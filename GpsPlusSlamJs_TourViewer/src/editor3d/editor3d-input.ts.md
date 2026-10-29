@@ -31,6 +31,10 @@ move the camera only, and a second finger during a drag cancels it.
   400 ms and 30 px.
 - `TWO_FINGER_CANCEL` - the toast a second finger's cancel says.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
+- `InputScene.clickWaited?()` and `answerClick?(pointer)` - while a click
+  is waited for, a press starts no gesture (and no handle is hovered), a
+  click (a press that did not move) is the scene's answer and selects
+  nothing, a double click frames nothing; a drag stays the camera's.
 
 ## Invariants & assumptions
 

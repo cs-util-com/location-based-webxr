@@ -35,7 +35,7 @@ far the visitor is from each offered station. Plan:
   voices; a figure only in its `stage` view, a model in its `stage` or
   `placed` view - a reached placed model stands in the world from its
   step on, B2b; never a video nor its poster, K4 review R3), then the files of
-  the station's free PLACED models (B2b, G2 follow-up 9: drawn with the
+  the station's free models, each in a world view (B2b, G2 follow-up 9: drawn with the
   station, so read ahead with it). Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed

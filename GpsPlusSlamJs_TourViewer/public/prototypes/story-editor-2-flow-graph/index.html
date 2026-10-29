@@ -1,0 +1,1830 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Story Flow Graph</title>
+<meta name="description" content="Story editor prototype 2: a station's story drawn as a flow graph, with every next step and every answer's jump as an arrow.">
+<!--
+  Throwaway prototype, story editor direction 2: a FLOW GRAPH. A station's
+  story steps are nodes laid out top to bottom in story order; every arrow
+  (the next step, each answer's jump, the quiz's way on) is drawn. The layout
+  is automatic: steps every visitor passes stay on the middle line, steps only
+  some visitors reach move out into a side column, so a branch reads as a
+  detour. On the desktop the graph sits inside the Studio 3 editor (tree left,
+  inspector right); on the phone the author sees one step at a time with where
+  it comes from and where it goes, beside a small map of the whole shape.
+  Original code and drawings, no libraries, no network. Nothing is saved; the
+  station "The old mill" is hard-coded sample data. Not wired into the app.
+-->
+<style>
+:root {
+  --bg0: #18191c; --bg1: #1f2023; --bg2: #26282c; --bg3: #2f3136; --bg4: #383a40;
+  --line: #313338; --line2: #3c3f46;
+  --text: #d9dbe0; --muted: #8a8f99; --dim: #646973;
+  --accent: #e9a23b; --accentBg: rgba(233,162,59,.14); --accentLine: rgba(233,162,59,.55);
+  --focus: #5b9cf0; --ok: #7cc77a; --err: #ef6b66; --warn: #e9b86b;
+  --a0: #5b9cf0; --a1: #67bb57; --a2: #e06fbf; --a3: #3fc1c9; --flow: #80858f;
+  --k-choice: #8db8e3; --k-quiz: #f0c05a;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg0); color: var(--text);
+  font: 12px/1.4 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; overflow: hidden; }
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+#app { height: 100%; }
+
+/* ---------------- desktop shell (Studio 3 language) ---------------- */
+#app.desk { display: grid; grid-template-rows: 40px minmax(0,1fr) 24px; grid-template-columns: 272px minmax(0,1fr) 300px;
+  grid-template-areas: "tb tb tb" "tree cv side" "sb sb sb"; }
+#tb { grid-area: tb; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--bg1); border-bottom: 1px solid var(--line); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-right: 1px solid var(--line); height: 24px; white-space: nowrap; }
+.brand b { font-weight: 600; }
+.brand .doc { color: var(--muted); }
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; white-space: nowrap; }
+.tbtn:hover:not(:disabled) { background: var(--bg3); }
+.tbtn:disabled { color: var(--dim); cursor: default; }
+.tbtn kbd { font: 10px var(--mono); color: var(--dim); }
+.seg { display: flex; background: var(--bg0); border: 1px solid var(--line2); border-radius: 5px; padding: 2px; gap: 2px; }
+.seg button { height: 22px; padding: 0 10px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.seg button.on { background: var(--bg3); color: var(--text); }
+.spacer { flex: 1; }
+.protoTag { font-size: 10px; color: var(--dim); }
+
+#tree { grid-area: tree; background: var(--bg1); border-right: 1px solid var(--line); overflow: auto; min-height: 0; padding-bottom: 12px; }
+.th { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; font-size: 10.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.th .count { font: 10px var(--mono); color: var(--dim); letter-spacing: 0; }
+.scard { margin: 8px 8px 0; border-radius: 6px; border: 1px solid var(--line2); background: var(--bg2); overflow: hidden; }
+.scard.sel { border-color: var(--accentLine); }
+.hero { position: relative; height: 46px; cursor: pointer; display: flex; align-items: flex-end; padding: 6px 9px; }
+.hero .n { position: absolute; left: 7px; top: 6px; font: 600 10px var(--mono); background: rgba(20,21,24,.78); color: #e6f0fa; border-radius: 3px; padding: 1px 5px; }
+.scard.sel .hero .n { background: var(--accent); color: #1c1c1c; }
+.hero .nm { font-weight: 600; font-size: 13px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.kids { padding: 4px 0 6px; }
+.row { position: relative; display: flex; align-items: center; gap: 7px; min-height: 26px; padding: 0 8px 0 12px; cursor: pointer; user-select: none; }
+.row:hover { background: var(--bg3); }
+.row.sel { background: var(--accentBg); }
+.row.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; }
+.row .tag { font-size: 10px; border-radius: 9px; padding: 0 7px; line-height: 16px; white-space: nowrap; }
+.tag.story { background: rgba(141,184,227,.14); color: #a9cbee; }
+.tag.world { background: rgba(124,199,122,.14); color: #9fd89d; }
+.row .rx { opacity: 0; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.row:hover .rx, .row.sel .rx { opacity: 1; }
+.row .rx:hover { background: var(--bg4); color: #f0a8a5; }
+.sub { font-size: 10px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); padding: 8px 12px 3px; }
+.kic { display: inline-flex; color: var(--muted); }
+
+#cv { grid-area: cv; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #202125; }
+#cvHead { flex: none; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg1); display: flex; flex-direction: column; gap: 7px; }
+.hrow { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.htitle { font-size: 14px; font-weight: 600; color: #f0f1f3; display: flex; align-items: center; gap: 7px; }
+.htitle small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.vchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid; cursor: pointer; background: transparent; font-size: 12px; white-space: nowrap; }
+.vchip.ok { color: #a6dca4; border-color: rgba(124,199,122,.45); background: rgba(124,199,122,.08); }
+.vchip.err { color: #ffb2ae; border-color: rgba(239,107,102,.6); background: rgba(239,107,102,.12); }
+.vchip.warn { color: #f3d29a; border-color: rgba(233,184,107,.5); background: rgba(233,184,107,.1); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line2); background: var(--bg2); color: var(--text); cursor: pointer; white-space: nowrap; }
+.btn:hover:not(:disabled) { background: var(--bg3); }
+.btn:disabled { color: var(--dim); cursor: default; }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #1c1c1c; font-weight: 600; }
+.btn.pri:hover { background: #f0b257; }
+.btn.danger { background: #b8413c; border-color: #b8413c; color: #fff; font-weight: 600; }
+.btn.danger:hover { background: #cc4d47; }
+.btn.ghost { background: transparent; }
+.ways { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); font-size: 11.5px; }
+.way { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 4px; border-radius: 12px; border: 1px solid var(--line2); background: var(--bg2); cursor: pointer; color: var(--text); font-size: 11.5px; max-width: 290px; }
+.way .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.way .ct { color: var(--dim); font: 10.5px var(--mono); white-space: nowrap; }
+.way.on { border-color: var(--accent); background: var(--accentBg); }
+.lt { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 3px; border-radius: 9px; font: 700 10px/1 var(--mono); color: #111; background: var(--c, var(--flow)); flex: none; }
+.lt.end { background: #50545c; color: #e6e8ec; }
+
+#cvScroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+#graph { position: relative; min-width: 100%; min-height: 100%; user-select: none; -webkit-user-select: none;
+  background-image: radial-gradient(rgba(255,255,255,.055) 1px, transparent 1px); background-size: 18px 18px; }
+#gz { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.zoom { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 5px; overflow: hidden; }
+.zoom button { height: 26px; min-width: 28px; border: 0; background: var(--bg2); cursor: pointer; padding: 0 8px; color: var(--text); }
+.zoom button + button { border-left: 1px solid var(--line2); }
+.zoom button.on { background: var(--accentBg); color: #f3c47e; }
+.zoom button:hover { background: var(--bg3); }
+.adv { font-size: 11px; color: var(--muted); background: var(--bg3); border-radius: 8px; padding: 0 6px; line-height: 16px; white-space: nowrap; }
+#edges, #wire { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+#wire { z-index: 6; }
+.e { fill: none; stroke-width: 1.8; stroke: var(--flow); transition: opacity .2s; }
+.e.ans { stroke-width: 2.1; }
+.e.a0 { stroke: var(--a0); } .e.a1 { stroke: var(--a1); } .e.a2 { stroke: var(--a2); } .e.a3 { stroke: var(--a3); }
+.e.lost { stroke: var(--err); stroke-dasharray: 5 4; }
+.e.back { stroke-dasharray: 2 4; }
+.e.dim { opacity: .12; }
+.e.walk { stroke: var(--accent); stroke-width: 3.2; }
+.e.doom { stroke: var(--err); stroke-width: 3; }
+.elab { transition: opacity .2s; }
+.elab.dim { opacity: .12; }
+.elab text { font: 700 9.5px var(--mono); fill: #111; text-anchor: middle; dominant-baseline: central; }
+.wire { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-dasharray: 6 4; }
+
+.node { position: absolute; width: 250px; background: var(--bg2); border: 1px solid var(--line2); border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.28); transition: left .28s ease, top .28s ease, opacity .2s, box-shadow .2s; cursor: pointer; z-index: 2; user-select: none; }
+.node::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 4px; border-radius: 8px 0 0 8px; background: var(--kc, var(--flow)); }
+.node:hover { border-color: #4b4f57; }
+.node.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 4px 16px rgba(0,0,0,.35); }
+.node.hl { box-shadow: 0 0 0 2px var(--k-choice), 0 4px 16px rgba(0,0,0,.35); }
+.node.dim { opacity: .3; }
+.node.unreached { border-style: dashed; }
+.node.doom { border-color: var(--err); box-shadow: 0 0 0 2px var(--err); opacity: .85; }
+.node.playing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent), 0 0 26px rgba(233,162,59,.45); }
+.node.visited { border-color: rgba(233,162,59,.5); }
+.node.dragging { transition: none; z-index: 20; box-shadow: 0 12px 30px rgba(0,0,0,.55); cursor: grabbing; opacity: .95; }
+.node.drop-ok { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgba(233,162,59,.4); }
+.node.drop-no { opacity: .35; }
+.nh { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 7px 0 6px; border-bottom: 1px solid var(--line); }
+.nh .grip { color: var(--dim); cursor: grab; display: inline-flex; }
+.nh .no { font: 600 11px var(--mono); background: #3d5a78; color: #e6f0fa; border-radius: 3px; padding: 1px 5px; }
+.node.sel .nh .no { background: var(--accent); color: #1c1c1c; }
+.nh .kd { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nh .iss { display: inline-flex; }
+.nh .iss.err { color: var(--err); } .nh .iss.warn { color: var(--warn); }
+.nb { padding: 6px 10px 9px 12px; }
+.nt { display: flex; align-items: flex-start; gap: 6px; font-weight: 600; color: #f0f1f3; font-size: 14px; line-height: 1.3; }
+.nt span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nt svg { margin-top: 1px; color: var(--kc); }
+.nx { color: #b9bdc5; margin-top: 3px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx b.ok { color: #a6dca4; font-weight: 600; }
+.nm2 { color: var(--dim); margin-top: 5px; font-size: 11px; }
+.ans, .qo { list-style: none; margin: 7px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ans li, .qo li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #c8ccd3; }
+.ans li .al, .qo li .al { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ans li .ag { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; }
+.ans li.lost .ag { color: var(--err); font-weight: 600; }
+.qo li .ck { width: 14px; display: inline-flex; color: var(--ok); }
+.port { position: absolute; bottom: -10px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; border: 2px solid var(--bg0); background: var(--c, var(--flow));
+  color: #111; font: 700 10px/16px var(--mono); text-align: center; cursor: grab; padding: 0; z-index: 3; }
+.port:hover { transform: scale(1.18); }
+.port.fixed { width: 10px; height: 10px; margin-left: -5px; bottom: -5px; cursor: default; border-width: 2px; }
+.port.fixed:hover { transform: none; }
+.port.lostp { background: var(--err); color: #fff; }
+.term { position: absolute; width: 250px; height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-weight: 600; font-size: 12px; z-index: 2; transition: left .28s, top .28s; }
+.term.start { background: #2b3a2c; border: 1px solid #4b7a4a; color: #b9e2b6; }
+.term.end { background: #33353b; border: 1px solid #5a5e66; color: #e6e8ec; }
+.term small { font-weight: 400; color: var(--muted); }
+.term.drop-ok { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgba(233,162,59,.4); }
+.term.playing { box-shadow: 0 0 0 3px var(--accent); }
+.ins { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 1px solid var(--line2); background: var(--bg1); color: #f3c47e;
+  display: grid; place-items: center; cursor: pointer; z-index: 4; padding: 0; opacity: .75; }
+.ins:hover { opacity: 1; background: var(--accent); color: #1c1c1c; border-color: var(--accent); }
+.ins svg { width: 13px; height: 13px; stroke-width: 2; }
+#insLine { position: absolute; height: 0; border-top: 3px solid var(--accent); z-index: 19; pointer-events: none; border-radius: 2px; }
+#insLine::before { content: attr(data-l); position: absolute; left: 0; top: -22px; background: var(--accent); color: #1c1c1c; font-weight: 600; font-size: 11px; padding: 1px 8px; border-radius: 9px; white-space: nowrap; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-left: auto; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--flow); }
+.legend i.a { border-color: var(--a0); } .legend i.l { border-color: var(--err); border-top-style: dashed; }
+
+#side { grid-area: side; background: var(--bg1); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.sh { flex: none; display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); }
+.sh .ttl { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; color: #f0f1f3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh .no { font: 600 10px var(--mono); background: var(--accent); color: #1c1c1c; border-radius: 3px; padding: 1px 5px; }
+.sbody { flex: 1; min-height: 0; overflow: auto; }
+.sfoot { flex: none; border-top: 1px solid var(--line); padding: 8px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.ib { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; background: transparent; border-radius: 4px; color: var(--muted); cursor: pointer; flex: none; }
+.ib:hover { background: var(--bg3); color: var(--text); }
+.empty { padding: 16px 14px; color: var(--muted); line-height: 1.55; }
+.empty h3 { margin: 0 0 6px; color: var(--text); font-size: 13px; }
+.empty ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* forms (inspector and phone edit sheet share them) */
+.form { padding: 6px 12px 12px; }
+.f { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; align-items: center; margin: 7px 0; }
+.f.top { align-items: start; }
+.f.top > label { padding-top: 5px; }
+.f > label { color: var(--muted); }
+.tfield { width: 100%; min-width: 0; height: 26px; background: var(--bg2); border: 1px solid var(--line2); border-radius: 3px; color: var(--text); padding: 0 7px; font: 12px "Segoe UI", system-ui, sans-serif; outline: none; }
+.tfield:focus { border-color: var(--focus); }
+select.tfield { padding: 0 4px; }
+textarea.tfield { height: 60px; padding: 5px 7px; resize: vertical; line-height: 1.4; }
+.tfield.bad { border-color: var(--err); box-shadow: 0 0 0 1px var(--err); }
+.note { color: var(--dim); font-size: 11px; line-height: 1.45; margin: 3px 0; }
+.note.err { color: #ffb2ae; }
+.radios { display: flex; flex-direction: column; gap: 5px; }
+.radios label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.radios input[type=number] { width: 52px; }
+.optrow { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 6px; align-items: center; margin: 6px 0; }
+.optrow .go { grid-column: 2 / 4; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.optrow .go select { flex: 1; }
+.optbox { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 6px 0; background: rgba(255,255,255,.015); }
+.optbox.lost { border-color: rgba(239,107,102,.6); }
+.secl { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 12px; border: 1px solid var(--line2); background: var(--bg2); cursor: pointer; font-size: 11.5px; }
+.chip:hover { border-color: #5a5e66; }
+.linkbtn { border: 0; background: none; color: #f3c47e; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+
+#sb { grid-area: sb; display: flex; align-items: center; gap: 0; background: var(--bg1); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); min-width: 0; }
+#sb > div { padding: 0 10px; border-right: 1px solid var(--line); height: 100%; display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+#sb .grow { flex: 1; min-width: 0; text-overflow: ellipsis; display: block; line-height: 23px; }
+#sb b { color: var(--text); font-weight: 500; }
+
+/* preview panel (desktop) */
+.pvwrap { padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pvphone { width: 272px; height: 484px; border-radius: 22px; border: 6px solid #0c0d0f; box-shadow: 0 0 0 1px var(--line2), 0 10px 30px rgba(0,0,0,.5); overflow: hidden; position: relative; flex: none; }
+.pvbar { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.pvpos { color: var(--muted); font-size: 11.5px; text-align: center; }
+
+/* ---------------- the visitor mock (preview) ---------------- */
+.vis { position: absolute; inset: 0; overflow: hidden; cursor: pointer; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #f4efe6; container-type: size; }
+.vis .scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+.vis .hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; align-items: center; font-size: 11px; background: rgba(17,20,27,.7); padding: 4px 10px; border-radius: 12px; z-index: 5; }
+.vis .hud b { color: #f2b84b; font-weight: 600; }
+.vis .wsign { position: absolute; right: 3%; bottom: 33%; max-width: 24% !important; background: #6b4a2b; color: #f6e8cf; border: 2px solid #3d2a17; border-radius: 3px; font: 600 10px/1.25 ui-serif, Georgia, serif; padding: 4px 7px; max-width: 34%; text-align: center; box-shadow: 0 3px 6px rgba(0,0,0,.35); }
+.vis .wsign::after { content: ""; position: absolute; left: 50%; bottom: -20px; width: 4px; height: 18px; background: #3d2a17; margin-left: -2px; }
+.vis .wtag { position: absolute; left: 50%; bottom: 40%; transform: translateX(-50%); background: rgba(17,20,27,.75); border-radius: 10px; padding: 3px 9px; font-size: 10px; }
+.vis .fig { position: absolute; left: 7%; bottom: 17%; width: 30%; height: 38%; transition: opacity .4s; }
+.vis .fig svg { width: 100%; height: 100%; }
+.vis .bubble { position: absolute; left: 22%; right: 6%; bottom: 52%; background: rgba(17,20,27,.88); border-radius: 16px; padding: 9px 12px; font-size: 13px; line-height: 1.38; z-index: 4; }
+.vis .bubble::after { content: ""; position: absolute; left: 22px; bottom: -9px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-top: 10px solid rgba(17,20,27,.88); }
+.vis .who { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #f2b84b; font-weight: 600; margin-bottom: 3px; }
+.vis .w { transition: color .12s; }
+.vis .w.up { color: rgba(244,239,230,.42); }
+.vis .portrait { position: absolute; left: 10px; right: 10px; bottom: 54px; display: flex; gap: 9px; align-items: flex-end; z-index: 4; }
+.vis .portrait .ring { width: 58px; height: 58px; border-radius: 50%; background: #1b1f27; box-shadow: 0 0 0 3px #f2b84b; flex: none; overflow: hidden; }
+.vis .portrait .pc { flex: 1; background: rgba(17,20,27,.88); border-radius: 14px; padding: 8px 11px; font-size: 13px; line-height: 1.38; }
+.vis .card { position: absolute; left: 10px; right: 10px; bottom: 50px; background: rgba(17,20,27,.92); border-radius: 16px; padding: 12px; z-index: 4; font-size: 13px; line-height: 1.4; }
+.vis .card.mid { bottom: auto; top: 50%; transform: translateY(-50%); }
+.vis .card h4 { margin: 0 0 6px; font-size: 14px; }
+.vis .card .pic { width: 100%; aspect-ratio: 4/3; border-radius: 9px; overflow: hidden; margin-bottom: 8px; background: #8a7353; }
+.vis .card .pic svg { width: 100%; height: 100%; display: block; }
+.vis .vid { width: 100%; aspect-ratio: 16/9; border-radius: 9px; background: #0b0c10; display: grid; place-items: center; position: relative; margin-bottom: 8px; overflow: hidden; }
+.vis .vid .pl { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.18); display: grid; place-items: center; }
+.vis .vid .bar { position: absolute; left: 8px; right: 8px; bottom: 8px; height: 3px; background: rgba(255,255,255,.2); border-radius: 2px; }
+.vis .vid .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #f2b84b; border-radius: 2px; }
+.vis .vid .tm { position: absolute; right: 9px; bottom: 14px; font: 10px var(--mono); color: rgba(255,255,255,.75); }
+.vis .vid .frame { position: absolute; inset: 0; opacity: .5; }
+.vis .opts { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
+.vis .opt { min-height: 40px; border-radius: 20px; border: 1px solid rgba(242,184,75,.6); background: rgba(242,184,75,.12); color: #f4efe6; font-size: 13.5px; text-align: left; padding: 6px 14px; cursor: pointer; }
+.vis .opt:hover { background: rgba(242,184,75,.25); }
+.vis .opt.right { border-color: #8fc49a; background: rgba(143,196,154,.25); }
+.vis .opt.wrong { border-color: #c4483a; background: rgba(196,72,58,.25); }
+.vis .fb { margin-top: 9px; padding: 8px 10px; border-radius: 10px; font-size: 13px; }
+.vis .fb.right { background: rgba(143,196,154,.18); color: #cfe9d3; }
+.vis .fb.wrong { background: rgba(196,72,58,.2); color: #f3cbc5; }
+.vis .go { margin-top: 9px; width: 100%; min-height: 40px; border-radius: 20px; border: 0; background: #f2b84b; color: #2a1d07; font-weight: 700; font-size: 14px; cursor: pointer; }
+.vis .tap { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(17,20,27,.72); border-radius: 14px; padding: 5px 13px; font-size: 11.5px; z-index: 5; white-space: nowrap; animation: pulse 1.6s infinite; }
+.vis .autob { position: absolute; left: 30%; right: 30%; bottom: 22px; height: 3px; border-radius: 2px; background: rgba(255,255,255,.2); z-index: 5; }
+.vis .autob i { position: absolute; left: 0; top: 0; bottom: 0; background: #f2b84b; border-radius: 2px; }
+.vis .stage { position: absolute; left: 46%; bottom: 13%; width: 50%; aspect-ratio: 1; transform: translateX(-50%); }
+.vis .stage .disc { position: absolute; left: 6%; right: 6%; bottom: -2%; height: 16%; border-radius: 50%; background: radial-gradient(rgba(242,184,75,.4), rgba(242,184,75,0) 70%); }
+.vis .stage svg { width: 100%; height: 100%; animation: spin 9s linear infinite; }
+.vis .stage.still svg { animation-duration: 30s; }
+.vis .cap { position: absolute; left: 10px; right: 10px; top: 46px; background: rgba(17,20,27,.8); border-radius: 12px; padding: 7px 11px; font-size: 12.5px; z-index: 4; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: .55; } }
+
+/* ---------------- modal / sheet / menu / toast ---------------- */
+#modalBack { position: fixed; inset: 0; z-index: 50; background: rgba(8,9,11,.32); display: none; align-items: center; justify-content: center; padding: 16px; }
+#modalBack.show { display: flex; }
+body.desk #modalBack.side { justify-content: flex-end; align-items: flex-start; padding: 52px 14px; background: rgba(8,9,11,.18); }
+#modal { width: min(470px, 100%); max-height: calc(100% - 16px); overflow: auto; background: var(--bg1); border: 1px solid var(--line2); border-radius: 9px; box-shadow: 0 18px 50px rgba(0,0,0,.55); }
+#modal h2 { margin: 0; font-size: 14px; font-weight: 600; color: #f0f1f3; padding: 13px 14px 11px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+#modal h2 .sp { flex: 1; }
+#modal .mb { padding: 10px 14px 6px; line-height: 1.5; font-size: 12.5px; }
+#modal .mf { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px 12px; border-top: 1px solid var(--line); margin-top: 6px; flex-wrap: wrap; }
+.dq { border-radius: 7px; padding: 8px 10px; margin: 8px 0; background: rgba(239,107,102,.08); border: 1px solid rgba(239,107,102,.35); }
+.dq.q2 { background: rgba(233,162,59,.08); border-color: rgba(233,162,59,.45); }
+.dq .dqh { display: flex; align-items: center; gap: 7px; font-weight: 600; color: #ffc7c3; }
+.dq.q2 .dqh { color: #f6cf8f; font-size: 13.5px; }
+.dq ul { margin: 6px 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.dq li { display: flex; align-items: center; gap: 7px; }
+.dq p { margin: 5px 0 2px; }
+.mini { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--line2); margin: 2px 0 6px; }
+.mini .no { font: 600 10px var(--mono); background: #3d5a78; color: #e6f0fa; border-radius: 3px; padding: 1px 5px; }
+.mini .kd { color: var(--muted); font-size: 11px; }
+.list { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.li { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; text-align: left; color: var(--text); }
+.li:hover:not(:disabled) { background: var(--bg3); }
+.li:disabled { color: var(--dim); cursor: default; }
+.li .grow { flex: 1; min-width: 0; }
+.li .grow small { display: block; color: var(--dim); font-size: 11px; }
+.li.on { background: var(--accentBg); }
+.li .ic { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; background: var(--bg2); flex: none; }
+.lh { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); padding: 8px 10px 2px; }
+#menu { position: fixed; z-index: 45; width: 290px; max-height: 70vh; overflow: auto; background: var(--bg1); border: 1px solid var(--line2); border-radius: 8px; box-shadow: 0 14px 40px rgba(0,0,0,.5); padding: 4px; }
+#toast { position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%); padding: 7px 8px 7px 14px; border-radius: 6px; background: rgba(36,37,41,.97); border: 1px solid var(--line2);
+  color: var(--text); opacity: 0; transition: opacity .25s; z-index: 60; display: flex; gap: 10px; align-items: center; pointer-events: none; max-width: calc(100% - 32px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+#toast.show { opacity: 1; pointer-events: auto; }
+#toast button { border: 0; background: var(--bg3); color: #f3c47e; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-weight: 600; }
+#issuesPop { position: fixed; z-index: 44; width: 360px; background: var(--bg1); border: 1px solid var(--line2); border-radius: 8px; box-shadow: 0 14px 40px rgba(0,0,0,.5); padding: 8px; }
+.iss-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 6px; border-radius: 5px; }
+.iss-row:hover { background: var(--bg2); }
+.iss-row .t { flex: 1; line-height: 1.45; }
+.iss-row .ic.err { color: var(--err); } .iss-row .ic.warn { color: var(--warn); }
+
+/* ---------------- phone creator mode ---------------- */
+#app.phone { display: flex; flex-direction: column; font-size: 14px; }
+#ph { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 4px; background: var(--bg1); border-bottom: 1px solid var(--line); min-height: 54px; }
+#ph .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+#ph .pt small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ph .pt b { font-size: 17px; }
+.pb { min-width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; padding: 0 8px; }
+.pb:active { background: var(--bg3); }
+.pb:disabled { color: var(--dim); }
+.pb svg { width: 20px; height: 20px; }
+.pb.play { background: var(--accent); color: #1c1c1c; font-weight: 700; padding: 0 12px; }
+#ph .vchip { height: 34px; border-radius: 17px; font-size: 13px; padding: 0 10px; }
+#pbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 74px minmax(0,1fr); }
+#rail { overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--line); background: #1b1c1f; }
+#rail svg { display: block; width: 74px; }
+#rail .rn { cursor: pointer; }
+#rail .rtxt { font: 700 11px var(--mono); fill: #e6e8ec; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+#rail .rlab { font: 600 9.5px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
+#focus { overflow-y: auto; min-width: 0; padding: 10px 12px 18px; }
+.fx { display: flex; flex-direction: column; gap: 10px; }
+.fsec h4 { margin: 0 0 6px; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.conn { display: flex; flex-wrap: wrap; gap: 6px; }
+.cbtn { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 4px 12px 4px 8px; border-radius: 20px; border: 1px solid var(--line2); background: var(--bg2); cursor: pointer; text-align: left; font-size: 13.5px; max-width: 100%; }
+.cbtn .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbtn.lostc { border-color: var(--err); color: #ffb2ae; }
+.pcard { position: relative; background: var(--bg2); border: 1px solid var(--accentLine); border-radius: 12px; padding: 12px 12px 10px 15px; box-shadow: 0 0 0 1px var(--accentLine); }
+.pcard::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 5px; border-radius: 12px 0 0 12px; background: var(--kc); }
+.pcard .pk { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+.pcard .pk .no { font: 700 11px var(--mono); background: var(--accent); color: #1c1c1c; border-radius: 4px; padding: 1px 6px; }
+.pcard .ptl { font-size: 17px; font-weight: 600; margin: 6px 0 2px; color: #f4f5f7; display: flex; gap: 8px; align-items: flex-start; }
+.pcard .ptl svg { width: 20px; height: 20px; margin-top: 2px; color: var(--kc); }
+.pcard .px { color: #b9bdc5; font-size: 13.5px; line-height: 1.4; }
+.pcard .pm { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+.pcard .pw { font-size: 12.5px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; color: var(--muted); }
+.pcard .pw.warn { color: var(--warn); }
+.wgrp { display: inline-flex; gap: 2px; padding: 2px 4px; border: 1px solid var(--line2); border-radius: 10px; }
+.wgrp { display: inline-flex; gap: 2px; padding: 2px 4px; border: 1px solid var(--line2); border-radius: 10px; }
+.pacts { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.2fr; gap: 6px; margin-top: 10px; }
+.pacts button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line2); background: var(--bg3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; padding: 0 6px; }
+.pacts button:disabled { color: var(--dim); background: var(--bg2); }
+.pacts .del { color: #f0a8a5; }
+.goes { display: flex; flex-direction: column; gap: 6px; }
+.grow2 { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 9px; border-radius: 10px; background: var(--bg2); border: 1px solid var(--line); }
+.grow2.lost { border-color: var(--err); background: rgba(239,107,102,.08); }
+.grow2 .al { flex: 1; min-width: 0; font-size: 13px; }
+.grow2 .al small { display: block; color: var(--muted); font-size: 12px; }
+.grow2 .al .tg { display: inline-flex; gap: 5px; align-items: center; color: var(--text); font-weight: 600; }
+.grow2 .chg { min-height: 40px; min-width: 72px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg3); cursor: pointer; font-size: 13px; }
+.grow2 .chg.need { background: var(--err); border-color: var(--err); color: #fff; font-weight: 700; }
+.addafter { min-height: 48px; border-radius: 12px; border: 1px dashed var(--accentLine); background: transparent; color: #f3c47e; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pfoot { display: flex; gap: 8px; flex-wrap: wrap; }
+.pfoot button { min-height: 40px; border-radius: 10px; border: 1px solid var(--line2); background: transparent; color: var(--muted); padding: 0 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.fnote { color: var(--dim); font-size: 12.5px; line-height: 1.45; }
+.phone #modalBack, body.phone #modalBack { align-items: flex-end; padding: 0; }
+body.phone #modal { width: 100%; max-height: 92%; border-radius: 16px 16px 0 0; border-bottom: 0; font-size: 14px; }
+body.phone #modal h2 { font-size: 16px; padding: 14px 14px 12px; }
+body.phone #modal .mb { font-size: 14px; }
+body.phone #modal .mf { flex-direction: column-reverse; }
+body.phone #modal .mf .btn { height: 46px; font-size: 14.5px; width: 100%; }
+body.phone .li { min-height: 48px; font-size: 14px; }
+body.phone .tfield { height: 40px; font-size: 15px; }
+body.phone textarea.tfield { height: 86px; }
+body.phone select.tfield { height: 40px; }
+body.phone .f { display: block; margin: 10px 0; }
+body.phone .f > label { display: block; margin-bottom: 4px; font-size: 13px; }
+body.phone .radios label { min-height: 36px; font-size: 14px; }
+body.phone .radios input[type=radio] { width: 20px; height: 20px; }
+body.phone .optrow .go { grid-column: 1 / 4; }
+body.phone .ib { width: 40px; height: 40px; }
+body.phone .btn { height: 40px; font-size: 14px; }
+body.phone #toast { bottom: auto; top: 60px; font-size: 14px; width: calc(100% - 24px); justify-content: space-between; }
+body.phone .note { font-size: 12.5px; }
+#pvFull { position: fixed; inset: 0; z-index: 40; background: #000; display: flex; flex-direction: column; }
+#pvFull .pvtop { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px; background: var(--bg1); border-bottom: 1px solid var(--line); }
+#pvFull .pvtop .grow { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); line-height: 1.2; }
+#pvFull .pvtop .grow b { color: var(--text); display: block; font-size: 14px; }
+#pvFull .pvarea { flex: 1; min-height: 0; position: relative; }
+/* landscape phone: the focused step and its connections side by side */
+#app.phone.land #ph { min-height: 44px; padding: 2px 6px; }
+#app.phone.land #ph .pt { flex-direction: row; align-items: baseline; gap: 8px; }
+#app.phone.land .pb { height: 40px; }
+#app.phone.land .fx { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 10px 14px; align-items: start; }
+#app.phone.land .fx > .colA, #app.phone.land .fx > .colB { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fx > .colA, .fx > .colB { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modalBack"><div id="modal" role="dialog" aria-modal="true" aria-labelledby="mTtl"></div></div>
+<div id="menu" hidden></div>
+<div id="issuesPop" hidden></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module">
+// ======================================================================
+// Data: the sample station "The old mill" (in memory only)
+// ======================================================================
+const END = '__end';
+const LET = 'ABCD';
+const SHORTV = { bubble: 'bubble', portrait: 'portrait', popup: 'pop-up', sign: 'sign', card: 'card', reading: 'stand', framed: 'framed', screen: 'screen', stage: 'stage', placed: 'placed' };
+const LC = /^[A-Z](?=[a-z])/; const lcf = (m) => m.toLowerCase(); // 'Picture' to 'picture', '3D model' stays
+const KIND = {
+  character: { label: 'Character', color: '#e9b86b', field: 'What she says', lineEnd: 'When the line ends', def: 'bubble',
+    views: { bubble: { label: 'Speech bubble', world: true }, portrait: { label: 'Portrait' }, popup: { label: 'Pop-up' } } },
+  shortText: { label: 'Short text', color: '#e07a6e', field: 'Text', def: 'card',
+    views: { sign: { label: 'Sign in the world', world: true }, card: { label: 'Card', storyOnly: true } } },
+  longText: { label: 'Long text', color: '#e39a76', field: 'Text', lineEnd: 'When the reading ends', def: 'card',
+    views: { card: { label: 'Card', storyOnly: true }, reading: { label: 'Reading stand in the world', world: true } } },
+  picture: { label: 'Picture', color: '#c9a66b', field: 'Caption', def: 'card',
+    views: { card: { label: 'Card', storyOnly: true }, framed: { label: 'Framed in the world', world: true } } },
+  video: { label: 'Video', color: '#b39ddb', field: 'Description', lineEnd: 'When the video ends', def: 'card',
+    views: { card: { label: 'Card', storyOnly: true }, screen: { label: 'Screen in the world', world: true } } },
+  audio: { label: 'Sound', color: '#8fd0c0', field: 'Transcript', lineEnd: 'When the sound ends', def: 'card',
+    views: { card: { label: 'Player card', storyOnly: true } } },
+  model: { label: '3D model', color: '#a3b1c2', field: 'Caption', def: 'stage',
+    views: { stage: { label: 'On the story stage', storyOnly: true }, placed: { label: 'Placed in the world', world: true } } },
+};
+const NEW_TEXT = {
+  character: 'Hello! Write what the character says here.', shortText: 'A few words for the visitor.', longText: 'A longer text to read.',
+  picture: 'What the picture shows.', video: 'What the video shows.', audio: 'What the visitor hears.', model: 'What the model shows.',
+};
+const STATIONS = [
+  { n: 1, name: 'Market square', g: 'linear-gradient(120deg,#5a6b52,#33402f)' },
+  { n: 2, name: 'The old mill', g: 'linear-gradient(120deg,#7a6446,#3f4c3a 70%)', here: true },
+  { n: 3, name: 'The stone bridge', g: 'linear-gradient(120deg,#5d6672,#38404a)' },
+];
+
+const S = {
+  blocks: [
+    { id: 'ada', kind: 'character', name: 'Miller Ada', view: 'bubble', content: 'Welcome to the old mill! I am Ada. My grandfather ground flour here for forty years.' },
+    { id: 'sign', kind: 'shortText', name: 'Built in 1742', view: 'sign', content: 'Built in 1742 - the last working water mill in the valley.' },
+    { id: 'pic', kind: 'picture', name: 'The mill in 1900', view: 'card', content: 'The mill in 1900, with the miller\'s family in front of the door.' },
+    { id: 'vid', kind: 'video', name: 'A day at the mill', view: 'card', content: 'From the first sack of grain to the evening bread.', durationS: 30 },
+    { id: 'wheel', kind: 'model', name: 'The water wheel', view: 'stage', content: 'Walk around it: the stream pushes the paddles from below.' },
+  ],
+  steps: [
+    { id: 's1', action: { kind: 'show', block: 'ada' }, advance: { mode: 'lineEnd' } },
+    { id: 's2', action: { kind: 'show', block: 'pic' }, advance: { mode: 'tap' } },
+    { id: 's3', action: { kind: 'choice', prompt: 'What would you like to see?', options: [
+      { id: 'o1', label: 'How the wheel works', goto: 's4' },
+      { id: 'o2', label: 'A day at the mill', goto: 's5' },
+      { id: 'o3', label: 'Nothing, I will walk on', goto: END }] }, advance: { mode: 'tap' } },
+    { id: 's4', action: { kind: 'show', block: 'wheel' }, advance: { mode: 'tap' } },
+    { id: 's5', action: { kind: 'show', block: 'vid' }, advance: { mode: 'lineEnd' } },
+    { id: 's6', action: { kind: 'quiz', question: 'How many millstones did the wheel turn?', options: [
+      { id: 'q1', label: 'One' }, { id: 'q2', label: 'Two' }, { id: 'q3', label: 'Five' }], correct: 'q2', points: 10,
+      right: 'Yes! One for flour, one for animal feed.', wrong: 'Not quite. Look at the picture from 1900 again: two stones.' }, advance: { mode: 'tap' } },
+  ],
+  nid: 100,
+  sel: { type: 'step', id: 's3' },
+  focus: 's3',
+  undo: [], redo: [],
+  mode: '', hoverWay: null, pinWay: null, doom: null, ways: [], issues: [], zoom: 'fit',
+};
+
+// ======================================================================
+// Helpers
+// ======================================================================
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ICON = {
+  character: '<circle cx="8" cy="4.6" r="2.4"/><path d="M3.3 14c.4-3.3 2.2-5.1 4.7-5.1s4.3 1.8 4.7 5.1"/>',
+  shortText: '<path d="M3 3.5h10M8 3.5v9.5"/>',
+  longText: '<path d="M2.5 3.5h11M2.5 6.5h11M2.5 9.5h11M2.5 12.5h7"/>',
+  picture: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2.5 11.5l3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/>',
+  video: '<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M7 6.2v3.6L10 8z"/>',
+  audio: '<path d="M3 6.2h2.4L9 3.5v9L5.4 9.8H3z"/><path d="M11.2 6a3 3 0 010 4"/>',
+  model: '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+  choice: '<path d="M8 14.5V9.2M8 9.2L3.6 4.6M8 9.2l4.4-4.6M3.6 4.6v2.8M3.6 4.6h2.8M12.4 4.6v2.8M12.4 4.6H9.6"/>',
+  quiz: '<circle cx="8" cy="8" r="6"/><path d="M6.2 6.3a1.9 1.9 0 113 1.5c-.8.5-1.2.9-1.2 1.7M8 11.3v.2"/>',
+  grip: '<path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" stroke-width="2.4"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/>',
+  up: '<path d="M4 10l4-4 4 4"/>', down: '<path d="M4 6l4 4 4-4"/>',
+  undo: '<path d="M5.5 3.5l-3 3 3 3"/><path d="M2.5 6.5h6.8a3.6 3.6 0 010 7.2H6.5"/>',
+  redo: '<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5H6.7a3.6 3.6 0 000 7.2h2.8"/>',
+  play: '<path d="M5 3.3v9.4l7.3-4.7z" fill="currentColor"/>',
+  check: '<path d="M3.5 8.5l3 3 6-7"/>',
+  warn: '<path d="M8 2l6.5 11.5h-13z"/><path d="M8 6.5v3M8 11.5v.2"/>',
+  flag: '<path d="M4 14.5V2.5M4 3h8l-1.8 3L12 9H4"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  edit: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/>',
+  start: '<circle cx="8" cy="8" r="5.5"/><path d="M6.8 5.6v4.8L10.4 8z"/>',
+  back: '<path d="M10 3L5 8l5 5"/>',
+  blocks: '<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>',
+  arrow: '<path d="M3 8h10M9 4l4 4-4 4"/>',
+  cube3d: '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/>',
+  story: '<path d="M3 3h10v10H3z"/><path d="M5.5 6h5M5.5 8.5h5M5.5 11h3"/>',
+  restart: '<path d="M3 8a5 5 0 105-5H5.5"/><path d="M7 1.2L5.2 3 7 4.8"/>',
+  skip: '<path d="M3.5 3.5v9l6-4.5z"/><path d="M12 3.5v9"/>',
+};
+const icon = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 16 16" aria-hidden="true">${ICON[n] || ''}</svg>`;
+const stepById = (id) => S.steps.find((s) => s.id === id);
+const idx = (id) => S.steps.findIndex((s) => s.id === id);
+const blockById = (id) => S.blocks.find((b) => b.id === id);
+const nextOf = (i) => (i + 1 < S.steps.length ? S.steps[i + 1].id : END);
+const num = (id) => (id === END ? 'End' : String(idx(id) + 1));
+const multiPick = () => new Set(S.ways.flatMap((w) => w.picks.map((p) => p.step))).size > 1;
+const showSteps = (bid) => S.steps.filter((s) => s.action.kind === 'show' && s.action.block === bid);
+const viewOf = (b) => KIND[b.kind].views[b.view] || {};
+const isStoryOnly = (b) => !!viewOf(b).storyOnly;
+const firstWorldView = (b) => Object.keys(KIND[b.kind].views).find((v) => KIND[b.kind].views[v].world);
+const kindColor = (st) => (st.action.kind === 'choice' ? 'var(--k-choice)' : st.action.kind === 'quiz' ? 'var(--k-quiz)' : KIND[blockById(st.action.block)?.kind]?.color || 'var(--flow)');
+const stepIcon = (st) => (st.action.kind === 'show' ? blockById(st.action.block)?.kind : st.action.kind);
+function stepTitle(st) {
+  const a = st.action;
+  if (a.kind === 'show') return blockById(a.block)?.name || '(missing block)';
+  if (a.kind === 'choice') return a.prompt || '(no question yet)';
+  return a.question || '(no question yet)';
+}
+function stepKind(st) {
+  const a = st.action;
+  if (a.kind === 'show') return 'Show - ' + (KIND[blockById(a.block)?.kind]?.label || '');
+  return a.kind === 'choice' ? 'Choice' : 'Quiz';
+}
+function advLabel(st) {
+  const ad = st.advance || { mode: 'tap' };
+  if (ad.mode === 'auto') return `moves on after ${ad.afterS} s`;
+  if (ad.mode === 'lineEnd') {
+    const b = st.action.kind === 'show' ? blockById(st.action.block) : null;
+    return (b && KIND[b.kind].lineEnd ? KIND[b.kind].lineEnd : 'When it ends').replace(/^W/, 'moves on w');
+  }
+  return 'moves on with a tap';
+}
+const targetName = (t) => (t === END ? 'End of the story' : `${num(t)} - ${stepTitle(stepById(t))}`);
+
+// ======================================================================
+// Analysis: where each step goes, the ways through, the story check
+// ======================================================================
+function outs(st) {
+  const i = idx(st.id);
+  const a = st.action;
+  const okT = (t) => t === END || idx(t) >= 0;
+  if (a.kind === 'choice') {
+    return a.options.map((o, k) => {
+      const valid = !!o.goto && okT(o.goto);
+      return { key: o.id, kind: 'answer', k, letter: LET[k], label: o.label, target: valid ? o.goto : nextOf(i), explicit: valid,
+        lost: !!o.lost || (!!o.goto && !valid) };
+    });
+  }
+  if (a.kind === 'quiz') {
+    const valid = !!a.then && okT(a.then);
+    return [{ key: 'then', kind: 'then', target: valid ? a.then : nextOf(i), explicit: valid, lost: !!a.lostThen }];
+  }
+  return [{ key: 'next', kind: 'next', target: nextOf(i), explicit: false }];
+}
+function incoming(id) {
+  const res = [];
+  if (S.steps[0]?.id === id) res.push({ from: 'start' });
+  S.steps.forEach((st) => outs(st).forEach((o) => { if (o.target === id) res.push({ from: st.id, o }); }));
+  return res;
+}
+function computeWays() {
+  const res = [];
+  const walk = (id, seq, edges, picks, seen) => {
+    if (res.length >= 64) return;
+    if (id === END) { res.push({ steps: seq, edges, picks }); return; }
+    if (seen.has(id)) { res.push({ steps: seq, edges, picks, loop: true }); return; }
+    const st = stepById(id);
+    if (!st) { res.push({ steps: seq, edges, picks }); return; }
+    const s2 = new Set(seen); s2.add(id);
+    for (const o of outs(st)) {
+      walk(o.target, [...seq, id], [...edges, st.id + ':' + o.key],
+        o.kind === 'answer' ? [...picks, { step: id, letter: o.letter, label: o.label }] : picks, s2);
+    }
+  };
+  if (S.steps.length) walk(S.steps[0].id, [], ['start'], [], new Set());
+  const multi = new Set(res.flatMap((w) => w.picks.map((p) => p.step))).size > 1;
+  res.forEach((w) => {
+    w.code = w.picks.length ? w.picks.map((p) => (multi ? num(p.step) : '') + p.letter).join(' ') : '';
+    w.name = w.picks.length ? w.picks.map((p) => p.label).join(', then ') : 'Straight through';
+  });
+  return res;
+}
+function computeIssues(W) {
+  const out = [];
+  S.steps.forEach((st, i) => {
+    const a = st.action; const n = i + 1;
+    if (a.kind === 'choice') {
+      if (!a.prompt.trim()) out.push({ lvl: 'err', step: st.id, text: `Step ${n}: the choice has no question.` });
+      if (a.options.length < 2) out.push({ lvl: 'err', step: st.id, text: `Step ${n}: a choice needs at least two answers.` });
+      a.options.forEach((o, k) => { if (!o.label.trim()) out.push({ lvl: 'err', step: st.id, text: `Step ${n}: answer ${LET[k]} has no words.` }); });
+    }
+    if (a.kind === 'quiz') {
+      if (!a.options.some((o) => o.id === a.correct)) out.push({ lvl: 'err', step: st.id, text: `Step ${n}: the quiz has no right answer marked.` });
+    }
+    outs(st).forEach((o) => {
+      if (o.lost) {
+        out.push({ lvl: 'err', step: st.id, text: o.kind === 'answer'
+          ? `Step ${n}, answer ${o.letter} "${o.label}" lost its target. Choose where it goes.`
+          : `Step ${n}: the quiz lost the step it went to. Choose where it goes.` });
+      } else if (o.target !== END && idx(o.target) <= i) {
+        out.push({ lvl: 'warn', step: st.id, text: `Step ${n} jumps back up to step ${num(o.target)}: visitors would go round in a loop.` });
+      }
+    });
+    if (!W.some((w) => w.steps.includes(st.id))) out.push({ lvl: 'warn', step: st.id, text: `Step ${n} is never reached: no answer leads to it.` });
+  });
+  S.blocks.forEach((b) => {
+    if (!showSteps(b.id).length && isStoryOnly(b)) out.push({ lvl: 'err', block: b.id, text: `"${b.name}" is a ${viewOf(b).label.replace(LC, lcf)} but no step shows it.` });
+  });
+  return out;
+}
+const issuesOf = (id) => S.issues.filter((x) => x.step === id);
+const worst = (list) => (list.some((x) => x.lvl === 'err') ? 'err' : list.length ? 'warn' : 'ok');
+
+// Auto-layout columns. Steps every way passes stay in column 0 (the middle
+// line). Runs of steps reached by the same subset of ways form a group that
+// moves out to a side column; a group reached by fewer ways than an
+// overlapping one goes further out, so a nested detour reads as nested.
+function computeCols(W) {
+  const total = W.length;
+  const sets = S.steps.map((st) => W.map((w, k) => (w.steps.includes(st.id) ? k : -1)).filter((k) => k >= 0));
+  const cols = S.steps.map(() => 0);
+  const groups = [];
+  sets.forEach((set, i) => {
+    if (total && set.length === total) return;
+    const key = set.join(',') || 'none';
+    const g = groups[groups.length - 1];
+    if (g && g.key === key && g.end === i - 1) g.end = i; else groups.push({ key, set, start: i, end: i });
+  });
+  const placed = [];
+  [...groups].sort((a, b) => b.set.length - a.set.length || a.start - b.start).forEach((g) => {
+    let minMag = 1; let side = -1;
+    placed.forEach((p) => {
+      if (g.set.length && p.set.length > g.set.length && g.set.every((x) => p.set.includes(x)) && Math.abs(p.col) + 1 > minMag) {
+        minMag = Math.abs(p.col) + 1; side = Math.sign(p.col) || -1;
+      }
+    });
+    if (g.key === 'none') side = 1;
+    for (let mag = minMag; mag < 9 && g.col === undefined; mag++) {
+      for (const c of [side * mag, -side * mag]) {
+        if (!placed.some((p) => p.col === c && !(p.end < g.start || p.start > g.end))) { g.col = c; break; }
+      }
+    }
+    placed.push(g);
+    for (let i = g.start; i <= g.end; i++) cols[i] = g.col;
+  });
+  return cols;
+}
+
+// ======================================================================
+// Undo and edits
+// ======================================================================
+const snap = () => JSON.stringify({ blocks: S.blocks, steps: S.steps, nid: S.nid });
+function pushUndo(label, s = snap()) { S.undo.push({ s, label }); if (S.undo.length > 100) S.undo.shift(); S.redo = []; }
+function restore(s) { const o = JSON.parse(s); S.blocks = o.blocks; S.steps = o.steps; S.nid = o.nid; }
+function fixSel() {
+  if (S.sel?.type === 'step' && !stepById(S.sel.id)) S.sel = null;
+  if (S.sel?.type === 'block' && !blockById(S.sel.id)) S.sel = null;
+  if (!stepById(S.focus)) S.focus = S.steps[0]?.id || null;
+}
+function undo() {
+  const u = S.undo.pop(); if (!u) return;
+  S.redo.push({ s: snap(), label: u.label }); restore(u.s); fixSel(); render(); toast(`Undone: ${u.label}`);
+}
+function redo() {
+  const r = S.redo.pop(); if (!r) return;
+  S.undo.push({ s: snap(), label: r.label }); restore(r.s); fixSel(); render(); toast(`Redone: ${r.label}`);
+}
+const newId = (p) => p + (++S.nid);
+function newBlock(kind) {
+  const K = KIND[kind];
+  const b = { id: newId('b'), kind, name: 'New ' + K.label.replace(LC, lcf), view: K.def, content: NEW_TEXT[kind] };
+  if (kind === 'video' || kind === 'audio') b.durationS = 20;
+  S.blocks.push(b);
+  return b;
+}
+function addStep(kind, at, blockOrKind) {
+  pushUndo(`Add step ${at + 1}`);
+  const id = newId('s');
+  let action; let advance = { mode: 'tap' };
+  if (kind === 'show') {
+    const b = blockById(blockOrKind) || newBlock(blockOrKind);
+    action = { kind: 'show', block: b.id };
+    if (KIND[b.kind].lineEnd && b.kind !== 'longText') advance = { mode: 'lineEnd' };
+  } else if (kind === 'choice') {
+    action = { kind: 'choice', prompt: 'Where would you like to go?', options: [{ id: newId('o'), label: 'First answer' }, { id: newId('o'), label: 'Second answer' }] };
+  } else {
+    const r = newId('q');
+    action = { kind: 'quiz', question: 'Your question?', options: [{ id: r, label: 'The right answer' }, { id: newId('q'), label: 'A wrong answer' }], correct: r, points: 10, right: 'Right!', wrong: 'Not quite.' };
+  }
+  S.steps.splice(at, 0, { id, action, advance });
+  S.sel = { type: 'step', id }; S.focus = id; S.reveal = id;
+  render();
+  toast(`Added step ${at + 1}: ${stepKind(stepById(id))}`, true);
+  return id;
+}
+function moveStep(id, to) {
+  const from = idx(id);
+  if (from < 0 || to < 0 || to >= S.steps.length || to === from) return;
+  pushUndo(`Move step ${from + 1} to position ${to + 1}`);
+  const [s] = S.steps.splice(from, 1); S.steps.splice(to, 0, s);
+  render();
+  toast(`Moved "${stepTitle(s)}" to position ${to + 1}`, true);
+}
+function setGoto(st, key, v) {
+  const a = st.action;
+  if (a.kind === 'choice') {
+    const o = a.options.find((x) => x.id === key); if (!o) return;
+    const k = a.options.indexOf(o);
+    pushUndo(`Change where answer ${LET[k]} goes`);
+    delete o.lost; if (!v) delete o.goto; else o.goto = v;
+  } else if (a.kind === 'quiz') {
+    pushUndo('Change where the quiz goes');
+    delete a.lostThen; if (!v) delete a.then; else a.then = v;
+  }
+  render();
+}
+// every option or quiz "then" outside `ids` that names one of `ids`
+function answersTargeting(ids) {
+  const res = [];
+  S.steps.forEach((st) => {
+    if (ids.includes(st.id)) return;
+    const a = st.action;
+    if (a.kind === 'choice') a.options.forEach((o, k) => { if (o.goto && ids.includes(o.goto)) res.push({ st, o, k }); });
+    if (a.kind === 'quiz' && a.then && ids.includes(a.then)) res.push({ st, then: true });
+  });
+  return res;
+}
+// answers with no goto (the next step) whose next step is about to go: they slide on
+function answersSliding(ids) {
+  const res = [];
+  S.steps.forEach((st, i) => {
+    if (ids.includes(st.id)) return;
+    const a = st.action;
+    if (a.kind !== 'choice') return;
+    const nx = nextOf(i);
+    if (!ids.includes(nx)) return;
+    let j = i + 1; while (j < S.steps.length && ids.includes(S.steps[j].id)) j++;
+    const after = j < S.steps.length ? S.steps[j].id : END;
+    a.options.forEach((o, k) => { if (!o.goto && !o.lost) res.push({ st, o, k, after }); });
+  });
+  return res;
+}
+function applyRemoval(ids) {
+  answersTargeting(ids).forEach((l) => {
+    if (l.then) { delete l.st.action.then; l.st.action.lostThen = true; } else { delete l.o.goto; l.o.lost = true; }
+  });
+  S.steps = S.steps.filter((s) => !ids.includes(s.id));
+}
+function orphanCheck(bid, removed) {
+  const b = blockById(bid); if (!b) return null;
+  if (S.steps.some((s) => s.action.kind === 'show' && s.action.block === bid && !removed.includes(s.id))) return null;
+  return { b, storyOnly: isStoryOnly(b), world: firstWorldView(b) };
+}
+
+// ---------- the deletion questions ----------
+function miniStep(st) {
+  return `<div class="mini" style="--kc:${kindColor(st)}"><span class="no">${num(st.id)}</span><span style="color:${kindColor(st)};display:inline-flex">${icon(stepIcon(st))}</span><span style="flex:1;min-width:0"><b>${esc(stepTitle(st))}</b><br><span class="kd">${esc(stepKind(st))}</span></span></div>`;
+}
+function lossHtml(losing, sliding) {
+  let h = '';
+  if (losing.length) {
+    h += `<div class="dq"><div class="dqh">${icon('warn')} ${losing.length === 1 ? 'This answer loses its target' : `These ${losing.length} answers lose their target`}</div><ul>`;
+    h += losing.map((l) => (l.then
+      ? `<li><span class="lt end">Q</span> Step ${num(l.st.id)}, the quiz "${esc(stepTitle(l.st))}" - where it goes next</li>`
+      : `<li><span class="lt" style="--c:var(--a${l.k})">${LET[l.k]}</span> <span>Step ${num(l.st.id)}: "<b>${esc(l.o.label)}</b>"</span></li>`)).join('');
+    h += `</ul><div class="note">Until you choose a new target they go on to the next step. They are marked red in the graph and in the story check.</div></div>`;
+  }
+  if (sliding.length) {
+    h += `<div class="note" style="margin:8px 0">Also changes: ${sliding.map((l) => `answer ${LET[l.k]} "${esc(l.o.label)}" of step ${num(l.st.id)} goes to the next step, which will be ${l.after === END ? 'the end of the story' : `"${esc(stepTitle(stepById(l.after)))}"`}`).join('; ')}.</div>`;
+  }
+  return h;
+}
+function orphanHtml(orph, verb) {
+  if (!orph) return '';
+  const b = orph.b; const kl = KIND[b.kind].label.replace(LC, lcf);
+  if (orph.storyOnly) {
+    return `<div class="dq q2"><div class="dqh">${icon(b.kind)} Also delete the block it shows?</div><p>"<b>${esc(b.name)}</b>" is a ${kl} shown only ${b.view === 'stage' ? 'on the story stage' : 'as a card in the story'}. With no step showing it, no visitor would ever see it, so it cannot stay on its own.</p>${orph.world ? `<p class="note">Or keep it as a ${kl} ${KIND[b.kind].views[orph.world].label.replace(LC, lcf)}: visitors then see it at the station without the story.</p>` : ''}</div>`;
+  }
+  return `<div class="note" style="margin:8px 0">"${esc(b.name)}" ${verb} no longer in the story, so it becomes a free block: visitors see it ${esc(viewOf(b).label.replace(LC, lcf))} at the station from the start.</div>`;
+}
+async function requestDeleteStep(id) {
+  const st = stepById(id); if (!st) return;
+  const n = num(id);
+  const losing = answersTargeting([id]);
+  const sliding = answersSliding([id]);
+  const orph = st.action.kind === 'show' ? orphanCheck(st.action.block, [id]) : null;
+  const kl = orph ? KIND[orph.b.kind].label.replace(LC, lcf) : '';
+  const buttons = orph?.storyOnly
+    ? [{ id: 'cancel', label: 'Cancel', kind: 'ghost' },
+      ...(orph.world ? [{ id: 'world', label: `Delete the step, keep the ${kl} in the world` }] : []),
+      { id: 'both', label: `Delete step and ${kl}`, kind: 'danger' }]
+    : [{ id: 'cancel', label: 'Cancel', kind: 'ghost' }, { id: 'del', label: 'Delete step', kind: 'danger' }];
+  S.doom = { steps: [id], edges: losing.map((l) => l.st.id + ':' + (l.then ? 'then' : l.o.id)) };
+  renderGraph();
+  const r = await ask({ title: `Delete step ${n}?`, body: miniStep(st) + lossHtml(losing, sliding) + orphanHtml(orph, 'is'), buttons });
+  S.doom = null;
+  if (r === 'cancel') { render(); return; }
+  pushUndo(`Delete step ${n}`);
+  applyRemoval([id]);
+  let extra = '';
+  if (r === 'both') { S.blocks = S.blocks.filter((b) => b.id !== orph.b.id); extra = ` and the ${kl} "${orph.b.name}"`; }
+  if (r === 'world') { blockById(orph.b.id).view = orph.world; extra = `; "${orph.b.name}" now stands in the world`; }
+  fixSel(); S.sel = null;
+  render();
+  toast(`Deleted step ${n}${extra}.${losing.length ? ` ${losing.length} answer${losing.length > 1 ? 's need' : ' needs'} a new target.` : ''}`, true);
+}
+async function requestDeleteBlock(bid) {
+  const b = blockById(bid); if (!b) return;
+  const steps = showSteps(bid); const ids = steps.map((s) => s.id);
+  const losing = answersTargeting(ids);
+  const sliding = answersSliding(ids);
+  let body = `<div class="mini"><span style="color:${KIND[b.kind].color};display:inline-flex">${icon(b.kind)}</span><span style="flex:1"><b>${esc(b.name)}</b><br><span class="kd">${KIND[b.kind].label} - ${esc(viewOf(b).label)}</span></span></div>`;
+  if (steps.length) {
+    body += `<div class="dq"><div class="dqh">${icon('story')} ${steps.length === 1 ? 'A story step shows this block' : `${steps.length} story steps show this block`}</div><p>Deleting the block removes ${steps.length === 1 ? 'that step' : 'those steps'} from the story too:</p><ul>${steps.map((s) => `<li><span class="lt end">${num(s.id)}</span> ${esc(stepKind(s))}</li>`).join('')}</ul></div>`;
+    body += lossHtml(losing, sliding);
+  } else {
+    body += `<p>It is not in the story; it stands ${esc(viewOf(b).label.replace(LC, lcf))} at the station.</p>`;
+  }
+  S.doom = { steps: ids, edges: losing.map((l) => l.st.id + ':' + (l.then ? 'then' : l.o.id)) };
+  S.sel = { type: 'block', id: bid };
+  renderGraph();
+  const r = await ask({ title: `Delete "${esc(b.name)}"?`, body, buttons: [{ id: 'cancel', label: 'Cancel', kind: 'ghost' },
+    { id: 'del', label: steps.length ? `Delete block and ${steps.length === 1 ? 'its step' : `its ${steps.length} steps`}` : 'Delete block', kind: 'danger' }] });
+  S.doom = null;
+  if (r === 'cancel') { render(); return; }
+  pushUndo(`Delete block "${b.name}"`);
+  applyRemoval(ids);
+  S.blocks = S.blocks.filter((x) => x.id !== bid);
+  fixSel(); S.sel = null;
+  render();
+  toast(`Deleted "${b.name}"${steps.length ? ` and ${steps.length === 1 ? 'its step' : `${steps.length} steps`}` : ''}.${losing.length ? ` ${losing.length} answer${losing.length > 1 ? 's need' : ' needs'} a new target.` : ''}`, true);
+}
+async function setStepBlock(st, bid, base = null) {
+  const old = st.action.block; if (old === bid) return;
+  const orph = orphanCheck(old, [st.id]);
+  let r = 'keep';
+  if (orph?.storyOnly) {
+    const kl = KIND[orph.b.kind].label.replace(LC, lcf);
+    r = await ask({ title: `Show "${esc(blockById(bid).name)}" instead?`, body: miniStep(st) + orphanHtml(orph, 'is'),
+      buttons: [{ id: 'cancel', label: 'Cancel', kind: 'ghost' }, ...(orph.world ? [{ id: 'world', label: `Keep the ${kl} in the world` }] : []), { id: 'both', label: `Switch and delete the ${kl}`, kind: 'danger' }] });
+    if (r === 'cancel') { if (base) restore(base); render(); return; }
+  }
+  pushUndo(`Step ${num(st.id)} shows another block`, base || snap());
+  st.action.block = bid;
+  if (r === 'both') S.blocks = S.blocks.filter((b) => b.id !== old);
+  if (r === 'world') blockById(old).view = orph.world;
+  const nb = blockById(bid);
+  if (st.advance.mode === 'lineEnd' && !KIND[nb.kind].lineEnd) st.advance = { mode: 'tap' };
+  render();
+}
+
+// ======================================================================
+// Modal, sheet, menu, toast
+// ======================================================================
+const back = $('#modalBack'); const modal = $('#modal');
+let modalClose = null;
+function ask({ title, body, buttons }) {
+  $('#toast').classList.remove('show');
+  return new Promise((res) => {
+    closeMenu();
+    modal.innerHTML = `<h2 id="mTtl">${title}</h2><div class="mb">${body}</div><div class="mf">${buttons.map((b) => `<button class="btn ${b.kind || ''}" data-r="${b.id}">${b.label}</button>`).join('')}</div>`;
+    back.classList.add('show'); back.classList.toggle('side', S.mode === 'desk');
+    const done = (r) => { back.classList.remove('show'); modal.onclick = null; back.onclick = null; document.removeEventListener('keydown', key, true); modalClose = null; res(r); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done('cancel'); } };
+    modalClose = () => done('cancel');
+    modal.onclick = (e) => { const b = e.target.closest('[data-r]'); if (b) done(b.dataset.r); };
+    back.onclick = (e) => { if (e.target === back) done('cancel'); };
+    document.addEventListener('keydown', key, true);
+    modal.scrollTop = 0; if (S.mode === 'desk') modal.querySelector('[data-r="cancel"]')?.focus();
+  });
+}
+let panelState = null;
+function openPanel(title, renderBody, onClick) {
+  closeMenu();
+  panelState = { title, renderBody, onClick }; $('#toast').classList.remove('show');
+  paintPanel(); modal.scrollTop = 0;
+  back.classList.add('show'); back.classList.remove('side');
+  back.onclick = (e) => { if (e.target === back) closePanel(); };
+  modalClose = closePanel;
+}
+function paintPanel() {
+  if (!panelState) return;
+  modal.innerHTML = `<h2 id="mTtl">${panelState.title}<span class="sp"></span><button class="ib" data-pclose aria-label="Close">${icon('close')}</button></h2><div class="mb" id="pbodyM">${panelState.renderBody()}</div>`;
+  modal.onclick = (e) => {
+    if (e.target.closest('[data-pclose]')) { closePanel(); return; }
+    panelState?.onClick?.(e);
+  };
+}
+function closePanel() {
+  if (!panelState) return;
+  panelState = null; back.classList.remove('show'); modal.onclick = null; back.onclick = null; modalClose = null;
+  render();
+}
+const menu = $('#menu');
+let menuOnPick = null;
+function openMenu(x, y, html, onPick) {
+  menu.innerHTML = html; menu.hidden = false; menuOnPick = onPick;
+  const w = 290; const h = Math.min(menu.scrollHeight, innerHeight * 0.7);
+  menu.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px';
+}
+function closeMenu() { menu.hidden = true; menuOnPick = null; }
+menu.addEventListener('click', (e) => { const b = e.target.closest('[data-pick]'); if (b && menuOnPick) menuOnPick(b.dataset.pick, b); });
+document.addEventListener('pointerdown', (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('[data-menu]')) closeMenu();
+  const ip = $('#issuesPop'); if (!ip.hidden && !ip.contains(e.target) && !e.target.closest('.vchip')) ip.hidden = true;
+}, true);
+let toastT = 0;
+function toast(msg, withUndo = false) {
+  const t = $('#toast');
+  t.innerHTML = `<span>${esc(msg)}</span>${withUndo ? '<button data-undo>Undo</button>' : ''}`;
+  t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), withUndo ? 5200 : 2600);
+}
+$('#toast').addEventListener('click', (e) => { if (e.target.closest('[data-undo]')) { $('#toast').classList.remove('show'); undo(); } });
+
+// the "what kind of step" chooser, shared by the desktop menu and the phone sheet
+function addChooserHtml(stage) {
+  if (stage === 'kind') {
+    return `<div class="lh">Add a step</div><div class="list">
+      <button class="li" data-pick="k:show"><span class="ic">${icon('blocks')}</span><span class="grow">Show a block<small>The guide speaks, a picture, a video, a 3D model...</small></span>${icon('arrow')}</button>
+      <button class="li" data-pick="k:choice"><span class="ic" style="color:var(--k-choice)">${icon('choice')}</span><span class="grow">Ask a choice<small>2 to 4 answers, each can jump to its own step</small></span></button>
+      <button class="li" data-pick="k:quiz"><span class="ic" style="color:var(--k-quiz)">${icon('quiz')}</span><span class="grow">Ask a quiz<small>One right answer, feedback, then on</small></span></button></div>`;
+  }
+  let h = `<div class="lh">Show which block?</div><div class="list">`;
+  S.blocks.forEach((b) => {
+    const ss = showSteps(b.id);
+    const where = ss.length ? `In the story at step ${ss.map((s) => num(s.id)).join(', ')}` : 'Free: stands in the world now; it would wait for this step';
+    h += `<button class="li" data-pick="b:${b.id}"><span class="ic" style="color:${KIND[b.kind].color}">${icon(b.kind)}</span><span class="grow">${esc(b.name)}<small>${KIND[b.kind].label} - ${esc(where)}</small></span></button>`;
+  });
+  h += `</div><div class="lh">Or make a new block</div><div class="list">`;
+  Object.keys(KIND).forEach((k) => { h += `<button class="li" data-pick="n:${k}"><span class="ic" style="color:${KIND[k].color}">${icon(k)}</span><span class="grow">New ${KIND[k].label.replace(LC, lcf)}</span>${icon('plus')}</button>`; });
+  return h + '</div>';
+}
+function openAddChooser(at, x, y) {
+  const pick = (v) => {
+    const [t, val] = v.split(':');
+    if (t === 'k' && val === 'show') { if (S.mode === 'desk') openMenu(x, y, addChooserHtml('block'), pick); else { panelState.renderBody = () => addChooserHtml('block'); panelState.title = 'Show a block'; paintPanel(); } return; }
+    closeMenu(); if (panelState) { panelState = null; back.classList.remove('show'); modalClose = null; }
+    if (t === 'k') addStep(val, at);
+    if (t === 'b') addStep('show', at, val);
+    if (t === 'n') addStep('show', at, val);
+  };
+  if (S.mode === 'desk') openMenu(x, y, addChooserHtml('kind'), pick);
+  else openPanel(`Add a step at position ${at + 1}`, () => addChooserHtml('kind'), (e) => { const b = e.target.closest('[data-pick]'); if (b) pick(b.dataset.pick); });
+}
+
+// ======================================================================
+// Forms: the inspector (desktop) and the edit sheet (phone)
+// ======================================================================
+function field(lab, ctl, top = false) { return `<div class="f${top ? ' top' : ''}"><label>${lab}</label><div>${ctl}</div></div>`; }
+function targetOptions(st, current, lost) {
+  const i = idx(st.id);
+  let h = lost ? '<option value="__none" selected>- choose where it goes -</option>' : '';
+  h += `<option value=""${!current && !lost ? ' selected' : ''}>Next step (${esc(targetName(nextOf(i)))})</option>`;
+  S.steps.forEach((s, j) => {
+    if (j <= i && s.id !== current) return;
+    h += `<option value="${s.id}"${s.id === current ? ' selected' : ''}>${j <= i ? 'Back to ' : ''}${esc(targetName(s.id))}</option>`;
+  });
+  h += `<option value="${END}"${current === END ? ' selected' : ''}>End the story</option>`;
+  return h;
+}
+function viewSelect(b) {
+  const free = !showSteps(b.id).length;
+  return `<select class="tfield" data-f="view">${Object.entries(KIND[b.kind].views).map(([v, d]) => `<option value="${v}"${v === b.view ? ' selected' : ''}${free && d.storyOnly ? ' disabled' : ''}>${esc(d.label)}${free && d.storyOnly ? ' (needs a story step)' : ''}</option>`).join('')}</select>`;
+}
+function stepForm(st) {
+  const a = st.action; let h = `<div class="form" data-step="${st.id}">`;
+  if (a.kind === 'show') {
+    const b = blockById(a.block); const K = KIND[b.kind];
+    h += field('Shows', `<select class="tfield" data-f="block">${S.blocks.map((x) => `<option value="${x.id}"${x.id === b.id ? ' selected' : ''}>${esc(x.name)} (${KIND[x.kind].label})</option>`).join('')}<optgroup label="Make a new block">${Object.keys(KIND).map((k) => `<option value="new:${k}">+ New ${KIND[k].label.replace(LC, lcf)}</option>`).join('')}</optgroup></select>`);
+    h += field('Name', `<input class="tfield" data-f="bname" value="${esc(b.name)}">`);
+    h += field(K.field, `<textarea class="tfield" data-f="bcontent">${esc(b.content)}</textarea>`, true);
+    h += field('Looks like', viewSelect(b));
+    const others = showSteps(b.id).filter((s) => s.id !== st.id);
+    h += `<div class="note">Name, text and look belong to the block${others.length ? `, which step ${others.map((s) => num(s.id)).join(', ')} also shows` : ''}.</div>`;
+    const ad = st.advance; const le = K.lineEnd;
+    h += field('Moves on', `<div class="radios">
+      <label><input type="radio" name="adv-${st.id}" data-f="adv" value="tap"${ad.mode === 'tap' ? ' checked' : ''}> With a tap</label>
+      <label><input type="radio" name="adv-${st.id}" data-f="adv" value="auto"${ad.mode === 'auto' ? ' checked' : ''}> By itself after <input class="tfield" type="number" min="1" max="120" data-f="advS" value="${ad.afterS || 5}"${ad.mode === 'auto' ? '' : ' disabled'}> s</label>
+      ${le ? `<label><input type="radio" name="adv-${st.id}" data-f="adv" value="lineEnd"${ad.mode === 'lineEnd' ? ' checked' : ''}> ${le}</label>` : ''}</div>`, true);
+    h += '<div class="note">A show step always goes on to the step below it. To let visitors pick a way, add a choice.</div>';
+  } else if (a.kind === 'choice') {
+    h += field('Question', `<textarea class="tfield${a.prompt.trim() ? '' : ' bad'}" data-f="prompt">${esc(a.prompt)}</textarea>`, true);
+    h += '<div class="secl">Answers and where each goes</div>';
+    a.options.forEach((o, k) => {
+      const out = outs(st)[k];
+      h += `<div class="optbox${out.lost ? ' lost' : ''}"><div class="optrow"><span class="lt" style="--c:var(--a${k})">${LET[k]}</span><input class="tfield${o.label.trim() ? '' : ' bad'}" data-f="olabel" data-o="${o.id}" value="${esc(o.label)}" aria-label="Answer ${LET[k]}">
+        <button class="ib" data-a="odel" data-o="${o.id}" title="Remove answer ${LET[k]}" aria-label="Remove answer ${LET[k]}"${a.options.length <= 2 ? ' disabled' : ''}>${icon('trash')}</button>
+        <div class="go">${icon('arrow')}<select class="tfield${out.lost ? ' bad' : ''}" data-f="ogoto" data-o="${o.id}" aria-label="Where answer ${LET[k]} goes">${targetOptions(st, o.goto, out.lost)}</select></div></div>
+        ${out.lost ? `<div class="note err">Lost its target${o.lostFrom ? ` (${esc(o.lostFrom)})` : ''}. For now it goes on to the next step.</div>` : ''}</div>`;
+    });
+    if (a.options.length < 4) h += `<button class="btn" data-a="oadd">${icon('plus')} Add an answer</button>`;
+    h += '<div class="note" style="margin-top:8px">On the desktop you can also drag an answer\'s coloured dot onto a step in the graph.</div>';
+  } else {
+    h += field('Question', `<textarea class="tfield" data-f="question">${esc(a.question)}</textarea>`, true);
+    h += '<div class="secl">Answers (mark the right one)</div>';
+    a.options.forEach((o, k) => {
+      h += `<div class="optrow"><input type="radio" name="cor-${st.id}" data-f="correct" value="${o.id}"${o.id === a.correct ? ' checked' : ''} aria-label="${esc(o.label)} is right">
+        <input class="tfield" data-f="qlabel" data-o="${o.id}" value="${esc(o.label)}" aria-label="Answer ${k + 1}">
+        <button class="ib" data-a="qdel" data-o="${o.id}" aria-label="Remove answer"${a.options.length <= 2 ? ' disabled' : ''}>${icon('trash')}</button></div>`;
+    });
+    if (a.options.length < 4) h += `<button class="btn" data-a="qadd">${icon('plus')} Add an answer</button>`;
+    h += field('If right', `<input class="tfield" data-f="right" value="${esc(a.right)}">`);
+    h += field('If wrong', `<input class="tfield" data-f="wrong" value="${esc(a.wrong)}">`);
+    h += field('Points', `<input class="tfield" type="number" min="0" max="100" data-f="points" value="${a.points}" style="width:70px">`);
+    const out = outs(st)[0];
+    h += field('Then', `<select class="tfield${out.lost ? ' bad' : ''}" data-f="then">${targetOptions(st, a.then, out.lost)}</select>`);
+    h += '<div class="note">Right or wrong, after the feedback the visitor goes on to the same step.</div>';
+  }
+  return h + '</div>';
+}
+function blockForm(b) {
+  const K = KIND[b.kind]; const ss = showSteps(b.id);
+  let h = `<div class="form" data-block="${b.id}">`;
+  h += field('Name', `<input class="tfield" data-f="bname" value="${esc(b.name)}">`);
+  h += field('Kind', `<span style="display:inline-flex;gap:6px;align-items:center;color:${K.color}">${icon(b.kind)} <span style="color:var(--text)">${K.label}</span></span>`);
+  h += field(K.field, `<textarea class="tfield" data-f="bcontent">${esc(b.content)}</textarea>`, true);
+  h += field('Looks like', viewSelect(b));
+  h += '<div class="secl">In the story</div>';
+  h += ss.length ? `<div class="chips">${ss.map((s) => `<button class="chip" data-a="jump" data-to="${s.id}">Step ${num(s.id)}</button>`).join('')}</div><div class="note">A story block appears when the story reaches its step.</div>`
+    : '<div class="note">Not in the story: a free block, standing in the world from the start.</div>';
+  h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" data-a="badd">${icon('plus')} Show it at the end of the story</button><button class="btn" data-a="bdel" style="color:#f0a8a5">${icon('trash')} Delete block</button></div>`;
+  return h + '</div>';
+}
+let pending = null;
+const isTextInput = (t) => t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && (t.type === 'text' || t.type === 'number' || t.type === ''));
+function formCtx(t) {
+  const root = t.closest('.form'); if (!root) return null;
+  const st = root.dataset.step ? stepById(root.dataset.step) : null;
+  const b = root.dataset.block ? blockById(root.dataset.block) : st?.action.kind === 'show' ? blockById(st.action.block) : null;
+  return { st, b, a: st?.action };
+}
+function onFormEvent(e) {
+  const t = e.target; const c = formCtx(t); if (!c) return;
+  const f = t.dataset.f; const { st, b, a } = c;
+  if (e.type === 'focusin') { if (isTextInput(t)) pending = snap(); return; }
+  if (e.type === 'input' && isTextInput(t)) {
+    const v = t.value;
+    if (f === 'bname') b.name = v; else if (f === 'bcontent') b.content = v;
+    else if (f === 'prompt') a.prompt = v; else if (f === 'question') a.question = v;
+    else if (f === 'olabel') a.options.find((o) => o.id === t.dataset.o).label = v;
+    else if (f === 'qlabel') a.options.find((o) => o.id === t.dataset.o).label = v;
+    else if (f === 'right') a.right = v; else if (f === 'wrong') a.wrong = v;
+    else if (f === 'points') a.points = Math.max(0, Math.min(100, Number(v) || 0));
+    else if (f === 'advS') st.advance = { mode: 'auto', afterS: Math.max(1, Math.min(120, Number(v) || 1)) };
+    soft();
+    return;
+  }
+  if (e.type === 'change' && isTextInput(t)) {
+    if (pending && pending !== snap()) pushUndo('Edit text', pending);
+    pending = snap();
+    return;
+  }
+  if (e.type === 'change') {
+    const v = t.value;
+    if (f === 'block') {
+      if (v.startsWith('new:')) { const base = snap(); const nb = newBlock(v.slice(4)); setStepBlock(st, nb.id, base); return; }
+      setStepBlock(st, v); return;
+    }
+    if (f === 'view') { pushUndo(`Change the look of "${b.name}"`); b.view = v; }
+    else if (f === 'adv') { pushUndo(`Change how step ${num(st.id)} moves on`); st.advance = v === 'auto' ? { mode: 'auto', afterS: st.advance.afterS || 5 } : { mode: v }; }
+    else if (f === 'ogoto') { if (v !== '__none') setGoto(st, t.dataset.o, v); return; }
+    else if (f === 'then') { if (v !== '__none') setGoto(st, 'then', v); return; }
+    else if (f === 'correct') { pushUndo('Change the right answer'); a.correct = v; }
+    render();
+  }
+}
+function onFormClick(e) {
+  const btn = e.target.closest('[data-a]'); if (!btn) return false;
+  const c = formCtx(btn); const act = btn.dataset.a;
+  if (act === 'jump') { selectStep(btn.dataset.to); return true; }
+  if (!c) return false;
+  const { st, b, a } = c;
+  if (act === 'oadd') { pushUndo('Add an answer'); a.options.push({ id: newId('o'), label: `Answer ${LET[a.options.length]}` }); render(); }
+  else if (act === 'odel') { pushUndo('Remove an answer'); a.options = a.options.filter((o) => o.id !== btn.dataset.o); render(); }
+  else if (act === 'qadd') { pushUndo('Add a quiz answer'); a.options.push({ id: newId('q'), label: 'Another answer' }); render(); }
+  else if (act === 'qdel') { pushUndo('Remove a quiz answer'); a.options = a.options.filter((o) => o.id !== btn.dataset.o); if (a.correct === btn.dataset.o) a.correct = a.options[0].id; render(); }
+  else if (act === 'bdel') { if (panelState) closePanel(); requestDeleteBlock(b.id); }
+  else if (act === 'badd') { if (panelState) { panelState = null; back.classList.remove('show'); modalClose = null; } addStep('show', S.steps.length, b.id); }
+  return true;
+}
+document.addEventListener('focusin', onFormEvent);
+document.addEventListener('input', onFormEvent);
+document.addEventListener('change', onFormEvent);
+document.addEventListener('click', (e) => { if (e.target.closest('.form')) onFormClick(e); });
+function soft() {
+  S.ways = computeWays(); S.issues = computeIssues(S.ways);
+  if (S.mode === 'desk') { renderGraph(); renderCanvasHead(); renderTree(); }
+}
+function selectStep(id) { S.sel = { type: 'step', id }; S.focus = id; S.reveal = id; if (panelState) { panelState = null; back.classList.remove('show'); modalClose = null; } render(); }
+
+// ======================================================================
+// Render: entry
+// ======================================================================
+const app = $('#app');
+const isPhone = () => innerWidth < 760 || (innerHeight < 520 && innerWidth < 1000);
+function render() {
+  S.ways = computeWays(); S.issues = computeIssues(S.ways);
+  const mode = isPhone() ? 'phone' : 'desk';
+  if (mode !== S.mode) {
+    S.mode = mode; document.body.className = mode;
+    app.className = mode;
+    app.innerHTML = mode === 'desk' ? deskShell() : '';
+  }
+  app.classList.toggle('land', mode === 'phone' && innerWidth > innerHeight);
+  if (mode === 'desk') { renderToolbar(); renderTree(); renderCanvasHead(); renderGraph(); renderSide(); renderStatus(); }
+  else renderPhone();
+  if (panelState) paintPanel();
+}
+
+// ======================================================================
+// Desktop
+// ======================================================================
+function deskShell() {
+  return `<header id="tb"></header><aside id="tree"></aside>
+  <section id="cv"><div id="cvHead"></div><div id="cvScroll"><div id="graph"><div id="gz"><svg id="edges"></svg><svg id="wire"></svg>
+    <div class="term start" id="tStart" data-term="start">${icon('start')} Start <small>the visitor arrives</small></div>
+    <div class="term end" id="tEnd" data-term="end">${icon('flag')} End <small>the visitor walks on</small></div>
+    <div id="insLine" hidden></div></div></div></div></section>
+  <aside id="side"></aside><footer id="sb"></footer>`;
+}
+function renderToolbar() {
+  $('#tb').innerHTML = `<div class="brand">${icon('cube3d')}<b>Tour Editor</b><span class="doc">Mill valley walk</span></div>
+    <button class="tbtn" data-a2="undo" ${S.undo.length ? '' : 'disabled'} title="${S.undo.length ? 'Undo: ' + esc(S.undo[S.undo.length - 1].label) : 'Nothing to undo'} (Ctrl+Z)">${icon('undo')}Undo<kbd>Ctrl+Z</kbd></button>
+    <button class="tbtn" data-a2="redo" ${S.redo.length ? '' : 'disabled'} title="Redo (Ctrl+Shift+Z)">${icon('redo')}Redo</button>
+    <span class="spacer"></span>
+    <div class="seg" role="tablist"><button data-a2="3d" title="The 3D view of the tour">${icon('cube3d')} 3D view</button><button class="on" title="The selected station's story">${icon('story')} Story</button></div>
+    <span class="spacer"></span><span class="protoTag">Prototype: story editor 2 - flow graph</span>`;
+}
+function renderTree() {
+  const t = $('#tree'); if (!t) return;
+  let h = `<div class="th">Stations <span class="count">3</span></div>`;
+  STATIONS.forEach((s) => {
+    h += `<div class="scard${s.here ? ' sel' : ''}"><div class="hero" style="background:${s.g}" data-a2="${s.here ? 'story' : 'otherStation'}"><span class="n">${s.n}</span><span class="nm">${s.name}</span></div>`;
+    if (s.here) {
+      const sv = worst(S.issues);
+      h += `<div class="kids"><div class="row${!S.sel || S.sel.type === 'step' ? ' sel' : ''}" data-a2="story"><span class="kic">${icon('story')}</span><span class="nm">Story</span>${sv !== 'ok' ? `<span class="iss ${sv}" style="color:var(--${sv})">${icon('warn')}</span>` : ''}<span class="meta">${S.steps.length} steps</span></div>`;
+      h += `<div class="sub">Blocks</div>`;
+      S.blocks.forEach((b) => {
+        const ss = showSteps(b.id);
+        h += `<div class="row${S.sel?.type === 'block' && S.sel.id === b.id ? ' sel' : ''}" data-a2="block" data-id="${b.id}" title="${esc(KIND[b.kind].label)}"><span class="kic" style="color:${KIND[b.kind].color}">${icon(b.kind)}</span><span class="nm">${esc(b.name)}</span>
+          ${ss.length ? `<span class="tag story" title="Shown by step ${ss.map((s) => num(s.id)).join(', ')}">step ${ss.map((s) => num(s.id)).join(', ')}</span>` : '<span class="tag world" title="Not in the story: stands in the world">world</span>'}
+          <button class="rx" data-a2="bdel" data-id="${b.id}" title="Delete this block" aria-label="Delete ${esc(b.name)}">${icon('trash')}</button></div>`;
+      });
+      h += `</div>`;
+    }
+    h += '</div>';
+  });
+  t.innerHTML = h;
+}
+function renderCanvasHead() {
+  const W = S.ways; const sv = worst(S.issues);
+  const ne = S.issues.filter((x) => x.lvl === 'err').length; const nw = S.issues.length - ne;
+  const vtxt = sv === 'ok' ? `${icon('check')} Story check: all good` : `${icon('warn')} ${ne ? `${ne} to fix` : ''}${ne && nw ? ', ' : ''}${nw ? `${nw} note${nw > 1 ? 's' : ''}` : ''}`;
+  const active = S.pinWay ?? S.hoverWay;
+  let ways = '';
+  const multi = new Set(W.flatMap((w) => w.picks.map((p) => p.step))).size > 1;
+  if (W.length > 1) {
+    ways = `<div class="ways"><span>Ways through:</span>${W.map((w, k) => `<button class="way${active === k ? ' on' : ''}" data-way="${k}" title="${esc(w.name)}: highlight the steps a visitor sees on this way">${w.picks.map((p) => `<span class="lt" style="--c:var(--a${LET.indexOf(p.letter)})">${multi ? num(p.step) : ''}${p.letter}</span>`).join('')}<span class="nm">${esc(w.name)}</span><span class="ct">${w.steps.length} steps${w.loop ? ', loops' : ''}</span></button>`).join('')}</div>`;
+  } else if (W.length === 1 && S.steps.length) ways = '<div class="ways"><span>One way through: every visitor sees every step.</span></div>';
+  const z = Math.round((G?.z || 1) * 100);
+  $('#cvHead').innerHTML = `<div class="hrow"><span class="htitle">${icon('story')} The old mill <small>- story</small></span>
+    <button class="vchip ${sv}" data-a2="issues" title="The story check">${vtxt}</button><span class="spacer"></span>
+    <span class="zoom" title="Zoom the graph"><button data-a2="zout" aria-label="Zoom out">-</button><button data-a2="z100" title="Actual size">${z}%</button><button data-a2="zin" aria-label="Zoom in">+</button><button data-a2="zfit" class="${S.zoom === 'fit' ? 'on' : ''}" title="Fit the whole story">Fit</button></span>
+    <button class="btn" data-a2="addEnd" data-menu>${icon('plus')} Add step</button>
+    <button class="btn pri" data-a2="preview" ${S.steps.length ? '' : 'disabled'}>${icon('play')} Preview</button></div>
+    <div class="hrow">${ways}</div>`;
+}
+function nodeInner(st, i) {
+  const a = st.action; const iss = issuesOf(st.id); const wv = worst(iss);
+  const b = a.kind === 'show' ? blockById(a.block) : null;
+  const kindTxt = b ? `${KIND[b.kind].label} - ${SHORTV[b.view] || b.view}` : a.kind === 'choice' ? 'Choice' : `Quiz - ${a.points} points`;
+  const ad = st.advance;
+  const advTxt = ad.mode === 'auto' ? `after ${ad.afterS} s` : ad.mode === 'lineEnd' ? 'when it ends' : 'on a tap';
+  let h = `<div class="nh"><span class="grip" title="Drag to reorder">${icon('grip')}</span><span class="no">${i + 1}</span><span class="kd">${esc(kindTxt)}</span>${wv !== 'ok' ? `<span class="iss ${wv}" title="${esc(iss.map((x) => x.text).join('\n'))}">${icon('warn')}</span>` : ''}${b ? `<span class="adv" title="${esc(advLabel(st))}">${advTxt}</span>` : ''}</div><div class="nb">`;
+  if (b) {
+    h += `<div class="nt">${icon(b.kind)}<span>${esc(b.name)}</span></div><div class="nx">${b.kind === 'character' ? '"' + esc(b.content) + '"' : esc(b.content)}</div>`;
+  } else if (a.kind === 'choice') {
+    const os = outs(st);
+    h += `<div class="nt">${icon('choice')}<span>${esc(a.prompt || '(no question yet)')}</span></div><ul class="ans">${os.map((o) => `<li class="${o.lost ? 'lost' : ''}"><span class="lt" style="--c:var(--a${o.k})">${o.letter}</span><span class="al">${esc(o.label || '(no words)')}</span><span class="ag">${o.lost ? 'lost' : o.target === END ? 'to End' : 'to ' + num(o.target)}</span></li>`).join('')}</ul>`;
+  } else {
+    h += `<div class="nt">${icon('quiz')}<span>${esc(a.question)}</span></div><div class="nx">${a.options.map((o) => (o.id === a.correct ? `<b class="ok">${esc(o.label)} (right)</b>` : esc(o.label))).join(' / ')}</div>`;
+  }
+  h += '</div>';
+  const os = outs(st);
+  if (a.kind === 'choice') {
+    os.forEach((o) => { h += `<button class="port${o.lost ? ' lostp' : ''}" data-port="${o.key}" style="left:${((o.k + 1) * NW) / (os.length + 1)}px;--c:var(--a${o.k})" title="Answer ${o.letter}: drag onto the step it should go to" aria-label="Answer ${o.letter}, goes to ${o.lost ? 'nothing yet' : esc(targetName(o.target))}">${o.lost ? '?' : o.letter}</button>`; });
+  } else if (a.kind === 'quiz') {
+    h += `<button class="port${os[0].lost ? ' lostp' : ''}" data-port="then" style="left:${NW / 2}px" title="Drag onto the step the quiz goes to next">${os[0].lost ? '?' : ''}</button>`;
+  } else {
+    h += `<span class="port fixed" style="left:${NW / 2}px" title="A show step always goes on to the next step"></span>`;
+  }
+  return h;
+}
+const NW = 250; const CW = 286; const TH = 36;
+let G = null; // the last layout, for drags and hit tests
+function renderGraph() {
+  const g = $('#gz'); const sc = $('#cvScroll'); if (!g || !sc) return;
+  const n = S.steps.length; const cols = computeCols(S.ways);
+  const keep = new Set();
+  S.steps.forEach((st, i) => {
+    let el = g.querySelector(`.node[data-node="${st.id}"]`);
+    const fresh = !el;
+    if (fresh) { el = document.createElement('div'); el.dataset.node = st.id; g.appendChild(el); }
+    el.innerHTML = nodeInner(st, i);
+    el.style.setProperty('--kc', kindColor(st));
+    el.className = 'node' + (fresh ? ' fresh' : '');
+    keep.add(el);
+  });
+  g.querySelectorAll('.node').forEach((el) => { if (!keep.has(el)) el.remove(); });
+  g.querySelectorAll('.ins').forEach((el) => el.remove());
+  const els = S.steps.map((st) => g.querySelector(`.node[data-node="${st.id}"]`));
+  const hs = els.map((el) => el.offsetHeight);
+  const rowTop = []; let y = 24; const startTop = y; y += TH + 46;
+  S.steps.forEach((st, i) => { rowTop[i] = y; const m = st.action.kind === 'choice' ? st.action.options.length : 1; y += hs[i] + 46 + (m - 1) * 8; });
+  const endTop = y; const totalH = endTop + TH + 24;
+  const minC = Math.min(0, ...cols); const maxC = Math.max(0, ...cols);
+  const build = (pad) => {
+    const cx = (c) => pad + NW / 2 + (c - minC) * CW;
+    const box = (i) => ({ l: cx(cols[i]) - NW / 2, r: cx(cols[i]) + NW / 2, t: rowTop[i], b: rowTop[i] + hs[i] });
+    const rowOf = (id) => (id === END ? n : idx(id));
+    const topOf = (id) => (id === END ? endTop : rowTop[idx(id)]);
+    const cxOf = (id) => (id === END ? cx(0) : cx(cols[idx(id)]));
+    const E = [{ key: 'start', from: 'start', srcRow: -1, sx: cx(0), sy: startTop + TH, target: n ? S.steps[0].id : END, kind: 'next', turn: 14 }];
+    S.steps.forEach((st, i) => {
+      const bx = box(i); const os = outs(st);
+      os.forEach((o) => {
+        const sx = o.kind === 'answer' ? bx.l + ((o.k + 1) * NW) / (os.length + 1) : cx(cols[i]);
+        E.push({ key: st.id + ':' + o.key, from: st.id, srcRow: i, sx, sy: bx.b + (o.kind === 'next' ? 5 : 10), target: o.target, kind: o.kind, k: o.k, letter: o.letter, lost: o.lost, turn: 13 + (o.kind === 'answer' ? o.k * 8 : 0) });
+      });
+    });
+    const byT = new Map();
+    E.forEach((e) => { if (!byT.has(e.target)) byT.set(e.target, []); byT.get(e.target).push(e); });
+    byT.forEach((list, t) => {
+      list.sort((p, q) => p.sx - q.sx || p.srcRow - q.srcRow);
+      const m = list.length;
+      list.forEach((e, j) => { e.tx = cxOf(t) + (j - (m - 1) / 2) * 18; e.ty = topOf(t) - 2; e.tgtRow = rowOf(t); });
+    });
+    let rl = 0; let ll = 0;
+    const rightBase = cx(maxC) + NW / 2 + 26; const leftBase = cx(minC) - NW / 2 - 26;
+    const clear = (x, r0, r1) => { for (let r = r0 + 1; r < r1; r++) { const b = box(r); if (x > b.l - 10 && x < b.r + 10) return false; } return true; };
+    E.forEach((e) => {
+      const ty0 = e.sy + e.turn;
+      if (e.tgtRow > e.srcRow) {
+        if (clear(e.tx, e.srcRow, e.tgtRow)) e.pts = [[e.sx, e.sy], [e.sx, ty0], [e.tx, ty0], [e.tx, e.ty]];
+        else { const lx = rightBase + rl * 16; const py = e.ty - 18 - (rl % 3) * 6; rl++; e.pts = [[e.sx, e.sy], [e.sx, ty0], [lx, ty0], [lx, py], [e.tx, py], [e.tx, e.ty]]; }
+      } else {
+        const lx = leftBase - ll * 16; const py = e.ty - 18 - (ll % 3) * 6; ll++;
+        e.back = true; e.pts = [[e.sx, e.sy], [e.sx, ty0], [lx, ty0], [lx, py], [e.tx, py], [e.tx, e.ty]];
+      }
+    });
+    return { E, rl, ll, cx, box, rightBase };
+  };
+  let L = build(40);
+  const pad0 = 40 + L.ll * 16;
+  L = build(pad0);
+  let width = L.rightBase + L.rl * 16 + 30;
+  // zoom: "fit" shows the whole story when it can be read (not below 60 %)
+  const fitZ = Math.max(0.6, Math.min(1, (sc.clientHeight - 8) / totalH, sc.clientWidth / width));
+  const z = S.zoom === 'fit' ? fitZ : S.zoom;
+  const off = Math.max(0, (sc.clientWidth / z - width) / 2);
+  if (off) L = build(pad0 + off);
+  width = Math.max(width + off, sc.clientWidth / z);
+  const gh = Math.max(totalH, sc.clientHeight / z);
+  g.style.width = width + 'px'; g.style.height = gh + 'px'; g.style.transform = `scale(${z})`;
+  const outer = $('#graph'); outer.style.width = (width * z) + 'px'; outer.style.height = (gh * z) + 'px';
+  outer.style.backgroundSize = `${18 * z}px ${18 * z}px`;
+  // place
+  S.steps.forEach((st, i) => {
+    const el = els[i]; const bx = L.box(i);
+    const flags = [];
+    if (S.sel?.type === 'step' && S.sel.id === st.id) flags.push('sel');
+    if (S.sel?.type === 'block' && st.action.kind === 'show' && st.action.block === S.sel.id) flags.push('hl');
+    if (!S.ways.some((w) => w.steps.includes(st.id))) flags.push('unreached');
+    const active = S.pinWay ?? S.hoverWay;
+    if (active !== null && S.ways[active] && !S.ways[active].steps.includes(st.id)) flags.push('dim');
+    if (S.doom?.steps.includes(st.id)) flags.push('doom');
+    if (PV.on) { if (PV.at === st.id) flags.push('playing'); else if (PV.visited.includes(st.id)) flags.push('visited'); }
+    if (el.classList.contains('fresh')) { el.style.transition = 'none'; el.style.left = bx.l + 'px'; el.style.top = bx.t + 'px'; void el.offsetWidth; el.style.transition = ''; }
+    el.className = 'node ' + flags.join(' ');
+    el.style.left = bx.l + 'px'; el.style.top = bx.t + 'px';
+  });
+  const ts = $('#tStart'); const te = $('#tEnd');
+  ts.style.left = (L.cx(0) - NW / 2) + 'px'; ts.style.top = startTop + 'px';
+  te.style.left = (L.cx(0) - NW / 2) + 'px'; te.style.top = endTop + 'px';
+  te.classList.toggle('playing', PV.on && PV.at === END);
+  // insert buttons in each gap, at the left edge of the step below
+  for (let r = 0; r <= n; r++) {
+    const b = document.createElement('button'); b.className = 'ins'; b.dataset.ins = r; b.setAttribute('data-menu', '');
+    const left = r < n ? L.box(r).l : L.cx(0) - NW / 2; const top = r < n ? rowTop[r] : endTop;
+    b.style.left = (left - 16) + 'px'; b.style.top = (top + 14) + 'px';
+    b.title = r < n ? `Insert a step before step ${r + 1}` : 'Add a step at the end';
+    b.setAttribute('aria-label', b.title); b.innerHTML = icon('plus');
+    g.appendChild(b);
+  }
+  // edges
+  const active = S.pinWay ?? S.hoverWay; const way = active !== null ? S.ways[active] : null;
+  const colors = ['flow', 'a0', 'a1', 'a2', 'a3', 'lost', 'walk', 'doom'];
+  const cvar = { flow: 'var(--flow)', a0: 'var(--a0)', a1: 'var(--a1)', a2: 'var(--a2)', a3: 'var(--a3)', lost: 'var(--err)', walk: 'var(--accent)', doom: 'var(--err)' };
+  let svg = '<defs>' + colors.map((c) => `<marker id="m-${c}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="${c === 'walk' ? 5 : 7}" markerHeight="${c === 'walk' ? 5 : 7}" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${cvar[c]}"/></marker>`).join('') + '</defs>';
+  let labels = '';
+  const ord = [...L.E].sort((p, q) => (PV.walked.includes(p.key) ? 1 : 0) - (PV.walked.includes(q.key) ? 1 : 0));
+  ord.forEach((e) => {
+    let cls = e.kind === 'answer' ? `ans a${e.k}` : 'flow'; let mk = e.kind === 'answer' ? `a${e.k}` : 'flow';
+    if (e.lost) { cls += ' lost'; mk = 'lost'; }
+    if (e.back) cls += ' back';
+    const dim = way && !way.edges.includes(e.key);
+    if (dim) cls += ' dim';
+    if (S.doom?.edges.includes(e.key)) { cls += ' doom'; mk = 'doom'; }
+    if (PV.on && PV.walked.includes(e.key)) { cls += ' walk'; mk = 'walk'; }
+    svg += `<path class="e ${cls}" d="${roundPath(e.pts)}" marker-end="url(#m-${mk})"/>`;
+    if (e.kind === 'answer') {
+      const lx = e.tx; const ly = e.ty - 14;
+      labels += `<g class="elab${dim ? ' dim' : ''}"><circle cx="${lx}" cy="${ly}" r="7.5" fill="${e.lost ? 'var(--err)' : `var(--a${e.k})`}" stroke="#202125" stroke-width="2"/><text x="${lx}" y="${ly + 0.5}">${e.lost ? '?' : e.letter}</text></g>`;
+    }
+  });
+  const ed = $('#edges'); ed.setAttribute('width', width); ed.setAttribute('height', gh); ed.innerHTML = svg + labels;
+  const wi = $('#wire'); wi.setAttribute('width', width); wi.setAttribute('height', gh);
+  const zb = $('[data-a2="z100"]'); if (zb) zb.textContent = Math.round(z * 100) + '%';
+  G = { L, rowTop, hs, endTop, n, cols, z };
+  if (S.reveal && idx(S.reveal) >= 0) {
+    const k = idx(S.reveal); const t = rowTop[k] * z; const bt = (rowTop[k] + hs[k]) * z;
+    if (t < sc.scrollTop + 10 || bt > sc.scrollTop + sc.clientHeight - 10) sc.scrollTo({ top: Math.max(0, t - 60), behavior: 'smooth' });
+  }
+  S.reveal = null;
+}
+function roundPath(pts0, r = 10) {
+  const pts = pts0.filter((p, i) => i === 0 || Math.hypot(p[0] - pts0[i - 1][0], p[1] - pts0[i - 1][1]) > 0.5);
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i - 1]; const [x1, y1] = pts[i]; const [x2, y2] = pts[i + 1];
+    const d1 = Math.hypot(x1 - x0, y1 - y0); const d2 = Math.hypot(x2 - x1, y2 - y1);
+    const rr = Math.min(r, d1 / 2, d2 / 2);
+    d += ` L${x1 + ((x0 - x1) / d1) * rr},${y1 + ((y0 - y1) / d1) * rr} Q${x1},${y1} ${x1 + ((x2 - x1) / d2) * rr},${y1 + ((y2 - y1) / d2) * rr}`;
+  }
+  const l = pts[pts.length - 1];
+  return d + ` L${l[0]},${l[1]}`;
+}
+function renderSide() {
+  const sd = $('#side'); if (!sd) return;
+  if (PV.on) { sd.innerHTML = previewPanelHtml(); paintVisitor(); return; }
+  const sel = S.sel;
+  if (sel?.type === 'step' && stepById(sel.id)) {
+    const st = stepById(sel.id); const i = idx(st.id);
+    sd.innerHTML = `<div class="sh"><span class="no">${i + 1}</span><span style="color:${kindColor(st)};display:inline-flex">${icon(stepIcon(st))}</span><span class="ttl">${esc(stepKind(st))}</span>
+      <button class="ib" data-a2="pvHere" title="Preview from this step">${icon('play')}</button></div>
+      <div class="sbody">${stepForm(st)}${issuesOf(st.id).map((x) => `<div class="note ${x.lvl === 'err' ? 'err' : ''}" style="padding:0 12px">${icon('warn')} ${esc(x.text)}</div>`).join('')}</div>
+      <div class="sfoot"><button class="btn" data-a2="up" ${i === 0 ? 'disabled' : ''} title="Move up (Alt+Up)">${icon('up')} Up</button><button class="btn" data-a2="down" ${i === S.steps.length - 1 ? 'disabled' : ''} title="Move down (Alt+Down)">${icon('down')} Down</button><span class="spacer"></span><button class="btn" data-a2="delStep" style="color:#f0a8a5" title="Delete this step (Del)">${icon('trash')} Delete step</button></div>`;
+  } else if (sel?.type === 'block' && blockById(sel.id)) {
+    const b = blockById(sel.id);
+    sd.innerHTML = `<div class="sh"><span style="color:${KIND[b.kind].color};display:inline-flex">${icon(b.kind)}</span><span class="ttl">${esc(b.name)}</span></div><div class="sbody">${blockForm(b)}</div>`;
+  } else {
+    sd.innerHTML = `<div class="sh"><span class="ttl">Story of The old mill</span></div><div class="sbody"><div class="empty"><h3>Pick a step in the graph</h3>
+      The story runs from <b>Start</b> at the top to <b>End</b> at the bottom. Steps every visitor sees sit on the middle line; steps only some answers lead to move out to the side.
+      <ul><li>Click a step to edit it here.</li><li>Drag a step up or down to reorder.</li><li>Drag an answer's coloured dot onto a step to change where it goes.</li><li>Use the + buttons to insert a step.</li></ul></div></div>`;
+  }
+}
+function renderStatus() {
+  const s = S.sel?.type === 'step' ? stepById(S.sel.id) : null;
+  $('#sb').innerHTML = `<div><b>The old mill</b>&nbsp; ${S.steps.length} steps, ${S.blocks.length} blocks</div><div class="grow">${s ? `Step ${num(s.id)} selected - Del deletes it, Alt+Up / Alt+Down moves it, Ctrl+Z undoes the last edit` : 'Click a step to edit it. Drag a step to reorder; drag an answer\'s dot onto a step to change where it goes.'}</div><div class="legend"><span><i></i> goes on</span><span><i class="a"></i> answer jumps</span><span><i class="l"></i> lost target</span></div><div>${S.undo.length ? 'Last edit: ' + esc(S.undo[S.undo.length - 1].label) : 'No edits yet'}</div>`;
+}
+
+// desktop interactions
+document.addEventListener('click', (e) => {
+  if (S.mode !== 'desk') return;
+  const b = e.target.closest('[data-a2]');
+  const ins = e.target.closest('.ins');
+  if (ins) { const r = ins.getBoundingClientRect(); openAddChooser(Number(ins.dataset.ins), r.right + 6, r.top - 10); return; }
+  const way = e.target.closest('[data-way]');
+  if (way) { const k = Number(way.dataset.way); S.pinWay = S.pinWay === k ? null : k; renderCanvasHead(); renderGraph(); return; }
+  if (!b) return;
+  const a = b.dataset.a2; const sel = S.sel?.type === 'step' ? stepById(S.sel.id) : null;
+  if (a === 'undo') undo();
+  else if (a === 'redo') redo();
+  else if (a === '3d') toast('The 3D view is the Studio 3 prototype; this page shows only the story.');
+  else if (a === 'otherStation') toast('In this prototype only The old mill has a story.');
+  else if (a === 'story') { S.sel = null; render(); }
+  else if (a === 'block') { if (!e.target.closest('.rx')) { S.sel = { type: 'block', id: b.dataset.id }; render(); } }
+  else if (a === 'bdel') requestDeleteBlock(b.dataset.id);
+  else if (a === 'issues') openIssues(b);
+  else if (a === 'addEnd') { const r = b.getBoundingClientRect(); const at = sel ? idx(sel.id) + 1 : S.steps.length; openAddChooser(at, r.left - 150, r.bottom + 6); }
+  else if (a === 'zfit') { S.zoom = 'fit'; renderCanvasHead(); renderGraph(); }
+  else if (a === 'z100') { S.zoom = 1; renderCanvasHead(); renderGraph(); }
+  else if (a === 'zin' || a === 'zout') { S.zoom = Math.max(0.5, Math.min(1.4, Math.round(((G?.z || 1) + (a === 'zin' ? 0.1 : -0.1)) * 10) / 10)); renderCanvasHead(); renderGraph(); }
+  else if (a === 'preview') pvStart(null);
+  else if (a === 'pvHere' && sel) pvStart(sel.id);
+  else if (a === 'up' && sel) moveStep(sel.id, idx(sel.id) - 1);
+  else if (a === 'down' && sel) moveStep(sel.id, idx(sel.id) + 1);
+  else if (a === 'delStep' && sel) requestDeleteStep(sel.id);
+});
+document.addEventListener('pointerover', (e) => {
+  if (S.mode !== 'desk' || S.pinWay !== null) return;
+  const w = e.target.closest?.('[data-way]'); const k = w ? Number(w.dataset.way) : null;
+  if (k !== S.hoverWay) { S.hoverWay = k; renderGraph(); }
+});
+function openIssues(anchor) {
+  const ip = $('#issuesPop'); $('#toast').classList.remove('show');
+  if (!ip.hidden) { ip.hidden = true; return; }
+  const list = S.issues;
+  ip.innerHTML = `<div class="lh">Story check</div>${list.length ? list.map((x, k) => `<div class="iss-row"><span class="ic ${x.lvl}">${icon(x.lvl === 'err' ? 'warn' : 'warn')}</span><span class="t">${esc(x.text)}</span>${x.step || x.block ? `<button class="btn" data-iss="${k}">Show</button>` : ''}</div>`).join('')
+    : `<div class="iss-row"><span class="ic" style="color:var(--ok)">${icon('check')}</span><span class="t">Every answer has a target, every step is reached, nothing loops, every story block is shown.</span></div>`}`;
+  const r = anchor.getBoundingClientRect();
+  ip.hidden = false;
+  ip.style.left = Math.max(8, Math.min(r.left, innerWidth - (S.mode === 'desk' ? 368 : innerWidth - 16) - 8)) + 'px';
+  ip.style.top = (r.bottom + 6) + 'px';
+  if (S.mode !== 'desk') { ip.style.width = (innerWidth - 16) + 'px'; ip.style.left = '8px'; } else ip.style.width = '';
+  ip.onclick = (e) => {
+    const b = e.target.closest('[data-iss]'); if (!b) return;
+    const x = list[Number(b.dataset.iss)]; ip.hidden = true;
+    if (x.step) selectStep(x.step); else { S.sel = { type: 'block', id: x.block }; render(); }
+  };
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && panelState) { closePanel(); return; }
+  if (e.key === 'Escape' && !menu.hidden) { closeMenu(); return; }
+  if (modalClose && e.key === 'Escape') return;
+  const inField = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '');
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !inField) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !inField) { e.preventDefault(); redo(); return; }
+  if (S.mode !== 'desk' || inField || modalClose) return;
+  const sel = S.sel?.type === 'step' ? stepById(S.sel.id) : null;
+  if (!sel) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); requestDeleteStep(sel.id); }
+  if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); moveStep(sel.id, idx(sel.id) - 1); }
+  if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); moveStep(sel.id, idx(sel.id) + 1); }
+});
+
+// drags on the graph: a node (reorder) or an answer's port (rewire)
+let D = null;
+document.addEventListener('pointerdown', (e) => {
+  if (S.mode !== 'desk' || e.button !== 0) return;
+  const g = $('#gz'); if (!g || !g.contains(e.target)) return;
+  const port = e.target.closest('.port[data-port]');
+  const node = e.target.closest('.node');
+  if (node || port) {
+    // commit a text field being edited, and keep the drag from selecting text
+    const ae = document.activeElement; if (ae && ae !== document.body && ae.blur) ae.blur();
+    e.preventDefault();
+  }
+  if (port && node) {
+    D = { type: 'wire', step: node.dataset.node, key: port.dataset.port, port, moved: false, x0: e.clientX, y0: e.clientY };
+    return;
+  }
+  if (node && !e.target.closest('button')) {
+    D = { type: 'node', id: node.dataset.node, el: node, x0: e.clientX, y0: e.clientY, moved: false };
+  }
+});
+document.addEventListener('pointercancel', () => {
+  if (!D) return;
+  if (D.type === 'node') D.el.classList.remove('dragging');
+  D = null; $('#insLine').hidden = true; $('#wire').innerHTML = ''; renderGraph();
+});
+document.addEventListener('pointermove', (e) => {
+  if (!D) return;
+  const dx = e.clientX - D.x0; const dy = e.clientY - D.y0;
+  if (!D.moved && Math.hypot(dx, dy) < 5) return;
+  const g = $('#gz'); const gr = g.getBoundingClientRect(); const z = G.z;
+  if (D.type === 'node') {
+    if (!D.moved) { D.moved = true; D.el.classList.add('dragging'); D.grab = (D.y0 - gr.top) / z - parseFloat(D.el.style.top); }
+    const yIn = (e.clientY - gr.top) / z;
+    D.el.style.top = (yIn - D.grab) + 'px';
+    let r = G.n;
+    for (let i = 0; i < G.n; i++) { if (yIn < G.rowTop[i] + G.hs[i] / 2) { r = i; break; } }
+    const from = idx(D.id); D.to = r > from ? r - 1 : r;
+    const line = $('#insLine');
+    if (D.to === from) { line.hidden = true; } else {
+      const yy = r < G.n ? G.rowTop[r] - 30 : G.endTop - 30;
+      line.hidden = false; line.style.top = yy + 'px'; line.style.left = (G.L.cx(Math.min(0, ...G.cols)) - NW / 2) + 'px';
+      line.style.width = (G.L.rightBase - G.L.cx(Math.min(0, ...G.cols)) + NW / 2 - 26) + 'px';
+      line.dataset.l = `Move to position ${D.to + 1}`;
+    }
+    autoScroll(e);
+  } else {
+    D.moved = true;
+    const pr = D.port.getBoundingClientRect();
+    const sx = (pr.left + pr.width / 2 - gr.left) / z; const sy = (pr.top + pr.height / 2 - gr.top) / z;
+    const ex = (e.clientX - gr.left) / z; const ey = (e.clientY - gr.top) / z;
+    $('#wire').innerHTML = `<path class="wire" d="M${sx},${sy} C${sx},${sy + 60} ${ex},${ey - 60} ${ex},${ey}"/><circle cx="${ex}" cy="${ey}" r="5" fill="var(--accent)"/>`;
+    g.querySelectorAll('.drop-ok,.drop-no').forEach((x) => x.classList.remove('drop-ok', 'drop-no'));
+    const from = idx(D.step);
+    S.steps.forEach((s, j) => { if (j <= from) g.querySelector(`.node[data-node="${s.id}"]`)?.classList.add('drop-no'); });
+    const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest('.node,.term.end');
+    D.target = null;
+    if (hit) {
+      const t = hit.classList.contains('term') ? END : hit.dataset.node;
+      if (t === END || idx(t) > from) { hit.classList.add('drop-ok'); D.target = t; }
+    }
+    autoScroll(e);
+  }
+});
+document.addEventListener('pointerup', () => {
+  if (!D) return;
+  const d = D; D = null;
+  if (d.type === 'node') {
+    $('#insLine').hidden = true;
+    if (!d.moved) { selectStep(d.id); return; }
+    d.el.classList.remove('dragging');
+    if (d.to !== undefined && d.to !== idx(d.id)) moveStep(d.id, d.to); else renderGraph();
+  } else {
+    $('#wire').innerHTML = '';
+    $('#gz').querySelectorAll('.drop-ok,.drop-no').forEach((x) => x.classList.remove('drop-ok', 'drop-no'));
+    const st = stepById(d.step);
+    if (!d.moved) { S.sel = { type: 'step', id: d.step }; render(); return; }
+    if (d.target) {
+      setGoto(st, d.key, d.target);
+      const o = outs(st).find((x) => x.key === d.key);
+      toast(`${o.kind === 'answer' ? `Answer ${o.letter} "${o.label}"` : 'The quiz'} now goes to ${targetName(d.target)}`, true);
+    } else toast('Drop the dot on a step below, or on End. Answers jump forward only.');
+  }
+});
+function autoScroll(e) {
+  const sc = $('#cvScroll'); const r = sc.getBoundingClientRect();
+  if (e.clientY > r.bottom - 40) sc.scrollTop += 14; else if (e.clientY < r.top + 40) sc.scrollTop -= 14;
+}
+
+// ======================================================================
+// Phone creator mode: one focused step, its connections, a map of the shape
+// ======================================================================
+function renderPhone() {
+  fixSel();
+  const sv = worst(S.issues); const ne = S.issues.filter((x) => x.lvl === 'err').length;
+  let h = `<header id="ph"><button class="pb" data-p="back" aria-label="Back to the station">${icon('back')}</button>
+    <div class="pt"><small>The old mill</small><b>Story</b></div>
+    <button class="pb" data-p="undo" aria-label="Undo" ${S.undo.length ? '' : 'disabled'}>${icon('undo')}</button>
+    <button class="vchip ${sv}" data-p="issues" aria-label="Story check">${sv === 'ok' ? icon('check') + ' OK' : icon('warn') + ' ' + (ne ? `${ne} to fix` : `${S.issues.length} note${S.issues.length > 1 ? 's' : ''}`)}</button>
+    <button class="pb play" data-p="preview" ${S.steps.length ? '' : 'disabled'} aria-label="Preview">${icon('play')} Play</button></header>
+    <div id="pbody"><nav id="rail" aria-label="The shape of the story">${railSvg()}</nav><section id="focus">${focusHtml()}</section></div>`;
+  if (PV.on) h += `<div id="pvFull"><div class="pvtop"><button class="pb" data-p="pvClose" aria-label="Close the preview">${icon('close')}</button><div class="grow"><b>Preview</b>${PV.at === END ? 'End of the story' : `Step ${num(PV.at)} of ${S.steps.length}`} - as the visitor sees it</div>
+    ${pvSkippable() ? `<button class="pb" data-p="pvSkip" aria-label="Skip ahead">${icon('skip')}</button>` : ''}<button class="pb" data-p="pvRestart" aria-label="Play again">${icon('restart')}</button></div><div class="pvarea" id="pvArea"></div></div>`;
+  app.innerHTML = h;
+  const f = $('#rail .rn.on'); if (f) { const rail = $('#rail'); const y = Number(f.dataset.y); if (y < rail.scrollTop + 40 || y > rail.scrollTop + rail.clientHeight - 60) rail.scrollTop = y - rail.clientHeight / 2; }
+  if (PV.on) paintVisitor();
+}
+function railSvg() {
+  const n = S.steps.length; const cols = computeCols(S.ways); const RH = 52; const CS = 12; const X0 = 37 - ((Math.min(0, ...cols) + Math.max(0, ...cols)) / 2) * CS;
+  const X = (i) => (i < 0 || i >= n ? X0 : X0 + cols[i] * CS);
+  const Y = (i) => 34 + (i + 1) * RH;
+  const fid = S.focus; const fi = idx(fid);
+  let e = ''; let nodes = '';
+  const line = (x1, y1, x2, y2, col, dim, dash) => `<path d="M${x1},${y1} C${x1},${y1 + 22} ${x2},${y2 - 22} ${x2},${y2}" fill="none" stroke="${col}" stroke-width="2" opacity="${dim ? 0.25 : 1}"${dash ? ' stroke-dasharray="4 3"' : ''}/>`;
+  if (n) e += line(X(-1), Y(-1) + 6, X(0), Y(0) - 13, 'var(--flow)', fi !== 0, false);
+  S.steps.forEach((st, i) => {
+    outs(st).forEach((o) => {
+      const tr = o.target === END ? n : idx(o.target);
+      const col = o.lost ? 'var(--err)' : o.kind === 'answer' ? `var(--a${o.k})` : 'var(--flow)';
+      const dim = !(st.id === fid || o.target === fid);
+      if (tr > i) e += line(X(i) + (o.kind === 'answer' ? (o.k - (outs(st).length - 1) / 2) * 4 : 0), Y(i) + 13, X(tr), Y(tr) - 13, col, dim, o.lost);
+      else e += `<path d="M${X(i) + 13},${Y(i)} C${X0 + 34},${Y(i)} ${X0 + 34},${Y(tr)} ${X(tr) + 13},${Y(tr)}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="2 3" opacity="${dim ? 0.25 : 1}"/>`;
+    });
+  });
+  S.steps.forEach((st, i) => {
+    const x = X(i); const y = Y(i); const on = st.id === fid; const kc = kindColor(st);
+    const reached = S.ways.some((w) => w.steps.includes(st.id)); const wv = worst(issuesOf(st.id));
+    const shape = st.action.kind === 'choice' ? `<rect x="${x - 11}" y="${y - 11}" width="22" height="22" rx="3" transform="rotate(45 ${x} ${y})"` : st.action.kind === 'quiz' ? `<rect x="${x - 12}" y="${y - 12}" width="24" height="24" rx="6"` : `<circle cx="${x}" cy="${y}" r="13"`;
+    nodes += `<g class="rn${on ? ' on' : ''}" data-p="focus" data-id="${st.id}" data-y="${y}" role="button" aria-label="Step ${i + 1}: ${esc(stepTitle(st))}">
+      ${on ? `<circle cx="${x}" cy="${y}" r="19" fill="none" stroke="var(--accent)" stroke-width="3"/>` : ''}
+      ${shape} fill="${on ? '#3a3326' : '#26282c'}" stroke="${kc}" stroke-width="2"${reached ? '' : ' stroke-dasharray="3 2"'}/>
+      <text class="rtxt" x="${x}" y="${y + 0.5}">${i + 1}</text>${wv !== 'ok' ? `<circle cx="${x + 11}" cy="${y - 11}" r="4.5" fill="var(--${wv})"/>` : ''}
+      <rect x="${x - 22}" y="${y - 24}" width="44" height="48" fill="transparent"/></g>`;
+  });
+  nodes += `<circle cx="${X0}" cy="${Y(-1)}" r="6" fill="#4b7a4a"/><text class="rlab" x="${X0}" y="${Y(-1) - 12}">Start</text>`;
+  nodes += `<rect x="${X0 - 16}" y="${Y(n) - 11}" width="32" height="22" rx="11" fill="#33353b" stroke="#5a5e66"/><text class="rlab" x="${X0}" y="${Y(n) + 3.5}" style="fill:#e6e8ec">End</text>`;
+  return `<svg viewBox="0 0 74 ${Y(n) + 40}" height="${Y(n) + 40}">${e}${nodes}</svg>`;
+}
+function connChip(id, extra = '') {
+  if (id === END) return `<span class="lt end">${icon('flag', '')}</span><span class="grow">End of the story</span>`;
+  const st = stepById(id);
+  return `<span class="lt end">${num(id)}</span><span class="grow">${esc(stepTitle(st))}${extra}</span>`;
+}
+function focusHtml() {
+  if (!S.steps.length) return `<div class="fx"><div class="fnote">This station has no story yet. Visitors see its free blocks in the world.</div><button class="addafter" data-p="add" data-at="0">${icon('plus')} Add the first step</button>${blocksFoot()}</div>`;
+  const st = stepById(S.focus) || S.steps[0]; S.focus = st.id;
+  const i = idx(st.id); const a = st.action; const os = outs(st);
+  const inc = incoming(st.id);
+  const wayIdx = S.ways.map((w, k) => (w.steps.includes(st.id) ? k : -1)).filter((k) => k >= 0);
+  let comes = `<div class="fsec"><h4>Comes from</h4><div class="conn">`;
+  comes += inc.length ? inc.map((x) => (x.from === 'start'
+    ? `<span class="cbtn" style="cursor:default">${icon('start')}<span class="grow">Start - the visitor arrives</span></span>`
+    : `<button class="cbtn" data-p="focus" data-id="${x.from}">${x.o.kind === 'answer' ? `<span class="lt" style="--c:var(--a${x.o.k})">${x.o.letter}</span>` : ''}<span class="lt end">${num(x.from)}</span><span class="grow">${x.o.kind === 'answer' ? `answer "${esc(x.o.label)}"` : esc(stepTitle(stepById(x.from)))}</span></button>`)).join('')
+    : '<span class="fnote" style="color:var(--warn)">Nothing leads here: no visitor reaches this step.</span>';
+  comes += '</div></div>';
+  let body = '';
+  if (a.kind === 'show') { const b = blockById(a.block); body = `<div class="px">${b.kind === 'character' ? '"' + esc(b.content) + '"' : esc(b.content)}</div><div class="pm">${esc(viewOf(b).label)} - ${esc(advLabel(st))}</div>`; }
+  else if (a.kind === 'choice') body = `<div class="pm">${a.options.length} answers, each can go its own way</div>`;
+  else body = `<div class="px">Right: ${esc(a.options.find((o) => o.id === a.correct)?.label || '-')}</div><div class="pm">${a.points} points - feedback, then on</div>`;
+  const ways = S.ways.length > 1 ? (wayIdx.length === S.ways.length ? 'Every visitor sees this step.' : wayIdx.length ? `Reached on the way${wayIdx.length > 1 ? 's' : ''}: ${wayIdx.map((k) => (S.ways[k].picks.length ? `<span class="wgrp">${S.ways[k].picks.map((p) => `<span class="lt" style="--c:var(--a${LET.indexOf(p.letter)})">${multiPick() ? num(p.step) : ''}${p.letter}</span>`).join('')}</span>` : '')).join(' ')}` : 'Never reached.') : '';
+  const card = `<article class="pcard" style="--kc:${kindColor(st)}"><div class="pk"><span class="no">${i + 1}</span> of ${S.steps.length} - ${esc(stepKind(st))}</div>
+    <div class="ptl">${icon(stepIcon(st))}<span>${esc(stepTitle(st))}</span></div>${body}
+    ${ways ? `<div class="pw${wayIdx.length ? '' : ' warn'}">${ways}</div>` : ''}
+    ${issuesOf(st.id).map((x) => `<div class="pw ${x.lvl === 'err' ? 'warn' : ''}" style="color:var(--${x.lvl})">${icon('warn')} ${esc(x.text)}</div>`).join('')}
+    <div class="pacts"><button data-p="edit">${icon('edit')} Edit</button><button data-p="up" ${i === 0 ? 'disabled' : ''} aria-label="Move step ${i + 1} up">${icon('up')} Up</button><button data-p="down" ${i === S.steps.length - 1 ? 'disabled' : ''} aria-label="Move step ${i + 1} down">${icon('down')} Down</button><button class="del" data-p="del" aria-label="Delete step ${i + 1}">${icon('trash')} Delete</button></div></article>`;
+  let goes = `<div class="fsec"><h4>Goes to</h4><div class="goes">`;
+  if (a.kind === 'choice') {
+    os.forEach((o) => {
+      goes += `<div class="grow2${o.lost ? ' lost' : ''}"><span class="lt" style="--c:var(--a${o.k})">${o.letter}</span><div class="al">"${esc(o.label)}"<small>${o.lost ? '<b style="color:var(--err)">Lost its target</b> - for now: the next step' : `goes to <button class="linkbtn" data-p="focus" data-id="${o.target}">${o.target === END ? 'the end' : `${num(o.target)} - ${esc(stepTitle(stepById(o.target)))}`}</button>`}</small></div>
+        <button class="chg${o.lost ? ' need' : ''}" data-p="target" data-key="${o.key}">${o.lost ? 'Choose' : 'Change'}</button></div>`;
+    });
+  } else if (a.kind === 'quiz') {
+    const o = os[0];
+    goes += `<div class="grow2${o.lost ? ' lost' : ''}"><div class="al">After the feedback<small>${o.lost ? '<b style="color:var(--err)">Lost its target</b>' : `<button class="linkbtn" data-p="focus" data-id="${o.target}">${o.target === END ? 'the end of the story' : `${num(o.target)} - ${esc(stepTitle(stepById(o.target)))}`}</button>`}</small></div><button class="chg${o.lost ? ' need' : ''}" data-p="target" data-key="then">${o.lost ? 'Choose' : 'Change'}</button></div>`;
+  } else {
+    const t = os[0].target;
+    goes += `<button class="cbtn" data-p="focus" data-id="${t}">${connChip(t)}</button><div class="fnote">A show step always goes on to the step below. To let visitors pick, add a choice.</div>`;
+  }
+  goes += '</div></div>';
+  const add = `<button class="addafter" data-p="add" data-at="${i + 1}">${icon('plus')} Add a step after this</button>`;
+  return `<div class="fx"><div class="colA">${comes}${card}</div><div class="colB">${goes}${add}${blocksFoot()}</div></div>`;
+}
+function blocksFoot() { return `<div class="pfoot"><button data-p="blocks">${icon('blocks')} Blocks of this station (${S.blocks.length})</button></div>`; }
+function targetSheet(st, key) {
+  const i = idx(st.id); const os = outs(st); const o = os.find((x) => x.key === key);
+  const cur = o.lost ? '__none' : o.explicit ? o.target : '';
+  const row = (v, title, sub, dis) => `<button class="li${v === cur ? ' on' : ''}" data-t="${v}" ${dis ? 'disabled' : ''}><span class="ic">${v === cur ? icon('check') : ''}</span><span class="grow">${title}${sub ? `<small>${sub}</small>` : ''}</span></button>`;
+  let h = `<div class="note" style="margin-bottom:6px">${o.kind === 'answer' ? `Where does a visitor go who answers <b>"${esc(o.label)}"</b>?` : 'Where does the visitor go after the quiz feedback?'} Answers jump forward only.</div><div class="list">`;
+  h += row('', 'The next step', esc(targetName(nextOf(i))));
+  S.steps.forEach((s, j) => { if (j > i) h += row(s.id, `${j + 1} - ${esc(stepTitle(s))}`, esc(stepKind(s))); });
+  h += row(END, 'End the story', 'The visitor walks on to the next station');
+  return h + '</div>';
+}
+function blocksSheet() {
+  return `<div class="list">${S.blocks.map((b) => { const ss = showSteps(b.id); return `<div class="li" style="cursor:default"><span class="ic" style="color:${KIND[b.kind].color}">${icon(b.kind)}</span><span class="grow">${esc(b.name)}<small>${KIND[b.kind].label} - ${ss.length ? `in the story at step ${ss.map((s) => num(s.id)).join(', ')}` : 'free, stands in the world'}</small></span><button class="ib" data-bedit="${b.id}" aria-label="Edit ${esc(b.name)}">${icon('edit')}</button><button class="ib" data-bdel="${b.id}" aria-label="Delete ${esc(b.name)}" style="color:#f0a8a5">${icon('trash')}</button></div>`; }).join('')}</div>
+    <div class="note">A block shown by a story step appears when the story reaches it. A free block stands in the world from the start.</div>`;
+}
+document.addEventListener('click', (e) => {
+  if (S.mode !== 'phone') return;
+  const b = e.target.closest('[data-p]'); if (!b || e.target.closest('#modal')) return;
+  const p = b.dataset.p; const st = stepById(S.focus);
+  if (p === 'focus') { if (b.dataset.id === END) return; S.focus = b.dataset.id; S.sel = { type: 'step', id: S.focus }; render(); $('#focus').scrollTop = 0; }
+  else if (p === 'back') toast('Back to the station (not part of this prototype).');
+  else if (p === 'undo') undo();
+  else if (p === 'issues') openIssues(b);
+  else if (p === 'preview') pvStart(null);
+  else if (p === 'pvClose') pvStop();
+  else if (p === 'pvRestart') pvStart(null);
+  else if (p === 'pvSkip') pvSkip();
+  else if (p === 'up' && st) moveStep(st.id, idx(st.id) - 1);
+  else if (p === 'down' && st) moveStep(st.id, idx(st.id) + 1);
+  else if (p === 'del' && st) requestDeleteStep(st.id);
+  else if (p === 'add') openAddChooser(Number(b.dataset.at), 0, 0);
+  else if (p === 'edit' && st) openPanel(`Edit step ${num(st.id)}`, () => (stepById(st.id) ? stepForm(stepById(st.id)) : ''), null);
+  else if (p === 'target' && st) {
+    const key = b.dataset.key; const sid = st.id;
+    openPanel(st.action.kind === 'choice' ? `Answer ${outs(st).find((o) => o.key === key).letter} goes to` : 'After the quiz, go to', () => targetSheet(stepById(sid), key), (ev) => {
+      const t = ev.target.closest('[data-t]'); if (!t) return;
+      panelState = null; back.classList.remove('show'); modalClose = null;
+      setGoto(stepById(sid), key, t.dataset.t);
+      toast('Changed where it goes', true);
+    });
+  }
+  else if (p === 'blocks') {
+    openPanel('Blocks of this station', blocksSheet, (ev) => {
+      const d = ev.target.closest('[data-bdel]'); const ed = ev.target.closest('[data-bedit]');
+      if (d) { panelState = null; back.classList.remove('show'); modalClose = null; requestDeleteBlock(d.dataset.bdel); }
+      if (ed) { const bid = ed.dataset.bedit; panelState.title = 'Edit block'; panelState.renderBody = () => (blockById(bid) ? blockForm(blockById(bid)) : ''); panelState.onClick = null; paintPanel(); }
+    });
+  }
+});
+
+// ======================================================================
+// Preview: plays the story as the visitor sees it
+// ======================================================================
+const PV = { on: false, at: null, walked: [], visited: [], figure: null, figStep: null, shown: [], pick: null, t0: 0, timer: 0, score: 0 };
+function pvStart(fromId) {
+  closeMenu();
+  Object.assign(PV, { on: true, walked: [], visited: [], figure: null, figStep: null, shown: [], pick: null, score: 0 });
+  pvGo(fromId || S.steps[0]?.id || END, fromId ? null : 'start');
+}
+function pvStop() { PV.on = false; clearInterval(PV.timer); render(); }
+function pvGo(id, edgeKey) {
+  clearInterval(PV.timer);
+  if (edgeKey) PV.walked.push(edgeKey);
+  PV.at = id; PV.pick = null; PV.t0 = performance.now();
+  if (id !== END) {
+    PV.visited.push(id);
+    const st = stepById(id);
+    if (st.action.kind === 'show') {
+      const b = blockById(st.action.block);
+      if (b.kind === 'character' || b.kind === 'model') { PV.figure = b.id; }
+      if (viewOf(b).world && !PV.shown.includes(b.id)) PV.shown.push(b.id);
+    }
+  }
+  render();
+  PV.timer = setInterval(pvTick, 100);
+}
+function pvNext(key) {
+  if (PV.at === END) return;
+  const st = stepById(PV.at); const os = outs(st);
+  const o = os.find((x) => x.key === key) || os[0];
+  pvGo(o.target, st.id + ':' + o.key);
+}
+const WORD_S = 0.32;
+function stepDur(st) {
+  if (!st || st.action.kind !== 'show') return null;
+  const b = blockById(st.action.block);
+  if (b.kind === 'video' || b.kind === 'audio') return b.durationS || 20;
+  if (b.kind === 'character' || b.kind === 'longText') return b.content.split(/\s+/).length * WORD_S + 0.4;
+  return null;
+}
+function pvSkippable() { const st = PV.at === END ? null : stepById(PV.at); return !!st && st.action.kind === 'show' && (st.advance.mode !== 'tap' || stepDur(st)); }
+function pvSkip() { PV.t0 -= 1e6; pvTick(); }
+function pvTick() {
+  if (!PV.on) { clearInterval(PV.timer); return; }
+  const st = PV.at === END ? null : stepById(PV.at); if (!st) return;
+  const el = (performance.now() - PV.t0) / 1000; const root = document.querySelector('.vis'); if (!root) return;
+  const ad = st.advance; const dur = stepDur(st);
+  root.querySelectorAll('.w').forEach((w, k) => w.classList.toggle('up', k * WORD_S > el));
+  const bar = root.querySelector('.vid .bar i');
+  if (bar && dur) { bar.style.width = Math.min(100, (el / dur) * 100) + '%'; const tm = root.querySelector('.vid .tm'); if (tm) tm.textContent = `0:${String(Math.min(dur, Math.floor(el))).padStart(2, '0')} / 0:${String(dur).padStart(2, '0')}`; }
+  const ab = root.querySelector('.autob i'); if (ab && ad.mode === 'auto') ab.style.width = Math.min(100, (el / ad.afterS) * 100) + '%';
+  const tap = root.querySelector('.tap'); if (tap && dur && ad.mode === 'tap') tap.hidden = el < dur;
+  if (st.action.kind === 'show') {
+    if (ad.mode === 'auto' && el >= ad.afterS) pvNext();
+    else if (ad.mode === 'lineEnd' && dur && el >= dur + 0.6) pvNext();
+  }
+}
+function previewPanelHtml() {
+  return `<div class="sh"><span style="color:var(--accent);display:inline-flex">${icon('play')}</span><span class="ttl">Preview</span><button class="ib" data-pv2="close" title="Close the preview">${icon('close')}</button></div>
+    <div class="sbody"><div class="pvwrap"><div class="pvpos">${PV.at === END ? 'End of the story' : `Step ${num(PV.at)} of ${S.steps.length}`} - exactly as the visitor sees it. The graph shows the way walked so far.</div>
+    <div class="pvphone" id="pvArea"></div>
+    <div class="pvbar"><button class="btn" data-pv2="restart">${icon('restart')} Play again</button>${pvSkippable() ? `<button class="btn" data-pv2="skip" title="Jump to the end of this line or video">${icon('skip')} Skip ahead</button>` : ''}</div></div></div>`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pv2]'); if (b) { const a = b.dataset.pv2; if (a === 'close') pvStop(); if (a === 'restart') pvStart(null); if (a === 'skip') pvSkip(); return; }
+  const vis = e.target.closest('.vis'); if (!vis) return;
+  const act = e.target.closest('[data-pv]');
+  const st = PV.at === END ? null : stepById(PV.at);
+  if (act) {
+    const v = act.dataset.pv;
+    if (v === 'again') { pvStart(null); return; }
+    if (v.startsWith('ans:')) { pvNext(v.slice(4)); return; }
+    if (v.startsWith('quiz:')) { if (!PV.pick) { PV.pick = v.slice(5); if (PV.pick === st.action.correct) PV.score += st.action.points; paintVisitor(); } return; }
+    if (v === 'quizOn') { pvNext('then'); return; }
+    return;
+  }
+  if (st && st.action.kind === 'show') pvNext();
+});
+function adaSvg(talking) {
+  return `<svg viewBox="0 0 100 130" aria-hidden="true"><ellipse cx="50" cy="126" rx="30" ry="4" fill="rgba(0,0,0,.3)"/>
+    <path d="M28 124 L34 66 Q50 58 66 66 L72 124 Z" fill="#6a4a7a"/><path d="M38 70 L62 70 L64 122 L36 122 Z" fill="#efe6d2"/>
+    <path d="M30 70 Q22 92 26 104" stroke="#e8c6a0" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M70 70 Q${talking ? '84 58 82 46' : '78 92 74 104'}" stroke="#e8c6a0" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <circle cx="50" cy="44" r="17" fill="#e8c6a0"/><path d="M32 42 Q34 22 50 22 Q66 22 68 42 Q60 32 50 32 Q40 32 32 42Z" fill="#c9b27a"/>
+    <path d="M31 40 Q50 18 69 40 L71 36 Q50 8 29 36Z" fill="#b5413a"/><circle cx="44" cy="45" r="1.8" fill="#2a2a2a"/><circle cx="56" cy="45" r="1.8" fill="#2a2a2a"/>
+    <path d="M45 53 Q50 ${talking ? 58 : 55} 55 53" stroke="#7a3b2a" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>`;
+}
+const wheelSvg = () => `<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="44" fill="none" stroke="#7a5432" stroke-width="5"/><circle cx="50" cy="50" r="30" fill="none" stroke="#8a6440" stroke-width="2"/><circle cx="50" cy="50" r="7" fill="#5b3d22"/>${Array.from({ length: 12 }, (_, k) => { const an = (k * Math.PI) / 6; const x = 50 + Math.cos(an) * 44; const y = 50 + Math.sin(an) * 44; const px = 50 + Math.cos(an) * 52; const py = 50 + Math.sin(an) * 52; return `<line x1="50" y1="50" x2="${x}" y2="${y}" stroke="#8a6440" stroke-width="2.5"/><line x1="${x}" y1="${y}" x2="${px}" y2="${py}" stroke="#6b4a2b" stroke-width="7"/>`; }).join('')}</svg>`;
+const sceneSvg = () => `<svg class="scene" viewBox="0 0 300 530" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fb6d8"/><stop offset="1" stop-color="#dfe8ee"/></linearGradient><linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7f9a5c"/><stop offset="1" stop-color="#4f6a3a"/></linearGradient></defs>
+  <rect width="300" height="530" fill="url(#sky)"/><path d="M0 300 Q70 250 150 280 T300 262 V530 H0Z" fill="#9db27c"/><rect y="315" width="300" height="215" fill="url(#gr)"/>
+  <g transform="translate(150 196)"><rect x="0" y="40" width="110" height="88" fill="#b9a487"/><path d="M-8 44 L55 0 L118 44Z" fill="#7a4a35"/><rect x="18" y="64" width="18" height="22" fill="#4a3a2c"/><rect x="72" y="64" width="18" height="22" fill="#4a3a2c"/><rect x="44" y="92" width="22" height="36" fill="#3d2f22"/>
+  <g transform="translate(-6 98)"><circle r="34" fill="none" stroke="#5e4329" stroke-width="5"/><circle r="5" fill="#5e4329"/><path d="M-34 0H34M0 -34V34M-24 -24L24 24M-24 24L24 -24" stroke="#5e4329" stroke-width="3"/></g></g>
+  <path d="M0 420 Q80 400 140 430 T300 410 V446 Q220 470 150 452 T0 456Z" fill="#6c9bc0" opacity=".85"/></svg>`;
+const oldPicSvg = () => `<svg viewBox="0 0 160 120" aria-hidden="true"><rect width="160" height="120" fill="#c8b48e"/><rect y="74" width="160" height="46" fill="#a08a64"/><g transform="translate(52 22)"><rect y="26" width="78" height="54" fill="#8c7652"/><path d="M-6 30 L39 0 L84 30Z" fill="#5f4a32"/><rect x="31" y="50" width="16" height="30" fill="#3f3122"/></g><g fill="#4a3a28"><circle cx="40" cy="78" r="4"/><rect x="36" y="82" width="8" height="18"/><circle cx="58" cy="80" r="3.5"/><rect x="55" y="83" width="7" height="15"/></g><circle cx="42" cy="104" r="22" fill="none" stroke="#5f4a32" stroke-width="3"/><rect width="160" height="120" fill="none" stroke="#e9dcc0" stroke-width="6"/></svg>`;
+function paintVisitor() {
+  const area = $('#pvArea'); if (!area) return;
+  const st = PV.at === END ? null : stepById(PV.at);
+  const cur = st?.action.kind === 'show' ? blockById(st.action.block) : null;
+  let h = sceneSvg() + `<div class="hud">${icon('station')}<b>The old mill</b>${PV.score ? ` - ${PV.score} points` : ''}</div>`;
+  // free blocks and world blocks shown earlier stand in the world
+  S.blocks.forEach((b) => {
+    const free = !showSteps(b.id).length; const stays = PV.shown.includes(b.id);
+    if (!(free || stays) || !viewOf(b).world || b.kind === 'character' || b.kind === 'model' || b === cur) return;
+    if (b.kind === 'shortText') h += `<div class="wsign">${esc(b.content)}</div>`;
+    else h += `<div class="wtag">${esc(b.name)}</div>`;
+  });
+  const fig = PV.figure ? blockById(PV.figure) : null;
+  const freeChar = S.blocks.find((b) => b.kind === 'character' && !showSteps(b.id).length && viewOf(b).world);
+  const figB = fig || freeChar;
+  const curIsFig = cur && (cur.kind === 'character' || cur.kind === 'model');
+  if (figB && figB.kind === 'character' && (figB.view === 'bubble' || !curIsFig || cur !== figB) && !(cur === figB && figB.view !== 'bubble')) h += `<div class="fig">${adaSvg(cur === figB)}</div>`;
+  if (figB && figB.kind === 'model' && cur !== figB && st) h += `<div class="stage still"><div class="disc"></div>${wheelSvg()}</div>`;
+  const words = (t) => t.split(/\s+/).map((w) => `<span class="w up">${esc(w)} </span>`).join('');
+  const tapHint = (hidden) => (st.advance.mode === 'tap' ? `<div class="tap"${hidden ? ' hidden' : ''}>Tap to continue</div>` : st.advance.mode === 'auto' ? '<div class="autob"><i></i></div>' : '');
+  if (!st) {
+    h += `<div class="card mid"><h4>That is the story of The old mill.</h4><div>Walk on to <b>The stone bridge</b>, 180 m along the stream.${PV.score ? `<br>You have ${PV.score} points.` : ''}</div><button class="go" data-pv="again">Play again</button></div>`;
+  } else if (cur) {
+    const K = cur.kind;
+    if (K === 'character') {
+      if (cur.view === 'bubble') h += `<div class="bubble"><div class="who">${esc(cur.name)}</div>${words(cur.content)}</div>`;
+      else if (cur.view === 'portrait') h += `<div class="portrait"><div class="ring">${adaSvg(true)}</div><div class="pc"><div class="who">${esc(cur.name)}</div>${words(cur.content)}</div></div>`;
+      else h += `<div class="card mid" style="text-align:center"><div style="width:90px;height:110px;margin:0 auto">${adaSvg(true)}</div><div class="who">${esc(cur.name)}</div>${words(cur.content)}</div>`;
+      h += tapHint(true);
+    } else if (K === 'picture') {
+      if (cur.view === 'card') h += `<div class="card"><div class="pic">${oldPicSvg()}</div><h4>${esc(cur.name)}</h4><div>${esc(cur.content)}</div></div>`;
+      else h += `<div class="cap"><b>${esc(cur.name)}</b> - ${esc(cur.content)}</div><div class="card" style="left:22%;right:22%;bottom:30%;padding:5px;background:#5b3d22"><div class="pic" style="margin:0">${oldPicSvg()}</div></div>`;
+      h += tapHint(false);
+    } else if (K === 'video' || K === 'audio') {
+      h += `<div class="card"><div class="vid">${K === 'video' ? `<div class="frame">${oldPicSvg()}</div>` : ''}<div class="pl">${icon(K === 'video' ? 'play' : 'audio')}</div><div class="bar"><i style="width:0"></i></div><div class="tm"></div></div><h4>${esc(cur.name)}</h4><div>${esc(cur.content)}</div></div>`;
+      h += tapHint(st.advance.mode === 'tap');
+    } else if (K === 'model') {
+      h += `<div class="cap"><b>${esc(cur.name)}</b> - ${esc(cur.content)}</div><div class="stage"><div class="disc"></div>${wheelSvg()}</div>` + tapHint(false);
+    } else {
+      h += `<div class="card"><h4>${esc(cur.name)}</h4><div>${words(cur.content)}</div></div>` + tapHint(false);
+    }
+  } else if (st.action.kind === 'choice') {
+    const a = st.action;
+    h += `<div class="card"><h4>${esc(a.prompt)}</h4><div class="opts">${a.options.map((o) => `<button class="opt" data-pv="ans:${o.id}">${esc(o.label)}</button>`).join('')}</div></div>`;
+  } else {
+    const a = st.action; const pk = PV.pick;
+    h += `<div class="card"><div class="who">Quiz - ${a.points} points</div><h4>${esc(a.question)}</h4><div class="opts">${a.options.map((o) => `<button class="opt${pk ? (o.id === a.correct ? ' right' : o.id === pk ? ' wrong' : '') : ''}" data-pv="quiz:${o.id}">${esc(o.label)}</button>`).join('')}</div>
+      ${pk ? `<div class="fb ${pk === a.correct ? 'right' : 'wrong'}">${esc(pk === a.correct ? a.right : a.wrong)}</div><button class="go" data-pv="quizOn">Continue</button>` : ''}</div>`;
+  }
+  area.innerHTML = `<div class="vis">${h}</div>`;
+  pvTick();
+}
+ICON.station = '<path d="M8 14s4.5-4.3 4.5-7.7a4.5 4.5 0 00-9 0C3.5 9.7 8 14 8 14z"/><circle cx="8" cy="6.3" r="1.6"/>';
+
+// ======================================================================
+addEventListener('resize', () => render());
+window.__story = S; // for the screenshot script
+render();
+</script>
+</body>
+</html>
