@@ -83,7 +83,13 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   the stage `selectStationContentShown` (`stage.follow`): the figure fades
   with its station. The stage's fade runs on `deps.now` and the AR frame
   loop (`registerFrameUpdate`).
-- The assets by id are built once per manifest.
+- A character look (a story view, `scene-stage.ts`) turns and opens to
+  `seams.getViewerCamera()` and beckons by `beckonOf(stationId)`: the
+  walk's one next station (`character-views.ts` `beckonNext` over the
+  store's walk, only while it is the open tour's), as the offset from his
+  figure pose (`guide.figurePoseOf`) to that station's pose
+  (`guide.poseOf`), with its title; none while either pose is unknown.
+- The assets by id, and the declared characters by id (handed to the scene view for a frames sheet), are built once per manifest.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` runs at the AR session's end and at an open tour's close
   (`hooks.stopStations`, from `ar-entry.ts` and `archive-open.ts`). It
@@ -129,6 +135,17 @@ hooks.tickStations = stations.tick;
   showed; "Keep listening"
   calls `cancelAsk`. The completion card has no way out of its own: the
   X at the top left (`#enter-ar`) is the session's one way out.
+- **The character's tap:** `characterTapped(tap)` (`characterTapOf`)
+  casts the visitor's AR tap against the parts of the standing look that
+  show (`stage.characterTapTargets()`, `seams.pickObjectInView`), nothing
+  while none of him stands; on a hit it is the story's (`scene-view.ts`
+  `characterTapped`: his voice, or the bubble view's bubble) and returns
+  true so `main.ts` hands it nowhere else. A click on his portrait in the
+  card (`dom.scene.portrait`, `wirePortraitTap`) goes the same way.
+  `routeVisitorTap` is `main.ts`'s order: the character, then a model's
+  card; a tap either takes closes the pin sheet, one neither takes is the
+  pin sheet's. `declaredCharactersOf` builds the declared characters by
+  id once per manifest, for the scene view and the prefetch.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);
@@ -195,7 +212,8 @@ hooks.tickStations = stations.tick;
   clears the frame loop's callbacks); `debugLines()` returns
   `walkDebugLines(mode, radar, frames, now)`: `walkRadarDebugLines`' two
   lines for a visitor's radar, none for a creator (who has no radar) or a
-  page without one.
+  page without one, followed by the scene view's own (`view.debugLines()`,
+  a frames sheet that could not be read).
 - The seam `xrProjection0` gives the radar its cone; the radar's canvas
   is observed by a `ResizeObserver` (`observeSize`) so its size is read
   only after a resize; its `listOpen` is the store's sheet.

@@ -5,14 +5,15 @@
 Which blocks stand in a station's world for the visitor (station blocks
 plan B2b step 2, owner decision B-Q4): the station's FREE world blocks (no
 story step shows them), drawn from the start, plus every STORY block with
-a world view (`pin`, `plane`, `placed` model) that a `show` step
+a world view (`pin`, `plane`, a model in `placed`, `ghost`, `hotspots`, `cutaway` or `toy`) that a `show` step
 reached. A reached block appears when its step is reached and stays for
 the rest of the visit, kept with the walk (`visitor-walk-slice.ts`
 `shownBlocks`, the lifetime of `done`). Pure.
 
 ## Public API
 
-- `isWorldBlock(block)` - true for a `pin`, `plane` or `placed` view.
+- `isWorldBlock(block)` - true for a world view: the framework's
+  `TOUR_WORLD_VIEWS` (`pin`, `plane` and the model's world views).
 - `worldBlockReachedBy(station, step)` - the world block a `show` step
   reaches, or null (a card, a stage block, a choice, a quiz, a missing
   block).

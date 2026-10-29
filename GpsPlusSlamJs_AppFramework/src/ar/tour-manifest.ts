@@ -35,8 +35,18 @@
  *   unknown fields are ignored at every minor, so a typo in a hand-edited
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
- *   version cannot read. The writer writes the LOWEST minor the tour needs;
- *   at 4.0 that is always 0.
+ *   version cannot read. The writer writes the LOWEST minor the tour needs
+ *   (`tourBlocksMinor`), so a tour an older reader can open fully is never
+ *   marked newer than it is. Minor 1 added a model's world views besides
+ *   `placed` (`ghost`, `hotspots`, `cutaway`, `toy`) and its `animation`,
+ *   `annotations` (notes) and `sections`. Minor 2 added the recurring
+ *   character: the tour's `characters` declaration (`tour-characters.ts`),
+ *   a character block's `character` reference (its inline `name` and
+ *   `image` are still written, in step with the declaration, so an older
+ *   reader shows him by name), his story views `bubble`, `speak`,
+ *   `two-stations`, `portrait` and `popup`, and the advance mode
+ *   `lineEnd` (an older reader taps on instead). A reader of this version
+ *   accepts all of them in a file of any minor.
  * - A newer minor may also add VALUES to a closed list: a block kind or
  *   view, an order, an advance mode, an asset's media type. Read from a
  *   file of a newer minor, an unknown value degrades - the block or step
@@ -70,10 +80,17 @@ import {
   type TourAsset,
 } from './tour-assets.js';
 import {
+  parseTourCharacters,
+  type TourCharacter,
+  type TourCharacterDrop,
+} from './tour-characters.js';
+import {
   placeTourBlocks,
   readTourBlocks,
+  tourBlocksMinor,
   type TourBlockDrop,
   type TourModelBlock,
+  type TourModelWorldView,
   type TourPictureBlock,
   type TourShortTextBlock,
 } from './tour-blocks.js';
@@ -91,8 +108,14 @@ import {
   type TourStation,
   type TourStationDrop,
 } from './tour-stations.js';
+import { tourStepsMinor } from './tour-story.js';
 
 export type { TourAsset, TourAssetKind } from './tour-assets.js';
+export type {
+  TourCharacter,
+  TourCharacterDrop,
+  TourCharacterView,
+} from './tour-characters.js';
 export type {
   TourAudioBlock,
   TourBlock,
@@ -101,7 +124,12 @@ export type {
   TourBlockView,
   TourCharacterBlock,
   TourLongTextBlock,
+  TourModelAnimation,
   TourModelBlock,
+  TourModelNote,
+  TourModelSection,
+  TourModelVector,
+  TourModelWorldView,
   TourPictureBlock,
   TourShortTextBlock,
   TourVideoBlock,
@@ -126,7 +154,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 4;
 
 /** The newest additive revision of version 4 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+export const TOUR_MANIFEST_MINOR = 2;
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -154,9 +182,9 @@ export type TourPicture = InWorld<TourPictureBlock> & {
   readonly view: 'plane';
   readonly imageAsset: TourAsset;
 };
-/** A 3D model placed in the world at its size. */
+/** A 3D model in the world at its size, in one of its world views. */
 export type TourModel = InWorld<TourModelBlock> & {
-  readonly view: 'placed';
+  readonly view: TourModelWorldView;
   readonly sizeM: number;
 };
 export type TourObject = TourPin | TourPicture | TourModel;
@@ -202,6 +230,9 @@ export interface TourManifest extends TourDetails {
   order: TourOrder;
   /** Media files named by their own ids. */
   assets: TourAsset[];
+  /** Minor 2: the tour's recurring characters, which character blocks
+   *  name; absent when there are none. */
+  characters?: TourCharacter[];
   /** The stations, each with its blocks and its story. */
   stations: TourStation[];
   /**
@@ -218,7 +249,7 @@ export interface TourManifest extends TourDetails {
  *  id), or a block or one of its fields (`tour-blocks.ts`; the kind that
  *  carries `block`). A drop with no `cause` is not one a writer accepts. */
 export type TourManifestDrop =
-  TourDetailsDrop | TourStationDrop | TourBlockDrop;
+  TourDetailsDrop | TourStationDrop | TourBlockDrop | TourCharacterDrop;
 
 /** How a reader or writer reports what it left out. The tour's details, a
  *  station's description and card image, and a block's optional texts are
@@ -475,8 +506,17 @@ export function parseTourManifest(
   const minor = minorOf(data.minor);
   const lenient = minor > TOUR_MANIFEST_MINOR;
   const assets = parseTourAssets(data.assets ?? [], { fail, lenient });
+  const characters = parseTourCharacters(data.characters, {
+    assets,
+    fail,
+    lenient,
+    ...(options.onDropped === undefined
+      ? {}
+      : { onDropped: options.onDropped }),
+  });
   const stations = parseTourStations(data.stations ?? [], {
     assets,
+    characters: new Map(characters.map((c) => [c.id, c])),
     fail,
     lenient,
     ...(options.onDropped === undefined
@@ -492,6 +532,7 @@ export function parseTourManifest(
     ...titleAndDetailsOf(data, assets, options),
     order: orderOf(data.order, lenient),
     assets,
+    ...(characters.length === 0 ? {} : { characters }),
     stations,
     ...(needsNoGps === undefined ? {} : { needsNoGps }),
   };
@@ -547,7 +588,19 @@ export function serializeTourManifest(
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  // 4.0 has no later minor yet: every tour needs 0. A field or view of a
-  // later minor brings back the lowest-minor rule here.
-  return JSON.stringify({ ...parsed, minor: 0 }, null, 2);
+  return JSON.stringify(
+    { ...parsed, minor: tourManifestMinor(parsed) },
+    null,
+    2
+  );
+}
+
+/** The lowest minor a tour needs: what its blocks, its steps and its
+ *  character declarations use. */
+function tourManifestMinor(manifest: TourManifest): number {
+  return Math.max(
+    tourBlocksMinor(manifest.stations.flatMap((s) => s.blocks)),
+    tourStepsMinor(manifest.stations.flatMap((s) => s.steps)),
+    manifest.characters === undefined ? 0 : 2
+  );
 }

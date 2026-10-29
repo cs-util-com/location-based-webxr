@@ -79,6 +79,7 @@ import {
 } from "./editor3d-stations.js";
 import { createSceneEditing, type GizmoPart } from "./editor3d-editing.js";
 import type { InputPage } from "./editor3d-input.js";
+import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
@@ -94,7 +95,11 @@ interface Editor3dStore {
 
 /** The page's edits the view asks for (`editor3d-input.ts`'s page, less
  *  the store the view reads itself). */
-export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected">;
+export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected"> & {
+  /** A model's own edit (a note or a section placed by a click on it):
+   *  true when written; a refusal is said by the page. */
+  model(id: string, edit: ModelEdit): boolean;
+};
 
 /** What the page hands the 3D view. */
 export interface Editor3dDeps {
@@ -173,6 +178,19 @@ export interface Editor3dView {
     readonly dotPx: number;
     readonly ringPx: number;
   } | null;
+  /** The selected model's note discs on the canvas (CSS px; null for one
+   *  that does not show) and its section planes drawn (the page's
+   *  checks). */
+  modelParts(): {
+    readonly discs: readonly (readonly [number, number] | null)[];
+    readonly planes: number;
+  };
+  /** Where a point of a drawn model (its own space) is on the canvas
+   *  (CSS px), or null until it is drawn (the page's checks). */
+  modelScreenOf(
+    id: string,
+    at: readonly [number, number, number],
+  ): readonly [number, number] | null;
 }
 
 /** The camera and the drawing, for the shell's compass, view line and
@@ -593,6 +611,17 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       endFlight,
       dropMomentum,
       frame: frameView,
+      models: {
+        view() {
+          const ui = deps.store.getState().editorView;
+          return {
+            selected: ui.selected,
+            focus: ui.modelFocus,
+            pick: ui.modelPick,
+          };
+        },
+        edit: (id, edit) => deps.edits.model(id, edit),
+      },
     });
     undo.push(() => {
       editing.dispose();
@@ -766,6 +795,11 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         return at === null ? null : [at.x, at.y];
       },
       gizmoSizes: () => editing.handleSizes(),
+      modelParts: () => editing.modelParts(),
+      modelScreenOf(id, at) {
+        const p = editing.modelScreenOf(id, at);
+        return p === null ? null : [p.x, p.y];
+      },
       setDistance(m) {
         const offset = camera.position.clone().sub(controls.target);
         offset.setLength(

@@ -681,7 +681,8 @@
 
 .lf-chip {
   position: absolute;
-  top: 4.7em;
+  /* lifted on a small screen so that it clears the scan frame (film-phone.ts) */
+  top: calc(4.7em - var(--lf-chip-lift, 0px));
   left: 50%;
   display: flex;
   flex-direction: column;
@@ -692,8 +693,14 @@
   opacity: 0;
   background: var(--lf-ok);
   color: #fff;
-  font: 700 0.86em/1 var(--lf-sans);
-  white-space: nowrap;
+  /* as wide as its words, but never wider than the screen: where the
+     film is small (540 px and less) a line that does not fit wraps
+     inside the screen instead of running over the scan frame */
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100% - 0.9em);
+  font: 700 0.86em/1.12 var(--lf-sans);
+  text-align: center;
   transform: translateX(-50%);
 }
 

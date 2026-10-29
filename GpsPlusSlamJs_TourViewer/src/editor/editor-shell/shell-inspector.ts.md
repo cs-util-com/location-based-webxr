@@ -58,7 +58,17 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   - A station whose story shows blocks: under "In its story", a
     labelled list with a row per block, its kind and its name as text
     (`ul.story-blocks`, `data-block` its id), and a note that they are
-    listed, not edited, here.
+    shown while the story runs. For each character of the story a section
+    (`div.isec.character`, `data-block` his id) under his name: "View"
+    chips (`data-act="character-view:<id>:<view>"`), "Moves on" chips
+    (`character-advance:<id>:tap` "On a tap", `:lineEnd` "When the line
+    ends"), each group a `role=group` named by its label and the one in
+    use pressed, as a model's view chips are (`chipGroup`, which both
+    use); a note when his view or his step's advance is none the chips
+    offer (an older tour's view, `auto`); and "Facing" in degrees
+    (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
+    0). Where these controls sit is this build's choice, made before the
+    owner's prototype round on the editor's character UI.
   - An item: what it is and its station (a pin's text to type in the
     head, "Pin text"), its commands, a model's Size to type, and under
     "Position" its Offset east and north, Height (up from the anchor)
@@ -107,6 +117,25 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   `.danger`, shows its key in a `<kbd>` hidden from screen readers and
   announces it by `aria-keyshortcuts="Delete"`. A code has none
   (read-only in the 3D view).
+- A model's parts (`modelParts`, after Size, before Position), as the
+  station blocks prototype's editor mode arranges them:
+  - `.isec.mview` - the view as chips (`data-act="view:<view>"`,
+    `aria-pressed`), and a line on what the view does; a model with notes
+    in any view but Hotspots adds "Its notes show only in Hotspots."
+    (they are drawn in no other view);
+  - `.isec.manim` - the clip's name (`anim-name`) and "Plays by itself"
+    (`anim-autoplay`, disabled without a clip);
+  - `.isec.mnotes` - a card per note (`.anno[data-note]`, `.on` in
+    focus): its number (`note:<i>`), title (`note-title:<i>`) and text
+    (`note-text:<i>`) with their counters, "Pick on model"
+    (`note-place:<i>`), Delete (`note-delete:<i>`) and its place; then
+    "+ Add note (click the model)" (`note-add`, disabled when full), and a
+    hint when the view does not show notes;
+  - `.isec.msections` - a card per section (`.anno[data-section]`): its
+    number, name (`section-name:<i>`), "Place on model", Flip and Delete;
+    then "+ Add section (click the model)" and what a section does.
+  - A button waiting for a click on the model reads "Click the model...",
+    pressed (`.mini.on`).
 
 ## Invariants & assumptions
 
@@ -136,7 +165,9 @@ opened again, and the fields' layout at four window sizes).
 `shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a station's story blocks, listed by kind and name as
-text under "In its story" (no list without a story), the fields to type
+text under "In its story" (no list without a story), a story
+character's view and advance chips (the one in use pressed, each group
+named) and his facing, none for a long text, the fields to type
 per kind (each counted in its unit), a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head with its count as it is typed (none for a read-only one or a

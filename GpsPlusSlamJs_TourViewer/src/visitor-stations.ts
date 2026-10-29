@@ -18,7 +18,11 @@ import {
   selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourAsset,
+  TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { Object3D } from "three";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
@@ -37,9 +41,15 @@ import { createWalkFocusCues } from "./walk-focus-cues.js";
 import { startWalkHuds } from "./walk-hud.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
-import { createSceneStage } from "./scene-stage.js";
-import { createSceneView, type SceneViewDom } from "./scene-view.js";
+import { createSceneStage, type SceneStage } from "./scene-stage.js";
+import {
+  createSceneView,
+  type SceneView,
+  type SceneViewDom,
+} from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
+import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import {
   wireStationGuide,
   type GuideView,
@@ -82,6 +92,8 @@ import {
 } from "./walk-edge-pill.js";
 import { walkRadarFovDeg } from "./walk-radar-model.js";
 import { stationTitle } from "./station-run.js";
+import { beckonNext } from "./character-views.js";
+import type { CharacterBeckon } from "./character-look.js";
 import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
 import {
   sampleFrameTimes,
@@ -180,6 +192,10 @@ export interface VisitorStations {
   walkShown: () => boolean;
   /** The `?debug=1` lines: the radar's draw time and the frame time; empty without a radar. */
   debugLines: () => string[];
+  /** A visitor's tap in AR: true when it hit the standing character of a
+   *  story step (his voice plays or stops, the bubble view's bubble shuts
+   *  or opens), so no other tap target takes it. */
+  characterTapped: (tap: SelectTargetRay | null) => boolean;
 }
 
 /**
@@ -219,6 +235,8 @@ export function wireVisitorStations(deps: {
     | "loadGlbModel"
     | "createAudioElement"
     | "xrProjection0"
+    | "getViewerCamera"
+    | "pickObjectInView"
   >;
   dom: {
     guide: StationGuideDom;
@@ -282,12 +300,17 @@ export function wireVisitorStations(deps: {
     }
     return indexed.byId;
   };
+  // The open tour's declared characters by id, likewise once per manifest.
+  const charactersById = declaredCharactersOf(() =>
+    ctx.tourDocument.manifest(),
+  );
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
   // the tour closes or another opens.
   const prefetch = createStationPrefetch({
     assets: assetsById,
+    characters: charactersById,
     tour: () => ctx.tourDocument.manifest(),
     read: (path) => {
       const session = ctx.session;
@@ -322,6 +345,10 @@ export function wireVisitorStations(deps: {
     // The figure fades with its station's content (`follow` below).
     now: deps.now,
     registerFrame: registerFrameUpdate,
+    // A character look turns and opens to the visitor's camera, and
+    // beckons along the walk (two-stations).
+    getCamera: () => seams.getViewerCamera(),
+    beckonOf: (id) => beckonOf(id),
   });
   // The sheet is drawn after a guide call, never from inside one.
   const calls = createCallGuard(() => {
@@ -332,6 +359,9 @@ export function wireVisitorStations(deps: {
     // A getter: the open tour's assets, read when a step needs one.
     get assets() {
       return assetsById();
+    },
+    get characters() {
+      return charactersById();
     },
     loadAsset: (path) => prefetch.load(path),
     audio,
@@ -434,6 +464,27 @@ export function wireVisitorStations(deps: {
     },
   });
   poseOf = (id) => guide.figurePoseOf(id);
+
+  /** Where the character at `stationId` beckons: the walk's one next
+   *  station (`beckonNext`), as an NUE offset from his own pose; none
+   *  while either pose is unknown. */
+  function beckonOf(stationId: string): CharacterBeckon | null {
+    const tour = guideTour();
+    const progress = selectWalkProgress(arStore.getState());
+    if (tour === null || progress === null) return null;
+    if (!walkOfTour(progress, tour.stations)) return null;
+    const nextId = beckonNext(progress, stationId);
+    const next = tour.stations.find((s) => s.id === nextId);
+    if (nextId === null || next === undefined) return null;
+    const here = guide.figurePoseOf(stationId);
+    const there = guide.poseOf(nextId);
+    if (here === null || there === null) return null;
+    return {
+      dx: there.positionNue[0] - here.positionNue[0],
+      dz: there.positionNue[2] - here.positionNue[2],
+      title: stationTitle(next),
+    };
+  }
 
   const walk = deps.walk;
   /** The note last said in the toast (it lasts 6 s in the store): the
@@ -681,6 +732,8 @@ export function wireVisitorStations(deps: {
   dom.playNextButton.addEventListener("click", () => {
     view.playNextNow();
   });
+  // His portrait in the card is his tap target too (the portrait view).
+  wirePortraitTap(dom.scene.portrait, view);
 
   return {
     tick: () => {
@@ -726,10 +779,101 @@ export function wireVisitorStations(deps: {
     },
     progressKept: () => keptWalk() !== null,
     walkShown: () => sheetShown,
-    debugLines: () =>
-      win === null
+    debugLines: () => [
+      ...(win === null
         ? []
-        : walkDebugLines(deps.mode, radarView, frames, win.performance.now()),
+        : walkDebugLines(deps.mode, radarView, frames, win.performance.now())),
+      ...view.debugLines(),
+    ],
+    characterTapped: characterTapOf({
+      stage,
+      pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+      view,
+    }),
+  };
+}
+
+/**
+ * The visitor's AR tap on the story's character: cast at the parts of
+ * him that show (`stage.characterTapTargets`, so a hidden bubble or
+ * pop-up takes no tap), handed to the story when one is hit. True when
+ * the story took it (his voice plays or stops, the bubble view's bubble
+ * shuts or opens); nothing is cast while none of him stands.
+ */
+export function characterTapOf(deps: {
+  readonly stage: Pick<SceneStage, "characterTapTargets">;
+  pick(
+    targets: ReadonlyMap<string, Object3D>,
+    tap: SelectTargetRay | null,
+  ): string | null;
+  readonly view: Pick<SceneView, "characterTapped">;
+}): (tap: SelectTargetRay | null) => boolean {
+  return (tap) => {
+    const parts = deps.stage.characterTapTargets();
+    if (parts.length === 0) return false;
+    const targets = new Map(
+      parts.map((part, i) => [`character-${String(i)}`, part] as const),
+    );
+    return deps.pick(targets, tap) !== null && deps.view.characterTapped();
+  };
+}
+
+/** His portrait in the card (the portrait view) takes a click as a tap
+ *  on him; a page without one wires nothing. */
+export function wirePortraitTap(
+  portrait: unknown,
+  view: Pick<SceneView, "characterTapped">,
+): void {
+  if (
+    typeof portrait !== "object" ||
+    portrait === null ||
+    typeof (portrait as Partial<EventTarget>).addEventListener !== "function"
+  ) {
+    return;
+  }
+  (portrait as EventTarget).addEventListener("click", () => {
+    view.characterTapped();
+  });
+}
+
+/**
+ * The visitor's tap in AR, in its order: the story's character first,
+ * then a model's card; a tap either takes closes the pin sheet, and one
+ * neither takes is the pin sheet's.
+ */
+export function routeVisitorTap(
+  tap: SelectTargetRay | null,
+  to: {
+    character(tap: SelectTargetRay | null): boolean;
+    model(tap: SelectTargetRay | null): boolean;
+    readonly pinSheet: {
+      close(): void;
+      tapped(tap: SelectTargetRay | null): void;
+    };
+  },
+): void {
+  if (to.character(tap) || to.model(tap)) to.pinSheet.close();
+  else to.pinSheet.tapped(tap);
+}
+
+/** The open tour's declared characters by id, built once per manifest
+ *  (compared by identity); none while no tour is open. */
+export function declaredCharactersOf(
+  manifest: () => Pick<TourManifest, "characters"> | null | undefined,
+): () => ReadonlyMap<string, TourCharacter> {
+  let declared: {
+    manifest: unknown;
+    byId: Map<string, TourCharacter>;
+  } | null = null;
+  return () => {
+    const now = manifest() ?? null;
+    if (declared?.manifest !== now) {
+      declared = {
+        manifest: now,
+        byId: new Map((now?.characters ?? []).map((c) => [c.id, c])),
+      };
+    }
+    return declared.byId;
   };
 }
 
