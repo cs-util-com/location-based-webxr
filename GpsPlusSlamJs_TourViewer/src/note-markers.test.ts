@@ -88,7 +88,9 @@ describe("layoutNoteMarkers", () => {
     expect(distant[0]!.label).toBe(false);
   });
 
-  // Why: a note behind the camera or off the screen has no disc.
+  // Why: a note behind the camera or off the screen has no disc; one just
+  // past the edge (within the slack) is shown, held where the whole disc
+  // can be tapped.
   it("hides a note behind the camera or off the screen", () => {
     const placed = layoutNoteMarkers(
       [
@@ -101,6 +103,8 @@ describe("layoutNoteMarkers", () => {
       null,
     );
     expect(placed.map((p) => p.on)).toEqual([false, false, true, false]);
+    expect(placed[2]!.x).toBe(14);
+    expect(placed[2]!.y).toBe(300);
   });
 });
 

@@ -35,10 +35,14 @@ camera, openKey), clear() }`. `sync` keeps one `button.note-marker`
 
 - Only views that show notes (`hotspots`) are passed in by the caller.
 - The layer's own size (`clientWidth` / `clientHeight`) is the screen.
-- A shown disc is always within the screen plus `NOTE_EDGE_SLACK_PX`
-  (20 px): "shown" is decided before the push, so a disc the push would
-  carry past that edge is held at it. Two notes with room around them
-  end at least `NOTE_MIN_GAP_PX` apart; a lone note is never moved.
+- A shown disc lies wholly on the screen, so it can be tapped: its centre
+  is held `NOTE_DISC_RADIUS_PX` (14 px, the 28 px button) inside every
+  edge. `NOTE_EDGE_SLACK_PX` (20 px) decides only whether a disc is shown
+  (a marker that far past an edge still is, pulled in); it is decided
+  before the push, and a disc the push would carry past an edge is held
+  there too. Two notes with room around them end at least
+  `NOTE_MIN_GAP_PX` apart; a lone note whose disc is on the screen is
+  never moved.
 - No occlusion test: a note behind the model's own body is faded by its
   facing, not hidden.
 
@@ -47,6 +51,6 @@ camera, openKey), clear() }`. `sync` keeps one `button.note-marker`
 `note-markers.test.ts` (jsdom): the fade and its floor, the push-apart,
 the one title, hiding off-screen notes, the projection and facing, and the
 buttons' lifecycle. `note-markers.property.test.ts` (fast-check): every
-shown disc within the screen plus its slack, none behind the camera,
-leaders' feet kept, a lone note unmoved, two close notes parted by the
+shown disc wholly on the screen (tappable), none behind the camera,
+leaders' feet kept, a lone note on the screen unmoved, two close notes parted by the
 full gap.

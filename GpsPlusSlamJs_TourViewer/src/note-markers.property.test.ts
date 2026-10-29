@@ -3,17 +3,19 @@
  * after it has decided which are on the screen. Unchecked, a crowd of
  * discs near an edge was pushed off the page while still counted as shown,
  * so a disc the visitor could never tap was drawn past the edge with its
- * leader pointing there. These properties hold the layout to its promises
- * for any notes at all: what is shown stays within the screen plus its
- * slack, what was off stays off, a lone note is never moved, and two notes
- * with room around them end the full gap apart.
+ * leader pointing there. Held only within the screen plus its 20 px slack,
+ * a 28 px disc could still sit wholly off it (the r973 review). These
+ * properties hold the layout to its promises for any notes at all: a shown
+ * disc lies wholly on the screen, so it can be tapped; what was off stays
+ * off; a lone note whose disc is on the screen is never moved; and two
+ * notes with room around them end the full gap apart.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
   layoutNoteMarkers,
-  NOTE_EDGE_SLACK_PX,
+  NOTE_DISC_RADIUS_PX,
   NOTE_MIN_GAP_PX,
   type NoteOnScreen,
 } from "./note-markers.js";
@@ -48,15 +50,17 @@ function toNotes(
 }
 
 describe("layoutNoteMarkers, for any notes", () => {
-  it("keeps every shown disc within the screen plus its slack", () => {
+  it("keeps every shown disc wholly on the screen, so it can be tapped", () => {
     fc.assert(
       fc.property(notesArb, screenArb, (raw, screen) => {
+        const r = NOTE_DISC_RADIUS_PX;
         for (const p of layoutNoteMarkers(toNotes(raw), screen, null)) {
           if (!p.on) continue;
-          expect(p.x).toBeGreaterThanOrEqual(-NOTE_EDGE_SLACK_PX);
-          expect(p.x).toBeLessThanOrEqual(screen.width + NOTE_EDGE_SLACK_PX);
-          expect(p.y).toBeGreaterThanOrEqual(-NOTE_EDGE_SLACK_PX);
-          expect(p.y).toBeLessThanOrEqual(screen.height + NOTE_EDGE_SLACK_PX);
+          // The whole disc, its edge included, inside the screen.
+          expect(p.x - r).toBeGreaterThanOrEqual(0);
+          expect(p.x + r).toBeLessThanOrEqual(screen.width);
+          expect(p.y - r).toBeGreaterThanOrEqual(0);
+          expect(p.y + r).toBeLessThanOrEqual(screen.height);
         }
       }),
     );
@@ -75,17 +79,18 @@ describe("layoutNoteMarkers, for any notes", () => {
     );
   });
 
-  it("never moves a lone note", () => {
+  it("never moves a lone note whose disc is on the screen", () => {
     fc.assert(
       fc.property(
         screenArb,
         fc.double({ min: 0, max: 1, noNaN: true }),
         fc.double({ min: 0, max: 1, noNaN: true }),
         (screen, u, v) => {
+          const r = NOTE_DISC_RADIUS_PX;
           const [only] = toNotes([
             {
-              x: u * screen.width,
-              y: v * screen.height,
+              x: r + u * (screen.width - 2 * r),
+              y: r + v * (screen.height - 2 * r),
               behind: false,
               facing: 1,
             },

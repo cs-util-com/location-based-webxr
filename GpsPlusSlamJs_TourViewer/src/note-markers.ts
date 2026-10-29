@@ -8,9 +8,9 @@
  * `layoutNoteMarkers` is the pure part: where each disc goes from the
  * notes' projected points - a disc whose note faces away fades (never
  * below 0.22, so the visitor still sees there is one), discs too close
- * are pushed apart where they can (a few rounds, never past the screen
- * plus its slack, so a crowd may stay closer than the gap; their leaders
- * keep the true point), and the one label
+ * are pushed apart where they can (a few rounds, each disc held wholly on
+ * the screen, so a crowd may stay closer than the gap; their leaders keep
+ * the true point), and the one label
  * shown is the open note's, or else the note nearest the screen's centre
  * that faces the visitor within 16 m. `createNoteMarkers` keeps one
  * button and one leader per note on the overlay and moves them each frame.
@@ -59,8 +59,13 @@ export const NOTE_MIN_GAP_PX = 46;
 export const NOTE_MIN_OPACITY = 0.22;
 /** The farthest a note's title shows by itself (m). */
 const NOTE_LABEL_RANGE_M = 16;
-/** A disc this far past the screen's edge still counts as on it (px). */
-export const NOTE_EDGE_SLACK_PX = 20;
+/** A disc this far past the screen's edge still counts as on it (px):
+ *  the slack decides only whether a disc is shown, never where. */
+const NOTE_EDGE_SLACK_PX = 20;
+/** A disc's radius (px): the stylesheet's 28 px button. A shown disc's
+ *  centre is held this far inside every edge, so all of it can be
+ *  tapped. */
+export const NOTE_DISC_RADIUS_PX = 14;
 /** Rounds of the push: enough to part a few neighbours, not a guarantee
  *  for a crowd (a disc held at the edge cannot give way). */
 const PUSH_ROUNDS = 6;
@@ -121,6 +126,17 @@ export function layoutNoteMarkers(
       best = p.note.key;
     }
   }
+  // Shown was decided with the slack: a shown disc is then held with all
+  // of it on the screen (a disc just past the edge, or pushed there), so
+  // it is always one the visitor can tap.
+  const r = NOTE_DISC_RADIUS_PX;
+  const holdOnScreen = (): void => {
+    for (const p of placed) {
+      if (!p.on) continue;
+      p.x = clamp(p.x, r, Math.max(r, w - r));
+      p.y = clamp(p.y, r, Math.max(r, h - r));
+    }
+  };
   for (let round = 0; round < PUSH_ROUNDS; round++) {
     for (let i = 0; i < placed.length; i++) {
       for (let j = i + 1; j < placed.length; j++) {
@@ -143,14 +159,10 @@ export function layoutNoteMarkers(
         b.y += (dy / d) * push;
       }
     }
-    // Shown was decided before the push: a disc pushed past the edge is
-    // held at it, so a shown disc is always one the visitor can tap.
-    for (const p of placed) {
-      if (!p.on) continue;
-      p.x = clamp(p.x, -NOTE_EDGE_SLACK_PX, w + NOTE_EDGE_SLACK_PX);
-      p.y = clamp(p.y, -NOTE_EDGE_SLACK_PX, h + NOTE_EDGE_SLACK_PX);
-    }
+    holdOnScreen();
   }
+  // Also with fewer than two discs, where no round pushes anything.
+  holdOnScreen();
   return placed.map((p) => ({
     key: p.note.key,
     on: p.on,
