@@ -18,7 +18,7 @@
   - `supported` - false where float colour buffers cannot be rendered to
     (then `render` does nothing);
   - `look` - a copy of `{ steps, strength, thickness }`;
-  - `setLook(partial)` - any of them (`globe-atmosphere-frame.js`
+  - `setLook(partial)` - any of them (`GpsPlusSlamJs_Globe/src/globe-atmosphere-frame.ts`
     `atmosphereLook`: RangeError outside steps 2-64, strength 0-4,
     thickness 1-10); a new step count recompiles the march;
   - `render(camera, { worldFromEcef, sunEcef, sunIntensity, skyShare,
@@ -63,7 +63,7 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     earlier version of this file claimed the colours could not change,
     and measured, the halo's chromaticity moved 0.09-0.11 between k = 1,
     6 and 10). So each ray's steps are also weighted by
-    `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
+    `grazingCompensation` (`globe-atmosphere-frame.ts` in the Globe package): Chapman's
     function at the two scale heights, normalised to 1 straight down
     (review m3), about sqrt(k) at the limb, Rayleigh and Mie each with its
     own scale height (the ozone absorption rides on Rayleigh's weight,
@@ -147,8 +147,8 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
   });
   ```
 
-- Tests: `globe-atmosphere-frame.test.mjs` (the frame and the look's
-  ranges). In the browser, `globe-atmosphere.smoke.spec.mjs`: the lit limb
+- Tests: the Globe package's `globe-atmosphere-frame.test.ts` (the frame
+  and the look's ranges). In the browser, `globe-atmosphere.smoke.spec.mjs`: the lit limb
   brighter inside and just outside, the night limb unchanged, the day side
   bluer, far space untouched, each against the pass off (floors swept
   x0.5-x2); the halo's falloff at both ends of the thickness slider; the

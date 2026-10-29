@@ -1,9 +1,11 @@
-# labs/globe/globe-atmosphere-frame.js - the atmosphere pass's numbers and frame
+# globe-atmosphere-frame.ts - the atmosphere pass's numbers and frame
 
 - Purpose: the pure part of the globe's atmosphere pass (round-4 plan
   2026-09-28-2105 DEC-GL4-4, `globe-atmosphere.js`): its look defaults and
   ranges, and the map from ECEF metres to the framework model's frame, free
-  of imports so Node's own runner tests it.
+  of imports. Moved from the globe lab into the Globe package with the
+  air slice; the lab (`labs/globe/globe-atmosphere.js`, `globe-lab.js`, the
+  atmosphere smoke) and `globe-air.ts` read it from here.
 - Public API:
   - `GLOBE_ATMOSPHERE` - the defaults: `steps` (samples per ray), `strength`
     (a scale on the physical light, 1 = as computed), `thickness` (the
@@ -58,12 +60,14 @@
     it reaches here (the lab's `readParam`), and anything else is a bug.
 - Examples:
 
-  ```js
+  ```ts
   const k = ellipsoidToModel([6378137, 6378137, 6356752.3], 6360);
   const look = atmosphereLook({ steps: 12 }); // { steps: 12, strength: 1, thickness: 6 }
   ```
 
-- Tests: `globe-atmosphere-frame.test.mjs` (the compensation: 1 at k = 1,
+- Tests: `globe-atmosphere-frame.test.ts` (the compensation: 1 at k = 1,
   sqrt(k) at the limb, near 1 for a steep ray, monotonic; every point of the ellipsoid
   on the ground sphere; altitudes kept within 0.4 %; refusals; the look's
-  defaults, rounding and ranges).
+  defaults, rounding and ranges; properties: the compensation between 1
+  and sqrt(k) for every thickness and ray, the observer at 0 anywhere on
+  the ellipsoid).

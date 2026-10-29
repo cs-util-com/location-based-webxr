@@ -154,8 +154,8 @@ import {
   GLOBE_ATMOSPHERE,
   atmosphereCostText,
   defaultAtmosphereSteps,
-  observerAltitudeKm,
-} from "./globe-atmosphere-frame.js";
+} from "/globe/globe-atmosphere-frame.js";
+import { createGlobeAir } from "/globe/globe-air.js";
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
@@ -168,10 +168,7 @@ import {
 } from "./globe-speed-dust-pass.js";
 import { GLOBE_SPEED_DUST } from "/globe/globe-speed-dust.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
-import {
-  GLOBE_SKY_HAND_OVER,
-  shellThicknessAt,
-} from "/globe/globe-sky-hand-over.js";
+import { GLOBE_SKY_HAND_OVER } from "/globe/globe-sky-hand-over.js";
 import { solarPosition } from "/fw/geo/solar-position.js";
 import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import { createGlobeDebug } from "./globe-debug.js";
@@ -2209,7 +2206,6 @@ async function start() {
     recentreFrame,
     earthCentreWorld,
   } = view;
-  const sunWorld = new THREE.Vector3();
   const device = reportDevice(renderer);
   const terrainResolution = new THREE.Vector2();
   useSurfaceDefaults(globe);
@@ -2243,20 +2239,12 @@ async function start() {
   // The ground sky (F2b): the framework's sky below the hand-over edge, in
   // the framework's units; its eased exposure is the globe's sun intensity.
   const groundSky = createGlobeGroundSky(renderer);
-  /**
-   * This frame's hand-over: the ground sky's weight and the sun's eased
-   * scale in the scene (the globe's sun intensity).
-   */
-  let skyHandOver = { weight: 0, exposure: Number.NaN };
   /** The view direction the cloud volume centres its disc along (§15). */
   const volumeView = new THREE.Vector3();
-  /** The observer's height over the ellipsoid's image (km), this frame. */
-  let observerKm = Number.POSITIVE_INFINITY;
   /** The flat cloud layer's last share by altitude (DEC-FR2-5), for state(). */
   let cloudFlatShare = 1;
   /** The speed dust's pass (round-3 plan D1, `dust=1`). */
   const speedDust = createSpeedDustPass();
-  let shellThickness = null;
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
@@ -2382,6 +2370,18 @@ async function start() {
     visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
   });
   if (terrain) haze.patch(terrain.tiles);
+  // The air's per-frame wiring (globe-air.ts): the observer's height, the
+  // sky hand-over, the haze that follows it, the sun's eased intensity and
+  // the space pass's shell thinning, over the three drawers above.
+  const air = createGlobeAir({
+    ellipsoidRadii: [radii.x, radii.y, radii.z],
+    groundRadiusKm: EARTH_ATMOSPHERE.groundRadiusKm,
+    sun: globe.sun,
+    globeGroup: globe.group,
+    spacePass: atmosphere,
+    groundSky,
+    haze,
+  });
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -3251,30 +3251,10 @@ async function start() {
     // The sky hand-over (F2b): the observer's height over the ellipsoid,
     // the ground sky's weight and its eased exposure, which also scales the
     // globe's sun; the space pass's shell thins on the way down.
-    observerKm = observerAltitudeKm(
-      ecefCamera().position.toArray(),
-      [radii.x, radii.y, radii.z],
-      EARTH_ATMOSPHERE.groundRadiusKm,
-    );
-    sunWorld
-      .copy(globe.sun.position)
-      .transformDirection(globe.group.matrixWorld);
-    skyHandOver =
-      params.groundSky === 1 && params.sky !== 0
-        ? groundSky.update({
-            altitudeKm: observerKm,
-            sunWorld,
-            framed: frameTarget() !== null,
-            edgeKm: params.skyEdgeKm,
-            widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
-            stepPct: params.skyStepPct,
-            spaceExposure: params.sunIntensity,
-          })
-        : { weight: 0, exposure: params.sunIntensity };
-    // The haze follows the ground sky: its state after each read, its
-    // strength by the weight.
-    if (groundSky.state().lastStage === "read") haze.sync(groundSky.atmosphere);
-    haze.setWeight(skyHandOver.weight, params.hazeScale);
+    air.step(params, {
+      cameraEcef: ecefCamera().position.toArray(),
+      framed: frameTarget() !== null,
+    });
     // The cloud volume (C2): its share by altitude, its disc, and the
     // shell's hole of the same size (variant 1), so the clouds are drawn
     // once at every altitude.
@@ -3284,7 +3264,7 @@ async function start() {
       cloudVolume.setNoise(params.cloudNoise);
       cloudVolume.setFineGain(params.cloudFineGain);
       const volume = cloudVolume.update({
-        altitudeKm: Math.max(0, observerKm),
+        altitudeKm: Math.max(0, air.observerKm()),
         target: frameTarget(),
         radiusKm: params.cloudVolumeKm,
         ceilingKm: params.cloudVolumeCeilingKm,
@@ -3305,7 +3285,8 @@ async function start() {
         params.cloudVolume === 1 && volume.radiusM > 0
           ? {
               radiusM: volume.radiusM,
-              aboveCameraM: globe.cloudShell.heightM() - observerKm * 1000,
+              aboveCameraM:
+                globe.cloudShell.heightM() - air.observerKm() * 1000,
             }
           : null,
       );
@@ -3338,15 +3319,7 @@ async function start() {
         shadow: shellShadow.shell,
       });
     }
-    globe.sun.intensity = skyHandOver.exposure;
-    const thickness =
-      params.atmoRamp === 1
-        ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)
-        : params.atmoThickness;
-    if (thickness !== shellThickness) {
-      shellThickness = thickness;
-      atmosphere.setLook({ thickness });
-    }
+    air.finish(params);
   };
   /**
    * The view's `beforeScene` seam (after the clear and the sky pass): the
@@ -3394,7 +3367,7 @@ async function start() {
     sceneDepth?.beginFrame();
     if (
       sceneDepth &&
-      skyHandOver.weight > 0 &&
+      air.weight() > 0 &&
       (costMode === null ? params.atmo !== 0 : costMode === "on")
     ) {
       sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
@@ -3414,7 +3387,7 @@ async function start() {
           sunEcef: globe.surfaceUniforms.uSunEcef.value,
           sunIntensity: globe.sun.intensity,
           slabTexture: slabDrawn ? cloudVolume.texture : null,
-          sceneDepthWeight: skyHandOver.weight,
+          sceneDepthWeight: air.weight(),
           disc: slabDisc(),
           flatten: params.cloudShellFlat,
         });
@@ -3422,20 +3395,12 @@ async function start() {
     }
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
-    if (costMode === null ? params.atmo !== 0 : costMode === "on") {
-      atmosphere.render(camera, {
-        worldFromEcef: globe.tiles.group.matrixWorld,
-        sunEcef: globe.surfaceUniforms.uSunEcef.value,
-        sunIntensity: globe.sun.intensity,
-        skyShare: 1 - skyHandOver.weight,
-        // The ground keeps its veil, its rays ending at the drawn relief
-        // (§17); `atmoGround=0` fades it with the sky's, for a comparison.
-        groundShare: params.atmoGround === 1 ? 1 : 1 - skyHandOver.weight,
-        sceneDepth,
-        // From nothing at the 80 km edge, so the depth is no jump there.
-        sceneDepthWeight: skyHandOver.weight,
-      });
-    }
+    air.render(camera, params, {
+      drawn: costMode === null ? params.atmo !== 0 : costMode === "on",
+      worldFromEcef: globe.tiles.group.matrixWorld,
+      sunEcef: globe.surfaceUniforms.uSunEcef.value,
+      sceneDepth,
+    });
   };
   const frame = view.frame;
   // The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6): always
@@ -3665,7 +3630,7 @@ async function start() {
       cloudDriftNow: view.state().cloudDriftRate,
       // The sky hand-over (F2b): the ground sky's state, and the observer's
       // height over the ellipsoid's image it is fed from (km).
-      groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },
+      groundSky: air.groundSkyState(),
       // The city (§12.5 C4): its phase, place, counts, ground and fade.
       city: city?.state() ?? null,
       // The clip planes in effect and the drawn ground they were fitted to.

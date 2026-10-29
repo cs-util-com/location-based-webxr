@@ -171,7 +171,7 @@
   Last, unless `#atmo=0`, the atmosphere pass over both.
 - The atmosphere seen from space (round-4 plan 2026-09-28-2105 DEC-GL4-4,
   DEC-GL4-11; `globe-atmosphere.js`, its numbers in
-  `globe-atmosphere-frame.js`): the lit limb's bright band, the blue halo
+  the Globe package's `globe-atmosphere-frame.ts`): the lit limb's bright band, the blue halo
   outside it and the blue veil over the day side, from one march through
   the framework's physical atmosphere tables, lit by the Earth's own sun.
   ON by default (the owner asked for it). Hash keys: `atmo` (1 on, 0 off),
@@ -924,7 +924,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   is placed right is not yet verified, and these numbers were taken where
   the volume drew almost nothing (at 46.5 N 9 E, gain 0.5, the same clear
   noise patch under every target), so they are to be measured again.
-- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`,
+  wired each frame by the Globe package's `globe-air.ts`: its `step` after
+  the clip planes, its `finish` after the cloud volumes, its `render` after
+  the scene):
   each frame, before the sky pass, the observer's height over the
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
   (`groundSky=1`, the default; 0 keeps the space pass all the way down),
