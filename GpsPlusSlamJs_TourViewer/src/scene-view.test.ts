@@ -6,6 +6,7 @@ import type {
   TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import { createSceneView, type SceneViewDom } from "./scene-view";
 
 /**
@@ -123,6 +124,16 @@ const assets = new Map<string, TourAsset>([
   ["arch", { id: "arch", path: "content/arch.glb", kind: "model" }],
   ["clip", { id: "clip", path: "content/clip.webm", kind: "video" }],
   [
+    "knight-sheet",
+    {
+      id: "knight-sheet",
+      path: "content/knight-sheet.webp",
+      kind: "image",
+      width: 2048,
+      height: 1024,
+    },
+  ],
+  [
     "still",
     {
       id: "still",
@@ -145,6 +156,7 @@ function harness(
       onWaiting?: () => void,
     ) => Promise<void>;
     onBlockShown?: (stationId: string, blockId: string) => void;
+    characters?: ReadonlyMap<string, TourCharacter>;
   } = {},
 ) {
   const { dom, lastChoices } = fakeDom();
@@ -207,6 +219,9 @@ function harness(
     ...(overrides.onBlockShown === undefined
       ? {}
       : { onBlockShown: overrides.onBlockShown }),
+    ...(overrides.characters === undefined
+      ? {}
+      : { characters: overrides.characters }),
   });
   return { view, dom, timers, ended, urls, audio, stage, lastChoices, changes };
 }
@@ -1424,5 +1439,92 @@ describe("a lineEnd step on a video", () => {
     const live = h.timers.filter((t) => !t.cancelled);
     expect(live).toHaveLength(1);
     expect(live[0]?.ms).toBeGreaterThanOrEqual(1500);
+  });
+});
+
+// Why these tests matter: a declared character with a frames sheet talks
+// and beckons in the world, so his story views must stand from the sheet
+// (the look slices it) - and a sheet that cannot be read must still leave
+// him standing in his one pose, as a tour without sheets does.
+describe("a declared character's frames sheet", () => {
+  const kay = new Map<string, TourCharacter>([
+    [
+      "kay",
+      { id: "kay", name: "Sir Kay", image: "knight", frames: "knight-sheet" },
+    ],
+  ]);
+  const step = (id: string, view: "speak" | "stage" | "portrait") =>
+    showing(id, {
+      kind: "character",
+      view,
+      name: "Sir Kay",
+      image: "knight",
+      character: "kay",
+      caption: "Welcome.",
+    });
+
+  it("stands a story view from the sheet, the stage view from his image", async () => {
+    const h = harness({ characters: kay });
+    h.view.offer(station("gate", [step("a", "speak"), step("b", "stage")]));
+    await settle();
+    const first = h.stage.showCharacter.mock.calls[0]!;
+    expect(await first[1].text()).toBe("content/knight-sheet.webp");
+    expect(first[3]).toMatchObject({ view: "speak", sheet: true });
+    h.view.continueTapped();
+    await settle();
+    const second = h.stage.showCharacter.mock.calls[1]!;
+    expect(await second[1].text()).toBe("content/knight.png");
+    expect(second[3]).toBeUndefined();
+  });
+
+  it("keeps the portrait his image while the world figure is the sheet", async () => {
+    const checked: string[] = [];
+    const h = harness({
+      characters: kay,
+      checkPicture: async (blob) => {
+        checked.push(await blob.text());
+        return null;
+      },
+    });
+    const portrait = { src: "", alt: "", hidden: true };
+    (h.dom as { portrait?: typeof portrait }).portrait = portrait;
+    h.view.offer(station("gate", [step("a", "portrait")]));
+    await settle();
+    await settle();
+    const call = h.stage.showCharacter.mock.calls[0]!;
+    expect(await call[1].text()).toBe("content/knight-sheet.webp");
+    expect(checked).toEqual(["content/knight.png"]);
+    expect(portrait.hidden).toBe(false);
+  });
+
+  it("falls back to his one pose when the sheet cannot be read", async () => {
+    const h = harness({
+      characters: kay,
+      loadAsset: (path) =>
+        path.includes("sheet")
+          ? Promise.reject(new Error("gone"))
+          : Promise.resolve(new Blob([path])),
+    });
+    h.view.offer(station("gate", [step("a", "speak")]));
+    await settle();
+    await settle();
+    const call = h.stage.showCharacter.mock.calls[0]!;
+    expect(await call[1].text()).toBe("content/knight.png");
+    expect(call[3]).not.toHaveProperty("sheet");
+    // He stands, so no line says the figure could not be loaded.
+    expect(h.dom.status.textContent ?? "").not.toMatch(/could not/);
+  });
+
+  it("uses his image for a declaration without a sheet or an unknown character", async () => {
+    const h = harness({
+      characters: new Map([
+        ["kay", { id: "kay", name: "Sir Kay", image: "knight" }],
+      ]),
+    });
+    h.view.offer(station("gate", [step("a", "speak")]));
+    await settle();
+    const call = h.stage.showCharacter.mock.calls[0]!;
+    expect(await call[1].text()).toBe("content/knight.png");
+    expect(call[3]).not.toHaveProperty("sheet");
   });
 });

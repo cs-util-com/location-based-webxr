@@ -41,6 +41,7 @@ import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import {
   wireStationGuide,
   type GuideView,
@@ -291,6 +292,21 @@ export function wireVisitorStations(deps: {
     }
     return indexed.byId;
   };
+  // The open tour's declared characters by id, likewise once per manifest.
+  let declared: {
+    manifest: unknown;
+    byId: Map<string, TourCharacter>;
+  } | null = null;
+  const charactersById = (): ReadonlyMap<string, TourCharacter> => {
+    const manifest = ctx.tourDocument.manifest();
+    if (declared?.manifest !== manifest) {
+      declared = {
+        manifest,
+        byId: new Map((manifest?.characters ?? []).map((c) => [c.id, c])),
+      };
+    }
+    return declared.byId;
+  };
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
@@ -345,6 +361,9 @@ export function wireVisitorStations(deps: {
     // A getter: the open tour's assets, read when a step needs one.
     get assets() {
       return assetsById();
+    },
+    get characters() {
+      return charactersById();
     },
     loadAsset: (path) => prefetch.load(path),
     audio,

@@ -1,6 +1,7 @@
 /**
  * A tour's recurring CHARACTERS (`tour.json` version 4, minor 2): declared
- * once for the whole tour - an id, a name and a cut-out image - and named
+ * once for the whole tour - an id, a name, a cut-out image and, optionally,
+ * a sheet of his four poses (`frames`) - and named
  * by the `character` blocks of any station (`tour-blocks.ts`, the block's
  * `character` field). A block that names one takes its name and image from
  * here; the writer keeps the block's own inline name and image as well, in
@@ -32,9 +33,31 @@ export interface TourCharacter {
   readonly id: string;
   /** 1-80 characters, the block's own rule. */
   readonly name: string;
-  /** A cut-out image asset. */
+  /** A cut-out image asset: his one pose, and the fallback when no sheet
+   *  is declared (no talking or beckoning frames then). */
   readonly image: string;
+  /** An image asset holding his four poses as a CANONICAL sheet: four
+   *  equal cells in one row, in the order of `TOUR_CHARACTER_FRAMES`, on
+   *  a transparent background, every figure centred in its cell with his
+   *  feet on one common baseline. A reader slices it into equal cells and
+   *  trusts that layout. */
+  readonly frames?: string;
 }
+
+/**
+ * The poses of a character's frames sheet, left to right: standing idle,
+ * mouth half open, mouth open, and beckoning (one arm out to the VIEWER'S
+ * RIGHT with an open hand; a viewer mirrors it toward a station on the
+ * left).
+ */
+export const TOUR_CHARACTER_FRAMES = [
+  'idle',
+  'talk-a',
+  'talk-b',
+  'beckon',
+] as const;
+
+export type TourCharacterFrame = (typeof TOUR_CHARACTER_FRAMES)[number];
 
 /** The most characters one tour declares. */
 const TOUR_MAX_CHARACTERS = 32;
@@ -78,12 +101,26 @@ export function parseTourCharacters(
     const id = requireTourId(entry.id, `${at}.id`, fail);
     ids.push(id);
     const why = problemOf(entry, at, images, i);
-    if (why === null) {
-      return [{ id, name: entry.name as string, image: entry.image as string }];
+    if (why !== null) {
+      if (options.lenient !== true) return fail(why);
+      options.onDropped?.({ kind: 'character', character: id, reason: why });
+      return [];
     }
-    if (options.lenient !== true) return fail(why);
-    options.onDropped?.({ kind: 'character', character: id, reason: why });
-    return [];
+    const character: TourCharacter = {
+      id,
+      name: entry.name as string,
+      image: entry.image as string,
+    };
+    if (entry.frames === undefined) return [character];
+    if (typeof entry.frames === 'string' && images.has(entry.frames)) {
+      return [{ ...character, frames: entry.frames }];
+    }
+    // A sheet this reader cannot take: a newer minor may describe it
+    // otherwise, and he still stands with his one image.
+    const sheet = `"${at}.frames" must name an image asset`;
+    if (options.lenient !== true) return fail(sheet);
+    options.onDropped?.({ kind: 'character', character: id, reason: sheet });
+    return [character];
   });
   assertUniqueTourIds(ids, 'character', fail);
   return read;

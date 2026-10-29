@@ -246,3 +246,60 @@ export function lineReadingMs(text: string): number {
   }
   return Math.min(READ_MAX_MS, Math.max(READ_MIN_MS, ms));
 }
+
+/** One word's place in the voice (ms from its start). */
+export interface WordTime {
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
+/** How long his mouth holds one frame inside a word (the prototype's). */
+const MOUTH_FLIP_MS = 115;
+
+/**
+ * The prototype's estimated word timing (`makeTiming`) for `text`: one
+ * entry per word of the line split on white space (the bubble's words),
+ * from 260 ms, each 110 + 52 ms a letter (170-640 ms), 70 ms between
+ * words, and 430 ms more after a sentence's end, 210 after a comma. The
+ * tour stores no timing, so the read-along and the mouth follow this.
+ */
+export function lineWordTimes(text: string): WordTime[] {
+  const words =
+    typeof text === "string" ? text.split(/\s+/).filter(Boolean) : [];
+  const out: WordTime[] = [];
+  let t = 260;
+  for (const word of words) {
+    const letters = word.replace(/[^\p{L}\p{N}]/gu, "").length || 1;
+    const dur = Math.min(640, Math.max(170, 110 + 52 * letters));
+    out.push({ startMs: t, endMs: t + dur });
+    t += dur + 70;
+    if (/[.!?]["')\]]*$/.test(word)) t += 430;
+    else if (/[,;:]["')\]]*$/.test(word)) t += 210;
+  }
+  return out;
+}
+
+/** The word being said `ms` into the voice: the last one begun, or -1
+ *  before the first (or for a non-finite `ms`). */
+export function activeWordAt(times: readonly WordTime[], ms: number): number {
+  if (!Number.isFinite(ms)) return -1;
+  let at = -1;
+  for (let i = 0; i < times.length; i++) {
+    if (ms >= times[i]!.startMs) at = i;
+    else break;
+  }
+  return at;
+}
+
+/** His mouth `ms` into the voice, as a frame of the sheet: 1 (talk-a,
+ *  half open) and 2 (talk-b, open) in turn every 115 ms inside a word,
+ *  starting half open; 0 (idle) between words and after the last. */
+export function talkFrameAt(times: readonly WordTime[], ms: number): 0 | 1 | 2 {
+  if (!Number.isFinite(ms)) return 0;
+  for (const w of times) {
+    if (ms >= w.startMs && ms < w.endMs) {
+      return Math.floor((ms - w.startMs) / MOUTH_FLIP_MS) % 2 === 0 ? 1 : 2;
+    }
+  }
+  return 0;
+}

@@ -26,6 +26,10 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - it flips when the chosen side overflows by more than 0.08 beyond the other;
   - it keeps the last side unless the other is better by 0.12 or more;
   - `overflow` is signed in NDC (screen units, + to the right).
+- The word timing (the prototype's `makeTiming`; the tour stores none, so the read-along and his mouth follow this estimate, not the real voice):
+  - `WordTime {startMs, endMs}`; `lineWordTimes(text)`: one per word of the line split on white space (`wordsOf`'s words), from 260 ms, each `110 + 52 ms` a letter bounded to 170-640 ms, 70 ms between words, 430 ms more after `.!?` and 210 after `,;:`;
+  - `activeWordAt(times, ms)`: the last word begun, -1 before the first (and for a non-finite `ms`);
+  - `talkFrameAt(times, ms)`: the sheet frame of his mouth, 1 (talk-a, half open) and 2 (talk-b, open) in turn every 115 ms (`MOUTH_FLIP_MS`, module-internal) inside a word, starting half open, 0 between words and after the last.
 - `lineReadingMs(text)`: the prototype's narration timing plus its tail, bounded to 1.5-60 s. It is the `lineEnd` wait for a line with no voice.
 
 ## Invariants
@@ -35,8 +39,8 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 
 ## Tests
 
-- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`.
-- `character-views.property.test.ts`:
+- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`, and the word timing (the prototype's numbers, the active word, the mouth frames).
+- `character-views.property.test.ts` (also: the read-along runs forward over the line's words, the mouth open only inside a word):
   - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly;
   - the beckon only points at an undone other station;
   - the reading time and the floor are bounded.

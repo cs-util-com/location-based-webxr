@@ -1,17 +1,33 @@
 /**
  * Character-look painters with no canvas (node has none): sizes only, and
  * a record of the bubble footers painted so a test can see what a bubble
- * said. For `character-look.test.ts` and `scene-stage.test.ts`.
+ * said, which word it read along, and the frames sheets sliced. For
+ * `character-look.test.ts` and `scene-stage.test.ts`.
  */
 
-import type { BubbleSide, Painted, PaintedTail } from "../character-canvas";
+import type {
+  BubbleSide,
+  Painted,
+  PaintedFigure,
+  PaintedTail,
+} from "../character-canvas";
 import type { CharacterPainters } from "../character-look";
 
 export function fakeCharacterPainters(): {
   painters: CharacterPainters;
-  painted: { bubbles: (string | null)[] };
+  painted: {
+    bubbles: (string | null)[];
+    /** The word each bubble read along (`undefined`: plain). */
+    actives: (number | undefined)[];
+    /** The frames each sliced sheet gave. */
+    sheets: PaintedFigure[][];
+  };
 } {
-  const painted: { bubbles: (string | null)[] } = { bubbles: [] };
+  const painted = {
+    bubbles: [] as (string | null)[],
+    actives: [] as (number | undefined)[],
+    sheets: [] as PaintedFigure[][],
+  };
   const img = (w: number, h: number) =>
     ({ width: w, height: h }) as unknown as HTMLCanvasElement;
   const flat = (w: number, h: number): Painted => ({ image: img(w, h), w, h });
@@ -19,16 +35,23 @@ export function fakeCharacterPainters(): {
     ...flat(w, h),
     tipX: side === "right" ? 30 : w - 30,
   });
+  const figure = (): PaintedFigure => ({
+    front: img(106, 206),
+    back: img(106, 206),
+    figureW: 100,
+    figureH: 200,
+    pad: 3,
+  });
   const painters: CharacterPainters = {
-    figure: () => ({
-      front: img(106, 206),
-      back: img(106, 206),
-      figureW: 100,
-      figureH: 200,
-      pad: 3,
-    }),
+    figure,
+    frames: () => {
+      const cells = [figure(), figure(), figure(), figure()];
+      painted.sheets.push(cells);
+      return cells;
+    },
     bubble: (c) => {
       painted.bubbles.push(c.footer);
+      painted.actives.push(c.active);
       return tail(600, 300, c.side);
     },
     pip: (_name, side) => tail(560, 150, side),

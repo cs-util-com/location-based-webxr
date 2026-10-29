@@ -157,6 +157,9 @@ for (const viewport of VIEWPORTS) {
       });
       expect(s.beckoning).toBe(true);
       expect(s.footer).toBe("Next: East road");
+      // He beckons with the sheet's beckon frame, the arm toward the next
+      // station: it lies to the north, on the screen's right from here.
+      expect(s).toMatchObject({ frames: 4, frame: 3, mirrored: false });
       const toEye = Math.atan2(EYE.x - HIM.x, EYE.z - HIM.z);
       const off = Math.abs(
         Math.atan2(Math.sin(s.turn - toEye), Math.cos(s.turn - toEye)),
@@ -174,6 +177,87 @@ for (const viewport of VIEWPORTS) {
       });
       expect(speaking.beckoning).toBe(false);
       expect(speaking.footer).toBe("Speaking");
+      // Seen from the west the next station lies on the screen's left:
+      // the beckon is mirrored, the figure standing in the same place.
+      const idle = await stand(page, "two-stations", 4.8, { voice: "idle" });
+      const west = await page.evaluate(async (him) => {
+        const check = window.__characterViewsCheck;
+        check.setVoice("spoken");
+        check.setBeckon(true);
+        check.lookAt(him.x, him.heightM * 0.82, him.z);
+        check.standAt(him.x, him.z - 4.8);
+        await check.show({ view: "two-stations" });
+        check.settle();
+        return check.state();
+      }, HIM);
+      expect(west).toMatchObject({ beckoning: true, frame: 3, mirrored: true });
+      const beckonedFrom = await stand(page, "two-stations", 4.8, {
+        voice: "spoken",
+        beckon: true,
+      });
+      // Every pose is a cell of one size: the beckon moves no part of him.
+      // He breathes (his height 0.6 % up and down, a slight sway) between
+      // the two reads, so the edges agree to 2 % of his height; a pose drawn
+      // at another size or place would move them by far more.
+      const tall = idle.parts.figure.bottom - idle.parts.figure.top;
+      for (const k of ["left", "top", "right", "bottom"]) {
+        expect(
+          Math.abs(beckonedFrom.parts.figure[k] - idle.parts.figure[k]),
+        ).toBeLessThan(0.02 * tall);
+      }
+      expect(errors).toEqual([]);
+    });
+
+    test("while he speaks his mouth moves and the bubble reads along word by word; the bubble view's mouth stays still", async ({
+      page,
+    }) => {
+      const errors = await open(page, viewport);
+      await stand(page, "speak", 4.8, { voice: "speaking" });
+      // Sample his state every frame until every talking frame and the third
+      // word have been seen (no clock: the wait ends on what is seen).
+      await page.evaluate(() => {
+        const check = window.__characterViewsCheck;
+        const seen = { frames: [], words: [], done: false };
+        window.__seenSpeaking = seen;
+        const sample = () => {
+          const st = check.state();
+          if (!seen.frames.includes(st.frame)) seen.frames.push(st.frame);
+          seen.words.push(st.activeWord);
+          if (!seen.done) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
+      await page.waitForFunction(() => {
+        const seen = window.__seenSpeaking;
+        return (
+          [0, 1, 2].every((f) => seen.frames.includes(f)) &&
+          Math.max(...seen.words) >= 2
+        );
+      });
+      const seen = await page.evaluate(() => {
+        window.__seenSpeaking.done = true;
+        return window.__seenSpeaking;
+      });
+      expect(seen.frames).toEqual(expect.arrayContaining([0, 1, 2]));
+      expect(seen.frames).not.toContain(3);
+      // The read-along runs forward, one word after the other.
+      for (let i = 1; i < seen.words.length; i++) {
+        expect(seen.words[i]).toBeGreaterThanOrEqual(seen.words[i - 1]);
+      }
+      expect(Math.max(...seen.words)).toBeGreaterThanOrEqual(2);
+      await stand(page, "bubble", 4.8, { voice: "speaking" });
+      const still = await page.evaluate(async () => {
+        const check = window.__characterViewsCheck;
+        const frames = new Set();
+        // Fifty frames (some 0.8 s or more): a speaking view flips his mouth
+        // every 115 ms, so a mouth that moved here would be seen.
+        for (let i = 0; i < 50; i++) {
+          await new Promise((r) => requestAnimationFrame(r));
+          frames.add(check.state().frame);
+        }
+        return [...frames];
+      });
+      expect(still).toEqual([0]);
       expect(errors).toEqual([]);
     });
 

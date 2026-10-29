@@ -10,6 +10,8 @@
  * The scene copies the prototype's numbers (background, fog, the 1.6 m
  * eye, the "short side sees 40 degrees" field of view, the first
  * station's place), so a screenshot of each can be put next to the other.
+ * His figure is a frames sheet (idle, talk-a, talk-b, beckon), so his mouth
+ * moves while the voice plays and he beckons with his arm.
  */
 import * as THREE from "three";
 
@@ -38,7 +40,9 @@ export const CHECK_CHARACTER = {
 
 /** The visitor's eye height (m), as in the prototype. */
 export const CHECK_EYE_M = 1.6;
-const FIGURE_URL = "/checks/character-knight.webp";
+/** The knight's frames sheet: the prototype's `drawKnight` frames 0, 2,
+ *  1, 3 in four 512 x 1024 cells (`character-views-check.ts.md`). */
+const FIGURE_URL = "/checks/character-knight-sheet.webp";
 
 /** A part's box on the page (CSS px), or null when it is not drawn. */
 export interface PartRect {
@@ -220,6 +224,7 @@ export function startCharacterViewsCheck(host: HTMLElement): void {
       name: options.name ?? CHECK_CHARACTER.name,
       line: options.line ?? CHECK_CHARACTER.line,
       figure,
+      sheet: true,
       heightM,
     });
     look.setVoice(voice);

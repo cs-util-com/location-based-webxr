@@ -1,4 +1,10 @@
-import { Box3, PerspectiveCamera, Vector3 } from "three";
+import {
+  Box3,
+  Mesh,
+  type MeshBasicMaterial,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 
 import { createCharacterLook } from "./character-look";
@@ -7,7 +13,7 @@ import { fakeCharacterPainters } from "./test-support/fake-character-painters";
 
 function setup(
   view: StageCharacterView,
-  extra: { restYaw?: number; voiced?: boolean } = {},
+  extra: { restYaw?: number; voiced?: boolean; sheet?: boolean } = {},
 ) {
   const { painters, painted } = fakeCharacterPainters();
   const look = createCharacterLook({
@@ -369,5 +375,137 @@ describe("createCharacterLook: the footer and the tap", () => {
     look.toggleBubble();
     tick(0, true);
     expect(look.state().bubble).toBe(1);
+  });
+});
+
+/** The texture image a mesh shows now, and whether it is mirrored. */
+function shown(mesh: Mesh): { image: unknown; mirrored: boolean } {
+  const map = (mesh.material as MeshBasicMaterial).map;
+  return { image: map?.image, mirrored: (map?.repeat.x ?? 1) < 0 };
+}
+
+// Why these tests matter: a character with a frames sheet (four poses:
+// idle, mouth half open, mouth open, beckoning) talks and beckons as in the
+// prototype - his mouth moves while a word sounds, the bubble reads along
+// word by word, and in two stations he beckons with the arm toward the
+// next station, mirrored when it lies to the left on the screen. Without
+// a sheet he keeps his one pose.
+describe("createCharacterLook: the frames sheet and the read-along", () => {
+  it("slices the sheet into four frames and stands idle on the first", () => {
+    const { look, standAt, tick, painted } = setup("speak", { sheet: true });
+    standAt(0, 5);
+    tick(0, true);
+    expect(painted.sheets).toHaveLength(1);
+    expect(look.state()).toMatchObject({
+      frames: 4,
+      frame: 0,
+      mirrored: false,
+    });
+    expect(shown(look.parts.figure).image).toBe(painted.sheets[0]![0]!.front);
+  });
+
+  it("moves his mouth inside a word and reads the line along while he speaks", () => {
+    const { look, standAt, tick, painted } = setup("speak", {
+      sheet: true,
+      voiced: true,
+    });
+    standAt(0, 5);
+    tick(0, true);
+    look.setVoice("speaking");
+    tick(16);
+    // Before the first word (260 ms): idle, every word still ahead.
+    expect(look.state()).toMatchObject({ frame: 0, activeWord: -1 });
+    tick(260);
+    expect(look.state()).toMatchObject({ frame: 1, activeWord: 0 });
+    expect(shown(look.parts.figure).image).toBe(painted.sheets[0]![1]!.front);
+    tick(115);
+    expect(look.state().frame).toBe(2);
+    expect(painted.actives).toContain(0);
+    look.setVoice("spoken");
+    tick(16);
+    expect(look.state()).toMatchObject({ frame: 0, activeWord: null });
+    expect(painted.actives[painted.actives.length - 1]).toBeUndefined();
+  });
+
+  it("beckons with the beckon frame toward the next station, mirrored when it lies to the left", () => {
+    const { look, standAt, tick, painted } = setup("two-stations", {
+      sheet: true,
+    });
+    // The eye looks west at him from the east: north is to the right.
+    standAt(0, 5);
+    look.setBeckon({ dx: 10, dz: 0, title: "East road" });
+    look.setVoice("spoken");
+    tick(0, true);
+    expect(look.state()).toMatchObject({
+      beckoning: true,
+      frame: 3,
+      mirrored: false,
+    });
+    expect(shown(look.parts.figure)).toEqual({
+      image: painted.sheets[0]![3]!.front,
+      mirrored: false,
+    });
+    look.setBeckon({ dx: -10, dz: 0, title: "East road" });
+    tick(16);
+    expect(look.state()).toMatchObject({ frame: 3, mirrored: true });
+    expect(shown(look.parts.figure).mirrored).toBe(true);
+    // Seen from behind the silhouette is mirrored the other way.
+    expect(
+      (
+        (look.parts.figure.parent!.children[1] as Mesh)
+          .material as MeshBasicMaterial
+      ).map?.repeat.x,
+    ).toBe(1);
+  });
+
+  it("keeps his one pose without a sheet, and the bubble view's mouth still", () => {
+    const plain = setup("two-stations", { voiced: true });
+    plain.standAt(0, 5);
+    plain.look.setBeckon({ dx: -10, dz: 0, title: "East road" });
+    plain.look.setVoice("spoken");
+    plain.tick(0, true);
+    expect(plain.painted.sheets).toHaveLength(0);
+    expect(plain.look.state()).toMatchObject({
+      frames: 1,
+      frame: 0,
+      beckoning: true,
+      mirrored: false,
+    });
+    plain.look.setVoice("speaking");
+    plain.tick(400);
+    expect(plain.look.state().frame).toBe(0);
+    // The read-along needs no sheet.
+    expect(plain.look.state().activeWord).toBe(0);
+    const bubble = setup("bubble", { sheet: true });
+    bubble.standAt(0, 5);
+    bubble.tick(0, true);
+    bubble.look.setVoice("speaking");
+    bubble.tick(400);
+    expect(bubble.look.state().frame).toBe(0);
+  });
+
+  it("moves the pop-up figure's mouth too", () => {
+    const { look, standAt, tick, painted } = setup("popup", {
+      sheet: true,
+      voiced: true,
+    });
+    standAt(0, 5);
+    tick(0, true);
+    look.setVoice("speaking");
+    tick(16);
+    tick(260);
+    let popFigure: Mesh | null = null;
+    look.parts.popup.traverse((o) => {
+      if (
+        o instanceof Mesh &&
+        painted.sheets[0]!.some(
+          (f) => (o.material as MeshBasicMaterial).map?.image === f.front,
+        )
+      ) {
+        popFigure = o;
+      }
+    });
+    expect(popFigure).not.toBeNull();
+    expect(shown(popFigure!).image).toBe(painted.sheets[0]![1]!.front);
   });
 });

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The check page `character-views-check.html`: one tour character (the station-blocks-7 prototype's knight, `public/checks/character-knight.webp`, rendered once from the prototype's own `drawKnight`, frame 0) standing as `character-look.ts` draws him, in a plain daylight scene with the prototype's numbers. Linked from nothing. It exists so the build can be put next to the prototype (`public/prototypes/station-blocks-7-character/`) at the same viewports, and so the layout e2e can measure where his parts land on the page.
+The check page `character-views-check.html`: one tour character (the station-blocks-7 prototype's knight; his figure is the knight's frames sheet `public/checks/character-knight-sheet.webp` (2048 x 1024, WebP at quality 0.85): the prototype's own procedural `drawKnight` (`public/prototypes/station-blocks-7-character/index.html`, the code from `const FW = 512` to `function silhouette`) drawn into four 512 x 1024 cells as its frames 0, 2, 1, 3 - idle, talk-a (half open), talk-b (open), beckon - because the prototype numbers its mouth frames the other way round (its 1 is open, its 2 half). Rendered once in a headless Chromium (Playwright) with `canvas.toDataURL("image/webp", 0.85)`; to re-render, run that code in a page the same way. It replaced `character-knight.webp` (frame 0 alone)), loaded with `sheet: true` so his mouth moves while he speaks and he beckons with his arm, standing as `character-look.ts` draws him, in a plain daylight scene with the prototype's numbers. Linked from nothing. It exists so the build can be put next to the prototype (`public/prototypes/station-blocks-7-character/`) at the same viewports, and so the layout e2e can measure where his parts land on the page.
 
 ## Public API
 
@@ -27,4 +27,4 @@ The check page `character-views-check.html`: one tour character (the station-blo
 ## Tests
 
 - `character-views-check.test.ts`: the field-of-view rule and the viewpoint.
-- `playwright-tests/character-views.spec.js`: the layout at 390x844, 844x390 and 1440x900.
+- `playwright-tests/character-views.spec.js`: the layout at 390x844, 844x390 and 1440x900, including the beckon frame and its mirror (the figure's box the same in every pose), the mouth and the read-along while he speaks, and the bubble view's still mouth.

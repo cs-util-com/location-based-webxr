@@ -23,6 +23,8 @@ Layout (wrapping and sizes) is separated from painting, so it can be tested in n
   - `bubbleTipX(w, side)`: the tail tip sits 30 px from the edge nearest the head.
 - `PIP` and `pipLayout`; `scrollLayout` (its sizes, `SCROLL`, module-internal).
 - Painters: `paintBubble`, `paintPip`, `paintScroll`, `paintStageTop`, `paintBackdrop` and `paintBlob`. Each returns `Painted {image, w, h}`, or `PaintedTail` with a `tipX`.
+- Frames sheets (the tour format's fixed layout, `TOUR_CHARACTER_FRAMES`): `SHEET_FRAMES` 4; `SheetCell`; `sheetCells(w, h)`: four equal cells in one row, left to right, a remainder of the width dropped, none for a sheet too small or not a size; `paintFrames(sheet)`: each cell as a die-cut card (`paintFigure`), in the sheet's order.
+- The read-along: `BubbleContent.active` (the word sounding, -1 before the first; undefined draws the line plain) and `readAlongColour(i, active)`, the prototype's colours: said `#f4efe6`, sounding `#f6c45a` with a 5 px underline 12 px under the baseline, to come `rgba(244,239,230,0.46)`.
 - `paintFigure(source)` returns `PaintedFigure {front, back, figureW, figureH, pad}`:
   - the source is scaled to at most `FIGURE_MAX_PX` (1024) high;
   - `dieCutPad(h)` = `max(3, round(14/1024 * h))`.
@@ -35,9 +37,9 @@ Layout (wrapping and sizes) is separated from painting, so it can be tested in n
 ## Deviations from the prototype
 
 - The backdrop is the arch without the keep.
-- There are no sprite frames.
+- The sheet's cells are cut by equal width: a sheet that does not follow the canonical layout is drawn wrongly, not detected (the format says so, `tour-characters.ts.md`).
 
 ## Tests
 
-- `character-canvas.test.ts`: wrapping, the bubble width and its clamp, the tail tip, the pip and scroll sizes, and the die-cut pad. It uses a mono measure of 30 px per character.
+- `character-canvas.test.ts`: wrapping, the bubble width and its clamp, the tail tip, the pip and scroll sizes, the die-cut pad, the sheet's cells and the read-along colours. It uses a mono measure of 30 px per character.
 - The painted look is checked in the browser by `playwright-tests/character-views.spec.js`.

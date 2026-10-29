@@ -39,6 +39,7 @@ import {
   type StageCharacterView,
 } from "./character-views.js";
 import type { CharacterVoice } from "./character-look.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { StageCharacterLook } from "./scene-stage.js";
 import { stationHasCard, stationTitle } from "./station-run.js";
 
@@ -115,6 +116,9 @@ export interface SceneViewDeps {
   readonly dom: SceneViewDom;
   /** The tour's media by asset id (`content/<id>.<ext>`). */
   readonly assets: ReadonlyMap<string, TourAsset>;
+  /** The tour's declared characters by id (minor 2): a story view of one
+   *  with a frames sheet stands from the sheet. None when absent. */
+  readonly characters?: ReadonlyMap<string, TourCharacter>;
   loadAsset(path: string): Promise<Blob>;
   readonly audio: SceneAudio;
   readonly stage: SceneStage;
@@ -465,14 +469,42 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
               pose: block.pose,
             }
           : undefined;
-        if (view === "stage" || look !== undefined) {
+        const stand = (
+          blob: Blob,
+          spec: StageCharacterLook | undefined,
+        ): Promise<void> =>
+          stageFigure("figure", (onWaiting) =>
+            spec === undefined
+              ? deps.stage.showCharacter(station.id, blob, onWaiting)
+              : deps.stage.showCharacter(station.id, blob, onWaiting, spec),
+          );
+        // A declared character's frames sheet (his talking and beckoning
+        // poses) stands a story view; the portrait stays his image.
+        const sheet =
+          look === undefined || block.character === undefined
+            ? undefined
+            : deps.characters?.get(block.character)?.frames;
+        if (look !== undefined && sheet !== undefined) {
+          if (view === "portrait") {
+            withAsset(block.image, "portrait", (blob) => {
+              void showPortrait(blob, block.name);
+            });
+          }
+          withAsset(
+            sheet,
+            "figure",
+            (blob) => stand(blob, { ...look, sheet: true }),
+            () => {
+              // An unreadable sheet: he stands in his one pose, so the
+              // failure line `withAsset` just wrote does not hold.
+              notice = null;
+              withAsset(block.image, "figure", (blob) => stand(blob, look));
+            },
+          );
+        } else if (view === "stage" || look !== undefined) {
           withAsset(block.image, "figure", async (blob) => {
             if (view === "portrait") void showPortrait(blob, block.name);
-            await stageFigure("figure", (onWaiting) =>
-              look === undefined
-                ? deps.stage.showCharacter(station.id, blob, onWaiting)
-                : deps.stage.showCharacter(station.id, blob, onWaiting, look),
-            );
+            await stand(blob, look);
           });
         }
         // A story view's voice plays on a tap on him (the prototype's

@@ -80,6 +80,9 @@ export interface StageCharacterLook {
   readonly line: string;
   /** The line has a voice, which a tap plays; default false. */
   readonly voiced?: boolean;
+  /** The image is his frames sheet (four poses in one row), which the look
+   *  slices; default false (one pose). */
+  readonly sheet?: boolean;
   /** The block's pose in the station's frame (NUE m, a quaternion [x, y,
    *  z, w]); absent: on the station's spot, facing its +Z. */
   readonly pose?: {
@@ -419,6 +422,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
           figure: texture.image as FigureSource,
           heightM: CHARACTER_HEIGHT_M,
           voiced: lookSpec.voiced === true,
+          sheet: lookSpec.sheet === true,
           ...(deps.lookPainters === undefined
             ? {}
             : { painters: deps.lookPainters }),

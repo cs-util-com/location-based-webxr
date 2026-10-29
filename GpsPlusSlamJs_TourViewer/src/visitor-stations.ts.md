@@ -89,7 +89,7 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   store's walk, only while it is the open tour's), as the offset from his
   figure pose (`guide.figurePoseOf`) to that station's pose
   (`guide.poseOf`), with its title; none while either pose is unknown.
-- The assets by id are built once per manifest.
+- The assets by id, and the declared characters by id (handed to the scene view for a frames sheet), are built once per manifest.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` runs at the AR session's end and at an open tour's close
   (`hooks.stopStations`, from `ar-entry.ts` and `archive-open.ts`). It

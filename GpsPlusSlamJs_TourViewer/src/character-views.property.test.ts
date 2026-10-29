@@ -2,9 +2,12 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  activeWordAt,
   beckonNext,
   facingYaw,
   lineReadingMs,
+  lineWordTimes,
+  talkFrameAt,
   MAX_TURN_DEG,
   readingFloor,
 } from "./character-views";
@@ -82,6 +85,37 @@ describe("character views (properties)", () => {
           const faced = Math.abs(wrap(yaw - toCam)) < 1e-9;
           expect(!inside || faced).toBe(true);
           expect(facingYaw(rest, toCam, false)).toBe(rest);
+        },
+      ),
+    );
+  });
+
+  /**
+   * Why this property matters: the read-along must only ever run forward
+   * through the line's words (a word lit twice, or out of order, reads as
+   * a glitch), and his mouth is open only while a word sounds.
+   */
+  it("reads along forward, one word of the line at a time, the mouth open only inside a word", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.stringMatching(/^[A-Za-z,.!?]{1,12}$/), { maxLength: 12 }),
+        fc.array(fc.double({ min: -1000, max: 30000, noNaN: true }), {
+          minLength: 2,
+          maxLength: 6,
+        }),
+        (words, raw) => {
+          const times = lineWordTimes(words.join(" "));
+          expect(times).toHaveLength(words.length);
+          const ms = [...raw].sort((a, b) => a - b);
+          let last = -1;
+          for (const t of ms) {
+            const at = activeWordAt(times, t);
+            expect(at).toBeGreaterThanOrEqual(last);
+            expect(at).toBeLessThan(Math.max(1, times.length));
+            last = at;
+            const inWord = times.some((w) => t >= w.startMs && t < w.endMs);
+            expect(talkFrameAt(times, t) !== 0).toBe(inWord);
+          }
         },
       ),
     );

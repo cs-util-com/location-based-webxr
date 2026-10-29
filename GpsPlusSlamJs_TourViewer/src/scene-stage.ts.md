@@ -26,7 +26,7 @@ tour's other content (`content-placement.ts`). Plan:
       guide's `figurePoseOf` holds the pose back until the alignment has
       a heading, r881 re-review M-B);
   - `showCharacter(stationId, imageBlob, onWaiting?, look?)` with a `look`
-    (`StageCharacterLook { view, name, line, voiced?, pose? }`, a story
+    (`StageCharacterLook { view, name, line, voiced?, sheet?, pose? }`, `sheet` the image being a frames sheet the look slices, a story
     view of tour format 4.2): the decoded image is painted into a
     character look (`character-look.ts`) and the decoded texture is
     freed. He stands at the block's pose position in the station's frame
@@ -125,4 +125,5 @@ stage.faceVisitor(visitorNue);
   scene, `clear` stops its frames, and no camera is no error; the block's
   pose and the 60 degree turn from its facing; a released look staying,
   beckoning, until its station is left, never back; `release` clearing
-  anything else; `characterRoot` and `toggleBubble`.
+  anything else; `characterRoot` and `toggleBubble`; a frames sheet sliced
+  by the look only when the spec says `sheet`.

@@ -361,7 +361,7 @@ describe("a character in a story view stands as a character look", () => {
       camera.position.set(...cameraAt);
       camera.lookAt(0, 401.2, 0);
     }
-    const { painters } = fakeCharacterPainters();
+    const { painters, painted } = fakeCharacterPainters();
     const beckonOf = vi.fn(() => ({ dx: 30, dz: 0, title: "East road" }));
     const stage = createSceneStage({
       getScene: () => scene,
@@ -390,7 +390,17 @@ describe("a character in a story view stands as a character look", () => {
       name: "Wendel",
       line: "Hello.",
     } as const;
-    return { clock, scene, stage, frames, frame, camera, beckonOf, look };
+    return {
+      clock,
+      scene,
+      stage,
+      frames,
+      frame,
+      camera,
+      beckonOf,
+      look,
+      painted,
+    };
   }
 
   const bubbleOf = (scene: Group) =>
@@ -411,6 +421,25 @@ describe("a character in a story view stands as a character look", () => {
     h.camera.lookAt(0, 401.2, 0);
     for (let i = 0; i < 20; i++) h.frame(50);
     expect(bubbleOf(h.scene)?.visible).toBe(false);
+  });
+
+  // Why this test matters: a declared character's frames sheet reaches the
+  // stage as one image, and only the look knows to slice it into poses.
+  it("has the look slice a frames sheet, and a plain figure not", async () => {
+    const sheet = looking();
+    await sheet.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...sheet.look,
+      sheet: true,
+    });
+    expect(sheet.painted.sheets).toHaveLength(1);
+    const plain = looking();
+    await plain.stage.showCharacter(
+      "gate",
+      new Blob(["png"]),
+      undefined,
+      plain.look,
+    );
+    expect(plain.painted.sheets).toHaveLength(0);
   });
 
   it("follows the voice set before the figure stood, and beckons once spoken", async () => {

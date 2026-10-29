@@ -3,7 +3,8 @@
  * `speak`, `two-stations`, `portrait`, `popup`): the die-cut figure with
  * its shadow, turned towards the visitor and breathing; the speech bubble
  * near him and the name tag far away; the pulsing ring at his feet while
- * the voice plays (portrait); the beckon towards the next station
+ * the voice plays (portrait); with a frames sheet his mouth moving while
+ * the voice plays and the bubble reading along; the beckon towards the next station
  * (two-stations: the bubble's footer names it; the arrows on the ground are
  * the creator's own blocks); or the folding paper stage with the line on a
  * scroll (popup). Built from the station-blocks-7 prototype
@@ -47,6 +48,7 @@ import {
   paintBlob,
   paintBubble,
   paintFigure,
+  paintFrames,
   paintPip,
   paintScroll,
   paintStageTop,
@@ -64,8 +66,11 @@ import {
   bubbleSide,
   SCREEN_EDGE,
   characterViewLook,
+  activeWordAt,
   facingYaw,
+  lineWordTimes,
   popupUnfolds,
+  talkFrameAt,
   readingFloor,
   type StageCharacterView,
 } from "./character-views.js";
@@ -73,6 +78,8 @@ import {
 /** The painters a look draws its media with (fakes in unit tests). */
 export interface CharacterPainters {
   figure(source: FigureSource): PaintedFigure;
+  /** A frames sheet's poses (`paintFrames`). */
+  frames(sheet: FigureSource): PaintedFigure[];
   bubble(content: BubbleContent): PaintedTail;
   pip(name: string, side: BubbleSide): PaintedTail;
   scroll(line: string, footer: string | null): Painted;
@@ -83,6 +90,7 @@ export interface CharacterPainters {
 
 const CANVAS_PAINTERS: CharacterPainters = {
   figure: paintFigure,
+  frames: paintFrames,
   bubble: (content) => paintBubble(content),
   pip: (name, side) => paintPip(name, side),
   scroll: (line, footer) => paintScroll(line, footer),
@@ -107,6 +115,10 @@ export interface CharacterLookOptions {
   readonly name: string;
   readonly line: string;
   readonly figure: FigureSource;
+  /** `figure` is a frames sheet (four equal cells in one row: idle,
+   *  talk-a, talk-b, beckon), not one pose. A sheet that does not slice
+   *  into four is drawn whole as one pose. Default false. */
+  readonly sheet?: boolean;
   /** His height (m); default 1.7. */
   readonly heightM?: number;
   /** The creator's facing (rad about Up, 0 facing +Z east; the block
@@ -139,6 +151,15 @@ export interface CharacterLookState {
   readonly footer: string | null;
   /** The horizontal distance to the camera (m). */
   readonly distanceM: number;
+  /** The poses he has (4 with a frames sheet, else 1), the one shown
+   *  (0 idle, 1 talk-a, 2 talk-b, 3 beckon) and whether it is mirrored
+   *  (the beckon toward a station on the screen's left). */
+  readonly frames: number;
+  readonly frame: number;
+  readonly mirrored: boolean;
+  /** The read-along's word while the voice plays (-1 before the first);
+   *  null while it does not. */
+  readonly activeWord: number | null;
 }
 
 export interface CharacterLook {
@@ -253,13 +274,23 @@ export function createCharacterLook(
   turn.add(body);
 
   // The die-cut figure: front and back, each seen from its own side.
-  const fig = painters.figure(options.figure);
+  // A frames sheet gives a pose per frame (the same size each).
+  const sliced = options.sheet === true ? painters.frames(options.figure) : [];
+  const poses =
+    sliced.length === 4 ? sliced : [painters.figure(options.figure)];
+  const fig = poses[0]!;
   const figGeo = figureGeometry(fig, heightM);
-  const frontTex = texture(fig.front);
-  const backTex = texture(fig.back);
-  // Seen from behind the silhouette is mirrored.
-  backTex.repeat.x = -1;
-  backTex.offset.x = 1;
+  const frontTexs = poses.map((p) => texture(p.front));
+  const backTexs = poses.map((p) => texture(p.back));
+  const frontTex = frontTexs[0]!;
+  const backTex = backTexs[0]!;
+  /** A pose's textures, mirrored or not; seen from behind the silhouette
+   *  is mirrored the other way. */
+  const mirror = (tex: Texture, mirrored: boolean): void => {
+    tex.repeat.x = mirrored ? -1 : 1;
+    tex.offset.x = mirrored ? 1 : 0;
+  };
+  for (const t of backTexs) mirror(t, true);
   const front = new Mesh(
     figGeo,
     basic(frontTex, { alphaTest: 0.03, depthWrite: true }),
@@ -354,12 +385,11 @@ export function createCharacterLook(
   const popFig = new Group();
   popFig.position.set(0.15, 0.05, 0.05);
   popup.add(popFig);
-  popFig.add(
-    new Mesh(
-      figureGeometry(fig, 1.5),
-      basic(frontTex, { alphaTest: 0.03, side: DoubleSide, depthWrite: true }),
-    ),
+  const popFigure = new Mesh(
+    figureGeometry(fig, 1.5),
+    basic(frontTex, { alphaTest: 0.03, side: DoubleSide, depthWrite: true }),
   );
+  popFig.add(popFigure);
   const tab = new Mesh(
     new PlaneGeometry(0.42, 0.36),
     basic(null, {
@@ -400,6 +430,12 @@ export function createCharacterLook(
   let beckoning = false;
   let footer: string | null = null;
   let distanceM = Number.POSITIVE_INFINITY;
+  const wordTimes = lineWordTimes(line);
+  /** When the voice began (the clock of the last update), while it plays. */
+  let speakStart: number | null = null;
+  let frameShown = 0;
+  let mirrored = false;
+  let activeWord: number | null = null;
   let bubbleKey = "";
   let bubbleInfo: PaintedTail | null = null;
   let pipKey = "";
@@ -488,6 +524,24 @@ export function createCharacterLook(
     turned = true;
     turn.rotation.y = turnYaw;
 
+    // The pose: the mouth while the voice plays (not in the bubble view,
+    // whose voice is the reader's own), the beckon toward the next
+    // station, mirrored when it lies on the screen's left.
+    if (voice === "speaking") speakStart ??= frame.nowMs;
+    const speakMs = speakStart === null ? null : frame.nowMs - speakStart;
+    activeWord = speakMs === null ? null : activeWordAt(wordTimes, speakMs);
+    let pose = 0;
+    let flip = false;
+    if (poses.length === 4) {
+      if (speakMs !== null && view !== "bubble") {
+        pose = talkFrameAt(wordTimes, speakMs);
+      } else if (beckoning && beckon !== null) {
+        pose = 3;
+        flip = right.x * beckon.dx + right.z * beckon.dz < 0;
+      }
+    }
+    showPose(pose, flip);
+
     // Breathing and a slight sway (calm, about 4 s).
     const a = presence;
     body.scale.set(
@@ -509,6 +563,25 @@ export function createCharacterLook(
 
     updateBubble(camera, step, dt * 1000);
     updatePopup(step, a);
+  }
+
+  function showPose(pose: number, flip: boolean): void {
+    if (pose === frameShown && flip === mirrored) return;
+    frameShown = pose;
+    mirrored = flip;
+    const f = frontTexs[pose]!;
+    const b = backTexs[pose]!;
+    mirror(f, flip);
+    mirror(b, !flip);
+    for (const [mesh, map] of [
+      [front, f],
+      [back, b],
+      [popFigure, f],
+    ] as const) {
+      const material = mesh.material;
+      material.map = map;
+      material.needsUpdate = true;
+    }
   }
 
   function updateBubble(
@@ -544,7 +617,8 @@ export function createCharacterLook(
     }
 
     footer = look.footer ? footerOf() : null;
-    const key = [name, line, side, footer ?? ""].join("|");
+    const active = activeWord ?? undefined;
+    const key = [name, line, side, footer ?? "", active ?? ""].join("|");
     if (open > 0.001 && key !== bubbleKey) {
       bubbleKey = key;
       bubbleInfo = painters.bubble({
@@ -553,6 +627,7 @@ export function createCharacterLook(
         footer,
         reserveFooter: look.footer,
         side,
+        ...(active === undefined ? {} : { active }),
       });
       setMap(bubble, bubbleInfo.image);
     }
@@ -689,6 +764,8 @@ export function createCharacterLook(
     },
     setVoice(next) {
       voice = next;
+      if (next !== "speaking") speakStart = null;
+      else if (lastMs !== null) speakStart ??= lastMs;
       if (next === "spoken") heard = true;
     },
     setRestYaw(yaw) {
@@ -710,9 +787,16 @@ export function createCharacterLook(
       beckoning,
       footer,
       distanceM,
+      frames: poses.length,
+      frame: frameShown,
+      mirrored,
+      activeWord,
     }),
     dispose() {
       disposed = true;
+      // The poses not on a mesh now are disposed here, the shown ones in
+      // the traversal (a second dispose is harmless).
+      for (const t of [...frontTexs, ...backTexs]) t.dispose();
       root.traverse((o) => {
         const parts = meshParts(o);
         if (parts === null) return;

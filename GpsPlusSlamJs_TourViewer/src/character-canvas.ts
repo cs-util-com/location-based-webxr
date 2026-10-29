@@ -101,6 +101,51 @@ export interface BubbleContent {
    *  comes). */
   readonly reserveFooter: boolean;
   readonly side: BubbleSide;
+  /** The read-along while the voice plays: the word sounding now (-1
+   *  before the first); undefined draws the line plain. */
+  readonly active?: number;
+}
+
+/** The read-along's colour for word `i` while word `active` sounds (the
+ *  prototype's): said in full colour, sounding in gold, to come dimmed;
+ *  every word in full colour when `active` is undefined. */
+export function readAlongColour(i: number, active: number | undefined): string {
+  if (active === undefined || i < active) return READ_SAID;
+  return i === active ? READ_NOW : READ_COMING;
+}
+
+const READ_SAID = "#f4efe6";
+const READ_NOW = "#f6c45a";
+const READ_COMING = "rgba(244,239,230,0.46)";
+
+/** One cell of a frames sheet (px in the sheet). */
+export interface SheetCell {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** How many frames a sheet holds (the tour format's fixed layout:
+ *  idle, talk-a, talk-b, beckon, left to right in one row). */
+export const SHEET_FRAMES = 4;
+
+/** The cells of a frames sheet `width` x `height` px: four equal cells in
+ *  one row, a remainder of the width dropped; none for a sheet too small
+ *  or not a size. */
+export function sheetCells(width: number, height: number): SheetCell[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || height < 1) {
+    return [];
+  }
+  const w = Math.floor(width / SHEET_FRAMES);
+  if (w < 1) return [];
+  const h = Math.floor(height);
+  return Array.from({ length: SHEET_FRAMES }, (_, i) => ({
+    x: i * w,
+    y: 0,
+    w,
+    h,
+  }));
 }
 
 export interface BubbleLayout {
@@ -293,7 +338,11 @@ export function paintBubble(
   y += nf * 0.55 + lineH * 0.82;
   const words = wordsOf(content.line);
   for (const l of lay.lines) {
-    for (const t of l) ctx.fillText(words[t.i]!, pad + t.x, y);
+    for (const t of l) {
+      ctx.fillStyle = readAlongColour(t.i, content.active);
+      ctx.fillText(words[t.i]!, pad + t.x, y);
+      if (t.i === content.active) ctx.fillRect(pad + t.x, y + 12, t.w, 5);
+    }
     y += lineH;
   }
   if (content.footer) {
@@ -606,4 +655,26 @@ export function paintFigure(source: FigureSource): PaintedFigure {
     b.stroke();
   }
   return { front, back, figureW: fw, figureH: fh, pad };
+}
+
+/**
+ * A frames sheet's four poses, each as a die-cut card (`paintFigure`),
+ * in the sheet's order; empty for a sheet too small to slice.
+ */
+export function paintFrames(sheet: FigureSource): PaintedFigure[] {
+  return sheetCells(sheet.width, sheet.height).map((cell) => {
+    const c = canvas(cell.w, cell.h);
+    ctxOf(c).drawImage(
+      sheet,
+      cell.x,
+      cell.y,
+      cell.w,
+      cell.h,
+      0,
+      0,
+      cell.w,
+      cell.h,
+    );
+    return paintFigure(c);
+  });
 }

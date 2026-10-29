@@ -47,6 +47,17 @@
   leniently: the character shows as a card with its name, caption and
   voice, `lineEnd` advances on a tap, and that app will not save the tour.
 
+- **A declared character's frames sheet** (`ar/tour-characters`, `tour.json`
+  version 4 minor 2). A declaration may name `frames`, an image asset
+  holding his four poses as one sheet: four equal cells in one row, left to
+  right `idle`, `talk-a` (mouth half open), `talk-b` (mouth open) and
+  `beckon` (an arm out to the viewer's right), on a transparent
+  background, every figure centred in its cell, feet on one baseline. New
+  export `TOUR_CHARACTER_FRAMES` and the type `TourCharacterFrame`. The
+  `image` stays his one pose and the fallback; a `frames` that is not an
+  image asset is refused at this minor and dropped with its declaration
+  when read leniently.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

@@ -23,7 +23,7 @@ time. Plan:
     station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
   - `playing()` - the station whose story plays.
-- Deps: `dom` (`SceneViewDom`), `assets` (by id), `loadAsset(path)`,
+- Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
   `createChoiceButton(label, onClick)`, `schedule(fn, ms)`, `objectUrls`,
@@ -41,6 +41,13 @@ time. Plan:
   (a character in the card plays its voice, but no figure stands). A
   block's world view (a pin, a plane, a placed model) is drawn with its
   station's free blocks (`content-placement.ts`), never by a step.
+- **A declared character's frames sheet:** a story view of a block whose
+  `character` names a declaration with `frames` stands from the sheet (the
+  look gets `sheet: true` and slices it); the `portrait` view's round
+  portrait stays the block's `image`. A sheet that cannot be read stands
+  him from his `image` in one pose, and the "could not be loaded" line the
+  failed read wrote is taken back, since he does stand. The `stage` view
+  and a declaration without `frames` use the `image` as before.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
   `portrait`, `popup`; tour format 4.2) goes to the stage with a look
   spec `{ view, name, line, voiced, pose }` (the line is the caption;
@@ -216,7 +223,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   over every step", "says why the station's card picture is missing",
   "drops a card picture that lands after its story ended", "ends a station with no story and nothing to show at once"; the
   e2e `story-blocks.spec.js` at the gate and "a station with no story".
-- Tests: `scene-view.test.ts` "a character's story views and the advance
+- Tests: `scene-view.test.ts` "a declared character's frames sheet" (a story view from the sheet, the stage view and the portrait from the image, the fallback with no failure line, no sheet), and "a character's story views and the advance
   when the line ends" (a story view handed to the stage as a look, the
   plain stage view without one, a card with no figure; the voice told to
   the stage; `lineEnd` on the voice's end, never before; the reading time

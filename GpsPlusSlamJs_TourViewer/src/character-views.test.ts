@@ -1,20 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  BUBBLE_OPEN_M,
-  POPUP_CLOSE_M,
-  POPUP_UNFOLD_M,
+  activeWordAt,
   beckonNext,
+  BUBBLE_OPEN_M,
   bubbleOpens,
   bubbleSide,
   characterViewLook,
   facingYaw,
-  MAX_TURN_DEG,
-  restYawOf,
   isStageCharacterView,
   lineReadingMs,
+  lineWordTimes,
+  MAX_TURN_DEG,
+  POPUP_CLOSE_M,
+  POPUP_UNFOLD_M,
   popupUnfolds,
   readingFloor,
+  restYawOf,
+  talkFrameAt,
 } from "./character-views";
 
 const walk = (
@@ -218,5 +221,50 @@ describe("restYawOf and facingYaw: the creator's facing and the 60 degree turn",
     expect(facingYaw(1, 2, false)).toBe(1);
     expect(facingYaw(Number.NaN, 0.3, true)).toBeCloseTo(0.3, 12);
     expect(facingYaw(0.4, Number.NaN, true)).toBe(0.4);
+  });
+});
+
+// Why these tests matter: while his voice plays the bubble reads along
+// word by word and his mouth moves (the sheet's talk-a and talk-b
+// frames), both from the prototype's estimated word timing - the tour
+// stores no timing, so the estimate is the one clock both follow.
+describe("the read-along's word timing", () => {
+  it("times each word of the line as the prototype does, from 260 ms, with pauses after a sentence and a comma", () => {
+    const times = lineWordTimes("Hi, my friend. Go");
+    expect(times).toHaveLength(4);
+    // "Hi," 2 letters: 110 + 104 = 214 ms; then 70 + a comma's 210.
+    expect(times[0]).toEqual({ startMs: 260, endMs: 474 });
+    expect(times[1]?.startMs).toBe(474 + 70 + 210);
+    // "friend." ends a sentence: 430 more before "Go".
+    const friend = times[2]!;
+    expect(times[3]?.startMs).toBe(friend.endMs + 70 + 430);
+    // A long word is capped at 640 ms, a short one floored at 170.
+    expect(lineWordTimes("a")[0]).toEqual({ startMs: 260, endMs: 430 });
+    const long = lineWordTimes("abcdefghijklmnopqrstuvwxyz")[0]!;
+    expect(long.endMs - long.startMs).toBe(640);
+    expect(lineWordTimes("")).toEqual([]);
+    expect(lineWordTimes(7 as unknown as string)).toEqual([]);
+  });
+
+  it("names the word being said: none before the first, the last one begun after", () => {
+    const times = lineWordTimes("One two three");
+    expect(activeWordAt(times, 0)).toBe(-1);
+    expect(activeWordAt(times, 260)).toBe(0);
+    expect(activeWordAt(times, times[1]!.startMs - 1)).toBe(0);
+    expect(activeWordAt(times, times[1]!.startMs)).toBe(1);
+    expect(activeWordAt(times, 1e9)).toBe(2);
+    expect(activeWordAt(times, Number.NaN)).toBe(-1);
+  });
+
+  it("moves his mouth only inside a word: half open first, then open, every 115 ms", () => {
+    const times = lineWordTimes("Wonderful");
+    const w = times[0]!;
+    expect(talkFrameAt(times, w.startMs - 1)).toBe(0);
+    expect(talkFrameAt(times, w.startMs)).toBe(1);
+    expect(talkFrameAt(times, w.startMs + 114)).toBe(1);
+    expect(talkFrameAt(times, w.startMs + 115)).toBe(2);
+    expect(talkFrameAt(times, w.startMs + 230)).toBe(1);
+    expect(talkFrameAt(times, w.endMs)).toBe(0);
+    expect(talkFrameAt(times, Number.NaN)).toBe(0);
   });
 });

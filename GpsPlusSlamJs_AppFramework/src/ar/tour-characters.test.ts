@@ -16,7 +16,11 @@ import {
   serializeTourManifest as serializeReleased,
 } from 'tour-reader-1-31/ar/tour-manifest';
 
-import { TOUR_CHARACTER_VIEWS, parseTourCharacters } from './tour-characters';
+import {
+  TOUR_CHARACTER_FRAMES,
+  TOUR_CHARACTER_VIEWS,
+  parseTourCharacters,
+} from './tour-characters';
 import {
   parseTourManifest,
   serializeTourManifest,
@@ -31,6 +35,7 @@ const ASSETS = [
   { id: 'wendel', path: 'content/wendel.png', width: 512, height: 1024 },
   { id: 'wendel2', path: 'content/wendel2.png', width: 512, height: 1024 },
   { id: 'voice', path: 'content/voice.mp3' },
+  { id: 'sheet', path: 'content/sheet.webp', width: 2048, height: 1024 },
 ];
 const WENDEL = { id: 'wendel', name: 'Wendel', image: 'wendel' };
 
@@ -170,6 +175,66 @@ describe('the characters declaration', () => {
         },
       })
     ).toEqual([WENDEL]);
+  });
+});
+
+describe("the character's frames sheet", () => {
+  // Why: one image holds his four poses - idle, mouth half open, mouth
+  // open, beckoning - in a fixed, documented layout (four equal cells in
+  // one row), so every view knows which frame talks and which points for
+  // ANY character, and a later import that slices an AI-made picture
+  // writes exactly this. The single `image` stays the one-pose fallback.
+  it('names the four frames in their fixed order, and reads a sheet that is an image asset', () => {
+    expect(TOUR_CHARACTER_FRAMES).toEqual([
+      'idle',
+      'talk-a',
+      'talk-b',
+      'beckon',
+    ]);
+    const manifest = parseTourManifest(
+      tour({ characters: [{ ...WENDEL, frames: 'sheet' }] })
+    );
+    expect(manifest.characters).toEqual([{ ...WENDEL, frames: 'sheet' }]);
+    expect(parseTourManifest(tour()).characters?.[0]).not.toHaveProperty(
+      'frames'
+    );
+  });
+
+  it("refuses a sheet that is no image asset at this reader's own minor", () => {
+    expect(() =>
+      parseTourManifest(tour({ characters: [{ ...WENDEL, frames: 'voice' }] }))
+    ).toThrow(/characters\[0\]\.frames" must name an image asset/);
+  });
+
+  it('a newer minor leaves out just the sheet it cannot read, keeping him with his one image', () => {
+    const drops: TourManifestDrop[] = [];
+    const manifest = parseTourManifest(
+      tour({
+        minor: TOUR_MANIFEST_MINOR + 1,
+        characters: [{ ...WENDEL, frames: { cells: 6 } }],
+      }),
+      { onDropped: (drop) => drops.push(drop) }
+    );
+    expect(manifest.characters).toEqual([WENDEL]);
+    expect(drops).toEqual([
+      expect.objectContaining({
+        kind: 'character',
+        character: 'wendel',
+        reason: expect.stringMatching(/frames/) as unknown,
+      }),
+    ]);
+  });
+
+  it('is written back as it was read: the same bytes again', () => {
+    const once = serializeTourManifest(
+      parseTourManifest(tour({ characters: [{ ...WENDEL, frames: 'sheet' }] }))
+    );
+    expect(JSON.parse(once)).toMatchObject({
+      characters: [{ ...WENDEL, frames: 'sheet' }],
+    });
+    expect(serializeTourManifest(parseTourManifest(JSON.parse(once)))).toBe(
+      once
+    );
   });
 });
 
