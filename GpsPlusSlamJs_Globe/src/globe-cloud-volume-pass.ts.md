@@ -1,20 +1,25 @@
-# globe-cloud-volume.js
+# globe-cloud-volume-pass.ts
 
 ## Purpose
 
-The cloud volume in the globe lab (volume-cloud plan
+The cloud volume's drawing pass (volume-cloud plan
 `2026-10-05-0016-globe-volume-cloud-variants-plan.md`, C2): the framework's
 ray-marched cloud slab near the camera, its clouds from the globe's own
 cloud map (so the swap from the shell never plops), drawn after the Earth
-and ending at the relief, so a ridge in front of a cloud hides it.
+and ending at the relief, so a ridge in front of a cloud hides it. Moved
+out of the globe lab as a pure refactor; the lab imports it as
+`/globe/globe-cloud-volume-pass.js`. Its arithmetic is
+`globe-cloud-volume.ts` (hence the name: that file already held the
+pure functions).
 
 ## Public API
 
 - `createGlobeCloudVolume(renderer, { atmosphere, skyScene, surfaceUniforms,
 sceneDepth })`
-  (`atmosphere` and `skyScene` the ground sky's, `globe-ground-sky.js`;
-  `sceneDepth` the relief's depth, `globe-scene-depth.js`, shared with the
-  space pass) returns:
+  returns a `GlobeCloudVolume`
+  (`atmosphere` and `skyScene` the ground sky's, `globe-ground-sky.ts`;
+  `sceneDepth` the relief's depth, `globe-scene-depth.ts`, shared with the
+  space pass):
   - `setEnabled(on)`: the ground sky's slab mode (cover 1), the coverage
     chunk (`CLOUD_VOLUME_COVERAGE_GLSL` with the globe's map, drift and
     opacity uniforms, the target's origin and the share) and the relief's
@@ -43,7 +48,7 @@ sceneDepth })`
     disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
     shell's hole is around the camera. `mixed` (round-4 plan
     2026-10-11-0122 R4d): the spherical volume mixes the slab by its share
-    (`globe-cloud-shell-volume.js`), so the slab's cover and disc are drawn
+    (the lab's `globe-cloud-shell-volume.js`), so the slab's cover and disc are drawn
     whole wherever its share is above 0 (its fade would apply twice).
   - `render(camera, relief, extra = [], { composite = true })` (`extra`:
     the city, drawn into the depth too): after the Earth, nothing at share
@@ -63,7 +68,7 @@ cloudNoiseFineGain })`); idempotent; the shadow shares the amplitudes.
     The state reports it as `fineGain`.
   - The live noise's anchor: while enabled, `update` carries the frame
     origin's noise-plane position and the frame's rotation across every
-    recentre and the unwrapped drift (`carryLive`, the Globe package's
+    recentre and the unwrapped drift (`carryLive`, with
     `cloudVolumeNoiseAnchor`, `cloudVolumeAnchorRecentre` and
     `cloudVolumeAnchorDrift`) and hands it to the ground sky
     (`setCloudNoiseAnchor`) in every mode, so a switch to live mid-flight
@@ -84,6 +89,9 @@ liftM, drawn, shadow, hex, noise, fineGain }`; `discCentre` (world x,
     volume's per-pixel weight (R4d review, finding 1). Mixed with that volume
     the slab's aerial fade comes in with its share (`setCloudAerial`,
     round-5 plan C3), alone all of it as before; reset on disable.
+  - `alphaGrid(nx, ny)` (debug, a synchronous read-back; round-4 plan
+    R4d): the last frame's alpha at an `nx` x `ny` grid of pixel centres,
+    bottom row first; null before the first frame.
   - `coverage()` (debug, a synchronous read-back): `{ share, lowerShare,
 maxAlpha }`, the share of the last volume frame's pixels its clouds
     cover (alpha over 0.05), overall and in the lower half (the view down);
@@ -93,7 +101,7 @@ maxAlpha }`, the share of the last volume frame's pixels its clouds
 
 ## Invariants & assumptions
 
-- **The relief's depth** is `globe-scene-depth.js`'s (its own meshes with
+- **The relief's depth** is `globe-scene-depth.ts`'s (its own meshes with
   their colour writes off: the displacement is in their vertex shader, so
   an override material would draw them flat), at most once a frame: the
   space pass reads the same texture (volume-cloud plan §17).
@@ -122,14 +130,19 @@ maxAlpha }`, the share of the last volume frame's pixels its clouds
   keeps the whole shell and draws the volume over it.
 - Only in the target's local frame (F2a), with the relief, below the
   ceiling, where the ground sky is supported.
+- **Imports**: the framework's cloud modules by bare subpath
+  (`gps-plus-slam-app-framework/visualization/atmosphere/cloud-layer`,
+  `-hex`, `-slab`, `-shadow`; `cloud-live-noise` and `sky-atmosphere`
+  for types only), each an exact entry of the lab's import map.
 
 ## Examples
 
-```js
+```ts
 const volume = createGlobeCloudVolume(renderer, {
   atmosphere: groundSky.atmosphere,
   skyScene: groundSky.scene,
   surfaceUniforms: globe.surfaceUniforms,
+  sceneDepth: createGlobeSceneDepth(renderer),
 });
 volume.setEnabled(true);
 const { radiusM } = volume.update({
@@ -145,7 +158,17 @@ volume.render(camera, terrain.tiles.group);
 
 ## Tests
 
-`globe-cloud-volume.smoke.spec.mjs`: the frame-to-frame step through the
+`globe-cloud-volume-pass.test.ts` (Node, the real framework sky from
+`createGlobeGroundSky` and a recording fake renderer): nothing while off;
+the switch on and every hand-over taken back off, both idempotent; the
+share, disc, lift and the mixed mode's whole disc and aerial fade; the
+reach in 1 km steps handed over only on change; the disc ahead along the
+view; the noise offset and live anchor while on; the draw order (depth,
+slab alone from the lifted camera into a transparent target, clear colour
+and siblings restored, composite), `composite: false`; the read-backs;
+the noise and fine-gain switches; the shadow's state and tile patch.
+
+In the browser, the lab's `globe-cloud-volume.smoke.spec.mjs`: the frame-to-frame step through the
 volume's fade-in (45 to 15 km) against the shell only, that it draws at
 the hold without a console error, and its frame cost; that its clouds are
 SEEN looking down from the 12 km hold over a cloudy part of the map (the

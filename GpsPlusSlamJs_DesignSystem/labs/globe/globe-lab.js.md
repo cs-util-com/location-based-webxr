@@ -14,6 +14,25 @@
   back after a context loss). A sharp map that could not be made (a
   piece failed after its retries, or the GPU step threw) adds "The sharp
   cloud map could not load: the coarser one shows." (the preview stays).
+- The view core (full-globe editor plan 2026-10-27-1850 §3.1, a pure
+  refactor: the globe must look and perform as before): the renderer, the
+  scene, the camera, the surface, the sky pass, the clock, the world frame,
+  the drawing buffer's fit and the frame's order live in
+  `/globe/globe-view.js` (`createGlobeView`, see its sidecar). The lab
+  passes its hash values as `settings()`, the framework's
+  `solarPosition` (injected, a deliberate seam: the view's tests drive
+  the sun with it), and its own work as seams: `driveCamera` (the intro, the
+  pin, the controls), `update` (the relief, the city, the OSM map, the
+  clouds, the air), `afterSky` (the ground sky), `beforeScene` and
+  `afterScene` (the dust, the depth, the cloud volumes, the atmosphere),
+  `frameStart`/`frameEnd` (the hooks, the perf sweep), `paused` and
+  `gestureBusy`. The air, the clouds, the city, the approach, the relief's
+  band and drains, the OSM step, the controls, the clip planes and the
+  credits stay here. `state()` reads the view's clock, sun, frame and
+  drift through it, unchanged in shape. The guard of the move is
+  `globe-reference-shots.smoke.spec.mjs` with
+  `globe-reference-shots-compare.mjs` (six held views, before and after,
+  side by side).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
@@ -151,8 +170,8 @@
   field of view, and no depth, so the Earth covers it by draw order.
   Last, unless `#atmo=0`, the atmosphere pass over both.
 - The atmosphere seen from space (round-4 plan 2026-09-28-2105 DEC-GL4-4,
-  DEC-GL4-11; `globe-atmosphere.js`, its numbers in
-  `globe-atmosphere-frame.js`): the lit limb's bright band, the blue halo
+  DEC-GL4-11; the Globe package's `globe-atmosphere.ts`, its numbers in
+  the Globe package's `globe-atmosphere-frame.ts`): the lit limb's bright band, the blue halo
   outside it and the blue veil over the day side, from one march through
   the framework's physical atmosphere tables, lit by the Earth's own sun.
   ON by default (the owner asked for it). Hash keys: `atmo` (1 on, 0 off),
@@ -669,7 +688,10 @@ heightM)` (the ECEF point of a place, for an independent placement check)
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
 
-- Test API, `window.__globeLab`: `ready`, `error`, `state()`
+- Test API, `window.__globeLab`: `ready` (set as the last step of
+  start(), after the on-demand recorder of `#perf=1` is wired, so a test
+  that sees it can use every part at once; `globe-lab-ready.test.mjs`),
+  `error`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
 cloudDrift, cloudLonOffsetRad, cloudMap, sky, device, deviceLine,
@@ -730,7 +752,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
   which adds `relief=0` to a hash that names no relief.
 - The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
-  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 the volume
+  `globe-cloud-volume-pass.ts`): `cloudVolume` 0 the shell only, 1 the volume
   within the disc and the shell outside it, 2 (default, the owner's choice
   of 2026-10-05) the volume over the shell; `cloudVolumeKm` (80; 20 until 2026-10-06) the disc, which the slab's reach follows,
   `cloudVolumeCeilingKm` (40) the ceiling it fades in under over
@@ -871,13 +893,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).
   `cloudHex` (0, the default until the owner's phone run; hex-tiling plan
   2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
-  clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;
+  clouds no longer repeat every 24 km (`globe-cloud-volume-pass.ts` `setHex`;
   the state's `cloudVolume.hex`).
   `cloudNoise=tile|hex|live` (a text key; round-3 plan 2026-10-08-2345,
   N1) picks the noise the volume's clouds read and wins over `cloudHex`:
   `live` is the framework's per-octave noise that never repeats in view
   (`cloud-live-noise.ts`), anchored to the ground across recentres and
-  the drift (`globe-cloud-volume.js` `setNoise`; the state's
+  the drift (`globe-cloud-volume-pass.ts` `setNoise`; the state's
   `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
   default). `cloudFineGain` (0.3-0.85, 0.5 by default; round-3 plan §19
   item 2) is the live noise's fine gain, more detail at the cloud edges
@@ -902,7 +924,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   is placed right is not yet verified, and these numbers were taken where
   the volume drew almost nothing (at 46.5 N 9 E, gain 0.5, the same clear
   noise patch under every target), so they are to be measured again.
-- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; the Globe package's `globe-ground-sky.ts`,
+  wired each frame by the Globe package's `globe-air.ts`: its `step` after
+  the clip planes, its `finish` after the cloud volumes, its `render` after
+  the scene):
   each frame, before the sky pass, the observer's height over the
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
   (`groundSky=1`, the default; 0 keeps the space pass all the way down),
@@ -914,7 +939,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   scaled by `1 - weight`, its veil over the ground is kept (`atmoGround=1`,
   the default; `atmoGround=0` fades it with the sky's, a comparison that
   breaks the hand-over's continuity), and below the edge its rays end at
-  the drawn relief: the scene depth (`globe-scene-depth.js`, volume-cloud
+  the drawn relief: the scene depth (the Globe package's `globe-scene-depth.ts`, volume-cloud
   plan §17) is drawn once a frame while the weight is above 0 and the pass
   is on, and shared with the cloud volume, which draws it itself when only
   it needs it; the pass weighs it by the hand-over's weight, so it grows
@@ -1048,6 +1073,24 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   framework's copy and `3d-tiles-renderer` (and `/plugins`) to the vendored
   library; nothing leaves the machine. The sun is real, so a view can be on
   the night side: the tests pin `#time=`.
+  - The lab's page modules (`labs/globe/*.js`) are linted for `no-undef`
+    and `no-shadow` only (`config/eslint.config.mjs`, the design system's
+    `lint` stage): the files are one no-build module split by hand, and a
+    shadowed name once fed the perf sweep the wrong world frame. A name
+    that would shadow an outer one is renamed (`startPose`, `fromPose`,
+    `cityNow`, `inView`, `cameraPose`, `fixedView`).
+  - `applyView` validates the pose, does the lab's side effects (the intro
+    yields, the pin and the dust reset, the hold) and leaves the frame
+    target and the camera to the view's own `placeView`.
+  - The frame's relief work comes from typed Globe modules, the page
+    keeping only its parameters, its DOM and its hooks: the band's gated
+    share and the carriers' release (`globe-band-step`), the clearance and
+    the relief's update with its timed E step (`globe-relief-step`), the
+    relief's clip planes (`globe-relief-planes`), the OSM map's step
+    (`globe-osm-frame`), the controls (`globe-camera-controls`, on the
+    page's canvas) and the credits line's text (`globeCreditsLine`;
+    `renderCredits` only builds the DOM). Each keeps the lab's order and
+    state, so the page's state readers and the smokes read the same values.
 - Tests: `globe.smoke.spec.mjs`:
   - on a fixed view (`#at=30,15&spinMs=0&turnMs=0`, 11:00 UTC on an
     equinox so it is day): boots, lit centre,

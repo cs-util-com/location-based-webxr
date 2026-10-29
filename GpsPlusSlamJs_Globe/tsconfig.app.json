@@ -17,9 +17,45 @@
     "erasableSyntaxOnly": true,
     "declaration": true,
     "sourceMap": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "paths": {
+      "gps-plus-slam-app-framework/*": ["../GpsPlusSlamJs_AppFramework/src/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.json"],
+  // The framework files in this package's program, by name: the modules it
+  // imports by source (`paths` above) and every framework file THEY import.
+  // `composite` needs every file of the program listed, so a new framework
+  // import (or a new import inside one of these) fails here naming its file
+  // (TS6307): add that file to THIS list, and to tsconfig.vitest.json's.
+  // Named files, not a folder glob: a framework file this package never
+  // reaches must not be checked under its stricter `erasableSyntaxOnly`
+  // and `verbatimModuleSyntax`, or an unrelated framework edit turns this
+  // typecheck red.
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.json",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-exposure.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-fallback.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-glsl.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-haze.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-lut-mapping.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-luts.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-model.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-scattering.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-column.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-coverage.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-hex.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-layer.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-live-noise.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-shadow.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sheet.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-slab.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sun.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/sky-atmosphere.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/clamp01.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/smoothstep.ts"
+  ],
   "exclude": [
     "dist",
     "coverage",
@@ -28,6 +64,8 @@
     "src/**/*.spec.ts",
     "src/**/*.property.test.ts",
     "src/**/*.bench.ts",
-    "src/test-utils/**"
+    "src/test-utils/**",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.test.ts",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.property.test.ts"
   ]
 }

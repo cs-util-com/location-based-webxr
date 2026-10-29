@@ -21,7 +21,7 @@ groundSky, atmosphere, sceneDepth })`:
   all shared as objects); `groundSky` the ground sky's `SkyAtmosphere` (the
   live field's lattice, amplitudes and anchor, which the cloud volume
   carries); `atmosphere` the space pass (`transmittance()`, the sun's
-  table); `sceneDepth` the relief's depth (`globe-scene-depth.js`).
+  table); `sceneDepth` the relief's depth (the Globe package's `globe-scene-depth.ts`).
 - `setEnabled(on)`, `enabled`; `setResolution(share)` (0.25-1 of the
   drawing buffer, RangeError outside).
 - `update({ altitudeKm, shares, stations, target, deckKm, cover })`: the
@@ -39,7 +39,7 @@ radiusM }` from its state, the centre null on the camera, where its flat
   times its fade-in less the slab's share of the cloud the slab draws at
   that pixel (`cloudShellPixelWeight`: r = the slab's alpha over the
   shell's) plus `slabTexture` (the slab drawn this frame at its full share,
-  `globe-cloud-volume.js` with `composite: false`) times the slab's share.
+  the Globe package's `globe-cloud-volume-pass.ts` with `composite: false`) times the slab's share.
   Returns whether it drew.
 - `readBack(bands)`: the last shell target's mean alpha and share over 0.05
   per horizontal band (debug, slow); `state()`; `dispose()`.
@@ -47,7 +47,7 @@ radiusM }` from its state, the centre null on the camera, where its flat
 ## The march (twin of the slab's, on a sphere)
 
 - The ray in the model frame (the ellipsoid as the atmosphere's ground
-  sphere, km), as `globe-atmosphere.js`; entry and exit of the deck's top
+  sphere, km), as the Globe package's `globe-atmosphere.ts`; entry and exit of the deck's top
   and base spheres analytic; the end at the relief's depth when it was
   drawn this frame, weighted like the space pass's (`skyHandOver.weight`;
   above the 80 km edge no depth: rays end at the deck's base, and relief

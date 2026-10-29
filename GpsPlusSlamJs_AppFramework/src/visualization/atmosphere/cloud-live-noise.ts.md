@@ -178,3 +178,10 @@ const threshold = liveCloudThreshold(0.4); // 40 % of the plane is cloud above i
   form always, the full sweep with `SWEEP=1`).
 - The browser: the globe lab's `globe-cloud-noise.smoke.spec.mjs` (the GPU
   against the twin, two anchors far apart, the cost against the tile).
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-live-noise`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.
