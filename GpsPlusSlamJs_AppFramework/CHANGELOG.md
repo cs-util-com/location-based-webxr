@@ -23,8 +23,10 @@
   back to `placed`, a story model to `card`, the new fields are ignored,
   and that app will not save the tour. `TourModel['view']` widens from
   `'placed'` to `TourModelWorldView`. A note's or a section's
-  `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9) is refused as a zero direction, at every
-  minor.
+  `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9, a policy floor) is a zero direction:
+  it fails a file of the reader's own minor, and a lenient read of a newer
+  minor leaves out just that note or section, reported through
+  `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
 
 ### Fixed
 

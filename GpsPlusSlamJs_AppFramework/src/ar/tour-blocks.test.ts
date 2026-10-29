@@ -764,9 +764,9 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     expect(full?.annotations?.[0]?.text).toHaveLength(1024);
   });
 
-  it('a point or direction must be three finite numbers, a direction not zero: malformed at every minor', () => {
-    // Why: no revision can make a point of two numbers, a NaN or a zero
-    // direction meaningful, so even a newer minor's file fails on them.
+  it('a point or direction must be three finite numbers: malformed at every minor', () => {
+    // Why: no revision can make a point of two numbers or a NaN
+    // meaningful, so even a newer minor's file fails on them.
     const bad: unknown[] = [
       [0, 0],
       [0, 0, 0, 0],
@@ -785,23 +785,58 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
         ).toThrow(Invalid);
       }
     }
-    expect(() =>
-      model(
-        { annotations: [{ ...NOTE, normal: [0, 0, 0] }] },
-        { lenient: true }
-      )
-    ).toThrow(/must not be zero/);
-    // A direction too short to normalise is as meaningless as a zero one:
-    // normalising it gives a NaN, or a direction from rounding alone.
-    expect(() =>
-      model(
-        { sections: [{ ...SECTION, normal: [1e-12, 0, -1e-12] }] },
-        { lenient: true }
-      )
-    ).toThrow(/must not be zero/);
     expect(
       model({ annotations: [{ ...NOTE, position: [0, 0, 0] }] })
     ).toBeDefined();
+  });
+
+  it('a zero or near-zero direction fails a file of this minor, and costs a newer one only its note or section', () => {
+    // Why: a direction shorter than the floor (1e-9, a policy, not a
+    // limit of the arithmetic: such a vector still normalises) carries no
+    // direction anyone meant - a zero written with rounding noise. A file
+    // of this reader's own minor is refused for it. A newer minor's file
+    // must not lose its whole model over one bad note: only that note or
+    // section is left out, and the reader hears which.
+    for (const normal of [
+      [0, 0, 0],
+      [1e-12, 0, -1e-12],
+    ]) {
+      expect(() => model({ annotations: [{ ...NOTE, normal }] })).toThrow(
+        /must not be zero/
+      );
+      expect(() => model({ sections: [{ ...SECTION, normal }] })).toThrow(
+        /must not be zero/
+      );
+    }
+    const drops: TourBlockDrop[] = [];
+    const read = model(
+      {
+        annotations: [
+          { ...NOTE, normal: [0, 0, 0] },
+          { ...NOTE, title: 'Kept' },
+        ],
+        sections: [{ ...SECTION, normal: [1e-12, 0, -1e-12] }],
+      },
+      { lenient: true, drops }
+    );
+    expect(read?.annotations?.map((n) => n.title)).toEqual(['Kept']);
+    expect(read?.sections).toBeUndefined();
+    expect(drops).toEqual([
+      expect.objectContaining({
+        kind: 'field',
+        field: 'annotations[0]',
+        reason: expect.stringMatching(/must not be zero/),
+      }),
+      expect.objectContaining({
+        kind: 'field',
+        field: 'sections[0]',
+        reason: expect.stringMatching(/must not be zero/),
+      }),
+    ]);
+    // Just at the floor, a direction is kept.
+    expect(
+      model({ annotations: [{ ...NOTE, normal: [1e-9, 0, 0] }] })?.annotations
+    ).toHaveLength(1);
   });
 
   it("a point beyond 10 000 of the model's origin fails here and skips for a newer minor", () => {

@@ -33,8 +33,11 @@ model | character`.
   40), `TOUR_MODEL_MAX_SECTIONS` (4), `TOUR_MODEL_ANIMATION_RULES` (`name`
   required 128), `TOUR_MODEL_SPACE_MAX` (10 000, a point's largest
   coordinate in the model's own units), `TOUR_MODEL_MIN_DIRECTION_LENGTH`
-  (1e-9, the shortest `normal` taken; the editor uses it to refuse what
-  the reader would).
+  (1e-9, the shortest `normal` taken, a policy floor; the editor uses it
+  to refuse what the reader would). A shorter `normal` fails a file of
+  the reader's own minor; a lenient read of a newer minor leaves out just
+  that note or section and reports it through `onDropped` as a field drop
+  (`annotations[i]` / `sections[i]`).
 - `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
   when a model stands in a view minor 1 added or carries `animation`,
   `annotations` or `sections`; else 0. The writer stamps it.

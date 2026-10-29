@@ -169,8 +169,11 @@ export const TOUR_MODEL_ANIMATION_RULES = {
  *  model file's own units: beyond any model, short of nonsense. */
 export const TOUR_MODEL_SPACE_MAX = 10_000;
 
-/** The shortest a note's or a section's `normal` may be: a shorter one has
- *  no direction to normalise and is refused as zero. */
+/** The shortest a note's or a section's `normal` may be. A policy floor,
+ *  not a limit of the arithmetic (a shorter vector still normalises): a
+ *  direction this short is a zero written with rounding noise, so it is
+ *  refused as zero - failing a file of the reader's own minor, and
+ *  leaving out just that note or section of a newer one. */
 export const TOUR_MODEL_MIN_DIRECTION_LENGTH = 1e-9;
 
 /** A picture's width in the world (m), inclusive. */
@@ -523,9 +526,9 @@ function isFiniteTriple(value: unknown): value is TourModelVector {
 }
 
 /** A point or a direction in a model's own space: three finite numbers
- *  (structural, at every minor; a direction also not zero, nor too short
- *  to normalise), within {@link TOUR_MODEL_SPACE_MAX} (a rule a later
- *  minor may widen). */
+ *  (structural, at every minor; a direction also not shorter than
+ *  {@link TOUR_MODEL_MIN_DIRECTION_LENGTH}), within
+ *  {@link TOUR_MODEL_SPACE_MAX} (a rule a later minor may widen). */
 function modelVector(
   value: unknown,
   at: string,
@@ -586,12 +589,37 @@ function nestedText(
   return optionalText(entry, field, rule, nested);
 }
 
+/** Whether a note or a section at `field[i]` is left out for its
+ *  direction: three finite numbers shorter than
+ *  {@link TOUR_MODEL_MIN_DIRECTION_LENGTH}, in a lenient read (a newer
+ *  minor), said to `onDropped`. A strict read keeps it, for
+ *  {@link modelVector} to refuse the file. */
+function droppedForDirection(
+  entry: Fields,
+  field: string,
+  at: string,
+  ctx: BlockContext
+): boolean {
+  const normal = entry.normal;
+  if (!ctx.lenient || !isFiniteTriple(normal)) return false;
+  if (Math.hypot(...normal) >= TOUR_MODEL_MIN_DIRECTION_LENGTH) return false;
+  ctx.onDropped?.({
+    kind: 'field',
+    block: ctx.id,
+    field,
+    reason: `"${at}.normal" is a direction, so it must not be zero`,
+  });
+  return true;
+}
+
 function modelNotes(v: Fields, ctx: BlockContext) {
   const at = `${ctx.at}.annotations`;
   const list = recordList(v.annotations, at, TOUR_MODEL_MAX_NOTES, ctx);
   if (list === undefined) return {};
-  const annotations = list.map((entry, i) => {
+  const annotations = list.flatMap((entry, i) => {
     const noteAt = `${at}[${String(i)}]`;
+    const field = `annotations[${String(i)}]`;
+    if (droppedForDirection(entry, field, noteAt, ctx)) return [];
     return {
       position: modelVector(entry.position, `${noteAt}.position`, false, ctx),
       normal: modelVector(entry.normal, `${noteAt}.normal`, true, ctx),
@@ -599,7 +627,7 @@ function modelNotes(v: Fields, ctx: BlockContext) {
       ...nestedText(entry, 'text', TOUR_MODEL_NOTE_RULES.text, noteAt, ctx),
     } as TourModelNote;
   });
-  return { annotations };
+  return annotations.length === 0 ? {} : { annotations };
 }
 
 function modelSections(v: Fields, ctx: BlockContext) {
@@ -612,8 +640,10 @@ function modelSections(v: Fields, ctx: BlockContext) {
   }
   const list = recordList(v.sections, at, TOUR_MODEL_MAX_SECTIONS, ctx);
   if (list === undefined) return {};
-  const sections = list.map((entry, i) => {
+  const sections = list.flatMap((entry, i) => {
     const sectionAt = `${at}[${String(i)}]`;
+    const field = `sections[${String(i)}]`;
+    if (droppedForDirection(entry, field, sectionAt, ctx)) return [];
     return {
       ...nestedText(
         entry,
@@ -631,7 +661,7 @@ function modelSections(v: Fields, ctx: BlockContext) {
       normal: modelVector(entry.normal, `${sectionAt}.normal`, true, ctx),
     } as TourModelSection;
   });
-  return { sections };
+  return sections.length === 0 ? {} : { sections };
 }
 
 function modelAnimation(v: Fields, ctx: BlockContext) {
