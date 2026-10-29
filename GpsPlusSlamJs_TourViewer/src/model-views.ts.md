@@ -19,7 +19,8 @@ drawn model; `model-visitor.ts` drives the handles.
     (a fresnel glass with a soft ground fade and an appear-in by
     `uAppear`; the ground is the model's lowest point in the world,
     wherever its origin is, and the fade is `min(0.7 m, 0.3 x its world
-height)`, so a small model is not faded away) with a depth-only child so it hides what is behind it once.
+height)`, held at 1 mm at least so a flat model never asks GLSL for the
+    undefined `smoothstep(0, 0, h)`, and a small model is not faded away) with a depth-only child so it hides what is behind it once.
   - `hotspots`: the notes are shown (by `note-markers.ts`); the clip is held
     at rest so a note points at what it names.
   - `cutaway`: each material clips by one plane and draws front faces;
@@ -40,16 +41,20 @@ height)`, so a small model is not faded away) with a depth-only child so it hide
     wraps and ignores a non-integer.
   - `toyFactor()`, `pinchToy(fromPx, toPx)`, `moveToy(dx, dz)` (world
     metres, turned into the parent's frame; the offset from its place is
-    held within 10 m + 3 x `sizeM`), `resetToy()`, `toyMoved()`.
+    held within 10 m + 3 x the size the toy is SHOWN at, `sizeM x
+toyFactor()` capped at `TOY_MAX_SIZE_M`; a pinch re-clamps, so a
+    shrunk toy is pulled back within its smaller reach), `resetToy()`, `toyMoved()`.
   - `update(dtS, camera)` - the clip and the facing cut; call it once a
     frame.
   - `dispose()` - gives the meshes back their own materials, removes every
     added child and frees what the view made, stops the clip.
 - `sectionColour(material)` - a material's own colour, else a warm brass.
-- `modelViewOf(object)` - the handle kept in `userData.modelView`, or null.
 - `mountedModelViews()` - every view mounted and not yet disposed, oldest
   first (a module-level list: `mountModelView` adds, `dispose` removes).
-  The visitor's frame loop reads it instead of walking the scene.
+  The visitor's frame loop reads it instead of walking the scene. It is the
+  one registry of mounted views: nothing keeps a handle in the model's
+  `userData` (the r973 review removed that second copy, read only by
+  tests).
 
 ## Invariants
 
@@ -66,12 +71,18 @@ height)`, so a small model is not faded away) with a depth-only child so it hide
   is drawn (its anchor is refined).
 - The ghost shader and the extra passes (the ghost's depth child, the
   cutaway's back-face fill) follow a rigged model: the shader is a
-  `ShaderMaterial` built from three's skinning, morph, instancing and
-  batching chunks, and `passOf` makes each pass the same kind of mesh as
+  `ShaderMaterial` built from three's skinning, morph and instancing
+  chunks, in the order three r185's meshbasic shader runs them, and `passOf` makes each pass the same kind of mesh as
   its source - a `SkinnedMesh` bound to the same skeleton and bind matrix,
   an `InstancedMesh` sharing the instance matrices and colours - sharing
   the morph influences by reference. A plain `Mesh` pass would stand
   still in the bind pose while the model moved.
+  - **Limits.** A `BatchedMesh` falls through `passOf` to a plain `Mesh`
+    (glTF never produces one, so it is not handled). An `InstancedMesh`
+    with per-instance morph weights (`setMorphAt`, three's
+    `morphTexture`) has its pass drawn with the shared influences only:
+    the pass does not carry the morph texture, so per-instance morphs are
+    not followed.
 - The per-frame matrix updates (`update`, `notePoints`, a section's
   placement) refresh the model's own and its ancestors' matrices only
   (`updateWorldMatrix(true, false)`), never its parts'.
@@ -84,7 +95,6 @@ height)`, so a small model is not faded away) with a depth-only child so it hide
 const view = mountModelView(model, block, modelScale(model, block.sizeM), {
   enableClipping: () => (renderer.localClippingEnabled = true),
 });
-model.userData["modelView"] = view;
 // each frame
 view.update(dtS, camera);
 ```
@@ -94,6 +104,7 @@ view.update(dtS, camera);
 `model-views.test.ts`: placed untouched; the ghost's materials and their
 return; the facing cut and its easing; sections in a rotated parent and after the parent moves; note
 points; notes after a file swap; the clip held in hotspots; the toy's
-factor, cap, move, reach and reset; the ghost's ground and fade on a
-centred and a 10 cm model; on a rigged model, the shader's chunks and
+factor, cap, move, reach (swept over tour sizes 0.1-500 m, and after a
+pinch) and reset; the ghost's ground and fade on a centred, a 10 cm and a
+flat model; on a rigged model, the shader's chunks in three's order and
 the skinned, morph-shared and instanced-shared passes.

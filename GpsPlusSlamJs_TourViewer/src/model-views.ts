@@ -35,7 +35,11 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
-import { pinchedToyFactor, toyStartFactor } from "./model-gestures.js";
+import {
+  pinchedToyFactor,
+  TOY_MAX_SIZE_M,
+  toyStartFactor,
+} from "./model-gestures.js";
 
 /** A model block, as the views read it. */
 export type TourModelBlock = Extract<TourBlock, { kind: "model" }>;
@@ -107,16 +111,20 @@ const MARKER_OFFSET_MAX_M = 4;
  *  `GHOST_FADE_MAX_M`. */
 const GHOST_FADE_SHARE = 0.3;
 const GHOST_FADE_MAX_M = 0.7;
-/** A toy stays within this many metres, plus `TOY_REACH_SIZES` of its
- *  sizes, of its place. */
+/** The shortest fade: a flat model's 0.3 of nothing would make the
+ *  shader's smoothstep(0, 0, h), which GLSL leaves undefined. */
+const GHOST_FADE_MIN_M = 1e-3;
+/** A toy stays within this many metres, plus `TOY_REACH_SIZES` of the
+ *  size it is shown at (never above `TOY_MAX_SIZE_M`), of its place. */
 const TOY_REACH_M = 10;
 const TOY_REACH_SIZES = 3;
 /** How fast the facing cut turns after the visitor (per second). */
 const CUT_TURN_RATE = 3;
 
-// Through three's own vertex chunks, so a rigged, morphed, instanced or
-// batched mesh moves under its glass as it does under its own material
-// (the renderer sets their defines for a ShaderMaterial too).
+// Through three's own vertex chunks, in the order its meshbasic shader
+// runs them, so a rigged, morphed or instanced mesh moves under its glass
+// as it does under its own material (the renderer sets their defines for a
+// ShaderMaterial too).
 const GHOST_VS = `#include <common>
 #include <batching_pars_vertex>
 #include <morphtarget_pars_vertex>
@@ -432,6 +440,17 @@ export function mountModelView(
   if (view === "toy") applyToyScale();
   const scratch = new THREE.Vector3();
   const scratchQ = new THREE.Quaternion();
+  /** Held near its place: a runaway drag never loses the toy. The reach
+   *  grows with the size the toy is SHOWN at, so a 500 m model shown as a
+   *  50 m toy reaches as far as a 50 m one, not 1.5 km. */
+  const holdToy = (): void => {
+    const shownM = Math.min(sizeM * toyFactor, TOY_MAX_SIZE_M);
+    const reach = TOY_REACH_M + TOY_REACH_SIZES * shownM;
+    const offset = scratch.subVectors(model.position, restPosition);
+    if (offset.length() > reach) {
+      model.position.copy(restPosition).add(offset.setLength(reach));
+    }
+  };
 
   const notes = view === "hotspots" ? (block.annotations ?? []) : [];
 
@@ -498,6 +517,8 @@ export function mountModelView(
       if (view !== "toy") return;
       toyFactor = pinchedToyFactor(toyFactor, fromPx, toPx, sizeM);
       applyToyScale();
+      // A smaller toy reaches less far: pulled back within its reach.
+      holdToy();
     },
     moveToy(dx, dz) {
       if (view !== "toy" || !Number.isFinite(dx) || !Number.isFinite(dz)) {
@@ -513,12 +534,7 @@ export function mountModelView(
         );
       }
       model.position.add(step);
-      // Held near its place: a runaway drag never loses the toy.
-      const reach = TOY_REACH_M + TOY_REACH_SIZES * sizeM;
-      const offset = scratch.subVectors(model.position, restPosition);
-      if (offset.length() > reach) {
-        model.position.copy(restPosition).add(offset.setLength(reach));
-      }
+      holdToy();
     },
     resetToy() {
       if (view !== "toy") return;
@@ -546,9 +562,12 @@ export function mountModelView(
         } else {
           worldBox.copy(restBox).applyMatrix4(model.matrixWorld);
           ghost.uniforms["uGround"]!.value = worldBox.min.y;
-          ghost.uniforms["uFade"]!.value = Math.min(
-            GHOST_FADE_MAX_M,
-            GHOST_FADE_SHARE * (worldBox.max.y - worldBox.min.y),
+          ghost.uniforms["uFade"]!.value = Math.max(
+            GHOST_FADE_MIN_M,
+            Math.min(
+              GHOST_FADE_MAX_M,
+              GHOST_FADE_SHARE * (worldBox.max.y - worldBox.min.y),
+            ),
           );
         }
       }
@@ -604,16 +623,4 @@ const mounted = new Set<ModelViewHandle>();
  *  frame loop updates, without walking the scene for them. */
 export function mountedModelViews(): ModelViewHandle[] {
   return [...mounted];
-}
-
-/** The view mounted on `object` (`content-placement.ts` keeps it in the
- *  model's `userData.modelView`), or null. */
-export function modelViewOf(object: THREE.Object3D): ModelViewHandle | null {
-  const handle: unknown = object.userData["modelView"];
-  return typeof handle === "object" &&
-    handle !== null &&
-    "blockId" in handle &&
-    "update" in handle
-    ? (handle as ModelViewHandle)
-    : null;
 }

@@ -13,8 +13,8 @@ import { describe, expect, it } from "vitest";
 
 import { TOY_MAX_SIZE_M } from "./model-gestures.js";
 import {
-  modelViewOf,
   mountModelView,
+  mountedModelViews,
   sectionColour,
   type TourModelBlock,
 } from "./model-views.js";
@@ -448,6 +448,36 @@ describe("mountModelView", () => {
     toy.dispose();
   });
 
+  // Why: the reach used the model's tour size, not the size the toy is
+  // shown at: a 500 m model shown as a 50 m toy could be dragged 1.5 km.
+  // The reach is 10 m plus three of the SHOWN sizes, swept over the sizes
+  // a tour may carry, and a pinch that shrinks a dragged toy pulls it back
+  // within its new reach.
+  it("keeps a toy within reach of its shown size, for every tour size, also after a pinch", () => {
+    for (const sizeM of [0.1, 0.5, 1, 3, 10, 16.7, 40, 50, 100, 200, 500]) {
+      const { model } = standing();
+      const toy = mountModelView(model, block("toy", { sizeM }), sizeM / 2);
+      const shown = () => Math.min(sizeM * toy.toyFactor(), TOY_MAX_SIZE_M);
+      toy.moveToy(5000, 0);
+      expect(shown(), String(sizeM)).toBeLessThanOrEqual(TOY_MAX_SIZE_M);
+      expect(model.position.length(), String(sizeM)).toBeCloseTo(
+        10 + 3 * shown(),
+        6,
+      );
+      toy.pinchToy(1000, 1);
+      expect(model.position.length(), `${sizeM} pinched`).toBeLessThanOrEqual(
+        10 + 3 * shown() + 1e-9,
+      );
+      toy.pinchToy(1, 1000);
+      toy.moveToy(5000, 0);
+      expect(model.position.length(), `${sizeM} grown`).toBeCloseTo(
+        10 + 3 * shown(),
+        6,
+      );
+      toy.dispose();
+    }
+  });
+
   // Why: the toy's cap is a size in metres - a 40 m model may grow to
   // 50 m, never 3x - and a model placed larger than 50 m starts at 50 m.
   it("caps a toy's largest side at 50 m", () => {
@@ -463,6 +493,24 @@ describe("mountModelView", () => {
     expect(model.scale.x).toBe(100);
   });
 
+  // Why: a flat model (a sign, a floor plan) is zero tall, so 0.3 of its
+  // height is a fade of 0 m, and the shader's smoothstep(0, 0, h) is
+  // undefined in GLSL - it may draw the glass or nothing. The fade is held
+  // at 1 mm at least.
+  it("gives a flat ghost a fade of at least 1 mm", () => {
+    const flat = new THREE.Group();
+    const sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2),
+    );
+    flat.add(sheet);
+    flat.updateMatrixWorld(true);
+    const view = mountModelView(flat, block("ghost", { sizeM: 2 }), 1);
+    view.update(0.016, null);
+    const glass = sheet.material as unknown as THREE.ShaderMaterial;
+    expect(glass.uniforms["uFade"]?.value).toBe(1e-3);
+    view.dispose();
+  });
+
   // Why: defensive - a scale that is not finite and > 0 would put the
   // model nowhere.
   it("refuses a scale that is not finite and > 0", () => {
@@ -474,17 +522,17 @@ describe("mountModelView", () => {
   });
 });
 
-describe("modelViewOf and sectionColour", () => {
-  // Why: the visitor's frame finds a model's view through the model's
-  // userData, and nothing else there may pass for one.
-  it("finds the view a model carries, and nothing else", () => {
+describe("mountedModelViews and sectionColour", () => {
+  // Why: the visitor's frame loop finds the views it updates through this
+  // one registry: a view is in it from its mount to its dispose, never
+  // after (a disposed view updated each frame would move a freed model).
+  it("lists a view from its mount to its dispose", () => {
     const { model } = standing();
-    expect(modelViewOf(model)).toBeNull();
-    model.userData["modelView"] = { blockId: "x" };
-    expect(modelViewOf(model)).toBeNull();
     const view = mountModelView(model, block("placed"), 1.5);
-    model.userData["modelView"] = view;
-    expect(modelViewOf(model)).toBe(view);
+    expect(mountedModelViews()).toContain(view);
+    expect(mountedModelViews().find((h) => h.model === model)).toBe(view);
+    view.dispose();
+    expect(mountedModelViews()).not.toContain(view);
   });
 
   // Why: a cut face takes its material's colour; a material with none
@@ -558,16 +606,33 @@ describe("mountModelView on a rigged model", () => {
     const { model, skinned } = rigged();
     const view = mountModelView(model, block("ghost"), 1);
     const glass = skinned.material as unknown as THREE.ShaderMaterial;
-    for (const chunk of [
-      "skinning_pars_vertex",
-      "morphtarget_pars_vertex",
-      "skinning_vertex",
-      "skinnormal_vertex",
-      "morphtarget_vertex",
-      "morphnormal_vertex",
-      "project_vertex",
-    ]) {
+    for (const chunk of ["skinning_pars_vertex", "morphtarget_pars_vertex"]) {
       expect(glass.vertexShader, chunk).toContain(`#include <${chunk}>`);
+    }
+    // The body's chunks in the order three r185's meshbasic vertex shader
+    // runs them: each reads what the one before wrote (`objectNormal`,
+    // `transformed`, `mvPosition`), so a chunk out of order compiles and
+    // draws the bind pose, or fails to compile. Substrings alone would pass
+    // a shader with every include in the wrong place.
+    const order = [
+      "morphinstance_vertex",
+      "batching_vertex",
+      "beginnormal_vertex",
+      "morphnormal_vertex",
+      "skinbase_vertex",
+      "skinnormal_vertex",
+      "defaultnormal_vertex",
+      "begin_vertex",
+      "morphtarget_vertex",
+      "skinning_vertex",
+      "project_vertex",
+    ];
+    const at = order.map((chunk) =>
+      glass.vertexShader.indexOf(`#include <${chunk}>`),
+    );
+    for (const [i, chunk] of order.entries()) {
+      expect(at[i], chunk).toBeGreaterThan(-1);
+      if (i > 0) expect(at[i], chunk).toBeGreaterThan(at[i - 1]!);
     }
     view.dispose();
   });
