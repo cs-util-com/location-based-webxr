@@ -235,11 +235,41 @@ describe("the character's frames sheet", () => {
       { onDropped: (drop) => drops.push(drop) }
     );
     expect(manifest.characters).toEqual([WENDEL]);
+    // A FIELD drop: the report names the one field left out, so nothing
+    // reading it can take it for the whole declaration.
+    expect(drops).toEqual([
+      {
+        kind: 'character',
+        character: 'wendel',
+        field: 'characters[0].frames',
+        reason: expect.stringMatching(/frames/) as unknown,
+      },
+    ]);
+  });
+
+  // Why: a sheet that is his one image would be sliced into four quarters
+  // of one pose - a quarter figure per frame. It is refused like any other
+  // sheet this reader cannot take.
+  it('refuses a sheet that is his one image, and a newer minor drops just that field', () => {
+    expect(() =>
+      parseTourManifest(
+        tour({ characters: [{ ...WENDEL, frames: WENDEL.image }] })
+      )
+    ).toThrow(/characters\[0\]\.frames" must name an image other than/);
+    const drops: TourManifestDrop[] = [];
+    const manifest = parseTourManifest(
+      tour({
+        minor: TOUR_MANIFEST_MINOR + 1,
+        characters: [{ ...WENDEL, frames: WENDEL.image }],
+      }),
+      { onDropped: (drop) => drops.push(drop) }
+    );
+    expect(manifest.characters).toEqual([WENDEL]);
     expect(drops).toEqual([
       expect.objectContaining({
         kind: 'character',
         character: 'wendel',
-        reason: expect.stringMatching(/frames/) as unknown,
+        field: 'characters[0].frames',
       }),
     ]);
   });

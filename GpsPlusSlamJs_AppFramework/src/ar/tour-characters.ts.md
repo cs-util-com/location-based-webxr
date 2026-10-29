@@ -18,8 +18,9 @@ station to station is written once, not copied into every block.
 - `TOUR_CHARACTER_FRAMES` - `['idle', 'talk-a', 'talk-b', 'beckon']`:
   the sheet's cells, left to right.
 - `TOUR_MAX_CHARACTERS = 32` (module-internal) - the most one tour declares.
-- `TourCharacterDrop` - `{ kind: 'character', character, reason }`: a
-  declaration a lenient reader left out.
+- `TourCharacterDrop` - `{ kind: 'character', character, field?, reason }`:
+  what a lenient reader left out - the whole declaration without `field`,
+  just that field (`characters[i].frames`) with it.
 - `TourCharactersReadOptions` - `{ assets, fail, lenient?, onDropped? }`;
   `assets` are the tour's already validated assets.
 - `parseTourCharacters(value, options): TourCharacter[]` - absent is `[]`;
@@ -58,9 +59,12 @@ station to station is written once, not copied into every block.
   wrongly rather than failing.
 - **`frames` is optional and the image stays:** a reader that knows no
   frames (1.31.0 knows no declarations at all) shows the block's image; a
-  `frames` that is not an image asset fails a file of this reader's own
-  minor and, read leniently, leaves out just that declaration (reported
-  through `onDropped`).
+  `frames` that is not an image asset, or that is his `image` itself (it
+  would be sliced into four quarters of one pose), fails a file of this
+  reader's own minor and, read leniently, leaves out just that FIELD: he
+  stays with his one image, and `onDropped` reports
+  `{ kind: 'character', character, field: 'characters[i].frames', reason }`.
+  A drop without `field` is the whole declaration (a bad name or image).
 
 ## Examples
 
@@ -81,7 +85,8 @@ const characters = parseTourCharacters(
 ## Tests
 
 - `tour-characters.test.ts` - the frames sheet (kept, absent, not an
-  image asset strict and lenient), the declaration's read (absent, empty,
+  image asset or his own image, strict and lenient as a field drop), the
+  declaration's read (absent, empty,
   strict refusals, lenient drops), reference resolution and the writer
   syncing the inline copies, an unknown reference strict and lenient, the
   five views as story views (refused for a free block), `lineEnd` read and

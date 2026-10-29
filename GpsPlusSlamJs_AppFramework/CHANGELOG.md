@@ -55,8 +55,11 @@
   background, every figure centred in its cell, feet on one baseline. New
   export `TOUR_CHARACTER_FRAMES`. The
   `image` stays his one pose and the fallback; a `frames` that is not an
-  image asset is refused at this minor and dropped with its declaration
-  when read leniently.
+  image asset, or that is his `image` itself, is refused at this minor.
+  Read leniently, only the field is dropped: he stays with his one image,
+  and `TourCharacterDrop` reports it with its new optional `field`
+  (`characters[i].frames`); a drop without `field` is the whole
+  declaration.
 
 ### Fixed
 

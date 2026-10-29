@@ -60,10 +60,13 @@ export const TOUR_CHARACTER_FRAMES = [
 /** The most characters one tour declares. */
 const TOUR_MAX_CHARACTERS = 32;
 
-/** A declaration a lenient reader left out. */
+/** What a lenient reader left out of a declaration: the whole declaration
+ *  when `field` is absent, or just that field (`characters[i].frames`)
+ *  when present - he then stays, with what was readable. */
 export interface TourCharacterDrop {
   readonly kind: 'character';
   readonly character: string;
+  readonly field?: string;
   readonly reason: string;
 }
 
@@ -110,18 +113,42 @@ export function parseTourCharacters(
       image: entry.image as string,
     };
     if (entry.frames === undefined) return [character];
-    if (typeof entry.frames === 'string' && images.has(entry.frames)) {
-      return [{ ...character, frames: entry.frames }];
+    const sheet = sheetProblemOf(entry.frames, character.image, at, images);
+    if (sheet === null) {
+      return [{ ...character, frames: entry.frames as string }];
     }
     // A sheet this reader cannot take: a newer minor may describe it
-    // otherwise, and he still stands with his one image.
-    const sheet = `"${at}.frames" must name an image asset`;
+    // otherwise, and he still stands with his one image - so only the
+    // field is left out.
     if (options.lenient !== true) return fail(sheet);
-    options.onDropped?.({ kind: 'character', character: id, reason: sheet });
+    options.onDropped?.({
+      kind: 'character',
+      character: id,
+      field: `${at}.frames`,
+      reason: sheet,
+    });
     return [character];
   });
   assertUniqueTourIds(ids, 'character', fail);
   return read;
+}
+
+/** Why a declaration's `frames` is no sheet this reader takes, or null: it
+ *  must name an image asset other than his one image (a sheet that is his
+ *  one pose would be sliced into four quarters of it). */
+function sheetProblemOf(
+  frames: unknown,
+  image: string,
+  at: string,
+  images: ReadonlySet<string>
+): string | null {
+  if (typeof frames !== 'string' || !images.has(frames)) {
+    return `"${at}.frames" must name an image asset`;
+  }
+  if (frames === image) {
+    return `"${at}.frames" must name an image other than "${at}.image"`;
+  }
+  return null;
 }
 
 /** Why a declaration breaks a rule a later minor may relax, or null. */
