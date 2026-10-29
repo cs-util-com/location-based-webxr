@@ -150,7 +150,7 @@ export function demoBlock(view: string): TourModelBlock & {
       { name: "Through the post", position: [0, 1, 0], normal: [0, 0, 1] },
       { name: "Across the arm", position: [0.6, 1.8, 0], normal: [1, 0, 0] },
     ],
-  } as TourModelBlock & { readonly sizeM: number };
+  };
 }
 
 /** Where the demo's camera stands for a model `sizeM` tall at the origin:
@@ -397,7 +397,7 @@ export function startModelViewsCheck(
           "lookFrom needs two points of three finite numbers",
         );
       }
-      camera.position.set(eye[0]!, eye[1]!, eye[2]!);
+      camera.position.set(eye[0]!, eye[1]!, eye[2]);
       camera.lookAt(target[0]!, target[1]!, target[2]!);
     },
     stop() {

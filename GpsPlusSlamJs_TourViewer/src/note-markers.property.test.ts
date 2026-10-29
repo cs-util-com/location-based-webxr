@@ -67,7 +67,7 @@ describe("layoutNoteMarkers, for any notes", () => {
       fc.property(notesArb, screenArb, (raw, screen) => {
         const notes = toNotes(raw);
         layoutNoteMarkers(notes, screen, null).forEach((p, i) => {
-          if (notes[i]!.behind) expect(p.on).toBe(false);
+          expect(notes[i]!.behind && p.on).toBe(false);
           expect(p.surfaceX).toBe(notes[i]!.surface.x);
           expect(p.surfaceY).toBe(notes[i]!.surface.y);
         });
