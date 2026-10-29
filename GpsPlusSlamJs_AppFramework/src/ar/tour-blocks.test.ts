@@ -720,12 +720,14 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     expect(after?.annotations).toEqual(before?.annotations);
   });
 
-  it('an empty note list reads as no notes; an empty section list is refused', () => {
-    // Why: an empty section list would be a cutaway that cannot cut;
-    // leaving the field out already means one automatic cut.
+  it('an empty note list reads as no notes, and an empty section list as no sections', () => {
+    // Why (a PR review finding): an absent section list is a working
+    // cutaway - one cut that turns to face the visitor - so an empty one
+    // reads the same, as an empty note list reads as no notes, rather than
+    // refusing the whole tour.
     expect(model({ annotations: [] })).not.toHaveProperty('annotations');
-    expect(() => model({ view: 'cutaway', sections: [] })).toThrow(
-      /sections" must hold 1 to 4/
+    expect(model({ view: 'cutaway', sections: [] })).not.toHaveProperty(
+      'sections'
     );
     expect(model({ view: 'cutaway' })).not.toHaveProperty('sections');
   });

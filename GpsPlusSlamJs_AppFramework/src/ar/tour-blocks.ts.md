@@ -108,8 +108,8 @@ model | character`.
     model file keeps them. An empty list reads as absent.
   - `sections` - 1 to 4 planes `{ name, position, normal }` in the model's
     own space; a cutaway cuts away what lies on the side `normal` points
-    to. Absent means one cut that turns to face the visitor; an empty
-    list is refused (a cutaway that cannot cut).
+    to. Absent means one cut that turns to face the visitor, and an empty
+    list reads as absent, as an empty note list does.
   - A point or direction is three finite numbers and a direction is not
     zero (nor shorter than 1e-9, too short to normalise) - malformed at
     every minor; a coordinate beyond

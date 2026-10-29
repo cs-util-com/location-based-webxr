@@ -62,6 +62,10 @@ const NOTE_LABEL_RANGE_M = 16;
 /** A disc this far past the screen's edge still counts as on it (px):
  *  the slack decides only whether a disc is shown, never where. */
 const NOTE_EDGE_SLACK_PX = 20;
+/** How fast a disc eases toward its opacity, per second: the gap left
+ *  after `dt` is `exp(-rate * dt)`, a quarter closed per frame at 60 Hz,
+ *  and the same per second at any frame rate. */
+const NOTE_FADE_RATE = -60 * Math.log(0.75);
 /** A disc's radius (px): the stylesheet's 28 px button. A shown disc's
  *  centre is held this far inside every edge, so all of it can be
  *  tapped. */
@@ -225,12 +229,14 @@ export interface NoteMarkersDom {
 }
 
 export interface NoteMarkers {
-  /** One frame: the discs of `handles`' notes, `openKey` the note whose
-   *  card is open; no camera hides them all. */
+  /** One frame, `dtS` seconds after the last: the discs of `handles`'
+   *  notes, `openKey` the note whose card is open; no camera hides them
+   *  all. */
   sync(
     handles: readonly ModelViewHandle[],
     camera: THREE.Camera | null,
     openKey: string | null,
+    dtS: number,
   ): void;
   /** Every disc and leader removed. */
   clear(): void;
@@ -297,7 +303,11 @@ export function createNoteMarkers(
   };
 
   return {
-    sync(handles, camera, openKey) {
+    sync(handles, camera, openKey, dtS) {
+      const ease =
+        Number.isFinite(dtS) && dtS > 0
+          ? 1 - Math.exp(-dtS * NOTE_FADE_RATE)
+          : 0;
       const width = dom.layer.clientWidth;
       const height = dom.layer.clientHeight;
       const wanted = new Set<string>();
@@ -328,7 +338,7 @@ export function createNoteMarkers(
           el.leader.style.display = "none";
           continue;
         }
-        el.opacity += (p.opacity - el.opacity) * 0.25;
+        el.opacity += (p.opacity - el.opacity) * ease;
         el.button.hidden = false;
         el.leader.style.display = "";
         // The stylesheet centres the 28 px button on its origin (its

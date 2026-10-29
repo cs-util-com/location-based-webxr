@@ -75,7 +75,8 @@ TourPicture | TourModel` - a free block without its local pose, plus
   link, no code-only station), `blocks[]` and `steps[]`. A step `show`s a
   block of its own station, asks a `choice` (an option's `goto` names a
   step of the station, or is absent: the next step), or asks a `quiz`. A
-  block no step shows must stand in the world (`pin`, `plane`, `placed`).
+  block no step shows must stand in the world (`pin`, `plane`, or a model's `placed`, `ghost`,
+  `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`).
   A station may have no steps (an automatic station: finding it
   completes it).
 - **Every media file is an asset**, a captured photo's too: its bytes stay
@@ -245,7 +246,8 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
   (`test-utils/tour-arbitraries.ts`: blocks of every kind, free and shown,
   shows, choices and quizzes) with generated details, tour ids, station
   descriptions and card images: serialize->parse is the identity with
-  every local pose the same numbers exactly, written at 4.0; parse is
+  every local pose the same numbers exactly, written at the lowest minor
+  the tour needs (`tourBlocksMinor`); parse is
   idempotent; the writer refuses every tour of a newer minor; every block
   stays in its station, and a kept cover or card image always names an
   image asset, every dropped card image reported.

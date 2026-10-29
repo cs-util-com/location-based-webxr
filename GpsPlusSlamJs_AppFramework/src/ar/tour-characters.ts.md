@@ -13,7 +13,7 @@ station to station is written once, not copied into every block.
 - `TourCharacter` - `{ id, name, image }`: the name 1-80 characters (the
   character block's own rule, `TOUR_BLOCK_TEXT_RULES.character.name`), the
   image the id of an image asset of the tour.
-- `TOUR_MAX_CHARACTERS = 32` - the most one tour declares.
+- `TOUR_MAX_CHARACTERS = 32` (module-internal) - the most one tour declares.
 - `TourCharacterDrop` - `{ kind: 'character', character, reason }`: a
   declaration a lenient reader left out.
 - `TourCharactersReadOptions` - `{ assets, fail, lenient?, onDropped? }`;

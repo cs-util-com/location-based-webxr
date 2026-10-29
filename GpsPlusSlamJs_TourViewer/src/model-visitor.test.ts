@@ -230,6 +230,20 @@ describe("the model card", () => {
 });
 
 describe("the toy in hand", () => {
+  // Why (a PR review finding): every pointer move of a drag re-rendered the
+  // whole card, rewriting its number, title and text dozens of times a
+  // second; only the reset button's state changes during a drag.
+  it("a drag updates the reset button without rewriting the card's text", () => {
+    const w = world([block("toy", "toy", { sizeM: 1 })]);
+    const { visitor, dom } = visitorFor(w, () => "toy");
+    visitor.tapped(null);
+    dom.title.textContent = "untouched";
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointermove", 1, 200, 400);
+    expect(dom.reset.disabled).toBe(false);
+    expect(dom.title.textContent).toBe("untouched");
+  });
+
   // Why: the gesture rule - while a toy's card is open, one finger drags
   // it, two pinch it, and a tap puts it down; "Back to its place" undoes
   // both.

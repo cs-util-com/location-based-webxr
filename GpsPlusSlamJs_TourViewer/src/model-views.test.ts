@@ -630,9 +630,10 @@ describe("mountModelView on a rigged model", () => {
     const at = order.map((chunk) =>
       glass.vertexShader.indexOf(`#include <${chunk}>`),
     );
+    // Each after the one before it (the first after -1: present), so
+    // every chunk is present and in order.
     for (const [i, chunk] of order.entries()) {
-      expect(at[i], chunk).toBeGreaterThan(-1);
-      if (i > 0) expect(at[i], chunk).toBeGreaterThan(at[i - 1]!);
+      expect(at[i], chunk).toBeGreaterThan(i === 0 ? -1 : at[i - 1]!);
     }
     view.dispose();
   });

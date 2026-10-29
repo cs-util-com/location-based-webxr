@@ -37,7 +37,7 @@ export interface TourCharacter {
 }
 
 /** The most characters one tour declares. */
-export const TOUR_MAX_CHARACTERS = 32;
+const TOUR_MAX_CHARACTERS = 32;
 
 /** A declaration a lenient reader left out. */
 export interface TourCharacterDrop {

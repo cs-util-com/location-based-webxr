@@ -171,7 +171,7 @@ describe("createNoteMarkers", () => {
     const opened: number[] = [];
     const markers = createNoteMarkers(d, (_h, i) => opened.push(i));
     const view = hotspots();
-    markers.sync([view], camera(), null);
+    markers.sync([view], camera(), null, 1 / 60);
     const buttons = d.layer.querySelectorAll("button.note-marker");
     expect(buttons).toHaveLength(2);
     expect(buttons[0]!.getAttribute("aria-label")).toBe("Note 1: Front");
@@ -180,14 +180,37 @@ describe("createNoteMarkers", () => {
     expect(d.leaders.querySelectorAll("line")).toHaveLength(4);
     (buttons[1] as HTMLButtonElement).click();
     expect(opened).toEqual([1]);
-    markers.sync([view], camera(), noteKey("bell", 0));
+    markers.sync([view], camera(), noteKey("bell", 0), 1 / 60);
     expect(buttons[0]!.classList.contains("open")).toBe(true);
     expect(buttons[0]!.classList.contains("labelled")).toBe(true);
     // No camera: every disc hidden, none removed.
-    markers.sync([view], null, null);
+    markers.sync([view], null, null, 1 / 60);
     expect((buttons[0] as HTMLButtonElement).hidden).toBe(true);
-    markers.sync([], camera(), null);
+    markers.sync([], camera(), null, 1 / 60);
     expect(d.layer.querySelectorAll("button")).toHaveLength(0);
     expect(d.leaders.querySelectorAll("g")).toHaveLength(0);
+  });
+
+  // Why (a PR review finding): the fade eased a fixed share per call, so
+  // at 120 Hz the discs faded in twice as fast as at 60 Hz. Per second it
+  // must be the same at any frame rate, and a quarter per frame at 60 Hz.
+  it("fades a disc in at the same pace per second at 60 and 120 Hz", () => {
+    const fadeAfter = (hz: number, frames: number): number => {
+      const d = dom();
+      const markers = createNoteMarkers(d, () => undefined);
+      const view = hotspots();
+      for (let i = 0; i < frames; i++) {
+        markers.sync([view], camera(), null, 1 / hz);
+      }
+      const button = d.layer.querySelector("button.note-marker");
+      return Number((button as HTMLButtonElement).style.opacity);
+    };
+    expect(fadeAfter(60, 1)).toBeCloseTo(0.25, 3);
+    for (const seconds of [0.05, 0.1, 0.2]) {
+      expect(fadeAfter(120, seconds * 120)).toBeCloseTo(
+        fadeAfter(60, seconds * 60),
+        3,
+      );
+    }
   });
 });

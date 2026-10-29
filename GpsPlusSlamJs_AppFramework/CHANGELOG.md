@@ -10,7 +10,8 @@
   `toy` (`TOUR_MODEL_WORLD_VIEWS`; every one needs `sizeM`) - and three
   optional fields: `animation` `{ name, autoplay }`, `annotations` (1-32
   notes `{ position, normal, title (64), text? (1024) }` in the model's own
-  space) and `sections` (1-4 named planes a cutaway steps through). New
+  space) and `sections` (1-4 named planes a cutaway steps through; an empty
+  list of either reads as absent). New
   exports: `TOUR_WORLD_VIEWS` (the one set of world views, for renderers),
   `TOUR_MODEL_NOTE_RULES`, `TOUR_MODEL_MAX_NOTES`,
   `TOUR_MODEL_SECTION_RULES`, `TOUR_MODEL_MAX_SECTIONS`,
@@ -32,13 +33,13 @@
   when the line ends, `tour.json` version 4 minor 2** (`ar/tour-characters`,
   `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
   declare `characters` (`{ id, name, image }`, at most
-  `TOUR_MAX_CHARACTERS`), and a `character` block may name one by its new
+  32), and a `character` block may name one by its new
   optional `character` field: the block then takes the declaration's name
   and image, and the writer keeps them inline too. A character block gains
   the story views `bubble`, `speak`, `two-stations`, `portrait` and
   `popup` (`TOUR_CHARACTER_VIEWS`), and a story step the advance
   `{ mode: 'lineEnd' }`. New exports: `parseTourCharacters`,
-  `TOUR_MAX_CHARACTERS`, `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
+  `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
   types `TourCharacter`, `TourCharacterDrop`, `TourCharacterView`;
   `TourManifest` gains an optional `characters`, `TourManifestDrop` a
   character drop. `TOUR_MANIFEST_MINOR` is 2, and a tour using none of this

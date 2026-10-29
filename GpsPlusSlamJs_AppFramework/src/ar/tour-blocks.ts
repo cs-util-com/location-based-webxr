@@ -299,8 +299,8 @@ export interface TourModelBlock extends TourBlockEnvelope<'model'> {
    *  live on the block, not in the file, so replacing the file keeps them. */
   readonly annotations?: readonly TourModelNote[];
   /** Minor 1: the planes a `cutaway` steps through, 1 to
-   *  {@link TOUR_MODEL_MAX_SECTIONS}. Absent: one cut that turns to face
-   *  the visitor. */
+   *  {@link TOUR_MODEL_MAX_SECTIONS}. Absent (an empty list reads so): one
+   *  cut that turns to face the visitor. */
   readonly sections?: readonly TourModelSection[];
 }
 
@@ -668,12 +668,6 @@ function modelNotes(v: Fields, ctx: BlockContext) {
 
 function modelSections(v: Fields, ctx: BlockContext) {
   const at = `${ctx.at}.sections`;
-  if (Array.isArray(v.sections) && v.sections.length === 0) {
-    return problem(
-      ctx,
-      `"${at}" must hold 1 to ${String(TOUR_MODEL_MAX_SECTIONS)} sections, or be left out`
-    );
-  }
   const list = recordList(v.sections, at, TOUR_MODEL_MAX_SECTIONS, ctx);
   if (list === undefined) return {};
   const sections = list.flatMap((entry, i) => {

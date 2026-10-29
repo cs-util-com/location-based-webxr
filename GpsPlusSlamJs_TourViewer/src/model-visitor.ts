@@ -374,7 +374,11 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
     }
     finger.x = event.clientX;
     finger.y = event.clientY;
-    render();
+    // Only the reset button changes while the toy moves: the card's text
+    // is not rewritten on every pointer move.
+    if (open?.as === "model" && open.handle.view === "toy") {
+      dom.reset.disabled = !open.handle.toyMoved();
+    }
   });
   const lift = (event: PointerEvent): void => {
     if (!fingers.delete(event.pointerId)) return;
@@ -406,6 +410,7 @@ export function createModelVisitor(deps: ModelVisitorDeps): ModelVisitor {
         handles.filter((h) => h.notes.length > 0),
         camera,
         openNote,
+        dtS,
       );
     },
     tapped(tap) {

@@ -13,8 +13,10 @@ select.
 - `NOTE_MIN_GAP_PX` (46), `NOTE_MIN_OPACITY` (0.22). With no card open, the
   note nearest the centre carries its label only within 16 m
   (`NOTE_LABEL_RANGE_M`, module-private).
-- `noteOpacity(facing)` - 1 for a note facing the camera (cosine above
-  0.25), fading to 0.22 as it turns away; NaN gives the floor.
+- `noteOpacity(facing)` - 1 for a note facing the camera (cosine 0.3 or
+  more), easing down (a smoothstep from 0.3 to -0.2) to the 0.22 floor as
+  it turns away; NaN gives the floor. (0.25 is a different threshold: the
+  facing a note needs to carry the automatic label.)
 - `notesOnScreen(handles, camera, { width, height })` - every note of every
   handle projected: surface and marker in pixels, `behind`, `facing`
   (cosine of its normal against the view direction) and its distance.
@@ -25,7 +27,9 @@ select.
   off the screen; the title goes to the open note, else to the facing
   note nearest `(w/2, 0.45 h)` within 16 m.
 - `createNoteMarkers({ layer, leaders }, onOpen)` -> `{ sync(handles,
-camera, openKey), clear() }`. `sync` keeps one `button.note-marker`
+camera, openKey, dtS), clear() }`. Each disc eases toward its opacity
+  by `dtS` (a quarter of the gap per frame at 60 Hz, the same per second at
+  any frame rate; a first or non-finite `dtS` moves nothing). `sync` keeps one `button.note-marker`
   (with `.note-disc` and `.note-label`, classes `open` / `labelled`) and
   one SVG leader group per note, removes those of models gone, hides all
   without a camera, and eases each disc's opacity. A click calls
