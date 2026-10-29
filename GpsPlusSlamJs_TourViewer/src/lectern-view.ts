@@ -37,11 +37,14 @@ import {
 import {
   analyzeLecternText,
   LECTERN_PAGE,
+  LECTERN_FIRST_PLACE,
+  lecternPlaceStart,
   lecternTurn,
-  lecternWindowStart,
   wrapLecternParagraph,
+  type LecternPlace,
   type LecternText,
 } from "./lectern-page.js";
+import { shownIn } from "./model-visitor.js";
 
 /** The stand's shape (m), the prototype's numbers. */
 export const LECTERN_STAND = {
@@ -74,12 +77,20 @@ const SERIF =
 const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
 const BODY_FONT = `400 38px ${SERIF}`;
 
-/** What the page shows: the block's title and text, and the sentence. */
+/** What the page shows: the block's title and text, the sentence, and
+ *  the window's first line when a turn moved it inside that sentence
+ *  (absent or null: the window the sentence opens). */
 export interface LecternPageState {
   readonly title: string;
   readonly text: LecternText;
   readonly sentence: number;
+  readonly start?: number | null;
 }
+
+/** The page texture's anisotropy: the prototype asks for the renderer's
+ *  maximum, and three clamps a texture's to that maximum when it uploads
+ *  it, so the largest any WebGL device reports (16) asks for the same. */
+export const LECTERN_PAGE_ANISOTROPY = 16;
 
 function roundRect(
   g: CanvasRenderingContext2D,
@@ -149,7 +160,7 @@ export function drawLecternPage(
   g.font = BODY_FONT;
   if (sentence !== undefined) {
     const lines = wrapLecternParagraph(text, p, (w) => g.measureText(w).width);
-    const start = lecternWindowStart(lines, sentence.from);
+    const start = lecternPlaceStart(lines, sentence.from, page.start ?? null);
     for (let r = 0; r < LECTERN_PAGE.rows; r += 1) {
       const line = lines[start + r];
       if (line === undefined) break;
@@ -189,6 +200,15 @@ export function drawLecternPage(
     M,
     738,
   );
+}
+
+/** The page's texture: sRGB, and as sharp seen at a slant from the
+ *  square as the renderer allows (`LECTERN_PAGE_ANISOTROPY`). */
+export function lecternPageTexture(canvas: HTMLCanvasElement): CanvasTexture {
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.anisotropy = LECTERN_PAGE_ANISOTROPY;
+  return texture;
 }
 
 /** The stand's geometry: the board (its back, the page plane showing
@@ -258,8 +278,8 @@ export interface LecternHandle {
   readonly page: Object3D;
   /** The sentence the page is on. */
   sentence(): number;
-  /** Turn the page (a tap): seven lines on, the next paragraph, or back
-   *  to the first. */
+  /** Turn the page (a tap): seven lines on (inside a long sentence too),
+   *  the next paragraph, or back to the first. */
   turn(): void;
   dispose(): void;
 }
@@ -289,15 +309,14 @@ export function mountLectern(block: {
   canvas.height = LECTERN_PAGE.heightPx;
   const g = canvas.getContext("2d");
   if (g === null) throw new Error("the reading stand needs a 2D canvas");
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
+  const texture = lecternPageTexture(canvas);
   const text = analyzeLecternText(
     plainTextOf(parseTourMarkdown(block.body)).text,
   );
   const stand = buildLecternStand(texture);
-  let sentence = 0;
+  let place: LecternPlace = LECTERN_FIRST_PLACE;
   const draw = (): void => {
-    drawLecternPage(g, { title: block.title, text, sentence });
+    drawLecternPage(g, { title: block.title, text, ...place });
     texture.needsUpdate = true;
   };
   draw();
@@ -306,10 +325,10 @@ export function mountLectern(block: {
     blockId: block.id,
     object: stand.root,
     page: stand.page,
-    sentence: () => sentence,
+    sentence: () => place.sentence,
     turn() {
       g.font = BODY_FONT;
-      sentence = lecternTurn(text, sentence, (w) => g.measureText(w).width);
+      place = lecternTurn(text, place, (w) => g.measureText(w).width);
       draw();
     },
     dispose() {
@@ -340,4 +359,24 @@ export function turnLecternUnderTap<T>(
   if (handle === undefined) return false;
   handle.turn();
   return true;
+}
+
+/**
+ * The visitor's tap on the reading stands (`main.ts`): only the stands
+ * shown under a station's content group of `scene` (`shownIn`, the model
+ * views' rule) can turn, so a hidden station's stand never takes a tap;
+ * no scene, no turn. True when one turned.
+ */
+export function turnShownLecternUnderTap<T>(
+  scene: Object3D | null,
+  pick: (targets: ReadonlyMap<string, Object3D>, tap: T) => string | null,
+  tap: T,
+  handles: readonly LecternHandle[] = mountedLecterns(),
+): boolean {
+  if (scene === null) return false;
+  return turnLecternUnderTap(
+    handles.filter((h) => shownIn(h.object, scene)),
+    pick,
+    tap,
+  );
 }

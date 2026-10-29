@@ -30,9 +30,24 @@ lectern); the drawing is `lectern-view.ts`'s.
 - `lecternWindowStart(lines, from)` - the first line shown for the
   sentence starting at `from`: two lines above its line, clamped so nine
   lines show when the paragraph has them.
-- `lecternTurn(text, s, measure, maxW = 900)` - the sentence seven lines
-  on in the same paragraph, else the next paragraph's first, else 0. A
-  sentence out of range (or not an integer) turns to 0.
+- `LecternPlace` `{ sentence, start }` - where the page is: the sentence
+  it highlights and, once a turn moved the window on inside a sentence
+  longer than the page, the window's first line (`null`: the window the
+  sentence opens). `LECTERN_FIRST_PLACE` is `{ sentence: 0, start: null }`.
+- `lecternPlaceStart(lines, from, start)` - the first line shown: `start`
+  kept inside the paragraph (at most nine lines from its end, at least
+  0), or `lecternWindowStart` for `null` or a start that is no integer.
+- `lecternTurn(text, place, measure, maxW = 900)` -> `LecternPlace` -
+  seven lines on from the line the page reads at (the sentence's line, or
+  two below a moved window's first): a later sentence starting there is
+  turned to (`start: null`); the same sentence still there moves the
+  window on to start two lines above that line, the sentence kept; past
+  the paragraph's last line, or when the window could not move on (the
+  page already shows the paragraph's last lines), the next paragraph's
+  first sentence, else `LECTERN_FIRST_PLACE`. A sentence out of range (or
+  not an integer) turns to `LECTERN_FIRST_PLACE`. Every tap changes the
+  page (the property test found a tap that did not: one sentence of eight
+  lines, all on the page, whose window was clamped back to where it was).
 
 ## Invariants & assumptions
 
@@ -41,10 +56,15 @@ lectern); the drawing is `lectern-view.ts`'s.
   turn.
 - Every sentence lies inside its paragraph; together they cover every
   non-space character of it.
-- A turn always moves forward or wraps to 0, and visits every paragraph.
+- A turn always moves forward (a later sentence, or the same one's window
+  further on) or wraps to the first, and visits every paragraph; over one
+  cycle every line of every paragraph is shown at least once.
   **Departure from the prototype:** its turn stuck on a sentence longer
   than seven lines (the line seven on still belonged to it); here the
-  turn moves to the next sentence instead. The property test found it.
+  window moves on by lines through that sentence, which stays
+  highlighted. (A first fix turned to the next sentence and skipped the
+  long one's middle lines; the r984 review showed a 14-line sentence
+  losing lines 9-11, and the every-line property now holds it.)
 
 ## Examples
 
@@ -52,7 +72,8 @@ lectern); the drawing is `lectern-view.ts`'s.
 const measure = (w: string) => ctx.measureText(w).width;
 const t = analyzeLecternText("One. Two.\n\nThree.");
 const lines = wrapLecternParagraph(t, 0, measure);
-const next = lecternTurn(t, 0, measure); // 2: the next paragraph
+const next = lecternTurn(t, LECTERN_FIRST_PLACE, measure);
+// { sentence: 2, start: null }: the next paragraph
 ```
 
 ## Tests

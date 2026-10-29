@@ -38,12 +38,8 @@ import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-me
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
-import {
-  createModelVisitor,
-  mountModelVisitorDom,
-  shownIn,
-} from "./model-visitor.js";
-import { mountedLecterns, turnLecternUnderTap } from "./lectern-view.js";
+import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
+import { turnShownLecternUnderTap } from "./lectern-view.js";
 import "./model-visitor.css";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
@@ -1081,15 +1077,12 @@ hooks.visitorTap = (tap) => {
     character: stations.characterTapped,
     model: (t) => modelVisitor.tapped(t),
     // A reading stand under the tap turns its page.
-    lectern: (t) => {
-      const scene = seams.getScene();
-      if (scene === null) return false;
-      return turnLecternUnderTap(
-        mountedLecterns().filter((h) => shownIn(h.object, scene)),
+    lectern: (t) =>
+      turnShownLecternUnderTap(
+        seams.getScene(),
         (targets, at) => seams.pickObjectInView(targets, at),
         t,
-      );
-    },
+      ),
     pinSheet,
   });
 };

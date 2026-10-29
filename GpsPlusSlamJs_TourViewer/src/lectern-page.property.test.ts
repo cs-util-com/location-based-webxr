@@ -4,7 +4,9 @@
  * on, through every paragraph, and back to the start. A sentence split that
  * loses characters, a window that slides past its sentence, or a turn that
  * sticks (a long sentence wider than seven lines) would each leave a
- * visitor tapping a page that does not change. Swept over random texts,
+ * visitor tapping a page that does not change; a turn that skips lines
+ * (a sentence longer than the page, turned past) would leave words never
+ * shown. Swept over random texts,
  * widths from a narrow 4 units to a wide 60 and measures of one or two
  * units per character, so no single line width carries the verdict.
  */
@@ -14,10 +16,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   analyzeLecternText,
+  LECTERN_FIRST_PLACE,
   LECTERN_PAGE,
+  lecternPlaceStart,
   lecternTurn,
   lecternWindowStart,
   wrapLecternParagraph,
+  type LecternPlace,
+  type LecternText,
 } from "./lectern-page";
 
 const word = fc.stringMatching(/^[A-Za-z0-9]{1,9}$/);
@@ -41,6 +47,23 @@ const text = fc
   .map((p) => p.join("\n\n"));
 const width = fc.integer({ min: 4, max: 60 });
 const perChar = fc.constantFrom(1, 2);
+
+/** Every paragraph's lines, and the first line `place` shows. */
+function pageOf(a: LecternText, measure: (s: string) => number, maxW: number) {
+  const wrapped = a.paragraphs.map((_, p) =>
+    wrapLecternParagraph(a, p, measure, maxW),
+  );
+  const startOf = (place: LecternPlace): number => {
+    const s = a.sentences[place.sentence];
+    if (s === undefined) return 0;
+    return lecternPlaceStart(wrapped[s.p] ?? [], s.from, place.start);
+  };
+  // Taps enough to go round once: each turns to a later sentence or moves
+  // the window on by at least a line.
+  const taps =
+    a.sentences.length + wrapped.reduce((n, lines) => n + lines.length, 0) + 1;
+  return { wrapped, startOf, taps };
+}
 
 describe("lectern page invariants", () => {
   it("every sentence lies inside its paragraph, in order, and covers its words", () => {
@@ -94,19 +117,49 @@ describe("lectern page invariants", () => {
       fc.property(text, width, perChar, (t, w, k) => {
         const a = analyzeLecternText(t);
         const measure = (s: string) => s.length * k;
-        let s = 0;
+        const { startOf, taps } = pageOf(a, measure, w * k);
+        let place = LECTERN_FIRST_PLACE;
         const seen = new Set<number>();
-        // Enough taps to go round once: each moves on by at least one
-        // sentence, so one per sentence plus the wrap.
-        for (let i = 0; i <= a.sentences.length; i += 1) {
-          if (a.sentences[s] !== undefined) seen.add(a.sentences[s]!.p);
-          const next = lecternTurn(a, s, measure, w * k);
-          expect(Number.isInteger(next)).toBe(true);
-          expect(next === 0 || next > s).toBe(true);
-          expect(next).toBeLessThan(Math.max(1, a.sentences.length));
-          s = next;
+        for (let i = 0; i < taps; i += 1) {
+          const s = a.sentences[place.sentence];
+          if (s !== undefined) seen.add(s.p);
+          const next = lecternTurn(a, place, measure, w * k);
+          expect(Number.isInteger(next.sentence)).toBe(true);
+          const wrapped = next.sentence === 0 && next.start === null;
+          const on = next.sentence > place.sentence;
+          const moved =
+            next.sentence === place.sentence &&
+            next.start !== null &&
+            next.start > startOf(place);
+          expect(wrapped || on || moved).toBe(true);
+          expect(next.sentence).toBeLessThan(Math.max(1, a.sentences.length));
+          place = next;
         }
         expect(seen.size).toBe(a.paragraphs.length);
+      }),
+    );
+  });
+
+  it("over one cycle of taps every line of every paragraph is shown at least once", () => {
+    fc.assert(
+      fc.property(text, width, perChar, (t, w, k) => {
+        const a = analyzeLecternText(t);
+        const measure = (s: string) => s.length * k;
+        const { wrapped, startOf, taps } = pageOf(a, measure, w * k);
+        const shown = wrapped.map((lines) => lines.map(() => false));
+        let place = LECTERN_FIRST_PLACE;
+        for (let i = 0; i < taps; i += 1) {
+          const s = a.sentences[place.sentence];
+          if (s !== undefined) {
+            const start = startOf(place);
+            const row = shown[s.p] ?? [];
+            const end = Math.min(row.length, start + LECTERN_PAGE.rows);
+            for (let r = start; r < end; r += 1) row[r] = true;
+          }
+          place = lecternTurn(a, place, measure, w * k);
+          if (place.sentence === 0 && place.start === null) break;
+        }
+        expect(shown.every((row) => row.every(Boolean))).toBe(true);
       }),
     );
   });

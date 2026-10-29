@@ -344,12 +344,12 @@ describe("sayFailureInToast", () => {
   // walk's toast and, since the toast's root is aria-hidden, announced.
   it("shows the failure in the toast and announces it; without a toast it says nothing and does not throw", () => {
     const toast = { say: vi.fn(), announce: vi.fn() };
-    sayFailureInToast(toast)("His voice could not be played here.");
+    sayFailureInToast(toast)("The voice could not be played here.");
     expect(toast.say).toHaveBeenCalledWith([
-      "His voice could not be played here.",
+      "The voice could not be played here.",
     ]);
     expect(toast.announce).toHaveBeenCalledWith(
-      "His voice could not be played here.",
+      "The voice could not be played here.",
     );
     expect(() => {
       sayFailureInToast(undefined)("x");

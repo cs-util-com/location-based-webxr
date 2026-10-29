@@ -42,7 +42,7 @@ tour id and the tour details.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - The WORLD VIEW a creator's pages hold: `TourObject = TourPin |
-TourPicture | TourModel` - a free block without its local pose, plus
+TourLectern | TourPicture | TourModel` - a free block without its local pose, plus
   `geo` (its geo pose) and `station?` (absent on a draft object no station
   holds yet). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
@@ -180,9 +180,10 @@ TourPicture | TourModel` - a free block without its local pose, plus
 - **Minor 3** (`TOUR_MANIFEST_MINOR = 3`): a long text's `lectern` view,
   a reading stand in the square at the block's pose (`TourLectern`, one
   of `TourObject`), as a free block or a story block. A file is written at
-  minor 3 only when a long text uses it (`tourBlocksMinor`). A 4.2 reader
-  leaves a free lectern out (reported through `onDropped`), shows a story
-  one as a card, and will not save the tour (`tour-lectern.test.ts`).
+  minor 3 only when a long text uses it (`tourBlocksMinor`). The reader
+  the framework released (1.31.0, minor 0) leaves a free lectern out
+  (reported through `onDropped`), shows a story one as a card, and will
+  not save the tour (`tour-lectern.test.ts`).
 - **Unknown VALUES of a newer minor:** an unknown block kind or view, step
   kind, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story
@@ -237,8 +238,8 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
 - `tour-lectern.test.ts` - the long text's `lectern` view: a free one
   read as a tour object and written back exactly at minor 3, a story one
   kept, minor 3 only when a long text uses it, a free card refused, and
-  the released 4.2 reader (`tour-reader-1-31`) dropping, carding and
-  refusing to save it.
+  the released reader (framework 1.31.0, minor 0, installed as
+  `tour-reader-1-31`) dropping, carding and refusing to save it.
 - `tour-manifest.test.ts` - a station with a pin and a picture at local
   poses, the empty manifest, block and asset ids as separate namespaces,
   one rejection per rule with the record named, versions 1, 2 and 3

@@ -165,6 +165,19 @@ export function wrapLecternParagraph(
   return lines;
 }
 
+/**
+ * Where the page is: the sentence it highlights, and the window's first
+ * line once a tap moved the window on inside a sentence longer than the
+ * page (`null`: the window the sentence opens, `lecternWindowStart`).
+ */
+export interface LecternPlace {
+  readonly sentence: number;
+  readonly start: number | null;
+}
+
+/** The page a stand opens on, and a turn wraps back to. */
+export const LECTERN_FIRST_PLACE: LecternPlace = { sentence: 0, start: null };
+
 /** The line a sentence starting at `from` begins on (0 when none). */
 function lineOf(lines: readonly LecternToken[][], from: number): number {
   const i = lines.findIndex((l) => (l[l.length - 1]?.to ?? 0) > from);
@@ -187,27 +200,60 @@ export function lecternWindowStart(
 }
 
 /**
- * The sentence a tap turns the page to from sentence `s`: the one seven
- * lines on in the same paragraph, else the next paragraph's first, else
- * the text's first (0). A sentence longer than seven lines moves on to the
- * sentence after it, so a tap never leaves the page where it was (the
- * prototype's turn stuck there).
+ * The first line the page shows: the window `start` names, kept inside
+ * the paragraph's lines, or, for `null` (or a start that is no integer),
+ * the window the sentence starting at `from` opens.
+ */
+export function lecternPlaceStart(
+  lines: readonly LecternToken[][],
+  from: number,
+  start: number | null,
+): number {
+  if (start === null || !Number.isInteger(start)) {
+    return lecternWindowStart(lines, from);
+  }
+  return Math.max(0, Math.min(start, lines.length - LECTERN_PAGE.rows));
+}
+
+/**
+ * Where a tap turns the page from `place`: seven lines on from the line
+ * the page reads at (its sentence's, or two below a moved window's first).
+ * When that line starts in a later sentence, the page turns to it; when it
+ * is still the same sentence's, the window moves on by seven lines and the
+ * sentence stays highlighted; past the paragraph's last line, the next
+ * paragraph's first sentence, else the text's first (also when the page
+ * already shows the paragraph's last lines). Every line of a long
+ * sentence is shown so (the prototype's turn stuck on one longer than
+ * seven lines; a turn to the next sentence would skip its middle).
  */
 export function lecternTurn(
   text: LecternText,
-  s: number,
+  place: LecternPlace,
   measure: (s: string) => number,
   maxW: number = LECTERN_PAGE.lineWidthPx,
-): number {
+): LecternPlace {
+  const s = place.sentence;
   const sentence = Number.isInteger(s) ? text.sentences[s] : undefined;
-  if (sentence === undefined) return 0;
+  if (sentence === undefined) return LECTERN_FIRST_PLACE;
   const lines = wrapLecternParagraph(text, sentence.p, measure, maxW);
-  const next = lines[lineOf(lines, sentence.from) + LECTERN_PAGE.turnLines];
-  const para = text.paragraphs[sentence.p];
-  if (next?.[0] !== undefined) {
-    const at = sentenceAt(text, next[0].from);
-    if (at > s) return at;
-    if (para !== undefined && s + 1 < para.s1) return s + 1;
+  const shownFrom = lecternPlaceStart(lines, sentence.from, place.start);
+  const reading =
+    place.start === null
+      ? lineOf(lines, sentence.from)
+      : shownFrom + LECTERN_PAGE.leadLines;
+  const target = reading + LECTERN_PAGE.turnLines;
+  const first = lines[target]?.[0];
+  if (first !== undefined) {
+    const at = sentenceAt(text, first.from);
+    if (at > s) return { sentence: at, start: null };
+    const start = lecternPlaceStart(
+      lines,
+      sentence.from,
+      target - LECTERN_PAGE.leadLines,
+    );
+    // A window that would not move on (the page already shows the
+    // paragraph's last lines) is no turn: the next paragraph is.
+    if (start > shownFrom) return { sentence: s, start };
   }
-  return text.paragraphs[sentence.p + 1]?.s0 ?? 0;
+  return { sentence: text.paragraphs[sentence.p + 1]?.s0 ?? 0, start: null };
 }

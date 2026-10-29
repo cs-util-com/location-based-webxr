@@ -235,7 +235,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
    *  another step's sound (a tap on him then does nothing). */
   let voiceIsHis = false;
   /** The step shows a video: its clip has its own sound, so a tap on him
-   *  plays nothing through the whole step, before and while it plays. */
+   *  plays nothing through the whole step, before and while it plays -
+   *  unless the clip cannot be read, when there is no sound to clash. */
   let videoStep = false;
   /** The step's object URLs (a picture; a clip and its poster). */
   const liveUrls: string[] = [];
@@ -410,7 +411,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       if (his) deps.stage.setVoice?.("idle");
       // After his story the panel is hidden: its status line is not seen.
       if (his && story === null) {
-        deps.sayFailure?.("His voice could not be played here.");
+        deps.sayFailure?.("The voice could not be played here.");
       }
       rearmLineEnd();
     };
@@ -486,9 +487,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         return;
       case "longText":
         // On a reading stand the text stands in the world (from this step
-        // on, as a placed model): the card names it by its title only.
+        // on, as a placed model), its page drawn as pixels: the card names
+        // it by its title and carries its words too, so they can be read
+        // here and reached by a screen reader.
         if (block.view === "lectern") {
-          dom.text.textContent = block.title;
+          const words = plainTextOf(parseTourMarkdown(block.body)).text;
+          dom.text.textContent =
+            words === "" ? block.title : `${block.title}\n\n${words}`;
           return;
         }
         // Its plain text P (S0): paragraphs a blank line apart, shown as
@@ -603,6 +608,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         const lost = (): void => {
           if (run !== voiceRun) return;
           lineVoice = "none";
+          // No clip plays this step: a tap on him may play his voice.
+          videoStep = false;
           rearmLineEnd();
         };
         let clipShown = false;

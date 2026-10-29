@@ -60,7 +60,7 @@ import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-bloc
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
-import { Group, type Object3D, type Texture } from "three";
+import { Euler, Group, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
 import { modelScale } from "./model-scale.js";
@@ -494,8 +494,15 @@ async function renderContent(
         });
         if (stand === undefined) continue;
         stand.object.position.set(...pose.positionNue);
-        // It keeps its pose: a stand does not turn to the visitor.
+        // It keeps its pose's turn about up only (the prototype's "the
+        // stand keeps this turn"): it does not turn to the visitor, and a
+        // pitch or roll would tilt it off its feet.
         stand.object.quaternion.set(...pose.rotationNue);
+        const turn = new Euler().setFromQuaternion(
+          stand.object.quaternion,
+          "YXZ",
+        );
+        stand.object.quaternion.setFromEuler(new Euler(0, turn.y, 0, "YXZ"));
         stand.object.userData["objectId"] = drawn.id;
         stands.push(stand);
         continue;

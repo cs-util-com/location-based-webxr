@@ -13,6 +13,15 @@ import { expect, test } from "@playwright/test";
  * worked out here from the prototype's numbers (not from the code under
  * test), and that a tap on the page - and only on the page - turns it.
  *
+ * What the geometry checks can catch: a stand of the wrong size, height,
+ * lean or facing (the page's screen box against the box the prototype's
+ * numbers give, within the stated margins). What they cannot: they
+ * compare a box with a box, so a page drawn mirrored, or upside down
+ * within the same box, or a wrong texture on the right plane, passes;
+ * and the check page turns the stand through its own tap, not the
+ * visitor's (`main.ts` `turnShownLecternUnderTap`, whose shown-stand
+ * filter the unit tests in `lectern-view.test.ts` pin).
+ *
  * Not pinned here: how the page looks (the side-by-side check against the
  * prototype, by eye).
  */

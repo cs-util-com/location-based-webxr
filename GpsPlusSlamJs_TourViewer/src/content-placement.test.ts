@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   BoxGeometry,
+  Euler,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -613,9 +614,47 @@ describe("renderTourStation", () => {
     });
     expect(found, "the stand is drawn under the station").toBeDefined();
     expect(found!.position.toArray()).toEqual([1, 0, 2]);
-    expect(found!.quaternion.toArray()).toEqual(pose.rotation);
+    // Its turn about up, re-derived from the pose (to the last bit or so).
+    expect(
+      found!.quaternion.angleTo(new Quaternion(...pose.rotation)),
+    ).toBeLessThan(1e-6);
     rendered.dispose();
     expect(disposed).toBe(1);
+
+    // A pose that also pitches and rolls: the stand keeps its turn about
+    // up only (the prototype's), standing upright on its feet.
+    const tilted = await renderTourStation(
+      stationAt("s", stationGeo, [
+        {
+          id: "stand",
+          kind: "longText" as const,
+          view: "lectern" as const,
+          title: "The guild house",
+          body: "It burned.",
+          pose: {
+            position: [1, 0, 2] as [number, number, number],
+            rotation: new Quaternion()
+              .setFromEuler(new Euler(0.4, (30 * Math.PI) / 180, -0.3, "YXZ"))
+              .toArray(),
+          },
+        },
+      ]),
+      {
+        assets: [],
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        makeLectern: () => ({ object: new Group(), dispose: () => undefined }),
+      },
+    );
+    let upright: Object3D | undefined;
+    tilted.root.traverse((o) => {
+      if (o.userData["objectId"] === "stand") upright = o;
+    });
+    const want = new Quaternion(...yaw(30));
+    expect(upright!.quaternion.angleTo(want)).toBeLessThan(1e-6);
+    tilted.dispose();
 
     const quiet = await renderTourStation(station, {
       assets: [],

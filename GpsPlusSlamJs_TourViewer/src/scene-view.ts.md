@@ -70,12 +70,13 @@ time. Plan:
   `visitor-stations.ts`, or the portrait in the card); a tap while his
   voice plays stops it, and the next plays it again; **while the step's
   own sound plays (an audio step, a card view's voice) or the step shows a
-  video (before its clip plays and while it plays), a tap on him is taken
+  video (before its clip plays and while it plays; not when its clip
+  cannot be read, and never past its step), a tap on him is taken
   and does nothing** - no second sound over it, and it is not stopped, so
   a `lineEnd` step still moves on at its end; a voice still loading when
   it was stopped is dropped. **His voice failing on a tap after his
   story** (the panel is hidden, so the status line is not seen) is said
-  through `sayFailure` ("His voice could not be played here."); during a
+  through `sayFailure` ("The voice could not be played here."); during a
   story the status line says it, as for any media. The bubble view has no voice: its tap shuts or opens
   the bubble. The `stage` and `card` views still play the voice with the
   step. **The tap stays his whenever he stands:** after his step and after
@@ -148,8 +149,9 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
 .text` (S0's P): paragraphs a blank line apart, a soft break as a space,
   no markup characters; `#scene-text` has `white-space: pre-line` so the
   breaks show. A long text in the `lectern` view stands on its reading
-  stand in the square (`lectern-view.ts`), so its step's card shows only
-  its title.
+  stand in the square (`lectern-view.ts`), its page drawn as pixels, so
+  its step's card shows its title and then its plain text, a blank line
+  apart (readable there, and reachable by a screen reader).
 - A quiz never reaches the view (the player skips it until K5).
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.

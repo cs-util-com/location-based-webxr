@@ -403,6 +403,30 @@ describe("createCharacterLook: the footer and the tap", () => {
     ]);
   });
 
+  // Why this test matters: the pop-up stands (unfold past a half) before
+  // its scroll unrolls (from 0.62); in between the scroll is hidden, and a
+  // tap must not land on it (three's raycaster would hit a hidden mesh).
+  it("leaves the hidden scroll out of the tap targets until it unrolls", () => {
+    const pop = setup("popup", { voiced: true });
+    const names = () => pop.look.tapTargets().map((o) => o.name);
+    // Far first (the first frame snaps, folded there), then near: it
+    // unfolds over time, so the half-way state can be seen.
+    pop.standAt(0, 40);
+    pop.tick(0, true);
+    expect(pop.look.state().unfold).toBe(0);
+    pop.standAt(0, 5);
+    for (let i = 0; i < 1000 && pop.look.state().unfold <= 0.5; i += 1) {
+      pop.tick(5);
+    }
+    expect(pop.look.state().unfold).toBeGreaterThan(0.5);
+    expect(pop.look.state().unfold).toBeLessThan(0.62);
+    expect(pop.look.parts.scroll.visible).toBe(false);
+    expect(names()).toEqual(["character-backdrop", "character-popfigure"]);
+    for (let i = 0; i < 40; i++) pop.tick(100);
+    expect(pop.look.parts.scroll.visible).toBe(true);
+    expect(names()).toContain("character-scroll");
+  });
+
   // Why this test matters: the bubble view has no voice; a tap opens and
   // shuts its bubble, as in the prototype.
   it("shuts and opens the bubble on a tap in the bubble view", () => {

@@ -579,6 +579,26 @@ describe("createSceneView", () => {
     );
   });
 
+  // Why: a long text on a reading stand is drawn as canvas pixels; the
+  // story card must carry its words too (below its title), readable there
+  // and by a screen reader.
+  it("shows a reading stand's long text in the card as its title, then its paragraphs", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("t", {
+          kind: "longText",
+          view: "lectern",
+          title: "The guild house",
+          body: "It *burned* in 1612.\n\nThen it stood again.",
+        }),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe(
+      "The guild house\n\nIt burned in 1612.\n\nThen it stood again.",
+    );
+  });
+
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {
     const refused = harness({
       play: () => Promise.reject(new Error("NotAllowedError")),
@@ -1504,6 +1524,57 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(h.dom.text.textContent).toBe("Onwards.");
   });
 
+  // Why this test matters: the "a video plays" hold lasts its step only:
+  // on the next step a tap on him plays his voice again. And a clip that
+  // cannot be read has no sound to clash with, so it holds nothing.
+  it("lets a tap play his voice after a video step, and in one whose clip cannot be read", async () => {
+    const video = {
+      ...showing("v", {
+        kind: "video",
+        view: "card",
+        video: "clip",
+        transcript: "The gate at dawn.",
+      }),
+      advance: { mode: "tap" as const },
+    };
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "tap" }),
+        video,
+        knight("c", "speak", { mode: "tap" }),
+      ]),
+    );
+    await settle();
+    h.view.continueTapped();
+    await settle();
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).not.toHaveBeenCalled();
+    h.view.continueTapped();
+    await settle();
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+
+    const lost = harness({
+      loadAsset: (path) =>
+        path.endsWith(".webm")
+          ? Promise.reject(new Error("gone"))
+          : Promise.resolve(new Blob([path])),
+    });
+    lost.view.offer(
+      station("gate", [knight("a", "speak", { mode: "tap" }), video]),
+    );
+    await settle();
+    lost.view.continueTapped();
+    await settle();
+    await settle();
+    expect(lost.view.characterTapped()).toBe(true);
+    await settle();
+    expect(lost.audio.play).toHaveBeenCalledTimes(1);
+  });
+
   // Why this test matters: a card view's voice is not the voice of the
   // figure standing in the world. It must not make his look speak, and a
   // tap on him while it plays is the "another sound plays" case; once it
@@ -1562,7 +1633,7 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(h.view.characterTapped()).toBe(true);
     await settle();
     await settle();
-    expect(failures).toEqual(["His voice could not be played here."]);
+    expect(failures).toEqual(["The voice could not be played here."]);
     expect(h.stage.setVoice).toHaveBeenLastCalledWith("idle");
     // A refused play says it too.
     const r: string[] = [];
@@ -1578,7 +1649,7 @@ describe("a character's story views and the advance when the line ends", () => {
     p.view.characterTapped();
     await settle();
     await settle();
-    expect(r).toEqual(["His voice could not be played here."]);
+    expect(r).toEqual(["The voice could not be played here."]);
   });
 
   // Why this test matters: during a story the panel's status line is seen,
