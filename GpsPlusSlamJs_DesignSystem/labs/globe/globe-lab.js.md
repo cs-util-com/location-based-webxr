@@ -571,6 +571,16 @@ globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` i
     current pose, distance and rotation (the rotation fades out over the
     first fifth, so a camera the controls had tilted turns smoothly
     instead of snapping), then held at the landing altitude.
+  - Where it lives: the Globe package's `globe-approach.ts` holds these
+    states (`createGlobeApproach`, the lab's `flight`, and
+    `approachRestartKey`, what restarts it), `globe-approach-camera.ts`
+    places each frame on the camera and eases the field of view back
+    (`createApproachDrive`, `createFovReturn`, the `fovReturnAt` hook),
+    and `globe-landing-flight.ts` the pin's dive and continuous flight
+    from the camera as it is (`createGlobeLandingFlight`). They were moved
+    out of the lab as a pure refactor (editor-on-the-full-globe plan, the
+    approach slice); the lab keeps the pin's button, its phases and lines,
+    the permission rule, the controls' hand-over and the test hooks.
 
 - The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
   §14; the Globe's `globe-city.ts` and `globe-city-step.ts`, the lab's
@@ -623,8 +633,10 @@ heightM)` (the ECEF point of a place, for an independent placement check)
     Osm library and H3) loads only then: the import map's `h3-js`,
     `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge`
     entries are unused at boot, and `build-lookdev.test.mjs` fails if the
-    lab's static graph reaches them. Only `/globe/flight-pace.js` and
-    `/globe/globe-arrival.js` (small, no dependencies) load at boot;
+    lab's static graph reaches them. Only `/globe/flight-pace.js`,
+    `/globe/globe-arrival.js` and `/globe/globe-arrival-prefetch.js` (small,
+    no dependencies beyond the Globe's own; the prefetch's state and status
+    line, `createArrivalPrefetch`) load at boot;
   - the dive's clock (`createDiveClock`): paced by the prefetch's
     progress (`stepPace`: the cold pace until the data is in, the whole
     path over at most the 30 s cap of DEC-GL5-6; about 8.6 s when the data

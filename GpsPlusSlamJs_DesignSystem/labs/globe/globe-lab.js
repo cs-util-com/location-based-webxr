@@ -37,13 +37,11 @@ import {
 } from "/globe/globe-cloud-shell-volume.js";
 import { creditsFor, globeCreditsLine } from "/globe/globe-credits.js";
 import {
-  GLOBE_FALLBACK_TARGET,
-  chooseGlobeTarget,
   formatViewText,
   parseLatLngText,
   parseViewText,
 } from "/globe/globe-target.js";
-import { applyOrbitPose, orbitPose, smoothstep } from "/globe/globe-camera.js";
+import { orbitPose } from "/globe/globe-camera.js";
 import { GLOBE_SKY } from "/globe/globe-sky.js";
 import { GLOBE_STARS } from "/globe/globe-stars.js";
 import {
@@ -54,40 +52,25 @@ import {
   readGlobeClockSetting,
   sameGlobeClockSetting,
 } from "/globe/globe-clock.js";
-import {
-  GLOBE_DIVE,
-  diveStep,
-  obliqueCamera,
-  planDive,
-  surfaceRadiusAlong,
-} from "/globe/globe-dive.js";
-import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
-import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
+import { GLOBE_DIVE, obliqueCamera } from "/globe/globe-dive.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
+import { pinFailed } from "/globe/pin-flight.js";
 import {
-  pinFailed,
-  pinFix,
-  pinFrame,
-  pinGround,
-  pinProgress,
-  pinTouch,
-  meteorLinkStart,
-  pressPin,
-} from "/globe/pin-flight.js";
-import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
+  approachRestartKey,
+  createGlobeApproach,
+} from "/globe/globe-approach.js";
+import {
+  createApproachDrive,
+  createFovReturn,
+} from "/globe/globe-approach-camera.js";
+import { createArrivalPrefetch } from "/globe/globe-arrival-prefetch.js";
+import { createGlobeLandingFlight } from "/globe/globe-landing-flight.js";
 import {
   globeReadoutText,
   landedLineText,
   readoutThrottle,
 } from "/globe/globe-readout.js";
-import {
-  GLOBE_INTRO,
-  INTRO_VARIANTS,
-  blendTarget,
-  flyInStart,
-  introCameraPose,
-  spinDirection,
-} from "/globe/globe-intro.js";
+import { GLOBE_INTRO, INTRO_VARIANTS } from "/globe/globe-intro.js";
 import { globeZoomOutLimitM } from "/globe/globe-zoom-limit.js";
 import {
   GLOBE_TERRAIN,
@@ -114,11 +97,7 @@ import {
   OSM_TILE_MAX_ZOOM,
   OSM_TILE_URL,
 } from "/fw/utils/osm-tiles.js";
-import {
-  LANDING_GROUND,
-  groundRevisionM,
-  readLandingGroundM,
-} from "/globe/landing-ground.js";
+import { LANDING_GROUND, readLandingGroundM } from "/globe/landing-ground.js";
 import { createBandRelease, createBandShare } from "/globe/globe-band-step.js";
 import { createGlobeCameraControls } from "/globe/globe-camera-controls.js";
 import { createOsmFrameStep } from "/globe/globe-osm-frame.js";
@@ -327,13 +306,6 @@ function renderCredits(credits, heights = null, extra = []) {
   creditsBox.replaceChildren(details);
 }
 
-/**
- * The spin while the page waits for a target, in degrees per second. It
- * starts over the sub-solar point (the day side the fly-in starts from,
- * review 2026-10-01-2124 Major 2); the view's longitude falls, so the
- * surface moves west to east across the screen, the way the Earth turns.
- */
-const SPIN_DEG_PER_S = -3;
 const DEG = Math.PI / 180;
 
 /**
@@ -941,427 +913,7 @@ function readHashParams() {
 /** The live noise without its finest octave (the probe's own check). */
 const WITHOUT_FINEST = { octaveLimit: CLOUD_LIVE_NOISE.octaves - 1 };
 
-/** What restarts the intro when it changes; everything else applies live. */
-const flightKey = (p) =>
-  JSON.stringify([
-    p.url?.lat,
-    p.url?.lng,
-    p.spinMs,
-    p.turnMs,
-    p.intro,
-    p.maxKm,
-    p.turnCap,
-  ]);
-
-/**
- * How long the field of view takes to ease back to the lab's `fovY` when
- * the fly-in is interrupted (a press, the pin's dive) while a variant has
- * it wider or narrower (round-5 plan §3.1): no snap, and no interim value
- * left behind.
- */
-const FOV_RETURN_MS = 500;
-
-/** A north-up orbit pose for a direction [x, y, z] from the centre. */
-function poseToward([x, y, z]) {
-  const direction = new THREE.Vector3(x, y, z).normalize();
-  const up = new THREE.Vector3(0, 0, 1);
-  up.addScaledVector(direction, -up.dot(direction));
-  if (up.lengthSq() < 1e-12) {
-    up.set(1, 0, 0).addScaledVector(direction, -direction.x);
-  }
-  return { direction, up: up.normalize() };
-}
-
 const asArray = (v) => [v.x, v.y, v.z];
-
-/**
- * The intro's states (globe plan §7.6): `spin` until a target is chosen,
- * `turning` towards it, then `arrived`, holding it; `user` once the user
- * has taken the camera (round-2 plan 2026-09-26-2055 M3a); `diving` down
- * to the pin's position and `landed` at the landing altitude (M3g).
- * `pose(now)` returns either an orbit `pose` (the fitted distance
- * applies) or, during the dive, the camera's `position` and `quaternion`
- * (`diveStep` in `/globe/globe-dive.js`). `history` records each
- * phase and source change with its time since the start, and `runs`
- * counts the starts (the replay button, a change of target or timing), so
- * a test reads the sequence instead of racing it.
- *
- * Round 5 (plan 2026-10-01-0945 §3.1): `turning` is the FLY-IN
- * (`/globe/globe-intro.js`): from the zoom-out limit (`zoomOutM`: at least
- * `maxKm`, the library's own limit and twice the fit) on the sun side (the
- * target turned towards the sub-solar point by at most `turnCap`) to the
- * target at the fitted distance, over `turnMs`, in the `intro` variant; it
- * ends at the lab's `fovY` (50 by default, DEC-GL5-2). While it waits for a
- * target it spins out there, over the sub-solar side; when a target
- * arrives (a link, a position, the fallback) the start is computed from it
- * and, if the spin was shown, blended to from the spin's direction over
- * 1.5 s (review 2026-10-01-2124 Major 2: before, a position arriving after
- * the first frame started from wherever the spin was, without the sun
- * side or the cap). The start follows the target as it is then, so a
- * position that replaces the fallback keeps the cap. A position that arrives while the fallback is
- * flown to or held becomes the target over 1.5 s (`setFix`); without a
- * granted permission none will come (`noFixComing`), so it does not wait.
- * `pose(now)` adds `distanceM` (null: the fitted distance) and `fovDeg`.
- */
-function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
-  let params;
-  let startedAt;
-  let phase;
-  let choice;
-  let to;
-  let turnStartedAt;
-  let history;
-  let runs = 0;
-  /** The dive in progress (`planDive`) and when it began. */
-  let dive = null;
-  let diveStartedAt = 0;
-  /**
-   * The dive's elapsed time from the real one (`globe-arrival.js`'s dive
-   * clock: as it is when fixed, the paced path when the prefetch runs).
-   */
-  let diveClock = (elapsedMs) => elapsedMs;
-  /** A fixed dive time (ms) the pose holds at, for the smokes; null: run. */
-  let diveHoldMs = null;
-  /**
-   * The continuous flight (`flight=2`): the pin flight
-   * (`/globe/pin-flight.js`) that drives the camera instead of `dive`.
-   */
-  let pinFlight = null;
-  /** The pin flight's camera this frame (a held time for the smokes). */
-  const pinPose = (now) => {
-    if (diveHoldMs !== null && pinFlight.flight) {
-      const held = flightCameraAt(pinFlight.flight, diveHoldMs);
-      return { position: held.position, quaternion: held.quaternion };
-    }
-    const out = pinFrame(pinFlight, now);
-    pinFlight = out.pin;
-    if (pinFlight.phase === "landed" && phase === "diving") {
-      phase = "landed";
-      note(now);
-    }
-    // A cancelled flight has no camera: it stays where it was last drawn
-    // (the binding yields it to the controls at once).
-    if (out.camera) {
-      lastPinPose = {
-        position: out.camera.position,
-        quaternion: out.camera.quaternion,
-      };
-    }
-    return lastPinPose ?? introPose(now);
-  };
-  /** The pin flight's last drawn pose. */
-  let lastPinPose = null;
-  /**
-   * The target's arrival: when, the spin's direction then, and how long the
-   * start blends from it (0 when no spin frame was drawn).
-   */
-  let arrival = null;
-  let spinShown = false;
-  /** The camera's direction on the fly-in's first frame, for the smokes. */
-  let firstTurn = null;
-  /**
-   * The camera's distance from the centre (m) on the fly-in's first frame,
-   * as the frame loop placed it (`cameraPlaced`), for the smokes; and
-   * whether the pose just returned is that first frame's.
-   */
-  let firstTurnDistanceM = null;
-  let firstTurnPending = false;
-  /** A position from the permission rule, and whether none will come. */
-  let fix = null;
-  let noFix = false;
-  /** A late position blending in: from, to (directions) and since when. */
-  let blend = null;
-  const note = (now) => {
-    history.push({
-      phase,
-      source: choice.source,
-      atMs: Math.round(now - startedAt),
-    });
-  };
-  const restart = (now, next) => {
-    params = next;
-    startedAt = now;
-    phase = "spin";
-    choice = { target: null, source: "waiting" };
-    history = [];
-    runs += 1;
-    dive = null;
-    pinFlight = null;
-    arrival = null;
-    spinShown = false;
-    firstTurn = null;
-    firstTurnDistanceM = null;
-    firstTurnPending = false;
-    blend = null;
-    note(now);
-  };
-  /** The variant's field of view at the fly-in's start. */
-  const startFov = () =>
-    introCameraPose(0, {
-      variant: params.intro,
-      start: [1, 0, 0],
-      target: [1, 0, 0],
-      startKm: zoomOutM() / 1000,
-      endKm: zoomOutM() / 1000,
-      endFovDeg: params.fovY,
-    }).fovDeg;
-  /** The target's direction now, a late fix blending in. */
-  const targetDirection = (now) => {
-    if (!blend) return asArray(to.direction);
-    const d = blendTarget(
-      blend.from,
-      blend.to,
-      now - blend.at,
-      GLOBE_INTRO.lateFixBlendMs,
-    );
-    if (now - blend.at >= GLOBE_INTRO.lateFixBlendMs) blend = null;
-    return d;
-  };
-  const spinPose = (now) =>
-    poseToward(
-      spinDirection(asArray(sunEcef()), now - startedAt, SPIN_DEG_PER_S),
-    );
-  /** The fly-in's start now: from the spin to the target's sun side. */
-  const startDirection = (now) =>
-    flyInStart({
-      spin: arrival.spin,
-      target: targetDirection(now),
-      sun: asArray(sunEcef()),
-      capDeg: params.turnCap,
-      sinceArrivalMs: Math.max(0, now - arrival.at),
-      blendMs: arrival.blendMs,
-    });
-  /** The spin, the turn and the hold. */
-  const introPose = (now) => {
-    if (phase === "spin") {
-      const next = chooseGlobeTarget({
-        url: params.url,
-        fix,
-        fallback: GLOBE_FALLBACK_TARGET,
-        fixWaitExpired: noFix || now - startedAt >= params.spinMs,
-      });
-      if (next.source !== choice.source) {
-        choice = next;
-        if (next.target) {
-          to = orbitPose(ellipsoid, next.target);
-          arrival = {
-            at: now,
-            spin: asArray(spinPose(now).direction),
-            blendMs: spinShown ? GLOBE_INTRO.lateFixBlendMs : 0,
-          };
-          turnStartedAt = now;
-          phase = "turning";
-        }
-        note(now);
-      }
-      if (phase === "spin") {
-        spinShown = true;
-        return {
-          pose: spinPose(now),
-          distanceM: zoomOutM(),
-          fovDeg: startFov(),
-        };
-      }
-    }
-    if (phase === "turning") {
-      const t = params.turnMs > 0 ? (now - turnStartedAt) / params.turnMs : 1;
-      if (t < 1) {
-        const p = introCameraPose(t, {
-          variant: params.intro,
-          start: startDirection(now),
-          target: targetDirection(now),
-          startKm: zoomOutM() / 1000,
-          endKm: fitDistance() / 1000,
-          endFovDeg: params.fovY,
-        });
-        if (firstTurn === null) {
-          firstTurn = [...p.direction];
-          firstTurnPending = true;
-        }
-        return {
-          pose: poseToward(p.direction),
-          distanceM: p.distanceKm * 1000,
-          fovDeg: p.fovDeg,
-        };
-      }
-      phase = "arrived";
-      note(now);
-    }
-    return {
-      pose: blend ? poseToward(targetDirection(now)) : to,
-      distanceM: null,
-      fovDeg: params.fovY,
-    };
-  };
-  return {
-    restart,
-    /**
-     * A position from the permission rule (round-5 plan §3.1): while the
-     * spin waits it becomes the target; while the fallback is flown to or
-     * held, the target blends over to it in 1.5 s (no jump).
-     */
-    setFix(next, now) {
-      fix = next;
-      if (choice.source !== "fallback") return;
-      if (phase !== "turning" && phase !== "arrived") return;
-      const toNext = orbitPose(ellipsoid, next);
-      blend = {
-        from: targetDirection(now),
-        to: asArray(toNext.direction),
-        at: now,
-      };
-      to = toNext;
-      choice = { target: next, source: "fix" };
-      note(now);
-    },
-    /** No position will come (no granted permission): do not wait for one. */
-    noFixComing() {
-      noFix = true;
-    },
-    /**
-     * The user took the camera (a drag, a pinch, a wheel, a double tap):
-     * the intro stops where it is, as the phase `user`, until a restart
-     * gives the camera back.
-     */
-    yieldToUser(now) {
-      if (phase === "user") return;
-      // The pin flight hears of it too, so its phase says cancelled (PR
-      // #560 review: every cancel path comes through here).
-      if (pinFlight) pinFlight = pinTouch(pinFlight, now);
-      phase = "user";
-      note(now);
-    },
-    /** Whether the intro drives the camera: every phase but `user`. */
-    get drives() {
-      return phase !== "user";
-    },
-    /**
-     * The pin's dive (round-2 plan M3g): from the camera as it is (`start`:
-     * its orbit pose, distance and rotation), turn to `target` and descend
-     * to `toAltitudeM` over `durationMs` (`planDive` in
-     * `/globe/globe-dive.js`: the height above the surface along the
-     * camera's own direction, the start's tilt fading out), then hold there
-     * as `landed`.
-     */
-    dive(now, target, fromPose, { durationMs, toAltitudeM, clock }) {
-      dive = planDive(ellipsoid, fromPose, orbitPose(ellipsoid, target), {
-        durationMs,
-        toAltitudeM,
-        pitchLowDeg: params.pitchLow,
-      });
-      diveStartedAt = now;
-      diveHoldMs = null;
-      diveClock = clock ?? ((elapsedMs) => elapsedMs);
-      // A pin flight left from `flight=2` (the hash can switch modes
-      // without a restart) must not drive this dive's pose (PR #560 R0
-      // review: a cancelled one froze the camera).
-      pinFlight = null;
-      choice = { target, source: "pin" };
-      phase = "diving";
-      note(now);
-    },
-    /**
-     * The continuous flight (`flight=2`, CF4): `pin` (`pressPin`'s)
-     * drives the camera from now on, as the dive would; `place` is its
-     * target when known (a link), else null until `aimPin`.
-     */
-    flyPin(now, pin, place = null) {
-      pinFlight = pin;
-      dive = null;
-      diveHoldMs = null;
-      choice = { target: place, source: "pin" };
-      phase = "diving";
-      note(now);
-    },
-    /**
-     * The pin flight's place once the fix names it, for the distance
-     * readout (DEC-GL4-5; PR #560 review: it stayed null under `flight=2`).
-     */
-    aimPin(place) {
-      if (pinFlight) choice = { target: place, source: "pin" };
-    },
-    /** Applies `(pin, now) => pin` to the pin flight (an event), if one. */
-    updatePin(now, apply) {
-      if (pinFlight) pinFlight = apply(pinFlight, now);
-    },
-    /** The pin flight, or null. */
-    get pinFlight() {
-      return pinFlight;
-    },
-    /**
-     * For the smokes: hold the camera at a dive time (ms, null to run on),
-     * and read the dive's altitude at a time without moving the camera.
-     * Null without a dive. With the pin flight the time is its own clock.
-     */
-    holdDiveAt(ms) {
-      if (pinFlight?.flight) {
-        diveHoldMs = ms;
-        return flightFrameAt(pinFlight.flight, ms ?? 0).altitudeM;
-      }
-      if (!dive) return null;
-      diveHoldMs = ms;
-      return diveStep(dive, ms ?? 0).altitudeM;
-    },
-    diveAltitudeAt(ms) {
-      if (pinFlight?.flight) {
-        return flightFrameAt(pinFlight.flight, ms).altitudeM;
-      }
-      return dive ? diveStep(dive, ms).altitudeM : null;
-    },
-    /** The pose for this frame, advancing the states. */
-    pose(now) {
-      if (pinFlight && (phase === "diving" || phase === "landed")) {
-        return pinPose(now);
-      }
-      if (phase === "diving" || phase === "landed") {
-        const step = diveStep(
-          dive,
-          diveHoldMs ?? diveClock(now - diveStartedAt),
-        );
-        if (step.done && phase === "diving") {
-          phase = "landed";
-          note(now);
-        }
-        return step;
-      }
-      return introPose(now);
-    },
-    /**
-     * The frame loop placed the camera at `distanceM` from the centre:
-     * kept when it was the fly-in's first frame.
-     */
-    cameraPlaced(distanceM) {
-      if (!firstTurnPending) return;
-      firstTurnPending = false;
-      firstTurnDistanceM = distanceM;
-    },
-    state: () => ({
-      phase,
-      target: choice.target,
-      source: choice.source,
-      history: history.slice(),
-      runs,
-      spinMs: params.spinMs,
-      turnMs: params.turnMs,
-      intro: params.intro,
-      fixState: fix ? "fix" : noFix ? "none" : "waiting",
-      // The fly-in's start as it is now (unit vector, ECEF), and the sun's
-      // direction, for the smokes; null before a target arrived.
-      flyInStart:
-        arrival && phase !== "diving" && phase !== "landed"
-          ? startDirection(performance.now())
-          : null,
-      firstTurn,
-      firstTurnDistanceM,
-      // How long the start blends from the spin (0: no spin was shown),
-      // and whether that blend is over.
-      flyInBlendMs: arrival?.blendMs ?? null,
-      flyInSettled: arrival
-        ? performance.now() - arrival.at >= arrival.blendMs
-        : false,
-    }),
-  };
-}
 
 /**
  * Touch and mouse (round-2 plan 2026-09-26-2055 M3a): the tile library's
@@ -1410,26 +962,6 @@ function cameraControls(
 
 /** How long the pin waits for a fix, as OsmDemo's locate button does. */
 const LOCATE_TIMEOUT_MS = 15_000;
-
-/**
- * The camera's current pose as an orbit pose: the direction from the
- * centre, and the screen's up made perpendicular to it (or, looking
- * straight along it, the view's forward direction, then north). From the
- * camera's ECEF pose (`ecefPoseOf`, F2a): the world is not ECEF once the
- * frame is at a target.
- */
-function currentPose({ position, quaternion }) {
-  const direction = position.clone().normalize();
-  for (const axis of [
-    new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion),
-    new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion),
-    new THREE.Vector3(0, 0, 1),
-  ]) {
-    const up = axis.addScaledVector(direction, -axis.dot(direction));
-    if (up.lengthSq() > 1e-12) return { direction, up: up.normalize() };
-  }
-  return { direction, up: new THREE.Vector3(1, 0, 0) };
-}
 
 /**
  * The pin (round-2 plan 2026-09-26-2055 M3g, DEC-FB2-2/3), bottom right as
@@ -1497,100 +1029,35 @@ function bindPin({
   // flight paces on, or null when there is no city to load.
   startCityLoad = () => null,
 }) {
-  const drawnOrNull = (groundM) =>
-    groundM === null ? null : drawnGroundM(groundM);
   let phase = "idle";
   let message = "";
-  let located = null;
   /** The last failure (denied, timeout, unavailable), until the next press. */
   let failure = null;
   /**
-   * The current flight's arrival prefetch: the module's handle once loaded
-   * (`prefetch`), whether its module failed to load (`gaveUp`), whether the
-   * flight was stopped (`stopped`), its final `outcome`, and the dive
-   * clock it paces. Null before the first flight.
+   * The current flight's arrival prefetch (`/globe/globe-arrival-prefetch.js`):
+   * the city's load the flight paces on, and its status line.
    */
-  let arrival = null;
-  let arrivalLine = "";
-  const NO_JOBS = { total: 0, warm: 0, fetched: 0, failed: 0 };
-  const arrivalCounts = () =>
-    arrival?.prefetch?.stats().counts ?? { overpass: NO_JOBS, dem: NO_JOBS };
-  const arrivalProgress = () => {
-    if (!arrival) return 0;
-    // Nothing to wait for: the prefetch is off (`prefetch=0`) or failed to
-    // load. Without "off" the flight=2 gate waited out its 60 s cap (PR #560
-    // review); the dive is unaffected (its clock is fixed when off).
-    if (arrival.gaveUp || arrival.outcome === "off") return 1;
-    return arrival.prefetch?.progress() ?? 0;
-  };
-  const renderArrival = () => {
-    const text =
-      arrival && arrival.outcome !== "off"
-        ? arrivalStatusText({
-            outcome: arrival.outcome,
-            counts: arrivalCounts(),
-          })
-        : "";
-    if (text === arrivalLine) return;
-    arrivalLine = text;
-    arrivalStatus.textContent = text;
-    arrivalStatus.hidden = text === "";
-  };
-  /** Stops the current prefetch, if it still runs. */
-  const stopArrival = () => {
-    if (!arrival || arrival.stopped) return;
-    arrival.stopped = true;
-    if (arrival.outcome === null) {
-      arrival.prefetch?.abort();
-      arrival.outcome = "aborted";
-    }
-    renderArrival();
-  };
-  /**
-   * Starts the arrival prefetch for `target` and returns the dive's clock
-   * (`flight.dive`'s `clock`): paced by it, or fixed by `diveMs`.
-   */
-  const startArrival = (target, params) => {
-    stopArrival();
-    const enabled = params.prefetch !== 0;
-    const manual = new URLSearchParams(location.hash.slice(1)).has("diveMs");
-    const clock = createDiveClock(
-      enabled && !manual
-        ? {
-            kind: "paced",
-            durationMs: params.diveMs,
-            pace: FLIGHT_PACE_DEFAULTS,
-          }
-        : { kind: "fixed", durationMs: params.diveMs },
-    );
-    const mine = {
-      prefetch: null,
-      gaveUp: false,
-      stopped: false,
-      outcome: enabled ? null : "off",
-      clock,
-    };
-    arrival = mine;
-    if (enabled) {
-      // The city's own load (round-4 plan 2026-10-11-0122 §5): one load in
-      // the city's worker is the warm-up and the build, so the flight paces
-      // on exactly the data the city reads. Null without a city to load
-      // (`city=0`, no relief, or the relief not at true heights): nothing
-      // to wait for.
-      mine.prefetch = startCityLoad(target);
-      if (mine.prefetch === null) {
-        mine.gaveUp = true;
-        mine.outcome = "off";
-      } else {
-        void mine.prefetch.finished.then((report) => {
-          if (mine.outcome === null) mine.outcome = report.outcome;
-          renderArrival();
-        });
-      }
-    }
-    renderArrival();
-    return (elapsedMs) => clock.elapsedMs(elapsedMs, arrivalProgress());
-  };
+  const arrival = createArrivalPrefetch({
+    startCityLoad,
+    show: (text) => {
+      arrivalStatus.textContent = text;
+      arrivalStatus.hidden = text === "";
+    },
+    manualDive: () => new URLSearchParams(location.hash.slice(1)).has("diveMs"),
+  });
+  /** The flight down to the place (`/globe/globe-landing-flight.js`). */
+  const landing = createGlobeLandingFlight({
+    approach: flight,
+    ellipsoid,
+    controls,
+    ecefCamera,
+    placeCameraEcef,
+    resetSpeed,
+    groundOf,
+    drawnGroundM,
+    reliefGroundM,
+    diveFloorM,
+  });
   /** The continuous flight moves the camera from the press (CF4). */
   const moving = () => getParams().flight === 2;
   const render = () => {
@@ -1617,105 +1084,20 @@ function bindPin({
    * The continuous flight from the camera as it is, to `place` if known
    * (a link), else held above the band until the fix (DEC-CF-4b).
    */
-  const beginPinFlight = (place, { fromAltitudeM = 0 } = {}) => {
-    const params = getParams();
-    controls.release();
-    const startPose = ecefCamera();
-    // The place's ground, if already read (a link reads it from load): the
-    // flight lands `landAglM` above it (DEC-R4-1); else the ellipsoid
-    // until the read arrives (`groundArrives`).
-    const groundM = place ? drawnGroundM(groundOf(place).groundM ?? 0) : 0;
-    // The flight's start: the camera as it is, unless placed below.
-    let flightStart = null;
-    if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
-      // A link starts ON the meteor's line, looking along it, the path's
-      // own view there, so the flight never turns the camera to its line
-      // (F1b, `meteorLinkStart`).
-      flightStart = meteorLinkStart(
-        ellipsoid,
-        orbitPose(ellipsoid, place),
-        startPose.position,
-        fromAltitudeM,
-        params.landAglM,
-        params.meteorDeg,
-        groundM,
-      );
-      startPose.position.copy(flightStart.position);
-      startPose.quaternion.copy(flightStart.quaternion);
-      placeCameraEcef(startPose.position, startPose.quaternion);
-      // A placement, not a speed: the dust starts from rest.
-      resetSpeed();
-    } else if (fromAltitudeM > 0) {
-      // Out along the camera's own direction, its rotation kept.
-      const direction = startPose.position.clone().normalize();
-      startPose.position.copy(
-        direction.multiplyScalar(
-          surfaceRadiusAlong(ellipsoid, direction) + fromAltitudeM,
-        ),
-      );
-      // Placed there at once, so no frame shows the intro's camera first.
-      placeCameraEcef(startPose.position, startPose.quaternion);
-      // A placement, not a speed: the dust starts from rest.
-      resetSpeed();
-    }
-    const now = performance.now();
-    flight.flyPin(
-      now,
-      pressPin(
-        ellipsoid,
-        now,
-        flightStart ?? {
-          pose: currentPose(startPose),
-          distanceM: startPose.position.length(),
-          quaternion: startPose.quaternion,
-        },
-        {
-          target: place ? orbitPose(ellipsoid, place) : null,
-          landingM: params.landAglM,
-          groundM,
-          progress: 0,
-          meteorDeg: params.meteorDeg,
-          paceLagMs: params.paceLagMs,
-          paceStages: params.paceStages === 2 ? 2 : 1,
-        },
-      ),
-      place,
-    );
-  };
-  /**
-   * The place's ground, once read (DEC-R4-1, the cold review's §6 item 3:
-   * early, at link or fix time): the flight replans onto it if it still
-   * flies to that place (`pinGround` ignores an unchanged ground).
-   */
-  const groundArrives = (place) => {
-    const ground = groundOf(place);
-    void ground.done.then(() => {
-      const same =
-        located && located.lat === place.lat && located.lng === place.lng;
-      if (!same || ground.groundM === null) return;
-      flight.updatePin(performance.now(), (p, now) =>
-        pinGround(p, now, drawnGroundM(ground.groundM)),
-      );
-    });
-  };
+  const beginPinFlight = (place, options) =>
+    landing.fly(place, getParams(), options);
   /** The target is known: its data warmed, the frame moved, the flight on. */
   const pinLocated = (place) => {
-    located = { lat: place.lat, lng: place.lng };
+    const located = landing.locate(place);
     const params = getParams();
     onLocated(located, params);
-    startArrival(located, params);
+    arrival.start(located, params);
     setFrameTarget(located);
-    flight.aimPin(located);
-    flight.updatePin(performance.now(), (p, now) =>
-      pinFix(p, now, orbitPose(ellipsoid, located)),
-    );
-    groundArrives(located);
+    landing.aim();
     go("located");
   };
   /** Bumped by every press, so an answer to a cancelled request is dropped. */
   let request = 0;
-  /** How often the relief revised the landing's ground (DEC-R4-1), for the smokes. */
-  let groundRevisions = 0;
   /**
    * When the continuous flight landed (page ms), until its line is written
    * after a frame; null otherwise.
@@ -1731,7 +1113,7 @@ function bindPin({
     if (before === "flying") {
       // Stopped: the camera stays where the flight left it, for the controls.
       flight.yieldToUser(performance.now());
-      stopArrival();
+      arrival.stop();
       return;
     }
     if (before === "locating") {
@@ -1768,32 +1150,16 @@ function bindPin({
    * descended to `landKm` over it.
    */
   function startDive(place) {
-    located = { lat: place.lat, lng: place.lng };
+    const located = landing.locate(place);
     const params = getParams();
     onLocated(located, params);
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
-    const clock = startArrival(located, params);
+    const clock = arrival.start(located, params);
     // The world frame moves to the target at the press, the view unchanged
     // (F2a): the dive then runs in the target's local frame.
     setFrameTarget(located);
-    const startPose = ecefCamera();
-    flight.dive(
-      performance.now(),
-      located,
-      {
-        pose: currentPose(startPose),
-        distanceM: startPose.position.length(),
-        quaternion: startPose.quaternion,
-      },
-      {
-        durationMs: params.diveMs,
-        // The clearance rule (one-scene plan §3.4): never closer to the
-        // exaggerated ground under the target than the clearance.
-        toAltitudeM: Math.max(params.landKm * 1000, diveFloorM(located)),
-        clock,
-      },
-    );
+    landing.dive(params, clock);
     go("located");
   }
   render();
@@ -1831,13 +1197,13 @@ function bindPin({
      */
     warm(target) {
       if (phase === "flying" || getParams().prefetch === 0) return;
-      startArrival(target, getParams());
+      arrival.start(target, getParams());
     },
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
       const inFlight = phase === "flying" || (moving() && phase === "locating");
       if (!inFlight) return;
-      stopArrival();
+      arrival.stop();
       go("touch");
     },
     /**
@@ -1851,37 +1217,19 @@ function bindPin({
       const inFlight = phase === "flying" || (moving() && phase === "locating");
       if (!inFlight) return;
       flight.yieldToUser(performance.now());
-      stopArrival();
+      arrival.stop();
       message = "Stopped: the page was hidden. Tap the pin to fly again.";
       go("touch");
     },
     /** Per frame: the status line follows; a landed dive holds. */
     frame() {
-      renderArrival();
-      if (moving() && phase === "flying" && located) {
-        const now = performance.now();
-        flight.updatePin(now, (p, t) => pinProgress(p, t, arrivalProgress()));
-        // The landing's ground revised by the relief's own finest height
-        // there (DEC-R4-1, the cold review's §6 item 3), only past the
-        // margin (the same tile as the early read, sampled on another
-        // lattice), through the replan path: after a failed read mostly.
-        // A LOWER ground only while the drop is small against the camera's
-        // height above the ground (it turns the view); a RAISE only while
-        // the camera stands well over the new ground (`pinGround` decides:
-        // nearer, the view flipped; the clearance keeps it up meanwhile).
-        const pinNow = flight.pinFlight;
-        const revised =
-          pinNow &&
-          groundRevisionM(pinNow.groundM, drawnOrNull(reliefGroundM(located)), {
-            heightM:
-              ellipsoid.getPositionElevation(ecefCamera().position) -
-              pinNow.groundM,
-          });
-        if (revised !== null && revised !== undefined) {
-          flight.updatePin(now, (p, t) => pinGround(p, t, revised));
-          // Counted when taken (a raise the camera is too low for is not).
-          if (flight.pinFlight?.groundM === revised) groundRevisions += 1;
-        }
+      arrival.render();
+      if (moving() && phase === "flying" && landing.located) {
+        // The pace follows the data; the landing's ground is revised by the
+        // relief's own finest height there (DEC-R4-1, the cold review's §6
+        // item 3), only past the margin, through the replan path
+        // (`globe-landing-flight.js`'s `followGround`).
+        landing.followGround(() => arrival.progress());
       }
       if (phase !== "flying" || flight.state().phase !== "landed") return;
       // Landed (the data is in, or the pace's cap has passed): the camera
@@ -1933,34 +1281,11 @@ function bindPin({
       phase,
       label: globePinView(phase, { moving: moving() }).label,
       // The continuous flight (flight=2), for the smokes; null without one.
-      flight: flight.pinFlight && {
-        phase: flight.pinFlight.phase,
-        clockMs: flight.pinFlight.clockMs,
-        rate: flight.pinFlight.rate,
-        landingM: flight.pinFlight.landingM,
-        // The place's ground the flight lands above (DEC-R4-1), m, how it
-        // was read, and how often the relief revised it.
-        groundM: flight.pinFlight.groundM,
-        groundSource: located ? groundOf(located).source : null,
-        groundRevisions,
-        // The relief's own finest height at the place now (null: not loaded).
-        reliefGroundM: located ? reliefGroundM(located) : null,
-        meteorDeg: flight.pinFlight.meteorDeg,
-        progress: flight.pinFlight.progress,
-        gateClockMs: flight.pinFlight.gateClockMs,
-        endsAtMs: flight.pinFlight.flight?.endsAtMs ?? null,
-      },
+      flight: landing.flightState(),
       status: pinStatus.textContent,
-      located,
+      located: landing.located,
       // The arrival prefetch of the current flight (null before one).
-      arrival: arrival && {
-        outcome: arrival.outcome,
-        progress: arrivalProgress(),
-        counts: arrivalCounts(),
-        paced: arrival.clock.paced,
-        rate: arrival.clock.rate(),
-        line: arrivalLine,
-      },
+      arrival: arrival.state(),
     }),
   };
 }
@@ -2191,8 +1516,6 @@ async function start() {
     view.placeView(at);
     camera.updateMatrixWorld();
   };
-  /** A camera for the orbit poses, which are written in ECEF. */
-  const ecefScratch = new THREE.PerspectiveCamera();
   const { radius: radii } = globe.tiles.ellipsoid;
   const atmosphere = createGlobeAtmosphere(renderer, [
     radii.x,
@@ -2389,7 +1712,9 @@ async function start() {
       })
     : null;
   const status = statusView();
-  const flight = introFlight(globe.tiles.ellipsoid, {
+  // The approach (`/globe/globe-approach.js`): the intro, the dive and the
+  // pin flight, the camera's owner until the user takes it.
+  const flight = createGlobeApproach(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
     fitDistance: () => view.fitDistance(),
     zoomOutM: () => zoomOutM(),
@@ -2401,37 +1726,13 @@ async function start() {
   /** While the plate measures the atmosphere's cost: "on", "off" or null. */
   let costMode = null;
   /**
-   * The field of view easing back to fovY ({ from, to, at, ms }), and the
-   * last such ease, kept for the `fovReturnAt` test hook.
+   * The field of view easing back to fovY when the fly-in is interrupted
+   * (`/globe/globe-approach-camera.js`); its last ease is kept for the
+   * `fovReturnAt` test hook.
    */
-  let fovReturn = null;
-  let lastFovReturn = null;
-  /** The ease's field of view `elapsedMs` after it began. */
-  const fovAt = (r, elapsedMs) =>
-    r.ms > 0 && elapsedMs < r.ms
-      ? r.from + (r.to - r.from) * smoothstep(elapsedMs / r.ms)
-      : r.to;
-  /** One frame of the ease back to fovY (FOV_RETURN_MS), if one is due. */
-  const returnFov = (now) => {
-    if (camera.fov === params.fovY) {
-      fovReturn = null;
-      return;
-    }
-    if (!fovReturn) {
-      fovReturn = {
-        from: camera.fov,
-        to: params.fovY,
-        at: now,
-        ms: FOV_RETURN_MS,
-      };
-      lastFovReturn = fovReturn;
-    }
-    fovReturn.to = params.fovY;
-    camera.fov = fovAt(fovReturn, now - fovReturn.at);
-    fovReturn.lastFrameAt = now;
-    camera.updateProjectionMatrix();
-    if (camera.fov === params.fovY) fovReturn = null;
-  };
+  const fovReturn = createFovReturn(camera, () => params.fovY);
+  /** One frame of the ease back to fovY, if one is due. */
+  const returnFov = (now) => fovReturn.step(now);
   // The nearest drawn ground and the highest drawn peak for the clip planes
   // (F2a, M4): the relief's sampler at the camera's ground point and on a
   // ring of eight points as far out as the camera stands above that ground
@@ -2591,7 +1892,7 @@ async function start() {
   /** Reads the hash and applies it; a new target or timing restarts. */
   const onHash = () => {
     const next = readHashParams();
-    const restart = flightKey(next) !== flightKey(params);
+    const restart = approachRestartKey(next) !== approachRestartKey(params);
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
     const viewText = (p) => (p.view ? formatViewText(p.view) : null);
     const viewChanged = viewText(next) !== viewText(params);
@@ -2907,6 +2208,14 @@ async function start() {
    */
   let perfPaused = false;
 
+  /** One frame of the approach on the camera (`/globe/globe-approach-camera.js`). */
+  const driveApproach = createApproachDrive({
+    approach: flight,
+    camera,
+    fovReturn,
+    placeCameraEcef,
+    fitDistance: () => view.fitDistance(),
+  });
   /**
    * The view's `driveCamera` seam: whoever owns the camera places it (the
    * recorder's paths, the intro and the pin's flight, or the controls).
@@ -2916,25 +2225,9 @@ async function start() {
       // The recorder's paths (§4.2) place the camera themselves.
       perf.drive(now);
     } else if (flight.drives) {
-      const step = flight.pose(now);
-      if (step.pose) {
-        applyOrbitPose(
-          ecefScratch,
-          step.pose,
-          step.distanceM ?? view.fitDistance(),
-        );
-        placeCameraEcef(ecefScratch.position, ecefScratch.quaternion);
-        flight.cameraPlaced(ecefScratch.position.length());
-        if (step.fovDeg !== undefined && camera.fov !== step.fovDeg) {
-          camera.fov = step.fovDeg;
-          camera.updateProjectionMatrix();
-        }
-        fovReturn = null;
-      } else {
-        // The dive sets no field of view: one the fly-in left eases back.
-        placeCameraEcef(step.position, step.quaternion);
-        returnFov(now);
-      }
+      // The intro's orbit frame, or the dive's (which sets no field of
+      // view: one the fly-in left eases back).
+      driveApproach(now);
       camera.updateMatrixWorld();
       controls.followIntro();
       if (params.flight === 2 && flight.pinFlight) recentreFrame();
@@ -3819,18 +3112,7 @@ void main() {
      * 2026-10-01-2124 Minor 5). Null before any ease.
      */
     fovReturnAt(fraction) {
-      if (!Number.isFinite(fraction))
-        throw new RangeError(`fraction must be finite, got ${fraction}`);
-      if (!lastFovReturn) return null;
-      const { from, to, ms, at, lastFrameAt } = lastFovReturn;
-      return {
-        from,
-        to,
-        ms,
-        at,
-        lastFrameAt,
-        fov: fovAt(lastFovReturn, fraction * ms),
-      };
+      return fovReturn.at(fraction);
     },
     /**
      * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to

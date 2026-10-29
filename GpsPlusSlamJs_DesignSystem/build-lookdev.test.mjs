@@ -485,6 +485,12 @@ describe("buildLookdev with the real globe lab", () => {
       "labs/globe/index.html",
       "labs/globe/globe-lab.js",
       "globe/globe-surface.js",
+      // The approach, moved out of the lab (editor-on-the-full-globe plan):
+      // reached only through the lab's imports.
+      "globe/globe-approach.js",
+      "globe/globe-approach-camera.js",
+      "globe/globe-arrival-prefetch.js",
+      "globe/globe-landing-flight.js",
       "globe/vendor/generated-surface-plugin.js",
       "vendor/3d-tiles-renderer/build/index.js",
       "vendor/3d-tiles-renderer/build/index.plugins.js",
