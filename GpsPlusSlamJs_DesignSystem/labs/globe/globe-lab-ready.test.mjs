@@ -14,9 +14,14 @@
  */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
-const source = readFileSync(new URL("./globe-lab.js", import.meta.url), "utf8");
+// By path, not `new URL(...)`: knip reads a URL beside import.meta.url as an
+// import and would then trace the lab's page-only paths as unresolved.
+const here = dirname(fileURLToPath(import.meta.url));
+const source = readFileSync(join(here, "globe-lab.js"), "utf8");
 
 describe("the globe lab's ready signal", () => {
   it("publishes the test API not ready", () => {
