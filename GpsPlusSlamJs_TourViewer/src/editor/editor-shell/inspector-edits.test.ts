@@ -390,6 +390,18 @@ describe("inspectorEdit: a story character's facing", () => {
           pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
         },
       ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "intro" },
+          advance: { mode: "tap" },
+        },
+        {
+          id: "s2",
+          action: { kind: "show", block: "w1" },
+          advance: { mode: "tap" },
+        },
+      ],
     },
   ] as unknown as TourStation[];
   const typed = (field: string, value: string) =>
@@ -407,6 +419,28 @@ describe("inspectorEdit: a story character's facing", () => {
       stationId: "a",
       edit: { character: { block: "w1", facingDeg: 182.5 } },
     });
+  });
+
+  // Why: a story block's text is typed as `block:<id>:<field>`; it must
+  // reach that block's edit (the session writes it as the station's), and
+  // a block the story does not show, or a field it has not, writes
+  // nothing.
+  it("writes a story block's text as that block's edit, and nothing for a field it has not", () => {
+    expect(typed("block:intro:body", "In 1633")).toEqual({
+      kind: "block",
+      id: "intro",
+      field: "body",
+      value: "In 1633",
+    });
+    expect(typed("block:w1:caption", "Good evening")).toEqual({
+      kind: "block",
+      id: "w1",
+      field: "caption",
+      value: "Good evening",
+    });
+    expect(typed("block:intro:alt", "x")).toEqual({ kind: "none" });
+    expect(typed("block:nobody:title", "x")).toEqual({ kind: "none" });
+    expect(typed("block:intro", "x")).toEqual({ kind: "none" });
   });
 
   it("says a value that is no number, and writes nothing for the facing he has or a block that is no character", () => {

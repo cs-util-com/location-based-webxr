@@ -49,7 +49,11 @@ import {
   worldBlocks,
   type WorldBlock,
 } from "../../tour-document.js";
-import { blockFields, type BlockField } from "../block-fields.js";
+import {
+  blockFields,
+  storyBlockFields,
+  type BlockField,
+} from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { stationImagePath } from "./tree-model.js";
 
@@ -134,6 +138,9 @@ interface InspectorStoryBlock {
   readonly title: string;
   /** For a character: what the station's inspector sets of him. */
   readonly character?: InspectorCharacter;
+  /** Its texts to type (`storyBlockFields`), named `block:<id>:<field>`
+   *  in the inspector. */
+  readonly fields: readonly BlockField[];
 }
 
 /** A story character's settings as the station's inspector shows them. */
@@ -172,6 +179,7 @@ function storyEntry(
     id: block.id,
     kind: BLOCK_KIND_LABEL[block.kind],
     title: objectTitle(block),
+    fields: storyBlockFields(block),
   };
   if (block.kind !== "character") return entry;
   const step = station.steps.find(

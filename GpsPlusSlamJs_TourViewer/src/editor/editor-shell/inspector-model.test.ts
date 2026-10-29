@@ -214,7 +214,19 @@ describe("buildInspector", () => {
       assets: [],
       codes: CODES,
     });
-    expect(model?.kind === "station" && model.story).toEqual([
+    const story = model?.kind === "station" ? model.story : [];
+    // Each carries its texts to type (`storyBlockFields`).
+    expect(story.map((s) => s.fields.map((f) => [f.name, f.value]))).toEqual([
+      [
+        ["title", "The siege"],
+        ["body", "In 1632..."],
+      ],
+      [
+        ["name", ""],
+        ["caption", "Halt!"],
+      ],
+    ]);
+    expect(story.map((s) => ({ ...s, fields: undefined }))).toEqual([
       { id: "intro", kind: "Long text", title: "The siege" },
       // A character without a name is named by its caption (one rule,
       // `objectTitle`).

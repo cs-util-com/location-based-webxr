@@ -494,7 +494,8 @@ function stationPosition(
 }
 
 /** The blocks the station's story shows, a row each by kind and name:
- *  listed, not edited, here (the 3D view draws none of them). */
+ *  listed here, neither added, ordered nor removed (the story editor's);
+ *  their texts are typed in a box each below (`storyBlockParts`). */
 function storyList(model: StationModel): HTMLElement {
   const box = el("div", "isec story");
   const tag = el("span", "flabel", "In its story");
@@ -513,7 +514,7 @@ function storyList(model: StationModel): HTMLElement {
     el(
       "div",
       "note",
-      "Shown while the station's story runs; its characters are set below.",
+      "Shown while the station's story runs; their texts and characters are set below.",
     ),
   );
   return box;
@@ -552,12 +553,36 @@ const CHARACTER_OLDER_VIEW =
 const CHARACTER_AUTO_ADVANCE =
   "His step moves on by itself after a while; a chip sets it otherwise.";
 
+/** A story block's texts to type, each named `block:<id>:<field>`
+ *  (`inspector-edits.ts`), its count under it. */
+function storyTextFields(
+  id: string,
+  fields: readonly BlockField[],
+): HTMLElement[] {
+  return fields.flatMap((f) =>
+    blockTextField({ ...f, name: `block:${id}:${f.name}` }),
+  );
+}
+
+/** A story block that is no character: its kind and name, its texts. */
+function storyBlockParts(block: StationModel["story"][number]): HTMLElement {
+  const box = el("div", "isec story-text");
+  box.dataset["block"] = block.id;
+  box.append(
+    el("span", "flabel", `${block.kind} - ${block.title}`),
+    ...storyTextFields(block.id, block.fields),
+  );
+  return box;
+}
+
 /** A story character's view, how his step moves on and his facing, as a
- *  model's view is set: chips, the one in use pressed, and a number. */
+ *  model's view is set: chips, the one in use pressed, and a number; his
+ *  texts under them. */
 function characterParts(
   id: string,
   name: string,
   c: InspectorCharacter,
+  fields: readonly BlockField[],
 ): HTMLElement {
   const box = el("div", "isec character");
   box.dataset["block"] = id;
@@ -591,6 +616,7 @@ function characterParts(
       String(Math.round(c.facingDeg) % 360),
       "deg",
     ),
+    ...storyTextFields(id, fields),
   );
   return box;
 }
@@ -636,7 +662,11 @@ function stationParts(
   if (model.story.length > 0) parts.push(storyList(model));
   for (const block of model.story) {
     if (block.character !== undefined) {
-      parts.push(characterParts(block.id, block.title, block.character));
+      parts.push(
+        characterParts(block.id, block.title, block.character, block.fields),
+      );
+    } else if (block.fields.length > 0) {
+      parts.push(storyBlockParts(block));
     }
   }
   const p = model.position;

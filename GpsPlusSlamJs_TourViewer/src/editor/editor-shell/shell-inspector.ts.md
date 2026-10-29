@@ -67,7 +67,11 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     use); a note when his view or his step's advance is none the chips
     offer (an older tour's view, `auto`); and "Facing" in degrees
     (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
-    0). Where these controls sit is this build's choice, made before the
+    0), then his texts. Every other story block with texts to type gets
+    a section of its own (`div.isec.story-text`, `data-block` its id)
+    under "<kind> - <name>". A story block's text field is named
+    `block:<id>:<field>` and drawn as an item's other texts are
+    (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
   - An item: what it is and its station (a pin's text to type in the
     head, "Pin text"), its commands, a model's Size to type, and under
@@ -167,7 +171,9 @@ opened again, and the fields' layout at four window sizes).
 It also covers a station's story blocks, listed by kind and name as
 text under "In its story" (no list without a story), a story
 character's view and advance chips (the one in use pressed, each group
-named) and his facing, none for a long text, the fields to type
+named) and his facing, none for a long text, a story block's texts
+named `block:<id>:<field>` (a character's in his box, none for a
+block without texts), the fields to type
 per kind (each counted in its unit), a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head with its count as it is typed (none for a read-only one or a

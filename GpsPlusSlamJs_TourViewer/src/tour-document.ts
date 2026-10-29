@@ -35,11 +35,14 @@ import {
   tourImageIds,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
+  checkTourBlockText,
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
   tourTextCount,
+  type TourBlock,
+  type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
@@ -1868,6 +1871,19 @@ export interface StationEdit {
   readonly image?: string | null;
   /** A character of the station's story, set in the station's inspector. */
   readonly character?: StationCharacterEdit;
+  /** A text of a block the station's story shows, typed in the station's
+   *  inspector. */
+  readonly storyText?: StationStoryTextEdit;
+}
+
+/** One text field (`field`, a key of the format's `TOUR_BLOCK_TEXT_RULES`
+ *  for the block's kind) of the story block `block`, set to `value`:
+ *  trimmed at its ends, its lines kept; a blank value removes an optional
+ *  text. */
+export interface StationStoryTextEdit {
+  readonly block: string;
+  readonly field: string;
+  readonly value: string;
 }
 
 /** A story character's settings: his `view` (one of the format's views
@@ -1890,7 +1906,12 @@ export type StationEditChange =
   | {
       readonly kind: "refused";
       readonly reason:
-        "title" | "radius" | "description" | "image" | "character";
+        | "title"
+        | "radius"
+        | "description"
+        | "image"
+        | "character"
+        | "storyText";
     }
   | { readonly kind: "missing" };
 
@@ -1956,6 +1977,45 @@ function withCharacter(
   };
 }
 
+/** `frame` with the text `edit.field` of its story block `edit.block`
+ *  set (`StationStoryTextEdit`); null when the block is none its story
+ *  shows, the kind has no such text, the text breaks its cap or empties a
+ *  text the block needs, or it is a declared character's name (the
+ *  declaration's, written over on every read). */
+function withStoryText(
+  frame: StationFrame,
+  edit: StationStoryTextEdit,
+): StationFrame | null {
+  const block = storyBlocksOf(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const rules = TOUR_BLOCK_TEXT_RULES[block.kind] as Readonly<
+    Record<string, TourTextRule | undefined>
+  >;
+  const rule = Object.hasOwn(rules, edit.field) ? rules[edit.field] : undefined;
+  if (rule === undefined) return null;
+  if (
+    block.kind === "character" &&
+    block.character !== undefined &&
+    edit.field === "name"
+  ) {
+    return null;
+  }
+  const text = edit.value.trim();
+  const next = { ...(block as unknown as Record<string, unknown>) };
+  if (text === "") {
+    if (rule.required) return null;
+    delete next[edit.field];
+  } else {
+    if (!checkTourBlockText(rule, text).ok) return null;
+    next[edit.field] = text;
+  }
+  const after = next as unknown as TourBlock;
+  return {
+    ...frame,
+    blocks: frame.blocks.map((b) => (b.id === edit.block ? after : b)),
+  };
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
@@ -1963,7 +2023,7 @@ function withCharacter(
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
  * an image asset of the tour (`stationImages`), a story character set by
- * `withCharacter`.
+ * `withCharacter`, a story block's text set by `withStoryText`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -2004,6 +2064,11 @@ export function stationEditChange(
     const characterSet = withCharacter(next, edit.character);
     if (characterSet === null) return { kind: "refused", reason: "character" };
     next = characterSet;
+  }
+  if (edit.storyText !== undefined) {
+    const texted = withStoryText(next, edit.storyText);
+    if (texted === null) return { kind: "refused", reason: "storyText" };
+    next = texted;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }

@@ -112,7 +112,12 @@ imperative resources only - that handle and the pictures' side table
     title, caption or alt text, a model's title), one step through the
     document's `edited` named "the <label> of <name>"; `refused` in
     words over the format's cap, `NOT_IN_TOUR` for an id the tour no
-    longer carries.
+    longer carries. An id that is a block a station's story shows
+    (`storyBlockFields`: a short text's caption too, no declared
+    character's name) is checked by the same `blockFieldEdit` for its
+    words, then written as that station's edit (`storyText`, one step
+    through `stationEdited`); the document's own refusal (`storyText`)
+    has a sentence of its own.
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)

@@ -50,6 +50,7 @@ import {
   isDocumentEdit,
   manifestNow,
   objectFits,
+  storyBlocksOf,
   nextStep,
   objectMoveChange,
   picturesNeeded,
@@ -83,7 +84,12 @@ import {
 } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
-import { blockFieldEdit, blockFields } from "./block-fields.js";
+import {
+  blockFieldEdit,
+  blockFields,
+  storyBlockFields,
+} from "./block-fields.js";
+import { objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
@@ -244,7 +250,10 @@ interface EditorRestore {
 
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
-  Record<"title" | "radius" | "description" | "image" | "character", string>
+  Record<
+    "title" | "radius" | "description" | "image" | "character" | "storyText",
+    string
+  >
 > = {
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
@@ -253,6 +262,8 @@ const STATION_REFUSALS: Readonly<
     "A station's picture must be a photo of that station or an image of this tour.",
   character:
     "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
+  storyText:
+    "That text of a block of the station's story is not one the tour can carry.",
 };
 
 /** Said for a delete of the tour's last station. */
@@ -354,11 +365,13 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Set one of a free block's other text fields (`block-fields.ts`: a
-   *  short text's description, a picture's title, caption or alt text, a
-   *  model's title): one step; a blank text removes the field; refused in
-   *  words, changing nothing, over its cap or for an id the tour does not
-   *  carry (B2c). */
+  /** Set one of a block's other text fields (`block-fields.ts`): of a
+   *  free block (a short text's description, a picture's title, caption
+   *  or alt text, a model's title, a long text's title and body) or of a
+   *  block a station's story shows (`storyBlockFields`, an edit of its
+   *  station): one step; a blank text removes the field; refused in
+   *  words, changing nothing, over its cap, for a text the block needs
+   *  emptied or for an id the tour does not carry. */
   editBlockField(
     id: string,
     field: string,
@@ -745,6 +758,44 @@ export function createEditorSession(input: {
 
   /** `edit` dispatched, and whether the document took it (a reducer that
    *  refuses returns the state it had). */
+  /** A text of the story block `id` typed (`editBlockField`): checked by
+   *  the same rule as a free block's, for its words, then written as an
+   *  edit of the station whose story shows it. */
+  function editStoryText(
+    id: string,
+    field: string,
+    value: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const state = mine();
+    const station = (state === null ? null : manifestNow(state))?.stations.find(
+      (s) => storyBlocksOf(s).some((b) => b.id === id),
+    );
+    const block = station?.blocks.find((b) => b.id === id);
+    if (state === null || station === undefined || block === undefined) {
+      return notInTour;
+    }
+    const spec = storyBlockFields(block).find((f) => f.name === field);
+    if (spec === undefined) return { kind: "unchanged" };
+    const check = blockFieldEdit(block, field, value);
+    if (check.kind !== "edited") return check;
+    const edit: StationEdit = { storyText: { block: id, field, value } };
+    const change = stationEditChange(state, station.id, edit);
+    if (change.kind === "refused") {
+      return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+    }
+    if (change.kind !== "edited") return { kind: "unchanged" };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: station.id,
+          edit,
+          what: `the ${spec.label.toLowerCase()} of "${objectTitle(block)}"`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : { kind: "unchanged" };
+  }
+
   function took(edit: () => void): boolean {
     const was = doc().revision;
     edit();
@@ -856,7 +907,7 @@ export function createEditorSession(input: {
     },
     editBlockField(id, field, value) {
       const found = find(id);
-      if (found === undefined) return notInTour;
+      if (found === undefined) return editStoryText(id, field, value);
       const edit = blockFieldEdit(found.object, field, value);
       if (edit.kind !== "edited") return edit;
       const label =
