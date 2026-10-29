@@ -397,7 +397,6 @@ export function startModelViewsCheck(
           renderer.localClippingEnabled = true;
         },
       });
-      model.userData["modelView"] = handle;
       shown = { model, handle };
     },
     lookFrom(eye, target) {

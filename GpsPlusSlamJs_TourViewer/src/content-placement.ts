@@ -392,8 +392,8 @@ function drawnBlock(
 }
 
 /** The one renderer: pins as labels, pictures as planes, models at their
- *  size (`modelScale`) in their world view (`mountModelView`, kept in the
- *  model's `userData.modelView`), each at its pose in `scene`'s frame,
+ *  size (`modelScale`) in their world view (`mountModelView`, found again
+ *  through `mountedModelViews`), each at its pose in `scene`'s frame,
  *  under one group added once everything decoded. */
 async function renderContent(
   objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
@@ -463,9 +463,7 @@ async function renderContent(
         model.quaternion.set(...pose.rotationNue);
         model.userData["objectId"] = drawn.id;
         models.push(model);
-        const view = mountModelView(model, drawn.block, scale, deps.modelViews);
-        model.userData["modelView"] = view;
-        views.push(view);
+        views.push(mountModelView(model, drawn.block, scale, deps.modelViews));
         continue;
       }
       const texture =

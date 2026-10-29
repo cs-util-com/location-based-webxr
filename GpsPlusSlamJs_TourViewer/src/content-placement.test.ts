@@ -36,7 +36,7 @@ import {
   renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
-import { modelViewOf } from "./model-views";
+import { mountedModelViews } from "./model-views";
 import { contentSegment } from "./tour-flow";
 
 /**
@@ -591,7 +591,10 @@ describe("renderTourStation", () => {
     for (const view of views) {
       const model = drawn.get(view)!;
       expect(model.scale.x, view).toBeCloseTo(1.5, 12);
-      expect(modelViewOf(model)?.view, view).toBe(view);
+      expect(
+        mountedModelViews().find((h) => h.model === model)?.view,
+        view,
+      ).toBe(view);
     }
     expect(
       clipping,

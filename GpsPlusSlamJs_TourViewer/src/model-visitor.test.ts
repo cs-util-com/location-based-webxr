@@ -51,9 +51,7 @@ function world(blocks: readonly TourModelBlock[]) {
     model.position.set(0, 0, -4);
     model.userData["objectId"] = b.id;
     station.add(model);
-    const handle = mountModelView(model, b, 1);
-    model.userData["modelView"] = handle;
-    return handle;
+    return mountModelView(model, b, 1);
   });
   const camera = new THREE.PerspectiveCamera(60, 0.5, 0.05, 100);
   scene.updateMatrixWorld(true);

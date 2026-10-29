@@ -57,8 +57,8 @@ under - what a tap in AR is cast against to name the object
   asset's entry, scaled so its largest side is its `sizeM` by the one
   shared rule (`model-scale.ts` `modelScale`, the 3D editor's), at its
   local pose, `userData.objectId` its id, mounted in its view
-  (`model-views.ts` `mountModelView`, the handle kept in
-  `userData.modelView`; `modelViews.enableClipping` is what a cutaway
+  (`model-views.ts` `mountModelView`, the handle found again through
+  `mountedModelViews`; `modelViews.enableClipping` is what a cutaway
   asks of the page), freed with the station (the view first, which gives
   back the model's own materials, then `disposeObject3D`); a model whose asset the tour lacks or whose load
   fails (null or a rejection) is named in `skipped`; without
