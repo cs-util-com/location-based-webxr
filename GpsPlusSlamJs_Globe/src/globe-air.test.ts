@@ -186,6 +186,18 @@ describe("createGlobeAir", () => {
     expect(sun.intensity).toBe(4.5);
   });
 
+  // Before the first `step` there is no hand-over yet (its exposure is
+  // NaN): a `finish` then must light the scene with the space view's sun,
+  // never a NaN that draws it black. The lab never calls it that way; a
+  // second caller of this factory might.
+  it("lights the space view's sun when finish comes before any step", () => {
+    const { air, sun, looks } = setup();
+    air.finish(PARAMS);
+    expect(sun.intensity).toBe(5);
+    // The observer is still at infinity: the shell's far thickness.
+    expect(looks).toEqual([{ thickness: 6 }]);
+  });
+
   // The shell thins on the way down with `atmoRamp=1` and keeps its far
   // thickness otherwise; its look (a shader rebuild) is set only when the
   // thickness changes.

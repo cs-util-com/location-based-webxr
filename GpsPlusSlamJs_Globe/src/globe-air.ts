@@ -190,9 +190,15 @@ export function createGlobeAir<Sky, Depth>(
       haze.setWeight(handOver.weight, params.hazeScale);
     },
     finish(params) {
-      sun.intensity = handOver.exposure;
+      // Before the first `step` there is no hand-over (exposure NaN): the
+      // space view's sun, never a NaN that draws the scene black.
+      sun.intensity = Number.isFinite(handOver.exposure)
+        ? handOver.exposure
+        : params.sunIntensity;
+      // The observer is at +Infinity before the first `step`: far away,
+      // where the ramp gives the far thickness.
       const thickness =
-        params.atmoRamp === 1
+        params.atmoRamp === 1 && Number.isFinite(observerKm)
           ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)
           : params.atmoThickness;
       if (thickness !== shellThickness) {
