@@ -142,7 +142,8 @@ export interface InspectorCharacter {
   readonly view: string;
   /** How the first step showing him moves on (`tap` when none does). */
   readonly advance: string;
-  /** The heading he faces at rest, degrees clockwise from north. */
+  /** The heading he faces at rest, degrees clockwise from the station's
+   *  own north (true north only while the station is not turned). */
   readonly facingDeg: number;
 }
 

@@ -1872,8 +1872,9 @@ export interface StationEdit {
 
 /** A story character's settings: his `view` (one of the format's views
  *  of a character), how the steps showing him move on (`advance`), the
- *  heading he faces at rest (`facingDeg`, degrees clockwise from north);
- *  a field left out stays. */
+ *  heading he faces at rest (`facingDeg`, degrees clockwise from the
+ *  station's own north - true north only while the station is not
+ *  turned, since he turns with it); a field left out stays. */
 export interface StationCharacterEdit {
   readonly block: string;
   readonly view?: string;
@@ -1908,10 +1909,6 @@ function withText(
   return checked.ok ? { ...frame, [key]: checked.value } : null;
 }
 
-/** `frame` with its story character `edit.block` set by `edit`; null
- *  when the block is no character of it, the view is none of a
- *  character's, the advance is neither a tap nor the line's end, or the
- *  facing is no number. The steps that show him all take the advance. */
 /** Whether `edit`'s view is one of a character's and its advance a tap
  *  or the line's end (either left out fits). */
 function characterEditFits(edit: StationCharacterEdit): boolean {
@@ -1923,6 +1920,10 @@ function characterEditFits(edit: StationCharacterEdit): boolean {
   );
 }
 
+/** `frame` with its story character `edit.block` set by `edit`; null
+ *  when the block is no character of it, the view is none of a
+ *  character's, the advance is neither a tap nor the line's end, or the
+ *  facing is no number. The steps that show him all take the advance. */
 function withCharacter(
   frame: StationFrame,
   edit: StationCharacterEdit,
