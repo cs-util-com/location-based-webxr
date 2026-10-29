@@ -87,6 +87,7 @@
   the sidereal angle at the frame's instant (already set when `driveCamera`
   runs, with a fake sun that moves with the time), the drift,
   the frame move (a property over places and altitudes), the recentre and
-  the gesture, `viewPoseEcef`. The browser check is the lab's smokes and the
+  the gesture, `placeView` (the frame on the place, the camera on its
+  pose, from a camera that started elsewhere), `viewPoseEcef`. The browser check is the lab's smokes and the
   reference-view screenshots
   (`GpsPlusSlamJs_DesignSystem/labs/globe/globe-reference-shots.smoke.spec.mjs`).

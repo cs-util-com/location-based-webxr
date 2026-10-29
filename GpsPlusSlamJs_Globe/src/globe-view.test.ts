@@ -383,6 +383,35 @@ describe("createGlobeView: the world frame", () => {
     expect(view.state().frameRecentres).toBe(1);
     expect(view.frameTarget()!.lng).toBeCloseTo(11.4, 3);
   });
+
+  // Why: `placeView` is how a smoke, the Debug export and the intro stand
+  // the camera somewhere; it is the composition of the pose, the frame
+  // move and the placement. From a camera that started elsewhere (20 000 km
+  // over Bern), the frame must end on the view's place and the camera on
+  // the view's ECEF pose: a dropped placement leaves the camera where it
+  // was. (The pose's and the frame move's order is not observable: the
+  // pose depends on the ellipsoid alone, and a frame move keeps the
+  // camera's ECEF pose.)
+  it("places the frame on the view's place and the camera on its pose", () => {
+    const { view } = makeView();
+    const place = {
+      lat: 47.5,
+      lng: 8.5,
+      altitudeKm: 3,
+      headingDeg: 30,
+      pitchDeg: -20,
+    };
+    view.placeView(place);
+    expect(view.frameTarget()).toEqual({ lat: 47.5, lng: 8.5 });
+    const want = viewPoseEcef(view.globe.tiles.ellipsoid, place);
+    const got = ecefOf(view);
+    for (let i = 0; i < 3; i++) {
+      expect(got.position[i]).toBeCloseTo(want.position.toArray()[i]!, 3);
+    }
+    expect(Math.abs(got.quaternion.dot(want.quaternion))).toBeCloseTo(1, 9);
+    // In the place's own frame the camera stands over the origin, 3 km up.
+    expect(view.camera.position.length()).toBeCloseTo(3000, 0);
+  });
 });
 
 describe("viewPoseEcef", () => {
