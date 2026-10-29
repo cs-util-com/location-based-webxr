@@ -325,9 +325,21 @@ describe("createGlobeLandingFlight: per frame and the state", () => {
     landing.followGround(() => (asked += 1));
     expect(asked).toBe(0);
     expect(log).toEqual(["updatePin 1000"]);
-    landing.fly(null, PARAMS);
+    // A flying flight on the place's read ground (500 m, drawn as 1000 m):
+    // with no relief height there, the ground stays as read, nothing is
+    // counted and the flight takes only its progress. A hold would not
+    // tell: its ground is the ellipsoid's, which a revision to 0 leaves.
+    landing.fly(BERN, PARAMS);
+    log.length = 0;
     landing.followGround(() => 0);
-    expect(landing.flightState()?.groundRevisions).toBe(0);
+    expect(log.filter((l) => l.startsWith("updatePin"))).toEqual([
+      "updatePin 1000",
+    ]);
+    expect(landing.flightState()).toMatchObject({
+      groundM: 1000,
+      groundRevisions: 0,
+      reliefGroundM: null,
+    });
   });
 
   it("reports the flight's own numbers", () => {

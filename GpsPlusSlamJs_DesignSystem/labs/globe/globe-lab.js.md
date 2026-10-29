@@ -576,8 +576,10 @@ globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` i
     `approachRestartKey`, what restarts it), `globe-approach-camera.ts`
     places each frame on the camera and eases the field of view back
     (`createApproachDrive`, `createFovReturn`, the `fovReturnAt` hook),
-    and `globe-landing-flight.ts` the pin's dive and continuous flight
-    from the camera as it is (`createGlobeLandingFlight`). They were moved
+    `globe-arrival-prefetch.ts` the pin's arrival prefetch (the city load
+    the dive waits for and its status line, `createArrivalPrefetch`), and
+    `globe-landing-flight.ts` the pin's dive and continuous flight from
+    the camera as it is (`createGlobeLandingFlight`). They were moved
     out of the lab as a pure refactor (editor-on-the-full-globe plan, the
     approach slice); the lab keeps the pin's button, its phases and lines,
     the permission rule, the controls' hand-over and the test hooks.

@@ -90,11 +90,19 @@ describe("createArrivalPrefetch", () => {
       paced: true,
       line: running,
     });
-    // Paced: no data yet, so the dive barely moves.
-    const early = clock(1000);
+    // Paced on the load's progress: a second prefetch whose load stays at
+    // 0, asked at the same times, is the cold pace to compare against. The
+    // clock flies each frame at the progress read the frame before, so the
+    // warm load shows from the third reading on, and only there.
+    const cold = fakeLoad([], "cold");
+    const other = setup({ loads: [cold] }).prefetch;
+    const coldClock = other.start(BERN, { prefetch: 1, diveMs: 8000 });
+    expect(clock(1000)).toBe(coldClock(1000));
     load.setProgress(1);
     expect(prefetch.progress()).toBe(1);
-    expect(clock(1000)).toBeGreaterThanOrEqual(early);
+    expect(other.progress()).toBe(0);
+    expect(clock(2000)).toBe(coldClock(2000));
+    expect(clock(3000)).toBeGreaterThan(coldClock(3000));
     load.settle("settled");
     await flush();
     expect(prefetch.state()?.outcome).toBe("settled");

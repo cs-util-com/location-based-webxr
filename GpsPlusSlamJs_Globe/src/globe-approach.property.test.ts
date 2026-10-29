@@ -7,7 +7,7 @@
  * distance never grows and stays between the fitted distance and the
  * zoom-out limit; from turnMs on the camera holds the target's orbit pose
  * exactly, at the fitted distance; and a dive ends exactly at its landing
- * altitude, is never asked for a step past its end, and lands once.
+ * altitude, asks its clock for the frame times in order, and lands once.
  */
 import fc from "fast-check";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
