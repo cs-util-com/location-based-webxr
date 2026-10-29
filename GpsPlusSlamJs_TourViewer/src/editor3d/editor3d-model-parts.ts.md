@@ -12,10 +12,14 @@ or a section's place in the model file's own space.
 - `hitModel(raycaster, model)` - the first visible mesh hit of the drawn
   model (with a face), or null.
 - `noteSpotOf(model, hit)` - the hit as a `ModelSpot`: the point by
-  `model.worldToLocal`, the face's normal turned into world space by the
-  hit mesh's matrix, then by the inverse of the model's world rotation;
-  both rounded to 1e-3 (a millimetre in the file's metres), `-0` written as
-  `0`.
+  `model.worldToLocal`, rounded to the power of ten nearest below a
+  ten-thousandth of the model's largest side (`largestSide` of
+  `model-scale.ts`; 1e-6 for a 1 cm part, 0.1 for a 1 km building, 1e-3
+  for a model with no extent), so a small model's note stays where it was
+  clicked and a large one's stays short in the file; the face's normal
+  through the normal matrix (inverse transpose) of the hit mesh's
+  transform into the model's frame, so a stretch that differs per axis
+  does not tilt it, rounded to 1e-3. `-0` is written as `0`.
 - `sectionSpotOf(model, hit, cameraWorld)` - the hit point, and the model's
   axis (+-x, +-y, +-z) nearest the way to the camera: the side facing the
   creator is the one a cutaway removes (the format: what lies on the side
@@ -56,7 +60,9 @@ if (hit !== null) edits.model(id, pickedEdit(pick, noteSpotOf(drawn, hit)!));
 ## Tests
 
 - `editor3d-model-parts.test.ts` - a turned, scaled, moved cube: the note's
-  spot in model space, a miss, the section normal toward the camera from
+  spot in model space, a 1 cm part and a 1 km building rounded to
+  their own size, a slanted face under a stretch that differs per axis
+  keeping its true direction, a miss, the section normal toward the camera from
   either side, the edit per wait, and the discs and planes drawn, the
   focused disc marked, a disc's click asking for focus, and `dispose`.
 - `playwright-tests/editor3d-model.spec.js` - in the page: add, type,

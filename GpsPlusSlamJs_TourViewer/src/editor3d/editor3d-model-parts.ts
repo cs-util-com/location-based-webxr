@@ -15,17 +15,42 @@ import type { TourModelBlock } from "gps-plus-slam-app-framework/ar/tour-blocks"
 
 import type { ModelFocus, ModelPick } from "../editor/editor-view.js";
 import type { ModelEdit, ModelSpot } from "../editor/model-edits.js";
+import { largestSide } from "../model-scale.js";
 import type { ScreenPoint } from "./gizmo-maths.js";
 
-/** A model-space number as written: a millimetre in the file's metres,
- *  enough for a note's place and short in the saved file. */
-const round3 = (n: number): number => Math.round(n * 1000) / 1000 + 0;
+/** A place's rounding step: the power of ten nearest below a
+ *  ten-thousandth of the model's largest side, so a 1 cm part keeps
+ *  micrometres and a 1 km building tenths of a metre - precise for any
+ *  model, short in the saved file. A millimetre for a model with no
+ *  extent. */
+const PLACE_STEP_OF_SIZE = 1e-4;
 
-const tuple = (v: THREE.Vector3): readonly [number, number, number] => [
-  round3(v.x),
-  round3(v.y),
-  round3(v.z),
+/** `n` rounded to whole multiples of `10^exponent`, as a short decimal
+ *  (toFixed, not a multiply, so no 0.30000000000000004), never -0. */
+function roundTo(n: number, exponent: number): number {
+  if (exponent < 0) return Number(n.toFixed(Math.min(20, -exponent))) + 0;
+  const step = 10 ** exponent;
+  return Math.round(n / step) * step + 0;
+}
+
+const placeExponent = (model: THREE.Object3D): number => {
+  const largest = largestSide(model);
+  return largest > 0
+    ? Math.floor(Math.log10(largest * PLACE_STEP_OF_SIZE))
+    : -3;
+};
+
+const tuple = (
+  v: THREE.Vector3,
+  exponent: number,
+): readonly [number, number, number] => [
+  roundTo(v.x, exponent),
+  roundTo(v.y, exponent),
+  roundTo(v.z, exponent),
 ];
+
+/** A unit direction as written: three decimals, whatever the model. */
+const DIRECTION_EXPONENT = -3;
 
 /** The first visible mesh of `model` a ray meets, or null. */
 export function hitModel(
@@ -41,8 +66,11 @@ export function hitModel(
   return null;
 }
 
-/** A hit on `model` as a note's spot in the model's own space: the point,
- *  and the surface's outward direction there (unit, then rounded). */
+/** A hit on `model` as a note's spot in the model's own space: the point
+ *  (rounded relative to the model's size), and the surface's outward
+ *  direction there (unit, then rounded). The direction goes through the
+ *  normal matrix (the inverse transpose of the part's transform into the
+ *  model), so a stretch that differs per axis does not tilt it. */
 export function noteSpotOf(
   model: THREE.Object3D,
   hit: THREE.Intersection,
@@ -51,13 +79,18 @@ export function noteSpotOf(
   if (face === null || face === undefined) return null;
   model.updateMatrixWorld(true);
   const position = model.worldToLocal(hit.point.clone());
-  const toModel = model.getWorldQuaternion(new THREE.Quaternion()).invert();
+  const partToModel = model.matrixWorld
+    .clone()
+    .invert()
+    .multiply(hit.object.matrixWorld);
   const normal = face.normal
     .clone()
-    .transformDirection(hit.object.matrixWorld)
-    .applyQuaternion(toModel)
+    .applyMatrix3(new THREE.Matrix3().getNormalMatrix(partToModel))
     .normalize();
-  return { position: tuple(position), normal: tuple(normal) };
+  return {
+    position: tuple(position, placeExponent(model)),
+    normal: tuple(normal, DIRECTION_EXPONENT),
+  };
 }
 
 /** A section through a hit on `model`: the point, and the model's axis
@@ -78,7 +111,7 @@ export function sectionSpotOf(
   }
   const normal: [number, number, number] = [0, 0, 0];
   normal[best] = (axes[best] ?? 0) < 0 ? -1 : 1;
-  return { position: tuple(position), normal };
+  return { position: tuple(position, placeExponent(model)), normal };
 }
 
 /** The edit a click on the model answers `pick` with. */

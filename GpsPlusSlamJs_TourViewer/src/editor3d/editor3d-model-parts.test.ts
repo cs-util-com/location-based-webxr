@@ -49,6 +49,64 @@ describe("a click on the model", () => {
     expect(spot).toEqual({ position: [1, 0.2, 0], normal: [1, 0, 0] });
   });
 
+  it("keeps a small model's note as precise as a large one's: the rounding follows the model's own size", () => {
+    // A 1 cm part (the file's metres) shown 1 m tall. A fixed millimetre
+    // step would snap its note to a tenth of the part; the step is about a
+    // ten-thousandth of the model's largest side instead (1e-6 here).
+    const model = new THREE.Group();
+    model.add(new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.01)));
+    model.scale.setScalar(100);
+    model.updateMatrixWorld(true);
+    const hit = hitModel(
+      rayFrom(new THREE.Vector3(0, 0.123, -20), new THREE.Vector3(0, 0.123, 0)),
+      model,
+    );
+    expect(noteSpotOf(model, hit!)).toEqual({
+      position: [0, 0.00123, -0.005],
+      normal: [0, 0, -1],
+    });
+    // A large model's place stays short in the file: a 1 km model rounds
+    // to a tenth of a metre.
+    const big = new THREE.Group();
+    big.add(new THREE.Mesh(new THREE.BoxGeometry(1000, 1000, 1000)));
+    big.updateMatrixWorld(true);
+    const far = hitModel(
+      rayFrom(
+        new THREE.Vector3(0, 123.456, -2000),
+        new THREE.Vector3(0, 123.456, 0),
+      ),
+      big,
+    );
+    expect(noteSpotOf(big, far!)?.position).toEqual([0, 123.5, -500]);
+  });
+
+  it("gives the surface's true direction under a stretch that is not the same on every axis", () => {
+    // A 2 m cube turned 45 degrees about z inside a model stretched 2x
+    // along x. The face's direction in the model's own space is the turn's
+    // (0.707, 0.707, 0); carrying it as a plain direction through the
+    // stretch would tilt it toward x (the normal needs the inverse
+    // transpose).
+    const model = new THREE.Group();
+    const part = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+    part.rotation.z = Math.PI / 4;
+    model.add(part);
+    model.scale.set(2, 1, 1);
+    model.updateMatrixWorld(true);
+    const centre = new THREE.Vector3(Math.SQRT1_2, Math.SQRT1_2, 0);
+    const worldCentre = model.localToWorld(centre.clone());
+    const worldNormal = new THREE.Vector3(0.5, 1, 0).normalize();
+    const hit = hitModel(
+      rayFrom(
+        worldCentre.clone().addScaledVector(worldNormal, 10),
+        worldCentre,
+      ),
+      model,
+    );
+    const spot = noteSpotOf(model, hit!);
+    expect(spot?.normal).toEqual([0.707, 0.707, 0]);
+    expect(spot?.position).toEqual([0.7071, 0.7071, 0]);
+  });
+
   it("misses where the ray passes the model", () => {
     const model = drawnCube();
     expect(
