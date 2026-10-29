@@ -3149,6 +3149,24 @@
       .walk-story #scene-speaker {
         font-weight: 600;
       }
+      /* The character's portrait (his `portrait` view): a round, gold-ringed
+         face beside his name, as in the station-blocks-7 prototype. */
+      .walk-story #scene-portrait {
+        float: left;
+        width: 64px;
+        height: 64px;
+        margin: 2px 12px 6px 0;
+        border-radius: 50%;
+        object-fit: cover;
+        object-position: 50% 12%;
+        background: #1b2232;
+        box-shadow:
+          0 0 0 3px #e5ab3e,
+          0 6px 18px rgb(0 0 0 / 30%);
+      }
+      .walk-story #scene-portrait[hidden] {
+        display: none;
+      }
       .walk-story #scene-text {
         min-height: 3em;
         font-size: 15.5px;
@@ -6222,6 +6240,12 @@
                     <img
                       id="scene-station-image"
                       data-testid="scene-station-image"
+                      alt=""
+                      hidden
+                    />
+                    <img
+                      id="scene-portrait"
+                      data-testid="scene-portrait"
                       alt=""
                       hidden
                     />

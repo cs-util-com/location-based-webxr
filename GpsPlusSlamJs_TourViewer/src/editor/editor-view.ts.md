@@ -80,6 +80,16 @@ chrome reads, one copy for every view of the page.
   wait for its end.
 - `View3dFailure` - the reasons the 3D view did not show.
 - `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
+- `modelFocus` - the selected model's note or section in focus
+  (`ModelFocus { part: "note" | "section", index }`), or null; set by
+  `modelFocused({ focus })`.
+- `modelPick` - the click on the model the inspector waits for
+  (`ModelPick`: `note-add`, `section-add`, or `note-place` /
+  `section-place` with an index), or null; set by
+  `modelPickAsked({ pick })`. The 3D view answers it
+  (`editor3d-editing.ts`).
+- Both are cleared when the selection changes, and on an open or a close.
+  Their reducers ignore input that is no focus or pick.
 
 ## Invariants & assumptions
 

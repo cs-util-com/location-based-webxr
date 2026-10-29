@@ -83,6 +83,12 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   the stage `selectStationContentShown` (`stage.follow`): the figure fades
   with its station. The stage's fade runs on `deps.now` and the AR frame
   loop (`registerFrameUpdate`).
+- A character look (a story view, `scene-stage.ts`) turns and opens to
+  `seams.getViewerCamera()` and beckons by `beckonOf(stationId)`: the
+  walk's one next station (`character-views.ts` `beckonNext` over the
+  store's walk, only while it is the open tour's), as the offset from his
+  figure pose (`guide.figurePoseOf`) to that station's pose
+  (`guide.poseOf`), with its title; none while either pose is unknown.
 - The assets by id are built once per manifest.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` runs at the AR session's end and at an open tour's close

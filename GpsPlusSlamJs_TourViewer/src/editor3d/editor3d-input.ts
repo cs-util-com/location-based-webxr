@@ -17,6 +17,11 @@
  * (`GestureTarget.locked`) takes no pose key and no drag of its middle or
  * knob: its radius dots stay.
  *
+ * While the scene waits for a click (`InputScene.clickWaited`: the
+ * inspector's "click the model"), a press starts no gesture and a click
+ * answers the wait (`answerClick`) instead of selecting; a drag still
+ * moves the camera.
+ *
  * OrbitControls keeps the camera's own input; a gesture or two fingers
  * lock it (`InputScene.lockCamera`) rather than hide events from it, so
  * its bookkeeping of the pointers stays whole.
@@ -64,6 +69,11 @@ export interface InputScene {
   twoFinger(mode: "tilt" | "map", last: FingerPair, now: FingerPair): void;
   /** Fly to a selection (a double click or a double tap). */
   frame(selection: string): void;
+  /** A click on the scene is waited for: a press then starts no gesture,
+   *  and a click answers the wait instead of selecting. */
+  clickWaited?(): boolean;
+  /** The waited click, at a pointer. */
+  answerClick?(pointer: ScreenPoint): void;
 }
 
 /** What the input asks of the page. */
@@ -263,6 +273,7 @@ export function createSceneInput(input: {
     if (touchBlocked || event.button !== 0 || drag !== null || held !== null) {
       return;
     }
+    if (scene.clickWaited?.() === true) return;
     const selection = page.selected();
     if (selection === null) return;
     const target = scene.target(selection);
@@ -321,11 +332,15 @@ export function createSceneInput(input: {
     ) {
       const selection = page.selected();
       const handle =
-        selection !== null && scene.target(selection) !== null
+        selection !== null &&
+        scene.target(selection) !== null &&
+        scene.clickWaited?.() !== true
           ? scene.handleAt(at)
           : null;
       setHover(handle);
-      surface.style.cursor = handle === null ? "" : "grab";
+      if (scene.clickWaited?.() !== true) {
+        surface.style.cursor = handle === null ? "" : "grab";
+      }
     }
   };
 
@@ -359,6 +374,10 @@ export function createSceneInput(input: {
       p.multi ||
       p.button !== 0
     ) {
+      return;
+    }
+    if (scene.clickWaited?.() === true) {
+      scene.answerClick?.(at);
       return;
     }
     const hit = scene.pickAt(at);
@@ -401,6 +420,7 @@ export function createSceneInput(input: {
   };
 
   const onDoubleClick = (event: MouseEvent) => {
+    if (scene.clickWaited?.() === true) return;
     const hit = scene.pickAt(pointOf(event));
     if (hit === null) return;
     page.select(hit);
