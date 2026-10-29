@@ -213,12 +213,19 @@ test("a note is added by a click on the model, typed, placed again, focused from
   const added = await modelNow(page);
   expect(added.annotations).toHaveLength(1);
   expect(added.annotations[0].title).toBe("Note 1");
-  // On the beam's face toward the camera, in the file's metres.
+  // On a face of the beam (y 2.5 to 3, z -0.25 to 0.25) toward the camera,
+  // in the file's metres. Which face depends on the camera's tilt: once it
+  // has settled (48 deg), a ray through the beam's centre enters through
+  // the top (0.25 / tan 48 deg < 0.25), earlier in its flight through the
+  // front, so either one is right.
   const [x, y, z] = added.annotations[0].position;
   expect(Math.abs(x)).toBeLessThan(0.3);
   expect(y).toBeGreaterThan(2.45);
   expect(y).toBeLessThan(3.05);
-  expect(Math.abs(Math.abs(z) - 0.25)).toBeLessThan(0.02);
+  expect(Math.abs(z)).toBeLessThan(0.27);
+  const onFront = Math.abs(Math.abs(z) - 0.25) < 0.02;
+  const onTop = Math.abs(y - 3) < 0.02;
+  expect(onFront || onTop).toBe(true);
   // The first note shows the model's notes; the new one is in focus, its
   // disc drawn.
   expect(added.view).toBe("hotspots");
