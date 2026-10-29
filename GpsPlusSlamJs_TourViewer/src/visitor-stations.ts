@@ -18,7 +18,11 @@ import {
   selectTrackingQuality,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourAsset,
+  TourManifest,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { Object3D } from "three";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { registerFrameUpdate } from "gps-plus-slam-app-framework/ar/frame-loop";
@@ -37,8 +41,12 @@ import { createWalkFocusCues } from "./walk-focus-cues.js";
 import { startWalkHuds } from "./walk-hud.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
-import { createSceneStage } from "./scene-stage.js";
-import { createSceneView, type SceneViewDom } from "./scene-view.js";
+import { createSceneStage, type SceneStage } from "./scene-stage.js";
+import {
+  createSceneView,
+  type SceneView,
+  type SceneViewDom,
+} from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
@@ -293,26 +301,16 @@ export function wireVisitorStations(deps: {
     return indexed.byId;
   };
   // The open tour's declared characters by id, likewise once per manifest.
-  let declared: {
-    manifest: unknown;
-    byId: Map<string, TourCharacter>;
-  } | null = null;
-  const charactersById = (): ReadonlyMap<string, TourCharacter> => {
-    const manifest = ctx.tourDocument.manifest();
-    if (declared?.manifest !== manifest) {
-      declared = {
-        manifest,
-        byId: new Map((manifest?.characters ?? []).map((c) => [c.id, c])),
-      };
-    }
-    return declared.byId;
-  };
+  const charactersById = declaredCharactersOf(() =>
+    ctx.tourDocument.manifest(),
+  );
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
   // the tour closes or another opens.
   const prefetch = createStationPrefetch({
     assets: assetsById,
+    characters: charactersById,
     tour: () => ctx.tourDocument.manifest(),
     read: (path) => {
       const session = ctx.session;
@@ -735,12 +733,7 @@ export function wireVisitorStations(deps: {
     view.playNextNow();
   });
   // His portrait in the card is his tap target too (the portrait view).
-  const portrait = dom.scene.portrait;
-  if (portrait instanceof HTMLElement) {
-    portrait.addEventListener("click", () => {
-      view.characterTapped();
-    });
-  }
+  wirePortraitTap(dom.scene.portrait, view);
 
   return {
     tick: () => {
@@ -786,16 +779,101 @@ export function wireVisitorStations(deps: {
     },
     progressKept: () => keptWalk() !== null,
     walkShown: () => sheetShown,
-    debugLines: () =>
-      win === null
+    debugLines: () => [
+      ...(win === null
         ? []
-        : walkDebugLines(deps.mode, radarView, frames, win.performance.now()),
-    characterTapped: (tap) => {
-      const root = stage.characterRoot();
-      if (root === null) return false;
-      const hit = seams.pickObjectInView(new Map([["character", root]]), tap);
-      return hit !== null && view.characterTapped();
-    },
+        : walkDebugLines(deps.mode, radarView, frames, win.performance.now())),
+      ...view.debugLines(),
+    ],
+    characterTapped: characterTapOf({
+      stage,
+      pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+      view,
+    }),
+  };
+}
+
+/**
+ * The visitor's AR tap on the story's character: cast at the parts of
+ * him that show (`stage.characterTapTargets`, so a hidden bubble or
+ * pop-up takes no tap), handed to the story when one is hit. True when
+ * the story took it (his voice plays or stops, the bubble view's bubble
+ * shuts or opens); nothing is cast while none of him stands.
+ */
+export function characterTapOf(deps: {
+  readonly stage: Pick<SceneStage, "characterTapTargets">;
+  pick(
+    targets: ReadonlyMap<string, Object3D>,
+    tap: SelectTargetRay | null,
+  ): string | null;
+  readonly view: Pick<SceneView, "characterTapped">;
+}): (tap: SelectTargetRay | null) => boolean {
+  return (tap) => {
+    const parts = deps.stage.characterTapTargets();
+    if (parts.length === 0) return false;
+    const targets = new Map(
+      parts.map((part, i) => [`character-${String(i)}`, part] as const),
+    );
+    return deps.pick(targets, tap) !== null && deps.view.characterTapped();
+  };
+}
+
+/** His portrait in the card (the portrait view) takes a click as a tap
+ *  on him; a page without one wires nothing. */
+export function wirePortraitTap(
+  portrait: unknown,
+  view: Pick<SceneView, "characterTapped">,
+): void {
+  if (
+    typeof portrait !== "object" ||
+    portrait === null ||
+    typeof (portrait as Partial<EventTarget>).addEventListener !== "function"
+  ) {
+    return;
+  }
+  (portrait as EventTarget).addEventListener("click", () => {
+    view.characterTapped();
+  });
+}
+
+/**
+ * The visitor's tap in AR, in its order: the story's character first,
+ * then a model's card; a tap either takes closes the pin sheet, and one
+ * neither takes is the pin sheet's.
+ */
+export function routeVisitorTap(
+  tap: SelectTargetRay | null,
+  to: {
+    character(tap: SelectTargetRay | null): boolean;
+    model(tap: SelectTargetRay | null): boolean;
+    readonly pinSheet: {
+      close(): void;
+      tapped(tap: SelectTargetRay | null): void;
+    };
+  },
+): void {
+  if (to.character(tap) || to.model(tap)) to.pinSheet.close();
+  else to.pinSheet.tapped(tap);
+}
+
+/** The open tour's declared characters by id, built once per manifest
+ *  (compared by identity); none while no tour is open. */
+export function declaredCharactersOf(
+  manifest: () => Pick<TourManifest, "characters"> | null | undefined,
+): () => ReadonlyMap<string, TourCharacter> {
+  let declared: {
+    manifest: unknown;
+    byId: Map<string, TourCharacter>;
+  } | null = null;
+  return () => {
+    const now = manifest() ?? null;
+    if (declared?.manifest !== now) {
+      declared = {
+        manifest: now,
+        byId: new Map((now?.characters ?? []).map((c) => [c.id, c])),
+      };
+    }
+    return declared.byId;
   };
 }
 

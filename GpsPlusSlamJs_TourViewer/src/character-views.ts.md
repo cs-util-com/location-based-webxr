@@ -14,7 +14,7 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - `BECKON_AFTER_MS` 6000.
 - `StageCharacterView` (the framework's `TourCharacterView`) and `isStageCharacterView(v)`, against the framework's `TOUR_CHARACTER_VIEWS` (`gps-plus-slam-app-framework/ar/tour-blocks`), the one list. `card` and `stage` are not world views and are not in it.
 - `MAX_TURN_DEG` 60; `restYawOf(q)`: the yaw a quaternion `[x, y, z, w]` turns +Z to (0 for a malformed or zero quaternion, or one pointing straight up or down); `facingYaw(rest, toCamera, turns)`: `rest` turned toward the camera by at most 60 degrees, or `rest` itself when the view does not turn.
-- `facingDegOf(q)`: the heading (degrees clockwise from north, 0 to 360) `restYawOf`'s yaw faces in the station frame (x north, z east); no turn faces east, 90. `facingRotation(deg)`: the turn about Up alone (unit length) that faces `deg`, so `facingDegOf` reads it back; null for a heading that is no finite number. The 3D inspector types a story character's facing with these.
+- `facingDegOf(q)`: the heading (degrees clockwise from the station's own north, true north only while the station is not turned; 0 to 360) `restYawOf`'s yaw faces in the station frame (x north, z east); no turn faces east, 90. `facingRotation(deg)`: the turn about Up alone (unit length) that faces `deg`, so `facingDegOf` reads it back; null for a heading that is no finite number. The 3D inspector types a story character's facing with these.
 - `characterViewLook(view)` returns `CharacterViewLook`, with these flags: `figure`, `bubble`, `footer`, `pip`, `ring`, `portrait`, `popup`, `turns`, `beckons`.
 - `bubbleOpens(d)`: true when `d` is finite and under 9 m.
 - `popupUnfolds(d, unfolded)`: true under 12 m, or under 16 m once it has unfolded.
@@ -29,6 +29,7 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - `overflow` is signed in NDC (screen units, + to the right).
 - The word timing (the prototype's `makeTiming`; the tour stores none, so the read-along and his mouth follow this estimate, not the real voice):
   - `WordTime {startMs, endMs}`; `lineWordTimes(text)`: one per word of the line split on white space (`wordsOf`'s words), from 260 ms, each `110 + 52 ms` a letter bounded to 170-640 ms, 70 ms between words, 430 ms more after `.!?` and 210 after `,;:`;
+  - `scaleWordTimes(times, durationMs)`: every start and end times one factor, `durationMs` over the last word's end, so the last word ends with the clip; `times` itself for an empty list or a length that is no positive finite number;
   - `activeWordAt(times, ms)`: the last word begun, -1 before the first (and for a non-finite `ms`);
   - `talkFrameAt(times, ms)`: the sheet frame of his mouth, 1 (talk-a, half open) and 2 (talk-b, open) in turn every 115 ms (`MOUTH_FLIP_MS`, module-internal) inside a word, starting half open, 0 between words and after the last.
 - `lineReadingMs(text)`: the prototype's narration timing plus its tail, bounded to 1.5-60 s. It is the `lineEnd` wait for a line with no voice.

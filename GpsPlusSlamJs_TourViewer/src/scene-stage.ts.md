@@ -32,16 +32,20 @@ tour's other content (`content-placement.ts`). Plan:
     freed. He stands at the block's pose position in the station's frame
     (its holder never turned) and rests at the yaw of the station's
     rotation times the block's; his beckon starts from where he stands;
-  - `setVoice(voice)` - `"idle" | "speaking" | "spoken"`, kept across a
-    figure's replacement (the voice may start before the figure stands);
+  - `setVoice(voice, durationMs?)` - `"idle" | "speaking" | "spoken"`,
+    with the voice clip's length when known (the look scales its
+    read-along to it), kept across a figure's replacement (the voice may
+    start before the figure stands); it reaches a released look too, so
+    his voice played by a tap after the story moves his mouth;
   - `clear()` - remove and dispose;
   - `release()` - the story ended: a standing look stays, heard (so it
     beckons in two stations), unreached by the next story's voice, until
     its station stops showing; once faded out it is cleared for good, so
     he does not come back on a return. A plain figure, a model or a look
     still waiting is cleared as by `clear`;
-  - `characterRoot()` - the standing look's root for the visitor's tap,
-    null while none stands in the scene;
+  - `characterTapTargets()` - the parts of the standing look that show
+    (`CharacterLook.tapTargets`), for the visitor's tap; empty while none
+    stands in the scene;
   - `toggleBubble()` - the bubble view's tap;
   - `faceVisitor(nue)` - mount what waits for its position, then turn a
     standing character about the vertical.
@@ -125,5 +129,6 @@ stage.faceVisitor(visitorNue);
   scene, `clear` stops its frames, and no camera is no error; the block's
   pose and the 60 degree turn from its facing; a released look staying,
   beckoning, until its station is left, never back; `release` clearing
-  anything else; `characterRoot` and `toggleBubble`; a frames sheet sliced
+  anything else; `characterTapTargets` and `toggleBubble`; the voice and
+  its length reaching a released look; a frames sheet sliced
   by the look only when the spec says `sheet`.

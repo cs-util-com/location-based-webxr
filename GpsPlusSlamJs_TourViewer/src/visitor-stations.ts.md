@@ -135,12 +135,17 @@ hooks.tickStations = stations.tick;
   showed; "Keep listening"
   calls `cancelAsk`. The completion card has no way out of its own: the
   X at the top left (`#enter-ar`) is the session's one way out.
-- **The character's tap:** `characterTapped(tap)` casts the visitor's
-  AR tap against the stage's standing look (`stage.characterRoot()`,
-  `seams.pickObjectInView`); on a hit it is the story's
-  (`scene-view.ts` `characterTapped`: his voice, or the bubble view's
-  bubble) and returns true so `main.ts` hands it nowhere else. A click
-  on his portrait in the card (`dom.scene.portrait`) goes the same way.
+- **The character's tap:** `characterTapped(tap)` (`characterTapOf`)
+  casts the visitor's AR tap against the parts of the standing look that
+  show (`stage.characterTapTargets()`, `seams.pickObjectInView`), nothing
+  while none of him stands; on a hit it is the story's (`scene-view.ts`
+  `characterTapped`: his voice, or the bubble view's bubble) and returns
+  true so `main.ts` hands it nowhere else. A click on his portrait in the
+  card (`dom.scene.portrait`, `wirePortraitTap`) goes the same way.
+  `routeVisitorTap` is `main.ts`'s order: the character, then a model's
+  card; a tap either takes closes the pin sheet, one neither takes is the
+  pin sheet's. `declaredCharactersOf` builds the declared characters by
+  id once per manifest, for the scene view and the prefetch.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);
@@ -207,7 +212,8 @@ hooks.tickStations = stations.tick;
   clears the frame loop's callbacks); `debugLines()` returns
   `walkDebugLines(mode, radar, frames, now)`: `walkRadarDebugLines`' two
   lines for a visitor's radar, none for a creator (who has no radar) or a
-  page without one.
+  page without one, followed by the scene view's own (`view.debugLines()`,
+  a frames sheet that could not be read).
 - The seam `xrProjection0` gives the radar its cone; the radar's canvas
   is observed by a `ResizeObserver` (`observeSize`) so its size is read
   only after a resize; its `listOpen` is the store's sheet.

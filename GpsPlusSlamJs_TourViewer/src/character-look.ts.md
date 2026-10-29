@@ -13,7 +13,8 @@ The three.js look of a recurring character standing at a station: a die-cut card
   - `parts`: `figure`, `bubble`, `pip`, `scroll` and `popup`, for tests and checks.
   - `update({nowMs, camera, snap?})`: once per frame. `snap` jumps every ease to its target (first frame, tests).
   - `setBeckon({dx, dz, title} | null)`: the offset to the next station (in root-local NUE metres) and its title.
-  - `setVoice("idle" | "speaking" | "spoken")`. `"spoken"` also marks him heard, which stays when the voice goes back to idle (the prototype's `spoken`).
+  - `setVoice("idle" | "speaking" | "spoken", durationMs?)`. `"spoken"` also marks him heard, which stays when the voice goes back to idle (the prototype's `spoken`). With `"speaking"` and a clip length, the read-along's word times are scaled to it (`scaleWordTimes`); without one they are the estimate.
+  - `tapTargets()`: the parts that show, for a tap - the figure (front and back, the mesh named `character-back` included) while it shows, the bubble while it shows, the name tag while it shows, the pop-up's stage only once more than half unfolded. three's raycaster ignores `visible`, so a hidden part must not be offered at all.
   - `setRestYaw(yaw)`: the creator's facing, once the stage knows the station's rotation (a non-finite yaw is ignored).
   - `toggleBubble()`: a tap in the bubble view shuts its bubble, or opens it again; no effect in any other view.
   - `setPresence(alpha)`: the fade. Use it instead of `setSubtreeOpacity`, which caches material opacities that the look changes every frame.
@@ -50,7 +51,7 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 ## Deviations from the prototype
 
-- The word timing is the prototype's estimate (`lineWordTimes`), started when the voice starts; it is not synced to the clip's real length, so a slow or fast voice drifts from the read-along.
+- The word timing is the prototype's estimate (`lineWordTimes`), started when the voice starts and, once the clip's length is known, stretched or shrunk by one factor (clip length over the estimate's last word end). That is no real sync: a clip with a long silence spreads the words by its share, and a voice that speeds up mid-line still drifts.
 - The beckon has no ground chevrons (owner decision: arrows on the ground are blocks the creator places).
 - The prototype swaps frames by a texture offset over one sheet texture; here each pose is its own die-cut texture (the cut edge is painted per pose).
 - The bubble is slid back onto the screen from its measured edges; the prototype's estimate left out the gap between his head and the tail's tip, so its bubble ran off a 390 px phone.
@@ -58,5 +59,5 @@ The three.js look of a recurring character standing at a station: a die-cut card
 
 ## Tests
 
-- `character-look.test.ts` (node, fake painters): near and far, the open rate, the bubble placement and facing, its growth with distance, presence, facing the camera, the beckon rules with no arrow drawn, the beckon staying once heard, the 60 degree turn from the creator's facing, the footers and the bubble's tap, the bubble staying on a narrow phone's screen, the 6 s beckon, no beckon in other views, the portrait ring, the pop-up hysteresis and facing, dispose, and the frames sheet (four poses sliced, the mouth and the read-along while speaking, the beckon frame and its mirror, one pose without a sheet, the bubble view's still mouth, the pop-up figure's mouth).
+- `character-look.test.ts` (node, fake painters): near and far, the open rate, the bubble placement and facing, its growth with distance, presence, facing the camera, the beckon rules with no arrow drawn, the beckon staying once heard, the 60 degree turn from the creator's facing, the footers and the bubble's tap, the bubble staying on a narrow phone's screen, the 6 s beckon, no beckon in other views, the portrait ring, the pop-up hysteresis and facing, dispose, and the frames sheet (four poses sliced, the mouth and the read-along while speaking, the beckon frame and its mirror, one pose without a sheet, the bubble view's still mouth, the pop-up figure's mouth, the read-along scaled to a clip's length), and the tap targets (only the visible parts, the pop-up only unfolded).
 - `playwright-tests/character-views.spec.js`: the look in a browser, at three viewports.

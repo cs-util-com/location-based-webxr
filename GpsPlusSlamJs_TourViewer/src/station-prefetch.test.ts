@@ -184,6 +184,43 @@ describe("stationAssetIds", () => {
     }
   });
 
+  // Why: a declared character with a frames sheet stands his story views
+  // from the sheet (`scene-view.ts`), so the sheet is what must be read
+  // ahead - his one image only where the card shows it too (the portrait
+  // view's portrait). The stage view and an undeclared or sheetless
+  // character keep his image.
+  it("reads a declared character's frames sheet for his story views, his image for the portrait and the stage", () => {
+    const characters = new Map([
+      ["kay", { id: "kay", name: "K", image: "knight", frames: "big" }],
+      ["ada", { id: "ada", name: "A", image: "knight" }],
+    ]);
+    const of = (
+      view: "speak" | "portrait" | "stage",
+      character: string,
+    ): string[] =>
+      stationAssetIds(
+        told([
+          {
+            id: "a",
+            kind: "character",
+            view,
+            name: "K",
+            image: "knight",
+            character,
+            caption: "c",
+            voice: "voice",
+            pose: POSE,
+          },
+        ]),
+        characters,
+      );
+    expect(of("speak", "kay")).toEqual(["big", "voice"]);
+    expect(of("portrait", "kay")).toEqual(["knight", "big", "voice"]);
+    expect(of("stage", "kay")).toEqual(["knight", "voice"]);
+    expect(of("speak", "ada")).toEqual(["knight", "voice"]);
+    expect(of("speak", "nobody")).toEqual(["knight", "voice"]);
+  });
+
   it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
     // Why this test matters (K4 review R3): the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.

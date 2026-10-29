@@ -37,6 +37,7 @@ function fakeDom() {
       video.loads += 1;
     },
     onended: null as ((ev: Event) => void) | null,
+    onplay: null as ((ev: Event) => void) | null,
   };
   const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
@@ -149,6 +150,8 @@ function harness(
   overrides: {
     loadAsset?: (path: string) => Promise<Blob>;
     play?: () => Promise<void>;
+    /** The playing clip's length, once the audio element knows it. */
+    durationMs?: () => number | null;
     checkPicture?: (blob: Blob) => Promise<string | null>;
     showCharacter?: (
       stationId: string,
@@ -167,6 +170,7 @@ function harness(
   const audio = {
     play: vi.fn(overrides.play ?? (() => Promise.resolve())),
     stop: vi.fn(),
+    durationMs: vi.fn(overrides.durationMs ?? (() => null)),
   };
   const stage = {
     showCharacter: vi.fn(
@@ -1351,22 +1355,109 @@ describe("a character's story views and the advance when the line ends", () => {
     ]);
   });
 
-  // Why this test matters: after his step he stays in the world (the
-  // stage's release) when the story ends; a session's end still clears
-  // the stage, and a tap with no story is not his to take.
-  it("releases the stage when the story ends, clears it when everything stops", async () => {
+  // Why this test matters: he stays in the world after his step and after
+  // his story (the stage's release), and the prototype's tap works
+  // whenever he stands: his voice plays again there. Only a stage that is
+  // cleared (everything stopped) leaves nothing of his to tap.
+  it("keeps his tap after his step and after the story, and drops it once the stage is cleared", async () => {
     const h = harness();
     h.view.offer(
-      station("gate", [knight("a", "two-stations", { mode: "tap" })]),
+      station("gate", [
+        knight("a", "two-stations", { mode: "tap" }),
+        tap("b", "Onwards."),
+      ]),
     );
     await settle();
+    h.view.continueTapped();
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
+    endVoice(h);
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("spoken");
     h.view.continueTapped();
     expect(h.ended).toEqual(["gate"]);
     expect(h.stage.release).toHaveBeenCalledTimes(1);
     h.stage.clear.mockClear();
-    expect(h.view.characterTapped()).toBe(false);
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
     h.view.stopAll();
     expect(h.stage.clear).toHaveBeenCalled();
+    expect(h.view.characterTapped()).toBe(false);
+  });
+
+  // Why this test matters: a plain figure or a model that takes the stage
+  // replaces him, and a new story clears the stage: a tap then has no
+  // character of a story view to play.
+  it("drops his tap when a plain figure, a model or a new story takes the stage", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "tap" }),
+        knight("b", "stage", { mode: "tap" }, false),
+      ]),
+    );
+    await settle();
+    h.view.continueTapped();
+    expect(h.view.characterTapped()).toBe(false);
+    const m = harness();
+    m.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "tap" }),
+        showing("m", { kind: "model", view: "stage", asset: "arch" }),
+      ]),
+    );
+    await settle();
+    m.view.continueTapped();
+    expect(m.view.characterTapped()).toBe(false);
+    const n = harness();
+    n.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
+    await settle();
+    n.view.continueTapped();
+    n.stage.clear.mockClear();
+    n.view.offer(station("well", [tap("w", "A well.")]));
+    expect(n.stage.clear).toHaveBeenCalled();
+    expect(n.view.characterTapped()).toBe(false);
+  });
+
+  // Why this test matters: after his step another step may play its own
+  // sound; a tap on him then plays HIS voice rather than stopping a sound
+  // that is not his.
+  it("plays his voice on a tap while another step's sound plays", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "tap" }),
+        showing("s", {
+          kind: "audio",
+          view: "card",
+          audio: "voice",
+          transcript: "Wind.",
+        }),
+      ]),
+    );
+    await settle();
+    h.view.continueTapped();
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(2);
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking");
+  });
+
+  // Why this test matters: the read-along's word times are an estimate;
+  // once the voice's own length is known the stage is told it, so the
+  // words and the mouth end with the voice instead of before or after it.
+  it("tells the stage the voice's length once it plays, when known", async () => {
+    const h = harness({ durationMs: () => 4200 });
+    h.view.offer(station("gate", [knight("a", "speak", { mode: "tap" })]));
+    await settle();
+    h.view.characterTapped();
+    await settle();
+    expect(h.stage.setVoice).toHaveBeenLastCalledWith("speaking", 4200);
   });
 
   // Why this test matters: the portrait view shows his face beside his
@@ -1403,24 +1494,32 @@ describe("a lineEnd step on a video", () => {
     };
   }
 
-  // Why this test matters: "when the line ends" on a video is the clip's
-  // end - a story that moved on after the transcript's reading time would
-  // cut the clip off while it plays.
-  it("waits until the clip ends, then its tail", async () => {
+  // Why this test matters: the card's player does not start by itself -
+  // the visitor starts it. Until it plays the transcript's reading time
+  // stands in, so a clip nobody starts does not hold the story forever;
+  // once it plays, "when the line ends" is the clip's end, so the story
+  // does not cut it off.
+  it("waits the reading time until the clip plays, then until it ends and its tail", async () => {
     const h = harness();
     h.view.offer(
       station("s", [clip({ mode: "lineEnd" }), tap("b", "Onwards.")]),
     );
     await settle();
+    const reading = h.timers.filter((t) => !t.cancelled);
+    expect(reading).toHaveLength(1);
+    expect(reading[0]?.ms).toBeGreaterThanOrEqual(1500);
+    expect(typeof h.dom.video.onplay).toBe("function");
+    h.dom.video.onplay?.(new Event("play"));
     expect(h.timers.filter((t) => !t.cancelled)).toHaveLength(0);
-    expect(typeof h.dom.video.onended).toBe("function");
+    expect(h.view.progress()?.autoMs).toBeNull();
     h.dom.video.onended?.(new Event("ended"));
     const live = h.timers.filter((t) => !t.cancelled);
     expect(live.map((t) => t.ms)).toEqual([600]);
     live[0]?.fn();
     expect(h.dom.text.textContent).toBe("Onwards.");
-    // The next step lets go of the clip's end.
+    // The next step lets go of the clip's start and end.
     expect(h.dom.video.onended).toBeNull();
+    expect(h.dom.video.onplay).toBeNull();
   });
 
   // Why this test matters: a clip that cannot be read never ends, so the
@@ -1513,6 +1612,53 @@ describe("a declared character's frames sheet", () => {
     expect(call[3]).not.toHaveProperty("sheet");
     // He stands, so no line says the figure could not be loaded.
     expect(h.dom.status.textContent ?? "").not.toMatch(/could not/);
+  });
+
+  // Why this test matters: when the sheet cannot be read he stands in his
+  // one pose, so the figure's failure line goes - but only that one: a
+  // line another asset wrote (his voice refused) still says what failed.
+  // The `?debug=1` readout names the sheet, so a creator can find it.
+  it("clears only the figure's own line when he falls back, and names the failed sheet for the debug readout", async () => {
+    let failSheet: (e: Error) => void = () => undefined;
+    const h = harness({
+      characters: kay,
+      play: () => Promise.reject(new Error("refused")),
+      loadAsset: (path) =>
+        path.includes("sheet")
+          ? new Promise<Blob>((_, no) => {
+              failSheet = no;
+            })
+          : Promise.resolve(new Blob([path])),
+    });
+    expect(h.view.debugLines()).toEqual([]);
+    h.view.offer(
+      station("gate", [
+        showing("a", {
+          kind: "character",
+          view: "speak",
+          name: "Sir Kay",
+          image: "knight",
+          character: "kay",
+          caption: "Welcome.",
+          voice: "voice",
+        }),
+      ]),
+    );
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    await settle();
+    expect(h.dom.status.textContent).toMatch(/sound did not play/);
+    failSheet(new Error("gone"));
+    await settle();
+    await settle();
+    expect(await h.stage.showCharacter.mock.calls[0]![1].text()).toBe(
+      "content/knight.png",
+    );
+    expect(h.dom.status.textContent).toMatch(/sound did not play/);
+    expect(h.dom.status.textContent).not.toMatch(/figure could not/);
+    expect(h.view.debugLines()).toEqual([
+      expect.stringMatching(/knight-sheet/),
+    ]);
   });
 
   it("uses his image for a declaration without a sheet or an unknown character", async () => {

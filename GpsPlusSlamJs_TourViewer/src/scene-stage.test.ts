@@ -6,6 +6,7 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
+  RingGeometry,
   Texture,
   Vector3,
   type Object3D,
@@ -494,7 +495,7 @@ describe("a character in a story view stands as a character look", () => {
     expect(holder.quaternion.toArray()).toEqual([0, 0, 0, 1]);
     // He rests facing north (pi/2); the camera due west of him (-z, a
     // turn of pi) is 90 degrees off, so he turns 60 toward it.
-    const look = turned.characterRoot();
+    const look = h.scene.getObjectByName("station-character") ?? null;
     expect(look).not.toBeNull();
     const turn = look!.children[0]!;
     expect(turn.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 3, 5);
@@ -513,19 +514,49 @@ describe("a character in a story view stands as a character look", () => {
     expect(h.frames.size).toBeGreaterThan(0);
     h.frame(16);
     expect(h.beckonOf).toHaveBeenCalledWith("gate");
-    expect(h.stage.characterRoot()).not.toBeNull();
-    // A voice set by the next story does not reach him.
-    h.stage.setVoice("speaking");
+    expect(h.stage.characterTapTargets()).not.toEqual([]);
     h.stage.follow(() => false);
     h.clock.ms += 500;
     h.stage.follow(() => false);
     expect(h.scene.children).toHaveLength(0);
-    expect(h.stage.characterRoot()).toBeNull();
+    expect(h.stage.characterTapTargets()).toEqual([]);
     h.stage.follow(() => true);
     h.clock.ms += 500;
     h.stage.follow(() => true);
     expect(h.scene.children).toHaveLength(0);
     expect(h.frames.size).toBe(0);
+  });
+
+  // Why this test matters: a tap on him after his story plays his voice
+  // again (the prototype's tap works whenever he stands), so the voice
+  // that tap sets must reach the released look: the portrait's ring
+  // pulses while he speaks.
+  it("lets a voice reach a released look, so a tap after the story animates him", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "portrait",
+    });
+    h.stage.follow(() => true);
+    h.stage.release();
+    const ring = (): boolean => {
+      let on = false;
+      h.scene.traverse((o) => {
+        if (
+          o instanceof Mesh &&
+          o.geometry instanceof RingGeometry &&
+          o.visible
+        ) {
+          on = true;
+        }
+      });
+      return on;
+    };
+    h.frame(16);
+    expect(ring()).toBe(false);
+    h.stage.setVoice("speaking");
+    h.frame(16);
+    expect(ring()).toBe(true);
   });
 
   it("releases a plain figure, a model or a look still waiting by clearing it", async () => {
@@ -556,22 +587,27 @@ describe("a character in a story view stands as a character look", () => {
   });
 
   // Why this test matters: the visitor's tap is cast against what he
-  // draws, so the stage names his root only while it stands in the scene;
-  // the bubble view's tap shuts his bubble.
-  it("names the look's root for a tap only while it stands, and shuts the bubble view's bubble", async () => {
+  // draws, so the stage names his visible parts only while he stands in
+  // the scene - a shut bubble is no target (three's raycaster does not
+  // skip hidden meshes); the bubble view's tap shuts his bubble.
+  it("names the look's visible parts for a tap only while it stands, and shuts the bubble view's bubble", async () => {
     const h = looking();
-    expect(h.stage.characterRoot()).toBeNull();
+    const names = () => h.stage.characterTapTargets().map((o) => o.name);
+    expect(names()).toEqual([]);
     await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
       ...h.look,
       view: "bubble",
     });
-    expect(h.stage.characterRoot()?.name).toBe("station-character");
+    expect(names()).toContain("character-bubble");
+    expect(names()).toContain("character-front");
     expect(bubbleOf(h.scene)?.visible).toBe(true);
     h.stage.toggleBubble();
     for (let i = 0; i < 20; i++) h.frame(50);
     expect(bubbleOf(h.scene)?.visible).toBe(false);
+    expect(names()).not.toContain("character-bubble");
+    expect(names()).toContain("character-front");
     await h.stage.showModel("gate", new Blob(["glb"]));
-    expect(h.stage.characterRoot()).toBeNull();
+    expect(names()).toEqual([]);
   });
 
   it("stands still, with no error, while there is no camera", async () => {

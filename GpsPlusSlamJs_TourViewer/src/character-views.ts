@@ -14,6 +14,7 @@ import {
   TOUR_CHARACTER_VIEWS,
   type TourCharacterView,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { wordsOf } from "./character-canvas.js";
 
 /** The bubble opens within this distance; farther away a name tag shows. */
 export const BUBBLE_OPEN_M = 9;
@@ -65,9 +66,10 @@ export function restYawOf(q: readonly number[]): number {
 }
 
 /**
- * The heading (degrees clockwise from north, 0 to 360) a character with
- * the rest rotation `q` faces: the creator's word for `restYawOf`'s yaw,
- * in the station frame (x north, z east). No turn faces east, 90.
+ * The heading (degrees clockwise from the station's own north, 0 to 360;
+ * true north only while the station is not turned) a character with the
+ * rest rotation `q` faces: the creator's word for `restYawOf`'s yaw, in
+ * the station frame (x north, z east). No turn faces east, 90.
  */
 export function facingDegOf(q: readonly number[]): number {
   const deg = 90 - (restYawOf(q) * 180) / Math.PI;
@@ -288,8 +290,7 @@ const MOUTH_FLIP_MS = 115;
  * tour stores no timing, so the read-along and the mouth follow this.
  */
 export function lineWordTimes(text: string): WordTime[] {
-  const words =
-    typeof text === "string" ? text.split(/\s+/).filter(Boolean) : [];
+  const words = wordsOf(text);
   const out: WordTime[] = [];
   let t = 260;
   for (const word of words) {
@@ -301,6 +302,31 @@ export function lineWordTimes(text: string): WordTime[] {
     else if (/[,;:]["')\]]*$/.test(word)) t += 210;
   }
   return out;
+}
+
+/**
+ * The estimated word times stretched (or squeezed) so the last word ends
+ * at `durationMs`, the voice's real length once it is known: every time
+ * is multiplied by `durationMs / last endMs`. A length that is not a
+ * positive finite number (unknown, a stream's endless one) keeps the
+ * estimate - `times` itself. A silent tail in the clip stretches the
+ * words by its share of the length.
+ */
+export function scaleWordTimes(
+  times: readonly WordTime[],
+  durationMs: number,
+): readonly WordTime[] {
+  const end = times.at(-1)?.endMs;
+  if (
+    end === undefined ||
+    !(end > 0) ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return times;
+  }
+  const k = durationMs / end;
+  return times.map((w) => ({ startMs: w.startMs * k, endMs: w.endMs * k }));
 }
 
 /** The word being said `ms` into the voice: the last one begun, or -1

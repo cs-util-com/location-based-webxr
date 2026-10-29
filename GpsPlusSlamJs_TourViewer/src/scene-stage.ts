@@ -141,8 +141,11 @@ export interface SceneStage {
     look?: StageCharacterLook,
   ): Promise<void>;
   /** The step's voice: a look's ring, footer and beckon follow it. Kept
-   *  across a figure's replacement (the voice may start first). */
-  setVoice(voice: CharacterVoice): void;
+   *  across a figure's replacement (the voice may start first). It
+   *  reaches a released look too: a tap on him after his story plays his
+   *  voice again (a new story clears the stage first). `durationMs`: the
+   *  voice's length, when known (`CharacterLook.setVoice`). */
+  setVoice(voice: CharacterVoice, durationMs?: number): void;
   showModel(
     stationId: string,
     model: Blob,
@@ -153,9 +156,10 @@ export interface SceneStage {
    *  station stops showing, then goes for good; anything else is cleared
    *  as by `clear`. */
   release(): void;
-  /** The standing look's root, for the visitor's tap; null while none
-   *  stands in the scene. */
-  characterRoot(): Object3D | null;
+  /** The standing look's visible parts, for the visitor's tap
+   *  (`CharacterLook.tapTargets`); none while no look stands in the
+   *  scene. */
+  characterTapTargets(): Object3D[];
   /** A tap on the bubble view's look: its bubble shuts, or opens again. */
   toggleBubble(): void;
   /** Turn a standing character towards the visitor (NUE). */
@@ -192,6 +196,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   /** The look's per-frame update, registered while a look stands. */
   let unregisterLook: (() => void) | null = null;
   let voice: CharacterVoice = "idle";
+  let voiceMs: number | undefined;
   let token = 0;
   /** Decoded and waiting for the station's position (no GPS zero yet, or a
    *  code-only station before the visitor's height is known): mounted on
@@ -368,7 +373,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     const visible = isShown(stationId);
     if (visible) scene.add(holder);
     else applyAlpha(holder, look, 0);
-    look?.setVoice(voice);
+    look?.setVoice(voice, voiceMs);
     shown = {
       root: holder,
       scene,
@@ -478,19 +483,21 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       // frames and its presence fade, heard.
       token += 1;
       voice = "idle";
+      voiceMs = undefined;
       shown.released = true;
       shown.look.setVoice("spoken");
     },
-    characterRoot() {
-      if (shown?.look == null || !shown.inScene) return null;
-      return shown.look.root;
+    characterTapTargets() {
+      if (shown?.look == null || !shown.inScene) return [];
+      return shown.look.tapTargets();
     },
     toggleBubble() {
       shown?.look?.toggleBubble();
     },
-    setVoice(next) {
+    setVoice(next, durationMs) {
       voice = next;
-      if (shown?.released !== true) shown?.look?.setVoice(next);
+      voiceMs = durationMs;
+      shown?.look?.setVoice(next, durationMs);
     },
     faceVisitor(visitor) {
       retryWaiting();

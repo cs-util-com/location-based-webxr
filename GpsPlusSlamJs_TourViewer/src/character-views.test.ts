@@ -14,6 +14,7 @@ import {
   lineReadingMs,
   lineWordTimes,
   MAX_TURN_DEG,
+  scaleWordTimes,
   POPUP_CLOSE_M,
   POPUP_UNFOLD_M,
   popupUnfolds,
@@ -21,6 +22,7 @@ import {
   restYawOf,
   talkFrameAt,
 } from "./character-views";
+import { wordsOf } from "./character-canvas";
 
 const walk = (
   order: "fixed" | "any",
@@ -246,6 +248,36 @@ describe("the read-along's word timing", () => {
     expect(long.endMs - long.startMs).toBe(640);
     expect(lineWordTimes("")).toEqual([]);
     expect(lineWordTimes(7 as unknown as string)).toEqual([]);
+  });
+
+  // Why this test matters: the read-along highlights the bubble's words,
+  // so the timing must count words exactly as the bubble splits them
+  // (`wordsOf`): one timing per drawn word, for any white space.
+  it("times exactly the words the bubble draws", () => {
+    for (const line of ["  Hi\tthere\n friend  ", "One", " ", "a  b c"]) {
+      expect(lineWordTimes(line), line).toHaveLength(wordsOf(line).length);
+    }
+  });
+
+  // Why this test matters: the timing is an estimate; once the voice's
+  // length is known the words are stretched or squeezed so the last one
+  // ends with the voice. An unknown, endless or zero length keeps the
+  // estimate.
+  it("scales the word times so the last word ends with the voice", () => {
+    const times = lineWordTimes("Hi, my friend. Go");
+    const end = times.at(-1)!.endMs;
+    const scaled = scaleWordTimes(times, end * 2);
+    expect(scaled.at(-1)!.endMs).toBeCloseTo(end * 2, 9);
+    expect(scaled[0]!.startMs).toBeCloseTo(times[0]!.startMs * 2, 9);
+    expect(scaled[1]!.endMs).toBeCloseTo(times[1]!.endMs * 2, 9);
+    expect(scaleWordTimes(times, end / 2).at(-1)!.endMs).toBeCloseTo(
+      end / 2,
+      9,
+    );
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0, -5]) {
+      expect(scaleWordTimes(times, bad), String(bad)).toBe(times);
+    }
+    expect(scaleWordTimes([], 3000)).toEqual([]);
   });
 
   it("names the word being said: none before the first, the last one begun after", () => {

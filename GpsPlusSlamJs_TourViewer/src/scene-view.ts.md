@@ -45,9 +45,12 @@ time. Plan:
   `character` names a declaration with `frames` stands from the sheet (the
   look gets `sheet: true` and slices it); the `portrait` view's round
   portrait stays the block's `image`. A sheet that cannot be read stands
-  him from his `image` in one pose, and the "could not be loaded" line the
-  failed read wrote is taken back, since he does stand. The `stage` view
-  and a declaration without `frames` use the `image` as before.
+  him from his `image` in one pose, and the figure's own "could not be
+  loaded" line the failed read wrote is taken back, since he does stand;
+  every other notice stays (the notices are kept per part). Under
+  `?debug=1` `debugLines()` names the failed sheet and the character,
+  until the next story starts. The `stage` view and a declaration without
+  `frames` use the `image` as before.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
   `portrait`, `popup`; tour format 4.2) goes to the stage with a look
   spec `{ view, name, line, voiced, pose }` (the line is the caption;
@@ -56,17 +59,22 @@ time. Plan:
   caption still shows in the card (captions always). The `portrait` view
   also shows the figure as a round portrait beside his name (`dom.portrait`,
   measured by `checkPicture` like a picture, hidden on the next step). A
-  character's voice tells the stage when it speaks (`setVoice("speaking")`)
-  and when it has spoken (`"spoken"`); every step change sets `"idle"`.
+  character's voice tells the stage when it speaks (`setVoice("speaking")`,
+  with the clip's length when the audio knows it, `SceneAudio.durationMs`,
+  so the read-along is scaled to it) and when it has spoken (`"spoken"`);
+  every step change sets `"idle"`.
   As in the prototype, a story view's voice plays only on a tap on him
   (`characterTapped()`: the figure, bubble or stage in AR, through
-  `visitor-stations.ts`, or the portrait in the card); a tap while it
-  plays stops it, and the next plays it again; a voice still loading when
-  it was stopped is dropped. The bubble view has no voice: its tap shuts
-  or opens the bubble. The `stage` and `card` views still play the voice
-  with the step. When the story ends the stage is released
-  (`stage.release`, absent: `clear`), so he stays in the world after his
-  step.
+  `visitor-stations.ts`, or the portrait in the card); a tap while his
+  voice plays stops it, and the next plays it again; a tap while another
+  step's sound plays starts his voice; a voice still loading when it was
+  stopped is dropped. The bubble view has no voice: its tap shuts or opens
+  the bubble. The `stage` and `card` views still play the voice with the
+  step. **The tap stays his whenever he stands:** after his step and after
+  the story (the stage is released, `stage.release`, absent: `clear`, so
+  he stays in the world) a tap still plays his voice; only a cleared look
+  takes none (a new story, `stopAll`, a story ended with nothing to
+  release, a plain `stage` figure or a model taking the stage).
 - A character's figure goes to the stage as it is; the stage's decoder
   measures it from its own header (the decode cap, `station-prefetch.ts`
   `decodeFigure`).
@@ -106,8 +114,10 @@ time. Plan:
   that cannot be read or played, or a story view's voice nobody tapped,
   the words' reading time stands in; a tap that starts the voice holds the
   step until it ends, and a tap that stops it counts as its end. A video's
-  `lineEnd` waits for the clip's `ended` (one that cannot be read: the
-  transcript's reading time); the next step resets `onended`
+  `lineEnd` waits for the clip's `ended` once its `play` event came (until
+  then, so for a clip nobody plays, the transcript's reading time; one
+  that cannot be read: the same); the next step resets `onended` and
+  `onplay`
   (`character-views.ts` `lineReadingMs`, 1.5-60 s). Held, no timer runs;
   released, the wait starts again. One timer at a time: `armTimer` cancels
   any earlier one (a voice lost while its step renders arms it early).
@@ -229,4 +239,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   the stage; `lineEnd` on the voice's end, never before; the reading time
   with no voice or a failing one; the hold; the portrait; the voice on a
   tap, its stop and replay, the bubble's tap, a dropped loading voice, the
-  release at the story's end) and "a lineEnd step on a video".
+  release at the story's end, the tap after his step and after the story,
+  none on a cleared look, the clip's length handed to the stage, a failed
+  sheet clearing only the figure's notice and its debug line) and "a
+  lineEnd step on a video" (the reading time until `play`).

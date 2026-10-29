@@ -70,6 +70,8 @@ import {
   facingYaw,
   lineWordTimes,
   popupUnfolds,
+  scaleWordTimes,
+  type WordTime,
   talkFrameAt,
   readingFloor,
   type StageCharacterView,
@@ -174,7 +176,16 @@ export interface CharacterLook {
   };
   update(frame: CharacterFrame): void;
   setBeckon(beckon: CharacterBeckon | null): void;
-  setVoice(voice: CharacterVoice): void;
+  /** The story's voice; `durationMs`, the voice's real length when known
+   *  as it starts speaking, stretches the read-along's estimated word
+   *  times to it (`scaleWordTimes`). */
+  setVoice(voice: CharacterVoice, durationMs?: number): void;
+  /** The parts a visitor's tap is cast at: only those that show at the
+   *  last update - his figure (front and back), the bubble while open,
+   *  the name tag while shown, the pop-up once unfolded. three's
+   *  raycaster does not skip a hidden mesh, so a hidden part is left out
+   *  here. */
+  tapTargets(): Object3D[];
   /** A tap in the bubble view: its bubble shuts, or opens again. */
   toggleBubble(): void;
   /** The creator's facing, once known (rad about Up, 0 facing +Z); a
@@ -300,6 +311,7 @@ export function createCharacterLook(
     figGeo,
     basic(backTex, { alphaTest: 0.03, depthWrite: true }),
   );
+  back.name = "character-back";
   back.rotation.y = Math.PI;
   back.position.z = -0.004;
   body.add(front, back);
@@ -430,7 +442,10 @@ export function createCharacterLook(
   let beckoning = false;
   let footer: string | null = null;
   let distanceM = Number.POSITIVE_INFINITY;
-  const wordTimes = lineWordTimes(line);
+  const estimatedTimes = lineWordTimes(line);
+  /** The word times of the voice playing: the estimate, stretched to the
+   *  voice's length when the story knows it. */
+  let wordTimes: readonly WordTime[] = estimatedTimes;
   /** When the voice began (the clock of the last update), while it plays. */
   let speakStart: number | null = null;
   let frameShown = 0;
@@ -762,11 +777,25 @@ export function createCharacterLook(
           ? next
           : null;
     },
-    setVoice(next) {
+    setVoice(next, durationMs) {
       voice = next;
       if (next !== "speaking") speakStart = null;
-      else if (lastMs !== null) speakStart ??= lastMs;
+      else {
+        if (lastMs !== null) speakStart ??= lastMs;
+        wordTimes =
+          durationMs === undefined
+            ? estimatedTimes
+            : scaleWordTimes(estimatedTimes, durationMs);
+      }
       if (next === "spoken") heard = true;
+    },
+    tapTargets() {
+      const out: Object3D[] = [];
+      if (front.visible) out.push(front, back);
+      if (bubble.visible) out.push(bubble);
+      if (pip.visible) out.push(pip);
+      if (popup.visible && unfold > 0.5) out.push(popup);
+      return out;
     },
     setRestYaw(yaw) {
       if (Number.isFinite(yaw)) restYaw = yaw;

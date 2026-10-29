@@ -33,7 +33,9 @@ import type {
   TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { isStageCharacterView } from "./character-views.js";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
@@ -105,12 +107,13 @@ export async function decodeFigure<T>(
  *  from the archive on arrival. Free pictures are read on their own. */
 export function stationAssetIds(
   station: Pick<TourStation, "blocks" | "steps">,
+  characters: ReadonlyMap<string, TourCharacter> = new Map(),
 ): string[] {
   const blocks = new Map(station.blocks.map((b) => [b.id, b]));
   const ids = station.steps.flatMap((step): readonly string[] => {
     if (step.action.kind !== "show") return [];
     const block = blocks.get(step.action.block);
-    return block === undefined ? [] : storyAssetIds(block);
+    return block === undefined ? [] : storyAssetIds(block, characters);
   });
   const models = tourFreeBlocks(station).flatMap((b) =>
     b.kind === "model" ? [b.asset] : [],
@@ -118,8 +121,12 @@ export function stationAssetIds(
   return [...new Set([...ids, ...models])];
 }
 
-/** The assets the story reads to show `block`. */
-function storyAssetIds(block: TourBlock): readonly string[] {
+/** The assets the story reads to show `block` (`scene-view.ts`); a
+ *  character resolves his declaration in `characters`. */
+function storyAssetIds(
+  block: TourBlock,
+  characters: ReadonlyMap<string, TourCharacter>,
+): readonly string[] {
   switch (block.kind) {
     case "picture":
       return [block.image];
@@ -130,8 +137,21 @@ function storyAssetIds(block: TourBlock): readonly string[] {
       return block.view === "card" ? [] : [block.asset];
     case "character": {
       // Drawn in every view but the card (the plain stage figure, or a
-      // character look in a story view).
-      const figure = block.view === "card" ? [] : [block.image];
+      // character look in a story view). A story view of a declared
+      // character with a frames sheet stands from the sheet; his image
+      // then only for the portrait view's portrait.
+      const sheet =
+        isStageCharacterView(block.view) && block.character !== undefined
+          ? characters.get(block.character)?.frames
+          : undefined;
+      const figure =
+        block.view === "card"
+          ? []
+          : sheet === undefined
+            ? [block.image]
+            : block.view === "portrait"
+              ? [block.image, sheet]
+              : [sheet];
       return block.voice === undefined ? figure : [...figure, block.voice];
     }
     case "shortText":
@@ -166,6 +186,9 @@ export interface StationPrefetch {
 export function createStationPrefetch(deps: {
   readonly assets: () => ReadonlyMap<string, TourAsset>;
   read(path: string): Promise<Blob>;
+  /** The open tour's declared characters by id (a frames sheet is what
+   *  his story views read); none when absent. */
+  readonly characters?: () => ReadonlyMap<string, TourCharacter>;
   /** The open tour, compared by identity: the cache is keyed by entry
    *  path, which the next tour reuses, so a different value (or null, the
    *  tour closed) drops everything. A session end keeps it (R15). */
@@ -304,7 +327,7 @@ export function createStationPrefetch(deps: {
    *  that asked; a path given up for this station is not asked again. */
   function request(station: TourStation): void {
     const assets = deps.assets();
-    for (const id of stationAssetIds(station)) {
+    for (const id of stationAssetIds(station, deps.characters?.())) {
       const asset = assets.get(id);
       if (asset === undefined) continue;
       const path = asset.path;

@@ -361,6 +361,42 @@ describe("createCharacterLook: the footer and the tap", () => {
     expect(look.state().footer).toBe("Tap the stage to hear him again");
   });
 
+  // Why this test matters: a tap is cast at what he draws, and three's
+  // raycaster does not skip a hidden mesh: so the tap targets are only the
+  // parts that show - his figure, an open bubble, the name tag far off,
+  // an unfolded pop-up - never the hidden ones around him.
+  it("names only the parts that show as tap targets", () => {
+    const names = (look: { tapTargets(): { name: string }[] }) =>
+      look.tapTargets().map((o) => o.name);
+    const near = setup("bubble");
+    near.standAt(0, 5);
+    near.tick(0, true);
+    expect(names(near.look)).toEqual([
+      "character-front",
+      "character-back",
+      "character-bubble",
+    ]);
+    near.standAt(0, 20);
+    near.tick(0, true);
+    expect(names(near.look)).toEqual([
+      "character-front",
+      "character-back",
+      "character-pip",
+    ]);
+    near.look.setPresence(0);
+    near.tick(0, true);
+    expect(names(near.look)).toEqual([]);
+    const pop = setup("popup", { voiced: true });
+    pop.standAt(0, 20);
+    pop.tick(0, true);
+    expect(names(pop.look)).not.toContain("character-popup");
+    pop.standAt(0, 5);
+    for (let i = 0; i < 40; i++) pop.tick(100);
+    expect(pop.look.state().unfold).toBeGreaterThan(0.5);
+    expect(names(pop.look)).toContain("character-popup");
+    expect(names(pop.look)).not.toContain("character-front");
+  });
+
   // Why this test matters: the bubble view has no voice; a tap opens and
   // shuts its bubble, as in the prototype.
   it("shuts and opens the bubble on a tap in the bubble view", () => {
@@ -456,6 +492,27 @@ describe("createCharacterLook: the frames sheet and the read-along", () => {
           .material as MeshBasicMaterial
       ).map?.repeat.x,
     ).toBe(1);
+  });
+
+  // Why this test matters: the word times are estimated from the letters;
+  // told the voice's real length, the read-along stretches to it, so the
+  // last word lights while the voice still says it, not seconds after.
+  it("stretches the read-along to the voice's length when told it", () => {
+    const { look, standAt, tick } = setup("speak", { voiced: true });
+    standAt(0, 5);
+    tick(0, true);
+    // "Good day, traveller." is estimated to end at 1772 ms, its third
+    // word to begin at 1194; told twice that, the second word still plays
+    // at 1316 ms.
+    look.setVoice("speaking", 3544);
+    tick(16);
+    tick(1300);
+    expect(look.state().activeWord).toBe(1);
+    look.setVoice("spoken");
+    look.setVoice("speaking");
+    tick(16);
+    tick(1300);
+    expect(look.state().activeWord).toBe(2);
   });
 
   it("keeps his one pose without a sheet, and the bubble view's mouth still", () => {

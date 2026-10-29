@@ -75,7 +75,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
-import { wireVisitorStations } from "./visitor-stations.js";
+import { routeVisitorTap, wireVisitorStations } from "./visitor-stations.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
@@ -1070,11 +1070,11 @@ if (mode === "visitor") {
   });
 }
 hooks.visitorTap = (tap) => {
-  // The story's character first, then a model's card; a tap that opens
-  // none is the pin sheet's.
-  if (stations.characterTapped(tap) || modelVisitor.tapped(tap)) {
-    pinSheet.close();
-  } else pinSheet.tapped(tap);
+  routeVisitorTap(tap, {
+    character: stations.characterTapped,
+    model: (t) => modelVisitor.tapped(t),
+    pinSheet,
+  });
 };
 hooks.stopStations = () => {
   stations.stop();
