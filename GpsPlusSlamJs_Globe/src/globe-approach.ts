@@ -52,11 +52,11 @@ import {
 export const SPIN_DEG_PER_S = -3;
 
 /** The approach's phases, in the order a run passes them. */
-export type ApproachPhase =
+type ApproachPhase =
   "spin" | "turning" | "arrived" | "user" | "diving" | "landed";
 
 /** Where the target came from: the intro's sources, or the pin. */
-export type ApproachSource = GlobeTargetSource | "pin";
+type ApproachSource = GlobeTargetSource | "pin";
 
 /** The lab's knobs the approach reads (its `params`, of which it uses these). */
 export interface GlobeApproachParams {
