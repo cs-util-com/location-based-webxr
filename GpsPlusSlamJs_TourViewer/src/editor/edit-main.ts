@@ -569,6 +569,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
           part: "middle" | "knob" | "dot",
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
+        view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
+        view3dModelScreen: (
+          id: string,
+          at: readonly [number, number, number],
+        ) => readonly [number, number] | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
       };
@@ -590,6 +595,8 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
+    view3dModelParts: () => shown3d?.modelParts() ?? null,
+    view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
   };
@@ -892,6 +899,19 @@ function renderTourName(): void {
     title === undefined ? EDITOR_TITLE : `${title} - ${EDITOR_TITLE}`;
 }
 
+/** Whether the selection `id` is still in the tour: one of the editor
+ *  model's items, or a 3D model block (which the 2D editor does not list,
+ *  `editor-model.ts`, but the 3D view selects and edits). */
+function stillInTour(id: string): boolean {
+  if (model?.items.some((i) => i.id === id) === true) return true;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  return (
+    tour?.stations.some((s) =>
+      s.blocks.some((b) => b.kind === "model" && b.id === id),
+    ) ?? false
+  );
+}
+
 /** After an edit: the rail, the markers, the card and the status follow. */
 function refresh(): void {
   if (editor === null) return;
@@ -900,7 +920,7 @@ function refresh(): void {
   rail.update(model);
   map.update(model);
   const { selected } = ui();
-  if (selected !== null && !model.items.some((i) => i.id === selected)) {
+  if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
   map.select(ui().selected);
@@ -2472,6 +2492,12 @@ let chosenAtOpen = false;
  *  save slot (`keepInChosenFile`, the "open" claim); null otherwise. */
 let openWriting: string | null = null;
 
+/** The tour whose open waits to write into the file it asked for
+ *  (`keepInChosenFile`), from the open until that write holds the save
+ *  slot or is given up. A Save queued for it meanwhile waits for that
+ *  file (`runQueuedSave`) instead of finding none and being dropped. */
+let openWriteOf: EditorSession | null = null;
+
 /**
  * A tour from a link or the sample asks where to save it IN the open's
  * click, before any await (Chromium opens the dialog only within a few
@@ -2563,11 +2589,22 @@ async function keepInChosenFile(
   // queued and runs after it, and Share and publish waits for it
   // (`savesSettled`). No await lies between the wait's last check and the
   // claim (`waitForSaveSlot`).
-  const handle = await waitForSaveSlot(
-    { busy: saving, end: () => saveEnd, settled: savesSettled },
-    () => stillToChoose(mine, pick),
-  );
+  openWriteOf = mine;
+  let handle: FileSystemFileHandle | null;
+  try {
+    handle = await waitForSaveSlot(
+      { busy: saving, end: () => saveEnd, settled: savesSettled },
+      () => stillToChoose(mine, pick),
+    );
+  } finally {
+    // From here the write holds the slot (no await before its claim), or
+    // there is no write: a queued Save no longer waits for it.
+    if (openWriteOf === mine) openWriteOf = null;
+  }
   if (handle === null) {
+    // A Save queued while the open waited (the dialog was dismissed, or
+    // a Save chose a file meanwhile) runs now that no write will come.
+    if (editor !== null) runQueuedSave(editor);
     // Picked, but no longer to be written (another tour opened, or a Save
     // chose a file meanwhile): not left behind empty and unexplained, in
     // a toast that stays.
@@ -2648,6 +2685,11 @@ function abandon(): AutosaveOutcome {
   return "held";
 }
 
+/** The tour whose Save (`runSave`) runs now, or null: an open keeps the
+ *  save slot's holder, so "explicit" alone cannot tell this tour's Save
+ *  from the closed tour's. */
+let explicitSaveOf: EditorSession | null = null;
+
 /**
  * The explicit Save (the button, Ctrl+S, "Download instead"). Asked for
  * while an autosave runs, it waits for it and runs next; what it comes to
@@ -2660,10 +2702,12 @@ async function runSave(
   if (editor === null) return;
   if (saving()) {
     const by = saveState().by;
-    if (by !== "explicit") {
+    if (by !== "explicit" || explicitSaveOf !== editor) {
       // Committed now, saved right after what holds the save (the
       // autosave, the write at the open, a copy, a move of the debug
-      // data). A second Save during a Save is the same Save.
+      // data, or a Save of a tour closed since: an open keeps the slot's
+      // holder). A second Save during this tour's own Save is the same
+      // Save.
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2671,7 +2715,13 @@ async function runSave(
     return;
   }
   const mine = editor;
-  const outcome = await saveTour("explicit", pick);
+  explicitSaveOf = mine;
+  let outcome: AutosaveOutcome;
+  try {
+    outcome = await saveTour("explicit", pick);
+  } finally {
+    if (explicitSaveOf === mine) explicitSaveOf = null;
+  }
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
@@ -2681,6 +2731,11 @@ async function runSave(
  *  runs once the slot is free, and only for the tour it was asked for. */
 function runQueuedSave(mine: EditorSession): void {
   if (!saveState().queued || editor !== mine || saving()) return;
+  // The open's write into its chosen file is still to come: the Save
+  // stays queued and runs into that file once it is adopted (a save
+  // that ends before the write claims the slot would otherwise find no
+  // file, and drop the Save).
+  if (openWriteOf === mine) return;
   store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
   // A tour with no file to save into asks where to save it, which the
   // browser allows only within a key press or a click - long gone now.
@@ -3665,6 +3720,7 @@ const shell = createEditorShell({
     text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
+    model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
@@ -3710,6 +3766,8 @@ const viewSwitch = createViewSwitch({
         groundMenu: (point, place) => {
           shell.groundMenu(point, place);
         },
+        model: (id, edit) =>
+          writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
         // A field's and a menu's keys are their own (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&

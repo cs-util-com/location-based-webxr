@@ -24,7 +24,7 @@ import type {
  *  `beforexrselect` is cancelled): a tap on a control or on a sheet or
  *  card. A tap on the overlay's open view stays a select - a pin's tap. */
 const OVERLAY_TAPS =
-  "button, a, input, select, textarea, summary, .sheet, #scene-panel";
+  "button, a, input, select, textarea, summary, .sheet, #scene-panel, .model-card, .model-gestures";
 
 /** Whether a tap on `target` (a `beforexrselect`'s) is the overlay's,
  *  not the world's. */

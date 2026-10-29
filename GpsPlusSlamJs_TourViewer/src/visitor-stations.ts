@@ -40,6 +40,8 @@ import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
+import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import {
   wireStationGuide,
   type GuideView,
@@ -82,6 +84,8 @@ import {
 } from "./walk-edge-pill.js";
 import { walkRadarFovDeg } from "./walk-radar-model.js";
 import { stationTitle } from "./station-run.js";
+import { beckonNext } from "./character-views.js";
+import type { CharacterBeckon } from "./character-look.js";
 import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
 import {
   sampleFrameTimes,
@@ -180,6 +184,10 @@ export interface VisitorStations {
   walkShown: () => boolean;
   /** The `?debug=1` lines: the radar's draw time and the frame time; empty without a radar. */
   debugLines: () => string[];
+  /** A visitor's tap in AR: true when it hit the standing character of a
+   *  story step (his voice plays or stops, the bubble view's bubble shuts
+   *  or opens), so no other tap target takes it. */
+  characterTapped: (tap: SelectTargetRay | null) => boolean;
 }
 
 /**
@@ -219,6 +227,8 @@ export function wireVisitorStations(deps: {
     | "loadGlbModel"
     | "createAudioElement"
     | "xrProjection0"
+    | "getViewerCamera"
+    | "pickObjectInView"
   >;
   dom: {
     guide: StationGuideDom;
@@ -282,6 +292,21 @@ export function wireVisitorStations(deps: {
     }
     return indexed.byId;
   };
+  // The open tour's declared characters by id, likewise once per manifest.
+  let declared: {
+    manifest: unknown;
+    byId: Map<string, TourCharacter>;
+  } | null = null;
+  const charactersById = (): ReadonlyMap<string, TourCharacter> => {
+    const manifest = ctx.tourDocument.manifest();
+    if (declared?.manifest !== manifest) {
+      declared = {
+        manifest,
+        byId: new Map((manifest?.characters ?? []).map((c) => [c.id, c])),
+      };
+    }
+    return declared.byId;
+  };
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
@@ -322,6 +347,10 @@ export function wireVisitorStations(deps: {
     // The figure fades with its station's content (`follow` below).
     now: deps.now,
     registerFrame: registerFrameUpdate,
+    // A character look turns and opens to the visitor's camera, and
+    // beckons along the walk (two-stations).
+    getCamera: () => seams.getViewerCamera(),
+    beckonOf: (id) => beckonOf(id),
   });
   // The sheet is drawn after a guide call, never from inside one.
   const calls = createCallGuard(() => {
@@ -332,6 +361,9 @@ export function wireVisitorStations(deps: {
     // A getter: the open tour's assets, read when a step needs one.
     get assets() {
       return assetsById();
+    },
+    get characters() {
+      return charactersById();
     },
     loadAsset: (path) => prefetch.load(path),
     audio,
@@ -434,6 +466,27 @@ export function wireVisitorStations(deps: {
     },
   });
   poseOf = (id) => guide.figurePoseOf(id);
+
+  /** Where the character at `stationId` beckons: the walk's one next
+   *  station (`beckonNext`), as an NUE offset from his own pose; none
+   *  while either pose is unknown. */
+  function beckonOf(stationId: string): CharacterBeckon | null {
+    const tour = guideTour();
+    const progress = selectWalkProgress(arStore.getState());
+    if (tour === null || progress === null) return null;
+    if (!walkOfTour(progress, tour.stations)) return null;
+    const nextId = beckonNext(progress, stationId);
+    const next = tour.stations.find((s) => s.id === nextId);
+    if (nextId === null || next === undefined) return null;
+    const here = guide.figurePoseOf(stationId);
+    const there = guide.poseOf(nextId);
+    if (here === null || there === null) return null;
+    return {
+      dx: there.positionNue[0] - here.positionNue[0],
+      dz: there.positionNue[2] - here.positionNue[2],
+      title: stationTitle(next),
+    };
+  }
 
   const walk = deps.walk;
   /** The note last said in the toast (it lasts 6 s in the store): the
@@ -681,6 +734,13 @@ export function wireVisitorStations(deps: {
   dom.playNextButton.addEventListener("click", () => {
     view.playNextNow();
   });
+  // His portrait in the card is his tap target too (the portrait view).
+  const portrait = dom.scene.portrait;
+  if (portrait instanceof HTMLElement) {
+    portrait.addEventListener("click", () => {
+      view.characterTapped();
+    });
+  }
 
   return {
     tick: () => {
@@ -730,6 +790,12 @@ export function wireVisitorStations(deps: {
       win === null
         ? []
         : walkDebugLines(deps.mode, radarView, frames, win.performance.now()),
+    characterTapped: (tap) => {
+      const root = stage.characterRoot();
+      if (root === null) return false;
+      const hit = seams.pickObjectInView(new Map([["character", root]]), tap);
+      return hit !== null && view.characterTapped();
+    },
   };
 }
 

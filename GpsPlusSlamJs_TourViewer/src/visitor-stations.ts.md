@@ -83,7 +83,13 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   the stage `selectStationContentShown` (`stage.follow`): the figure fades
   with its station. The stage's fade runs on `deps.now` and the AR frame
   loop (`registerFrameUpdate`).
-- The assets by id are built once per manifest.
+- A character look (a story view, `scene-stage.ts`) turns and opens to
+  `seams.getViewerCamera()` and beckons by `beckonOf(stationId)`: the
+  walk's one next station (`character-views.ts` `beckonNext` over the
+  store's walk, only while it is the open tour's), as the offset from his
+  figure pose (`guide.figurePoseOf`) to that station's pose
+  (`guide.poseOf`), with its title; none while either pose is unknown.
+- The assets by id, and the declared characters by id (handed to the scene view for a frames sheet), are built once per manifest.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` runs at the AR session's end and at an open tour's close
   (`hooks.stopStations`, from `ar-entry.ts` and `archive-open.ts`). It
@@ -129,6 +135,12 @@ hooks.tickStations = stations.tick;
   showed; "Keep listening"
   calls `cancelAsk`. The completion card has no way out of its own: the
   X at the top left (`#enter-ar`) is the session's one way out.
+- **The character's tap:** `characterTapped(tap)` casts the visitor's
+  AR tap against the stage's standing look (`stage.characterRoot()`,
+  `seams.pickObjectInView`); on a hit it is the story's
+  (`scene-view.ts` `characterTapped`: his voice, or the bubble view's
+  bubble) and returns true so `main.ts` hands it nowhere else. A click
+  on his portrait in the card (`dom.scene.portrait`) goes the same way.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);

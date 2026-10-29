@@ -361,3 +361,62 @@ describe("groundEdit", () => {
     expect(ground("pin-1", "ground-items", flat(1))).toEqual({ kind: "none" });
   });
 });
+
+// Why these tests matter: a story character's facing is typed in his
+// station's inspector as a heading; it must be written as an edit of his
+// station for that character (the session writes the rotation), a value
+// that is no number must be said, and the facing he has writes nothing.
+describe("inspectorEdit: a story character's facing", () => {
+  const story = [
+    {
+      ...STATIONS[0],
+      blocks: [
+        {
+          id: "w1",
+          kind: "character",
+          view: "speak",
+          name: "Wendel",
+          image: "cut",
+          caption: "Good day",
+          // No turn: he faces east (90).
+          pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "intro",
+          kind: "longText",
+          view: "card",
+          title: "The siege",
+          body: "In 1632",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    },
+  ] as unknown as TourStation[];
+  const typed = (field: string, value: string) =>
+    inspectorEdit({
+      selected: "station:a",
+      stations: story,
+      origin: ORIGIN,
+      field,
+      value,
+    });
+
+  it("writes a heading typed as his station's edit of that character", () => {
+    expect(typed("character-facing:w1", "182,5")).toEqual({
+      kind: "station",
+      stationId: "a",
+      edit: { character: { block: "w1", facingDeg: 182.5 } },
+    });
+  });
+
+  it("says a value that is no number, and writes nothing for the facing he has or a block that is no character", () => {
+    expect(typed("character-facing:w1", "south")).toEqual({
+      kind: "invalid",
+      reason: "Type a number, like 12.5",
+    });
+    expect(typed("character-facing:w1", "90")).toEqual({ kind: "none" });
+    expect(typed("character-facing:w1", "450")).toEqual({ kind: "none" });
+    expect(typed("character-facing:intro", "10")).toEqual({ kind: "none" });
+    expect(typed("character-facing:nobody", "10")).toEqual({ kind: "none" });
+  });
+});

@@ -23,7 +23,7 @@ time. Plan:
     station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
   - `playing()` - the station whose story plays.
-- Deps: `dom` (`SceneViewDom`), `assets` (by id), `loadAsset(path)`,
+- Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
   `createChoiceButton(label, onClick)`, `schedule(fn, ms)`, `objectUrls`,
@@ -41,6 +41,32 @@ time. Plan:
   (a character in the card plays its voice, but no figure stands). A
   block's world view (a pin, a plane, a placed model) is drawn with its
   station's free blocks (`content-placement.ts`), never by a step.
+- **A declared character's frames sheet:** a story view of a block whose
+  `character` names a declaration with `frames` stands from the sheet (the
+  look gets `sheet: true` and slices it); the `portrait` view's round
+  portrait stays the block's `image`. A sheet that cannot be read stands
+  him from his `image` in one pose, and the "could not be loaded" line the
+  failed read wrote is taken back, since he does stand. The `stage` view
+  and a declaration without `frames` use the `image` as before.
+- **A character in a story view** (`bubble`, `speak`, `two-stations`,
+  `portrait`, `popup`; tour format 4.2) goes to the stage with a look
+  spec `{ view, name, line, voiced, pose }` (the line is the caption;
+  `voiced` is false in the bubble view, which has no voice), which the stage
+  draws as a character look (`scene-stage.ts`, `character-look.ts`). The
+  caption still shows in the card (captions always). The `portrait` view
+  also shows the figure as a round portrait beside his name (`dom.portrait`,
+  measured by `checkPicture` like a picture, hidden on the next step). A
+  character's voice tells the stage when it speaks (`setVoice("speaking")`)
+  and when it has spoken (`"spoken"`); every step change sets `"idle"`.
+  As in the prototype, a story view's voice plays only on a tap on him
+  (`characterTapped()`: the figure, bubble or stage in AR, through
+  `visitor-stations.ts`, or the portrait in the card); a tap while it
+  plays stops it, and the next plays it again; a voice still loading when
+  it was stopped is dropped. The bubble view has no voice: its tap shuts
+  or opens the bubble. The `stage` and `card` views still play the voice
+  with the step. When the story ends the stage is released
+  (`stage.release`, absent: `clear`), so he stays in the world after his
+  step.
 - A character's figure goes to the stage as it is; the stage's decoder
   measures it from its own header (the decode cap, `station-prefetch.ts`
   `decodeFigure`).
@@ -75,6 +101,16 @@ time. Plan:
   its sound stopped when the step changes.
 - **Auto steps** advance on `schedule(afterS x 1000)`; a tap first cancels
   the timer. A choice never auto-advances.
+- **`lineEnd` steps** (format 4.2) advance when the step's voice or sound
+  ends, after a 600 ms tail; never while it plays. With no voice, or one
+  that cannot be read or played, or a story view's voice nobody tapped,
+  the words' reading time stands in; a tap that starts the voice holds the
+  step until it ends, and a tap that stops it counts as its end. A video's
+  `lineEnd` waits for the clip's `ended` (one that cannot be read: the
+  transcript's reading time); the next step resets `onended`
+  (`character-views.ts` `lineReadingMs`, 1.5-60 s). Held, no timer runs;
+  released, the wait starts again. One timer at a time: `armTimer` cancels
+  any earlier one (a voice lost while its step renders arms it early).
 - **Video** (B2b step 3) plays in the card's `<video controls playsinline
 preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   poster are read through `loadAsset` as object URLs of the step. The
@@ -130,8 +166,9 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - `SceneView.progress(): StoryProgress | null` -
   `{ index, count, autoMs }` of the story playing: the step shown, the
   playable step count (`scene-player.ts` `playableStepCount`) and the
-  current step's auto-advance time (null for a step that waits for a
-  tap); null without a story or for a story with a choice.
+  current step's own timer: the auto time, or a `lineEnd` step's wait once
+  its voice is out of the way (null for a step that waits for a tap or
+  for a voice still playing, and while held); null without a story or for a story with a choice.
 - Tested in `scene-view.test.ts` (the step, the count and the auto
   step's time, nothing without a story, no dots with a choice, `onChange`
   on a start, each step, the end and `stopAll`).
@@ -186,3 +223,10 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   over every step", "says why the station's card picture is missing",
   "drops a card picture that lands after its story ended", "ends a station with no story and nothing to show at once"; the
   e2e `story-blocks.spec.js` at the gate and "a station with no story".
+- Tests: `scene-view.test.ts` "a declared character's frames sheet" (a story view from the sheet, the stage view and the portrait from the image, the fallback with no failure line, no sheet), and "a character's story views and the advance
+  when the line ends" (a story view handed to the stage as a look, the
+  plain stage view without one, a card with no figure; the voice told to
+  the stage; `lineEnd` on the voice's end, never before; the reading time
+  with no voice or a failing one; the hold; the portrait; the voice on a
+  tap, its stop and replay, the bubble's tap, a dropped loading voice, the
+  release at the story's end) and "a lineEnd step on a video".
