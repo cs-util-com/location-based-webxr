@@ -13,11 +13,22 @@
  * the lab's smokes and the reference captures.
  */
 import * as THREE from "three";
+import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { describe, expect, it, vi } from "vitest";
 
+import { CLOUD_LAYER } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-layer";
+import { CLOUD_NOISE_PERIOD_TILES } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-hex";
+import { CloudShadow } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-shadow";
 import { CLOUD_SLAB } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-slab";
 
-import { cloudVolumeShare } from "./globe-cloud-volume.js";
+import {
+  cloudVolumeAnchorDrift,
+  cloudVolumeAnchorRecentre,
+  cloudVolumeNoiseAnchor,
+  cloudVolumeNoiseOffset,
+  cloudVolumeRecentreShift,
+  cloudVolumeShare,
+} from "./globe-cloud-volume.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume-pass.js";
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import type { GlobeSceneDepth } from "./globe-scene-depth.js";
@@ -377,7 +388,125 @@ describe("createGlobeCloudVolume", () => {
         new THREE.MeshStandardMaterial(),
       ),
     );
-    expect(() => listener?.({ scene: model })).not.toThrow();
+    listener?.({ scene: model });
+    // The patch is the framework shadow's: its name in the program key.
+    const material = (model.children[0] as THREE.Mesh)
+      .material as THREE.Material;
+    expect(material.customProgramCacheKey()).toContain("|cloud-shadow");
     volume.dispose();
+  });
+
+  // Off resets the reach it last handed over, so the same frame after an
+  // off and on hands it again: without that the slab would keep its
+  // default reach (21 km) after a switch, the horizon without clouds.
+  it("hands the same reach again after an off and on", () => {
+    const { volume, atmosphere } = setUp();
+    const reach = vi.spyOn(atmosphere, "setCloudReach");
+    volume.setEnabled(true);
+    volume.update(FRAME);
+    volume.setEnabled(false);
+    volume.setEnabled(true);
+    volume.update(FRAME);
+    const handed = reach.mock.calls.filter(([r]) => r !== null);
+    expect(handed).toHaveLength(2);
+    expect(handed[1]?.[0]).toEqual(handed[0]?.[0]);
+  });
+
+  // The volume's shadow falls from the clouds the volume draws: the same
+  // lift and disc every frame, and on only while asked, on and with a disc.
+  it("hands its shadow the lift, the disc and the switch each frame", () => {
+    const enabled = vi.spyOn(CloudShadow.prototype, "setEnabled");
+    const lift = vi.spyOn(CloudShadow.prototype, "setLiftM");
+    const radius = vi.spyOn(CloudShadow.prototype, "setDiscRadiusM");
+    const centre = vi.spyOn(CloudShadow.prototype, "setDiscCentre");
+    try {
+      const { volume } = setUp();
+      const middle = (CLOUD_SLAB.baseM + CLOUD_SLAB.topM) / 2;
+      volume.setShadow(true);
+      volume.update(FRAME);
+      expect(lift).toHaveBeenLastCalledWith(3000 - middle);
+      expect(radius).not.toHaveBeenCalled();
+      expect(enabled).toHaveBeenLastCalledWith(false);
+      volume.setEnabled(true);
+      const { radiusM } = volume.update({ ...FRAME, shellHeightM: 4000 });
+      expect(radiusM).toBe(30_000);
+      expect(lift).toHaveBeenLastCalledWith(4000 - middle);
+      expect(radius).toHaveBeenLastCalledWith(30_000);
+      expect(centre).toHaveBeenLastCalledWith(null);
+      expect(enabled).toHaveBeenLastCalledWith(true);
+      volume.setShadow(false);
+      volume.update(FRAME);
+      expect(enabled).toHaveBeenLastCalledWith(false);
+    } finally {
+      for (const spy of [enabled, lift, radius, centre]) spy.mockRestore();
+    }
+  });
+
+  // The coverage chunk reads the globe surface's own uniform objects, so a
+  // drift step or a new map reaches the slab without a copy.
+  it("shares the surface's map, drift and opacity uniforms by identity", () => {
+    const { volume, atmosphere, surfaceUniforms } = setUp();
+    const coverage = vi.spyOn(atmosphere, "setCloudCoverage");
+    volume.setEnabled(true);
+    const handed = coverage.mock.calls[0]?.[0] as {
+      uniforms: Record<string, unknown>;
+    };
+    expect(handed.uniforms["uVolumeClouds"]).toBe(surfaceUniforms.uClouds);
+    expect(handed.uniforms["uCloudCubic"]).toBe(surfaceUniforms.uCloudCubic);
+    expect(handed.uniforms["uVolumeLonOffset"]).toBe(
+      surfaceUniforms.uCloudLonOffset,
+    );
+    expect(handed.uniforms["uVolumeOpacity"]).toBe(
+      surfaceUniforms.uCloudOpacity,
+    );
+  });
+
+  // A recentre carries the tile noise's shift (a ground point keeps its
+  // noise) and the live anchor; a drift step moves the live anchor by
+  // exactly that step. Both against the module's own arithmetic.
+  it("carries the noise across a recentre and the live anchor through one drift step", () => {
+    const { volume, atmosphere, surfaceUniforms } = setUp();
+    const anchor = vi.spyOn(atmosphere, "setCloudNoiseAnchor");
+    const DEG = Math.PI / 180;
+    const a = { lat: 45, lng: 7 };
+    const b = { lat: 45.1, lng: 7.2 };
+    volume.setEnabled(true);
+    volume.update({ ...FRAME, target: a });
+    volume.update({ ...FRAME, target: b });
+    const tileM = CLOUD_LAYER.tileKm * 1000;
+    const period = CLOUD_NOISE_PERIOD_TILES;
+    const wrap = (t: number) => t - period * Math.floor(t / period);
+    const [du, dv] = cloudVolumeRecentreShift(
+      WGS84_ELLIPSOID,
+      a,
+      b,
+      0.25,
+      tileM,
+      period,
+    );
+    const [u, v] = cloudVolumeNoiseOffset(
+      { latRad: b.lat * DEG, lonRad: b.lng * DEG, lonOffsetRad: 0.25 },
+      tileM,
+      period,
+    );
+    const offset = atmosphere.cloudUniforms.atmCloudOffset.value;
+    expect(offset.x).toBe(wrap(u + wrap(du)));
+    expect(offset.y).toBe(wrap(v + wrap(dv)));
+    const recentred = cloudVolumeAnchorRecentre(
+      WGS84_ELLIPSOID,
+      cloudVolumeNoiseAnchor({
+        latRad: a.lat * DEG,
+        lonRad: a.lng * DEG,
+        lonOffsetRad: 0.25,
+      }),
+      a,
+      b,
+    );
+    expect(anchor).toHaveBeenLastCalledWith(recentred);
+    surfaceUniforms.uCloudLonOffset.value = 0.3;
+    volume.update({ ...FRAME, target: b });
+    expect(anchor).toHaveBeenLastCalledWith(
+      cloudVolumeAnchorDrift(recentred, b.lat * DEG, 0.3 - 0.25),
+    );
   });
 });

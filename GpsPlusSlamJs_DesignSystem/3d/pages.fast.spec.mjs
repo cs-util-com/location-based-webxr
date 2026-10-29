@@ -221,6 +221,7 @@ test("the globe lab opens with the relief, the band and the recorder, without er
       return {
         km: s.groundSky.observerAltitudeKm,
         thickness: s.atmosphere.thickness,
+        applied: s.appliedHash,
       };
     });
   };
@@ -229,6 +230,9 @@ test("the globe lab opens with the relief, the band and the recorder, without er
   expect(moved.km).toBeLessThanOrEqual(300);
   expect(moved.thickness).toBe(1);
   const changed = await thicknessAfter(`${low}&atmoThickness=6`);
+  // The lab must have applied the second change, or the x1 below proves
+  // nothing: a hash change the lab never handled leaves x1 too.
+  expect(changed.applied).toContain("atmoThickness=6");
   expect(changed.km).toBeLessThanOrEqual(300);
   expect(changed.thickness).toBe(1);
   expect(problems).toEqual([]);

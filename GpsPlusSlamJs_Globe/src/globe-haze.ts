@@ -68,11 +68,12 @@ export function createGlobeHaze(
   { visibilityKm }: { visibilityKm: number },
 ): GlobeHaze {
   const haze = new AtmosphereHaze({ visibilityKm, densityScale: 0 });
-  scene.fog = new THREE.Fog(
+  const fog = new THREE.Fog(
     0x000000,
     FOG_OUT_OF_REACH_M,
     FOG_OUT_OF_REACH_M * 2,
   );
+  scene.fog = fog;
   haze.setMode("atmosphere");
   let synced = false;
   let density = 0;
@@ -102,7 +103,8 @@ export function createGlobeHaze(
     },
     dispose() {
       haze.dispose();
-      if (scene.fog instanceof THREE.Fog) scene.fog = null;
+      // Only its own fog: one the page set since stays.
+      if (scene.fog === fog) scene.fog = null;
     },
   };
 }

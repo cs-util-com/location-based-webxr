@@ -29,7 +29,10 @@
     `clock()`, `sceneMs()`, `resetCloudDrift()`, `sunNow()`; `frame()`;
     `state()` (`frameAt`, `frameRecentres`, `siderealAngleRad`,
     `cloudDriftRate`); `dispose()` (the surface out of the scene and
-    freed, the sky pass, the renderer; the page stops its loop first).
+    freed, the sky pass, the renderer; the page stops its loop first;
+    a second call does nothing and `frame()` afterwards throws an Error;
+    the WebGL context is not released, since three's `renderer.dispose()`
+    keeps it, so a caller that reuses the canvas keeps that context).
   - `viewPoseEcef(ellipsoid, view)`: the ECEF pose of a Debug export's view
     (`lat`, `lng`, `altitudeKm` over the ellipsoid, `headingDeg` from north
     toward east, `pitchDeg` above the local horizontal). RangeError for a

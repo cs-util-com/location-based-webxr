@@ -24,7 +24,8 @@
 scale` (0 above the edge); a no-op when unchanged; RangeError as the
       framework's for a negative or non-finite product.
     - `state()`: `{ synced, density, patched }`.
-    - `dispose()`: releases the framework haze and takes the fog away.
+    - `dispose()`: releases the framework haze and takes its own fog away
+      (by identity: a fog the page set since stays).
   - `HazeTiles`: the `load-model` event source it patches (3d-tiles-
     renderer's `TilesRenderer`).
 - Invariants & assumptions:

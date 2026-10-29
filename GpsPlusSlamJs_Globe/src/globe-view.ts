@@ -190,7 +190,9 @@ export interface GlobeView {
   /**
    * Frees what the view created: the surface (out of the scene first),
    * the sky pass and the renderer. The page stops its animation loop
-   * first; the view is unusable afterwards.
+   * first; the view is unusable afterwards: `frame()` throws and a second
+   * dispose does nothing. The WebGL context is not released (three's
+   * `dispose` keeps it), so a caller reusing the canvas keeps its context.
    */
   dispose(): void;
 }
@@ -442,7 +444,16 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     seams.afterSky?.();
   };
 
+  /** Set by `dispose`: a second dispose does nothing, a frame throws. */
+  let disposed = false;
+  const refuseDisposed = () => {
+    if (disposed) {
+      throw new Error("the globe view was disposed; a frame needs a new view");
+    }
+  };
+
   const frame = () => {
+    refuseDisposed();
     seams.frameStart?.(monoNow());
     if (seams.paused?.() === true) {
       seams.frameEnd?.(monoNow());
@@ -503,6 +514,8 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
       cloudDriftRate: cloudDrift.rate,
     }),
     dispose() {
+      if (disposed) return;
+      disposed = true;
       scene.remove(globe.group);
       globe.dispose();
       sky.dispose();

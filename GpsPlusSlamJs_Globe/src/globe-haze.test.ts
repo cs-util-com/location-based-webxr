@@ -126,4 +126,15 @@ describe("createGlobeHaze", () => {
     haze.dispose();
     expect(scene.fog).toBeNull();
   });
+
+  // Why: dispose takes away the fog it set, not whatever fog the scene has
+  // by then; a page that set its own fog after the haze keeps it.
+  it("leaves a fog the page set since in place on dispose", () => {
+    const scene = new THREE.Scene();
+    const haze = createGlobeHaze(scene, { visibilityKm: 60 });
+    const pageFog = new THREE.Fog(0xffffff, 1, 2);
+    scene.fog = pageFog;
+    haze.dispose();
+    expect(scene.fog).toBe(pageFog);
+  });
 });

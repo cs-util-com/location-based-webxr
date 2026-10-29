@@ -24,8 +24,10 @@ sceneDepth })`
     chunk (`CLOUD_VOLUME_COVERAGE_GLSL` with the globe's map, drift and
     opacity uniforms, the target's origin and the share) and the relief's
     depth; off restores the dome. Idempotent.
-  - `update({ altitudeKm, target, radiusKm, ceilingKm, shellHeightM })` →
-    `{ share, radiusM }`: the share by altitude (`cloudVolumeShare`), the
+  - `update({ altitudeKm, target, radiusKm, ceilingKm, fadeKm, cover,
+shellHeightM, view, maxAheadM, mixed })` → `{ share, radiusM }`
+    (`fadeKm` default 10, capped at the ceiling; `cover` the coverage
+    chunk's gain, default 1): the share by altitude (`cloudVolumeShare`), the
     disc `radiusKm` x share, the lift (the shell's height minus the slab's
     middle), the origin from `target` (degrees; null before one: no
     volume), and, while enabled, the ground sky's noise offset
@@ -162,11 +164,17 @@ volume.render(camera, terrain.tiles.group);
 `createGlobeGroundSky` and a recording fake renderer): nothing while off;
 the switch on and every hand-over taken back off, both idempotent; the
 share, disc, lift and the mixed mode's whole disc and aerial fade; the
-reach in 1 km steps handed over only on change; the disc ahead along the
-view; the noise offset and live anchor while on; the draw order (depth,
-slab alone from the lifted camera into a transparent target, clear colour
-and siblings restored, composite), `composite: false`; the read-backs;
-the noise and fine-gain switches; the shadow's state and tile patch.
+reach in 1 km steps handed over only on change, and handed again after an
+off and on; the disc ahead along the view; the noise offset and live
+anchor while on; a recentre's carried tile-noise shift and live anchor and
+one drift step, against `globe-cloud-volume.ts`'s own arithmetic; the
+surface's map, drift and opacity uniforms shared by identity; the shadow's
+lift, disc and switch each frame (spies on the framework `CloudShadow`);
+the draw order (depth, slab alone from the lifted camera into a
+transparent target, clear colour and siblings restored, composite),
+`composite: false`; the read-backs; the noise and fine-gain switches; the
+shadow's state and the tile patch (the patched material's program key
+names `cloud-shadow`).
 
 In the browser, the lab's `globe-cloud-volume.smoke.spec.mjs`: the frame-to-frame step through the
 volume's fade-in (45 to 15 km) against the shell only, that it draws at

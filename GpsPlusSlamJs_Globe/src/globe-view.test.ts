@@ -132,6 +132,20 @@ describe("createGlobeView: dispose", () => {
     expect(log.at(-1)).toBe("renderer dispose");
     expect(view.scene.children).not.toContain(view.globe.group);
   });
+
+  // Why: an editor that unmounts twice (a route change during a teardown)
+  // must not free the surface and the renderer twice, and a frame that a
+  // stale animation loop still asks for after the teardown must fail
+  // loudly instead of drawing with freed resources.
+  it("ignores a second dispose and refuses a frame afterwards", () => {
+    const { view, log } = makeView();
+    const globe = vi.spyOn(view.globe, "dispose");
+    view.dispose();
+    view.dispose();
+    expect(globe).toHaveBeenCalledTimes(1);
+    expect(log.filter((l) => l === "renderer dispose")).toHaveLength(1);
+    expect(() => view.frame()).toThrow(/disposed/);
+  });
 });
 
 describe("createGlobeView: the frame", () => {
