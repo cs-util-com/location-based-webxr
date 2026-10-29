@@ -90,6 +90,12 @@ export function createGlobeCityStep({
 }: GlobeCityStepOptions): GlobeCityStep {
   /** The place the city was last asked for, as "lat,lng". */
   let cityKey: string | null = null;
+  /**
+   * The place the tries count for. Kept apart from `cityKey`, which a due
+   * retry clears to ask again: the count restarts only for another place,
+   * never for a frame without one or one that did not want the city.
+   */
+  let triedKey: string | null = null;
   let tries = 0;
   let failedAt: number | null = null;
 
@@ -117,7 +123,10 @@ export function createGlobeCityStep({
     step(frame) {
       const groundTrue = exaggerationAt(0, frame.law) === 1;
       const key = keyOf(frame.place);
-      if (key !== cityKey) tries = 0;
+      if (key !== null && key !== triedKey) {
+        triedKey = key;
+        tries = 0;
+      }
       const at = now();
       retryIfDue(key, at, city.state().phase === "failed");
       if (key !== null && key !== cityKey && wanted(frame, groundTrue)) {

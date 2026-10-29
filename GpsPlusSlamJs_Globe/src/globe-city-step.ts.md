@@ -37,12 +37,15 @@
   - The retry: a failure of the asked place is timed from the first frame
     that sees it; once the pause has passed (strictly more than `afterMs`)
     and fewer than `times` loads were made for the place, the place is
-    forgotten so the same frame asks again. **Kept from the lab as it
-    was:** when the retry falls due in a frame that does not want the
-    city (above `topM` without a flight), the place is forgotten without
-    a load, and the next frame counts the tries from 0 again, so the cap
-    can be passed that way (`globe-city-step.test.ts` pins it). Changing
-    it is a behaviour change, not part of the move.
+    forgotten so the same frame asks again. When the retry falls due in a
+    frame that does not want the city (above `topM` without a flight, or
+    while a warm-up runs), the place is forgotten without a load and the
+    next frame that wants it asks again. The tries count per place: they
+    restart only when another place is asked for, never for a frame
+    without a place or one that did not want the city, so a failing place
+    is loaded at most `times` times. (The lab restarted the count on the
+    next frame that differed from the forgotten place, so a city that kept
+    failing could be tried more often; fixed after the move.)
   - Every frame reads `city.state()` once and the clock once, whatever
     the branch, as the lab did.
   - The fade follows the frame's load in the frame (the order the lab
@@ -62,7 +65,10 @@
   ```
 
 - Tests: `globe-city-step.test.ts` (a recording fake city and a clock:
-  when a place loads and when not, the retry's pause and cap, the kept
-  reset of the tries, the fade by altitude and height law, the warm-up,
-  the gate and the readiness). The city's look is the design system's
-  city smokes.
+  when a place loads and when not, the retry's pause and cap, the tries
+  kept across frames that do not want the city or have no place, the fade
+  by altitude and height law, the warm-up, the gate and the readiness);
+  `globe-city-step.property.test.ts` (for any sequence of wanted,
+  unwanted, warming and placeless frames at one failing place, at most
+  three loads, and all three once the camera comes down). The city's look
+  is the design system's city smokes.

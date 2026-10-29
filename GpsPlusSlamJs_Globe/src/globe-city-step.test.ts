@@ -188,10 +188,11 @@ describe("createGlobeCityStep: the retry of a failed build", () => {
     expect(fake.loads()).toHaveLength(4);
   });
 
-  // The lab's behaviour, kept by the move: a retry that is due while the
-  // city is not wanted (above `topM` without a flight) forgets the place,
-  // so the next frame counts the tries from 0 again.
-  it("counts the tries again after a due retry the frame did not want", () => {
+  // A retry that falls due while the city is not wanted (above `topM`
+  // without a flight) is asked for on the next frame that wants it, and
+  // the tries keep counting for the place: the lab restarted them there,
+  // so a city that kept failing was tried more than three times.
+  it("keeps counting the tries across a due retry the frame did not want", () => {
     const { fake, step, at } = setup();
     fake.set({ phase: "failed" });
     step.step(frame()); // the first load
@@ -200,13 +201,25 @@ describe("createGlobeCityStep: the retry of a failed build", () => {
     at(20_000);
     step.step(frame({ altitudeM: 40_000 })); // due, but not wanted up here
     at(20_001);
-    step.step(frame({ altitudeM: 40_000 })); // the tries back to 0
+    step.step(frame({ altitudeM: 40_000 })); // still the same place's tries
     for (let i = 0; i < 6; i += 1) {
       at(60_000 + i * 20_000);
       step.step(frame());
     }
-    // One load before, then three more: the reset gave a fourth.
-    expect(fake.loads()).toHaveLength(4);
+    // One load before, then the two tries that were left.
+    expect(fake.loads()).toHaveLength(GLOBE_CITY_RETRY.times);
+    expect(step.gate()).toBe("gave-up");
+  });
+
+  it("keeps counting the tries across frames without a place", () => {
+    const { fake, step, at } = setup();
+    fake.set({ phase: "failed" });
+    for (let i = 0; i < 8; i += 1) {
+      at(i * 20_000);
+      step.step(frame());
+      step.step(frame({ place: null }));
+    }
+    expect(fake.loads()).toHaveLength(GLOBE_CITY_RETRY.times);
   });
 });
 
