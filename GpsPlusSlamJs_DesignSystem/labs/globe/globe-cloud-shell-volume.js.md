@@ -47,7 +47,7 @@ radiusM }` from its state, the centre null on the camera, where its flat
 ## The march (twin of the slab's, on a sphere)
 
 - The ray in the model frame (the ellipsoid as the atmosphere's ground
-  sphere, km), as `globe-atmosphere.js`; entry and exit of the deck's top
+  sphere, km), as the Globe package's `globe-atmosphere.ts`; entry and exit of the deck's top
   and base spheres analytic; the end at the relief's depth when it was
   drawn this frame, weighted like the space pass's (`skyHandOver.weight`;
   above the 80 km edge no depth: rays end at the deck's base, and relief

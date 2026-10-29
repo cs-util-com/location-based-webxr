@@ -1,6 +1,6 @@
 /**
  * The globe atmosphere's frame and look (round-4 plan 2026-09-28-2105
- * DEC-GL4-4).
+ * DEC-GL4-4), moved with the module from the globe lab.
  *
  * Why this file matters: the pass intersects the model's ground and top
  * SPHERES analytically, while the globe is the WGS84 ELLIPSOID. The frame
@@ -11,10 +11,11 @@
  * the halo's width would be wrong. The look's numbers come from the hash,
  * so a malformed one must be refused rather than compiled into a shader.
  */
-import { strict as assert } from "node:assert";
-import { describe, it } from "node:test";
+import fc from "fast-check";
+import { describe, expect, it } from "vitest";
 
 import {
+  CHAPMAN_GLSL,
   GLOBE_ATMOSPHERE,
   atmosphereCostText,
   atmosphereLook,
@@ -25,24 +26,32 @@ import {
   observerAltitudeKm,
 } from "./globe-atmosphere-frame.js";
 
-const WGS84 = [6378137, 6378137, 6356752.314245];
+type Vec3 = [number, number, number];
+
+const WGS84: Vec3 = [6378137, 6378137, 6356752.314245];
 const GROUND_KM = 6360;
+
+/** A point on the WGS84 ellipsoid by its parametric latitude. */
+const onEllipsoid = (latDeg: number, lonDeg: number): Vec3 => {
+  const la = (latDeg * Math.PI) / 180;
+  const lo = (lonDeg * Math.PI) / 180;
+  return [
+    WGS84[0] * Math.cos(la) * Math.cos(lo),
+    WGS84[1] * Math.cos(la) * Math.sin(lo),
+    WGS84[2] * Math.sin(la),
+  ];
+};
 
 describe("ellipsoidToModel", () => {
   it("puts every point of the ellipsoid on the model's ground sphere", () => {
     const k = ellipsoidToModel(WGS84, GROUND_KM);
     for (let lat = -90; lat <= 90; lat += 7.5) {
       for (let lon = -180; lon < 180; lon += 15) {
-        const la = (lat * Math.PI) / 180;
-        const lo = (lon * Math.PI) / 180;
-        // A point on the ellipsoid by its parametric latitude.
-        const p = [
-          WGS84[0] * Math.cos(la) * Math.cos(lo),
-          WGS84[1] * Math.cos(la) * Math.sin(lo),
-          WGS84[2] * Math.sin(la),
-        ];
+        const p = onEllipsoid(lat, lon);
         const r = Math.hypot(p[0] * k[0], p[1] * k[1], p[2] * k[2]);
-        assert.ok(Math.abs(r - GROUND_KM) < 1e-6, `${lat},${lon}: ${r}`);
+        expect(Math.abs(r - GROUND_KM), `${lat},${lon}: ${r}`).toBeLessThan(
+          1e-6,
+        );
       }
     }
   });
@@ -52,25 +61,26 @@ describe("ellipsoidToModel", () => {
     for (const [axis, radius] of [
       [0, WGS84[0]],
       [2, WGS84[2]],
-    ]) {
-      const p = [0, 0, 0];
+    ] as const) {
+      const p: Vec3 = [0, 0, 0];
       p[axis] = radius + 100_000;
       const r = Math.hypot(p[0] * k[0], p[1] * k[1], p[2] * k[2]);
       const altKm = r - GROUND_KM;
-      assert.ok(Math.abs(altKm - 100) / 100 < 0.004, `axis ${axis}: ${altKm}`);
+      expect(Math.abs(altKm - 100) / 100, `axis ${axis}`).toBeLessThan(0.004);
     }
   });
 
   it("refuses a radius that is not a positive finite number", () => {
-    for (const bad of [
+    const bads: Vec3[] = [
       [0, 1, 1],
       [1, -1, 1],
       [1, 1, Number.NaN],
       [1, Infinity, 1],
-    ]) {
-      assert.throws(() => ellipsoidToModel(bad, GROUND_KM), RangeError);
+    ];
+    for (const bad of bads) {
+      expect(() => ellipsoidToModel(bad, GROUND_KM)).toThrow(RangeError);
     }
-    assert.throws(() => ellipsoidToModel(WGS84, 0), RangeError);
+    expect(() => ellipsoidToModel(WGS84, 0)).toThrow(RangeError);
   });
 });
 
@@ -80,10 +90,11 @@ describe("ellipsoidToModel", () => {
 // still reaches the rest.
 describe("defaultAtmosphereSteps", () => {
   it("is fewer samples on a coarse pointer (a phone) than on a mouse", () => {
-    assert.equal(defaultAtmosphereSteps(false), GLOBE_ATMOSPHERE.steps);
-    assert.equal(defaultAtmosphereSteps(true), GLOBE_ATMOSPHERE.coarseSteps);
-    assert.ok(GLOBE_ATMOSPHERE.coarseSteps < GLOBE_ATMOSPHERE.steps);
-    assert.ok(GLOBE_ATMOSPHERE.coarseSteps >= 6, "banding measured from 6 up");
+    expect(defaultAtmosphereSteps(false)).toBe(GLOBE_ATMOSPHERE.steps);
+    expect(defaultAtmosphereSteps(true)).toBe(GLOBE_ATMOSPHERE.coarseSteps);
+    expect(GLOBE_ATMOSPHERE.coarseSteps).toBeLessThan(GLOBE_ATMOSPHERE.steps);
+    // Banding was measured from 6 up.
+    expect(GLOBE_ATMOSPHERE.coarseSteps).toBeGreaterThanOrEqual(6);
   });
 });
 
@@ -101,7 +112,7 @@ describe("grazingCompensation", () => {
 
   it("is exactly 1 at the physical thickness, for every ray", () => {
     for (const mu of [0, 0.01, 0.1, 0.5, 1]) {
-      assert.equal(grazingCompensation(1, mu, X), 1);
+      expect(grazingCompensation(1, mu, X)).toBe(1);
     }
   });
 
@@ -112,7 +123,10 @@ describe("grazingCompensation", () => {
   it("is exactly 1 straight down, for every thickness", () => {
     for (const k of [1, 2, 6, 10]) {
       for (const x of [X, XM]) {
-        assert.ok(Math.abs(grazingCompensation(k, 1, x) - 1) < 1e-12, `k ${k}`);
+        expect(
+          Math.abs(grazingCompensation(k, 1, x) - 1),
+          `k ${k}`,
+        ).toBeLessThan(1e-12);
       }
     }
   });
@@ -120,7 +134,8 @@ describe("grazingCompensation", () => {
   it("is sqrt(k) at the limb, less the vertical normalisation (within 6 %)", () => {
     for (const k of [2, 6, 10]) {
       const f = grazingCompensation(k, 0, X);
-      assert.ok(f < Math.sqrt(k) && f > Math.sqrt(k) / 1.06, `k ${k}: ${f}`);
+      expect(f).toBeLessThan(Math.sqrt(k));
+      expect(f).toBeGreaterThan(Math.sqrt(k) / 1.06);
     }
   });
 
@@ -128,9 +143,25 @@ describe("grazingCompensation", () => {
     let previous = Infinity;
     for (let mu = 0; mu <= 1; mu += 0.01) {
       const f = grazingCompensation(6, mu, X);
-      assert.ok(f <= previous + 1e-12, `mu ${mu}: ${f} after ${previous}`);
+      expect(f, `mu ${mu}`).toBeLessThanOrEqual(previous + 1e-12);
       previous = f;
     }
+  });
+
+  // The same two bounds for any thickness and ray: never below the real
+  // air's depth, never above the limb's sqrt(k).
+  it("stays between 1 and sqrt(k) for every thickness and ray", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 1, max: 10, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (k, mu) => {
+          const f = grazingCompensation(k, mu, X);
+          expect(f).toBeGreaterThanOrEqual(1 - 1e-12);
+          expect(f).toBeLessThanOrEqual(Math.sqrt(k) + 1e-12);
+        },
+      ),
+    );
   });
 });
 
@@ -140,37 +171,53 @@ describe("grazingCompensation", () => {
 // one-scene flight) a ray going up has its lowest point at the camera,
 // where it climbs steeply: with the tangent-point rule it got sqrt(k),
 // about 2.45 times the intended optical depth at k = 6.
+// The pass's march (globe-atmosphere.ts) calls the GLSL twins by
+// these names; a renamed or dropped twin would fail only in a browser.
+describe("CHAPMAN_GLSL", () => {
+  it("declares the twins the march calls, with the same pi", () => {
+    for (const name of [
+      "float atmChapman( float x, float mu )",
+      "float atmGrazingCompensation( float k, float mu, float x )",
+      "float atmLowestPointMu( vec3 o, vec3 dir, float tEnter, float tEnd )",
+    ]) {
+      expect(CHAPMAN_GLSL).toContain(name);
+    }
+    expect(CHAPMAN_GLSL).toContain(String(Math.PI));
+  });
+});
+
 describe("lowestPointMu", () => {
   const G = 6360;
-  const up = [0, 0, 1];
+  const up: Vec3 = [0, 0, 1];
 
   it("is 0 at the tangent point of a ray from space that passes the ground", () => {
-    const o = [-20000, 0, G + 30];
-    const dir = [1, 0, 0];
-    assert.ok(Math.abs(lowestPointMu(o, dir, 0, 40000)) < 1e-9);
+    const o: Vec3 = [-20000, 0, G + 30];
+    const dir: Vec3 = [1, 0, 0];
+    expect(Math.abs(lowestPointMu(o, dir, 0, 40000))).toBeLessThan(1e-9);
   });
 
   it("is the ray's slant at the ground where it hits the ground", () => {
-    const o = [0, 0, G + 1000];
-    const dir = [0, 0, -1];
-    assert.ok(Math.abs(lowestPointMu(o, dir, 0, 1000) - 1) < 1e-9);
+    const o: Vec3 = [0, 0, G + 1000];
+    const dir: Vec3 = [0, 0, -1];
+    expect(Math.abs(lowestPointMu(o, dir, 0, 1000) - 1)).toBeLessThan(1e-9);
   });
 
   it("is the ray's climb at the camera when the camera is its lowest point", () => {
-    const o = [0, 0, G + 150];
-    for (const [dir, mu] of [
+    const o: Vec3 = [0, 0, G + 150];
+    const cases: [Vec3, number][] = [
       [up, 1],
       [[Math.SQRT1_2, 0, Math.SQRT1_2], Math.SQRT1_2],
-    ]) {
+    ];
+    for (const [dir, mu] of cases) {
       const got = lowestPointMu(o, dir, 0, 500);
-      assert.ok(Math.abs(got - mu) < 1e-9, `${dir}: ${got}`);
+      expect(Math.abs(got - mu), dir.join(",")).toBeLessThan(1e-9);
     }
   });
 
   it("is 0 for a level ray from inside (its lowest point is the camera, grazing)", () => {
-    assert.ok(
-      Math.abs(lowestPointMu([0, 0, G + 150], [1, 0, 0], 0, 5000)) < 1e-9,
-    );
+    expect(
+      Math.abs(lowestPointMu([0, 0, G + 150], [1, 0, 0], 0, 5000)),
+    ).toBeLessThan(1e-9);
   });
 });
 
@@ -180,18 +227,16 @@ describe("lowestPointMu", () => {
 // must say plainly when it cannot measure rather than print NaN.
 describe("atmosphereCostText", () => {
   it("names both medians and their ratio, to a tenth of a ms", () => {
-    assert.equal(
+    expect(
       atmosphereCostText({
         supported: true,
         onMs: [9, 8.04, 12],
         offMs: [4, 4.4, 3],
       }),
-      "Atmosphere: 9.0 ms a frame on, 4.0 ms off (x2.25)",
-    );
+    ).toBe("Atmosphere: 9.0 ms a frame on, 4.0 ms off (x2.25)");
   });
   it("says when the pass is not supported or the timings are unusable", () => {
-    assert.equal(
-      atmosphereCostText({ supported: false, onMs: [], offMs: [] }),
+    expect(atmosphereCostText({ supported: false, onMs: [], offMs: [] })).toBe(
       "Atmosphere: not supported on this device (no float render targets)",
     );
     for (const bad of [
@@ -199,8 +244,7 @@ describe("atmosphereCostText", () => {
       { supported: true, onMs: [Number.NaN], offMs: [1] },
       { supported: true, onMs: [1], offMs: [0] },
     ]) {
-      assert.equal(
-        atmosphereCostText(bad),
+      expect(atmosphereCostText(bad)).toBe(
         "Atmosphere: the frame timing failed",
       );
     }
@@ -209,7 +253,7 @@ describe("atmosphereCostText", () => {
 
 describe("atmosphereLook", () => {
   it("fills every missing value from the defaults", () => {
-    assert.deepEqual(atmosphereLook({}), {
+    expect(atmosphereLook({})).toEqual({
       steps: GLOBE_ATMOSPHERE.steps,
       strength: GLOBE_ATMOSPHERE.strength,
       thickness: GLOBE_ATMOSPHERE.thickness,
@@ -217,8 +261,7 @@ describe("atmosphereLook", () => {
   });
 
   it("keeps values inside their ranges and rounds the steps", () => {
-    assert.deepEqual(
-      atmosphereLook({ steps: 7.6, strength: 2.5, thickness: 3 }),
+    expect(atmosphereLook({ steps: 7.6, strength: 2.5, thickness: 3 })).toEqual(
       { steps: 8, strength: 2.5, thickness: 3 },
     );
   });
@@ -235,7 +278,9 @@ describe("atmosphereLook", () => {
       { thickness: 0.5 },
       { thickness: 11 },
     ]) {
-      assert.throws(() => atmosphereLook(bad), RangeError, JSON.stringify(bad));
+      expect(() => atmosphereLook(bad), JSON.stringify(bad)).toThrow(
+        RangeError,
+      );
     }
   });
 });
@@ -248,19 +293,39 @@ describe("observerAltitudeKm", () => {
   it("is the height over the ellipsoid in the model, at the equator and the pole", () => {
     const [a, , c] = WGS84;
     const equator = observerAltitudeKm([a + 40_000, 0, 0], WGS84, GROUND_KM);
-    assert.ok(Math.abs(equator - 40 * (GROUND_KM / (a / 1000))) < 1e-6);
+    expect(Math.abs(equator - 40 * (GROUND_KM / (a / 1000)))).toBeLessThan(
+      1e-6,
+    );
     const pole = observerAltitudeKm([0, 0, c + 10_000], WGS84, GROUND_KM);
-    assert.ok(Math.abs(pole - 10 * (GROUND_KM / (c / 1000))) < 1e-6);
-    assert.ok(Math.abs(observerAltitudeKm([a, 0, 0], WGS84, GROUND_KM)) < 1e-9);
+    expect(Math.abs(pole - 10 * (GROUND_KM / (c / 1000)))).toBeLessThan(1e-6);
+    expect(
+      Math.abs(observerAltitudeKm([a, 0, 0], WGS84, GROUND_KM)),
+    ).toBeLessThan(1e-9);
   });
 
   it("is negative below the ellipsoid, and refuses a non-finite position", () => {
-    assert.ok(
-      observerAltitudeKm([WGS84[0] - 1000, 0, 0], WGS84, GROUND_KM) < 0,
-    );
-    assert.throws(
-      () => observerAltitudeKm([Number.NaN, 0, 0], WGS84, GROUND_KM),
-      RangeError,
+    expect(
+      observerAltitudeKm([WGS84[0] - 1000, 0, 0], WGS84, GROUND_KM),
+    ).toBeLessThan(0);
+    expect(() =>
+      observerAltitudeKm([Number.NaN, 0, 0], WGS84, GROUND_KM),
+    ).toThrow(RangeError);
+  });
+
+  // Every point of the ellipsoid is the observer's ground: 0, wherever.
+  it("is 0 anywhere on the ellipsoid", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -90, max: 90, noNaN: true }),
+        fc.double({ min: -180, max: 180, noNaN: true }),
+        (lat, lon) => {
+          expect(
+            Math.abs(
+              observerAltitudeKm(onEllipsoid(lat, lon), WGS84, GROUND_KM),
+            ),
+          ).toBeLessThan(1e-6);
+        },
+      ),
     );
   });
 });

@@ -37,3 +37,8 @@
   iOS's `prompt`; the `unknown` cases: no API, no navigator, no
   geolocation, a rejecting, throwing or odd query).
   `permission-checker.test.ts` still covers the checker's rows on top.
+- Import path: `gps-plus-slam-app-framework/sensors/permission-state`, a
+  built subpath of the published package (a tsdown entry since 2026-10-28),
+  so the typed Globe package can import what the globe lab loads by page
+  path. `tests/repo-config/framework-deep-imports-are-built.test.js` keeps
+  it an entry.

@@ -6,6 +6,20 @@
     "checkJs": false,
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.json"],
-  "exclude": ["dist", "coverage", "node_modules"]
+  // The framework's files as in tsconfig.app.json (see there).
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.json",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/**/*.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/clamp01.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/smoothstep.ts"
+  ],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.test.ts",
+    "../GpsPlusSlamJs_AppFramework/src/**/*.property.test.ts"
+  ]
 }

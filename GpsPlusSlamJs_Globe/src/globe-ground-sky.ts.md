@@ -1,4 +1,4 @@
-# globe-ground-sky.js
+# globe-ground-sky.ts
 
 ## Purpose
 
@@ -7,7 +7,10 @@ The ground sky in the globe lab (globe F2 plan
 M1): the framework's physical sky (`SkyAtmosphere`) seen from the camera's
 height, taking over the sky's pixels below the hand-over edge, faded in by
 the cross-fade's weight, with the exposure eased from the space view's to
-the ground sky's.
+the ground sky's. Moved out of the globe lab as a pure refactor; the
+framework sky is imported by its bare subpath
+(`gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere`),
+which the lab's import map resolves to the `/fw/` source.
 
 ## Public API
 
@@ -20,7 +23,7 @@ the ground sky's.
 spaceExposure })`
     → `{ weight, exposure }`, once a frame before drawing. `altitudeKm` is
     the observer's height over the ellipsoid's image
-    (`observerAltitudeKm` in `globe-atmosphere-frame.js`), `sunWorld` the
+    (`observerAltitudeKm` in `globe-atmosphere-frame.ts`), `sunWorld` the
     sun's unit direction in the world, `framed` whether the world is the
     target's local frame (F2a). `weight` is the ground sky's share of the
     sky, `exposure` the sun's eased scale in the scene, which IS the
@@ -83,7 +86,12 @@ renderer.render(scene, camera);
 
 ## Tests
 
-The arithmetic is unit-tested in `GpsPlusSlamJs_Globe/src/globe-sky-hand-over.test.ts`
-and the staged rebuild in the framework's `sky-atmosphere.test.ts`. This
-file's drawing is exercised by `globe-ground-sky.smoke.spec.mjs` in the
-lab (the hand-over's continuity, the exposure's steps, the rebuild count).
+`globe-ground-sky.test.ts` (under Node with a recording fake renderer:
+the space view's values where unsupported, unframed or above the edge's
+reach; the weight, the eased exposure and one counted rebuild stage below
+the edge; the draw into its target with the cloud slab hidden, then the
+composite, and nothing at weight 0). The arithmetic is unit-tested in
+`globe-sky-hand-over.test.ts` and the staged rebuild in the framework's
+`sky-atmosphere.test.ts`. The look is exercised by the lab's
+`globe-ground-sky.smoke.spec.mjs` (the hand-over's continuity, the
+exposure's steps, the rebuild count).

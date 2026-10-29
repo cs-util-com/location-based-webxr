@@ -5,7 +5,7 @@
  * 700 km down to the slab's ceiling, so the clouds the flat layer drew
  * between 700 and 30 km are volumes; `cloudShellVolume=1`, off by default.
  *
- * - **The geometry**: the atmosphere pass's scaffold (`globe-atmosphere.js`):
+ * - **The geometry**: the atmosphere pass's scaffold (the Globe package's `globe-atmosphere.ts`):
  *   each pixel's ray in the model frame (the ellipsoid as the atmosphere's
  *   ground sphere, km), intersected analytically with the deck's top and
  *   base spheres, ending at the relief's depth when it is drawn this frame.
@@ -723,7 +723,7 @@ export function createGlobeCloudShellVolume(
       altitudeKm,
       shares,
       stations,
-      target,
+      target: frameAt,
       deckKm,
       cover = 1,
       cascade,
@@ -731,7 +731,7 @@ export function createGlobeCloudShellVolume(
       shadow = 0,
     }) {
       cameraKm = altitudeKm;
-      framed = target !== null;
+      framed = frameAt !== null;
       law = cloudShellVolumeLaw(altitudeKm, stations);
       shellIn = enabled && framed ? shares.shellIn : 0;
       weight = enabled && framed ? shares.shell : 0;
@@ -767,7 +767,7 @@ export function createGlobeCloudShellVolume(
       // The shell's own shadow (cloudShellShadowStrengths, M2).
       shadowStrength = shadow;
       uniforms.uShellIn.value = shellIn;
-      const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
+      const frame = cloudShellFrame(ellipsoid, frameAt, groundKm, frameMatrix);
       uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
       // Each field's basis: the slab's for its own field (scale 1, no
       // offset), else the carried anchor over the scale and shifted by the
