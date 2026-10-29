@@ -300,6 +300,7 @@ export {
   type TourObject,
   type TourObjectRecord,
   type TourPin,
+  type TourLectern,
   type TourPicture,
   type TourModel,
   type TourObjectKind,

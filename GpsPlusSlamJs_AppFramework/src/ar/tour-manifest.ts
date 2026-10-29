@@ -45,7 +45,10 @@
  *   `image` are still written, in step with the declaration, so an older
  *   reader shows him by name), his story views `bubble`, `speak`,
  *   `two-stations`, `portrait` and `popup`, and the advance mode
- *   `lineEnd` (an older reader taps on instead). A reader of this version
+ *   `lineEnd` (an older reader taps on instead). Minor 3 added a long
+ *   text's world view `lectern`, a reading stand at its pose (an older
+ *   reader leaves a free one out and shows a story one as its card). A
+ *   reader of this version
  *   accepts all of them in a file of any minor.
  * - A newer minor may also add VALUES to a closed list: a block kind or
  *   view, an order, an advance mode, an asset's media type. Read from a
@@ -89,6 +92,7 @@ import {
   readTourBlocks,
   tourBlocksMinor,
   type TourBlockDrop,
+  type TourLongTextBlock,
   type TourModelBlock,
   type TourModelWorldView,
   type TourPictureBlock,
@@ -154,7 +158,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 4;
 
 /** The newest additive revision of version 4 this module knows. */
-export const TOUR_MANIFEST_MINOR = 2;
+export const TOUR_MANIFEST_MINOR = 3;
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -187,7 +191,12 @@ export type TourModel = InWorld<TourModelBlock> & {
   readonly view: TourModelWorldView;
   readonly sizeM: number;
 };
-export type TourObject = TourPin | TourPicture | TourModel;
+/** Minor 3: a long text in the world, drawn as a reading stand that
+ *  keeps its pose (it does not turn to the visitor). */
+export type TourLectern = InWorld<TourLongTextBlock> & {
+  readonly view: 'lectern';
+};
+export type TourObject = TourPin | TourLectern | TourPicture | TourModel;
 export type TourObjectKind = TourObject['kind'];
 
 /** The draft record's format: what `tourObjectRecord` writes and

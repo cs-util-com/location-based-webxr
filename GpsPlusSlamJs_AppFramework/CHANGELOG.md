@@ -61,6 +61,17 @@
   (`characters[i].frames`); a drop without `field` is the whole
   declaration.
 
+- **A long text on a reading stand, `tour.json` version 4 minor 3**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `lectern`: a reading stand at the block's pose that keeps its facing,
+  free at its station or reached by a story step. `TOUR_WORLD_VIEWS` now
+  holds `lectern`, the new type `TourLectern` joins `TourObject` (a switch
+  over an object's `kind` gains a `longText` case), and
+  `TOUR_MANIFEST_MINOR` is 3; a tour without a lectern is still written at
+  its lower minor. A reader of 1.31.0 opens a 4.3 tour leniently: a free
+  lectern is left out and reported, a story one shows as its card, and
+  that app will not save the tour.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

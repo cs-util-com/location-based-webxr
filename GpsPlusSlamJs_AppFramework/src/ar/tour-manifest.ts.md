@@ -19,7 +19,7 @@ tour id and the tour details.
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 4` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision of version 4
+  `TOUR_MANIFEST_MINOR = 3` (the newest additive revision of version 4
   this module knows).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
@@ -75,7 +75,8 @@ TourPicture | TourModel` - a free block without its local pose, plus
   link, no code-only station), `blocks[]` and `steps[]`. A step `show`s a
   block of its own station, asks a `choice` (an option's `goto` names a
   step of the station, or is absent: the next step), or asks a `quiz`. A
-  block no step shows must stand in the world (`pin`, `plane`, or a model's `placed`, `ghost`,
+  block no step shows must stand in the world (`pin`, a long text's
+  `lectern`, `plane`, or a model's `placed`, `ghost`,
   `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`).
   A station may have no steps (an automatic station: finding it
   completes it).
@@ -176,6 +177,12 @@ TourPicture | TourModel` - a free block without its local pose, plus
   `name` and `image` in step with its declaration, so a 4.0 or 4.1 reader
   shows the character as a `card` by its name, reads `lineEnd` as a tap,
   ignores `characters`, and will not save the tour.
+- **Minor 3** (`TOUR_MANIFEST_MINOR = 3`): a long text's `lectern` view,
+  a reading stand in the square at the block's pose (`TourLectern`, one
+  of `TourObject`), as a free block or a story block. A file is written at
+  minor 3 only when a long text uses it (`tourBlocksMinor`). A 4.2 reader
+  leaves a free lectern out (reported through `onDropped`), shows a story
+  one as a card, and will not save the tour (`tour-lectern.test.ts`).
 - **Unknown VALUES of a newer minor:** an unknown block kind or view, step
   kind, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story
@@ -227,6 +234,11 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
 
 ## Tests
 
+- `tour-lectern.test.ts` - the long text's `lectern` view: a free one
+  read as a tour object and written back exactly at minor 3, a story one
+  kept, minor 3 only when a long text uses it, a free card refused, and
+  the released 4.2 reader (`tour-reader-1-31`) dropping, carding and
+  refusing to save it.
 - `tour-manifest.test.ts` - a station with a pin and a picture at local
   poses, the empty manifest, block and asset ids as separate namespaces,
   one rejection per rule with the record named, versions 1, 2 and 3

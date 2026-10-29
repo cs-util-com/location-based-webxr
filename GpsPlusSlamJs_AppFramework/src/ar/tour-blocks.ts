@@ -74,7 +74,7 @@ export type TourCharacterView = (typeof TOUR_CHARACTER_VIEWS)[number];
  *  renderer; `card` (the block in the scene card) exists for every kind. */
 export const TOUR_BLOCK_VIEWS = {
   shortText: ['pin', 'card'],
-  longText: ['card'],
+  longText: ['lectern', 'card'],
   picture: ['plane', 'card'],
   video: ['card'],
   audio: ['card'],
@@ -109,6 +109,7 @@ type ViewOf<K extends TourBlockKind> = (typeof TOUR_BLOCK_VIEWS)[K][number];
  *  never a copy of it. */
 export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set([
   'pin',
+  'lectern',
   'plane',
   ...TOUR_MODEL_WORLD_VIEWS,
 ]);
@@ -736,12 +737,16 @@ function characterFields(v: Fields, ctx: BlockContext) {
 }
 
 /**
- * The lowest minor `blocks` need: 2 when a character speaks in a view
+ * The lowest minor `blocks` need: 3 when a long text stands in the world
+ * as a reading stand (`lectern`); 2 when a character speaks in a view
  * minor 2 added or names a declared character; 1 when a model stands in a
  * view minor 1 added, or carries an animation, notes or sections; 0
  * otherwise.
  */
 export function tourBlocksMinor(blocks: readonly TourBlock[]): number {
+  if (blocks.some((b) => b.kind === 'longText' && b.view === 'lectern')) {
+    return 3;
+  }
   const needsTwo = blocks.some(
     (b) =>
       b.kind === 'character' &&

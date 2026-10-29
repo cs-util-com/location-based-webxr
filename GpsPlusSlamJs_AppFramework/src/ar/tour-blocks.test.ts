@@ -406,7 +406,7 @@ describe('views', () => {
   it('lists the views this reader draws, per kind', () => {
     expect(TOUR_BLOCK_VIEWS).toEqual({
       shortText: ['pin', 'card'],
-      longText: ['card'],
+      longText: ['lectern', 'card'],
       picture: ['plane', 'card'],
       video: ['card'],
       audio: ['card'],
@@ -667,6 +667,7 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     }
     expect([...TOUR_WORLD_VIEWS]).toEqual([
       'pin',
+      'lectern',
       'plane',
       ...TOUR_MODEL_WORLD_VIEWS,
     ]);

@@ -16,13 +16,14 @@ through `tour-story.ts`, which reads the blocks here.
 - `TourBlockKind` - `shortText | longText | picture | video | audio |
 model | character`.
 - `TOUR_BLOCK_VIEWS` - the views this reader draws, per kind:
-  - `shortText`: `pin`, `card`; `longText`: `card`;
+  - `shortText`: `pin`, `card`; `longText`: `lectern` (minor 3, a reading stand
+    in the square), `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
     `card`; `character`: `stage`, `bubble`, `speak`, `two-stations`,
     `portrait`, `popup`, `card` (the five between are minor 2,
     `TOUR_CHARACTER_VIEWS`, story views only).
-  - The WORLD views (a free block's) are `pin`, `plane` and the model's
+  - The WORLD views (a free block's) are `pin`, `lectern`, `plane` and the model's
     world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
     keep a copy.
 - `TOUR_MODEL_WORLD_VIEWS` / `TourModelWorldView` - `placed`, `ghost`
