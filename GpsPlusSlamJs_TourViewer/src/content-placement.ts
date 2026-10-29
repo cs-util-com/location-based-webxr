@@ -103,8 +103,9 @@ export function rotationFromHeading(
 }
 
 /**
- * A pin (a short text in the `pin` view, `label` its caption) from the
- * reticle's GPS-world NUE position.
+ * A pin (a short text in the `pin` view, `label` its caption and
+ * `description`, when not empty, its description) from the reticle's
+ * GPS-world NUE position.
  *
  * @returns null when the zero is missing (no GPS fix yet) or the pose
  *   cannot be minted - the caller refuses the placement with a reason.
@@ -112,6 +113,7 @@ export function rotationFromHeading(
 export function mintPin(input: {
   id: string;
   label: string;
+  description?: string;
   worldNuePosition: { x: number; y: number; z: number };
   zero: LatLong | null;
   nowIso: string;
@@ -130,6 +132,9 @@ export function mintPin(input: {
       geo,
       createdAtIso: input.nowIso,
       caption: input.label,
+      ...(input.description === undefined || input.description === ""
+        ? {}
+        : { description: input.description }),
     };
   } catch {
     return null;

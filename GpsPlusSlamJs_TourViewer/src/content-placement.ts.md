@@ -10,9 +10,12 @@ the creator's live preview and the visitor's session share.
 
 - `newObjectId(random?)` - 12 base-36 characters; the manifest id and the
   content file's stem.
-- `mintPin({ id, label, worldNuePosition, zero, nowIso }): TourPin | null` -
-  a short text in its `pin` view, `label` its caption, from the reticle's
-  GPS-world NUE position (identity rotation). Null without a zero.
+- `mintPin({ id, label, description?, worldNuePosition, zero, nowIso }): TourPin | null` -
+  a short text in its `pin` view, `label` its caption and `description`
+  its description (left out when absent or empty: the reader refuses a
+  blank optional text), from the reticle's GPS-world NUE position
+  (identity rotation). Null without a zero. The caller checks both texts'
+  caps (`pin-text.ts`).
 - `mintPhoto({ id, cameraPose, alignmentMatrix, zero, imageWidth,
 imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   composed through `alignment · WEBXR_TO_NUE · pose` (`qrWorldPoseFromOdom`)

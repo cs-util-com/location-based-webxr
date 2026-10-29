@@ -87,6 +87,27 @@ describe("mintPin / objectPoseNue", () => {
     );
   });
 
+  it("carries a description when one is given, and none for a blank one", () => {
+    // Why this test matters: the phone's pin entry passes the typed
+    // description through here; a blank one must leave the key out, as
+    // the format's reader refuses a blank optional text.
+    const base = {
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 0, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    };
+    expect(mintPin({ ...base, description: "The old gate." })).toMatchObject({
+      caption: "Gate",
+      description: "The old gate.",
+    });
+    expect(mintPin({ ...base, description: "" })).not.toHaveProperty(
+      "description",
+    );
+    expect(mintPin(base)).not.toHaveProperty("description");
+  });
+
   it("refuses without a GPS zero", () => {
     expect(
       mintPin({

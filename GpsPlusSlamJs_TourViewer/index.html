@@ -3950,15 +3950,30 @@
         min-height: 48px;
         border-radius: 999px;
       }
+      /* The pin's optional description: a row of its own under the text,
+         its count and the buttons on the row below. */
+      body[data-mode="creator"][data-ar-active="true"]
+        .setup-place-row:has(#pin-label:not([hidden])) {
+        flex-wrap: wrap;
+      }
+      body[data-mode="creator"][data-ar-active="true"] #pin-description {
+        flex: 1 1 100%;
+        min-width: 0;
+        min-height: 48px;
+        resize: none;
+        border-radius: 16px;
+      }
       /* The pin text's count ("12 / 40"), marked past the limit. */
-      body[data-mode="creator"][data-ar-active="true"] #pin-label-count {
+      body[data-mode="creator"][data-ar-active="true"] #pin-label-count,
+      body[data-mode="creator"][data-ar-active="true"] #pin-description-count {
         flex: none;
         align-self: center;
         color: #fff;
         font-variant-numeric: tabular-nums;
         text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
       }
-      #pin-label-count[data-over] {
+      #pin-label-count[data-over],
+      #pin-description-count[data-over] {
         color: #ffb4a8;
         font-weight: 600;
       }
@@ -6567,6 +6582,23 @@
                       id="pin-label-count"
                       data-testid="pin-label-count"
                       for="pin-label"
+                      hidden
+                    ></output>
+                    <textarea
+                      id="pin-description"
+                      class="input"
+                      data-testid="pin-description"
+                      rows="2"
+                      autocomplete="off"
+                      placeholder="Description (optional)"
+                      aria-label="The pin's description (optional)"
+                      aria-describedby="pin-description-count"
+                      hidden
+                    ></textarea>
+                    <output
+                      id="pin-description-count"
+                      data-testid="pin-description-count"
+                      for="pin-description"
                       hidden
                     ></output>
                     <button
