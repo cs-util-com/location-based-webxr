@@ -41,6 +41,7 @@ import { blockFields } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
+import { facingDegOf } from "../../character-views.js";
 
 /** What a typed value writes. */
 export type InspectorEdit =
@@ -105,6 +106,31 @@ function turnTo(
   return Math.abs(deg) < SAME ? NONE : { kind: "turn", selection, deg };
 }
 
+/** The field naming a story character's facing: `character-facing:<id>`. */
+const CHARACTER_FACING = "character-facing:";
+
+/** A story character's facing typed in his station's inspector: his
+ *  station's edit for him, nothing for the facing he has (a whole turn
+ *  round is the same) or for a block that is no character. */
+function characterFacingEdit(
+  station: TourStation,
+  block: string,
+  value: string,
+): InspectorEdit {
+  const character = station.blocks.find((b) => b.id === block);
+  if (character?.kind !== "character") return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  const now = facingDegOf(character.pose.rotation);
+  return Math.abs(shortTurn(typed - now)) < SAME
+    ? NONE
+    : {
+        kind: "station",
+        stationId: station.id,
+        edit: { character: { block, facingDeg: typed } },
+      };
+}
+
 function stationEdit(
   station: TourStation,
   field: string,
@@ -116,6 +142,13 @@ function stationEdit(
     return { kind: "station", stationId, edit: { title: value } };
   if (field === "description") {
     return { kind: "station", stationId, edit: { description: value } };
+  }
+  if (field.startsWith(CHARACTER_FACING)) {
+    return characterFacingEdit(
+      station,
+      field.slice(CHARACTER_FACING.length),
+      value,
+    );
   }
   if (!["radius", "east", "north", "heading"].includes(field)) return NONE;
   const typed = typedNumber(value);

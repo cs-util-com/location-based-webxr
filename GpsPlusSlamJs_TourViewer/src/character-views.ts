@@ -65,6 +65,30 @@ export function restYawOf(q: readonly number[]): number {
 }
 
 /**
+ * The heading (degrees clockwise from north, 0 to 360) a character with
+ * the rest rotation `q` faces: the creator's word for `restYawOf`'s yaw,
+ * in the station frame (x north, z east). No turn faces east, 90.
+ */
+export function facingDegOf(q: readonly number[]): number {
+  const deg = 90 - (restYawOf(q) * 180) / Math.PI;
+  const turned = ((deg % 360) + 360) % 360;
+  return 360 - turned < 1e-9 ? 0 : turned;
+}
+
+/**
+ * The rest rotation (a turn about Up alone, unit length) that faces the
+ * heading `deg`, so `facingDegOf` reads `deg` back; null for a heading
+ * that is no finite number.
+ */
+export function facingRotation(
+  deg: number,
+): [number, number, number, number] | null {
+  if (!Number.isFinite(deg)) return null;
+  const half = ((90 - deg) * Math.PI) / 360;
+  return [0, Math.sin(half), 0, Math.cos(half)];
+}
+
+/**
  * Where he faces (rad, about Up, 0 facing +Z): from his rest facing toward
  * the camera's direction, by at most {@link MAX_TURN_DEG}; a view that does
  * not turn (the pop-up) stays at rest. A non-finite rest reads as 0, a

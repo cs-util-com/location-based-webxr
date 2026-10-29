@@ -662,3 +662,71 @@ describe("the inspector's model parts", () => {
     shell.hide();
   });
 });
+
+// Why these tests matter: a story character's chips must reach the page
+// as an edit of HIS station for HIM - his view, or how the step showing
+// him moves on - and the chip already pressed must write nothing (a
+// second click would otherwise be an undo step that changed nothing).
+describe("a story character's chips", () => {
+  function withCharacter() {
+    const set = setUp();
+    const gate = {
+      ...station("c", 0.0008),
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "w1" },
+          advance: { mode: "tap" },
+        },
+      ],
+      blocks: [
+        {
+          id: "w1",
+          kind: "character",
+          view: "speak",
+          name: "Wendel",
+          image: "cut",
+          caption: "Good day",
+          pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    } as unknown as TourStation;
+    set.store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [station("a", 0), gate],
+        },
+      }),
+    );
+    set.select("station:c");
+    return set;
+  }
+  const click = (act: string) => {
+    const b = document.querySelector<HTMLButtonElement>(
+      `#shell-inspector [data-act="${act}"]`,
+    );
+    if (b === null) throw new Error(`no ${act}`);
+    b.click();
+  };
+
+  it("write his view and how his step moves on as his station's edit", () => {
+    const { edits, shell } = withCharacter();
+    click("character-view:w1:two-stations");
+    click("character-advance:w1:lineEnd");
+    expect(edits.station.mock.calls).toEqual([
+      ["c", { character: { block: "w1", view: "two-stations" } }],
+      ["c", { character: { block: "w1", advance: "lineEnd" } }],
+    ]);
+    expect(edits.model).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("write nothing for the chip already pressed", () => {
+    const { edits, shell } = withCharacter();
+    click("character-view:w1:speak");
+    click("character-advance:w1:tap");
+    expect(edits.station).not.toHaveBeenCalled();
+    shell.hide();
+  });
+});

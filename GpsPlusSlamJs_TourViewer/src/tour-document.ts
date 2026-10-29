@@ -36,6 +36,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
   TOUR_BLOCK_TEXT_RULES,
+  TOUR_BLOCK_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
   tourTextCount,
@@ -53,6 +54,7 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
+import { facingRotation } from "./character-views.js";
 import {
   afterFinish,
   codesNotHosted,
@@ -1864,6 +1866,19 @@ export interface StationEdit {
   readonly foundRadiusM?: number;
   readonly description?: string | null;
   readonly image?: string | null;
+  /** A character of the station's story, set in the station's inspector. */
+  readonly character?: StationCharacterEdit;
+}
+
+/** A story character's settings: his `view` (one of the format's views
+ *  of a character), how the steps showing him move on (`advance`), the
+ *  heading he faces at rest (`facingDeg`, degrees clockwise from north);
+ *  a field left out stays. */
+export interface StationCharacterEdit {
+  readonly block: string;
+  readonly view?: string;
+  readonly advance?: "tap" | "lineEnd";
+  readonly facingDeg?: number;
 }
 
 /** What `stationEditChange` finds: the frame to dispatch, nothing, why
@@ -1873,7 +1888,8 @@ export type StationEditChange =
   | { readonly kind: "unchanged" }
   | {
       readonly kind: "refused";
-      readonly reason: "title" | "radius" | "description" | "image";
+      readonly reason:
+        "title" | "radius" | "description" | "image" | "character";
     }
   | { readonly kind: "missing" };
 
@@ -1892,13 +1908,61 @@ function withText(
   return checked.ok ? { ...frame, [key]: checked.value } : null;
 }
 
+/** `frame` with its story character `edit.block` set by `edit`; null
+ *  when the block is no character of it, the view is none of a
+ *  character's, the advance is neither a tap nor the line's end, or the
+ *  facing is no number. The steps that show him all take the advance. */
+/** Whether `edit`'s view is one of a character's and its advance a tap
+ *  or the line's end (either left out fits). */
+function characterEditFits(edit: StationCharacterEdit): boolean {
+  const views: readonly string[] = TOUR_BLOCK_VIEWS.character;
+  const advances: readonly string[] = ["tap", "lineEnd"];
+  return (
+    (edit.view === undefined || views.includes(edit.view)) &&
+    (edit.advance === undefined || advances.includes(edit.advance))
+  );
+}
+
+function withCharacter(
+  frame: StationFrame,
+  edit: StationCharacterEdit,
+): StationFrame | null {
+  const block = frame.blocks.find((b) => b.id === edit.block);
+  if (block?.kind !== "character" || !characterEditFits(edit)) return null;
+  let rotation = block.pose.rotation;
+  if (edit.facingDeg !== undefined) {
+    const turned = facingRotation(edit.facingDeg);
+    if (turned === null) return null;
+    rotation = turned;
+  }
+  const character = {
+    ...block,
+    ...(edit.view === undefined ? {} : { view: edit.view }),
+    pose: { ...block.pose, rotation },
+  } as typeof block;
+  const advance = edit.advance;
+  return {
+    ...frame,
+    blocks: frame.blocks.map((b) => (b.id === edit.block ? character : b)),
+    steps:
+      advance === undefined
+        ? frame.steps
+        : frame.steps.map((s) =>
+            s.action.kind === "show" && s.action.block === edit.block
+              ? { ...s, advance: { mode: advance } }
+              : s,
+          ),
+  };
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
  * (`checkTourTitle`), a found radius from 2 m to 300 m (`isStationRadius`)
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
- * an image asset of the tour (`stationImages`).
+ * an image asset of the tour (`stationImages`), a story character set by
+ * `withCharacter`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -1934,6 +1998,11 @@ export function stationEditChange(
       return { kind: "refused", reason: "image" };
     }
     next = { ...next, image: edit.image };
+  }
+  if (edit.character !== undefined) {
+    const characterSet = withCharacter(next, edit.character);
+    if (characterSet === null) return { kind: "refused", reason: "character" };
+    next = characterSet;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }

@@ -276,6 +276,88 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector("ul.story-blocks")).toBeNull();
   });
 
+  // Why: a story character is set in the station's inspector with the
+  // controls a model's view already has - chips, the one in use pressed -
+  // and his facing as a heading typed like an item's: each control named
+  // by the block it sets (`data-act` / `data-field`), so the shell writes
+  // to the right character; a long text of the story gets none.
+  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "station",
+        title: "Unplaced",
+        sub: "Station 1 of 1",
+        place: { number: 1, count: 1 },
+        name: "Unplaced",
+        description: null,
+        imagePath: null,
+        images: [],
+        imageId: null,
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+        outside: 0,
+        offGround: null,
+        groundOffM: null,
+        position: null,
+        locked: true,
+        story: [
+          { id: "intro", kind: "Long text", title: "The siege" },
+          {
+            id: "w1",
+            kind: "Character",
+            title: "Wendel",
+            character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
+          },
+        ],
+      },
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const section = dock.body.querySelector<HTMLElement>(
+      '.character[data-block="w1"]',
+    );
+    expect(section).not.toBeNull();
+    expect(dock.body.querySelectorAll(".character")).toHaveLength(1);
+    const chips = (prefix: string) =>
+      [
+        ...(section?.querySelectorAll<HTMLButtonElement>(
+          `[data-act^="${prefix}"]`,
+        ) ?? []),
+      ].map((b) => [
+        b.dataset["act"],
+        b.textContent,
+        b.getAttribute("aria-pressed"),
+      ]);
+    expect(chips("character-view:")).toEqual([
+      ["character-view:w1:bubble", "Bubble", "false"],
+      ["character-view:w1:speak", "Tap to speak", "true"],
+      ["character-view:w1:two-stations", "Two stations", "false"],
+      ["character-view:w1:portrait", "Portrait", "false"],
+      ["character-view:w1:popup", "Pop-up", "false"],
+    ]);
+    expect(chips("character-advance:")).toEqual([
+      ["character-advance:w1:tap", "On a tap", "false"],
+      ["character-advance:w1:lineEnd", "When the line ends", "true"],
+    ]);
+    // Each group of chips is named by its label.
+    const groups = [...(section?.querySelectorAll('[role="group"]') ?? [])];
+    expect(
+      groups.map(
+        (g) =>
+          dock.body.querySelector(
+            `[id="${g.getAttribute("aria-labelledby") ?? ""}"]`,
+          )?.textContent,
+      ),
+    ).toEqual(["View", "Moves on"]);
+    const facing = section?.querySelector<HTMLInputElement>(
+      '[data-field="character-facing:w1"]',
+    );
+    expect(facing?.defaultValue).toBe("180");
+    expect(facing?.labels?.[0]?.textContent).toBe("Facing");
+    expect(section?.textContent).toContain("Wendel");
+  });
+
   it("is hidden while nothing is selected", () => {
     draw(null);
     expect(dock.root.hidden).toBe(true);

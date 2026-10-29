@@ -1650,8 +1650,14 @@ body[data-view="3d"] .view3d-credits {
   cursor: pointer;
 }
 
+/* A story character's groups of chips, apart from the next label. */
+.character > .vchips {
+  margin-bottom: 8px;
+}
+
 .mnotes > .flabel,
-.msections > .flabel {
+.msections > .flabel,
+.character > .flabel {
   margin: 2px 0 4px;
   color: var(--s-muted);
 }

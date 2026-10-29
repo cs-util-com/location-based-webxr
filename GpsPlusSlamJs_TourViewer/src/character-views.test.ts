@@ -7,6 +7,8 @@ import {
   bubbleOpens,
   bubbleSide,
   characterViewLook,
+  facingDegOf,
+  facingRotation,
   facingYaw,
   isStageCharacterView,
   lineReadingMs,
@@ -266,5 +268,35 @@ describe("the read-along's word timing", () => {
     expect(talkFrameAt(times, w.startMs + 230)).toBe(1);
     expect(talkFrameAt(times, w.endMs)).toBe(0);
     expect(talkFrameAt(times, Number.NaN)).toBe(0);
+  });
+});
+
+// Why these tests matter: the creator types where a character faces as a
+// heading (clockwise from north), the format stores a rotation, and the
+// viewer turns him by `restYawOf`'s yaw: the three must agree, or a
+// character typed to face the fountain stands facing away from it.
+describe("facingDegOf and facingRotation: his rest facing as a heading", () => {
+  it("reads no turn as facing east, and writes north, east, south and west so restYawOf faces them", () => {
+    expect(facingDegOf([0, 0, 0, 1])).toBe(90);
+    for (const [deg, yaw] of [
+      [0, Math.PI / 2],
+      [90, 0],
+      [180, -Math.PI / 2],
+      [270, Math.PI],
+    ] as const) {
+      const q = facingRotation(deg);
+      if (q === null) throw new Error("no rotation");
+      expect(Math.cos(restYawOf(q) - yaw)).toBeCloseTo(1, 9);
+      expect(facingDegOf(q)).toBeCloseTo(deg, 9);
+    }
+  });
+
+  it("turns about Up alone, and writes no rotation for a heading that is no number", () => {
+    const q = facingRotation(37);
+    if (q === null) throw new Error("no rotation");
+    expect([q[0], q[2]]).toEqual([0, 0]);
+    expect(Math.hypot(...q)).toBeCloseTo(1, 12);
+    expect(facingRotation(Number.NaN)).toBeNull();
+    expect(facingRotation(Number.POSITIVE_INFINITY)).toBeNull();
   });
 });

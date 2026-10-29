@@ -17,6 +17,11 @@ editor session as one undo step.
   - A station's `title`, `description` and `radius`: `{ kind: "station",
 stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     lower than its items is allowed: they stay where they are.
+  - A story character's `character-facing:<block>` on his station: `{ kind:
+"station", stationId, edit: { character: { block, facingDeg } } }`;
+    `invalid` for a value that is no number; none for the facing he has
+    (a whole turn round counts as the same, `shortTurn`) and for a block
+    that is no character.
   - A pin's `title` (the head's text box): `{ kind: "text", id, text }`.
   - A block's other text field (any of `blockFields(item)`, B2c: a short
     text's `description`, a picture's `title` / `caption` / `alt`, a

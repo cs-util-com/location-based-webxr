@@ -42,6 +42,7 @@ import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
   manifestToWrite,
   nextStep,
+  type StationCharacterEdit,
   type StationEdit,
   type TourDocumentState,
 } from "../../tour-document.js";
@@ -232,6 +233,34 @@ function byId<T extends HTMLElement>(id: string): T {
   if (found === null) throw new Error(`edit.html lacks #${id}`);
   return found as T;
 }
+
+/** A story character's chip (`character-view:<block>:<view>` or
+ *  `character-advance:<block>:<mode>`) as his station's edit, or null for
+ *  another act and for the chip already pressed (writing it would be an
+ *  undo step that changed nothing). */
+function characterChipEdit(
+  model: InspectorModel | null,
+  act: string,
+): StationCharacterEdit | null {
+  const chip = CHARACTER_CHIP.exec(act);
+  if (chip === null || model?.kind !== "station") return null;
+  const [, what, block, value] = chip as unknown as [
+    string,
+    "view" | "advance",
+    string,
+    string,
+  ];
+  const now = model.story.find((b) => b.id === block)?.character;
+  if (now === undefined || now[what] === value) return null;
+  if (what === "view") return { block, view: value };
+  // Only the two advance chips are drawn: another value is no chip's.
+  return value === "tap" || value === "lineEnd"
+    ? { block, advance: value }
+    : null;
+}
+
+/** A story character's chip: its kind, his block and the chip's value. */
+const CHARACTER_CHIP = /^character-(view|advance):(.+):([^:]+)$/;
 
 export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const { store } = deps;
@@ -958,6 +987,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (model?.kind === "station" && model.imageId !== image) {
         deps.edits.station(selected.slice(STATION_PREFIX.length), { image });
       }
+    }
+    if (act !== undefined && selected.startsWith(STATION_PREFIX)) {
+      const stationId = selected.slice(STATION_PREFIX.length);
+      const edit = characterChipEdit(inspectorModel(state().editorView), act);
+      if (edit !== null) deps.edits.station(stationId, { character: edit });
     }
     if (act === "fold") {
       const folded = !state().editorView.foldedDocks.inspector;

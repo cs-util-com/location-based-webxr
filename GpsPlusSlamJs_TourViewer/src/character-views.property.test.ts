@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   activeWordAt,
   beckonNext,
+  facingDegOf,
+  facingRotation,
   facingYaw,
   lineReadingMs,
   lineWordTimes,
@@ -118,6 +120,24 @@ describe("character views (properties)", () => {
           }
         },
       ),
+    );
+  });
+
+  /**
+   * Why this property matters: a heading the creator types must come back
+   * as the same heading (the inspector shows it again after the edit), at
+   * 0 to 360, for any number typed, however far round.
+   */
+  it("reads a facing written for any heading back as that heading, 0 to 360", () => {
+    fc.assert(
+      fc.property(fc.double({ min: -1e4, max: 1e4, noNaN: true }), (deg) => {
+        const q = facingRotation(deg);
+        expect(q).not.toBeNull();
+        const back = facingDegOf(q ?? []);
+        expect(back).toBeGreaterThanOrEqual(0);
+        expect(back).toBeLessThan(360);
+        expect(Math.cos(((back - deg) * Math.PI) / 180)).toBeCloseTo(1, 6);
+      }),
     );
   });
 });

@@ -242,13 +242,15 @@ interface EditorRestore {
 
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
-  Record<"title" | "radius" | "description" | "image", string>
+  Record<"title" | "radius" | "description" | "image" | "character", string>
 > = {
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
   description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
   image:
     "A station's picture must be a photo of that station or an image of this tour.",
+  character:
+    "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
 };
 
 /** Said for a delete of the tour's last station. */

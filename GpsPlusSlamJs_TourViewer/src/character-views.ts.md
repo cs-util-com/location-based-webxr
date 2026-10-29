@@ -14,6 +14,7 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
   - `BECKON_AFTER_MS` 6000.
 - `StageCharacterView` (the framework's `TourCharacterView`) and `isStageCharacterView(v)`, against the framework's `TOUR_CHARACTER_VIEWS` (`gps-plus-slam-app-framework/ar/tour-blocks`), the one list. `card` and `stage` are not world views and are not in it.
 - `MAX_TURN_DEG` 60; `restYawOf(q)`: the yaw a quaternion `[x, y, z, w]` turns +Z to (0 for a malformed or zero quaternion, or one pointing straight up or down); `facingYaw(rest, toCamera, turns)`: `rest` turned toward the camera by at most 60 degrees, or `rest` itself when the view does not turn.
+- `facingDegOf(q)`: the heading (degrees clockwise from north, 0 to 360) `restYawOf`'s yaw faces in the station frame (x north, z east); no turn faces east, 90. `facingRotation(deg)`: the turn about Up alone (unit length) that faces `deg`, so `facingDegOf` reads it back; null for a heading that is no finite number. The 3D inspector types a story character's facing with these.
 - `characterViewLook(view)` returns `CharacterViewLook`, with these flags: `figure`, `bubble`, `footer`, `pip`, `ring`, `portrait`, `popup`, `turns`, `beckons`.
 - `bubbleOpens(d)`: true when `d` is finite and under 9 m.
 - `popupUnfolds(d, unfolded)`: true under 12 m, or under 16 m once it has unfolded.
@@ -39,7 +40,7 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 
 ## Tests
 
-- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`, and the word timing (the prototype's numbers, the active word, the mouth frames).
+- `character-views.test.ts`: the table, the distances, the side choice, the reading time, `restYawOf` and `facingYaw`, `facingDegOf` and `facingRotation` (the four headings, a turn about Up alone, no rotation for a heading that is no number; `character-views.property.test.ts`: any heading read back as itself, 0 to 360), and the word timing (the prototype's numbers, the active word, the mouth frames).
 - `character-views.property.test.ts` (also: the read-along runs forward over the line's words, the mouth open only inside a word):
   - `facingYaw` never turns more than 60 degrees from rest, and faces a camera inside that cone exactly;
   - the beckon only points at an undone other station;

@@ -58,7 +58,17 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   - A station whose story shows blocks: under "In its story", a
     labelled list with a row per block, its kind and its name as text
     (`ul.story-blocks`, `data-block` its id), and a note that they are
-    listed, not edited, here.
+    shown while the story runs. For each character of the story a section
+    (`div.isec.character`, `data-block` his id) under his name: "View"
+    chips (`data-act="character-view:<id>:<view>"`), "Moves on" chips
+    (`character-advance:<id>:tap` "On a tap", `:lineEnd` "When the line
+    ends"), each group a `role=group` named by its label and the one in
+    use pressed, as a model's view chips are (`chipGroup`, which both
+    use); a note when his view or his step's advance is none the chips
+    offer (an older tour's view, `auto`); and "Facing" in degrees
+    (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
+    0). Where these controls sit is this build's choice, made before the
+    owner's prototype round on the editor's character UI.
   - An item: what it is and its station (a pin's text to type in the
     head, "Pin text"), its commands, a model's Size to type, and under
     "Position" its Offset east and north, Height (up from the anchor)
@@ -155,7 +165,9 @@ opened again, and the fields' layout at four window sizes).
 `shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a station's story blocks, listed by kind and name as
-text under "In its story" (no list without a story), the fields to type
+text under "In its story" (no list without a story), a story
+character's view and advance chips (the one in use pressed, each group
+named) and his facing, none for a long text, the fields to type
 per kind (each counted in its unit), a locked station's place
 and heading read-only with its Put on the ground off, a pin's text in
 the head with its count as it is typed (none for a read-only one or a

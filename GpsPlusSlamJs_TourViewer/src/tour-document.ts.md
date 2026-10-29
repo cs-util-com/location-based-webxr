@@ -281,7 +281,12 @@ largeTour?, cannotSave? })`.
     (`StationEdit`; `image: null` clears it), by `stationEditChange`'s
     rules: a title of at most 80 characters (`checkTourTitle`, blank
     clears it), a description of at most 2000 (`checkTourDescription`),
-    an image that is a photo of that station or an image asset. Any
+    an image that is a photo of that station or an image asset, a story
+    character (`character: StationCharacterEdit { block, view?, advance?,
+facingDeg? }`): his block's view (one of `TOUR_BLOCK_VIEWS.character`),
+    the advance of every step showing him (`tap` or `lineEnd`), his rest
+    rotation turned to face a heading (`facingRotation`, his place kept);
+    a block that is no character of the station is refused. Any
     station the next write carries is edited, a written one no frame
     names (it follows its items until a write prunes it) too: it becomes
     one of the document's frames (`framesHolding`), and any other emptied
@@ -424,7 +429,10 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   holds it, or an image asset. One pass over the objects per call.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to
   dispatch, `unchanged`, `refused` with the field the format refuses
-  (`title`, `radius`, `description`, `image`), or `missing`.
+  (`title`, `radius`, `description`, `image`, `character`), or `missing`.
+  Tests of the character edit: `tour-document-characters.test.ts` (one
+  undo step, a change, the saved tour read back by the format's parser,
+  the refusals changing nothing).
 - `stationDeleteRefusal(state, id)` - `missing`, `last` (a tour keeps at
   least one station) or null.
 - `documentFrames(state)` - every frame the next write carries, whole and

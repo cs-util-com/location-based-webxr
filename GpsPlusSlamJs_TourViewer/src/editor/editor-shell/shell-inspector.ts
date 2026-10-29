@@ -34,8 +34,10 @@ import {
   TOUR_MODEL_SECTION_RULES,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
+  CHARACTER_VIEW_CHOICES,
   MODEL_VIEW_CHOICES,
   ON_GROUND_M,
+  type InspectorCharacter,
   type InspectorModel,
   type InspectorModelParts,
   type InspectorPosition,
@@ -509,7 +511,83 @@ function storyList(model: StationModel): HTMLElement {
     el(
       "div",
       "note",
-      "Shown while the station's story runs; listed here, not edited here yet.",
+      "Shown while the station's story runs; its characters are set below.",
+    ),
+  );
+  return box;
+}
+
+/** A group of chips named `label`, one per choice, the one `on` pressed;
+ *  each acts as `act:<value>`. */
+function chipGroup(
+  label: string,
+  act: string,
+  choices: readonly { readonly value: string; readonly label: string }[],
+  on: string,
+): [HTMLElement, HTMLElement] {
+  const tag = el("span", "flabel", label);
+  tag.id = fieldId();
+  const chips = el("div", "vchips");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-labelledby", tag.id);
+  for (const choice of choices) {
+    const pressed = choice.value === on;
+    const b = el("button", pressed ? "chip on" : "chip", choice.label);
+    b.type = "button";
+    b.dataset["act"] = `${act}:${choice.value}`;
+    b.setAttribute("aria-pressed", String(pressed));
+    chips.append(b);
+  }
+  return [tag, chips];
+}
+
+/** Said under a character's view chips for a view they do not offer
+ *  (an older tour's), so no chip being pressed reads as meant. */
+const CHARACTER_OLDER_VIEW =
+  "He stands in a view of an older tour; a chip moves him to a story view.";
+
+/** Said under his advance chips when his step moves on by itself. */
+const CHARACTER_AUTO_ADVANCE =
+  "His step moves on by itself after a while; a chip sets it otherwise.";
+
+/** A story character's view, how his step moves on and his facing, as a
+ *  model's view is set: chips, the one in use pressed, and a number. */
+function characterParts(
+  id: string,
+  name: string,
+  c: InspectorCharacter,
+): HTMLElement {
+  const box = el("div", "isec character");
+  box.dataset["block"] = id;
+  const views = CHARACTER_VIEW_CHOICES.map((v) => ({
+    value: v.view,
+    label: v.label,
+  }));
+  const offered = views.some((v) => v.value === c.view);
+  box.append(
+    el("span", "flabel", name),
+    ...chipGroup("View", `character-view:${id}`, views, c.view),
+  );
+  if (!offered) box.append(el("div", "note", CHARACTER_OLDER_VIEW));
+  box.append(
+    ...chipGroup(
+      "Moves on",
+      `character-advance:${id}`,
+      [
+        { value: "tap", label: "On a tap" },
+        { value: "lineEnd", label: "When the line ends" },
+      ],
+      c.advance,
+    ),
+  );
+  if (c.advance === "auto")
+    box.append(el("div", "note", CHARACTER_AUTO_ADVANCE));
+  box.append(
+    numberField(
+      "Facing",
+      `character-facing:${id}`,
+      String(Math.round(c.facingDeg) % 360),
+      "deg",
     ),
   );
   return box;
@@ -554,6 +632,11 @@ function stationParts(
     section,
   ];
   if (model.story.length > 0) parts.push(storyList(model));
+  for (const block of model.story) {
+    if (block.character !== undefined) {
+      parts.push(characterParts(block.id, block.title, block.character));
+    }
+  }
   const p = model.position;
   if (p === null) {
     // Nothing for the lock to keep still: the note stands alone.
@@ -620,19 +703,12 @@ const VIEW_NOTE: Readonly<Record<string, string>> = {
 /** A model's view, clip, notes and sections (`model-edits.ts`). */
 function modelParts(parts: ModelParts): HTMLElement[] {
   const view = el("div", "isec mview");
-  const label = el("span", "flabel", "View");
-  label.id = fieldId();
-  const chips = el("div", "vchips");
-  chips.setAttribute("role", "group");
-  chips.setAttribute("aria-labelledby", label.id);
-  for (const choice of MODEL_VIEW_CHOICES) {
-    const on = choice.view === parts.view;
-    const b = el("button", on ? "chip on" : "chip", choice.label);
-    b.type = "button";
-    b.dataset["act"] = `view:${choice.view}`;
-    b.setAttribute("aria-pressed", String(on));
-    chips.append(b);
-  }
+  const [label, chips] = chipGroup(
+    "View",
+    "view",
+    MODEL_VIEW_CHOICES.map((c) => ({ value: c.view, label: c.label })),
+    parts.view,
+  );
   // Notes are drawn only in the Hotspots view: say so where they would
   // otherwise seem lost.
   const notesHidden = parts.view !== "hotspots" && parts.notes.length > 0;

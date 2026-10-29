@@ -151,7 +151,8 @@ imperative resources only - that handle and the pictures' side table
     `stationEditChange`; `NOT_IN_TOUR` for an id the tour no longer
     carries; `NOT_APPLIED` when the tour changed under the call):
     - `editStation(stationId, edit)` - title, found radius (2 m to 300 m),
-      description, card image (`StationEdit`): `edited` or `unchanged`.
+      description, card image, a story character's view, advance and
+      facing (`StationEdit`): `edited` or `unchanged`.
       `unchanged` also when the document dropped the edit (its revision
       did not move): an edit of a station a delete emptied that leaves it
       with nothing of its own (its radius alone) is not listed, so no step
