@@ -12,7 +12,7 @@ and ending at the relief, so a ridge in front of a cloud hides it.
 
 - `createGlobeCloudVolume(renderer, { atmosphere, skyScene, surfaceUniforms,
 sceneDepth })`
-  (`atmosphere` and `skyScene` the ground sky's, `globe-ground-sky.js`;
+  (`atmosphere` and `skyScene` the ground sky's, the Globe package's `globe-ground-sky.ts`;
   `sceneDepth` the relief's depth, `globe-scene-depth.js`, shared with the
   space pass) returns:
   - `setEnabled(on)`: the ground sky's slab mode (cover 1), the coverage

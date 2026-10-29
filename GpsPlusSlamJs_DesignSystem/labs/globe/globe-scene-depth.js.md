@@ -5,7 +5,7 @@
 The drawn relief's depth, once a frame, for the two passes that must end
 at it: the cloud volume's march (`globe-cloud-volume.js`, volume-cloud plan
 `2026-10-05-0016-globe-volume-cloud-variants-plan.md`) and the space pass's
-rays below the hand-over (`globe-atmosphere.js`, §17; the F2 plan's
+rays below the hand-over (the Globe package's `globe-atmosphere.ts`, §17; the F2 plan's
 accepted "no scene depth" limit, M1 R3 minor 10, which drew a hard edge at
 the ellipsoid's limb on the owner's phone on 2026-10-06: the relief, drawn
 three times as high, stood above the ellipsoid's horizon unveiled).

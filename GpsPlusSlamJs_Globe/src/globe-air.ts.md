@@ -4,9 +4,9 @@
   Earth, the framework's ground sky, the haze over the relief) are told
   each frame and in which order (globe F2 plan 2026-10-03-1922, F2b),
   moved out of the globe lab as a pure refactor. The drawers themselves
-  stay the lab's (`labs/globe/globe-atmosphere.js`, `globe-ground-sky.js`,
-  `globe-haze.js`): they build on the framework's atmosphere, which this
-  package does not import yet, so they are passed in.
+  (`globe-atmosphere.ts`, `globe-ground-sky.ts`, `globe-haze.ts`, also
+  moved out of the lab) are passed in, so the wiring is tested over
+  recording fakes rather than WebGL.
 - Public API:
   - `createGlobeAir({ ellipsoidRadii, groundRadiusKm, sun, globeGroup,
 spacePass, groundSky, haze })` returns `GlobeAir`:

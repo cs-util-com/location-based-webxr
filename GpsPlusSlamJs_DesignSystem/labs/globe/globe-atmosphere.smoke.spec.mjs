@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * The globe's atmosphere seen from space (round-4 plan 2026-09-28-2105
- * DEC-GL4-4, `globe-atmosphere.js`).
+ * DEC-GL4-4, the Globe package's `globe-atmosphere.ts`).
  *
  * Why this file matters: the owner's reference shows a bright, almost
  * white-cyan band just inside the Earth's edge and a soft blue halo just
@@ -381,7 +381,7 @@ test("the limb at the terminator's crossing", async ({ page }) => {
       `inside on ${fmt(on.inside)}; off ${fmt(off.inside)}; outside on ${fmt(on.outside)}; ` +
       `violet inside ${on.inside.map(violet).join(" ")}, outside ${on.outside.map(violet).join(" ")}`,
   );
-  // The documented range (globe-atmosphere.js.md, reviews B3 and M1/m3):
+  // The documented range (GpsPlusSlamJs_Globe/src/globe-atmosphere.ts.md, reviews B3 and M1/m3):
   // since the lowest-point weighting the spot at the crossing reads
   // 33/21/51 just inside and 74/48/74 just outside (violet index 12 and
   // 26, luminance up to 55; before it, 27/16/45 and 46/35/56, violet 11),

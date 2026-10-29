@@ -149,14 +149,14 @@ import {
   installSyntheticHeights,
 } from "/globe/test-utils/synthetic-heights.js";
 import { geolocationPermissionState } from "/fw/sensors/permission-state.js";
-import { createGlobeAtmosphere } from "./globe-atmosphere.js";
+import { createGlobeAtmosphere } from "/globe/globe-atmosphere.js";
 import {
   GLOBE_ATMOSPHERE,
   atmosphereCostText,
   defaultAtmosphereSteps,
 } from "/globe/globe-atmosphere-frame.js";
 import { createGlobeAir } from "/globe/globe-air.js";
-import { createGlobeGroundSky } from "./globe-ground-sky.js";
+import { createGlobeGroundSky } from "/globe/globe-ground-sky.js";
 import { createGlobeHaze } from "/globe/globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { createGlobeCloudShellVolume } from "./globe-cloud-shell-volume.js";
@@ -547,7 +547,7 @@ const PARAMS = {
   starGain: { fallback: GLOBE_SKY.starGain, min: 0, max: 10 },
   milkyWay: { fallback: GLOBE_SKY.milkyWay, min: 0, max: 0.1 },
   // The atmosphere seen from space (round-4 plan 2026-09-28-2105
-  // DEC-GL4-4; `globe-atmosphere.js`): on unless 0 (on by default: the
+  // DEC-GL4-4; `globe-atmosphere.ts`): on unless 0 (on by default: the
   // owner asked for it), the march's samples per ray, a scale on its light
   // (1 = as computed) and how many times thicker than the real air the
   // shell is drawn (1 = physical).

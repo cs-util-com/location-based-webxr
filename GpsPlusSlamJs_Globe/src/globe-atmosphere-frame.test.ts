@@ -171,7 +171,7 @@ describe("grazingCompensation", () => {
 // one-scene flight) a ray going up has its lowest point at the camera,
 // where it climbs steeply: with the tangent-point rule it got sqrt(k),
 // about 2.45 times the intended optical depth at k = 6.
-// The pass's march (the lab's globe-atmosphere.js) calls the GLSL twins by
+// The pass's march (globe-atmosphere.ts) calls the GLSL twins by
 // these names; a renamed or dropped twin would fail only in a browser.
 describe("CHAPMAN_GLSL", () => {
   it("declares the twins the march calls, with the same pi", () => {

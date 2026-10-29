@@ -57,7 +57,7 @@ const RANGES = {
 } as const;
 
 /** The look's three values (`atmosphereLook`). */
-interface AtmosphereLook {
+export interface AtmosphereLook {
   steps: number;
   strength: number;
   thickness: number;

@@ -6,7 +6,8 @@
  * atmosphere. It reuses the framework's transmittance and multi-scattering
  * tables (which depend on neither the camera nor the sun), so nothing here
  * is tuned per effect: the rim is brightest where the sun shines and fades
- * across the terminator because the tables say so.
+ * across the terminator because the tables say so. Moved out of the globe
+ * lab as a pure refactor.
  *
  * A full-screen pass drawn after the Earth: each pixel's ray is intersected
  * with the atmosphere's top and the ground analytically (in a frame where
@@ -15,26 +16,27 @@
  * in-scattered light plus what lies behind dimmed by the ray's
  * transmittance. Rays that miss the atmosphere are discarded at once.
  *
- * @see globe-atmosphere.js.md
+ * @see globe-atmosphere.ts.md
  */
 import * as THREE from "three";
 
 import {
   ATMOSPHERE_COMMON_GLSL,
   ATMOSPHERE_RADIANCE_SCALE,
-} from "/fw/visualization/atmosphere/atmosphere-glsl.js";
-import { WebGlAtmosphereDevice } from "/fw/visualization/atmosphere/atmosphere-luts.js";
+} from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-glsl";
+import { WebGlAtmosphereDevice } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-luts";
 import {
   EARTH_ATMOSPHERE,
   mieExtinctionForVisibility,
-} from "/fw/visualization/atmosphere/atmosphere-model.js";
+} from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-model";
 
 import {
+  type AtmosphereLook,
   CHAPMAN_GLSL,
   GLOBE_ATMOSPHERE,
   atmosphereLook,
   ellipsoidToModel,
-} from "/globe/globe-atmosphere-frame.js";
+} from "./globe-atmosphere-frame.js";
 
 /**
  * A full-screen triangle; each corner's ray direction in the model frame
@@ -90,7 +92,7 @@ uniform float uSkyShare;
 // kept below the hand-over (fading it there broke the hand-over's
 // continuity); the lab's atmoGround=0 fades it as the sky's, a comparison.
 uniform float uGroundShare;
-// The drawn relief's depth (§17, globe-scene-depth.js), weighted by
+// The drawn relief's depth (§17, the lab's globe-scene-depth.js), weighted by
 // uSceneDepthWeight: at 1 a ray ends at the relief and a relief pixel is
 // ground, never sky. Without it the rays end at the ellipsoid, and relief
 // standing above its limb was treated as sky (whose share is 0 below the
@@ -201,18 +203,94 @@ void main() {
 }`;
 
 /**
+ * The drawn relief's depth (the lab's `globe-scene-depth.js`): its depth
+ * texture, the camera it was drawn with, and whether it was drawn this
+ * frame.
+ */
+interface SceneDepth {
+  readonly fresh: boolean;
+  readonly texture: THREE.Texture;
+  readonly camera: { readonly projectionMatrixInverse: THREE.Matrix4 };
+}
+
+/** What `render` is told each frame. */
+interface GlobeAtmosphereFrame {
+  /** The tiles group's world matrix (the ECEF frame's placement). */
+  worldFromEcef: THREE.Matrix4;
+  /** The sun's unit direction in ECEF. */
+  sunEcef: THREE.Vector3;
+  /** The Earth's sun light's intensity. */
+  sunIntensity: number;
+  /** The share of the sky's light, 0-1 (default 1). */
+  skyShare?: number;
+  /** The share of the veil over the ground, 0-1 (default 1). */
+  groundShare?: number;
+  /** The drawn relief's depth, or null (default). */
+  sceneDepth?: SceneDepth | null;
+  /** The depth's weight, 0-1 (default 1). */
+  sceneDepthWeight?: number;
+}
+
+export interface GlobeAtmosphere {
+  /** False where float colour buffers cannot be rendered: no pass. */
+  readonly supported: boolean;
+  /** A copy of the current look. */
+  readonly look: AtmosphereLook;
+  /** Sets any of steps, strength, thickness; RangeError as atmosphereLook. */
+  setLook(input: Partial<AtmosphereLook>): void;
+  /**
+   * Draws the pass over the current frame. `camera` is the globe's
+   * (updated world matrix), `worldFromEcef` the tiles group's world
+   * matrix (the ECEF frame's placement), `sunEcef` a unit vector and
+   * `sunIntensity` the Earth's sun light's, so the air and the ground are
+   * lit by the same sun. `skyShare` (0-1, default 1) scales the light of
+   * the rays that miss the ground: the ground sky takes over the sky's
+   * pixels below the hand-over edge (F2b). `groundShare` (0-1, default 1)
+   * scales the veil over the ground the same way (volume-cloud plan §17):
+   * the framework haze takes the ground below the edge. Nothing is drawn
+   * when both are 0. RangeError for a share or depth weight outside 0-1.
+   */
+  render(camera: THREE.Camera, frame: GlobeAtmosphereFrame): void;
+  /**
+   * The sun's transmittance table (the spherical cloud volume's sun, round-4
+   * plan R4d), drawn on first use; null where the pass is unsupported.
+   */
+  transmittance(): THREE.Texture | null;
+  dispose(): void;
+}
+
+/** RangeError unless `value` is in 0-1 (NaN included). */
+function requireUnit(name: string, value: number): void {
+  if (!(value >= 0 && value <= 1)) {
+    throw new RangeError(`${name} must be 0-1, got ${value}`);
+  }
+}
+
+/**
  * The atmosphere pass for a renderer. The two tables are built on the
  * first draw (they depend on neither the camera nor the sun).
- * `ellipsoidRadii` are the globe ellipsoid's radii in metres.
+ * `ellipsoidRadii` are the globe ellipsoid's radii in metres; RangeError
+ * as `ellipsoidToModel` for a radius that is not positive and finite.
  */
-export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
+export function createGlobeAtmosphere(
+  renderer: THREE.WebGLRenderer,
+  ellipsoidRadii: readonly [number, number, number],
+): GlobeAtmosphere {
   const device = new WebGlAtmosphereDevice(renderer);
   const toModel = ellipsoidToModel(
-    ellipsoidRadii,
+    [...ellipsoidRadii],
     EARTH_ATMOSPHERE.groundRadiusKm,
   );
   const scaleToModel = new THREE.Matrix3().set(
-    ...[toModel[0], 0, 0, 0, toModel[1], 0, 0, 0, toModel[2]],
+    toModel[0],
+    0,
+    0,
+    0,
+    toModel[1],
+    0,
+    0,
+    0,
+    toModel[2],
   );
   let look = atmosphereLook({});
   const uniforms = {
@@ -234,7 +312,7 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
     uThickness: { value: look.thickness },
     uSkyShare: { value: 1 },
     uGroundShare: { value: 1 },
-    uSceneDepth: { value: null },
+    uSceneDepth: { value: null as THREE.Texture | null },
     uSceneInverseProjection: { value: new THREE.Matrix4() },
     uSceneDepthWeight: { value: 0 },
   };
@@ -273,6 +351,17 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
   const cameraEcef = new THREE.Vector3();
+  /** The drawn relief's depth, only when drawn this frame (§17). */
+  const setDepth = (sceneDepth: SceneDepth | null, weight: number) => {
+    const depth = sceneDepth?.fresh === true ? sceneDepth : null;
+    uniforms.uSceneDepthWeight.value = depth ? weight : 0;
+    if (depth) {
+      uniforms.uSceneDepth.value = depth.texture;
+      uniforms.uSceneInverseProjection.value.copy(
+        depth.camera.projectionMatrixInverse,
+      );
+    }
+  };
   /** The two tables, drawn once (they depend on neither camera nor sun). */
   const buildTables = () => {
     if (built) return;
@@ -281,14 +370,12 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
     built = true;
   };
   return {
-    /** False where float colour buffers cannot be rendered: no pass. */
     get supported() {
       return device.supported;
     },
     get look() {
       return { ...look };
     },
-    /** Sets any of steps, strength, thickness; RangeError as atmosphereLook. */
     setLook(input) {
       look = atmosphereLook({ ...look, ...input });
       uniforms.uThickness.value = look.thickness;
@@ -297,18 +384,6 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
         material.needsUpdate = true;
       }
     },
-    /**
-     * Draws the pass over the current frame. `camera` is the globe's
-     * (updated world matrix), `worldFromEcef` the tiles group's world
-     * matrix (the ECEF frame's placement), `sunEcef` a unit vector and
-     * `sunIntensity` the Earth's sun light's, so the air and the ground are
-     * lit by the same sun. `skyShare` (0-1, default 1) scales the light of
-     * the rays that miss the ground: the ground sky takes over the sky's
-     * pixels below the hand-over edge (F2b). `groundShare` (0-1, default 1)
-     * scales the veil over the ground the same way (volume-cloud plan §17):
-     * the framework haze takes the ground below the edge. Nothing is drawn
-     * when both are 0.
-     */
     render(
       camera,
       {
@@ -321,28 +396,12 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
         sceneDepthWeight = 1,
       },
     ) {
-      if (!(skyShare >= 0 && skyShare <= 1)) {
-        throw new RangeError(`skyShare must be 0-1, got ${skyShare}`);
-      }
-      if (!(groundShare >= 0 && groundShare <= 1)) {
-        throw new RangeError(`groundShare must be 0-1, got ${groundShare}`);
-      }
-      if (!(sceneDepthWeight >= 0 && sceneDepthWeight <= 1)) {
-        throw new RangeError(
-          `sceneDepthWeight must be 0-1, got ${sceneDepthWeight}`,
-        );
-      }
+      requireUnit("skyShare", skyShare);
+      requireUnit("groundShare", groundShare);
+      requireUnit("sceneDepthWeight", sceneDepthWeight);
       uniforms.uSkyShare.value = skyShare;
       uniforms.uGroundShare.value = groundShare;
-      // The drawn relief's depth, only when drawn this frame (§17).
-      const depthOn = sceneDepth?.fresh === true;
-      uniforms.uSceneDepthWeight.value = depthOn ? sceneDepthWeight : 0;
-      if (depthOn) {
-        uniforms.uSceneDepth.value = sceneDepth.texture;
-        uniforms.uSceneInverseProjection.value.copy(
-          sceneDepth.camera.projectionMatrixInverse,
-        );
-      }
+      setDepth(sceneDepth, sceneDepthWeight);
       if (skyShare === 0 && groundShare === 0) return;
       if (!device.supported) return;
       buildTables();
@@ -372,10 +431,6 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
         (sunIntensity * look.strength) / ATMOSPHERE_RADIANCE_SCALE;
       renderer.render(scene, quadCamera);
     },
-    /**
-     * The sun's transmittance table (the spherical cloud volume's sun, round-4
-     * plan R4d), drawn on first use; null where the pass is unsupported.
-     */
     transmittance() {
       if (!device.supported) return null;
       buildTables();

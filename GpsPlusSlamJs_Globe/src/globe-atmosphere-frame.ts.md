@@ -1,11 +1,11 @@
 # globe-atmosphere-frame.ts - the atmosphere pass's numbers and frame
 
 - Purpose: the pure part of the globe's atmosphere pass (round-4 plan
-  2026-09-28-2105 DEC-GL4-4, `globe-atmosphere.js`): its look defaults and
+  2026-09-28-2105 DEC-GL4-4, `globe-atmosphere.ts`): its look defaults and
   ranges, and the map from ECEF metres to the framework model's frame, free
   of imports. Moved from the globe lab into the Globe package with the
-  air slice; the lab (`labs/globe/globe-atmosphere.js`, `globe-lab.js`, the
-  atmosphere smoke) and `globe-air.ts` read it from here.
+  air slice; the pass (`globe-atmosphere.ts`), the lab
+  (`globe-lab.js`, the atmosphere smoke) and `globe-air.ts` read it from here.
 - Public API:
   - `GLOBE_ATMOSPHERE` - the defaults: `steps` (samples per ray), `strength`
     (a scale on the physical light, 1 = as computed), `thickness` (the

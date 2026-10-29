@@ -5,7 +5,7 @@
  * 700 km down to the slab's ceiling, so the clouds the flat layer drew
  * between 700 and 30 km are volumes; `cloudShellVolume=1`, off by default.
  *
- * - **The geometry**: the atmosphere pass's scaffold (`globe-atmosphere.js`):
+ * - **The geometry**: the atmosphere pass's scaffold (the Globe package's `globe-atmosphere.ts`):
  *   each pixel's ray in the model frame (the ellipsoid as the atmosphere's
  *   ground sphere, km), intersected analytically with the deck's top and
  *   base spheres, ending at the relief's depth when it is drawn this frame.

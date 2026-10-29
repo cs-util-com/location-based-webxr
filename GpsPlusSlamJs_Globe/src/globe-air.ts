@@ -5,10 +5,10 @@
  * haze that follows it, the sun's eased intensity and the space pass's
  * shell thinning on the way down.
  *
- * The three drawers (the space pass, the ground sky, the haze) are the
- * lab's and are passed in: they build on the framework's atmosphere, which
- * this package does not import. This module only decides, each frame, what
- * they are told and in which order:
+ * The three drawers (the space pass, the ground sky, the haze;
+ * `globe-atmosphere.ts`, `globe-ground-sky.ts`, `globe-haze.ts`) are
+ * passed in, so this wiring is tested over recording fakes. This module only
+ * decides, each frame, what they are told and in which order:
  *
  * - `step` (after the clip planes): the observer's height, the sun's world
  *   direction, the ground sky's update or the space view's values, the

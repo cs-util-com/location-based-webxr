@@ -170,7 +170,7 @@
   field of view, and no depth, so the Earth covers it by draw order.
   Last, unless `#atmo=0`, the atmosphere pass over both.
 - The atmosphere seen from space (round-4 plan 2026-09-28-2105 DEC-GL4-4,
-  DEC-GL4-11; `globe-atmosphere.js`, its numbers in
+  DEC-GL4-11; the Globe package's `globe-atmosphere.ts`, its numbers in
   the Globe package's `globe-atmosphere-frame.ts`): the lit limb's bright band, the blue halo
   outside it and the blue veil over the day side, from one march through
   the framework's physical atmosphere tables, lit by the Earth's own sun.
@@ -924,7 +924,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   is placed right is not yet verified, and these numbers were taken where
   the volume drew almost nothing (at 46.5 N 9 E, gain 0.5, the same clear
   noise patch under every target), so they are to be measured again.
-- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`,
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; the Globe package's `globe-ground-sky.ts`,
   wired each frame by the Globe package's `globe-air.ts`: its `step` after
   the clip planes, its `finish` after the cloud volumes, its `render` after
   the scene):
