@@ -261,8 +261,8 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy', () => {
-  it('is version 4, minor 0', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([4, 0]);
+  it('is version 4, minor 1', () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([4, 1]);
   });
 
   it.each([1, 2, 3])(
@@ -464,6 +464,73 @@ describe('a placed 3D model (a size in metres)', () => {
       stations: [station([pin, { ...model, sizeM: 900 }])],
     });
     expect(tourObjects(manifest).map((o) => o.id)).toEqual(['p1']);
+  });
+
+  describe("a model's views, notes, sections and clip: minor 1", () => {
+    // Why: the writer writes the LOWEST minor a tour needs, so a tour that
+    // uses none of minor 1 still opens fully in an app that reads only
+    // minor 0, and one that does is marked so that app opens it leniently
+    // (falling back to `placed`) instead of refusing a view it never met.
+    const annotated = {
+      ...model,
+      view: 'hotspots',
+      animation: { name: 'Swing', autoplay: true },
+      annotations: [
+        { position: [0, 2.5, 0.4], normal: [0, 0, 1], title: 'Keystone' },
+      ],
+      sections: [
+        { name: 'Through the arch', position: [0, 0, 0], normal: [1, 0, 0] },
+      ],
+    };
+    const withBlocks = (blocks: unknown[]) =>
+      tour({
+        assets: [photoAsset, { id: 'arch', path: 'content/arch.glb' }],
+        stations: [station(blocks)],
+      });
+
+    it('writes minor 1 and reads every field back exactly', () => {
+      const manifest = parseTourManifest(withBlocks([pin, annotated]));
+      const json = serializeTourManifest(manifest);
+      expect(JSON.parse(json)).toMatchObject({ version: 4, minor: 1 });
+      const again = parseTourManifest(JSON.parse(json));
+      expect(again).toEqual({ ...manifest, minor: 1 });
+      expect(
+        again.stations[0]?.blocks.find((b) => b.id === annotated.id)
+      ).toEqual(annotated);
+    });
+
+    it('writes minor 0 again once the tour no longer uses any of it', () => {
+      const {
+        animation: _a,
+        annotations: _n,
+        sections: _s,
+        ...plain
+      } = annotated;
+      const json = serializeTourManifest(
+        parseTourManifest(withBlocks([pin, { ...plain, view: 'placed' }]))
+      );
+      expect(JSON.parse(json)).toMatchObject({ minor: 0 });
+    });
+
+    it('reads the fields from a file that says minor 0, as the reader that knows them', () => {
+      const manifest = parseTourManifest({
+        ...withBlocks([pin, annotated]),
+        minor: 0,
+      });
+      expect(tourObjects(manifest).map((o) => o.view)).toEqual([
+        'pin',
+        'hotspots',
+      ]);
+    });
+
+    it('each new world view puts the model in the world view list', () => {
+      for (const view of ['ghost', 'hotspots', 'cutaway', 'toy']) {
+        const manifest = parseTourManifest(withBlocks([{ ...model, view }]));
+        expect(tourObjects(manifest)).toEqual([
+          expect.objectContaining({ id: 'm1', view, sizeM: 12.75 }),
+        ]);
+      }
+    });
   });
 
   it('a model id may be an asset id: blocks and assets are separate namespaces', () => {

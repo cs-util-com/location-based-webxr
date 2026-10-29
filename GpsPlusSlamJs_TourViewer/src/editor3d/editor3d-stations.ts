@@ -868,6 +868,17 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
     },
+    /** An item's drawn model (the glb under its pose and size), or null
+     *  for one not drawn now. */
+    modelObject(id: string): THREE.Object3D | null {
+      const entry = entryOfItem(id);
+      if (entry === null) return null;
+      return (
+        drawnOf(entry, id).find(
+          (o) => typeof o.userData["tourScale"] === "number",
+        ) ?? null
+      );
+    },
     models(id: string): THREE.Object3D[] {
       return [...(stations.get(id)?.content?.models ?? [])];
     },

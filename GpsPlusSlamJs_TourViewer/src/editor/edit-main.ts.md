@@ -74,6 +74,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   into view (`revealPadding`). A photo is read by `photoSource`: a placed
   one by `loadContentEntry`, a recorded one by `loadEntry`. The card follows the marker on every map move and on resize;
   Esc, the card's close and a click on the map clear the selection.
+  A `refresh()` keeps a selection that is still in the tour (`stillInTour`):
+  an item of the editor model, or a 3D model block, which the model never
+  lists, so an edit of a selected model keeps it selected.
 - **Editing (M6 E2a)** through `editor-session.ts`: a pin's text (committed
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
@@ -337,7 +340,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     it, and so does Ctrl+S during the write at a link's or the sample's
     open (the `"open"` claim), during a copy being saved (`"copy"`) and
     during a move of the debug data (`"walk"`): every claim but an
-    explicit Save itself queues it, and the claim's end runs it
+    explicit Save of the tour that shows queues it (a Save of a tour
+    closed since does queue: an open keeps the slot's holder, so the page
+    keeps whose Save runs, `explicitSaveOf`), and the claim's end runs it
     (`runQueuedSave`); the Save button is disabled while any save
     runs, so only the key queues (E2b-2 milestone review #10). A queued
     Ctrl+S on a tour with unsaved work and no file to save into (no
@@ -734,6 +739,13 @@ view3dGizmoSizes(), manifest(), selected() }`): an e2e reaches the editor sessio
 - Once everything is wired the page sets `body[data-editor="ready"]`;
   the keyboard e2e waits for it (a press before the module ran went
   nowhere - a flaky run under load).
+
+### A model's own parts
+
+The shell's and the 3D view's `model` edits go through
+`writeInspectorEdit` to the session's `editModel` (a refusal toasted).
+The dev hook adds `view3dModelParts()` and
+`view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
 
 ## Tests
 

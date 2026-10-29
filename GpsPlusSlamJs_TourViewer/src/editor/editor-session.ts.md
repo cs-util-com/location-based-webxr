@@ -323,6 +323,15 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   file at your link is called"). Done derives the name of the file at the
   tour's link from a dated save with it, also after a reopen
   (`editor-link.ts` `doneHostedName`).
+- `editModel(id, edit)` - one of a model's own edits (`model-edits.ts`:
+  its view, a note, a section, its clip), one undo step named for the part
+  and the model ("the title of note 2 of The arch"). Refused for an id that
+  is no model (`NOT_A_MODEL_EDIT`) and for what the format refuses, in
+  words. A `view` edit marks the model's view as the creator's choice for
+  this session (`explicitViews`), so the default view rule never
+  overrides it; the mark is the session's, not the file's (the format has
+  no field for it): it is lost when the tour is opened again, and an undo
+  of the view edit does not clear it.
 
 ## Invariants & assumptions
 

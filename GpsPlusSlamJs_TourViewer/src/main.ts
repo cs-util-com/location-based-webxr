@@ -38,6 +38,8 @@ import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-me
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
+import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
+import "./model-visitor.css";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -1029,6 +1031,8 @@ hooks.tickStations = () => {
   viewer.syncContent();
   // A pin's sheet goes with its pin.
   pinSheet.sync();
+  // A model's view, its notes and its card.
+  modelVisitor.tick(performance.now());
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
@@ -1047,6 +1051,14 @@ const pinSheet = createPinSheet({
 element("pin-sheet-close").addEventListener("click", () => {
   pinSheet.close();
 });
+// A model's notes, its card and a toy in hand: a tap opens a note or the
+// model's card, a pinch and a drag act only on a toy in hand.
+const modelVisitor = createModelVisitor({
+  dom: mountModelVisitorDom(element("ar-root")),
+  scene: () => seams.getScene(),
+  camera: () => seams.getViewerCamera(),
+  pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+});
 if (mode === "visitor") {
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
@@ -1057,11 +1069,14 @@ if (mode === "visitor") {
   });
 }
 hooks.visitorTap = (tap) => {
-  pinSheet.tapped(tap);
+  // A model's card first; a tap that opens none is the pin sheet's.
+  if (modelVisitor.tapped(tap)) pinSheet.close();
+  else pinSheet.tapped(tap);
 };
 hooks.stopStations = () => {
   stations.stop();
   pinSheet.close();
+  modelVisitor.stop();
 };
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
