@@ -62,13 +62,21 @@ const TOUR_MAX_CHARACTERS = 32;
 
 /** What a lenient reader left out of a declaration: the whole declaration
  *  when `field` is absent, or just that field (`characters[i].frames`)
- *  when present - he then stays, with what was readable. */
-export interface TourCharacterDrop {
-  readonly kind: 'character';
-  readonly character: string;
-  readonly field?: string;
-  readonly reason: string;
-}
+ *  when present - he then stays, with what was readable. Two members, not
+ *  one optional `field`, so a caller's `'field' in drop` still narrows to
+ *  a string, as it does for every other drop. */
+export type TourCharacterDrop =
+  | {
+      readonly kind: 'character';
+      readonly character: string;
+      readonly reason: string;
+    }
+  | {
+      readonly kind: 'character';
+      readonly character: string;
+      readonly field: string;
+      readonly reason: string;
+    };
 
 export interface TourCharactersReadOptions {
   /** The tour's (already validated) assets. */

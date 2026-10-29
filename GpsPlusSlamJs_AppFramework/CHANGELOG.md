@@ -57,7 +57,7 @@
   `image` stays his one pose and the fallback; a `frames` that is not an
   image asset, or that is his `image` itself, is refused at this minor.
   Read leniently, only the field is dropped: he stays with his one image,
-  and `TourCharacterDrop` reports it with its new optional `field`
+  and `TourCharacterDrop` reports it in its new member that carries a `field`
   (`characters[i].frames`); a drop without `field` is the whole
   declaration.
 

@@ -18,7 +18,7 @@ station to station is written once, not copied into every block.
 - `TOUR_CHARACTER_FRAMES` - `['idle', 'talk-a', 'talk-b', 'beckon']`:
   the sheet's cells, left to right.
 - `TOUR_MAX_CHARACTERS = 32` (module-internal) - the most one tour declares.
-- `TourCharacterDrop` - `{ kind: 'character', character, field?, reason }`:
+- `TourCharacterDrop` - `{ kind: 'character', character, reason }` or `{ kind: 'character', character, field, reason }` (two members, so `'field' in drop` narrows to a string):
   what a lenient reader left out - the whole declaration without `field`,
   just that field (`characters[i].frames`) with it.
 - `TourCharactersReadOptions` - `{ assets, fail, lenient?, onDropped? }`;
