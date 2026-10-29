@@ -752,7 +752,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
   which adds `relief=0` to a hash that names no relief.
 - The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
-  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 the volume
+  `globe-cloud-volume-pass.ts`): `cloudVolume` 0 the shell only, 1 the volume
   within the disc and the shell outside it, 2 (default, the owner's choice
   of 2026-10-05) the volume over the shell; `cloudVolumeKm` (80; 20 until 2026-10-06) the disc, which the slab's reach follows,
   `cloudVolumeCeilingKm` (40) the ceiling it fades in under over
@@ -893,13 +893,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).
   `cloudHex` (0, the default until the owner's phone run; hex-tiling plan
   2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
-  clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;
+  clouds no longer repeat every 24 km (`globe-cloud-volume-pass.ts` `setHex`;
   the state's `cloudVolume.hex`).
   `cloudNoise=tile|hex|live` (a text key; round-3 plan 2026-10-08-2345,
   N1) picks the noise the volume's clouds read and wins over `cloudHex`:
   `live` is the framework's per-octave noise that never repeats in view
   (`cloud-live-noise.ts`), anchored to the ground across recentres and
-  the drift (`globe-cloud-volume.js` `setNoise`; the state's
+  the drift (`globe-cloud-volume-pass.ts` `setNoise`; the state's
   `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
   default). `cloudFineGain` (0.3-0.85, 0.5 by default; round-3 plan §19
   item 2) is the live noise's fine gain, more detail at the cloud edges
@@ -939,7 +939,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   scaled by `1 - weight`, its veil over the ground is kept (`atmoGround=1`,
   the default; `atmoGround=0` fades it with the sky's, a comparison that
   breaks the hand-over's continuity), and below the edge its rays end at
-  the drawn relief: the scene depth (`globe-scene-depth.js`, volume-cloud
+  the drawn relief: the scene depth (the Globe package's `globe-scene-depth.ts`, volume-cloud
   plan §17) is drawn once a frame while the weight is above 0 and the pass
   is on, and shared with the cloud volume, which draws it itself when only
   it needs it; the pass weighs it by the hand-over's weight, so it grows

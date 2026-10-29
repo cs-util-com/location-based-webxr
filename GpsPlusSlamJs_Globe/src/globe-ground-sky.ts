@@ -258,7 +258,7 @@ export function createGlobeGroundSky(
       }
       const previous = renderer.getRenderTarget();
       // The cloud volume's slab, when there is one, draws after the Earth
-      // (the lab's globe-cloud-volume.js), never with the sky behind it.
+      // (globe-cloud-volume-pass.ts), never with the sky behind it.
       const slab = scene.getObjectByName("atmosphere-cloud-slab");
       const slabShown = slab?.visible ?? false;
       if (slab) slab.visible = false;

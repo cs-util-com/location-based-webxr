@@ -158,9 +158,9 @@ import {
 import { createGlobeAir } from "/globe/globe-air.js";
 import { createGlobeGroundSky } from "/globe/globe-ground-sky.js";
 import { createGlobeHaze } from "/globe/globe-haze.js";
-import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
+import { createGlobeCloudVolume } from "/globe/globe-cloud-volume-pass.js";
 import { createGlobeCloudShellVolume } from "./globe-cloud-shell-volume.js";
-import { createGlobeSceneDepth } from "./globe-scene-depth.js";
+import { createGlobeSceneDepth } from "/globe/globe-scene-depth.js";
 import { createGlobeCity } from "./globe-city.js";
 import {
   SPEED_DUST_MAX_COUNT,
@@ -2323,7 +2323,7 @@ async function start() {
     roles(terrain.tiles, asStencilWriter);
     roles(globe.tiles, asStencilFill);
   }
-  // The cloud volume (C2; globe-cloud-volume.js): the ground sky's slab, its
+  // The cloud volume (C2; the Globe package's globe-cloud-volume-pass.ts): the ground sky's slab, its
   // clouds from the globe's map, ending at the relief's depth; its shadow
   // (C3) patches the relief before the haze does.
   // The drawn relief's depth, once a frame below the hand-over, for the
@@ -4409,7 +4409,7 @@ void main() {
       cloudShellHidden = Boolean(on);
     },
     /**
-     * The cloud volume's last frame read back (`globe-cloud-volume.js`
+     * The cloud volume's last frame read back (`globe-cloud-volume-pass.ts`
      * `coverage()`): the share of pixels its clouds cover, overall and in
      * the lower half. Null without a volume or before its first frame.
      */

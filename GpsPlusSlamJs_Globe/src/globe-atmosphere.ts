@@ -203,7 +203,7 @@ void main() {
 }`;
 
 /**
- * The drawn relief's depth (the lab's `globe-scene-depth.js`): its depth
+ * The drawn relief's depth (`globe-scene-depth.ts`): its depth
  * texture, the camera it was drawn with, and whether it was drawn this
  * frame.
  */

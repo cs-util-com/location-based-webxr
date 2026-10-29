@@ -36,7 +36,7 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     sky's pixels; `groundShare` (0-1, default 1; RangeError outside) scales
     the veil over the ground (the lab keeps it at 1: fading it with the
     sky's broke the hand-over's continuity smoke, worst step 4.8 against a
-    bound of 1). `sceneDepth` (optional, the lab's `globe-scene-depth.js`) is the
+    bound of 1). `sceneDepth` (optional, `globe-scene-depth.ts`) is the
     drawn relief's depth; when it was drawn this frame (`fresh`), a ray
     ends at the relief rather than the ellipsoid and a relief pixel counts
     as ground (volume-cloud plan §17, 2026-10-06). Without it relief
