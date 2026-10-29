@@ -23,6 +23,7 @@ import {
   type TourModelBlock,
 } from "../model-views.js";
 import { createModelVisitor, mountModelVisitorDom } from "../model-visitor.js";
+import { notesOnScreen } from "../note-markers.js";
 
 /** What the e2e reads back: the card and every note's disc on screen. */
 export interface ModelViewsCheckState {
@@ -33,6 +34,9 @@ export interface ModelViewsCheckState {
     readonly title: string;
   };
   readonly discs: number;
+  /** Each shown note's marker point as the camera projects it, in page
+   *  pixels: where its disc belongs (before any push apart). */
+  readonly notes: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** The page's hook. */
@@ -363,6 +367,15 @@ export function startModelViewsCheck(
     renderer.render(scene, camera);
   });
 
+  const projectedNotes = (): { x: number; y: number }[] => {
+    if (shown === null) return [];
+    const rect = root.getBoundingClientRect();
+    return notesOnScreen([shown.handle], camera, {
+      width: root.clientWidth,
+      height: root.clientHeight,
+    }).map((n) => ({ x: rect.left + n.marker.x, y: rect.top + n.marker.y }));
+  };
+
   const hook: ModelViewsCheck = {
     load(glbBase64) {
       glb = glbBase64 === null ? null : bytesOf(glbBase64);
@@ -417,6 +430,7 @@ export function startModelViewsCheck(
           title: root.querySelector("#model-card-title")?.textContent ?? "",
         },
         discs: root.querySelectorAll("button.note-marker:not([hidden])").length,
+        notes: projectedNotes(),
       };
     },
   };

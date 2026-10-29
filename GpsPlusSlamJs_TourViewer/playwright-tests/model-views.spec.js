@@ -105,13 +105,22 @@ for (const viewport of VIEWPORTS) {
     await expect(discs).toHaveCount(NOTES.length);
     await expect(page.locator("#model-card")).toBeHidden();
 
-    // The discs: 28 px round, centred on their points, and apart.
+    // The discs: 28 px round, centred on their points, and apart. Each
+    // centre is checked against its note's projected point, so a disc
+    // drawn in the wrong place (a wrong camera, a wrong offset) fails.
+    const points = await page.evaluate(
+      () => window.__modelViewsCheck?.state().notes ?? [],
+    );
+    expect(points).toHaveLength(NOTES.length);
     const centres = [];
     for (let i = 0; i < NOTES.length; i += 1) {
       const disc = await box(discs.nth(i).locator(".note-disc"));
       expect(disc.width).toBeCloseTo(28, 0);
       expect(disc.height).toBeCloseTo(28, 0);
       centres.push([disc.x + disc.width / 2, disc.y + disc.height / 2]);
+      const at = points[i];
+      expect(Math.abs(centres[i][0] - at.x), `disc ${i} x`).toBeLessThan(3);
+      expect(Math.abs(centres[i][1] - at.y), `disc ${i} y`).toBeLessThan(3);
     }
     for (let i = 0; i < centres.length; i += 1) {
       for (let j = i + 1; j < centres.length; j += 1) {

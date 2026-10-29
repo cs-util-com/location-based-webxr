@@ -319,7 +319,10 @@ export function createNoteMarkers(
         el.opacity += (p.opacity - el.opacity) * 0.25;
         el.button.hidden = false;
         el.leader.style.display = "";
-        el.button.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
+        // The stylesheet centres the 28 px button on its origin (its
+        // negative margins); a further -50% put the disc 14 px up and left
+        // of its point, off its leader's end.
+        el.button.style.transform = `translate(${p.x}px, ${p.y}px)`;
         el.button.style.opacity = el.opacity.toFixed(3);
         el.leader.style.opacity = (el.opacity * 0.95).toFixed(3);
         el.button.classList.toggle("open", key === openKey);
