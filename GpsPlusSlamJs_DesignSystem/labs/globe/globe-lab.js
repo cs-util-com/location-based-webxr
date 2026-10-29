@@ -3641,8 +3641,10 @@ async function start() {
     return out;
   };
 
+  // Not ready until start() is done, the on-demand recorder included
+  // (the last step below): tests use the page as soon as it is ready.
   window.__globeLab = {
-    ready: true,
+    ready: false,
     error: null,
     state: () => ({
       ...globe.state(),
@@ -4808,6 +4810,7 @@ void main() {
     // how far its foot stands over the drawn ground now (`globe-perf-items.js`).
     window.__globeLab.perfItem = (k) => perfItems.probe(k, camera, perfGroundM);
   }
+  window.__globeLab.ready = true;
 }
 
 start().catch((e) => {

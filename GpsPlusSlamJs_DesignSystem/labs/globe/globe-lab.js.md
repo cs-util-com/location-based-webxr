@@ -688,7 +688,10 @@ heightM)` (the ECEF point of a place, for an independent placement check)
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
 
-- Test API, `window.__globeLab`: `ready`, `error`, `state()`
+- Test API, `window.__globeLab`: `ready` (set as the last step of
+  start(), after the on-demand recorder of `#perf=1` is wired, so a test
+  that sees it can use every part at once; `globe-lab-ready.test.mjs`),
+  `error`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
 cloudDrift, cloudLonOffsetRad, cloudMap, sky, device, deviceLine,
