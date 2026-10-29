@@ -15,8 +15,8 @@ station to station is written once, not copied into every block.
   `TOUR_BLOCK_TEXT_RULES.character.name`), the image the id of an image
   asset of the tour (his one pose, and the fallback), `frames` the id of
   an image asset holding his poses as a frames sheet.
-- `TOUR_CHARACTER_FRAMES` - `['idle', 'talk-a', 'talk-b', 'beckon']`, and
-  the type `TourCharacterFrame`: the sheet's cells, left to right.
+- `TOUR_CHARACTER_FRAMES` - `['idle', 'talk-a', 'talk-b', 'beckon']`:
+  the sheet's cells, left to right.
 - `TOUR_MAX_CHARACTERS = 32` (module-internal) - the most one tour declares.
 - `TourCharacterDrop` - `{ kind: 'character', character, reason }`: a
   declaration a lenient reader left out.

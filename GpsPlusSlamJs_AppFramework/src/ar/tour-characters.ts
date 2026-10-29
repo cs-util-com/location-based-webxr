@@ -57,8 +57,6 @@ export const TOUR_CHARACTER_FRAMES = [
   'beckon',
 ] as const;
 
-export type TourCharacterFrame = (typeof TOUR_CHARACTER_FRAMES)[number];
-
 /** The most characters one tour declares. */
 const TOUR_MAX_CHARACTERS = 32;
 

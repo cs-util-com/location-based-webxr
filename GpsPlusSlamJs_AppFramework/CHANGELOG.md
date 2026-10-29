@@ -53,7 +53,7 @@
   right `idle`, `talk-a` (mouth half open), `talk-b` (mouth open) and
   `beckon` (an arm out to the viewer's right), on a transparent
   background, every figure centred in its cell, feet on one baseline. New
-  export `TOUR_CHARACTER_FRAMES` and the type `TourCharacterFrame`. The
+  export `TOUR_CHARACTER_FRAMES`. The
   `image` stays his one pose and the fallback; a `frames` that is not an
   image asset is refused at this minor and dropped with its declaration
   when read leniently.

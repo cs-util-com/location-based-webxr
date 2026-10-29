@@ -14,6 +14,7 @@
  *
  * @see character-canvas.ts.md
  */
+import { TOUR_CHARACTER_FRAMES } from "gps-plus-slam-app-framework/ar/tour-characters";
 
 /** The prototype's typefaces. */
 const CHARACTER_SANS =
@@ -128,7 +129,7 @@ export interface SheetCell {
 
 /** How many frames a sheet holds (the tour format's fixed layout:
  *  idle, talk-a, talk-b, beckon, left to right in one row). */
-export const SHEET_FRAMES = 4;
+const SHEET_FRAMES = TOUR_CHARACTER_FRAMES.length;
 
 /** The cells of a frames sheet `width` x `height` px: four equal cells in
  *  one row, a remainder of the width dropped; none for a sheet too small
