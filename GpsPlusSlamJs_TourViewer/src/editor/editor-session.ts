@@ -418,10 +418,11 @@ export interface EditorSession {
     items: readonly { readonly id: string; readonly alt: number }[],
   ): { kind: "grounded" | "unchanged" } | EditorRefusal;
   /** One of a model's own edits (`model-edits.ts`: its view, notes,
-   *  sections, clip): one step. A view chosen here is the creator's, and
-   *  the default rule (a first note switches `placed` to `hotspots`, the
-   *  last one deleted switches it back) never overrides it for as long as
-   *  this session lasts. Refused in words, changing nothing, for an id the
+   *  sections, clip): one step. The default rule (a first note
+   *  switches `placed` to `hotspots`, the last one deleted switches it
+   *  back) applies only to a model placed in this session whose view the
+   *  creator has not touched: a view read from the file, or chosen here
+   *  (the chip already pressed included), is never overridden. Refused in words, changing nothing, for an id the
    *  tour does not carry, a block that is not a model, or what the format
    *  would refuse. */
   editModel(
@@ -630,10 +631,13 @@ export function createEditorSession(input: {
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
-  /** The models whose view the creator chose in this session: the default
-   *  view rule leaves them (`editModel`). Not undone by an undo, and gone
-   *  with the session: a reopened tour's views are the rule's again. */
-  const explicitViews = new Set<string>();
+  /** The models the default view rule may still switch (`editModel`):
+   *  those placed in this session whose view the creator has not touched.
+   *  Every model read from the file, restored from a draft or copied counts
+   *  as the creator's choice, so a reopen never hands a saved view back to
+   *  the rule. A view chosen - the chip already pressed too - takes a model
+   *  out for good; an undo does not put it back. */
+  const defaultViews = new Set<string>();
 
   /** Undefined for an id the tour no longer carries, or a tour no longer
    *  open: a page holding an older card gets a refusal, never a throw (E2c
@@ -889,6 +893,7 @@ export function createEditorSession(input: {
           what: `the placement of ${objectName(object)}`,
         }),
       );
+      if (object.kind === "model") defaultViews.add(object.id);
       return { kind: "placed" };
     },
     moveStation(stationId, geo) {
@@ -1096,7 +1101,12 @@ export function createEditorSession(input: {
       if (object.kind !== "model") {
         return { kind: "refused", reason: NOT_A_MODEL_EDIT };
       }
-      const outcome = applyModelEdit(object, edit, explicitViews.has(id));
+      const outcome = applyModelEdit(object, edit, !defaultViews.has(id));
+      // A view clicked is the creator's choice even when it is the one the
+      // model has ("unchanged"); a refused one is no choice.
+      if (edit.kind === "view" && outcome.kind !== "refused") {
+        defaultViews.delete(id);
+      }
       if (outcome.kind !== "edited") return outcome;
       const applied = took(() =>
         store.dispatch(
@@ -1106,9 +1116,7 @@ export function createEditorSession(input: {
           }),
         ),
       );
-      if (!applied) return notApplied;
-      if (edit.kind === "view") explicitViews.add(id);
-      return { kind: "edited" };
+      return applied ? { kind: "edited" } : notApplied;
     },
     resizeModel(id, sizeM) {
       const found = find(id);

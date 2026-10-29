@@ -46,7 +46,9 @@ and to the editor's default view rule.
 - The default view rule (owner's): a note added to a model in `placed`
   with no notes switches it to `hotspots`; deleting the last note of a
   model in `hotspots` switches it back to `placed`; neither happens when
-  `explicitView` is true (the creator chose the view). Sections never move
+  `explicitView` is true. The editor session passes true for every model
+  except one placed in this session whose view was never touched, so a
+  view read from a file is never overridden. Sections never move
   the view.
 - Defensive: an index that is no integer in the list, a spot that is not
   three finite numbers twice, or a view the format lacks is refused, never

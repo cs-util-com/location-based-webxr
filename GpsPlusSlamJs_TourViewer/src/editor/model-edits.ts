@@ -11,8 +11,9 @@
  * The default rule: a model's notes are drawn in its `hotspots` view, so
  * the first note added to a model in `placed` switches it to `hotspots`,
  * and deleting the last note of a model in `hotspots` switches it back to
- * `placed` - unless the creator chose its view himself (`explicitView`),
- * which no note ever overrides.
+ * `placed` - unless the view counts as the creator's (`explicitView`:
+ * the session passes it for every model but one placed in this session
+ * whose view was never touched), which no note ever overrides.
  *
  * @see model-edits.ts.md
  */
@@ -153,8 +154,9 @@ const inRange = (index: number, length: number): boolean =>
   Number.isInteger(index) && index >= 0 && index < length;
 
 /**
- * `edit` applied to `model`. `explicitView` says the creator chose the
- * model's view himself this session: the default rule then leaves it.
+ * `edit` applied to `model`. `explicitView` says the model's view is the
+ * creator's (read from the file, or chosen): the default rule then
+ * leaves it.
  */
 export function applyModelEdit(
   model: TourModel,

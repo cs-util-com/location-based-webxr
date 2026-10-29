@@ -327,11 +327,14 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   its view, a note, a section, its clip), one undo step named for the part
   and the model ("the title of note 2 of The arch"). Refused for an id that
   is no model (`NOT_A_MODEL_EDIT`) and for what the format refuses, in
-  words. A `view` edit marks the model's view as the creator's choice for
-  this session (`explicitViews`), so the default view rule never
-  overrides it; the mark is the session's, not the file's (the format has
-  no field for it): it is lost when the tour is opened again, and an undo
-  of the view edit does not clear it.
+  words. The default view rule applies only to a model placed in this
+  session whose view the creator has not touched (`defaultViews`): every
+  model read from the file, restored from a draft or copied counts as the
+  creator's choice, so a reopen never hands a saved view back to the rule
+  (the r973 review: the old in-memory set of chosen views let a first note
+  override a saved view after a reopen). A `view` edit - the chip already
+  pressed included - takes the model out of the rule for good; an undo
+  does not put it back.
 
 ## Invariants & assumptions
 
