@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Character views check</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #e4e9ee;
+      }
+      #ar-root {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      /* The demo's view bar (a person's mode), inside 16 px gutters. */
+      .cvc-views {
+        position: absolute;
+        top: calc(16px + env(safe-area-inset-top, 0px));
+        left: 16px;
+        right: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px;
+        z-index: 3;
+      }
+      .check-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ar-root"></div>
+    <script type="module">
+      import { startCharacterViewsCheck } from "./src/checks/character-views-check.ts";
+
+      startCharacterViewsCheck(document.getElementById("ar-root"));
+    </script>
+  </body>
+</html>

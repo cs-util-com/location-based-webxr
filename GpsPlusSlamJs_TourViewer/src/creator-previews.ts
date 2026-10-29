@@ -48,6 +48,8 @@ function lookOf(object: AuthoringObject["object"]): unknown {
   switch (object.kind) {
     case "shortText":
       return object.caption;
+    case "longText":
+      return [object.title, object.body];
     case "picture":
       return object.imageAsset.path;
     case "model":

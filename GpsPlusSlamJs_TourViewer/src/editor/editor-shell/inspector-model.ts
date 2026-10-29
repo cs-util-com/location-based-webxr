@@ -26,6 +26,15 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  TOUR_CHARACTER_VIEWS,
+  TOUR_MODEL_MAX_NOTES,
+  TOUR_MODEL_MAX_SECTIONS,
+  TOUR_MODEL_WORLD_VIEWS,
+  type TourModelVector,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import type { ModelFocus, ModelPick } from "../editor-view.js";
+import { facingDegOf } from "../../character-views.js";
 
 import {
   BLOCK_KIND_LABEL,
@@ -123,6 +132,93 @@ interface InspectorStoryBlock {
   readonly kind: string;
   /** Text, never markup: it comes from a file anyone can write. */
   readonly title: string;
+  /** For a character: what the station's inspector sets of him. */
+  readonly character?: InspectorCharacter;
+}
+
+/** A story character's settings as the station's inspector shows them. */
+export interface InspectorCharacter {
+  /** His block's view. */
+  readonly view: string;
+  /** How the first step showing him moves on (`tap` when none does). */
+  readonly advance: string;
+  /** The heading he faces at rest, degrees clockwise from the station's
+   *  own north (true north only while the station is not turned). */
+  readonly facingDeg: number;
+}
+
+/** A character's story views in the inspector's words, in the format's
+ *  order (the words of the station-blocks-7 prototype). */
+export const CHARACTER_VIEW_CHOICES: readonly {
+  readonly view: (typeof TOUR_CHARACTER_VIEWS)[number];
+  readonly label: string;
+}[] = TOUR_CHARACTER_VIEWS.map((view) => ({
+  view,
+  label: {
+    bubble: "Bubble",
+    speak: "Tap to speak",
+    "two-stations": "Two stations",
+    portrait: "Portrait",
+    popup: "Pop-up",
+  }[view],
+}));
+
+/** What the inspector shows of the story block `block` of `station`. */
+function storyEntry(
+  station: TourStation,
+  block: ReturnType<typeof storyBlocksOf>[number],
+): InspectorStoryBlock {
+  const entry = {
+    id: block.id,
+    kind: BLOCK_KIND_LABEL[block.kind],
+    title: objectTitle(block),
+  };
+  if (block.kind !== "character") return entry;
+  const step = station.steps.find(
+    (s) => s.action.kind === "show" && s.action.block === block.id,
+  );
+  return {
+    ...entry,
+    character: {
+      view: block.view,
+      advance: step?.advance.mode ?? "tap",
+      facingDeg: facingDegOf(block.pose.rotation),
+    },
+  };
+}
+
+/** A model's views in the 3D inspector's words, in the format's order. */
+export const MODEL_VIEW_CHOICES: readonly {
+  readonly view: (typeof TOUR_MODEL_WORLD_VIEWS)[number];
+  readonly label: string;
+}[] = TOUR_MODEL_WORLD_VIEWS.map((view) => ({
+  view,
+  label: view.charAt(0).toUpperCase() + view.slice(1),
+}));
+
+/** A model's own parts as its inspector edits them. */
+export interface InspectorModelParts {
+  readonly view: string;
+  readonly notes: readonly {
+    readonly title: string;
+    readonly text: string;
+    readonly position: TourModelVector;
+  }[];
+  /** Whether another note fits (the format's most). */
+  readonly notesFull: boolean;
+  readonly sections: readonly {
+    readonly name: string;
+    readonly position: TourModelVector;
+    readonly normal: TourModelVector;
+  }[];
+  readonly sectionsFull: boolean;
+  readonly animation: {
+    readonly name: string;
+    readonly autoplay: boolean;
+  } | null;
+  /** Its note or section in focus, and the click the 3D view waits for. */
+  readonly focus: ModelFocus | null;
+  readonly pick: ModelPick | null;
 }
 
 interface ItemInspector {
@@ -141,6 +237,9 @@ interface ItemInspector {
    *  short text's description, a picture's title, caption and alt text, a
    *  model's title. */
   readonly fields: readonly BlockField[];
+  /** A model's view, notes, sections and clip; null for a pin or a
+   *  photo. */
+  readonly model: InspectorModelParts | null;
   /** In the station's frame (m). */
   readonly offset: {
     readonly northM: number;
@@ -320,6 +419,10 @@ export function buildInspector(input: {
   readonly origin?: { readonly lat: number; readonly lng: number } | null;
   /** The ground as the 3D view has it loaded; none given: unknown. */
   readonly groundAt?: InspectorGround;
+  /** The page's model focus and pick (`editor-view.ts`); none given:
+   *  none. */
+  readonly modelFocus?: ModelFocus | null;
+  readonly modelPick?: ModelPick | null;
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -361,11 +464,7 @@ export function buildInspector(input: {
       groundOffM: offGroundOf(station.geo, groundAt),
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
-      story: storyBlocksOf(station).map((block) => ({
-        id: block.id,
-        kind: BLOCK_KIND_LABEL[block.kind],
-        title: objectTitle(block),
-      })),
+      story: storyBlocksOf(station).map((block) => storyEntry(station, block)),
     };
   }
   for (const [index, station] of stations.entries()) {
@@ -381,6 +480,35 @@ export function buildInspector(input: {
       text: item.kind === "shortText" ? item.caption : null,
       sizeM: item.kind === "model" ? (item.sizeM ?? null) : null,
       fields: blockFields(item),
+      model:
+        item.kind === "model"
+          ? {
+              view: item.view,
+              notes: (item.annotations ?? []).map((n) => ({
+                title: n.title,
+                text: n.text ?? "",
+                position: n.position,
+              })),
+              notesFull:
+                (item.annotations?.length ?? 0) >= TOUR_MODEL_MAX_NOTES,
+              sections: (item.sections ?? []).map((c) => ({
+                name: c.name,
+                position: c.position,
+                normal: c.normal,
+              })),
+              sectionsFull:
+                (item.sections?.length ?? 0) >= TOUR_MODEL_MAX_SECTIONS,
+              animation:
+                item.animation === undefined
+                  ? null
+                  : {
+                      name: item.animation.name,
+                      autoplay: item.animation.autoplay,
+                    },
+              focus: input.modelFocus ?? null,
+              pick: input.modelPick ?? null,
+            }
+          : null,
       offset: { northM, upM, eastM },
       headingDeg: headingOfRotation(item.pose.rotation),
       groundOffM: itemOffGround(item, station, groundAt),

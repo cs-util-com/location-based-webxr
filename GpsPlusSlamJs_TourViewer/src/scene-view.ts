@@ -33,6 +33,14 @@ import {
   plainTextOf,
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 import { worldBlockReachedBy } from "./shown-blocks.js";
+import {
+  isStageCharacterView,
+  lineReadingMs,
+  type StageCharacterView,
+} from "./character-views.js";
+import type { CharacterVoice } from "./character-look.js";
+import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
+import type { StageCharacterLook } from "./scene-stage.js";
 import { stationHasCard, stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
@@ -44,6 +52,9 @@ export interface SceneViewDom {
   readonly description: Pick<HTMLElement, "textContent" | "hidden">;
   /** A character's name; hidden for other steps. */
   readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;
+  /** The character's round portrait beside his name (the `portrait`
+   *  view); absent: none. */
+  readonly portrait?: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
   /** Text, caption or transcript: every step has words (captions always). */
   readonly text: Pick<HTMLElement, "textContent">;
   /** Loading and failures of this step's media, `aria-live`. */
@@ -60,17 +71,25 @@ export interface SceneViewDom {
   readonly playNext: Pick<HTMLElement, "textContent" | "hidden">;
 }
 
-/** What the story card uses of its `<video>` element. */
+/** What the story card uses of its `<video>` element (`onended`: a
+ *  `lineEnd` step waits for the clip's end). */
 type SceneVideo = Pick<
   HTMLVideoElement,
   "src" | "poster" | "hidden" | "pause" | "removeAttribute" | "load"
->;
+> & {
+  onended: ((ev: Event) => void) | null;
+  /** The visitor started the clip (the player does not autoplay). */
+  onplay: ((ev: Event) => void) | null;
+};
 
 /** The sound of a step (one channel: a new clip stops the previous). */
 export interface SceneAudio {
   /** Rejects when the browser refuses to play (the captions still show). */
   play(blob: Blob, onEnded: () => void): Promise<void>;
   stop(): void;
+  /** The playing clip's length (ms) once known, else null; absent: never
+   *  known. */
+  durationMs?(): number | null;
 }
 
 /** What a step shows in AR at its station. `onWaiting`: the decoded
@@ -80,7 +99,16 @@ interface SceneStage {
     stationId: string,
     image: Blob,
     onWaiting?: () => void,
+    look?: StageCharacterLook,
   ): Promise<void>;
+  /** The step's voice, which a character look follows; `durationMs`, the
+   *  voice's length when known as it starts speaking. */
+  setVoice?(voice: CharacterVoice, durationMs?: number): void;
+  /** The story ended: a character look stays in the world (absent: the
+   *  story's end clears the stage). */
+  release?(): void;
+  /** A tap on the bubble view's look: its bubble shuts or opens. */
+  toggleBubble?(): void;
   showModel(
     stationId: string,
     model: Blob,
@@ -89,10 +117,16 @@ interface SceneStage {
   clear(): void;
 }
 
+/** A `lineEnd` step's wait after its voice ended (the narration's tail). */
+const LINE_TAIL_MS = 600;
+
 export interface SceneViewDeps {
   readonly dom: SceneViewDom;
   /** The tour's media by asset id (`content/<id>.<ext>`). */
   readonly assets: ReadonlyMap<string, TourAsset>;
+  /** The tour's declared characters by id (minor 2): a story view of one
+   *  with a frames sheet stands from the sheet. None when absent. */
+  readonly characters?: ReadonlyMap<string, TourCharacter>;
   loadAsset(path: string): Promise<Blob>;
   readonly audio: SceneAudio;
   readonly stage: SceneStage;
@@ -118,6 +152,10 @@ export interface SceneViewDeps {
    *  blocks plan B2b, `shown-blocks.ts`). Its words show in the card as
    *  before. */
   onBlockShown?(stationId: string, blockId: string): void;
+  /** A failure the panel's status line cannot show, because no story
+   *  plays and the panel is hidden: his voice, tapped after his story,
+   *  could not play. The app says it in its toast. None: not said. */
+  sayFailure?(text: string): void;
 }
 
 /** Where a choice-free story is (the story card's dots). */
@@ -137,6 +175,14 @@ export interface SceneView {
   playNextNow(): void;
   /** The continue tap. */
   continueTapped(): void;
+  /** A tap on the step's character (his figure, bubble or stage in the
+   *  world, or his portrait in the card): a story view's voice plays, or
+   *  stops while it plays; the bubble view's bubble shuts or opens. False
+   *  when the step shows no character in a story view. */
+  characterTapped(): boolean;
+  /** The `?debug=1` lines of the story: a frames sheet that could not be
+   *  read (he stands in his one pose), naming it; none otherwise. */
+  debugLines(): string[];
   /** End this station's story now (the guide's "End this story", K4
    *  review R9): the playing one stops and the next queued one starts, a
    *  queued one leaves the queue; its end is reported either way, also for
@@ -167,8 +213,30 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** Bumped per rendered step: a load that lands later is dropped. */
   let renderToken = 0;
   let cancelTimer: (() => void) | null = null;
+  /** Bumped when a voice starts or is stopped: a voice still loading
+   *  when the visitor tapped it off lands on nothing. */
+  let voiceRun = 0;
+  /** The character of a story view the stage holds, whose voice a tap
+   *  plays (the bubble view: whose bubble a tap shuts): set by his step
+   *  and kept after it and after his story - he stays in the world and a
+   *  tap works whenever he stands (the prototype's rule) - until the
+   *  stage is cleared or another figure or model takes it. */
+  let tapTarget: {
+    readonly view: StageCharacterView;
+    readonly voice: string | undefined;
+  } | null = null;
   /** The step held (`holdStep`): no timer runs. */
   let held = false;
+  /** The step's voice or sound, which a `lineEnd` step waits for: none
+   *  (or it could not play: the words' reading time stands in), playing,
+   *  or ended. */
+  let lineVoice: "none" | "playing" | "ended" = "none";
+  /** The sound playing is his voice (a tap on him then stops it), not
+   *  another step's sound (a tap on him then does nothing). */
+  let voiceIsHis = false;
+  /** The step shows a video: its clip has its own sound, so a tap on him
+   *  plays nothing through the whole step, before and while it plays. */
+  let videoStep = false;
   /** The step's object URLs (a picture; a clip and its poster). */
   const liveUrls: string[] = [];
   /** The step's media share one status line (r881 re-review M1: one
@@ -177,8 +245,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let figureWait: string | null = null;
   /** The media still loading, in the order they started. */
   const loading: string[] = [];
-  /** What went wrong with the step's media: true until the step changes. */
-  let notice: string | null = null;
+  /** What went wrong with the step's media, per asset (its `what`), in
+   *  the order it went wrong: until the step changes. One asset's line
+   *  never clears another's. */
+  const notices = new Map<string, string>();
+  /** The frames sheet that could not be read this story, for the
+   *  `?debug=1` readout. */
+  let sheetFailure: string | null = null;
   /** The station's card picture's object URL, freed when its story ends. */
   let stationUrl: string | null = null;
   /** Bumped when the card picture goes: a read that lands later is dropped. */
@@ -194,7 +267,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const current = loading.at(-1);
     const now =
       figureWait ?? (current === undefined ? null : `Loading the ${current}…`);
-    dom.status.textContent = [now, notice, stationNotice]
+    dom.status.textContent = [now, ...notices.values(), stationNotice]
       .filter((part) => part !== null)
       .join(" ");
   }
@@ -207,10 +280,19 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     for (const url of liveUrls.splice(0)) deps.objectUrls.revoke(url);
     dom.image.hidden = true;
     dom.image.src = "";
+    if (dom.portrait !== undefined) {
+      dom.portrait.hidden = true;
+      dom.portrait.src = "";
+    }
     stopVideo();
+    lineVoice = "none";
+    voiceIsHis = false;
+    videoStep = false;
+    voiceRun += 1;
+    deps.stage.setVoice?.("idle");
     figureWait = null;
     loading.length = 0;
-    notice = null;
+    notices.clear();
     showStatus();
     dom.choices.replaceChildren();
   }
@@ -225,6 +307,14 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     video.removeAttribute("poster");
     video.load();
     video.hidden = true;
+    video.onended = null;
+    video.onplay = null;
+  }
+
+  /** The stage is cleared: nothing of his stands to tap. */
+  function clearStage(): void {
+    tapTarget = null;
+    deps.stage.clear();
   }
 
   /** An object URL for this step, freed when the step changes. */
@@ -251,9 +341,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     assetId: string,
     what: string,
     use: (blob: Blob) => Promise<string | void> | void,
+    onFail?: () => void,
   ): void {
     const asset = deps.assets.get(assetId);
-    if (asset === undefined) return;
+    if (asset === undefined) {
+      onFail?.();
+      return;
+    }
     const token = renderToken;
     loading.push(what);
     showStatus();
@@ -269,14 +363,18 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         showStatus();
         const outcome = await use(blob);
         if (token !== renderToken) return;
-        if (typeof outcome === "string") notice = outcome;
+        if (typeof outcome === "string") notices.set(what, outcome);
         showStatus();
       })
       .catch(() => {
         if (token !== renderToken) return;
         loaded();
-        notice = `The ${what} could not be loaded - the words are below.`;
+        notices.set(
+          what,
+          `The ${what} could not be loaded - the words are below.`,
+        );
         showStatus();
+        onFail?.();
       });
   }
 
@@ -296,15 +394,84 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     if (token === renderToken) figureWait = null;
   }
 
-  function playSound(assetId: string): void {
-    withAsset(assetId, "sound", async (blob) => {
-      try {
-        await deps.audio.play(blob, () => undefined);
-        return undefined;
-      } catch {
-        return "The sound did not play here - the words are below.";
+  /** Play the step's sound. His own voice (`his`: the one a tap on the
+   *  figure standing in the world plays) also tells the stage - his ring,
+   *  footer and beckon; any other sound, a card view's voice among them,
+   *  leaves his look alone. A `lineEnd` step moves on when it ends, or,
+   *  when it cannot play, after the words' reading time. */
+  function playSound(assetId: string, his: boolean): void {
+    voiceRun += 1;
+    const run = voiceRun;
+    lineVoice = "playing";
+    voiceIsHis = his;
+    const lost = (): void => {
+      if (run !== voiceRun) return;
+      lineVoice = "none";
+      if (his) deps.stage.setVoice?.("idle");
+      // After his story the panel is hidden: its status line is not seen.
+      if (his && story === null) {
+        deps.sayFailure?.("His voice could not be played here.");
       }
-    });
+      rearmLineEnd();
+    };
+    withAsset(
+      assetId,
+      "sound",
+      async (blob) => {
+        if (run !== voiceRun) return undefined;
+        try {
+          await deps.audio.play(blob, () => {
+            if (run !== voiceRun) return;
+            lineVoice = "ended";
+            if (his) deps.stage.setVoice?.("spoken");
+            rearmLineEnd();
+          });
+          if (run === voiceRun && his && lineVoice === "playing") {
+            // Its length, when the element knows it, times the read-along.
+            const ms = deps.audio.durationMs?.() ?? null;
+            if (ms === null) deps.stage.setVoice?.("speaking");
+            else deps.stage.setVoice?.("speaking", ms);
+          }
+          return undefined;
+        } catch {
+          if (run !== voiceRun) return undefined;
+          lost();
+          return "The sound did not play here - the words are below.";
+        }
+      },
+      lost,
+    );
+  }
+
+  /** A `lineEnd` step's wait changed (its voice ended or was lost). */
+  function rearmLineEnd(): void {
+    const step = story?.player.current() ?? null;
+    if (step === null || step.advance.mode !== "lineEnd") return;
+    cancelTimer?.();
+    cancelTimer = null;
+    armTimer(step);
+    deps.onChange?.();
+  }
+
+  /** How long a `lineEnd` step still waits once its voice is out of the
+   *  way: its tail after the voice, the words' reading time with none;
+   *  null while the voice plays. */
+  function lineEndMs(): number | null {
+    if (lineVoice === "playing") return null;
+    if (lineVoice === "ended") return LINE_TAIL_MS;
+    return lineReadingMs(dom.text.textContent ?? "");
+  }
+
+  /** The step's portrait (the `portrait` view): measured like a picture. */
+  async function showPortrait(blob: Blob, name: string): Promise<void> {
+    const portrait = dom.portrait;
+    if (portrait === undefined) return;
+    const token = renderToken;
+    if ((await deps.checkPicture(blob)) !== null) return;
+    if (token !== renderToken) return;
+    portrait.src = stepUrl(blob);
+    portrait.alt = name;
+    portrait.hidden = false;
   }
 
   /** Show one `show` step's block, as the step kinds of earlier versions
@@ -318,6 +485,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         dom.text.textContent = block.caption;
         return;
       case "longText":
+        // On a reading stand the text stands in the world (from this step
+        // on, as a placed model): the card names it by its title only.
+        if (block.view === "lectern") {
+          dom.text.textContent = block.title;
+          return;
+        }
         // Its plain text P (S0): paragraphs a blank line apart, shown as
         // breaks (`white-space: pre-line`), no markup characters (B2b).
         dom.text.textContent = plainTextOf(parseTourMarkdown(block.body)).text;
@@ -338,20 +511,80 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         });
         return;
       }
-      case "character":
+      case "character": {
         dom.text.textContent = block.caption;
-        if (block.view === "stage") {
-          withAsset(block.image, "figure", (blob) =>
-            stageFigure("figure", (onWaiting) =>
-              deps.stage.showCharacter(station.id, blob, onWaiting),
-            ),
+        // A story view (format 4.2) stands as a character look; `stage`
+        // as the plain cut-out; `card` only in the card.
+        const view = block.view;
+        const look = isStageCharacterView(view)
+          ? {
+              view,
+              name: block.name,
+              line: block.caption,
+              voiced: view !== "bubble" && block.voice !== undefined,
+              pose: block.pose,
+            }
+          : undefined;
+        const stand = (
+          blob: Blob,
+          spec: StageCharacterLook | undefined,
+        ): Promise<void> =>
+          stageFigure("figure", (onWaiting) =>
+            spec === undefined
+              ? deps.stage.showCharacter(station.id, blob, onWaiting)
+              : deps.stage.showCharacter(station.id, blob, onWaiting, spec),
           );
+        // A declared character's frames sheet (his talking and beckoning
+        // poses) stands a story view; the portrait stays his image.
+        const sheet =
+          look === undefined || block.character === undefined
+            ? undefined
+            : deps.characters?.get(block.character)?.frames;
+        if (look !== undefined && sheet !== undefined) {
+          if (view === "portrait") {
+            withAsset(block.image, "portrait", (blob) => {
+              void showPortrait(blob, block.name);
+            });
+          }
+          withAsset(
+            sheet,
+            "figure",
+            (blob) => stand(blob, { ...look, sheet: true }),
+            () => {
+              // An unreadable sheet: he stands in his one pose, so the
+              // figure's failure line `withAsset` just wrote does not
+              // hold (another asset's line stays); the debug readout
+              // names the sheet.
+              notices.delete("figure");
+              showStatus();
+              sheetFailure = `story: the frames sheet "${sheet}" of "${block.character ?? ""}" could not be read - he stands in his one pose`;
+              withAsset(block.image, "figure", (blob) => stand(blob, look));
+            },
+          );
+        } else if (view === "stage" || look !== undefined) {
+          withAsset(block.image, "figure", async (blob) => {
+            if (view === "portrait") void showPortrait(blob, block.name);
+            await stand(blob, look);
+          });
         }
-        if (block.voice !== undefined) playSound(block.voice);
+        // A story view's voice plays on a tap on him (the prototype's
+        // rule; `characterTapped`), the bubble view's never; the stage
+        // and card views play it with the step, as 4.0 did.
+        if (look !== undefined) {
+          tapTarget = { view: look.view, voice: block.voice };
+        } else {
+          // A plain figure takes the stage from him; a card view leaves
+          // the stage as it was.
+          if (view === "stage") tapTarget = null;
+          // Not the voice of a figure the visitor taps: his look (if one
+          // stands) is left alone.
+          if (block.voice !== undefined) playSound(block.voice, false);
+        }
         return;
+      }
       case "audio":
         dom.text.textContent = block.transcript;
-        playSound(block.audio);
+        playSound(block.audio, false);
         return;
       case "video": {
         // The card plays it: the browser's controls, so a tap plays it (a
@@ -361,6 +594,17 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         // cannot be read, which the status line says (`withAsset`) - the
         // poster stands as a still picture.
         dom.text.textContent = block.transcript;
+        // The player does not start by itself: until the visitor starts
+        // the clip a `lineEnd` step waits the transcript's reading time
+        // (as for one that cannot be read); once it plays, its end.
+        lineVoice = "none";
+        videoStep = true;
+        const run = voiceRun;
+        const lost = (): void => {
+          if (run !== voiceRun) return;
+          lineVoice = "none";
+          rearmLineEnd();
+        };
         let clipShown = false;
         if (block.poster !== undefined) {
           withAsset(block.poster, "poster", (blob) => {
@@ -372,18 +616,35 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
             dom.image.hidden = false;
           });
         }
-        withAsset(block.video, "video", (blob) => {
-          clipShown = true;
-          dom.video.src = stepUrl(blob);
-          dom.image.hidden = true;
-          dom.image.src = "";
-          dom.video.hidden = false;
-        });
+        withAsset(
+          block.video,
+          "video",
+          (blob) => {
+            clipShown = true;
+            dom.video.onplay = () => {
+              if (run !== voiceRun || lineVoice === "playing") return;
+              lineVoice = "playing";
+              rearmLineEnd();
+            };
+            dom.video.onended = () => {
+              if (run !== voiceRun) return;
+              lineVoice = "ended";
+              rearmLineEnd();
+            };
+            dom.video.src = stepUrl(blob);
+            dom.image.hidden = true;
+            dom.image.src = "";
+            dom.video.hidden = false;
+          },
+          lost,
+        );
         return;
       }
       case "model":
         dom.text.textContent = block.title ?? "";
         if (block.view !== "stage") return;
+        // The model takes the stage from him.
+        tapTarget = null;
         withAsset(block.asset, "3D model", (blob) =>
           stageFigure("3D model", (onWaiting) =>
             deps.stage.showModel(station.id, blob, onWaiting),
@@ -443,20 +704,38 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     deps.onChange?.();
   }
 
-  /** An auto step's timer, from its full length; none while held. */
+  /** An auto step's timer, from its full length; a `lineEnd` step's
+   *  once its voice is out of the way (`lineEndMs`); none while held. */
   function armTimer(step: TourStep): void {
-    if (held || step.advance.mode !== "auto" || step.action.kind === "choice") {
-      return;
-    }
+    // One timer: a voice lost while its step renders arms it early.
+    cancelTimer?.();
+    cancelTimer = null;
+    if (held || step.action.kind === "choice") return;
+    const ms = timerMs(step);
+    if (ms === null) return;
     cancelTimer = deps.schedule(() => {
       cancelTimer = null;
       if (story !== null) render(story.player.next());
-    }, step.advance.afterS * 1000);
+    }, ms);
+  }
+
+  /** The step's own timer (ms), or null for none (a tap step, a voice
+   *  still playing). */
+  function timerMs(step: TourStep): number | null {
+    switch (step.advance.mode) {
+      case "auto":
+        return step.advance.afterS * 1000;
+      case "lineEnd":
+        return lineEndMs();
+      case "tap":
+        return null;
+    }
   }
 
   function start(station: TourStation): void {
     held = false;
-    deps.stage.clear();
+    sheetFailure = null;
+    clearStage();
     story = {
       station,
       player: createScenePlayer(station.steps),
@@ -547,7 +826,10 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const ended = story;
     story = null;
     releaseStep();
-    deps.stage.clear();
+    // A character look stays in the world after his story (he goes when
+    // his station is left); anything else leaves with it.
+    if (deps.stage.release === undefined) clearStage();
+    else deps.stage.release();
     dom.panel.hidden = true;
     showDescription("");
     hideStationImage();
@@ -581,6 +863,31 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     continueTapped() {
       if (story !== null) render(story.player.next());
     },
+    characterTapped() {
+      const target = tapTarget;
+      if (target === null) return false;
+      if (target.view === "bubble") {
+        deps.stage.toggleBubble?.();
+        return true;
+      }
+      if (target.voice === undefined) return true;
+      // The step's own sound or clip is out: the tap is taken (it hit
+      // him) and plays nothing over it, nor stops it - its end is what a
+      // lineEnd step waits for.
+      if (videoStep || (lineVoice === "playing" && !voiceIsHis)) return true;
+      if (lineVoice === "playing") {
+        // A tap while he speaks stops him; a lineEnd step then waits only
+        // its tail.
+        voiceRun += 1;
+        deps.audio.stop();
+        lineVoice = "ended";
+        deps.stage.setVoice?.("idle");
+      } else {
+        playSound(target.voice, true);
+      }
+      rearmLineEnd();
+      return true;
+    },
     end(stationId) {
       if (story?.station.id === stationId) {
         endStory();
@@ -596,13 +903,16 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     stopAll() {
       queue.length = 0;
       story = null;
+      // The debug readout names nothing of a tour that is gone.
+      sheetFailure = null;
       releaseStep();
       hideStationImage();
-      deps.stage.clear();
+      clearStage();
       dom.panel.hidden = true;
       renderQueue();
       deps.onChange?.();
     },
+    debugLines: () => (sheetFailure === null ? [] : [sheetFailure]),
     playing: () => story?.station.id ?? null,
     progress() {
       const step = story?.player.current() ?? null;
@@ -611,10 +921,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       return {
         index: playable.indexOf(step),
         count: story.count,
-        autoMs:
-          step.advance.mode === "auto" && !held
-            ? step.advance.afterS * 1000
-            : null,
+        autoMs: held ? null : timerMs(step),
       };
     },
     holdStep(hold) {

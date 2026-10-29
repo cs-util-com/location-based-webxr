@@ -17,8 +17,12 @@ import "../../test-support/tour-of.js";
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { TOUR_CHARACTER_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+
+import { facingRotation } from "../../character-views.js";
 import {
   buildInspector,
+  CHARACTER_VIEW_CHOICES,
   headingOfRotation,
   inspectorHint,
   ON_GROUND_M,
@@ -214,7 +218,60 @@ describe("buildInspector", () => {
       { id: "intro", kind: "Long text", title: "The siege" },
       // A character without a name is named by its caption (one rule,
       // `objectTitle`).
-      { id: "guard", kind: "Character", title: "Halt!" },
+      {
+        id: "guard",
+        kind: "Character",
+        title: "Halt!",
+        // A character carries what the inspector sets of him: no turn
+        // faces east.
+        character: { view: "stage", advance: "tap", facingDeg: 90 },
+      },
+    ]);
+  });
+
+  // Why: the station's inspector is where a story character is set (his
+  // view, how the step showing him moves on, his facing), so it must read
+  // them as the file holds them: the view of the block, the advance of the
+  // step that shows him, the heading his rest rotation faces.
+  it("reads a story character's view, how his step moves on and his facing", () => {
+    const POSE = { position: [2, 0, 0], rotation: facingRotation(200) };
+    const storyStation = {
+      ...STATIONS[1],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "wendel" },
+          advance: { mode: "lineEnd" },
+        },
+      ],
+      blocks: [
+        {
+          id: "wendel",
+          kind: "character",
+          view: "two-stations",
+          name: "Wendel",
+          image: "cut",
+          caption: "Follow me",
+          pose: POSE,
+        },
+      ],
+    } as unknown as TourStation;
+    const model = buildInspector({
+      selected: "station:b",
+      stations: [STATIONS[0]!, storyStation],
+      assets: [],
+      codes: CODES,
+    });
+    const story = model?.kind === "station" ? model.story : [];
+    expect(story).toHaveLength(1);
+    expect(story[0]?.character).toMatchObject({
+      view: "two-stations",
+      advance: "lineEnd",
+    });
+    expect(story[0]?.character?.facingDeg).toBeCloseTo(200, 6);
+    // The chips offer the format's story views, in its order.
+    expect(CHARACTER_VIEW_CHOICES.map((c) => c.view)).toEqual([
+      ...TOUR_CHARACTER_VIEWS,
     ]);
   });
 
@@ -227,6 +284,8 @@ describe("buildInspector", () => {
       stationId: "a",
       text: "Fountain, 1612",
       sizeM: null,
+      // Only a model has notes, sections and a view.
+      model: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {
