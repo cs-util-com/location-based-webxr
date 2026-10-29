@@ -27,7 +27,9 @@
  * Read-only: nothing here edits the tour. The page hands the tour
  * (`setTour`) when the document changes and the camera (`update`) each
  * frame. A station's items are rendered when it enters the near set and
- * freed when it leaves; a tour handed again unchanged renders nothing.
+ * freed when it leaves; a tour handed again unchanged renders nothing, nor
+ * does an edit of a model's notes, sections or view (drawn apart, by
+ * `editor3d-model-parts.ts`): its file is not loaded again.
  *
  * While a drag of the 3D view runs, `setPreview` draws the dragged
  * station (its items, billboard and found radius with it) or item (a
@@ -213,7 +215,9 @@ interface StationEntry {
   readonly id: string;
   readonly index: number;
   readonly key: string;
-  readonly station: TourStation;
+  /** The station as the tour has it now (an edit that leaves its drawing
+   *  as it is still updates it). */
+  station: TourStation;
   readonly root: THREE.Group;
   /** The root's matrix where the tour has the station (a preview moves
    *  the root; clearing it puts this back). */
@@ -227,10 +231,29 @@ interface StationEntry {
   content: StationContent | null;
 }
 
+/** A model block's fields the layer does not draw: its notes, sections
+ *  and view are the model parts' (`editor3d-model-parts.ts`). */
+const UNDRAWN_MODEL_FIELDS = ["annotations", "sections", "view"] as const;
+
+/** A record as the layer's drawing reads it: a model block without its
+ *  undrawn fields (a JSON.stringify replacer). */
+function drawnFields(_key: string, value: unknown): unknown {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    (value as { kind?: unknown }).kind !== "model"
+  ) {
+    return value;
+  }
+  const kept: Record<string, unknown> = { ...value };
+  for (const field of UNDRAWN_MODEL_FIELDS) delete kept[field];
+  return kept;
+}
+
 /** What a station's drawing depends on: its place in the list and its
- *  whole record. */
+ *  whole record but a model's undrawn fields. */
 const keyOf = (s: TourStation, index: number): string =>
-  `${String(index)}|${JSON.stringify(s)}`;
+  `${String(index)}|${JSON.stringify(s, drawnFields)}`;
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -696,7 +719,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         keep.add(station.id);
         const key = keyOf(station, index);
         const old = stations.get(station.id);
-        if (old?.key === key) return;
+        if (old?.key === key) {
+          old.station = station;
+          return;
+        }
         if (old !== undefined) freeStation(old);
         const root = rootAt(station.geo);
         const point = new THREE.Vector3(0, station.geo.alt, 0).applyMatrix4(

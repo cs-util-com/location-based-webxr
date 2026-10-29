@@ -13,6 +13,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createModelParts,
+  HELD_CLICK_MS,
+  heldClickNext,
   hitModel,
   noteSpotOf,
   pickedEdit,
@@ -139,6 +141,55 @@ describe("a click on the model", () => {
       index: 2,
       at,
     });
+  });
+});
+
+// Why: a model being drawn anew (its file loading again after an edit) is
+// briefly not drawn. A click waited for on it then must not be said missed:
+// it is held and answered once the model is drawn, dropped when the wait or
+// the selection changed, and said missed only when the model never comes.
+describe("a waited click while the model is drawn anew", () => {
+  const held = {
+    pointer: { x: 10, y: 20 },
+    selected: "m",
+    pick: { what: "note-place", index: 1 },
+    atMs: 1000,
+  } as const;
+  const now = {
+    selected: "m",
+    pick: { what: "note-place", index: 1 },
+    drawn: false,
+    ms: 1000,
+  } as const;
+
+  it("waits while the model is not drawn, and answers once it is", () => {
+    expect(heldClickNext(held, now)).toBe("wait");
+    expect(heldClickNext(held, { ...now, ms: 1000 + HELD_CLICK_MS - 1 })).toBe(
+      "wait",
+    );
+    expect(heldClickNext(held, { ...now, drawn: true, ms: 1500 })).toBe(
+      "answer",
+    );
+  });
+
+  it("drops the click when the wait or the selection changed", () => {
+    expect(heldClickNext(held, { ...now, pick: null })).toBe("drop");
+    expect(
+      heldClickNext(held, { ...now, pick: { what: "note-place", index: 0 } }),
+    ).toBe("drop");
+    expect(heldClickNext(held, { ...now, pick: { what: "section-add" } })).toBe(
+      "drop",
+    );
+    expect(heldClickNext(held, { ...now, selected: "other" })).toBe("drop");
+    expect(heldClickNext(held, { ...now, selected: null, drawn: true })).toBe(
+      "drop",
+    );
+  });
+
+  it("says missed when the model is not drawn in time", () => {
+    expect(heldClickNext(held, { ...now, ms: 1000 + HELD_CLICK_MS })).toBe(
+      "missed",
+    );
   });
 });
 

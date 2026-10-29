@@ -46,7 +46,9 @@ import {
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
 import {
   createModelParts,
+  heldClickNext,
   hitModel,
+  type HeldClick,
   MISSED_MODEL,
   noteSpotOf,
   pickedEdit,
@@ -253,14 +255,24 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     },
   });
 
+  /** A waited click that came while the model was being drawn anew. */
+  let held: HeldClick | null = null;
+
   /** The click the inspector waited for: the note or the section written
    *  where the ray meets the selected model (the new one in focus), or
-   *  said missed. */
+   *  said missed. A model of the tour not drawn this moment (its file
+   *  loading again after an edit) holds the click until it is
+   *  (`heldClickNext`). */
   const answerClick = (pointer: ScreenPoint) => {
+    held = null;
     const { selected, pick } = deps.models.view();
     if (selected === null || pick === null) return;
     const model = modelOf(selected);
     const drawn = layer.modelObject(selected);
+    if (model !== null && model.sizeM !== undefined && drawn === null) {
+      held = { pointer, selected, pick, atMs: performance.now() };
+      return;
+    }
     const hit = drawn === null ? null : hitModel(rayAt(pointer), drawn);
     const spot =
       drawn === null || hit === null
@@ -499,9 +511,23 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       );
       return true;
     },
-    /** Each frame: the input's retries, then the gizmo on the selection. */
+    /** Each frame: the input's retries and a held click, then the gizmo
+     *  on the selection. */
     update() {
       input.frame();
+      if (held !== null) {
+        const { selected, pick } = deps.models.view();
+        const next = heldClickNext(held, {
+          selected,
+          pick,
+          drawn: selected !== null && layer.modelObject(selected) !== null,
+          ms: performance.now(),
+        });
+        const { pointer } = held;
+        if (next !== "wait") held = null;
+        if (next === "answer") answerClick(pointer);
+        else if (next === "missed") deps.page.say(MISSED_MODEL);
+      }
       parts.update();
       layout = layoutNow();
       if (layout === null) {

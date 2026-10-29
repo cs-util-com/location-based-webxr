@@ -47,7 +47,11 @@ standing`). A distance, size or focal length that is not a positive
   `localPlaneToEnu`, +y up, the face at heading + 90 degrees).
 - `createStationsLayer(deps)` -> the layer:
   - `setTour(manifest, levels)` - when the document changes; a station
-    whose place in the list and record are unchanged is not rebuilt;
+    whose place in the list and record are unchanged is not rebuilt, and
+    neither is one where only a model's `annotations`, `sections` or
+    `view` changed (the layer does not draw them; the model parts do),
+    so a note's edit never loads the model's file again (its record is
+    still updated);
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
@@ -188,7 +192,9 @@ renderer.setAnimationLoop(() => {
 
 `editor3d-stations.test.ts` (a hand-made WGS84 ellipsoid, the licence's
 store): each station at its drawn height where it stands; only the near
-and selected stations rendered, and what leaves freed; a billboard per
+and selected stations rendered, and what leaves freed; a model kept
+drawn through an edit of its notes, sections or view, drawn anew when it
+moves; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; every code as a square of its printed size, laid flat face up in front

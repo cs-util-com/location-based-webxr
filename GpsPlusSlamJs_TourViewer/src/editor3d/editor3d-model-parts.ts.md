@@ -20,6 +20,12 @@ or a section's place in the model file's own space.
   through the normal matrix (inverse transpose) of the hit mesh's
   transform into the model's frame, so a stretch that differs per axis
   does not tilt it, rounded to 1e-3. `-0` is written as `0`.
+- `HELD_CLICK_MS`, `HeldClick`, `heldClickNext(held, now)` - a waited
+  click that came while the model was being drawn anew: `"answer"` once
+  it is drawn, `"drop"` when the selection or the wait (its kind and
+  index) changed, `"missed"` after `HELD_CLICK_MS` (10 s) without it,
+  else `"wait"`. `editor3d-editing.ts` holds the click and asks each
+  frame.
 - `sectionSpotOf(model, hit, cameraWorld)` - the hit point, and the model's
   axis (+-x, +-y, +-z) nearest the way to the camera: the side facing the
   creator is the one a cutaway removes (the format: what lies on the side
@@ -62,7 +68,8 @@ if (hit !== null) edits.model(id, pickedEdit(pick, noteSpotOf(drawn, hit)!));
 - `editor3d-model-parts.test.ts` - a turned, scaled, moved cube: the note's
   spot in model space, a 1 cm part and a 1 km building rounded to
   their own size, a slanted face under a stretch that differs per axis
-  keeping its true direction, a miss, the section normal toward the camera from
+  keeping its true direction, a held click answered, dropped or said
+  missed, a miss, the section normal toward the camera from
   either side, the edit per wait, and the discs and planes drawn, the
   focused disc marked, a disc's click asking for focus, and `dispose`.
 - `playwright-tests/editor3d-model.spec.js` - in the page: add, type,

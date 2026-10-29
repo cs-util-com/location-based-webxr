@@ -41,7 +41,12 @@ pure gesture maths reads (`GestureWorld`).
   it (`answerClick`): the ray on the drawn model gives the spot
   (`noteSpotOf` / `sectionSpotOf`), the edit is written, the wait
   cleared and the new or placed part focused; a miss says
-  `MISSED_MODEL`; a refused edit keeps the wait.
+  `MISSED_MODEL`; a refused edit keeps the wait. A click while the
+  model is not drawn this moment (its file loading again after an edit
+  of its pose or size) is held and answered on the first frame it is
+  drawn again (`heldClickNext`): dropped when the selection or the wait
+  changed, said missed after `HELD_CLICK_MS`. A model without a size is
+  never drawn here, so a click on one is said missed at once.
 - `modelParts()` and `modelScreenOf(id, at)` - for the page's checks.
 
 ## Invariants & assumptions

@@ -129,6 +129,43 @@ export function pickedEdit(pick: ModelPick, spot: ModelSpot): ModelEdit {
 /** Said when a click waited for meets no part of the model. */
 export const MISSED_MODEL = "Click the model itself";
 
+/** How long a waited click on a model being drawn anew is held (ms): its
+ *  file loading again after an edit takes a moment, seconds on a slow
+ *  machine; one that has not come by then is said missed. */
+export const HELD_CLICK_MS = 10_000;
+
+/** A waited click that came while the model was not drawn. */
+export interface HeldClick {
+  readonly pointer: ScreenPoint;
+  readonly selected: string;
+  readonly pick: ModelPick;
+  readonly atMs: number;
+}
+
+const samePick = (a: ModelPick, b: ModelPick | null): boolean =>
+  b !== null &&
+  a.what === b.what &&
+  ("index" in a ? a.index : null) === ("index" in b ? b.index : null);
+
+/** What a held click does now: answered once the model is drawn; dropped
+ *  when the selection or the wait changed (the creator moved on); said
+ *  missed after `HELD_CLICK_MS` without the model; else held on. */
+export function heldClickNext(
+  held: HeldClick,
+  now: {
+    readonly selected: string | null;
+    readonly pick: ModelPick | null;
+    readonly drawn: boolean;
+    readonly ms: number;
+  },
+): "answer" | "drop" | "missed" | "wait" {
+  if (now.selected !== held.selected || !samePick(held.pick, now.pick)) {
+    return "drop";
+  }
+  if (now.drawn) return "answer";
+  return now.ms - held.atMs >= HELD_CLICK_MS ? "missed" : "wait";
+}
+
 /** What the parts read of the view and ask of the page. */
 export interface ModelPartsDeps {
   /** The view's box: the discs sit in it, over the canvas. */

@@ -151,9 +151,8 @@ async function onPage(page, at) {
  * @param {readonly [number, number, number]} at
  */
 async function clickModel(page, at) {
-  // An edit of the model draws it anew (its file loads again), so it may
-  // be off the screen for a moment.
-  await expect.poll(() => modelScreen(page, at)).not.toBeNull();
+  // No wait for the drawing: an edit of the notes, sections or view keeps
+  // the model drawn, and a click while it is drawn anew is held.
   const p = await onPage(page, await modelScreen(page, at));
   await page.mouse.click(p.x, p.y);
 }
