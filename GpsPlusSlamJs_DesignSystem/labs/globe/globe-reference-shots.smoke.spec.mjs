@@ -11,8 +11,10 @@
  *   node labs/globe/globe-reference-shots-compare.mjs C:/gps/shots/before C:/gps/shots/after C:/gps/shots/diff
  *
  * The page is the owner's reference link with time and motion pinned: the
- * time is fixed (the clock stands, so the clouds do not drift and the stars
- * do not turn), every view is a held camera (`placeView`, which also ends
+ * time is fixed (the sun stands and the stars do not turn), the clouds' far
+ * drift rate is 0 (`cloudDrift=0`: they drift on the monotonic clock even
+ * with the time pinned, so only the rate holds them still), every view is
+ * a held camera (`placeView`, which also ends
  * the approach and resets the speed dust), and every network answer is
  * local and deterministic: the height tiles are the relief's synthetic
  * surface generated in the page, Overpass answers an empty city, and the
@@ -47,6 +49,15 @@ const REFERENCE_HASH =
 const PINNED = "&cloudDrift=0";
 
 const AT = { lat: 46.948, lng: 7.4474 };
+
+/** The instant Playwright's clock is installed at: the link's `time=`. */
+const INSTALL_MS = Date.UTC(2026, 9, 5, 11);
+
+/** The link with its `time=` one second on: a clock restart, then back. */
+const REFERENCE_HASH_NEXT_SECOND = REFERENCE_HASH.replace(
+  "T11:00:00Z",
+  "T11:00:01Z",
+);
 
 /** The intro flight's frames the trace records (16 ms each). */
 const TRACE_FRAMES = 240;
@@ -287,7 +298,7 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const foreign = [];
-  await page.clock.install({ time: Date.UTC(2026, 9, 5, 11) });
+  await page.clock.install({ time: INSTALL_MS });
   await openReference(page, context, REFERENCE_HASH, foreign);
   const approach = VIEWS.find((v) => v.name === "3-approach");
   const view = {
@@ -306,11 +317,13 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   // of Date.now() in one run and 60 s in the other gave a constant offset
   // of 0.2999 rad). A pause relative to Date.now() also failed with "Cannot
   // fast-forward to the past" after a long load. Only a load past the two
-  // hours steps on, by whole hours, and the log says so.
+  // hours steps on, by whole hours, and the log says so. (The clock restart
+  // below seeds the clouds from the clock's own start; the fixed pause
+  // keeps every later frame's instant equal between captures too.)
   let paused = false;
   for (let hours = 2; hours <= 6 && !paused; hours++) {
     try {
-      await page.clock.pauseAt(Date.UTC(2026, 9, 5, 11 + hours));
+      await page.clock.pauseAt(INSTALL_MS + hours * 3_600_000);
       console.log(`clock paused at install + ${hours} h`);
       paused = true;
     } catch (e) {
@@ -318,14 +331,27 @@ test("the drift view and the intro trace on Playwright's clock", async ({
     }
   }
   expect(paused).toBe(true);
-  // A changed far rate and back re-seeds the clouds at this instant (the
-  // lab's hash reaction), so the drift no longer carries the loading's
-  // real-time frames.
+  // A changed `time=` and back restarts the clock at this paused instant
+  // and re-seeds the clouds there (the lab's hash reaction: a changed clock
+  // setting restarts the clock and resets the drift). The clouds' drift
+  // runs on the monotonic clock even with `time=` pinned, so without the
+  // restart their seed still carried the real load time up to the clock's
+  // first start, and two captures of one build differed in the drift view.
+  // Each hash change resolves after the page's own `hashchange` listener
+  // (registered at load, so it runs first) has applied it: two changes
+  // read together would look like none.
   const setHash = (hash) =>
-    page.evaluate((h) => {
-      location.hash = h;
-    }, hash);
-  await setHash(`${REFERENCE_HASH}&cloudDrift=0.5`);
+    page.evaluate(
+      (h) =>
+        new Promise((resolve) => {
+          window.addEventListener("hashchange", () => resolve(null), {
+            once: true,
+          });
+          location.hash = h;
+        }),
+      hash,
+    );
+  await setHash(REFERENCE_HASH_NEXT_SECOND);
   await setHash(REFERENCE_HASH);
   await holdView(page, view);
   await page.clock.runFor(5000);

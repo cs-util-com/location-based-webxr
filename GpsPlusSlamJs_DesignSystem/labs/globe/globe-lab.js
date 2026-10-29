@@ -2396,11 +2396,17 @@ async function start() {
   let groundUnderCameraM = null;
   /** Frames on which the clearance raised the camera. */
   let clearanceLifts = 0;
-  /** The relief's share of the pixels this frame (the band's cross-fade). */
-  let bandShare = terrain ? 1 : 0;
+  /** The band's cross-fade (`globe-band-step.ts`), made with the relief below. */
+  let band = null;
+  /**
+   * The relief's share of the pixels this frame, read from the band, its one
+   * owner: 1 with the relief until the band exists (the band starts at 1),
+   * 0 without the relief.
+   */
+  const bandShare = () => (band ? band.share() : terrain ? 1 : 0);
   /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
   const surfaceTiles = () =>
-    terrain && bandShare >= 0.5 ? terrain.tiles : globe.tiles;
+    terrain && bandShare() >= 0.5 ? terrain.tiles : globe.tiles;
   const credits = creditsFor(globe.activeSources());
   const heightsCredit = !terrain
     ? null
@@ -2499,7 +2505,7 @@ async function start() {
         sampleGround: (lat, lon) =>
           terrain.plugin.sampleCartographicElevation(lat, lon),
         heightScale: () => terrain.plugin.heightScale,
-        active: () => bandShare > 0 && params.reliefPlanes !== 0,
+        active: () => bandShare() > 0 && params.reliefPlanes !== 0,
       })
     : () => ({});
   const controls = cameraControls(
@@ -2921,7 +2927,7 @@ async function start() {
    */
   const bandLog = (kind, detail) => debugLog.log(kind, detail);
   const bandMark = (kind, detail) => hooks.mark(kind, detail);
-  const band = terrain
+  band = terrain
     ? createBandShare({
         globeTiles: globe.tiles,
         reliefTiles: terrain.tiles,
@@ -3057,7 +3063,7 @@ async function start() {
         );
       }
       const highM = params.bandHigh * 1000;
-      bandShare = band.step(now, {
+      band.step(now, {
         altitudeM,
         fixedShare: params.bandShare,
         highM,
@@ -3066,13 +3072,13 @@ async function start() {
         sharp: params.bandSharp !== 0,
       });
       bandTarget = band.target();
-      globe.surfaceUniforms.uCarrierShare.value = bandShare;
+      globe.surfaceUniforms.uCarrierShare.value = bandShare();
       // A carrier out of the band for `bandReleaseMs` has its cache
       // released; a return before then cancels it. Not while frozen: the
       // smokes step the share over the same tiles.
       const frozen = params.bandFreeze === 1;
       bandRelease.step(now, {
-        share: bandShare,
+        share: bandShare(),
         altitudeM,
         frozen,
         releaseMs: params.bandReleaseMs,
@@ -3082,7 +3088,7 @@ async function start() {
       // major 1): wherever the relief draws, the camera never comes closer
       // to the drawn ground under it than the clearance, whoever owns the
       // camera (the dive, the hold or the controls).
-      if (bandShare > 0) {
+      if (bandShare() > 0) {
         const clear = reliefClearance({
           ellipsoid: globe.tiles.ellipsoid,
           group: globe.tiles.group,
@@ -3104,25 +3110,25 @@ async function start() {
         on: params.osm === 1,
         fadeM: params.osmFadeM,
         groundUnderCameraM,
-        bandShare,
+        bandShare: bandShare(),
       });
       // With the fill the globe always draws (only where the relief left a
       // pixel) and is always updated, coarse while the relief has every
       // pixel, so it keeps to its top tiles.
-      globe.tiles.group.visible = bandFill || bandShare < 1;
+      globe.tiles.group.visible = bandFill || bandShare() < 1;
       if (bandFill) {
         globe.tiles.errorTarget =
-          bandShare >= 1 && bandTarget >= 1
+          bandShare() >= 1 && bandTarget >= 1
             ? params.bandFillErrorTarget
             : params.errorTarget;
       }
       // A carrier is updated (so loads) where it draws or where the
       // altitude wants it to: the gate waits for it to be ready.
-      if ((bandFill || bandShare < 1 || bandTarget < 1) && !frozen) {
+      if ((bandFill || bandShare() < 1 || bandTarget < 1) && !frozen) {
         globe.update(camera, renderer);
       }
-      terrain.tiles.group.visible = bandShare > 0 && !reliefHidden;
-      if ((bandShare > 0 || bandTarget > 0) && !frozen) {
+      terrain.tiles.group.visible = bandShare() > 0 && !reliefHidden;
+      if ((bandShare() > 0 || bandTarget > 0) && !frozen) {
         // An E step re-walks the relief's tile tree (frame-hitch plan H1):
         // the assignment is timed for the recorder.
         updateRelief({
@@ -3149,7 +3155,7 @@ async function start() {
     // 2026-10-04: from orbit the shell read 25-35 levels (summed) darker than
     // the paint, because each draw is tone-mapped and then blended in
     // display space; the paint mixes before the tone mapping.
-    const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
+    const shellShare = params.cloudShell === 1 && terrain ? bandShare() : 0;
     // The flat layer's share by the camera's altitude now (the last
     // frame's lagged a fast dive by kilometres): it hands over to the volume
     // where one is drawn, else it only weakens.
@@ -3482,7 +3488,7 @@ async function start() {
       farKm: camera.far / 1000,
       phase,
       e: terrain?.plugin.heightScale ?? null,
-      bandShare: terrain ? bandShare : null,
+      bandShare: terrain ? bandShare() : null,
       globeLoaded: gs.loadedTiles,
       globePending: gs.pendingTiles,
       globeMiB: globe.tiles.lruCache.cachedBytes / 2 ** 20,
@@ -3777,7 +3783,7 @@ async function start() {
             litTiles: terrain.litTiles(),
             visibleTiles: terrain.tiles.visibleTiles.size,
             heights: startParams.reliefHeights,
-            share: bandShare,
+            share: bandShare(),
             groundUnderCameraM,
             clearanceLifts,
             // The clearance the lift keeps (m), so the smokes read the
@@ -4603,7 +4609,7 @@ void main() {
         altitudeM: altitudeNow(),
         relief: terrain
           ? {
-              share: bandShare,
+              share: bandShare(),
               heightScale: terrain.plugin.heightScale,
               visibleTiles: terrain.tiles.visibleTiles.size,
               stats: terrain.tiles.stats,
@@ -4663,10 +4669,10 @@ void main() {
       },
       /** The drawn carriers' queues are empty. */
       settled() {
-        const globeIdle = bandShare >= 1 || globe.state().pendingTiles === 0;
+        const globeIdle = bandShare() >= 1 || globe.state().pendingTiles === 0;
         const reliefIdle =
           !terrain ||
-          bandShare <= 0 ||
+          bandShare() <= 0 ||
           (terrain.tiles.loadProgress === 1 &&
             !terrain.tiles.downloadQueue.running &&
             !terrain.tiles.parseQueue.running &&
@@ -4707,7 +4713,7 @@ void main() {
       viewReadiness() {
         const cityState = city?.state();
         return {
-          band: !terrain || Math.abs(bandShare - bandTarget) < 1e-3,
+          band: !terrain || Math.abs(bandShare() - bandTarget) < 1e-3,
           release: bandRelease?.settled() ?? true,
           // A delivery that lands inside a held run voids it
           // (`city.arrived`), so a run need not wait for the load's end;

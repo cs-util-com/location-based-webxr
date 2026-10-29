@@ -165,7 +165,7 @@ type BandCarrier = "globe" | "relief";
 /** A carrier as the release sees it. */
 interface BandReleaseCarrier {
   cache: TileCache;
-  /** The tiles a drain keeps, asked anew each frame. */
+  /** The tiles a drain keeps, asked anew each drain frame. */
   keep: () => (item: unknown) => boolean;
 }
 

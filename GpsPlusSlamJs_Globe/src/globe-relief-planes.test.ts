@@ -88,6 +88,18 @@ describe("createReliefPlanes", () => {
     expect(none.planes.state().clearanceM).toBeNull();
   });
 
+  // Why: ground below sea level (the Dead Sea, a polder) must not push
+  // the ring out past the camera's height above sea level: the ring's
+  // distance counts the ground from 0 up.
+  it("measures the ring from sea level over ground below it", () => {
+    const { planes } = planesOver(() => -400, { altitudeM: 2000 });
+    planes();
+    const s = planes.state().samples!;
+    expect(s.below).toBe(-400);
+    expect(s.ringM).toBeCloseTo(s.altitude, 6);
+    expect(s.ringM).toBeLessThan(2100);
+  });
+
   it("refuses a radius that is not positive", () => {
     expect(() =>
       createReliefPlanes({

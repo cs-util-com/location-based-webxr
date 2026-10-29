@@ -22,11 +22,21 @@ import { GLOBE_EYE, eyeClipPlanes } from "./globe-eye-camera.js";
 function fakeControls() {
   const calls: string[] = [];
   const listeners = new Map<string, () => void>();
+  /** Every value `enabled` was set to, in order. */
+  const enabledSets: boolean[] = [];
+  let enabled = true;
   const fake = {
     calls,
     listeners,
+    enabledSets,
     enableDamping: false,
-    enabled: true,
+    get enabled() {
+      return enabled;
+    },
+    set enabled(value: boolean) {
+      enabledSets.push(value);
+      enabled = value;
+    },
     adjustHeight: true,
     up: new THREE.Vector3(),
     cameraRadius: 5,
@@ -148,6 +158,33 @@ describe("createGlobeCameraControls", () => {
     expect([camera.near, camera.far]).toEqual([want.near, want.far]);
   });
 
+  // Why: in first person the relief's clearance and peak still shape the
+  // planes (a camera at eye height over a ridge); without them the near
+  // plane would follow the ellipsoid's height and cut the ground.
+  it("fits first person's planes from the relief and the nearest item", () => {
+    const relief = { clearanceM: 2, peakM: 8850 };
+    const sphere = new THREE.Sphere(new THREE.Vector3(), 1);
+    const { camera, controls } = setup({
+      onTake: () => {},
+      reliefPlanes: () => relief,
+      eyeItems: () => [sphere],
+    });
+    sphere.center.copy(camera.position).add(new THREE.Vector3(0, 0, 1001));
+    controls.fitPlanes();
+    const position = camera.position.clone();
+    const want = eyeClipPlanes(WGS84_ELLIPSOID, position, {
+      ...relief,
+      nearestItemM: 1000,
+    });
+    expect([camera.near, camera.far]).toEqual([want.near, want.far]);
+    // The relief changes both planes here, so the test sees it.
+    const bare = eyeClipPlanes(WGS84_ELLIPSOID, position, {
+      nearestItemM: 1000,
+    });
+    expect(want.near).not.toBe(bare.near);
+    expect(want.far).not.toBe(bare.far);
+  });
+
   it("follows the intro: the planes and the up direction", () => {
     const { fake, camera, controls } = setup({ onTake: () => {} });
     controls.followIntro();
@@ -190,6 +227,8 @@ describe("createGlobeCameraControls", () => {
     expect(fake.globeInertiaFactor).toBe(0);
     expect(fake.zoomDelta).toBe(0);
     expect(fake.globeInertia.equals(new THREE.Quaternion())).toBe(true);
+    // The library's own reset is the toggle off and on again.
+    expect(fake.enabledSets).toEqual([false, true]);
     expect(fake.enabled).toBe(true);
     expect(controls.busy()).toBe(false);
     (

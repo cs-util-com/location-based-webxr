@@ -46,6 +46,7 @@ function band() {
     logs,
     marks,
     unsettle: () => (settled = false),
+    settle: () => (settled = true),
   };
 }
 
@@ -106,6 +107,48 @@ describe("createBandShare", () => {
     b.globe.now = false;
     b.share.step(1500, frame);
     expect(b.logs.filter((k) => k === "band.hold")).toHaveLength(1);
+  });
+
+  // Why: once the relief has pixels it keeps them while its top tiles are
+  // loaded, refined or not, so a pan at a low altitude never hands the
+  // frame back and forth (`share > 0` in the readiness rule).
+  it("keeps moving once the relief has pixels, however unrefined", () => {
+    const b = band();
+    b.share.step(0, frame);
+    const first = b.share.step(100, frame);
+    expect(first).toBeGreaterThan(0);
+    b.unsettle();
+    const next = b.share.step(200, frame);
+    expect(next).toBeGreaterThan(first);
+    expect(b.logs).not.toContain("band.hold");
+  });
+
+  // Why: `bandSharp=0` lets the relief take pixels as soon as its top
+  // tiles are loaded, refined or not (the before/after of the rule).
+  it("does not wait for a refined relief with sharp false", () => {
+    const b = band();
+    b.unsettle();
+    b.share.step(0, { ...frame, sharp: false });
+    expect(b.share.step(100, { ...frame, sharp: false })).toBeGreaterThan(0);
+    expect(b.logs).not.toContain("band.hold");
+  });
+
+  // Why: the hold's end reaches the log once, and the share leaving 0 is an
+  // edge the recorder marks (the edge check for 0, not only for 1).
+  it("logs the go and marks the edge when a held share leaves 0", () => {
+    const b = band();
+    b.unsettle();
+    b.share.step(0, frame);
+    expect(b.share.step(100, frame)).toBe(0);
+    expect(b.logs).toContain("band.hold");
+    expect(b.logs).not.toContain("band.go");
+    b.settle();
+    const marksBefore = b.marks.length;
+    const shared = b.share.step(200, frame);
+    expect(shared).toBeGreaterThan(0);
+    expect(shared).toBeLessThan(1);
+    expect(b.marks.slice(marksBefore)).toEqual(["band.edge", "band.mixed"]);
+    expect(b.logs.filter((k) => k === "band.go")).toHaveLength(1);
   });
 
   it("marks each mixed frame and logs only the share's 0.1 steps", () => {

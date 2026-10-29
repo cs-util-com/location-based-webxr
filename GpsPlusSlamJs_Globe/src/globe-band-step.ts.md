@@ -23,7 +23,7 @@
   - `createBandRelease({ globe, relief, log, mark, clock? })` returns
     `{ step(nowMs, frame), outOfBand, released, settled() }`.
     - A carrier is `{ cache: TileCache, keep: () => keepFn }`; `keep` is
-      asked anew each frame (it reads the tiles' frame count).
+      asked anew each drain frame (it reads the tiles' frame count).
     - `frame`: `{ share, altitudeM, frozen, releaseMs, drainTiles }`. The
       globe is out at a share of 1, the relief at 0. After `releaseMs` out,
       the carrier's cache is drained `drainTiles` a frame (`drainTileCache`,
