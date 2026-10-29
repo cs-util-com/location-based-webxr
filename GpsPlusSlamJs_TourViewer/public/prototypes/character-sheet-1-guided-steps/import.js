@@ -66,7 +66,7 @@
     let bmp;
     try {
       bmp = await createImageBitmap(blob);
-    } catch (e) {
+    } catch {
       throw new ImportError(
         "read",
         "decode",

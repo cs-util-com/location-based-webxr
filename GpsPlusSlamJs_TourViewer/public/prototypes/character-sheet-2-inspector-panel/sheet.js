@@ -70,7 +70,7 @@
     let bmp;
     try {
       bmp = await createImageBitmap(blob);
-    } catch (e) {
+    } catch {
       throw new SheetError("read", "decode");
     }
     const w0 = bmp.width;
@@ -114,7 +114,7 @@
 
   // A grey-and-white checkerboard painted as "fake transparency": two light
   // levels alternating along the border, many times.
-  function isChecker(d, W, H) {
+  function isChecker(d, W, _H) {
     const lum = (i) => (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     const row = [];
     for (let x = 0; x < W; x++) row.push(lum(x + 2 * W));

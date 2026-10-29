@@ -66,7 +66,7 @@ export async function cutSheet(blob, opt = {}, onStep = async () => {}) {
   let bmp;
   try {
     bmp = await createImageBitmap(blob);
-  } catch (e) {
+  } catch {
     throw new CutError(
       "read",
       "decode",
