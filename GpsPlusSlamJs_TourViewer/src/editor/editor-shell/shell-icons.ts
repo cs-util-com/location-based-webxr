@@ -10,6 +10,7 @@ const PATHS = {
   pin: '<rect x="2.5" y="2.5" width="11" height="5" rx="1"/><path d="M8 7.5v6.5"/>',
   photo:
     '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+  text: '<rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>',
   model:
     '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
   frame:

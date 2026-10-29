@@ -37,6 +37,7 @@ import {
   createStationsLayer,
   type StationsLayerDeps,
 } from "./editor3d-stations.js";
+import { buildLecternStand } from "../lectern-view.js";
 
 // The geodesy is licence-gated; the store's construction activates it (the
 // page's own store does at boot).
@@ -890,6 +891,79 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, "a", 1));
     expect(horse.position.toArray()).toEqual([0, 0, 2]);
     expect(horse.scale.x).toBeCloseTo(2, 9);
+  });
+
+  // Why: a free long text stands in the world on its reading stand
+  // (format minor 3). The 3D editor drew none, so the creator could
+  // neither see nor click it. Drawn by the page's builder, it keeps its
+  // pose through the morph (a stand is no photo plane), a click on it
+  // selects it, and a drag's preview moves and turns it.
+  it("draws a long text's reading stand, picks it, and moves and turns it with a preview", async () => {
+    const titles: string[] = [];
+    const { d } = deps({
+      makeLectern: (block) => {
+        titles.push(block.title);
+        const stand = buildLecternStand(null);
+        return { object: stand.root, dispose: stand.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const stand = {
+      id: "l",
+      kind: "longText",
+      view: "lectern",
+      title: "The siege",
+      body: "In 1632 the town was besieged.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [photo("p"), stand]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    expect(titles).toEqual(["The siege"]);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    const root = d.parent.getObjectByName("lectern")!;
+    expect(root).toBeDefined();
+    // Looking straight down, the photo lies flat; the stand stays upright.
+    layer.update(view(0, 0, "a", 0));
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+    // Its page faces east (its local +z, the station's east): seen from
+    // the east, a click on it selects the long text.
+    const page = d.parent.getObjectByName("lectern-page")!;
+    page.updateMatrixWorld(true);
+    const at = page.getWorldPosition(new THREE.Vector3());
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    camera.position.copy(at).add(new THREE.Vector3(10, 0, 0));
+    camera.lookAt(at);
+    camera.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    expect(layer.pick(ray)).toBe("l");
+    // A drag's preview moves and turns it; cleared, it is back.
+    const quarter = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      -Math.PI / 2,
+    );
+    layer.setPreview({
+      kind: "item",
+      id: "l",
+      geo: itemGeoPose(
+        {
+          position: [3, 0, 4],
+          rotation: [quarter.x, quarter.y, quarter.z, quarter.w],
+        },
+        a.geo,
+      ),
+      sizeM: null,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(root.position.z).toBeCloseTo(4, 3);
+    expect(root.quaternion.angleTo(quarter)).toBeLessThan(1e-6);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(root.position.toArray()).toEqual([3, 0, 0]);
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
   });
 
   // Why: a click in the view selects what is under the pointer - a

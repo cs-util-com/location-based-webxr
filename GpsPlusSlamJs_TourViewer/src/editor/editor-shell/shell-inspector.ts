@@ -301,6 +301,7 @@ function lockButton(locked: boolean): HTMLButtonElement {
 const ITEM_WORD: Readonly<Record<string, string>> = {
   pin: "pin",
   photo: "photo",
+  text: "long text",
   model: "3D model",
 };
 
@@ -378,6 +379,7 @@ const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
   code: "qr",
   pin: "pin",
   photo: "photo",
+  text: "text",
   model: "model",
 };
 

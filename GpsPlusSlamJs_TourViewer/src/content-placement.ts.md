@@ -66,8 +66,8 @@ under - what a tap in AR is cast against to name the object
   quietly as before. A long text in the `lectern` view is drawn by the
   page's optional `makeLectern(block)` (`lectern-view.ts` `mountLectern`,
   the visitor's), at the block's local pose, added after the models and
-  disposed with them; without the builder (the 3D editor, the creator's
-  previews, the unit tests) it is left out. Models are added after the planes, so the planes'
+  disposed with them (the 3D editor passes it too); without the builder
+  (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks (shown by its
   steps) are the story's, never drawn here. A station without free blocks gives an empty
   one. The

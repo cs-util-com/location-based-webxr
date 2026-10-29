@@ -380,6 +380,36 @@ describe("inspectorHint", () => {
       "Code 1 - read-only here; F frames it, Esc deselects",
     );
   });
+
+  // Why: a free long text (its reading stand) read as a 3D model, so its
+  // hint offered a resize dot a stand does not have.
+  it("shows a reading stand as a text, with no resize dot", () => {
+    const stand = {
+      ...STATIONS[1],
+      blocks: [
+        {
+          id: "stand-1",
+          kind: "longText",
+          view: "lectern",
+          title: "The siege",
+          body: "In 1632 the town was besieged.",
+          createdAtIso: AT,
+          pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    } as unknown as TourStation;
+    const model = buildInspector({
+      selected: "stand-1",
+      stations: [STATIONS[0]!, stand],
+      assets: [],
+      codes: CODES,
+      unlockedStations: [],
+    });
+    expect(model).toMatchObject({ kind: "item", itemKind: "text" });
+    expect(inspectorHint(model)).toBe(
+      "The siege - drag the middle to move along the ground, the round arrow to turn",
+    );
+  });
 });
 
 describe("headingOfRotation", () => {

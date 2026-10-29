@@ -126,9 +126,10 @@ export function storyBlocksOf(
   return station.blocks.filter((b) => shown.has(b.id));
 }
 
-/** A block standing in the world: a short text drawn as a pin, a picture
- *  or a placed model, the only kinds a free block can be (its view is a
- *  world view, and only these kinds have one). */
+/** A block standing in the world: a short text drawn as a pin, a picture,
+ *  a long text on its reading stand or a placed model, the only kinds a
+ *  free block can be (its view is a world view, and only these kinds have
+ *  one). */
 export type WorldBlock = Extract<
   TourBlock,
   { readonly kind: TourObject["kind"] }
@@ -141,7 +142,10 @@ export function worldBlocks(
 ): WorldBlock[] {
   return tourFreeBlocks(station).filter(
     (b): b is WorldBlock =>
-      b.kind === "shortText" || b.kind === "picture" || b.kind === "model",
+      b.kind === "shortText" ||
+      b.kind === "picture" ||
+      b.kind === "longText" ||
+      b.kind === "model",
   );
 }
 

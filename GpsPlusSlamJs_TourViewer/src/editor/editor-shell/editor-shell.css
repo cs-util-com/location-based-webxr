@@ -667,6 +667,10 @@ body[data-view="3d"] #view3d {
   color: #a3b1c2;
 }
 
+.ic.text {
+  color: #b7a7d6;
+}
+
 .ic.code {
   color: #b9c2cf;
 }

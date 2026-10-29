@@ -4,14 +4,16 @@
  * height) and a billboard with its number and name. The stations near the
  * camera's centre and the selected one (`nearStations`) also draw their
  * items as the phone does (`renderTourStation`: pins as labels, photos as
- * planes), their placed models at the format's size (`modelScale`), their
+ * planes, long texts on their reading stands when the page gives
+ * `makeLectern`), their placed models at the format's size (`modelScale`), their
  * found radius as a ring and a pole up to the billboard. Every code with a
  * position is a square of its printed size, facing as printed.
  *
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
- * on - and the billboards and their poles rise. Models keep their pose;
+ * on - and the billboards and their poles rise. Models and reading stands
+ * keep their pose;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -76,6 +78,13 @@ export interface StationsLayerDeps {
   /** A pin's label (the phone's recipe). */
   makeLabel(text: string): { object: THREE.Object3D; dispose(): void };
   loadPhotoTexture(entryName: string): Promise<THREE.Texture | null>;
+  /** A long text's reading stand (`lectern-view.ts`: a canvas page, so
+   *  the page's). Absent: no stand is drawn (Node, where the tests run). */
+  makeLectern?(block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }): { object: THREE.Object3D; dispose(): void };
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -185,6 +194,17 @@ export type LayerPreview =
 /** The selection an object of the layer stands for (`pick`), on it or
  *  on an ancestor: a billboard's `station:<id>` and a code's level id
  *  (`userData.pick`), an item's id (`userData.objectId`). */
+/** The name `buildLecternStand` gives a reading stand's root. */
+const STAND = "lectern";
+
+/** Whether `object` is a reading stand or part of one. */
+function inStand(object: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+    if (o.name === STAND) return true;
+  }
+  return false;
+}
+
 function pickOf(object: THREE.Object3D | null): string | null {
   for (let o = object; o !== null; o = o.parent) {
     const pick: unknown = o.userData["pick"] ?? o.userData["objectId"];
@@ -511,6 +531,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       alive: () => content.alive,
       makeLabel: (text) => deps.makeLabel(text),
       loadPhotoTexture: (entryName) => deps.loadPhotoTexture(entryName),
+      ...(deps.makeLectern === undefined
+        ? {}
+        : { makeLectern: deps.makeLectern.bind(deps) }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -520,7 +543,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         content.rendered = rendered;
         rendered.root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          if (mesh.isMesh) {
+          // A stand's meshes keep their pose: they are no photo planes.
+          if (mesh.isMesh && !inStand(mesh)) {
             content.photos.push({ mesh, upright: mesh.quaternion.clone() });
           }
         });
@@ -655,6 +679,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       const photo = entry.content?.photos.find((p) => p.mesh === o);
       if (photo !== undefined) {
         photo.upright.copy(turned);
+        continue;
+      }
+      if (o.name === STAND) {
+        o.quaternion.copy(turned);
         continue;
       }
       const tourScale: unknown = o.userData["tourScale"];

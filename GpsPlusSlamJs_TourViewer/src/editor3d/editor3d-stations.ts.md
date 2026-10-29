@@ -15,8 +15,10 @@ ray (`pick`).
 
 - `StationsLayerDeps` - what the page hands in: `parent`, `ellipsoid`,
   `worldFromEcef`, `undulationAt`, `makeLabel`, `loadPhotoTexture`,
-  `loadContent`, `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the
-  drawing is the page's: Node, where the tests run, has no canvas).
+  the optional `makeLectern` (a long text's reading stand, the page's
+  `mountLectern`; absent, no stand is drawn), `loadContent`,
+  `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the drawing is the
+  page's: Node, where the tests run, has no canvas).
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
   world), `selectedStation` (the selected station, or the selected item's),
   `stationSelected` (the selection is that station itself), `standing`
@@ -154,8 +156,10 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
     which reads as a dot.
 - **Codes have no gizmo;** their point and the inspector's printed size do
   not change. Tilted up, a code is its printed size.
-- **Billboards and poles rise with `standing`;** models keep their pose,
-  and pins stand. `renderTourStation` skips placed models (and draws each
+- **Billboards and poles rise with `standing`;** models and reading
+  stands keep their pose (a stand's meshes are no photo planes, so the
+  morph never lays them flat; a preview moves and turns the stand's root,
+  named `lectern`), and pins stand. `renderTourStation` skips placed models (and draws each
   picture from the tour's assets, passed to it), so the layer adds the
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a
