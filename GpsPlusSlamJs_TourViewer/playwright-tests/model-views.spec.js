@@ -44,6 +44,11 @@ const NOTES = [
   },
 ];
 
+/** A disc floats this share of the model's size off its surface, along
+ *  its note's normal (`model-views.ts`'s rule, restated here so the
+ *  expected point does not come from the code under test). */
+const MARKER_LIFT_SHARE = 0.13;
+
 /** The stand-in model 6 m in front of the camera, in `view`. */
 function block(view, extra = {}) {
   return {
@@ -108,10 +113,16 @@ for (const viewport of VIEWPORTS) {
     // The discs: 28 px round, centred on their points, and apart. Each
     // centre is checked against its note's projected point, so a disc
     // drawn in the wrong place (a wrong camera, a wrong offset) fails.
+    // The point is the note's own place lifted along its normal, projected
+    // by the page's camera - not the markers' code under test.
+    const liftM = MARKER_LIFT_SHARE * block("hotspots").sizeM;
     const points = await page.evaluate(
-      () => window.__modelViewsCheck?.state().notes ?? [],
+      ([count, lift]) =>
+        Array.from({ length: count }, (_, i) =>
+          window.__modelViewsCheck?.noteAt(i, lift),
+        ),
+      [NOTES.length, liftM],
     );
-    expect(points).toHaveLength(NOTES.length);
     const centres = [];
     for (let i = 0; i < NOTES.length; i += 1) {
       const disc = await box(discs.nth(i).locator(".note-disc"));
@@ -119,6 +130,7 @@ for (const viewport of VIEWPORTS) {
       expect(disc.height).toBeCloseTo(28, 0);
       centres.push([disc.x + disc.width / 2, disc.y + disc.height / 2]);
       const at = points[i];
+      if (at === null || at === undefined) throw new Error(`note ${i}`);
       expect(Math.abs(centres[i][0] - at.x), `disc ${i} x`).toBeLessThan(3);
       expect(Math.abs(centres[i][1] - at.y), `disc ${i} y`).toBeLessThan(3);
     }

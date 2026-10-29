@@ -12,9 +12,11 @@ hook. See `model-views-check.html.md` for what the page is for.
 - `startModelViewsCheck(root, mode?)` -> `ModelViewsCheck` - builds the
   renderer, the scene, the camera and the visitor DOM under `root`, starts
   the frame loop and installs the hook (`load`, `show`, `lookFrom`,
-  `openNote`, `stop`, `state` - the shown view, the card, the shown
-  discs and each note's projected marker point in page pixels, which the
-  e2e holds each disc's centre to). `mode` defaults to the URL's
+  `openNote`, `stop`, `state` - the shown view, the card and the shown
+  discs; `noteAt(index, liftM)` - a note's place lifted along its normal,
+  projected by the page's camera into page pixels, worked out apart from
+  the markers' own code (`notesOnScreen`, `notePoints`) so the e2e's
+  expectation for each disc's centre is independent of what it checks). `mode` defaults to the URL's
   (`checkPageMode`); in `demo` it also shows the stand-in in `hotspots`,
   frames it (`demoCamera`), lets a drag orbit it (OrbitControls, no pan,
   never under the ground, off in `toy`) and adds the view bar

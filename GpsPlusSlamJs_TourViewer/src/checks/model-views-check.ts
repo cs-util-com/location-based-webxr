@@ -23,7 +23,6 @@ import {
   type TourModelBlock,
 } from "../model-views.js";
 import { createModelVisitor, mountModelVisitorDom } from "../model-visitor.js";
-import { notesOnScreen } from "../note-markers.js";
 
 /** What the e2e reads back: the card and every note's disc on screen. */
 export interface ModelViewsCheckState {
@@ -34,9 +33,6 @@ export interface ModelViewsCheckState {
     readonly title: string;
   };
   readonly discs: number;
-  /** Each shown note's marker point as the camera projects it, in page
-   *  pixels: where its disc belongs (before any push apart). */
-  readonly notes: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** The page's hook. */
@@ -49,6 +45,12 @@ export interface ModelViewsCheck {
   lookFrom(eye: readonly number[], target: readonly number[]): void;
   /** Open the shown model's note `index`. */
   openNote(index: number): void;
+  /** The shown block's note `index`, at its place in the model's own
+   *  space lifted `liftM` metres along its normal (turned with the
+   *  model), projected by the page's camera into page pixels: where the
+   *  e2e expects its disc, worked out apart from the markers' own code
+   *  (`notesOnScreen`, `notePoints`). Null for no such note. */
+  noteAt(index: number, liftM: number): { x: number; y: number } | null;
   state(): ModelViewsCheckState;
   /** Stop drawing, so a closing browser is not kept busy by the loop. */
   stop(): void;
@@ -350,7 +352,11 @@ export function startModelViewsCheck(
   });
 
   let glb: Uint8Array<ArrayBuffer> | null = null;
-  let shown: { model: THREE.Object3D; handle: ModelViewHandle } | null = null;
+  let shown: {
+    model: THREE.Object3D;
+    handle: ModelViewHandle;
+    block: TourModelBlock;
+  } | null = null;
 
   const resize = (): void => {
     const w = Math.max(1, root.clientWidth);
@@ -366,15 +372,6 @@ export function startModelViewsCheck(
     visitor.tick(now);
     renderer.render(scene, camera);
   });
-
-  const projectedNotes = (): { x: number; y: number }[] => {
-    if (shown === null) return [];
-    const rect = root.getBoundingClientRect();
-    return notesOnScreen([shown.handle], camera, {
-      width: root.clientWidth,
-      height: root.clientHeight,
-    }).map((n) => ({ x: rect.left + n.marker.x, y: rect.top + n.marker.y }));
-  };
 
   const hook: ModelViewsCheck = {
     load(glbBase64) {
@@ -397,7 +394,7 @@ export function startModelViewsCheck(
           renderer.localClippingEnabled = true;
         },
       });
-      shown = { model, handle };
+      shown = { model, handle, block };
     },
     lookFrom(eye, target) {
       if (
@@ -418,6 +415,25 @@ export function startModelViewsCheck(
     openNote(index) {
       if (shown !== null) visitor.openNote(shown.handle, index);
     },
+    noteAt(index, liftM) {
+      const note = shown?.block.annotations?.[index];
+      if (shown === null || note === undefined) return null;
+      shown.model.updateMatrixWorld(true);
+      camera.updateMatrixWorld();
+      const turn = shown.model.getWorldQuaternion(new THREE.Quaternion());
+      const p = shown.model
+        .localToWorld(new THREE.Vector3(...note.position))
+        .addScaledVector(
+          new THREE.Vector3(...note.normal).normalize().applyQuaternion(turn),
+          liftM,
+        )
+        .project(camera);
+      const rect = root.getBoundingClientRect();
+      return {
+        x: rect.left + ((p.x + 1) / 2) * root.clientWidth,
+        y: rect.top + ((1 - p.y) / 2) * root.clientHeight,
+      };
+    },
     state() {
       const card = root.querySelector<HTMLElement>("#model-card");
       return {
@@ -429,7 +445,6 @@ export function startModelViewsCheck(
           title: root.querySelector("#model-card-title")?.textContent ?? "",
         },
         discs: root.querySelectorAll("button.note-marker:not([hidden])").length,
-        notes: projectedNotes(),
       };
     },
   };
