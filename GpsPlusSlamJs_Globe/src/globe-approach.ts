@@ -279,7 +279,7 @@ export function createGlobeApproach(
   /** The fly-in: its frame, or null once it reached the target (`arrived`). */
   const turnStep = (now: number): ApproachOrbitStep | null => {
     const t = params.turnMs > 0 ? (now - turnStartedAt) / params.turnMs : 1;
-    if (t >= 1 || !arrival) {
+    if (!(t < 1) || !arrival) {
       phase = "arrived";
       note(now);
       return null;

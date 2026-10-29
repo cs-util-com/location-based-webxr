@@ -200,6 +200,21 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     ]);
   });
 
+  // The lab's `!(t < 1)`: a frame time that is not a number ends the
+  // fly-in at the target instead of asking the intro for a pose at NaN.
+  it("ends the fly-in on a frame time that is not a number", () => {
+    const { approach, at } = setup();
+    approach.restart(at(0), params());
+    approach.pose(at(0));
+    expect(approach.state().phase).toBe("turning");
+    const held = orbit(approach.pose(at(Number.NaN)));
+    at(1000); // `state()` reads the clock too
+    expect(approach.state().phase).toBe("arrived");
+    expect(held.pose.direction.toArray()).toEqual(
+      orbitPose(WGS84_ELLIPSOID, BERN).direction.toArray(),
+    );
+  });
+
   it("with turnMs 0 arrives on its first frame", () => {
     const { approach, at } = setup();
     approach.restart(at(0), params({ turnMs: 0 }));

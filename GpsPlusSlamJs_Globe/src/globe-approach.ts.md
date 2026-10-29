@@ -50,7 +50,9 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
     (then `user`, or `diving` and `landed`); `landed` is noted once.
   - The fly-in starts at `zoomOutM()` and ends at `fitDistance()`; its
     distance never grows; from `turnMs` on the pose IS the target's
-    `orbitPose`, at the fitted distance and `fovY`.
+    `orbitPose`, at the fitted distance and `fovY`. The end test is the
+    lab's `!(t < 1)`, so a frame time that is not a number ends the fly-in
+    at the target rather than asking the intro for a pose at NaN.
   - A target that arrives after a shown spin frame blends from the spin
     over `GLOBE_INTRO.lateFixBlendMs`; a position replacing the fallback
     blends the target over the same time. No jump.
@@ -71,7 +73,8 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
   ```
 - Tests: `globe-approach.test.ts` (a set clock and a fixed sun: the spin,
   the fallback, a position while spinning and over the fallback, the
-  fly-in's first frame and its arrival, the user, the dive with its clock
+  fly-in's first frame and its arrival (also on a NaN frame time), the
+  user, the dive with its clock
   and hold, the pin flight and its cancel, the restart key, the pole case
   of `poseToward`); `globe-approach.property.test.ts` (forward-only
   phases, a non-growing fly-in between the fit and the zoom-out limit,
