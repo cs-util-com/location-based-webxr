@@ -203,7 +203,7 @@ function withDefaults(frame: CloudVolumeFrame): FullFrame {
   };
 }
 
-export interface GlobeCloudVolumeState {
+interface GlobeCloudVolumeState {
   enabled: boolean;
   share: number;
   radiusM: number;
