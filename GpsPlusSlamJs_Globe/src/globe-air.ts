@@ -67,7 +67,9 @@ interface SpacePassFrame<Depth> {
 
 /** The lab's space pass (the atmosphere over the Earth), as used here. */
 interface AirSpacePass<Depth> {
-  setLook(look: { thickness: number }): void;
+  setLook(
+    look: { thickness: number } | { steps: number; strength: number },
+  ): void;
   render(camera: THREE.Camera, frame: SpacePassFrame<Depth>): void;
 }
 
@@ -76,7 +78,8 @@ interface AirSpacePass<Depth> {
  * `groundSky` and `sky` (0 is off), the hand-over's `skyEdgeKm`,
  * `skyWidthKm` and `skyStepPct`, the space view's `sunIntensity`, the
  * haze's `hazeScale`, the shell's `atmoRamp` (1 thins it on the way down)
- * and far `atmoThickness`, and `atmoGround` (1 keeps the ground's veil).
+ * and far `atmoThickness`, `atmoGround` (1 keeps the ground's veil), and
+ * the space pass's live `atmoSteps` and `atmoStrength`.
  */
 interface AirParams {
   groundSky: number;
@@ -89,6 +92,8 @@ interface AirParams {
   atmoRamp: number;
   atmoThickness: number;
   atmoGround: number;
+  atmoSteps: number;
+  atmoStrength: number;
 }
 
 interface GlobeAirOptions<Sky, Depth> {
@@ -118,6 +123,12 @@ export interface GlobeAir<Depth> {
   ): void;
   /** The sun's eased intensity and the shell's thickness, after the clouds. */
   finish(params: AirParams): void;
+  /**
+   * The page's live look of the space pass (its march steps and strength),
+   * whenever a setting changes. Never the thickness: `finish` owns it and
+   * writes it only on a change, so a live write here would stick.
+   */
+  setLook(params: AirParams): void;
   /**
    * The space pass over the Earth and the sky (nothing when `drawn` is
    * false): its sky share fades under the ground sky, its ground keeps its
@@ -188,6 +199,12 @@ export function createGlobeAir<Sky, Depth>(
         shellThickness = thickness;
         spacePass.setLook({ thickness });
       }
+    },
+    setLook(params) {
+      spacePass.setLook({
+        steps: params.atmoSteps,
+        strength: params.atmoStrength,
+      });
     },
     render(camera, params, { drawn, worldFromEcef, sunEcef, sceneDepth }) {
       if (!drawn) return;

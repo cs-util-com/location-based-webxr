@@ -31,6 +31,8 @@ const PARAMS = {
   atmoRamp: 1,
   atmoThickness: 6,
   atmoGround: 1,
+  atmoSteps: 12,
+  atmoStrength: 1.5,
 };
 
 /** The air over recording fakes of the three drawers. */
@@ -201,13 +203,34 @@ describe("createGlobeAir", () => {
     ]);
   });
 
-  // Below the ellipsoid the ramp reads 0 km, never a negative height.
-  it("ramps from the ground below the ellipsoid", () => {
+  // A camera below the ellipsoid (a negative height) still gets the ground's
+  // thickness. This cannot tell the wiring's clamp to 0 km from the ramp's
+  // own: `shellThicknessAt` is already flat below its lower end.
+  it("gives the ground's thickness below the ellipsoid", () => {
     const { air, looks } = setup();
     air.step(PARAMS, { cameraEcef: at(-200), framed: true });
     expect(air.observerKm()).toBeLessThan(0);
     air.finish(PARAMS);
     expect(looks).toEqual([{ thickness: shellThicknessAt(0, 6) }]);
+  });
+
+  // The page's live settings reach the space pass's look without its
+  // thickness: the thickness is `finish`'s alone, which writes it only when
+  // it changes. A live write of the far thickness (6 km) below the ramp
+  // would leave the shell thick until the ramp next moved (a bug the lab
+  // had: any slider or hash change set 6 under the 300 km ramp's 1).
+  it("sets the live look without the thickness, which stays the ramp's", () => {
+    const { air, looks } = setup();
+    air.step(PARAMS, { cameraEcef: at(1000), framed: true });
+    air.finish(PARAMS);
+    air.setLook(PARAMS);
+    air.finish(PARAMS);
+    const ramped = shellThicknessAt(air.observerKm(), 6);
+    expect(ramped).toBeLessThan(6);
+    expect(looks).toEqual([
+      { thickness: ramped },
+      { steps: 12, strength: 1.5 },
+    ]);
   });
 
   // The space pass's sky fades under the ground sky; its ground keeps its
@@ -248,8 +271,10 @@ describe("createGlobeAir", () => {
   });
 
   it("reports the ground sky's state with the observer's height", () => {
-    const { air } = setup();
+    const { air, updates } = setup();
     air.step(PARAMS, { cameraEcef: at(2000), framed: false });
+    // `framed` is passed through, not assumed.
+    expect((updates[0] as Record<string, unknown>).framed).toBe(false);
     expect(air.groundSkyState()).toEqual({
       lastStage: "idle",
       rebuilds: 3,

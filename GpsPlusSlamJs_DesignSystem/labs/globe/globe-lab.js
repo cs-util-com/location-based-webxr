@@ -2608,11 +2608,7 @@ async function start() {
       view.refit(); // refit on the next frame
     }
     applyFactors(params);
-    atmosphere.setLook({
-      steps: params.atmoSteps,
-      strength: params.atmoStrength,
-      thickness: params.atmoThickness,
-    });
+    air.setLook(params);
     sky.setStarLook({
       magLimit: params.starMag,
       gain: params.starGain,
@@ -3249,8 +3245,7 @@ async function start() {
     // The clip planes where the camera now is, after the clearance's lift.
     controls.fitPlanes();
     // The sky hand-over (F2b): the observer's height over the ellipsoid,
-    // the ground sky's weight and its eased exposure, which also scales the
-    // globe's sun; the space pass's shell thins on the way down.
+    // the ground sky's weight and its eased exposure.
     air.step(params, {
       cameraEcef: ecefCamera().position.toArray(),
       framed: frameTarget() !== null,
@@ -3319,6 +3314,9 @@ async function start() {
         shadow: shellShadow.shell,
       });
     }
+    // The eased exposure scales the globe's sun (after the cloud volumes,
+    // which update with the frame's previous sun), and the space pass's
+    // shell thins on the way down.
     air.finish(params);
   };
   /**

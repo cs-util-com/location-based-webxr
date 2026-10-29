@@ -28,12 +28,16 @@ hazeScale)`. RangeError for a camera that is not finite.
 })`: the space pass, its sky share `1 - weight`, its ground share 1
       (or `1 - weight` with `atmoGround` 0), its scene depth weighted by
       the weight; nothing when `drawn` is false.
+    - `setLook(params)`, whenever a page setting changes: the space
+      pass's live `steps` and `strength` (`atmoSteps`, `atmoStrength`),
+      never its thickness, which is `finish`'s alone.
     - `observerKm()`, `weight()`, `groundSkyState()` (the ground sky's
       `state()` plus `observerAltitudeKm`) for the lab's other passes and
       its `state()` adapter.
   - `params` carries the lab's hash names: `groundSky`, `sky`,
     `skyEdgeKm`, `skyWidthKm`, `skyStepPct`, `sunIntensity`, `hazeScale`,
-    `atmoRamp`, `atmoThickness`, `atmoGround`; the lab passes its `params`.
+    `atmoRamp`, `atmoThickness`, `atmoGround`, `atmoSteps`, `atmoStrength`;
+    the lab passes its `params`.
 - Invariants & assumptions:
   - The lab's order is kept: `step` between the clip planes and the cloud
     volumes' updates, `finish` after them (the volumes update with the
@@ -45,8 +49,11 @@ hazeScale)`. RangeError for a camera that is not finite.
     haze's sync); the haze is synced only after a `read` stage, which
     implies the framework sky exists.
   - The shell's look is a shader setting: it is set only when the
-    thickness changes. The lab's live controls also set the far thickness
-    on the space pass directly; the cache here is not told, as before.
+    thickness changes, and nothing else sets it: the live look
+    (`setLook`) leaves it out. Before that, the lab's live controls set
+    the far thickness on the space pass directly, which the cache here
+    never saw, so below the ramp any setting change left the shell at the
+    far thickness until the ramp next moved.
 - Examples:
 
   ```ts
@@ -67,5 +74,6 @@ hazeScale)`. RangeError for a camera that is not finite.
 - Tests: `globe-air.test.ts` (the ground sky's inputs and the narrowed
   width; the ground sky left alone when off; the haze's sync only after a
   read and its weight; the sun's intensity set in `finish`; the shell's
-  thickness by the ramp, only on change, from 0 km below the ellipsoid;
-  the space pass's shares; the state; a non-finite camera refused).
+  thickness by the ramp, only on change, the ground's below the ellipsoid;
+  the live look leaving the thickness to the ramp; the space pass's
+  shares; the state; a non-finite camera refused).
