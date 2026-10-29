@@ -542,6 +542,71 @@ describe("renderTourStation", () => {
     quiet.dispose();
   });
 
+  // Why (station blocks, the reading stand): a long text in the
+  // `lectern` view stands at its local pose and keeps it (it does not
+  // turn to the visitor), drawn by the page's builder (a canvas, so the
+  // caller's); with no builder (the 3D editor, the creator's previews)
+  // it is left out quietly, never reported as a failed download.
+  it("draws a reading stand at its local pose through the page's builder, and leaves it out without one", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(30),
+    };
+    const station = stationAt("s", stationGeo, [
+      {
+        id: "stand",
+        kind: "longText" as const,
+        view: "lectern" as const,
+        title: "The guild house",
+        body: "It *burned* in 1612.",
+        pose,
+      },
+    ]);
+    const made: { id: string; title: string; body: string }[] = [];
+    let disposed = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: (block) => {
+        made.push(block);
+        return {
+          object: new Group(),
+          dispose: () => {
+            disposed += 1;
+          },
+        };
+      },
+    });
+    expect(made).toEqual([
+      { id: "stand", title: "The guild house", body: "It *burned* in 1612." },
+    ]);
+    expect(rendered.count).toBe(1);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "stand") found = o;
+    });
+    expect(found, "the stand is drawn under the station").toBeDefined();
+    expect(found!.position.toArray()).toEqual([1, 0, 2]);
+    expect(found!.quaternion.toArray()).toEqual(pose.rotation);
+    rendered.dispose();
+    expect(disposed).toBe(1);
+
+    const quiet = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect([quiet.count, quiet.skipped]).toEqual([0, []]);
+    quiet.dispose();
+  });
+
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
   // toy - keeps the size the tour names by the one shared scale rule, and
   // carries its view's handle for the visitor's page; freeing the station

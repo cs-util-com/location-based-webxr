@@ -51,6 +51,11 @@ export default defineConfig({
         characterViewsCheck: fileURLToPath(
           new URL("character-views-check.html", import.meta.url),
         ),
+        // A long text on its reading stand without an AR session
+        // (`lectern-check.html.md`), linked from nothing.
+        lecternCheck: fileURLToPath(
+          new URL("lectern-check.html", import.meta.url),
+        ),
       },
     },
   },

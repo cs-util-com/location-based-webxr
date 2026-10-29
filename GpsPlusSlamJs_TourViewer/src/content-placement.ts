@@ -37,7 +37,9 @@
  *
  * A pin is a short text in the `pin` view; a captured photo is a picture
  * in the `plane` view plus an image asset of the picture's own id (its
- * bytes at `content/<id>.jpg`), carried inline until a tour lists it.
+ * bytes at `content/<id>.jpg`), carried inline until a tour lists it. A
+ * reading stand is a long text in the `lectern` view, built by the
+ * caller's `makeLectern` (`lectern-view.ts`: a canvas page) at its pose.
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -221,6 +223,17 @@ export interface TourObjectRendererDeps {
   poseOf?: (object: TourObject) => ObjectPoseNue;
   makeLabel(text: string): { object: Object3D; dispose(): void };
   loadPhotoTexture(entryName: string): Promise<Texture | null>;
+  /**
+   * A long text's reading stand (`lectern` view), built by the page
+   * (`mountLectern`: a canvas texture, so node has none). Absent: a stand
+   * is left out quietly (the 3D editor and the creator's previews draw
+   * none yet).
+   */
+  makeLectern?(block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }): { object: Object3D; dispose(): void };
 }
 
 export interface RenderedTourObjects {
@@ -338,9 +351,15 @@ export async function renderStationBlocks(
 /** What the renderer draws of one free block: a label with its text, a
  *  plane with its picture's archive entry, a model in a world view with
  *  its file's entry, its size and its block (null entry: the tour lacks
- *  its asset), or nothing. */
+ *  its asset), a reading stand with its title and body, or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
+  | {
+      readonly id: string;
+      readonly as: "lectern";
+      readonly title: string;
+      readonly body: string;
+    }
   | { readonly id: string; readonly as: "plane"; readonly entry: string | null }
   | {
       readonly id: string;
@@ -351,11 +370,22 @@ type Drawn =
     }
   | { readonly id: string; readonly as: "none" };
 
+/** A long text as its reading stand draws it. */
+function lecternOf(text: {
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+}): Drawn {
+  return { id: text.id, as: "lectern", title: text.title, body: text.body };
+}
+
 /** A world-view object as drawn: a picture's file is its inline asset. */
 function drawnObject(object: TourObject): Drawn {
   switch (object.kind) {
     case "shortText":
       return { id: object.id, as: "label", text: object.caption };
+    case "longText":
+      return lecternOf(object);
     case "picture":
       return { id: object.id, as: "plane", entry: object.imageAsset.path };
     case "model":
@@ -371,6 +401,9 @@ function drawnBlock(
 ): Drawn {
   if (block.kind === "shortText" && block.view === "pin") {
     return { id: block.id, as: "label", text: block.caption };
+  }
+  if (block.kind === "longText" && block.view === "lectern") {
+    return lecternOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {
     return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
@@ -393,8 +426,9 @@ function drawnBlock(
 
 /** The one renderer: pins as labels, pictures as planes, models at their
  *  size (`modelScale`) in their world view (`mountModelView`, found again
- *  through `mountedModelViews`), each at its pose in `scene`'s frame,
- *  under one group added once everything decoded. */
+ *  through `mountedModelViews`), reading stands by `makeLectern`, each at
+ *  its pose in `scene`'s frame, under one group added once everything
+ *  decoded. */
 async function renderContent(
   objects: readonly { readonly drawn: Drawn; readonly pose: ObjectPoseNue }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
@@ -404,6 +438,7 @@ async function renderContent(
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
+  const stands: { object: Object3D; dispose(): void }[] = [];
   const models: Object3D[] = [];
   const views: ModelViewHandle[] = [];
   const disposeModels = (): void => {
@@ -411,6 +446,7 @@ async function renderContent(
     // which `disposeObject3D` then frees.
     for (const view of views) view.dispose();
     for (const model of models) disposeObject3D(model);
+    for (const stand of stands) stand.dispose();
   };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
@@ -442,6 +478,22 @@ async function renderContent(
         // editor draws its own): left out quietly, as a lenient read
         // leaves out what it cannot show. Not in `skipped`: "could not
         // load" would claim a download failed.
+        continue;
+      }
+      if (drawn.as === "lectern") {
+        // No builder (the 3D editor, the creator's previews): left out
+        // quietly, as a model without a loader.
+        const stand = deps.makeLectern?.({
+          id: drawn.id,
+          title: drawn.title,
+          body: drawn.body,
+        });
+        if (stand === undefined) continue;
+        stand.object.position.set(...pose.positionNue);
+        // It keeps its pose: a stand does not turn to the visitor.
+        stand.object.quaternion.set(...pose.rotationNue);
+        stand.object.userData["objectId"] = drawn.id;
+        stands.push(stand);
         continue;
       }
       if (drawn.as === "model") {
@@ -490,8 +542,10 @@ async function renderContent(
       const id = photoIds[i];
       if (id !== undefined) plane.userData["objectId"] = id;
     });
-    // The models after the planes, so the planes' order above holds.
+    // The models and the stands after the planes, so the planes' order
+    // above holds.
     for (const model of models) group.add(model);
+    for (const stand of stands) group.add(stand.object);
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
@@ -503,7 +557,7 @@ async function renderContent(
   }
   deps.scene.add(group);
   return {
-    count: labels.length + planes.count + models.length,
+    count: labels.length + planes.count + models.length + stands.length,
     root: group,
     skipped,
     dispose: () => {

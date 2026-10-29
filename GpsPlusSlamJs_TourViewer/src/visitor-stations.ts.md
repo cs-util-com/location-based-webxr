@@ -143,7 +143,8 @@ hooks.tickStations = stations.tick;
   true so `main.ts` hands it nowhere else. A click on his portrait in the
   card (`dom.scene.portrait`, `wirePortraitTap`) goes the same way.
   `routeVisitorTap` is `main.ts`'s order: the character, then a model's
-  card; a tap either takes closes the pin sheet, one neither takes is the
+  card, then a reading stand's page (`lectern-view.ts`, which turns it);
+  a tap any of them takes closes the pin sheet, one none of them takes is the
   pin sheet's. `declaredCharactersOf` builds the declared characters by
   id once per manifest, for the scene view and the prefetch.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a

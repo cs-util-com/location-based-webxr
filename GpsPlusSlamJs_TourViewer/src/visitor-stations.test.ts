@@ -169,9 +169,9 @@ describe("the visitor's tap on the story's character", () => {
     }).not.toThrow();
   });
 
-  it("gives a tap to the character first, then a model's card, then the pin sheet", () => {
+  it("gives a tap to the character first, then a model's card, then a reading stand, then the pin sheet", () => {
     const calls: string[] = [];
-    const targets = (character: boolean, model: boolean) => ({
+    const targets = (character: boolean, model: boolean, lectern = false) => ({
       character: () => {
         calls.push("character");
         return character;
@@ -179,6 +179,10 @@ describe("the visitor's tap on the story's character", () => {
       model: () => {
         calls.push("model");
         return model;
+      },
+      lectern: () => {
+        calls.push("lectern");
+        return lectern;
       },
       pinSheet: {
         close: () => calls.push("close"),
@@ -191,8 +195,12 @@ describe("the visitor's tap on the story's character", () => {
     routeVisitorTap(null, targets(false, true));
     expect(calls).toEqual(["character", "model", "close"]);
     calls.length = 0;
+    routeVisitorTap(null, targets(false, false, true));
+    // A turned page closes the pin sheet, as a model's card does.
+    expect(calls).toEqual(["character", "model", "lectern", "close"]);
+    calls.length = 0;
     routeVisitorTap(null, targets(false, false));
-    expect(calls).toEqual(["character", "model", "pin"]);
+    expect(calls).toEqual(["character", "model", "lectern", "pin"]);
   });
 
   it("reads the tour's declared characters by id, once per manifest", () => {

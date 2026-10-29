@@ -838,22 +838,25 @@ export function wirePortraitTap(
 
 /**
  * The visitor's tap in AR, in its order: the story's character first,
- * then a model's card; a tap either takes closes the pin sheet, and one
- * neither takes is the pin sheet's.
+ * then a model's card, then a reading stand's page (it turns); a tap any
+ * of them takes closes the pin sheet, and one none takes is the pin
+ * sheet's.
  */
 export function routeVisitorTap(
   tap: SelectTargetRay | null,
   to: {
     character(tap: SelectTargetRay | null): boolean;
     model(tap: SelectTargetRay | null): boolean;
+    lectern(tap: SelectTargetRay | null): boolean;
     readonly pinSheet: {
       close(): void;
       tapped(tap: SelectTargetRay | null): void;
     };
   },
 ): void {
-  if (to.character(tap) || to.model(tap)) to.pinSheet.close();
-  else to.pinSheet.tapped(tap);
+  if (to.character(tap) || to.model(tap) || to.lectern(tap)) {
+    to.pinSheet.close();
+  } else to.pinSheet.tapped(tap);
 }
 
 /** The open tour's declared characters by id, built once per manifest

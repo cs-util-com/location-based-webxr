@@ -2171,6 +2171,11 @@ function copiedObject(
       return base.title === undefined
         ? base
         : { ...base, title: copyText(base.title, rules.model.title.max) };
+    case "longText":
+      return {
+        ...base,
+        title: copyText(base.title, rules.longText.title.max),
+      };
     case "picture": {
       const marked =
         base.caption === undefined

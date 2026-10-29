@@ -106,7 +106,9 @@ const PICTURE_GONE =
  *  it is. */
 function objectName(object: TourObject): string {
   const label = (
-    (object.kind === "model" ? object.title : object.caption) ?? ""
+    (object.kind === "model" || object.kind === "longText"
+      ? object.title
+      : object.caption) ?? ""
   ).trim();
   if (label === "") return object.kind === "picture" ? "a photo" : "a note";
   const chars = [...label];

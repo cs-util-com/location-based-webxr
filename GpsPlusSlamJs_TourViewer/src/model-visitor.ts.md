@@ -25,6 +25,9 @@ taps.
     does nothing.
   - `close()`, `stop()` (the card closed, every disc removed), `openKey()`
     (`"note:<key>"`, `"model:<id>"` or null).
+- `shownIn(object, scene)` - whether `object` is under a
+  `station-content:` group of `scene`, it and every parent visible; `main.ts` asks it
+  of the reading stands too (`lectern-view.ts`).
 - `shownModelViews(scene)` - the mounted handles (`mountedModelViews`)
   whose model is shown under a `station-content:` group of `scene`, in
   mounting order. It runs every frame, so it climbs each model's

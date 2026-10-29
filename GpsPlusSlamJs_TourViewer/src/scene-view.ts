@@ -471,6 +471,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         dom.text.textContent = block.caption;
         return;
       case "longText":
+        // On a reading stand the text stands in the world (from this step
+        // on, as a placed model): the card names it by its title only.
+        if (block.view === "lectern") {
+          dom.text.textContent = block.title;
+          return;
+        }
         // Its plain text P (S0): paragraphs a blank line apart, shown as
         // breaks (`white-space: pre-line`), no markup characters (B2b).
         dom.text.textContent = plainTextOf(parseTourMarkdown(block.body)).text;

@@ -139,7 +139,9 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
 - **A long text** (B2b step 4) shows `plainTextOf(parseTourMarkdown(body))
 .text` (S0's P): paragraphs a blank line apart, a soft break as a space,
   no markup characters; `#scene-text` has `white-space: pre-line` so the
-  breaks show.
+  breaks show. A long text in the `lectern` view stands on its reading
+  stand in the square (`lectern-view.ts`), so its step's card shows only
+  its title.
 - A quiz never reaches the view (the player skips it until K5).
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.

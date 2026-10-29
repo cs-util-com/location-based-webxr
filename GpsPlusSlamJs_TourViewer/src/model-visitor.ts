@@ -83,8 +83,12 @@ export interface ModelVisitor {
 }
 
 /** Whether `object` is shown under a station's content group of
- *  `scene`: it and every ancestor visible. */
-function shownIn(object: THREE.Object3D, scene: THREE.Object3D): boolean {
+ *  `scene`: it and every ancestor visible. A reading stand's tap asks
+ *  the same (`main.ts`). */
+export function shownIn(
+  object: THREE.Object3D,
+  scene: THREE.Object3D,
+): boolean {
   let inStation = false;
   for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
     if (!o.visible) return false;
