@@ -393,6 +393,8 @@ export function wireVisitorStations(deps: {
     onBlockShown: (stationId, blockId) => {
       guide.blockShown(stationId, blockId);
     },
+    // A failure the hidden panel cannot show: in the walk's toast.
+    sayFailure: sayFailureInToast(deps.walk?.toast),
   });
   /** The open tour's stations as the guide reads them. */
   function guideTour(): StationTour | null {
@@ -815,6 +817,19 @@ export function characterTapOf(deps: {
       parts.map((part, i) => [`character-${String(i)}`, part] as const),
     );
     return deps.pick(targets, tap) !== null && deps.view.characterTapped();
+  };
+}
+
+/** A failure the story's hidden panel cannot show (his voice, tapped
+ *  after his story, could not play): shown in the walk's toast and
+ *  announced, as the toast's root is aria-hidden. No toast (no walk
+ *  sheet): not said. */
+export function sayFailureInToast(
+  toast: Pick<WalkToast, "say" | "announce"> | undefined,
+): (text: string) => void {
+  return (text) => {
+    toast?.say([text]);
+    toast?.announce(text);
   };
 }
 

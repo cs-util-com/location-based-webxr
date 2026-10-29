@@ -384,16 +384,16 @@ export function createCharacterLook(
   const backdropTex = texture(painters.backdrop().image);
   const backdropGeo = new PlaneGeometry(2.3, BACKDROP_H);
   backdropGeo.translate(0, BACKDROP_H / 2, 0);
-  popBack.add(
-    new Mesh(
-      backdropGeo,
-      basic(backdropTex, {
-        alphaTest: 0.02,
-        side: DoubleSide,
-        depthWrite: true,
-      }),
-    ),
+  const backdrop = new Mesh(
+    backdropGeo,
+    basic(backdropTex, {
+      alphaTest: 0.02,
+      side: DoubleSide,
+      depthWrite: true,
+    }),
   );
+  backdrop.name = "character-backdrop";
+  popBack.add(backdrop);
   const popFig = new Group();
   popFig.position.set(0.15, 0.05, 0.05);
   popup.add(popFig);
@@ -401,6 +401,7 @@ export function createCharacterLook(
     figureGeometry(fig, 1.5),
     basic(frontTex, { alphaTest: 0.03, side: DoubleSide, depthWrite: true }),
   );
+  popFigure.name = "character-popfigure";
   popFig.add(popFigure);
   const tab = new Mesh(
     new PlaneGeometry(0.42, 0.36),
@@ -794,7 +795,13 @@ export function createCharacterLook(
       if (front.visible) out.push(front, back);
       if (bubble.visible) out.push(bubble);
       if (pip.visible) out.push(pip);
-      if (popup.visible && unfold > 0.5) out.push(popup);
+      // The stage's backdrop, his figure and the shown scroll: not the
+      // whole group, whose ground shadow, base and tab lie on the ground
+      // around him (and the hidden scroll in it).
+      if (popup.visible && unfold > 0.5) {
+        out.push(backdrop, popFigure);
+        if (scroll.visible) out.push(scroll);
+      }
       return out;
     },
     setRestYaw(yaw) {

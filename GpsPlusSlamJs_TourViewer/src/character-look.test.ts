@@ -393,8 +393,14 @@ describe("createCharacterLook: the footer and the tap", () => {
     pop.standAt(0, 5);
     for (let i = 0; i < 40; i++) pop.tick(100);
     expect(pop.look.state().unfold).toBeGreaterThan(0.5);
-    expect(names(pop.look)).toContain("character-popup");
-    expect(names(pop.look)).not.toContain("character-front");
+    // The stage's backdrop, his figure and the shown scroll - never the
+    // whole group, whose ground shadow (3.3 m by 1.9 m), base and tab
+    // would take taps on the ground around him.
+    expect(names(pop.look)).toEqual([
+      "character-backdrop",
+      "character-popfigure",
+      "character-scroll",
+    ]);
   });
 
   // Why this test matters: the bubble view has no voice; a tap opens and

@@ -49,7 +49,7 @@ time. Plan:
   loaded" line the failed read wrote is taken back, since he does stand;
   every other notice stays (the notices are kept per part). Under
   `?debug=1` `debugLines()` names the failed sheet and the character,
-  until the next story starts. The `stage` view and a declaration without
+  until the next story starts or everything stops (`stopAll`). The `stage` view and a declaration without
   `frames` use the `image` as before.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
   `portrait`, `popup`; tour format 4.2) goes to the stage with a look
@@ -59,16 +59,24 @@ time. Plan:
   caption still shows in the card (captions always). The `portrait` view
   also shows the figure as a round portrait beside his name (`dom.portrait`,
   measured by `checkPicture` like a picture, hidden on the next step). A
-  character's voice tells the stage when it speaks (`setVoice("speaking")`,
-  with the clip's length when the audio knows it, `SceneAudio.durationMs`,
-  so the read-along is scaled to it) and when it has spoken (`"spoken"`);
-  every step change sets `"idle"`.
+  character's own voice - the one a tap on his standing look plays - tells
+  the stage when it speaks (`setVoice("speaking")`, with the clip's length
+  when the audio knows it, `SceneAudio.durationMs`, so the read-along is
+  scaled to it) and when it has spoken (`"spoken"`); every step change
+  sets `"idle"`. A `card` or `stage` view's voice is not his: it leaves
+  a standing look alone.
   As in the prototype, a story view's voice plays only on a tap on him
   (`characterTapped()`: the figure, bubble or stage in AR, through
   `visitor-stations.ts`, or the portrait in the card); a tap while his
-  voice plays stops it, and the next plays it again; a tap while another
-  step's sound plays starts his voice; a voice still loading when it was
-  stopped is dropped. The bubble view has no voice: its tap shuts or opens
+  voice plays stops it, and the next plays it again; **while the step's
+  own sound plays (an audio step, a card view's voice) or the step shows a
+  video (before its clip plays and while it plays), a tap on him is taken
+  and does nothing** - no second sound over it, and it is not stopped, so
+  a `lineEnd` step still moves on at its end; a voice still loading when
+  it was stopped is dropped. **His voice failing on a tap after his
+  story** (the panel is hidden, so the status line is not seen) is said
+  through `sayFailure` ("His voice could not be played here."); during a
+  story the status line says it, as for any media. The bubble view has no voice: its tap shuts or opens
   the bubble. The `stage` and `card` views still play the voice with the
   step. **The tap stays his whenever he stands:** after his step and after
   the story (the stage is released, `stage.release`, absent: `clear`, so
@@ -201,6 +209,10 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 
 ## World blocks a step reaches (B2b)
 
+- `sayFailure?(text)`: a failure the hidden panel cannot show (his voice,
+  tapped after his story, could not be read or played); the app shows it
+  in the walk's toast (`visitor-stations.ts` `sayFailureInToast`).
+  Absent: not said.
 - `onBlockShown?(stationId, blockId)`: called from the step's render when
   a `show` step reaches a block with a world view (`worldBlockReachedBy`),
   after a tap, a timer or a choice alike. The card still shows its words;

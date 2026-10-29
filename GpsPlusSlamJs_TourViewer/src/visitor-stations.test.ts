@@ -11,6 +11,7 @@ import {
   createCallGuard,
   declaredCharactersOf,
   routeVisitorTap,
+  sayFailureInToast,
   stationAlignmentSignals,
   walkDebugLines,
   walkDirectionsOf,
@@ -334,5 +335,24 @@ describe("walkDebugLines (the ?debug=1 readout)", () => {
   it("a creator, or a page without a radar, reads none", () => {
     expect(walkDebugLines("creator", radar, frames, 0)).toEqual([]);
     expect(walkDebugLines("visitor", null, frames, 0)).toEqual([]);
+  });
+});
+
+describe("sayFailureInToast", () => {
+  // Why this test matters: a failure the hidden panel cannot show (his
+  // voice, tapped after his story) must reach the visitor: shown in the
+  // walk's toast and, since the toast's root is aria-hidden, announced.
+  it("shows the failure in the toast and announces it; without a toast it says nothing and does not throw", () => {
+    const toast = { say: vi.fn(), announce: vi.fn() };
+    sayFailureInToast(toast)("His voice could not be played here.");
+    expect(toast.say).toHaveBeenCalledWith([
+      "His voice could not be played here.",
+    ]);
+    expect(toast.announce).toHaveBeenCalledWith(
+      "His voice could not be played here.",
+    );
+    expect(() => {
+      sayFailureInToast(undefined)("x");
+    }).not.toThrow();
   });
 });

@@ -142,6 +142,10 @@ hooks.tickStations = stations.tick;
   `characterTapped`: his voice, or the bubble view's bubble) and returns
   true so `main.ts` hands it nowhere else. A click on his portrait in the
   card (`dom.scene.portrait`, `wirePortraitTap`) goes the same way.
+  His voice failing on a tap after his story (the story panel is hidden)
+  goes to the walk's toast, shown and announced (the toast's root is
+  aria-hidden): `sayFailureInToast(toast)`, the scene view's
+  `sayFailure`; no walk sheet, not said.
   `routeVisitorTap` is `main.ts`'s order: the character, then a model's
   card, then a reading stand's page (`lectern-view.ts`, which turns it);
   a tap any of them takes closes the pin sheet, one none of them takes is the
