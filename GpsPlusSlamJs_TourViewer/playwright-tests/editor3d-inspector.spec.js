@@ -826,6 +826,18 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   await expect(story.filter({ hasText: "Sir Kay" })).toHaveText(
     "CharacterSir Kay",
   );
+  // His name heads his own parts, on a line of its own: it once ran into
+  // the "View" label after it ("Sir KayView").
+  const kayLabels = inspector.locator(
+    '.character[data-block="sir-kay"] > .flabel',
+  );
+  await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
+  await expect(kayLabels.nth(1)).toHaveText("View");
+  const nameBox = await kayLabels.nth(0).boundingBox();
+  const viewBox = await kayLabels.nth(1).boundingBox();
+  expect(viewBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (nameBox?.y ?? 0) + (nameBox?.height ?? 0) - 0.5,
+  );
   // An untitled picture is named by its kind in the tree.
   const card = page.locator('#tree-body .card[data-station="gate"]');
   await expect(card.locator('[data-select="gate-knight"]')).toContainText(

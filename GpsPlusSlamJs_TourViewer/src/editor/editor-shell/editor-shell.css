@@ -1666,6 +1666,13 @@ body[data-view="3d"] .view3d-credits {
   color: var(--s-muted);
 }
 
+/* Each of a character's labels on a line of its own: his name heads his
+ * parts, and his groups' labels ("View", "Moves on") sit over their chips
+ * (inline, the name ran into "View"). */
+.character > .flabel {
+  display: block;
+}
+
 .anno {
   margin: 6px 0;
   padding: 7px 8px;
