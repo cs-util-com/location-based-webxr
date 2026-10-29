@@ -65,6 +65,7 @@ if (hit !== null) edits.model(id, pickedEdit(pick, noteSpotOf(drawn, hit)!));
 
 ## Tests
 
+- `editor3d-model-parts.property.test.ts` - for any click within the format's model space and any model side from a millimetre to 1000 km (both sides of the 10 km boundary where the step turns whole): the rounded place is within half a step of the click, never -0, and still a spot the format takes (`applyModelEdit` adds the note).
 - `editor3d-model-parts.test.ts` - a turned, scaled, moved cube: the note's
   spot in model space, a 1 cm part and a 1 km building rounded to
   their own size, a slanted face under a stretch that differs per axis

@@ -31,10 +31,10 @@ const walk = (
 });
 
 describe("beckonNext", () => {
-  // Why this test matters: the plan's rule is "the character points along
-  // the tour order when exactly one next station exists, otherwise there
-  // is no beckon" - under a fixed order that is the next station the walk
-  // will offer, never a done one.
+  // Why this test matters: he points at the station the visitor goes to
+  // next. Under a fixed order that is the next station the walk will
+  // offer, never a done one, however many remain; under any order there is
+  // a next one only when exactly one undone station is left.
   it("points at the next undone station in a fixed order", () => {
     const p = walk("fixed", {
       a: "done",

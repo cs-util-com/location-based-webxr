@@ -186,11 +186,11 @@ export interface BeckonWalk {
 }
 
 /**
- * The station he beckons toward from `currentId`: he points along the tour
- * order when exactly one next station exists, otherwise there is no beckon.
- * Under a fixed order that is the first undone station after him (or
- * before, when the visitor skipped ahead); under any order, the one undone
- * station left besides his.
+ * The station he beckons toward from `currentId`, or null for no beckon.
+ * Under a fixed order he points at the first undone station after him (or
+ * before, when the visitor skipped ahead), however many remain; under any
+ * order only when exactly one undone station is left besides his (with
+ * more, no one of them is the next).
  */
 export function beckonNext(walk: BeckonWalk, currentId: string): string | null {
   const undone = walk.stations.filter(

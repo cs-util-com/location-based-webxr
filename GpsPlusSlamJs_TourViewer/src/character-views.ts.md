@@ -19,7 +19,7 @@ The rules for a recurring character's five world views (`bubble`, `speak`, `two-
 - `bubbleOpens(d)`: true when `d` is finite and under 9 m.
 - `popupUnfolds(d, unfolded)`: true under 12 m, or under 16 m once it has unfolded.
 - `readingFloor(d)`: `max(1, d / 2.4)`; a non-finite `d` gives 1.
-- `beckonNext(walk, currentId)`: he points along the tour order when exactly one next station exists; otherwise there is no beckon (`null`).
+- `beckonNext(walk, currentId)`: the station he beckons toward, or `null`. Under a fixed order, the first undone station after him (or before, when the visitor skipped ahead), however many remain; under any order, only when exactly one undone station is left besides his.
   - Under a fixed order: the first undone other station.
   - Under any order: the one undone station that is left, if there is only one.
 - `bubbleSide({x, width, last})` returns `{side, overflow}`, the prototype's `auto` side choice:

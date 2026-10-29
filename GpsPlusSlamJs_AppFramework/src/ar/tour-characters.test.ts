@@ -22,10 +22,12 @@ import {
   parseTourCharacters,
 } from './tour-characters';
 import {
+  createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
   TourManifestValidationError,
+  type TourManifest,
   type TourManifestDrop,
 } from './tour-manifest';
 
@@ -99,6 +101,23 @@ describe('the characters declaration', () => {
         JSON.parse(serializeTourManifest(manifest)) as object
       ).not.toHaveProperty('characters');
     }
+  });
+
+  it('a manifest built in code with no characters left is written at the minor its blocks need', () => {
+    // Why: a tour that needs nothing of minor 2 must not be stamped 4.2,
+    // or a writer of minor 1 refuses to save it again. A page may hand the
+    // writer a manifest whose characters it emptied (never parsed); the
+    // writer reads it through the parser first, which drops an empty list.
+    const built = {
+      ...createEmptyTourManifest(),
+      characters: [],
+      stations: [station('gate', [])],
+    } as unknown as TourManifest;
+    const written = JSON.parse(serializeTourManifest(built)) as {
+      minor: number;
+    };
+    expect(written.minor).toBe(0);
+    expect(written).not.toHaveProperty('characters');
   });
 
   it.each([
