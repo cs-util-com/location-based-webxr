@@ -768,7 +768,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   the volume through its own fade (only weakening when the volume is off);
   its shell shadow follows, and the state reports it as `cloudFlat`.
   `cloudShellVolume` (0, the default; 1 on; round-4 plan 2026-10-11-0122
-  R4d, `globe-cloud-shell-volume.js`) draws the clouds from
+  R4d, the Globe package's `globe-cloud-shell-volume-pass.ts`, driven
+  by its `globe-cloud-step.ts`) draws the clouds from
   `cloudShellTopKm` (700) down to the slab's ceiling as one ray-marched
   shell, faded in over `cloudShellBandKm` (300) above its top and mixed
   with the slab below its ceiling (the slab then drawn whole, its share the

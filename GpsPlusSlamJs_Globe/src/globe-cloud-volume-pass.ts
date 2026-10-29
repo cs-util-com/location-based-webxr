@@ -571,7 +571,7 @@ export function createGlobeCloudVolume(
           : 0;
       // Mixed with the spherical volume (round-4 plan R4d): the slab is
       // drawn whole wherever it is drawn at all, and its share weights the
-      // mix (the lab's `globe-cloud-shell-volume.js`); its fade by cover and
+      // mix (`globe-cloud-shell-volume-pass.ts`); its fade by cover and
       // disc would weaken it twice.
       const drawShare = mixed && share > 0 ? 1 : share;
       radiusM = frame.radiusKm * 1000 * drawShare;

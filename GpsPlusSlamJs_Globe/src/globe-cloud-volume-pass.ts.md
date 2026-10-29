@@ -50,7 +50,7 @@ shellHeightM, view, maxAheadM, mixed })` → `{ share, radiusM }`
     disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
     shell's hole is around the camera. `mixed` (round-4 plan
     2026-10-11-0122 R4d): the spherical volume mixes the slab by its share
-    (the lab's `globe-cloud-shell-volume.js`), so the slab's cover and disc are drawn
+    (`globe-cloud-shell-volume-pass.ts`), so the slab's cover and disc are drawn
     whole wherever its share is above 0 (its fade would apply twice).
   - `render(camera, relief, extra = [], { composite = true })` (`extra`:
     the city, drawn into the depth too): after the Earth, nothing at share

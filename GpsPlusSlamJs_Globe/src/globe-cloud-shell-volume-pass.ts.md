@@ -1,15 +1,18 @@
-# globe-cloud-shell-volume.js
+# globe-cloud-shell-volume-pass.ts
 
 ## Purpose
 
-The spherical cloud volume in the globe lab (round-4 plan
+The spherical cloud volume's drawing pass (round-4 plan
 `2026-10-11-0122-globe-round-4-owner-feedback-plan.md`, R4d / V1;
 DEC-R4-5 as reconciled with DEC-R3-6 in its §6 item 8): ONE full-screen
 ray march through a cloud shell around the Earth, from about 700 km down
 to the slab's ceiling, so the clouds the flat layer drew between 700 and
 30 km (the owner: "almost gone" there) are volumes; mixed with the slab
 below its ceiling. Behind `cloudShellVolume=1`, off by default until the
-owner has looked.
+owner has looked. Moved out of the globe lab (`labs/globe/globe-cloud-shell-volume.js`)
+as a pure refactor, typed, its shaders verbatim; its arithmetic is
+`globe-cloud-shell-volume.ts`, the lab's per-frame wiring of it
+`globe-cloud-step.ts`.
 
 ## Public API
 
@@ -24,7 +27,8 @@ groundSky, atmosphere, sceneDepth })`:
   table); `sceneDepth` the relief's depth (the Globe package's `globe-scene-depth.ts`).
 - `setEnabled(on)`, `enabled`; `setResolution(share)` (0.25-1 of the
   drawing buffer, RangeError outside).
-- `update({ altitudeKm, shares, stations, target, deckKm, cover })`: the
+- `update({ altitudeKm, shares, stations, target, deckKm, cover, cascade,
+highLayer, shadow })` (`CloudShellVolumeFrame`): the
   law at the altitude (`cloudShellVolumeLaw`), the weights from `shares`
   (`cloudShellVolumeShares`), the deck centred on `deckKm` (the cloud
   shell's height) and `thicknessScale` times the slab's 400 m thick, the
@@ -32,17 +36,23 @@ groundSky, atmosphere, sceneDepth })`:
   and the two fields' bases (the law's `cells`): the slab's own at scale
   1, else the same carried anchor over the scale through `cloudLiveBasis`. Returns `{ weight, slabWeight }`.
 - `render(camera, { worldFromEcef, sunEcef, sunIntensity, slabTexture,
-sceneDepthWeight, disc })`: the march into its own half-float target
+sceneDepthWeight, disc, flatten })` (`CloudShellVolumeRenderOptions`): the march into its own half-float target
   (cleared to 0, premultiplied; `disc`: the slab's `{ centre, deckY,
 radiusM }` from its state, the centre null on the camera, where its flat
   deck and its haze apply), then ONE composite over the frame of the shell
   times its fade-in less the slab's share of the cloud the slab draws at
   that pixel (`cloudShellPixelWeight`: r = the slab's alpha over the
   shell's) plus `slabTexture` (the slab drawn this frame at its full share,
-  the Globe package's `globe-cloud-volume-pass.ts` with `composite: false`) times the slab's share.
+  `globe-cloud-volume-pass.ts` with `composite: false`) times the slab's
+  share (0 without the texture).
   Returns whether it drew.
 - `readBack(bands)`: the last shell target's mean alpha and share over 0.05
-  per horizontal band (debug, slow); `state()`; `dispose()`.
+  per horizontal band (debug, slow); `alphaGrid(nx, ny, which)` a target's
+  alpha at a grid of pixel centres, bottom row first (`"deck"`, `"high"`,
+  `"shadow"`; zeros for the shadow while it is off); both null before a
+  frame was drawn; `state()`; `dispose()`.
+- The law is taken in `update` even while off (it refuses stations the
+  shares would refuse); a cascade without a field is a RangeError.
 
 ## The march (twin of the slab's, on a sphere)
 
@@ -78,7 +88,7 @@ radiusM }` from its state, the centre null on the camera, where its flat
 - The light at the interval's middle, by that point's own sun: the sun's
   transmittance from the space pass's table at the deck, the top and the
   underside as the slab's (`cloudTopRadiance`, `cloudLitRadiance`), the
-  zenith ambient from `ZENITH_TABLE` (`globe-cloud-shell-light.js`) by the
+  zenith ambient from `ZENITH_TABLE` (`globe-cloud-shell-light.ts`) by the
   sun's cosine. The slab's aerial fade (e^(-t / 60 km) a segment) by the
   law's `aerial` share: 1 at the slab's station (measured without it, the
   shell's mean alpha at 30 km read 0.48 against the slab's 0.29 at the same
@@ -168,15 +178,28 @@ radiusM }` from its state, the centre null on the camera, where its flat
 
 ## Tests
 
-- `globe-cloud-shell-light.test.mjs` (the ambient table).
-- `globe-cloud-shell-field.test.mjs` (the two-field mix keeps the field's
-  spread and the cover the thresholds draw, on the framework's CPU twin;
-  the plain average it replaces fails it).
-- `globe-cloud-shell-volume.smoke.spec.mjs`: compiles and draws at 700 /
-  200 / 50 km and nothing with the switch off or with the tile noise; the
-  owner's shots before and after (opt-in, `R4D_SHOTS_DIR`); the seam (its
-  mean difference and mean alphas asserted, not only the correlation); far
-  clouds at the owner's oblique pose with the slab on against off; the
-  descent and the cost (see the spec's header).
-- The arithmetic: `GpsPlusSlamJs_Globe/src/globe-cloud-shell-volume.test.ts`
-  and `.property.test.ts`.
+- `globe-cloud-shell-volume-pass.test.ts` (Node, the real framework sky
+  from `createGlobeGroundSky`, a recording fake renderer that snapshots
+  the uniforms at each draw): nothing drawn while off, unframed, weightless
+  or without the sun's table; the law taken while off; the march order
+  (alpha-0 clear, own target, clear colour and target put back); the
+  composite alone before the fade-in; the law's deck, march and look and
+  the aerial fade as the slab's share cubed; the sky's basis copied for
+  the slab's own field and the carried anchor for a scaled one; the
+  shadow pass and its switches reset; the high layer's swap and every
+  swapped uniform put back; the composite's slab weight only with a
+  texture and the flat deck's ease; the scene depth only while fresh; the
+  shared uniforms by identity; the resolution's refusals and target size;
+  the read-backs; dispose. Each of these was checked to fail on a mutant
+  of the line it pins.
+- `globe-cloud-shell-light.test.ts` (the ambient table).
+- The lab's `globe-cloud-shell-field.test.mjs` (the two-field mix keeps
+  the field's spread and the cover the thresholds draw, on the
+  framework's CPU twin; the plain average it replaces fails it).
+- The lab's `globe-cloud-shell-volume.smoke.spec.mjs`: compiles and draws
+  at 700 / 200 / 50 km and nothing with the switch off or with the tile
+  noise; the seam; far clouds at the owner's oblique pose; the descent
+  and the cost (see the spec's header). The look is these smokes and the
+  lab's reference captures, never the unit tests.
+- The arithmetic: `globe-cloud-shell-volume.test.ts` and
+  `.property.test.ts`.
