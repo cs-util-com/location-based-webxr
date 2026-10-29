@@ -16,8 +16,9 @@
     `sky`, `space`, `holeColor`, `cloudDrift`, `cloudDriftFarKm`,
     `cloudWindMps`, the lab's hash values of those names); `solarPosition`
     (the framework's ephemeris, `gps-plus-slam-app-framework/geo/solar-position`,
-    injected for now: the Globe package does not depend on the framework
-    yet); `stencil`, `reversedDepth` (the renderer's buffers); `mapLoader`,
+    injected, a deliberate seam: the tests drive the sun with a fake that
+    moves with the time, and the package's typecheck takes in only the
+    framework's atmosphere modules, not its `geo/` ones); `stencil`, `reversedDepth` (the renderer's buffers); `mapLoader`,
     `band`, `fill` (the surface's); `seams`; for tests `createRenderer` and
     `monoNow`.
   - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`;
@@ -27,7 +28,8 @@
     `earthCentreWorld()`; `fitDistance()` and `refit()`; `startClock(setting)`,
     `clock()`, `sceneMs()`, `resetCloudDrift()`, `sunNow()`; `frame()`;
     `state()` (`frameAt`, `frameRecentres`, `siderealAngleRad`,
-    `cloudDriftRate`).
+    `cloudDriftRate`); `dispose()` (the surface out of the scene and
+    freed, the sky pass, the renderer; the page stops its loop first).
   - `viewPoseEcef(ellipsoid, view)`: the ECEF pose of a Debug export's view
     (`lat`, `lng`, `altitudeKm` over the ellipsoid, `headingDeg` from north
     toward east, `pitchDeg` above the local horizontal). RangeError for a
@@ -82,7 +84,7 @@
   ```
 
 - Tests: `globe-view.test.ts` (Node, a fake renderer and canvas, the real
-  surface with a stub map loader): the frame's order with the seams, the
+  surface with a stub map loader): `dispose`, the frame's order with the seams, the
   paused frame, the fit, the clear colour and the sky switch, the sun and
   the sidereal angle at the frame's instant (already set when `driveCamera`
   runs, with a fake sun that moves with the time), the drift,

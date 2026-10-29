@@ -36,7 +36,10 @@ const PARAMS = {
 };
 
 /** The air over recording fakes of the three drawers. */
-const setup = (hand = { weight: 0.25, exposure: 4.5 }) => {
+const setup = (
+  hand = { weight: 0.25, exposure: 4.5 },
+  { noSky = false } = {},
+) => {
   const calls: string[] = [];
   let stage = "idle";
   const skyModel = { name: "sky" };
@@ -65,7 +68,7 @@ const setup = (hand = { weight: 0.25, exposure: 4.5 }) => {
       },
     },
     groundSky: {
-      atmosphere: skyModel,
+      atmosphere: noSky ? null : skyModel,
       update: (frame) => {
         calls.push("update");
         updates.push({ ...frame, sunWorld: frame.sunWorld.toArray() });
@@ -173,6 +176,17 @@ describe("createGlobeAir", () => {
       [0.25, 2],
       [0.25, 2],
     ]);
+  });
+
+  // A ground sky without its framework sky (no float targets) has nothing
+  // for the haze to copy: the haze is never handed null, whatever stage
+  // the ground sky reports.
+  it("never syncs the haze from a ground sky without its sky", () => {
+    const { air, calls, syncs, read } = setup(undefined, { noSky: true });
+    read("read");
+    air.step(PARAMS, { cameraEcef: at(1000), framed: true });
+    expect(syncs).toEqual([]);
+    expect(calls).toEqual(["update", "state", "weight"]);
   });
 
   // The sun's intensity is the eased exposure only from `finish` on: the

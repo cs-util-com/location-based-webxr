@@ -15,10 +15,13 @@
   - `update()`: the controls, then the planes;
   - `pickFrom(object)`: the controls' scene, swapped only on a change;
   - `limit`, `setAdjustHeight(on)`, `busy()` (pointers, a state, inertia or
-    a pending inertia update) and `release()` (drops momentum and zoom).
+    a pending inertia update) and `release()` (drops momentum and zoom);
+  - `dispose()`: removes the `start` listener and disposes the library's
+    controls (their canvas listeners), for a page that unmounts the view.
   - TypeError without `onTake`. `createControls` is the test seam.
 - Invariants: the library internals it reads (0.5.3) are typed once, in
   `ControlsInternals`. First person sets the eye's camera radius at once.
 - Tests: `globe-camera-controls.test.ts` (setup and `onTake`, the planes and
   the projection count, the globe's frame, first person, the intro, the
-  update order, `pickFrom`, `busy`/`release`, the height switch).
+  update order, `pickFrom`, `busy`/`release`, the height switch,
+  `dispose`).

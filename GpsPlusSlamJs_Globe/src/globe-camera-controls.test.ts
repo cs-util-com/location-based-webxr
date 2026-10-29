@@ -53,6 +53,11 @@ function fakeControls() {
     addEventListener: (type: string, fn: () => void) => {
       listeners.set(type, fn);
     },
+    removeEventListener: (type: string, fn: () => void) => {
+      if (listeners.get(type) === fn) listeners.delete(type);
+      calls.push(`remove ${type}`);
+    },
+    dispose: () => calls.push("dispose"),
     update: () => calls.push("update"),
     getCameraUpDirection: (v: THREE.Vector3) => {
       calls.push("up");
@@ -92,6 +97,20 @@ function setup(options: Parameters<typeof createGlobeCameraControls>[4]) {
     projections: () => projections,
   };
 }
+
+describe("createGlobeCameraControls: dispose", () => {
+  // Why: the editor mounts and unmounts the view; the library's controls
+  // hold canvas listeners and a raycast loop, and a left-over start
+  // listener would call the old page's onTake on the next press.
+  it("drops the start listener and disposes the library's controls", () => {
+    let taken = 0;
+    const { fake, controls } = setup({ onTake: () => (taken += 1) });
+    controls.dispose();
+    expect(fake.listeners.has("start")).toBe(false);
+    expect(fake.calls.slice(-2)).toEqual(["remove start", "dispose"]);
+    expect(taken).toBe(0);
+  });
+});
 
 describe("createGlobeCameraControls", () => {
   it("sets the controls up on the globe and calls onTake on a press", () => {

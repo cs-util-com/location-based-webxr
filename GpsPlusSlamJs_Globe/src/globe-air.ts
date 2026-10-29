@@ -50,7 +50,7 @@ interface AirGroundSky<Sky> {
 
 /** The lab's haze, as the wiring uses it. */
 interface AirHaze<Sky> {
-  sync(atmosphere: Sky | null): void;
+  sync(atmosphere: Sky): void;
   setWeight(weight: number, scale: number): void;
 }
 
@@ -187,9 +187,10 @@ export function createGlobeAir<Sky, Depth>(
             })
           : { weight: 0, exposure: params.sunIntensity };
       // The haze follows the ground sky: its state after each read, its
-      // strength by the weight.
-      if (groundSky.state().lastStage === "read") {
-        haze.sync(groundSky.atmosphere);
+      // strength by the weight. Without its sky there is nothing to copy.
+      const { atmosphere } = groundSky;
+      if (groundSky.state().lastStage === "read" && atmosphere !== null) {
+        haze.sync(atmosphere);
       }
       haze.setWeight(handOver.weight, params.hazeScale);
       stepped = true;

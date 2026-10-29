@@ -58,7 +58,8 @@ export function dropRepeatedFrames(trace) {
  * Two intro traces (one entry per frame): null when they match exactly,
  * else `{ lengths }` for traces of different lengths, or `{ fields }` with,
  * per field that differs, its first differing frame and the largest numeric
- * difference over all frames (null for a field that is not numeric).
+ * difference over all frames (null for a field that is not numeric, or
+ * whose values differ in a frame where their numbers do not).
  */
 export function diffTrace(a, b) {
   if (a.length !== b.length) return { lengths: [a.length, b.length] };
@@ -79,13 +80,16 @@ export function diffTrace(a, b) {
       const f = (fields[key] ??= { firstFrame: i, maxAbs: 0 });
       const nx = numbers(x);
       const ny = numbers(y);
+      let frameMax = 0;
       if (f.maxAbs !== null && nx.length === ny.length && nx.length > 0) {
         for (let k = 0; k < nx.length; k++) {
-          f.maxAbs = Math.max(f.maxAbs, Math.abs(nx[k] - ny[k]));
+          frameMax = Math.max(frameMax, Math.abs(nx[k] - ny[k]));
         }
-      } else {
-        f.maxAbs = null;
       }
+      // The values differ, but not in their numbers (a switch flipped, a
+      // name changed): no numeric difference describes that.
+      f.maxAbs =
+        frameMax > 0 && f.maxAbs !== null ? Math.max(f.maxAbs, frameMax) : null;
     }
   }
   return Object.keys(fields).length === 0 ? null : { fields };

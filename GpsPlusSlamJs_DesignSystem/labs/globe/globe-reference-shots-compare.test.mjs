@@ -105,6 +105,16 @@ describe("diffTrace", () => {
     assert.equal(d.fields.cameraDirection, undefined);
   });
 
+  // Why: a switch that flips while every number stays put (the dust on
+  // with the same count) is a real difference; a largest difference of 0
+  // would read as "no change" beside it.
+  it("reports no numeric difference for a field that differs only in its other parts", () => {
+    const a = [{ ...frame(1, 0), dust: { on: false, count: 3 } }];
+    const b = [{ ...frame(1, 0), dust: { on: true, count: 3 } }];
+    const d = diffTrace(a, b);
+    assert.deepEqual(d.fields.dust, { firstFrame: 0, maxAbs: null });
+  });
+
   it("reports traces of different lengths", () => {
     assert.deepEqual(diffTrace([frame(1, 0)], []), { lengths: [1, 0] });
   });

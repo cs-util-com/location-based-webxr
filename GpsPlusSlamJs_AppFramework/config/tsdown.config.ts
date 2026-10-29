@@ -436,7 +436,9 @@ const entryFiles = [
   // The sky's low-level building blocks (its model, CPU scattering twin,
   // GLSL and LUT passes) and the clouds, loaded by the globe lab by page
   // path; built per-file so the typed Globe package reaches them through
-  // the published `./visualization/*` wildcard (they are public API).
+  // the published `./visualization/*` wildcard (low-level deep imports:
+  // the README says they are not covered by semver and may change in a
+  // minor release).
   'src/visualization/atmosphere/atmosphere-glsl.ts',
   'src/visualization/atmosphere/atmosphere-luts.ts',
   'src/visualization/atmosphere/atmosphere-model.ts',

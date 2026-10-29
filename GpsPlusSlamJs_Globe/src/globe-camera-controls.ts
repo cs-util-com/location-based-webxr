@@ -85,6 +85,11 @@ export interface GlobeCameraControls {
   busy(): boolean;
   /** Ends any drag and drops the momentum. */
   release(): void;
+  /**
+   * Drops the start listener and disposes the library's controls (their
+   * canvas listeners); the controls are unusable afterwards.
+   */
+  dispose(): void;
 }
 
 /**
@@ -170,6 +175,10 @@ export function createGlobeCameraControls(
       inner.zoomDelta = 0;
       inner.globeInertia.identity();
       inner.globeInertiaFactor = 0;
+    },
+    dispose() {
+      controls.removeEventListener("start", onTake);
+      controls.dispose();
     },
   };
 }

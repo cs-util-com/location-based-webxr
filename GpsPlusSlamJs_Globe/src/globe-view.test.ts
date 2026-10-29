@@ -21,7 +21,7 @@
 
 import * as THREE from "three";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import {
@@ -51,6 +51,7 @@ function fakeRenderer(log: string[]) {
     clear: () => log.push("clear"),
     render: (scene: THREE.Object3D) =>
       log.push(`render ${scene.userData.role ?? scene.type}`),
+    dispose: () => log.push("renderer dispose"),
     getPixelRatio: () => ratio,
     setPixelRatio: (r: number) => {
       ratio = r;
@@ -116,6 +117,22 @@ function makeView(
     },
   };
 }
+
+describe("createGlobeView: dispose", () => {
+  // Why: the editor mounts and unmounts the view. Everything the view
+  // created must be freed with it: the surface (its tiles, maps and
+  // shell), the sky pass and the renderer, the surface out of the scene.
+  it("frees the surface, the sky and the renderer, and empties the scene", () => {
+    const { view, log } = makeView();
+    const globe = vi.spyOn(view.globe, "dispose");
+    const sky = vi.spyOn(view.sky, "dispose");
+    view.dispose();
+    expect(globe).toHaveBeenCalledTimes(1);
+    expect(sky).toHaveBeenCalledTimes(1);
+    expect(log.at(-1)).toBe("renderer dispose");
+    expect(view.scene.children).not.toContain(view.globe.group);
+  });
+});
 
 describe("createGlobeView: the frame", () => {
   // Why: the frame's order is the look. The page's air (the ground sky)

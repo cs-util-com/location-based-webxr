@@ -6,11 +6,28 @@
     "checkJs": false,
     "types": ["vitest/globals", "node"]
   },
-  // The framework's files as in tsconfig.app.json (see there).
+  // The framework's files as in tsconfig.app.json (see there; extend both).
   "include": [
     "src/**/*.ts",
     "src/**/*.json",
-    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/**/*.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-exposure.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-fallback.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-glsl.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-haze.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-lut-mapping.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-luts.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-model.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/atmosphere-scattering.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-column.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-coverage.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-hex.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-layer.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-live-noise.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-shadow.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sheet.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-slab.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-sun.ts",
+    "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/sky-atmosphere.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/clamp01.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/smoothstep.ts"

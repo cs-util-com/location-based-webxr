@@ -41,7 +41,7 @@
   files a folder happens to hold, so a view missing on either side fails.
   `diffTrace(a, b)`: null for equal traces, `{ lengths }` for different
   lengths (exit 1), else `{ fields }` with each differing field's first
-  frame and largest numeric difference (null when not numeric), printed
+  frame and largest numeric difference (null when not numeric, or when the values differ in a frame where their numbers do not), printed
   per field; a missing `trace.json` exits 1. Before the comparison
   `dropRepeatedFrames(trace)` removes each frame equal in every field to
   the one before it (a frame drawn without the clock moving; their number

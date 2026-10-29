@@ -20,8 +20,8 @@
   the drawing buffer's fit and the frame's order live in
   `/globe/globe-view.js` (`createGlobeView`, see its sidecar). The lab
   passes its hash values as `settings()`, the framework's
-  `solarPosition` (injected: the Globe package does not depend on the
-  framework yet), and its own work as seams: `driveCamera` (the intro, the
+  `solarPosition` (injected, a deliberate seam: the view's tests drive
+  the sun with it), and its own work as seams: `driveCamera` (the intro, the
   pin, the controls), `update` (the relief, the city, the OSM map, the
   clouds, the air), `afterSky` (the ground sky), `beforeScene` and
   `afterScene` (the dust, the depth, the cloud volumes, the atmosphere),

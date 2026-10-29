@@ -116,6 +116,11 @@ export interface GlobeViewOptions {
   /** The camera's field of view at creation (deg). */
   readonly fovYDeg: number;
   readonly settings: () => GlobeViewSettings;
+  /**
+   * The sun's ephemeris (the framework's `solarPosition`), injected: the
+   * tests drive the sun with it, and the package's typecheck takes in only
+   * the framework's atmosphere modules.
+   */
   readonly solarPosition: SolarPositionAt;
   /** A stencil buffer (the relief's stencil fill needs one). */
   readonly stencil?: boolean;
@@ -182,6 +187,12 @@ export interface GlobeView {
   /** One frame. */
   frame(): void;
   state(): GlobeViewState;
+  /**
+   * Frees what the view created: the surface (out of the scene first),
+   * the sky pass and the renderer. The page stops its animation loop
+   * first; the view is unusable afterwards.
+   */
+  dispose(): void;
 }
 
 /**
@@ -491,5 +502,11 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
       siderealAngleRad,
       cloudDriftRate: cloudDrift.rate,
     }),
+    dispose() {
+      scene.remove(globe.group);
+      globe.dispose();
+      sky.dispose();
+      renderer.dispose();
+    },
   };
 }
