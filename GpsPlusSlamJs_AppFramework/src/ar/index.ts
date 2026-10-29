@@ -274,7 +274,10 @@ export {
   type TourBlockDrop,
   type TourBlockKind,
   type TourBlockView,
+  type TourCharacter,
   type TourCharacterBlock,
+  type TourCharacterDrop,
+  type TourCharacterView,
   type TourChoiceOption,
   type TourLongTextBlock,
   type TourModelAnimation,
@@ -324,6 +327,7 @@ export { TOUR_ITEM_MAX_OFFSET_M } from './tour-items.js';
 export {
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
+  TOUR_CHARACTER_VIEWS,
   TOUR_MODEL_ANIMATION_RULES,
   TOUR_MODEL_MAX_NOTES,
   TOUR_MODEL_MAX_SECTIONS,

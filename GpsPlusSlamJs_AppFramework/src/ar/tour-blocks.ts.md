@@ -19,7 +19,9 @@ model | character`.
   - `shortText`: `pin`, `card`; `longText`: `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
-    `card`; `character`: `stage`, `card`.
+    `card`; `character`: `stage`, `bubble`, `speak`, `two-stations`,
+    `portrait`, `popup`, `card` (the five between are minor 2,
+    `TOUR_CHARACTER_VIEWS`, story views only).
   - The WORLD views (a free block's) are `pin`, `plane` and the model's
     world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
     keep a copy.
@@ -40,7 +42,8 @@ model | character`.
   (`annotations[i]` / `sections[i]`).
 - `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
   when a model stands in a view minor 1 added or carries `animation`,
-  `annotations` or `sections`; else 0. The writer stamps it.
+  `annotations` or `sections`; 2 when a character stands in a minor-2
+  view or names a declared character; else 0. The writer stamps it.
 - `TOUR_BLOCK_TEXT_RULES` - every capped text, as `{ max, unit, required }`:
   - `shortText`: `caption` required 40, `description` optional 160;
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
@@ -115,7 +118,12 @@ model | character`.
     (skips the block when lenient). Vectors are kept as written;
     renderers normalise directions.
 - `character`: `name`, `image` (an image asset), `caption`, optional
-  `voice` (an audio asset).
+  `voice` (an audio asset), and (minor 2) an optional `character`, the id
+  of a declared character (`tour-characters.ts`, passed in as
+  `TourBlocksReadOptions.characters`). A resolved reference gives the block
+  the declaration's name and image (the writer writes them inline too); an
+  unknown one fails at this reader's minor and, from a newer minor, is a
+  field drop (`field: 'character'`) keeping the inline name and image.
 
 ## Invariants & assumptions
 

@@ -28,6 +28,24 @@
   minor leaves out just that note or section, reported through
   `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
 
+- **A tour's recurring characters, five story views and the advance
+  when the line ends, `tour.json` version 4 minor 2** (`ar/tour-characters`,
+  `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
+  declare `characters` (`{ id, name, image }`, at most
+  `TOUR_MAX_CHARACTERS`), and a `character` block may name one by its new
+  optional `character` field: the block then takes the declaration's name
+  and image, and the writer keeps them inline too. A character block gains
+  the story views `bubble`, `speak`, `two-stations`, `portrait` and
+  `popup` (`TOUR_CHARACTER_VIEWS`), and a story step the advance
+  `{ mode: 'lineEnd' }`. New exports: `parseTourCharacters`,
+  `TOUR_MAX_CHARACTERS`, `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
+  types `TourCharacter`, `TourCharacterDrop`, `TourCharacterView`;
+  `TourManifest` gains an optional `characters`, `TourManifestDrop` a
+  character drop. `TOUR_MANIFEST_MINOR` is 2, and a tour using none of this
+  is still written at its lower minor. A reader of 1.31.0 opens a 4.2 tour
+  leniently: the character shows as a card with its name, caption and
+  voice, `lineEnd` advances on a tap, and that app will not save the tour.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

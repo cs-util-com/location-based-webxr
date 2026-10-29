@@ -411,7 +411,15 @@ describe('views', () => {
       video: ['card'],
       audio: ['card'],
       model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
-      character: ['stage', 'card'],
+      character: [
+        'stage',
+        'bubble',
+        'speak',
+        'two-stations',
+        'portrait',
+        'popup',
+        'card',
+      ],
     });
   });
 

@@ -52,6 +52,24 @@ export type TourBlockKind =
   | 'model'
   | 'character';
 
+/** The views a character speaks in as a story step (minor 2), besides
+ *  4.0's `stage` and `card`: a speech bubble over his head (`bubble`);
+ *  the bubble with his voice on a tap (`speak`); the bubble, and once his
+ *  line has ended he beckons along the tour (`two-stations`); a portrait
+ *  card at the foot of the screen (`portrait`); a paper stage that unfolds
+ *  at the station (`popup`). None is a world view: a character speaks
+ *  only as a step. */
+export const TOUR_CHARACTER_VIEWS = [
+  'bubble',
+  'speak',
+  'two-stations',
+  'portrait',
+  'popup',
+] as const;
+
+/** A character's minor-2 view. */
+export type TourCharacterView = (typeof TOUR_CHARACTER_VIEWS)[number];
+
 /** The views this reader draws, per kind. A view joins the format with its
  *  renderer; `card` (the block in the scene card) exists for every kind. */
 export const TOUR_BLOCK_VIEWS = {
@@ -61,7 +79,7 @@ export const TOUR_BLOCK_VIEWS = {
   video: ['card'],
   audio: ['card'],
   model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
-  character: ['stage', 'card'],
+  character: ['stage', ...TOUR_CHARACTER_VIEWS, 'card'],
 } as const satisfies Record<TourBlockKind, readonly string[]>;
 
 /**
@@ -104,6 +122,10 @@ const MINOR_0_MODEL_VIEWS: ReadonlySet<string> = new Set([
   'stage',
   'card',
 ]);
+
+/** A character's views of minor 0; any other, or a `character`
+ *  reference, makes the tour need minor 2. */
+const MINOR_0_CHARACTER_VIEWS: ReadonlySet<string> = new Set(['stage', 'card']);
 
 /** How a text cap is counted. */
 export type TourTextUnit = 'codePoints' | 'utf16';
@@ -283,9 +305,13 @@ export interface TourModelBlock extends TourBlockEnvelope<'model'> {
 }
 
 export interface TourCharacterBlock extends TourBlockEnvelope<'character'> {
+  /** As written; with a `character` reference, the declaration's. */
   readonly name: string;
-  /** A cut-out image asset. */
+  /** A cut-out image asset; with a `character` reference, the
+   *  declaration's. */
   readonly image: string;
+  /** Minor 2: the tour's declared character this is (`tour-characters.ts`). */
+  readonly character?: string;
   /** Captions always: what the character says, as text. */
   readonly caption: string;
   /** An optional voice clip (an audio asset). */
@@ -326,6 +352,9 @@ export interface TourBlockRead {
  *  minor (`lenient`), and who hears what was left out. */
 export interface TourBlocksReadOptions {
   readonly assets: readonly TourAsset[];
+  /** The tour's declared characters by id (`tour-characters.ts`), which a
+   *  character block's `character` names; none when absent. */
+  readonly characters?: ReadonlyMap<string, DeclaredCharacter>;
   readonly fail: Fail;
   readonly lenient?: boolean;
   readonly onDropped?: (drop: TourBlockDrop) => void;
@@ -393,6 +422,12 @@ const FREE_FLOOR: Record<TourBlockKind, TourBlockView | null> = {
   character: null,
 };
 
+/** What a block takes from a declared character. */
+interface DeclaredCharacter {
+  readonly name: string;
+  readonly image: string;
+}
+
 /** Thrown inside one block's read when a lenient reader cannot show it;
  *  caught per block. Never escapes this module. */
 class SkippedBlock extends Error {}
@@ -401,6 +436,7 @@ interface BlockContext {
   readonly at: string;
   readonly id: string;
   readonly assets: ReadonlyMap<string, TourAssetKind>;
+  readonly characters: ReadonlyMap<string, DeclaredCharacter>;
   readonly fail: Fail;
   readonly lenient: boolean;
   readonly onDropped: ((drop: TourBlockDrop) => void) | undefined;
@@ -686,11 +722,38 @@ function modelAnimation(v: Fields, ctx: BlockContext) {
   return { animation };
 }
 
+/** A character block's name and image, from the declaration it names
+ *  (minor 2) or as written. A name no declaration has fails a file of this
+ *  reader's own minor; a newer one's drops just the reference. */
+function characterFields(v: Fields, ctx: BlockContext) {
+  const name = requiredText(v, 'name', rules.character.name, ctx);
+  const image = assetRef(v, 'image', 'image', ctx);
+  const ref = v.character;
+  if (ref === undefined) return { name, image };
+  const declared =
+    typeof ref === 'string' ? ctx.characters.get(ref) : undefined;
+  if (declared !== undefined) {
+    return { name: declared.name, image: declared.image, character: ref };
+  }
+  const reason = `"${ctx.at}.character" must name a character of the tour`;
+  if (!ctx.lenient) return ctx.fail(reason);
+  ctx.onDropped?.({ kind: 'field', block: ctx.id, field: 'character', reason });
+  return { name, image };
+}
+
 /**
- * The lowest minor `blocks` need: 1 when a model stands in a view minor 1
- * added, or carries an animation, notes or sections; 0 otherwise.
+ * The lowest minor `blocks` need: 2 when a character speaks in a view
+ * minor 2 added or names a declared character; 1 when a model stands in a
+ * view minor 1 added, or carries an animation, notes or sections; 0
+ * otherwise.
  */
 export function tourBlocksMinor(blocks: readonly TourBlock[]): number {
+  const needsTwo = blocks.some(
+    (b) =>
+      b.kind === 'character' &&
+      (!MINOR_0_CHARACTER_VIEWS.has(b.view) || b.character !== undefined)
+  );
+  if (needsTwo) return 2;
   const needsOne = blocks.some(
     (b) =>
       b.kind === 'model' &&
@@ -748,8 +811,7 @@ const KIND_FIELDS: Record<TourBlockKind, KindFields> = {
     ...modelSections(v, ctx),
   }),
   character: (v, _view, ctx) => ({
-    name: requiredText(v, 'name', rules.character.name, ctx),
-    image: assetRef(v, 'image', 'image', ctx),
+    ...characterFields(v, ctx),
     caption: requiredText(v, 'caption', rules.character.caption, ctx),
     ...optionalAssetRef(v, 'voice', 'audio', ctx),
   }),
@@ -833,6 +895,7 @@ export function readTourBlocks(
       at: blockAt,
       id,
       assets,
+      characters: options.characters ?? new Map(),
       fail,
       lenient,
       onDropped: options.onDropped,

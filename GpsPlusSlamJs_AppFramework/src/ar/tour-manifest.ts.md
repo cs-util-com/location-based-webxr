@@ -19,7 +19,7 @@ tour id and the tour details.
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 4` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 4
+  `TOUR_MANIFEST_MINOR = 2` (the newest additive revision of version 4
   this module knows).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
@@ -155,7 +155,8 @@ TourPicture | TourModel` - a free block without its local pose, plus
   every minor. The writer refuses a manifest whose minor is newer than
   `TOUR_MANIFEST_MINOR` (it was read with fields dropped). The writer
   writes the LOWEST minor the tour needs (`tourBlocksMinor` over every
-  station's blocks), so an older reader opens fully every tour that uses
+  station's blocks, `tourStepsMinor` over every station's story, and 2
+  when the tour declares characters), so an older reader opens fully every tour that uses
   nothing newer, and is never handed something it would drop on its own
   write.
 - **Minor 1** (`TOUR_MANIFEST_MINOR = 1`): a model's world views `ghost`,
@@ -165,6 +166,15 @@ TourPicture | TourModel` - a free block without its local pose, plus
   reader opening a 4.1 tour reads it leniently: a model in a view it does
   not know falls back to `placed`, and the new fields are ignored.
   `TourModel['view']` is any `TourModelWorldView`.
+- **Minor 2** (`TOUR_MANIFEST_MINOR = 2`): the tour's recurring
+  characters (`characters`, `tour-characters.ts.md`, read before the
+  stations so a `character` block's `character` reference resolves), the
+  character's five story views `bubble`, `speak`, `two-stations`,
+  `portrait`, `popup`, and the advance `{ mode: 'lineEnd' }`
+  (`tour-story.ts.md`). The writer keeps a referencing block's inline
+  `name` and `image` in step with its declaration, so a 4.0 or 4.1 reader
+  shows the character as a `card` by its name, reads `lineEnd` as a tap,
+  ignores `characters`, and will not save the tour.
 - **Unknown VALUES of a newer minor:** an unknown block kind or view, step
   kind, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story
