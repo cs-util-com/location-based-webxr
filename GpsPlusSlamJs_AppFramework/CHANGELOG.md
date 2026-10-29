@@ -26,6 +26,12 @@
   `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9) is refused as a zero direction, at every
   minor.
 
+### Fixed
+
+- **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return
+  -0** (`utils/median`). A 0 and a -0 compare equal, so the result's sign
+  used to follow the order the samples arrived in; a median of -0 is now 0.
+
 ## [1.31.0] - 2026-10-28
 
 > ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
