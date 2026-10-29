@@ -103,7 +103,7 @@ export const MODEL_EDIT_REFUSALS = {
 const WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
 
 /** Whether `view` is a view a model stands in the world in. */
-export function isModelWorldView(view: string): view is TourModelWorldView {
+function isModelWorldView(view: string): view is TourModelWorldView {
   return WORLD_VIEWS.has(view);
 }
 
@@ -119,7 +119,7 @@ const isVector = (v: unknown, direction: boolean): v is TourModelVector =>
   (!direction || (v as number[]).some((x) => x !== 0));
 
 /** Whether `at` is a spot the format takes. */
-export function isModelSpot(at: ModelSpot): boolean {
+function isModelSpot(at: ModelSpot): boolean {
   return isVector(at.position, false) && isVector(at.normal, true);
 }
 

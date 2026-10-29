@@ -28,7 +28,7 @@ and to the editor's default view rule.
     creator reads.
 - `MODEL_EDIT_REFUSALS` - view, notesFull, sectionsFull, noSuchNote,
   noSuchSection, spot, noteTitle, noteText, sectionName, animationName.
-- `isModelWorldView(value)`, `isModelSpot(value)` - the guards the edits use.
+- The guards the edits use (`isModelWorldView`, `isModelSpot`) are module-private.
 
 ## Invariants and assumptions
 
