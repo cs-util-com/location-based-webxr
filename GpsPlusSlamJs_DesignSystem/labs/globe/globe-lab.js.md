@@ -436,7 +436,7 @@
     the credits line names Mapterhorn and Copernicus GLO-30 with their
     links. The city's heights and the landing's ground read the same
     source at its global zoom (12; the relief draws z14 where it can, an
-    unmeasured difference, `globe-city-heights.js.md`); the detail
+    unmeasured difference, the Globe's `globe-city-heights.ts.md`); the detail
     colour stays on AWS z8.
     `reliefDevice=phone|desktop` (without it, from the input: phone for a
     coarse pointer, desktop otherwise; the state's `relief.device` and
@@ -573,7 +573,8 @@ globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` i
     instead of snapping), then held at the landing altitude.
 
 - The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
-  §14; `globe-city.js`, `globe-city-worker.js`): `city` (default 1, read at
+  §14; the Globe's `globe-city.ts` and `globe-city-step.ts`, the lab's
+  `globe-city-worker.js`): `city` (default 1, read at
   start; 0 turns it off) and `cityKm` (30). The pin's warm-up IS the
   city's load (above, round-4 plan 2026-10-11-0122 §5); once a place is
   known (the pin's located target or the link's `at=`) and no warm-up runs
@@ -609,7 +610,8 @@ heightM)` (the ECEF point of a place, for an independent placement check)
 - The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
   into the pin:
   - at the fix (or from load for an `at=` link, `cityWarm`), the lab starts
-    the city's own load for the target (`startCityLoad`: `globe-city.js`'s
+    the city's own load for the target (`startCityLoad`: the Globe's
+    `globe-city-step.ts` `warmUp`, `globe-city.ts`'s
     `load` with `fresh`, the Osm library's `loadCityData` in the city's
     worker; round-4 plan 2026-10-11-0122 §5). The warm-up and the build are
     ONE load: the flight paces on exactly the tiles and heights the city

@@ -7,25 +7,29 @@
  * Mapterhorn relief the city still stood on AWS heights, up to 12 m apart
  * in towns (the G0 spikes).
  *
- * Pure, no imports: the worker loads it through the worker view, and the
- * lab's node tests import it directly.
+ * Pure, no imports: the lab's city worker loads it through the worker view
+ * (`/w/globe/`), and `globe-city.ts` checks a template with it. Moved out of
+ * the globe lab as a pure refactor (editor-on-the-full-globe plan, the
+ * city slice).
  *
- * @see globe-city-heights.js.md
+ * @see globe-city-heights.ts.md
  */
 
 /** The zooms a city's heights may be read at (the Osm library's reader). */
 export const CITY_HEIGHTS_ZOOM = Object.freeze({ min: 1, max: 15 });
 
+/** The Osm library's heights spec for `cityDataPlan`. */
+export interface CityHeightsSpec {
+  urlTemplates: string[];
+  zoom: number;
+}
+
 /**
  * The library's heights spec for a city: `{ urlTemplates: [url], zoom }`.
  * RangeError for a zoom that is not an integer 1-15 or a url that is not
  * a `{z}`/`{x}`/`{y}` template.
- *
- * @param {number} zoom
- * @param {string} url
- * @returns {{ urlTemplates: string[], zoom: number }}
  */
-export function cityHeights(zoom, url) {
+export function cityHeights(zoom: number, url: string): CityHeightsSpec {
   if (!(
     Number.isInteger(zoom) &&
     zoom >= CITY_HEIGHTS_ZOOM.min &&
@@ -40,7 +44,7 @@ export function cityHeights(zoom, url) {
     !url.includes("{y}")
   ) {
     throw new RangeError(
-      `a city needs the relief's {z}/{x}/{y} height template, got ${url}`,
+      `a city needs the relief's {z}/{x}/{y} height template, got ${String(url)}`,
     );
   }
   return { urlTemplates: [url], zoom };

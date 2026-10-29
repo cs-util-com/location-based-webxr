@@ -132,7 +132,6 @@ import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
-  cityShareAt,
   exaggerationAt,
   minimumAltitudeM,
   pitchAtDeg,
@@ -156,7 +155,8 @@ import { createGlobeCloudVolume } from "/globe/globe-cloud-volume-pass.js";
 import { createGlobeCloudShellVolume } from "/globe/globe-cloud-shell-volume-pass.js";
 import { createGlobeCloudStep } from "/globe/globe-cloud-step.js";
 import { createGlobeSceneDepth } from "/globe/globe-scene-depth.js";
-import { createGlobeCity } from "./globe-city.js";
+import { createGlobeCity } from "/globe/globe-city.js";
+import { createGlobeCityStep } from "/globe/globe-city-step.js";
 import {
   SPEED_DUST_MAX_COUNT,
   createSpeedDustPass,
@@ -1448,7 +1448,7 @@ function currentPose({ position, quaternion }) {
  *
  * THE ARRIVAL PREFETCH (round-5 plan 2026-10-01-0945 §3.6 step 1): once the
  * position is known, the lab starts the city's own load for the target
- * (`startCityLoad`: `globe-city.js`'s `load`, the Osm library's
+ * (`startCityLoad`: the Globe's `globe-city.ts` `load`, the Osm library's
  * `loadCityData` in the city's worker; round-4 plan 2026-10-11-0122 §5:
  * the warm-up and the build are one load, so the flight paces on exactly
  * the data the city reads, and the 21 MB JSON parse stays off the main
@@ -2504,6 +2504,19 @@ async function start() {
       ? createGlobeCity({
           parent: globe.group,
           ellipsoid: globe.tiles.ellipsoid,
+          // A LITERAL URL: the lookdev builder finds a worker by its literal
+          // string, so a variable would leave the deployed preview without
+          // it. Through the worker view (`/w/`): its modules import
+          // packages by name.
+          createWorker: () =>
+            new Worker("/w/labs/globe/globe-city-worker.js", {
+              type: "module",
+            }),
+          // The library's three.js entry, loaded with the first city: the
+          // lab's boot graph stays free of the Osm library
+          // (`build-lookdev.test.mjs` holds it to that), so a page that
+          // never reaches a city never loads it.
+          loadCityThree: () => import("gps-plus-slam-osm/three"),
           roads: params.cityRoads === 1,
           roadLiftM: params.roadLiftM,
           roadOffset: params.roadOffset,
@@ -2513,17 +2526,8 @@ async function start() {
           heightsUrl: terrarium ? reliefSource.url : undefined,
         })
       : null;
-  /** The place the city was last asked for, as "lat,lng". */
-  let cityKey = null;
-  /**
-   * A failed build is asked for again after a pause, a few times, so a
-   * passing Overpass or DEM failure does not leave the place without a city
-   * for the session (r790 milestone review F6).
-   */
-  const CITY_RETRY_MS = 10_000;
-  const CITY_RETRIES = 3;
-  let cityTries = 0;
-  let cityFailedAt = null;
+  // The city's loads, retries and fade, frame by frame.
+  const cityStep = city ? createGlobeCityStep({ city }) : null;
   let appliedHash = location.hash.slice(1);
   // The globe's one clock (the view's); restarted only when its setting
   // changes. The clouds' drift is summed per frame in the view.
@@ -2781,9 +2785,8 @@ async function start() {
     // The city loads its own data (round-4 plan 2026-10-11-0122 §5), only
     // where it can be drawn: the relief at true heights near the ground (R14).
     startCityLoad: (target) =>
-      city && exaggerationAt(0, heightLaw()) === 1
-        ? city.load(target, { zoom: reliefGlobalZoom, fresh: true })
-        : null,
+      cityStep?.warmUp(target, { zoom: reliefGlobalZoom, law: heightLaw() }) ??
+      null,
     // The relief's detail colour over the target's region, built while
     // the dive runs.
     onLocated: (target, p) => {
@@ -2964,51 +2967,18 @@ async function start() {
           globe.tiles.group.worldToLocal(camera.position.clone()),
         ),
       );
-      if (city) {
-        // The flight's place, or the link's: loaded here when no warm-up is
-        // running for it (`prefetch=0`, `cityWarm=0`, a stopped flight). A
-        // load of the place that runs or ran is the same load (`city.load`
-        // returns it), so nothing is downloaded twice.
+      if (cityStep) {
+        // The flight's place, or the link's: loaded when no warm-up runs for
+        // it, retried after a failure, faded by altitude (`globe-city-step`).
         const { located, arrival } = pin.state();
-        const place = located ?? params.url;
-        const warming = arrival != null && arrival.outcome === null;
-        const groundTrue = exaggerationAt(0, heightLaw()) === 1;
-        const key = place ? `${place.lat},${place.lng}` : null;
-        if (key !== cityKey) cityTries = 0;
-        const cityNow = performance.now();
-        const cityState = city.state();
-        if (key !== null && key === cityKey && cityState.phase === "failed") {
-          cityFailedAt ??= cityNow;
-          if (
-            cityNow - cityFailedAt > CITY_RETRY_MS &&
-            cityTries < CITY_RETRIES
-          ) {
-            cityKey = null; // asks again below
-          }
-        }
-        // Without a warm-up (`cityWarm=0`, `prefetch=0`) the frame loop loads
-        // only once the city could be seen (below `cityKm`): a link that
-        // names a place for its view loads no city data from orbit.
-        const wanted = arrival != null || altitudeM < params.cityKm * 1000;
-        if (
-          key !== null &&
-          key !== cityKey &&
-          !warming &&
-          groundTrue &&
-          wanted
-        ) {
-          city.load(place, { zoom: reliefGlobalZoom });
-          cityKey = key;
-          cityTries += 1;
-          cityFailedAt = null;
-        }
-        // Drawn only where the relief is drawn at true heights NOW (R14,
-        // review F8): with `reliefGround` the relief is exaggerated above
-        // 2-8 km, and true-height buildings would stand buried in it there.
-        const trueNow = exaggerationAt(altitudeM, heightLaw()) === 1;
-        city.setFade(
-          trueNow ? cityShareAt(altitudeM, params.cityKm * 1000) : 0,
-        );
+        cityStep.step({
+          place: located ?? params.url,
+          arrival,
+          altitudeM,
+          topM: params.cityKm * 1000,
+          zoom: reliefGlobalZoom,
+          law: heightLaw(),
+        });
       }
       const highM = params.bandHigh * 1000;
       band.step(now, {
@@ -4489,7 +4459,6 @@ void main() {
        * near the camera waiting for its map.
        */
       viewReadiness() {
-        const cityState = city?.state();
         return {
           band: !terrain || Math.abs(bandShare() - bandTarget) < 1e-3,
           release: bandRelease?.settled() ?? true,
@@ -4497,10 +4466,7 @@ void main() {
           // (`city.arrived`), so a run need not wait for the load's end;
           // the sweep waits for that once, before its first move
           // (`cityGate`).
-          city:
-            !cityState ||
-            (cityState.phase !== "loading" &&
-              Math.abs(cityState.shown - cityState.fade) < 1e-3),
+          city: !cityStep || cityStep.ready(),
           osm: perfOsmReady(),
         };
       },
@@ -4513,17 +4479,7 @@ void main() {
        * for the place, or failed with every retry spent).
        */
       cityGate() {
-        if (!city) return "off";
-        const s = city.state();
-        if (s.phase === "idle") return "idle";
-        if (s.load?.ended) return "ended";
-        if (
-          s.load?.outcome === "unavailable" ||
-          (s.phase === "failed" && cityTries >= CITY_RETRIES)
-        ) {
-          return "gave-up";
-        }
-        return "loading";
+        return cityStep?.gate() ?? "off";
       },
       /** Whether the city draws anything this frame (null without one). */
       cityDrawn: () => (city ? city.root.visible : null),
