@@ -2668,17 +2668,17 @@ function abandon(): AutosaveOutcome {
   return "held";
 }
 
+/** The tour whose Save (`runSave`) runs now, or null: an open keeps the
+ *  save slot's holder, so "explicit" alone cannot tell this tour's Save
+ *  from the closed tour's. */
+let explicitSaveOf: EditorSession | null = null;
+
 /**
  * The explicit Save (the button, Ctrl+S, "Download instead"). Asked for
  * while an autosave runs, it waits for it and runs next; what it comes to
  * tells the autosave (a landed save ends a pause, a failed one pauses it).
  * `pick`: the file its click asked for (`askSaveFile`), if any.
  */
-/** The tour whose Save (`runSave`) runs now, or null: an open keeps the
- *  save slot's holder, so "explicit" alone cannot tell this tour's Save
- *  from the closed tour's. */
-let explicitSaveOf: EditorSession | null = null;
-
 async function runSave(
   pick: Promise<SaveFilePick> | null = null,
 ): Promise<void> {

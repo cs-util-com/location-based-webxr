@@ -58,6 +58,13 @@ select. The styles are in `model-visitor.css`, which stacks the layer
 (z 15) below the note leaders and discs (z 20), so a disc stays tappable
 while it is shown, and the card (z 31) above them all.
 
+- **Decided (the r973 review, accepted as is):** at z 15 the gesture layer
+  also sits below the walk radar (z 20) and level with the walk coach. A
+  pinch or a drag that starts on one of those controls does not reach the
+  toy, and that is right: the page's controls must stay tappable while a
+  toy is held, and the visitor can start the gesture anywhere else on the
+  screen.
+
 ## Tests
 
 `model-visitor.test.ts` (jsdom): which models have a card, opening and

@@ -102,6 +102,9 @@
   opacity: 1;
 }
 
+/* Below the note discs and the walk radar (z 20) and level with the walk
+   coach: a gesture starting on a control is the control's (decided,
+   model-visitor.ts.md "Gesture layer"). */
 .model-gestures {
   position: absolute;
   inset: 0;
