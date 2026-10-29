@@ -18,6 +18,7 @@ import type { TourModel } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import { applyModelEdit } from "../editor/model-edits.js";
+import { largestSide } from "../model-scale.js";
 import { noteSpotOf } from "./editor3d-model-parts.js";
 
 /** A cube model of side `side` (the file's units) and a click on it at
@@ -35,8 +36,11 @@ function clickOn(side: number, point: readonly [number, number, number]) {
   return { model, hit };
 }
 
-/** The rounding step `noteSpotOf` uses for a model of side `side`: the
- *  power of ten nearest below a ten-thousandth of it. */
+/** The rounding step `noteSpotOf` uses for a model whose largest side
+ *  is `side`: the power of ten nearest below a ten-thousandth of it. The
+ *  side is the model's as measured (`largestSide`), not the one asked
+ *  for: a cube of side just below a power of ten may measure a float's
+ *  width over it, and the step then is ten times larger. */
 const stepOf = (side: number): number =>
   10 ** Math.floor(Math.log10(side * 1e-4));
 
@@ -69,14 +73,12 @@ describe("noteSpotOf's rounding (properties)", () => {
           const { model, hit } = clickOn(s, point);
           const spot = noteSpotOf(model, hit);
           expect(spot).not.toBeNull();
-          const step = stepOf(s);
+          const step = stepOf(largestSide(model));
           for (const [i, v] of (spot?.position ?? []).entries()) {
             expect(Object.is(v, -0)).toBe(false);
-            // Half a step, and a hair over it for the float's own error:
-            // the point's, and the step's own for a point near zero (the
-            // model's scale rounds it too).
+            // Half a step, and a hair over it for the point's float error.
             expect(Math.abs(v - point[i]!)).toBeLessThanOrEqual(
-              step / 2 + (Math.abs(point[i]!) + step) * 1e-12,
+              step / 2 + Math.abs(point[i]!) * 1e-12,
             );
           }
           const added = applyModelEdit(
@@ -88,8 +90,17 @@ describe("noteSpotOf's rounding (properties)", () => {
         },
       ),
       // A click a float's width over half a step from a near-zero
-      // coordinate: the error is the model's scale's, not the point's.
-      { examples: [[0.9999999999999988, [0, -0.000005000000000005001, 0]]] },
+      // coordinate on a model that measures a hair under a power of ten;
+      // and clicks just under half a step on models just under a power
+      // of ten, where a step taken from the asked-for side would be wrong.
+      {
+        examples: [
+          [0.9999999999999988, [0, -0.000005000000000005001, 0]],
+          [0.99999999, [0, 4.95e-5, 0]],
+          [99_999.999, [0, 0.495, 0]],
+          [9_999.9999, [0, 0.0495, 0]],
+        ],
+      },
     );
   });
 
