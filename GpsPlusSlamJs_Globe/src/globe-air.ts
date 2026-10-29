@@ -121,7 +121,10 @@ export interface GlobeAir<Depth> {
     params: AirParams,
     frame: { cameraEcef: readonly [number, number, number]; framed: boolean },
   ): void;
-  /** The sun's eased intensity and the shell's thickness, after the clouds. */
+  /**
+   * The sun's eased intensity and the shell's thickness, after the clouds.
+   * Throws an Error before the first `step`: there is no hand-over yet.
+   */
   finish(params: AirParams): void;
   /**
    * The page's live look of the space pass (its march steps and strength),
@@ -162,6 +165,7 @@ export function createGlobeAir<Sky, Depth>(
   let handOver: AirHandOver = { weight: 0, exposure: Number.NaN };
   let observerKm = Number.POSITIVE_INFINITY;
   let shellThickness: number | null = null;
+  let stepped = false;
   return {
     step(params, { cameraEcef, framed }) {
       observerKm = observerAltitudeKm(
@@ -188,17 +192,16 @@ export function createGlobeAir<Sky, Depth>(
         haze.sync(groundSky.atmosphere);
       }
       haze.setWeight(handOver.weight, params.hazeScale);
+      stepped = true;
     },
     finish(params) {
-      // Before the first `step` there is no hand-over (exposure NaN): the
-      // space view's sun, never a NaN that draws the scene black.
-      sun.intensity = Number.isFinite(handOver.exposure)
-        ? handOver.exposure
-        : params.sunIntensity;
-      // The observer is at +Infinity before the first `step`: far away,
-      // where the ramp gives the far thickness.
+      // Before the first `step` there is no hand-over (its exposure NaN,
+      // the observer at +Infinity): a caller out of order fails loudly
+      // rather than drawing the scene black or guessing a far look.
+      if (!stepped) throw new Error("GlobeAir.finish before the first step");
+      sun.intensity = handOver.exposure;
       const thickness =
-        params.atmoRamp === 1 && Number.isFinite(observerKm)
+        params.atmoRamp === 1
           ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)
           : params.atmoThickness;
       if (thickness !== shellThickness) {

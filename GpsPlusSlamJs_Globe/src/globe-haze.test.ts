@@ -10,7 +10,8 @@
  * lab's smoke and the reference captures.
  */
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AtmosphereHaze } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-haze";
 
 import { createGlobeHaze, FOG_OUT_OF_REACH_M } from "./globe-haze.js";
 
@@ -91,20 +92,32 @@ describe("createGlobeHaze", () => {
     expect(haze.state().patched).toBe(1);
   });
 
+  // The ground sky's own uniforms (sun, scale, sky view) and visibility
+  // reach the framework's haze: a sync that only flipped `synced` would
+  // leave the relief hazed by a sky the page no longer shows.
   it("follows the ground sky after a sync", () => {
-    const haze = createGlobeHaze(new THREE.Scene(), { visibilityKm: 60 });
-    const groundKm = 6360;
-    haze.sync({
-      visibilityKm: 40,
-      sharedUniforms: {
+    const sync = vi.spyOn(AtmosphereHaze.prototype, "sync");
+    try {
+      const haze = createGlobeHaze(new THREE.Scene(), { visibilityKm: 60 });
+      const groundKm = 6360;
+      const sharedUniforms = {
         atmMieExtinction: { value: 0.01 },
         atmSunDirection: { value: new THREE.Vector3(0, 0, 1) },
         atmObserverRadius: { value: groundKm + 1 },
         atmRadianceToScene: { value: 1 },
         atmSkyViewLut: { value: new THREE.Texture() },
-      },
-    } as never);
-    expect(haze.state().synced).toBe(true);
+      };
+      haze.sync({ visibilityKm: 40, sharedUniforms } as never);
+      expect(sync).toHaveBeenCalledTimes(1);
+      expect(sync.mock.calls[0]?.[0]).toEqual({
+        sharedUniforms,
+        visibilityKm: 40,
+      });
+      expect(sync.mock.calls[0]?.[0].sharedUniforms).toBe(sharedUniforms);
+      expect(haze.state().synced).toBe(true);
+    } finally {
+      sync.mockRestore();
+    }
   });
 
   it("takes its fog away on dispose", () => {

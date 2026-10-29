@@ -92,7 +92,7 @@ uniform float uSkyShare;
 // kept below the hand-over (fading it there broke the hand-over's
 // continuity); the lab's atmoGround=0 fades it as the sky's, a comparison.
 uniform float uGroundShare;
-// The drawn relief's depth (§17, the lab's globe-scene-depth.js), weighted by
+// The drawn relief's depth (§17, globe-scene-depth.ts), weighted by
 // uSceneDepthWeight: at 1 a ray ends at the relief and a relief pixel is
 // ground, never sky. Without it the rays end at the ellipsoid, and relief
 // standing above its limb was treated as sky (whose share is 0 below the

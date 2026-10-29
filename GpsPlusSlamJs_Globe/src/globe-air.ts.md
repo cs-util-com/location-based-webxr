@@ -46,9 +46,9 @@ hazeScale)`. RangeError for a camera that is not finite.
   - Before the first `step` the weight is 0, the exposure NaN and the
     observer at +Infinity, as the lab's initial values.
     A `finish` before any `step` (the lab never calls it so; another
-    caller of this factory might) lights the space view's sun
-    (`sunIntensity`), never the NaN that would draw the scene black, and
-    gives the shell its far thickness (the observer is far away).
+    caller of this factory might) throws an Error and touches neither the
+    sun nor the shell: a silent fallback would hide the misordering, and
+    the NaN exposure would draw the scene black.
   - The ground sky's `state()` is read every frame (its stage decides the
     haze's sync); the haze is synced only after a `read` stage, which
     implies the framework sky exists.
@@ -77,8 +77,8 @@ hazeScale)`. RangeError for a camera that is not finite.
 
 - Tests: `globe-air.test.ts` (the ground sky's inputs and the narrowed
   width; the ground sky left alone when off; the haze's sync only after a
-  read and its weight; the sun's intensity set in `finish`, the space view's before any
-  `step`; the shell's
+  read and its weight; the sun's intensity set in `finish`, a `finish` before any
+  `step` refused; the shell's
   thickness by the ramp, only on change, the ground's below the ellipsoid;
   the live look leaving the thickness to the ramp; the space pass's
   shares; the state; a non-finite camera refused).

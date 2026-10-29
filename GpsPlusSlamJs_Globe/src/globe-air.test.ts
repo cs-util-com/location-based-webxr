@@ -187,15 +187,16 @@ describe("createGlobeAir", () => {
   });
 
   // Before the first `step` there is no hand-over yet (its exposure is
-  // NaN): a `finish` then must light the scene with the space view's sun,
-  // never a NaN that draws it black. The lab never calls it that way; a
-  // second caller of this factory might.
-  it("lights the space view's sun when finish comes before any step", () => {
+  // NaN, the observer at infinity). The lab never calls `finish` that way;
+  // a second caller of this factory might, and a NaN sun draws the scene
+  // black without a word. So the misuse is loud, and touches nothing.
+  it("refuses a finish before any step, touching neither sun nor shell", () => {
     const { air, sun, looks } = setup();
-    air.finish(PARAMS);
-    expect(sun.intensity).toBe(5);
-    // The observer is still at infinity: the shell's far thickness.
-    expect(looks).toEqual([{ thickness: 6 }]);
+    expect(() => air.finish(PARAMS)).toThrow(
+      "GlobeAir.finish before the first step",
+    );
+    expect(sun.intensity).toBe(0);
+    expect(looks).toEqual([]);
   });
 
   // The shell thins on the way down with `atmoRamp=1` and keeps its far
@@ -228,9 +229,9 @@ describe("createGlobeAir", () => {
 
   // The page's live settings reach the space pass's look without its
   // thickness: the thickness is `finish`'s alone, which writes it only when
-  // it changes. A live write of the far thickness (6 km) below the ramp
+  // it changes. A live write of the far thickness (x6 of a 100 km shell) below the ramp
   // would leave the shell thick until the ramp next moved (a bug the lab
-  // had: any slider or hash change set 6 under the 300 km ramp's 1).
+  // had: any slider or hash change set x6 under the 300 km ramp's x1).
   it("sets the live look without the thickness, which stays the ramp's", () => {
     const { air, looks } = setup();
     air.step(PARAMS, { cameraEcef: at(1000), framed: true });

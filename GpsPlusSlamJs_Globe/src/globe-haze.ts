@@ -102,7 +102,7 @@ export function createGlobeHaze(
     },
     dispose() {
       haze.dispose();
-      if (scene.fog !== null && "isFog" in scene.fog) scene.fog = null;
+      if (scene.fog instanceof THREE.Fog) scene.fog = null;
     },
   };
 }
