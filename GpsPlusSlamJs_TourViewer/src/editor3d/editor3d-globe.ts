@@ -201,8 +201,11 @@ export async function openGlobeEditor(
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
         gestureBusy: () => controls.busy() || editing.gesture() !== null,
+        // A frame move (the first view's too): the controls let go, and the
+        // editing's ECEF matrices follow at once, not at the next frame.
         frameChanged: () => {
           controls.release();
+          followFrame();
         },
       },
     });
@@ -671,6 +674,12 @@ export async function openGlobeEditor(
     );
     controls.followIntro();
 
+    /** The tour's centre at its drawn height in the world (what the zoom
+     *  and the distance are measured to, as `stats().distanceM` is; the
+     *  frame's origin is on the ellipsoid, under it). */
+    const tourTarget = () =>
+      worldOf(new THREE.Vector3(0, centreHeightM, 0), worldPoint);
+
     let firstTick: () => void = () => undefined;
     let notShown: (error: unknown) => void = () => undefined;
     const ready = new Promise<void>((resolve, reject) => {
@@ -720,8 +729,7 @@ export async function openGlobeEditor(
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
-        worldOf(new THREE.Vector3(), worldPoint);
-        camera.position.copy(worldPoint).addScaledVector(forward, -m);
+        camera.position.copy(tourTarget()).addScaledVector(forward, -m);
         camera.updateMatrixWorld();
       },
       flyTo(selection) {
@@ -742,9 +750,7 @@ export async function openGlobeEditor(
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
-        const toTour = camera.position.distanceTo(
-          worldOf(new THREE.Vector3(), worldPoint),
-        );
+        const toTour = camera.position.distanceTo(tourTarget());
         camera.position.addScaledVector(
           forward,
           step * ZOOM_SHARE * Math.max(GLOBE_EDITOR_LOOK.backM, toTour),
@@ -779,17 +785,9 @@ export async function openGlobeEditor(
           codes: !hiddenLayers.includes("codes"),
         });
       },
-      centre() {
-        // The place under the camera, on the drawn ground where loaded.
-        const pose = poseNow();
-        const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
-        return {
-          lat: pose.lat,
-          lon: pose.lng,
-          alt: groundM ?? pose.altitudeKm * 1000 - GLOBE_EDITOR_LOOK.eyeM,
-        };
-      },
-      groundAt: (place) => ground.groundAt(place.lat * DEG, place.lon * DEG),
+      // The tour file's heights (ellipsoidal): the drawn ground plus N.
+      centre: () => editing.centre(),
+      groundAt: (place) => editing.groundAt(place),
       origin: () => ({ lat: centre.lat, lng: centre.lng }),
       turn: (selection, deg) => editing.turn(selection, deg),
       pointOf(selection) {

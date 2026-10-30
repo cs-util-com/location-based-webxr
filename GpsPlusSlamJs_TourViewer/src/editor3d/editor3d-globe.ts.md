@@ -93,9 +93,14 @@ ground.
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field
   changed.
-- `zoom` and `setDistance` move the camera along its line of sight.
-- `centre()` is the place UNDER the camera (on the drawn ground where it
-  is loaded), not a look-at target: eye mode has none.
+- `zoom` and `setDistance` move the camera along its line of sight,
+  measured to the tour's centre at its drawn height (the tour frame's
+  point `centreHeightM` up), as `stats().distanceM` is - not to the
+  frame's origin on the ellipsoid, which lies the tour's height under it.
+- `centre()` is the place UNDER the camera, not a look-at target (eye mode
+  has none), and `groundAt(place)` the ground there; both are the
+  editing's, in the tour file's ellipsoidal heights: the drawn ground plus
+  the geoid's N (the point's own height plus N where no ground has loaded).
 - Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
   `cancelGesture`, `handleScreen`, `gizmoSizes`, `modelParts` and
   `modelScreenOf` are the editing's. Its camera leases the globe's
@@ -129,7 +134,9 @@ ground.
   open on that first tick.
 - A frame that throws after the open stops the loop and tells the page
   (`events.failed`); a lost context after the open tells it too.
-- `dispose` frees in reverse order and forces the WebGL context loss.
+- `dispose` frees in reverse order: the loop stops first, and the
+  context-lost listener is taken off before the WebGL context loss is
+  forced (the forced loss is not a lost context to tell the page about).
 - Credits are filled once at open (the globe's active sources and the
   relief's); they do not follow a later change of sources yet.
 - The heavy clouds (the shell and its volume) are never mounted.
@@ -145,10 +152,22 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
 
 ## Tests
 
+- `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
+  controls, the relief, the stations layer and the input are fakes; the
+  fake view places its camera through the globe's own `viewPoseEcef`, and
+  the editing is the real one. It covers `gestureBusy` during a gesture, a
+  frame move releasing the controls and refreshing the editing's matrices
+  (the place under the camera right after the first view and after a
+  recentre), `centre` and `groundAt` with N added, the zoom and the
+  distance measured to the tour's centre at tour heights 0, 515 and
+  2,500 m, and the order of `dispose`.
 - `globe-editor-look.test.ts` (the pure rules), `editor3d-stations.test.ts`
   ("hides single stations and codes, and nothing hidden is picked"),
   `editor3d-terrain.test.ts` (the ECEF placement).
 - `../editor3d-lazy.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
 - `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html?globe=1` and
-  finds the globe and a station through the page's test hooks.
+  finds the globe and a station through the page's test hooks; the sky
+  (blue at noon, dark at midnight); a handle drag holding the camera and
+  the frame still (the frame even with the camera taken 60 km away); a
+  pinch moving the camera on a touch screen.

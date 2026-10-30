@@ -270,11 +270,23 @@ test("drags a selected station's radius dot on the globe: one edit, the camera a
   await afterFrames(page, 10);
   const during = await view3d(page);
   expect(during.camera).toEqual(before.camera);
-  expect(during.globe.recentres).toBe(before.globe.recentres);
   // Nothing is written while the drag runs.
   expect(await revision()).toBe(steps);
+  // The frame holds still under the drag even with the camera taken far
+  // (60 km back, past the 20 km a recentre waits for) ...
+  await page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.view3dDistance(60_000),
+  );
+  await afterFrames(page, 10);
+  const far = await view3d(page);
+  expect(far.globe.frameTarget).toEqual(before.globe.frameTarget);
+  expect(far.globe.recentres).toBe(before.globe.recentres);
   await page.mouse.up();
   await expect.poll(revision).toBe(steps + 1);
+  // ... and moves once it ends: the move was far enough to be held.
+  await expect
+    .poll(async () => (await view3d(page))?.globe.recentres)
+    .toBeGreaterThan(before.globe.recentres);
   const moved = (await tourOf()).stations.find(
     (/** @type {any} */ s) => s.id === first.id,
   );
