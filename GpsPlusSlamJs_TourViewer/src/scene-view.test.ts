@@ -38,6 +38,7 @@ function fakeDom() {
     },
     onended: null as ((ev: Event) => void) | null,
     onplay: null as ((ev: Event) => void) | null,
+    onerror: null as OnErrorEventHandler,
   };
   const dom: SceneViewDom & { video: typeof video } = {
     panel: { hidden: true },
@@ -1573,6 +1574,44 @@ describe("a character's story views and the advance when the line ends", () => {
     expect(lost.view.characterTapped()).toBe(true);
     await settle();
     expect(lost.audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: a clip that loads but cannot be decoded never
+  // plays, so it has no sound to clash with: the browser's `error` on the
+  // player must end the step's "a video plays" hold, as a clip that cannot
+  // be read does, so a tap on him plays his voice; the status line says
+  // why the clip stays still, and the next step lets go of the handler.
+  it("lets a tap play his voice once the clip turns out not to decode, and says so", async () => {
+    const h = harness();
+    h.view.offer(
+      station("gate", [
+        knight("a", "speak", { mode: "tap" }),
+        {
+          ...showing("v", {
+            kind: "video",
+            view: "card",
+            video: "clip",
+            transcript: "The bell at dawn.",
+          }),
+          advance: { mode: "tap" },
+        },
+        tap("b", "Onwards."),
+      ]),
+    );
+    await settle();
+    h.view.continueTapped();
+    await settle();
+    expect(h.dom.video.hidden).toBe(false);
+    expect(typeof h.dom.video.onerror).toBe("function");
+    h.dom.video.onerror?.(new Event("error"));
+    expect(h.dom.status.textContent).toContain(
+      "The video could not be played here",
+    );
+    expect(h.view.characterTapped()).toBe(true);
+    await settle();
+    expect(h.audio.play).toHaveBeenCalledTimes(1);
+    h.view.continueTapped();
+    expect(h.dom.video.onerror).toBeNull();
   });
 
   // Why this test matters: a card view's voice is not the voice of the

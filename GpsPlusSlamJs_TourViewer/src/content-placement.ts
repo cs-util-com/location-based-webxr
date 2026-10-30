@@ -60,7 +60,7 @@ import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-bloc
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
-import { Euler, Group, type Object3D, type Texture } from "three";
+import { Euler, Group, Quaternion, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
 import { modelScale } from "./model-scale.js";
@@ -186,6 +186,24 @@ export function mintPhoto(input: {
   } catch {
     return null;
   }
+}
+
+/**
+ * A reading stand's turn from its pose's rotation `[x, y, z, w]`: the
+ * turn about up only (the prototype's "the stand keeps this turn"). It
+ * does not turn to the visitor, and a pitch or roll would tilt it off its
+ * feet. Every page that draws a stand turns it by this one rule (the
+ * renderer here, the 3D editor's drag preview), written into `out`.
+ */
+export function uprightTurn(
+  rotation: readonly [number, number, number, number],
+  out: Quaternion = new Quaternion(),
+): Quaternion {
+  const turn = new Euler().setFromQuaternion(
+    out.set(...rotation).normalize(),
+    "YXZ",
+  );
+  return out.setFromEuler(new Euler(0, turn.y, 0, "YXZ"));
 }
 
 /** An object's pose in one NUE frame: the renderer's input shape. */
@@ -494,15 +512,7 @@ async function renderContent(
         });
         if (stand === undefined) continue;
         stand.object.position.set(...pose.positionNue);
-        // It keeps its pose's turn about up only (the prototype's "the
-        // stand keeps this turn"): it does not turn to the visitor, and a
-        // pitch or roll would tilt it off its feet.
-        stand.object.quaternion.set(...pose.rotationNue);
-        const turn = new Euler().setFromQuaternion(
-          stand.object.quaternion,
-          "YXZ",
-        );
-        stand.object.quaternion.setFromEuler(new Euler(0, turn.y, 0, "YXZ"));
+        uprightTurn(pose.rotationNue, stand.object.quaternion);
         stand.object.userData["objectId"] = drawn.id;
         stands.push(stand);
         continue;

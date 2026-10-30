@@ -63,7 +63,7 @@ lectern); the drawing is `lectern-view.ts`'s.
   than seven lines (the line seven on still belonged to it); here the
   window moves on by lines through that sentence, which stays
   highlighted. (A first fix turned to the next sentence and skipped the
-  long one's middle lines; the r984 review showed a 14-line sentence
+  long one's middle lines; a review showed a 14-line sentence
   losing lines 9-11, and the every-line property now holds it.)
 
 ## Examples

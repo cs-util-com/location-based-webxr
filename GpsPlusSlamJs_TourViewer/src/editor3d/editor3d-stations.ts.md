@@ -68,7 +68,9 @@ standing`). A distance, size or focal length that is not a positive
     the tour does not have;
   - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
     tour's pose until null: a station's place (its billboard, ring, items
-    and models follow) and found radius, or an item's place (a model also
+    and models follow) and found radius, or an item's place (a reading
+    stand turned by `uprightTurn` only, as the renderer turns it, on
+    the drag and when cleared; a model also
     its size); the tour as drawn is untouched and comes back on null;
   - `pick(raycaster)` - the nearest visible thing under the ray: a
     station's billboard (`station:<id>`), an item's label, plane or model

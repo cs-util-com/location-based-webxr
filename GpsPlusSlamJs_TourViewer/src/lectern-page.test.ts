@@ -143,7 +143,7 @@ describe("lecternTurn", () => {
     expect(turn(11)).toEqual(LECTERN_FIRST_PLACE);
   });
 
-  // Why: the review's case. A sentence of 14 lines followed by more text:
+  // Why: a sentence of 14 lines followed by more text:
   // a turn that moved on to the sentence after it opened the page two
   // lines above that one (line 12) and lines 9-11 were never shown. The
   // turn now moves the window seven lines on inside the sentence, keeping

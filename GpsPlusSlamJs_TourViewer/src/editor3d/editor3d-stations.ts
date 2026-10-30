@@ -58,6 +58,7 @@ import { worldBlocks } from "../tour-document.js";
 import {
   objectPoseNue,
   renderTourStation,
+  uprightTurn,
   type RenderedTourObjects,
 } from "../content-placement.js";
 import { modelScale } from "../model-scale.js";
@@ -191,9 +192,6 @@ export type LayerPreview =
       readonly sizeM: number | null;
     };
 
-/** The selection an object of the layer stands for (`pick`), on it or
- *  on an ancestor: a billboard's `station:<id>` and a code's level id
- *  (`userData.pick`), an item's id (`userData.objectId`). */
 /** The name `buildLecternStand` gives a reading stand's root. */
 const STAND = "lectern";
 
@@ -205,6 +203,9 @@ function inStand(object: THREE.Object3D): boolean {
   return false;
 }
 
+/** The selection an object of the layer stands for (`pick`), on it or
+ *  on an ancestor: a billboard's `station:<id>` and a code's level id
+ *  (`userData.pick`), an item's id (`userData.objectId`). */
 function pickOf(object: THREE.Object3D | null): string | null {
   for (let o = object; o !== null; o = o.parent) {
     const pick: unknown = o.userData["pick"] ?? o.userData["objectId"];
@@ -682,7 +683,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         continue;
       }
       if (o.name === STAND) {
-        o.quaternion.copy(turned);
+        // Upright, as the renderer draws it: its turn about up only.
+        uprightTurn(pose.rotation, o.quaternion);
         continue;
       }
       const tourScale: unknown = o.userData["tourScale"];

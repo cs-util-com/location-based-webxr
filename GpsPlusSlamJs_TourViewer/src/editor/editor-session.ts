@@ -371,7 +371,8 @@ export interface EditorSession {
    *  block a station's story shows (`storyBlockFields`, an edit of its
    *  station): one step; a blank text removes the field; refused in
    *  words, changing nothing, over its cap, for a text the block needs
-   *  emptied or for an id the tour does not carry. */
+   *  emptied or for an id the tour does not carry. A free short text's
+   *  caption is its pin text: it goes `editText`'s way. */
   editBlockField(
     id: string,
     field: string,
@@ -756,8 +757,26 @@ export function createEditorSession(input: {
       : null;
   }
 
-  /** `edit` dispatched, and whether the document took it (a reducer that
-   *  refuses returns the state it had). */
+  /** A free pin's text typed (`editText`, and `editBlockField`'s caption
+   *  of a free pin): by the pin text's rule (`pinTextChange`), one step. */
+  function editPinText(
+    id: string,
+    text: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    const edit = pinTextChange(state, id, text);
+    if (edit.kind === "missing") return notInTour;
+    if (edit.kind !== "edited") return edit;
+    store.dispatch(
+      tourDocumentActions.edited({
+        object: edit.after,
+        what: `the text of ${objectName(edit.after)}`,
+      }),
+    );
+    return { kind: "edited" };
+  }
+
   /** A text of the story block `id` typed (`editBlockField`): checked by
    *  the same rule as a free block's, for its words, then written as an
    *  edit of the station whose story shows it. */
@@ -796,6 +815,8 @@ export function createEditorSession(input: {
     return applied ? { kind: "edited" } : { kind: "unchanged" };
   }
 
+  /** `edit` dispatched, and whether the document took it (a reducer that
+   *  refuses returns the state it had). */
   function took(edit: () => void): boolean {
     const was = doc().revision;
     edit();
@@ -891,23 +912,15 @@ export function createEditorSession(input: {
     noGpsCheck() {
       return checkNoGps({ stations: now().stations, levels });
     },
-    editText(id, text) {
-      const state = mine();
-      if (state === null) return notInTour;
-      const edit = pinTextChange(state, id, text);
-      if (edit.kind === "missing") return notInTour;
-      if (edit.kind !== "edited") return edit;
-      store.dispatch(
-        tourDocumentActions.edited({
-          object: edit.after,
-          what: `the text of ${objectName(edit.after)}`,
-        }),
-      );
-      return { kind: "edited" };
-    },
+    editText: editPinText,
     editBlockField(id, field, value) {
       const found = find(id);
       if (found === undefined) return editStoryText(id, field, value);
+      // A free pin's caption is its text: one rule and one undo wording,
+      // whichever field asks for it.
+      if (found.object.kind === "shortText" && field === "caption") {
+        return editPinText(id, value);
+      }
       const edit = blockFieldEdit(found.object, field, value);
       if (edit.kind !== "edited") return edit;
       const label =

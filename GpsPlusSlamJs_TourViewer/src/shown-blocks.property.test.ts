@@ -200,6 +200,7 @@ describe("a story's world (property)", () => {
             load: () => undefined,
             onended: null,
             onplay: null,
+            onerror: null,
           },
           choices: {
             replaceChildren: (...nodes: (Node | string)[]) => {

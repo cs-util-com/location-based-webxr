@@ -966,6 +966,67 @@ describe("createStationsLayer", () => {
     expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
   });
 
+  // Why: a stand keeps only its pose's turn about up, wherever it is
+  // drawn (`uprightTurn`): a pitch or roll in its pose would tilt it off
+  // its feet. The phone's drawing applied that rule and the editor's drag
+  // preview did not, so a drag (or a cancelled one, which draws the tour's
+  // pose again) showed a stand leaning over.
+  it("keeps a reading stand upright through a drag's preview and after it, for a tilted pose", async () => {
+    const { d } = deps({
+      makeLectern: () => {
+        const stand = buildLecternStand(null);
+        return { object: stand.root, dispose: stand.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const turn = (yawDeg: number, pitchDeg: number) =>
+      new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(
+          THREE.MathUtils.degToRad(pitchDeg),
+          THREE.MathUtils.degToRad(yawDeg),
+          0,
+          "YXZ",
+        ),
+      );
+    const tilted = turn(40, 25);
+    const stand = {
+      id: "lamp",
+      kind: "longText",
+      view: "lectern",
+      title: "The lamp",
+      body: "Lit every evening.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: {
+        position: [3, 0, 0],
+        rotation: [tilted.x, tilted.y, tilted.z, tilted.w],
+      },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [stand]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    const root = d.parent.getObjectByName("lectern")!;
+    expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
+    const dragged = turn(-70, -35);
+    layer.setPreview({
+      kind: "item",
+      id: "lamp",
+      geo: itemGeoPose(
+        {
+          position: [3, 0, 4],
+          rotation: [dragged.x, dragged.y, dragged.z, dragged.w],
+        },
+        a.geo,
+      ),
+      sizeM: null,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(root.quaternion.angleTo(turn(-70, 0))).toBeLessThan(1e-6);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
+  });
+
   // Why: a click in the view selects what is under the pointer - a
   // station by its billboard, an item by its drawing (a placed model by
   // any of its parts), a code by its square; the ring and the pole are

@@ -125,8 +125,9 @@ time. Plan:
   step until it ends, and a tap that stops it counts as its end. A video's
   `lineEnd` waits for the clip's `ended` once its `play` event came (until
   then, so for a clip nobody plays, the transcript's reading time; one
-  that cannot be read: the same); the next step resets `onended` and
-  `onplay`
+  that cannot be read, or that loads and then fails to decode (the
+  player's `error`): the same); the next step resets `onended`, `onplay`
+  and `onerror`
   (`character-views.ts` `lineReadingMs`, 1.5-60 s). Held, no timer runs;
   released, the wait starts again. One timer at a time: `armTimer` cancels
   any earlier one (a voice lost while its step renders arms it early).
@@ -139,7 +140,11 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   empty: the transcript says it); a tap on the player's controls plays the
   clip (the tap is the activation, so no autoplay rule applies), and the
   transcript stays below. A clip that cannot be read says "The video could
-  not be loaded - the words are below." on the status line; a poster that
+  not be loaded - the words are below." on the status line; one that loads
+  but does not decode (the player's `error`, wired through `SceneVideo`'s
+  `onerror`) says "The video could not be played here - the words are
+  below." and ends the step's "a video plays" hold, so a tap on him plays
+  his voice, as for a clip that cannot be read; a poster that
   cannot be read says so too. The words always stay. On the next step, an end or a stop the player
   pauses, drops its `src` and `poster` (`removeAttribute` then `load()`;
   `src = ""` would fetch the page) and hides, and every object URL of the

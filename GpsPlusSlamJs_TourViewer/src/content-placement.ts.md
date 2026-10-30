@@ -28,6 +28,12 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   its facing through `rotationFromHeading` (the framework's -heading about
   Up convention) instead of facing East.
 - `rotationFromHeading(headingDeg)` - that quaternion.
+- `uprightTurn(rotation, out?)` - a reading stand's turn from its pose's
+  `[x, y, z, w]`: the turn about up only (YXZ yaw), pitch and roll
+  dropped, written into `out` (a new `Quaternion` when absent). The one
+  rule every page that turns a stand uses: the renderer here and the 3D
+  editor's drag preview (`editor3d-stations.ts`), so a drag or a
+  cancelled one never tilts a stand.
 - `renderTourObjects(objects, { scene, zero, poseOf?, makeLabel, loadPhotoTexture })`
   builds ONE `Group` and adds it to the scene only after the last photo
   decoded (photos decode one at a time - memory), so a session ending
@@ -69,8 +75,8 @@ under - what a tap in AR is cast against to name the object
   quietly as before. A long text in the `lectern` view is drawn by the
   page's optional `makeLectern(block)` (`lectern-view.ts` `mountLectern`,
   the visitor's), at the block's local position and its turn about up
-  only (a pitch or roll is dropped, as the prototype's stand keeps only
-  its turn), added after the models and
+  only (`uprightTurn`: a pitch or roll is dropped, as the prototype's
+  stand keeps only its turn), added after the models and
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks (shown by its

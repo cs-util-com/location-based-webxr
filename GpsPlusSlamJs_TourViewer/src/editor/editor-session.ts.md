@@ -108,7 +108,7 @@ imperative resources only - that handle and the pictures' side table
     sentence; `refused` with `NOT_IN_TOUR` for an id the tour no longer
     carries).
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
-    (`block-fields.ts`, B2c: a short text's description, a picture's
+    (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the
     document's `edited` named "the <label> of <name>"; `refused` in
     words over the format's cap, `NOT_IN_TOUR` for an id the tour no
@@ -117,7 +117,9 @@ imperative resources only - that handle and the pictures' side table
     character's name) is checked by the same `blockFieldEdit` for its
     words, then written as that station's edit (`storyText`, one step
     through `stationEdited`); the document's own refusal (`storyText`)
-    has a sentence of its own.
+    has a sentence of its own. A free short text's `caption` is its pin
+    text: it goes `editText`'s way (`pinTextEdit`'s rule, "the text of
+    <name>"), so a pin's caption has one rule, never two.
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
@@ -274,8 +276,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     an id, is opened again), the title of the newest written file (an
     edit not yet saved is not the file's), the saved file name. A bundle
     this session saves names the tour id of the newest written file
-    (`debugData`, the move), the copy it was saved beside (r901 review
-    #2).
+    (`debugData`, the move), the copy it was saved beside.
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
@@ -337,7 +338,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   session whose view the creator has not touched (`defaultViews`): every
   model read from the file, restored from a draft or copied counts as the
   creator's choice, so a reopen never hands a saved view back to the rule
-  (the r973 review: the old in-memory set of chosen views let a first note
+  (a review found that the old in-memory set of chosen views let a first note
   override a saved view after a reopen). A `view` edit - the chip already
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.

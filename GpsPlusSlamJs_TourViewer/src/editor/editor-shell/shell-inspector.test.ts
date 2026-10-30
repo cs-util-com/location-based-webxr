@@ -421,6 +421,12 @@ describe("drawInspector", () => {
             ],
           },
           {
+            id: "bell",
+            kind: "Long text",
+            title: "The bell",
+            fields: [field("title", "Title", "The bell", 80)],
+          },
+          {
             id: "k1",
             kind: "Character",
             title: "Sir Kay",
@@ -463,6 +469,24 @@ describe("drawInspector", () => {
         (f) => f.dataset["field"],
       ),
     ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
+    // Each box is a group named by its head, and each field's name
+    // carries its block's: two blocks' "Title" fields are told apart by a
+    // screen reader.
+    const nameOf = (input: Element | null | undefined): string =>
+      (input?.getAttribute("aria-labelledby") ?? "")
+        .split(" ")
+        .map((id) => dock.body.querySelector(`[id="${id}"]`)?.textContent)
+        .join(" ");
+    expect(intro?.getAttribute("role")).toBe("group");
+    expect(nameOf(intro)).toBe("Long text - The siege");
+    expect(nameOf(title)).toBe("Long text - The siege Title");
+    expect(
+      nameOf(dock.body.querySelector('[data-field="block:bell:title"]')),
+    ).toBe("Long text - The bell Title");
+    expect(kay?.getAttribute("role")).toBe("group");
+    expect(nameOf(kay?.querySelector('[data-field="block:k1:caption"]'))).toBe(
+      "Sir Kay Caption",
+    );
     expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
     expect(dock.body.querySelector('.isec[data-block="arch"]')).toBeNull();
   });
@@ -542,7 +566,7 @@ describe("drawInspector", () => {
 
   it("shows an item's offset in its station's frame, its height and heading to type", () => {
     draw("photo-1", true);
-    // B2c: a picture's text fields first; its kind in the creator's word.
+    // A picture's text fields first; its kind in the creator's word.
     expect(dock.body.querySelector(".sub")?.textContent).toBe(
       "Photo in The old gate",
     );
@@ -556,7 +580,7 @@ describe("drawInspector", () => {
       ["Heading", "0.0 deg"],
     ]);
     // A picture's head is words; its title, caption and alt text are
-    // typed in the body (B2c), each with its count against its cap.
+    // typed in the body, each with its count against its cap.
     expect(dock.head.querySelector("input")).toBeNull();
     expect(dock.head.querySelector(".ttl")?.textContent).toBe("Photo");
     expect(dock.body.contains(input("title"))).toBe(true);

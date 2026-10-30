@@ -554,24 +554,51 @@ const CHARACTER_AUTO_ADVANCE =
   "His step moves on by itself after a while; a chip sets it otherwise.";
 
 /** A story block's texts to type, each named `block:<id>:<field>`
- *  (`inspector-edits.ts`), its count under it. */
+ *  (`inspector-edits.ts`), its count under it. Each field's name starts
+ *  with its block's head (`headId`): several blocks have a "Title", and a
+ *  screen reader tells them apart by it. */
 function storyTextFields(
   id: string,
   fields: readonly BlockField[],
+  headId: string,
 ): HTMLElement[] {
-  return fields.flatMap((f) =>
-    blockTextField({ ...f, name: `block:${id}:${f.name}` }),
-  );
+  return fields.flatMap((f) => {
+    const parts = blockTextField({ ...f, name: `block:${id}:${f.name}` });
+    const input = parts[0]?.querySelector("input, textarea");
+    const label = parts[0]?.querySelector("label");
+    if (input && label) {
+      label.id = `${input.id}-label`;
+      input.setAttribute("aria-labelledby", `${headId} ${label.id}`);
+    }
+    return parts;
+  });
+}
+
+/** A story block's box: a group named by its head (`head`, given an id
+ *  here). */
+function storyBox(
+  id: string,
+  className: string,
+  head: string,
+): [HTMLElement, string] {
+  const box = el("div", className);
+  box.dataset["block"] = id;
+  const tag = el("span", "flabel", head);
+  tag.id = fieldId();
+  box.setAttribute("role", "group");
+  box.setAttribute("aria-labelledby", tag.id);
+  box.append(tag);
+  return [box, tag.id];
 }
 
 /** A story block that is no character: its kind and name, its texts. */
 function storyBlockParts(block: StationModel["story"][number]): HTMLElement {
-  const box = el("div", "isec story-text");
-  box.dataset["block"] = block.id;
-  box.append(
-    el("span", "flabel", `${block.kind} - ${block.title}`),
-    ...storyTextFields(block.id, block.fields),
+  const [box, headId] = storyBox(
+    block.id,
+    "isec story-text",
+    `${block.kind} - ${block.title}`,
   );
+  box.append(...storyTextFields(block.id, block.fields, headId));
   return box;
 }
 
@@ -584,17 +611,13 @@ function characterParts(
   c: InspectorCharacter,
   fields: readonly BlockField[],
 ): HTMLElement {
-  const box = el("div", "isec character");
-  box.dataset["block"] = id;
+  const [box, headId] = storyBox(id, "isec character", name);
   const views = CHARACTER_VIEW_CHOICES.map((v) => ({
     value: v.view,
     label: v.label,
   }));
   const offered = views.some((v) => v.value === c.view);
-  box.append(
-    el("span", "flabel", name),
-    ...chipGroup("View", `character-view:${id}`, views, c.view),
-  );
+  box.append(...chipGroup("View", `character-view:${id}`, views, c.view));
   if (!offered) box.append(el("div", "note", CHARACTER_OLDER_VIEW));
   box.append(
     ...chipGroup(
@@ -616,7 +639,7 @@ function characterParts(
       String(Math.round(c.facingDeg) % 360),
       "deg",
     ),
-    ...storyTextFields(id, fields),
+    ...storyTextFields(id, fields, headId),
   );
   return box;
 }

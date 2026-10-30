@@ -170,7 +170,7 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
-  // Why (B2c): a block's other text fields (a short text's description
+  // Why: a block's other text fields (a short text's description
   // here) are edited through the same tour document as its caption: one
   // undo step each, counted as a change, written by the save; a text
   // over its cap is refused in words and changes nothing.
@@ -196,6 +196,19 @@ describe("createEditorSession", () => {
     expect((await carried(saved.blob)).objects[0]).toMatchObject({
       caption: "Old",
       description: "Under the arch",
+    });
+    // A free pin's caption is its text, typed in the head (`editText`): asked
+    // through the block-field path it takes the pin text's one rule and
+    // its undo words, never a second rule of its own.
+    expect(editor.editBlockField("a", "caption", "  ")).toEqual(
+      editor.editText("a", "  "),
+    );
+    expect(editor.editBlockField("a", "caption", "Bell")).toEqual({
+      kind: "edited",
+    });
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the text of "Bell"',
     });
     editor.editBlockField("a", "description", "Changed");
     editor.undo();
@@ -448,7 +461,7 @@ describe("createEditorSession, Save a copy", () => {
   });
 });
 
-describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12)", () => {
+describe("createEditorSession, edge cases", () => {
   it("counts a text edited back to the tour's own as no change", async () => {
     const { session, manifest } = await opened([pin("a", "Old")]);
     const editor = createEditorSession({
@@ -2202,7 +2215,7 @@ describe("moving the walk out (W2, D19)", () => {
   });
 
   it("writes the saved file's own id into the debug data, and compares by the id the opened file carries", async () => {
-    // Why (r901 review #2): the id is the one name a tour keeps through a
+    // Why: the id is the one name a tour keeps through a
     // rename and a retitle, so a bundle carries the id of the copy it was
     // saved beside, and an added bundle is matched on it first. The tour
     // side is the id the OPENED file carries: the one its open minted is

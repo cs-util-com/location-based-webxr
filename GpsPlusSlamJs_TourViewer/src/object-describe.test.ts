@@ -17,6 +17,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   BLOCK_KIND_LABEL,
   codeDistanceLine,
+  kindNoun,
   objectLook,
   objectTitle,
 } from "./object-describe.js";
@@ -101,6 +102,17 @@ describe("objectTitle", () => {
   it("names the kinds a creator places in the phone's words: a pin and a photo", () => {
     expect(BLOCK_KIND_LABEL.shortText).toBe("Pin");
     expect(BLOCK_KIND_LABEL.picture).toBe("Photo");
+  });
+
+  // Why: the phone's undo and refusal words named every object that is no
+  // pin "the photo" - a reading stand's delete offered to undo "the
+  // delete of the photo". Inside a sentence each kind is its own word,
+  // lower-cased, its "3D" kept.
+  it("names a kind inside a sentence in its own word", () => {
+    expect(kindNoun("picture")).toBe("photo");
+    expect(kindNoun("longText")).toBe("long text");
+    expect(kindNoun("model")).toBe("3D model");
+    expect(kindNoun("shortText")).toBe("pin");
   });
 
   it("names every kind by its own text, else by its kind's name", () => {

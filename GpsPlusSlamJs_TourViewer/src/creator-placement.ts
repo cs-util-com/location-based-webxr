@@ -26,6 +26,7 @@ import { mintPhoto, mintPin, newObjectId } from "./content-placement.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
+import { kindNoun } from "./object-describe.js";
 import { usablePhotoFrame } from "./photo-frame.js";
 import {
   PIN_DESCRIPTION_MAX_CHARS,
@@ -231,7 +232,9 @@ export function wireCreatorPlacement(deps: {
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
   ): { object: TourObject; ownStation: boolean } | null {
     const what =
-      object.kind === "shortText" ? `the pin "${object.caption}"` : "a photo";
+      object.kind === "shortText"
+        ? `the pin "${object.caption}"`
+        : `a ${kindNoun(object.kind)}`;
     const refusal = placeRefusal(ctx.tourDocument.state(), object);
     const change =
       refusal === null ? ctx.tourDocument.place(object, extras, what) : null;
