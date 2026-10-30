@@ -35,8 +35,9 @@ tour's centre at eye height, looking at it.
 The stations layer (`editor3d-stations.ts`) keeps its tour frame (x east,
 y up, z south at the tour's centre). One group, `tour-frame`, under the
 Earth-centred group carries the inverse of `worldFromEcefAt(centre)` as its
-matrix, so the layer's coordinates land on the globe and a recentre of the
-world frame moves nothing relative to the ground.
+matrix (`globe-layer.ts`'s `mountTour`), so the layer's coordinates land on
+the globe and a recentre of the world frame moves nothing relative to the
+ground.
 
 ## Per frame (`updateLayers`, the view's `update` seam)
 

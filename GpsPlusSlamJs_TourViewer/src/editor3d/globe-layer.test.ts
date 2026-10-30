@@ -1,49 +1,31 @@
 /**
  * Why these tests matter: the globe moves its world frame under a camera
- * flown far away (every 20 km of drift below 150 km). An editor object
- * placed in world coordinates would move by the whole drift at each
- * recentre and still look plausible near the camera. The layer puts its
- * objects in ECEF under the globe's frame, so a recentre must change
- * nothing in the layer and leave every object at its geo pose; these pin
- * that, and that a refused place leaves the object untouched.
+ * flown far away (every 20 km of drift below 150 km). The tour hangs under
+ * the globe's Earth-centred group through one group of its own, the tour's
+ * frame (x east, y up, z south at the tour's centre) in ECEF; the editor
+ * places every station in that frame. A tour placed in world coordinates
+ * instead would move by the whole drift at each recentre and still look
+ * plausible near the camera. These pin the path production takes: a point
+ * of the tour's frame lands, in the world, on the globe's frame times its
+ * ECEF point (written out by hand from the textbook WGS84, not from the
+ * library the layer is built on), before and after the frame moves.
  */
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
-
 import { GLOBE_LAYER_NAME, createGlobeLayer } from "./globe-layer.js";
 import {
-  WGS84_TEXTBOOK,
-  ecefOf,
-  geodeticOf,
-} from "../test-support/wgs84-textbook.js";
+  earthAt,
+  ecefOfTourPoint,
+  recentre,
+} from "../test-support/tour-frame-points.js";
+import { WGS84_TEXTBOOK, geodeticOf } from "../test-support/wgs84-textbook.js";
 
-const BERN = { lat: 46.948, lng: 7.4474 };
-const THUN = { lat: 46.758, lng: 7.628 };
-const DEG = Math.PI / 180;
-
-/** The globe's Earth-centred group, its matrix the frame at `target`. */
-function earthAt(target: { lat: number; lng: number }): THREE.Group {
-  const earth = new THREE.Group();
-  earth.matrixAutoUpdate = false;
-  worldFromEcefAt(WGS84_TEXTBOOK, target, earth.matrix);
-  earth.updateMatrixWorld(true);
-  return earth;
-}
-
-function recentre(earth: THREE.Group, target: { lat: number; lng: number }) {
-  worldFromEcefAt(WGS84_TEXTBOOK, target, earth.matrix);
-  earth.updateMatrixWorld(true);
-}
-
-function worldPointOf(object: THREE.Object3D, local: THREE.Vector3) {
-  return local.clone().applyMatrix4(object.matrixWorld);
-}
+const MUNICH = { lat: 48.1374, lng: 11.5755 };
 
 describe("createGlobeLayer", () => {
   it("hangs one named group under the globe's group and takes it out again", () => {
-    const earth = earthAt(BERN);
+    const earth = earthAt(MUNICH);
     const layer = createGlobeLayer(earth);
     expect(layer.root.parent).toBe(earth);
     expect(layer.root.name).toBe(GLOBE_LAYER_NAME);
@@ -51,90 +33,65 @@ describe("createGlobeLayer", () => {
     expect(layer.root.parent).toBeNull();
   });
 
-  // Why: the object's file height on its up axis lands on the ellipsoid's
-  // point of its place at height alt - N, in the world through the frame.
-  it("places an object at its geo pose through the globe's frame", () => {
-    const earth = earthAt(BERN);
+  // Why: the stations are placed in the tour's frame; that frame must sit
+  // at the tour's centre in ECEF, so a station's world point is the
+  // globe's frame times its ECEF point.
+  it("mounts the tour's frame at the tour's centre in ECEF", () => {
+    const earth = earthAt(MUNICH);
     const layer = createGlobeLayer(earth);
-    const bench = new THREE.Object3D();
-    const place = { lat: 46.95, lon: 7.45 };
-    layer.place(bench, {
-      ellipsoid: WGS84_TEXTBOOK,
-      place,
-      undulationM: 49.5,
-    });
-    earth.updateMatrixWorld(true);
-    const world = worldPointOf(bench, new THREE.Vector3(0, 560, 0));
-    const expected = ecefOf(
-      place.lat * DEG,
-      place.lon * DEG,
-      560 - 49.5,
-      new THREE.Vector3(),
-    ).applyMatrix4(earth.matrix);
+    const tour = layer.mountTour(WGS84_TEXTBOOK, MUNICH);
+    expect(tour.frame.parent).toBe(layer.root);
+    expect(tour.frame.matrixAutoUpdate).toBe(false);
+    const station = new THREE.Vector3(12, 515, -40);
+    const world = station.clone().applyMatrix4(tour.frame.matrixWorld);
+    const expected = ecefOfTourPoint(MUNICH, station).applyMatrix4(
+      earth.matrixWorld,
+    );
     expect(world.distanceTo(expected)).toBeLessThan(1e-6);
-    expect(bench.parent).toBe(layer.root);
-    expect(bench.matrixAutoUpdate).toBe(false);
+    // The matrix the stations layer is given: ECEF to the tour's frame.
+    const back = ecefOfTourPoint(MUNICH, station).applyMatrix4(
+      tour.tourFromEcef,
+    );
+    expect(back.distanceTo(station)).toBeLessThan(1e-6);
   });
 
   // Why: the point of the layer - a recentre rewrites only the globe's
-  // frame; the object's own matrix is not touched and its ECEF point (its
-  // geo pose) is the same, while its world point follows the new frame.
-  it("keeps every object at its geo pose across a frame recentre", () => {
-    const earth = earthAt(BERN);
+  // frame; the tour's frame matrix is not touched and its points follow
+  // the new frame, so a station stays at its place on the Earth.
+  it("keeps the tour at its place across a frame recentre", () => {
+    const earth = earthAt(MUNICH);
     const layer = createGlobeLayer(earth);
-    const fountain = new THREE.Object3D();
-    const place = { lat: 46.76, lon: 7.63 };
-    layer.place(fountain, {
-      ellipsoid: WGS84_TEXTBOOK,
-      place,
-      undulationM: 50,
-    });
-    earth.updateMatrixWorld(true);
-    const own = fountain.matrix.clone();
-    const foot = new THREE.Vector3(0, 600, 0);
-    const ecefBefore = worldPointOf(fountain, foot).applyMatrix4(
-      earth.matrix.clone().invert(),
+    const tour = layer.mountTour(WGS84_TEXTBOOK, MUNICH);
+    const own = tour.frame.matrix.clone();
+    recentre(earth, { lat: 47.3, lng: 11.4 });
+    expect(tour.frame.matrix.equals(own)).toBe(true);
+    const station = new THREE.Vector3(-30, 520, 25);
+    const world = station.clone().applyMatrix4(tour.frame.matrixWorld);
+    const expected = ecefOfTourPoint(MUNICH, station).applyMatrix4(
+      earth.matrixWorld,
     );
-
-    recentre(earth, THUN);
-
-    expect(fountain.matrix.equals(own)).toBe(true);
-    const world = worldPointOf(fountain, foot);
-    const ecefAfter = world.clone().applyMatrix4(earth.matrix.clone().invert());
-    expect(ecefAfter.distanceTo(ecefBefore)).toBeLessThan(1e-6);
-    const geo = geodeticOf(ecefAfter);
-    expect(geo.latDeg).toBeCloseTo(place.lat, 9);
-    expect(geo.lonDeg).toBeCloseTo(place.lon, 9);
-    expect(geo.heightM).toBeCloseTo(550, 6);
-    // Near the new frame's origin now: the frame did its job for the camera.
-    expect(world.length()).toBeLessThan(2_000);
+    expect(world.distanceTo(expected)).toBeLessThan(1e-6);
+    // Read back by the closed-form inversion: the point straight up the
+    // tour frame's y axis is the centre at that height, so the hand-written
+    // frame is the tour's place on the Earth, not merely agreed with.
+    const above = new THREE.Vector3(0, 520, 0)
+      .applyMatrix4(tour.frame.matrixWorld)
+      .applyMatrix4(earth.matrixWorld.clone().invert());
+    const geo = geodeticOf(above);
+    expect(geo.latDeg).toBeCloseTo(MUNICH.lat, 9);
+    expect(geo.lonDeg).toBeCloseTo(MUNICH.lng, 9);
+    expect(geo.heightM).toBeCloseTo(520, 6);
   });
 
-  it("re-places an object already in the layer without adding it twice", () => {
-    const earth = earthAt(BERN);
-    const layer = createGlobeLayer(earth);
-    const gate = new THREE.Object3D();
-    const at = { ellipsoid: WGS84_TEXTBOOK, undulationM: 0 };
-    layer.place(gate, { ...at, place: { lat: 46.9, lon: 7.4 } });
-    layer.place(gate, { ...at, place: { lat: 46.8, lon: 7.5 } });
-    expect(layer.root.children).toEqual([gate]);
-  });
-
-  it("refuses a bad place and leaves the object as it was", () => {
-    const earth = earthAt(BERN);
-    const layer = createGlobeLayer(earth);
-    const gate = new THREE.Object3D();
-    const before = gate.matrix.clone();
+  it("refuses a tour centre off the Earth", () => {
+    const layer = createGlobeLayer(earthAt(MUNICH));
     for (const bad of [
-      { place: { lat: 91, lon: 0 }, undulationM: 0 },
-      { place: { lat: NaN, lon: 0 }, undulationM: 0 },
-      { place: { lat: 46, lon: 7 }, undulationM: Infinity },
+      { lat: 91, lng: 0 },
+      { lat: Number.NaN, lng: 0 },
+      { lat: 0, lng: Number.POSITIVE_INFINITY },
     ]) {
-      expect(() =>
-        layer.place(gate, { ellipsoid: WGS84_TEXTBOOK, ...bad }),
-      ).toThrow(RangeError);
+      expect(() => layer.mountTour(WGS84_TEXTBOOK, bad)).toThrow(RangeError);
     }
-    expect(gate.matrix.equals(before)).toBe(true);
-    expect(gate.parent).toBeNull();
+    expect(layer.root.children).toEqual([]);
   });
 });

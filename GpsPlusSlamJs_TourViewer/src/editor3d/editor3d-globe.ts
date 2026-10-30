@@ -51,7 +51,6 @@ import * as THREE from "three";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
-import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 import {
   createGlobeCameraControls,
   createGlobeView,
@@ -260,17 +259,10 @@ export async function openGlobeEditor(
     undo.push(() => {
       earth.dispose();
     });
-    const tourFromEcef = worldFromEcefAt(
+    const { frame: tourFrame, tourFromEcef } = earth.mountTour(
       ellipsoid,
-      { lat: centre.lat, lng: centre.lng },
-      new THREE.Matrix4(),
+      centre,
     );
-    const tourFrame = new THREE.Group();
-    tourFrame.name = "tour-frame";
-    tourFrame.matrixAutoUpdate = false;
-    tourFrame.matrix.copy(tourFromEcef).invert();
-    earth.root.add(tourFrame);
-    tourFrame.updateMatrixWorld(true);
 
     const billboardView = () => ({
       viewportPx,
