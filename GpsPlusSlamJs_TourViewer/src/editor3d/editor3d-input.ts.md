@@ -11,7 +11,7 @@ move the camera only, and a second finger during a drag cancels it.
 ## Public API
 
 - `createSceneInput({ element, surface, scene, page, clickPx? })` -> the input
-  (`clickPx`: a mouse press that moved this far or less is a click; the
+  (`clickPx`: a mouse press that moved less than this is a click, this far or more a drag; the
   globe passes its routing table's `dragPx`, 5, in place of `INPUT`'s 4),
   listening until `dispose`:
   - `element` - the view's box (its presses are read in the capture phase,

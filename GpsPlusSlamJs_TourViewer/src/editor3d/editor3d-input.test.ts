@@ -932,7 +932,8 @@ describe("the globe's routing table, event by event", () => {
   });
 
   it("a left release selects, deselects or (after a drag) does nothing", () => {
-    for (const movedPx of [0, 3, dragPx - 0.5, dragPx + 0.5, 12]) {
+    // dragPx itself too: the table and the input must agree at the line.
+    for (const movedPx of [0, 3, dragPx - 0.5, dragPx, dragPx + 0.5, 12]) {
       for (const on of ["object", "ground"] as const) {
         const t = globeSetup({
           selected: null,

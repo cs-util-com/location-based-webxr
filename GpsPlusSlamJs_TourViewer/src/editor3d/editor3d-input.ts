@@ -125,7 +125,8 @@ function groundPlace(world: GestureWorld, at: ScreenPoint): GroundPlace | null {
 
 /** The input's numbers (the design's). */
 export const INPUT = Object.freeze({
-  /** A press that moved less than this is a click (px; a finger more). */
+  /** A press that moved less than this is a click, this far or more a
+   *  drag (px; `tapPx` for a finger), as `GLOBE_GESTURES.dragPx` reads it. */
   clickPx: 4,
   tapPx: 8,
   /** Two taps within this, this close, are a double tap. */
@@ -349,7 +350,7 @@ export function createSceneInput(input: {
     }
     if (press !== null && event.pointerId === press.id) {
       const d = Math.hypot(at.x - press.at.x, at.y - press.at.y);
-      if (d > (press.touch ? INPUT.tapPx : clickPx)) press.moved = true;
+      if (d >= (press.touch ? INPUT.tapPx : clickPx)) press.moved = true;
       return;
     }
     // A mouse over the scene (not a dock): the handle under it drawn
