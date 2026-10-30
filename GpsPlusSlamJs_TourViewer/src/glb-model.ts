@@ -15,5 +15,7 @@ export async function loadGlbModel(blob: Blob): Promise<Object3D> {
   const { GLTFLoader } =
     await import("three/examples/jsm/loaders/GLTFLoader.js");
   const gltf = await new GLTFLoader().parseAsync(await blob.arrayBuffer(), "");
+  // The clips ride on the scene, where a model view finds them.
+  gltf.scene.animations = gltf.animations;
   return gltf.scene;
 }

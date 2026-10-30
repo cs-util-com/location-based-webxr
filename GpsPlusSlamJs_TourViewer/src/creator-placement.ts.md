@@ -18,7 +18,12 @@ troubleshooting recording's record of each placement. Split out of
     here", D8, below), whose clicks this module handles; `pinLabelCount?`,
     the pin text's "12 / 40" beside the field (`pin-text.ts`), counted as
     it is typed, marked `data-over` past the limit, shown and hidden with
-    the field and recounted when the page clears it.
+    the field and recounted when the page clears it; `pinDescription?` and
+    `pinDescriptionCount?`, the pin's optional description (at most 160
+    characters, `PIN_DESCRIPTION_MAX_CHARS`) and its "12 / 160", shown,
+    hidden, cleared and recounted with the pin's text. Save refuses a
+    description past its cap with the texts kept, and places the pin with
+    the description trimmed and in NFC (none when blank).
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
     in), `encodeFrameJpeg` (the photo's bytes).
   - `settledVisit(visit)` - the settle record of a visit that already
