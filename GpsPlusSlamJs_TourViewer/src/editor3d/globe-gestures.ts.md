@@ -30,7 +30,7 @@ counts movement itself). Pure: the page wires each route.
   `dragPx` on an object is `select`, on the ground or the sky `deselect`;
   at or over it `none` (a pan selects nothing).
 - **Double click:** on an object `select-and-fly`; on the ground or the
-  sky `camera-zoom` (the controls' own zoom); on a handle `none`.
+  sky `camera-zoom` (the editor's zoom towards the pointer; the controls' own double-tap zoom is off); on a handle `none`.
 - **Arrow keys:** with a selection `nudge`, without one `camera-step`. The
   lab's controls take no keys (their flight mode is off), so the page
   steps the camera itself. This follows the owner's decision of

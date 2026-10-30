@@ -43,6 +43,8 @@ type ReliefPlanes = () => { clearanceM?: number; peakM?: number };
  * once, because the library's declarations leave them out.
  */
 interface ControlsInternals {
+  /** Stops a running double-tap zoom (absent in a test double). */
+  _cancelDoubleTapZoom?: () => void;
   pointerTracker: { getPointerCount(): number };
   state: number;
   globeInertiaFactor: number;
@@ -58,6 +60,12 @@ export interface GlobeCameraControlsOptions {
   onTake: () => void;
   /** The relief's clearance and peak for the planes; `{}` over the ellipsoid. */
   reliefPlanes?: ReliefPlanes;
+  /**
+   * The library's own double-tap zoom (default on, as in the lab). An app
+   * with its own double click (the editor's zoom step and fly-to) turns
+   * it off: both would run.
+   */
+  doubleTapZoom?: boolean;
   /** First person: the items' world bounding spheres; null otherwise. */
   eyeItems?: (() => Iterable<THREE.Sphere>) | null;
   /** For tests: the controls in place of the library's. */
@@ -113,6 +121,7 @@ export function createGlobeCameraControls(
     onTake,
     reliefPlanes = () => ({}),
     eyeItems = null,
+    doubleTapZoom = true,
     createControls = (s, c, el) => new GlobeControls(s, c, el),
   }: GlobeCameraControlsOptions,
 ): GlobeCameraControls {
@@ -123,6 +132,7 @@ export function createGlobeCameraControls(
   const inner = controls as unknown as ControlsInternals;
   controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
   controls.enableDamping = true;
+  controls.enableDoubleTapZoom = doubleTapZoom;
   if (eyeItems) applyEyeControls(inner);
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
@@ -131,9 +141,11 @@ export function createGlobeCameraControls(
   const release = () => {
     // Toggling `enabled` is the library's own reset: it ends any drag,
     // forgets the pointers and drops the drag and rotation momentum. The
-    // globe's spin momentum and a pending wheel step are cleared here.
+    // globe's spin momentum, a pending wheel step and a running double-tap
+    // zoom are cleared here. Leased controls stay off.
     controls.enabled = false;
-    controls.enabled = true;
+    controls.enabled = !leased;
+    inner._cancelDoubleTapZoom?.();
     inner.zoomDelta = 0;
     inner.globeInertia.identity();
     inner.globeInertiaFactor = 0;
@@ -188,8 +200,8 @@ export function createGlobeCameraControls(
       if (on === leased) return;
       leased = on;
       if (on) {
+        // Leased: the reset leaves them off.
         release();
-        controls.enabled = false;
       } else {
         controls.enabled = true;
       }

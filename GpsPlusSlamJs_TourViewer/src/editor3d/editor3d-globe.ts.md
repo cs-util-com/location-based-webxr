@@ -101,7 +101,12 @@ world frame moves nothing relative to the ground.
   controls off for a handle drag (`GlobeCameraControls.lease`), and the
   view's `gestureBusy` is true while the controls or an edit's gesture
   run, so the world frame recentres only between gestures. The ECEF
-  matrices it reads are refreshed each frame (`followFrame`).
+  matrices it reads are refreshed each frame and at every frame move (the
+  view's `frameChanged` seam, which also releases the controls), so they
+  are right from the first view on (`followFrame`).
+- The globe's controls are made with `doubleTapZoom: false`: a double
+  click is the routing table's `camera-zoom`, done here (`zoomTowards`),
+  and the library's own animated double-tap zoom would add a second one.
 - The routing table's extras: an arrow with nothing selected steps the
   camera (`steppedView`, the height over the loaded ground); a double
   click on the ground moves the camera `ZOOM_SHARE` of the way toward the

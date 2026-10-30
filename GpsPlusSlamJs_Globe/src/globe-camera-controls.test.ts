@@ -38,6 +38,11 @@ function fakeControls() {
       enabled = value;
     },
     adjustHeight: true,
+    enableDoubleTapZoom: true,
+    doubleTapCancels: 0,
+    _cancelDoubleTapZoom: () => {
+      fake.doubleTapCancels += 1;
+    },
     up: new THREE.Vector3(),
     cameraRadius: 5,
     minDistance: 10,
@@ -270,7 +275,35 @@ describe("createGlobeCameraControls", () => {
     expect(fake.enabled).toBe(true);
     // A return without a lease leaves the controls as they were.
     controls.lease(false);
-    expect(fake.enabledSets).toEqual([false, true, false, true]);
+    expect(fake.enabledSets).toEqual([false, false, true]);
+  });
+
+  // Why: a release while leased must not hand the pointer back: a frame
+  // move during an editor's handle drag calls release, and controls left
+  // enabled would pan the globe under the handle.
+  it("release keeps leased controls off", () => {
+    const { fake, controls } = setup({ onTake: () => {} });
+    controls.lease(true);
+    controls.release();
+    expect(fake.enabled).toBe(false);
+    controls.lease(false);
+    controls.release();
+    expect(fake.enabled).toBe(true);
+  });
+
+  // Why: an app with its own double-click (the editor zooms one step toward
+  // the ground, and flies to what was clicked) turns the library's off;
+  // left on, a double click zooms twice, or bends a fly-to for its 0.25 s
+  // animation. The lab keeps it.
+  it("turns the library's double-tap zoom off on request, and release stops its animation", () => {
+    expect(setup({ onTake: () => {} }).fake.enableDoubleTapZoom).toBe(true);
+    const { fake, controls } = setup({
+      onTake: () => {},
+      doubleTapZoom: false,
+    });
+    expect(fake.enableDoubleTapZoom).toBe(false);
+    controls.release();
+    expect(fake.doubleTapCancels).toBe(1);
   });
 
   it("switches the library's height adjustment", () => {

@@ -7,7 +7,10 @@
   `release`); the controls stay enabled throughout, except while `lease(true)`
   lends the pointer to an editor's handle drag.
 - Public API: `createGlobeCameraControls(scene, camera, canvas, globe,
-{ onTake, reliefPlanes?, eyeItems?, createControls? })` returns:
+{ onTake, reliefPlanes?, eyeItems?, doubleTapZoom?, createControls? })` returns
+  (`doubleTapZoom` false turns the library's own double-tap zoom off, for an
+  app with its own double click, the editor's zoom step and fly-to; default
+  on, as in the lab):
   - `fitPlanes()`: near and far from `clipPlanes` (with `reliefPlanes()`) or
     `eyeClipPlanes` (nearest of `eyeItems()`), the projection updated only
     when they change;
@@ -16,7 +19,8 @@
   - `update()`: the controls, then the planes;
   - `pickFrom(object)`: the controls' scene, swapped only on a change;
   - `limit`, `setAdjustHeight(on)`, `busy()` (pointers, a state, inertia or
-    a pending inertia update) and `release()` (drops momentum and zoom);
+    a pending inertia update) and `release()` (drops momentum, a pending zoom
+    and a running double-tap zoom; leased controls stay off);
   - `lease(on)`: `true` releases and holds the controls disabled, `false`
     enables them again; repeats are no-ops;
   - `dispose()`: removes the `start` listener and disposes the library's
@@ -26,5 +30,6 @@
   `ControlsInternals`. First person sets the eye's camera radius at once.
 - Tests: `globe-camera-controls.test.ts` (setup and `onTake`, the planes and
   the projection count, the globe's frame, first person, the intro, the
-  update order, `pickFrom`, `busy`/`release`, `lease`, the height switch,
+  update order, `pickFrom`, `busy`/`release`, `lease` and a release while leased, the double-tap
+  switch, the height switch,
   `dispose`).

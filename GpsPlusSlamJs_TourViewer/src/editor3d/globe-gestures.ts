@@ -55,7 +55,8 @@ export type GlobeInput =
  * - `select` / `deselect` - the editor's selection;
  * - `menu` - the editor's menu at the pointer;
  * - `select-and-fly` - select the object and fly the camera to it;
- * - `camera-zoom` - the controls' own double-click zoom;
+ * - `camera-zoom` - the editor zooms towards the pointer (`zoomTowards`;
+ *   the controls' own double-tap zoom is off, so one double click is one zoom);
  * - `nudge` - the editor nudges the selection;
  * - `camera-step` - the editor steps the camera (the lab's keys do nothing);
  * - `none` - nothing more (the drag already happened).

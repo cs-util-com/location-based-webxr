@@ -417,6 +417,9 @@ export async function openGlobeEditor(
     const eyeSpheres: THREE.Sphere[] = [];
     const controls = createGlobeCameraControls(scene, camera, canvas, globe, {
       onTake: () => undefined,
+      // The editor zooms a double click itself (`zoomTowards`); the
+      // library's own double-tap zoom would add a second, animated one.
+      doubleTapZoom: false,
       eyeItems: () => eyeSpheres,
     });
     undo.push(() => {
