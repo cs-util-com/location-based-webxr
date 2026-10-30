@@ -160,6 +160,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   map (`editor-shell.css`: the 3D view does not draw them yet), starts
   ticked and shows or hides them there: view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
+- View's "Real time" (`#view-realtime`, a checkbox item, shown only with
+  the globe link switch `globe=1`): the globe view's clock, unticked by
+  default (the sky held in daylight over the tour), ticked the real time
+  now (`Editor3dView.setRealTime`). View state only; a view opened again
+  takes the item's state.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
     window's lower right corner, and whichever lay on top covered the

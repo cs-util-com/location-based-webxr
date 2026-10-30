@@ -30,6 +30,14 @@ and a camera pose read back as a view.
 - `aimView(place, heightM, radiusM)`: a view looking down at the place from
   the south at `aimPitchDeg`, `aimRadii` x radius away (`backM` at least).
   RangeError for a value that is not finite or a negative radius.
+- `daylightStartMs(nowMs, lng)`: the instant the globe view's clock is held
+  at by default - the mean solar noon of `lng` on the UTC day of `nowMs`
+  (12:00 UTC less 4 minutes a degree east), so the editor opens in
+  daylight whatever the hour. RangeError for a value not finite or a
+  longitude outside [-180, 180]. The test sweeps eight longitudes and four
+  months at 48 degrees north: the sun stands above 15 degrees in each (the
+  equation of time moves true noon by at most about 16 minutes, a few
+  degrees of the sun's height at most).
 - `steppedView(pose, key, aboveGroundM)`: the view an arrow key steps to
   (the routing table's `camera-step`): Left and Right turn the heading
   `turnStepDeg` (15) in place, Up and Down move along the heading at the

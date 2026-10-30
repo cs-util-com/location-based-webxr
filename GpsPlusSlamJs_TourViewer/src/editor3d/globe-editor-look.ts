@@ -72,6 +72,26 @@ export function globeEditorSettings(): GlobeViewSettings {
   return SETTINGS;
 }
 
+/** Milliseconds in a day and an hour. */
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+
+/**
+ * The editor's default sky: the clock held at the mean solar noon of
+ * `lng` on the UTC day of `nowMs` (12:00 UTC less the longitude's 4 min a
+ * degree), so a creator always edits in daylight. RangeError for a value
+ * that is not finite or a longitude outside [-180, 180].
+ */
+export function daylightStartMs(nowMs: number, lng: number): number {
+  if (!Number.isFinite(nowMs) || !Number.isFinite(lng) || Math.abs(lng) > 180) {
+    throw new RangeError(
+      `daylight needs a finite time and a longitude in [-180, 180], got ${String(nowMs)}, ${String(lng)}`,
+    );
+  }
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  return dayStart + 12 * HOUR_MS - (lng / 15) * HOUR_MS;
+}
+
 /**
  * The first view: `backM` south of `centre`, `eyeM` over `groundM` (m over
  * the ellipsoid), facing north and down at the centre's ground. RangeError

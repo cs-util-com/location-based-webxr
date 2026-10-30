@@ -57,6 +57,20 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   expect(staged.ran).toBe(3);
   expect(staged.admitted).toBe(3);
   await page.screenshot({ path: testInfo.outputPath("globe-street.png") });
+  // The sky opens in daylight whatever the hour; the View menu's Real time
+  // runs the clock at the real time now.
+  expect(stats.globe.clock.realTime).toBe(false);
+  expect(stats.globe.clock.sunElevationDeg).toBeGreaterThan(0);
+  await page.locator("#view-menu-btn").click();
+  const realTime = page.locator("#view-realtime");
+  await expect(realTime).toBeVisible();
+  await realTime.click();
+  await expect(realTime).toHaveAttribute("aria-checked", "true");
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.clock?.realTime)
+    .toBe(true);
+  const clock = (await view3d(page)).globe.clock;
+  expect(Math.abs(clock.sceneMs - Date.now())).toBeLessThan(120_000);
   expect(await rejections(page)).toEqual([]);
 });
 
@@ -70,6 +84,8 @@ test("opens the OrbitControls view without the switch, nothing of the globe aske
   const stats = await view3d(page);
   expect(stats.globe).toBeUndefined();
   expect(imagery.asks).toBe(0);
+  // No sky of its own: no clock item in the View menu.
+  await expect(page.locator("#view-realtime")).toBeHidden();
 });
 
 /**

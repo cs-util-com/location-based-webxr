@@ -75,6 +75,11 @@ world frame moves nothing relative to the ground.
 
 ## The verbs
 
+- The clock: daylight by default, `view.startClock` held (`scale` null with
+  a `startMs`) at `daylightStartMs(Date.now(), centre.lng)`; `setRealTime(true)`
+  restarts it at the real time now, `false` back in daylight. `stats().globe.clock`
+  carries `realTime`, `sceneMs` and the sun's height over the tour
+  (`sunElevationDeg`).
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field

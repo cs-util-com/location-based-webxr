@@ -379,6 +379,8 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
 const debugSwitch = element<HTMLButtonElement>("view-debug");
+/** The View menu's Real time: the globe view's clock (`globe=1` only). */
+const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
  *  plan). */
@@ -3737,6 +3739,14 @@ const shell = createEditorShell({
 });
 /** The link switch to the 3D view on the whole globe (`globe=1`). */
 const globeSwitch = readGlobeSwitch(location.search);
+// Only the globe view has a sky of its own to set the clock of.
+realTimeSwitch.hidden = !globeSwitch.on;
+// View state only - no edit, nothing pending; kept for the next open.
+realTimeSwitch.addEventListener("click", () => {
+  const on = !isChecked(realTimeSwitch);
+  setChecked(realTimeSwitch, on);
+  shown3d?.setRealTime?.(on);
+});
 const viewSwitch = createViewSwitch({
   button: menuItemControl(element("view-switch")),
   status: element("view-loading"),
@@ -3795,6 +3805,7 @@ const viewSwitch = createViewSwitch({
       },
     });
     shown3d = view;
+    if (isChecked(realTimeSwitch)) view.setRealTime?.(true);
     const handle: View3dHandle = {
       dispose: () => {
         if (shown3d === view) shown3d = null;

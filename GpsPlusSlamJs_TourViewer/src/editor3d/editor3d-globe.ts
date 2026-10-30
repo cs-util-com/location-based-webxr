@@ -31,9 +31,13 @@
  * compiled and their textures uploaded, so a tour of many stations does
  * not stall the first frame. The code squares share one face texture.
  *
+ * The sky opens in daylight: the clock held at the tour's solar noon
+ * (`daylightStartMs`), whatever the hour; the View menu's Real time runs
+ * it at the real time now (`setRealTime`).
+ *
  * Not yet here (later steps of the plan): the layer chips for the clouds
- * and the buildings, the time of day. The heavy clouds (the shell and its
- * volume) are never mounted.
+ * and the buildings. The heavy clouds (the shell and its volume) are never
+ * mounted.
  *
  * @see editor3d-globe.ts.md
  */
@@ -84,6 +88,7 @@ import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
   aimView,
+  daylightStartMs,
   globeEditorSettings,
   globeHidden,
   reliefCarries,
@@ -194,7 +199,17 @@ export async function openGlobeEditor(
       renderer.forceContextLoss();
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    view.startClock({ startMs: null, scale: null });
+    // Daylight over the tour by default (held at its solar noon); the real
+    // time now on request.
+    let realTime = false;
+    const startClock = () => {
+      view.startClock(
+        realTime
+          ? { startMs: null, scale: null }
+          : { startMs: daylightStartMs(Date.now(), centre.lng), scale: null },
+      );
+    };
+    startClock();
     // The tour's objects and the relief's plain ground: the sun alone
     // leaves their shaded sides black.
     scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9));
@@ -714,6 +729,11 @@ export async function openGlobeEditor(
       northUp() {
         placePose({ headingDeg: 0 });
       },
+      setRealTime(on) {
+        if (on === realTime) return;
+        realTime = on;
+        startClock();
+      },
       readout() {
         const pose = poseNow();
         const mean =
@@ -807,6 +827,13 @@ export async function openGlobeEditor(
             hiddenCodes: [...hidden.codes],
             recentres: view.state().frameRecentres,
             uploads: { ...uploads.stats(), admitted: admitted.size },
+            clock: {
+              realTime,
+              sceneMs: view.sceneMs(),
+              sunElevationDeg:
+                solarPosition(view.sceneMs(), centre.lat, centre.lng)
+                  .elevationRad / DEG,
+            },
             surface: globe.state(),
           },
         };

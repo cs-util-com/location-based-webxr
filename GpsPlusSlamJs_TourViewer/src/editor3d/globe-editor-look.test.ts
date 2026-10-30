@@ -7,11 +7,13 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import { WGS84_ELLIPSOID, viewPoseEcef } from "gps-plus-slam-globe/view";
 
 import {
   GLOBE_EDITOR_LOOK,
   aimView,
+  daylightStartMs,
   globeEditorSettings,
   globeHidden,
   reliefCarries,
@@ -289,5 +291,40 @@ describe("steppedView", () => {
   it("refuses a height that is not finite or below zero", () => {
     expect(() => steppedView(at, "ArrowUp", Number.NaN)).toThrow(RangeError);
     expect(() => steppedView(at, "ArrowUp", -1)).toThrow(RangeError);
+  });
+});
+
+describe("daylightStartMs", () => {
+  // Why: the editor opens in daylight whatever the hour (the owner's
+  // default), so the clock is held at the tour's solar noon; a sun below
+  // the horizon there would mean the instant is wrong, at any longitude.
+  const now = Date.UTC(2026, 9, 30, 21, 47);
+
+  it("is 12:00 UTC at Greenwich and moves 4 minutes a degree", () => {
+    expect(daylightStartMs(now, 0)).toBe(Date.UTC(2026, 9, 30, 12));
+    expect(daylightStartMs(now, 15)).toBe(Date.UTC(2026, 9, 30, 11));
+    expect(daylightStartMs(now, -90)).toBe(Date.UTC(2026, 9, 30, 18));
+  });
+
+  it("puts the sun high over the tour at any longitude and season", () => {
+    for (const lng of [-179, -120, -45, 0, 11.57, 77, 151, 180]) {
+      for (const month of [0, 3, 6, 9]) {
+        const at = daylightStartMs(Date.UTC(2026, month, 15, 3), lng);
+        // At 48 N the noon sun stands at least 18 deg up in December.
+        const sun = solarPosition(at, 48, lng);
+        expect(
+          sun.elevationRad / (Math.PI / 180),
+          `${lng} ${month}`,
+        ).toBeGreaterThan(15);
+      }
+    }
+  });
+
+  it("refuses a time or a longitude out of range", () => {
+    expect(() => daylightStartMs(Number.NaN, 0)).toThrow(RangeError);
+    expect(() => daylightStartMs(now, 181)).toThrow(RangeError);
+    expect(() => daylightStartMs(now, Number.POSITIVE_INFINITY)).toThrow(
+      RangeError,
+    );
   });
 });

@@ -51,6 +51,9 @@ keys), and writes only through the page's `edits`.
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
     the camera looks toward), `top`, `drawCalls`, `frameMs` (the mean of
     the last 60 frames);
+  - `setRealTime?(on)` - optional: the globe view's clock, the real time
+    now (true) or held in daylight over the tour (false, its default);
+    this view has no sky of its own and leaves it out;
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's

@@ -152,6 +152,10 @@ export interface Editor3dView {
   zoom(step: 1 | -1): void;
   /** Turn the view north up. */
   northUp(): void;
+  /** The globe view's clock: the sky at the real time now (true), or held
+   *  in daylight over the tour (false, its default). Absent: the view has
+   *  no sky of its own. */
+  setRealTime?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
   /** The layers turned off (the station names and the codes are drawn
