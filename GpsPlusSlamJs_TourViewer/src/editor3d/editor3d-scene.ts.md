@@ -51,6 +51,9 @@ keys), and writes only through the page's `edits`.
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
     the camera looks toward), `top`, `drawCalls`, `frameMs` (the mean of
     the last 60 frames);
+  - `setRealTime?(on)` - optional: the globe view's clock, the real time
+    now (true) or held in daylight over the tour (false, its default);
+    this view has no sky of its own and leaves it out;
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
@@ -72,6 +75,11 @@ keys), and writes only through the page's `edits`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it
   takes is structural: `getState()` with `tourDocument` and `editorView`,
   `subscribe` and `dispatch`).
+- `Editor3dEdits.model(id, edit)` - the page's model edit, for a note or
+  a section placed by a click on the model (true when written).
+- `modelParts()` and `modelScreenOf(id, at)` - the selected model's
+  discs and planes, and a point of a drawn model on the canvas (the page's
+  checks).
 
 ## Invariants & assumptions
 

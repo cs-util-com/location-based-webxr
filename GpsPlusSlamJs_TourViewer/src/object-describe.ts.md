@@ -16,10 +16,12 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
 
 ## Public API
 
-- `ObjectLook` - `"pin" | "photo" | "model"`: what an object in the
-  world is in the pages' words and icons; `objectLook(kind)` maps the
-  format's kinds onto it (a short text is a pin, a picture a photo, a
-  model a model). The format's kinds stay out of the pages' words.
+- `ObjectLook` - `"pin" | "photo" | "text" | "model"`: what an object in
+  the world is in the pages' words and icons; `objectLook(kind)` maps the
+  format's kinds onto it (a short text is a pin, a picture a photo, a long
+  text on its reading stand a text, a model a model; a stand read as a
+  model until B2c, with a model's icon, "Delete 3D model" and a resize
+  hint). The format's kinds stay out of the pages' words.
 - `BLOCK_KIND_LABEL` - each kind in the ONE word every creator page uses
   for it ("Pin", "Long text", "Photo", "Video", "Audio", "3D model",
   "Character"): the name of a block with no text of its own, the

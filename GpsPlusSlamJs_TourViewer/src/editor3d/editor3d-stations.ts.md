@@ -15,8 +15,10 @@ ray (`pick`).
 
 - `StationsLayerDeps` - what the page hands in: `parent`, `ellipsoid`,
   `worldFromEcef`, `undulationAt`, `makeLabel`, `loadPhotoTexture`,
-  `loadContent`, `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the
-  drawing is the page's: Node, where the tests run, has no canvas).
+  the optional `makeLectern` (a long text's reading stand, the page's
+  `mountLectern`; absent, no stand is drawn), `loadContent`,
+  `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the drawing is the
+  page's: Node, where the tests run, has no canvas).
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
   world), `selectedStation` (the selected station, or the selected item's),
   `stationSelected` (the selection is that station itself), `standing`
@@ -47,7 +49,11 @@ standing`). A distance, size or focal length that is not a positive
   `localPlaneToEnu`, +y up, the face at heading + 90 degrees).
 - `createStationsLayer(deps)` -> the layer:
   - `setTour(manifest, levels)` - when the document changes; a station
-    whose place in the list and record are unchanged is not rebuilt;
+    whose place in the list and record are unchanged is not rebuilt, and
+    neither is one where only a model's `annotations`, `sections` or
+    `view` changed (the layer does not draw them; the model parts do),
+    so a note's edit never loads the model's file again (its record is
+    still updated);
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
@@ -69,7 +75,19 @@ standing`). A distance, size or focal length that is not a positive
     (its object id) or a code's square (its level id); null for none;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
+  - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
+    (`globe-editor-look.ts`): those stations (root with ring and items,
+    billboard, pole) and codes are neither drawn nor picked, whatever the
+    chips say; the rest follow the chips. `pick` skips any hit under a
+    hidden ancestor, so a code hidden by its chip is not picked either
+    (before, only the hit object's own flag was read).
   - `dispose()` - everything out of the scene and freed.
+- `stationObjects(id)` - every object a station draws: its root (ring,
+  pole, items) and its billboard once made (the billboard hangs in the
+  layer's group, not under the root); null for an id the tour does not
+  hold. The globe view stages a station's first upload through these.
+- `modelObject(id)` - an item's drawn model (the glb under its tour
+  pose and scale), or null while its station does not draw it.
 
 ## Invariants & assumptions
 
@@ -148,8 +166,10 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
     which reads as a dot.
 - **Codes have no gizmo;** their point and the inspector's printed size do
   not change. Tilted up, a code is its printed size.
-- **Billboards and poles rise with `standing`;** models keep their pose,
-  and pins stand. `renderTourStation` skips placed models (and draws each
+- **Billboards and poles rise with `standing`;** models and reading
+  stands keep their pose (a stand's meshes are no photo planes, so the
+  morph never lays them flat; a preview moves and turns the stand's root,
+  named `lectern`), and pins stand. `renderTourStation` skips placed models (and draws each
   picture from the tour's assets, passed to it), so the layer adds the
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a
@@ -186,7 +206,9 @@ renderer.setAnimationLoop(() => {
 
 `editor3d-stations.test.ts` (a hand-made WGS84 ellipsoid, the licence's
 store): each station at its drawn height where it stands; only the near
-and selected stations rendered, and what leaves freed; a billboard per
+and selected stations rendered, and what leaves freed; a model kept
+drawn through an edit of its notes, sections or view, drawn anew when it
+moves; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; every code as a square of its printed size, laid flat face up in front

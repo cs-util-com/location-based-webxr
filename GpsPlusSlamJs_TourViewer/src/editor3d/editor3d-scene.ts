@@ -40,6 +40,7 @@ import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
 import { loadGlbModel } from "../glb-model.js";
+import { mountLectern } from "../lectern-view.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
 import {
@@ -77,9 +78,19 @@ import {
   DEFAULT_CODE_SIZE_M,
   createStationsLayer,
 } from "./editor3d-stations.js";
-import { createSceneEditing, type GizmoPart } from "./editor3d-editing.js";
+import {
+  createSceneEditing,
+  orbitEditingCamera,
+  type GizmoPart,
+} from "./editor3d-editing.js";
 import type { InputPage } from "./editor3d-input.js";
+import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
+import {
+  createViewRenderer,
+  fillCredits,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -94,7 +105,11 @@ interface Editor3dStore {
 
 /** The page's edits the view asks for (`editor3d-input.ts`'s page, less
  *  the store the view reads itself). */
-export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected">;
+export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected"> & {
+  /** A model's own edit (a note or a section placed by a click on it):
+   *  true when written; a refusal is said by the page. */
+  model(id: string, edit: ModelEdit): boolean;
+};
 
 /** What the page hands the 3D view. */
 export interface Editor3dDeps {
@@ -137,6 +152,10 @@ export interface Editor3dView {
   zoom(step: 1 | -1): void;
   /** Turn the view north up. */
   northUp(): void;
+  /** The globe view's clock: the sky at the real time now (true), or held
+   *  in daylight over the tour (false, its default). Absent: the view has
+   *  no sky of its own. */
+  setRealTime?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
   /** The layers turned off (the station names and the codes are drawn
@@ -173,6 +192,19 @@ export interface Editor3dView {
     readonly dotPx: number;
     readonly ringPx: number;
   } | null;
+  /** The selected model's note discs on the canvas (CSS px; null for one
+   *  that does not show) and its section planes drawn (the page's
+   *  checks). */
+  modelParts(): {
+    readonly discs: readonly (readonly [number, number] | null)[];
+    readonly planes: number;
+  };
+  /** Where a point of a drawn model (its own space) is on the canvas
+   *  (CSS px), or null until it is drawn (the page's checks). */
+  modelScreenOf(
+    id: string,
+    at: readonly [number, number, number],
+  ): readonly [number, number] | null;
 }
 
 /** The camera and the drawing, for the shell's compass, view line and
@@ -221,54 +253,14 @@ export interface Editor3dStats {
     drawnM: number;
     groundM: number | null;
   }[];
-}
-
-/** A failure with the reason the view switch says. */
-function failure(
-  reason: "empty" | "webgl" | "chunk" | "context-lost",
-  message: string,
-): Error {
-  return Object.assign(new Error(message), { reason });
+  /** The globe view's own (`editor3d-globe.ts`); absent in this one. */
+  readonly globe?: Record<string, unknown>;
 }
 
 const BACKGROUND = 0x232427;
 /** The size an item is framed by (m): about a pin or a photo. */
 const ITEM_RADIUS_M = 1.6;
 const DEG = Math.PI / 180;
-
-function createRenderer(): THREE.WebGLRenderer {
-  let renderer: THREE.WebGLRenderer;
-  try {
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-  } catch (error) {
-    throw failure(
-      "webgl",
-      `no WebGL: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (renderer.getContext() === null) {
-    renderer.dispose();
-    throw failure("webgl", "no WebGL context");
-  }
-  return renderer;
-}
-
-function fillCredits(
-  box: HTMLElement,
-  credits: readonly { short: string; href: string }[],
-): void {
-  const parts: Node[] = [];
-  credits.forEach((credit, i) => {
-    if (i > 0) parts.push(document.createTextNode(" · "));
-    const a = document.createElement("a");
-    a.href = credit.href;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = credit.short;
-    parts.push(a);
-  });
-  box.replaceChildren(...parts);
-}
 
 /** The 3D view in `deps.container`, once its first frame is drawn. */
 export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
@@ -280,19 +272,19 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
   );
   const centre = tourCentre(manifest?.stations ?? [], codeGeos);
   if (centre === null) {
-    throw failure("empty", "the tour has nothing with a position");
+    throw viewFailure("empty", "the tour has nothing with a position");
   }
   const { egm96Geoid } =
     await import("gps-plus-slam-osm/elevation/egm96").catch(
       (error: unknown) => {
-        throw failure("chunk", `the geoid did not load: ${String(error)}`);
+        throw viewFailure("chunk", `the geoid did not load: ${String(error)}`);
       },
     );
   const geoid = egm96Geoid();
   const undulationAt = (p: { lat: number; lon: number }) =>
     geoid.undulationMetres({ lat: p.lat, lng: p.lon });
 
-  const renderer = createRenderer();
+  const renderer = createViewRenderer();
   // Everything made from here on is undone, last first, by `dispose` - and
   // by a failure before the first frame, so a failed open leaves no canvas
   // and no renderer behind.
@@ -383,6 +375,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       worldFromEcef: ground.worldFromEcef,
       undulationAt,
       makeLabel: createPinLabel,
+      makeLectern: mountLectern,
       loadPhotoTexture: async (entry) =>
         decodeFrameTexture(await deps.loadContent(entry), 2, {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,
@@ -436,7 +429,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     // would resolve on a black canvas); once shown the page is told.
     const onLost = () => {
       if (shown) deps.events.contextLost();
-      else notShown(failure("context-lost", "the WebGL context was lost"));
+      else notShown(viewFailure("context-lost", "the WebGL context was lost"));
     };
     canvas.addEventListener("webglcontextlost", onLost);
     undo.push(() => canvas.removeEventListener("webglcontextlost", onLost));
@@ -577,9 +570,10 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       canvas,
       scene,
       camera,
-      controls,
+      view: orbitEditingCamera({ controls, camera, endFlight, dropMomentum }),
       layer,
       ground,
+      worldFromEcef: ground.worldFromEcef,
       ecefFromWorld,
       undulationAt,
       tour: () => tourNow,
@@ -590,9 +584,18 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         dispatch: (action) => deps.store.dispatch(action),
         selected: () => deps.store.getState().editorView.selected,
       },
-      endFlight,
-      dropMomentum,
       frame: frameView,
+      models: {
+        view() {
+          const ui = deps.store.getState().editorView;
+          return {
+            selected: ui.selected,
+            focus: ui.modelFocus,
+            pick: ui.modelPick,
+          };
+        },
+        edit: (id, edit) => deps.edits.model(id, edit),
+      },
     });
     undo.push(() => {
       editing.dispose();
@@ -766,6 +769,11 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         return at === null ? null : [at.x, at.y];
       },
       gizmoSizes: () => editing.handleSizes(),
+      modelParts: () => editing.modelParts(),
+      modelScreenOf(id, at) {
+        const p = editing.modelScreenOf(id, at);
+        return p === null ? null : [p.x, p.y];
+      },
       setDistance(m) {
         const offset = camera.position.clone().sub(controls.target);
         offset.setLength(

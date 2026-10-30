@@ -32,7 +32,8 @@ message }` when no city was delivered (heights still missing, no tile).
 - Steps (round-4 plan 2026-10-11-0122 §5): the store (the framework's
   `openPersistentOsmStore`, or memory without OPFS); the library's
   `cityDataPlan` for the target with the relief's heights (the relief's
-  own source at its zoom, R13, `globe-city-heights.js`: since G1 1d the
+  own source at its zoom, R13, the Globe's `globe-city-heights.ts`, loaded
+  through the worker view as `/w/globe/globe-city-heights.js`: since G1 1d the
   template comes with the load, so a Mapterhorn relief gets a city on
   Mapterhorn heights, where a template fixed here put it on AWS heights up
   to 12 m apart in towns; one source, never OsmDemo's Mapterhorn-first

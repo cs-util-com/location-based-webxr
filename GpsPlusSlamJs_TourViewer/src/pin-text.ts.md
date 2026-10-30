@@ -14,6 +14,10 @@ counter beside the field.
   `ar/tour-blocks`).
 - `PIN_TEXT_TOO_LONG` - the sentence a page shows when it refuses a text
   past the cap.
+- `PIN_DESCRIPTION_MAX_CHARS` (160, a short text's description cap),
+  `PIN_DESCRIPTION_TOO_LONG` and `pinDescriptionTooLong(text)` - the same
+  for a pin's optional description, by the same count (the phone's pin
+  entry, `creator-placement.ts`).
 - `pinTextCount(text): number` - the format's count (`tourTextCount`):
   code points after trimming and collapsing each whitespace run to one
   space.
@@ -59,7 +63,7 @@ if (pinTextTooLong(input.value)) showRefusal(PIN_TEXT_TOO_LONG);
 
 ## Tests
 
-- `pin-text.test.ts` - the cap is the format's 40; code points, not UTF-16
+- `pin-text.test.ts` - the cap is the format's 40, the description's 160; code points, not UTF-16
   units (40 emoji fit, 41 do not); whitespace collapsed; the counter's
   line, of the NFC text too; any text counted exactly as the format counts
   it, and the wired counter agreeing with the refusal (properties); the

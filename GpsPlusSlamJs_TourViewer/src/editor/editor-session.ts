@@ -50,6 +50,7 @@ import {
   isDocumentEdit,
   manifestNow,
   objectFits,
+  storyBlocksOf,
   nextStep,
   objectMoveChange,
   picturesNeeded,
@@ -83,7 +84,13 @@ import {
 } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
-import { blockFieldEdit, blockFields } from "./block-fields.js";
+import {
+  blockFieldEdit,
+  blockFields,
+  storyBlockFields,
+} from "./block-fields.js";
+import { objectTitle } from "../object-describe.js";
+import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
@@ -105,7 +112,9 @@ const PICTURE_GONE =
  *  it is. */
 function objectName(object: TourObject): string {
   const label = (
-    (object.kind === "model" ? object.title : object.caption) ?? ""
+    (object.kind === "model" || object.kind === "longText"
+      ? object.title
+      : object.caption) ?? ""
   ).trim();
   if (label === "") return object.kind === "picture" ? "a photo" : "a note";
   const chars = [...label];
@@ -241,13 +250,20 @@ interface EditorRestore {
 
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
-  Record<"title" | "radius" | "description" | "image", string>
+  Record<
+    "title" | "radius" | "description" | "image" | "character" | "storyText",
+    string
+  >
 > = {
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
   description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
   image:
     "A station's picture must be a photo of that station or an image of this tour.",
+  character:
+    "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
+  storyText:
+    "That text of a block of the station's story is not one the tour can carry.",
 };
 
 /** Said for a delete of the tour's last station. */
@@ -275,6 +291,7 @@ const NOT_AN_ORDER = "The new order must name every station of the tour once.";
 
 /** Said for a size given to anything but a model. */
 const NOT_A_MODEL = "Only a 3D model has a size.";
+const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 
 /** Said for a model size out of bounds. */
 const MODEL_SIZE = `A model's size must be from ${String(TOUR_MODEL_MIN_SIZE_M)} m to ${String(TOUR_MODEL_MAX_SIZE_M)} m.`;
@@ -348,11 +365,13 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Set one of a free block's other text fields (`block-fields.ts`: a
-   *  short text's description, a picture's title, caption or alt text, a
-   *  model's title): one step; a blank text removes the field; refused in
-   *  words, changing nothing, over its cap or for an id the tour does not
-   *  carry (B2c). */
+  /** Set one of a block's other text fields (`block-fields.ts`): of a
+   *  free block (a short text's description, a picture's title, caption
+   *  or alt text, a model's title, a long text's title and body) or of a
+   *  block a station's story shows (`storyBlockFields`, an edit of its
+   *  station): one step; a blank text removes the field; refused in
+   *  words, changing nothing, over its cap, for a text the block needs
+   *  emptied or for an id the tour does not carry. */
   editBlockField(
     id: string,
     field: string,
@@ -415,6 +434,18 @@ export interface EditorSession {
   groundItems(
     items: readonly { readonly id: string; readonly alt: number }[],
   ): { kind: "grounded" | "unchanged" } | EditorRefusal;
+  /** One of a model's own edits (`model-edits.ts`: its view, notes,
+   *  sections, clip): one step. The default rule (a first note
+   *  switches `placed` to `hotspots`, the last one deleted switches it
+   *  back) applies only to a model placed in this session whose view the
+   *  creator has not touched: a view read from the file, or chosen here
+   *  (the chip already pressed included), is never overridden. Refused in words, changing nothing, for an id the
+   *  tour does not carry, a block that is not a model, or what the format
+   *  would refuse. */
+  editModel(
+    id: string,
+    edit: ModelEdit,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
   resizeModel(
     id: string,
@@ -617,6 +648,13 @@ export function createEditorSession(input: {
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
+  /** The models the default view rule may still switch (`editModel`):
+   *  those placed in this session whose view the creator has not touched.
+   *  Every model read from the file, restored from a draft or copied counts
+   *  as the creator's choice, so a reopen never hands a saved view back to
+   *  the rule. A view chosen - the chip already pressed too - takes a model
+   *  out for good; an undo does not put it back. */
+  const defaultViews = new Set<string>();
 
   /** Undefined for an id the tour no longer carries, or a tour no longer
    *  open: a page holding an older card gets a refusal, never a throw (E2c
@@ -720,6 +758,44 @@ export function createEditorSession(input: {
 
   /** `edit` dispatched, and whether the document took it (a reducer that
    *  refuses returns the state it had). */
+  /** A text of the story block `id` typed (`editBlockField`): checked by
+   *  the same rule as a free block's, for its words, then written as an
+   *  edit of the station whose story shows it. */
+  function editStoryText(
+    id: string,
+    field: string,
+    value: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const state = mine();
+    const station = (state === null ? null : manifestNow(state))?.stations.find(
+      (s) => storyBlocksOf(s).some((b) => b.id === id),
+    );
+    const block = station?.blocks.find((b) => b.id === id);
+    if (state === null || station === undefined || block === undefined) {
+      return notInTour;
+    }
+    const spec = storyBlockFields(block).find((f) => f.name === field);
+    if (spec === undefined) return { kind: "unchanged" };
+    const check = blockFieldEdit(block, field, value);
+    if (check.kind !== "edited") return check;
+    const edit: StationEdit = { storyText: { block: id, field, value } };
+    const change = stationEditChange(state, station.id, edit);
+    if (change.kind === "refused") {
+      return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+    }
+    if (change.kind !== "edited") return { kind: "unchanged" };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: station.id,
+          edit,
+          what: `the ${spec.label.toLowerCase()} of "${objectTitle(block)}"`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : { kind: "unchanged" };
+  }
+
   function took(edit: () => void): boolean {
     const was = doc().revision;
     edit();
@@ -831,7 +907,7 @@ export function createEditorSession(input: {
     },
     editBlockField(id, field, value) {
       const found = find(id);
-      if (found === undefined) return notInTour;
+      if (found === undefined) return editStoryText(id, field, value);
       const edit = blockFieldEdit(found.object, field, value);
       if (edit.kind !== "edited") return edit;
       const label =
@@ -872,6 +948,7 @@ export function createEditorSession(input: {
           what: `the placement of ${objectName(object)}`,
         }),
       );
+      if (object.kind === "model") defaultViews.add(object.id);
       return { kind: "placed" };
     },
     moveStation(stationId, geo) {
@@ -1071,6 +1148,30 @@ export function createEditorSession(input: {
       )
         ? { kind: "grounded" }
         : { kind: "refused", reason: HEIGHT_REFUSED };
+    },
+    editModel(id, edit) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "model") {
+        return { kind: "refused", reason: NOT_A_MODEL_EDIT };
+      }
+      const outcome = applyModelEdit(object, edit, !defaultViews.has(id));
+      // A view clicked is the creator's choice even when it is the one the
+      // model has ("unchanged"); a refused one is no choice.
+      if (edit.kind === "view" && outcome.kind !== "refused") {
+        defaultViews.delete(id);
+      }
+      if (outcome.kind !== "edited") return outcome;
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: outcome.after,
+            what: `${outcome.what} of ${objectName(object)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
     },
     resizeModel(id, sizeM) {
       const found = find(id);

@@ -23,6 +23,9 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const EDITOR_ONLY =
   /^(gps-plus-slam-globe|3d-tiles-renderer|gps-plus-slam-osm)(\/|$)/;
 
+/** The globe's whole view: only the 3D view's modules import it. */
+const GLOBE_VIEW = /^gps-plus-slam-globe\/view$/;
+
 /** The folders whose modules may import them. */
 const EDITOR_DIRS = ["editor", "editor3d"];
 
@@ -69,6 +72,26 @@ describe("the editor's heavy packages", () => {
           .map((spec) => `${relative(SRC, file)} imports ${spec}`),
       );
     expect(offenders).toEqual([]);
+  });
+
+  // Why: the globe's whole view (`gps-plus-slam-globe/view`) carries the
+  // whole-Earth imagery and the sky; only the 3D view's own modules, which
+  // the editor's page reaches by import() alone, may name it. One import
+  // from the page's own modules (src/editor/) would put it on the map
+  // page's first load.
+  it("leaves the globe's whole view to the 3D view's modules", () => {
+    const importers = productionFiles(SRC).filter((file) =>
+      importedSpecifiers(readFileSync(file, "utf8")).some((spec) =>
+        GLOBE_VIEW.test(spec),
+      ),
+    );
+    expect(
+      importers
+        .map((file) => relative(SRC, file).replaceAll("\\", "/"))
+        .filter((file) => !file.startsWith("editor3d/")),
+    ).toEqual([]);
+    // The rule can see an importer at all.
+    expect(importers.length).toBeGreaterThan(0);
   });
 
   it("reads every import form the rule is about", () => {

@@ -4,14 +4,16 @@
  * height) and a billboard with its number and name. The stations near the
  * camera's centre and the selected one (`nearStations`) also draw their
  * items as the phone does (`renderTourStation`: pins as labels, photos as
- * planes), their placed models at the format's size (`modelScale`), their
+ * planes, long texts on their reading stands when the page gives
+ * `makeLectern`), their placed models at the format's size (`modelScale`), their
  * found radius as a ring and a pole up to the billboard. Every code with a
  * position is a square of its printed size, facing as printed.
  *
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
- * on - and the billboards and their poles rise. Models keep their pose;
+ * on - and the billboards and their poles rise. Models and reading stands
+ * keep their pose;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -27,7 +29,9 @@
  * Read-only: nothing here edits the tour. The page hands the tour
  * (`setTour`) when the document changes and the camera (`update`) each
  * frame. A station's items are rendered when it enters the near set and
- * freed when it leaves; a tour handed again unchanged renders nothing.
+ * freed when it leaves; a tour handed again unchanged renders nothing, nor
+ * does an edit of a model's notes, sections or view (drawn apart, by
+ * `editor3d-model-parts.ts`): its file is not loaded again.
  *
  * While a drag of the 3D view runs, `setPreview` draws the dragged
  * station (its items, billboard and found radius with it) or item (a
@@ -74,6 +78,13 @@ export interface StationsLayerDeps {
   /** A pin's label (the phone's recipe). */
   makeLabel(text: string): { object: THREE.Object3D; dispose(): void };
   loadPhotoTexture(entryName: string): Promise<THREE.Texture | null>;
+  /** A long text's reading stand (`lectern-view.ts`: a canvas page, so
+   *  the page's). Absent: no stand is drawn (Node, where the tests run). */
+  makeLectern?(block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }): { object: THREE.Object3D; dispose(): void };
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -183,6 +194,17 @@ export type LayerPreview =
 /** The selection an object of the layer stands for (`pick`), on it or
  *  on an ancestor: a billboard's `station:<id>` and a code's level id
  *  (`userData.pick`), an item's id (`userData.objectId`). */
+/** The name `buildLecternStand` gives a reading stand's root. */
+const STAND = "lectern";
+
+/** Whether `object` is a reading stand or part of one. */
+function inStand(object: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+    if (o.name === STAND) return true;
+  }
+  return false;
+}
+
 function pickOf(object: THREE.Object3D | null): string | null {
   for (let o = object; o !== null; o = o.parent) {
     const pick: unknown = o.userData["pick"] ?? o.userData["objectId"];
@@ -213,7 +235,9 @@ interface StationEntry {
   readonly id: string;
   readonly index: number;
   readonly key: string;
-  readonly station: TourStation;
+  /** The station as the tour has it now (an edit that leaves its drawing
+   *  as it is still updates it). */
+  station: TourStation;
   readonly root: THREE.Group;
   /** The root's matrix where the tour has the station (a preview moves
    *  the root; clearing it puts this back). */
@@ -227,10 +251,29 @@ interface StationEntry {
   content: StationContent | null;
 }
 
+/** A model block's fields the layer does not draw: its notes, sections
+ *  and view are the model parts' (`editor3d-model-parts.ts`). */
+const UNDRAWN_MODEL_FIELDS = ["annotations", "sections", "view"] as const;
+
+/** A record as the layer's drawing reads it: a model block without its
+ *  undrawn fields (a JSON.stringify replacer). */
+function drawnFields(_key: string, value: unknown): unknown {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    (value as { kind?: unknown }).kind !== "model"
+  ) {
+    return value;
+  }
+  const kept: Record<string, unknown> = { ...value };
+  for (const field of UNDRAWN_MODEL_FIELDS) delete kept[field];
+  return kept;
+}
+
 /** What a station's drawing depends on: its place in the list and its
- *  whole record. */
+ *  whole record but a model's undrawn fields. */
 const keyOf = (s: TourStation, index: number): string =>
-  `${String(index)}|${JSON.stringify(s)}`;
+  `${String(index)}|${JSON.stringify(s, drawnFields)}`;
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -376,6 +419,16 @@ function freeSprite(sprite: THREE.Sprite): void {
   sprite.material.dispose();
 }
 
+/** Whether `object` and every ancestor up to `top` is visible: a hidden
+ *  root hides its items from the picking as from the drawing. */
+function drawnInGroup(object: THREE.Object3D, top: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+    if (!o.visible) return false;
+    if (o === top) return true;
+  }
+  return true;
+}
+
 /**
  * The layer, its group added to `deps.parent`. `setTour(manifest, levels)`
  * places every station and code; `update(view)` each frame renders the
@@ -396,6 +449,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   let codePoints = new Map<string, THREE.Vector3>();
   let shownNames = true;
   let shownCodes = true;
+  /** Each code root's level id, in the order of `codes`. */
+  let codeIds: string[] = [];
+  /** What the globe view's visibility rule hides (`setHidden`). */
+  let hiddenStations: ReadonlySet<string> = new Set();
+  let hiddenCodes: ReadonlySet<string> = new Set();
+  const codeShown = (levelId: string) =>
+    shownCodes && !hiddenCodes.has(levelId);
   let shown = new Set<string>();
   let renders = 0;
   /** What a drag shows now (`setPreview`). */
@@ -488,6 +548,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       alive: () => content.alive,
       makeLabel: (text) => deps.makeLabel(text),
       loadPhotoTexture: (entryName) => deps.loadPhotoTexture(entryName),
+      ...(deps.makeLectern === undefined
+        ? {}
+        : { makeLectern: deps.makeLectern.bind(deps) }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -497,7 +560,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         content.rendered = rendered;
         rendered.root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          if (mesh.isMesh) {
+          // A stand's meshes keep their pose: they are no photo planes.
+          if (mesh.isMesh && !inStand(mesh)) {
             content.photos.push({ mesh, upright: mesh.quaternion.clone() });
           }
         });
@@ -512,13 +576,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const setCodes = (levels: ReadonlyMap<string, QrLevel>) => {
     for (const code of codes) freeObject(code);
     codes = [];
+    codeIds = [];
     codeSquares = [];
     codePoints = new Map();
     for (const [levelId, level] of levels) {
       const geo = level.qr.geo;
       if (geo === undefined) continue;
       const root = rootAt(geo);
-      root.visible = shownCodes;
+      root.visible = codeShown(levelId);
       const point = new THREE.Vector3(0, geo.alt, 0).applyMatrix4(
         root.matrixWorld,
       );
@@ -531,6 +596,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       square.quaternion.copy(upright);
       root.add(square);
       codes.push(root);
+      codeIds.push(levelId);
       codeSquares.push({
         square,
         upright,
@@ -570,10 +636,12 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     entry.billboard.position
       .copy(entry.shownPoint)
       .setY(entry.shownPoint.y + rise);
-    entry.billboard.visible = shownNames;
+    const hidden = hiddenStations.has(entry.id);
+    entry.root.visible = !hidden;
+    entry.billboard.visible = shownNames && !hidden;
     if (entry.content !== null) {
       entry.content.pole.scale.set(1, rise, 1);
-      entry.content.pole.visible = shownNames;
+      entry.content.pole.visible = shownNames && !hidden;
     }
   };
 
@@ -632,6 +700,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       const photo = entry.content?.photos.find((p) => p.mesh === o);
       if (photo !== undefined) {
         photo.upright.copy(turned);
+        continue;
+      }
+      if (o.name === STAND) {
+        o.quaternion.copy(turned);
         continue;
       }
       const tourScale: unknown = o.userData["tourScale"];
@@ -696,7 +768,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         keep.add(station.id);
         const key = keyOf(station, index);
         const old = stations.get(station.id);
-        if (old?.key === key) return;
+        if (old?.key === key) {
+          old.station = station;
+          return;
+        }
         if (old !== undefined) freeStation(old);
         const root = rootAt(station.geo);
         const point = new THREE.Vector3(0, station.geo.alt, 0).applyMatrix4(
@@ -789,7 +864,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     pick(raycaster: THREE.Raycaster): string | null {
       group.updateMatrixWorld();
       for (const hit of raycaster.intersectObject(group, true)) {
-        if (!hit.object.visible) continue;
+        if (!drawnInGroup(hit.object, group)) continue;
         const pick = pickOf(hit.object);
         if (pick !== null) return pick;
       }
@@ -856,7 +931,25 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     setShown(layers: { readonly names: boolean; readonly codes: boolean }) {
       shownNames = layers.names;
       shownCodes = layers.codes;
-      for (const code of codes) code.visible = shownCodes;
+      codes.forEach((code, i) => {
+        code.visible = codeShown(codeIds[i] ?? "");
+      });
+    },
+    /**
+     * The globe view's visibility rule: these stations (their billboard,
+     * pole, ring and items) and these codes are not drawn and not picked,
+     * whatever the chips say; the rest follow the chips. A station's
+     * billboard takes it on the next `update`.
+     */
+    setHidden(stationIds: ReadonlySet<string>, levelIds: ReadonlySet<string>) {
+      hiddenStations = new Set(stationIds);
+      hiddenCodes = new Set(levelIds);
+      for (const entry of stations.values()) {
+        entry.root.visible = !hiddenStations.has(entry.id);
+      }
+      codes.forEach((code, i) => {
+        code.visible = codeShown(codeIds[i] ?? "");
+      });
     },
     /** Whether the codes show (the page's checks). */
     codesVisible(): boolean {
@@ -865,8 +958,30 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     billboardOf(id: string): THREE.Sprite | null {
       return stations.get(id)?.billboard ?? null;
     },
+    /** Every object a station draws: its root (ring, pole and items) and
+     *  its billboard once made (it hangs in the layer's group, not under
+     *  the root); null for an id the tour does not hold. The globe view
+     *  stages each station's first upload through these. */
+    stationObjects(id: string): THREE.Object3D[] | null {
+      const entry = stations.get(id);
+      if (entry === undefined) return null;
+      return entry.billboard === null
+        ? [entry.root]
+        : [entry.root, entry.billboard];
+    },
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
+    },
+    /** An item's drawn model (the glb under its pose and size), or null
+     *  for one not drawn now. */
+    modelObject(id: string): THREE.Object3D | null {
+      const entry = entryOfItem(id);
+      if (entry === null) return null;
+      return (
+        drawnOf(entry, id).find(
+          (o) => typeof o.userData["tourScale"] === "number",
+        ) ?? null
+      );
     },
     models(id: string): THREE.Object3D[] {
       return [...(stations.get(id)?.content?.models ?? [])];
@@ -876,6 +991,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       stations.clear();
       for (const code of codes) freeObject(code);
       codes = [];
+      codeIds = [];
       codeSquares = [];
       group.removeFromParent();
     },

@@ -23,10 +23,17 @@ import {
   readTourBlocks,
   TOUR_BLOCK_TEXT_RULES,
   TOUR_BLOCK_VIEWS,
+  TOUR_MODEL_MAX_NOTES,
+  TOUR_MODEL_MAX_SECTIONS,
+  TOUR_MODEL_SPACE_MAX,
+  TOUR_MODEL_WORLD_VIEWS,
+  TOUR_WORLD_VIEWS,
+  tourBlocksMinor,
   tourFloorView,
   tourTextCount,
   type TourBlock,
   type TourBlockDrop,
+  type TourModelBlock,
 } from './tour-blocks';
 import { parseTourAssets } from './tour-assets';
 
@@ -399,12 +406,20 @@ describe('views', () => {
   it('lists the views this reader draws, per kind', () => {
     expect(TOUR_BLOCK_VIEWS).toEqual({
       shortText: ['pin', 'card'],
-      longText: ['card'],
+      longText: ['lectern', 'card'],
       picture: ['plane', 'card'],
       video: ['card'],
       audio: ['card'],
-      model: ['placed', 'stage', 'card'],
-      character: ['stage', 'card'],
+      model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
+      character: [
+        'stage',
+        'bubble',
+        'speak',
+        'two-stations',
+        'portrait',
+        'popup',
+        'card',
+      ],
     });
   });
 
@@ -612,5 +627,322 @@ describe('the exact words a tour author reads, and shapes coerced into valid one
     expect(read.map((r) => r.block)).toEqual([
       expect.not.objectContaining({ description: expect.anything() }),
     ]);
+  });
+});
+
+/** A note at the arch's keystone, facing out of it. */
+const NOTE = { position: [0, 2.5, 0.4], normal: [0, 0, 1], title: 'Keystone' };
+const SECTION = {
+  name: 'Through the arch',
+  position: [0, 0, 0],
+  normal: [0, 0, 1],
+};
+
+function model(
+  patch: Record<string, unknown>,
+  options: ReadOptions = {}
+): TourModelBlock | undefined {
+  return one('model', patch, options) as TourModelBlock | undefined;
+}
+
+describe("a model's views, notes, sections and clip (minor 1)", () => {
+  it('every world view of a model stands free, and needs a size like placed', () => {
+    // Why: each of these views draws the model at its pose and size in
+    // the world; one without a size would have nothing to scale by.
+    expect(TOUR_MODEL_WORLD_VIEWS).toEqual([
+      'placed',
+      'ghost',
+      'hotspots',
+      'cutaway',
+      'toy',
+    ]);
+    for (const view of TOUR_MODEL_WORLD_VIEWS) {
+      expect(TOUR_WORLD_VIEWS.has(view)).toBe(true);
+      expect(parse([{ ...VALID.model, view }], { shown: [] })).toEqual([
+        expect.objectContaining({ view, sizeM: 3 }),
+      ]);
+      expect(() => model({ view, sizeM: undefined })).toThrow(
+        `"blocks[0].sizeM" is required for a model in the world (${view})`
+      );
+    }
+    expect([...TOUR_WORLD_VIEWS]).toEqual([
+      'pin',
+      'lectern',
+      'plane',
+      ...TOUR_MODEL_WORLD_VIEWS,
+    ]);
+  });
+
+  it('keeps notes, sections and a clip exactly as written', () => {
+    const second = {
+      ...NOTE,
+      title: 'Foot',
+      text: 'Worn by a thousand carts.',
+    };
+    const read = model({
+      view: 'hotspots',
+      animation: { name: 'Swing', autoplay: true },
+      annotations: [NOTE, second],
+      sections: [SECTION],
+    });
+    expect(read).toMatchObject({
+      animation: { name: 'Swing', autoplay: true },
+      annotations: [NOTE, second],
+      sections: [SECTION],
+    });
+  });
+
+  it('notes are read from the block, so a model block naming another file carries the same notes', () => {
+    // Why: notes are written on the block, not in the model file, so a
+    // block that names another asset reads the same notes; that is what
+    // lets a creator swap a better scan in without losing them.
+    const before = model({ view: 'hotspots', annotations: [NOTE] });
+    const assets = parseTourAssets(
+      [
+        { id: 'arch', path: 'content/arch.glb' },
+        { id: 'arch2', path: 'content/arch2.glb' },
+      ],
+      { fail }
+    );
+    const read = readTourBlocks(
+      [
+        {
+          ...VALID.model,
+          view: 'hotspots',
+          asset: 'arch2',
+          annotations: [NOTE],
+        },
+      ],
+      'blocks',
+      { assets, fail }
+    );
+    const after = read[0]?.block as TourModelBlock | undefined;
+    expect(after?.asset).toBe('arch2');
+    expect(after?.annotations).toEqual(before?.annotations);
+  });
+
+  it('an empty note list reads as no notes, and an empty section list as no sections', () => {
+    // Why (a PR review finding): an absent section list is a working
+    // cutaway - one cut that turns to face the visitor - so an empty one
+    // reads the same, as an empty note list reads as no notes, rather than
+    // refusing the whole tour.
+    expect(model({ annotations: [] })).not.toHaveProperty('annotations');
+    expect(model({ view: 'cutaway', sections: [] })).not.toHaveProperty(
+      'sections'
+    );
+    expect(model({ view: 'cutaway' })).not.toHaveProperty('sections');
+  });
+
+  it('holds at most 32 notes and 4 sections; more fails here and skips for a newer minor', () => {
+    const notes = (n: number) => Array.from({ length: n }, () => NOTE);
+    const sections = (n: number) => Array.from({ length: n }, () => SECTION);
+    expect(TOUR_MODEL_MAX_NOTES).toBe(32);
+    expect(TOUR_MODEL_MAX_SECTIONS).toBe(4);
+    expect(model({ annotations: notes(32) })?.annotations).toHaveLength(32);
+    expect(() => model({ annotations: notes(33) })).toThrow(/at most 32/);
+    expect(
+      model({ annotations: notes(33) }, { lenient: true })
+    ).toBeUndefined();
+    for (const n of [1, 4]) {
+      expect(
+        model({ view: 'cutaway', sections: sections(n) })?.sections
+      ).toHaveLength(n);
+    }
+    expect(() => model({ sections: sections(5) })).toThrow(/at most 4/);
+    expect(model({ sections: sections(5) }, { lenient: true })).toBeUndefined();
+  });
+
+  it("a note's title is required and capped at 64; its text is optional and capped at 1024", () => {
+    expect(
+      model({ annotations: [{ ...NOTE, title: 'x'.repeat(64) }] })
+    ).toBeDefined();
+    expect(() =>
+      model({ annotations: [{ ...NOTE, title: 'x'.repeat(65) }] })
+    ).toThrow(/annotations\[0\]\.title" is longer than 64/);
+    expect(() => model({ annotations: [{ ...NOTE, title: ' ' }] })).toThrow(
+      /title" is empty/
+    );
+    const drops: TourBlockDrop[] = [];
+    const read = model(
+      { annotations: [{ ...NOTE, text: 'y'.repeat(1025) }] },
+      { drops }
+    );
+    expect(read?.annotations?.[0]).not.toHaveProperty('text');
+    expect(drops).toEqual([
+      expect.objectContaining({ kind: 'field', block: 'b6', field: 'text' }),
+    ]);
+    const full = model({ annotations: [{ ...NOTE, text: 'y'.repeat(1024) }] });
+    expect(full?.annotations?.[0]?.text).toHaveLength(1024);
+  });
+
+  it('a point or direction must be three finite numbers: malformed at every minor', () => {
+    // Why: no revision can make a point of two numbers or a NaN
+    // meaningful, so even a newer minor's file fails on them.
+    const bad: unknown[] = [
+      [0, 0],
+      [0, 0, 0, 0],
+      [0, Number.NaN, 0],
+      [0, '1', 0],
+      'up',
+      null,
+    ];
+    for (const value of bad) {
+      for (const lenient of [false, true]) {
+        expect(() =>
+          model({ annotations: [{ ...NOTE, position: value }] }, { lenient })
+        ).toThrow(Invalid);
+        expect(() =>
+          model({ sections: [{ ...SECTION, normal: value }] }, { lenient })
+        ).toThrow(Invalid);
+      }
+    }
+    expect(
+      model({ annotations: [{ ...NOTE, position: [0, 0, 0] }] })
+    ).toBeDefined();
+  });
+
+  it('a zero or near-zero direction fails a file of this minor, and costs a newer one only its note or section', () => {
+    // Why: a direction shorter than the floor (1e-9, a policy, not a
+    // limit of the arithmetic: such a vector still normalises) carries no
+    // direction anyone meant - a zero written with rounding noise. A file
+    // of this reader's own minor is refused for it. A newer minor's file
+    // must not lose its whole model over one bad note: only that note or
+    // section is left out, and the reader hears which.
+    for (const normal of [
+      [0, 0, 0],
+      [1e-12, 0, -1e-12],
+    ]) {
+      expect(() => model({ annotations: [{ ...NOTE, normal }] })).toThrow(
+        /must not be zero/
+      );
+      expect(() => model({ sections: [{ ...SECTION, normal }] })).toThrow(
+        /must not be zero/
+      );
+    }
+    const drops: TourBlockDrop[] = [];
+    const read = model(
+      {
+        annotations: [
+          { ...NOTE, normal: [0, 0, 0] },
+          { ...NOTE, title: 'Kept' },
+        ],
+        sections: [{ ...SECTION, normal: [1e-12, 0, -1e-12] }],
+      },
+      { lenient: true, drops }
+    );
+    expect(read?.annotations?.map((n) => n.title)).toEqual(['Kept']);
+    expect(read?.sections).toBeUndefined();
+    expect(drops).toEqual([
+      expect.objectContaining({
+        kind: 'field',
+        field: 'annotations[0]',
+        reason: expect.stringMatching(/must not be zero/),
+      }),
+      expect.objectContaining({
+        kind: 'field',
+        field: 'sections[0]',
+        reason: expect.stringMatching(/must not be zero/),
+      }),
+    ]);
+    // Just at the floor, a direction is kept.
+    expect(
+      model({ annotations: [{ ...NOTE, normal: [1e-9, 0, 0] }] })?.annotations
+    ).toHaveLength(1);
+  });
+
+  it("a point beyond 10 000 of the model's origin fails here and skips for a newer minor", () => {
+    const edge = TOUR_MODEL_SPACE_MAX;
+    expect(
+      model({ annotations: [{ ...NOTE, position: [edge, -edge, 0] }] })
+    ).toBeDefined();
+    expect(() =>
+      model({ annotations: [{ ...NOTE, position: [edge + 1, 0, 0] }] })
+    ).toThrow(/within 10000/);
+    expect(
+      model(
+        { sections: [{ ...SECTION, position: [0, 0, -edge - 1] }] },
+        { lenient: true }
+      )
+    ).toBeUndefined();
+  });
+
+  it('a clip needs a name and a yes or no for autoplay', () => {
+    expect(() => model({ animation: { autoplay: true } })).toThrow(
+      /animation\.name" must be text/
+    );
+    expect(() =>
+      model({ animation: { name: 'Swing', autoplay: 'yes' } })
+    ).toThrow(/autoplay" must be true or false/);
+    expect(() => model({ animation: 'Swing' })).toThrow(
+      /animation" must be an object/
+    );
+    expect(
+      model({ animation: { name: 'Swing', autoplay: false } })?.animation
+    ).toEqual({ name: 'Swing', autoplay: false });
+  });
+
+  it('a section needs a name of at most 40', () => {
+    expect(
+      model({ sections: [{ ...SECTION, name: 'z'.repeat(40) }] })
+    ).toBeDefined();
+    expect(() =>
+      model({ sections: [{ ...SECTION, name: 'z'.repeat(41) }] })
+    ).toThrow(/sections\[0\]\.name" is longer than 40/);
+    expect(() =>
+      model({ sections: [{ ...SECTION, name: undefined }] })
+    ).toThrow(/name" must be text/);
+  });
+
+  it('notes and sections that are not lists of objects are malformed at every minor', () => {
+    expect(() => model({ annotations: NOTE }, { lenient: true })).toThrow(
+      /annotations" must be an array/
+    );
+    expect(() =>
+      model({ annotations: ['Keystone'] }, { lenient: true })
+    ).toThrow(/annotations\[0\]" must be an object/);
+    expect(() => model({ sections: [7] }, { lenient: true })).toThrow(
+      /sections\[0\]" must be an object/
+    );
+  });
+});
+
+describe('tourBlocksMinor: the lowest minor a station needs', () => {
+  it('is 0 for a model placed, staged or in a card with none of the new fields', () => {
+    // Why: the writer marks a tour newer only when it must, so an older
+    // reader opens it fully instead of in its lenient mode.
+    expect(tourBlocksMinor(parse(Object.values(VALID)))).toBe(0);
+    expect(tourBlocksMinor(parse([{ ...VALID.model, view: 'card' }]))).toBe(0);
+    expect(
+      tourBlocksMinor(
+        parse([{ ...VALID.model, view: 'stage', sizeM: undefined }])
+      )
+    ).toBe(0);
+    expect(tourBlocksMinor([])).toBe(0);
+  });
+
+  it('is 1 for a model in a new view, or with a clip, notes or sections in any view', () => {
+    for (const view of ['ghost', 'hotspots', 'cutaway', 'toy']) {
+      expect(tourBlocksMinor(parse([{ ...VALID.model, view }]))).toBe(1);
+    }
+    const patches = [
+      { animation: { name: 'Swing', autoplay: true } },
+      { annotations: [NOTE] },
+      { sections: [SECTION] },
+    ];
+    for (const patch of patches) {
+      for (const view of ['placed', 'card']) {
+        const blocks = parse([
+          VALID.shortText,
+          { ...VALID.model, view, ...patch },
+        ]);
+        expect(tourBlocksMinor(blocks)).toBe(1);
+      }
+    }
+  });
+
+  it('an empty note list needs nothing new: it reads as absent', () => {
+    expect(tourBlocksMinor(parse([{ ...VALID.model, annotations: [] }]))).toBe(
+      0
+    );
   });
 });

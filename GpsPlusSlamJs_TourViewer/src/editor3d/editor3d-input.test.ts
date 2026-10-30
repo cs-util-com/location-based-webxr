@@ -23,6 +23,7 @@ import {
 } from "./editor3d-input.js";
 import type { GestureEdit, GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
+import { GLOBE_GESTURES, routeGlobeInput } from "./globe-gestures.js";
 import { LONG_PRESS } from "./long-press.js";
 import { liftedGeo, nudgedGeo, turnedGeo } from "./pose-edits.js";
 
@@ -58,6 +59,7 @@ function setup(
     pick?: string | null;
     keysFree?: boolean;
     world?: GestureWorld;
+    clickPx?: number;
   } = {},
 ) {
   const log: string[] = [];
@@ -110,6 +112,7 @@ function setup(
     surface: element,
     scene,
     page,
+    ...(options.clickPx === undefined ? {} : { clickPx: options.clickPx }),
   });
   return {
     input,
@@ -820,5 +823,192 @@ describe("the ground menu", () => {
     context(t.dock, { x: 5, y: 5 });
     expect(t.page.groundMenu).not.toHaveBeenCalled();
     t.input.dispose();
+  });
+});
+
+// Why: while the inspector waits for a click on the model (a note or a
+// section placed), the press on the selected model must not start a move
+// of it, and the click must answer the wait, not select something else
+// (it would close the inspector the creator works in); a drag stays the
+// camera's.
+describe("a click the scene waits for", () => {
+  it("answers the wait instead of selecting, and starts no gesture on a handle", () => {
+    const t = setup({ handle: "move", pick: "station:a" });
+    const answered: ScreenPoint[] = [];
+    t.scene.clickWaited = () => true;
+    t.scene.answerClick = (at) => {
+      answered.push(at);
+    };
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(pointer("pointerup", { x: 5, y: 5 }));
+    expect(answered).toEqual([{ x: 5, y: 5 }]);
+    expect(t.page.select).not.toHaveBeenCalled();
+    expect(t.dispatched).toEqual([]);
+    expect(t.scene.handleAt).not.toHaveBeenCalled();
+    // A drag is the camera's: no answer.
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 20, y: 5 }, { buttons: 1 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 20, y: 5 }));
+    expect(answered).toHaveLength(1);
+    t.input.dispose();
+  });
+});
+
+describe("the globe's extras (`globe-gestures.ts`'s routes)", () => {
+  // Why: on the globe the arrows with nothing selected are the camera's
+  // ("camera-step") and a double click on the ground zooms toward it
+  // ("camera-zoom"); a scene without the hooks keeps the old behaviour.
+  it("step the camera by the arrows with nothing selected, and only then", () => {
+    const t = setup({ selected: null });
+    const steps: string[] = [];
+    t.scene.stepCamera = (code) => {
+      steps.push(code);
+    };
+    expect(tap("ArrowLeft").defaultPrevented).toBe(true);
+    tap("ArrowUp");
+    tap("KeyQ");
+    expect(steps).toEqual(["ArrowLeft", "ArrowUp"]);
+    t.setSelected("pin");
+    tap("ArrowRight");
+    expect(steps).toHaveLength(2);
+    expect(t.commits).toHaveLength(1);
+    t.input.dispose();
+  });
+
+  it("zoom toward a double click on nothing; one on an object frames it", () => {
+    const t = setup({ pick: null });
+    const zooms: ScreenPoint[] = [];
+    t.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    t.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(t.scene.frame).not.toHaveBeenCalled();
+    t.input.dispose();
+    const u = setup({ pick: "pin" });
+    u.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    u.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toHaveLength(1);
+    expect(u.scene.frame).toHaveBeenCalledWith("pin");
+    u.input.dispose();
+  });
+});
+
+describe("the globe's routing table, event by event", () => {
+  // Why: the globe editor shares this input, and the owner's routing table
+  // (`globe-gestures.ts`) is the specification of who owns each event. This
+  // replays every row against the real input and maps what the input DID
+  // back to a route, so the two cannot drift apart unnoticed. The click
+  // distance is the table's (`clickPx`), swept below and above it.
+  const { dragPx } = GLOBE_GESTURES;
+
+  /** The input with the globe's click distance and both extras wired. */
+  function globeSetup(options: Parameters<typeof setup>[0]) {
+    const t = setup({ ...options, clickPx: dragPx });
+    const extras: string[] = [];
+    t.scene.stepCamera = () => extras.push("camera-step");
+    t.scene.zoomTowards = () => extras.push("camera-zoom");
+    return { ...t, extras };
+  }
+
+  it("a left press on a handle edits, elsewhere it is the camera's", () => {
+    for (const on of ["handle", "ground"] as const) {
+      const t = globeSetup({ handle: on === "handle" ? "move" : null });
+      t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+      const did = t.dispatched.length > 0 ? "edit" : "camera";
+      expect(did, on).toBe(
+        routeGlobeInput({ kind: "press", button: "left", on }),
+      );
+      t.input.dispose();
+    }
+  });
+
+  it("a left release selects, deselects or (after a drag) does nothing", () => {
+    for (const movedPx of [0, 3, dragPx - 0.5, dragPx + 0.5, 12]) {
+      for (const on of ["object", "ground"] as const) {
+        const t = globeSetup({
+          selected: null,
+          pick: on === "object" ? "station:a" : null,
+        });
+        t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+        const end = { x: 5 + movedPx, y: 5 };
+        window.dispatchEvent(pointer("pointermove", end, { buttons: 1 }));
+        window.dispatchEvent(pointer("pointerup", end));
+        const calls = vi.mocked(t.page.select).mock.calls;
+        const did =
+          calls.length === 0
+            ? "none"
+            : calls[0]?.[0] === null
+              ? "deselect"
+              : "select";
+        expect(did, `${on} ${String(movedPx)} px`).toBe(
+          routeGlobeInput({ kind: "release", button: "left", on, movedPx }),
+        );
+        t.input.dispose();
+      }
+    }
+  });
+
+  it("a right click that did not move opens the menu", () => {
+    const t = globeSetup({ selected: null });
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 30, y: 40 }, { button: 2, buttons: 2 }),
+    );
+    t.element.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 30,
+        clientY: 40,
+        button: 2,
+      }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 30, y: 40 }, { button: 2 }));
+    const did =
+      vi.mocked(t.page.groundMenu).mock.calls.length > 0 ? "menu" : "none";
+    expect(did).toBe(
+      routeGlobeInput({
+        kind: "release",
+        button: "right",
+        on: "ground",
+        movedPx: 0,
+      }),
+    );
+    t.input.dispose();
+  });
+
+  it("a double click on an object selects and flies, on the ground zooms", () => {
+    for (const on of ["object", "ground"] as const) {
+      const t = globeSetup({ pick: on === "object" ? "station:a" : null });
+      t.element.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true, clientX: 5, clientY: 5 }),
+      );
+      const did =
+        vi.mocked(t.scene.frame).mock.calls.length > 0
+          ? "select-and-fly"
+          : (t.extras[0] ?? "none");
+      expect(did, on).toBe(routeGlobeInput({ kind: "double", on }));
+      t.input.dispose();
+    }
+  });
+
+  it("an arrow nudges the selection, or steps the camera without one", () => {
+    for (const selected of [true, false]) {
+      const t = globeSetup({ selected: selected ? "pin" : null });
+      tap("ArrowRight");
+      const did = t.commits.length > 0 ? "nudge" : (t.extras[0] ?? "none");
+      expect(did, String(selected)).toBe(
+        routeGlobeInput({ kind: "arrow", selected }),
+      );
+      t.input.dispose();
+    }
   });
 });

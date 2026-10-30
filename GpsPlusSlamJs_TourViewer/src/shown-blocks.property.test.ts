@@ -198,6 +198,8 @@ describe("a story's world (property)", () => {
             pause: () => undefined,
             removeAttribute: () => undefined,
             load: () => undefined,
+            onended: null,
+            onplay: null,
           },
           choices: {
             replaceChildren: (...nodes: (Node | string)[]) => {

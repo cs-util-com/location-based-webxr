@@ -28,7 +28,9 @@ inspector (a station's name, description, radius, place and heading; a
 pin's text; an item's offset, height and heading; a model's size)
 becomes one edit (`inspector-edits.ts`) and one page command
 (`deps.edits`), one undo step per field; so do Put on the ground, Put
-items on the ground, the card's picture and Add pin.
+items on the ground, the card's picture and Add pin, and a story
+character's view and advance chips (`characterChipEdit`: his station's
+`StationEdit.character`; the chip already pressed writes nothing).
 
 ## Public API
 
@@ -64,6 +66,14 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   `turn` for Align to station and a typed heading, `groundAt` and
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
+- `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
+  (`inspector-edits.ts`) or pressed (`modelAct`).
+- `modelAct` answers a model's part buttons: a view chosen; a note or a
+  section brought into focus (pressed again: out of it); the 3D view asked
+  to wait for a click on the model (`modelPickAsked`; pressed again: no
+  longer), placing a part again also focusing it; a part deleted (focus and
+  wait cleared when written); a section flipped (its normal negated, a zero
+  kept 0); the clip's autoplay turned.
 
 ## Invariants & assumptions
 
@@ -265,6 +275,8 @@ with the page's commands as spies (`editor-shell.test.ts`): text typed
 and not committed goes to the selection it was typed for on a selection
 change and on `hide()`; a refused text (a block field, a pin text, a
 station name) kept in the field, a written one showing the tour's value;
+a story character's chips written as his station's edit, the pressed one
+writing nothing;
 a draw while typing (a store change, the ground
 arriving on the readout's tick) commits nothing and keeps the text and
 the focus (Chromium's synchronous `focusout` on a removed field is

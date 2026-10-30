@@ -118,9 +118,10 @@ export function buildEditorModel(input: {
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
   // Pins and photos only: this 2D editor lists no placed 3D model (format
-  // minor 1) rather than a mislabelled note; the tour keeps it untouched.
+  // minor 1) and no reading stand (a long text, minor 3) rather than a
+  // mislabelled note; the tour keeps them untouched.
   const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
-    if (object.kind === "model") return [];
+    if (object.kind === "model" || object.kind === "longText") return [];
     const mark = drawable.get(object.id);
     return [
       {
