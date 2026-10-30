@@ -32,7 +32,8 @@
   drift through it, unchanged in shape. The guard of the move is
   `globe-reference-shots.smoke.spec.mjs` with
   `globe-reference-shots-compare.mjs` (six held views, before and after,
-  side by side).
+  side by side; later also the cloud bands at 120, 60 and 20 km, held and
+  on the reference flight).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow

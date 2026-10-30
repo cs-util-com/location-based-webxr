@@ -11,7 +11,12 @@
  *
  *   node labs/globe/globe-reference-shots-compare.mjs <before> <after> <out>
  *
- * Exits 1 when one of the fixed views (or the trace) is missing from either
+ * The views added later (`ADDED_SHOT_NAMES`: the cloud bands and the held
+ * flight) are compared where both captures hold them; a capture made
+ * before they existed lacks them, which is reported, not failed, so old
+ * captures still compare. Their facts (`flight.json`) are compared too.
+ *
+ * Exits 1 when one of the first seven views (or the trace) is missing from either
  * side, or the sizes or the trace's lengths differ; a pixel or trace
  * difference is reported, never judged: whether it is visible is the
  * reader's call, with the image in front of them.
@@ -21,6 +26,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import sharp from "sharp";
+
+import { ADDED_SHOT_NAMES } from "./globe-reference-shots-views.mjs";
 
 /**
  * The thresholds (8-bit levels) the changed-pixel shares are counted at;
@@ -154,8 +161,16 @@ export async function main([before, after, out]) {
   }
   mkdirSync(out, { recursive: true });
   let failed = false;
-  for (const name of VIEW_NAMES.map((v) => `${v}.png`)) {
+  const added = new Set(ADDED_SHOT_NAMES);
+  for (const view of [...VIEW_NAMES, ...ADDED_SHOT_NAMES]) {
+    const name = `${view}.png`;
     const gone = [before, after].filter((dir) => !existsSync(join(dir, name)));
+    if (gone.length > 0 && added.has(view)) {
+      console.log(
+        `${name}: not in ${gone.join(" and ")} (a capture older than this view), skipped`,
+      );
+      continue;
+    }
     if (gone.length > 0) {
       console.log(`${name}: MISSING in ${gone.join(" and ")}`);
       failed = true;
@@ -192,10 +207,11 @@ export async function main([before, after, out]) {
       .join(", ");
     console.log(`${name}: max ${d.max}, ${shares}`);
   }
-  const facts = (dir) => {
-    const f = join(dir, "views.json");
-    return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
-  };
+  const facts = (dir) =>
+    ["views.json", "flight.json"].flatMap((file) => {
+      const f = join(dir, file);
+      return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : [];
+    });
   const fa = facts(before);
   const fb = facts(after);
   for (const v of fa) {
@@ -208,6 +224,7 @@ export async function main([before, after, out]) {
       "osmRequests",
       "cameraNear",
       "view",
+      "dive",
     ]) {
       if (JSON.stringify(v[key]) !== JSON.stringify(w[key])) {
         console.log(

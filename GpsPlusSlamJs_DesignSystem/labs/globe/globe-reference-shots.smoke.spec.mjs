@@ -27,6 +27,13 @@
  * target and the speed dust), stepped frame by frame, so state a refactor
  * changed shows even where no image would.
  *
+ * A third test holds the reference flight (the lab's `holdDiveAt`) where
+ * it passes about 120, 60 and 20 km (`11-flight-120km.png` to
+ * `13-flight-20km.png`, facts in `flight.json`), and the held views gain
+ * the same bands (`8-shell-band-120km.png` to `10-shell-band-20km.png`):
+ * the altitudes where the cloud shell volume's look lives, which the first
+ * seven views pass over (`globe-reference-shots-views.mjs`).
+ *
  * `GLOBE_SHOTS_SHELL=1` captures the second set: the same views and trace
  * with the spherical cloud volume, its high layer and its ground shadow on
  * (`SHELL_KNOBS`). The shell is off by default (`cloudShellVolume=0`), so
@@ -38,6 +45,11 @@ import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import {
+  BAND_VIEWS,
+  FLIGHT_HOLDS,
+  diveTimeFor,
+} from "./globe-reference-shots-views.mjs";
 import { routeCityFixture } from "./globe-smoke-helpers.mjs";
 
 const OUT = process.env.GLOBE_SHOTS_DIR ?? "";
@@ -110,6 +122,9 @@ const VIEWS = [
   { name: "5-below-clouds", aglM: 1500, headingDeg: 200, pitchDeg: -8 },
   // Landed, at street level: the eye camera, the map underfoot, the horizon.
   { name: "6-street", aglM: 2, headingDeg: 30, pitchDeg: 2 },
+  // Added later, after the first six so those capture as before: the
+  // cloud bands at 120, 60 and 20 km, where the shell volume's look lives.
+  ...BAND_VIEWS,
 ];
 
 /**
@@ -227,6 +242,53 @@ async function openReference(page, context, hash, foreign) {
 const holdView = (page, view) =>
   page.evaluate((v) => window.__globeLab.placeView(v), view);
 
+/**
+ * The held view's facts for `views.json` and `flight.json`: the credits,
+ * the tile counts, the relief, the near plane and the cloud states.
+ */
+const viewFacts = (page) =>
+  page.evaluate(() => {
+    const s = window.__globeLab.state();
+    return {
+      credits: document.getElementById("globe-credits")?.textContent ?? "",
+      loadedTiles: s.loadedTiles,
+      relief: s.relief
+        ? {
+            share: s.relief.share,
+            visibleTiles: s.relief.visibleTiles,
+            groundUnderCameraM: s.relief.groundUnderCameraM,
+          }
+        : null,
+      osmRequests: s.osm?.requests ?? null,
+      cameraNear: s.eye?.near ?? null,
+      // The clouds' states (r980 review, verdict 2): the flat layer's
+      // share and the two volumes' switches, shares, laws and decks. A
+      // held view with the drift pinned is deterministic, so this covers
+      // the cloud state the intro trace cannot. `drawn` (a frame count,
+      // set by how long the view took to settle) is left out.
+      cloudFlat: s.cloudFlat ?? null,
+      cloudVolume: s.cloudVolume
+        ? { ...s.cloudVolume, drawn: undefined }
+        : null,
+      cloudShellVolume: s.cloudShellVolume
+        ? { ...s.cloudShellVolume, drawn: undefined }
+        : null,
+    };
+  });
+
+/**
+ * The shell's switch in every added view: on in the shell set, off in the
+ * default set. A renamed knob, or a default that changed, would otherwise
+ * capture one set's look under the other's name exactly where the shell
+ * lives.
+ */
+function expectShellSwitch(rows) {
+  const on = process.env.GLOBE_SHOTS_SHELL === "1";
+  expect(
+    rows.map((r) => [r.name, r.cloudShellVolume?.enabled === true]),
+  ).toEqual(rows.map((r) => [r.name, on]));
+}
+
 // WHY: a refactor that must leave the globe looking exactly as before needs
 // the same views rendered before and after it; this captures them with
 // everything that moves on its own pinned, so a difference is the code's.
@@ -266,34 +328,7 @@ test("the reference views render and settle", async ({ page, context }) => {
     await holdView(page, view);
     const seconds = await settle(page, { timeoutMs: 900_000 });
     await page.screenshot({ path: join(OUT, `${v.name}.png`) });
-    const facts = await page.evaluate(() => {
-      const s = window.__globeLab.state();
-      return {
-        credits: document.getElementById("globe-credits")?.textContent ?? "",
-        loadedTiles: s.loadedTiles,
-        relief: s.relief
-          ? {
-              share: s.relief.share,
-              visibleTiles: s.relief.visibleTiles,
-              groundUnderCameraM: s.relief.groundUnderCameraM,
-            }
-          : null,
-        osmRequests: s.osm?.requests ?? null,
-        cameraNear: s.eye?.near ?? null,
-        // The clouds' states (r980 review, verdict 2): the flat layer's
-        // share and the two volumes' switches, shares, laws and decks. A
-        // held view with the drift pinned is deterministic, so this covers
-        // the cloud state the intro trace cannot. `drawn` (a frame count,
-        // set by how long the view took to settle) is left out.
-        cloudFlat: s.cloudFlat ?? null,
-        cloudVolume: s.cloudVolume
-          ? { ...s.cloudVolume, drawn: undefined }
-          : null,
-        cloudShellVolume: s.cloudShellVolume
-          ? { ...s.cloudShellVolume, drawn: undefined }
-          : null,
-      };
-    });
+    const facts = await viewFacts(page);
     report.push({ ...v, view, settledInS: seconds, ...facts });
     console.log(`${v.name}: settled in ${seconds.toFixed(1)} s`);
   }
@@ -304,6 +339,9 @@ test("the reference views render and settle", async ({ page, context }) => {
   if (process.env.GLOBE_SHOTS_SHELL === "1") {
     expect(report.some((r) => r.cloudShellVolume?.enabled === true)).toBe(true);
   }
+  expectShellSwitch(
+    report.filter((r) => BAND_VIEWS.some((b) => b.name === r.name)),
+  );
   // The routes draw their tiles in the page (the OSM pattern, the city
   // fixture's heights); a tile still in flight when the test ends would
   // fail the run after every view passed.
@@ -415,6 +453,59 @@ test("the drift view and the intro trace on Playwright's clock", async ({
   writeFileSync(join(OUT, "trace.json"), JSON.stringify(trace, null, 1));
   console.log(`trace: ${trace.length} frames`);
   expect(trace.length).toBeGreaterThan(TRACE_FRAMES / 2);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await context.unrouteAll({ behavior: "ignoreErrors" });
+  expect(errors).toEqual([]);
+  expect(foreign).toEqual([]);
+});
+
+// WHY: the held views look at the bands from one fixed pose; the owner
+// sees them from the reference flight, whose camera pitches and moves as it
+// dives. Held at fixed times on the flight's own clock, the flight is the
+// same in two builds, so its shots at 120, 60 and 20 km compare like the
+// held views and catch a cloud layer that is lost only on the flight's path.
+test("the reference flight held at the cloud bands", async ({
+  page,
+  context,
+}) => {
+  test.skip(!OUT, "set GLOBE_SHOTS_DIR to capture the reference views");
+  test.setTimeout(3_600_000);
+  mkdirSync(OUT, { recursive: true });
+  const errors = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  const foreign = [];
+  await openReference(page, context, `${LINK}${PINNED}`, foreign);
+  // The link's flight (`land=1`) exists once the lab is ready to fly; it is
+  // held at its start at once, so it never runs on while the times are read.
+  await page.waitForFunction(
+    () => window.__globeLab.diveAltitudeAt(0) !== null,
+    null,
+    { timeout: 180_000, polling: 250 },
+  );
+  await page.evaluate(() => window.__globeLab.holdDiveAt(0));
+  const altitudeAt = (ms) =>
+    page.evaluate((t) => window.__globeLab.diveAltitudeAt(t), ms);
+  const report = [];
+  for (const h of FLIGHT_HOLDS) {
+    const dive = await diveTimeFor(altitudeAt, h.altitudeKm * 1000);
+    await page.evaluate((t) => window.__globeLab.holdDiveAt(t), dive.ms);
+    const seconds = await settle(page, { timeoutMs: 900_000 });
+    await page.screenshot({ path: join(OUT, `${h.name}.png`) });
+    report.push({
+      ...h,
+      dive,
+      settledInS: seconds,
+      ...(await viewFacts(page)),
+    });
+    console.log(
+      `${h.name}: dive at ${dive.ms.toFixed(0)} ms (${(dive.altitudeM / 1000).toFixed(1)} km), settled in ${seconds.toFixed(1)} s`,
+    );
+  }
+  writeFileSync(join(OUT, "flight.json"), JSON.stringify(report, null, 2));
+  expectShellSwitch(report);
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await context.unrouteAll({ behavior: "ignoreErrors" });
   expect(errors).toEqual([]);

@@ -8,7 +8,13 @@
  * visible change as identical.
  */
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -22,6 +28,7 @@ import {
   dropRepeatedFrames,
   main,
 } from "./globe-reference-shots-compare.mjs";
+import { ADDED_SHOT_NAMES } from "./globe-reference-shots-views.mjs";
 
 const rgba = (...pixels) => new Uint8Array(pixels.flat());
 
@@ -146,7 +153,7 @@ describe("main", () => {
       .png()
       .toFile(join(dir, `${name}.png`));
 
-  const setup = async ({ missing = null } = {}) => {
+  const setup = async ({ missing = null, addedIn = [] } = {}) => {
     const root = mkdtempSync(join(tmpdir(), "shots-"));
     const [before, after, out] = ["before", "after", "out"].map((d) =>
       join(root, d),
@@ -156,6 +163,9 @@ describe("main", () => {
       for (const name of VIEW_NAMES) {
         if (dir === before && name === missing) continue;
         await png(dir, name);
+      }
+      if (addedIn.includes(dir === before ? "before" : "after")) {
+        for (const name of ADDED_SHOT_NAMES) await png(dir, name);
       }
       writeFileSync(join(dir, "trace.json"), "[]");
     }
@@ -179,6 +189,31 @@ describe("main", () => {
       assert.equal(await main(args), 0);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Why: the cloud-band views were added after captures existed; an old
+  // capture must still compare against a new one (the added views reported
+  // and skipped), while two captures that both hold them compare them.
+  it("skips the added views a capture lacks, and compares them where both hold them", async () => {
+    const old = await setup({ addedIn: ["after"] });
+    try {
+      assert.equal(await main(old.args), 0);
+      assert.equal(
+        existsSync(join(old.args[2], `${ADDED_SHOT_NAMES[0]}-pair.png`)),
+        false,
+      );
+    } finally {
+      rmSync(old.root, { recursive: true, force: true });
+    }
+    const both = await setup({ addedIn: ["before", "after"] });
+    try {
+      assert.equal(await main(both.args), 0);
+      for (const name of ADDED_SHOT_NAMES) {
+        assert.ok(existsSync(join(both.args[2], `${name}-pair.png`)), name);
+      }
+    } finally {
+      rmSync(both.root, { recursive: true, force: true });
     }
   });
 });

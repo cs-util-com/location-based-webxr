@@ -22,6 +22,15 @@
   flight's first 240 frames stepped one at a time from that instant (per
   frame the camera's distance, direction and forward, the clouds' offset
   uniform, the world frame's target and the speed dust's state).
+  Added later (`globe-reference-shots-views.mjs`), where the cloud shell
+  volume's look lives and the first views do not look: three held views
+  over the place at heading 0, pitch -25 (`8-shell-band-120km`,
+  `9-shell-band-60km`, `10-shell-band-20km`), and a third test holding
+  the reference flight (`holdDiveAt`) at the dive times where it passes
+  120, 60 and 20 km (`11-flight-120km`, `12-flight-60km`,
+  `13-flight-20km`; their dive times and facts in `flight.json`). Every
+  added view asserts the shell's switch: on in the shell set, off in the
+  default set.
 - Use:
 
   ```sh
@@ -42,8 +51,12 @@
   difference) and prints a line per view and every `views.json` fact that
   differs. Exit 1 when a view is missing or the sizes differ, 2 for a wrong
   call; a pixel difference is reported, never judged. The views compared
-  are the fixed `VIEW_NAMES` (the seven the capture writes), not the
-  files a folder happens to hold, so a view missing on either side fails.
+  are the fixed `VIEW_NAMES` (the first seven the capture writes), not the
+  files a folder happens to hold, so a view missing on either side fails;
+  then the added `ADDED_SHOT_NAMES`, compared where both sides hold them
+  and reported as skipped where a side lacks them (a capture made before
+  they existed), so old captures still compare. `flight.json` facts,
+  with each hold's `dive` time, are compared like `views.json`.
   `diffTrace(a, b)`: null for equal traces, `{ lengths }` for different
   lengths (exit 1), else `{ fields }` with each differing field's first
   frame and largest numeric difference (null when not numeric, or when the values differ in a frame where their numbers do not), printed
@@ -56,4 +69,5 @@
 - Tests: `globe-reference-shots-compare.test.mjs` (the counting per channel,
   the strict thresholds including `>0`, alpha ignored, the amplified
   image, the size check; the trace difference; `main` failing on a view
-  missing from the before side).
+  missing from the before side; the added views skipped where one side
+  lacks them and compared where both hold them).
