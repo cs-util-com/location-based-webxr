@@ -38,7 +38,9 @@ Design: `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`
     `long-text-pictures.ts` to fill.
   - An inline picture (the parser's `pictureAlt`) is a `span` with its alt
     text; an empty alt shows as "picture" (`altBoxText`).
-  - Never throws: a value that is not a tree renders an empty fragment.
+  - Never throws: a value that is not a tree renders an empty fragment,
+    and a block or an inline of a kind the renderer does not know (a
+    newer parser's, a hand-built tree's) is skipped.
 - `altBoxText(alt)` - the alt box's text.
 - `leaveArQuestion(host)` - "Open {host}? You may lose your place in the
   AR view."
@@ -75,5 +77,16 @@ sheetBody.replaceChildren(fragment);
 
 - `long-text-render.test.ts` - each element, the link attributes and host,
   a punycode host, the tap hand-off, picture holders, inline alt boxes,
-  escaped markup, an allowlist sweep, a non-tree input, and the link guard
-  (outside AR, yes, no, a rejected question, its words).
+  escaped markup, an allowlist sweep, a non-tree input, unknown block and
+  inline kinds skipped, and the link guard (outside AR, yes, no, a
+  rejected question, its words).
+- `long-text-render.property.test.ts` - generated bodies of loose Markdown
+  and HTML characters plus whole links (an https target and bad ones:
+  `javascript:`, `data:`, `blob:`, `http:`, credentials, relative) and whole
+  picture lines (the tour's assets, a missing one, bad targets), with the
+  pictures filled as the sheet does: only allowlisted elements and
+  attributes; every `a` exactly its four attributes and an `https:` href
+  without credentials; every `img` src an object URL made from one of the
+  tour's files, one per picture of a tour asset. A second test keeps the
+  generator honest: at seed 42, 2 000 bodies, about 33 % render a link
+  and 31 % a tour picture (floor 20 %).

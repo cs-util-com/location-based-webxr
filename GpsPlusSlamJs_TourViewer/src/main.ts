@@ -40,6 +40,7 @@ import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { turnShownLecternUnderTap } from "./lectern-view.js";
+import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { createViewSwitch } from "./view-switch.js";
@@ -1084,11 +1085,10 @@ const modelVisitor = createModelVisitor({
 // path in the open tour.
 const longTextSheet = createLongTextSheet({
   host: element("ar-root"),
-  loadAsset: async (id) => {
-    const asset = ctx.tourDocument.manifest()?.assets.find((a) => a.id === id);
-    if (asset === undefined) throw new Error(`no asset "${id}" in the tour`);
-    return stations.loadContent(asset.path);
-  },
+  loadAsset: async (id) =>
+    stations.loadContent(
+      pictureAssetPath(ctx.tourDocument.manifest()?.assets, id),
+    ),
   arActive: () => arSessionLive(arController.getState().status),
   openLink: (href) => {
     window.open(href, "_blank", "noopener,noreferrer");

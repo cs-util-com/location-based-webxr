@@ -24,8 +24,9 @@ const SEGMENTER = (Intl as unknown as { Segmenter?: SentenceSegmenter })
   .Segmenter;
 
 /** Ends of sentences where the browser has no sentence segmenter: a run
- *  of `.`, `!` or `?` and any closing quotes or brackets after it. */
-const FALLBACK = /[^.!?]*(?:[.!?]+["'’”)\]]*|$)/gu;
+ *  of `.`, `!` or `?` and any closing quotes or brackets after it, or a line
+ *  break (a hard break; the segmenter ends a sentence there too). */
+const FALLBACK = /[^.!?\n]*(?:\n|[.!?]+["'’”)\]]*|$)/gu;
 
 function segments(text: string, lang: string): TextSpan[] {
   if (SEGMENTER !== undefined) {
@@ -85,11 +86,36 @@ export interface SentenceIndex {
  *  headings (list items and quotes hold paragraphs of their own). */
 const TEXT_BLOCKS = "p, h3, h4, h5";
 
+/** A block's text and where each of its text nodes starts in it; a hard
+ *  break (`br`) is a line break in the text, in no node. */
+function blockText(block: Element): {
+  readonly nodes: readonly { readonly node: Text; readonly start: number }[];
+  readonly text: string;
+} {
+  const nodes: { readonly node: Text; readonly start: number }[] = [];
+  let text = "";
+  const walker = block.ownerDocument.createTreeWalker(
+    block,
+    1 | 4 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT */,
+  );
+  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+    if (n.nodeType === 1) {
+      if ((n as Element).localName === "br") text += "\n";
+      continue;
+    }
+    const t = n as Text;
+    nodes.push({ node: t, start: text.length });
+    text += t.data;
+  }
+  return { nodes, text };
+}
+
 /**
  * The sentences of the body rendered under `root`, in reading order.
  * `skip` names blocks that are not read (a picture's holder). A block's
  * text is the text of all its text nodes, so a sentence may run across
- * an emphasis or a link.
+ * an emphasis or a link; each hard break (`br`) adds a line break to it,
+ * which ends a sentence, so two lines are never read as one.
  */
 export function indexSentences(
   root: Element,
@@ -101,14 +127,7 @@ export function indexSentences(
   const paragraphStarts: number[] = [];
   for (const block of root.querySelectorAll(TEXT_BLOCKS)) {
     if (skip.has(block)) continue;
-    const nodes: { readonly node: Text; readonly start: number }[] = [];
-    let text = "";
-    const walker = doc.createTreeWalker(block, 4 /* NodeFilter.SHOW_TEXT */);
-    for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
-      const t = n as Text;
-      nodes.push({ node: t, start: text.length });
-      text += t.data;
-    }
+    const { nodes, text } = blockText(block);
     const spans = sentenceSpans(text, lang);
     if (spans.length === 0) continue;
     // A point in the block's text as a (node, offset) pair: the first

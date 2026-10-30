@@ -65,6 +65,11 @@ describe("sentenceSpans without a sentence segmenter", () => {
       expect(
         m.sentenceSpans(text).map((s) => text.slice(s.from, s.to)),
       ).toEqual(["The hall burned.", "“Why?”", "It was rebuilt"]);
+      // A hard break's line break ends a sentence, as the segmenter's does.
+      const lines = "Market Street 4\nOpen from nine";
+      expect(
+        m.sentenceSpans(lines).map((s) => lines.slice(s.from, s.to)),
+      ).toEqual(["Market Street 4", "Open from nine"]);
     } finally {
       intl.Segmenter = saved;
       vi.resetModules();
@@ -87,6 +92,19 @@ describe("indexSentences", () => {
     expect(index.sentences.map((s) => s.paragraph)).toEqual([0, 1, 1, 2, 2]);
     expect(index.paragraphs).toBe(3);
     expect(index.paragraphStarts).toEqual([0, 1, 3]);
+  });
+
+  // Why this test matters: a hard break ends a line the writer meant to
+  // stand alone (an address, a verse); with nothing added for it the two
+  // lines' words run together ("...Street 4Open from...") and the mark
+  // covers both as one sentence.
+  it("ends a sentence at a hard break, not gluing the two lines", () => {
+    const { index } = rendered("Market Street 4  \nOpen from nine");
+    expect(index.sentences.map((s) => s.range.toString())).toEqual([
+      "Market Street 4",
+      "Open from nine",
+    ]);
+    expect(index.paragraphs).toBe(1);
   });
 
   it("leaves a picture's holder out", () => {

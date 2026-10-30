@@ -78,8 +78,9 @@ export function altBoxText(alt: string): string {
 
 /**
  * Builds a body's tree as DOM nodes. Never throws: a value that is not a
- * tree renders nothing. Headings render one level below the sheet's own
- * title (`#` as `h3`).
+ * tree renders nothing, and a block or an inline of a kind it does not
+ * know (a newer parser's, a hand-built tree's) is skipped. Headings render
+ * one level below the sheet's own title (`#` as `h3`).
  */
 export function renderLongText(
   doc: TourMarkdown,
@@ -89,10 +90,21 @@ export function renderLongText(
   const pictures: LongTextPictureSlot[] = [];
 
   function inlines(parent: Node, list: readonly TourMdInline[]): void {
-    for (const inline of list) parent.appendChild(inlineNode(inline));
+    for (const inline of list) {
+      const node = inlineNode(inline);
+      if (node !== null) parent.appendChild(node);
+    }
   }
 
-  function inlineNode(inline: TourMdInline): Node {
+  function blocksInto(parent: Node, list: readonly TourMdBlock[]): void {
+    for (const b of list) {
+      const node = block(b);
+      if (node !== null) parent.appendChild(node);
+    }
+  }
+
+  /** An inline's node, or null for a kind the renderer does not know. */
+  function inlineNode(inline: TourMdInline): Node | null {
     switch (inline.kind) {
       case "text":
         return d.createTextNode(inline.text);
@@ -113,6 +125,8 @@ export function renderLongText(
       }
       case "link":
         return linkNode(inline.href, inline.host, inline.children);
+      default:
+        return null;
     }
   }
 
@@ -135,7 +149,8 @@ export function renderLongText(
     return a;
   }
 
-  function block(b: TourMdBlock): Node {
+  /** A block's node, or null for a kind the renderer does not know. */
+  function block(b: TourMdBlock): Node | null {
     switch (b.kind) {
       case "paragraph": {
         const p = d.createElement("p");
@@ -154,14 +169,14 @@ export function renderLongText(
         }
         for (const item of b.items) {
           const li = d.createElement("li");
-          for (const child of item) li.appendChild(block(child));
+          blocksInto(li, item);
           list.appendChild(li);
         }
         return list;
       }
       case "quote": {
         const q = d.createElement("blockquote");
-        for (const child of b.blocks) q.appendChild(block(child));
+        blocksInto(q, b.blocks);
         return q;
       }
       case "picture": {
@@ -172,6 +187,8 @@ export function renderLongText(
         pictures.push({ asset: b.asset, alt: b.alt, holder });
         return holder;
       }
+      default:
+        return null;
     }
   }
 
@@ -180,7 +197,7 @@ export function renderLongText(
   const blocks: readonly TourMdBlock[] = Array.isArray(given)
     ? (given as readonly TourMdBlock[])
     : [];
-  for (const b of blocks) fragment.appendChild(block(b));
+  blocksInto(fragment, blocks);
   return { fragment, pictures };
 }
 

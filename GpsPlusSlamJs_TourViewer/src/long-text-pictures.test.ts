@@ -16,6 +16,7 @@ import type { PictureFit } from "./image-cap.js";
 import {
   LONG_TEXT_DECODE_BUDGET_PX,
   createLongTextPictures,
+  pictureAssetPath,
   planPictures,
   screensAway,
   type PicturePlanEntry,
@@ -242,5 +243,24 @@ describe("createLongTextPictures", () => {
     broken.update();
     await h.settle();
     expect(h.slots[0]!.holder.textContent).toBe("alt 0 (cannot be shown here)");
+  });
+});
+
+describe("pictureAssetPath", () => {
+  const assets = [
+    { id: "mill", path: "content/mill.jpg", kind: "image" },
+    { id: "walk", path: "content/walk.mp4", kind: "video" },
+    { id: "bell", path: "content/bell.glb", kind: "model" },
+  ] as const;
+
+  // Why this test matters: a picture line names an asset by id, and the
+  // id may name a video or a model; the sheet must not download a 200 MB
+  // video to find out it cannot decode it as a picture.
+  it("gives an image's path, and throws for a missing asset or any other kind", () => {
+    expect(pictureAssetPath(assets, "mill")).toBe("content/mill.jpg");
+    expect(() => pictureAssetPath(assets, "walk")).toThrow(/not a picture/);
+    expect(() => pictureAssetPath(assets, "bell")).toThrow(/not a picture/);
+    expect(() => pictureAssetPath(assets, "gone")).toThrow(/no asset/);
+    expect(() => pictureAssetPath(undefined, "mill")).toThrow(/no asset/);
   });
 });

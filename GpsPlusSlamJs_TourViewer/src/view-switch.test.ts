@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { cancelsXrSelect } from "./pin-sheet.js";
 import { createViewSwitch, viewSwitchModel } from "./view-switch.js";
 import { withPreferredView, type ViewPlacement } from "./visitor-prefs.js";
 
@@ -88,6 +89,20 @@ describe("the switch on the page", () => {
       document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
     return { sw, said, chosen, q };
   }
+
+  // Why this test matters: in AR the switch sits in the DOM overlay; a tap
+  // on its menu's text or padding that the overlay does not claim becomes
+  // an XR select - the world's tap - behind the open menu.
+  it("keeps every tap on the pill and its menu from being an AR select", () => {
+    const { q } = mount([longText("a", "lectern")]);
+    q("view-switch-button")?.click();
+    const menu = q("view-switch-menu");
+    expect(menu?.hidden).toBe(false);
+    expect(cancelsXrSelect(q("view-switch"))).toBe(true);
+    expect(cancelsXrSelect(menu)).toBe(true);
+    expect(cancelsXrSelect(menu?.querySelector(".vs-foot") ?? null)).toBe(true);
+    expect(cancelsXrSelect(document.body)).toBe(false);
+  });
 
   // Why this test matters: no block in a set, no switch (it must not sit
   // on the screen of a station it cannot change).

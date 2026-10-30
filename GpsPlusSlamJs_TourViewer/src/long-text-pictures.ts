@@ -28,6 +28,30 @@ import { altBoxText, type LongTextPictureSlot } from "./long-text-render.js";
  */
 export const LONG_TEXT_DECODE_BUDGET_PX = 24_000_000;
 
+/**
+ * The file path of the picture a body names by `asset`: an image asset of
+ * the open tour. Throws for an id the tour lacks and for an asset of any
+ * other kind (a video or a model), so a picture line naming one fails
+ * before its file is fetched rather than after downloading it.
+ */
+export function pictureAssetPath(
+  assets:
+    | readonly {
+        readonly id: string;
+        readonly path: string;
+        readonly kind: string;
+      }[]
+    | undefined,
+  asset: string,
+): string {
+  const found = assets?.find((a) => a.id === asset);
+  if (found === undefined) throw new Error(`no asset "${asset}" in the tour`);
+  if (found.kind !== "image") {
+    throw new Error(`asset "${asset}" is a ${found.kind}, not a picture`);
+  }
+  return found.path;
+}
+
 /** A picture is measured, and may be shown, within this many screens. */
 const ADMIT_SCREENS = 1;
 /** A shown picture is let go at this many screens: the band between the

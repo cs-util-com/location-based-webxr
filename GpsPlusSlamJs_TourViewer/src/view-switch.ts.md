@@ -42,8 +42,9 @@ and offers "Use the creator's choice again" while a choice is stored.
   held sideways, as the button moves up), inside the safe area; z-index
   25, above the radar (20), below the toast and the Exit button (30).
   Shown only in a visitor's AR session.
-- Its taps are the overlay's own: buttons, which `cancelsXrSelect`
-  already exempts from the AR select.
+- Its taps are the overlay's own: `cancelsXrSelect` exempts the whole
+  `.view-switch` root from the AR select, so a tap on the menu's text or
+  padding (not only its buttons) never reaches the world behind it.
 
 ## Examples
 

@@ -19,6 +19,7 @@ import {
   wordCount,
   type LongTextSheetDeps,
 } from "./long-text-sheet.js";
+import { cancelsXrSelect } from "./pin-sheet.js";
 
 const BODY = [
   "# The square",
@@ -219,6 +220,29 @@ describe("the reading sheet", () => {
     expect(sheet.state()).toMatchObject({ sentence: -1, sentences: 0 });
     sheet.goTo(3);
     expect(sheet.state().sentence).toBe(-1);
+  });
+
+  // Why this test matters: in AR the sheet sits in the DOM overlay, and a
+  // tap the overlay does not claim becomes an XR select - the world's tap,
+  // which moves the reading sign's place, turns a lectern or opens a pin's
+  // sheet. Reading, scrolling and the ask bar's text must stay the sheet's.
+  it("keeps every tap on the sheet, its text and its ask bar from being an AR select", () => {
+    const { host, sheet } = make();
+    sheet.show({ over: "", title: "T", body: BODY });
+    for (const id of [
+      "long-text-sheet",
+      "long-text-text",
+      "long-text-wrap",
+      "long-text-bar",
+      "long-text-ask",
+      "long-text-head",
+    ]) {
+      expect(cancelsXrSelect(q(host, id)), id).toBe(true);
+    }
+    const sentence = q(host, "long-text-text").querySelector("p");
+    expect(cancelsXrSelect(sentence)).toBe(true);
+    expect(cancelsXrSelect(host.querySelector(".lt-ask-text"))).toBe(true);
+    expect(cancelsXrSelect(host)).toBe(false);
   });
 
   it("dispose takes the sheet out of the page", () => {

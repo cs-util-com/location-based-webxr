@@ -20,6 +20,11 @@ Design: `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`
 - `LONG_TEXT_DECODE_BUDGET_PX = 24_000_000` - what it rests on and what
   would reverse it are in its doc comment; the 16/24/48 MP sweep is in the
   build plan's "B3a built" section.
+- `pictureAssetPath(assets, asset)` - the file path of the picture a body
+  names by asset id: throws for an id the tour lacks ("no asset") and for
+  an asset of any other kind ("not a picture"), so a picture line naming a
+  video or a model fails before its file is fetched. `main.ts` uses it in
+  the reading sheet's `loadAsset`.
 - `screensAway(box, view)` - the gap between two vertical spans in view
   heights; 0 where they overlap; `Infinity` for a view with no height.
 - `planPictures(entries, budget)` - pure. `entries[i]` is
@@ -81,7 +86,8 @@ pictures.update();
 
 - `long-text-pictures.test.ts` - `screensAway`, the planner's rules, and
   the controller: near shown, far left as alt, release revokes, the two
-  failure texts, a full budget then room, dispose, a throwing fit.
+  failure texts, a full budget then room, dispose, a throwing fit; and
+  `pictureAssetPath` for an image, a video, a model and a missing id.
 - `long-text-pictures.property.test.ts` - the plan's invariants over
   generated sizes and distances.
 - Scratch mutants (release at 3 screens, admit at 1.5, a budget check

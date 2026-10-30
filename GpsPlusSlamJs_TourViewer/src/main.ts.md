@@ -59,7 +59,8 @@ listed in `index.html.md`. The concerns and their modules:
   in the walk's toast and live region.
 - `long-text-sheet.ts` and `reading-sign.ts` - a long text's whole text:
   `main.ts` builds the reading sheet under `#ar-root` (its pictures read
-  through the stations' prefetch by the asset's path, a link asking while
+  through the stations' prefetch by the asset's path, an image asset only
+  (`pictureAssetPath`), a link asking while
   an AR session is live), opens it from `hooks.visitorTap` when a shown
   reading sign is under the tap (`shownReadingSignUnderTap`, after the
   reading stands in `routeVisitorTap`'s order), with the station's line

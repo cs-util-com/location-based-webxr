@@ -17,7 +17,7 @@ no element for it, and the ranges need none.
   of white space only is left out. Uses `Intl.Segmenter` (sentence
   granularity) with `lang`, falling back to `"en"` for a malformed tag;
   where the browser has no segmenter, a run of `.`, `!` or `?` and any
-  closing quotes or brackets ends a sentence. Never throws; a non-string
+  closing quotes or brackets, or a line break, ends a sentence. Never throws; a non-string
   or empty text gives `[]`.
 - `indexSentences(root, skip, lang = "en")` - the sentences of the body
   under `root`: `{ sentences: { range, paragraph }[], paragraphs,
@@ -25,7 +25,13 @@ paragraphStarts }`. A "paragraph" is a block of text: every `p`, `h3`,
   `h4` and `h5` under `root` (list items and quotes hold paragraphs of
   their own) that is not in `skip` (a picture's holder) and holds at least
   one sentence. A block's text is all its text nodes, so a sentence may
-  run across an emphasis or a link (whose shown host is part of it).
+  run across an emphasis or a link (whose shown host is part of it); each
+  hard break (`br`) adds a line break to that text, which ends a
+  sentence, so two lines are never glued into one.
+  - These sentences are cut from the DOM's text (the shown link host and
+    a picture's alt box count), not from the body's plain text that the
+    format's sentence ranges are defined over; narration of a long text
+    must cut them from that plain text instead.
 - `sentenceAt(index, node, offset)` - the sentence at a DOM point: the one
   containing it; between two, the one before; the first before them all,
   the last after them all; null for no sentences or a point the ranges
@@ -53,8 +59,8 @@ const i = sentenceAt(index, caret.offsetNode, caret.offset);
 ## Tests
 
 - `long-text-sentences.test.ts` - splitting and trimming, the fallback
-  without a segmenter, reading order across headings, emphasis, links and
-  lists, picture holders left out, the start node, `sentenceAt` at a
+  without a segmenter (a line break included), reading order across
+  headings, emphasis, links and lists, a hard break ending a sentence, picture holders left out, the start node, `sentenceAt` at a
   sentence, in a gap, before and after all, and its null cases.
 - `long-text-sentences.property.test.ts` - for generated texts in three
   languages: spans ordered, non-overlapping, non-empty, trimmed, inside

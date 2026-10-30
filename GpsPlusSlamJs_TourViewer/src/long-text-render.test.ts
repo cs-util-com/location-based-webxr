@@ -138,6 +138,31 @@ describe("renderLongText", () => {
     }
   });
 
+  // Why this test matters: the tree's type is a promise of the parser, not
+  // of whatever reaches the renderer (a newer parser's kind, a hand-built
+  // tree): an unknown block or inline kind must render nothing rather than
+  // throw (appendChild of undefined) and take the whole sheet down.
+  it("skips a block or an inline of a kind it does not know", () => {
+    const tree = {
+      blocks: [
+        { kind: "table", rows: [] },
+        {
+          kind: "paragraph",
+          inlines: [
+            { kind: "text", text: "Kept" },
+            { kind: "footnote", text: "dropped" },
+          ],
+        },
+        { kind: "quote", blocks: [{ kind: "chart" }] },
+      ],
+    };
+    const host = document.createElement("div");
+    host.append(
+      renderLongText(tree as never, { document, onLinkTap: vi.fn() }).fragment,
+    );
+    expect(host.innerHTML).toBe("<p>Kept</p><blockquote></blockquote>");
+  });
+
   it("reads a value that is not a tree as an empty body", () => {
     const out = renderLongText(null as never, { document, onLinkTap: vi.fn() });
     expect(out.fragment.childNodes).toHaveLength(0);
