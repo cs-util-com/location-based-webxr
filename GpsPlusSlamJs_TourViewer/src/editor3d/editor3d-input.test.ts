@@ -822,3 +822,33 @@ describe("the ground menu", () => {
     t.input.dispose();
   });
 });
+
+// Why: while the inspector waits for a click on the model (a note or a
+// section placed), the press on the selected model must not start a move
+// of it, and the click must answer the wait, not select something else
+// (it would close the inspector the creator works in); a drag stays the
+// camera's.
+describe("a click the scene waits for", () => {
+  it("answers the wait instead of selecting, and starts no gesture on a handle", () => {
+    const t = setup({ handle: "move", pick: "station:a" });
+    const answered: ScreenPoint[] = [];
+    t.scene.clickWaited = () => true;
+    t.scene.answerClick = (at) => {
+      answered.push(at);
+    };
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(pointer("pointerup", { x: 5, y: 5 }));
+    expect(answered).toEqual([{ x: 5, y: 5 }]);
+    expect(t.page.select).not.toHaveBeenCalled();
+    expect(t.dispatched).toEqual([]);
+    expect(t.scene.handleAt).not.toHaveBeenCalled();
+    // A drag is the camera's: no answer.
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 20, y: 5 }, { buttons: 1 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 20, y: 5 }));
+    expect(answered).toHaveLength(1);
+    t.input.dispose();
+  });
+});

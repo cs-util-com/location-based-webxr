@@ -5,12 +5,15 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  PerspectiveCamera,
+  RingGeometry,
   Texture,
   Vector3,
   type Object3D,
 } from "three";
 
 import { CHARACTER_HEIGHT_M, createSceneStage } from "./scene-stage";
+import { fakeCharacterPainters } from "./test-support/fake-character-painters";
 
 /**
  * Why these tests matter: the knight has to stand ON the station's spot,
@@ -342,5 +345,275 @@ describe("the figure follows its station's presence (it fades, the story plays o
     h.stage.clear();
     expect(disposeSpy).toHaveBeenCalled();
     expect(h.scene.children).toHaveLength(0);
+  });
+});
+
+describe("a character in a story view stands as a character look", () => {
+  // Why these tests matter: a look turns itself against the camera every
+  // frame and fades by its own presence; a holder turned by faceVisitor or
+  // a material opacity cached by the plain fade would fight it, and a look
+  // that never ticks would stand frozen with its bubble closed.
+  function looking(cameraAt: [number, number, number] | null = [0, 401.6, 5]) {
+    const clock = { ms: 1000 };
+    const scene = new Group();
+    const frames = new Set<() => void>();
+    const camera = new PerspectiveCamera(50, 1, 0.05, 600);
+    if (cameraAt !== null) {
+      camera.position.set(...cameraAt);
+      camera.lookAt(0, 401.2, 0);
+    }
+    const { painters, painted } = fakeCharacterPainters();
+    const beckonOf = vi.fn(() => ({ dx: 30, dz: 0, title: "East road" }));
+    const stage = createSceneStage({
+      getScene: () => scene,
+      poseOf: () => ({
+        positionNue: [0, 400, 0] as [number, number, number],
+        rotationNue: [0, 0, 0, 1] as [number, number, number, number],
+      }),
+      decodeTexture: () => Promise.resolve(textureOf(100, 200)),
+      loadModel: () => Promise.resolve(new Group()),
+      now: () => clock.ms,
+      fadeMs: 400,
+      registerFrame: (fn) => {
+        frames.add(fn);
+        return () => frames.delete(fn);
+      },
+      getCamera: () => (cameraAt === null ? null : camera),
+      beckonOf,
+      lookPainters: painters,
+    });
+    const frame = (ms: number) => {
+      clock.ms += ms;
+      for (const fn of [...frames]) fn();
+    };
+    const look = {
+      view: "two-stations",
+      name: "Wendel",
+      line: "Hello.",
+    } as const;
+    return {
+      clock,
+      scene,
+      stage,
+      frames,
+      frame,
+      camera,
+      beckonOf,
+      look,
+      painted,
+    };
+  }
+
+  const bubbleOf = (scene: Group) =>
+    scene
+      .getObjectByName("station-character")
+      ?.children.find((c) => c.renderOrder === 20);
+
+  it("stands at the station, opens to the camera at once and keeps ticking each frame", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    const holder = h.scene.children[0]!;
+    expect(holder.position.toArray()).toEqual([0, 400, 0]);
+    expect(bubbleOf(h.scene)?.visible).toBe(true);
+    expect(h.frames.size).toBe(1);
+    h.stage.faceVisitor([20, 401.6, 0]);
+    expect(holder.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+    h.camera.position.set(0, 401.6, 30);
+    h.camera.lookAt(0, 401.2, 0);
+    for (let i = 0; i < 20; i++) h.frame(50);
+    expect(bubbleOf(h.scene)?.visible).toBe(false);
+  });
+
+  // Why this test matters: a declared character's frames sheet reaches the
+  // stage as one image, and only the look knows to slice it into poses.
+  it("has the look slice a frames sheet, and a plain figure not", async () => {
+    const sheet = looking();
+    await sheet.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...sheet.look,
+      sheet: true,
+    });
+    expect(sheet.painted.sheets).toHaveLength(1);
+    const plain = looking();
+    await plain.stage.showCharacter(
+      "gate",
+      new Blob(["png"]),
+      undefined,
+      plain.look,
+    );
+    expect(plain.painted.sheets).toHaveLength(0);
+  });
+
+  it("follows the voice set before the figure stood, and beckons once spoken", async () => {
+    const h = looking();
+    h.stage.setVoice("spoken");
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    h.frame(16);
+    expect(h.beckonOf).toHaveBeenCalledWith("gate");
+  });
+
+  it("fades by the look's presence and leaves the scene, and clear stops its frames", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    h.stage.follow(() => false);
+    h.clock.ms += 500;
+    h.stage.follow(() => false);
+    expect(h.scene.children).toHaveLength(0);
+    h.stage.clear();
+    expect(h.frames.size).toBe(0);
+  });
+
+  // Why this test matters: the creator places him with the block's pose
+  // in the station's frame - where he stands and which way he faces - and
+  // the prototype turns him from that facing toward the visitor by at most
+  // 60 degrees. A figure standing on the station's centre facing the
+  // visitor whatever the creator chose would ignore both.
+  it("stands at the block's pose in the station's frame and rests at its facing", async () => {
+    const h = looking([2, 401.6, -30]);
+    const s45 = Math.SQRT1_2;
+    const turned = createSceneStage({
+      getScene: () => h.scene,
+      // The station turned 90 degrees about Up: its +Z (east) now north.
+      poseOf: () => ({
+        positionNue: [0, 400, 0] as [number, number, number],
+        rotationNue: [0, s45, 0, s45] as [number, number, number, number],
+      }),
+      decodeTexture: () => Promise.resolve(textureOf(100, 200)),
+      loadModel: () => Promise.resolve(new Group()),
+      getCamera: () => h.camera,
+      lookPainters: fakeCharacterPainters().painters,
+    });
+    await turned.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "speak",
+      pose: { position: [0, 0, 2], rotation: [0, 0, 0, 1] },
+    });
+    const holder = h.scene.children[0]!;
+    // 2 m along the station's +Z, which points north.
+    expect(holder.position.x).toBeCloseTo(2, 9);
+    expect(holder.position.y).toBeCloseTo(400, 9);
+    expect(holder.position.z).toBeCloseTo(0, 9);
+    expect(holder.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+    // He rests facing north (pi/2); the camera due west of him (-z, a
+    // turn of pi) is 90 degrees off, so he turns 60 toward it.
+    const look = h.scene.getObjectByName("station-character") ?? null;
+    expect(look).not.toBeNull();
+    const turn = look!.children[0]!;
+    expect(turn.rotation.y).toBeCloseTo(Math.PI / 2 + Math.PI / 3, 5);
+  });
+
+  // Why this test matters: after his step he stays in the world (the plan:
+  // a story view stays, as world blocks do), idle, beckoning in two
+  // stations; he goes once his station is left and does not come back.
+  it("keeps a released look standing, beckoning, until its station is left, and never brings it back", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    h.stage.follow(() => true);
+    h.beckonOf.mockClear();
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(1);
+    expect(h.frames.size).toBeGreaterThan(0);
+    h.frame(16);
+    expect(h.beckonOf).toHaveBeenCalledWith("gate");
+    expect(h.stage.characterTapTargets()).not.toEqual([]);
+    h.stage.follow(() => false);
+    h.clock.ms += 500;
+    h.stage.follow(() => false);
+    expect(h.scene.children).toHaveLength(0);
+    expect(h.stage.characterTapTargets()).toEqual([]);
+    h.stage.follow(() => true);
+    h.clock.ms += 500;
+    h.stage.follow(() => true);
+    expect(h.scene.children).toHaveLength(0);
+    expect(h.frames.size).toBe(0);
+  });
+
+  // Why this test matters: a tap on him after his story plays his voice
+  // again (the prototype's tap works whenever he stands), so the voice
+  // that tap sets must reach the released look: the portrait's ring
+  // pulses while he speaks.
+  it("lets a voice reach a released look, so a tap after the story animates him", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "portrait",
+    });
+    h.stage.follow(() => true);
+    h.stage.release();
+    const ring = (): boolean => {
+      let on = false;
+      h.scene.traverse((o) => {
+        if (
+          o instanceof Mesh &&
+          o.geometry instanceof RingGeometry &&
+          o.visible
+        ) {
+          on = true;
+        }
+      });
+      return on;
+    };
+    h.frame(16);
+    expect(ring()).toBe(false);
+    h.stage.setVoice("speaking");
+    h.frame(16);
+    expect(ring()).toBe(true);
+  });
+
+  it("releases a plain figure, a model or a look still waiting by clearing it", async () => {
+    const h = looking();
+    await h.stage.showCharacter("gate", new Blob(["png"]));
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(0);
+    await h.stage.showModel("gate", new Blob(["glb"]));
+    h.stage.release();
+    expect(h.scene.children).toHaveLength(0);
+    const parked = createSceneStage({
+      getScene: () => h.scene,
+      poseOf: () => null,
+      decodeTexture: () => Promise.resolve(textureOf(100, 200)),
+      loadModel: () => Promise.resolve(new Group()),
+      lookPainters: fakeCharacterPainters().painters,
+    });
+    const shown = parked.showCharacter(
+      "gate",
+      new Blob(["png"]),
+      undefined,
+      h.look,
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    parked.release();
+    await shown;
+    expect(h.scene.children).toHaveLength(0);
+  });
+
+  // Why this test matters: the visitor's tap is cast against what he
+  // draws, so the stage names his visible parts only while he stands in
+  // the scene - a shut bubble is no target (three's raycaster does not
+  // skip hidden meshes); the bubble view's tap shuts his bubble.
+  it("names the look's visible parts for a tap only while it stands, and shuts the bubble view's bubble", async () => {
+    const h = looking();
+    const names = () => h.stage.characterTapTargets().map((o) => o.name);
+    expect(names()).toEqual([]);
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, {
+      ...h.look,
+      view: "bubble",
+    });
+    expect(names()).toContain("character-bubble");
+    expect(names()).toContain("character-front");
+    expect(bubbleOf(h.scene)?.visible).toBe(true);
+    h.stage.toggleBubble();
+    for (let i = 0; i < 20; i++) h.frame(50);
+    expect(bubbleOf(h.scene)?.visible).toBe(false);
+    expect(names()).not.toContain("character-bubble");
+    expect(names()).toContain("character-front");
+    await h.stage.showModel("gate", new Blob(["glb"]));
+    expect(names()).toEqual([]);
+  });
+
+  it("stands still, with no error, while there is no camera", async () => {
+    const h = looking(null);
+    await h.stage.showCharacter("gate", new Blob(["png"]), undefined, h.look);
+    expect(() => h.frame(16)).not.toThrow();
+    expect(h.scene.children).toHaveLength(1);
   });
 });

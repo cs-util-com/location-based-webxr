@@ -170,7 +170,7 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
-  // Why (B2c): a block's other text fields (a short text's description
+  // Why: a block's other text fields (a short text's description
   // here) are edited through the same tour document as its caption: one
   // undo step each, counted as a change, written by the save; a text
   // over its cap is refused in words and changes nothing.
@@ -197,7 +197,89 @@ describe("createEditorSession", () => {
       caption: "Old",
       description: "Under the arch",
     });
+    // A free pin's caption is its text, typed in the head (`editText`): asked
+    // through the block-field path it takes the pin text's one rule and
+    // its undo words, never a second rule of its own.
+    expect(editor.editBlockField("a", "caption", "  ")).toEqual(
+      editor.editText("a", "  "),
+    );
+    expect(editor.editBlockField("a", "caption", "Bell")).toEqual({
+      kind: "edited",
+    });
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the text of "Bell"',
+    });
     editor.editBlockField("a", "description", "Changed");
+    editor.undo();
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  // Why this test matters: a block a station's story shows is no object
+  // of the world, so its texts take the station's edit; each must still
+  // be one step that counts, reaches the saved zip and refuses in the same
+  // words as a free block's.
+  it("sets a text of a story block as one step of its station, refused in words over its cap", async () => {
+    const story = {
+      id: "gate",
+      title: "The gate",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      blocks: [
+        {
+          id: "intro",
+          kind: "longText" as const,
+          view: "card" as const,
+          title: "The siege",
+          body: "In 1632 the gate held.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show" as const, block: "intro" },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    } as unknown as TourManifest["stations"][number];
+    const { session, manifest } = await opened([pin("a", "Old")], {
+      stations: [story],
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockField("intro", "title", "The long siege")).toEqual({
+      kind: "edited",
+    });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.editBlockField("intro", "title", "x".repeat(81))).toEqual({
+      kind: "refused",
+      reason: "A title takes at most 80 characters.",
+    });
+    expect(editor.editBlockField("intro", "body", " ")).toEqual({
+      kind: "refused",
+      reason: "A body cannot be empty.",
+    });
+    expect(editor.editBlockField("intro", "alt", "x")).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await editor.save({ keepScan: false });
+    const gate = (await carried(saved.blob)).stations.find(
+      (s) => s.id === "gate",
+    );
+    expect(gate?.blocks[0]).toMatchObject({
+      title: "The long siege",
+      body: "In 1632 the gate held.",
+    });
+    editor.editBlockField("intro", "body", "Then it fell.");
+    expect(editor.changeCount()).toBe(1);
     editor.undo();
     expect(editor.changeCount()).toBe(0);
     await session.close();
@@ -379,7 +461,7 @@ describe("createEditorSession, Save a copy", () => {
   });
 });
 
-describe("createEditorSession, the review's cases (E0c + E2a review #9, #10, #12)", () => {
+describe("createEditorSession, edge cases", () => {
   it("counts a text edited back to the tour's own as no change", async () => {
     const { session, manifest } = await opened([pin("a", "Old")]);
     const editor = createEditorSession({
@@ -2133,7 +2215,7 @@ describe("moving the walk out (W2, D19)", () => {
   });
 
   it("writes the saved file's own id into the debug data, and compares by the id the opened file carries", async () => {
-    // Why (r901 review #2): the id is the one name a tour keeps through a
+    // Why: the id is the one name a tour keeps through a
     // rename and a retitle, so a bundle carries the id of the copy it was
     // saved beside, and an added bundle is matched on it first. The tour
     // side is the id the OPENED file carries: the one its open minted is

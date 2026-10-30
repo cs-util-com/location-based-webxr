@@ -4,14 +4,16 @@
  * height) and a billboard with its number and name. The stations near the
  * camera's centre and the selected one (`nearStations`) also draw their
  * items as the phone does (`renderTourStation`: pins as labels, photos as
- * planes), their placed models at the format's size (`modelScale`), their
+ * planes, long texts on their reading stands when the page gives
+ * `makeLectern`), their placed models at the format's size (`modelScale`), their
  * found radius as a ring and a pole up to the billboard. Every code with a
  * position is a square of its printed size, facing as printed.
  *
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
  * and codes lie flat face up and stand up again - a code laid in front of
  * its anchor, on the side its face looks to, never under the wall it hangs
- * on - and the billboards and their poles rise. Models keep their pose;
+ * on - and the billboards and their poles rise. Models and reading stands
+ * keep their pose;
  * pins (the phone's labels) stand. Laid flat, a code is drawn at least
  * `CODE_SCREEN_PX` on screen (`codeGrowth`): grown with the camera's
  * distance wherever its printed size would look smaller, its printed size
@@ -27,7 +29,9 @@
  * Read-only: nothing here edits the tour. The page hands the tour
  * (`setTour`) when the document changes and the camera (`update`) each
  * frame. A station's items are rendered when it enters the near set and
- * freed when it leaves; a tour handed again unchanged renders nothing.
+ * freed when it leaves; a tour handed again unchanged renders nothing, nor
+ * does an edit of a model's notes, sections or view (drawn apart, by
+ * `editor3d-model-parts.ts`): its file is not loaded again.
  *
  * While a drag of the 3D view runs, `setPreview` draws the dragged
  * station (its items, billboard and found radius with it) or item (a
@@ -54,6 +58,7 @@ import { worldBlocks } from "../tour-document.js";
 import {
   objectPoseNue,
   renderTourStation,
+  uprightTurn,
   type RenderedTourObjects,
 } from "../content-placement.js";
 import { modelScale } from "../model-scale.js";
@@ -74,6 +79,13 @@ export interface StationsLayerDeps {
   /** A pin's label (the phone's recipe). */
   makeLabel(text: string): { object: THREE.Object3D; dispose(): void };
   loadPhotoTexture(entryName: string): Promise<THREE.Texture | null>;
+  /** A long text's reading stand (`lectern-view.ts`: a canvas page, so
+   *  the page's). Absent: no stand is drawn (Node, where the tests run). */
+  makeLectern?(block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }): { object: THREE.Object3D; dispose(): void };
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -180,6 +192,17 @@ export type LayerPreview =
       readonly sizeM: number | null;
     };
 
+/** The name `buildLecternStand` gives a reading stand's root. */
+const STAND = "lectern";
+
+/** Whether `object` is a reading stand or part of one. */
+function inStand(object: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+    if (o.name === STAND) return true;
+  }
+  return false;
+}
+
 /** The selection an object of the layer stands for (`pick`), on it or
  *  on an ancestor: a billboard's `station:<id>` and a code's level id
  *  (`userData.pick`), an item's id (`userData.objectId`). */
@@ -213,7 +236,9 @@ interface StationEntry {
   readonly id: string;
   readonly index: number;
   readonly key: string;
-  readonly station: TourStation;
+  /** The station as the tour has it now (an edit that leaves its drawing
+   *  as it is still updates it). */
+  station: TourStation;
   readonly root: THREE.Group;
   /** The root's matrix where the tour has the station (a preview moves
    *  the root; clearing it puts this back). */
@@ -227,10 +252,29 @@ interface StationEntry {
   content: StationContent | null;
 }
 
+/** A model block's fields the layer does not draw: its notes, sections
+ *  and view are the model parts' (`editor3d-model-parts.ts`). */
+const UNDRAWN_MODEL_FIELDS = ["annotations", "sections", "view"] as const;
+
+/** A record as the layer's drawing reads it: a model block without its
+ *  undrawn fields (a JSON.stringify replacer). */
+function drawnFields(_key: string, value: unknown): unknown {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    (value as { kind?: unknown }).kind !== "model"
+  ) {
+    return value;
+  }
+  const kept: Record<string, unknown> = { ...value };
+  for (const field of UNDRAWN_MODEL_FIELDS) delete kept[field];
+  return kept;
+}
+
 /** What a station's drawing depends on: its place in the list and its
- *  whole record. */
+ *  whole record but a model's undrawn fields. */
 const keyOf = (s: TourStation, index: number): string =>
-  `${String(index)}|${JSON.stringify(s)}`;
+  `${String(index)}|${JSON.stringify(s, drawnFields)}`;
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -488,6 +532,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       alive: () => content.alive,
       makeLabel: (text) => deps.makeLabel(text),
       loadPhotoTexture: (entryName) => deps.loadPhotoTexture(entryName),
+      ...(deps.makeLectern === undefined
+        ? {}
+        : { makeLectern: deps.makeLectern.bind(deps) }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -497,7 +544,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         content.rendered = rendered;
         rendered.root.traverse((o) => {
           const mesh = o as THREE.Mesh;
-          if (mesh.isMesh) {
+          // A stand's meshes keep their pose: they are no photo planes.
+          if (mesh.isMesh && !inStand(mesh)) {
             content.photos.push({ mesh, upright: mesh.quaternion.clone() });
           }
         });
@@ -634,6 +682,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         photo.upright.copy(turned);
         continue;
       }
+      if (o.name === STAND) {
+        // Upright, as the renderer draws it: its turn about up only.
+        uprightTurn(pose.rotation, o.quaternion);
+        continue;
+      }
       const tourScale: unknown = o.userData["tourScale"];
       const tourSizeM: unknown = o.userData["tourSizeM"];
       if (typeof tourScale !== "number" || typeof tourSizeM !== "number") {
@@ -696,7 +749,10 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         keep.add(station.id);
         const key = keyOf(station, index);
         const old = stations.get(station.id);
-        if (old?.key === key) return;
+        if (old?.key === key) {
+          old.station = station;
+          return;
+        }
         if (old !== undefined) freeStation(old);
         const root = rootAt(station.geo);
         const point = new THREE.Vector3(0, station.geo.alt, 0).applyMatrix4(
@@ -867,6 +923,17 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     },
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
+    },
+    /** An item's drawn model (the glb under its pose and size), or null
+     *  for one not drawn now. */
+    modelObject(id: string): THREE.Object3D | null {
+      const entry = entryOfItem(id);
+      if (entry === null) return null;
+      return (
+        drawnOf(entry, id).find(
+          (o) => typeof o.userData["tourScale"] === "number",
+        ) ?? null
+      );
     },
     models(id: string): THREE.Object3D[] {
       return [...(stations.get(id)?.content?.models ?? [])];

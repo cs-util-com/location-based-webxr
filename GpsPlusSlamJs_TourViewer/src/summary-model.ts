@@ -327,9 +327,10 @@ function diagonalM(points: readonly MapPoint[]): number {
 }
 
 function summaryObject(object: TourObject): SummaryObject | null {
-  // Pins and photos only: a placed 3D model (format minor 1) is not drawn
-  // here, and stays in the tour untouched.
-  if (object.kind === "model") return null;
+  // Pins and photos only: a placed 3D model (format minor 1) and a free
+  // long text on its reading stand (minor 3) are not drawn here, and stay
+  // in the tour untouched.
+  if (object.kind === "model" || object.kind === "longText") return null;
   const point = { lat: object.geo.lat, lng: object.geo.lon };
   if (!readablePoint(point)) return null;
   return {

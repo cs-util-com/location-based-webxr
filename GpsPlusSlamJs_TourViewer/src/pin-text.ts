@@ -25,6 +25,19 @@ export const PIN_TEXT_MAX_CHARS = TOUR_BLOCK_TEXT_RULES.shortText.caption.max;
 /** Said when a page refuses a pin's text as too long. */
 export const PIN_TEXT_TOO_LONG = `A pin's text takes at most ${String(PIN_TEXT_MAX_CHARS)} characters.`;
 
+/** The most characters a pin's optional description takes (a short
+ *  text's description, `TOUR_BLOCK_TEXT_RULES`). */
+export const PIN_DESCRIPTION_MAX_CHARS =
+  TOUR_BLOCK_TEXT_RULES.shortText.description.max;
+
+/** Said when a page refuses a pin's description as too long. */
+export const PIN_DESCRIPTION_TOO_LONG = `A pin's description takes at most ${String(PIN_DESCRIPTION_MAX_CHARS)} characters.`;
+
+/** Whether `text` is longer than a pin's description takes. */
+export function pinDescriptionTooLong(text: string): boolean {
+  return tourTextCount(inputText(text)) > PIN_DESCRIPTION_MAX_CHARS;
+}
+
 /** How many characters of a pin's text count. */
 export function pinTextCount(text: string): number {
   return tourTextCount(inputText(text));

@@ -7,7 +7,8 @@ A tour's `.glb` model as a three scene, for the phone's AR (through
 
 ## Public API
 
-- `loadGlbModel(blob)` -> `Promise<Object3D>`: the model's scene; rejects
+- `loadGlbModel(blob)` -> `Promise<Object3D>`: the model's scene, its
+  clips in `animations` (where `model-views.ts` plays one); rejects
   when three's GLTFLoader cannot parse the bytes.
 
 ## Invariants & assumptions
