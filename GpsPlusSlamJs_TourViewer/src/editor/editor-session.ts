@@ -89,7 +89,7 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { objectTitle } from "../object-describe.js";
+import { kindNoun, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
@@ -116,7 +116,8 @@ function objectName(object: TourObject): string {
       ? object.title
       : object.caption) ?? ""
   ).trim();
-  if (label === "") return object.kind === "picture" ? "a photo" : "a note";
+  // TourObject kinds (pin, long text, photo, 3D model) all take "a".
+  if (label === "") return `a ${kindNoun(object.kind)}`;
   const chars = [...label];
   return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
 }

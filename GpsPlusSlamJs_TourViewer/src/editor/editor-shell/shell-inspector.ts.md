@@ -71,9 +71,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     a section of its own (`div.isec.story-text`, `data-block` its id)
     under "<kind> - <name>". Each story block's section (a character's
     too) is a `role=group` named by its head, and each of its text
-    fields is named by the head and its own label (`aria-labelledby`,
-    "Long text - The bell Title"), so two blocks' "Title" fields are
-    told apart by a screen reader. A story block's text field is named
+    fields by its own label only ("Title"): a screen reader says the
+    group's name once on entering it, so two blocks' "Title" fields are
+    told apart by their group without the head said again per field. A story block's text field is named
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.

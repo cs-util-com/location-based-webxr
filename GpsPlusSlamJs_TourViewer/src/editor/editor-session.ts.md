@@ -199,8 +199,8 @@ imperative resources only - that handle and the pictures' side table
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete
 of …`, `the "needs no GPS" setting`, `the tour details`, `the restored
-changes`; a label is cut at 40 characters, a label-less note is "a
-    photo" / "a note"), `{ kind: "nothing" }` at either end, or `refused`
+changes`; a label is cut at 40 characters, a label-less object is named
+    by its kind, "a photo", "a 3D model"), `{ kind: "nothing" }` at either end, or `refused`
     in words: while a save runs (`SAVE_RUNNING`), and for a photo whose
     delete a save wrote and whose picture could not be read
     (`PICTURE_GONE`; the step stays). Every edit kind is one step - a

@@ -143,7 +143,8 @@ interface Undoable {
 interface DeletedObject {
   readonly object: TourObject;
   readonly hosted: boolean;
-  /** "the photo" or the pin's quoted text. */
+  /** The kind's word ("the long text", "the photo") or the pin's quoted
+   *  text. */
   readonly name: string;
 }
 

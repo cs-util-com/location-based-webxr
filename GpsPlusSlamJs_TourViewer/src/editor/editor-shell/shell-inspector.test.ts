@@ -469,23 +469,41 @@ describe("drawInspector", () => {
         (f) => f.dataset["field"],
       ),
     ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
-    // Each box is a group named by its head, and each field's name
-    // carries its block's: two blocks' "Title" fields are told apart by a
-    // screen reader.
-    const nameOf = (input: Element | null | undefined): string =>
-      (input?.getAttribute("aria-labelledby") ?? "")
+    // Each box is a group named by its head, and each field is named by
+    // its own label only: a screen reader says the group's name once, on
+    // entering it, so two blocks' "Title" fields are told apart by their
+    // group - the head is not said again for every field.
+    const nameOf = (node: Element | null | undefined): string =>
+      (node?.getAttribute("aria-labelledby") ?? "")
         .split(" ")
         .map((id) => dock.body.querySelector(`[id="${id}"]`)?.textContent)
         .join(" ");
-    expect(intro?.getAttribute("role")).toBe("group");
-    expect(nameOf(intro)).toBe("Long text - The siege");
-    expect(nameOf(title)).toBe("Long text - The siege Title");
+    const group = (name: string): Element | undefined =>
+      [...dock.body.querySelectorAll('[role="group"]')].find(
+        (g) => nameOf(g) === name,
+      );
+    const labelled = (
+      box: Element | undefined,
+      label: string,
+    ): HTMLInputElement | HTMLTextAreaElement | undefined =>
+      [
+        ...(box?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+          "input, textarea",
+        ) ?? []),
+      ].find(
+        (f) =>
+          !f.hasAttribute("aria-labelledby") &&
+          !f.hasAttribute("aria-label") &&
+          f.labels?.[0]?.textContent === label,
+      );
+    expect(group("Long text - The siege")).toBe(intro);
+    expect(labelled(group("Long text - The siege"), "Title")).toBe(title);
     expect(
-      nameOf(dock.body.querySelector('[data-field="block:bell:title"]')),
-    ).toBe("Long text - The bell Title");
-    expect(kay?.getAttribute("role")).toBe("group");
-    expect(nameOf(kay?.querySelector('[data-field="block:k1:caption"]'))).toBe(
-      "Sir Kay Caption",
+      labelled(group("Long text - The bell"), "Title")?.dataset["field"],
+    ).toBe("block:bell:title");
+    expect(group("Sir Kay")).toBe(kay);
+    expect(labelled(group("Sir Kay"), "Caption")?.dataset["field"]).toBe(
+      "block:k1:caption",
     );
     expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
     expect(dock.body.querySelector('.isec[data-block="arch"]')).toBeNull();

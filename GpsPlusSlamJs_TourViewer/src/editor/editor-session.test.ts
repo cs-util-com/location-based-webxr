@@ -2594,3 +2594,44 @@ describe("createEditorSession, a moved station across a reload (review #1)", () 
     await session.close();
   });
 });
+
+/**
+ * Why this test matters: an undo names the object its step changed, and
+ * an object with no text is named by what it is. A title-less 3D model
+ * named "a note" (the old fallback for everything but a photo) tells the
+ * author the undo took back something it did not.
+ */
+describe("createEditorSession, an untitled object's name in the undo", () => {
+  it("names a title-less 3D model by its kind", async () => {
+    const statue: TourObject = {
+      id: "m1",
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 4,
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const manifest = tourOf([pin("a"), statue], {
+      assets: [{ id: "statue", path: "content/statue.glb", kind: "model" }],
+    });
+    const zip = await packFilesAsZip([
+      { path: "tour.json", data: serializeTourManifest(manifest) },
+      { path: "content/statue.glb", data: "glTF" },
+    ]);
+    const session = await openTourFile(
+      new File([zip], "tour.zip", { type: "application/zip" }),
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.remove("m1")).toEqual({ kind: "deleted" });
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: "the delete of a 3D model",
+    });
+    await session.close();
+  });
+});
