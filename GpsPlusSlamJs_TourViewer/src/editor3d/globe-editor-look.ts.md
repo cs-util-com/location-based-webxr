@@ -30,6 +30,12 @@ and a camera pose read back as a view.
 - `aimView(place, heightM, radiusM)`: a view looking down at the place from
   the south at `aimPitchDeg`, `aimRadii` x radius away (`backM` at least).
   RangeError for a value that is not finite or a negative radius.
+- `steppedView(pose, key, aboveGroundM)`: the view an arrow key steps to
+  (the routing table's `camera-step`): Left and Right turn the heading
+  `turnStepDeg` (15) in place, Up and Down move along the heading at the
+  same altitude by `moveShare` (0.25) of the height over the ground,
+  `moveMinM` (2 m) at least. RangeError for a height not finite or below
+  zero. The step values are declared, not tuned on screen. Type `StepKey`.
 - `viewPoseOf(ellipsoid, pose)`: the inverse of the globe's `viewPoseEcef`;
   heading in [0, 360), 0 when looking straight down.
 - Types `GlobeObjectOnScreen`, `GlobeHiddenSet`.

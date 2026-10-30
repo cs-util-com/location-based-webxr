@@ -43,6 +43,14 @@ export const GLOBE_EDITOR_LOOK = Object.freeze({
    *  (deg), from `aimRadii` times its radius away, `backM` at least. */
   aimPitchDeg: -30,
   aimRadii: 3,
+  /**
+   * The arrows with nothing selected (`steppedView`): Left and Right turn
+   * this much (deg); Up and Down move `moveShare` of the height over the
+   * ground, `moveMinM` at least. Declared, not measured on screen.
+   */
+  turnStepDeg: 15,
+  moveShare: 0.25,
+  moveMinM: 2,
 });
 
 const SETTINGS: GlobeViewSettings = Object.freeze({
@@ -194,6 +202,44 @@ export function aimView(
     altitudeKm: (heightM + distanceM * Math.sin(down)) / 1000,
     headingDeg: 0,
     pitchDeg: aimPitchDeg,
+  };
+}
+
+/** The arrow keys `steppedView` reads. */
+export type StepKey = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown";
+
+/**
+ * The view one arrow key steps to (the routing table's `camera-step`):
+ * Left and Right turn the heading `turnStepDeg` where the camera stands,
+ * Up and Down move it along its heading at the same altitude by
+ * `moveShare` of `aboveGroundM` (`moveMinM` at least). RangeError for an
+ * `aboveGroundM` that is not finite or below zero.
+ */
+export function steppedView(
+  pose: GlobeViewPose,
+  key: StepKey,
+  aboveGroundM: number,
+): GlobeViewPose {
+  if (!Number.isFinite(aboveGroundM) || aboveGroundM < 0) {
+    throw new RangeError(
+      `a step needs a finite height >= 0, got ${String(aboveGroundM)}`,
+    );
+  }
+  const { turnStepDeg, moveShare, moveMinM } = GLOBE_EDITOR_LOOK;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    const turned =
+      pose.headingDeg + (key === "ArrowRight" ? turnStepDeg : -turnStepDeg);
+    return { ...pose, headingDeg: ((turned % 360) + 360) % 360 };
+  }
+  const stepM =
+    Math.max(moveMinM, moveShare * aboveGroundM) * (key === "ArrowUp" ? 1 : -1);
+  const h = pose.headingDeg * DEG;
+  return {
+    ...pose,
+    lat: pose.lat + (stepM * Math.cos(h)) / M_PER_DEG_LAT,
+    lng:
+      pose.lng +
+      (stepM * Math.sin(h)) / (M_PER_DEG_LAT * Math.cos(pose.lat * DEG)),
   };
 }
 

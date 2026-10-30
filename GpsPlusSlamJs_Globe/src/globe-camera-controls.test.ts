@@ -256,6 +256,23 @@ describe("createGlobeCameraControls", () => {
     expect(controls.busy()).toBe(true);
   });
 
+  // Why: an editor's handle drag must own the pointer; a lease that only
+  // released would let the very next move pan the globe under the handle.
+  it("lease holds the controls off until it is returned", () => {
+    const { fake, controls } = setup({ onTake: () => {} });
+    fake.globeInertiaFactor = 0.5;
+    controls.lease(true);
+    expect(fake.globeInertiaFactor).toBe(0);
+    expect(fake.enabled).toBe(false);
+    controls.lease(true);
+    expect(fake.enabled).toBe(false);
+    controls.lease(false);
+    expect(fake.enabled).toBe(true);
+    // A return without a lease leaves the controls as they were.
+    controls.lease(false);
+    expect(fake.enabledSets).toEqual([false, true, false, true]);
+  });
+
   it("switches the library's height adjustment", () => {
     const { fake, controls } = setup({ onTake: () => {} });
     controls.setAdjustHeight(false);

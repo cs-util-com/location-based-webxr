@@ -74,6 +74,12 @@ export interface InputScene {
   clickWaited?(): boolean;
   /** The waited click, at a pointer. */
   answerClick?(pointer: ScreenPoint): void;
+  /** The globe's "camera-step": an arrow key with nothing selected.
+   *  Without it the arrows only stay off the page. */
+  stepCamera?(code: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"): void;
+  /** The globe's "camera-zoom": a double click on nothing (the ground or
+   *  the sky). Without it such a double click does nothing. */
+  zoomTowards?(pointer: ScreenPoint): void;
 }
 
 /** What the input asks of the page. */
@@ -94,6 +100,10 @@ export interface InputPage {
   /** The keys are the view's: no dialog shows, no field has the focus. */
   keysFree(event: KeyboardEvent): boolean;
 }
+
+const ARROWS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const;
+const isArrow = (code: string): code is (typeof ARROWS)[number] =>
+  (ARROWS as readonly string[]).includes(code);
 
 /** The ground's place under `at`, or null where none has loaded. */
 function groundPlace(world: GestureWorld, at: ScreenPoint): GroundPlace | null {
@@ -145,8 +155,12 @@ export function createSceneInput(input: {
   readonly surface: HTMLElement;
   readonly scene: InputScene;
   readonly page: InputPage;
+  /** A mouse press that moved this far (px) or less is a click; the
+   *  globe passes its routing table's `dragPx`. */
+  readonly clickPx?: number;
 }) {
   const { element, surface, scene, page } = input;
+  const clickPx = input.clickPx ?? INPUT.clickPx;
   let drag: {
     readonly gesture: Gesture;
     readonly selection: string;
@@ -320,7 +334,7 @@ export function createSceneInput(input: {
     }
     if (press !== null && event.pointerId === press.id) {
       const d = Math.hypot(at.x - press.at.x, at.y - press.at.y);
-      if (d > (press.touch ? INPUT.tapPx : INPUT.clickPx)) press.moved = true;
+      if (d > (press.touch ? INPUT.tapPx : clickPx)) press.moved = true;
       return;
     }
     // A mouse over the scene (not a dock): the handle under it drawn
@@ -421,8 +435,12 @@ export function createSceneInput(input: {
 
   const onDoubleClick = (event: MouseEvent) => {
     if (scene.clickWaited?.() === true) return;
-    const hit = scene.pickAt(pointOf(event));
-    if (hit === null) return;
+    const at = pointOf(event);
+    const hit = scene.pickAt(at);
+    if (hit === null) {
+      scene.zoomTowards?.(at);
+      return;
+    }
     page.select(hit);
     scene.frame(hit);
   };
@@ -444,7 +462,10 @@ export function createSceneInput(input: {
     // The design's: the arrows are the view's even with nothing selected
     // (they would scroll the page); the other keys only with a selection.
     if (selection === null) {
-      if (event.code.startsWith("Arrow")) event.preventDefault();
+      if (isArrow(event.code)) {
+        event.preventDefault();
+        scene.stepCamera?.(event.code);
+      }
       return;
     }
     event.preventDefault();

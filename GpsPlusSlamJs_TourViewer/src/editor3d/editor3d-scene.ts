@@ -78,7 +78,11 @@ import {
   DEFAULT_CODE_SIZE_M,
   createStationsLayer,
 } from "./editor3d-stations.js";
-import { createSceneEditing, type GizmoPart } from "./editor3d-editing.js";
+import {
+  createSceneEditing,
+  orbitEditingCamera,
+  type GizmoPart,
+} from "./editor3d-editing.js";
 import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
@@ -562,9 +566,10 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       canvas,
       scene,
       camera,
-      controls,
+      view: orbitEditingCamera({ controls, camera, endFlight, dropMomentum }),
       layer,
       ground,
+      worldFromEcef: ground.worldFromEcef,
       ecefFromWorld,
       undulationAt,
       tour: () => tourNow,
@@ -575,8 +580,6 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         dispatch: (action) => deps.store.dispatch(action),
         selected: () => deps.store.getState().editorView.selected,
       },
-      endFlight,
-      dropMomentum,
       frame: frameView,
       models: {
         view() {

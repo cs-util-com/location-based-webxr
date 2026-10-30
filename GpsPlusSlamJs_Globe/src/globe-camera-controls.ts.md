@@ -4,7 +4,8 @@
   fitted from the drawn ground or, in first person, the nearest item
   (globe plan §7.5, F2 plan F2a M4, G1 5), moved out of the globe lab. The
   camera has one owner at a time (the intro, the controls, or nobody after
-  `release`); the controls stay enabled throughout.
+  `release`); the controls stay enabled throughout, except while `lease(true)`
+  lends the pointer to an editor's handle drag.
 - Public API: `createGlobeCameraControls(scene, camera, canvas, globe,
 { onTake, reliefPlanes?, eyeItems?, createControls? })` returns:
   - `fitPlanes()`: near and far from `clipPlanes` (with `reliefPlanes()`) or
@@ -16,6 +17,8 @@
   - `pickFrom(object)`: the controls' scene, swapped only on a change;
   - `limit`, `setAdjustHeight(on)`, `busy()` (pointers, a state, inertia or
     a pending inertia update) and `release()` (drops momentum and zoom);
+  - `lease(on)`: `true` releases and holds the controls disabled, `false`
+    enables them again; repeats are no-ops;
   - `dispose()`: removes the `start` listener and disposes the library's
     controls (their canvas listeners), for a page that unmounts the view.
   - TypeError without `onTake`. `createControls` is the test seam.
@@ -23,5 +26,5 @@
   `ControlsInternals`. First person sets the eye's camera radius at once.
 - Tests: `globe-camera-controls.test.ts` (setup and `onTake`, the planes and
   the projection count, the globe's frame, first person, the intro, the
-  update order, `pickFrom`, `busy`/`release`, the height switch,
+  update order, `pickFrom`, `busy`/`release`, `lease`, the height switch,
   `dispose`).

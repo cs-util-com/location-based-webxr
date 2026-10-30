@@ -60,8 +60,20 @@ world frame moves nothing relative to the ground.
 - `zoom` and `setDistance` move the camera along its line of sight.
 - `centre()` is the place UNDER the camera (on the drawn ground where it
   is loaded), not a look-at target: eye mode has none.
-- Editing is not wired yet: `turn` returns false, `handleScreen`,
-  `gizmoSizes` and `modelScreenOf` return null, `modelParts` is empty.
+- Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
+  `cancelGesture`, `handleScreen`, `gizmoSizes`, `modelParts` and
+  `modelScreenOf` are the editing's. Its camera leases the globe's
+  controls off for a handle drag (`GlobeCameraControls.lease`), and the
+  view's `gestureBusy` is true while the controls or an edit's gesture
+  run, so the world frame recentres only between gestures. The ECEF
+  matrices it reads are refreshed each frame (`followFrame`).
+- The routing table's extras: an arrow with nothing selected steps the
+  camera (`steppedView`, the height over the loaded ground); a double
+  click on the ground moves the camera `ZOOM_SHARE` of the way toward the
+  ground under the pointer, along its ray (what is under the pointer stays
+  there).
+- Two fingers lock the camera (the shared input's rule) and move nothing:
+  the globe's own two-finger gestures are not wired.
 
 ## Invariants & assumptions
 

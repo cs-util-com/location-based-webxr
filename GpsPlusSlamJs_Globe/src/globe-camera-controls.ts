@@ -86,6 +86,12 @@ export interface GlobeCameraControls {
   /** Ends any drag and drops the momentum. */
   release(): void;
   /**
+   * Lends the pointer to someone else (an editor's handle drag): `true`
+   * releases the controls and holds them disabled, `false` gives them
+   * back. Repeating either is a no-op.
+   */
+  lease(on: boolean): void;
+  /**
    * Drops the start listener and disposes the library's controls (their
    * canvas listeners); the controls are unusable afterwards.
    */
@@ -121,6 +127,17 @@ export function createGlobeCameraControls(
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
   let picking: THREE.Object3D = scene;
+  let leased = false;
+  const release = () => {
+    // Toggling `enabled` is the library's own reset: it ends any drag,
+    // forgets the pointers and drops the drag and rotation momentum. The
+    // globe's spin momentum and a pending wheel step are cleared here.
+    controls.enabled = false;
+    controls.enabled = true;
+    inner.zoomDelta = 0;
+    inner.globeInertia.identity();
+    inner.globeInertiaFactor = 0;
+  };
   const fitPlanes = () => {
     local.copy(camera.position);
     globe.tiles.group.worldToLocal(local);
@@ -166,15 +183,16 @@ export function createGlobeCameraControls(
         Boolean(inner._inertiaNeedsUpdate?.())
       );
     },
-    release() {
-      // Toggling `enabled` is the library's own reset: it ends any drag,
-      // forgets the pointers and drops the drag and rotation momentum. The
-      // globe's spin momentum and a pending wheel step are cleared here.
-      controls.enabled = false;
-      controls.enabled = true;
-      inner.zoomDelta = 0;
-      inner.globeInertia.identity();
-      inner.globeInertiaFactor = 0;
+    release,
+    lease(on) {
+      if (on === leased) return;
+      leased = on;
+      if (on) {
+        release();
+        controls.enabled = false;
+      } else {
+        controls.enabled = true;
+      }
     },
     dispose() {
       controls.removeEventListener("start", onTake);

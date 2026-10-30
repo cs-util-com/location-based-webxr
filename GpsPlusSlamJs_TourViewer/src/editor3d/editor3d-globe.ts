@@ -17,10 +17,18 @@
  * hides what is too small or too crowded on screen; under the relief's
  * ceiling the relief carries the ground, above it the globe's surface.
  *
- * Not yet here (later steps of the plan): editing (the gizmo and its
- * gestures), the staged uploads, the layer chips for the clouds and the
- * buildings, the time of day. The heavy clouds (the shell and its volume)
- * are never mounted.
+ * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
+ * globe's camera as its `EditingCamera`: a handle drag leases the controls
+ * off, and the world frame holds still while any gesture runs (the view's
+ * `gestureBusy`), so the gesture's world points stay valid. The routing
+ * table's two extras (`globe-gestures.ts`) are wired here: the arrows with
+ * nothing selected step the camera (`steppedView`), a double click on the
+ * ground zooms one step toward it. Two fingers lock the camera without
+ * moving it (the globe's own two-finger gestures are not wired yet).
+ *
+ * Not yet here (later steps of the plan): the staged uploads, the layer
+ * chips for the clouds and the buildings, the time of day. The heavy
+ * clouds (the shell and its volume) are never mounted.
  *
  * @see editor3d-globe.ts.md
  */
@@ -41,6 +49,7 @@ import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite } from "../tour-document.js";
+import { isStationLocked } from "../editor/editor-view.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import type { GlobeSwitch } from "../editor/globe-switch.js";
@@ -49,6 +58,7 @@ import type {
   Editor3dStats,
   Editor3dView,
 } from "./editor3d-scene.js";
+import { createSceneEditing } from "./editor3d-editing.js";
 import {
   createBillboard,
   createCodeFace,
@@ -72,11 +82,13 @@ import {
   globeEditorSettings,
   globeHidden,
   reliefCarries,
+  steppedView,
   streetView,
   viewPoseOf,
   type GlobeHiddenSet,
   type GlobeObjectOnScreen,
 } from "./globe-editor-look.js";
+import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
 
 const DEG = Math.PI / 180;
@@ -160,7 +172,9 @@ export async function openGlobeEditor(
         update: (now) => {
           updateLayers(now);
         },
-        gestureBusy: () => controls.busy(),
+        // An edit's gesture holds the frame still too: its world points
+        // would move under it.
+        gestureBusy: () => controls.busy() || editing.gesture() !== null,
         frameChanged: () => {
           controls.release();
         },
@@ -394,7 +408,7 @@ export async function openGlobeEditor(
       }
 
       camera.updateMatrixWorld();
-      tourFrame.updateMatrixWorld(true);
+      followFrame();
       tourFromWorld.copy(tourFrame.matrixWorld).invert();
       cameraTour.copy(camera.position).applyMatrix4(tourFromWorld);
       // The tilt from straight down, in the tour's frame.
@@ -438,8 +452,116 @@ export async function openGlobeEditor(
         if (at === null) continue;
         eyeSpheres.push(new THREE.Sphere(worldOf(at), s.foundRadiusM));
       }
+      editing.update();
       frames++;
     }
+
+    const aimAt = (at: THREE.Vector3, radiusM: number) => {
+      const place = placeOfTour(at);
+      controls.release();
+      view.placeView(
+        aimView({ lat: place.lat, lng: place.lng }, place.heightM, radiusM),
+      );
+      controls.followIntro();
+    };
+    const placePose = (change: { headingDeg?: number; pitchDeg?: number }) => {
+      const pose = poseNow();
+      controls.release();
+      view.placeView({ ...pose, ...change });
+      controls.followIntro();
+    };
+    /** Fit the selection (null: the whole tour) into the view. */
+    const frameView = (selection: string | null) => {
+      if (selection !== null) {
+        const place = placeOf(selection);
+        if (place !== null) aimAt(place.at, place.radiusM);
+        return;
+      }
+      const points = (tourNow?.stations ?? []).flatMap((s) => {
+        const at = layer.pointOf(s.id);
+        return at === null ? [] : [at];
+      });
+      if (points.length === 0) return;
+      const box = new THREE.Box3().setFromPoints(points);
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      aimAt(sphere.center, sphere.radius);
+    };
+
+    // ECEF and the world, read live by the editing: the world frame
+    // follows the camera (`followFrame` each frame).
+    const worldFromEcef = new THREE.Matrix4();
+    const ecefFromWorld = new THREE.Matrix4();
+    function followFrame(): void {
+      tourFrame.updateWorldMatrix(true, true);
+      worldFromEcef.copy(globe.group.matrixWorld);
+      ecefFromWorld.copy(worldFromEcef).invert();
+    }
+    followFrame();
+    const editing = createSceneEditing({
+      container: deps.container,
+      canvas,
+      scene,
+      camera,
+      view: {
+        lock: (on) => {
+          controls.lease(on);
+        },
+        twoFingerStart: () => undefined,
+        twoFinger: () => undefined,
+        lookAt: () => camera.position,
+      },
+      layer,
+      ground,
+      worldFromEcef,
+      ecefFromWorld,
+      layerToWorld: tourFrame.matrixWorld,
+      undulationAt,
+      tour: () => tourNow,
+      stationLocked: (id) =>
+        isStationLocked(deps.store.getState().editorView, id),
+      page: {
+        ...deps.edits,
+        dispatch: (action) => deps.store.dispatch(action),
+        selected: () => deps.store.getState().editorView.selected,
+      },
+      frame: frameView,
+      models: {
+        view() {
+          const ui = deps.store.getState().editorView;
+          return {
+            selected: ui.selected,
+            focus: ui.modelFocus,
+            pick: ui.modelPick,
+          };
+        },
+        edit: (id, edit) => deps.edits.model(id, edit),
+      },
+      // The routing table's click distance: a release that moved less is a
+      // click, more a drag the controls already had.
+      clickPx: GLOBE_GESTURES.dragPx,
+      stepCamera(code) {
+        const pose = poseNow();
+        const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
+        const aboveM = Math.max(0, pose.altitudeKm * 1000 - (groundM ?? 0));
+        controls.release();
+        view.placeView(steppedView(pose, code, aboveM));
+        controls.followIntro();
+      },
+      zoomTowards(pointer) {
+        // Along the ray under the pointer: what is there stays there.
+        const hit = editing.groundUnder(pointer);
+        if (!("at" in hit)) return;
+        controls.release();
+        camera.position.lerp(
+          new THREE.Vector3(hit.at.x, hit.at.y, hit.at.z),
+          ZOOM_SHARE,
+        );
+        camera.updateMatrixWorld();
+      },
+    });
+    undo.push(() => {
+      editing.dispose();
+    });
 
     // The first view: at street level south of the tour, on the tour's
     // drawn height (the ground is not loaded yet).
@@ -490,21 +612,6 @@ export async function openGlobeEditor(
     await ready;
     shown = true;
 
-    const aimAt = (at: THREE.Vector3, radiusM: number) => {
-      const place = placeOfTour(at);
-      controls.release();
-      view.placeView(
-        aimView({ lat: place.lat, lng: place.lng }, place.heightM, radiusM),
-      );
-      controls.followIntro();
-    };
-    const placePose = (change: { headingDeg?: number; pitchDeg?: number }) => {
-      const pose = poseNow();
-      controls.release();
-      view.placeView({ ...pose, ...change });
-      controls.followIntro();
-    };
-
     return {
       dispose,
       setTilt(deg) {
@@ -524,21 +631,7 @@ export async function openGlobeEditor(
         aimAt(place.at, place.radiusM);
         return true;
       },
-      frame(selection) {
-        if (selection !== null) {
-          const place = placeOf(selection);
-          if (place !== null) aimAt(place.at, place.radiusM);
-          return;
-        }
-        const points = (tourNow?.stations ?? []).flatMap((s) => {
-          const at = layer.pointOf(s.id);
-          return at === null ? [] : [at];
-        });
-        if (points.length === 0) return;
-        const box = new THREE.Box3().setFromPoints(points);
-        const sphere = box.getBoundingSphere(new THREE.Sphere());
-        aimAt(sphere.center, sphere.radius);
-      },
+      frame: frameView,
       setTop(on) {
         if (on === top) return;
         top = on;
@@ -594,25 +687,32 @@ export async function openGlobeEditor(
       },
       groundAt: (place) => ground.groundAt(place.lat * DEG, place.lon * DEG),
       origin: () => ({ lat: centre.lat, lng: centre.lng }),
-      // Editing comes with the gestures (a later step): nothing to turn.
-      turn: () => false,
+      turn: (selection, deg) => editing.turn(selection, deg),
       pointOf(selection) {
         const place = placeOf(selection);
         if (place === null) return null;
         const p = worldOf(place.at);
         return [p.x, p.y, p.z];
       },
-      cancelGesture: () => undefined,
+      cancelGesture() {
+        editing.cancel();
+      },
       screenOf(selection) {
         const place = placeOf(selection);
         if (place === null) return null;
         const at = screenOfWorld(worldOf(place.at));
         return at === null ? null : [at.x, at.y];
       },
-      handleScreen: () => null,
-      gizmoSizes: () => null,
-      modelParts: () => ({ discs: [], planes: 0 }),
-      modelScreenOf: () => null,
+      handleScreen(part) {
+        const at = editing.handleScreen(part);
+        return at === null ? null : [at.x, at.y];
+      },
+      gizmoSizes: () => editing.handleSizes(),
+      modelParts: () => editing.modelParts(),
+      modelScreenOf(id, at) {
+        const p = editing.modelScreenOf(id, at);
+        return p === null ? null : [p.x, p.y];
+      },
       stats(): Editor3dStats {
         const pose = poseNow();
         return {

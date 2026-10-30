@@ -15,6 +15,7 @@ import {
   globeEditorSettings,
   globeHidden,
   reliefCarries,
+  steppedView,
   streetView,
   viewPoseOf,
   type GlobeObjectOnScreen,
@@ -236,5 +237,57 @@ describe("viewPoseOf", () => {
       }),
     );
     expect(back.headingDeg).toBeCloseTo(270, 6);
+  });
+});
+
+describe("steppedView", () => {
+  // Why: on the globe the arrows with nothing selected step the camera
+  // (the routing table's "camera-step"); a step must turn about the spot
+  // where the camera stands, move along the line of sight's heading at
+  // the same altitude, and scale with the height so a step from high up
+  // is not a crawl.
+  const at = {
+    lat: 48,
+    lng: 11,
+    altitudeKm: 0.52,
+    headingDeg: 90,
+    pitchDeg: -20,
+  };
+  const { turnStepDeg, moveShare, moveMinM } = GLOBE_EDITOR_LOOK;
+
+  it("turns by the step, wrapping the heading into [0, 360)", () => {
+    expect(steppedView(at, "ArrowRight", 10).headingDeg).toBe(90 + turnStepDeg);
+    expect(
+      steppedView({ ...at, headingDeg: 5 }, "ArrowLeft", 10).headingDeg,
+    ).toBeCloseTo(360 + 5 - turnStepDeg, 9);
+    const turned = steppedView(at, "ArrowLeft", 10);
+    expect([
+      turned.lat,
+      turned.lng,
+      turned.altitudeKm,
+      turned.pitchDeg,
+    ]).toEqual([at.lat, at.lng, at.altitudeKm, at.pitchDeg]);
+  });
+
+  it("moves forward and back along the heading, by a share of the height", () => {
+    for (const aboveM of [0.5, 20, 400, 30_000]) {
+      const stepM = Math.max(moveMinM, moveShare * aboveM);
+      const ahead = steppedView(at, "ArrowUp", aboveM);
+      const back = steppedView(at, "ArrowDown", aboveM);
+      const eastM = (p: { lng: number }) =>
+        (p.lng - at.lng) * M_PER_DEG * Math.cos(at.lat * (Math.PI / 180));
+      expect(eastM(ahead)).toBeCloseTo(stepM, 6);
+      expect(eastM(back)).toBeCloseTo(-stepM, 6);
+      expect(ahead.lat).toBeCloseTo(at.lat, 12);
+      expect(ahead.altitudeKm).toBe(at.altitudeKm);
+      expect(ahead.headingDeg).toBe(at.headingDeg);
+    }
+    const north = steppedView({ ...at, headingDeg: 0 }, "ArrowUp", 100);
+    expect((north.lat - at.lat) * M_PER_DEG).toBeCloseTo(moveShare * 100, 6);
+  });
+
+  it("refuses a height that is not finite or below zero", () => {
+    expect(() => steppedView(at, "ArrowUp", Number.NaN)).toThrow(RangeError);
+    expect(() => steppedView(at, "ArrowUp", -1)).toThrow(RangeError);
   });
 });

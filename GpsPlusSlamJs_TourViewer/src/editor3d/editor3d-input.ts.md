@@ -10,7 +10,9 @@ move the camera only, and a second finger during a drag cancels it.
 
 ## Public API
 
-- `createSceneInput({ element, surface, scene, page })` -> the input,
+- `createSceneInput({ element, surface, scene, page, clickPx? })` -> the input
+  (`clickPx`: a mouse press that moved this far or less is a click; the
+  globe passes its routing table's `dragPx`, 5, in place of `INPUT`'s 4),
   listening until `dispose`:
   - `element` - the view's box (its presses are read in the capture phase,
     before OrbitControls on the canvas sees them);
@@ -35,6 +37,10 @@ move the camera only, and a second finger during a drag cancels it.
   is waited for, a press starts no gesture (and no handle is hovered), a
   click (a press that did not move) is the scene's answer and selects
   nothing, a double click frames nothing; a drag stays the camera's.
+- `InputScene.stepCamera?(code)` and `zoomTowards?(pointer)` - the globe's
+  routes (`globe-gestures.ts`): an arrow with nothing selected is
+  `camera-step` (it still stays off the page without the hook), a double
+  click on nothing is `camera-zoom` (without the hook it does nothing).
 
 ## Invariants & assumptions
 
