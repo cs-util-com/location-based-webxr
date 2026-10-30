@@ -10,10 +10,21 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourObject,
+  TourPin,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { applyObjectChanges } from "./authoring-draft.js";
+import type { UndoOffer } from "./creator-undo.js";
+import { wireObjectEditing } from "./object-editing.js";
 import { authoringObjects, upsertPlaced } from "./object-edits.js";
+import type { ObjectListHandlers } from "./object-list.js";
+import { tourOf } from "./test-support/tour-of.js";
+import {
+  createTourViewerSession,
+  createTourViewerStore,
+} from "./tour-viewer-session.js";
 
 function pin(id: string, label = `pin ${id}`): TourPin {
   return {
@@ -78,5 +89,57 @@ describe("upsertPlaced", () => {
   it("appends an id it does not have", () => {
     const out = upsertPlaced([{ object: pin("a") }], { object: pin("b") });
     expect(out.map((p) => p.object.id)).toEqual(["a", "b"]);
+  });
+});
+
+/**
+ * Why this test matters: a delete names what it took in the list's note
+ * and in the strip's Undo ("Undo: delete the long text"). The name comes
+ * from the kind's word; a fixed "the photo" there would tell a creator
+ * they deleted a picture when they deleted a text, and nothing else would
+ * notice.
+ */
+describe("wireObjectEditing delete", () => {
+  it("names a deleted long text by its kind in the note and the Undo", () => {
+    const ctx = createTourViewerSession();
+    const text: TourObject = {
+      id: "door",
+      kind: "longText",
+      view: "lectern",
+      title: "The door",
+      body: "Painted red in spring.",
+      createdAtIso: "2026-10-19T00:00:00.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    };
+    ctx.tourDocument.open(tourOf([text]));
+    let handlers: ObjectListHandlers | null = null;
+    const notes: string[] = [];
+    const offers: UndoOffer[] = [];
+    wireObjectEditing({
+      ctx,
+      arStore: createTourViewerStore(),
+      view: {
+        bind: (h) => {
+          handlers = h;
+        },
+        render: (model) => {
+          notes.push(model.note);
+        },
+      },
+      getArWorldGroup: () => null,
+      sessionLive: () => false,
+      placementAllowed: () => false,
+      settleInputs: () => ({}) as never,
+      codes: () => [],
+      schedule: () => () => undefined,
+      syncPreviews: () => undefined,
+      renderAuthorReadout: () => undefined,
+      offerUndo: (offer) => {
+        offers.push(offer);
+      },
+    });
+    handlers!.remove("door");
+    expect(notes).toContain("Deleting the long text…");
+    expect(offers.map((o) => o.target)).toEqual(["delete the long text"]);
   });
 });

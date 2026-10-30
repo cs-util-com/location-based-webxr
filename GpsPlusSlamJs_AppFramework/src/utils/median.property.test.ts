@@ -111,7 +111,32 @@ describe('weightedMedian invariants', () => {
           )
         );
       }),
-      { numRuns: 300 }
+      {
+        numRuns: 300,
+        // Seed 32073154 found this: a 0 and a -0 holding the middle weight
+        // between them, so the answer's sign followed the arrival order.
+        examples: [
+          [
+            [
+              { value: 0, weight: 0.000001 },
+              { value: 0, weight: 0.000001 },
+              { value: 0, weight: 999999.9884380217 },
+              { value: -0, weight: 999999.9884419959 },
+              { value: 2.90914108193724e-86, weight: 0.0000010000000000000002 },
+              { value: -5.4e-323, weight: 0.0000010000000000000019 },
+              {
+                value: 1.1856926251185534e-68,
+                weight: 0.0000010000000000000027,
+              },
+              {
+                value: 1.040595352339426e-212,
+                weight: 0.0000010000000000000006,
+              },
+            ],
+            3,
+          ],
+        ],
+      }
     );
   });
 

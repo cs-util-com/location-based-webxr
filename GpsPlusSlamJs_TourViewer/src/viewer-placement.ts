@@ -54,6 +54,8 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { renderStationBlocks, renderTourStation } from "./content-placement.js";
+import { mountLectern } from "./lectern-view.js";
+import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
 import type {
@@ -1082,10 +1084,16 @@ export function createViewerPlacement(deps: {
       zero,
       alive,
       makeLabel: (text: string) => seams.createLabel(text),
+      // A long text's reading stand: a canvas page, turned by a tap.
+      makeLectern: mountLectern,
+      // A long text's reading sign: a tap opens its text in the sheet.
+      makeReadingSign: mountReadingSign,
       // A placed model at its size (station blocks plan B2b), read
       // through the same cache as the station's story.
       loadModel: async (entryName: string) =>
         seams.loadGlbModel(await loadContent(entryName)),
+      // A cutaway model clips by a plane.
+      modelViews: { enableClipping: () => seams.enableClipping() },
       loadPhotoTexture: async (entryName: string) =>
         // Measured before it is decoded (tour kit K4 review R2).
         decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {

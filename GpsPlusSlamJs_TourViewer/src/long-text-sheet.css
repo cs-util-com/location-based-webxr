@@ -1,0 +1,414 @@
+/* The reading sheet of a long text (long-text-sheet.ts). Its numbers are
+   the narrated-text prototype's (public/prototypes/
+   station-blocks-1-narrated-text/, #sheet): a bottom sheet on a phone held
+   upright (width / height under 0.85), a side panel held sideways (under
+   520 px high) and on a desktop. The design system zeroes margins, so
+   every gap here is set explicitly. */
+
+.lt-sheet {
+  --lt-serif:
+    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia,
+    "Times New Roman", serif;
+  --lt-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --lt-mono:
+    ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --lt-amber: #f2b45a;
+  --lt-ink2: #d8d2c6;
+  --lt-ink3: #a49e92;
+
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 7%);
+  background: rgb(18 19 22 / 94%);
+  box-shadow: 0 -10px 40px rgb(0 0 0 / 25%);
+  color: var(--lt-ink2);
+  font-family: var(--lt-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: normal;
+  text-shadow: none;
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  animation: lt-sheet-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lt-sheet[hidden],
+.lt-sheet [hidden] {
+  display: none !important;
+}
+.lt-sheet *,
+.lt-sheet *::before,
+.lt-sheet *::after {
+  box-sizing: border-box;
+}
+.lt-sheet button {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+@keyframes lt-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lt-sheet {
+    animation: none;
+  }
+}
+
+/* A phone held upright: a bottom sheet over 63 % of the height. */
+@media (max-aspect-ratio: 17/20) {
+  .lt-sheet {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 63%;
+    border-radius: 24px 24px 0 0;
+  }
+}
+/* Held sideways: a side panel below the top bar (the prototype measures
+   42 px from the top). */
+@media (min-aspect-ratio: 17/20) and (max-height: 519.98px) {
+  .lt-sheet {
+    top: 42px;
+    right: 8px;
+    bottom: 8px;
+    width: min(56%, 520px);
+    border-radius: 20px;
+  }
+}
+/* A desktop (or a tablet): a 520 px side panel. */
+@media (min-aspect-ratio: 17/20) and (min-height: 520px) {
+  .lt-sheet {
+    top: 48px;
+    right: 18px;
+    bottom: 18px;
+    width: 520px;
+    border-radius: 24px;
+  }
+}
+
+.lt-grab {
+  flex: none;
+  width: 38px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 18%);
+}
+@media (min-aspect-ratio: 17/20) {
+  .lt-grab {
+    display: none;
+  }
+}
+
+.lt-head {
+  position: relative;
+  flex: none;
+  padding: 12px 58px 10px 24px;
+}
+.lt-over {
+  color: var(--lt-amber);
+  font: 700 10.5px/1.2 var(--lt-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.lt-title {
+  margin: 7px 0 6px;
+  color: #fff;
+  font: 600 24px/1.18 var(--lt-serif);
+  letter-spacing: 0.003em;
+}
+.lt-meta {
+  color: var(--lt-ink3);
+  font-size: 12.5px;
+}
+.lt-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 7%);
+}
+.lt-close svg {
+  width: 16px;
+  height: 16px;
+}
+@media (min-aspect-ratio: 17/20) {
+  .lt-head {
+    padding-top: 20px;
+  }
+  .lt-close {
+    top: 18px;
+  }
+}
+
+.lt-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgb(255 255 255 / 15%) transparent;
+  scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 30px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 30px),
+    transparent
+  );
+}
+.lt-text {
+  padding: 14px 26px 46vh 24px;
+  color: var(--lt-ink2);
+  font-family: var(--lt-serif);
+  font-size: 18.5px;
+  line-height: 1.62;
+  cursor: pointer;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  text-wrap: pretty;
+}
+.lt-text p {
+  margin: 0 0 1.05em;
+}
+/* What the prototype's one plain body has no example of: headings, lists,
+   quotes, links and pictures, in the same type and spacing. */
+.lt-text h3,
+.lt-text h4,
+.lt-text h5 {
+  margin: 1.2em 0 0.5em;
+  color: #fff;
+  font-family: var(--lt-serif);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.lt-text h3 {
+  font-size: 1.15em;
+}
+.lt-text h4 {
+  font-size: 1.05em;
+}
+.lt-text h5 {
+  font-size: 1em;
+}
+.lt-text ul,
+.lt-text ol {
+  margin: 0 0 1.05em;
+  padding-left: 1.3em;
+}
+.lt-text li {
+  margin: 0 0 0.35em;
+}
+.lt-text li > p {
+  margin: 0;
+}
+.lt-text blockquote {
+  margin: 0 0 1.05em;
+  padding-left: 14px;
+  border-left: 3px solid rgb(255 255 255 / 18%);
+  color: var(--lt-ink3);
+}
+.lt-text a {
+  color: #ffd391;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.lt-text img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.lt-text p > span:only-child {
+  display: inline-block;
+  padding: 10px 12px;
+  border: 1px dashed rgb(255 255 255 / 25%);
+  border-radius: 10px;
+  color: var(--lt-ink3);
+  font: 13px/1.4 var(--lt-sans);
+}
+/* The reading mark (the prototype's cooler tint of "sound off"). */
+::highlight(long-text-place) {
+  background-color: rgb(150 196 220 / 13%);
+  color: #fdfaf3;
+}
+
+.lt-ask {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 18px;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+  font-size: 13.5px;
+}
+.lt-ask-text {
+  flex: 1 1 200px;
+  margin: 0;
+}
+.lt-ask button {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 650;
+}
+.lt-ask-open {
+  background: #f6f2ea;
+  color: #16171a;
+}
+.lt-ask-stay {
+  background: rgb(255 255 255 / 9%);
+  color: #f6f2ea;
+}
+
+.lt-foot {
+  flex: none;
+  padding: 6px 18px 14px;
+  border-top: 1px solid rgb(255 255 255 / 7%);
+}
+.lt-bar {
+  position: relative;
+  height: 18px;
+  margin: 2px 4px 0;
+  cursor: pointer;
+}
+.lt-track,
+.lt-fill {
+  position: absolute;
+  top: 7px;
+  height: 4px;
+  border-radius: 4px;
+}
+.lt-track {
+  right: 0;
+  left: 0;
+  background: rgb(255 255 255 / 12%);
+}
+.lt-fill {
+  left: 0;
+  width: 0;
+  background: #96c4dc;
+}
+.lt-tick {
+  position: absolute;
+  top: 5px;
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 22%);
+}
+.lt-knob {
+  position: absolute;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+}
+.lt-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.lt-time {
+  min-width: 62px;
+  color: var(--lt-ink3);
+  font: 500 12px var(--lt-mono);
+}
+.lt-time.lt-r {
+  text-align: right;
+}
+.lt-btns {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.lt-cb {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #e9e4da;
+}
+.lt-cb:active {
+  background: rgb(255 255 255 / 8%);
+}
+.lt-cb svg {
+  width: 24px;
+  height: 24px;
+}
+.lt-pos {
+  min-width: 120px;
+  color: var(--lt-ink3);
+  font-size: 12.5px;
+  text-align: center;
+}
+.lt-credit {
+  margin-top: 4px;
+  color: #8f897e;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+.lt-sheet svg.lt-icon-fill {
+  fill: currentcolor;
+}
+.lt-sheet svg.lt-icon-stroke {
+  fill: none;
+  stroke: #ddd;
+  stroke-width: 2.2;
+}
+
+/* Held sideways: smaller type and tighter gaps. */
+@media (min-aspect-ratio: 17/20) and (max-height: 519.98px) {
+  .lt-head {
+    padding-top: 12px;
+    padding-bottom: 4px;
+  }
+  .lt-title {
+    margin: 4px 0 2px;
+    font-size: 18px;
+  }
+  .lt-text {
+    font-size: 17px;
+  }
+  .lt-foot {
+    padding: 2px 14px 8px;
+  }
+}
+@media (min-aspect-ratio: 17/20) and (min-height: 520px) {
+  .lt-text {
+    font-size: 19.5px;
+  }
+}

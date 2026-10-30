@@ -83,6 +83,7 @@ const entryFiles = [
   'src/ar/tour-fields.ts',
   'src/ar/tour-blocks.ts',
   'src/ar/tour-story.ts',
+  'src/ar/tour-characters.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
   // The station text's Markdown subset, its plain text and that text's

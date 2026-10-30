@@ -161,4 +161,18 @@ describe('weightedMedian', () => {
   it('ignores samples that are not finite', () => {
     expect(weightedMedian([1, Number.NaN, 3], [1, 99, 1])).toBe(1);
   });
+
+  it('returns +0, never -0, whatever order a 0 and a -0 arrive in', () => {
+    // Why this matters: 0 and -0 compare equal, so the stable sort keeps them
+    // in arrival order and the scan used to hand back whichever came first -
+    // the order-independence property failed on seed 32073154. A median of
+    // -0 is 0; Object.is tells the two apart, so toBe pins it.
+    expect(weightedMedian([-0, 0], [1, 1])).toBe(0);
+    expect(weightedMedian([0, -0], [1, 1])).toBe(0);
+    expect(weightedMedian([-0], [1])).toBe(0);
+    expect(lowerMedian([-0, 0])).toBe(0);
+    expect(lowerMedian([-0])).toBe(0);
+    expect(interpolatingMedian([-0])).toBe(0);
+    expect(interpolatingMedian([-0, -0])).toBe(0);
+  });
 });

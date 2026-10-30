@@ -11,6 +11,12 @@ one whose size cannot be read, is not shown.
 
 ## Public API
 
+- `pictureFit(blob): Promise<PictureFit>` - `{ ok: true, pixels }` for a
+  picture within the cap (its width times height, which the long text's
+  decode budget counts, `long-text-pictures.ts`), else
+  `{ ok: false, why, tooLarge }` with the same words as `pictureProblem`
+  (`tooLarge`: over the cap, rather than a size that could not be read). One reading of the header gives
+  both, so the cap and the budget never disagree about a file.
 - `pictureProblem(blob): Promise<string | null>` - why the picture may not
   be shown, in plain words ("it is W x H pixels, more than a phone can
   safely decode", "its size could not be read from its file"), or null.
@@ -36,5 +42,6 @@ if (problem !== null)
 
 ## Tests
 
-`image-cap.test.ts` - a 12 MP picture passes; a 48 MP one and an
-unmeasurable one are named.
+`image-cap.test.ts` - a 12 MP picture passes (and `pictureFit` gives its
+pixel count); a 48 MP one and an unmeasurable one are named, by both
+functions alike.

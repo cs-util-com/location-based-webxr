@@ -64,7 +64,9 @@ them.
     soon as the gate allows it and the GPS zero exists
     (`renderTourStation`: a group per station at its geo pose, its
     free blocks (pins, pictures and, since B2b, placed models through
-    `seams.loadGlbModel` over the same read) as children at their local
+    `seams.loadGlbModel` over the same read, and since minor 3 a long
+    text's reading stand through `mountLectern`, since minor 4 its
+    reading sign through `mountReadingSign`) as children at their local
     poses, the
     stations without free blocks skipped; each
     station one "items" part of the side table, see below; labels

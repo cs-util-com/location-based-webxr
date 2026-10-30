@@ -728,7 +728,15 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("pin-label")).toBeHidden();
   await page.getByTestId("setup-pin").click();
   await page.getByTestId("pin-label").fill("The old gate");
+  // The pin's optional description: typed with the
+  // text, it lands in tour.json with it.
+  await expect(page.getByTestId("pin-description")).toBeVisible();
+  await page.getByTestId("pin-description").fill("Built in 1540.");
+  await expect(page.getByTestId("pin-description-count")).toHaveText(
+    "14 / 160",
+  );
   await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("pin-description")).toBeHidden();
   await expect(page.getByTestId("setup-status")).toContainText(
     /1 object placed/,
   );
@@ -854,6 +862,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   const [, , , , pin, photo] = manifest.objects;
   expect(pin?.kind).toBe("shortText");
   expect(pin?.kind === "shortText" ? pin.caption : null).toBe("The old gate");
+  expect(pin?.kind === "shortText" ? pin.description : null).toBe(
+    "Built in 1540.",
+  );
   // The pin keeps its place RELATIVE TO THE CODE (D10b): the visit settles
   // through its alignment corrected rigidly onto the code's stored pose.
   // The reticle (3 m north, 2 m west of the zero, altitude 400.5 - GPS-world

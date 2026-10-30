@@ -41,6 +41,26 @@ export default defineConfig({
         fileAccessCheck: fileURLToPath(
           new URL("file-access-check.html", import.meta.url),
         ),
+        // A tour model in each world view without an AR session
+        // (`model-views-check.html.md`), linked from nothing.
+        modelViewsCheck: fileURLToPath(
+          new URL("model-views-check.html", import.meta.url),
+        ),
+        // A tour character in each world view without an AR session
+        // (`character-views-check.html.md`), linked from nothing.
+        characterViewsCheck: fileURLToPath(
+          new URL("character-views-check.html", import.meta.url),
+        ),
+        // A long text on its reading stand without an AR session
+        // (`lectern-check.html.md`), linked from nothing.
+        lecternCheck: fileURLToPath(
+          new URL("lectern-check.html", import.meta.url),
+        ),
+        // A long text in its reading sheet without an AR session
+        // (`long-text-check.html.md`), linked from nothing.
+        longTextCheck: fileURLToPath(
+          new URL("long-text-check.html", import.meta.url),
+        ),
       },
     },
   },

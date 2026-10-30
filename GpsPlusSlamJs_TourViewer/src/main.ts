@@ -38,6 +38,14 @@ import { sanitizedPageUrl } from "gps-plus-slam-app-framework/storage/session-me
 import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
+import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
+import { turnShownLecternUnderTap } from "./lectern-view.js";
+import { createLongTextSheet } from "./long-text-sheet.js";
+import {
+  readingSheetContent,
+  shownReadingSignUnderTap,
+} from "./reading-sign.js";
+import "./model-visitor.css";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -73,7 +81,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
-import { wireVisitorStations } from "./visitor-stations.js";
+import { routeVisitorTap, wireVisitorStations } from "./visitor-stations.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
@@ -708,6 +716,8 @@ const setup = wireCreatorSetup({
     pinButton: element("setup-pin"),
     pinLabel: element("pin-label"),
     pinLabelCount: element("pin-label-count"),
+    pinDescription: element("pin-description"),
+    pinDescriptionCount: element("pin-description-count"),
     pinSave: element("pin-save"),
     pinCancel: element("pin-cancel"),
     photoButton: element("setup-photo"),
@@ -938,6 +948,7 @@ const stations = wireVisitorStations({
       title: element("scene-title"),
       description: element("scene-description"),
       speaker: element("scene-speaker"),
+      portrait: element<HTMLImageElement>("scene-portrait"),
       text: element("scene-text"),
       status: element("scene-status"),
       image: element<HTMLImageElement>("scene-image"),
@@ -1029,6 +1040,8 @@ hooks.tickStations = () => {
   viewer.syncContent();
   // A pin's sheet goes with its pin.
   pinSheet.sync();
+  // A model's view, its notes and its card.
+  modelVisitor.tick(performance.now());
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
@@ -1047,6 +1060,29 @@ const pinSheet = createPinSheet({
 element("pin-sheet-close").addEventListener("click", () => {
   pinSheet.close();
 });
+// A model's notes, its card and a toy in hand: a tap opens a note or the
+// model's card, a pinch and a drag act only on a toy in hand.
+const modelVisitor = createModelVisitor({
+  dom: mountModelVisitorDom(element("ar-root")),
+  scene: () => seams.getScene(),
+  camera: () => seams.getViewerCamera(),
+  pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+});
+// A long text's whole text, opened by a tap on its reading sign. Its
+// pictures are read through the stations' prefetch cache, by the asset's
+// path in the open tour.
+const longTextSheet = createLongTextSheet({
+  host: element("ar-root"),
+  loadAsset: async (id) => {
+    const asset = ctx.tourDocument.manifest()?.assets.find((a) => a.id === id);
+    if (asset === undefined) throw new Error(`no asset "${id}" in the tour`);
+    return stations.loadContent(asset.path);
+  },
+  arActive: () => arSessionLive(arController.getState().status),
+  openLink: (href) => {
+    window.open(href, "_blank", "noopener,noreferrer");
+  },
+});
 if (mode === "visitor") {
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
@@ -1057,11 +1093,40 @@ if (mode === "visitor") {
   });
 }
 hooks.visitorTap = (tap) => {
-  pinSheet.tapped(tap);
+  routeVisitorTap(tap, {
+    character: stations.characterTapped,
+    model: (t) => modelVisitor.tapped(t),
+    // A reading stand under the tap turns its page.
+    lectern: (t) =>
+      turnShownLecternUnderTap(
+        seams.getScene(),
+        (targets, at) => seams.pickObjectInView(targets, at),
+        t,
+      ),
+    // A reading sign under the tap opens its text in the sheet.
+    reading: (t) => {
+      const sign = shownReadingSignUnderTap(
+        seams.getScene(),
+        (targets, at) => seams.pickObjectInView(targets, at),
+        t,
+      );
+      if (sign === null) return false;
+      longTextSheet.show(
+        readingSheetContent(
+          ctx.tourDocument.manifest()?.stations ?? [],
+          sign.block,
+        ),
+      );
+      return true;
+    },
+    pinSheet,
+  });
 };
 hooks.stopStations = () => {
   stations.stop();
   pinSheet.close();
+  longTextSheet.close();
+  modelVisitor.stop();
 };
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one

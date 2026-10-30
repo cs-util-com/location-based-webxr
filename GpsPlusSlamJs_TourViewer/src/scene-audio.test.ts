@@ -55,6 +55,25 @@ function harness(play: () => Promise<void> = () => Promise.resolve()) {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("createSceneAudio", () => {
+  // Why: the read-along stretches to the voice's real length, which the
+  // element knows only once it has read the clip's metadata: before that
+  // (NaN), for a stream (Infinity) or with no element, there is none.
+  it("tells the playing clip's length in ms once the element knows it", async () => {
+    const h = harness();
+    expect(h.audio.durationMs?.()).toBeNull();
+    await h.audio.play(new Blob(["v"]), () => undefined);
+    const el = h.elements[0] as FakeElement & { duration?: number };
+    for (const [s, ms] of [
+      [Number.NaN, null],
+      [Number.POSITIVE_INFINITY, null],
+      [0, null],
+      [2.5, 2500],
+    ] as const) {
+      el.duration = s;
+      expect(h.audio.durationMs?.(), String(s)).toBe(ms);
+    }
+  });
+
   it("plays every clip through the one element the tap unlocked", async () => {
     const h = harness();
     h.audio.unlock();

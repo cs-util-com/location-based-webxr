@@ -1,0 +1,379 @@
+// @vitest-environment jsdom
+/**
+ * Why these tests matter: the visitor's taps and gestures on a 3D model
+ * follow one rule - a tap opens a note or the model's card, a pinch or a
+ * drag acts only on a toy in hand - and the card must say exactly what is
+ * open ("Note 2 of 5", "Section 1 of 2") and go with its model. A drag
+ * that moved a model in any other view, or a card left open over a model
+ * the visitor walked away from, would break the tour's own placement.
+ */
+import * as THREE from "three";
+import { describe, expect, it, vi } from "vitest";
+
+import { mountModelView, type TourModelBlock } from "./model-views.js";
+import {
+  createModelVisitor,
+  hasModelCard,
+  mountModelVisitorDom,
+  shownModelViews,
+} from "./model-visitor.js";
+import { cancelsXrSelect } from "./pin-sheet.js";
+
+const NOW = "2026-10-28T12:00:00.000Z";
+
+function block(
+  id: string,
+  view: TourModelBlock["view"],
+  extra: Partial<TourModelBlock> = {},
+): TourModelBlock {
+  return {
+    id,
+    kind: "model",
+    view,
+    asset: id,
+    sizeM: 1,
+    createdAtIso: NOW,
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    ...extra,
+  };
+}
+
+/** A scene with one station's content group holding `blocks`' models,
+ *  each mounted in its view, 4 m in front of a camera at the origin. */
+function world(blocks: readonly TourModelBlock[]) {
+  const scene = new THREE.Scene();
+  const station = new THREE.Group();
+  station.name = "station-content:s1";
+  scene.add(station);
+  const handles = blocks.map((b) => {
+    const model = new THREE.Group();
+    model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+    model.position.set(0, 0, -4);
+    model.userData["objectId"] = b.id;
+    station.add(model);
+    return mountModelView(model, b, 1);
+  });
+  const camera = new THREE.PerspectiveCamera(60, 0.5, 0.05, 100);
+  scene.updateMatrixWorld(true);
+  return { scene, station, handles, camera };
+}
+
+function visitorFor(w: ReturnType<typeof world>, hit: () => string | null) {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dom = mountModelVisitorDom(root);
+  for (const el of [dom.layer, dom.gestures]) {
+    Object.defineProperty(el, "clientWidth", { value: 400 });
+    Object.defineProperty(el, "clientHeight", { value: 800 });
+  }
+  const picked: string[][] = [];
+  const visitor = createModelVisitor({
+    dom,
+    scene: () => w.scene,
+    camera: () => w.camera,
+    pick: (targets) => {
+      picked.push([...targets.keys()]);
+      return hit();
+    },
+  });
+  return { dom, visitor, picked };
+}
+
+function pointer(
+  target: HTMLElement,
+  type: string,
+  pointerId: number,
+  clientX: number,
+  clientY: number,
+): void {
+  const event = new MouseEvent(type, { bubbles: true, clientX, clientY });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  target.dispatchEvent(event);
+}
+
+describe("the model card", () => {
+  // Why: only a model with something to show opens a card on a tap: a
+  // toy, a cutaway with sections, a model with a title.
+  it("opens on a tap only for a model with a card of its own", () => {
+    const w = world([
+      block("plain", "placed"),
+      block("named", "ghost", { title: "The bell" }),
+      block("cut", "cutaway"),
+      block("toy", "toy"),
+      block("sections", "cutaway", {
+        sections: [{ name: "A", position: [0, 0, 0], normal: [1, 0, 0] }],
+      }),
+    ]);
+    expect(w.handles.map(hasModelCard)).toEqual([
+      false,
+      true,
+      false,
+      true,
+      true,
+    ]);
+    const { visitor, picked, dom } = visitorFor(w, () => "named");
+    expect(visitor.tapped(null)).toBe(true);
+    expect(picked[0]).toEqual(["named", "toy", "sections"]);
+    expect(dom.card.hidden).toBe(false);
+    expect(dom.title.textContent).toBe("The bell");
+    expect(dom.num.textContent).toBe("3D model");
+    expect(dom.gestures.hidden).toBe(true);
+    expect(visitor.openKey()).toBe("model:named");
+  });
+
+  // Why: a tap on nothing closes the card and is the next sheet's.
+  it("closes on a tap that hits no model", () => {
+    const w = world([block("toy", "toy")]);
+    let hit: string | null = "toy";
+    const { visitor, dom } = visitorFor(w, () => hit);
+    visitor.tapped(null);
+    hit = null;
+    expect(visitor.tapped(null)).toBe(false);
+    expect(dom.card.hidden).toBe(true);
+    expect(visitor.openKey()).toBeNull();
+  });
+
+  // Why: a note's card counts the notes and steps through them in a loop.
+  it("shows a note as 'Note i of n' and steps through the notes", () => {
+    const notes = [
+      { position: [0, 0, 0.5], normal: [0, 0, 1], title: "One", text: "First" },
+      { position: [0, 0.5, 0], normal: [0, 1, 0], title: "Two" },
+    ] as const;
+    const w = world([block("bell", "hotspots", { annotations: notes })]);
+    const { visitor, dom } = visitorFor(w, () => null);
+    visitor.openNote(w.handles[0]!, 1);
+    expect(dom.num.textContent).toBe("Note 2 of 2");
+    expect(dom.title.textContent).toBe("Two");
+    expect(dom.text.textContent).toBe("");
+    dom.next.click();
+    expect(dom.num.textContent).toBe("Note 1 of 2");
+    expect(dom.text.textContent).toBe("First");
+    dom.prev.click();
+    expect(dom.num.textContent).toBe("Note 2 of 2");
+    expect(visitor.openKey()).toBe("note:bell#1");
+    visitor.openNote(w.handles[0]!, 5);
+    expect(visitor.openKey()).toBe("note:bell#1");
+    dom.close.click();
+    expect(dom.card.hidden).toBe(true);
+  });
+
+  // Why: nothing on the screen said a cutaway has named sections to step
+  // through, so a visitor who never tapped the model never saw them. A
+  // chip names the section shown and opens the model's card on a tap; it
+  // goes while the card is open and when no such cutaway is shown.
+  it("shows a chip for a cutaway with sections that opens its card", () => {
+    const w = world([
+      block("plain", "cutaway"),
+      block("cut", "cutaway", {
+        sections: [
+          { name: "Across", position: [0, 0, 0], normal: [1, 0, 0] },
+          { name: "Along", position: [0, 0, 0], normal: [0, 0, 1] },
+        ],
+      }),
+    ]);
+    const { visitor, dom } = visitorFor(w, () => null);
+    visitor.tick(0);
+    expect(dom.sectionChip.hidden).toBe(false);
+    expect(dom.sectionChip.textContent).toBe("Section 1 of 2: Across");
+    dom.sectionChip.click();
+    expect(visitor.openKey()).toBe("model:cut");
+    expect(dom.num.textContent).toBe("Section 1 of 2");
+    expect(dom.sectionChip.hidden).toBe(true);
+    dom.next.click();
+    dom.close.click();
+    visitor.tick(16);
+    expect(dom.sectionChip.textContent).toBe("Section 2 of 2: Along");
+    w.station.visible = false;
+    visitor.tick(32);
+    expect(dom.sectionChip.hidden).toBe(true);
+
+    const none = world([block("plain", "cutaway")]);
+    const other = visitorFor(none, () => null);
+    other.visitor.tick(0);
+    expect(other.dom.sectionChip.hidden).toBe(true);
+  });
+
+  // Why: a cutaway's card steps the cut through its sections.
+  it("steps a cutaway through its sections", () => {
+    const w = world([
+      block("cut", "cutaway", {
+        sections: [
+          { name: "Across", position: [0, 0, 0], normal: [1, 0, 0] },
+          { name: "Along", position: [0, 0, 0], normal: [0, 0, 1] },
+        ],
+      }),
+    ]);
+    const { visitor, dom } = visitorFor(w, () => "cut");
+    visitor.tapped(null);
+    expect(dom.num.textContent).toBe("Section 1 of 2");
+    expect(dom.title.textContent).toBe("Across");
+    dom.next.click();
+    expect(w.handles[0]!.section()).toBe(1);
+    expect(dom.title.textContent).toBe("Along");
+    dom.next.click();
+    expect(w.handles[0]!.section()).toBe(0);
+  });
+
+  // Why: a card goes with its model - the station's content hidden as
+  // the visitor walks away closes it.
+  it("closes when its model is no longer shown", () => {
+    const w = world([block("toy", "toy")]);
+    const { visitor, dom } = visitorFor(w, () => "toy");
+    visitor.tapped(null);
+    visitor.tick(0);
+    expect(dom.card.hidden).toBe(false);
+    w.station.visible = false;
+    expect(shownModelViews(w.scene)).toEqual([]);
+    visitor.tick(16);
+    expect(dom.card.hidden).toBe(true);
+  });
+});
+
+describe("the toy in hand", () => {
+  // Why (a PR review finding): every pointer move of a drag re-rendered the
+  // whole card, rewriting its number, title and text dozens of times a
+  // second; only the reset button's state changes during a drag.
+  it("a drag updates the reset button without rewriting the card's text", () => {
+    const w = world([block("toy", "toy", { sizeM: 1 })]);
+    const { visitor, dom } = visitorFor(w, () => "toy");
+    visitor.tapped(null);
+    dom.title.textContent = "untouched";
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointermove", 1, 200, 400);
+    expect(dom.reset.disabled).toBe(false);
+    expect(dom.title.textContent).toBe("untouched");
+  });
+
+  // Why: the gesture rule - while a toy's card is open, one finger drags
+  // it, two pinch it, and a tap puts it down; "Back to its place" undoes
+  // both.
+  it("drags, pinches and is put back", () => {
+    const w = world([block("toy", "toy", { sizeM: 1 })]);
+    const { visitor, dom } = visitorFor(w, () => "toy");
+    visitor.tapped(null);
+    expect(dom.gestures.hidden).toBe(false);
+    expect(dom.reset.hidden).toBe(false);
+    expect(dom.reset.disabled).toBe(true);
+    const toy = w.handles[0]!;
+    // A drag right moves it right (+x for a camera looking along -z).
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointermove", 1, 200, 400);
+    pointer(dom.gestures, "pointerup", 1, 200, 400);
+    expect(toy.model.position.x).toBeGreaterThan(0);
+    expect(dom.card.hidden).toBe(false);
+    expect(dom.reset.disabled).toBe(false);
+    // Two fingers spreading to twice their distance: twice the size.
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointerdown", 2, 200, 400);
+    pointer(dom.gestures, "pointermove", 2, 300, 400);
+    pointer(dom.gestures, "pointerup", 2, 300, 400);
+    pointer(dom.gestures, "pointerup", 1, 100, 400);
+    expect(toy.toyFactor()).toBeCloseTo(2, 9);
+    dom.reset.click();
+    expect(toy.toyFactor()).toBe(1);
+    expect(toy.model.position.toArray()).toEqual([0, 0, -4]);
+    // A tap on the layer puts the toy down.
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointerup", 1, 101, 400);
+    expect(dom.card.hidden).toBe(true);
+    expect(dom.gestures.hidden).toBe(true);
+  });
+
+  // Why: in any other view the same fingers do nothing to the model.
+  it("leaves a model in any other view where it is", () => {
+    const w = world([block("bell", "placed", { title: "Bell" })]);
+    const { visitor, dom } = visitorFor(w, () => "bell");
+    visitor.tapped(null);
+    expect(dom.gestures.hidden).toBe(true);
+    pointer(dom.gestures, "pointerdown", 1, 100, 400);
+    pointer(dom.gestures, "pointermove", 1, 300, 400);
+    pointer(dom.gestures, "pointerdown", 2, 200, 400);
+    pointer(dom.gestures, "pointermove", 2, 390, 400);
+    expect(w.handles[0]!.model.position.toArray()).toEqual([0, 0, -4]);
+    expect(w.handles[0]!.model.scale.x).toBe(1);
+  });
+
+  // Why: the overlay's own taps are never an AR select: the card, the
+  // toy's gesture layer and a note's disc (a button).
+  it("keeps the card, the gesture layer and the discs from being AR selects", () => {
+    const root = document.createElement("div");
+    const dom = mountModelVisitorDom(root);
+    expect(cancelsXrSelect(dom.card)).toBe(true);
+    expect(cancelsXrSelect(dom.title)).toBe(true);
+    expect(cancelsXrSelect(dom.gestures)).toBe(true);
+    expect(cancelsXrSelect(dom.layer)).toBe(false);
+  });
+
+  // Why: stopping the session removes every disc and closes the card.
+  it("clears the card and the discs on stop", () => {
+    const notes: TourModelBlock["annotations"] = [
+      { position: [0, 0, 0.5], normal: [0, 0, 1], title: "One" },
+    ];
+    const w = world([block("bell", "hotspots", { annotations: notes })]);
+    const { visitor, dom } = visitorFor(w, () => null);
+    visitor.tick(0);
+    expect(dom.layer.querySelectorAll("button")).toHaveLength(1);
+    visitor.openNote(w.handles[0]!, 0);
+    visitor.stop();
+    expect(dom.card.hidden).toBe(true);
+    expect(dom.layer.querySelectorAll("button")).toHaveLength(0);
+  });
+});
+
+/** The `z-index` the stylesheet gives `selector`'s own rule. */
+function zIndexOf(css: string, selector: string): number {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const rule of bare.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const selectors = rule[1]!.split(",").map((s) => s.trim());
+    if (!selectors.includes(selector)) continue;
+    const z = /z-index:\s*(-?\d+)/.exec(rule[2]!);
+    if (z !== null) return Number(z[1]);
+  }
+  throw new Error(`no z-index for ${selector}`);
+}
+
+describe("the overlay's stacking", () => {
+  // Why this test matters: the toy's gesture layer covers the whole screen.
+  // Stacked above the note discs it swallowed every tap on a disc whenever
+  // it was shown, so the layers' order is pinned: gestures below the
+  // leaders and discs, the card above them all.
+  it("puts the gesture layer below the notes and the card above them", async () => {
+    const { readFileSync } = await import("node:fs");
+    // vitest runs from the package root (jsdom gives no file: URL here).
+    const css = readFileSync("src/model-visitor.css", "utf8");
+    const gestures = zIndexOf(css, ".model-gestures");
+    const markers = zIndexOf(css, ".note-markers");
+    const leaders = zIndexOf(css, ".note-leaders");
+    const card = zIndexOf(css, ".model-card");
+    const chip = zIndexOf(css, ".model-section-chip");
+    expect(gestures).toBeLessThan(Math.min(markers, leaders));
+    expect(chip).toBeGreaterThan(Math.max(markers, leaders));
+    expect(card).toBeGreaterThan(Math.max(markers, leaders));
+  });
+});
+
+describe("shownModelViews", () => {
+  // Why: it runs every frame. Walking every node of every station's models
+  // (a model file can hold hundreds) to find the few views was the frame's
+  // cost; the views are known when they are mounted, so it reads that list
+  // and only climbs each model's ancestors.
+  it("finds the shown views without walking the models' parts", () => {
+    const w = world([block("a", "hotspots"), block("b", "ghost")]);
+    const walk = vi.spyOn(THREE.Object3D.prototype, "traverse");
+    try {
+      expect(shownModelViews(w.scene)).toEqual(w.handles);
+      expect(walk).not.toHaveBeenCalled();
+    } finally {
+      walk.mockRestore();
+    }
+  });
+
+  // Why: a view disposed before its model leaves the scene (the station
+  // renderer frees views first) must not be updated or tapped again.
+  it("leaves out a view once it is disposed, and one outside the scene", () => {
+    const w = world([block("a", "hotspots"), block("b", "ghost")]);
+    w.handles[0]!.dispose();
+    expect(shownModelViews(w.scene)).toEqual([w.handles[1]]);
+    expect(shownModelViews(new THREE.Scene())).toEqual([]);
+  });
+});
