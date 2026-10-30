@@ -26,9 +26,14 @@
  * ground zooms one step toward it. Two fingers lock the camera without
  * moving it (the globe's own two-finger gestures are not wired yet).
  *
- * Not yet here (later steps of the plan): the staged uploads, the layer
- * chips for the clouds and the buildings, the time of day. The heavy
- * clouds (the shell and its volume) are never mounted.
+ * A station is drawn only once its first upload ran (`upload-queue.ts`):
+ * at most `UPLOADS.perFrame` stations a frame have their materials
+ * compiled and their textures uploaded, so a tour of many stations does
+ * not stall the first frame. The code squares share one face texture.
+ *
+ * Not yet here (later steps of the plan): the layer chips for the clouds
+ * and the buildings, the time of day. The heavy clouds (the shell and its
+ * volume) are never mounted.
  *
  * @see editor3d-globe.ts.md
  */
@@ -90,6 +95,7 @@ import {
 } from "./globe-editor-look.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
+import { UPLOADS, createUploadQueue } from "./upload-queue.js";
 
 const DEG = Math.PI / 180;
 /** The size an item is framed by (m): about a pin or a photo (the
@@ -254,6 +260,51 @@ export async function openGlobeEditor(
       layer.dispose();
     });
     layer.setTour(manifest, levels);
+
+    // Each station's first upload, a few a frame; one not admitted yet is
+    // not drawn (an object drawn before its upload stalls the frame it
+    // first shows in).
+    const uploads = createUploadQueue({ perFrame: UPLOADS.perFrame });
+    const admitted = new Set<string>();
+    const stage = (id: string) => {
+      const objects = layer.stationObjects(id);
+      if (objects === null) return;
+      for (const object of objects) {
+        const was = object.visible;
+        object.visible = true;
+        renderer.compile(object, camera, scene);
+        object.traverse((o) => {
+          const material = (o as Partial<THREE.Mesh>).material;
+          const list = Array.isArray(material)
+            ? material
+            : material === undefined
+              ? []
+              : [material];
+          for (const m of list) {
+            const map = (m as THREE.MeshBasicMaterial).map;
+            if (map) renderer.initTexture(map);
+          }
+        });
+        object.visible = was;
+      }
+      admitted.add(id);
+    };
+    /** Queue the stations not admitted yet, forget the ones gone; the
+     *  stations to hold back from drawing (null: none). */
+    const unadmitted = (): Set<string> | null => {
+      const ids = new Set((tourNow?.stations ?? []).map((s) => s.id));
+      for (const id of admitted) if (!ids.has(id)) admitted.delete(id);
+      let held: Set<string> | null = null;
+      for (const id of ids) {
+        if (admitted.has(id)) continue;
+        if (!uploads.has(id))
+          uploads.add(id, () => {
+            stage(id);
+          });
+        (held ??= new Set()).add(id);
+      }
+      return held;
+    };
     fillCredits(deps.credits, [
       ...creditsFor(globe.activeSources()),
       ...ground.credits,
@@ -433,7 +484,13 @@ export async function openGlobeEditor(
         },
         selectedStation,
       );
-      layer.setHidden(hidden.stations, hidden.codes);
+      const held = unadmitted();
+      layer.setHidden(
+        held === null
+          ? hidden.stations
+          : new Set([...hidden.stations, ...held]),
+        hidden.codes,
+      );
       layer.update({
         centre: cameraTour,
         selectedStation,
@@ -443,6 +500,8 @@ export async function openGlobeEditor(
         viewportPx,
         fovDeg: GLOBE_EDITOR_LOOK.fovYDeg,
       });
+      // After the layer's update: a station's billboard is made there.
+      uploads.step();
 
       // The near plane keeps clear of the drawn stations.
       eyeSpheres.length = 0;
@@ -747,6 +806,7 @@ export async function openGlobeEditor(
             hiddenStations: [...hidden.stations],
             hiddenCodes: [...hidden.codes],
             recentres: view.state().frameRecentres,
+            uploads: { ...uploads.stats(), admitted: admitted.size },
             surface: globe.state(),
           },
         };

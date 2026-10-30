@@ -826,6 +826,28 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: the globe view stages each station's first upload (its materials
+  // compiled, its textures uploaded) and needs every object the station
+  // draws - its root and its billboard, which hangs beside it - or a part
+  // left out would still upload in the first frame.
+  it("hands a station's drawn objects (its root and its billboard), null for none", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    const objects = layer.stationObjects("a");
+    expect(objects).not.toBeNull();
+    expect(objects).toContain(layer.billboardOf("a"));
+    const names: string[] = [];
+    for (const o of objects ?? []) o.traverse((c) => names.push(c.name));
+    expect(names).toContain("found-radius");
+    expect(layer.stationObjects("nowhere")).toBeNull();
+    layer.dispose();
+  });
+
   // Why: a selected station has no ring of its own in the gizmo - its
   // found-radius circle IS the ring its radius dots sit on - so the circle
   // must show the selection's amber, and a selected item's station a

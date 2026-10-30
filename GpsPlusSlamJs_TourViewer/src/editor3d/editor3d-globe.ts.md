@@ -50,6 +50,28 @@ world frame moves nothing relative to the ground.
   The result goes to `layer.setHidden`, which also keeps hidden objects
   from being picked.
 - The near plane's keep-clear spheres: the shown stations' found radii.
+- The staged uploads (`upload-queue.ts`): a station of the tour not yet
+  admitted is queued and held back from drawing (added to what
+  `setHidden` gets, never to the rule's own result, whose hysteresis reads
+  it back). After `layer.update` (where a station's billboard is made) the
+  queue runs at most `UPLOADS.perFrame` (4) stations: each object of
+  `layer.stationObjects(id)` is shown for the call, `renderer.compile`d and
+  its material maps `renderer.initTexture`d, then the station is admitted
+  and drawn from the next frame. A station gone from the tour is
+  forgotten.
+  - Shared textures: the code squares share one face (`createCodeFace`);
+    the billboards are one canvas each (their number and name differ), so
+    they are staged rather than shared.
+  - Not staged: what a near station renders later, asynchronously (its
+    photos, models and reading stands, which upload when they arrive), a
+    billboard made again on a selection change, and a station whose
+    drawing an edit makes anew (its new root uploads in place: holding it
+    back would make it blink under the user's hand). `compile` is the
+    synchronous one: `compileAsync` would need a frame budget of its own.
+  - The scheduler's sweep (40 jobs of 3 ms each): N = 1 costs 3 ms a frame
+    over 40 frames, N = 4 12 ms over 10, N = 16 48 ms over 3; 4 keeps one
+    frame under the 16.7 ms of 60 Hz at that cost. The 3 ms is declared,
+    not measured on the phone.
 
 ## The verbs
 
@@ -94,7 +116,8 @@ world frame moves nothing relative to the ground.
 
 `stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
 the camera's altitude, the frame target, the hidden stations and codes, the
-frame recentres and the surface's state.
+frame recentres, the surface's state and `uploads` (`pending`, `ran`,
+`worstFrameMs`, `admitted`).
 
 ## Tests
 

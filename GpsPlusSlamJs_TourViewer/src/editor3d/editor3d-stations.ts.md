@@ -82,6 +82,10 @@ standing`). A distance, size or focal length that is not a positive
     hidden ancestor, so a code hidden by its chip is not picked either
     (before, only the hit object's own flag was read).
   - `dispose()` - everything out of the scene and freed.
+- `stationObjects(id)` - every object a station draws: its root (ring,
+  pole, items) and its billboard once made (the billboard hangs in the
+  layer's group, not under the root); null for an id the tour does not
+  hold. The globe view stages a station's first upload through these.
 - `modelObject(id)` - an item's drawn model (the glb under its tour
   pose and scale), or null while its station does not draw it.
 

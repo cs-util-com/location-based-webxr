@@ -958,6 +958,17 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     billboardOf(id: string): THREE.Sprite | null {
       return stations.get(id)?.billboard ?? null;
     },
+    /** Every object a station draws: its root (ring, pole and items) and
+     *  its billboard once made (it hangs in the layer's group, not under
+     *  the root); null for an id the tour does not hold. The globe view
+     *  stages each station's first upload through these. */
+    stationObjects(id: string): THREE.Object3D[] | null {
+      const entry = stations.get(id);
+      if (entry === undefined) return null;
+      return entry.billboard === null
+        ? [entry.root]
+        : [entry.root, entry.billboard];
+    },
     photoPlanes(id: string): THREE.Mesh[] {
       return (stations.get(id)?.content?.photos ?? []).map((p) => p.mesh);
     },

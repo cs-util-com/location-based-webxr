@@ -49,6 +49,13 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   expect(stats.distanceM).toBeLessThan(200);
   // The stations are drawn, none hidden as too small this close.
   expect(stats.globe.hiddenStations).toEqual([]);
+  // The staged uploads: every station admitted once, a few a frame.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.uploads?.pending)
+    .toBe(0);
+  const staged = (await view3d(page)).globe.uploads;
+  expect(staged.ran).toBe(3);
+  expect(staged.admitted).toBe(3);
   await page.screenshot({ path: testInfo.outputPath("globe-street.png") });
   expect(await rejections(page)).toEqual([]);
 });
