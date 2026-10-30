@@ -50,6 +50,13 @@ listed in `index.html.md`. The concerns and their modules:
   (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or
   stage plays or stops his voice, and goes nowhere else; a tap that opens
   no model card goes to the pin sheet) and stops it in `hooks.stopStations`.
+- `view-switch.ts`, `visitor-prefs.ts` and `visitor-prefs-slice.ts` - the
+  visitor's view preference: in visitor mode `main.ts` loads the stored
+  value from the page's guarded storage (`stepStore`) into the store,
+  mounts the switch under `#ar-root` (fed the present station's free
+  blocks), syncs it in `hooks.tickStations`, and on a choice dispatches
+  it, writes it back (a refused write keeps it for the visit) and says it
+  in the walk's toast and live region.
 - `long-text-sheet.ts` and `reading-sign.ts` - a long text's whole text:
   `main.ts` builds the reading sheet under `#ar-root` (its pictures read
   through the stations' prefetch by the asset's path, a link asking while

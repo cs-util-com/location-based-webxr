@@ -41,6 +41,14 @@ import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { turnShownLecternUnderTap } from "./lectern-view.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { createViewSwitch } from "./view-switch.js";
+import {
+  selectVisitorPrefs,
+  visitorPrefsLoaded,
+  visitorViewChosen,
+} from "./visitor-prefs-slice.js";
+import { loadVisitorPrefs, saveVisitorPrefs } from "./visitor-prefs.js";
 import {
   readingSheetContent,
   shownReadingSignUnderTap,
@@ -98,6 +106,7 @@ import {
 import { editorPitch, wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
 import {
+  selectPresentStationId,
   showAllContentSet,
   showAllStationsFromSearch,
 } from "./visitor-guide-slice.js";
@@ -1040,6 +1049,8 @@ hooks.tickStations = () => {
   viewer.syncContent();
   // A pin's sheet goes with its pin.
   pinSheet.sync();
+  // The view switch follows the present station.
+  viewSwitch?.sync();
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
 };
@@ -1083,6 +1094,40 @@ const longTextSheet = createLongTextSheet({
     window.open(href, "_blank", "noopener,noreferrer");
   },
 });
+// The visitor's view preference (station blocks design §4): read once
+// from this device, kept in the page's store, mirrored back on a choice.
+// A store that throws keeps the choice for the visit.
+const viewSwitch =
+  mode === "visitor"
+    ? (() => {
+        arStore.dispatch(visitorPrefsLoaded(loadVisitorPrefs(stepStore)));
+        return createViewSwitch({
+          host: element("ar-root"),
+          read: () => {
+            const state = arStore.getState();
+            const present = selectPresentStationId(state);
+            const station = ctx.tourDocument
+              .manifest()
+              ?.stations.find((s) => s.id === present);
+            return {
+              blocks: station === undefined ? [] : tourFreeBlocks(station),
+              stored: selectVisitorPrefs(state),
+            };
+          },
+          choose: (kind, placement, view) => {
+            arStore.dispatch(visitorViewChosen({ kind, placement, view }));
+            return saveVisitorPrefs(
+              stepStore,
+              selectVisitorPrefs(arStore.getState()),
+            );
+          },
+          say: (text) => {
+            walkToast.say([text]);
+            walkToast.announce(text);
+          },
+        });
+      })()
+    : null;
 if (mode === "visitor") {
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
