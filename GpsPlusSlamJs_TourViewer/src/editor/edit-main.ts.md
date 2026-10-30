@@ -356,10 +356,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the tour that shows then (every open drops one queued before it), so
     a Ctrl+S in a tour opened meanwhile is not lost. A save's end does
     the same: a save whose tour closed meanwhile (`abandon`) runs the
-    Save queued in the tour that shows, never one pressed before it opened.
-    A Ctrl+S pressed in a tour from a link or the sample while its write
-    into the file its open asked for still waits for the slot
-    (`openWriteOf`) stays queued when the previous save ends, and runs
+    Save queued in the tour that shows, never one pressed before it opened;
+    so does a move of the debug data whose tour was dropped meanwhile
+    (`holdForMove`). A Ctrl+S pressed in a tour from a link or the sample
+    while its write into the file its open asked for still waits for the
+    slot (`openWriteOf`) stays queued when the previous save ends, and runs
     into that file once it is adopted, instead of finding no file and
     being dropped. A restored draft's work is saved by
     itself like any edit.
@@ -730,7 +731,7 @@ pin to "..."`).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
 edited(), view3d(), view3dTilt(deg), view3dDistance(m),
 view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part),
-view3dGizmoSizes(), manifest(), selected() }`): an e2e reaches the editor session's edits no control of
+view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
@@ -738,7 +739,9 @@ view3dGizmoSizes(), manifest(), selected() }`): an e2e reaches the editor sessio
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
   on the canvas and how large; `manifest()` is what a save would write
-  now and `selected()` the selection. Guarded by `import.meta.env.DEV &&
+  now and `selected()` the selection; `dropTour(reason)` drops the open
+  tour as a late integrity failure does, at the moment the e2e chooses.
+  Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 
 - Once everything is wired the page sets `body[data-editor="ready"]`;

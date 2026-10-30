@@ -576,6 +576,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => readonly [number, number] | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
+        dropTour: (reason: string) => void;
       };
     }
   ).__tourEditor = {
@@ -599,6 +600,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
+    // What a late integrity failure does to the open tour (`openFile`'s
+    // `onIntegrityFailure`), at the moment an e2e chooses.
+    dropTour,
   };
 }
 
@@ -3467,14 +3471,12 @@ async function holdForMove(
     // every later save.
     releaseSave();
     ended();
-    if (editor === mine) {
-      refresh();
-      // A Save asked for during the move runs now.
-      runQueuedSave(mine);
-      autosave.poke();
-    } else {
-      renderSaveState();
-    }
+    if (editor === mine) refresh();
+    else renderSaveState();
+    // A Save asked for during the move runs now, for the tour that shows -
+    // also when another tour opened meanwhile (`saveCopy`'s rule).
+    if (editor !== null) runQueuedSave(editor);
+    if (editor === mine) autosave.poke();
   }
 }
 
