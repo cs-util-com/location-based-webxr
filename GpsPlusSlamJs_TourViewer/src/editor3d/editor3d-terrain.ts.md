@@ -25,9 +25,10 @@ near the camera under the editor's own gate, and the credits both need.
   `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
   into it:
   - `terrain` - the globe's `GlobeTerrain`;
-  - `worldFromEcef` - ECEF to the world (x east, y up, z south at
-    `centre`, the ellipsoid's point of the centre at the origin), also
-    decomposed into the tiles' group;
+  - `worldFromEcef` - ECEF to the frame of `centre` (x east, y up, z
+    south there, the ellipsoid's point of the centre at the origin); with
+    `placement: "world"` the world itself, decomposed into the tiles'
+    group; with `"ecef"` not the world (the parent places the relief);
   - `osm` - the attached, enabled map overlay;
   - `credits` - the heights' sources, then the map's (the globe's credit
     shape: `short`, full text, `href`);

@@ -101,8 +101,11 @@ type EditorCredit = ReturnType<typeof reliefCredits>[number];
 /** The editor's ground, ready to be added to a scene and updated. */
 export interface EditorTerrain {
   readonly terrain: GlobeTerrain;
-  /** The world frame: ECEF to the world (x east, y up, z south at the
-   *  centre, the ellipsoid's point of the centre at the origin). */
+  /** The frame of `centre`: ECEF to it (x east, y up, z south at the
+   *  centre, the ellipsoid's point of the centre at the origin). With
+   *  `placement: "world"` that frame is the world; with `"ecef"` it is
+   *  not (the parent places the relief, and the world follows the
+   *  camera). */
   readonly worldFromEcef: THREE.Matrix4;
   readonly osm: GlobeOsmOverlay;
   /** The heights' sources, then the map's. */

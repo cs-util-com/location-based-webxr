@@ -37,7 +37,9 @@ and a camera pose read back as a view.
   longitude outside [-180, 180]. The test sweeps eight longitudes and four
   months at 48 degrees north: the sun stands above 15 degrees in each (the
   equation of time moves true noon by at most about 16 minutes, a few
-  degrees of the sun's height at most).
+  degrees of the sun's height at most). Above the polar circle in winter
+  the noon sun stays below the horizon (polar night): the view then opens
+  dark, as it should; nothing here moves the clock to find a light hour.
 - `steppedView(pose, key, aboveGroundM)`: the view an arrow key steps to
   (the routing table's `camera-step`): Left and Right turn the heading
   `turnStepDeg` (15) in place, Up and Down move along the heading at the
