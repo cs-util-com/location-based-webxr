@@ -314,8 +314,8 @@ describe("cloudShellVolumeShares", () => {
   });
 });
 
-// The lab's march binds these uniforms by name and calls these functions
-// (`globe-cloud-shell-volume.js`): the chunk's contract with its pass. A
+// The march binds these uniforms by name and calls these functions
+// (`globe-cloud-shell-volume-pass.ts`): the chunk's contract with its pass. A
 // rename here without the pass would draw the map at uv 0 and the noise at
 // the chart's origin, silently (an unset uniform reads 0).
 describe("GLOBE_CLOUD_SHELL_GLSL", () => {
