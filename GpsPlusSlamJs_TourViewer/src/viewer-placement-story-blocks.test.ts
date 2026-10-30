@@ -1,6 +1,6 @@
 /**
  * The viewer placement and a station's reached story blocks (station
- * blocks plan B2b step 2, B-Q4).
+ * blocks plan, step 2), and a visitor's view choice redrawing them.
  *
  * Why this test matters: a story pin, picture or placed model stands in
  * the world from the step that reaches it for the rest of the visit, in
@@ -33,6 +33,7 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { showAllContentSet } from "./visitor-guide-slice.js";
 import { blockShown, walkStarted } from "./visitor-walk-slice.js";
+import { visitorViewChosen } from "./visitor-prefs-slice.js";
 
 const fake = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -49,6 +50,30 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
     };
   },
 }));
+
+// The stands draw on a 2D canvas, which node has not; each stand here is
+// an empty object named as the real one is, so a test reads the view a
+// block was drawn in.
+vi.mock("./lectern-view.js", async () => {
+  const { Object3D: O } = await import("three");
+  return {
+    mountLectern: (block: { id: string }) => {
+      const object = new O();
+      object.name = "lectern";
+      return { blockId: block.id, object, page: object, dispose: () => {} };
+    },
+  };
+});
+vi.mock("./reading-sign.js", async () => {
+  const { Object3D: O } = await import("three");
+  return {
+    mountReadingSign: (block: unknown) => {
+      const object = new O();
+      object.name = "reading-sign";
+      return { block, object, plate: object, dispose: () => {} };
+    },
+  };
+});
 
 const TEXT = "https://example.test/t?c=1";
 const ZERO = { lat: 47.5, lon: 8.7 };
@@ -99,7 +124,7 @@ const flush = async (): Promise<void> => {
   for (let i = 0; i < 50; i += 1) await Promise.resolve();
 };
 
-function harness() {
+function harness(stations: readonly TourStation[] = [STATION]) {
   fake.configs.length = 0;
   const ctx = createTourViewerSession();
   const level: QrLevel = {
@@ -120,7 +145,7 @@ function harness() {
     loadEntry: () => Promise.resolve(new Blob([])),
     loadContentEntry: () => Promise.resolve(new Blob([])),
   } as unknown as TourSession;
-  ctx.tourDocument.open(tourOf([], { stations: [STATION] }));
+  ctx.tourDocument.open(tourOf([], { stations: [...stations] }));
   ctx.tourManifestStatus = "settled";
   ctx.scanGate = { kind: "passed", via: "code" };
   const labels: string[] = [];
@@ -201,7 +226,7 @@ function harness() {
    *  card) still leaves its frame, so this sees a part the ids cannot. */
   const frames = () =>
     scene.getObjectByName("station-content:gate")?.children.length ?? 0;
-  return { ctx, store, placement, lock, sync, drawn, frames, labels };
+  return { ctx, store, scene, placement, lock, sync, drawn, frames, labels };
 }
 
 describe("a station's reached story blocks (B2b)", () => {
@@ -234,5 +259,54 @@ describe("a station's reached story blocks (B2b)", () => {
     );
     await h.sync();
     expect(h.drawn()).toEqual([]);
+  });
+});
+
+describe("a visitor's view choice", () => {
+  // Why this test matters: the choice reaches the blocks already standing
+  // (station blocks design §4): a long text the creator set as a reading
+  // sign is drawn again as a lectern once the visitor picks it, and as the
+  // creator's sign again when the choice is cleared - without a new
+  // placement or a new walk.
+  it("draws a standing long text again in the chosen view, and back", async () => {
+    const station: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "essay",
+          kind: "longText",
+          view: "reading",
+          title: "E",
+          body: "Plain words.",
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    const h = harness([station]);
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    const nameOf = (): string | undefined => {
+      let name: string | undefined;
+      h.scene.traverse((o) => {
+        if (o.userData["objectId"] === "essay") name = o.name;
+      });
+      return name;
+    };
+    expect(nameOf()).toBe("reading-sign");
+    const choose = (view: string | null) =>
+      h.store.dispatch(
+        visitorViewChosen({ kind: "longText", placement: "world", view }),
+      );
+    choose("lectern");
+    await h.sync();
+    expect(nameOf()).toBe("lectern");
+    expect(h.frames(), "the old part is replaced, not added to").toBe(1);
+    choose(null);
+    await h.sync();
+    expect(nameOf()).toBe("reading-sign");
   });
 });

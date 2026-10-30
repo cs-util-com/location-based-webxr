@@ -763,6 +763,63 @@ describe("renderTourStation", () => {
     quiet.dispose();
   });
 
+  // Why (station blocks, the visitor's view preference): the visitor's
+  // page draws a block in the view `viewOf` names (a reading sign as a
+  // stand, design §4) at the same pose; a view no world drawing has is
+  // nothing, and without `viewOf` the creator's view is drawn.
+  it("draws a block in the view viewOf names, at the same pose", async () => {
+    const scene = new Group();
+    const station = stationAt(
+      "s",
+      geoAt({ ...ZERO, alt: 400 }, 0, 0, 0, yaw(0)),
+      [
+        {
+          id: "sign",
+          kind: "longText" as const,
+          view: "reading" as const,
+          title: "The guild house",
+          body: "It burned in 1612.",
+          pose: {
+            position: [3, 0, -1] as [number, number, number],
+            rotation: yaw(0),
+          },
+        },
+      ],
+    );
+    const drawn: string[] = [];
+    const make = (as: string) => (block: { readonly id: string }) => {
+      drawn.push(`${as}:${block.id}`);
+      return { object: new Group(), dispose: () => undefined };
+    };
+    const deps = {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: make("lectern"),
+      makeReadingSign: make("reading"),
+    };
+    const swapped = await renderTourStation(station, {
+      ...deps,
+      viewOf: (block) => (block.view === "reading" ? "lectern" : block.view),
+    });
+    let found: Object3D | undefined;
+    swapped.root.traverse((o) => {
+      if (o.userData["objectId"] === "sign") found = o;
+    });
+    expect(found?.position.toArray()).toEqual([3, 0, -1]);
+    swapped.dispose();
+    const none = await renderTourStation(station, {
+      ...deps,
+      viewOf: () => "captions",
+    });
+    expect(none.count).toBe(0);
+    none.dispose();
+    (await renderTourStation(station, deps)).dispose();
+    expect(drawn).toEqual(["lectern:sign", "reading:sign"]);
+  });
+
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
   // toy - keeps the size the tour names by the one shared scale rule, and
   // carries its view's handle for the visitor's page; freeing the station

@@ -58,6 +58,8 @@ import { mountLectern } from "./lectern-view.js";
 import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
+import { selectVisitorPrefs } from "./visitor-prefs-slice.js";
+import { shownView } from "./visitor-prefs.js";
 import type {
   TourBlock,
   TourStation,
@@ -1006,6 +1008,34 @@ export function createViewerPlacement(deps: {
    *  with their station; reset with the table. */
   let storyParts = new Map<string, string>();
   let storyPartsTo: StationContent | null = null;
+  /** A station's free blocks' part, made by `tryPlaceContent`; null
+   *  before it ran. */
+  let itemsPartOf: ((station: TourStation) => ContentPart) | null = null;
+  /** The visitor's stored preference the parts were drawn with: a choice
+   *  draws them again (`redrawForPrefs`). */
+  let prefsDrawn: unknown = null;
+
+  /** A visitor's view choice changed what a block shows (station blocks
+   *  design §4): every part is made again, and the side table draws a
+   *  shown station's replacement at once. A creator's parts never change
+   *  (rule 1). */
+  function redrawForPrefs(content: StationContent): void {
+    if (authorMode) return;
+    const stored = selectVisitorPrefs(arStore.getState());
+    if (stored === prefsDrawn) return;
+    prefsDrawn = stored;
+    const items = itemsPartOf;
+    if (items === null) return;
+    for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+      if (tourFreeBlocks(station).length === 0) continue;
+      content.setPart(station.id, "items", items(station));
+    }
+    // The next `syncStoryParts` makes every reached story block again.
+    for (const [key, stationId] of storyParts) {
+      content.setPart(stationId, key, null);
+    }
+    storyParts = new Map();
+  }
 
   /** Each reached story world block (`selectShownBlocks`) gets one part of
    *  its station, kept while the walk keeps it; a new walk's empty set
@@ -1039,6 +1069,7 @@ export function createViewerPlacement(deps: {
   function syncContent(): void {
     const content = ctx.stationContent;
     if (content === null) return;
+    redrawForPrefs(content);
     syncStoryParts(content);
     const ids = shownStationIds();
     const key = [...ids].join("\n");
@@ -1099,9 +1130,21 @@ export function createViewerPlacement(deps: {
         decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,
         }),
+      // A visitor sees each block in the view their preference picks
+      // (station blocks design §4); a creator sees their own choice.
+      ...(authorMode
+        ? {}
+        : {
+            viewOf: (block: TourBlock) =>
+              shownView({
+                audience: "visitor",
+                block,
+                stored: selectVisitorPrefs(arStore.getState()),
+              }),
+          }),
     });
-    for (const station of manifest.stations) {
-      if (tourFreeBlocks(station).length === 0) continue;
+    prefsDrawn = selectVisitorPrefs(arStore.getState());
+    itemsPartOf = (station) => {
       // One group per station, its pins and photos as children at their
       // local poses (tour editor plan W3).
       const part: ContentPart = {
@@ -1109,7 +1152,11 @@ export function createViewerPlacement(deps: {
           renderTourStation(station, rendererDeps(parent, alive)),
       };
       partLogs.set(part, { what: "content", basis: "geo", zero });
-      content.setPart(station.id, "items", part);
+      return part;
+    };
+    for (const station of manifest.stations) {
+      if (tourFreeBlocks(station).length === 0) continue;
+      content.setPart(station.id, "items", itemsPartOf(station));
     }
     // A story block its story reached stands with the station's own
     // (B2b, `syncContent`): one part per block, in the station's frame.

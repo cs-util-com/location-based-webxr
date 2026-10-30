@@ -182,3 +182,14 @@ the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.
   block.
 - Tests: `content-placement.test.ts` "draws exactly the given blocks of a
   station, in its frame".
+
+## A visitor's view (`viewOf`)
+
+- `TourStationRendererDeps.viewOf(block)`, optional: the view a block is
+  drawn in, in place of its own. The visitor's page passes `shownView`
+  (`visitor-prefs.ts`), so a long text the creator stands as a reading
+  sign draws as a lectern for a visitor who chose it. The pose, the id and
+  everything else stay the block's; without `viewOf` (the creator, the 3D
+  editor) every block draws in its own view.
+- Tests: `content-placement.test.ts` "draws a block in the view viewOf
+  names, at the same pose".

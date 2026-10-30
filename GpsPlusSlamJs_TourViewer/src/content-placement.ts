@@ -322,6 +322,12 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * are set, and drawn only where the renderer already clips.
    */
   readonly modelViews?: ModelViewEnv;
+  /**
+   * The view a block is drawn in (the visitor's page: `shownView` of
+   * `visitor-prefs.ts`, design §4), at the block's own pose. Absent: the
+   * creator's view. A view no world drawing has is drawn as nothing.
+   */
+  readonly viewOf?: (block: TourBlock) => string;
 };
 
 /**
@@ -361,7 +367,12 @@ export async function renderStationBlocks(
   const paths = new Map(deps.assets.map((a) => [a.id, a.path]));
   const part = await renderContent(
     blocks.map((block) => ({
-      drawn: drawnBlock(block, paths),
+      drawn: drawnBlock(
+        deps.viewOf === undefined
+          ? block
+          : ({ ...block, view: deps.viewOf(block) } as TourBlock),
+        paths,
+      ),
       pose: {
         positionNue: block.pose.position,
         rotationNue: block.pose.rotation,

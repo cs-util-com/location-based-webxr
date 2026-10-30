@@ -247,3 +247,10 @@ unchanged across the split (the split's behaviour-neutrality proof).
   frame's epoch (`qrDetected.frameEpoch`), taken when the session's
   runtime started, next to `gpsSamplesAtSessionStart`. A visit whose
   frame changed since makes no automatic code-spot decision.
+
+## The visitor's view preference
+
+- The store also mounts `visitorPrefs` (`visitor-prefs-slice.ts`): the
+  value read from the device under `tour-viewer.visitor.prefs.v1` and
+  every choice since. Not persisted, and no tour change resets it (the
+  preference is the device's, across tours).
