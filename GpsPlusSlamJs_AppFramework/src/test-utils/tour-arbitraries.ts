@@ -334,7 +334,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   Record<TourBlockKind, readonly string[]>
 > = {
   shortText: ['pin'],
-  longText: [],
+  longText: ['lectern', 'reading'],
   picture: ['plane'],
   video: [],
   audio: [],

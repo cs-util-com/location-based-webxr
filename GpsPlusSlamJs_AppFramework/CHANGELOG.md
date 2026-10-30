@@ -72,6 +72,21 @@
   lectern is left out and reported, a story one shows as its card, and
   that app will not save the tour.
 
+- **A long text as a reading sign, `tour.json` version 4 minor 4**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `reading`: a short sign at the block's pose, turned toward the viewer,
+  that opens the whole text on a tap, free at its station or reached by a
+  story step. `TOUR_BLOCK_VIEWS.longText` is now `lectern`, `reading`,
+  `card` and `TOUR_WORLD_VIEWS` holds `reading`; the new type
+  `TourReadingSign` joins `TourObject` (a switch over an object's `view`
+  gains a `reading` case); `tourFloorView('longText', 'free')` is now
+  `'reading'` (it was `null`), so a free long text in a view this reader
+  does not know falls back to the reading sign instead of being skipped.
+  `TOUR_MANIFEST_MINOR` is 4; a tour without a reading sign is still
+  written at its lower minor. A reader of 1.31.0 opens a 4.4 tour
+  leniently: a free reading sign is left out and reported, a story one
+  shows as its card, and that app will not save the tour.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

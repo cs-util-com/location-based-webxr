@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkTourBlockText,
   TOUR_BLOCK_TEXT_RULES,
+  TOUR_WORLD_VIEWS,
   tourTextCount,
   type TourTextRule,
 } from '../ar/tour-blocks';
@@ -23,6 +24,7 @@ import { parseTourManifest } from '../ar/tour-manifest';
 import { tourObjects } from '../ar/tour-station-pose';
 import {
   TOUR_ARBITRARY_ASSETS,
+  TOUR_FREE_VIEWS,
   tourIdArbitrary,
   tourManifestArbitrary,
   tourTextArbitrary,
@@ -139,5 +141,25 @@ describe('tourManifestArbitrary', () => {
     );
     expect([...steps].sort()).toEqual(['choice', 'quiz', 'show']);
     expect(free).toBeGreaterThan(0);
+  });
+
+  // Why this test matters: a world view the format gains but the free-block
+  // generator never writes is a view no manifest property ever round-trips
+  // (a long text's lectern and reading sign went untested that way). The
+  // generator's free views must be exactly the format's world views, and
+  // the manifests must actually stand each one in the world.
+  it('stands a free block in every world view of the format', () => {
+    expect(new Set(Object.values(TOUR_FREE_VIEWS).flat())).toEqual(
+      TOUR_WORLD_VIEWS
+    );
+    const views = new Set<string>();
+    fc.assert(
+      fc.property(tourManifestArbitrary(), (record) => {
+        const manifest = parseTourManifest(JSON.parse(JSON.stringify(record)));
+        for (const object of tourObjects(manifest)) views.add(object.view);
+      }),
+      { numRuns: 300, seed: 9 }
+    );
+    expect(views).toEqual(TOUR_WORLD_VIEWS);
   });
 });

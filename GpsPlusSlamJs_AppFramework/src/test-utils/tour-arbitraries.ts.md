@@ -22,7 +22,7 @@ reason; no production module imports it.
   and with step ids, short random ids, and ids at the 64-character limit.
 - `tourLocalPoseArbitrary` - a local pose with a yaw-only unit quaternion
   (exact through JSON and the reader's renormalisation; never `-0`).
-- `TOUR_FREE_VIEWS` - the world views a free block of each kind may take.
+- `TOUR_FREE_VIEWS` - the world views a free block of each kind may take. Together they are exactly the format's `TOUR_WORLD_VIEWS` (a test holds the two together), so every world view is round-tripped.
 - `tourBlockArbitrary(id, 'free' | 'story', kinds?)` - a valid version 4
   block record: a free one in a world view, a story one in any view of its
   kind.

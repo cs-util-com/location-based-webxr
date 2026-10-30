@@ -42,7 +42,7 @@ tour id and the tour details.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - The WORLD VIEW a creator's pages hold: `TourObject = TourPin |
-TourLectern | TourPicture | TourModel` - a free block without its local pose, plus
+TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without its local pose, plus
   `geo` (its geo pose) and `station?` (absent on a draft object no station
   holds yet). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
