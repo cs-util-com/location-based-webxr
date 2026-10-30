@@ -56,6 +56,11 @@ export default defineConfig({
         lecternCheck: fileURLToPath(
           new URL("lectern-check.html", import.meta.url),
         ),
+        // A long text in its reading sheet without an AR session
+        // (`long-text-check.html.md`), linked from nothing.
+        longTextCheck: fileURLToPath(
+          new URL("long-text-check.html", import.meta.url),
+        ),
       },
     },
   },

@@ -27,9 +27,10 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   And `file-access-check.html`, an on-device check of what a phone's
   browser lets the editor do with a file it saves, linked from nothing
   (`file-access-check.html.md`), at `/tour/file-access-check.html`.
-  And the check pages `model-views-check.html`, `character-views-check.html`
-  and `lectern-check.html` (a long text on its reading stand,
-  `lectern-check.html.md`), each linked from nothing.
+  And the check pages `model-views-check.html`, `character-views-check.html`,
+  `lectern-check.html` (a long text on its reading stand,
+  `lectern-check.html.md`) and `long-text-check.html` (a long text in
+  its reading sheet, `long-text-check.html.md`), each linked from nothing.
 
 ## Invariants & assumptions
 
