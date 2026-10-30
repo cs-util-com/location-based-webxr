@@ -287,7 +287,7 @@ export interface LecternHandle {
 const mounted = new Set<LecternHandle>();
 
 /** The stands mounted and not yet disposed, oldest first. */
-export function mountedLecterns(): LecternHandle[] {
+function mountedLecterns(): LecternHandle[] {
   return [...mounted];
 }
 

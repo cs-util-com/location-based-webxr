@@ -38,8 +38,8 @@ one, which the format does not have yet.
   `sentence()`, `turn()` (by `lecternTurn`, keeping the place: inside a
   long sentence the window moves on) and `dispose()` (idempotent;
   removes it from the scene and the registry).
-- `mountedLecterns()` - the mounted stands not yet disposed, oldest
-  first.
+- `mountedLecterns()` (module-internal) - the mounted stands not yet
+  disposed, oldest first; the default of `turnShownLecternUnderTap`.
 - `turnLecternUnderTap(handles, pick, tap)` - turns the stand whose page
   `pick` (the page's `pickObjectInView`) finds under the tap; true when
   one turned. With no stands `pick` is not asked.
