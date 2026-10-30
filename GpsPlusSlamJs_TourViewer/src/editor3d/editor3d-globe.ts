@@ -33,7 +33,10 @@
  *
  * The sky opens in daylight: the clock held at the tour's solar noon
  * (`daylightStartMs`), whatever the hour; the View menu's Real time runs
- * it at the real time now (`setRealTime`).
+ * it at the real time now (`setRealTime`). The air over it is the globe
+ * package's (`mountGlobeViewAir`: the ground sky blue in daylight, the
+ * space pass, the haze over the relief), stepped after the camera is
+ * placed; it sets the globe's sun to its eased exposure each frame.
  *
  * Not yet here (later steps of the plan): the layer chips for the clouds
  * and the buildings. The heavy clouds (the shell and its volume) are never
@@ -51,7 +54,9 @@ import {
   createGlobeCameraControls,
   createGlobeView,
   creditsFor,
+  mountGlobeViewAir,
   type GlobeView,
+  type GlobeViewAir,
 } from "gps-plus-slam-globe/view";
 
 import { loadGlbModel } from "../glb-model.js";
@@ -163,6 +168,9 @@ export async function openGlobeEditor(
     });
 
     let viewportPx = Math.max(1, deps.container.clientHeight);
+    // The air (the blue sky, the haze over the relief), mounted once the
+    // view and its relief exist; the view's sky alone is black at noon.
+    let air: GlobeViewAir | null = null;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -182,6 +190,12 @@ export async function openGlobeEditor(
         },
         update: (now) => {
           updateLayers(now);
+        },
+        afterSky: () => {
+          air?.afterSky();
+        },
+        afterScene: () => {
+          air?.afterScene();
         },
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
@@ -228,6 +242,16 @@ export async function openGlobeEditor(
       ground.terrain.tiles.group.removeFromParent();
     });
     const { ellipsoid } = ground.terrain.tiles;
+    const mountedAir = mountGlobeViewAir(view, {
+      coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
+    });
+    air = mountedAir;
+    undo.push(() => {
+      air = null;
+      mountedAir.dispose();
+    });
+    // Before the relief loads: every tile it loads is hazed.
+    mountedAir.haze(ground.terrain.tiles);
 
     // The tour's frame in ECEF, under the Earth-centred group.
     const earth = createGlobeLayer(globe.group);
@@ -475,6 +499,9 @@ export async function openGlobeEditor(
 
       camera.updateMatrixWorld();
       followFrame();
+      // The hand-over at the camera's height; the globe's sun at its
+      // eased exposure.
+      air?.step();
       tourFromWorld.copy(tourFrame.matrixWorld).invert();
       cameraTour.copy(camera.position).applyMatrix4(tourFromWorld);
       // The tilt from straight down, in the tour's frame.
@@ -835,6 +862,7 @@ export async function openGlobeEditor(
                   .elevationRad / DEG,
             },
             surface: globe.state(),
+            air: air?.state() ?? null,
           },
         };
       },

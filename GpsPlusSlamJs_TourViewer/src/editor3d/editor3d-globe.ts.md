@@ -80,6 +80,14 @@ world frame moves nothing relative to the ground.
   restarts it at the real time now, `false` back in daylight. `stats().globe.clock`
   carries `realTime`, `sceneMs` and the sun's height over the tour
   (`sunElevationDeg`).
+- The air: `mountGlobeViewAir` from `gps-plus-slam-globe/view`, mounted
+  once the relief exists, in the view's `afterSky` and `afterScene` seams
+  and stepped in `updateLayers` after the camera and the frame are
+  placed; the relief's tiles are hazed before they load. Without it the
+  view core's sky is black at noon. It writes the globe's sun intensity
+  (the eased exposure) every frame, so nothing here sets it.
+  `stats().globe.air` carries its `weight`, `observerKm` and the ground
+  sky's state.
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field

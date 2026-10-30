@@ -4,19 +4,25 @@
   app (the full-globe editor plan `2026-10-27-1850`, GV1b). Re-exports
   only.
 - Public API (each block's own sidecar holds its rules):
-  - The view core: `createGlobeView`, `viewPoseEcef` and the types
-    `GlobeView`, `GlobeViewOptions`, `GlobeViewPose`, `GlobeViewSeams`,
-    `GlobeViewSettings` (`globe-view.ts`).
+  - The view core: `createGlobeView` and the types `GlobeView`,
+    `GlobeViewPose`, `GlobeViewSettings` (`globe-view.ts`).
   - The camera: `createGlobeCameraControls`, `GlobeCameraControls`
     (`globe-camera-controls.ts`; eye mode with `eyeItems`).
   - The defaults a page sets the view up with: `GLOBE_CLOUD_DRIFT_LAW`
     (`globe-cloud-drift.ts`), `GLOBE_CLOUD_DRIFT_DEG_PER_S`
-    (`globe-surface-material.ts`), and the clock's setting type
-    `GlobeClockSetting` (`globe-clock.ts`).
+    (`globe-surface-material.ts`).
+  - The air: `mountGlobeViewAir`, `GlobeViewAir` (`globe-view-air.ts`):
+    the lab's ground sky, haze and space pass made for the view, so the
+    sky is blue in daylight below the hand-over edge. Without it the view
+    core draws only the sun's disc, the stars and navy space, black at
+    noon. An app calls its `afterSky` and `afterScene` from the view's
+    seams of those names and its `step` once a frame after the camera.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`).
-  - `WGS84_ELLIPSOID`, the tile renderer's ellipsoid the view uses (an
-    app without the tile renderer as its own dependency reads it here).
+  - Only what an app's production code uses: a name only a test needs
+    lives under `./test-utils/*` (`viewPoseEcef` and `WGS84_ELLIPSOID` in
+    `./test-utils/view-pose`), because knip reads this entry as public and
+    cannot see an export nobody consumes.
 - Invariants & assumptions:
   - Separate from `./editor` on purpose: this entry pulls in the surface
     with its whole-Earth imagery (`/globe-assets/...`) and the sky pass.

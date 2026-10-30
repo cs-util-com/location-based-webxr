@@ -74,6 +74,130 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   expect(await rejections(page)).toEqual([]);
 });
 
+/**
+ * The sky's colour: the per-channel median (0-255) of the canvas's top
+ * tenth, read from a screenshot (a software-drawn WebGL keeps no drawing
+ * buffer to read back). The median ignores a label or a star in the band.
+ * @param {import("@playwright/test").Page} page
+ */
+async function skyColour(page) {
+  const box = await page.locator("#view3d canvas").boundingBox();
+  if (box === null) throw new Error("no canvas");
+  const png = await page.screenshot({
+    clip: {
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: Math.max(4, box.height * 0.1),
+    },
+  });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(
+      new Blob([bytes], { type: "image/png" }),
+    );
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("no 2d context");
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    /** @type {number[][]} */
+    const channels = [[], [], []];
+    for (let i = 0; i < data.length; i += 4) {
+      for (let c = 0; c < 3; c++) channels[c]?.push(data[i + c] ?? 0);
+    }
+    const median = (/** @type {number[]} */ v) =>
+      v.sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0;
+    const [r = 0, g = 0, b = 0] = channels.map(median);
+    return { r, g, b };
+  }, png.toString("base64"));
+}
+
+/**
+ * The sky's thresholds (0-255, the median of the top band). Blue: the blue
+ * channel above both others and the mean of the three over `BLUE_MIN_MEAN`;
+ * the view core's own sky (navy space at 0.1) has a mean under 15, so a
+ * black sky fails it however blue its tint. Dark: the mean under
+ * `DARK_MAX_MEAN`. Declared from the readings this test logs; the report
+ * of the change that introduced them gives the measured values and the
+ * margins.
+ */
+const SKY = { BLUE_MIN_MEAN: 60, DARK_MAX_MEAN: 40 };
+
+/** @param {{ r: number, g: number, b: number }} c */
+const skyKind = ({ r, g, b }) => {
+  const mean = (r + g + b) / 3;
+  if (b > r && b > g && mean > SKY.BLUE_MIN_MEAN) return "blue";
+  if (mean < SKY.DARK_MAX_MEAN) return "dark";
+  return `other ${r},${g},${b}`;
+};
+
+// Why: the editor on the globe opens in daylight (the clock held at the
+// tour's solar noon), so its sky must be blue: the view core alone draws
+// only the sun's disc, the stars and navy space, and the sky stayed black
+// at noon. And the air must follow the clock: at the real time with the
+// tour's local midnight, the sky is dark again. The page's Date is pinned
+// to an equinox night at the sample's longitude (Munich, 11.58 deg E: the
+// solar midnight is about 23:14 UTC), so the noon default and the real
+// time are both known.
+test("the sky over the tour is blue at noon and dark at its midnight", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  await page.clock.setFixedTime(new Date("2026-03-20T23:14:00Z"));
+  await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
+  await page.goto("/edit.html?globe=1");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  /** @type {Record<string, unknown>} */
+  const readings = {};
+  // Logged however the test ends: a red run reports what it read.
+  const report = () => {
+    testInfo.annotations.push({
+      type: "sky readings",
+      description: JSON.stringify(readings),
+    });
+    console.log(`sky readings ${JSON.stringify(readings)}`);
+  };
+  try {
+    // The ground sky builds its tables over a few frames.
+    await expect
+      .poll(
+        async () => {
+          const colour = await skyColour(page);
+          readings.noon = colour;
+          return skyKind(colour);
+        },
+        { timeout: 90_000, intervals: [2_000] },
+      )
+      .toBe("blue");
+
+    await page.locator("#view-menu-btn").click();
+    await page.locator("#view-realtime").click();
+    await expect
+      .poll(async () => (await view3d(page))?.globe?.clock?.sunElevationDeg)
+      .toBeLessThan(-30);
+    await expect
+      .poll(
+        async () => {
+          const colour = await skyColour(page);
+          readings.midnight = colour;
+          return skyKind(colour);
+        },
+        { timeout: 90_000, intervals: [2_000] },
+      )
+      .toBe("dark");
+  } finally {
+    report();
+  }
+  expect(await rejections(page)).toEqual([]);
+});
+
 test("opens the OrbitControls view without the switch, nothing of the globe asked for", async ({
   page,
 }) => {

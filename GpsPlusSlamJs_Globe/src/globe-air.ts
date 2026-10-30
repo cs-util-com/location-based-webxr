@@ -81,7 +81,7 @@ interface AirSpacePass<Depth> {
  * and far `atmoThickness`, `atmoGround` (1 keeps the ground's veil), and
  * the space pass's live `atmoSteps` and `atmoStrength`.
  */
-interface AirParams {
+export interface AirParams {
   groundSky: number;
   sky: number;
   skyEdgeKm: number;

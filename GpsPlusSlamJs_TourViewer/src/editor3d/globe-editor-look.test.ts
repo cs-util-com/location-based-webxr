@@ -8,7 +8,10 @@
 import { describe, expect, it } from "vitest";
 
 import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
-import { WGS84_ELLIPSOID, viewPoseEcef } from "gps-plus-slam-globe/view";
+import {
+  WGS84_ELLIPSOID,
+  viewPoseEcef,
+} from "gps-plus-slam-globe/test-utils/view-pose";
 
 import {
   GLOBE_EDITOR_LOOK,

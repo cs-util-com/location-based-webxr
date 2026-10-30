@@ -10,11 +10,8 @@
  */
 export {
   createGlobeView,
-  viewPoseEcef,
   type GlobeView,
-  type GlobeViewOptions,
   type GlobeViewPose,
-  type GlobeViewSeams,
   type GlobeViewSettings,
 } from "./globe-view.js";
 export {
@@ -23,7 +20,7 @@ export {
 } from "./globe-camera-controls.js";
 export { GLOBE_CLOUD_DRIFT_LAW } from "./globe-cloud-drift.js";
 export { GLOBE_CLOUD_DRIFT_DEG_PER_S } from "./globe-surface-material.js";
-export type { GlobeClockSetting } from "./globe-clock.js";
 export { creditsFor } from "./globe-credits.js";
-// The ellipsoid the view and its tiles use (the tile renderer's own).
-export { WGS84_ELLIPSOID } from "3d-tiles-renderer";
+// The air (the blue sky below the hand-over, the haze, the halo): the view
+// core draws only the sun disc, the stars and navy space.
+export { mountGlobeViewAir, type GlobeViewAir } from "./globe-view-air.js";
