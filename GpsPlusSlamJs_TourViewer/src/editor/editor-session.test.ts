@@ -203,6 +203,75 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why this test matters: a block a station's story shows is no object
+  // of the world, so its texts take the station's edit; each must still
+  // be one step that counts, reaches the saved zip and refuses in the same
+  // words as a free block's.
+  it("sets a text of a story block as one step of its station, refused in words over its cap", async () => {
+    const story = {
+      id: "gate",
+      title: "The gate",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow" as const,
+      blocks: [
+        {
+          id: "intro",
+          kind: "longText" as const,
+          view: "card" as const,
+          title: "The siege",
+          body: "In 1632 the gate held.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show" as const, block: "intro" },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    } as unknown as TourManifest["stations"][number];
+    const { session, manifest } = await opened([pin("a", "Old")], {
+      stations: [story],
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockField("intro", "title", "The long siege")).toEqual({
+      kind: "edited",
+    });
+    expect(editor.changeCount()).toBe(1);
+    expect(editor.editBlockField("intro", "title", "x".repeat(81))).toEqual({
+      kind: "refused",
+      reason: "A title takes at most 80 characters.",
+    });
+    expect(editor.editBlockField("intro", "body", " ")).toEqual({
+      kind: "refused",
+      reason: "A body cannot be empty.",
+    });
+    expect(editor.editBlockField("intro", "alt", "x")).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await editor.save({ keepScan: false });
+    const gate = (await carried(saved.blob)).stations.find(
+      (s) => s.id === "gate",
+    );
+    expect(gate?.blocks[0]).toMatchObject({
+      title: "The long siege",
+      body: "In 1632 the gate held.",
+    });
+    editor.editBlockField("intro", "body", "Then it fell.");
+    expect(editor.changeCount()).toBe(1);
+    editor.undo();
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
   it("refuses an empty pin with the phone's sentence and changes nothing", async () => {
     const { session, manifest } = await opened([pin("a", "Old")]);
     const editor = createEditorSession({

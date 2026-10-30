@@ -17,7 +17,8 @@ import type { SceneAudio } from "./scene-view.js";
 export type AudioElementLike = Pick<
   HTMLAudioElement,
   "src" | "onended" | "play" | "pause"
->;
+> &
+  Partial<Pick<HTMLAudioElement, "duration">>;
 
 export interface UnlockableAudio extends SceneAudio {
   /** Call inside the visitor's tap (synchronously): the element plays a
@@ -112,5 +113,10 @@ export function createSceneAudio(deps: {
       return audio.play();
     },
     stop,
+    durationMs() {
+      // NaN before the metadata, Infinity for a stream: no length then.
+      const s = element?.duration;
+      return s !== undefined && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+    },
   };
 }

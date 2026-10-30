@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   BoxGeometry,
+  Euler,
   Group,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   Quaternion,
   Texture,
@@ -35,6 +37,7 @@ import {
   renderStationBlocks,
   rotationFromHeading,
 } from "./content-placement";
+import { mountedModelViews } from "./model-views";
 import { contentSegment } from "./tour-flow";
 
 /**
@@ -83,6 +86,27 @@ describe("mintPin / objectPoseNue", () => {
         },
       ),
     );
+  });
+
+  it("carries a description when one is given, and none for a blank one", () => {
+    // Why this test matters: the phone's pin entry passes the typed
+    // description through here; a blank one must leave the key out, as
+    // the format's reader refuses a blank optional text.
+    const base = {
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 0, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    };
+    expect(mintPin({ ...base, description: "The old gate." })).toMatchObject({
+      caption: "Gate",
+      description: "The old gate.",
+    });
+    expect(mintPin({ ...base, description: "" })).not.toHaveProperty(
+      "description",
+    );
+    expect(mintPin(base)).not.toHaveProperty("description");
   });
 
   it("refuses without a GPS zero", () => {
@@ -538,6 +562,176 @@ describe("renderTourStation", () => {
     expect(quiet.count).toBe(0);
     expect(quiet.skipped).toEqual([]);
     quiet.dispose();
+  });
+
+  // Why (station blocks, the reading stand): a long text in the
+  // `lectern` view stands at its local pose and keeps it (it does not
+  // turn to the visitor), drawn by the page's builder (a canvas, so the
+  // caller's); with no builder (the 3D editor, the creator's previews)
+  // it is left out quietly, never reported as a failed download.
+  it("draws a reading stand at its local pose through the page's builder, and leaves it out without one", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const pose = {
+      position: [1, 0, 2] as [number, number, number],
+      rotation: yaw(30),
+    };
+    const station = stationAt("s", stationGeo, [
+      {
+        id: "stand",
+        kind: "longText" as const,
+        view: "lectern" as const,
+        title: "The guild house",
+        body: "It *burned* in 1612.",
+        pose,
+      },
+    ]);
+    const made: { id: string; title: string; body: string }[] = [];
+    let disposed = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: (block) => {
+        made.push(block);
+        return {
+          object: new Group(),
+          dispose: () => {
+            disposed += 1;
+          },
+        };
+      },
+    });
+    expect(made).toEqual([
+      { id: "stand", title: "The guild house", body: "It *burned* in 1612." },
+    ]);
+    expect(rendered.count).toBe(1);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "stand") found = o;
+    });
+    expect(found, "the stand is drawn under the station").toBeDefined();
+    expect(found!.position.toArray()).toEqual([1, 0, 2]);
+    // Its turn about up, re-derived from the pose (to the last bit or so).
+    expect(
+      found!.quaternion.angleTo(new Quaternion(...pose.rotation)),
+    ).toBeLessThan(1e-6);
+    rendered.dispose();
+    expect(disposed).toBe(1);
+
+    // A pose that also pitches and rolls: the stand keeps its turn about
+    // up only (the prototype's), standing upright on its feet.
+    const tilted = await renderTourStation(
+      stationAt("s", stationGeo, [
+        {
+          id: "stand",
+          kind: "longText" as const,
+          view: "lectern" as const,
+          title: "The guild house",
+          body: "It burned.",
+          pose: {
+            position: [1, 0, 2] as [number, number, number],
+            rotation: new Quaternion()
+              .setFromEuler(new Euler(0.4, (30 * Math.PI) / 180, -0.3, "YXZ"))
+              .toArray(),
+          },
+        },
+      ]),
+      {
+        assets: [],
+        scene,
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        makeLectern: () => ({ object: new Group(), dispose: () => undefined }),
+      },
+    );
+    let upright: Object3D | undefined;
+    tilted.root.traverse((o) => {
+      if (o.userData["objectId"] === "stand") upright = o;
+    });
+    const want = new Quaternion(...yaw(30));
+    expect(upright!.quaternion.angleTo(want)).toBeLessThan(1e-6);
+    tilted.dispose();
+
+    const quiet = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect([quiet.count, quiet.skipped]).toEqual([0, []]);
+    quiet.dispose();
+  });
+
+  // Why: every world view of a model - placed, ghost, hotspots, cutaway,
+  // toy - keeps the size the tour names by the one shared scale rule, and
+  // carries its view's handle for the visitor's page; freeing the station
+  // gives each model back its own material before freeing it.
+  it("draws a model in every world view by the shared scale, with its view's handle", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const views = ["placed", "ghost", "hotspots", "cutaway", "toy"] as const;
+    const station = stationAt(
+      "s",
+      stationGeo,
+      views.map((view) => ({
+        id: view,
+        kind: "model" as const,
+        view,
+        asset: "horse",
+        sizeM: 3,
+        createdAtIso: NOW,
+        pose: {
+          position: [0, 0, 0] as [number, number, number],
+          rotation: yaw(0),
+        },
+      })),
+    );
+    const own = new MeshBasicMaterial();
+    let freed = 0;
+    own.dispose = () => {
+      freed += 1;
+    };
+    let clipping = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [{ id: "horse", path: "content/horse.glb", kind: "model" }],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      loadModel: () =>
+        Promise.resolve(new Mesh(new BoxGeometry(2, 0.5, 1), own)),
+      modelViews: { enableClipping: () => (clipping += 1) },
+    });
+    expect(rendered.count).toBe(views.length);
+    const drawn = new Map<string, Object3D>();
+    rendered.root.traverse((o) => {
+      const id = o.userData["objectId"];
+      if (typeof id === "string") drawn.set(id, o);
+    });
+    for (const view of views) {
+      const model = drawn.get(view)!;
+      expect(model.scale.x, view).toBeCloseTo(1.5, 12);
+      expect(
+        mountedModelViews().find((h) => h.model === model)?.view,
+        view,
+      ).toBe(view);
+    }
+    expect(
+      clipping,
+      "a cutaway switches the renderer's clipping on",
+    ).toBeGreaterThan(0);
+    expect((drawn.get("ghost") as Mesh).material).not.toBe(own);
+    rendered.dispose();
+    expect(
+      (drawn.get("ghost") as Mesh).material,
+      "its own material is back",
+    ).toBe(own);
+    expect(freed, "each model's own material is freed once").toBe(views.length);
   });
 
   // Why (B2b step 2): a story block its story reached stands with the

@@ -263,6 +263,31 @@ describe("buildEditorModel", () => {
     expect(m.counts).toEqual({ code: 0, pin: 1, photo: 0, station: 0 });
   });
 
+  // Why: a free long text (a reading stand, minor 3) was listed as a
+  // photo with no picture and counted as one. This editor edits neither
+  // its stand nor its body, so it lists it nowhere, as a placed model.
+  it("lists no reading stand, and counts none as a photo", () => {
+    const m = buildEditorModel({
+      manifest: manifest(),
+      objects: [
+        pin("p", "The town hall"),
+        {
+          id: "l",
+          kind: "longText",
+          view: "lectern",
+          title: "The siege",
+          body: "In 1632 the town was besieged.",
+          createdAtIso: "2026-10-19T00:00:00.000Z",
+          geo: { ...AT, headingDeg: 0 },
+        },
+      ],
+      levels: new Map(),
+      fileName: "tour.zip",
+    });
+    expect(m.items.map((i) => i.id)).toEqual(["p"]);
+    expect(m.counts).toEqual({ code: 0, pin: 1, photo: 0, station: 0 });
+  });
+
   it("titles the tour with its own name, else the file's", () => {
     const named = buildEditorModel({
       manifest: manifest({ title: "Altstadt walk" }),

@@ -1,0 +1,2858 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor approach 3 - Work while it flies</title>
+    <!--
+  Throwaway UX prototype (direction C, "work while it flies") for the 3D tour editor's approach on
+  opening a tour. The editor is usable from the first second: the station tree and the inspector
+  are live during the flight, a click on a station redirects the flight there, and the flight is a
+  small scrubber strip (space - region - city - street) with a tick per part of the map that has
+  arrived. Missing parts of the map are drawn as soft sketches that fill in as they arrive.
+
+  Everything is faked: the globe is a 2D canvas, the map is generated, the loading is a timer.
+  Not wired into the app; linked from nothing in it. Plain HTML, no imports.
+-->
+    <style>
+      :root {
+        --ink: #1f2937;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --panel: #fff;
+        --bg: #f3f4f6;
+        --accent: #2563eb;
+        --accent-soft: #dbeafe;
+        --ok: #16a34a;
+        --warn: #d97706;
+        --fail: #dc2626;
+        --sketch: #7c93bf;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      body {
+        display: grid;
+        grid-template-rows: 44px minmax(0, 1fr) 34px;
+        height: 100dvh;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+
+      /* ---- top bar ---- */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        font-weight: 700;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+      .tourname {
+        font-weight: 600;
+        font-size: 15px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .tbtn {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 8px;
+        padding: 5px 11px;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tbtn:hover {
+        background: var(--bg);
+      }
+      .tbtn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tbtn.primary:disabled {
+        background: #eef0f3;
+        border-color: #eef0f3;
+        color: var(--muted);
+        cursor: default;
+      }
+      .menuwrap {
+        position: relative;
+      }
+      .menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 6px);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+        padding: 6px;
+        min-width: 260px;
+        z-index: 60;
+        font-size: 13px;
+      }
+      .menu label,
+      .menu button {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 7px 8px;
+        border-radius: 6px;
+        width: 100%;
+        background: none;
+        border: 0;
+        text-align: left;
+        cursor: pointer;
+      }
+      .menu label:hover,
+      .menu button:hover {
+        background: var(--bg);
+      }
+      .menu hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 4px 0;
+      }
+      .phone-only {
+        display: none;
+      }
+
+      /* ---- main layout ---- */
+      .app {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 280px;
+        min-height: 0;
+        position: relative;
+      }
+      .rail {
+        background: #fff;
+        border-right: 1px solid var(--line);
+        overflow: auto;
+        padding: 10px 8px;
+        font-size: 13px;
+        min-width: 0;
+      }
+      .rail-h {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 2px 6px 8px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .live {
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 600;
+        font-size: 11px;
+        color: var(--accent);
+        background: var(--accent-soft);
+        border-radius: 999px;
+        padding: 2px 8px;
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .live .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: blink 1.2s infinite;
+      }
+      .live.off {
+        display: none;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      .node {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        padding: 6px 6px;
+        border: 0;
+        background: none;
+        border-radius: 8px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .node:hover {
+        background: var(--bg);
+      }
+      .node.sel {
+        background: var(--accent-soft);
+      }
+      .node .num {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid var(--accent);
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+      }
+      .node.sel .num {
+        background: var(--accent);
+        color: #fff;
+      }
+      .node .nm {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .node.tour-node {
+        font-weight: 600;
+      }
+      .node.tour-node .num {
+        border-style: dashed;
+      }
+      .items {
+        list-style: none;
+        margin: 0 0 4px 0;
+        padding: 0 0 0 36px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .items li {
+        padding: 3px 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      ul.st {
+        list-style: none;
+        margin: 4px 0;
+        padding: 0;
+      }
+      .addst {
+        margin: 6px 6px;
+        border: 1px dashed #cbd5e1;
+        background: none;
+        border-radius: 8px;
+        padding: 6px;
+        width: calc(100% - 12px);
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .insp {
+        background: #fff;
+        border-left: 1px solid var(--line);
+        overflow: auto;
+        padding: 12px 14px;
+        font-size: 13px;
+        min-width: 0;
+      }
+      .insp h3 {
+        margin: 0 0 2px;
+        font-size: 15px;
+      }
+      .insp .sub {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 12px;
+      }
+      .insp label {
+        display: block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 12px 0 4px;
+      }
+      .insp input[type="text"],
+      .insp textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 7px 9px;
+        background: #fff;
+      }
+      .insp textarea {
+        min-height: 70px;
+        resize: vertical;
+      }
+      .insp input[type="range"] {
+        width: 100%;
+      }
+      .chiplist {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ichip {
+        background: var(--bg);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+      .insp-note {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: #f0f7ff;
+        color: #1e40af;
+        border-radius: 8px;
+        padding: 6px 9px;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+      .insp-note.off {
+        display: none;
+      }
+
+      /* ---- the 3D view ---- */
+      .view {
+        position: relative;
+        overflow: hidden;
+        background: #0b1020;
+        min-width: 0;
+        touch-action: none;
+      }
+      #cv {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: grab;
+        outline: none;
+      }
+      #cv:active {
+        cursor: grabbing;
+      }
+
+      /* ---- the flight strip ---- */
+      .strip {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(640px, calc(100% - 24px));
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(8px);
+        border-radius: 16px;
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
+        padding: 6px 10px 7px;
+        z-index: 20;
+        transition:
+          width 0.35s ease,
+          padding 0.35s ease;
+        user-select: none;
+      }
+      .track {
+        position: relative;
+        height: 58px;
+        --w: calc(100% - 44px);
+      }
+      .line {
+        position: absolute;
+        left: 22px;
+        right: 22px;
+        top: 31px;
+        height: 4px;
+        border-radius: 4px;
+        background: repeating-linear-gradient(
+          90deg,
+          #cbd5e1 0 6px,
+          transparent 6px 10px
+        );
+      }
+      .fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: calc(var(--p, 0) * 100%);
+        border-radius: 4px;
+        background: linear-gradient(90deg, #93c5fd, var(--accent));
+      }
+      .stop {
+        position: absolute;
+        top: 27px;
+        left: calc(22px + var(--sp) * var(--w));
+        transform: translateX(-50%);
+        border: 0;
+        background: none;
+        padding: 0;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .stop i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid #94a3b8;
+        display: block;
+      }
+      .stop.passed i {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+      .stop span {
+        white-space: nowrap;
+      }
+      .stop:hover span {
+        color: var(--accent);
+        text-decoration: underline;
+      }
+      .stop.street span::after {
+        content: " \25B8";
+      }
+      .tick {
+        position: absolute;
+        top: 0;
+        left: calc(22px + var(--tp) * var(--w));
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        pointer-events: auto;
+      }
+      .tick b {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--muted);
+        white-space: nowrap;
+        line-height: 12px;
+      }
+      .tick .ring {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: conic-gradient(
+          var(--c, var(--accent)) calc(var(--f, 0) * 360deg),
+          #e2e8f0 0
+        );
+        display: grid;
+        place-items: center;
+        position: relative;
+      }
+      .tick .ring::before {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: #fff;
+      }
+      .tick .ring em {
+        position: relative;
+        font-style: normal;
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 1;
+        color: #fff;
+      }
+      .tick.done .ring {
+        --c: var(--ok);
+        background: var(--ok);
+      }
+      .tick.done .ring::before {
+        display: none;
+      }
+      .tick.done .ring em::before {
+        content: "\2713";
+      }
+      .tick.done b {
+        color: var(--ok);
+      }
+      .tick.fail .ring {
+        background: var(--warn);
+      }
+      .tick.fail .ring::before {
+        display: none;
+      }
+      .tick.fail .ring em::before {
+        content: "!";
+      }
+      .tick.fail b {
+        color: var(--warn);
+      }
+      .tick.stalled .ring {
+        --c: #a3a3a3;
+      }
+      .tick.stalled b {
+        color: #8a8a8a;
+      }
+      .tick.waiting .ring {
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55);
+        animation: pulse 1.1s infinite;
+      }
+      .tick.waiting b {
+        color: var(--accent);
+      }
+      .tick.pop .ring {
+        animation: pop 0.5s ease;
+      }
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55);
+        }
+        100% {
+          box-shadow: 0 0 0 9px rgba(37, 99, 235, 0);
+        }
+      }
+      @keyframes pop {
+        0% {
+          transform: scale(1);
+        }
+        40% {
+          transform: scale(1.6);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+      .marker {
+        position: absolute;
+        top: 20px;
+        left: calc(22px + var(--p, 0) * var(--w));
+        transform: translateX(-50%);
+        width: 28px;
+        height: 26px;
+        border-radius: 13px;
+        background: #fff;
+        border: 2px solid var(--accent);
+        display: grid;
+        place-items: center;
+        cursor: grab;
+        z-index: 3;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+        touch-action: none;
+      }
+      .marker svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--accent);
+      }
+      .marker.holding svg {
+        animation: wobble 1.4s ease-in-out infinite;
+      }
+      .marker.you {
+        border-style: dashed;
+        border-color: #64748b;
+        box-shadow: none;
+      }
+      .marker.you svg {
+        fill: #64748b;
+      }
+      @keyframes wobble {
+        0%,
+        100% {
+          transform: translateY(0) rotate(0);
+        }
+        25% {
+          transform: translateY(-2px) rotate(-8deg);
+        }
+        75% {
+          transform: translateY(1px) rotate(6deg);
+        }
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        min-height: 20px;
+        padding: 0 4px;
+      }
+      .stxt {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 600;
+      }
+      .stxt.warn {
+        color: #b45309;
+      }
+      .hint {
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 11px;
+      }
+      .sbtn {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .sbtn:hover {
+        background: var(--bg);
+      }
+      .sbtn.warn {
+        border-color: #fbbf24;
+        background: #fffbeb;
+        color: #92400e;
+      }
+      .mini {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .mini .mticks {
+        display: flex;
+        gap: 4px;
+      }
+      .mini .tick {
+        position: static;
+        transform: none;
+      }
+      .mini .tick b {
+        display: none;
+      }
+      .strip.compact {
+        width: auto;
+        max-width: calc(100% - 24px);
+        padding: 5px 8px 5px 10px;
+        border-radius: 999px;
+      }
+      .strip.compact .track,
+      .strip.compact .status {
+        display: none;
+      }
+      .strip.compact .mini {
+        display: flex;
+      }
+      .mtxt {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 600;
+        min-width: 0;
+      }
+
+      /* ---- in-view chips and toast ---- */
+      .chips {
+        position: absolute;
+        left: 10px;
+        bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        z-index: 15;
+        max-width: min(380px, calc(100% - 20px));
+      }
+      .chip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-size: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+      }
+      .chip .sw {
+        flex: none;
+        width: 22px;
+        height: 14px;
+        border-radius: 3px;
+        border: 1.5px dashed var(--sketch);
+        background: repeating-linear-gradient(
+          45deg,
+          rgba(124, 147, 191, 0.25) 0 3px,
+          transparent 3px 6px
+        );
+      }
+      .chip.warn {
+        background: #fffbeb;
+        color: #92400e;
+      }
+      .chip .ic {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        font-size: 11px;
+        color: #fff;
+        background: var(--warn);
+      }
+      .chip.slow .ic {
+        background: #a3a3a3;
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translate(-50%, 20px);
+        background: rgba(17, 24, 39, 0.9);
+        color: #fff;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        opacity: 0;
+        transition:
+          opacity 0.25s,
+          transform 0.25s;
+        pointer-events: none;
+        z-index: 16;
+        max-width: calc(100% - 24px);
+        text-align: center;
+      }
+      .toast.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      /* ---- prototype debug strip (not part of the design) ---- */
+      .debug {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        background: #111827;
+        color: #9ca3af;
+        font:
+          11px ui-monospace,
+          Consolas,
+          monospace;
+        overflow-x: auto;
+        white-space: nowrap;
+        border-top: 3px solid #f59e0b;
+      }
+      .debug .tag {
+        color: #f59e0b;
+        font-weight: 700;
+      }
+      .debug button {
+        font: inherit;
+        background: #1f2937;
+        color: #e5e7eb;
+        border: 1px solid #374151;
+        border-radius: 4px;
+        padding: 3px 7px;
+        cursor: pointer;
+      }
+      .debug button.on {
+        background: #f59e0b;
+        color: #111827;
+        border-color: #f59e0b;
+      }
+      .debug .sep {
+        width: 1px;
+        height: 16px;
+        background: #374151;
+        margin: 0 4px;
+        flex: none;
+      }
+      .debug .ro {
+        color: #6b7280;
+      }
+
+      /* ---- tablet landscape ---- */
+      @media (max-width: 1100px) {
+        .app {
+          grid-template-columns: 190px minmax(0, 1fr) 240px;
+        }
+        .hint {
+          display: none;
+        }
+      }
+      /* ---- phone landscape ---- */
+      @media (max-height: 500px) {
+        body {
+          grid-template-rows: 36px minmax(0, 1fr) 30px;
+        }
+        .topbar {
+          gap: 6px;
+          padding: 0 8px;
+        }
+        .brand {
+          display: none;
+        }
+        .tbtn {
+          padding: 3px 8px;
+          font-size: 12px;
+        }
+        .phone-only {
+          display: inline-block;
+        }
+        .app {
+          grid-template-columns: 52px minmax(0, 1fr);
+        }
+        .rail {
+          padding: 6px 4px;
+        }
+        .rail-h,
+        .node .nm,
+        .items,
+        .addst {
+          display: none;
+        }
+        .node {
+          justify-content: center;
+          padding: 5px 0;
+        }
+        .insp {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: 270px;
+          z-index: 40;
+          box-shadow: -6px 0 18px rgba(0, 0, 0, 0.18);
+          transform: translateX(105%);
+          transition: transform 0.25s;
+        }
+        .insp.open {
+          transform: none;
+        }
+        .strip {
+          top: 6px;
+          padding: 3px 8px 4px;
+          border-radius: 12px;
+        }
+        .track {
+          height: 44px;
+        }
+        .tick b {
+          display: none;
+        }
+        .tick {
+          top: 4px;
+        }
+        .line {
+          top: 20px;
+        }
+        .stop {
+          top: 16px;
+        }
+        .marker {
+          top: 10px;
+        }
+        .status {
+          font-size: 11px;
+          min-height: 18px;
+        }
+        .chips {
+          bottom: 6px;
+          left: 6px;
+        }
+        .chip {
+          padding: 4px 8px;
+          font-size: 11px;
+        }
+        .debug {
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="brand">TOUR EDITOR</span>
+      <span class="tourname" id="tourTitle">Old Town Walk</span>
+      <span class="spacer"></span>
+      <div class="menuwrap">
+        <button
+          class="tbtn"
+          id="viewBtn"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          View &#9662;
+        </button>
+        <div class="menu" id="viewMenu" hidden>
+          <label
+            ><input type="checkbox" id="optSketch" checked /> Show sketches
+            where the map is still coming</label
+          >
+          <label
+            ><input type="checkbox" id="optFly" checked /> Fly in when I open a
+            tour</label
+          >
+          <hr />
+          <button id="menuReplay">Replay the flight in</button>
+          <button id="menuTour">Show the whole tour</button>
+        </div>
+      </div>
+      <button class="tbtn phone-only" id="inspToggle">Details</button>
+      <button class="tbtn primary" id="saveBtn" disabled>Saved</button>
+    </header>
+
+    <main class="app">
+      <aside class="rail" id="rail" aria-label="Stations">
+        <div class="rail-h">
+          <span>Stations</span
+          ><span class="live" id="railLive"
+            ><span class="dot"></span>Edit now</span
+          >
+        </div>
+        <button class="node tour-node" id="tourNode">
+          <span class="num">&#9733;</span><span class="nm">Whole tour</span>
+        </button>
+        <ul class="st" id="stList"></ul>
+        <button class="addst">+ Add station</button>
+      </aside>
+
+      <section class="view" id="view">
+        <canvas id="cv" tabindex="0" aria-label="3D map of the tour"></canvas>
+        <div class="strip" id="strip">
+          <div class="track" id="track">
+            <div class="line"><div class="fill"></div></div>
+            <button
+              class="stop"
+              data-sp="0"
+              style="--sp: 0"
+              title="Go back out to space and fly in again"
+            >
+              <i></i><span>Space</span>
+            </button>
+            <button
+              class="stop"
+              data-sp="0.3333"
+              style="--sp: 0.3333"
+              title="Fly from the region view"
+            >
+              <i></i><span>Region</span>
+            </button>
+            <button
+              class="stop"
+              data-sp="0.6667"
+              style="--sp: 0.6667"
+              title="Jump to the city view"
+            >
+              <i></i><span>City</span>
+            </button>
+            <button
+              class="stop street"
+              data-sp="1"
+              style="--sp: 1"
+              title="Skip ahead to street level"
+            >
+              <i></i><span>Street</span>
+            </button>
+            <div id="ticks"></div>
+            <div
+              class="marker"
+              id="marker"
+              title="Drag back to replay, forward to skip"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 5 L22 12 L2 19 L6 12 Z" />
+              </svg>
+            </div>
+          </div>
+          <div class="status">
+            <span class="stxt" id="stxt"></span>
+            <span class="hint" id="hint"
+              >Drag, scroll or press a key to take over</span
+            >
+            <button class="sbtn warn" id="retryBtn" hidden>Retry</button>
+            <button class="sbtn" id="replayBtn" hidden>&#8634; Replay</button>
+          </div>
+          <div class="mini" id="mini">
+            <span class="mticks" id="mticks"></span>
+            <span class="mtxt" id="mtxt"></span>
+            <button class="sbtn warn" id="mRetry" hidden>Retry</button>
+            <button class="sbtn" id="mBtn">&#8634; Replay</button>
+          </div>
+        </div>
+        <div class="chips" id="chips"></div>
+        <div class="toast" id="toast"></div>
+      </section>
+
+      <aside class="insp" id="insp" aria-label="Inspector"></aside>
+    </main>
+
+    <footer class="debug" id="debug">
+      <span class="tag">PROTOTYPE CONTROLS</span>
+      <span>network:</span>
+      <button data-prof="fast">fast</button>
+      <button data-prof="normal" class="on">normal</button>
+      <button data-prof="slow">slow</button>
+      <button data-prof="never">city never finishes</button>
+      <button data-prof="fail">one part fails</button>
+      <span class="sep"></span>
+      <button id="dbgOpen">open tour</button>
+      <button id="dbgDraft">restore draft (no flight)</button>
+      <span class="sep"></span>
+      <span class="ro" id="dbgRo"></span>
+    </footer>
+
+    <script>
+      (() => {
+        "use strict";
+
+        // ---------------------------------------------------------------- helpers
+        const $ = (s) => document.querySelector(s);
+        const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
+        const smooth = (t) => {
+          t = clamp(t);
+          return t * t * (3 - 2 * t);
+        };
+        function rng(seed) {
+          return function () {
+            seed = (seed + 0x6d2b79f5) | 0;
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+          };
+        }
+        const fadeIn = (alt, hi, lo) =>
+          clamp((Math.log(hi) - Math.log(alt)) / (Math.log(hi) - Math.log(lo)));
+
+        // ---------------------------------------------------------------- the tour (already loaded)
+        const tour = {
+          name: "Old Town Walk",
+          desc: "A 40-minute walk from the old gate down to the river and up to the lookout.",
+        };
+        const stations = [
+          {
+            name: "Old Town Gate",
+            x: -120,
+            y: 60,
+            text: "Built in 1412, rebuilt after the fire of 1890.",
+            radius: 15,
+            items: ["Photo: the gate in 1890", "Narration"],
+          },
+          {
+            name: "Market Square",
+            x: -40,
+            y: 95,
+            text: "Market day is still Thursday.",
+            radius: 25,
+            items: ["Short text", "3D model: the fountain"],
+          },
+          {
+            name: "St. Mary's Church",
+            x: 45,
+            y: 40,
+            text: "Climb the tower if it is open.",
+            radius: 20,
+            items: ["Narration", "Photo: the tower"],
+          },
+          {
+            name: "River Steps",
+            x: 100,
+            y: -30,
+            text: "Where the boats landed the salt.",
+            radius: 15,
+            items: ["Video", "Short text"],
+          },
+          {
+            name: "Lookout",
+            x: 20,
+            y: -120,
+            text: "The best view back over the old town.",
+            radius: 20,
+            items: ["Panorama photo"],
+          },
+        ];
+        const tourCenter = () => {
+          let x = 0,
+            y = 0;
+          for (const s of stations) {
+            x += s.x;
+            y += s.y;
+          }
+          return { x: x / stations.length, y: y / stations.length };
+        };
+
+        // ---------------------------------------------------------------- the generated world (metres, x east, y north)
+        const R = 6371000;
+        const A0 = 2.0e7;
+        const LAND_TOUR = 330,
+          LAND_STATION = 190;
+        const rand = rng(7);
+        const riverY = (x) =>
+          -90 + 55 * Math.sin(x / 420) + 2500 * Math.sin(x / 23000);
+        const river = [];
+        for (let x = -150000; x <= 150000;) {
+          river.push([x, riverY(x)]);
+          x += Math.abs(x) < 2500 ? 20 : 1500;
+        }
+        const G = 0.2,
+          UX = Math.cos(G),
+          UY = Math.sin(G),
+          VX = -Math.sin(G),
+          VY = Math.cos(G);
+        const SP = 90;
+        const streets = [];
+        for (let dir = 0; dir < 2; dir++) {
+          for (let i = -20; i <= 20; i++) {
+            for (let j = -20; j < 20; j++) {
+              const o = i * SP;
+              const P = (s) =>
+                dir === 0
+                  ? [UX * s + VX * o, UY * s + VY * o]
+                  : [UX * o + VX * s, UY * o + VY * s];
+              const [ax, ay] = P(j * SP),
+                [bx, by] = P((j + 1) * SP);
+              const d = Math.hypot((ax + bx) / 2, (ay + by) / 2);
+              if (d > 1800) continue;
+              const major = i % 5 === 0;
+              if (!major && rand() < 0.08) continue;
+              streets.push({ ax, ay, bx, by, d, major });
+            }
+          }
+        }
+        const nearStation = (x, y, r) =>
+          stations.some((s) => Math.hypot(s.x - x, s.y - y) < r);
+        const buildings = [],
+          parks = [],
+          trees = [];
+        const ROOFS = [
+          "#e9c9a8",
+          "#d9b49a",
+          "#e3d3b4",
+          "#cfb8a3",
+          "#e8ddc8",
+          "#d8a48f",
+        ];
+        const toW = (u, v) => [UX * u + VX * v, UY * u + VY * v];
+        for (let i = -11; i <= 10; i++) {
+          for (let j = -11; j <= 10; j++) {
+            const cu = (i + 0.5) * SP,
+              cv = (j + 0.5) * SP;
+            const [cx, cy] = toW(cu, cv);
+            const d = Math.hypot(cx, cy);
+            if (d > 950) continue;
+            if (Math.abs(cy - riverY(cx)) < 55) continue;
+            if (rand() < 0.07) {
+              const h = 34,
+                poly = [];
+              for (const [a, b] of [
+                [-1, -1],
+                [1, -1],
+                [1, 1],
+                [-1, 1],
+              ])
+                poly.push(...toW(cu + a * h, cv + b * h));
+              parks.push({ poly, d });
+              for (let k = 0; k < 9; k++) {
+                const [tx, ty] = toW(
+                  cu + (rand() - 0.5) * 60,
+                  cv + (rand() - 0.5) * 60,
+                );
+                trees.push({ x: tx, y: ty, d: Math.hypot(tx, ty) });
+              }
+              continue;
+            }
+            for (const qa of [-1, 1]) {
+              for (const qb of [-1, 1]) {
+                const bu = cu + qa * 20 + (rand() - 0.5) * 6,
+                  bv = cv + qb * 20 + (rand() - 0.5) * 6;
+                const [bx, by] = toW(bu, bv);
+                if (nearStation(bx, by, 24)) continue;
+                const w = 13 + rand() * 16,
+                  dd = 13 + rand() * 16;
+                const c = [];
+                for (const [a, b] of [
+                  [-1, -1],
+                  [1, -1],
+                  [1, 1],
+                  [-1, 1],
+                ])
+                  c.push(...toW(bu + (a * w) / 2, bv + (b * dd) / 2));
+                buildings.push({
+                  x: bx,
+                  y: by,
+                  c,
+                  h: 7 + rand() * 20,
+                  d: Math.hypot(bx, by),
+                  roof: ROOFS[Math.floor(rand() * ROOFS.length)],
+                  depth: 0,
+                });
+              }
+            }
+          }
+        }
+        {
+          let best = null,
+            bd = 1e9;
+          for (const b of buildings) {
+            const dd = Math.hypot(b.x - stations[2].x, b.y - stations[2].y);
+            if (dd < bd) {
+              bd = dd;
+              best = b;
+            }
+          }
+          if (best) {
+            best.h = 48;
+            best.roof = "#b8a99a";
+          }
+        }
+        for (let k = 0; k < 70; k++) {
+          const x = -900 + rand() * 1800,
+            side = rand() < 0.5 ? -1 : 1;
+          const y = riverY(x) + side * (30 + rand() * 6);
+          trees.push({ x, y, d: Math.hypot(x, y) });
+        }
+        const ghosts = [];
+        for (let gx = -950; gx <= 950; gx += 48) {
+          for (let gy = -950; gy <= 950; gy += 48) {
+            const d = Math.hypot(gx, gy);
+            if (d > 950 || Math.abs(gy - riverY(gx)) < 45) continue;
+            ghosts.push({ x: gx, y: gy, d });
+          }
+        }
+        const HILL_COLS = [
+          "#c3dca2",
+          "#b3d293",
+          "#d6cfa9",
+          "#a5c98a",
+          "#cfe0b0",
+        ];
+        const hills = [];
+        for (let k = 0; k < 42; k++) {
+          const a = rand() * Math.PI * 2,
+            d = 4000 + rand() * 120000;
+          hills.push({
+            x: Math.cos(a) * d,
+            y: Math.sin(a) * d,
+            r: 4000 + rand() * 22000,
+            d,
+            col: HILL_COLS[k % HILL_COLS.length],
+          });
+        }
+        const TOWNS = [
+          "Lindenau",
+          "Ostheim",
+          "Brueckfeld",
+          "Hohenwald",
+          "Sankt Veit",
+          "Marbach",
+          "Kaltental",
+          "Weidenau",
+          "Eichstetten",
+          "Rothberg",
+        ];
+        const towns = TOWNS.map((n) => {
+          const a = rand() * Math.PI * 2,
+            d = 18000 + rand() * 120000;
+          return { n, x: Math.cos(a) * d, y: Math.sin(a) * d };
+        });
+        const roads = [];
+        for (let k = 0; k < 6; k++) roads.push([0, 0, towns[k].x, towns[k].y]);
+        for (let k = 0; k < towns.length - 1; k++)
+          if (k % 2 === 0)
+            roads.push([
+              towns[k].x,
+              towns[k].y,
+              towns[k + 1].x,
+              towns[k + 1].y,
+            ]);
+        const continents = [];
+        for (const [cx, cy, r, ph] of [
+          [-600e3, 350e3, 1900e3, 0.3],
+          [5200e3, -2100e3, 2200e3, 1.7],
+          [-5800e3, 3100e3, 2500e3, 4.1],
+          [1800e3, 6200e3, 1500e3, 2.6],
+          [-2600e3, -5200e3, 1700e3, 5.3],
+        ]) {
+          const pts = [];
+          for (let k = 0; k < 72; k++) {
+            const a = (k / 72) * Math.PI * 2;
+            const rr =
+              r *
+              (1 +
+                0.22 * Math.sin(3 * a + ph) +
+                0.12 * Math.sin(7 * a + ph * 2) +
+                0.05 * Math.sin(17 * a + ph));
+            pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+          }
+          continents.push(pts);
+        }
+        const stars = [];
+        for (let k = 0; k < 260; k++)
+          stars.push({
+            a: rand() * Math.PI * 2,
+            r: Math.sqrt(rand()) * 0.75,
+            s: rand() < 0.1 ? 1.6 : 0.9,
+            tw: rand() * 6,
+          });
+
+        // ---------------------------------------------------------------- the loading (faked)
+        const SOURCES = [
+          {
+            id: "land",
+            label: "Landscape",
+            what: "the landscape",
+            tickP: 0.27,
+            gateP: 0.27,
+            need: 1,
+          },
+          {
+            id: "streets",
+            label: "Streets",
+            what: "the streets",
+            tickP: 0.58,
+            gateP: 0.58,
+            need: 0.5,
+          },
+          {
+            id: "buildings",
+            label: "Buildings",
+            what: "the buildings",
+            tickP: 0.82,
+            gateP: 0.82,
+            need: 0.3,
+          },
+          {
+            id: "details",
+            label: "Details",
+            what: "the details",
+            tickP: 0.955,
+            gateP: null,
+            need: 1,
+          },
+        ];
+        const PROFILES = {
+          fast: {
+            land: [0.2, 0.9],
+            streets: [0.4, 1.6],
+            buildings: [0.8, 3],
+            details: [1, 4],
+          },
+          normal: {
+            land: [0.5, 2.6],
+            streets: [1, 5.5],
+            buildings: [2, 9],
+            details: [3, 13],
+          },
+          slow: {
+            land: [1, 9],
+            streets: [3, 20],
+            buildings: [6, 42],
+            details: [8, 58],
+          },
+          never: {
+            land: [0.5, 2.6],
+            streets: [1, 5.5],
+            buildings: [2, 14],
+            details: [3, 13],
+            stall: { buildings: 0.72, details: 0.4 },
+          },
+          fail: {
+            land: [0.5, 2.6],
+            streets: [1, 5.5],
+            buildings: [2, 9],
+            details: [3, 13],
+            fail: { buildings: 0.45 },
+          },
+        };
+        let profile = "normal";
+        let loadT = 0;
+        const st = {};
+        function resetSources() {
+          loadT = 0;
+          for (const s of SOURCES)
+            st[s.id] = {
+              frac: 0,
+              done: false,
+              failed: false,
+              stalled: false,
+              stalledFor: 0,
+              retry: null,
+              popped: false,
+            };
+        }
+        function updateSources(dt) {
+          loadT += dt;
+          const pr = PROFILES[profile];
+          for (const s of SOURCES) {
+            const o = st[s.id];
+            if (o.done || o.failed) continue;
+            const [a, b] = pr[s.id];
+            let f;
+            if (o.retry) {
+              f =
+                o.retry.from +
+                (1 - o.retry.from) * clamp((loadT - o.retry.t0) / o.retry.dur);
+            } else {
+              f = clamp((loadT - a) / (b - a));
+              const stall = pr.stall && pr.stall[s.id];
+              if (stall != null && f >= stall) {
+                f = stall;
+                o.stalled = true;
+                o.stalledFor += dt;
+              }
+              const fail = pr.fail && pr.fail[s.id];
+              if (fail != null && f >= fail) {
+                f = fail;
+                o.failed = true;
+              }
+            }
+            o.frac = f;
+            if (f >= 1) {
+              o.done = true;
+              o.pop = true;
+            }
+          }
+        }
+        const pending = () =>
+          SOURCES.filter((s) => !st[s.id].done && !st[s.id].failed);
+
+        // ---------------------------------------------------------------- flight state
+        const D_FLIGHT = 6.2,
+          MAX_WAIT = 12;
+        const START_DIR = { x: 0.88, y: -0.48 },
+          START_SWING = 0.28;
+        const cam = { x: 0, y: 0, alt: A0, bearing: 0.5, tilt: 0 };
+        const F = {
+          mode: "flying",
+          p: 0,
+          seek: null,
+          target: null,
+          hold: null,
+          holdT: 0,
+          gaveUp: new Set(),
+          offScale: 1,
+          draft: false,
+          settleSince: 0,
+        };
+        let sel = null; // null = whole tour, else station index
+        let showSketch = true;
+
+        const targetPoint = () =>
+          F.target == null ? tourCenter() : stations[F.target];
+        const targetAlt = () => (F.target == null ? LAND_TOUR : LAND_STATION);
+        const altFromP = (p) =>
+          Math.exp(Math.log(A0) + (Math.log(targetAlt()) - Math.log(A0)) * p);
+        const pFromAlt = (alt) =>
+          clamp(
+            (Math.log(A0) - Math.log(alt)) /
+              (Math.log(A0) - Math.log(targetAlt())),
+          );
+        const tiltFromAlt = (alt) =>
+          smooth(
+            (Math.log(5000) - Math.log(alt)) / (Math.log(5000) - Math.log(450)),
+          );
+        const speedAt = (p) =>
+          (0.45 + 0.55 * Math.sin(Math.PI * clamp(p))) / D_FLIGHT;
+        function gateOk(s) {
+          const o = st[s.id];
+          return o.done || o.failed || o.frac >= s.need || F.gaveUp.has(s.id);
+        }
+        const markerP = () => (F.mode === "user" ? pFromAlt(cam.alt) : F.p);
+
+        function openTour() {
+          resetSources();
+          F.mode = "flying";
+          F.p = 0;
+          F.seek = null;
+          F.target = null;
+          F.hold = null;
+          F.holdT = 0;
+          F.gaveUp.clear();
+          F.offScale = 1;
+          F.draft = false;
+          const tc = tourCenter();
+          cam.x = tc.x + START_DIR.x * A0 * START_SWING;
+          cam.y = tc.y + START_DIR.y * A0 * START_SWING;
+          cam.alt = A0;
+          cam.bearing = 0.5;
+          setSel(null, false);
+        }
+        function restoreDraft() {
+          resetSources();
+          F.mode = "landed";
+          F.p = 1;
+          F.seek = null;
+          F.target = null;
+          F.hold = null;
+          F.gaveUp.clear();
+          F.draft = true;
+          const tc = tourCenter();
+          cam.x = tc.x;
+          cam.y = tc.y;
+          cam.alt = LAND_TOUR;
+          cam.bearing = -0.25;
+          setSel(null, false);
+        }
+        function interrupt(why) {
+          if (F.mode === "user") return;
+          const wasFlying = F.mode === "flying" || F.mode === "scrub";
+          F.mode = "user";
+          F.seek = null;
+          F.hold = null;
+          F.draft = false;
+          if (wasFlying && why !== "quiet")
+            toast(
+              'You took over. The map keeps loading. Click "Street" to fly on.',
+            );
+        }
+        function flyTo(sp, fromUser) {
+          const cur = markerP();
+          if (sp < cur)
+            F.offScale = 1; // going back out replays the swing toward the place
+          else if (fromUser) F.offScale = 0; // skipping ahead from where the creator left the camera
+          F.mode = "flying";
+          F.draft = false;
+          F.p = cur;
+          F.seek = sp;
+          F.hold = null;
+          F.holdT = 0;
+        }
+        function redirect(i) {
+          const prev = F.target;
+          F.target = i;
+          if (F.mode === "flying" || F.mode === "scrub") {
+            if (prev !== i)
+              toast(
+                i == null
+                  ? "Heading for the whole tour instead"
+                  : "Heading for " +
+                      (i + 1) +
+                      " - " +
+                      stations[i].name +
+                      " instead",
+              );
+            return;
+          }
+          // landed or in control: a short hop from wherever the camera is
+          F.offScale = 0;
+          F.draft = false;
+          F.p = Math.min(pFromAlt(cam.alt), 0.999);
+          if (F.p > 0.985) {
+            F.p = 1;
+            F.mode = "landed";
+          } else F.mode = "flying";
+          F.seek = null;
+        }
+
+        function stepFlight(dt) {
+          if (F.mode === "flying") {
+            if (F.seek != null) {
+              const dir = Math.sign(F.seek - F.p) || 1;
+              F.p += dir * dt * 0.6;
+              if ((dir > 0 && F.p >= F.seek) || (dir < 0 && F.p <= F.seek)) {
+                F.p = F.seek;
+                F.seek = null;
+              }
+              F.hold = null;
+            } else {
+              let sp = speedAt(F.p);
+              let hold = null;
+              for (const s of SOURCES)
+                if (s.gateP != null && F.p >= s.gateP && !gateOk(s)) {
+                  hold = s;
+                  break;
+                }
+              if (hold !== F.hold) F.holdT = 0;
+              F.hold = hold;
+              if (hold) {
+                F.holdT += dt;
+                sp *= 0.12;
+                cam.bearing += dt * 0.16;
+                if (F.holdT > MAX_WAIT) {
+                  F.gaveUp.add(hold.id);
+                  toast(
+                    "Going on without " +
+                      hold.what +
+                      " for now - it fills in as it arrives",
+                  );
+                  F.hold = null;
+                  F.holdT = 0;
+                }
+              } else {
+                cam.bearing += dt * 0.09 * (1 - F.p) - dt * 0.05 * F.p;
+              }
+              F.p += sp * dt;
+            }
+            if (F.p >= 1 && F.seek == null) {
+              F.p = 1;
+              F.mode = "landed";
+              F.hold = null;
+            }
+          }
+          if (F.mode !== "user") {
+            const tgt = targetPoint();
+            // the start swing is proportional to the altitude, so the place is never pushed off screen
+            const off =
+              (1 - smooth(F.p / 0.35)) *
+              F.offScale *
+              altFromP(F.p) *
+              START_SWING;
+            const wx = tgt.x + START_DIR.x * off,
+              wy = tgt.y + START_DIR.y * off;
+            const k = 1 - Math.exp(-dt * (F.mode === "scrub" ? 14 : 3.2));
+            cam.x += (wx - cam.x) * k;
+            cam.y += (wy - cam.y) * k;
+            if (F.mode === "landed") cam.alt += (targetAlt() - cam.alt) * k;
+            else cam.alt = altFromP(F.p);
+          }
+          cam.tilt = tiltFromAlt(cam.alt);
+        }
+
+        // ---------------------------------------------------------------- rendering
+        const cv = $("#cv"),
+          ctx = cv.getContext("2d");
+        const view = $("#view");
+        let W = 800,
+          H = 600,
+          dpr = 1;
+        function resize() {
+          dpr = Math.min(window.devicePixelRatio || 1, 2);
+          W = view.clientWidth;
+          H = view.clientHeight;
+          cv.width = Math.round(W * dpr);
+          cv.height = Math.round(H * dpr);
+        }
+        new ResizeObserver(resize).observe(view);
+        resize();
+
+        let S = 1,
+          cb = 1,
+          sb = 0,
+          sq = 1,
+          lift = 0,
+          CX = 0,
+          CY = 0;
+        let PX = 0,
+          PY = 0;
+        function proj(wx, wy, h) {
+          const dx = wx - cam.x,
+            dy = wy - cam.y;
+          const rx = dx * cb - dy * sb,
+            ry = dx * sb + dy * cb;
+          PX = CX + rx * S;
+          PY = CY - ry * S * sq - (h || 0) * S * lift;
+        }
+        function projGlobe(wx, wy) {
+          const dx = wx - cam.x,
+            dy = wy - cam.y;
+          const d = Math.hypot(dx, dy);
+          if (d < 1) {
+            proj(wx, wy);
+            return;
+          }
+          const k = (R * Math.sin(Math.min(d / R, Math.PI / 2))) / d;
+          proj(cam.x + dx * k, cam.y + dy * k);
+        }
+        const depth = (wx, wy) => (wx - cam.x) * sb + (wy - cam.y) * cb;
+        const onScreen = (m) => PX > -m && PX < W + m && PY > -m && PY < H + m;
+
+        const hatch = (() => {
+          const c = document.createElement("canvas");
+          c.width = c.height = 14;
+          const g = c.getContext("2d");
+          g.strokeStyle = "rgba(110,100,80,0.22)";
+          g.lineWidth = 1;
+          g.beginPath();
+          g.moveTo(0, 14);
+          g.lineTo(14, 0);
+          g.stroke();
+          return ctx.createPattern(c, "repeat");
+        })();
+
+        function revealR(id, max) {
+          const o = st[id];
+          return o.done ? Infinity : o.frac * max;
+        }
+        function revealClipOutside(r) {
+          // clip to everything OUTSIDE the revealed ellipse around the tour's place
+          proj(0, 0);
+          ctx.beginPath();
+          ctx.rect(-10, -10, W + 20, H + 20);
+          if (r > 0 && Number.isFinite(r))
+            ctx.ellipse(
+              PX,
+              PY,
+              Math.max(0.1, r * S),
+              Math.max(0.1, r * S * sq),
+              0,
+              0,
+              Math.PI * 2,
+            );
+          ctx.clip("evenodd");
+        }
+
+        function render(t) {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          S = H / (cam.alt * 1.15);
+          cb = Math.cos(cam.bearing);
+          sb = Math.sin(cam.bearing);
+          sq = 1 - 0.45 * cam.tilt;
+          lift = 0.85 * cam.tilt;
+          CX = W / 2;
+          CY = H * (0.56 + 0.1 * cam.tilt);
+          const diag = Math.hypot(W, H);
+          const Rpx = R * S;
+          const space = Rpx < diag * 1.6;
+          const shimmer = (ph) => 0.5 + 0.5 * Math.sin(t * 2.6 - ph);
+
+          // background and globe
+          if (space) {
+            const bg = ctx.createRadialGradient(
+              CX,
+              CY,
+              Rpx * 0.5,
+              CX,
+              CY,
+              diag,
+            );
+            bg.addColorStop(0, "#162047");
+            bg.addColorStop(1, "#070a17");
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, W, H);
+            const sa = 1 - smooth((Rpx - diag * 0.3) / diag);
+            if (sa > 0) {
+              for (const s of stars) {
+                const a = s.a + cam.bearing * 0.3;
+                const x = CX + Math.cos(a) * s.r * diag,
+                  y = CY + Math.sin(a) * s.r * diag;
+                ctx.globalAlpha = sa * (0.5 + 0.5 * Math.sin(t * 1.5 + s.tw));
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(x, y, s.s, s.s);
+              }
+              ctx.globalAlpha = 1;
+            }
+            const glow = ctx.createRadialGradient(
+              CX,
+              CY,
+              Rpx * 0.96,
+              CX,
+              CY,
+              Rpx * 1.12,
+            );
+            glow.addColorStop(0, "rgba(120,180,255,0.55)");
+            glow.addColorStop(1, "rgba(120,180,255,0)");
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(CX, CY, Rpx * 1.12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(CX, CY, Rpx, Rpx * sq, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "#5e9fcf";
+            ctx.fill();
+            ctx.clip();
+          } else {
+            ctx.fillStyle = "#8fc0de";
+            ctx.fillRect(0, 0, W, H);
+          }
+          ctx.fillStyle = "#e6dfc8";
+          ctx.strokeStyle = "rgba(120,110,80,0.35)";
+          ctx.lineWidth = 1;
+          for (const c of continents) {
+            ctx.beginPath();
+            for (let k = 0; k < c.length; k++) {
+              projGlobe(c[k][0], c[k][1]);
+              if (k) ctx.lineTo(PX, PY);
+              else ctx.moveTo(PX, PY);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+          if (space) {
+            // a soft day-night shade so the globe reads as a ball
+            const sh = ctx.createRadialGradient(
+              CX - Rpx * 0.35,
+              CY - Rpx * 0.4,
+              Rpx * 0.1,
+              CX,
+              CY,
+              Rpx * 1.05,
+            );
+            sh.addColorStop(0, "rgba(255,255,255,0.12)");
+            sh.addColorStop(0.7, "rgba(0,0,0,0)");
+            sh.addColorStop(1, "rgba(0,10,40,0.35)");
+            ctx.fillStyle = sh;
+            ctx.fillRect(0, 0, W, H);
+            ctx.restore();
+          }
+
+          // landscape: hills and the river (sketched contours where not yet arrived)
+          const landA = fadeIn(cam.alt, 3000e3, 700e3);
+          const landR = revealR("land", 130e3);
+          if (landA > 0) {
+            for (const h of hills) {
+              proj(h.x, h.y);
+              const rp = h.r * S;
+              if (
+                rp < 1.5 ||
+                PX < -rp ||
+                PX > W + rp ||
+                PY < -rp ||
+                PY > H + rp
+              )
+                continue;
+              if (h.d < landR) {
+                ctx.save();
+                ctx.translate(PX, PY);
+                ctx.scale(1, sq);
+                const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rp);
+                g.addColorStop(0, h.col);
+                g.addColorStop(1, "rgba(255,255,255,0)");
+                ctx.globalAlpha = landA * 0.85;
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(0, 0, rp, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+              } else if (showSketch) {
+                ctx.globalAlpha = landA * (0.35 + 0.35 * shimmer(h.d / 20000));
+                ctx.strokeStyle = "#8a7f62";
+                ctx.setLineDash([4, 5]);
+                ctx.lineWidth = 1;
+                for (const f of [0.35, 0.65, 0.95]) {
+                  ctx.beginPath();
+                  ctx.ellipse(PX, PY, rp * f, rp * f * sq, 0, 0, Math.PI * 2);
+                  ctx.stroke();
+                }
+                ctx.setLineDash([]);
+              }
+            }
+            ctx.globalAlpha = 1;
+          }
+          const rivA = fadeIn(cam.alt, 1500e3, 250e3);
+          if (rivA > 0 && st.land.frac > 0) {
+            ctx.globalAlpha = rivA;
+            ctx.strokeStyle = "#7fb8db";
+            ctx.lineWidth = Math.max(1.4, 45 * S);
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.beginPath();
+            let pen = false;
+            for (const [x, y] of river) {
+              if (Math.hypot(x, y) > landR) {
+                pen = false;
+                continue;
+              }
+              proj(x, y);
+              if (pen) ctx.lineTo(PX, PY);
+              else {
+                ctx.moveTo(PX, PY);
+                pen = true;
+              }
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+          if (showSketch && !st.land.done && cam.alt < 80e3) {
+            ctx.globalAlpha = 0.6 + 0.3 * shimmer(0);
+            ctx.fillStyle = hatch;
+            ctx.fillRect(0, 0, W, H);
+            ctx.globalAlpha = 1;
+          }
+
+          // region: main roads and towns
+          const roadA =
+            fadeIn(cam.alt, 900e3, 200e3) * (1 - fadeIn(cam.alt, 6e3, 2e3));
+          if (roadA > 0) {
+            const have = st.streets.frac > 0.08;
+            if (have || showSketch) {
+              ctx.globalAlpha = roadA * (have ? 1 : 0.5 + 0.3 * shimmer(1));
+              ctx.strokeStyle = have ? "#e9b860" : "#7c93bf";
+              ctx.lineWidth = have ? 2 : 1.2;
+              if (!have) ctx.setLineDash([6, 6]);
+              for (const r of roads) {
+                ctx.beginPath();
+                proj(r[0], r[1]);
+                ctx.moveTo(PX, PY);
+                proj(r[2], r[3]);
+                ctx.lineTo(PX, PY);
+                ctx.stroke();
+              }
+              ctx.setLineDash([]);
+              ctx.globalAlpha = 1;
+            }
+          }
+          const townA =
+            fadeIn(cam.alt, 1400e3, 400e3) * (1 - fadeIn(cam.alt, 50e3, 18e3));
+          if (townA > 0) {
+            ctx.globalAlpha = townA;
+            ctx.font = "600 11px system-ui, sans-serif";
+            for (const tw of towns) {
+              proj(tw.x, tw.y);
+              if (!onScreen(40)) continue;
+              ctx.fillStyle = "#4b5563";
+              ctx.beginPath();
+              ctx.arc(PX, PY, 2.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "rgba(31,41,55,0.8)";
+              ctx.fillText(tw.n, PX + 5, PY - 4);
+            }
+            ctx.globalAlpha = 1;
+          }
+
+          // streets (graph-paper sketch where they have not arrived yet)
+          const strA = fadeIn(cam.alt, 60e3, 12e3);
+          const strR = revealR("streets", 1900);
+          if (strA > 0) {
+            if (showSketch && Number.isFinite(strR)) {
+              ctx.save();
+              revealClipOutside(strR);
+              ctx.globalAlpha = strA * (0.35 + 0.3 * shimmer(0.5));
+              ctx.strokeStyle = "#7c93bf";
+              ctx.lineWidth = 1;
+              ctx.setLineDash([3, 4]);
+              ctx.beginPath();
+              for (let g = -1800; g <= 1800; g += 150) {
+                proj(g, -1800);
+                ctx.moveTo(PX, PY);
+                proj(g, 1800);
+                ctx.lineTo(PX, PY);
+                proj(-1800, g);
+                ctx.moveTo(PX, PY);
+                proj(1800, g);
+                ctx.lineTo(PX, PY);
+              }
+              ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.restore();
+            }
+            ctx.globalAlpha = strA;
+            ctx.lineCap = "round";
+            for (const pass of [0, 1]) {
+              for (const major of [false, true]) {
+                const wm = major ? 14 : 9;
+                const lw =
+                  Math.max(major ? 1 : 0.5, wm * S) +
+                  (pass === 0 ? Math.max(1, 3 * S) : 0);
+                ctx.lineWidth = lw;
+                ctx.strokeStyle =
+                  pass === 0
+                    ? major
+                      ? "#d2ae63"
+                      : "#c9c2b2"
+                    : major
+                      ? "#fff1c2"
+                      : "#ffffff";
+                ctx.beginPath();
+                for (const s of streets) {
+                  if (s.major !== major || s.d > strR) continue;
+                  proj(s.ax, s.ay);
+                  ctx.moveTo(PX, PY);
+                  proj(s.bx, s.by);
+                  ctx.lineTo(PX, PY);
+                }
+                ctx.stroke();
+              }
+            }
+            ctx.globalAlpha = 1;
+          }
+
+          // parks and trees (details)
+          const detR = revealR("details", 950);
+          const bA = fadeIn(cam.alt, 9e3, 3e3);
+          if (bA > 0) {
+            ctx.globalAlpha = bA;
+            for (const pk of parks) {
+              ctx.beginPath();
+              for (let k = 0; k < 4; k++) {
+                proj(pk.poly[k * 2], pk.poly[k * 2 + 1]);
+                if (k) ctx.lineTo(PX, PY);
+                else ctx.moveTo(PX, PY);
+              }
+              ctx.closePath();
+              if (pk.d < detR) {
+                ctx.fillStyle = "#bfe0a6";
+                ctx.fill();
+              } else if (showSketch) {
+                ctx.strokeStyle = "rgba(124,147,191,0.45)";
+                ctx.setLineDash([3, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
+            }
+            ctx.fillStyle = "#6fa75b";
+            for (const tr of trees) {
+              if (tr.d > detR) continue;
+              proj(tr.x, tr.y);
+              if (!onScreen(10)) continue;
+              ctx.beginPath();
+              ctx.arc(
+                PX,
+                PY - 4 * S * lift,
+                Math.max(1.2, 4.5 * S),
+                0,
+                Math.PI * 2,
+              );
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+          }
+
+          // buildings (pale sketched blocks where they have not arrived yet)
+          const bR = st.buildings.done ? Infinity : st.buildings.frac * 950;
+          if (bA > 0) {
+            const failed = st.buildings.failed;
+            if (showSketch && Number.isFinite(bR)) {
+              ctx.globalAlpha = bA;
+              for (const g of ghosts) {
+                if (g.d < bR) continue;
+                proj(g.x, g.y);
+                if (!onScreen(40)) continue;
+                const hs = 14 * S;
+                if (failed) {
+                  ctx.strokeStyle = "rgba(217,119,6,0.55)";
+                  ctx.setLineDash([3, 3]);
+                  ctx.lineWidth = 1;
+                  ctx.strokeRect(PX - hs, PY - hs * sq, hs * 2, hs * 2 * sq);
+                  ctx.setLineDash([]);
+                } else {
+                  const a = 0.1 + 0.16 * shimmer(g.d / 90);
+                  ctx.fillStyle = "rgba(124,147,191," + a.toFixed(3) + ")";
+                  ctx.fillRect(PX - hs, PY - hs * sq, hs * 2, hs * 2 * sq);
+                }
+              }
+              ctx.globalAlpha = 1;
+            }
+            const vis = [];
+            for (const b of buildings) {
+              if (b.d > bR) continue;
+              proj(b.x, b.y);
+              if (!onScreen(60 + b.h * S)) continue;
+              b.depth = depth(b.x, b.y);
+              vis.push(b);
+            }
+            vis.sort((a, b) => b.depth - a.depth);
+            ctx.globalAlpha = bA;
+            ctx.lineWidth = 0.8;
+            ctx.strokeStyle = "rgba(110,100,85,0.6)";
+            const ext = cam.tilt > 0.03;
+            const xs = [0, 0, 0, 0],
+              ys = [0, 0, 0, 0],
+              rxs = [0, 0, 0, 0],
+              rys = [0, 0, 0, 0];
+            for (const b of vis) {
+              for (let k = 0; k < 4; k++) {
+                proj(b.c[k * 2], b.c[k * 2 + 1]);
+                xs[k] = PX;
+                ys[k] = PY;
+                proj(b.c[k * 2], b.c[k * 2 + 1], b.h);
+                rxs[k] = PX;
+                rys[k] = PY;
+              }
+              if (ext) {
+                for (let k = 0; k < 4; k++) {
+                  const n = (k + 1) % 4;
+                  const shade = xs[n] - xs[k] > 0 ? "#c9c0ae" : "#b8ae9b";
+                  ctx.fillStyle = shade;
+                  ctx.beginPath();
+                  ctx.moveTo(xs[k], ys[k]);
+                  ctx.lineTo(xs[n], ys[n]);
+                  ctx.lineTo(rxs[n], rys[n]);
+                  ctx.lineTo(rxs[k], rys[k]);
+                  ctx.closePath();
+                  ctx.fill();
+                }
+              }
+              ctx.fillStyle = b.d < detR ? b.roof : "#ebe6db";
+              ctx.beginPath();
+              ctx.moveTo(rxs[0], rys[0]);
+              for (let k = 1; k < 4; k++) ctx.lineTo(rxs[k], rys[k]);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+          }
+
+          // the tour: route and station pins (always there, the tour is loaded)
+          const stA = fadeIn(cam.alt, 80e3, 20e3);
+          if (stA > 0) {
+            ctx.globalAlpha = stA;
+            ctx.strokeStyle = "#2563eb";
+            ctx.lineWidth = Math.max(2, 4 * S);
+            ctx.setLineDash([8, 6]);
+            ctx.beginPath();
+            stations.forEach((s, i) => {
+              proj(s.x, s.y);
+              if (i) ctx.lineTo(PX, PY);
+              else ctx.moveTo(PX, PY);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const small = H < 420;
+            stations.forEach((s, i) => {
+              proj(s.x, s.y);
+              const isSel = sel === i;
+              const pinH = 18 + 10 * cam.tilt;
+              if (isSel) {
+                ctx.strokeStyle = "rgba(37,99,235,0.5)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(
+                  PX,
+                  PY,
+                  Math.max(8, s.radius * S),
+                  Math.max(8, s.radius * S) * sq,
+                  0,
+                  0,
+                  Math.PI * 2,
+                );
+                ctx.stroke();
+              }
+              ctx.strokeStyle = "#1e3a8a";
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(PX, PY);
+              ctx.lineTo(PX, PY - pinH);
+              ctx.stroke();
+              const r = isSel ? 13 : 11;
+              ctx.fillStyle = isSel ? "#2563eb" : "#fff";
+              ctx.strokeStyle = "#2563eb";
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              ctx.arc(PX, PY - pinH - r, r, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+              ctx.fillStyle = isSel ? "#fff" : "#2563eb";
+              ctx.font = "700 12px system-ui, sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(String(i + 1), PX, PY - pinH - r + 0.5);
+              if (cam.alt < 2500 && (!small || isSel)) {
+                ctx.font = "600 12px system-ui, sans-serif";
+                const tw = ctx.measureText(s.name).width;
+                ctx.fillStyle = "rgba(255,255,255,0.92)";
+                ctx.fillRect(PX + r + 4, PY - pinH - r - 9, tw + 10, 18);
+                ctx.fillStyle = "#1f2937";
+                ctx.textAlign = "left";
+                ctx.fillText(s.name, PX + r + 9, PY - pinH - r);
+              }
+              ctx.textAlign = "start";
+              ctx.textBaseline = "alphabetic";
+            });
+            ctx.globalAlpha = 1;
+          }
+          // the beacon marks the tour's place from space down to the region
+          const beA = 1 - stA;
+          if (beA > 0.02) {
+            const tc = tourCenter();
+            proj(tc.x, tc.y);
+            ctx.globalAlpha = beA;
+            const pr = (t * 18) % 22;
+            ctx.strokeStyle =
+              "rgba(255,214,102," + (1 - pr / 22).toFixed(3) + ")";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(PX, PY, 5 + pr, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = "#ffd666";
+            ctx.beginPath();
+            ctx.arc(PX, PY, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = "700 12px system-ui, sans-serif";
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "rgba(0,0,0,0.55)";
+            ctx.fillStyle = "#fff";
+            ctx.strokeText(tour.name, PX + 10, PY + 4);
+            ctx.fillText(tour.name, PX + 10, PY + 4);
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        // ---------------------------------------------------------------- strip, chips, toast
+        const strip = $("#strip"),
+          track = $("#track"),
+          marker = $("#marker");
+        const stops = [...document.querySelectorAll(".stop")];
+        const mkTick = (s, mini) => {
+          const el = document.createElement("div");
+          el.className = "tick";
+          el.title = s.label;
+          el.innerHTML =
+            (mini ? "" : "<b>" + s.label + "</b>") +
+            '<span class="ring"><em></em></span>';
+          if (!mini) el.style.setProperty("--tp", s.tickP);
+          return el;
+        };
+        const ticks = SOURCES.map((s) => {
+          const el = mkTick(s, false);
+          $("#ticks").appendChild(el);
+          return el;
+        });
+        const mticks = SOURCES.map((s) => {
+          const el = mkTick(s, true);
+          $("#mticks").appendChild(el);
+          return el;
+        });
+        const stxt = $("#stxt"),
+          mtxt = $("#mtxt");
+        let lastText = "",
+          lastMini = "";
+
+        function tickState(s, el) {
+          const o = st[s.id];
+          el.style.setProperty("--f", o.frac.toFixed(3));
+          el.classList.toggle("done", o.done);
+          el.classList.toggle("fail", o.failed);
+          el.classList.toggle("stalled", o.stalled && !o.done && !o.failed);
+          el.classList.toggle("waiting", F.hold === s);
+          let tip = s.label + ": ";
+          if (o.done) tip += "here";
+          else if (o.failed) tip += "didn't load";
+          else if (o.stalled) tip += "taking long";
+          else tip += Math.round(o.frac * 100) + "%";
+          el.title = tip;
+          if (o.pop && o.done && !el.classList.contains("pop")) {
+            el.classList.add("pop");
+          }
+        }
+        const pct = (s) =>
+          s.what +
+          (st[s.id].frac > 0.02
+            ? " " + Math.round(st[s.id].frac * 100) + "%"
+            : "");
+        function readyTime(s) {
+          const o = st[s.id],
+            pr = PROFILES[profile];
+          if (gateOk(s)) return 0;
+          if (o.retry)
+            return (
+              o.retry.t0 +
+              o.retry.dur * clamp((s.need - o.retry.from) / (1 - o.retry.from))
+            );
+          const [a, b] = pr[s.id];
+          return a + s.need * (b - a);
+        }
+        function eta() {
+          let tc = 0,
+            p = F.p;
+          for (const s of SOURCES) {
+            if (s.gateP == null || gateOk(s)) continue;
+            if (s.gateP > p) {
+              tc += ((s.gateP - p) * D_FLIGHT) / 0.8;
+              p = s.gateP;
+            }
+            tc = Math.max(tc, readyTime(s) - loadT);
+          }
+          tc += ((1 - p) * D_FLIGHT) / 0.8;
+          return Math.max(1, Math.round(tc));
+        }
+        function statusFor() {
+          const pend = pending();
+          const failed = SOURCES.filter((s) => st[s.id].failed);
+          const slowOnes = pend.filter((s) => st[s.id].stalledFor > 8);
+          const tname =
+            F.target == null
+              ? tour.name
+              : F.target + 1 + " - " + stations[F.target].name;
+          if (F.draft) {
+            if (failed.length)
+              return {
+                t: cap(failed[0].what) + " didn't load. Everything else works.",
+                warn: true,
+              };
+            if (!pend.length)
+              return { t: "Your draft is back, and the map is all here." };
+            return {
+              t:
+                "Your draft is back. Still coming in: " +
+                pend.map(pct).join(", "),
+            };
+          }
+          if (F.mode === "scrub")
+            return { t: "Replaying - let go to fly on from here" };
+          if (F.mode === "flying") {
+            if (F.seek != null)
+              return {
+                t:
+                  F.seek >= F.p
+                    ? "Skipping ahead to " + tname
+                    : "Flying back out to replay the way in",
+              };
+            if (F.hold)
+              return {
+                t:
+                  "Waiting for " +
+                  F.hold.what +
+                  " (slow connection) - still moving in",
+                warn: true,
+              };
+            return { t: "Flying to " + tname + " - about " + eta() + " s" };
+          }
+          if (F.mode === "user") {
+            if (!pend.length && !failed.length)
+              return {
+                t: "Everything is here. Click Street to fly to the tour.",
+              };
+            const parts = pend.map(pct);
+            return {
+              t:
+                "You're in control. Still coming: " +
+                (parts.join(", ") || "nothing") +
+                (failed.length
+                  ? ". " + cap(failed[0].what) + " didn't load."
+                  : ""),
+              warn: failed.length > 0,
+            };
+          }
+          // landed
+          if (failed.length)
+            return {
+              t:
+                "Arrived. " +
+                cap(failed[0].what) +
+                " didn't load - you can keep working.",
+              warn: true,
+            };
+          if (!pend.length) return { t: "All here. Happy editing." };
+          if (slowOnes.length === pend.length)
+            return {
+              t:
+                "Arrived. " +
+                cap(slowOnes.map((s) => s.what).join(" and ")) +
+                " are taking long - you do not need them to edit.",
+            };
+          return {
+            t:
+              "Arrived. Still coming in: " +
+              pend.map(pct).join(", ") +
+              " - the sketches fill in by themselves",
+          };
+        }
+        const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+        function updateStrip(t) {
+          const mp = markerP();
+          track.style.setProperty("--p", mp.toFixed(4));
+          marker.classList.toggle("you", F.mode === "user");
+          marker.classList.toggle("holding", !!F.hold);
+          marker.title =
+            F.mode === "user"
+              ? "Where you are now - drag to fly in from here"
+              : "Drag back to replay, forward to skip";
+          stops.forEach((b) =>
+            b.classList.toggle("passed", mp >= Number(b.dataset.sp) - 0.002),
+          );
+          SOURCES.forEach((s, i) => {
+            tickState(s, ticks[i]);
+            tickState(s, mticks[i]);
+          });
+          const sObj = statusFor();
+          if (sObj.t !== lastText) {
+            stxt.textContent = sObj.t;
+            lastText = sObj.t;
+          }
+          stxt.classList.toggle("warn", !!sObj.warn);
+          const anyFail = SOURCES.some((s) => st[s.id].failed);
+          $("#retryBtn").hidden = !anyFail;
+          $("#mRetry").hidden = !anyFail;
+          const moving = F.mode === "flying" || F.mode === "scrub";
+          $("#hint").hidden = !moving;
+          $("#replayBtn").hidden = moving;
+          // compact once the camera is the creator's or has landed and nothing more is moving
+          const settled = SOURCES.every((s) => {
+            const o = st[s.id];
+            return o.done || o.failed || o.stalledFor > 6;
+          });
+          if (!(settled && (F.mode === "landed" || F.mode === "user")))
+            F.settleSince = t;
+          const compact = F.draft || t - F.settleSince > 2.5;
+          strip.classList.toggle("compact", compact);
+          if (compact) {
+            const far = F.mode === "user" && pFromAlt(cam.alt) < 0.9;
+            const mb = $("#mBtn");
+            const lbl = F.draft
+              ? "↻ Fly in"
+              : far
+                ? "Back to the tour"
+                : "↻ Replay";
+            if (mb.textContent !== lbl) mb.textContent = lbl;
+            const mt = F.draft
+              ? sObj.t
+              : anyFail
+                ? sObj.t
+                : pending().length
+                  ? sObj.t
+                  : "All here";
+            if (mt !== lastMini) {
+              mtxt.textContent = mt;
+              lastMini = mt;
+            }
+          }
+          $("#railLive").classList.toggle("off", !(moving || pending().length));
+          $("#railLive").lastChild.textContent = moving
+            ? "Edit now"
+            : "Map loading";
+          const note = $("#inspNote");
+          if (note) note.classList.toggle("off", !(moving || pending().length));
+        }
+
+        const chipsEl = $("#chips");
+        let lastChips = "";
+        function updateChips() {
+          const out = [];
+          const near = cam.alt < 60e3;
+          const sketchy =
+            showSketch &&
+            near &&
+            ["land", "streets", "buildings"].some(
+              (id) => !st[id].done && !st[id].failed,
+            );
+          if (sketchy)
+            out.push(
+              '<div class="chip"><span class="sw"></span><span>Sketched parts are still on their way and fill in by themselves.</span></div>',
+            );
+          for (const s of SOURCES) {
+            const o = st[s.id];
+            if (o.failed)
+              out.push(
+                '<div class="chip warn"><span class="ic">!</span><span>' +
+                  cap(s.what) +
+                  ' didn\'t load. Everything else works.</span><button class="sbtn warn" data-retry="' +
+                  s.id +
+                  '">Retry</button></div>',
+              );
+            else if (o.stalledFor > 10 && !o.done)
+              out.push(
+                '<div class="chip slow"><span class="ic">&hellip;</span><span>' +
+                  cap(s.what) +
+                  " are taking unusually long. Nothing you need to wait for.</span></div>",
+              );
+          }
+          const html = out.join("");
+          if (html !== lastChips) {
+            chipsEl.innerHTML = html;
+            lastChips = html;
+          }
+        }
+        chipsEl.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-retry]");
+          if (b) retry(b.dataset.retry);
+        });
+        chipsEl.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+        const toastEl = $("#toast");
+        let toastTimer = 0;
+        function toast(msg) {
+          toastEl.textContent = msg;
+          toastEl.classList.add("on");
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => toastEl.classList.remove("on"), 2800);
+        }
+        function retry(id) {
+          const o = st[id || "buildings"];
+          if (!o || !o.failed) return;
+          o.failed = false;
+          o.retry = { t0: loadT, from: o.frac, dur: 4 };
+          toast(
+            "Trying " +
+              SOURCES.find((s) => s.id === (id || "buildings")).what +
+              " again",
+          );
+        }
+        $("#retryBtn").addEventListener("click", () =>
+          retry(SOURCES.find((s) => st[s.id].failed).id),
+        );
+        $("#mRetry").addEventListener("click", () =>
+          retry(SOURCES.find((s) => st[s.id].failed).id),
+        );
+
+        // strip interactions: stops skip or replay, the marker scrubs, nothing here interrupts
+        strip.addEventListener("pointerdown", (e) => e.stopPropagation());
+        strip.addEventListener("wheel", (e) => e.stopPropagation(), {
+          passive: true,
+        });
+        stops.forEach((b) =>
+          b.addEventListener("click", () => {
+            const sp = Number(b.dataset.sp);
+            flyTo(sp, F.mode === "user");
+          }),
+        );
+        $("#replayBtn").addEventListener("click", () => {
+          F.target = null;
+          setSel(null, false);
+          flyTo(0, false);
+        });
+        $("#mBtn").addEventListener("click", () => {
+          if (
+            F.draft ||
+            $("#mBtn").textContent.indexOf("Replay") >= 0 ||
+            $("#mBtn").textContent.indexOf("Fly in") >= 0
+          ) {
+            F.target = null;
+            setSel(null, false);
+            flyTo(0, false);
+          } else {
+            F.target = null;
+            setSel(null, false);
+            flyTo(1, true);
+          }
+        });
+        let scrubbing = false;
+        const pFromX = (x) => {
+          const r = track.getBoundingClientRect();
+          return clamp((x - r.left - 22) / (r.width - 44));
+        };
+        marker.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          marker.setPointerCapture(e.pointerId);
+          scrubbing = true;
+          const cur = markerP();
+          F.mode = "scrub";
+          F.draft = false;
+          F.offScale = 1;
+          F.p = cur;
+          F.seek = null;
+          F.hold = null;
+        });
+        marker.addEventListener("pointermove", (e) => {
+          if (scrubbing) F.p = pFromX(e.clientX);
+        });
+        const endScrub = () => {
+          if (!scrubbing) return;
+          scrubbing = false;
+          F.mode = F.p >= 1 ? "landed" : "flying";
+        };
+        marker.addEventListener("pointerup", endScrub);
+        marker.addEventListener("pointercancel", endScrub);
+
+        // ---------------------------------------------------------------- the view: any input takes over at once
+        let drag = null;
+        cv.addEventListener("pointerdown", (e) => {
+          closeMenu();
+          interrupt();
+          cv.setPointerCapture(e.pointerId);
+          cv.focus({ preventScroll: true });
+          drag = { x: e.clientX, y: e.clientY };
+        });
+        cv.addEventListener("pointermove", (e) => {
+          if (!drag) return;
+          pan(e.clientX - drag.x, e.clientY - drag.y);
+          drag = { x: e.clientX, y: e.clientY };
+        });
+        const endDrag = () => {
+          drag = null;
+        };
+        cv.addEventListener("pointerup", endDrag);
+        cv.addEventListener("pointercancel", endDrag);
+        cv.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            interrupt();
+            cam.alt = clamp(cam.alt * Math.exp(e.deltaY * 0.0015), 80, 2.5e7);
+          },
+          { passive: false },
+        );
+        function pan(sx, sy) {
+          const rx = sx / S,
+            ry = -sy / (S * sq);
+          cam.x -= rx * cb + ry * sb;
+          cam.y -= -rx * sb + ry * cb;
+        }
+        window.addEventListener("keydown", (e) => {
+          const tg = e.target;
+          if (
+            tg &&
+            tg.closest &&
+            tg.closest("input, textarea, select, [contenteditable]")
+          )
+            return; // typing in the inspector is editing, not camera input
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+            e.preventDefault();
+            save();
+            return;
+          }
+          if (["Tab", "Shift", "Control", "Alt", "Meta"].includes(e.key))
+            return; // moving focus through the chrome
+          if (e.key === "Escape" && !$("#viewMenu").hidden) {
+            closeMenu();
+            return;
+          }
+          if (
+            tg &&
+            tg.tagName === "BUTTON" &&
+            (e.key === "Enter" || e.key === " ")
+          )
+            return; // pressing a chrome button
+          interrupt();
+          const step = 60;
+          if (e.key === "ArrowLeft") pan(step, 0);
+          else if (e.key === "ArrowRight") pan(-step, 0);
+          else if (e.key === "ArrowUp") pan(0, step);
+          else if (e.key === "ArrowDown") pan(0, -step);
+          else if (e.key === "+" || e.key === "=")
+            cam.alt = clamp(cam.alt * 0.8, 80, 2.5e7);
+          else if (e.key === "-") cam.alt = clamp(cam.alt * 1.25, 80, 2.5e7);
+        });
+
+        // ---------------------------------------------------------------- rail and inspector (live during the flight)
+        const stList = $("#stList"),
+          insp = $("#insp");
+        function renderRail() {
+          stList.innerHTML = "";
+          stations.forEach((s, i) => {
+            const li = document.createElement("li");
+            const b = document.createElement("button");
+            b.className = "node" + (sel === i ? " sel" : "");
+            b.title = s.name;
+            b.innerHTML =
+              '<span class="num">' +
+              (i + 1) +
+              '</span><span class="nm"></span>';
+            b.querySelector(".nm").textContent = s.name;
+            b.addEventListener("click", () => setSel(i, true));
+            li.appendChild(b);
+            if (sel === i) {
+              const ul = document.createElement("ul");
+              ul.className = "items";
+              for (const it of s.items) {
+                const l = document.createElement("li");
+                l.textContent = it;
+                ul.appendChild(l);
+              }
+              li.appendChild(ul);
+            }
+            stList.appendChild(li);
+          });
+          $("#tourNode").classList.toggle("sel", sel == null);
+        }
+        function esc(s) {
+          return String(s).replace(
+            /[&<>"]/g,
+            (c) =>
+              ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+          );
+        }
+        function renderInsp() {
+          const note =
+            '<div class="insp-note" id="inspNote"><span>&#9998;</span><span>The map is still loading. Your edits are safe.</span></div>';
+          if (sel == null) {
+            insp.innerHTML =
+              note +
+              '<h3>Whole tour</h3><div class="sub">' +
+              stations.length +
+              " stations</div>" +
+              '<label for="fName">Tour name</label><input type="text" id="fName" value="' +
+              esc(tour.name) +
+              '">' +
+              '<label for="fText">Description</label><textarea id="fText">' +
+              esc(tour.desc) +
+              "</textarea>" +
+              "<label>Starts at</label><div>1 - " +
+              esc(stations[0].name) +
+              "</div>";
+            $("#fName").addEventListener("input", (e) => {
+              tour.name = e.target.value;
+              $("#tourTitle").textContent = tour.name;
+              dirty();
+            });
+            $("#fText").addEventListener("input", (e) => {
+              tour.desc = e.target.value;
+              dirty();
+            });
+          } else {
+            const s = stations[sel];
+            insp.innerHTML =
+              note +
+              "<h3>Station " +
+              (sel + 1) +
+              '</h3><div class="sub">Click another station to fly there</div>' +
+              '<label for="fName">Name</label><input type="text" id="fName" value="' +
+              esc(s.name) +
+              '">' +
+              '<label for="fText">Text</label><textarea id="fText">' +
+              esc(s.text) +
+              "</textarea>" +
+              '<label for="fRad">Reach (<span id="radV">' +
+              s.radius +
+              '</span> m)</label><input type="range" id="fRad" min="5" max="60" value="' +
+              s.radius +
+              '">' +
+              '<label>On this station</label><div class="chiplist">' +
+              s.items
+                .map((it) => '<span class="ichip">' + esc(it) + "</span>")
+                .join("") +
+              '<span class="ichip">+ Add</span></div>';
+            $("#fName").addEventListener("input", (e) => {
+              s.name = e.target.value;
+              renderRailKeepFocus();
+              dirty();
+            });
+            $("#fText").addEventListener("input", (e) => {
+              s.text = e.target.value;
+              dirty();
+            });
+            $("#fRad").addEventListener("input", (e) => {
+              s.radius = Number(e.target.value);
+              $("#radV").textContent = s.radius;
+              dirty();
+            });
+          }
+        }
+        function renderRailKeepFocus() {
+          renderRail();
+        }
+        function setSel(i, fly) {
+          sel = i;
+          renderRail();
+          renderInsp();
+          if (fly) redirect(i);
+        }
+        $("#tourNode").addEventListener("click", () => setSel(null, true));
+
+        // ---------------------------------------------------------------- top bar
+        const saveBtn = $("#saveBtn");
+        function dirty() {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+        }
+        function save() {
+          if (saveBtn.disabled) return;
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Saving…";
+          setTimeout(() => {
+            saveBtn.textContent = "Saved ✓";
+            setTimeout(() => {
+              if (saveBtn.disabled) saveBtn.textContent = "Saved";
+            }, 1500);
+          }, 700);
+        }
+        saveBtn.addEventListener("click", save);
+        const viewMenu = $("#viewMenu");
+        function closeMenu() {
+          viewMenu.hidden = true;
+          $("#viewBtn").setAttribute("aria-expanded", "false");
+        }
+        $("#viewBtn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          viewMenu.hidden = !viewMenu.hidden;
+          $("#viewBtn").setAttribute("aria-expanded", String(!viewMenu.hidden));
+        });
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest(".menuwrap")) closeMenu();
+        });
+        $("#optSketch").addEventListener("change", (e) => {
+          showSketch = e.target.checked;
+        });
+        $("#menuReplay").addEventListener("click", () => {
+          closeMenu();
+          F.target = null;
+          setSel(null, false);
+          flyTo(0, false);
+        });
+        $("#menuTour").addEventListener("click", () => {
+          closeMenu();
+          setSel(null, true);
+        });
+        $("#inspToggle").addEventListener("click", () =>
+          insp.classList.toggle("open"),
+        );
+
+        // ---------------------------------------------------------------- debug strip
+        document.querySelectorAll("[data-prof]").forEach((b) =>
+          b.addEventListener("click", () => {
+            profile = b.dataset.prof;
+            document
+              .querySelectorAll("[data-prof]")
+              .forEach((x) => x.classList.toggle("on", x === b));
+            if ($("#optFly").checked) openTour();
+            else restoreDraft();
+          }),
+        );
+        $("#dbgOpen").addEventListener("click", openTour);
+        $("#dbgDraft").addEventListener("click", restoreDraft);
+        const ro = $("#dbgRo");
+
+        // hidden URL flags for screenshots: #net=slow&t=6 (fast-forward the clock by t seconds)
+        const flags = new URLSearchParams(location.hash.slice(1));
+        if (flags.get("net") && PROFILES[flags.get("net")]) {
+          profile = flags.get("net");
+          document
+            .querySelectorAll("[data-prof]")
+            .forEach((x) =>
+              x.classList.toggle("on", x.dataset.prof === profile),
+            );
+        }
+
+        // ---------------------------------------------------------------- loop
+        openTour();
+        if (flags.get("draft")) restoreDraft();
+        const ff = Number(flags.get("t") || 0);
+        let simT = 0;
+        for (let k = 0; k < ff * 30; k++) {
+          simT += 1 / 30;
+          updateSources(1 / 30);
+          stepFlight(1 / 30);
+        }
+        if (flags.get("sel")) setSel(Number(flags.get("sel")) - 1, true);
+        if (flags.get("user")) interrupt("quiet");
+        let last = performance.now();
+        function frame(now) {
+          const dt = Math.min(0.05, (now - last) / 1000);
+          last = now;
+          simT += dt;
+          updateSources(dt);
+          stepFlight(dt);
+          render(simT);
+          updateStrip(simT);
+          updateChips();
+          ro.textContent =
+            F.mode +
+            " | " +
+            (cam.alt >= 1000
+              ? (cam.alt / 1000).toFixed(cam.alt > 1e5 ? 0 : 1) + " km"
+              : Math.round(cam.alt) + " m") +
+            " | t=" +
+            loadT.toFixed(1) +
+            "s";
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      })();
+    </script>
+  </body>
+</html>

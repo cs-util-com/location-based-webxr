@@ -31,7 +31,7 @@ origin?, groundAt? })` ->
     (`InspectorStoryBlock[]`: the blocks its story shows,
     `storyBlocksOf`, in the station's order, each `{ id, kind, title }`
     with the kind in the block model's words and the name by
-    `objectTitle` (`../../object-describe.ts`, the one naming rule); listed, not edited, here);
+    `objectTitle` (`../../object-describe.ts`, the one naming rule), and `fields` (`storyBlockFields`, its texts to type); listed, neither added, ordered nor removed here (the story editor's); a character also carries `character: InspectorCharacter { view, advance, facingDeg }`: his block's view, the advance mode of the first step showing him (`tap` when none does), his facing by `facingDegOf`);
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `BLOCK_KIND_LABEL`; the
@@ -67,6 +67,17 @@ origin?, groundAt? })` ->
   turn; an item: move and turn, a model also a size dot; a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
+- `MODEL_VIEW_CHOICES` - the format's world views with their labels, in
+  the inspector's order.
+- `CHARACTER_VIEW_CHOICES` - a character's story views
+  (`TOUR_CHARACTER_VIEWS`, in the format's order) with the station-blocks-7
+  prototype's labels: Bubble, Tap to speak, Two stations, Portrait, Pop-up.
+- `ItemInspector.model` - for a model, its parts
+  (`InspectorModelParts`: the view, the notes with title, text and place,
+  whether the notes are full, the sections with name, place and normal,
+  whether the sections are full, the clip or null, and the store's
+  `modelFocus` and `modelPick`); null for every other item.
+- `buildInspector` takes the store's `modelFocus` and `modelPick`.
 
 ## Invariants & assumptions
 

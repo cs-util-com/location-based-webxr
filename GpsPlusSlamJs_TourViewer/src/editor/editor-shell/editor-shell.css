@@ -667,6 +667,10 @@ body[data-view="3d"] #view3d {
   color: #a3b1c2;
 }
 
+.ic.text {
+  color: #b7a7d6;
+}
+
 .ic.code {
   color: #b9c2cf;
 }
@@ -1633,4 +1637,151 @@ body[data-view="3d"] .view3d-credits {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A model's own parts in the inspector (the station blocks prototype's
+ * editor mode): its view as chips, its clip, its notes and sections as
+ * cards with a numbered badge, and the small buttons that wait for a click
+ * on the model. */
+.vchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.vchips .chip {
+  cursor: pointer;
+}
+
+/* A story character's groups of chips, apart from the next label. */
+.character > .vchips {
+  margin-bottom: 8px;
+}
+
+.mnotes > .flabel,
+.msections > .flabel,
+.character > .flabel {
+  margin: 2px 0 4px;
+  color: var(--s-muted);
+}
+
+/* Each of a character's labels on a line of its own: his name heads his
+ * parts, and his groups' labels ("View", "Moves on") sit over their chips
+ * (inline, the name ran into "View"). */
+.character > .flabel {
+  display: block;
+}
+
+.anno {
+  margin: 6px 0;
+  padding: 7px 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+}
+
+.anno.on {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+}
+
+.anno .top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anno .top .tfield {
+  flex: 1;
+  font-weight: 600;
+}
+
+.anno > textarea.tfield {
+  margin-top: 6px;
+  min-height: 38px;
+}
+
+.badge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--s-accent);
+  color: #16120b;
+  font: 700 11.5px var(--s-sans);
+  cursor: pointer;
+}
+
+.anno .tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.anno .tools .pos {
+  margin-left: auto;
+  color: var(--s-dim);
+  font: 10.5px var(--s-mono);
+}
+
+.mini {
+  padding: 3px 9px;
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: 12px var(--s-sans);
+  cursor: pointer;
+}
+
+.mini.on {
+  border-color: var(--s-accent);
+  color: var(--s-accent);
+}
+
+.mini:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.manim > .mini,
+.mnotes > .mini,
+.msections > .mini {
+  margin-top: 4px;
+}
+
+/* A selected model's notes over the 3D view: a numbered disc on each
+ * (`editor3d-model-parts.ts`), placed by a transform each frame. */
+.model-notes {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.note-disc {
+  position: absolute;
+  top: -14px;
+  left: -14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid rgb(255 255 255 / 70%);
+  border-radius: 50%;
+  background: rgb(15 17 21 / 86%);
+  color: #fff;
+  font: 600 13px/1 var(--s-sans);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.note-disc.on {
+  background: var(--s-accent);
+  color: #16120b;
 }

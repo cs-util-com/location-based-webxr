@@ -90,7 +90,7 @@ were here. What stays is the Finish's side:
     `draft-store-root.ts`'s `openDraftStore(navigator, key)`. The object
     list's four draft writes are `draft-actions.ts`'s `draftObjectWrites`
     over the creator draft (M6 E2c).
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; newStationButton?; undoButton?; undoLabel?; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinLabelCount?; pinDescription?; pinDescriptionCount?; pinSave; pinCancel; photoButton; newStationButton?; undoButton?; undoLabel?; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; stationChip?; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
