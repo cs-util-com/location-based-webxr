@@ -6,6 +6,10 @@
  * land. Linked from nothing. The e2e and the side-by-side check drive it
  * through `window.__longTextCheck`, which is always installed.
  *
+ * `?text=rich` opens a body with headings, a nested list, a link and two
+ * pictures served from files made in the page; `?ar=1` makes the sheet
+ * behave as during an AR session (a link asks before it opens).
+ *
  * @see long-text-check.ts.md
  */
 import {
@@ -64,6 +68,10 @@ interface LongTextCheck {
   state(): LongTextCheckState;
   /** The first line box of the marked sentence, or null. */
   markRect(): PartRect | null;
+  /** Behave as during an AR session, or not (`?ar=1` starts it on). */
+  setArActive(on: boolean): void;
+  /** The links the sheet opened (only ever after a yes in AR). */
+  opened(): readonly string[];
 }
 
 declare global {
@@ -74,6 +82,74 @@ declare global {
 
 /** The check page's line above the title, as the prototype's. */
 const CHECK_OVER = "Old market square · Station 1";
+
+/** The picture assets of the rich text, by id. */
+const CHECK_PICTURES = { mill: "#7b8f5a", bell: "#a0623c" } as const;
+
+/**
+ * The rich text (`?text=rich`): a heading, a nested list and a link on the
+ * first screen; the two pictures several screens below it, so they are
+ * decoded only once the sheet is scrolled near them.
+ */
+export const CHECK_RICH_BODY = [
+  "# The square",
+  "",
+  "What stands here, **from the oldest**:",
+  "",
+  "- The keep",
+  "  - its broken wall",
+  "  - its first-floor door",
+  "- The guild house",
+  "",
+  "See [the town map](https://town.example/map) for the way on.",
+  "",
+  CHECK_TEXT.body,
+  "",
+  CHECK_TEXT.body,
+  "",
+  "![The mill](asset:mill)",
+  "",
+  "## The hall",
+  "",
+  CHECK_TEXT.body,
+  "",
+  "![The bell](asset:bell)",
+].join("\n");
+
+/** What the page's query asks for. */
+export function longTextCheckOptions(search: string): {
+  readonly rich: boolean;
+  readonly ar: boolean;
+} {
+  const query = new URLSearchParams(search);
+  return { rich: query.get("text") === "rich", ar: query.get("ar") === "1" };
+}
+
+/** A small picture file of one colour, made in the page. */
+function pictureFile(colour: string): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = 480;
+  canvas.height = 320;
+  const ctx = canvas.getContext("2d");
+  if (ctx !== null) {
+    ctx.fillStyle = colour;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob === null) reject(new Error("the picture could not be made"));
+      else resolve(blob);
+    }, "image/png");
+  });
+}
+
+/** The rich text's picture by asset id; refuses any other id. */
+function loadCheckPicture(asset: string): Promise<Blob> {
+  const colour = (CHECK_PICTURES as Record<string, string | undefined>)[asset];
+  return colour === undefined
+    ? Promise.reject(new Error(`the check page has no picture "${asset}"`))
+    : pictureFile(colour);
+}
 
 function box(r: DOMRect | undefined): PartRect | null {
   return r === undefined
@@ -93,12 +169,15 @@ function registry(): HighlightRegistry | undefined {
 }
 
 export function startLongTextCheck(host: HTMLElement): void {
+  const options = longTextCheckOptions(window.location.search);
+  let arActive = options.ar;
+  const opened: string[] = [];
   const sheet = createLongTextSheet({
     host,
-    loadAsset: () =>
-      Promise.reject(new Error("the check page has no pictures")),
-    arActive: () => false,
+    loadAsset: loadCheckPicture,
+    arActive: () => arActive,
     openLink: (href) => {
+      opened.push(href);
       window.open(href, "_blank", "noopener,noreferrer");
     },
   });
@@ -110,7 +189,7 @@ export function startLongTextCheck(host: HTMLElement): void {
     sheet.show({
       over: content.over ?? CHECK_OVER,
       title: content.title ?? CHECK_TEXT.title,
-      body: content.body ?? CHECK_TEXT.body,
+      body: content.body ?? (options.rich ? CHECK_RICH_BODY : CHECK_TEXT.body),
       lang: content.lang ?? "en",
     });
   };
@@ -149,6 +228,10 @@ export function startLongTextCheck(host: HTMLElement): void {
       const range = mark === undefined ? undefined : [...mark][0];
       return range instanceof Range ? box(range.getClientRects()[0]) : null;
     },
+    setArActive: (on) => {
+      arActive = on;
+    },
+    opened: () => [...opened],
   };
   show();
 }

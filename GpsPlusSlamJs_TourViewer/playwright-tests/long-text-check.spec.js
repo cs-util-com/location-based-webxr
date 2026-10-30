@@ -183,3 +183,109 @@ test("a tap on a sentence moves the mark there; the buttons step it; close shuts
   await expect(page.getByTestId("long-text-sheet")).toBeHidden();
   expect(errors).toEqual([]);
 });
+
+/**
+ * Why this test matters: a long text's body is the one place a tour file
+ * puts structure of its own into the page, and in AR a link would take
+ * the visitor out of the session. Through the check page's rich text
+ * (headings, a nested list, a link and two pictures from the tour's own
+ * files, `?text=rich&ar=1`), this pins in a real browser what the unit
+ * tests can only pin in jsdom: a picture is decoded into an object URL
+ * once it is scrolled near, a link tapped during an AR session asks first
+ * and opens nothing before the answer, and the sheet holds only the
+ * elements the design's allowlist names (copied here from the design, not
+ * from the renderer).
+ */
+const DESIGN_ALLOWLIST = [
+  "p",
+  "h3",
+  "h4",
+  "h5",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "em",
+  "strong",
+  "a",
+  "img",
+  "br",
+  "span",
+];
+
+test("a rich text: pictures load when scrolled near, a link asks before it leaves AR, only allowlisted tags", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  const popups = /** @type {string[]} */ ([]);
+  page.on("popup", (popup) => popups.push(popup.url()));
+  await page
+    .context()
+    .route("https://town.example/**", (route) =>
+      route.fulfill({ status: 200, body: "a page", contentType: "text/plain" }),
+    );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/long-text-check.html?text=rich&ar=1");
+  await page.waitForFunction(() => window.__longTextCheck?.state().sheet.open);
+  const text = page.getByTestId("long-text-text");
+  const pictures = text.locator('img[src^="blob:"]');
+  // The pictures stand far below the first screen: not decoded yet.
+  await expect(text.locator("h3")).toHaveCount(1);
+  await expect(text.locator("h4")).toHaveCount(1);
+  await expect(text.locator("ul li ul li")).toHaveCount(2);
+  await expect(pictures).toHaveCount(0);
+
+  // Scrolled to each, it comes in as an object URL of the tour's file
+  // (only pictures within a screen of the view are decoded, so the mill is
+  // let go again by the time the bell, far below it, is reached).
+  for (const alt of ["The mill", "The bell"]) {
+    await page.getByTestId("long-text-wrap").evaluate((wrap, want) => {
+      const box = [...wrap.querySelectorAll("p > span")].find(
+        (s) => s.textContent === want,
+      );
+      box?.scrollIntoView({ block: "center" });
+    }, alt);
+    const shown = text.locator(`img[src^="blob:"][alt="${alt}"]`);
+    await expect(shown).toHaveCount(1);
+    await expect(shown).toBeVisible();
+  }
+
+  const tags = await text.evaluate((root) => [
+    ...new Set([...root.querySelectorAll("*")].map((e) => e.localName)),
+  ]);
+  expect(tags.filter((t) => !DESIGN_ALLOWLIST.includes(t))).toEqual([]);
+  for (const t of ["h3", "h4", "ul", "li", "a", "img", "strong"]) {
+    expect(tags).toContain(t);
+  }
+
+  // A link tapped in AR: the question, and nothing opened before it.
+  const ask = page.getByTestId("long-text-ask");
+  await expect(ask).toBeHidden();
+  await text.locator("a").first().click();
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText(
+    "Open town.example? You may lose your place in the AR view.",
+  );
+  expect(popups).toEqual([]);
+  expect(await page.evaluate(() => window.__longTextCheck?.opened())).toEqual(
+    [],
+  );
+  expect(page.url()).toContain("/long-text-check.html");
+
+  // "Stay" opens nothing; a second tap and "Open" opens the page once.
+  await ask.getByRole("button", { name: "Stay" }).click();
+  await expect(ask).toBeHidden();
+  expect(await page.evaluate(() => window.__longTextCheck?.opened())).toEqual(
+    [],
+  );
+  await text.locator("a").first().click();
+  const popup = page.waitForEvent("popup");
+  await ask.getByRole("button", { name: "Open" }).click();
+  await popup;
+  expect(await page.evaluate(() => window.__longTextCheck?.opened())).toEqual([
+    "https://town.example/map",
+  ]);
+  expect(popups).toHaveLength(1);
+  expect(errors).toEqual([]);
+});

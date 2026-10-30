@@ -19,12 +19,15 @@ which documents the hook `window.__longTextCheck`.
 ## What it shows
 
 The prototype's record (its title and first two paragraphs) in the sheet,
-the reading mark on the first sentence.
+the reading mark on the first sentence. With `?text=rich` a text with
+headings, a nested list, a link and two pictures; with `?ar=1` a link
+asks before it opens, as during an AR session.
 
 ## What it does not show
 
 The camera image or the prototype's square behind the sheet, the
-station's sign, the visitor's view switch, and pictures.
+station's sign and the visitor's view switch; pictures only in the rich
+text.
 
 ## Tests
 
