@@ -419,6 +419,16 @@ function freeSprite(sprite: THREE.Sprite): void {
   sprite.material.dispose();
 }
 
+/** Whether `object` and every ancestor up to `top` is visible: a hidden
+ *  root hides its items from the picking as from the drawing. */
+function drawnInGroup(object: THREE.Object3D, top: THREE.Object3D): boolean {
+  for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
+    if (!o.visible) return false;
+    if (o === top) return true;
+  }
+  return true;
+}
+
 /**
  * The layer, its group added to `deps.parent`. `setTour(manifest, levels)`
  * places every station and code; `update(view)` each frame renders the
@@ -439,6 +449,13 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   let codePoints = new Map<string, THREE.Vector3>();
   let shownNames = true;
   let shownCodes = true;
+  /** Each code root's level id, in the order of `codes`. */
+  let codeIds: string[] = [];
+  /** What the globe view's visibility rule hides (`setHidden`). */
+  let hiddenStations: ReadonlySet<string> = new Set();
+  let hiddenCodes: ReadonlySet<string> = new Set();
+  const codeShown = (levelId: string) =>
+    shownCodes && !hiddenCodes.has(levelId);
   let shown = new Set<string>();
   let renders = 0;
   /** What a drag shows now (`setPreview`). */
@@ -559,13 +576,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   const setCodes = (levels: ReadonlyMap<string, QrLevel>) => {
     for (const code of codes) freeObject(code);
     codes = [];
+    codeIds = [];
     codeSquares = [];
     codePoints = new Map();
     for (const [levelId, level] of levels) {
       const geo = level.qr.geo;
       if (geo === undefined) continue;
       const root = rootAt(geo);
-      root.visible = shownCodes;
+      root.visible = codeShown(levelId);
       const point = new THREE.Vector3(0, geo.alt, 0).applyMatrix4(
         root.matrixWorld,
       );
@@ -578,6 +596,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       square.quaternion.copy(upright);
       root.add(square);
       codes.push(root);
+      codeIds.push(levelId);
       codeSquares.push({
         square,
         upright,
@@ -617,10 +636,12 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     entry.billboard.position
       .copy(entry.shownPoint)
       .setY(entry.shownPoint.y + rise);
-    entry.billboard.visible = shownNames;
+    const hidden = hiddenStations.has(entry.id);
+    entry.root.visible = !hidden;
+    entry.billboard.visible = shownNames && !hidden;
     if (entry.content !== null) {
       entry.content.pole.scale.set(1, rise, 1);
-      entry.content.pole.visible = shownNames;
+      entry.content.pole.visible = shownNames && !hidden;
     }
   };
 
@@ -843,7 +864,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     pick(raycaster: THREE.Raycaster): string | null {
       group.updateMatrixWorld();
       for (const hit of raycaster.intersectObject(group, true)) {
-        if (!hit.object.visible) continue;
+        if (!drawnInGroup(hit.object, group)) continue;
         const pick = pickOf(hit.object);
         if (pick !== null) return pick;
       }
@@ -910,7 +931,25 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     setShown(layers: { readonly names: boolean; readonly codes: boolean }) {
       shownNames = layers.names;
       shownCodes = layers.codes;
-      for (const code of codes) code.visible = shownCodes;
+      codes.forEach((code, i) => {
+        code.visible = codeShown(codeIds[i] ?? "");
+      });
+    },
+    /**
+     * The globe view's visibility rule: these stations (their billboard,
+     * pole, ring and items) and these codes are not drawn and not picked,
+     * whatever the chips say; the rest follow the chips. A station's
+     * billboard takes it on the next `update`.
+     */
+    setHidden(stationIds: ReadonlySet<string>, levelIds: ReadonlySet<string>) {
+      hiddenStations = new Set(stationIds);
+      hiddenCodes = new Set(levelIds);
+      for (const entry of stations.values()) {
+        entry.root.visible = !hiddenStations.has(entry.id);
+      }
+      codes.forEach((code, i) => {
+        code.visible = codeShown(codeIds[i] ?? "");
+      });
     },
     /** Whether the codes show (the page's checks). */
     codesVisible(): boolean {
@@ -941,6 +980,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       stations.clear();
       for (const code of codes) freeObject(code);
       codes = [];
+      codeIds = [];
       codeSquares = [];
       group.removeFromParent();
     },

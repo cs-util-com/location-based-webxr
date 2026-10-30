@@ -38,6 +38,10 @@ import {
 } from "./vendor/generated-surface-plugin.js";
 import { globeMapLoader, type GlobeSurfaceLoader } from "./globe-map-loader.js";
 import { createGlobeCloudMap, type GlobeCloudMap } from "./globe-cloud-map.js";
+import { litCopy, tileMeshes } from "./globe-tile-meshes.js";
+
+// Shared with the relief, which imports them from their own module.
+export { litCopy, tileMeshes } from "./globe-tile-meshes.js";
 
 /** The surface's imagery, from the one registry (so it carries a credit). */
 const IMAGERY = globeSource("blue-marble");
@@ -202,23 +206,6 @@ export interface GlobeSurface {
 }
 
 /**
- * Every mesh under `root`, with its material typed (shared with the relief
- * carrier, `globe-terrain.ts`).
- */
-export function tileMeshes(
-  root: THREE.Object3D,
-): THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] {
-  const out: THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] = [];
-  root.traverse((node) => {
-    // instanceof narrows to Mesh<any, any>: name the types.
-    if (node instanceof THREE.Mesh) {
-      out.push(node as THREE.Mesh<THREE.BufferGeometry, THREE.Material>);
-    }
-  });
-  return out;
-}
-
-/**
  * Swap each mesh's unlit tile material for a lit copy of `template` that
  * keeps the mesh's own texture, and record the copy in `owned`. The
  * renderer still holds (and later frees) the original material; the texture
@@ -236,24 +223,6 @@ export function useLitMaterial(
     owned.add(lit);
     mesh.material = lit;
   }
-}
-
-/**
- * A clone of the patched `template` that keeps its compile hooks and
- * program key: Material.copy does not carry them, and the patch would be
- * lost without an error. Neither hook uses `this` (applyGlobeSurface
- * assigns arrow functions; three's defaults ignore it). Shared with the
- * relief carrier (`globe-terrain.ts`).
- */
-export function litCopy(
-  template: THREE.MeshStandardMaterial,
-): THREE.MeshStandardMaterial {
-  const lit = template.clone();
-  // eslint-disable-next-line @typescript-eslint/unbound-method
-  lit.onBeforeCompile = template.onBeforeCompile;
-  // eslint-disable-next-line @typescript-eslint/unbound-method
-  lit.customProgramCacheKey = template.customProgramCacheKey;
-  return lit;
 }
 
 /** Free the lit copies `useLitMaterial` made under `model`, not their maps. */

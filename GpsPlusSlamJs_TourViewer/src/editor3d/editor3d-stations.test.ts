@@ -754,6 +754,78 @@ describe("createStationsLayer", () => {
     expect(layer.codesVisible()).toBe(true);
   });
 
+  // Why: on the globe view the visibility rule hides a station too small
+  // or too crowded on screen, and a code too small, one by one; what is
+  // hidden must not draw (its billboard, its root with its items) nor be
+  // picked through, and the chips' own choice must still hold over it.
+  it("hides single stations and codes, and nothing hidden is picked", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: 2,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    layer.update(view(0, 0, null, 1));
+    await settle();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const ray = (from: THREE.Vector3, to: THREE.Vector3) => {
+      camera.position.copy(from);
+      camera.lookAt(to);
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      return r;
+    };
+    const look = (target: THREE.Vector3) =>
+      ray(target.clone().add(new THREE.Vector3(0, 0, 20)), target);
+    const code = layer.codePointOf("c1")!;
+    const codeRay = () =>
+      ray(code.clone().add(new THREE.Vector3(20, 0, 0)), code);
+    const p = layer.itemPointOf("p")!;
+    const photoRay = () => ray(p.clone().add(new THREE.Vector3(20, 0, 0)), p);
+    expect(layer.pick(photoRay())).toBe("p");
+    expect(layer.pick(codeRay())).toBe("c1");
+
+    layer.setHidden(new Set(["a"]), new Set(["c1"]));
+    layer.update(view(0, 0, null, 1));
+    expect(layer.billboardOf("a")?.visible).toBe(false);
+    expect(layer.billboardOf("b")?.visible).toBe(true);
+    expect(layer.pick(photoRay())).toBeNull();
+    expect(layer.pick(codeRay())).toBeNull();
+    expect(layer.pick(look(layer.billboardOf("a")!.position.clone()))).toBe(
+      null,
+    );
+    expect(layer.pick(look(layer.billboardOf("b")!.position.clone()))).toBe(
+      "station:b",
+    );
+
+    // Shown again by the rule, but the chips have the codes off.
+    layer.setShown({ names: true, codes: false });
+    layer.setHidden(new Set(), new Set());
+    layer.update(view(0, 0, null, 1));
+    expect(layer.billboardOf("a")?.visible).toBe(true);
+    expect(layer.pick(photoRay())).toBe("p");
+    expect(layer.pick(codeRay())).toBeNull();
+    layer.setShown({ names: true, codes: true });
+    expect(layer.pick(codeRay())).toBe("c1");
+    layer.dispose();
+  });
+
   // Why: a selected station has no ring of its own in the gizmo - its
   // found-radius circle IS the ring its radius dots sit on - so the circle
   // must show the selection's amber, and a selected item's station a

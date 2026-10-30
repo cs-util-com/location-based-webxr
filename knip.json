@@ -21,6 +21,7 @@
       "entry": [
         "src/globe-surface.ts",
         "src/globe-editor.ts",
+        "src/globe-view-entry.ts",
         "src/vendor/generated-surface-plugin.ts",
         "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"

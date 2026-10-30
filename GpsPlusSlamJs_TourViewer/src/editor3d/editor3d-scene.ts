@@ -82,6 +82,11 @@ import { createSceneEditing, type GizmoPart } from "./editor3d-editing.js";
 import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
+import {
+  createViewRenderer,
+  fillCredits,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -240,54 +245,14 @@ export interface Editor3dStats {
     drawnM: number;
     groundM: number | null;
   }[];
-}
-
-/** A failure with the reason the view switch says. */
-function failure(
-  reason: "empty" | "webgl" | "chunk" | "context-lost",
-  message: string,
-): Error {
-  return Object.assign(new Error(message), { reason });
+  /** The globe view's own (`editor3d-globe.ts`); absent in this one. */
+  readonly globe?: Record<string, unknown>;
 }
 
 const BACKGROUND = 0x232427;
 /** The size an item is framed by (m): about a pin or a photo. */
 const ITEM_RADIUS_M = 1.6;
 const DEG = Math.PI / 180;
-
-function createRenderer(): THREE.WebGLRenderer {
-  let renderer: THREE.WebGLRenderer;
-  try {
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-  } catch (error) {
-    throw failure(
-      "webgl",
-      `no WebGL: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (renderer.getContext() === null) {
-    renderer.dispose();
-    throw failure("webgl", "no WebGL context");
-  }
-  return renderer;
-}
-
-function fillCredits(
-  box: HTMLElement,
-  credits: readonly { short: string; href: string }[],
-): void {
-  const parts: Node[] = [];
-  credits.forEach((credit, i) => {
-    if (i > 0) parts.push(document.createTextNode(" · "));
-    const a = document.createElement("a");
-    a.href = credit.href;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = credit.short;
-    parts.push(a);
-  });
-  box.replaceChildren(...parts);
-}
 
 /** The 3D view in `deps.container`, once its first frame is drawn. */
 export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
@@ -299,19 +264,19 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
   );
   const centre = tourCentre(manifest?.stations ?? [], codeGeos);
   if (centre === null) {
-    throw failure("empty", "the tour has nothing with a position");
+    throw viewFailure("empty", "the tour has nothing with a position");
   }
   const { egm96Geoid } =
     await import("gps-plus-slam-osm/elevation/egm96").catch(
       (error: unknown) => {
-        throw failure("chunk", `the geoid did not load: ${String(error)}`);
+        throw viewFailure("chunk", `the geoid did not load: ${String(error)}`);
       },
     );
   const geoid = egm96Geoid();
   const undulationAt = (p: { lat: number; lon: number }) =>
     geoid.undulationMetres({ lat: p.lat, lng: p.lon });
 
-  const renderer = createRenderer();
+  const renderer = createViewRenderer();
   // Everything made from here on is undone, last first, by `dispose` - and
   // by a failure before the first frame, so a failed open leaves no canvas
   // and no renderer behind.
@@ -456,7 +421,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     // would resolve on a black canvas); once shown the page is told.
     const onLost = () => {
       if (shown) deps.events.contextLost();
-      else notShown(failure("context-lost", "the WebGL context was lost"));
+      else notShown(viewFailure("context-lost", "the WebGL context was lost"));
     };
     canvas.addEventListener("webglcontextlost", onLost);
     undo.push(() => canvas.removeEventListener("webglcontextlost", onLost));

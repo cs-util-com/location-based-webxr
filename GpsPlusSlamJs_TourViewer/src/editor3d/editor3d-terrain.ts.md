@@ -19,7 +19,11 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `createEditorTerrain({ renderer, centre, device })` -> `EditorTerrain`:
+- `createEditorTerrain({ renderer, centre, device, placement? })` ->
+  `EditorTerrain`. `placement` `"ecef"` leaves the tiles' group in ECEF
+  for a parent that places it (the globe view's Earth-centred group,
+  `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
+  into it:
   - `terrain` - the globe's `GlobeTerrain`;
   - `worldFromEcef` - ECEF to the world (x east, y up, z south at
     `centre`, the ellipsoid's point of the centre at the origin), also

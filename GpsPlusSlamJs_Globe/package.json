@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./editor": "./src/globe-editor.ts",
+    "./view": "./src/globe-view-entry.ts",
     "./test-utils/synthetic-heights": "./src/test-utils/synthetic-heights.ts"
   },
   "scripts": {

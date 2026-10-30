@@ -1,12 +1,20 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
+import { globeAssetsRoute } from "./src/dev-server/globe-assets-route.js";
 import { createBuildMetadataDefine } from "../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs";
 
 // Tour-viewer Vite config. AppFramework resolves through the pnpm workspace
 // symlink. Port allocation lives in ../docs/dev-server-ports.md — this
 // package owns 5187.
 export default defineConfig({
+  // The globe package's imagery at /globe-assets/, for the editor on the
+  // globe view (dev and e2e only; globe-assets-route.ts).
+  plugins: [
+    globeAssetsRoute(
+      fileURLToPath(new URL("../GpsPlusSlamJs_Globe/assets", import.meta.url)),
+    ),
+  ],
   server: {
     port: 5187,
     // Listen on all interfaces so 127.0.0.1 (what the Playwright e2e config

@@ -193,4 +193,21 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.stats().active).toBe(false);
     ground.dispose();
   });
+  // Why: on the globe view the relief hangs in the view's Earth-centred
+  // group, which places it; placed again in the tour's frame it would
+  // stand 6,400 km off. The frame is still given for the tour's objects.
+  it("stays in ECEF when its parent places it, the frame still given", () => {
+    const ground = createEditorTerrain({
+      renderer: {} as THREE.WebGLRenderer,
+      centre: { lat: 48.137393, lng: 11.575493 },
+      device: "desktop",
+      placement: "ecef",
+    });
+    const group = ground.terrain.tiles.group;
+    expect(group.position.length()).toBe(0);
+    expect(group.quaternion.equals(new THREE.Quaternion())).toBe(true);
+    expect(ground.worldFromEcef.equals(make().worldFromEcef)).toBe(true);
+    expect(make().terrain.tiles.group.position.length()).toBeGreaterThan(6e6);
+    ground.dispose();
+  });
 });

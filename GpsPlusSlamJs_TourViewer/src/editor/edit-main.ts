@@ -168,9 +168,11 @@ import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
+  Editor3dDeps,
   Editor3dStats,
   Editor3dView,
 } from "../editor3d/editor3d-scene.js";
+import { readGlobeSwitch } from "./globe-switch.js";
 import {
   adoptsSavedFile,
   createSaveTarget,
@@ -3733,20 +3735,33 @@ const shell = createEditorShell({
     toast(text);
   },
 });
+/** The link switch to the 3D view on the whole globe (`globe=1`). */
+const globeSwitch = readGlobeSwitch(location.search);
 const viewSwitch = createViewSwitch({
   button: menuItemControl(element("view-switch")),
   status: element("view-loading"),
   store,
   open: async (events) => {
     // A module that does not arrive is the connection's (`chunk`).
-    const { openEditor3d } =
-      await import("../editor3d/editor3d-scene.js").catch((error: unknown) => {
-        throw Object.assign(
-          new Error(`the 3D view did not load: ${String(error)}`),
-          { reason: "chunk" },
-        );
-      });
-    const view = await openEditor3d({
+    // With the link switch on, the view on the whole globe; else the
+    // OrbitControls view.
+    const openView = await (
+      globeSwitch.on
+        ? import("../editor3d/editor3d-globe.js").then(
+            ({ openGlobeEditor }) =>
+              (deps: Editor3dDeps) =>
+                openGlobeEditor(deps, globeSwitch),
+          )
+        : import("../editor3d/editor3d-scene.js").then(
+            ({ openEditor3d }) => openEditor3d,
+          )
+    ).catch((error: unknown) => {
+      throw Object.assign(
+        new Error(`the 3D view did not load: ${String(error)}`),
+        { reason: "chunk" },
+      );
+    });
+    const view = await openView({
       container: view3dBox,
       credits: element("view3d-credits"),
       store,

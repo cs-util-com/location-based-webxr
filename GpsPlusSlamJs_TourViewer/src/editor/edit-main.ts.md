@@ -43,6 +43,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the bottom bar (`#shell-bar`, shown with the top bar in both views).
   Checkbox items keep their state in `aria-checked` (`isChecked`,
   `setChecked`).
+- **The 3D view on the whole globe is behind a link switch:** with
+  `globe=1` in the page's address (`readGlobeSwitch`, `globe-switch.ts`)
+  the view switch opens `openGlobeEditor` (`editor3d-globe.ts`, its own
+  lazy chunk, with the switch's `globeHidePx` and `globeCrowdPx`);
+  without it the OrbitControls view (`openEditor3d`) as before.
 - **The 3D view is the default:** an open that shows a tour ends with
   `viewSwitch.show3d()`; a 3D view that fails lands on the map, said in
   a line kept until closed. A tour with nothing positioned is no failure:

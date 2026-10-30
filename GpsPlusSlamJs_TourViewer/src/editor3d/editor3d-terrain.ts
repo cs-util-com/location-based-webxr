@@ -134,6 +134,12 @@ export function createEditorTerrain(input: {
   /** The world frame's centre (degrees). */
   readonly centre: { readonly lat: number; readonly lng: number };
   readonly device: ReliefDeviceClass;
+  /**
+   * `world` (the default): the relief is placed in the world frame of
+   * `centre`. `ecef`: it is left in ECEF for a parent that places it (the
+   * globe view's Earth-centred group); `worldFromEcef` is the same.
+   */
+  readonly placement?: "world" | "ecef";
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -156,7 +162,9 @@ export function createEditorTerrain(input: {
     new THREE.Matrix4(),
   );
   const group = terrain.tiles.group;
-  worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  if (input.placement !== "ecef") {
+    worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  }
   group.updateMatrixWorld(true);
   const osm = createGlobeOsmOverlay({
     url: OSM_TILE_URL,

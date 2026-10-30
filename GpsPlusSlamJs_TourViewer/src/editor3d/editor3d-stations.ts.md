@@ -75,6 +75,12 @@ standing`). A distance, size or focal length that is not a positive
     (its object id) or a code's square (its level id); null for none;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
+  - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
+    (`globe-editor-look.ts`): those stations (root with ring and items,
+    billboard, pole) and codes are neither drawn nor picked, whatever the
+    chips say; the rest follow the chips. `pick` skips any hit under a
+    hidden ancestor, so a code hidden by its chip is not picked either
+    (before, only the hit object's own flag was read).
   - `dispose()` - everything out of the scene and freed.
 - `modelObject(id)` - an item's drawn model (the glb under its tour
   pose and scale), or null while its station does not draw it.
