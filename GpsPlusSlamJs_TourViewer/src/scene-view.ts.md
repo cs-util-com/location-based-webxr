@@ -156,7 +156,9 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   breaks show. A long text in the `lectern` view stands on its reading
   stand in the square (`lectern-view.ts`), its page drawn as pixels, so
   its step's card shows its title and then its plain text, a blank line
-  apart (readable there, and reachable by a screen reader).
+  apart (readable there, and reachable by a screen reader). A long text
+  in the `reading` view (a short sign in the square, `reading-sign.ts`)
+  shows in its card the same way.
 - A quiz never reaches the view (the player skips it until K5).
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.

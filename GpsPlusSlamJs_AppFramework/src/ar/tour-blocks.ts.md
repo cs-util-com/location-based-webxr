@@ -17,13 +17,14 @@ through `tour-story.ts`, which reads the blocks here.
 model | character`.
 - `TOUR_BLOCK_VIEWS` - the views this reader draws, per kind:
   - `shortText`: `pin`, `card`; `longText`: `lectern` (minor 3, a reading stand
-    in the square), `card`;
+    in the square), `reading` (minor 4, a short sign that opens the whole
+    text on a tap), `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
     `card`; `character`: `stage`, `bubble`, `speak`, `two-stations`,
     `portrait`, `popup`, `card` (the five between are minor 2,
     `TOUR_CHARACTER_VIEWS`, story views only).
-  - The WORLD views (a free block's) are `pin`, `lectern`, `plane` and the model's
+  - The WORLD views (a free block's) are `pin`, `lectern`, `reading`, `plane` and the model's
     world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
     keep a copy.
 - `TOUR_MODEL_WORLD_VIEWS` / `TourModelWorldView` - `placed`, `ghost`
@@ -44,7 +45,9 @@ model | character`.
 - `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
   when a model stands in a view minor 1 added or carries `animation`,
   `annotations` or `sections`; 2 when a character stands in a minor-2
-  view or names a declared character; else 0. The writer stamps it.
+  view or names a declared character; 3 when a long text stands as a
+  `lectern`; 4 when one stands as a `reading` sign; else 0. The writer
+  stamps it.
 - `TOUR_BLOCK_TEXT_RULES` - every capped text, as `{ max, unit, required }`:
   - `shortText`: `caption` required 40, `description` optional 160;
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
@@ -66,8 +69,8 @@ model | character`.
   `{ ok: false, reason, blank? }` (`blank` for a whitespace-only text).
 - `tourFloorView(kind, 'free' | 'story'): TourBlockView | null` - the view
   a block falls back to when its own is unknown to this reader: `card` for
-  a story block; for a free one its kind's world view (`pin`, `plane`,
-  `placed`) or `null` (no world view: skipped).
+  a story block; for a free one its kind's world view (`pin`, `reading`
+  from minor 4, `plane`, `placed`) or `null` (no world view: skipped).
 - `readTourBlocks(value, at, options): TourBlockRead[]` - one station's
   blocks, each field checked, each media reference resolved, ids unique.
   `TourBlockRead` is `{ block, knownView }`; the view is settled by

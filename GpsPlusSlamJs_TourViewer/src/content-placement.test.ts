@@ -698,6 +698,71 @@ describe("renderTourStation", () => {
     quiet.dispose();
   });
 
+  // Why (station blocks, the reading sign): a long text in the `reading`
+  // view stands at its local pose as a short sign drawn by the page's
+  // builder, not as a reading stand; with no builder it is left out
+  // quietly, as a stand is.
+  it("draws a reading sign at its local pose through the page's builder, and leaves it out without one", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const station = stationAt("s", stationGeo, [
+      {
+        id: "sign",
+        kind: "longText" as const,
+        view: "reading" as const,
+        title: "The guild house",
+        body: "It burned in 1612.",
+        pose: {
+          position: [3, 0, -1] as [number, number, number],
+          rotation: yaw(0),
+        },
+      },
+    ]);
+    const signs: string[] = [];
+    let stands = 0;
+    let disposed = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: () => {
+        stands += 1;
+        return { object: new Group(), dispose: () => undefined };
+      },
+      makeReadingSign: (block) => {
+        signs.push(`${block.id}:${block.title}:${block.body}`);
+        return {
+          object: new Group(),
+          dispose: () => {
+            disposed += 1;
+          },
+        };
+      },
+    });
+    expect(signs).toEqual(["sign:The guild house:It burned in 1612."]);
+    expect(stands).toBe(0);
+    expect(rendered.count).toBe(1);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "sign") found = o;
+    });
+    expect(found?.position.toArray()).toEqual([3, 0, -1]);
+    rendered.dispose();
+    expect(disposed).toBe(1);
+
+    const quiet = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect([quiet.count, quiet.skipped]).toEqual([0, []]);
+    quiet.dispose();
+  });
+
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
   // toy - keeps the size the tour names by the one shared scale rule, and
   // carries its view's handle for the visitor's page; freeing the station

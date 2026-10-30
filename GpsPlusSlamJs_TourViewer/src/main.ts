@@ -40,6 +40,11 @@ import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { turnShownLecternUnderTap } from "./lectern-view.js";
+import { createLongTextSheet } from "./long-text-sheet.js";
+import {
+  readingSheetContent,
+  shownReadingSignUnderTap,
+} from "./reading-sign.js";
 import "./model-visitor.css";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
@@ -1063,6 +1068,21 @@ const modelVisitor = createModelVisitor({
   camera: () => seams.getViewerCamera(),
   pick: (targets, tap) => seams.pickObjectInView(targets, tap),
 });
+// A long text's whole text, opened by a tap on its reading sign. Its
+// pictures are read through the stations' prefetch cache, by the asset's
+// path in the open tour.
+const longTextSheet = createLongTextSheet({
+  host: element("ar-root"),
+  loadAsset: async (id) => {
+    const asset = ctx.tourDocument.manifest()?.assets.find((a) => a.id === id);
+    if (asset === undefined) throw new Error(`no asset "${id}" in the tour`);
+    return stations.loadContent(asset.path);
+  },
+  arActive: () => arSessionLive(arController.getState().status),
+  openLink: (href) => {
+    window.open(href, "_blank", "noopener,noreferrer");
+  },
+});
 if (mode === "visitor") {
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
@@ -1083,12 +1103,29 @@ hooks.visitorTap = (tap) => {
         (targets, at) => seams.pickObjectInView(targets, at),
         t,
       ),
+    // A reading sign under the tap opens its text in the sheet.
+    reading: (t) => {
+      const sign = shownReadingSignUnderTap(
+        seams.getScene(),
+        (targets, at) => seams.pickObjectInView(targets, at),
+        t,
+      );
+      if (sign === null) return false;
+      longTextSheet.show(
+        readingSheetContent(
+          ctx.tourDocument.manifest()?.stations ?? [],
+          sign.block,
+        ),
+      );
+      return true;
+    },
     pinSheet,
   });
 };
 hooks.stopStations = () => {
   stations.stop();
   pinSheet.close();
+  longTextSheet.close();
   modelVisitor.stop();
 };
 // Every device fix goes through the viewer placement: while a scanned code's

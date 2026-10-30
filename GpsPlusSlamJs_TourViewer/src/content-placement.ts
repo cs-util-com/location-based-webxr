@@ -39,7 +39,9 @@
  * in the `plane` view plus an image asset of the picture's own id (its
  * bytes at `content/<id>.jpg`), carried inline until a tour lists it. A
  * reading stand is a long text in the `lectern` view, built by the
- * caller's `makeLectern` (`lectern-view.ts`: a canvas page) at its pose.
+ * caller's `makeLectern` (`lectern-view.ts`: a canvas page) at its pose;
+ * a reading sign is one in the `reading` view, built by the caller's
+ * `makeReadingSign` (`reading-sign.ts`) at its pose.
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -251,11 +253,21 @@ export interface TourObjectRendererDeps {
    * (`mountLectern`: a canvas texture, so node has none). Absent: a stand
    * is left out quietly (the creator's previews draw none yet).
    */
-  makeLectern?(block: {
+  readonly makeLectern?: (block: {
     readonly id: string;
     readonly title: string;
     readonly body: string;
-  }): { object: Object3D; dispose(): void };
+  }) => { object: Object3D; dispose(): void };
+  /**
+   * A long text's reading sign (`reading` view), built by the page
+   * (`mountReadingSign`: a canvas texture). Absent: the sign is left out
+   * quietly, as a stand is.
+   */
+  readonly makeReadingSign?: (block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }) => { object: Object3D; dispose(): void };
 }
 
 export interface RenderedTourObjects {
@@ -373,12 +385,19 @@ export async function renderStationBlocks(
 /** What the renderer draws of one free block: a label with its text, a
  *  plane with its picture's archive entry, a model in a world view with
  *  its file's entry, its size and its block (null entry: the tour lacks
- *  its asset), a reading stand with its title and body, or nothing. */
+ *  its asset), a reading stand or a reading sign with its title and body,
+ *  or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
   | {
       readonly id: string;
       readonly as: "lectern";
+      readonly title: string;
+      readonly body: string;
+    }
+  | {
+      readonly id: string;
+      readonly as: "reading";
       readonly title: string;
       readonly body: string;
     }
@@ -392,13 +411,19 @@ type Drawn =
     }
   | { readonly id: string; readonly as: "none" };
 
-/** A long text as its reading stand draws it. */
-function lecternOf(text: {
+/** A long text as its reading stand or its reading sign draws it. */
+function longTextOf(text: {
   readonly id: string;
+  readonly view: string;
   readonly title: string;
   readonly body: string;
 }): Drawn {
-  return { id: text.id, as: "lectern", title: text.title, body: text.body };
+  return {
+    id: text.id,
+    as: text.view === "reading" ? "reading" : "lectern",
+    title: text.title,
+    body: text.body,
+  };
 }
 
 /** A world-view object as drawn: a picture's file is its inline asset. */
@@ -407,7 +432,7 @@ function drawnObject(object: TourObject): Drawn {
     case "shortText":
       return { id: object.id, as: "label", text: object.caption };
     case "longText":
-      return lecternOf(object);
+      return longTextOf(object);
     case "picture":
       return { id: object.id, as: "plane", entry: object.imageAsset.path };
     case "model":
@@ -424,8 +449,11 @@ function drawnBlock(
   if (block.kind === "shortText" && block.view === "pin") {
     return { id: block.id, as: "label", text: block.caption };
   }
-  if (block.kind === "longText" && block.view === "lectern") {
-    return lecternOf(block);
+  if (
+    block.kind === "longText" &&
+    (block.view === "lectern" || block.view === "reading")
+  ) {
+    return longTextOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {
     return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
@@ -448,7 +476,8 @@ function drawnBlock(
 
 /** The one renderer: pins as labels, pictures as planes, models at their
  *  size (`modelScale`) in their world view (`mountModelView`, found again
- *  through `mountedModelViews`), reading stands by `makeLectern`, each at
+ *  through `mountedModelViews`), reading stands by `makeLectern` and
+ *  reading signs by `makeReadingSign`, each at
  *  its pose in `scene`'s frame, under one group added once everything
  *  decoded. */
 async function renderContent(
@@ -502,10 +531,12 @@ async function renderContent(
         // load" would claim a download failed.
         continue;
       }
-      if (drawn.as === "lectern") {
+      if (drawn.as === "lectern" || drawn.as === "reading") {
         // No builder (the 3D editor, the creator's previews): left out
         // quietly, as a model without a loader.
-        const stand = deps.makeLectern?.({
+        const make =
+          drawn.as === "lectern" ? deps.makeLectern : deps.makeReadingSign;
+        const stand = make?.({
           id: drawn.id,
           title: drawn.title,
           body: drawn.body,

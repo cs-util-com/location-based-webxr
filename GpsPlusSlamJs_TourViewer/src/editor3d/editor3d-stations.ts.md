@@ -161,7 +161,8 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
 - **Billboards and poles rise with `standing`;** models and reading
   stands keep their pose (a stand's meshes are no photo planes, so the
   morph never lays them flat; a preview moves and turns the stand's root,
-  named `lectern`), and pins stand. `renderTourStation` skips placed models (and draws each
+  named `lectern`; a reading sign's root, `reading-sign`, is treated the
+  same, drawn by the optional `makeReadingSign`), and pins stand. `renderTourStation` skips placed models (and draws each
   picture from the tour's assets, passed to it), so the layer adds the
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a

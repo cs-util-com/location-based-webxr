@@ -600,6 +600,25 @@ describe("createSceneView", () => {
     );
   });
 
+  // Why: a reading sign shows only the title in the world; the story card
+  // carries the words below the title, as for a reading stand.
+  it("shows a reading sign's long text in the card as its title, then its paragraphs", () => {
+    const h = harness();
+    h.view.offer(
+      station("s", [
+        showing("t", {
+          kind: "longText",
+          view: "reading",
+          title: "The guild house",
+          body: "It *burned* in 1612.",
+        }),
+      ]),
+    );
+    expect(h.dom.text.textContent).toBe(
+      "The guild house\n\nIt burned in 1612.",
+    );
+  });
+
   it("says when a sound is refused or a file cannot be read, and keeps the words", async () => {
     const refused = harness({
       play: () => Promise.reject(new Error("NotAllowedError")),

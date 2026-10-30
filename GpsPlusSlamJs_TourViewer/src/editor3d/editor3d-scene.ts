@@ -41,6 +41,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 
 import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
+import { mountReadingSign } from "../reading-sign.js";
 import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
 import {
@@ -403,6 +404,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       undulationAt,
       makeLabel: createPinLabel,
       makeLectern: mountLectern,
+      makeReadingSign: mountReadingSign,
       loadPhotoTexture: async (entry) =>
         decodeFrameTexture(await deps.loadContent(entry), 2, {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,

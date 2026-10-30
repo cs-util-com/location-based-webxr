@@ -38,6 +38,7 @@ import {
   type StationsLayerDeps,
 } from "./editor3d-stations.js";
 import { buildLecternStand } from "../lectern-view.js";
+import { buildReadingSign } from "../reading-sign.js";
 
 // The geodesy is licence-gated; the store's construction activates it (the
 // page's own store does at boot).
@@ -964,6 +965,52 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, "a", 1));
     expect(root.position.toArray()).toEqual([3, 0, 0]);
     expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+  });
+
+  // Why: a free long text may stand as a short reading sign (format
+  // minor 4). The editor draws it through the page's builder, keeps it
+  // upright through the morph like a stand (it is no photo plane), and a
+  // click on its plate selects the long text.
+  it("draws a long text's reading sign, keeps it upright, and picks it", async () => {
+    const titles: string[] = [];
+    const { d } = deps({
+      makeReadingSign: (block) => {
+        titles.push(block.title);
+        const sign = buildReadingSign(null);
+        return { object: sign.root, dispose: sign.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const sign = {
+      id: "r",
+      kind: "longText",
+      view: "reading",
+      title: "The siege",
+      body: "In 1632 the town was besieged.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [photo("p"), sign]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    expect(titles).toEqual(["The siege"]);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    const root = d.parent.getObjectByName("reading-sign")!;
+    expect(root).toBeDefined();
+    layer.update(view(0, 0, "a", 0));
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+    const plate = d.parent.getObjectByName("reading-sign-plate")!;
+    plate.updateMatrixWorld(true);
+    const at = plate.getWorldPosition(new THREE.Vector3());
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    // Unturned, it faces its local +z, the station's east (as a stand).
+    camera.position.copy(at).add(new THREE.Vector3(10, 0, 0));
+    camera.lookAt(at);
+    camera.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    expect(layer.pick(ray)).toBe("r");
   });
 
   // Why: a stand keeps only its pose's turn about up, wherever it is

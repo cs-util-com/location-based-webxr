@@ -13,7 +13,8 @@ the rest of the visit, kept with the walk (`visitor-walk-slice.ts`
 ## Public API
 
 - `isWorldBlock(block)` - true for a world view: the framework's
-  `TOUR_WORLD_VIEWS` (`pin`, `plane` and the model's world views).
+  `TOUR_WORLD_VIEWS` (`pin`, a long text's `lectern` and `reading`,
+  `plane` and the model's world views).
 - `worldBlockReachedBy(station, step)` - the world block a `show` step
   reaches, or null (a card, a stage block, a choice, a quiz, a missing
   block).

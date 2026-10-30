@@ -50,6 +50,14 @@ listed in `index.html.md`. The concerns and their modules:
   (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or
   stage plays or stops his voice, and goes nowhere else; a tap that opens
   no model card goes to the pin sheet) and stops it in `hooks.stopStations`.
+- `long-text-sheet.ts` and `reading-sign.ts` - a long text's whole text:
+  `main.ts` builds the reading sheet under `#ar-root` (its pictures read
+  through the stations' prefetch by the asset's path, a link asking while
+  an AR session is live), opens it from `hooks.visitorTap` when a shown
+  reading sign is under the tap (`shownReadingSignUnderTap`, after the
+  reading stands in `routeVisitorTap`'s order), with the station's line
+  above the title (`readingSheetContent`), and closes it in
+  `hooks.stopStations`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

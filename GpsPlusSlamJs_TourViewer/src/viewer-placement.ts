@@ -55,6 +55,7 @@ import {
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { renderStationBlocks, renderTourStation } from "./content-placement.js";
 import { mountLectern } from "./lectern-view.js";
+import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
 import type {
@@ -1085,6 +1086,8 @@ export function createViewerPlacement(deps: {
       makeLabel: (text: string) => seams.createLabel(text),
       // A long text's reading stand: a canvas page, turned by a tap.
       makeLectern: mountLectern,
+      // A long text's reading sign: a tap opens its text in the sheet.
+      makeReadingSign: mountReadingSign,
       // A placed model at its size (station blocks plan B2b), read
       // through the same cache as the station's story.
       loadModel: async (entryName: string) =>

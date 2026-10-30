@@ -86,6 +86,13 @@ export interface StationsLayerDeps {
     readonly title: string;
     readonly body: string;
   }): { object: THREE.Object3D; dispose(): void };
+  /** A long text's reading sign (`reading-sign.ts`, the page's).
+   *  Absent: no sign is drawn. */
+  makeReadingSign?(block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }): { object: THREE.Object3D; dispose(): void };
   /** A content entry's bytes, by its path in the tour. */
   loadContent(entryName: string): Promise<Blob>;
   loadGlbModel(blob: Blob): Promise<THREE.Object3D>;
@@ -192,13 +199,14 @@ export type LayerPreview =
       readonly sizeM: number | null;
     };
 
-/** The name `buildLecternStand` gives a reading stand's root. */
-const STAND = "lectern";
+/** The names `buildLecternStand` and `buildReadingSign` give a reading
+ *  stand's and a reading sign's root: drawn upright, never as a photo. */
+const STANDS: ReadonlySet<string> = new Set(["lectern", "reading-sign"]);
 
-/** Whether `object` is a reading stand or part of one. */
+/** Whether `object` is a reading stand or sign, or part of one. */
 function inStand(object: THREE.Object3D): boolean {
   for (let o: THREE.Object3D | null = object; o !== null; o = o.parent) {
-    if (o.name === STAND) return true;
+    if (STANDS.has(o.name)) return true;
   }
   return false;
 }
@@ -535,6 +543,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       ...(deps.makeLectern === undefined
         ? {}
         : { makeLectern: deps.makeLectern.bind(deps) }),
+      ...(deps.makeReadingSign === undefined
+        ? {}
+        : { makeReadingSign: deps.makeReadingSign.bind(deps) }),
     })
       .then(async (rendered) => {
         if (!content.alive) {
@@ -682,7 +693,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         photo.upright.copy(turned);
         continue;
       }
-      if (o.name === STAND) {
+      if (STANDS.has(o.name)) {
         // Upright, as the renderer draws it: its turn about up only.
         uprightTurn(pose.rotation, o.quaternion);
         continue;

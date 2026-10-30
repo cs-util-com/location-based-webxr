@@ -72,7 +72,10 @@ under - what a tap in AR is cast against to name the object
   back the model's own materials, then `disposeObject3D`); a model whose asset the tour lacks or whose load
   fails (null or a rejection) is named in `skipped`; without
   `loadModel` (the 3D editor, which draws its own) a model is left out
-  quietly as before. A long text in the `lectern` view is drawn by the
+  quietly as before. A long text in the `reading` view is drawn the same
+  way by the page's optional `makeReadingSign(block)` (`reading-sign.ts`
+  `mountReadingSign`), and left out quietly without it. A long text in
+  the `lectern` view is drawn by the
   page's optional `makeLectern(block)` (`lectern-view.ts` `mountLectern`,
   the visitor's), at the block's local position and its turn about up
   only (`uprightTurn`: a pitch or roll is dropped, as the prototype's

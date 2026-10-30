@@ -68,7 +68,7 @@ export function sentenceSpans(text: string, lang = "en"): TextSpan[] {
 
 /** One sentence of the sheet: its text in the DOM and the paragraph
  *  (block of text) it belongs to, counted from 0. */
-export interface SheetSentence {
+interface SheetSentence {
   readonly range: Range;
   readonly paragraph: number;
 }

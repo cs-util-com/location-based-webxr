@@ -489,11 +489,11 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         dom.text.textContent = block.caption;
         return;
       case "longText":
-        // On a reading stand the text stands in the world (from this step
-        // on, as a placed model), its page drawn as pixels: the card names
-        // it by its title and carries its words too, so they can be read
-        // here and reached by a screen reader.
-        if (block.view === "lectern") {
+        // On a reading stand or a reading sign the text stands in the world
+        // (from this step on, as a placed model), drawn as pixels: the card
+        // names it by its title and carries its words too, so they can be
+        // read here and reached by a screen reader.
+        if (block.view === "lectern" || block.view === "reading") {
           const words = plainTextOf(parseTourMarkdown(block.body)).text;
           dom.text.textContent =
             words === "" ? block.title : `${block.title}\n\n${words}`;
