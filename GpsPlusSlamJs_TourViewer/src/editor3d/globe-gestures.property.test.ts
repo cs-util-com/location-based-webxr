@@ -28,6 +28,7 @@ const input: fc.Arbitrary<GlobeInput> = fc.oneof(
   }),
   fc.record({ kind: fc.constant("double" as const), on: hit }),
   fc.record({ kind: fc.constant("arrow" as const), selected: fc.boolean() }),
+  fc.record({ kind: fc.constant("fingers" as const), on: hit }),
 );
 const ROUTES = new Set([
   "camera",

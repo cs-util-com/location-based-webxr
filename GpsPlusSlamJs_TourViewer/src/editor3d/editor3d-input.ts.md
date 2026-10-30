@@ -21,7 +21,9 @@ move the camera only, and a second finger during a drag cancels it.
   - `scene: InputScene` - `target(selection)`, `handleAt(pointer)`,
     `pickAt(pointer)`, `world`, `preview(target, preview | null)`,
     `hover(handle)`, `lockCamera(on)`, `twoFingerStart()`,
-    `twoFinger(mode, last, now)`, `frame(selection)`;
+    `twoFinger(mode, last, now)`, `frame(selection)`, and the optional
+    `cameraTakesTwoFingers` (the globe's: two fingers are the camera
+    controls' own; see below);
   - `page: InputPage` - `dispatch`, `selected()`, `select(id)`,
     `commit(edit)`, `remove(selection)`, `duplicate(selection)`,
     `say(text)`, `groundMenu(point, place | null)`, `keysFree(event)`.
@@ -78,6 +80,13 @@ move the camera only, and a second finger during a drag cancels it.
   handle locks it BEFORE the gesture reads the pointer: the lock stops a
   flight and the orbit's coast, so the camera stands still from the press
   on (a press that finds nothing to grab unlocks again).
+- With `cameraTakesTwoFingers` (the globe view, whose controls pinch,
+  twist and tilt as in the globe lab) a second finger still cancels a
+  drag and blocks new presses until every finger is up, but the camera
+  is unlocked at once (before the controls read that finger: the listener
+  captures) and the fingers are not read here (no `twoFingerStart` or
+  `twoFinger`). Tested as a row of the globe's routing table
+  (`globe-gestures.ts`, `fingers`).
 - A drag waiting for its ground shows a `progress` cursor until the
   ground arrives (then `grabbing` again).
 - The handle under the mouse is looked for only when the pointer is over

@@ -23,8 +23,10 @@
  * `gestureBusy`), so the gesture's world points stay valid. The routing
  * table's two extras (`globe-gestures.ts`) are wired here: the arrows with
  * nothing selected step the camera (`steppedView`), a double click on the
- * ground zooms one step toward it. Two fingers lock the camera without
- * moving it (the globe's own two-finger gestures are not wired yet).
+ * ground zooms one step toward it. Two fingers are the globe's controls'
+ * (their pinch, twist and tilt, as in the globe lab): the input leaves the
+ * camera free for them (`takesTwoFingers`), and a handle drag a second
+ * finger interrupts is cancelled.
  *
  * A station is drawn only once its first upload ran (`upload-queue.ts`):
  * at most `UPLOADS.perFrame` stations a frame have their materials
@@ -607,6 +609,7 @@ export async function openGlobeEditor(
         lock: (on) => {
           controls.lease(on);
         },
+        takesTwoFingers: true,
         twoFingerStart: () => undefined,
         twoFinger: () => undefined,
         lookAt: () => camera.position,

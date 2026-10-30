@@ -5,7 +5,8 @@
  * stays - a right drag rotates, a right click that did not move opens the
  * editor's menu; a double click on an object selects it and flies to it,
  * on the ground it zooms as in the lab; the arrow keys nudge while
- * something is selected and move the camera otherwise.
+ * something is selected and move the camera otherwise; two fingers are
+ * the camera's, as in the lab (its pinch, twist and tilt).
  *
  * Pure: one input in, one route out. The page wires each route.
  *
@@ -43,7 +44,9 @@ export type GlobeInput =
   /** A double click (or a double tap). */
   | { readonly kind: "double"; readonly on: GlobeHit }
   /** An arrow key, with or without a selection. */
-  | { readonly kind: "arrow"; readonly selected: boolean };
+  | { readonly kind: "arrow"; readonly selected: boolean }
+  /** A second finger came down; `on` is where the first one started. */
+  | { readonly kind: "fingers"; readonly on: GlobeHit };
 
 /**
  * Where an input goes:
@@ -102,5 +105,9 @@ export function routeGlobeInput(
       return input.on === "handle" ? "none" : "camera-zoom";
     case "arrow":
       return input.selected ? "nudge" : "camera-step";
+    case "fingers":
+      // The controls' own two-finger gestures; a handle drag the first
+      // finger started is cancelled (the page's rule for a second finger).
+      return "camera";
   }
 }

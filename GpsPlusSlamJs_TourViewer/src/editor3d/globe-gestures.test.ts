@@ -18,6 +18,17 @@ import {
 const HITS: readonly GlobeHit[] = ["object", "handle", "ground", "sky"];
 
 describe("routeGlobeInput, the owner's table", () => {
+  // Why: on a phone the globe's controls pinch, twist and tilt with two
+  // fingers, as in the globe lab; the editor once took two fingers for
+  // itself and, having nothing to do with them on the globe, locked the
+  // camera still. A second finger is the camera's wherever the first one
+  // started: on a handle the drag is cancelled first.
+  it("gives two fingers to the camera, wherever the first one started", () => {
+    for (const on of HITS) {
+      expect(routeGlobeInput({ kind: "fingers", on })).toBe("camera");
+    }
+  });
+
   it("rotates on a right drag and opens the menu on a right click", () => {
     for (const on of HITS) {
       expect(routeGlobeInput({ kind: "press", button: "right", on })).toBe(

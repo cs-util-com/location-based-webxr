@@ -285,3 +285,62 @@ test("drags a selected station's radius dot on the globe: one edit, the camera a
   expect(moved.geo).toEqual(first.geo);
   expect(await rejections(page)).toEqual([]);
 });
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  // Why: on a phone two fingers are the globe's controls' (their pinch,
+  // twist and tilt, as in the globe lab). The editor's input used to lock
+  // the camera for two fingers and read them for the OrbitControls view's
+  // own gestures, which the globe view ignored: a pinch held the camera
+  // still. A pinch on the ground must move the camera.
+  test("a pinch on the ground moves the camera on the globe", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await answerHosts(page, { globeAssets: "serve" });
+    await keepRejections(page);
+    await page.goto("/edit.html?globe=1");
+    await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+    await page.locator("#sample-btn").click();
+    await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+      timeout: 120_000,
+    });
+    await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+    await afterFrames(page, 5);
+    const box = await page.locator("#view3d canvas").boundingBox();
+    if (box === null) throw new Error("no canvas");
+    const before = await view3d(page);
+    const cdp = await page.context().newCDPSession(page);
+    /** @param {string} type @param {{x: number, y: number, id: number}[]} points */
+    const touch = (type, points) =>
+      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+    // On the ground below the tour, the two fingers 60 px apart, opened
+    // to 300 px over twelve steps.
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.8;
+    /** @param {number} half */
+    const pair = (half) => [
+      { x: x - half, y, id: 1 },
+      { x: x + half, y, id: 2 },
+    ];
+    await touch("touchStart", [{ x: x - 30, y, id: 1 }]);
+    await touch("touchStart", pair(30));
+    for (let i = 1; i <= 12; i++) {
+      await touch("touchMove", pair(30 + i * 10));
+    }
+    await touch("touchEnd", []);
+    await afterFrames(page, 10);
+    const after = await view3d(page);
+    console.log(
+      `pinch distance ${before.distanceM.toFixed(1)} -> ${after.distanceM.toFixed(1)} m`,
+    );
+    // The controls moved the camera: before the change the input locked
+    // them and the camera stayed exactly where it was.
+    expect(after.camera).not.toEqual(before.camera);
+    expect(Math.abs(after.distanceM - before.distanceM)).toBeGreaterThan(
+      before.distanceM * 0.05,
+    );
+    expect(await rejections(page)).toEqual([]);
+  });
+});

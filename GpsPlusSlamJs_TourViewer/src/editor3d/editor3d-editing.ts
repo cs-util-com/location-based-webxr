@@ -18,7 +18,8 @@
  * The camera is the view's (`EditingCamera`): the OrbitControls view's is
  * `orbitEditingCamera` (two fingers tilt, or pinch, pan and twist, and
  * OrbitControls is told to leave two fingers alone); the globe view leases
- * its own controls. The world's frame may move between frames (the globe's
+ * its own controls for a handle drag and leaves two fingers to them
+ * (`EditingCamera.takesTwoFingers`). The world's frame may move between frames (the globe's
  * follows the camera): the ECEF matrices and the layer's frame are read
  * live each time.
  *
@@ -87,6 +88,12 @@ export interface EditingCamera {
   /** A handle drag holds the camera still (true) until it is given back
    *  (false); a flight or a coast stops at once. */
   lock(on: boolean): void;
+  /**
+   * The camera's own controls take two fingers (the globe's): the input
+   * leaves the camera free for them and never calls `twoFingerStart` or
+   * `twoFinger`. Without it the editing reads two fingers itself.
+   */
+  readonly takesTwoFingers?: boolean;
   /** Two fingers began moving the camera. */
   twoFingerStart(): void;
   /** Two fingers moved from `last` to `now`, read as `mode`. */
@@ -457,6 +464,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     twoFinger: (mode, last, now) => {
       deps.view.twoFinger(mode, last, now, world);
     },
+    cameraTakesTwoFingers: deps.view.takesTwoFingers === true,
     frame(selection) {
       deps.frame(selection);
     },

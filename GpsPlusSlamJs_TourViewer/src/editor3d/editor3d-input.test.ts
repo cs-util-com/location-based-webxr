@@ -1000,6 +1000,56 @@ describe("the globe's routing table, event by event", () => {
     }
   });
 
+  // Why: the globe's controls pinch, twist and tilt with two fingers (the
+  // lab's gestures); the input used to lock the camera for two fingers and
+  // read them itself, which on the globe moved nothing. With a camera that
+  // takes two fingers the input must leave it free, read nothing, and still
+  // cancel a handle drag the first finger had started.
+  it("two fingers are the camera's, a handle drag under the first cancelled", () => {
+    for (const on of ["ground", "handle"] as const) {
+      const t = globeSetup({ handle: on === "handle" ? "move" : null });
+      t.scene.cameraTakesTwoFingers = true;
+      const one = { x: 10, y: 10 };
+      t.element.dispatchEvent(pointer("pointerdown", one, { touch: true }));
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 60, y: 10 }, { id: 2, touch: true }),
+      );
+      for (let i = 1; i <= 4; i++) {
+        window.dispatchEvent(
+          pointer("pointermove", { x: 10 - i * 5, y: 10 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer(
+            "pointermove",
+            { x: 60 + i * 5, y: 10 },
+            { id: 2, touch: true },
+          ),
+        );
+      }
+      const locks = t.log.filter((l) => l.startsWith("lock:"));
+      const locked = locks.at(-1) === "lock:true";
+      const read =
+        vi.mocked(t.scene.twoFinger).mock.calls.length > 0 ||
+        vi.mocked(t.scene.twoFingerStart).mock.calls.length > 0;
+      const did = locked || read ? "locked" : "camera";
+      expect(did, on).toBe(routeGlobeInput({ kind: "fingers", on }));
+      expect(t.commits, on).toEqual([]);
+      // The cancel line is said exactly when a handle drag was cancelled.
+      const saidCancel = vi
+        .mocked(t.page.say)
+        .mock.calls.some((call) => call[0] === TWO_FINGER_CANCEL);
+      expect(saidCancel, on).toBe(on === "handle");
+      window.dispatchEvent(pointer("pointerup", one, { touch: true }));
+      window.dispatchEvent(
+        pointer("pointerup", { x: 80, y: 10 }, { id: 2, touch: true }),
+      );
+      expect(
+        t.log.filter((l) => l.startsWith("lock:")).at(-1) ?? "lock:false",
+      ).toBe("lock:false");
+      t.input.dispose();
+    }
+  });
+
   it("an arrow nudges the selection, or steps the camera without one", () => {
     for (const selected of [true, false]) {
       const t = globeSetup({ selected: selected ? "pin" : null });

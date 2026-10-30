@@ -16,7 +16,7 @@ counts movement itself). Pure: the page wires each route.
   release's `movedPx` that is NaN or negative, or a `dragPx` that is not
   finite and positive.
 - Types `GlobeInput` (`press`, `release` with `movedPx`, `double`,
-  `arrow` with `selected`), `GlobeHit` (`object`, `handle`, `ground`,
+  `arrow` with `selected`, `fingers` with where the first finger started), `GlobeHit` (`object`, `handle`, `ground`,
   `sky`), `GlobeRoute`.
 
 ## The table
@@ -36,6 +36,16 @@ counts movement itself). Pure: the page wires each route.
   steps the camera itself. This follows the owner's decision of
   2026-10-27 ("move the camera otherwise") over the GV0 results' later
   recommendation of nothing (Q-G3, moved to this milestone).
+
+- **Two fingers:** `camera`, wherever the first finger started: the
+  globe's controls pinch, twist and tilt as in the lab. A handle drag the
+  first finger started is cancelled (the input's rule for a second
+  finger, the edit undone). The page wires this through the editing
+  camera's `takesTwoFingers`: the input then neither locks the camera for
+  two fingers nor reads them itself. Before this row the input locked
+  the camera and read the fingers for the OrbitControls view's own
+  gestures, which the globe has none of, so two fingers held the camera
+  still.
 
 ## Invariants & assumptions
 

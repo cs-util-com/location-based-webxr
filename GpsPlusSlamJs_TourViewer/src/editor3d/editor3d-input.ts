@@ -24,7 +24,9 @@
  *
  * OrbitControls keeps the camera's own input; a gesture or two fingers
  * lock it (`InputScene.lockCamera`) rather than hide events from it, so
- * its bookkeeping of the pointers stays whole.
+ * its bookkeeping of the pointers stays whole. A camera whose controls
+ * take two fingers themselves (`InputScene.cameraTakesTwoFingers`, the
+ * globe's) is left free for them instead.
  *
  * @see editor3d-input.ts.md
  */
@@ -63,6 +65,13 @@ export interface InputScene {
   hover(handle: GizmoHandle | null): void;
   /** OrbitControls takes no input while locked. */
   lockCamera(on: boolean): void;
+  /**
+   * The camera's own controls take two fingers (the globe's pinch, twist
+   * and tilt): a second finger still cancels a drag, but the camera is
+   * left free and `twoFingerStart` / `twoFinger` are never called.
+   * Without it two fingers lock the camera and are read here.
+   */
+  cameraTakesTwoFingers?: boolean;
   /** Two fingers began moving the camera (a flight ends). */
   twoFingerStart(): void;
   /** Two fingers moved from `last` to `now`, read as `mode`. */
@@ -265,6 +274,12 @@ export function createSceneInput(input: {
         if (drag !== null) {
           endDrag(false);
           page.say(TWO_FINGER_CANCEL);
+        }
+        if (scene.cameraTakesTwoFingers === true) {
+          // Free before the controls read this finger (the listener
+          // captures): a cancelled drag had them locked.
+          scene.lockCamera(false);
+          return;
         }
         scene.lockCamera(true);
         const pair = fingerPair();

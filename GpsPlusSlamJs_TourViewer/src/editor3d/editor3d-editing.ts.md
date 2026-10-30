@@ -38,12 +38,14 @@ pure gesture maths reads (`GestureWorld`).
   - `screenOf(selection)`, `handleScreen("middle" | "knob" | "dot")`,
     `handleSizes()` - for the page's checks: CSS px on the canvas.
   - `dispose()`.
-- Types `GizmoPart`, `EditingCamera` (`lock(on)`, `twoFingerStart()`,
-  `twoFinger(mode, last, now, world)`, `lookAt()`).
+- Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional
+  `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
+  `cameraTakesTwoFingers`.
 - `orbitEditingCamera({ controls, camera, endFlight, dropMomentum })` - the
   OrbitControls view's `EditingCamera`; it turns OrbitControls' two-finger
   touch off at once. The globe view's (in `editor3d-globe.ts`) leases the
-  globe's controls and leaves two fingers unwired.
+  globe's controls for a handle drag and takes two fingers itself
+  (`takesTwoFingers`): the globe's controls pinch, twist and tilt.
 - `SceneEditingDeps.models` - the store's selection, model focus and
   model pick, and the page's model edit (true: written).
 - The selected model's parts are drawn by `editor3d-model-parts.ts`; a

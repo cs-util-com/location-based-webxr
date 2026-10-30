@@ -107,8 +107,13 @@ world frame moves nothing relative to the ground.
   click on the ground moves the camera `ZOOM_SHARE` of the way toward the
   ground under the pointer, along its ray (what is under the pointer stays
   there).
-- Two fingers lock the camera (the shared input's rule) and move nothing:
-  the globe's own two-finger gestures are not wired.
+- Two fingers are the globe's controls' (their pinch, twist and tilt, as
+  in the globe lab; the routing table's `fingers` row): the editing
+  camera says `takesTwoFingers`, so the input leaves the controls free
+  for them; a handle drag a second finger interrupts is cancelled
+  unwritten. Before, the input locked the camera for two fingers and read
+  them for the OrbitControls view's gestures, which the globe view
+  ignored: two fingers held the camera still.
 
 ## Invariants & assumptions
 
