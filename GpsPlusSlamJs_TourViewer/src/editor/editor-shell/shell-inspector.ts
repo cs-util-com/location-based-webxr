@@ -30,8 +30,16 @@
 import type { ShellPictures } from "./shell-pictures.js";
 import { shellIcon, type ShellIcon } from "./shell-icons.js";
 import {
+  TOUR_MODEL_NOTE_RULES,
+  TOUR_MODEL_SECTION_RULES,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import {
+  CHARACTER_VIEW_CHOICES,
+  MODEL_VIEW_CHOICES,
   ON_GROUND_M,
+  type InspectorCharacter,
   type InspectorModel,
+  type InspectorModelParts,
   type InspectorPosition,
 } from "./inspector-model.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
@@ -293,6 +301,7 @@ function lockButton(locked: boolean): HTMLButtonElement {
 const ITEM_WORD: Readonly<Record<string, string>> = {
   pin: "pin",
   photo: "photo",
+  text: "long text",
   model: "3D model",
 };
 
@@ -370,6 +379,7 @@ const KIND_ICON: Readonly<Record<string, ShellIcon>> = {
   code: "qr",
   pin: "pin",
   photo: "photo",
+  text: "text",
   model: "model",
 };
 
@@ -387,6 +397,7 @@ function offText(m: number | null): string {
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
 type ItemModel = Extract<InspectorModel, { kind: "item" }>;
 type CodeModel = Extract<InspectorModel, { kind: "code" }>;
+type ModelParts = InspectorModelParts;
 
 /** The card picture's choices: a button each, the shown one pressed. */
 function imagePicker(
@@ -483,7 +494,8 @@ function stationPosition(
 }
 
 /** The blocks the station's story shows, a row each by kind and name:
- *  listed, not edited, here (the 3D view draws none of them). */
+ *  listed here, neither added, ordered nor removed (the story editor's);
+ *  their texts are typed in a box each below (`storyBlockParts`). */
 function storyList(model: StationModel): HTMLElement {
   const box = el("div", "isec story");
   const tag = el("span", "flabel", "In its story");
@@ -502,8 +514,109 @@ function storyList(model: StationModel): HTMLElement {
     el(
       "div",
       "note",
-      "Shown while the station's story runs; listed here, not edited here yet.",
+      "Shown while the station's story runs; their texts and characters are set below.",
     ),
+  );
+  return box;
+}
+
+/** A group of chips named `label`, one per choice, the one `on` pressed;
+ *  each acts as `act:<value>`. */
+function chipGroup(
+  label: string,
+  act: string,
+  choices: readonly { readonly value: string; readonly label: string }[],
+  on: string,
+): [HTMLElement, HTMLElement] {
+  const tag = el("span", "flabel", label);
+  tag.id = fieldId();
+  const chips = el("div", "vchips");
+  chips.setAttribute("role", "group");
+  chips.setAttribute("aria-labelledby", tag.id);
+  for (const choice of choices) {
+    const pressed = choice.value === on;
+    const b = el("button", pressed ? "chip on" : "chip", choice.label);
+    b.type = "button";
+    b.dataset["act"] = `${act}:${choice.value}`;
+    b.setAttribute("aria-pressed", String(pressed));
+    chips.append(b);
+  }
+  return [tag, chips];
+}
+
+/** Said under a character's view chips for a view they do not offer
+ *  (an older tour's), so no chip being pressed reads as meant. */
+const CHARACTER_OLDER_VIEW =
+  "He stands in a view of an older tour; a chip moves him to a story view.";
+
+/** Said under his advance chips when his step moves on by itself. */
+const CHARACTER_AUTO_ADVANCE =
+  "His step moves on by itself after a while; a chip sets it otherwise.";
+
+/** A story block's texts to type, each named `block:<id>:<field>`
+ *  (`inspector-edits.ts`), its count under it. */
+function storyTextFields(
+  id: string,
+  fields: readonly BlockField[],
+): HTMLElement[] {
+  return fields.flatMap((f) =>
+    blockTextField({ ...f, name: `block:${id}:${f.name}` }),
+  );
+}
+
+/** A story block that is no character: its kind and name, its texts. */
+function storyBlockParts(block: StationModel["story"][number]): HTMLElement {
+  const box = el("div", "isec story-text");
+  box.dataset["block"] = block.id;
+  box.append(
+    el("span", "flabel", `${block.kind} - ${block.title}`),
+    ...storyTextFields(block.id, block.fields),
+  );
+  return box;
+}
+
+/** A story character's view, how his step moves on and his facing, as a
+ *  model's view is set: chips, the one in use pressed, and a number; his
+ *  texts under them. */
+function characterParts(
+  id: string,
+  name: string,
+  c: InspectorCharacter,
+  fields: readonly BlockField[],
+): HTMLElement {
+  const box = el("div", "isec character");
+  box.dataset["block"] = id;
+  const views = CHARACTER_VIEW_CHOICES.map((v) => ({
+    value: v.view,
+    label: v.label,
+  }));
+  const offered = views.some((v) => v.value === c.view);
+  box.append(
+    el("span", "flabel", name),
+    ...chipGroup("View", `character-view:${id}`, views, c.view),
+  );
+  if (!offered) box.append(el("div", "note", CHARACTER_OLDER_VIEW));
+  box.append(
+    ...chipGroup(
+      "Moves on",
+      `character-advance:${id}`,
+      [
+        { value: "tap", label: "On a tap" },
+        { value: "lineEnd", label: "When the line ends" },
+      ],
+      c.advance,
+    ),
+  );
+  if (c.advance === "auto")
+    box.append(el("div", "note", CHARACTER_AUTO_ADVANCE));
+  box.append(
+    numberField(
+      "Facing",
+      `character-facing:${id}`,
+      String(Math.round(c.facingDeg) % 360),
+      "deg",
+    ),
+    ...storyTextFields(id, fields),
   );
   return box;
 }
@@ -547,6 +660,15 @@ function stationParts(
     section,
   ];
   if (model.story.length > 0) parts.push(storyList(model));
+  for (const block of model.story) {
+    if (block.character !== undefined) {
+      parts.push(
+        characterParts(block.id, block.title, block.character, block.fields),
+      );
+    } else if (block.fields.length > 0) {
+      parts.push(storyBlockParts(block));
+    }
+  }
   const p = model.position;
   if (p === null) {
     // Nothing for the lock to keep still: the note stands alone.
@@ -567,6 +689,208 @@ function stationParts(
   row.append(lockButton(model.locked));
   parts.push(row, ...open);
   return parts;
+}
+
+/** A line of a model's part to type (a note's title, a section's name),
+ *  its count against the format's cap beside it. */
+function partLine(
+  field: string,
+  aria: string,
+  value: string,
+  max: number,
+): HTMLElement[] {
+  const input = typed(field, value, "tfield");
+  input.setAttribute("aria-label", aria);
+  input.id = fieldId();
+  const count = el("output", "note count");
+  count.id = `${input.id}-count`;
+  input.setAttribute("aria-describedby", count.id);
+  wireTextCounter(input, count, max, "codePoints");
+  return [input, count];
+}
+
+/** A small button of a model's part (`data-act`), pressed while `on`. */
+function partButton(act: string, label: string, on = false): HTMLButtonElement {
+  const b = el("button", on ? "mini on" : "mini", label);
+  b.type = "button";
+  b.dataset["act"] = act;
+  if (on) b.setAttribute("aria-pressed", "true");
+  return b;
+}
+
+/** A model-space point as the inspector shows it. */
+function spotText(v: readonly number[]): string {
+  return v.map((x) => fixed(x, 2)).join(", ");
+}
+
+/** What a model's view does, under its choice. */
+const VIEW_NOTE: Readonly<Record<string, string>> = {
+  placed: "Stands at its place and size.",
+  ghost: "Glass, its feet fading into the ground.",
+  hotspots: "Its notes drawn on it; its animation held at rest.",
+  cutaway: "Cut open by its sections, one after the other.",
+  toy: "The visitor may move and resize it.",
+};
+
+/** A model's view, clip, notes and sections (`model-edits.ts`). */
+function modelParts(parts: ModelParts): HTMLElement[] {
+  const view = el("div", "isec mview");
+  const [label, chips] = chipGroup(
+    "View",
+    "view",
+    MODEL_VIEW_CHOICES.map((c) => ({ value: c.view, label: c.label })),
+    parts.view,
+  );
+  // Notes are drawn only in the Hotspots view: say so where they would
+  // otherwise seem lost.
+  const notesHidden = parts.view !== "hotspots" && parts.notes.length > 0;
+  const viewNote =
+    (VIEW_NOTE[parts.view] ?? "") +
+    (notesHidden ? " Its notes show only in Hotspots." : "");
+  view.append(label, chips, el("div", "note", viewNote.trim()));
+
+  const clip = el("div", "isec manim");
+  const autoplay = partButton(
+    "anim-autoplay",
+    "Plays by itself",
+    parts.animation?.autoplay === true,
+  );
+  autoplay.disabled = parts.animation === null;
+  autoplay.setAttribute(
+    "aria-pressed",
+    String(parts.animation?.autoplay === true),
+  );
+  clip.append(
+    lineField(
+      "Animation",
+      "anim-name",
+      parts.animation?.name ?? "",
+      "The clip's name in the model file",
+    ),
+    autoplay,
+  );
+
+  const notes = el("div", "isec mnotes");
+  notes.append(el("div", "flabel", `Notes (${String(parts.notes.length)})`));
+  const pick = parts.pick;
+  parts.notes.forEach((n, i) => {
+    const on = parts.focus?.part === "note" && parts.focus.index === i;
+    const row = el("div", on ? "anno on" : "anno");
+    row.dataset["note"] = String(i);
+    const top = el("div", "top");
+    const badge = el("button", "badge", String(i + 1));
+    badge.type = "button";
+    badge.dataset["act"] = `note:${String(i)}`;
+    badge.setAttribute("aria-label", `Note ${String(i + 1)}`);
+    badge.setAttribute("aria-pressed", String(on));
+    top.append(
+      badge,
+      ...partLine(
+        `note-title:${String(i)}`,
+        `Note ${String(i + 1)} title`,
+        n.title,
+        TOUR_MODEL_NOTE_RULES.title.max,
+      ),
+    );
+    const text = el("textarea", "tfield");
+    text.rows = 2;
+    text.spellcheck = false;
+    text.dataset["field"] = `note-text:${String(i)}`;
+    text.placeholder = "What the visitor reads";
+    text.defaultValue = n.text.replace(/\r\n?/g, "\n");
+    text.id = fieldId();
+    text.setAttribute("aria-label", `Note ${String(i + 1)} text`);
+    const count = el("output", "note count");
+    count.id = `${text.id}-count`;
+    text.setAttribute("aria-describedby", count.id);
+    wireTextCounter(
+      text,
+      count,
+      TOUR_MODEL_NOTE_RULES.text.max,
+      TOUR_MODEL_NOTE_RULES.text.unit,
+    );
+    const picking = pick?.what === "note-place" && pick.index === i;
+    const tools = el("div", "tools");
+    tools.append(
+      partButton(
+        `note-place:${String(i)}`,
+        picking ? "Click the model..." : "Pick on model",
+        picking,
+      ),
+      partButton(`note-delete:${String(i)}`, "Delete"),
+      el("span", "pos", spotText(n.position)),
+    );
+    row.append(top, text, count, tools);
+    notes.append(row);
+  });
+  const adding = pick?.what === "note-add";
+  const add = partButton(
+    "note-add",
+    adding ? "Click the model..." : "+ Add note (click the model)",
+    adding,
+  );
+  add.disabled = parts.notesFull;
+  notes.append(add);
+  if (parts.notes.length > 0 && parts.view !== "hotspots") {
+    notes.append(
+      el("div", "note", "The visitor sees notes in the Hotspots view."),
+    );
+  }
+
+  const sections = el("div", "isec msections");
+  sections.append(
+    el("div", "flabel", `Sections (${String(parts.sections.length)})`),
+  );
+  parts.sections.forEach((c, i) => {
+    const on = parts.focus?.part === "section" && parts.focus.index === i;
+    const row = el("div", on ? "anno on" : "anno");
+    row.dataset["section"] = String(i);
+    const top = el("div", "top");
+    const badge = el("button", "badge", String(i + 1));
+    badge.type = "button";
+    badge.dataset["act"] = `section:${String(i)}`;
+    badge.setAttribute("aria-label", `Section ${String(i + 1)}`);
+    badge.setAttribute("aria-pressed", String(on));
+    top.append(
+      badge,
+      ...partLine(
+        `section-name:${String(i)}`,
+        `Section ${String(i + 1)} name`,
+        c.name,
+        TOUR_MODEL_SECTION_RULES.name.max,
+      ),
+    );
+    const picking = pick?.what === "section-place" && pick.index === i;
+    const tools = el("div", "tools");
+    tools.append(
+      partButton(
+        `section-place:${String(i)}`,
+        picking ? "Click the model..." : "Place on model",
+        picking,
+      ),
+      partButton(`section-flip:${String(i)}`, "Flip"),
+      partButton(`section-delete:${String(i)}`, "Delete"),
+      el("span", "pos", spotText(c.position)),
+    );
+    row.append(top, tools);
+    sections.append(row);
+  });
+  const cutting = pick?.what === "section-add";
+  const addCut = partButton(
+    "section-add",
+    cutting ? "Click the model..." : "+ Add section (click the model)",
+    cutting,
+  );
+  addCut.disabled = parts.sectionsFull;
+  sections.append(
+    addCut,
+    el(
+      "div",
+      "note",
+      "A section cuts the model through the point you click; the side facing you is cut away. Shown in the Cutaway view.",
+    ),
+  );
+  return [view, clip, notes, sections];
 }
 
 function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
@@ -606,6 +930,7 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
     );
     parts.push(section);
   }
+  if (model.model !== null) parts.push(...modelParts(model.model));
   const o = model.offset;
   const heading = model.headingDeg === null ? "-" : fixed(model.headingDeg, 0);
   parts.push(

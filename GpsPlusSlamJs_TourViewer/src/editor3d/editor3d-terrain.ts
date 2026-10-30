@@ -101,8 +101,11 @@ type EditorCredit = ReturnType<typeof reliefCredits>[number];
 /** The editor's ground, ready to be added to a scene and updated. */
 export interface EditorTerrain {
   readonly terrain: GlobeTerrain;
-  /** The world frame: ECEF to the world (x east, y up, z south at the
-   *  centre, the ellipsoid's point of the centre at the origin). */
+  /** The frame of `centre`: ECEF to it (x east, y up, z south at the
+   *  centre, the ellipsoid's point of the centre at the origin). With
+   *  `placement: "world"` that frame is the world; with `"ecef"` it is
+   *  not (the parent places the relief, and the world follows the
+   *  camera). */
   readonly worldFromEcef: THREE.Matrix4;
   readonly osm: GlobeOsmOverlay;
   /** The heights' sources, then the map's. */
@@ -134,6 +137,12 @@ export function createEditorTerrain(input: {
   /** The world frame's centre (degrees). */
   readonly centre: { readonly lat: number; readonly lng: number };
   readonly device: ReliefDeviceClass;
+  /**
+   * `world` (the default): the relief is placed in the world frame of
+   * `centre`. `ecef`: it is left in ECEF for a parent that places it (the
+   * globe view's Earth-centred group); `worldFromEcef` is the same.
+   */
+  readonly placement?: "world" | "ecef";
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -156,7 +165,9 @@ export function createEditorTerrain(input: {
     new THREE.Matrix4(),
   );
   const group = terrain.tiles.group;
-  worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  if (input.placement !== "ecef") {
+    worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  }
   group.updateMatrixWorld(true);
   const osm = createGlobeOsmOverlay({
     url: OSM_TILE_URL,

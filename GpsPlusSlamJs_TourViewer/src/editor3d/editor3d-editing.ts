@@ -11,8 +11,17 @@
  * The selection's gizmo is placed each frame from the tour, or from a
  * gesture's preview while one runs; codes have none (read-only here), and
  * a locked station's is its radius dots alone.
- * Two fingers move the camera (tilt, or pinch, pan and twist); OrbitControls
- * is told to leave two fingers alone.
+ * A selected model's notes and sections are drawn here too
+ * (`editor3d-model-parts.ts`), and the click on its surface the
+ * inspector waits for is answered here: a note or a section written where
+ * the ray meets the model (`SceneEditingDeps.models`).
+ * The camera is the view's (`EditingCamera`): the OrbitControls view's is
+ * `orbitEditingCamera` (two fingers tilt, or pinch, pan and twist, and
+ * OrbitControls is told to leave two fingers alone); the globe view leases
+ * its own controls for a handle drag and leaves two fingers to them
+ * (`EditingCamera.takesTwoFingers`). The world's frame may move between frames (the globe's
+ * follows the camera): the ECEF matrices and the layer's frame are read
+ * live each time.
  *
  * @see editor3d-editing.ts.md
  */
@@ -25,8 +34,13 @@ import { groundHit } from "gps-plus-slam-globe/editor";
 
 import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
+import {
+  editorViewActions,
+  type ModelFocus,
+  type ModelPick,
+} from "../editor/editor-view.js";
+import type { ModelEdit } from "../editor/model-edits.js";
 import { worldBlocks } from "../tour-document.js";
-import { EDITOR_CAMERA } from "./editor3d-camera.js";
 import {
   clampedPose,
   orbitPoseOf,
@@ -35,10 +49,21 @@ import {
 } from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
 import {
+  createModelParts,
+  heldClickNext,
+  hitModel,
+  type HeldClick,
+  MISSED_MODEL,
+  noteSpotOf,
+  pickedEdit,
+  sectionSpotOf,
+} from "./editor3d-model-parts.js";
+import {
   createSceneInput,
   type InputPage,
   type InputScene,
 } from "./editor3d-input.js";
+import type { FingerPair } from "./two-finger.js";
 import type { createStationsLayer, LayerPreview } from "./editor3d-stations.js";
 import type { EditorTerrain } from "./editor3d-terrain.js";
 import type { GesturePreview, GestureTarget, GestureWorld } from "./gesture.js";
@@ -58,6 +83,30 @@ const DEG = Math.PI / 180;
 
 type StationsLayer = ReturnType<typeof createStationsLayer>;
 
+/** What the editing asks of the view's camera. */
+export interface EditingCamera {
+  /** A handle drag holds the camera still (true) until it is given back
+   *  (false); a flight or a coast stops at once. */
+  lock(on: boolean): void;
+  /**
+   * The camera's own controls take two fingers (the globe's): the input
+   * leaves the camera free for them and never calls `twoFingerStart` or
+   * `twoFinger`. Without it the editing reads two fingers itself.
+   */
+  readonly takesTwoFingers?: boolean;
+  /** Two fingers began moving the camera. */
+  twoFingerStart(): void;
+  /** Two fingers moved from `last` to `now`, read as `mode`. */
+  twoFinger(
+    mode: "tilt" | "map",
+    last: FingerPair,
+    now: FingerPair,
+    world: GestureWorld,
+  ): void;
+  /** The world point the view looks at (`centre`'s place). */
+  lookAt(): THREE.Vector3;
+}
+
 /** What the editing needs of the scene and the page. */
 export interface SceneEditingDeps {
   /** The view's box (its docks inside it are not the scene's). */
@@ -65,10 +114,15 @@ export interface SceneEditingDeps {
   readonly canvas: HTMLCanvasElement;
   readonly scene: THREE.Scene;
   readonly camera: THREE.PerspectiveCamera;
-  readonly controls: OrbitControls;
+  readonly view: EditingCamera;
   readonly layer: StationsLayer;
   readonly ground: EditorTerrain;
+  /** ECEF to the world and back; read live (the globe's frame moves). */
+  readonly worldFromEcef: THREE.Matrix4;
   readonly ecefFromWorld: THREE.Matrix4;
+  /** The stations layer's frame to the world, read live; the identity
+   *  when absent (the layer draws in the world). */
+  readonly layerToWorld?: THREE.Matrix4;
   undulationAt(place: { lat: number; lon: number }): number;
   /** The tour as the view draws it now. */
   tour(): TourManifest | null;
@@ -77,12 +131,24 @@ export interface SceneEditingDeps {
   stationLocked(stationId: string): boolean;
   /** The page's selection and the store's dispatch, and its edits. */
   readonly page: InputPage;
-  /** The camera's flights: a two-finger touch ends one; a double click
-   *  frames. */
-  endFlight(): void;
-  /** Spend the orbit's coast at once: the camera stops moving. */
-  dropMomentum(): void;
+  /** A double click frames. */
   frame(selection: string): void;
+  /** The globe's extras (`InputScene.stepCamera`, `zoomTowards`). */
+  stepCamera?: InputScene["stepCamera"];
+  zoomTowards?: InputScene["zoomTowards"];
+  /** The input's click distance (px); its own default when absent. */
+  readonly clickPx?: number;
+  /** A model's own parts: the store's selection, the part in focus and
+   *  the click the inspector waits for, and the page's model edits (true:
+   *  written; a refusal is said by the page). */
+  readonly models: {
+    view(): {
+      readonly selected: string | null;
+      readonly focus: ModelFocus | null;
+      readonly pick: ModelPick | null;
+    };
+    edit(id: string, edit: ModelEdit): boolean;
+  };
 }
 
 /** The gizmo's parts a check can ask the screen position of. */
@@ -93,11 +159,14 @@ export type GizmoPart = "middle" | "knob" | "dot";
  * frame, before the drawing.
  */
 export function createSceneEditing(deps: SceneEditingDeps) {
-  const { camera, controls, canvas, layer, ground } = deps;
+  const { camera, canvas, layer, ground } = deps;
   const { ellipsoid } = ground.terrain.tiles;
-  // Two fingers are the editing's (`two-finger.ts`): OrbitControls keeps
-  // one finger and the mouse.
-  controls.touches.TWO = null;
+
+  /** A point of the stations layer in the world (a copy). */
+  const fromLayer = (at: THREE.Vector3): THREE.Vector3 =>
+    deps.layerToWorld === undefined
+      ? at.clone()
+      : at.clone().applyMatrix4(deps.layerToWorld);
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
@@ -138,7 +207,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       geo.alt - deps.undulationAt(geo),
       out,
     );
-    return out.applyMatrix4(deps.ground.worldFromEcef);
+    return out.applyMatrix4(deps.worldFromEcef);
   };
 
   const world: GestureWorld = {
@@ -195,6 +264,76 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     return null;
   };
 
+  /** A model of the tour by its id, or null. */
+  const modelOf = (id: string) => {
+    for (const station of deps.tour()?.stations ?? []) {
+      const item = worldBlocks(station).find((i) => i.id === id);
+      if (item !== undefined) return item.kind === "model" ? item : null;
+    }
+    return null;
+  };
+
+  // --- a model's notes and sections ----------------------------------------
+  const parts = createModelParts({
+    container: deps.container,
+    canvas,
+    scene: deps.scene,
+    camera,
+    view: () => deps.models.view(),
+    model: modelOf,
+    drawn: (id) => layer.modelObject(id),
+    focusNote(index) {
+      const { focus } = deps.models.view();
+      const on = focus?.part === "note" && focus.index === index;
+      deps.page.dispatch(
+        editorViewActions.modelFocused({
+          focus: on ? null : { part: "note", index },
+        }),
+      );
+    },
+  });
+
+  /** A waited click that came while the model was being drawn anew. */
+  let held: HeldClick | null = null;
+
+  /** The click the inspector waited for: the note or the section written
+   *  where the ray meets the selected model (the new one in focus), or
+   *  said missed. A model of the tour not drawn this moment (its file
+   *  loading again after an edit) holds the click until it is
+   *  (`heldClickNext`). */
+  const answerClick = (pointer: ScreenPoint) => {
+    held = null;
+    const { selected, pick } = deps.models.view();
+    if (selected === null || pick === null) return;
+    const model = modelOf(selected);
+    const drawn = layer.modelObject(selected);
+    if (model !== null && model.sizeM !== undefined && drawn === null) {
+      held = { pointer, selected, pick, atMs: performance.now() };
+      return;
+    }
+    const hit = drawn === null ? null : hitModel(rayAt(pointer), drawn);
+    const spot =
+      drawn === null || hit === null
+        ? null
+        : pick.what.startsWith("note")
+          ? noteSpotOf(drawn, hit)
+          : sectionSpotOf(drawn, hit, camera.position);
+    if (model === null || spot === null) {
+      deps.page.say(MISSED_MODEL);
+      return;
+    }
+    if (!deps.models.edit(selected, pickedEdit(pick, spot))) return;
+    deps.page.dispatch(editorViewActions.modelPickAsked({ pick: null }));
+    const part = pick.what.startsWith("note") ? "note" : "section";
+    const index =
+      "index" in pick
+        ? pick.index
+        : ((part === "note" ? model.annotations : model.sections)?.length ?? 0);
+    deps.page.dispatch(
+      editorViewActions.modelFocused({ focus: { part, index } }),
+    );
+  };
+
   // --- the gizmo -----------------------------------------------------------
   const gizmo = createGizmo(deps.scene, drawGizmoPictures());
   let preview: { target: GestureTarget; now: GesturePreview } | null = null;
@@ -202,7 +341,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   let layout: GizmoLayout | null = null;
 
   const spritePerPx = () =>
-    viewHeightAtOneM(EDITOR_CAMERA.fovDeg) /
+    viewHeightAtOneM(camera.fov) /
     Math.max(1, canvas.getBoundingClientRect().height);
 
   /** The gizmo's layout for the selection now: its target, or the
@@ -287,8 +426,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       if (g.miss !== null) return null;
       let best: { id: string; d: number } | null = null;
       for (const s of deps.tour()?.stations ?? []) {
-        const at = layer.pointOf(s.id);
-        if (at === null) continue;
+        const drawn = layer.pointOf(s.id);
+        if (drawn === null) continue;
+        const at = fromLayer(drawn);
         const d = Math.hypot(at.x - g.point.x, at.z - g.point.z);
         if (d <= s.foundRadiusM && (best === null || d < best.d)) {
           best = { id: s.id, d };
@@ -315,7 +455,190 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     hover(handle) {
       hovered = handle;
     },
-    lockCamera(on) {
+    lockCamera: (on) => {
+      deps.view.lock(on);
+    },
+    twoFingerStart: () => {
+      deps.view.twoFingerStart();
+    },
+    twoFinger: (mode, last, now) => {
+      deps.view.twoFinger(mode, last, now, world);
+    },
+    cameraTakesTwoFingers: deps.view.takesTwoFingers === true,
+    frame(selection) {
+      deps.frame(selection);
+    },
+    clickWaited() {
+      const { selected, pick } = deps.models.view();
+      return pick !== null && selected !== null && modelOf(selected) !== null;
+    },
+    answerClick,
+    ...(deps.stepCamera === undefined ? {} : { stepCamera: deps.stepCamera }),
+    ...(deps.zoomTowards === undefined
+      ? {}
+      : { zoomTowards: deps.zoomTowards }),
+  };
+  const input = createSceneInput({
+    element: deps.container,
+    surface: canvas,
+    scene: sceneSide,
+    page: deps.page,
+    ...(deps.clickPx === undefined ? {} : { clickPx: deps.clickPx }),
+  });
+
+  return {
+    /** The place the view looks at, on the ground: the ground's
+     *  ellipsoidal height there, or the point's own height where no
+     *  ground has loaded yet. */
+    centre(): GroundPlace {
+      const at = deps.view.lookAt();
+      const place = placeOf(at);
+      const groundAlt = world.groundAt(place);
+      if (groundAlt !== null) return { ...place, alt: groundAlt };
+      ecef.copy(at).applyMatrix4(deps.ecefFromWorld);
+      const c = ellipsoid.getPositionToCartographic(ecef, {}) as {
+        height: number;
+      };
+      return { ...place, alt: c.height + deps.undulationAt(place) };
+    },
+    /** The handle of the gesture under way (a drag, or "key" for a held
+     *  key), or null: the globe holds its frame still meanwhile. */
+    gesture: () => input.gesture(),
+    /** The sampled ground under a pointer (the world), or why none. */
+    groundUnder: (pointer: ScreenPoint) => world.groundUnder(pointer),
+    /** The ground's ellipsoidal height at a place, as loaded (null where
+     *  none has loaded yet). */
+    groundAt: (place: { readonly lat: number; readonly lon: number }) =>
+      world.groundAt(place),
+    /** Turn the selection `deg` clockwise about up, where it stands: one
+     *  edit through the page (a locked station's is refused there).
+     *  False for a selection without a pose here (a code). */
+    turn(selection: string, deg: number): boolean {
+      const target = targetOf(selection);
+      if (target === null) return false;
+      const geo = turnedGeo(target.geo, deg);
+      deps.page.commit(
+        target.kind === "station"
+          ? { kind: "station-pose", id: target.id, geo }
+          : { kind: "item-pose", id: target.id, geo },
+      );
+      return true;
+    },
+    /** Each frame: the input's retries and a held click, then the gizmo
+     *  on the selection. */
+    update() {
+      input.frame();
+      if (held !== null) {
+        const { selected, pick } = deps.models.view();
+        const next = heldClickNext(held, {
+          selected,
+          pick,
+          drawn: selected !== null && layer.modelObject(selected) !== null,
+          ms: performance.now(),
+        });
+        const { pointer } = held;
+        if (next !== "wait") held = null;
+        if (next === "answer") answerClick(pointer);
+        else if (next === "missed") deps.page.say(MISSED_MODEL);
+      }
+      parts.update();
+      layout = layoutNow();
+      if (layout === null) {
+        gizmo.update(null);
+        return;
+      }
+      const centreY = layout.centre.y;
+      gizmo.update({
+        layout,
+        spritePerPx: spritePerPx(),
+        groundY: (spot) => {
+          const place = placeOf({ x: spot.x, y: centreY, z: spot.z });
+          const drawn = ground.groundAt(place.lat * DEG, place.lon * DEG);
+          if (drawn === null) return centreY;
+          return worldOf({ ...place, alt: drawn + deps.undulationAt(place) }).y;
+        },
+        hovered,
+      });
+    },
+    /** Cancel a gesture under way, writing nothing. */
+    cancel() {
+      input.cancel();
+    },
+    /** Where the selection, or a part of its gizmo, is on the screen (the
+     *  page's checks), or null. */
+    screenOf(selection: string): ScreenPoint | null {
+      const at = selection.startsWith(STATION)
+        ? layer.pointOf(selection.slice(STATION.length))
+        : (layer.itemPointOf(selection) ?? layer.codePointOf(selection));
+      return at === null ? null : screenOf(fromLayer(at));
+    },
+    handleScreen(part: GizmoPart): ScreenPoint | null {
+      const o =
+        part === "middle"
+          ? gizmo.parts.disc
+          : part === "knob"
+            ? gizmo.parts.knob
+            : gizmo.parts.dots[0];
+      return o?.visible === true ? screenOf(o.position) : null;
+    },
+    /** The gizmo's drawn sizes on the screen (px), for the layout checks:
+     *  the knob, a dot, and the ring's or the move disc's radius. */
+    handleSizes(): { knobPx: number; dotPx: number; ringPx: number } | null {
+      if (layout === null) return null;
+      const perPx = spritePerPx();
+      const c = layout.centre;
+      const metresPerPx =
+        camera.position.distanceTo(new THREE.Vector3(c.x, c.y, c.z)) * perPx;
+      return {
+        knobPx: gizmo.parts.knob.scale.x / perPx,
+        dotPx:
+          gizmo.parts.dots[0]?.visible === true
+            ? gizmo.parts.dots[0].scale.x / perPx
+            : 0,
+        ringPx: (layout.ringM ?? layout.moveM) / metresPerPx,
+      };
+    },
+    /** For the page's checks: the selected model's note discs on the
+     *  canvas and its section planes. */
+    modelParts: () => parts.stats(),
+    /** Where a point of a drawn model (its own space) is on the screen,
+     *  or null (the page's checks click its surface there). */
+    modelScreenOf(
+      id: string,
+      at: readonly [number, number, number],
+    ): ScreenPoint | null {
+      const drawn = layer.modelObject(id);
+      if (drawn === null) return null;
+      drawn.updateMatrixWorld(true);
+      return screenOf(drawn.localToWorld(new THREE.Vector3(...at)));
+    },
+    dispose() {
+      input.dispose();
+      parts.dispose();
+      layer.setPreview(null);
+      gizmo.dispose();
+    },
+  };
+}
+
+/**
+ * The OrbitControls view's camera for the editing: a lock ends a flight,
+ * spends the orbit's coast and stops rotate, pan and zoom; two fingers
+ * are the editing's (`two-finger.ts`), so OrbitControls is told to leave
+ * them alone and keeps one finger and the mouse.
+ */
+export function orbitEditingCamera(deps: {
+  readonly controls: OrbitControls;
+  readonly camera: THREE.PerspectiveCamera;
+  /** The camera's flights: a lock or a two-finger touch ends one. */
+  endFlight(): void;
+  /** Spend the orbit's coast at once: the camera stops moving. */
+  dropMomentum(): void;
+}): EditingCamera {
+  const { controls, camera } = deps;
+  controls.touches.TWO = null;
+  return {
+    lock(on) {
       // Locked, the camera stands still: a flight or the orbit's coast
       // would move the object under a pointer that holds still.
       if (on) {
@@ -329,8 +652,9 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     twoFingerStart() {
       deps.endFlight();
     },
-    twoFinger(mode, last, now) {
+    twoFinger(mode, last, now, world) {
       const pose = orbitPoseOf(camera.position, controls.target);
+
       let next: OrbitPose;
       if (mode === "tilt") {
         next = { ...pose, polarRad: tiltedPolarRad(pose.polarRad, last, now) };
@@ -361,113 +685,6 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       orbitPosition(placed, camera.position);
       camera.lookAt(placed.target);
     },
-    frame(selection) {
-      deps.frame(selection);
-    },
-  };
-  const input = createSceneInput({
-    element: deps.container,
-    surface: canvas,
-    scene: sceneSide,
-    page: deps.page,
-  });
-
-  return {
-    /** The place the view looks at (the orbit's centre), on the ground:
-     *  the ground's ellipsoidal height there, or the centre's own height
-     *  where no ground has loaded yet. */
-    centre(): GroundPlace {
-      const at = controls.target;
-      const place = placeOf(at);
-      const groundAlt = world.groundAt(place);
-      if (groundAlt !== null) return { ...place, alt: groundAlt };
-      ecef.copy(at).applyMatrix4(deps.ecefFromWorld);
-      const c = ellipsoid.getPositionToCartographic(ecef, {}) as {
-        height: number;
-      };
-      return { ...place, alt: c.height + deps.undulationAt(place) };
-    },
-    /** The ground's ellipsoidal height at a place, as loaded (null where
-     *  none has loaded yet). */
-    groundAt: (place: { readonly lat: number; readonly lon: number }) =>
-      world.groundAt(place),
-    /** Turn the selection `deg` clockwise about up, where it stands: one
-     *  edit through the page (a locked station's is refused there).
-     *  False for a selection without a pose here (a code). */
-    turn(selection: string, deg: number): boolean {
-      const target = targetOf(selection);
-      if (target === null) return false;
-      const geo = turnedGeo(target.geo, deg);
-      deps.page.commit(
-        target.kind === "station"
-          ? { kind: "station-pose", id: target.id, geo }
-          : { kind: "item-pose", id: target.id, geo },
-      );
-      return true;
-    },
-    /** Each frame: the input's retries, then the gizmo on the selection. */
-    update() {
-      input.frame();
-      layout = layoutNow();
-      if (layout === null) {
-        gizmo.update(null);
-        return;
-      }
-      const centreY = layout.centre.y;
-      gizmo.update({
-        layout,
-        spritePerPx: spritePerPx(),
-        groundY: (spot) => {
-          const place = placeOf({ x: spot.x, y: centreY, z: spot.z });
-          const drawn = ground.groundAt(place.lat * DEG, place.lon * DEG);
-          if (drawn === null) return centreY;
-          return worldOf({ ...place, alt: drawn + deps.undulationAt(place) }).y;
-        },
-        hovered,
-      });
-    },
-    /** Cancel a gesture under way, writing nothing. */
-    cancel() {
-      input.cancel();
-    },
-    /** Where the selection, or a part of its gizmo, is on the screen (the
-     *  page's checks), or null. */
-    screenOf(selection: string): ScreenPoint | null {
-      const at = selection.startsWith(STATION)
-        ? layer.pointOf(selection.slice(STATION.length))
-        : (layer.itemPointOf(selection) ?? layer.codePointOf(selection));
-      return at === null ? null : screenOf(at);
-    },
-    handleScreen(part: GizmoPart): ScreenPoint | null {
-      const o =
-        part === "middle"
-          ? gizmo.parts.disc
-          : part === "knob"
-            ? gizmo.parts.knob
-            : gizmo.parts.dots[0];
-      return o?.visible === true ? screenOf(o.position) : null;
-    },
-    /** The gizmo's drawn sizes on the screen (px), for the layout checks:
-     *  the knob, a dot, and the ring's or the move disc's radius. */
-    handleSizes(): { knobPx: number; dotPx: number; ringPx: number } | null {
-      if (layout === null) return null;
-      const perPx = spritePerPx();
-      const c = layout.centre;
-      const metresPerPx =
-        camera.position.distanceTo(new THREE.Vector3(c.x, c.y, c.z)) * perPx;
-      return {
-        knobPx: gizmo.parts.knob.scale.x / perPx,
-        dotPx:
-          gizmo.parts.dots[0]?.visible === true
-            ? gizmo.parts.dots[0].scale.x / perPx
-            : 0,
-        ringPx: (layout.ringM ?? layout.moveM) / metresPerPx,
-      };
-    },
-    dispose() {
-      input.dispose();
-      layer.setPreview(null);
-      gizmo.dispose();
-    },
+    lookAt: () => controls.target,
   };
 }

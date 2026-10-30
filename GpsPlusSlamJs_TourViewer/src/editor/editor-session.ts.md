@@ -112,7 +112,12 @@ imperative resources only - that handle and the pictures' side table
     title, caption or alt text, a model's title), one step through the
     document's `edited` named "the <label> of <name>"; `refused` in
     words over the format's cap, `NOT_IN_TOUR` for an id the tour no
-    longer carries.
+    longer carries. An id that is a block a station's story shows
+    (`storyBlockFields`: a short text's caption too, no declared
+    character's name) is checked by the same `blockFieldEdit` for its
+    words, then written as that station's edit (`storyText`, one step
+    through `stationEdited`); the document's own refusal (`storyText`)
+    has a sentence of its own.
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
@@ -151,7 +156,8 @@ imperative resources only - that handle and the pictures' side table
     `stationEditChange`; `NOT_IN_TOUR` for an id the tour no longer
     carries; `NOT_APPLIED` when the tour changed under the call):
     - `editStation(stationId, edit)` - title, found radius (2 m to 300 m),
-      description, card image (`StationEdit`): `edited` or `unchanged`.
+      description, card image, a story character's view, advance and
+      facing (`StationEdit`): `edited` or `unchanged`.
       `unchanged` also when the document dropped the edit (its revision
       did not move): an edit of a station a delete emptied that leaves it
       with nothing of its own (its radius alone) is not listed, so no step
@@ -323,6 +329,18 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   file at your link is called"). Done derives the name of the file at the
   tour's link from a dated save with it, also after a reopen
   (`editor-link.ts` `doneHostedName`).
+- `editModel(id, edit)` - one of a model's own edits (`model-edits.ts`:
+  its view, a note, a section, its clip), one undo step named for the part
+  and the model ("the title of note 2 of The arch"). Refused for an id that
+  is no model (`NOT_A_MODEL_EDIT`) and for what the format refuses, in
+  words. The default view rule applies only to a model placed in this
+  session whose view the creator has not touched (`defaultViews`): every
+  model read from the file, restored from a draft or copied counts as the
+  creator's choice, so a reopen never hands a saved view back to the rule
+  (the r973 review: the old in-memory set of chosen views let a first note
+  override a saved view after a reopen). A `view` edit - the chip already
+  pressed included - takes the model out of the rule for good; an undo
+  does not put it back.
 
 ## Invariants & assumptions
 

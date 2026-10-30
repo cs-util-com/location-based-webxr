@@ -1,0 +1,173 @@
+# editor3d-globe.ts
+
+## Purpose
+
+The desktop editor's 3D view on the whole globe (full-globe editor plan
+2026-10-27-1850, GV1b), opened instead of the OrbitControls view
+(`editor3d-scene.ts`) when the page's link carries `globe=1`
+(`../editor/globe-switch.ts`, read in `../editor/edit-main.ts`). Without the
+switch nothing here loads.
+
+It mounts the globe package's view core (`createGlobeView` from
+`gps-plus-slam-globe/view`: sky, sun, surface, a world frame that follows
+the camera) with the editor's own relief and map (`editor3d-terrain.ts`,
+placed in ECEF) under the camera, the tour drawn in the globe's
+Earth-centred group (`globe-layer.ts`), and the globe's camera controls in
+eye mode. It opens at street level, `GLOBE_EDITOR_LOOK.backM` south of the
+tour's centre at eye height, looking at it.
+
+## Public API
+
+- `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
+  - `deps`: the same `Editor3dDeps` the OrbitControls view takes.
+  - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
+    rule's thresholds).
+  - Resolves on the render loop's first tick with the same `Editor3dView`
+    shape, so the shell, the view switch and the page's test hooks work
+    unchanged.
+  - Rejects with a `viewFailure` (`editor3d-view-parts.ts`): `empty` for a
+    tour with nothing positioned, `chunk` when the geoid does not load,
+    `context-lost` before the first frame, or the first frame's own error.
+    Everything made so far is undone first.
+
+## How the tour hangs on the globe
+
+The stations layer (`editor3d-stations.ts`) keeps its tour frame (x east,
+y up, z south at the tour's centre). One group, `tour-frame`, under the
+Earth-centred group carries the inverse of `worldFromEcefAt(centre)` as its
+matrix (`globe-layer.ts`'s `mountTour`), so the layer's coordinates land on
+the globe and a recentre of the world frame moves nothing relative to the
+ground.
+
+## Per frame (`updateLayers`, the view's `update` seam)
+
+- The ground's carrier by altitude (`reliefCarries`, hysteresis band): the
+  relief under the ceiling (with the globe's clouds step only), the globe's
+  surface above it. The two are never both shown.
+- The camera in the tour's frame, and the morph from pins to standing marks
+  from the tilt (`morphStanding`).
+- The visibility rule (`globeHidden`): each station and code by its own
+  size on screen, then crowded stations; the selected station never hides.
+  The result goes to `layer.setHidden`, which also keeps hidden objects
+  from being picked.
+- The near plane's keep-clear spheres: the shown stations' found radii.
+- The staged uploads (`upload-queue.ts`): a station of the tour not yet
+  admitted is queued and held back from drawing (added to what
+  `setHidden` gets, never to the rule's own result, whose hysteresis reads
+  it back). After `layer.update` (where a station's billboard is made) the
+  queue runs at most `UPLOADS.perFrame` (4) stations: each object of
+  `layer.stationObjects(id)` is shown for the call, `renderer.compile`d and
+  its material maps `renderer.initTexture`d, then the station is admitted
+  and drawn from the next frame. A station gone from the tour is
+  forgotten.
+  - Shared textures: the code squares share one face (`createCodeFace`);
+    the billboards are one canvas each (their number and name differ), so
+    they are staged rather than shared.
+  - Not staged: what a near station renders later, asynchronously (its
+    photos, models and reading stands, which upload when they arrive), a
+    billboard made again on a selection change, and a station whose
+    drawing an edit makes anew (its new root uploads in place: holding it
+    back would make it blink under the user's hand). `compile` is the
+    synchronous one: `compileAsync` would need a frame budget of its own.
+  - The scheduler's sweep (40 jobs of 3 ms each): N = 1 costs 3 ms a frame
+    over 40 frames, N = 4 12 ms over 10, N = 16 48 ms over 3; 4 keeps one
+    frame under the 16.7 ms of 60 Hz at that cost. The 3 ms is declared,
+    not measured on the phone.
+
+## The verbs
+
+- The clock: daylight by default, `view.startClock` held (`scale` null with
+  a `startMs`) at `daylightStartMs(Date.now(), centre.lng)`; `setRealTime(true)`
+  restarts it at the real time now, `false` back in daylight. `stats().globe.clock`
+  carries `realTime`, `sceneMs` and the sun's height over the tour
+  (`sunElevationDeg`).
+- The air: `mountGlobeViewAir` from `gps-plus-slam-globe/view`, mounted
+  once the relief exists, in the view's `afterSky` and `afterScene` seams
+  and stepped in `updateLayers` after the camera and the frame are
+  placed; the relief's tiles are hazed before they load. Without it the
+  view core's sky is black at noon. It writes the globe's sun intensity
+  (the eased exposure) every frame, so nothing here sets it.
+  `stats().globe.air` carries its `weight`, `observerKm` and the ground
+  sky's state.
+- `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
+  flight yet.
+- `setTop`, `northUp`, `setTilt` re-place the current pose with one field
+  changed.
+- `zoom` and `setDistance` move the camera along its line of sight,
+  measured to the tour's centre at its drawn height (the tour frame's
+  point `centreHeightM` up), as `stats().distanceM` is - not to the
+  frame's origin on the ellipsoid, which lies the tour's height under it.
+- `centre()` is the place UNDER the camera, not a look-at target (eye mode
+  has none), and `groundAt(place)` the ground there; both are the
+  editing's, in the tour file's ellipsoidal heights: the drawn ground plus
+  the geoid's N (the point's own height plus N where no ground has loaded).
+- Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
+  `cancelGesture`, `handleScreen`, `gizmoSizes`, `modelParts` and
+  `modelScreenOf` are the editing's. Its camera leases the globe's
+  controls off for a handle drag (`GlobeCameraControls.lease`), and the
+  view's `gestureBusy` is true while the controls or an edit's gesture
+  run, so the world frame recentres only between gestures. The ECEF
+  matrices it reads are refreshed each frame and at every frame move (the
+  view's `frameChanged` seam, which also releases the controls), so they
+  are right from the first view on (`followFrame`).
+- The globe's controls are made with `doubleTapZoom: false`: a double
+  click is the routing table's `camera-zoom`, done here (`zoomTowards`),
+  and the library's own animated double-tap zoom would add a second one.
+- The routing table's extras: an arrow with nothing selected steps the
+  camera (`steppedView`, the height over the loaded ground); a double
+  click on the ground moves the camera `ZOOM_SHARE` of the way toward the
+  ground under the pointer, along its ray (what is under the pointer stays
+  there).
+- Two fingers are the globe's controls' (their pinch, twist and tilt, as
+  in the globe lab; the routing table's `fingers` row): the editing
+  camera says `takesTwoFingers`, so the input leaves the controls free
+  for them; a handle drag a second finger interrupts is cancelled
+  unwritten. Before, the input locked the camera for two fingers and read
+  them for the OrbitControls view's gestures, which the globe view
+  ignored: two fingers held the camera still.
+
+## Invariants & assumptions
+
+- The page's box is hidden until the open resolves; the view's fit needs a
+  laid-out canvas (a zero-size canvas would make its aspect NaN and throw).
+  So the loop skips drawing while the canvas has no size and resolves the
+  open on that first tick.
+- A frame that throws after the open stops the loop and tells the page
+  (`events.failed`); a lost context after the open tells it too.
+- `dispose` frees in reverse order: the loop stops first, and the
+  context-lost listener is taken off before the WebGL context loss is
+  forced (the forced loss is not a lost context to tell the page about).
+- Credits are filled once at open (the globe's active sources and the
+  relief's); they do not follow a later change of sources yet.
+- The heavy clouds (the shell and its volume) are never mounted.
+- The globe's assets are served at `/globe-assets/` by the dev server only
+  (`../dev-server/globe-assets-route.ts`); the built site lacks them.
+
+## Stats
+
+`stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
+the camera's altitude, the frame target, the hidden stations and codes, the
+frame recentres, the surface's state and `uploads` (`pending`, `ran`,
+`worstFrameMs`, `admitted`).
+
+## Tests
+
+- `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
+  controls, the relief, the stations layer and the input are fakes; the
+  fake view places its camera through the globe's own `viewPoseEcef`, and
+  the editing is the real one. It covers `gestureBusy` during a gesture, a
+  frame move releasing the controls and refreshing the editing's matrices
+  (the place under the camera right after the first view and after a
+  recentre), `centre` and `groundAt` with N added, the zoom and the
+  distance measured to the tour's centre at tour heights 0, 515 and
+  2,500 m, and the order of `dispose`.
+- `globe-editor-look.test.ts` (the pure rules), `editor3d-stations.test.ts`
+  ("hides single stations and codes, and nothing hidden is picked"),
+  `editor3d-terrain.test.ts` (the ECEF placement).
+- `../editor3d-lazy.test.ts`: the globe view is reached only by import()
+  from the editor's page, and only its chunks hold the globe's imagery.
+- `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html?globe=1` and
+  finds the globe and a station through the page's test hooks; the sky
+  (blue at noon, dark at midnight); a handle drag holding the camera and
+  the frame still (the frame even with the camera taken 60 km away); a
+  pinch moving the camera on a touch screen.

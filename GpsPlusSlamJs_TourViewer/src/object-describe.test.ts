@@ -17,6 +17,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   BLOCK_KIND_LABEL,
   codeDistanceLine,
+  objectLook,
   objectTitle,
 } from "./object-describe.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
@@ -123,6 +124,19 @@ describe("objectTitle", () => {
     expect(
       block({ kind: "shortText", view: "pin", caption: " Look up " }),
     ).toBe("Look up");
+  });
+});
+
+describe("objectLook", () => {
+  // Why: the look picks a block's icon, its command's word ("Delete long
+  // text") and its handles' hint on every page that lists one. A free long
+  // text (a reading stand, format minor 3) read as a 3D model: a model's
+  // icon, "Delete 3D model" and a resize dot it does not have.
+  it("gives each kind standing in the world its own look", () => {
+    expect(objectLook("shortText")).toBe("pin");
+    expect(objectLook("picture")).toBe("photo");
+    expect(objectLook("longText")).toBe("text");
+    expect(objectLook("model")).toBe("model");
   });
 });
 

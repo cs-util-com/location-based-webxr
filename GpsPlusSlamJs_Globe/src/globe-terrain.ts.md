@@ -75,7 +75,7 @@
     are displaced and bump-shaded as 0 (review 2026-10-02-1235 major 3, the one-scene
     plan's §5): exaggerated sea floors would sink 10-15 km under the
     water's imagery at E 3, so the sea keeps the globe's surface and
-    colour. The clone and its hooks are `litCopy` from `globe-surface.ts`.
+    colour. The clone and its hooks are `litCopy` from `globe-tile-meshes.ts`.
     The fragment starts with `#define GLOBE_FADE_SIDE 1`: the relief's
     side of the altitude band's dither (`globe-surface-material.ts`). With
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
@@ -156,7 +156,7 @@
     is a quarter of it per level); Error if the library stops exporting the plugin (0.5.3
     ships it without typings, so it is read off the plugins entry at
     runtime). The tile meshes are found by `tileMeshes` from
-    `globe-surface.ts` (one implementation, DEC-H3).
+    `globe-tile-meshes.ts` (one implementation, DEC-H3).
 - Invariants & assumptions:
   - The template is the globe's own (`createGlobeSurface().template`), so
     the relief reads the same uniforms and sun as the globe.

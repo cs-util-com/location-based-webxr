@@ -21,6 +21,7 @@
       "entry": [
         "src/globe-surface.ts",
         "src/globe-editor.ts",
+        "src/globe-view-entry.ts",
         "src/vendor/generated-surface-plugin.ts",
         "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"
@@ -198,6 +199,9 @@
     "GpsPlusSlamJs_TourViewer": {
       "entry": [
         "src/editor/edit-main.ts",
+        "src/checks/model-views-check.ts",
+        "src/checks/character-views-check.ts",
+        "src/checks/lectern-check.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
@@ -217,7 +221,7 @@
       "project": ["src/**/*.ts"]
     },
     "GpsPlusSlamJs_DesignSystem": {
-      "entry": ["config/stylelint.config.mjs"],
+      "entry": ["config/stylelint.config.mjs", "config/eslint.config.mjs"],
       "project": ["*.mjs", "config/*.mjs"],
       "ignoreUnresolved": [
         "/3d/water-metrics.mjs",

@@ -6,6 +6,9 @@
  * - A station's title, description and found radius: a station edit.
  * - A pin's text (its title box): its text. A photo's or a model's
  *   caption is not edited here.
+ * - A text of a block a station's story shows (`block:<id>:<field>`,
+ *   `storyBlockFields`): that block's edit, as a free block's other
+ *   texts are.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
  * - An item's east and north: its offset in its station's frame, the
@@ -16,6 +19,10 @@
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
+ * - A model's note title or text (`note-title:<i>`, `note-text:<i>`), a
+ *   section's name (`section-name:<i>`) and its clip's name
+ *   (`anim-name`, its autoplay kept, on for a first clip): a model edit
+ *   (`model-edits.ts`).
  *
  * And "Put on the ground" and "Put items on the ground" (`groundEdit`):
  * heights at the ground the 3D view has loaded, or null while it has not.
@@ -27,15 +34,18 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
+  storyBlocksOf,
   worldBlocks,
   type StationEdit,
   type WorldBlock,
 } from "../../tour-document.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
-import { blockFields } from "../block-fields.js";
+import { blockFields, storyBlockFields } from "../block-fields.js";
+import type { ModelEdit } from "../model-edits.js";
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
+import { facingDegOf } from "../../character-views.js";
 
 /** What a typed value writes. */
 export type InspectorEdit =
@@ -50,13 +60,16 @@ export type InspectorEdit =
       readonly edit: StationEdit;
     }
   | { readonly kind: "text"; readonly id: string; readonly text: string }
-  /** One of a free block's other text fields (`block-fields.ts`). */
+  /** One of a block's other text fields (`block-fields.ts`): a free
+   *  block's, or one of a block its station's story shows. */
   | {
       readonly kind: "block";
       readonly id: string;
       readonly field: string;
       readonly value: string;
     }
+  /** One of a model's own edits (`model-edits.ts`). */
+  | { readonly kind: "model"; readonly id: string; readonly edit: ModelEdit }
   /** A pose or a size, written as the 3D view's gestures write them. */
   | { readonly kind: "scene"; readonly edit: GestureEdit }
   /** A turn about up of `deg` clockwise. */
@@ -98,6 +111,54 @@ function turnTo(
   return Math.abs(deg) < SAME ? NONE : { kind: "turn", selection, deg };
 }
 
+/** The field naming a text of a story block: `block:<id>:<field>`. */
+const STORY_TEXT = "block:";
+
+/** A text of a block `station`'s story shows, typed in its inspector:
+ *  the block's edit (`editBlockField` writes it as the station's), or
+ *  nothing for a block its story does not show or a field it has not. */
+function storyTextEdit(
+  station: TourStation,
+  field: string,
+  value: string,
+): InspectorEdit {
+  const rest = field.slice(STORY_TEXT.length);
+  const cut = rest.lastIndexOf(":");
+  if (cut <= 0) return NONE;
+  const id = rest.slice(0, cut);
+  const name = rest.slice(cut + 1);
+  const block = storyBlocksOf(station).find((b) => b.id === id);
+  if (block === undefined) return NONE;
+  return storyBlockFields(block).some((f) => f.name === name)
+    ? { kind: "block", id, field: name, value }
+    : NONE;
+}
+
+/** The field naming a story character's facing: `character-facing:<id>`. */
+const CHARACTER_FACING = "character-facing:";
+
+/** A story character's facing typed in his station's inspector: his
+ *  station's edit for him, nothing for the facing he has (a whole turn
+ *  round is the same) or for a block that is no character. */
+function characterFacingEdit(
+  station: TourStation,
+  block: string,
+  value: string,
+): InspectorEdit {
+  const character = station.blocks.find((b) => b.id === block);
+  if (character?.kind !== "character") return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  const now = facingDegOf(character.pose.rotation);
+  return Math.abs(shortTurn(typed - now)) < SAME
+    ? NONE
+    : {
+        kind: "station",
+        stationId: station.id,
+        edit: { character: { block, facingDeg: typed } },
+      };
+}
+
 function stationEdit(
   station: TourStation,
   field: string,
@@ -109,6 +170,14 @@ function stationEdit(
     return { kind: "station", stationId, edit: { title: value } };
   if (field === "description") {
     return { kind: "station", stationId, edit: { description: value } };
+  }
+  if (field.startsWith(STORY_TEXT)) return storyTextEdit(station, field, value);
+  if (field.startsWith(CHARACTER_FACING)) {
+    return characterFacingEdit(
+      station,
+      field.slice(CHARACTER_FACING.length),
+      value,
+    );
   }
   if (!["radius", "east", "north", "heading"].includes(field)) return NONE;
   const typed = typedNumber(value);
@@ -158,12 +227,49 @@ const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
   east: 2,
 };
 
+/** A model's own field (`note-title:2`) as its edit, or null for a
+ *  field that is none of them. */
+function modelFieldEdit(
+  item: Extract<WorldBlock, { kind: "model" }>,
+  field: string,
+  value: string,
+): InspectorEdit | null {
+  if (field === "anim-name") {
+    return {
+      kind: "model",
+      id: item.id,
+      edit: {
+        kind: "animation",
+        name: value,
+        autoplay: item.animation?.autoplay ?? true,
+      },
+    };
+  }
+  const match = /^(note-title|note-text|section-name):(\d+)$/.exec(field);
+  if (match === null) return null;
+  const index = Number(match[2]);
+  const edit: ModelEdit =
+    match[1] === "section-name"
+      ? { kind: "section-name", index, value }
+      : {
+          kind: "note-text",
+          index,
+          field: match[1] === "note-title" ? "title" : "text",
+          value,
+        };
+  return { kind: "model", id: item.id, edit };
+}
+
 function itemEdit(
   item: WorldBlock,
   station: TourStation,
   field: string,
   value: string,
 ): InspectorEdit {
+  if (item.kind === "model") {
+    const edit = modelFieldEdit(item, field, value);
+    if (edit !== null) return edit;
+  }
   if (field === "title" && item.kind === "shortText") {
     return { kind: "text", id: item.id, text: value };
   }

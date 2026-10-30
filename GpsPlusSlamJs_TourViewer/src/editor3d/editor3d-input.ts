@@ -17,9 +17,16 @@
  * (`GestureTarget.locked`) takes no pose key and no drag of its middle or
  * knob: its radius dots stay.
  *
+ * While the scene waits for a click (`InputScene.clickWaited`: the
+ * inspector's "click the model"), a press starts no gesture and a click
+ * answers the wait (`answerClick`) instead of selecting; a drag still
+ * moves the camera.
+ *
  * OrbitControls keeps the camera's own input; a gesture or two fingers
  * lock it (`InputScene.lockCamera`) rather than hide events from it, so
- * its bookkeeping of the pointers stays whole.
+ * its bookkeeping of the pointers stays whole. A camera whose controls
+ * take two fingers themselves (`InputScene.cameraTakesTwoFingers`, the
+ * globe's) is left free for them instead.
  *
  * @see editor3d-input.ts.md
  */
@@ -58,12 +65,30 @@ export interface InputScene {
   hover(handle: GizmoHandle | null): void;
   /** OrbitControls takes no input while locked. */
   lockCamera(on: boolean): void;
+  /**
+   * The camera's own controls take two fingers (the globe's pinch, twist
+   * and tilt): a second finger still cancels a drag, but the camera is
+   * left free and `twoFingerStart` / `twoFinger` are never called.
+   * Without it two fingers lock the camera and are read here.
+   */
+  cameraTakesTwoFingers?: boolean;
   /** Two fingers began moving the camera (a flight ends). */
   twoFingerStart(): void;
   /** Two fingers moved from `last` to `now`, read as `mode`. */
   twoFinger(mode: "tilt" | "map", last: FingerPair, now: FingerPair): void;
   /** Fly to a selection (a double click or a double tap). */
   frame(selection: string): void;
+  /** A click on the scene is waited for: a press then starts no gesture,
+   *  and a click answers the wait instead of selecting. */
+  clickWaited?(): boolean;
+  /** The waited click, at a pointer. */
+  answerClick?(pointer: ScreenPoint): void;
+  /** The globe's "camera-step": an arrow key with nothing selected.
+   *  Without it the arrows only stay off the page. */
+  stepCamera?(code: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"): void;
+  /** The globe's "camera-zoom": a double click on nothing (the ground or
+   *  the sky). Without it such a double click does nothing. */
+  zoomTowards?(pointer: ScreenPoint): void;
 }
 
 /** What the input asks of the page. */
@@ -85,6 +110,10 @@ export interface InputPage {
   keysFree(event: KeyboardEvent): boolean;
 }
 
+const ARROWS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const;
+const isArrow = (code: string): code is (typeof ARROWS)[number] =>
+  (ARROWS as readonly string[]).includes(code);
+
 /** The ground's place under `at`, or null where none has loaded. */
 function groundPlace(world: GestureWorld, at: ScreenPoint): GroundPlace | null {
   const hit = world.groundUnder(at);
@@ -96,7 +125,8 @@ function groundPlace(world: GestureWorld, at: ScreenPoint): GroundPlace | null {
 
 /** The input's numbers (the design's). */
 export const INPUT = Object.freeze({
-  /** A press that moved less than this is a click (px; a finger more). */
+  /** A press that moved less than this is a click, this far or more a
+   *  drag (px; `tapPx` for a finger), as `GLOBE_GESTURES.dragPx` reads it. */
   clickPx: 4,
   tapPx: 8,
   /** Two taps within this, this close, are a double tap. */
@@ -135,8 +165,12 @@ export function createSceneInput(input: {
   readonly surface: HTMLElement;
   readonly scene: InputScene;
   readonly page: InputPage;
+  /** A mouse press that moved this far (px) or less is a click; the
+   *  globe passes its routing table's `dragPx`. */
+  readonly clickPx?: number;
 }) {
   const { element, surface, scene, page } = input;
+  const clickPx = input.clickPx ?? INPUT.clickPx;
   let drag: {
     readonly gesture: Gesture;
     readonly selection: string;
@@ -242,6 +276,12 @@ export function createSceneInput(input: {
           endDrag(false);
           page.say(TWO_FINGER_CANCEL);
         }
+        if (scene.cameraTakesTwoFingers === true) {
+          // Free before the controls read this finger (the listener
+          // captures): a cancelled drag had them locked.
+          scene.lockCamera(false);
+          return;
+        }
         scene.lockCamera(true);
         const pair = fingerPair();
         if (fingers.size === 2 && pair !== null) {
@@ -263,6 +303,7 @@ export function createSceneInput(input: {
     if (touchBlocked || event.button !== 0 || drag !== null || held !== null) {
       return;
     }
+    if (scene.clickWaited?.() === true) return;
     const selection = page.selected();
     if (selection === null) return;
     const target = scene.target(selection);
@@ -309,7 +350,7 @@ export function createSceneInput(input: {
     }
     if (press !== null && event.pointerId === press.id) {
       const d = Math.hypot(at.x - press.at.x, at.y - press.at.y);
-      if (d > (press.touch ? INPUT.tapPx : INPUT.clickPx)) press.moved = true;
+      if (d >= (press.touch ? INPUT.tapPx : clickPx)) press.moved = true;
       return;
     }
     // A mouse over the scene (not a dock): the handle under it drawn
@@ -321,11 +362,15 @@ export function createSceneInput(input: {
     ) {
       const selection = page.selected();
       const handle =
-        selection !== null && scene.target(selection) !== null
+        selection !== null &&
+        scene.target(selection) !== null &&
+        scene.clickWaited?.() !== true
           ? scene.handleAt(at)
           : null;
       setHover(handle);
-      surface.style.cursor = handle === null ? "" : "grab";
+      if (scene.clickWaited?.() !== true) {
+        surface.style.cursor = handle === null ? "" : "grab";
+      }
     }
   };
 
@@ -359,6 +404,10 @@ export function createSceneInput(input: {
       p.multi ||
       p.button !== 0
     ) {
+      return;
+    }
+    if (scene.clickWaited?.() === true) {
+      scene.answerClick?.(at);
       return;
     }
     const hit = scene.pickAt(at);
@@ -401,8 +450,13 @@ export function createSceneInput(input: {
   };
 
   const onDoubleClick = (event: MouseEvent) => {
-    const hit = scene.pickAt(pointOf(event));
-    if (hit === null) return;
+    if (scene.clickWaited?.() === true) return;
+    const at = pointOf(event);
+    const hit = scene.pickAt(at);
+    if (hit === null) {
+      scene.zoomTowards?.(at);
+      return;
+    }
     page.select(hit);
     scene.frame(hit);
   };
@@ -424,7 +478,10 @@ export function createSceneInput(input: {
     // The design's: the arrows are the view's even with nothing selected
     // (they would scroll the page); the other keys only with a selection.
     if (selection === null) {
-      if (event.code.startsWith("Arrow")) event.preventDefault();
+      if (isArrow(event.code)) {
+        event.preventDefault();
+        scene.stepCamera?.(event.code);
+      }
       return;
     }
     event.preventDefault();

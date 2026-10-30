@@ -14,8 +14,11 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import {
+  PIN_DESCRIPTION_MAX_CHARS,
+  PIN_DESCRIPTION_TOO_LONG,
   PIN_TEXT_MAX_CHARS,
   PIN_TEXT_TOO_LONG,
+  pinDescriptionTooLong,
   pinTextCount,
   pinTextCounterLine,
   pinTextTooLong,
@@ -30,6 +33,21 @@ describe("pin text", () => {
     );
     expect(PIN_TEXT_MAX_CHARS).toBe(40);
     expect(PIN_TEXT_TOO_LONG).toContain("40 characters");
+  });
+
+  it("takes the format's description cap, 160, counted as the format counts", () => {
+    // Why this test matters: the phone's pin entry refuses a description
+    // by this cap; it must be the file's own, by the file's count, or a
+    // pin the page took would make the Finish throw.
+    expect(PIN_DESCRIPTION_MAX_CHARS).toBe(
+      TOUR_BLOCK_TEXT_RULES.shortText.description.max,
+    );
+    expect(PIN_DESCRIPTION_MAX_CHARS).toBe(160);
+    expect(PIN_DESCRIPTION_TOO_LONG).toContain("160 characters");
+    const emoji = "\u{1F600}".repeat(160);
+    expect(pinDescriptionTooLong(emoji)).toBe(false);
+    expect(pinDescriptionTooLong(`${emoji}a`)).toBe(true);
+    expect(pinDescriptionTooLong(`  ${"x".repeat(160)}  `)).toBe(false);
   });
 
   it("counts characters by code point, not UTF-16 units", () => {

@@ -34,7 +34,7 @@ import {
   createGlobeDetailUniforms,
   setGlobeDetail,
 } from "./globe-detail.js";
-import { litCopy, tileMeshes } from "./globe-surface.js";
+import { litCopy, tileMeshes } from "./globe-tile-meshes.js";
 import {
   type HeightKeeper,
   installHeightKeeper,

@@ -610,6 +610,7 @@ async function prepareGlb() {
   const exporter = new GLTFExporter();
   const buf = await exporter.parseAsync(root, { binary: true, animations: [clip] });
   glb.bytes = buf.byteLength;
+  glb.buf = buf;
   let loaded = null;
   try { loaded = await new GLTFLoader().parseAsync(buf, ''); } catch (e) { console.warn('glb round trip failed, using the source scene', e); }
   glb.scene = loaded ? loaded.scene : root;
@@ -1313,6 +1314,7 @@ window.__stationBlock = {
   },
   async exportModel() { await ready; return JSON.parse(JSON.stringify(record)); },
   // test-only extras (not part of the shared hook contract)
+  async _glb() { await ready; const b = new Uint8Array(glb.buf); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); },
   async _frameStat() { return $('#frameStat').textContent; },
   async _openNote(i) { await ready; openCard(i); await nextFrames(); },
   async _setPhoneFrame(on) { await ready; phoneFrame = !!on; syncUI(); await nextFrames(); resize(); await nextFrames(); },

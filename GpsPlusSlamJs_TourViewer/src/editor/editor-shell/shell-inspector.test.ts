@@ -221,7 +221,14 @@ describe("drawInspector", () => {
   // file's, never markup), and no list at all for a station without a
   // story.
   it("lists the blocks its story shows, by kind and name, as text", () => {
-    const station = (story: { id: string; kind: string; title: string }[]) =>
+    const station = (
+      story: {
+        id: string;
+        kind: string;
+        title: string;
+        fields: readonly never[];
+      }[],
+    ) =>
       ({
         kind: "station",
         title: "Unplaced",
@@ -244,8 +251,13 @@ describe("drawInspector", () => {
     drawInspector(
       dock,
       station([
-        { id: "intro", kind: "Long text", title: "The <b>siege</b>" },
-        { id: "guard", kind: "Character", title: "The watchman" },
+        {
+          id: "intro",
+          kind: "Long text",
+          title: "The <b>siege</b>",
+          fields: [],
+        },
+        { id: "guard", kind: "Character", title: "The watchman", fields: [] },
       ]),
       { folded: false, positionOpen: false },
       pictures,
@@ -274,6 +286,185 @@ describe("drawInspector", () => {
       pictures,
     );
     expect(dock.body.querySelector("ul.story-blocks")).toBeNull();
+  });
+
+  // Why: a story character is set in the station's inspector with the
+  // controls a model's view already has - chips, the one in use pressed -
+  // and his facing as a heading typed like an item's: each control named
+  // by the block it sets (`data-act` / `data-field`), so the shell writes
+  // to the right character; a long text of the story gets none.
+  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "station",
+        title: "Unplaced",
+        sub: "Station 1 of 1",
+        place: { number: 1, count: 1 },
+        name: "Unplaced",
+        description: null,
+        imagePath: null,
+        images: [],
+        imageId: null,
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+        outside: 0,
+        offGround: null,
+        groundOffM: null,
+        position: null,
+        locked: true,
+        story: [
+          { id: "intro", kind: "Long text", title: "The siege", fields: [] },
+          {
+            id: "w1",
+            kind: "Character",
+            title: "Wendel",
+            character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
+            fields: [],
+          },
+        ],
+      },
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const section = dock.body.querySelector<HTMLElement>(
+      '.character[data-block="w1"]',
+    );
+    expect(section).not.toBeNull();
+    expect(dock.body.querySelectorAll(".character")).toHaveLength(1);
+    const chips = (prefix: string) =>
+      [
+        ...(section?.querySelectorAll<HTMLButtonElement>(
+          `[data-act^="${prefix}"]`,
+        ) ?? []),
+      ].map((b) => [
+        b.dataset["act"],
+        b.textContent,
+        b.getAttribute("aria-pressed"),
+      ]);
+    expect(chips("character-view:")).toEqual([
+      ["character-view:w1:bubble", "Bubble", "false"],
+      ["character-view:w1:speak", "Tap to speak", "true"],
+      ["character-view:w1:two-stations", "Two stations", "false"],
+      ["character-view:w1:portrait", "Portrait", "false"],
+      ["character-view:w1:popup", "Pop-up", "false"],
+    ]);
+    expect(chips("character-advance:")).toEqual([
+      ["character-advance:w1:tap", "On a tap", "false"],
+      ["character-advance:w1:lineEnd", "When the line ends", "true"],
+    ]);
+    // Each group of chips is named by its label.
+    const groups = [...(section?.querySelectorAll('[role="group"]') ?? [])];
+    expect(
+      groups.map(
+        (g) =>
+          dock.body.querySelector(
+            `[id="${g.getAttribute("aria-labelledby") ?? ""}"]`,
+          )?.textContent,
+      ),
+    ).toEqual(["View", "Moves on"]);
+    const facing = section?.querySelector<HTMLInputElement>(
+      '[data-field="character-facing:w1"]',
+    );
+    expect(facing?.defaultValue).toBe("180");
+    expect(facing?.labels?.[0]?.textContent).toBe("Facing");
+    expect(section?.textContent).toContain("Wendel");
+  });
+
+  // Why: a story block's texts are typed in its station's inspector, each
+  // named by the block and the field it sets (`block:<id>:<field>`), so
+  // the shell writes to the right block; each shows its count against the
+  // format's cap; a character's texts sit in his own box, under his
+  // settings; a story block without texts to type gets no box.
+  it("draws a story block's texts named by block and field, a character's in his box", () => {
+    const field = (
+      name: string,
+      label: string,
+      value: string,
+      max: number,
+    ) => ({
+      name,
+      label,
+      value,
+      max,
+      unit: "codePoints" as const,
+      required: true,
+      prose: name !== "title" && name !== "name",
+    });
+    drawInspector(
+      dock,
+      {
+        kind: "station",
+        title: "Unplaced",
+        sub: "Station 1 of 1",
+        place: { number: 1, count: 1 },
+        name: "Unplaced",
+        description: null,
+        imagePath: null,
+        images: [],
+        imageId: null,
+        foundRadiusM: 25,
+        activateRadiusM: 50,
+        outside: 0,
+        offGround: null,
+        groundOffM: null,
+        position: null,
+        locked: true,
+        story: [
+          {
+            id: "intro",
+            kind: "Long text",
+            title: "The siege",
+            fields: [
+              field("title", "Title", "The siege", 80),
+              field("body", "Body", "In 1632", 32000),
+            ],
+          },
+          {
+            id: "k1",
+            kind: "Character",
+            title: "Sir Kay",
+            character: { view: "speak", advance: "tap", facingDeg: 0 },
+            fields: [
+              field("name", "Name", "Sir Kay", 80),
+              field("caption", "Caption", "Hold the gate.", 2000),
+            ],
+          },
+          { id: "arch", kind: "Model", title: "Arch", fields: [] },
+        ],
+      },
+      { folded: false, positionOpen: false },
+      pictures,
+    );
+    const intro = dock.body.querySelector<HTMLElement>(
+      '.story-text[data-block="intro"]',
+    );
+    expect(intro?.querySelector(".flabel")?.textContent).toBe(
+      "Long text - The siege",
+    );
+    const title = intro?.querySelector<HTMLInputElement>(
+      '[data-field="block:intro:title"]',
+    );
+    expect(title?.defaultValue).toBe("The siege");
+    expect(title?.labels?.[0]?.textContent).toBe("Title");
+    const body = intro?.querySelector<HTMLTextAreaElement>(
+      'textarea[data-field="block:intro:body"]',
+    );
+    expect(body?.defaultValue).toBe("In 1632");
+    const count = dock.body.querySelector(
+      `[id="${body?.getAttribute("aria-describedby") ?? ""}"]`,
+    );
+    expect(count?.textContent).toContain("32000");
+    const kay = dock.body.querySelector<HTMLElement>(
+      '.character[data-block="k1"]',
+    );
+    expect(
+      [...(kay?.querySelectorAll<HTMLElement>("[data-field]") ?? [])].map(
+        (f) => f.dataset["field"],
+      ),
+    ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
+    expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
+    expect(dock.body.querySelector('.isec[data-block="arch"]')).toBeNull();
   });
 
   it("is hidden while nothing is selected", () => {

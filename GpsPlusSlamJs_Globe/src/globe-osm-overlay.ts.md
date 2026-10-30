@@ -130,8 +130,10 @@ failed, unprocessed }`: the relief tiles drawn in the last update
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
-    The Globe package depends on neither the framework nor the Osm
-    library; the globe lab passes them.
+    This module imports neither the framework's tile constants nor the
+    Osm library (the Globe package depends on the framework only for its
+    atmosphere and cloud modules, and not on the Osm library); the globe
+    lab passes them.
   - A tile is asked for only when ALL hold: the overlay is ready and
     enabled, the rule is active (by default on below 180 m and 45 m/s,
     kept until above 200 m or 50 m/s; the caller's `limits` otherwise),

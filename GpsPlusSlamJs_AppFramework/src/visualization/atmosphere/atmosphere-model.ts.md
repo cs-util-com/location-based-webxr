@@ -76,3 +76,10 @@ sunLight(Math.sin((5 * Math.PI) / 180), params); // warm chroma, intensity < 1
 - `atmosphere-model.property.test.ts` — monotonicity (visibility, zenith
   angle, sun elevation), transmittance within [0, 1], chroma validity.
 - GPU parity: `GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-model`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

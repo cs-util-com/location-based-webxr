@@ -2,6 +2,119 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A model's views, notes, sections and clip, `tour.json` version 4
+  minor 1** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
+  four world views besides `placed` - `ghost`, `hotspots`, `cutaway`,
+  `toy` (`TOUR_MODEL_WORLD_VIEWS`; every one needs `sizeM`) - and three
+  optional fields: `animation` `{ name, autoplay }`, `annotations` (1-32
+  notes `{ position, normal, title (64), text? (1024) }` in the model's own
+  space) and `sections` (1-4 named planes a cutaway steps through; an empty
+  list of either reads as absent). New
+  exports: `TOUR_WORLD_VIEWS` (the one set of world views, for renderers),
+  `TOUR_MODEL_NOTE_RULES`, `TOUR_MODEL_MAX_NOTES`,
+  `TOUR_MODEL_SECTION_RULES`, `TOUR_MODEL_MAX_SECTIONS`,
+  `TOUR_MODEL_ANIMATION_RULES`, `TOUR_MODEL_SPACE_MAX`, `tourBlocksMinor`
+  and the types `TourModelWorldView`, `TourModelNote`, `TourModelSection`,
+  `TourModelAnimation`, `TourModelVector`. `TOUR_MANIFEST_MINOR` is 1, and
+  `serializeTourManifest` writes the lowest minor the tour needs: a tour
+  using none of this is still written at minor 0. A reader of minor 0
+  (1.31.0) opens a 4.1 tour leniently: a free model in a new view falls
+  back to `placed`, a story model to `card`, the new fields are ignored,
+  and that app will not save the tour. `TourModel['view']` widens from
+  `'placed'` to `TourModelWorldView`. A note's or a section's
+  `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9, a policy floor) is a zero direction:
+  it fails a file of the reader's own minor, and a lenient read of a newer
+  minor leaves out just that note or section, reported through
+  `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
+
+- **A tour's recurring characters, five story views and the advance
+  when the line ends, `tour.json` version 4 minor 2** (new `ar/tour-characters`;
+  `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
+  declare `characters` (`{ id, name, image }`, at most
+  32), and a `character` block may name one by its new
+  optional `character` field: the block then takes the declaration's name
+  and image, and the writer keeps them inline too. A character block gains
+  the story views `bubble`, `speak`, `two-stations`, `portrait` and
+  `popup` (`TOUR_CHARACTER_VIEWS`), and a story step the advance
+  `{ mode: 'lineEnd' }`. New exports: `parseTourCharacters`,
+  `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
+  types `TourCharacter`, `TourCharacterDrop`, `TourCharacterView`;
+  `TourManifest` gains an optional `characters`, `TourManifestDrop` a
+  character drop. `TOUR_MANIFEST_MINOR` is 2, and a tour using none of this
+  is still written at its lower minor. A reader of 1.31.0 opens a 4.2 tour
+  leniently: the character shows as a card with its name, caption and
+  voice, `lineEnd` advances on a tap, and that app will not save the tour.
+
+- **A declared character's frames sheet** (`ar/tour-characters`, `tour.json`
+  version 4 minor 2). A declaration may name `frames`, an image asset
+  holding his four poses as one sheet: four equal cells in one row, left to
+  right `idle`, `talk-a` (mouth half open), `talk-b` (mouth open) and
+  `beckon` (an arm out to the viewer's right), on a transparent
+  background, every figure centred in its cell, feet on one baseline. New
+  export `TOUR_CHARACTER_FRAMES`. The
+  `image` stays his one pose and the fallback; a `frames` that is not an
+  image asset, or that is his `image` itself, is refused at this minor.
+  Read leniently, only the field is dropped: he stays with his one image,
+  and `TourCharacterDrop` reports it in its new member that carries a `field`
+  (`characters[i].frames`); a drop without `field` is the whole
+  declaration.
+
+- **A long text on a reading stand, `tour.json` version 4 minor 3**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `lectern`: a reading stand at the block's pose that keeps its facing,
+  free at its station or reached by a story step. `TOUR_WORLD_VIEWS` now
+  holds `lectern`, the new type `TourLectern` joins `TourObject` (a switch
+  over an object's `kind` gains a `longText` case), and
+  `TOUR_MANIFEST_MINOR` is 3; a tour without a lectern is still written at
+  its lower minor. A reader of 1.31.0 opens a 4.3 tour leniently: a free
+  lectern is left out and reported, a story one shows as its card, and
+  that app will not save the tour.
+
+- **The sky's and the clouds' building blocks, the frame recorder and two
+  small helpers are built subpaths**, for a typed globe that composes the
+  sky from its parts. They are low-level deep imports, not semver public
+  API: their signatures may change in a minor release. Their behaviour is
+  unchanged; until now only the no-build globe lab could load them, by
+  page path.
+  - **`visualization/atmosphere/atmosphere-model`** (deep import): the
+    physical atmosphere's numbers and its CPU maths.
+  - **`visualization/atmosphere/atmosphere-scattering`** (deep import):
+    the CPU twin of the scattering passes.
+  - **`visualization/atmosphere/atmosphere-glsl`** (deep import): the
+    atmosphere's GLSL, generated from the model.
+  - **`visualization/atmosphere/atmosphere-luts`** (deep import): the
+    look-up-table passes, the environment bake and the readbacks.
+  - **`visualization/atmosphere/cloud-layer`** (deep import): the 2D cloud
+    layer and its noise texture.
+  - **`visualization/atmosphere/cloud-hex`** (deep import): hex-tiling of
+    the clouds' big shapes.
+  - **`visualization/atmosphere/cloud-live-noise`** (deep import): the
+    clouds' noise evaluated live, per octave.
+  - **`visualization/atmosphere/cloud-coverage`** (deep import): the
+    clouds from a coverage map.
+  - **`visualization/atmosphere/cloud-sheet`** (deep import): the clouds
+    on a flat sheet a camera can fly through.
+  - **`visualization/atmosphere/cloud-slab`** (deep import): the clouds as
+    a thin ray-marched volume.
+  - **`visualization/atmosphere/cloud-shadow`** (deep import): cloud
+    shadows on three.js's lit materials.
+  - **`utils/frame-run`** (deep import): one frame-recorder run.
+  - **`utils/frame-run-report`** (deep import): its phone-readable summary
+    and export.
+  - **`utils/frame-target`** (deep import): a frame target checked from a
+    run's threshold counts.
+  - **`utils/glsl-float`** (deep import): the GLSL float-literal formatter.
+  - **`sensors/permission-state`** (deep import): the prompt-free
+    Permissions-API query.
+
+### Fixed
+
+- **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return
+  -0** (`utils/median`). A 0 and a -0 compare equal, so the result's sign
+  used to follow the order the samples arrived in; a median of -0 is now 0.
+
 ## [1.31.0] - 2026-10-28
 
 > ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather

@@ -2,7 +2,7 @@
  * Which blocks stand in a station's world for the visitor (station blocks
  * plan B2b step 2, owner decision B-Q4): its FREE blocks (the ones no
  * story step shows), drawn from the start, plus every STORY block with a
- * world view (a `pin`, a `plane`, a `placed` model) that a `show` step
+ * world view (a `pin`, a `plane`, a model in a world view) that a `show` step
  * reached. A reached world block appears when its step is reached and
  * stays for the rest of the visit: it is kept with the station's walk
  * state, the lifetime of `done` (`visitor-walk-slice.ts`), so the story's
@@ -22,14 +22,13 @@ import type {
   TourStation,
   TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
-/** The views a block stands in the world in. */
-const WORLD_VIEWS: ReadonlySet<string> = new Set(["pin", "plane", "placed"]);
-
-/** Whether `block` stands in the world (a pin, a plane, a placed model). */
+/** Whether `block` stands in the world (a pin, a plane, a model in a
+ *  world view). */
 export function isWorldBlock(block: TourBlock): boolean {
-  return WORLD_VIEWS.has(block.view);
+  return TOUR_WORLD_VIEWS.has(block.view);
 }
 
 /** The world block `step` reaches in `station`, or null: a `show` step

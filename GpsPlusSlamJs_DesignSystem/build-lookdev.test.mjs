@@ -485,6 +485,12 @@ describe("buildLookdev with the real globe lab", () => {
       "labs/globe/index.html",
       "labs/globe/globe-lab.js",
       "globe/globe-surface.js",
+      // The approach, moved out of the lab (editor-on-the-full-globe plan):
+      // reached only through the lab's imports.
+      "globe/globe-approach.js",
+      "globe/globe-approach-camera.js",
+      "globe/globe-arrival-prefetch.js",
+      "globe/globe-landing-flight.js",
       "globe/vendor/generated-surface-plugin.js",
       "vendor/3d-tiles-renderer/build/index.js",
       "vendor/3d-tiles-renderer/build/index.plugins.js",
@@ -505,8 +511,12 @@ describe("buildLookdev with the real globe lab", () => {
   // a preview whose city never builds, while every local smoke passes.
   it("emits the city: its worker and library graph in the worker view, the three.js entry", () => {
     for (const rel of [
-      "labs/globe/globe-city.js",
+      "globe/globe-city.js",
+      "globe/globe-city-step.js",
       "w/labs/globe/globe-city-worker.js",
+      // The city's heights spec, a Globe module the worker loads by its
+      // route: in the worker view, its types stripped.
+      "w/globe/globe-city-heights.js",
       "w/osm-lib/index.js",
       "w/osm-lib/mesh/city.js",
       "w/osm-lib/elevation/terrain-field.js",
@@ -528,6 +538,9 @@ describe("buildLookdev with the real globe lab", () => {
       "utf8",
     );
     assert.match(worker, /"\/lookdev\/w\/osm-lib\/index\.js"/);
+    // The worker's height law comes from the Globe package: its import is
+    // rebased too, or the worker fails at its first city.
+    assert.match(worker, /"\/lookdev\/w\/globe\/globe-city-heights\.js"/);
     assert.doesNotMatch(worker, /from "gps-plus-slam-osm"/);
   });
 

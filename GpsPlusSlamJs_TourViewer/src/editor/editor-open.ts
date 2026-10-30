@@ -79,8 +79,11 @@ export function droppedDetailsLine(
   const names = [
     ...new Set(
       dropped
-        // Only a station's drop names its station.
-        .filter((d): d is TourDetailsDrop => !("station" in d))
+        // A detail's drop is the one that names neither a station nor a
+        // kind (a block's, a block field's and a character's carry one).
+        .filter(
+          (d): d is TourDetailsDrop => !("station" in d) && !("kind" in d),
+        )
         .map((d) => DETAIL_WORDS[d.field]),
     ),
   ];

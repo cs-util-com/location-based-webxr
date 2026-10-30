@@ -231,6 +231,157 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: the 3D inspector writes a model's notes, sections and view
+  // through `editModel`; each is one undo step written to the saved file.
+  // A model read from the file keeps its view: the creator chose it when
+  // the tour was made, and a first note must not override it (the owner's
+  // rule: the first note switches placed to hotspots once; an explicit
+  // choice is never overridden).
+  it("edits a model's notes and view as single steps, a view read from the file kept", async () => {
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const at = { position: [0, 1, 0], normal: [0, 1, 0] } as const;
+    expect(editor.editModel("a", { kind: "note-add", at })).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.editModel("nope", { kind: "note-add", at })).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.editModel("m", { kind: "note-add", at })).toEqual({
+      kind: "edited",
+    });
+    expect(editor.changeCount()).toBe(1);
+    let tour = await savedTour((await editor.save({ keepScan: false })).blob);
+    const block = () =>
+      tour.stations.flatMap((s) => s.blocks).find((b) => b.id === "m");
+    expect(block()).toMatchObject({
+      view: "placed",
+      annotations: [{ title: "Note 1", position: [0, 1, 0] }],
+    });
+    expect(editor.editModel("m", { kind: "view", view: "ghost" })).toEqual({
+      kind: "edited",
+    });
+    expect(editor.editModel("m", { kind: "note-delete", index: 0 })).toEqual({
+      kind: "edited",
+    });
+    tour = await savedTour((await editor.save({ keepScan: false })).blob);
+    expect(block()).toMatchObject({ view: "ghost" });
+    expect(block()).not.toHaveProperty("annotations");
+    const undone = editor.undo();
+    expect(undone).toMatchObject({ kind: "undone" });
+    expect(undone.kind === "undone" ? undone.what : "").toContain(
+      "the delete of note 1 of",
+    );
+    await session.close();
+  });
+
+  // Why: the default rule is for a model the creator has just placed and
+  // whose view he has not touched: its first note switches it to hotspots,
+  // and deleting that note again switches it back. Clicking the view chip
+  // that is already pressed is a choice too, so it ends the rule.
+  it("switches a model placed in this session to hotspots with its first note, until its view is chosen", async () => {
+    const { session, manifest } = await opened();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const at = { position: [0, 1, 0], normal: [0, 1, 0] } as const;
+    const viewOf = async (id: string) => {
+      const saved = await editor.save({ keepScan: false });
+      const found = (await savedTour(saved.blob)).stations
+        .flatMap((s) => s.blocks)
+        .find((b) => b.id === id);
+      return found?.kind === "model" ? found.view : undefined;
+    };
+    expect(editor.place(model("n", 48.5206))).toEqual({ kind: "placed" });
+    expect(editor.editModel("n", { kind: "note-add", at })).toEqual({
+      kind: "edited",
+    });
+    expect(await viewOf("n")).toBe("hotspots");
+    expect(editor.editModel("n", { kind: "note-delete", index: 0 })).toEqual({
+      kind: "edited",
+    });
+    expect(await viewOf("n")).toBe("placed");
+
+    expect(editor.place(model("p", 48.5206))).toEqual({ kind: "placed" });
+    // The chip already pressed: no change, but the creator's choice.
+    expect(editor.editModel("p", { kind: "view", view: "placed" })).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.editModel("p", { kind: "note-add", at })).toEqual({
+      kind: "edited",
+    });
+    expect(await viewOf("p")).toBe("placed");
+    await session.close();
+  });
+
+  // Why: the rule used to live in a set of the views chosen in this
+  // session, so after a reopen every model was the rule's again and a
+  // first note overrode the view the creator had saved; deleting a model's
+  // only note could likewise switch a saved hotspots model to placed.
+  it("after a reopen, a first note or the last note's delete leaves a saved view as it is", async () => {
+    const { session, manifest } = await opened(
+      (m) =>
+        ({
+          ...m,
+          stations: m.stations.map((s) => ({
+            ...s,
+            blocks: s.blocks.map((b) =>
+              b.id === "m"
+                ? {
+                    ...b,
+                    view: "hotspots",
+                    annotations: [
+                      { position: [0, 1, 0], normal: [0, 1, 0], title: "Door" },
+                    ],
+                  }
+                : b,
+            ),
+          })),
+        }) as TourManifest,
+    );
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const at = { position: [0, 1, 0], normal: [0, 1, 0] } as const;
+    expect(editor.place(model("n", 48.5206))).toEqual({ kind: "placed" });
+    const saved = await editor.save({ keepScan: false });
+    await session.close();
+
+    const reopened = await openTourFile(
+      new File([saved.blob], "tour.zip", { type: "application/zip" }),
+    );
+    const again = createEditorSession({
+      session: reopened,
+      manifest: await savedTour(saved.blob),
+      levels: new Map(),
+    });
+    expect(again.editModel("n", { kind: "note-add", at })).toEqual({
+      kind: "edited",
+    });
+    expect(again.editModel("m", { kind: "note-delete", index: 0 })).toEqual({
+      kind: "edited",
+    });
+    const tour = await savedTour((await again.save({ keepScan: false })).blob);
+    const blocks = tour.stations.flatMap((s) => s.blocks);
+    expect(blocks.find((b) => b.id === "n")).toMatchObject({
+      view: "placed",
+      annotations: [{ title: "Note 1" }],
+    });
+    expect(blocks.find((b) => b.id === "m")).toMatchObject({
+      view: "hotspots",
+    });
+    expect(blocks.find((b) => b.id === "m")).not.toHaveProperty("annotations");
+    await reopened.close();
+  });
+
   // Why: an edit of a station a delete emptied - its radius alone - is
   // dropped by the document (the next write and a reload leave such a
   // station out, so the live tour must not list it again). Reported as

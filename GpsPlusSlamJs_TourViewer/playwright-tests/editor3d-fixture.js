@@ -20,10 +20,13 @@ export const SQUARE_GROUND_M = 515.5;
 /**
  * Answer the relief's host with a flat ground at the square's height (512 px
  * Terrarium tiles, as Mapterhorn serves them) and the map's with a plain
- * tile; refuse the globe's whole-Earth imagery, counting any ask.
+ * tile; refuse the globe's whole-Earth imagery, counting any ask (or,
+ * with `globeAssets: "serve"`, let the dev server answer it, still
+ * counted: the editor on the globe view draws it).
  * @param {import("@playwright/test").Page} page
+ * @param {{ globeAssets?: "refuse" | "serve" }} [options]
  */
-export async function answerHosts(page) {
+export async function answerHosts(page, { globeAssets = "refuse" } = {}) {
   const flat = terrariumPng(512, 512, () => SQUARE_GROUND_M);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
     if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {
@@ -41,7 +44,7 @@ export async function answerHosts(page) {
   const imagery = { asks: 0 };
   await page.route("**/globe-assets/**", (route) => {
     imagery.asks++;
-    return route.abort();
+    return globeAssets === "serve" ? route.continue() : route.abort();
   });
   return imagery;
 }
