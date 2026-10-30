@@ -422,6 +422,34 @@ describe("buildSummaryModel", () => {
     expect(model.objects.map((o) => o.id)).toEqual(["a"]);
   });
 
+  // Why: a free long text (its reading stand, format minor 3) is neither a
+  // pin nor a photo either; drawn here it was listed with a photo's icon
+  // and words. It is left out as a model is, and stays in the tour.
+  it("leaves a free long text out of the pins and photos it draws", () => {
+    const model = buildSummaryModel({
+      visits: [],
+      references: [],
+      objects: [
+        pin("a", "Old gate", at(1, 2)),
+        {
+          id: "door",
+          kind: "longText",
+          view: "lectern",
+          title: "The door",
+          body: "Painted red in spring.",
+          createdAtIso: "2026-10-19T00:00:00.000Z",
+          geo: {
+            lat: at(2, 2).lat,
+            lon: at(2, 2).lng,
+            alt: 400,
+            rotation: [0, 0, 0, 1],
+          },
+        },
+      ],
+    });
+    expect(model.objects.map((o) => o.id)).toEqual(["a"]);
+  });
+
   it("keeps each visit's walk apart and drops points it cannot place", () => {
     const model = buildSummaryModel({
       visits: [

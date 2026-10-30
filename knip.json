@@ -198,6 +198,10 @@
     "GpsPlusSlamJs_TourViewer": {
       "entry": [
         "src/editor/edit-main.ts",
+        "src/checks/model-views-check.ts",
+        "src/checks/character-views-check.ts",
+        "src/checks/lectern-check.ts",
+        "src/checks/long-text-check.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"

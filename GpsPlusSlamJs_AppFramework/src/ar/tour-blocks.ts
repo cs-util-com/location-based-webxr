@@ -52,24 +52,82 @@ export type TourBlockKind =
   | 'model'
   | 'character';
 
+/** The views a character speaks in as a story step (minor 2), besides
+ *  4.0's `stage` and `card`: a speech bubble over his head (`bubble`);
+ *  the bubble with his voice on a tap (`speak`); the bubble, and once his
+ *  line has ended he beckons along the tour (`two-stations`); a portrait
+ *  card at the foot of the screen (`portrait`); a paper stage that unfolds
+ *  at the station (`popup`). None is a world view: a character speaks
+ *  only as a step. */
+export const TOUR_CHARACTER_VIEWS = [
+  'bubble',
+  'speak',
+  'two-stations',
+  'portrait',
+  'popup',
+] as const;
+
+/** A character's minor-2 view. */
+export type TourCharacterView = (typeof TOUR_CHARACTER_VIEWS)[number];
+
 /** The views this reader draws, per kind. A view joins the format with its
  *  renderer; `card` (the block in the scene card) exists for every kind. */
 export const TOUR_BLOCK_VIEWS = {
   shortText: ['pin', 'card'],
-  longText: ['card'],
+  longText: ['lectern', 'reading', 'card'],
   picture: ['plane', 'card'],
   video: ['card'],
   audio: ['card'],
-  model: ['placed', 'stage', 'card'],
-  character: ['stage', 'card'],
+  model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'stage', 'card'],
+  character: ['stage', ...TOUR_CHARACTER_VIEWS, 'card'],
 } as const satisfies Record<TourBlockKind, readonly string[]>;
+
+/**
+ * The views a model stands in the world in (minor 1 added all but
+ * `placed`): `placed` at its pose and size; `ghost`, the same shape as
+ * glass whose feet fade into the ground; `hotspots`, its notes drawn on it
+ * (its animation held at rest, so they stay on the surface); `cutaway`,
+ * cut open by its sections; `toy`, at its pose and size until the visitor
+ * resizes or moves it. Every one of them needs a size.
+ */
+export const TOUR_MODEL_WORLD_VIEWS = [
+  'placed',
+  'ghost',
+  'hotspots',
+  'cutaway',
+  'toy',
+] as const;
+
+/** A model's world view. */
+export type TourModelWorldView = (typeof TOUR_MODEL_WORLD_VIEWS)[number];
 
 type ViewOf<K extends TourBlockKind> = (typeof TOUR_BLOCK_VIEWS)[K][number];
 
 /** The views a FREE block may stand in: drawn in the world for as long as
  *  its station is shown. `card` opens only when a step shows it, and a
- *  `stage` figure lives only while a story runs. */
-const WORLD_VIEWS: ReadonlySet<string> = new Set(['pin', 'plane', 'placed']);
+ *  `stage` figure lives only while a story runs. Renderers ask this set,
+ *  never a copy of it. */
+export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set([
+  'pin',
+  'lectern',
+  'reading',
+  'plane',
+  ...TOUR_MODEL_WORLD_VIEWS,
+]);
+
+const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
+
+/** The views of minor 0: a model in any other view, or carrying a minor-1
+ *  field, makes the tour need minor 1. */
+const MINOR_0_MODEL_VIEWS: ReadonlySet<string> = new Set([
+  'placed',
+  'stage',
+  'card',
+]);
+
+/** A character's views of minor 0; any other, or a `character`
+ *  reference, makes the tour need minor 2. */
+const MINOR_0_CHARACTER_VIEWS: ReadonlySet<string> = new Set(['stage', 'card']);
 
 /** How a text cap is counted. */
 export type TourTextUnit = 'codePoints' | 'utf16';
@@ -110,6 +168,37 @@ export const TOUR_BLOCK_TEXT_RULES = {
  */
 export const TOUR_MODEL_MIN_SIZE_M = 0.05;
 export const TOUR_MODEL_MAX_SIZE_M = 500;
+
+/** A model's notes (minor 1): a note's title is required, its text
+ *  optional; at most {@link TOUR_MODEL_MAX_NOTES} on one model. */
+export const TOUR_MODEL_NOTE_RULES = {
+  title: required(64),
+  text: optional(1024),
+} as const satisfies Record<string, TourTextRule>;
+export const TOUR_MODEL_MAX_NOTES = 32;
+
+/** A model's sections (minor 1), the planes a cutaway cuts it by: 1 to
+ *  {@link TOUR_MODEL_MAX_SECTIONS}, each named. */
+export const TOUR_MODEL_SECTION_RULES = {
+  name: required(40),
+} as const satisfies Record<string, TourTextRule>;
+export const TOUR_MODEL_MAX_SECTIONS = 4;
+
+/** The name of a model's animation clip (minor 1), as its file names it. */
+export const TOUR_MODEL_ANIMATION_RULES = {
+  name: required(128),
+} as const satisfies Record<string, TourTextRule>;
+
+/** How far from the model's origin a note or a section may sit, in the
+ *  model file's own units: beyond any model, short of nonsense. */
+export const TOUR_MODEL_SPACE_MAX = 10_000;
+
+/** The shortest a note's or a section's `normal` may be. A policy floor,
+ *  not a limit of the arithmetic (a shorter vector still normalises): a
+ *  direction this short is a zero written with rounding noise, so it is
+ *  refused as zero - failing a file of the reader's own minor, and
+ *  leaving out just that note or section of a newer one. */
+export const TOUR_MODEL_MIN_DIRECTION_LENGTH = 1e-9;
 
 /** A picture's width in the world (m), inclusive. */
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
@@ -167,19 +256,64 @@ export interface TourAudioBlock extends TourBlockEnvelope<'audio'> {
   readonly title?: string;
 }
 
+/** A point or a direction in a model's own space: the model file's frame
+ *  and units, before its size scales it. */
+export type TourModelVector = readonly [number, number, number];
+
+/** A note on a model: a point on its surface and the surface's outward
+ *  direction there, both in the model's own space, so a note scales and
+ *  turns with the model. */
+export interface TourModelNote {
+  readonly position: TourModelVector;
+  /** Not zero; kept as written (a renderer normalises it). */
+  readonly normal: TourModelVector;
+  readonly title: string;
+  readonly text?: string;
+}
+
+/** A plane a cutaway cuts the model by, in the model's own space: what
+ *  lies on the side its `normal` points to is cut away. */
+export interface TourModelSection {
+  readonly name: string;
+  readonly position: TourModelVector;
+  /** Not zero; kept as written. */
+  readonly normal: TourModelVector;
+}
+
+/** One of the model file's animation clips, by name, and whether it plays
+ *  by itself. A name the file lacks plays nothing. */
+export interface TourModelAnimation {
+  readonly name: string;
+  readonly autoplay: boolean;
+}
+
 export interface TourModelBlock extends TourBlockEnvelope<'model'> {
   /** A model asset. */
   readonly asset: string;
-  /** The scaled model's largest side in metres: required to place it,
-   *  refused on the stage (mounted at its file's own size). */
+  /** The scaled model's largest side in metres: required in every world
+   *  view, refused on the stage (mounted at its file's own size). */
   readonly sizeM?: number;
   readonly title?: string;
+  /** Minor 1: its clip. */
+  readonly animation?: TourModelAnimation;
+  /** Minor 1: its notes, drawn in the `hotspots` view; 1 to
+   *  {@link TOUR_MODEL_MAX_NOTES} (an empty list reads as absent). They
+   *  live on the block, not in the file, so replacing the file keeps them. */
+  readonly annotations?: readonly TourModelNote[];
+  /** Minor 1: the planes a `cutaway` steps through, 1 to
+   *  {@link TOUR_MODEL_MAX_SECTIONS}. Absent (an empty list reads so): one
+   *  cut that turns to face the visitor. */
+  readonly sections?: readonly TourModelSection[];
 }
 
 export interface TourCharacterBlock extends TourBlockEnvelope<'character'> {
+  /** As written; with a `character` reference, the declaration's. */
   readonly name: string;
-  /** A cut-out image asset. */
+  /** A cut-out image asset; with a `character` reference, the
+   *  declaration's. */
   readonly image: string;
+  /** Minor 2: the tour's declared character this is (`tour-characters.ts`). */
+  readonly character?: string;
   /** Captions always: what the character says, as text. */
   readonly caption: string;
   /** An optional voice clip (an audio asset). */
@@ -220,6 +354,9 @@ export interface TourBlockRead {
  *  minor (`lenient`), and who hears what was left out. */
 export interface TourBlocksReadOptions {
   readonly assets: readonly TourAsset[];
+  /** The tour's declared characters by id (`tour-characters.ts`), which a
+   *  character block's `character` names; none when absent. */
+  readonly characters?: ReadonlyMap<string, DeclaredCharacter>;
   readonly fail: Fail;
   readonly lenient?: boolean;
   readonly onDropped?: (drop: TourBlockDrop) => void;
@@ -279,13 +416,19 @@ export function tourFloorView(
 
 const FREE_FLOOR: Record<TourBlockKind, TourBlockView | null> = {
   shortText: 'pin',
-  longText: null,
+  longText: 'reading',
   picture: 'plane',
   video: null,
   audio: null,
   model: 'placed',
   character: null,
 };
+
+/** What a block takes from a declared character. */
+interface DeclaredCharacter {
+  readonly name: string;
+  readonly image: string;
+}
 
 /** Thrown inside one block's read when a lenient reader cannot show it;
  *  caught per block. Never escapes this module. */
@@ -295,6 +438,7 @@ interface BlockContext {
   readonly at: string;
   readonly id: string;
   readonly assets: ReadonlyMap<string, TourAssetKind>;
+  readonly characters: ReadonlyMap<string, DeclaredCharacter>;
   readonly fail: Fail;
   readonly lenient: boolean;
   readonly onDropped: ((drop: TourBlockDrop) => void) | undefined;
@@ -386,16 +530,19 @@ function metres(
   return value;
 }
 
-/** A model's size by its view: required to place it, refused on the
- *  stage, optional in a card or a view this reader does not know. */
+/** A model's size by its view: required in every world view, refused on
+ *  the stage, optional in a card or a view this reader does not know. */
 function modelSize(
   v: Fields,
   view: string | null,
   ctx: BlockContext
 ): { sizeM?: number } {
   if (v.sizeM === undefined) {
-    if (view !== 'placed') return {};
-    return problem(ctx, `"${ctx.at}.sizeM" is required for a placed model`);
+    if (view === null || !MODEL_WORLD_VIEWS.has(view)) return {};
+    return problem(
+      ctx,
+      `"${ctx.at}.sizeM" is required for a model in the world (${view})`
+    );
   }
   if (view === 'stage') {
     return problem(
@@ -405,6 +552,221 @@ function modelSize(
   }
   const bounds = [TOUR_MODEL_MIN_SIZE_M, TOUR_MODEL_MAX_SIZE_M] as const;
   return { sizeM: metres(v.sizeM, `${ctx.at}.sizeM`, bounds, ctx) };
+}
+
+/** Whether `value` is an array of exactly three finite numbers. */
+function isFiniteTriple(value: unknown): value is TourModelVector {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    (value as unknown[]).every(isFiniteNumber)
+  );
+}
+
+/** A point or a direction in a model's own space: three finite numbers
+ *  (structural, at every minor; a direction also not shorter than
+ *  {@link TOUR_MODEL_MIN_DIRECTION_LENGTH}), within
+ *  {@link TOUR_MODEL_SPACE_MAX} (a rule a later minor may widen). */
+function modelVector(
+  value: unknown,
+  at: string,
+  direction: boolean,
+  ctx: BlockContext
+): TourModelVector {
+  if (!isFiniteTriple(value)) {
+    return ctx.fail(`"${at}" must be three finite numbers`);
+  }
+  const [x, y, z] = value;
+  if (direction && Math.hypot(x, y, z) < TOUR_MODEL_MIN_DIRECTION_LENGTH) {
+    return ctx.fail(`"${at}" is a direction, so it must not be zero`);
+  }
+  if (Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > TOUR_MODEL_SPACE_MAX) {
+    return problem(
+      ctx,
+      `"${at}" must lie within ${String(TOUR_MODEL_SPACE_MAX)} of the model's origin`
+    );
+  }
+  return [x, y, z];
+}
+
+/** A list of up to `max` objects at `at`: undefined when absent or empty;
+ *  not an array, or an entry not an object, fails; too long is a rule a
+ *  later minor may widen. */
+function recordList(
+  value: unknown,
+  at: string,
+  max: number,
+  ctx: BlockContext
+): readonly Fields[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return ctx.fail(`"${at}" must be an array`);
+  if (value.length > max) {
+    return problem(ctx, `"${at}" must hold at most ${String(max)} entries`);
+  }
+  if (value.length === 0) return undefined;
+  return (value as unknown[]).map((entry, i): Fields => {
+    if (!isRecord(entry)) {
+      return ctx.fail(`"${at}[${String(i)}]" must be an object`);
+    }
+    return entry;
+  });
+}
+
+/** One nested text field, checked by its rule; its messages name `at`. */
+function nestedText(
+  entry: Fields,
+  field: string,
+  rule: TourTextRule,
+  at: string,
+  ctx: BlockContext
+): Partial<Record<string, string>> {
+  const nested: BlockContext = { ...ctx, at };
+  if (rule.required) {
+    return { [field]: requiredText(entry, field, rule, nested) };
+  }
+  return optionalText(entry, field, rule, nested);
+}
+
+/** Whether a note or a section at `field[i]` is left out for its
+ *  direction: three finite numbers shorter than
+ *  {@link TOUR_MODEL_MIN_DIRECTION_LENGTH}, in a lenient read (a newer
+ *  minor), said to `onDropped`. A strict read keeps it, for
+ *  {@link modelVector} to refuse the file. */
+function droppedForDirection(
+  entry: Fields,
+  field: string,
+  at: string,
+  ctx: BlockContext
+): boolean {
+  const normal = entry.normal;
+  if (!ctx.lenient || !isFiniteTriple(normal)) return false;
+  if (Math.hypot(...normal) >= TOUR_MODEL_MIN_DIRECTION_LENGTH) return false;
+  ctx.onDropped?.({
+    kind: 'field',
+    block: ctx.id,
+    field,
+    reason: `"${at}.normal" is a direction, so it must not be zero`,
+  });
+  return true;
+}
+
+function modelNotes(v: Fields, ctx: BlockContext) {
+  const at = `${ctx.at}.annotations`;
+  const list = recordList(v.annotations, at, TOUR_MODEL_MAX_NOTES, ctx);
+  if (list === undefined) return {};
+  const annotations = list.flatMap((entry, i) => {
+    const noteAt = `${at}[${String(i)}]`;
+    const field = `annotations[${String(i)}]`;
+    if (droppedForDirection(entry, field, noteAt, ctx)) return [];
+    return {
+      position: modelVector(entry.position, `${noteAt}.position`, false, ctx),
+      normal: modelVector(entry.normal, `${noteAt}.normal`, true, ctx),
+      ...nestedText(entry, 'title', TOUR_MODEL_NOTE_RULES.title, noteAt, ctx),
+      ...nestedText(entry, 'text', TOUR_MODEL_NOTE_RULES.text, noteAt, ctx),
+    } as TourModelNote;
+  });
+  return annotations.length === 0 ? {} : { annotations };
+}
+
+function modelSections(v: Fields, ctx: BlockContext) {
+  const at = `${ctx.at}.sections`;
+  const list = recordList(v.sections, at, TOUR_MODEL_MAX_SECTIONS, ctx);
+  if (list === undefined) return {};
+  const sections = list.flatMap((entry, i) => {
+    const sectionAt = `${at}[${String(i)}]`;
+    const field = `sections[${String(i)}]`;
+    if (droppedForDirection(entry, field, sectionAt, ctx)) return [];
+    return {
+      ...nestedText(
+        entry,
+        'name',
+        TOUR_MODEL_SECTION_RULES.name,
+        sectionAt,
+        ctx
+      ),
+      position: modelVector(
+        entry.position,
+        `${sectionAt}.position`,
+        false,
+        ctx
+      ),
+      normal: modelVector(entry.normal, `${sectionAt}.normal`, true, ctx),
+    } as TourModelSection;
+  });
+  return sections.length === 0 ? {} : { sections };
+}
+
+function modelAnimation(v: Fields, ctx: BlockContext) {
+  const value = v.animation;
+  if (value === undefined) return {};
+  const at = `${ctx.at}.animation`;
+  if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
+  if (typeof value.autoplay !== 'boolean') {
+    return problem(ctx, `"${at}.autoplay" must be true or false`);
+  }
+  const named = nestedText(
+    value,
+    'name',
+    TOUR_MODEL_ANIMATION_RULES.name,
+    at,
+    ctx
+  );
+  const animation = {
+    ...named,
+    autoplay: value.autoplay,
+  } as TourModelAnimation;
+  return { animation };
+}
+
+/** A character block's name and image, from the declaration it names
+ *  (minor 2) or as written. A name no declaration has fails a file of this
+ *  reader's own minor; a newer one's drops just the reference. */
+function characterFields(v: Fields, ctx: BlockContext) {
+  const name = requiredText(v, 'name', rules.character.name, ctx);
+  const image = assetRef(v, 'image', 'image', ctx);
+  const ref = v.character;
+  if (ref === undefined) return { name, image };
+  const declared =
+    typeof ref === 'string' ? ctx.characters.get(ref) : undefined;
+  if (declared !== undefined) {
+    return { name: declared.name, image: declared.image, character: ref };
+  }
+  const reason = `"${ctx.at}.character" must name a character of the tour`;
+  if (!ctx.lenient) return ctx.fail(reason);
+  ctx.onDropped?.({ kind: 'field', block: ctx.id, field: 'character', reason });
+  return { name, image };
+}
+
+/**
+ * The lowest minor `blocks` need: 4 when a long text stands in the world
+ * as a short reading sign (`reading`); 3 when one stands as a reading
+ * stand (`lectern`); 2 when a character speaks in a view
+ * minor 2 added or names a declared character; 1 when a model stands in a
+ * view minor 1 added, or carries an animation, notes or sections; 0
+ * otherwise.
+ */
+export function tourBlocksMinor(blocks: readonly TourBlock[]): number {
+  if (blocks.some((b) => b.kind === 'longText' && b.view === 'reading')) {
+    return 4;
+  }
+  if (blocks.some((b) => b.kind === 'longText' && b.view === 'lectern')) {
+    return 3;
+  }
+  const needsTwo = blocks.some(
+    (b) =>
+      b.kind === 'character' &&
+      (!MINOR_0_CHARACTER_VIEWS.has(b.view) || b.character !== undefined)
+  );
+  if (needsTwo) return 2;
+  const needsOne = blocks.some(
+    (b) =>
+      b.kind === 'model' &&
+      (!MINOR_0_MODEL_VIEWS.has(b.view) ||
+        b.animation !== undefined ||
+        b.annotations !== undefined ||
+        b.sections !== undefined)
+  );
+  return needsOne ? 1 : 0;
 }
 
 type KindFields = (v: Fields, view: string | null, ctx: BlockContext) => Fields;
@@ -448,10 +810,12 @@ const KIND_FIELDS: Record<TourBlockKind, KindFields> = {
     asset: assetRef(v, 'asset', 'model', ctx),
     ...modelSize(v, view, ctx),
     ...optionalText(v, 'title', rules.model.title, ctx),
+    ...modelAnimation(v, ctx),
+    ...modelNotes(v, ctx),
+    ...modelSections(v, ctx),
   }),
   character: (v, _view, ctx) => ({
-    name: requiredText(v, 'name', rules.character.name, ctx),
-    image: assetRef(v, 'image', 'image', ctx),
+    ...characterFields(v, ctx),
     caption: requiredText(v, 'caption', rules.character.caption, ctx),
     ...optionalAssetRef(v, 'voice', 'audio', ctx),
   }),
@@ -535,6 +899,7 @@ export function readTourBlocks(
       at: blockAt,
       id,
       assets,
+      characters: options.characters ?? new Map(),
       fail,
       lenient,
       onDropped: options.onDropped,
@@ -567,9 +932,9 @@ export function checkTourBlockIdsUnique(
 function freePlacement(read: TourBlockRead): TourBlock | string {
   const { block, knownView } = read;
   if (knownView) {
-    return WORLD_VIEWS.has(block.view)
+    return TOUR_WORLD_VIEWS.has(block.view)
       ? block
-      : `no step shows block "${block.id}", so it must stand in the world (pin, plane or placed), not in "${block.view}"`;
+      : `no step shows block "${block.id}", so it must stand in the world (${[...TOUR_WORLD_VIEWS].join(', ')}), not in "${block.view}"`;
   }
   const floor = tourFloorView(block.kind, 'free');
   if (floor === null) {

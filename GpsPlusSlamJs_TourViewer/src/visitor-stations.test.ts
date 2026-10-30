@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { Object3D } from "three";
 import {
   reportUpdated,
   type TrackingQualityReport,
@@ -6,10 +7,15 @@ import {
 
 import { createTourViewerStore } from "./tour-viewer-session";
 import {
+  characterTapOf,
   createCallGuard,
+  declaredCharactersOf,
+  routeVisitorTap,
+  sayFailureInToast,
   stationAlignmentSignals,
   walkDebugLines,
   walkDirectionsOf,
+  wirePortraitTap,
 } from "./visitor-stations";
 import { createWalkDirections } from "./walk-direction";
 
@@ -100,6 +106,136 @@ describe("stationAlignmentSignals", () => {
       "codeLinedUp",
       "trackingReady",
     ]);
+  });
+});
+
+// Why these tests matter: the AR tap on the story's character is the
+// visitor's way to hear him (the prototype's rule), and it competes with
+// a model's card and the pin sheet for the same tap. A tap must reach the
+// story only when it hits a part of him that shows, never when nothing
+// of him stands, and the order decides which target takes a tap.
+describe("the visitor's tap on the story's character", () => {
+  const part = (name: string): Object3D => {
+    const o = new Object3D();
+    o.name = name;
+    return o;
+  };
+
+  it("casts the tap at his visible parts and hands a hit to the story", () => {
+    const figure = part("character-front");
+    const bubble = part("character-bubble");
+    const stage = { characterTapTargets: vi.fn(() => [figure, bubble]) };
+    const view = { characterTapped: vi.fn(() => true) };
+    const seen: Object3D[][] = [];
+    const pick = vi.fn((targets: ReadonlyMap<string, Object3D>) => {
+      seen.push([...targets.values()]);
+      return [...targets.keys()][1] ?? null;
+    });
+    const tapped = characterTapOf({ stage, pick, view });
+    expect(tapped(null)).toBe(true);
+    expect(seen).toEqual([[figure, bubble]]);
+    expect(view.characterTapped).toHaveBeenCalledTimes(1);
+    // A miss is not his.
+    pick.mockReturnValueOnce(null);
+    expect(tapped(null)).toBe(false);
+    expect(view.characterTapped).toHaveBeenCalledTimes(1);
+    // A hit the story does not take (no character of a story view) is
+    // not his either.
+    view.characterTapped.mockReturnValueOnce(false);
+    expect(tapped(null)).toBe(false);
+  });
+
+  it("casts nothing while none of him stands", () => {
+    const pick = vi.fn(() => "x");
+    const view = { characterTapped: vi.fn(() => true) };
+    const tapped = characterTapOf({
+      stage: { characterTapTargets: () => [] },
+      pick,
+      view,
+    });
+    expect(tapped(null)).toBe(false);
+    expect(pick).not.toHaveBeenCalled();
+    expect(view.characterTapped).not.toHaveBeenCalled();
+  });
+
+  it("takes a click on his portrait in the card as a tap on him", () => {
+    const portrait = new EventTarget();
+    const view = { characterTapped: vi.fn(() => true) };
+    wirePortraitTap(portrait, view);
+    portrait.dispatchEvent(new Event("click"));
+    expect(view.characterTapped).toHaveBeenCalledTimes(1);
+    // A page without the portrait wires nothing and does not throw.
+    expect(() => {
+      wirePortraitTap(undefined, view);
+    }).not.toThrow();
+  });
+
+  it("gives a tap to the character first, then a model's card, then a reading stand, then a reading sign, then the pin sheet", () => {
+    const calls: string[] = [];
+    const targets = (
+      character: boolean,
+      model: boolean,
+      lectern = false,
+      reading = false,
+    ) => ({
+      character: () => {
+        calls.push("character");
+        return character;
+      },
+      model: () => {
+        calls.push("model");
+        return model;
+      },
+      lectern: () => {
+        calls.push("lectern");
+        return lectern;
+      },
+      reading: () => {
+        calls.push("reading");
+        return reading;
+      },
+      pinSheet: {
+        close: () => calls.push("close"),
+        tapped: () => calls.push("pin"),
+      },
+    });
+    routeVisitorTap(null, targets(true, true));
+    expect(calls).toEqual(["character", "close"]);
+    calls.length = 0;
+    routeVisitorTap(null, targets(false, true));
+    expect(calls).toEqual(["character", "model", "close"]);
+    calls.length = 0;
+    routeVisitorTap(null, targets(false, false, true));
+    // A turned page closes the pin sheet, as a model's card does.
+    expect(calls).toEqual(["character", "model", "lectern", "close"]);
+    calls.length = 0;
+    // An opened reading sheet closes the pin sheet too.
+    routeVisitorTap(null, targets(false, false, false, true));
+    expect(calls).toEqual([
+      "character",
+      "model",
+      "lectern",
+      "reading",
+      "close",
+    ]);
+    calls.length = 0;
+    routeVisitorTap(null, targets(false, false));
+    expect(calls).toEqual(["character", "model", "lectern", "reading", "pin"]);
+  });
+
+  it("reads the tour's declared characters by id, once per manifest", () => {
+    const one = {
+      characters: [{ id: "kay", name: "Sir Kay", image: "knight" }],
+    };
+    let manifest: typeof one | null = one;
+    const byId = declaredCharactersOf(() => manifest);
+    const first = byId();
+    expect([...first.keys()]).toEqual(["kay"]);
+    expect(byId()).toBe(first);
+    manifest = { characters: [] };
+    expect(byId().size).toBe(0);
+    manifest = null;
+    expect(byId().size).toBe(0);
   });
 });
 
@@ -218,5 +354,24 @@ describe("walkDebugLines (the ?debug=1 readout)", () => {
   it("a creator, or a page without a radar, reads none", () => {
     expect(walkDebugLines("creator", radar, frames, 0)).toEqual([]);
     expect(walkDebugLines("visitor", null, frames, 0)).toEqual([]);
+  });
+});
+
+describe("sayFailureInToast", () => {
+  // Why this test matters: a failure the hidden panel cannot show (his
+  // voice, tapped after his story) must reach the visitor: shown in the
+  // walk's toast and, since the toast's root is aria-hidden, announced.
+  it("shows the failure in the toast and announces it; without a toast it says nothing and does not throw", () => {
+    const toast = { say: vi.fn(), announce: vi.fn() };
+    sayFailureInToast(toast)("The voice could not be played here.");
+    expect(toast.say).toHaveBeenCalledWith([
+      "The voice could not be played here.",
+    ]);
+    expect(toast.announce).toHaveBeenCalledWith(
+      "The voice could not be played here.",
+    );
+    expect(() => {
+      sayFailureInToast(undefined)("x");
+    }).not.toThrow();
   });
 });

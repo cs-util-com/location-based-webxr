@@ -26,7 +26,10 @@ The manifest reads every station's blocks and story here
   - `TourChoiceOption` - `{ id, label, goto? }`;
   - `TourQuiz` - `{ question, points, answer }`; `TourQuizAnswer`,
     `TourQuizOption`;
-  - `TourStepAdvance` - `{ mode: 'tap' }` or `{ mode: 'auto', afterS }`.
+  - `TourStepAdvance` - `{ mode: 'tap' }`, `{ mode: 'auto', afterS }` or
+    (minor 2) `{ mode: 'lineEnd' }`.
+- `tourStepsMinor(steps): number` - 2 when a step advances on `lineEnd`,
+  else 0; the writer stamps the highest minor any part needs.
 
 ## The story
 
@@ -44,7 +47,9 @@ correct[] }` (at least 2 options, unique ids, correct among them),
     answers after normalisation - a deterrent only), `number { value,
 tolerance >= 0, unit? }`.
 - `advance`: `{ mode: 'tap' }` (also when absent, and written out on a
-  read so a renderer never guesses) or `{ mode: 'auto', afterS > 0 }`.
+  read so a renderer never guesses), `{ mode: 'auto', afterS > 0 }` or
+  `{ mode: 'lineEnd' }` (minor 2: when the character's line ends - its
+  voice, else a reading time - which an older reader treats as a tap).
 - Step ids are unique within the station.
 
 ## Invariants & assumptions

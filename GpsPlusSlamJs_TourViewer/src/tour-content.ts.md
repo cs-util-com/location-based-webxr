@@ -30,8 +30,9 @@ camera captures are debug data, never in a station (an earlier file's
 - `storyBlocksOf(station)`: a station's story blocks, the ones a step
   shows (what a frame of the tour document holds inline).
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
-  (`tourFreeBlocks`, the ones no step shows) as the short texts, pictures
-  and models standing in the world they are.
+  (`tourFreeBlocks`, the ones no step shows) as the short texts,
+  pictures, long texts (on their reading stands, minor 3) and models
+  standing in the world they are.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own
   id (`content/<id>.jpg`, minted with it) - what a creator page takes with
   the camera; a picture naming another of the tour's images is not one.

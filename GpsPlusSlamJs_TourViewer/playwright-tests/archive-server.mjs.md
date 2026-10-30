@@ -37,6 +37,11 @@ its printed code (no level): only a walk gives the guide its heading
 beside its pin, a captured photo (its own image asset), a picture of the
 tour's knight image and a placed model of the arch: every kind of free
 block a tour stands in the world (`blocks-tour.spec.js`).
+`/ranges-ok/long-text-tour.zip` and `/ranges-ok/long-text-tour-b.zip` are
+the stations tour (minor 4) whose gate also holds a long text its creator
+stands as a reading sign; the second is another tour, its own title and
+block id, so `view-switch.spec.js` sees the visitor's view preference
+carried from one tour to the next.
 `/ranges-ok/v3-tour.zip` is a tour in the earlier format 3, written
 literally: the app refuses it and deletes the draft it kept for it.
 

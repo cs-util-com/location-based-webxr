@@ -42,6 +42,29 @@ listed in `index.html.md`. The concerns and their modules:
   `#pin-sheet`, binds `hooks.visitorTap` to it, closes it with
   `hooks.stopStations`, and in visitor mode cancels `beforexrselect` on
   `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
+- `model-visitor.ts` - a model's notes, its card and a toy in hand:
+  `main.ts` mounts its DOM under `#ar-root` (`mountModelVisitorDom`, styles
+  in `model-visitor.css`), ticks it in `hooks.tickStations`, gives
+  `hooks.visitorTap` to it after the story's character (in
+  `visitor-stations.ts` `routeVisitorTap`'s order)
+  (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or
+  stage plays or stops his voice, and goes nowhere else; a tap that opens
+  no model card goes to the pin sheet) and stops it in `hooks.stopStations`.
+- `view-switch.ts`, `visitor-prefs.ts` and `visitor-prefs-slice.ts` - the
+  visitor's view preference: in visitor mode `main.ts` loads the stored
+  value from the page's guarded storage (`stepStore`) into the store,
+  mounts the switch under `#ar-root` (fed the present station's free
+  blocks), syncs it in `hooks.tickStations`, and on a choice dispatches
+  it, writes it back (a refused write keeps it for the visit) and says it
+  in the walk's toast and live region.
+- `long-text-sheet.ts` and `reading-sign.ts` - a long text's whole text:
+  `main.ts` builds the reading sheet under `#ar-root` (its pictures read
+  through the stations' prefetch by the asset's path, a link asking while
+  an AR session is live), opens it from `hooks.visitorTap` when a shown
+  reading sign is under the tap (`shownReadingSignUnderTap`, after the
+  reading stands in `routeVisitorTap`'s order), with the station's line
+  above the title (`readingSheetContent`), and closes it in
+  `hooks.stopStations`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

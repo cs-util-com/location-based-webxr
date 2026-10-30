@@ -1,0 +1,9 @@
+/**
+ * The check page's long text: the narrated-text prototype's record (its
+ * title and its first two paragraphs), so the page and the prototype show
+ * the same words side by side.
+ */
+export const CHECK_TEXT = {
+  title: "The Guild House and the Burnt Hall",
+  body: "You are standing in the old market square, almost exactly where the town's weekly market has been held for more than six hundred years. Turn to face north. The tall stone front with the single door and the two windows is the guild house, finished in the spring of 1612. To your left, in the north-west corner, a low and broken wall runs along the edge of the paving. It looks like nothing much, a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all. Over the next few minutes we will move through four centuries of this place: the keep that came first, the guild house that still stands, the great timber market hall that once filled the whole west half of the square, and the October night in 1890 when that hall burned to the ground.\n\nLong before there was a market, there was a rise in the ground and a tower on top of it. The keep was built of rough field stone, bedded in lime mortar that the builders burned in a kiln down by the river. Nobody wrote down the year it was begun. The first record that mentions it is a dispute about firewood, which tells us that by then somebody lived in the tower through the winter and expected the farms around it to keep him warm. The walls were nearly three metres thick at the base. The only door was on the first floor, reached by a wooden stair that could be pulled up or burned in an emergency. From the top a guard could see the ford across the river and the road coming down from the hills, which is exactly what the tower was for.",
+} as const;

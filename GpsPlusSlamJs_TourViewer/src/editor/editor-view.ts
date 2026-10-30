@@ -80,6 +80,30 @@ const SHELL_LAYERS: readonly string[] = [
   "buildings",
 ];
 
+/** A part of the selected 3D model the 3D inspector has in focus: one of
+ *  its notes or sections, by its index. */
+export interface ModelFocus {
+  readonly part: "note" | "section";
+  readonly index: number;
+}
+
+/** What a click on the selected model gives, while the 3D view waits for
+ *  one: a new note or section there, or a note or section placed there
+ *  again (`index`). */
+export type ModelPick =
+  | { readonly what: "note-add" | "section-add" }
+  | { readonly what: "note-place" | "section-place"; readonly index: number };
+
+const MODEL_PICKS: ReadonlySet<string> = new Set([
+  "note-add",
+  "section-add",
+  "note-place",
+  "section-place",
+]);
+
+const isIndex = (v: unknown): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0;
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -125,6 +149,13 @@ export interface EditorViewState {
    *  id: every other station is locked (`isStationLocked`). Per open
    *  tour, never saved: another open starts with every station locked. */
   readonly unlockedStations: readonly string[];
+  /** The selected model's note or section in focus (its inspector entry
+   *  marked, its disc or plane drawn so in the 3D view), or none. Belongs
+   *  to the selection: another selection, or another tour, clears it. */
+  readonly modelFocus: ModelFocus | null;
+  /** A click on the selected model the 3D view waits for, or none;
+   *  cleared with the selection, like `modelFocus`. */
+  readonly modelPick: ModelPick | null;
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -147,6 +178,8 @@ export const initialEditorViewState: EditorViewState = {
   hiddenLayers: [],
   readout: false,
   unlockedStations: [],
+  modelFocus: null,
+  modelPick: null,
 };
 
 /** Whether a payload's flag is a flag: anything else changes nothing. */
@@ -165,7 +198,39 @@ const editorViewSlice = createSlice({
   reducers: {
     /** An item selected, or none. */
     selected(state, action: PayloadAction<{ id: string | null }>) {
+      if (state.selected !== action.payload.id) {
+        state.modelFocus = null;
+        state.modelPick = null;
+      }
       state.selected = action.payload.id;
+    },
+    /** A note or a section of the selected model in focus, or none; one
+     *  that is no part and index changes nothing. */
+    modelFocused(state, action: PayloadAction<{ focus: ModelFocus | null }>) {
+      const { focus } = action.payload;
+      if (focus === null) {
+        state.modelFocus = null;
+        return;
+      }
+      if (focus.part !== "note" && focus.part !== "section") return;
+      if (!isIndex(focus.index)) return;
+      state.modelFocus = { part: focus.part, index: focus.index };
+    },
+    /** The 3D view to wait for a click on the selected model, or not;
+     *  one that is no pick changes nothing. */
+    modelPickAsked(state, action: PayloadAction<{ pick: ModelPick | null }>) {
+      const { pick } = action.payload;
+      if (pick === null) {
+        state.modelPick = null;
+        return;
+      }
+      if (!MODEL_PICKS.has(pick.what)) return;
+      if (pick.what === "note-place" || pick.what === "section-place") {
+        if (!isIndex(pick.index)) return;
+        state.modelPick = { what: pick.what, index: pick.index };
+        return;
+      }
+      state.modelPick = { what: pick.what };
     },
     busyChanged(state, action: PayloadAction<{ busy: boolean }>) {
       state.busy = action.payload.busy;
@@ -305,12 +370,16 @@ const editorViewSlice = createSlice({
       openStations: string[];
       gesture: EditorGesture | null;
       unlockedStations: string[];
+      modelFocus: ModelFocus | null;
+      modelPick: ModelPick | null;
     }) => {
       state.openStations = [];
       // A gesture belongs to the tour it started on.
       state.gesture = null;
       // Another tour, or none: every station locked again.
       state.unlockedStations = [];
+      state.modelFocus = null;
+      state.modelPick = null;
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)

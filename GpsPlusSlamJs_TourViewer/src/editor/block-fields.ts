@@ -57,6 +57,10 @@ const TRANSCRIPT: FieldSpec = {
   prose: true,
 };
 
+/** A short text's caption: the head types it for a free one, the station's
+ *  inspector for one its story shows. */
+const CAPTION: FieldSpec = { name: "caption", label: "Caption", prose: false };
+
 /** Each kind's fields in the inspector's order. */
 const FIELDS: Readonly<Record<TourBlockKind, readonly FieldSpec[]>> = {
   shortText: [{ name: "description", label: "Description", prose: true }],
@@ -104,6 +108,31 @@ export function blockFields(block: AnyBlock): BlockField[] {
   });
 }
 
+/** The fields the station's inspector types for `block`, one its story
+ *  shows: a short text's caption too (no head types it there), and no
+ *  name for a declared character (his declaration's, written over on
+ *  every read). */
+export function storyBlockFields(block: TourBlock): BlockField[] {
+  const fields = blockFields(block);
+  if (block.kind === "shortText") {
+    const rule = ruleOf("shortText", CAPTION.name);
+    return [
+      {
+        ...CAPTION,
+        value: block.caption,
+        max: rule.max,
+        unit: rule.unit,
+        required: rule.required,
+      },
+      ...fields,
+    ];
+  }
+  if (block.kind === "character" && block.character !== undefined) {
+    return fields.filter((f) => f.name !== "name");
+  }
+  return fields;
+}
+
 /**
  * What typing `value` into `block`'s field `name` writes: the block with
  * the text trimmed at its ends (its lines kept), or without the field when
@@ -119,7 +148,11 @@ export function blockFieldEdit<B extends AnyBlock>(
   | { readonly kind: "edited"; readonly after: B }
   | { readonly kind: "unchanged" }
   | { readonly kind: "refused"; readonly reason: string } {
-  const spec = FIELDS[block.kind].find((f) => f.name === name);
+  const specs =
+    block.kind === "shortText"
+      ? [CAPTION, ...FIELDS.shortText]
+      : FIELDS[block.kind];
+  const spec = specs.find((f) => f.name === name);
   if (spec === undefined) return { kind: "unchanged" };
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };

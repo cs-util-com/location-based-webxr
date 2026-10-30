@@ -26,7 +26,8 @@ map.
   - `SummaryModel`: `tracks` (per visit: `gps`, `fused`), `codes`
     (`SummaryCode`), `objects` (`SummaryObject`: id, kind, label, lat,
     lng; the label is `object-describe.ts` `objectTitle`; pins and photos
-    only - a placed 3D model, format minor 1, is not drawn here and stays
+    only - a placed 3D model, format minor 1, and a free long text on its
+    reading stand, minor 3, are not drawn here and stay
     in the tour untouched), `fitPoints` (everything drawn, for framing).
   - `SummaryCode`: `levelId`, `label` ("The code", or "Code 1", "Code 2"...),
     `reference` (the stored pose as a `CodeMark` plus `ringM`, its own
@@ -135,6 +136,6 @@ measured; a code only the visits know ("no saved position") and the
 numbering; the second mark only past the estimate's predicted error, and
 the floor; the visits' estimate combining only the visits from the code's
 latest move on (the move boundary, M5b); pin and photo labels; a placed
-3D model left out of the drawn objects; walks
+3D model and a free long text left out of the drawn objects; walks
 kept apart and unreadable points dropped; framing covering the walk, the
 pins, the line and the ring.

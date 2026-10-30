@@ -53,6 +53,16 @@ async function refuseWebGL(page) {
 }
 
 /**
+ * How long a first visit may take to mount its moving parts: the boot
+ * budget of a dev server compiling the landing's module graph on a busy
+ * machine, as the AR specs give their boot 10-15 s. Not a retry - a part
+ * that never mounts still fails, only later. Measured about 1-1.6 s on an
+ * idle machine at every viewport; the misses of a one-worker browser run
+ * were past the 5 s default, and passed on their retry.
+ */
+const MOUNTED = { timeout: 15_000 };
+
+/**
  * A first visit with the film mounted.
  *
  * @param {import("@playwright/test").Page} page
@@ -60,7 +70,7 @@ async function refuseWebGL(page) {
 async function openFilm(page) {
   await page.goto("/?nocache=1");
   const host = page.getByTestId("landing-film");
-  await expect(host).toHaveAttribute("data-mount", "ready");
+  await expect(host).toHaveAttribute("data-mount", "ready", MOUNTED);
   await expect(host.locator(".lf-film")).toBeVisible();
   return host;
 }
@@ -355,6 +365,12 @@ for (const viewport of [
   { width: 390, height: 844 },
   { width: 844, height: 390 },
   { width: 1280, height: 720 },
+  // The film at 540 px and less on a desktop: the chip's lines wrap inside
+  // the screen there (they ran over it before, up to 30 px at 1000x700).
+  { width: 1000, height: 700 },
+  { width: 1100, height: 700 },
+  { width: 1159, height: 800 },
+  { width: 1280, height: 600 },
 ]) {
   for (const wide of [false, true]) {
     test.describe(`the scanning part at ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {

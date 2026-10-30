@@ -64,7 +64,9 @@ them.
     soon as the gate allows it and the GPS zero exists
     (`renderTourStation`: a group per station at its geo pose, its
     free blocks (pins, pictures and, since B2b, placed models through
-    `seams.loadGlbModel` over the same read) as children at their local
+    `seams.loadGlbModel` over the same read, and since minor 3 a long
+    text's reading stand through `mountLectern`, since minor 4 its
+    reading sign through `mountReadingSign`) as children at their local
     poses, the
     stations without free blocks skipped; each
     station one "items" part of the side table, see below; labels
@@ -500,3 +502,17 @@ pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
   placed too (the early return also asks `hasStoryWorldBlocks`).
 - Tests: `viewer-placement-story-blocks.test.ts`; the e2e
   `story-blocks.spec.js` (a pin the story shows stays after its end).
+
+## A visitor's view choice
+
+- In visitor mode the renderer deps carry `viewOf`, the five rules of
+  `shownView` (`visitor-prefs.ts`) over the store's stored preference
+  (`visitor-prefs-slice.ts`); a creator's carry none (rule 1).
+- `syncContent` first runs `redrawForPrefs`: when the stored preference is
+  no longer the one the parts were drawn with, every station's `items`
+  part is made again (the side table replaces it, and draws a shown
+  station's at once) and every reached story part is taken out, so the
+  next `syncStoryParts` makes them again. A choice is rare, so the rebuild
+  is whole rather than per block.
+- Tests: `viewer-placement-story-blocks.test.ts` "draws a standing long
+  text again in the chosen view, and back"; the e2e `view-switch.spec.js`.
