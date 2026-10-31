@@ -7,8 +7,15 @@
   `release`); the controls stay enabled throughout, except while `lease(true)`
   lends the pointer to an editor's handle drag.
 - Public API: `createGlobeCameraControls(scene, camera, canvas, globe,
-{ onTake, reliefPlanes?, eyeItems?, doubleTapZoom?, createControls? })` returns
-  (`doubleTapZoom` false turns the library's own double-tap zoom off, for an
+{ onTake, reliefPlanes?, eyeItems?, groundRay?, doubleTapZoom?, createControls? })` returns
+  (`groundRay(ray)`, when given, is what every zoom, drag and height step
+  of the controls picks, in place of the library's raycast of the drawn
+  mesh: its point at its distance along the ray, else the ellipsoid, else
+  nothing; the editor passes `groundPointOfRay` of its relief, because the
+  drawn mesh can lie kilometres off the sampled heights and the zoom steps
+  a share of the distance to what it picks. It replaces the library's
+  private `_raycast`, whose presence a guard test checks. Without it, the
+  lab, the library's pick stays. `doubleTapZoom` false turns the library's own double-tap zoom off, for an
   app with its own double click, the editor's zoom step and fly-to; default
   on, as in the lab):
   - `fitPlanes()`: near and far from `clipPlanes` (with `reliefPlanes()`) or

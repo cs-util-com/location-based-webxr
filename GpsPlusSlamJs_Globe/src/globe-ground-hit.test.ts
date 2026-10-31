@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   GROUND_HIT,
   groundHit,
+  groundPointOfRay,
   groundReachM,
   marchToGround,
   terrainAboveGround,
@@ -511,5 +512,52 @@ describe("marchToGround", () => {
     expect(hit.t).toBeGreaterThanOrEqual(3);
     expect(hit.t).toBeLessThanOrEqual(8 + GROUND_HIT.minStepM);
     expect(hit.nulls).toBeGreaterThan(0);
+  });
+});
+
+describe("groundPointOfRay", () => {
+  // Why: the camera's controls zoom and pivot on the point their ray
+  // meets. Picked from the relief's DRAWN mesh, a pinch from eye height
+  // found a point 15 km off and 5.8 km under the ground, and every step
+  // (a share of the distance to that point) flew the camera kilometres
+  // through the ground. This gives them the SAMPLED ground instead, with
+  // a reach to the ray's own horizon: a shallow ray from 300 m (2 degrees
+  // down, the ground about 8.6 km out) is found, which the default 5 km
+  // reach would call out of reach.
+  it("finds the sampled ground within the ray's horizon, null on a miss", () => {
+    const terrain = fakeTerrain(() => 516);
+    const ray = rayFrom(516, 300, -2);
+    expect(groundHit(terrain, ray).miss).toBe("out-of-reach");
+    const point = groundPointOfRay(terrain)(ray);
+    if (point === null) throw new Error("no ground");
+    expect(heightOf(point)).toBeCloseTo(516, 3);
+    const t = point.distanceTo(ray.origin);
+    expect(t / 1000).toBeGreaterThan(8);
+    expect(t / 1000).toBeLessThan(9.5);
+    // The sky, and ground not loaded: no point (the caller falls back).
+    expect(groundPointOfRay(terrain)(rayFrom(516, 1.7, 10))).toBeNull();
+    expect(
+      groundPointOfRay(fakeTerrain(() => null))(rayFrom(516, 1.7, -10)),
+    ).toBeNull();
+  });
+
+  // Why: the editor moves the globe's group under the camera (its frame
+  // follows the tour), so the ground's frame is read for every ray, not
+  // once when the function is made.
+  it("reads the group's frame for every ray", () => {
+    const terrain = fakeTerrain(() => 516);
+    const find = groundPointOfRay(terrain);
+    const frame = WGS84_ELLIPSOID.getEastNorthUpFrame(
+      MUNICH.lat,
+      MUNICH.lon,
+      0,
+      new THREE.Matrix4(),
+    ).invert();
+    terrain.tiles.group.matrix.copy(frame);
+    terrain.tiles.group.updateMatrixWorld(true);
+    const point = find(rayFrom(516, 1.7, -10).applyMatrix4(frame));
+    if (point === null) throw new Error("no ground");
+    const ecef = point.clone().applyMatrix4(frame.clone().invert());
+    expect(heightOf(ecef)).toBeCloseTo(516, 3);
   });
 });

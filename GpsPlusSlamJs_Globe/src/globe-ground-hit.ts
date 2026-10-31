@@ -341,3 +341,25 @@ export function groundReachM(heightM: number): number {
     Math.sqrt(2 * EARTH_RADIUS_M * h + h * h),
   );
 }
+
+/**
+ * The point where a WORLD-space ray meets the sampled ground of `terrain`,
+ * or null (the sky, past the horizon, heights not loaded, a ray from under
+ * the ground). The reach runs to the horizon of the ray's origin
+ * (`groundReachM` of its height over the ground; the default where none
+ * is loaded under it), so a shallow ray from a raised camera is found.
+ * The tiles' frame is read for every ray: the editor moves the group.
+ * For the camera's controls (`createGlobeCameraControls`' `groundRay`).
+ */
+export function groundPointOfRay(
+  terrain: SampledTerrain,
+): (ray: THREE.Ray) => THREE.Vector3 | null {
+  return (ray) => {
+    const above = terrainAboveGround(terrain);
+    const heightM = above(ray.origin);
+    const hit = marchToGround(ray, above, {
+      maxDistanceM: groundReachM(heightM ?? 0),
+    });
+    return hit.miss === null ? hit.point : null;
+  };
+}

@@ -46,6 +46,7 @@ export {
 export {
   GROUND_HIT,
   groundHit,
+  groundPointOfRay,
   groundReachM,
   marchToGround,
   terrainAboveGround,

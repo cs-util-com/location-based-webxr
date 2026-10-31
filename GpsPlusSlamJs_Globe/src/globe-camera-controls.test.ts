@@ -10,7 +10,10 @@
  */
 
 import * as THREE from "three";
-import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
+import {
+  GlobeControls as LibraryControls,
+  WGS84_ELLIPSOID,
+} from "3d-tiles-renderer";
 import type { GlobeControls } from "3d-tiles-renderer";
 import { describe, expect, it } from "vitest";
 
@@ -69,6 +72,8 @@ function fakeControls() {
       v.set(0, 0, 1);
     },
     setScene: () => calls.push("setScene"),
+    /** The library's own pick (the scene's mesh, then the ellipsoid). */
+    _raycast: (_r: THREE.Raycaster): unknown => "library",
   };
   return fake;
 }
@@ -310,5 +315,66 @@ describe("createGlobeCameraControls", () => {
     const { fake, controls } = setup({ onTake: () => {} });
     controls.setAdjustHeight(false);
     expect(fake.adjustHeight).toBe(false);
+  });
+});
+
+describe("createGlobeCameraControls: groundRay", () => {
+  /** A raycaster from 20,000 km out over the equator, toward the centre. */
+  const inward = () => {
+    const raycaster = new THREE.Raycaster();
+    raycaster.ray.origin.set(6_378_137 + 20_000_000, 0, 0);
+    raycaster.ray.direction.set(-1, 0, 0);
+    return raycaster;
+  };
+
+  // Why: the library zooms toward, and pivots on, what its raycast hits.
+  // Over the relief that was the DRAWN mesh, which put a pinch's zoom
+  // point 15 km off and 5.8 km under the ground: a spread flew the camera
+  // kilometres through it, a close climbed kilometres. With `groundRay`
+  // the controls' every pick is the sampled ground, at its true distance.
+  it("picks the ground the app finds, at its distance along the ray", () => {
+    const ground = new THREE.Vector3(6_378_137 + 100, 0, 0);
+    const { fake } = setup({ onTake: () => {}, groundRay: () => ground });
+    const hit = fake._raycast(inward()) as {
+      point: THREE.Vector3;
+      distance: number;
+    };
+    expect(hit.point.toArray()).toEqual(ground.toArray());
+    expect(hit.point).not.toBe(ground);
+    expect(hit.distance).toBeCloseTo(20_000_000 - 100, 3);
+  });
+
+  // Why: where the app finds no ground (the sky, heights not loaded) the
+  // controls keep the library's own last resort, the ellipsoid, rather
+  // than the drawn mesh that misled them.
+  it("falls back to the ellipsoid, never the drawn mesh", () => {
+    const { fake } = setup({ onTake: () => {}, groundRay: () => null });
+    const hit = fake._raycast(inward()) as {
+      point: THREE.Vector3;
+      distance: number;
+    };
+    expect(hit.point.x).toBeCloseTo(6_378_137, 3);
+    expect(hit.distance).toBeCloseTo(20_000_000, 3);
+    const away = inward();
+    away.ray.direction.set(1, 0, 0);
+    expect(fake._raycast(away)).toBeNull();
+  });
+
+  // Why: without the option (the globe lab) the library's pick stays.
+  it("leaves the library's pick alone without the option", () => {
+    const { fake } = setup({ onTake: () => {} });
+    expect(fake._raycast(inward())).toBe("library");
+  });
+});
+
+describe("the library's private pick (a guard)", () => {
+  // Why: `groundRay` replaces this undocumented method of 3d-tiles-renderer
+  // 0.5.3; an upgrade that renames it would silently bring the drawn-mesh
+  // pick back.
+  it("is still a method of GlobeControls", () => {
+    const proto = LibraryControls.prototype as unknown as {
+      _raycast?: unknown;
+    };
+    expect(typeof proto._raycast).toBe("function");
   });
 });

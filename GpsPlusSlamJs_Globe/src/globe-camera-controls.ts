@@ -53,6 +53,10 @@ interface ControlsInternals {
   _inertiaNeedsUpdate?: () => boolean;
   cameraRadius: number;
   minDistance: number;
+  /** What every zoom, drag and height step picks (the scene, then the ellipsoid). */
+  _raycast: (
+    raycaster: THREE.Raycaster,
+  ) => { point: THREE.Vector3; distance: number } | null;
 }
 
 export interface GlobeCameraControlsOptions {
@@ -66,6 +70,14 @@ export interface GlobeCameraControlsOptions {
    * it off: both would run.
    */
   doubleTapZoom?: boolean;
+  /**
+   * Where a world ray meets the ground, null for none: when given, the
+   * controls pick with it in place of the library's raycast of the drawn
+   * mesh (the scene), and fall back to the ellipsoid on null. The relief's
+   * drawn mesh can lie kilometres off its sampled heights, and the zoom
+   * steps a share of the distance to what it picks.
+   */
+  groundRay?: ((ray: THREE.Ray) => THREE.Vector3 | null) | null;
   /** First person: the items' world bounding spheres; null otherwise. */
   eyeItems?: (() => Iterable<THREE.Sphere>) | null;
   /** For tests: the controls in place of the library's. */
@@ -107,6 +119,33 @@ export interface GlobeCameraControls {
 }
 
 /**
+ * The controls' pick from `groundRay`: its point at its distance along the
+ * ray, else the ray's first meeting with the ellipsoid (the library's own
+ * last resort, in the frame of the globe's group), else null.
+ */
+function groundPick(
+  groundRay: (ray: THREE.Ray) => THREE.Vector3 | null,
+  globe: GlobeControlsGlobe,
+): ControlsInternals["_raycast"] {
+  const toFrame = new THREE.Matrix4();
+  const local = new THREE.Ray();
+  return ({ ray }) => {
+    const ground = groundRay(ray);
+    let point: THREE.Vector3 | null = ground === null ? null : ground.clone();
+    if (point === null) {
+      const { group, ellipsoid } = globe.tiles;
+      toFrame.copy(group.matrixWorld).invert();
+      local.copy(ray).applyMatrix4(toFrame);
+      point = ellipsoid.intersectRay(local, new THREE.Vector3());
+      point?.applyMatrix4(group.matrixWorld);
+    }
+    return point === null
+      ? null
+      : { point, distance: point.distanceTo(ray.origin) };
+  };
+}
+
+/**
  * The controls over `scene` for `camera` on `canvas`. The planes are fitted
  * from the camera's position in the globe's frame: `eyeClipPlanes` with
  * `eyeItems`, else `clipPlanes`, both with `reliefPlanes()`; the camera's
@@ -121,6 +160,7 @@ export function createGlobeCameraControls(
     onTake,
     reliefPlanes = () => ({}),
     eyeItems = null,
+    groundRay = null,
     doubleTapZoom = true,
     createControls = (s, c, el) => new GlobeControls(s, c, el),
   }: GlobeCameraControlsOptions,
@@ -134,6 +174,7 @@ export function createGlobeCameraControls(
   controls.enableDamping = true;
   controls.enableDoubleTapZoom = doubleTapZoom;
   if (eyeItems) applyEyeControls(inner);
+  if (groundRay) inner._raycast = groundPick(groundRay, globe);
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
   let picking: THREE.Object3D = scene;

@@ -45,6 +45,12 @@
     under the ground, keeps the default): 30 m 19.6 km, 3 km 195.5 km.
     Ground that stands up beyond that horizon (a far mountain) is out of
     reach. RangeError for a non-finite height.
+  - `groundPointOfRay(terrain)`: a function of a WORLD-space ray giving the
+    point where it meets the sampled ground, or null for any miss; its
+    reach is `groundReachM` of the ray origin's height over the ground
+    (the default where none is loaded under it), and the tiles' frame is
+    read again for every ray. The camera's controls pick with it
+    (`createGlobeCameraControls`' `groundRay`).
 - What G2 (the editor's picking) uses:
   - a ray from `THREE.Raycaster.setFromCamera(ndc, camera)` (its `.ray`),
     passed to
