@@ -184,6 +184,14 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   text in an unknown view stands as its sign instead of being left out).
   Written at minor 4 only when a long text uses it; the released reader
   treats it as it treats a lectern (`tour-reading.test.ts`).
+- **Minor 5** (`TOUR_MANIFEST_MINOR = 5`): a long text's `narration`, a
+  voice and optionally a read-along track in its own archive entry
+  `timing/<blockId>.json` (`tour-blocks.ts.md`, `tour-timing.ts.md`).
+  Written at minor 5 only when a text is narrated. The released reader
+  ignores the field (unknown fields are ignored at every minor), so it
+  shows the text as it did at minor 4 - a story text as its card, a free
+  reading sign left out - and will not save the tour; a minor-4 reader
+  shows the text with no voice (`tour-narration.test.ts`).
 - **Minor 3**: a long text's `lectern` view,
   a reading stand in the square at the block's pose (`TourLectern`, one
   of `TourObject`), as a free block or a story block. A file is written at
@@ -242,6 +250,12 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
 
 ## Tests
 
+- `tour-narration.test.ts` - a long text's narration: every field read
+  and written back exactly at minor 5, the voice alone, minor 5 only when
+  narrated, the duration's edges, one failure per rule at this minor, a
+  newer minor dropping only the narration, a non-object failing at every
+  minor, the credit cap, and the released reader carding, dropping and
+  refusing to save it.
 - `tour-reading.test.ts` - the long text's `reading` view: a free one
   read as a tour object and written back exactly at minor 4, a story one
   kept, minor 4 only when a long text uses it, the floor of a free long

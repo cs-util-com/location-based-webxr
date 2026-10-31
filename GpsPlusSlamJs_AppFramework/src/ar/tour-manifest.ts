@@ -131,6 +131,7 @@ export type {
   TourBlockView,
   TourCharacterBlock,
   TourLongTextBlock,
+  TourNarration,
   TourModelAnimation,
   TourModelBlock,
   TourModelNote,
@@ -161,7 +162,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 4;
 
 /** The newest additive revision of version 4 this module knows. */
-export const TOUR_MANIFEST_MINOR = 4;
+export const TOUR_MANIFEST_MINOR = 5;
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */

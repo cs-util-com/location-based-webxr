@@ -46,8 +46,11 @@ model | character`.
   when a model stands in a view minor 1 added or carries `animation`,
   `annotations` or `sections`; 2 when a character stands in a minor-2
   view or names a declared character; 3 when a long text stands as a
-  `lectern`; 4 when one stands as a `reading` sign; else 0. The writer
-  stamps it.
+  `lectern`; 4 when one stands as a `reading` sign; 5 when one is
+  narrated (`narration`); else 0. The writer stamps it.
+- `TOUR_NARRATION_RULES` (`voiceCredit` optional 200 code points),
+  `TOUR_NARRATION_MAX_DURATION_MS` (14 400 000, four hours) and the type
+  `TourNarration` - a long text's narration (minor 5).
 - `TOUR_BLOCK_TEXT_RULES` - every capped text, as `{ max, unit, required }`:
   - `shortText`: `caption` required 40, `description` optional 160;
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
@@ -95,7 +98,16 @@ model | character`.
   asset's id), `kind`, `view`, `pose` (`parseTourLocalPose`), optional
   `createdAtIso` (ISO-8601).
 - `shortText`: `caption`, optional `description`.
-- `longText`: `title`, `body` (the text's source).
+- `longText`: `title`, `body` (the text's source), and from minor 5 an
+  optional `narration` `{ audio, timing?, voiceCredit?, synthetic,
+durationMs? }`: `audio` names an audio asset; `timing` must be the
+  block's own entry `timing/<id>.json` (`tour-timing.ts`, read by a
+  viewer only when the text opens); `synthetic` reads as false when
+  absent; `durationMs` a whole number from 1 to four hours. A narration
+  that is not an object fails at every minor; a field breaking its rule
+  fails a file of this reader's own minor, and a newer minor's file
+  loses just the narration (reported as a `narration` field drop) while
+  the text still reads; an over-long `voiceCredit` is left out alone.
 - `picture`: `image` (an image asset), optional `title`, `caption`, `alt`,
   and `widthM` (required).
 - `video`: `video` (a video asset), `transcript`, optional `title`, optional

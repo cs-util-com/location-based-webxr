@@ -87,6 +87,28 @@
   leniently: a free reading sign is left out and reported, a story one
   shows as its card, and that app will not save the tour.
 
+- **A long text read aloud, with a read-along track, `tour.json` version 4
+  minor 5** (`ar/tour-blocks`, `ar/tour-manifest`, new `ar/tour-timing`).
+  A long text gains an optional `narration` `{ audio, timing?,
+voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
+  `timing` names the block's own new archive entry `timing/<blockId>.json`
+  (a track of `{ startMs, endMs, from, to, text? }` segments over the
+  body's plain text, with the text's hash), `voiceCredit` is at most 200
+  characters, `synthetic` reads as false when absent, and `durationMs` is
+  1 ms to four hours. New exports: `TourNarration`,
+  `TOUR_NARRATION_RULES`, `TOUR_NARRATION_MAX_DURATION_MS`, and from
+  `ar/tour-timing` `parseTourTiming`, `parseTourTimingText`,
+  `tourTimingStaleReason`, `tourTimingEntryName`, `TourTimingError`, the
+  caps `TOUR_TIMING_MAX_BYTES` (1.5 MB), `TOUR_TIMING_MAX_SEGMENTS`
+  (20 000) and `TOUR_TIMING_MAX_ANCHORS` (2 000), `TOUR_TIMING_FOLDER` and
+  the `TourTiming*` types. A timing's wrong shape is an error; a timing
+  that no longer fits its text (the text was edited, or it runs past the
+  voice) is stale, and a viewer shows the plain text. `TOUR_MANIFEST_MINOR`
+  is 5; a tour without narration is still written at its lower minor. A
+  reader of 1.31.0 opens a 4.5 tour leniently: the narration is ignored,
+  the text shows as it did at minor 4, and that app will not save the
+  tour.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

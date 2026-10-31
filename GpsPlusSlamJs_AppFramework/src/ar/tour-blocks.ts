@@ -39,6 +39,7 @@ import {
   type TourFail,
 } from './tour-fields.js';
 import { parseTourLocalPose, type TourLocalPose } from './tour-items.js';
+import { tourTimingEntryName } from './tour-timing.js';
 
 type Fail = TourFail;
 
@@ -200,6 +201,15 @@ export const TOUR_MODEL_SPACE_MAX = 10_000;
  *  leaving out just that note or section of a newer one. */
 export const TOUR_MODEL_MIN_DIRECTION_LENGTH = 1e-9;
 
+/** A narration's credit line (minor 5): optional, left out alone when
+ *  over its cap. */
+export const TOUR_NARRATION_RULES = {
+  voiceCredit: optional(200),
+} as const satisfies Record<string, TourTextRule>;
+
+/** The longest a narration may last (ms): four hours. */
+export const TOUR_NARRATION_MAX_DURATION_MS = 14_400_000;
+
 /** A picture's width in the world (m), inclusive. */
 export const TOUR_PICTURE_MIN_WIDTH_M = 0.05;
 export const TOUR_PICTURE_MAX_WIDTH_M = 50;
@@ -222,10 +232,32 @@ export interface TourShortTextBlock extends TourBlockEnvelope<'shortText'> {
   readonly description?: string;
 }
 
+/**
+ * A long text's narration (minor 5): its voice, and optionally the
+ * read-along track that says which words it speaks when.
+ */
+export interface TourNarration {
+  /** An audio asset: the text read aloud. */
+  readonly audio: string;
+  /** The block's own timing entry, `timing/<blockId>.json`
+   *  (`tour-timing.ts`); absent: a voice without a read-along. */
+  readonly timing?: string;
+  /** Who the voice is, shown beside the player
+   *  ({@link TOUR_NARRATION_RULES}). */
+  readonly voiceCredit?: string;
+  /** Whether the voice is a synthetic one, as the player says. */
+  readonly synthetic: boolean;
+  /** The voice's length (ms), when the creator's tool knew it: a track
+   *  timed beyond it is stale. */
+  readonly durationMs?: number;
+}
+
 export interface TourLongTextBlock extends TourBlockEnvelope<'longText'> {
   readonly title: string;
   /** The text's source, counted in UTF-16 units. */
   readonly body: string;
+  /** Minor 5: the text read aloud. */
+  readonly narration?: TourNarration;
 }
 
 export interface TourPictureBlock extends TourBlockEnvelope<'picture'> {
@@ -737,15 +769,87 @@ function characterFields(v: Fields, ctx: BlockContext) {
   return { name, image };
 }
 
+/** A narration's length: whole milliseconds, 1 to the cap. */
+function isNarrationDuration(ms: unknown): boolean {
+  return (
+    typeof ms === 'number' &&
+    Number.isSafeInteger(ms) &&
+    ms >= 1 &&
+    ms <= TOUR_NARRATION_MAX_DURATION_MS
+  );
+}
+
+/** Why a narration's fields break their rules; null when they hold (the
+ *  credit is checked on its own, by its text rule). */
+function narrationFault(value: Fields, ctx: BlockContext): string | null {
+  const at = `${ctx.at}.narration`;
+  const { audio, timing, synthetic, durationMs } = value;
+  if (typeof audio !== 'string' || ctx.assets.get(audio) !== 'audio') {
+    return `"${at}.audio" must name an audio asset`;
+  }
+  const own = tourTimingEntryName(ctx.id);
+  if (timing !== undefined && timing !== own) {
+    return `"${at}.timing" must be the block's own timing entry, ${own}`;
+  }
+  if (synthetic !== undefined && typeof synthetic !== 'boolean') {
+    return `"${at}.synthetic" must be true or false`;
+  }
+  if (durationMs !== undefined && !isNarrationDuration(durationMs)) {
+    return `"${at}.durationMs" must be a whole number of milliseconds from 1 to ${String(TOUR_NARRATION_MAX_DURATION_MS)}`;
+  }
+  return null;
+}
+
+/** A long text's narration (minor 5). Not an object fails at every
+ *  minor; a field breaking its rule fails a file of this reader's own
+ *  minor, and a newer one's drops just the narration, keeping the text.
+ *  An over-long credit is left out alone. */
+function narrationOf(v: Fields, ctx: BlockContext) {
+  const value = v.narration;
+  if (value === undefined) return {};
+  const at = `${ctx.at}.narration`;
+  if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
+  const reason = narrationFault(value, ctx);
+  if (reason !== null) {
+    if (!ctx.lenient) return ctx.fail(reason);
+    ctx.onDropped?.({
+      kind: 'field',
+      block: ctx.id,
+      field: 'narration',
+      reason,
+    });
+    return {};
+  }
+  const { audio, timing, durationMs } = value as {
+    audio: string;
+    timing?: string;
+    durationMs?: number;
+  };
+  const narration: TourNarration = {
+    audio,
+    ...(timing === undefined ? {} : { timing }),
+    ...optionalText(value, 'voiceCredit', TOUR_NARRATION_RULES.voiceCredit, {
+      ...ctx,
+      at,
+    }),
+    synthetic: value.synthetic === true,
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
+  return { narration };
+}
+
 /**
- * The lowest minor `blocks` need: 4 when a long text stands in the world
- * as a short reading sign (`reading`); 3 when one stands as a reading
+ * The lowest minor `blocks` need: 5 when a long text is narrated; 4 when
+ * a long text stands in the world as a short reading sign (`reading`); 3 when one stands as a reading
  * stand (`lectern`); 2 when a character speaks in a view
  * minor 2 added or names a declared character; 1 when a model stands in a
  * view minor 1 added, or carries an animation, notes or sections; 0
  * otherwise.
  */
 export function tourBlocksMinor(blocks: readonly TourBlock[]): number {
+  if (blocks.some((b) => b.kind === 'longText' && b.narration !== undefined)) {
+    return 5;
+  }
   if (blocks.some((b) => b.kind === 'longText' && b.view === 'reading')) {
     return 4;
   }
@@ -782,6 +886,7 @@ const KIND_FIELDS: Record<TourBlockKind, KindFields> = {
   longText: (v, _view, ctx) => ({
     title: requiredText(v, 'title', rules.longText.title, ctx),
     body: requiredText(v, 'body', rules.longText.body, ctx),
+    ...narrationOf(v, ctx),
   }),
   picture: (v, _view, ctx) => ({
     image: assetRef(v, 'image', 'image', ctx),

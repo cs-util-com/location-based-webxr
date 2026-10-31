@@ -78,7 +78,7 @@ describe('the reading view of a long text (minor 4)', () => {
     expect(TOUR_WORLD_VIEWS.has('reading')).toBe(true);
     expect(tourFloorView('longText', 'free')).toBe('reading');
     expect(tourFloorView('longText', 'story')).toBe('card');
-    expect(TOUR_MANIFEST_MINOR).toBe(4);
+    expect(TOUR_MANIFEST_MINOR).toBeGreaterThanOrEqual(4);
   });
 
   it('a free sign stands in the world at its station, as a tour object', () => {

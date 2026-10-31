@@ -280,6 +280,7 @@ export {
   type TourCharacterView,
   type TourChoiceOption,
   type TourLongTextBlock,
+  type TourNarration,
   type TourModelAnimation,
   type TourModelBlock,
   type TourModelNote,
@@ -342,9 +343,28 @@ export {
   TOUR_MODEL_WORLD_VIEWS,
   TOUR_WORLD_VIEWS,
   TOUR_PICTURE_MAX_WIDTH_M,
+  TOUR_NARRATION_MAX_DURATION_MS,
+  TOUR_NARRATION_RULES,
   TOUR_PICTURE_MIN_WIDTH_M,
   tourTextCount,
 } from './tour-blocks.js';
+export {
+  TOUR_TIMING_FOLDER,
+  TOUR_TIMING_MAX_ANCHORS,
+  TOUR_TIMING_MAX_BYTES,
+  TOUR_TIMING_MAX_SEGMENTS,
+  TourTimingError,
+  parseTourTiming,
+  parseTourTimingText,
+  tourTimingEntryName,
+  tourTimingStaleReason,
+  type TourTiming,
+  type TourTimingAnchor,
+  type TourTimingGranularity,
+  type TourTimingSegment,
+  type TourTimingSource,
+  type TourTimingText,
+} from './tour-timing.js';
 export { tourShownBlockIds } from './tour-story.js';
 export {
   TOUR_CONTACT_MAX_CHARS,
