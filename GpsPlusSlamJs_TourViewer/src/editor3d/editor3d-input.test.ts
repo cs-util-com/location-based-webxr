@@ -1032,7 +1032,7 @@ describe("the globe's routing table, event by event", () => {
       const read =
         vi.mocked(t.scene.twoFinger).mock.calls.length > 0 ||
         vi.mocked(t.scene.twoFingerStart).mock.calls.length > 0;
-      const did = locked || read ? "locked" : "camera";
+      const did = locked || read ? "none" : "camera";
       expect(did, on).toBe(routeGlobeInput({ kind: "fingers", on }));
       expect(t.commits, on).toEqual([]);
       // The cancel line is said exactly when a handle drag was cancelled.
@@ -1061,5 +1061,135 @@ describe("the globe's routing table, event by event", () => {
       );
       t.input.dispose();
     }
+  });
+});
+
+describe("the OrbitControls view's click distance", () => {
+  // Why: one rule decides click or drag in both views: a press that moved
+  // the click distance or more is a drag. The globe's table puts its line
+  // there, and the default (OrbitControls) view follows the same `>=`, so
+  // its line moved by that one pixel too, on purpose: 4 px with a mouse,
+  // 8 px with a finger, each now a drag, just under them still a click.
+  it("selects after a move just under the line, not on it", () => {
+    for (const touch of [false, true]) {
+      const line = touch ? INPUT.tapPx : INPUT.clickPx;
+      for (const movedPx of [0, line - 0.5, line, line + 1]) {
+        const t = setup({ selected: null, pick: "station:a" });
+        const id = touch ? 7 : 1;
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 5, y: 5 }, { id, touch }),
+        );
+        const end = { x: 5 + movedPx, y: 5 };
+        window.dispatchEvent(
+          pointer("pointermove", end, { id, touch, buttons: 1 }),
+        );
+        window.dispatchEvent(pointer("pointerup", end, { id, touch }));
+        const selected = vi.mocked(t.page.select).mock.calls.length > 0;
+        expect(
+          selected,
+          `${touch ? "finger" : "mouse"} ${String(movedPx)} px`,
+        ).toBe(movedPx < line);
+        t.input.dispose();
+      }
+    }
+  });
+});
+
+describe("a second finger after a handle drag, on the globe", () => {
+  /**
+   * A stand-in for the globe's controls, as 3d-tiles-renderer 0.5.3 reads
+   * pointers: its listeners run after the input's (which capture), see
+   * only what arrives while the camera is free, and move the camera for a
+   * tracked finger's move. The library's tracker never saw a finger
+   * pressed while it was locked, and its lift then drops the wrong one.
+   */
+  function controlsDouble(t: ReturnType<typeof setup>) {
+    let locked = false;
+    const tracked = new Set<number>();
+    let moves = 0;
+    vi.mocked(t.scene.lockCamera).mockImplementation((on: boolean) => {
+      locked = on;
+      t.log.push(`lock:${String(on)}`);
+    });
+    t.element.addEventListener("pointerdown", (e) => {
+      if (!locked) tracked.add(e.pointerId);
+    });
+    const onMove = (e: Event) => {
+      if (!locked && tracked.has((e as PointerEvent).pointerId)) moves += 1;
+    };
+    const onUp = (e: Event) => {
+      tracked.delete((e as PointerEvent).pointerId);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return {
+      moves: () => moves,
+      locked: () => locked,
+      dispose() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      },
+    };
+  }
+
+  // Why: the first finger on a handle locks the controls before they see
+  // it. A second finger cancelled the drag and used to free them, so they
+  // tracked the second finger alone (a pan, not a pinch), and when the
+  // first lifted the library dropped the second while it was still down.
+  // The camera must stay still from the cancel until every finger is up,
+  // and be free again after.
+  it("keeps the camera still from the cancel until every finger is up", () => {
+    const t = setup({ handle: "move" });
+    t.scene.cameraTakesTwoFingers = true;
+    const controls = controlsDouble(t);
+    const one = { x: 10, y: 10 };
+    const two = { x: 60, y: 10 };
+    t.element.dispatchEvent(pointer("pointerdown", one, { touch: true }));
+    t.element.dispatchEvent(
+      pointer("pointerdown", two, { id: 2, touch: true }),
+    );
+    expect(vi.mocked(t.page.say)).toHaveBeenCalledWith(TWO_FINGER_CANCEL);
+    window.dispatchEvent(pointer("pointerup", one, { touch: true }));
+    for (let i = 1; i <= 4; i++) {
+      window.dispatchEvent(
+        pointer(
+          "pointermove",
+          { x: 60 + i * 10, y: 10 },
+          { id: 2, touch: true },
+        ),
+      );
+    }
+    expect(controls.moves()).toBe(0);
+    expect(controls.locked()).toBe(true);
+    window.dispatchEvent(
+      pointer("pointerup", { x: 100, y: 10 }, { id: 2, touch: true }),
+    );
+    expect(controls.locked()).toBe(false);
+    expect(t.commits).toEqual([]);
+    controls.dispose();
+    t.input.dispose();
+  });
+
+  // Why: the fix must not take the pinch away where the controls saw the
+  // first finger (it started on the ground): they get both.
+  it("leaves both fingers to the camera when the first was not a drag", () => {
+    const t = setup({ handle: null });
+    t.scene.cameraTakesTwoFingers = true;
+    const controls = controlsDouble(t);
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 10, y: 10 }, { touch: true }),
+    );
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 60, y: 10 }, { id: 2, touch: true }),
+    );
+    window.dispatchEvent(
+      pointer("pointermove", { x: 70, y: 10 }, { id: 2, touch: true }),
+    );
+    window.dispatchEvent(
+      pointer("pointermove", { x: 0, y: 10 }, { touch: true }),
+    );
+    expect(controls.moves()).toBe(2);
+    controls.dispose();
+    t.input.dispose();
   });
 });

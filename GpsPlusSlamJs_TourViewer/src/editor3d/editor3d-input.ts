@@ -187,6 +187,9 @@ export function createSceneInput(input: {
   let lastPress: Press | null = null;
   const fingers = new Map<number, ScreenPoint>();
   let touchBlocked = false;
+  /** A second finger cancelled a drag: the camera's controls never saw
+   *  the first finger, so they stay locked until every finger is up. */
+  let heldTillUp = false;
   let two: {
     start: FingerPair;
     last: FingerPair;
@@ -275,11 +278,14 @@ export function createSceneInput(input: {
         if (drag !== null) {
           endDrag(false);
           page.say(TWO_FINGER_CANCEL);
+          heldTillUp = true;
         }
         if (scene.cameraTakesTwoFingers === true) {
           // Free before the controls read this finger (the listener
-          // captures): a cancelled drag had them locked.
-          scene.lockCamera(false);
+          // captures), but only when they saw the first one: a finger that
+          // started a drag was held from them, and tracking the second
+          // alone they would pan, then drop it when the first lifts.
+          scene.lockCamera(heldTillUp);
           return;
         }
         scene.lockCamera(true);
@@ -382,6 +388,7 @@ export function createSceneInput(input: {
       if (fingers.size < 2) two = null;
       if (fingers.size === 0 && touchBlocked) {
         touchBlocked = false;
+        heldTillUp = false;
         if (drag === null) scene.lockCamera(false);
       }
     }

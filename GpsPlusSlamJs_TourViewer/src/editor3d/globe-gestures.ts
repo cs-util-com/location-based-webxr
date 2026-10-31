@@ -107,8 +107,11 @@ export function routeGlobeInput(
     case "arrow":
       return input.selected ? "nudge" : "camera-step";
     case "fingers":
-      // The controls' own two-finger gestures; a handle drag the first
-      // finger started is cancelled (the page's rule for a second finger).
-      return "camera";
+      // The controls' own two-finger gestures. A handle drag the first
+      // finger started is cancelled (the page's rule for a second finger),
+      // and the camera then stays still until every finger is up: the
+      // controls never saw that first finger, and given the second alone
+      // they would pan, then drop it when the first lifts.
+      return input.on === "handle" ? "none" : "camera";
   }
 }

@@ -22,10 +22,15 @@ describe("routeGlobeInput, the owner's table", () => {
   // fingers, as in the globe lab; the editor once took two fingers for
   // itself and, having nothing to do with them on the globe, locked the
   // camera still. A second finger is the camera's wherever the first one
-  // started: on a handle the drag is cancelled first.
-  it("gives two fingers to the camera, wherever the first one started", () => {
+  // started, except on a handle: the drag is cancelled and the camera
+  // stays still until every finger is up, because the controls never saw
+  // the first finger (alone with the second they panned, then dropped it
+  // when the first lifted).
+  it("gives two fingers to the camera, except after a handle drag", () => {
     for (const on of HITS) {
-      expect(routeGlobeInput({ kind: "fingers", on })).toBe("camera");
+      expect(routeGlobeInput({ kind: "fingers", on })).toBe(
+        on === "handle" ? "none" : "camera",
+      );
     }
   });
 

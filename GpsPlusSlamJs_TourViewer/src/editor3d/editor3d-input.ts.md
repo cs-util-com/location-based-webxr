@@ -33,6 +33,12 @@ move the camera only, and a second finger during a drag cancels it.
     `gesture()` (its handle, `"key"`, or null), `dispose()`.
 - `INPUT` - a click moved less than 4 px (a tap 8 px); a double tap within
   400 ms and 30 px.
+  - One rule in both views: a press that moved the click distance or
+    more is a drag. The globe's routing table draws its line there, and
+    the OrbitControls (default) view follows the same `>=`, so a mouse
+    press that moved exactly 4 px (a finger 8 px) is a drag there too; it
+    was a click before the globe view, a one-pixel move made on purpose
+    (`editor3d-input.test.ts`, "the OrbitControls view's click distance").
 - `TWO_FINGER_CANCEL` - the toast a second finger's cancel says.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
 - `InputScene.clickWaited?()` and `answerClick?(pointer)` - while a click
@@ -82,11 +88,15 @@ move the camera only, and a second finger during a drag cancels it.
   on (a press that finds nothing to grab unlocks again).
 - With `cameraTakesTwoFingers` (the globe view, whose controls pinch,
   twist and tilt as in the globe lab) a second finger still cancels a
-  drag and blocks new presses until every finger is up, but the camera
-  is unlocked at once (before the controls read that finger: the listener
-  captures) and the fingers are not read here (no `twoFingerStart` or
-  `twoFinger`). Tested as a row of the globe's routing table
-  (`globe-gestures.ts`, `fingers`).
+  drag and blocks new presses until every finger is up, and the fingers
+  are not read here (no `twoFingerStart` or `twoFinger`). The camera is
+  unlocked at once (before the controls read that finger: the listener
+  captures) when the controls saw the first finger; when the second
+  finger cancelled a drag, the first was held from them, so the camera
+  stays locked until every finger is up (given the second alone they
+  panned, then dropped it when the first lifted). Tested as a row of the
+  globe's routing table (`globe-gestures.ts`, `fingers`) and as that
+  sequence against a stand-in for the controls.
 - A drag waiting for its ground shows a `progress` cursor until the
   ground arrives (then `grabbing` again).
 - The handle under the mouse is looked for only when the pointer is over

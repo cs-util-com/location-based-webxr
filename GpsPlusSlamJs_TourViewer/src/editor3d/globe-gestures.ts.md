@@ -37,10 +37,14 @@ counts movement itself). Pure: the page wires each route.
   2026-10-27 ("move the camera otherwise") over the GV0 results' later
   recommendation of nothing (Q-G3, moved to this milestone).
 
-- **Two fingers:** `camera`, wherever the first finger started: the
-  globe's controls pinch, twist and tilt as in the lab. A handle drag the
-  first finger started is cancelled (the input's rule for a second
-  finger, the edit undone). The page wires this through the editing
+- **Two fingers:** `camera` wherever the first finger started, except on
+  a handle: the globe's controls pinch, twist and tilt as in the lab. A
+  handle drag the first finger started is cancelled (the input's rule
+  for a second finger, the edit undone) and the row is then `none`: the
+  camera stays still until every finger is up, because the controls
+  never saw the first finger (it was held from them for the drag), and
+  given the second alone they panned, then dropped it when the first
+  lifted (3d-tiles-renderer 0.5.3's pointer tracker). The page wires this through the editing
   camera's `takesTwoFingers`: the input then neither locks the camera for
   two fingers nor reads them itself. Before this row the input locked
   the camera and read the fingers for the OrbitControls view's own
