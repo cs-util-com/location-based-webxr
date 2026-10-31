@@ -188,6 +188,22 @@ wired into its logic: every interaction is faked.
     the arrow, dragged sideways. Weakness: in the editor at phone width the
     whole bend spans a few pixels, so the slider does it there.
 
+- `narration-1-quiet-voice/` ... `narration-3-sign-speaks/` - a narrated
+  long text for the visitor in AR, three directions; made 2026-10-31. Each
+  answers how the voice is noticed before anything opens, the captions strip
+  next to the full text, the audio states (loading, missing file, the end, a
+  locked phone, a call) and a speed control. A fake clock drives the words.
+  - `narration-1-quiet-voice/` - the voice is a gentle extra: a small speaker
+    mark on the sign, one surface at a time, calm one-line problems.
+    Weakness: "4 min" can read as reading time, so the voice is easy to miss.
+  - `narration-2-audio-guide/` - listening first: one tap on "Listen" plays
+    and shows a persistent mini-player. Weakness: sound starts at once, which
+    can startle in a quiet place without earphones.
+  - `narration-3-sign-speaks/` - the sign has Read and Listen halves and the
+    spoken sentence runs on a plate under it in the world (three.js 0.185.1
+    from unpkg). Weakness: beyond about 7-9 m the letters are too small and the
+    caption moves to the screen.
+
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
 coding agent to build that one. The verdicts are in the polish-round plan

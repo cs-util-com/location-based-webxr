@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Narration: Audio Guide</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Liberation Mono",monospace;
+  --amber:#f2b45a; --amber-soft:rgba(242,180,90,.16); --ink:#f6f2ea; --ink2:#d8d2c6; --ink3:#a49e92;
+  --plate:rgba(17,18,21,.9); --line:rgba(255,255,255,.09);
+  --dbgH:40px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b0c0e;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none!important}
+
+/* ---------- frame: the stage sits above the prototype controls ---------- */
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+#area{position:relative;flex:1;min-height:0;overflow:hidden;background:#050506}
+#stage{position:absolute;left:50%;top:50%;overflow:hidden;font-family:var(--sans);color:var(--ink);background:#d9dfe2;transform-origin:50% 50%}
+#stage.framed{border-radius:28px;box-shadow:0 0 0 7px #1a1b1e,0 0 0 8px #3b3c42,0 20px 70px rgba(0,0,0,.6)}
+
+/* ---------- the fake camera view (a blurred street) ---------- */
+#world{position:absolute;inset:-3%;filter:blur(1.4px) saturate(.86);transition:transform 1.2s cubic-bezier(.3,.7,.2,1),filter .5s}
+#stage[data-where=within] #world{transform:translateX(9%) scale(1.06)}
+#stage[data-where=out] #world{transform:translateX(-14%) scale(1.18)}
+#stage.walking #world{animation:bob 1.1s ease-in-out infinite}
+@keyframes bob{0%,100%{translate:0 0}50%{translate:0 -4px}}
+#stage.veiled #sign{opacity:.2}
+#stage.veiled #world{filter:blur(7px) saturate(.5) brightness(.55)}
+.sky{position:absolute;left:0;right:0;top:0;height:48%;background:linear-gradient(#bcd0dc,#e3e8e6 80%)}
+.facade{position:absolute;left:14%;right:14%;top:17%;height:33%;background:linear-gradient(#cfc8bb,#beb6a8);box-shadow:0 0 0 1px rgba(0,0,0,.04)}
+.facade::before{content:"";position:absolute;left:-2%;right:-2%;top:-5%;height:6%;background:#b2aa9c}
+.facade .win{position:absolute;top:30%;width:9%;height:30%;background:#7f8a91;box-shadow:inset 0 0 0 3px #a59d90}
+.facade .door{position:absolute;left:45.5%;bottom:0;width:9%;height:44%;background:#6b625a;border-radius:3px 3px 0 0}
+.side{position:absolute;top:22%;height:28%;background:linear-gradient(#b9b4ab,#a8a299)}
+.side.l{left:0;width:15%}.side.r{right:0;width:15%;top:25%;height:25%}
+.ruin{position:absolute;left:4%;top:46%;width:26%;height:3.5%;background:repeating-linear-gradient(90deg,#9d968b 0 14%,#8f887d 14% 16%);clip-path:polygon(0 30%,20% 0,38% 20%,40% 100%,0 100%,0 30%,50% 100%,52% 10%,70% 0,85% 35%,100% 20%,100% 100%,50% 100%)}
+.ground{position:absolute;left:0;right:0;top:48%;bottom:0;background:linear-gradient(#b9b4aa,#a19b91);overflow:hidden}
+.ground::before{content:"";position:absolute;left:-60%;right:-60%;top:0;height:220%;transform-origin:50% 0;transform:perspective(260px) rotateX(62deg);background:repeating-linear-gradient(90deg,transparent 0 46px,rgba(0,0,0,.07) 46px 48px),repeating-linear-gradient(0deg,transparent 0 46px,rgba(0,0,0,.07) 46px 48px)}
+.tree{position:absolute;right:8%;top:26%;width:12%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 40% 35%,#aab3a2,#8d977f)}
+.tree::after{content:"";position:absolute;left:46%;top:88%;width:8%;height:90%;background:#857d72}
+
+/* ---------- the reading sign, standing in the world (crisp: it is rendered, not filmed) ---------- */
+#sign{position:absolute;z-index:5;width:max-content;left:var(--sx,50%);top:var(--sy,22%);transform:translateX(-50%) scale(var(--ss,1));transform-origin:50% 0;display:flex;flex-direction:column;align-items:center;transition:left 1.2s cubic-bezier(.3,.7,.2,1),top 1.2s cubic-bezier(.3,.7,.2,1),transform 1.2s cubic-bezier(.3,.7,.2,1),opacity .6s}
+#stage[data-where=out] #sign{opacity:0;pointer-events:none}
+.plate{display:grid;grid-template-columns:62px 1fr;gap:12px;align-items:center;width:258px;text-align:left;border:1px solid rgba(255,255,255,.1);background:rgba(17,18,21,.93);border-radius:20px;padding:12px 14px 12px 12px;box-shadow:0 12px 34px rgba(0,0,0,.28)}
+.plate:active{transform:scale(.98)}
+.disc{width:62px;height:62px;border-radius:50%;background:var(--amber);color:#1a1408;display:grid;place-items:center;position:relative}
+.disc svg{width:28px;height:28px;fill:currentColor}
+.disc .eq{height:26px}
+.disc .eq i{width:5px}
+.disc.busy::after,.cb.busy::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:3px solid rgba(242,180,90,.25);border-top-color:var(--amber);animation:spin .9s linear infinite}
+.cb.busy{position:relative}
+@keyframes spin{to{transform:rotate(1turn)}}
+.ptext{display:flex;flex-direction:column;min-width:0}
+.ptext .ov{font:700 10.5px/1.2 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptext .tt{font:600 18px/1.18 var(--serif);color:#fff;margin:4px 0 4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ptext .sb{font-size:11.5px;color:#b9b2a5}
+.qchip{margin-top:0;border:1px solid rgba(255,255,255,.12);background:rgba(17,18,21,.88);border-radius:999px;height:32px;padding:0 13px;font-size:12px;font-weight:600;color:#e3ddd2;display:flex;align-items:center;gap:6px}
+.qchip svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.stem{width:3px;background:#2a2b2f;opacity:.85}
+.stem.a{height:10px}.stem.b{height:96px}
+.base{width:46px;height:12px;border-radius:50%;border:3px solid var(--amber);opacity:.85;margin-top:-6px}
+.pulse{position:absolute;left:43px;top:43px;width:62px;height:62px;margin:-31px;border-radius:50%;border:2px solid var(--amber);opacity:0;pointer-events:none}
+#sign.playing .pulse{animation:pulse 1.8s ease-out infinite}
+#sign.playing .pulse.p2{animation-delay:.6s}#sign.playing .pulse.p3{animation-delay:1.2s}
+@keyframes pulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(2.1);opacity:0}}
+
+/* ---------- AR chrome (static mock-ups) ---------- */
+#exit{position:absolute;z-index:30;left:12px;top:12px;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--plate);display:grid;place-items:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#exit svg{width:16px;height:16px;stroke:#eee;stroke-width:2.2;fill:none}
+#vswitch{position:absolute;z-index:30;left:60px;top:12px}
+#vs-btn{display:flex;align-items:center;gap:7px;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 13px 0 11px;font-size:12.5px;font-weight:650;color:#efe9de}
+#vs-btn svg{width:16px;height:16px;fill:none;stroke:var(--amber);stroke-width:1.8;stroke-linecap:round}
+#vs-btn small{font-weight:500;color:#9f998d;font-size:11px}
+#vs-menu{position:absolute;left:0;top:46px;width:min(300px,calc(100vw - 80px));background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px;box-shadow:0 16px 50px rgba(0,0,0,.4)}
+#vs-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:11px;padding:8px 10px;color:#e9e4da}
+#vs-menu button b{display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+#vs-menu button b i{font-style:normal;font-weight:500;font-size:11px;color:#9f998d}
+#vs-menu button span{display:block;font-size:11.5px;color:#9f998d;margin-top:1px;line-height:1.35}
+#vs-menu button.on{background:rgba(242,180,90,.12)}
+#vs-menu button.on b{color:#ffd391}
+#vs-menu button[disabled]{opacity:.45;cursor:default}
+#vs-menu .foot{font-size:11px;color:#8f897e;padding:6px 10px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:4px;line-height:1.4}
+
+#toast{position:absolute;z-index:60;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);opacity:0;transition:opacity .3s,transform .3s;background:#f6f2ea;color:#17181b;border-radius:14px;padding:10px 16px;font-size:13px;font-weight:550;width:max-content;max-width:min(460px,calc(100% - 30px));box-shadow:0 12px 40px rgba(0,0,0,.35);pointer-events:none;line-height:1.4}
+#toast.show{opacity:1;transform:translateX(-50%)}
+
+/* ---------- the bottom dock: hint, mini-player, resume chip, walk card ---------- */
+#dock{position:absolute;z-index:25;left:10px;right:10px;bottom:12px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+#dock>*{pointer-events:auto}
+#stage[data-layout=landscape] #dock{left:auto;right:8px;bottom:8px;width:min(56%,520px)}
+#stage[data-layout=desktop] #dock{left:auto;right:18px;bottom:18px;width:520px}
+#stage.sheet-open[data-layout=portrait] #dock{left:8px;right:8px;bottom:8px}
+#stage.sheet-open[data-layout=landscape] #dock{right:14px;bottom:14px;width:calc(min(56%,520px) - 12px)}
+#stage.sheet-open[data-layout=desktop] #dock{right:26px;bottom:26px;width:504px}
+
+#tapHint{align-self:center;display:flex;align-items:center;gap:9px;background:var(--plate);border:1px solid var(--line);border-radius:999px;padding:8px 15px 8px 12px;font-size:13px;color:var(--ink2);white-space:nowrap;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#tapHint b{color:var(--amber)}
+#tapHint svg{width:17px;height:17px;fill:none;stroke:#cfc9bd;stroke-width:1.7;stroke-linecap:round;flex:none}
+#tapHint .sep{width:1px;height:14px;background:rgba(255,255,255,.15)}
+
+.strip{position:relative;background:rgba(14,15,18,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:12px 16px 10px;box-shadow:0 10px 40px rgba(0,0,0,.28)}
+.strip .top{display:flex;align-items:center;gap:8px;min-height:26px;padding-right:34px}
+.strip .top .ttl{font:700 10.5px/1.2 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.xbtn{position:absolute;right:8px;top:7px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+.xbtn svg{width:13px;height:13px;stroke:#ddd;stroke-width:2.4;fill:none}
+.strow{font-size:12.5px;color:#d9d3c7;line-height:1.35;margin:4px 0 2px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.strow:empty{display:none}
+.strow .lk{border:0;background:none;padding:2px 0;color:var(--amber);font-weight:650;font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+.strow .warm{color:#ffd391;font-weight:600}
+.captext{font:600 21px/1.33 var(--sans);color:#f7f3eb;min-height:calc(1.33em*3);letter-spacing:.002em;display:flex;align-items:flex-end;margin-top:4px}
+.captext .chunk{display:block;animation:capIn .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.captext .w.todo{color:#bdb7ab}
+.captext.dim .w{color:#bdb7ab}
+.captext .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:3px;text-underline-offset:6px}
+#stage[data-layout=landscape] .captext{font-size:18px;min-height:calc(1.33em*2)}
+#stage[data-layout=desktop] .captext{font-size:23px;min-height:calc(1.33em*3)}
+.crow{display:flex;align-items:center;gap:6px;margin-top:9px}
+.crow #st-x2{display:none}
+.cb{width:44px;height:44px;flex:none;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:#e9e4da}
+.cb:active{background:rgba(255,255,255,.08)}
+.cb svg{width:21px;height:21px;fill:currentColor}
+.cb.play{width:50px;height:50px;background:var(--amber);color:#1a1408}
+.cb.play svg{width:24px;height:24px}
+.cmeta{flex:1;min-width:0}
+.cmeta .t{font:600 13.5px/1.25 var(--sans);color:#efe9de;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:7px}
+.cmeta .sub{font-size:11.5px;color:#9f998d;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rate{flex:none;min-width:48px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);font:700 13px var(--sans);color:#efe9de;padding:0 8px}
+.rate.off1{border-color:rgba(242,180,90,.7);color:#ffd391;background:rgba(242,180,90,.1)}
+.pill{flex:none;border:1px solid rgba(255,255,255,.16);background:transparent;border-radius:999px;height:40px;padding:0 14px;font-size:12.5px;font-weight:650;color:#e9e4da;white-space:nowrap}
+.pill.primary{background:var(--amber);border-color:var(--amber);color:#1a1408}
+.pbar{height:3px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:9px;overflow:hidden}
+.pbar div{height:100%;width:0;background:var(--amber)}
+.eq{display:inline-flex;gap:2px;align-items:flex-end;height:13px;transform-origin:50% 100%;transform:scaleY(var(--g,1))}
+.eq i{display:block;width:3px;height:100%;border-radius:2px;background:currentColor;transform-origin:50% 100%;animation:eqb .8s ease-in-out infinite alternate}
+.eq i:nth-child(2){animation-duration:.55s}.eq i:nth-child(3){animation-duration:.95s}.eq i:nth-child(4){animation-duration:.65s}
+.eq.off i{animation:none;transform:scaleY(.22)}
+@keyframes eqb{0%{transform:scaleY(.25)}100%{transform:scaleY(1)}}
+.cmeta .eq{color:var(--amber)}
+.card{margin:6px 0 2px}
+.card h4{margin:0 0 4px;font:600 18px/1.25 var(--serif);color:#fff}
+.card p{margin:0 0 10px;font-size:13px;color:#cfc9bd;line-height:1.45}
+.card .btns{display:flex;gap:8px;flex-wrap:wrap}
+.card .pill{height:44px}
+.card .ic{display:flex;gap:12px;align-items:flex-start}
+.card .ic svg{flex:none;width:34px;height:34px;fill:none;stroke:var(--amber);stroke-width:1.6;stroke-linecap:round;margin-top:2px}
+/* compact: the same strip folded to one row (the sheet shows the words, or the visitor is walking) */
+.strip.compact{padding:8px 10px 8px 8px;border-radius:20px}
+.strip.compact .top,.strip.compact .captext,.strip.compact .strow{display:none}
+.strip.compact .crow{margin-top:0}
+.strip.compact #st-x{display:none}
+.strip.compact #st-back{display:none}
+.crow #st-x2{position:static;flex:none;width:36px;height:36px}
+.strip.compact:not(.withsheet) .crow #st-x2{display:grid}
+.strip.compact .pbar{margin:7px 6px 0}
+#chip{align-self:flex-start;display:flex;align-items:center;gap:9px;height:46px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 16px 0 6px;font-size:13px;font-weight:650;color:#efe9de}
+#chip .d{width:34px;height:34px;border-radius:50%;background:var(--amber);color:#1a1408;display:grid;place-items:center}
+#chip .d svg{width:16px;height:16px;fill:currentColor}
+#chip small{font-weight:500;color:#9f998d}
+
+#walk{display:flex;align-items:center;gap:12px;background:rgba(18,19,22,.92);border:1px solid var(--line);border-radius:20px;padding:12px 14px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#walk .arr{width:44px;height:44px;border-radius:50%;background:rgba(242,180,90,.14);display:grid;place-items:center;flex:none}
+#walk .arr svg{width:22px;height:22px;fill:var(--amber);transform:rotate(38deg)}
+#walk .wt{flex:1;min-width:0}
+#walk .over{font:700 10.5px/1.2 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber)}
+#walk b{display:block;font:600 16px/1.25 var(--serif);color:#fff;margin-top:3px}
+#walk span{display:block;font-size:12px;color:#9f998d;margin-top:2px}
+
+/* ---------- reading sheet (the existing one, kept) ---------- */
+#sheet{position:absolute;z-index:20;display:flex;flex-direction:column;background:rgba(18,19,22,.95);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.07);box-shadow:0 -10px 40px rgba(0,0,0,.25);transition:transform .32s cubic-bezier(.2,.8,.2,1);color:var(--ink2);overflow:hidden}
+#stage[data-layout=portrait] #sheet{left:0;right:0;bottom:0;height:63%;border-radius:24px 24px 0 0;transform:translateY(104%)}
+#stage[data-layout=landscape] #sheet{top:8px;bottom:8px;right:8px;width:min(56%,520px);border-radius:20px;transform:translateX(108%)}
+#stage[data-layout=desktop] #sheet{top:18px;bottom:18px;right:18px;width:520px;border-radius:24px;transform:translateX(112%)}
+#sheet.open{transform:none!important}
+#sheet .grab{width:38px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);margin:8px auto 0;flex:none}
+#stage:not([data-layout=portrait]) #sheet .grab{display:none}
+#sheet header{position:relative;padding:12px 58px 10px 24px;flex:none}
+#stage[data-layout=landscape] #sheet header{padding-top:12px;padding-bottom:4px}
+.over{font:700 10.5px/1.2 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+#sh-title{font:600 23px/1.18 var(--serif);color:#fff;margin:7px 0 6px}
+#stage[data-layout=landscape] #sh-title{font-size:18px;margin:4px 0 2px}
+#sh-meta{font-size:12.5px;color:var(--ink3)}
+#sh-close{position:absolute;right:14px;top:10px;width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#sh-close svg{width:16px;height:16px;stroke:#ddd;stroke-width:2.2;fill:none}
+.textwrap{position:relative;flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+#sh-text{font-family:var(--serif);font-size:18.5px;line-height:1.62;color:var(--ink2);padding:14px 26px 46vh 24px;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty}
+#stage[data-layout=landscape] #sh-text{font-size:17px}
+#sh-text p{margin:0 0 1.05em}
+#sh-text .s{border-radius:4px;padding:2px 0;-webkit-box-decoration-break:clone;box-decoration-break:clone;transition:background-color .35s,color .35s,box-shadow .35s;cursor:pointer}
+#sh-text .s.cur{background:var(--amber-soft);box-shadow:0 0 0 3px var(--amber-soft);color:#fdfaf3}
+#sh-text .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:2px;text-underline-offset:4px}
+#sheet.quiet #sh-text .s.cur{background:rgba(150,196,220,.13);box-shadow:0 0 0 3px rgba(150,196,220,.13)}
+#sh-follow{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);border:0;border-radius:999px;background:var(--ink);color:#16171a;font-weight:650;font-size:12.5px;height:36px;padding:0 15px;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:2}
+#sheet.quiet #sh-follow{display:none}
+#sh-quiet{flex:none;display:flex;align-items:center;gap:6px;padding:8px 14px 12px;border-top:1px solid rgba(255,255,255,.07)}
+#sh-quiet .pos{flex:1;text-align:center;font-size:12.5px;color:var(--ink3)}
+#sheet:not(.quiet) #sh-quiet{display:none}
+
+/* ---------- simulated phone states ---------- */
+#veil{position:absolute;z-index:40;left:0;right:0;bottom:0;top:0;display:flex;align-items:flex-end;justify-content:center;padding:0 16px calc(var(--dockH,0px) + 30px);pointer-events:none}
+#veil .vc{pointer-events:auto;background:rgba(18,19,22,.95);border:1px solid var(--line);border-radius:20px;padding:16px;max-width:360px;text-align:center}
+#veil p{margin:0 0 12px;font-size:13px;color:#cfc9bd;line-height:1.45}
+#lock{position:absolute;z-index:70;inset:0;background:radial-gradient(120% 80% at 30% 0%,#3c4652,#15181d 70%);color:#fff;display:flex;flex-direction:column;align-items:center;padding:7% 16px 18px}
+#lock .clock{font:200 72px/1 var(--sans);letter-spacing:-.02em;margin-top:4%}
+#lock .date{font-size:15px;color:#cfd4da;margin-top:8px}
+#lock .tag,.simtag{font:600 10px var(--mono);color:#f0d27a;letter-spacing:.06em;text-transform:uppercase;border:1px dashed rgba(240,210,122,.6);border-radius:6px;padding:2px 6px;margin-top:10px}
+#lock .media{margin-top:auto;width:min(360px,100%);background:rgba(255,255,255,.13);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:22px;padding:14px 16px 12px}
+#lock .mrow{display:flex;gap:12px;align-items:center}
+#lock .art{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,#f2b45a,#9a6b2f);flex:none;display:grid;place-items:center}
+#lock .art svg{width:24px;height:24px;fill:#1a1408}
+#lock .mt{min-width:0}
+#lock .mt b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lock .mt span{display:block;font-size:12.5px;color:#cfd4da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lock .scrub{height:4px;border-radius:3px;background:rgba(255,255,255,.25);margin:14px 0 4px;overflow:hidden}
+#lock .scrub div{height:100%;background:#fff;width:0}
+#lock .times{display:flex;justify-content:space-between;font:500 11px var(--sans);color:#cfd4da;font-variant-numeric:tabular-nums}
+#lock .ctl{display:flex;justify-content:center;gap:26px;margin-top:6px}
+#lock .ctl button{border:0;background:none;width:52px;height:52px;display:grid;place-items:center;color:#fff}
+#lock .ctl svg{width:30px;height:30px;fill:currentColor}
+#lock .ctl .sm svg{width:26px;height:26px}
+#lock .unlock{margin-top:18px;border:0;background:rgba(255,255,255,.16);border-radius:999px;height:42px;padding:0 20px;font-size:13.5px;color:#fff}
+#away{position:absolute;z-index:70;inset:0;background:#24262b;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;color:#d9dde2;font-size:14px}
+#away .app{width:min(300px,90%);height:40%;border-radius:18px;background:repeating-linear-gradient(0deg,#2e3137 0 22px,#33363c 22px 44px)}
+#call{position:absolute;z-index:72;left:10px;right:10px;top:10px;background:#1e2024;border-radius:22px;padding:14px 16px;color:#fff;box-shadow:0 16px 50px rgba(0,0,0,.5);display:flex;align-items:center;gap:12px}
+#call .av{width:44px;height:44px;border-radius:50%;background:#5b6b7c;display:grid;place-items:center;font-weight:700;flex:none}
+#call .ct{flex:1;min-width:0}
+#call .ct b{display:block;font-size:15px}
+#call .ct span{font-size:12.5px;color:#aab}
+#call button{width:46px;height:46px;border-radius:50%;border:0;display:grid;place-items:center;flex:none}
+#call button svg{width:22px;height:22px;fill:#fff}
+#call .no{background:#e5484d}#call .yes{background:#30a46c}
+#stage[data-layout=landscape] #call{left:auto;width:420px}
+#stage[data-layout=desktop] #call{left:auto;right:18px;width:420px}
+
+/* ---------- prototype controls: deliberately NOT the design's language ---------- */
+#debug{flex:none;position:relative;z-index:100;font:500 11.5px/1.3 var(--mono);color:#1b1b1b;background:#f3e27a;border-top:3px solid #1b1b1b}
+#debug::before{content:"";position:absolute;left:0;right:0;top:-9px;height:6px;background:repeating-linear-gradient(45deg,#1b1b1b 0 8px,#f3e27a 8px 16px)}
+#dbg-bar{height:calc(var(--dbgH) - 3px);display:flex;align-items:center;gap:8px;padding:0 8px;overflow:hidden}
+#dbg-bar b{white-space:nowrap}
+#dbg-sum{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8}
+#debug button{font:600 11.5px var(--mono);border:1.5px solid #1b1b1b;background:#fffbe0;color:#1b1b1b;border-radius:5px;height:28px;padding:0 8px;white-space:nowrap}
+#debug button.on{background:#1b1b1b;color:#f3e27a}
+#dbg-panel{position:absolute;left:0;right:0;bottom:100%;background:#f3e27a;border-top:3px solid #1b1b1b;max-height:min(62vh,430px);overflow:auto;padding:10px 10px 8px;box-shadow:0 -10px 30px rgba(0,0,0,.35)}
+.dg{margin:0 0 9px}
+.dg .lb{font-weight:700;margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px}
+.dg .opts{display:flex;flex-wrap:wrap;gap:5px}
+#dbg-read{white-space:pre-wrap;font-size:11px;opacity:.85;margin-top:4px}
+#dbg-tab{position:fixed;z-index:101;left:0;bottom:0;font:700 10px var(--mono);background:#f3e27a;border:2px solid #1b1b1b;border-left:0;border-bottom:0;border-radius:0 8px 0 0;height:22px;padding:0 7px;color:#1b1b1b}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="area">
+<div id="stage" data-layout="portrait" data-where="sign" data-view="caption">
+  <div id="world" aria-hidden="true">
+    <div class="sky"></div><div class="side l"></div><div class="side r"></div>
+    <div class="facade"><div class="win" style="left:18%"></div><div class="win" style="right:18%"></div><div class="door"></div></div>
+    <div class="tree"></div><div class="ground"></div><div class="ruin"></div>
+  </div>
+
+  <div id="sign">
+    <button class="plate" id="plate" aria-label="Reading sign">
+      <span class="disc" id="disc"></span>
+      <span class="ptext"><span class="ov" id="sg-ov"></span><span class="tt" id="sg-tt"></span><span class="sb" id="sg-sb"></span></span>
+      <span class="pulse"></span><span class="pulse p2"></span><span class="pulse p3"></span>
+    </button>
+    <span class="stem a"></span>
+    <button class="qchip" id="sg-quiet"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></svg>Read without sound</button>
+    <span class="stem b"></span><span class="base"></span>
+  </div>
+
+  <button id="exit" aria-label="Exit AR"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="vswitch"><button id="vs-btn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span id="vs-cur"></span><small>change</small></button><div id="vs-menu" role="menu" hidden></div></div>
+
+  <section id="sheet" aria-hidden="true">
+    <div class="grab"></div>
+    <header>
+      <div class="over">Old market square · Station 1</div>
+      <h2 id="sh-title"></h2>
+      <div id="sh-meta"></div>
+      <button id="sh-close" aria-label="Close the text"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="textwrap" id="sh-wrap"><article id="sh-text" lang="en"></article></div>
+    <button id="sh-follow" hidden>Back to the voice</button>
+    <footer id="sh-quiet">
+      <button class="cb" id="q-prev" aria-label="Previous sentence"></button>
+      <span class="pos" id="q-pos"></span>
+      <button class="cb" id="q-next" aria-label="Next sentence"></button>
+      <button class="pill primary" id="q-listen">Listen from here</button>
+      <button class="pill" id="q-close">Close</button>
+    </footer>
+  </section>
+
+  <div id="dock">
+    <div id="tapHint" hidden></div>
+    <div id="strip" class="strip" hidden>
+      <div class="top"><span class="ttl" id="st-ttl"></span></div>
+      <button class="xbtn" id="st-x" aria-label="Stop the voice and fold the player away"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <div class="strow" id="st-row"></div>
+      <div class="captext" id="cap"></div>
+      <div class="card" id="st-card" hidden></div>
+      <div class="crow" id="st-crow">
+        <button class="cb play" id="st-play" aria-label="Play or pause"></button>
+        <button class="cb" id="st-back" aria-label="Back 10 seconds"></button>
+        <div class="cmeta"><div class="t" id="st-t"></div><div class="sub" id="st-sub"></div></div>
+        <button class="rate" id="st-rate" aria-label="Speed"></button>
+        <button class="pill" id="st-open">Full text</button>
+        <button class="xbtn" id="st-x2" aria-label="Stop the voice and fold the player away"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="pbar"><div id="st-fill"></div></div>
+    </div>
+    <button id="chip" hidden><span class="d" id="chip-ic"></span><span id="chip-t"></span></button>
+    <div id="walk" hidden>
+      <div class="arr"><svg viewBox="0 0 24 24"><path d="M12 3l7 9h-4.5v9h-5v-9H5z"/></svg></div>
+      <div class="wt"><div class="over">Next station</div><b>Station 2 · East path</b><span>60 m ahead · about a minute's walk</span></div>
+    </div>
+  </div>
+
+  <div id="veil" hidden><div class="vc"><p id="veil-t"></p><button class="pill primary" id="veil-go">Back to the camera view</button></div></div>
+  <div id="lock" hidden>
+    <div class="clock" id="lk-clock">9:41</div><div class="date" id="lk-date"></div><div class="tag">simulated lock screen</div>
+    <div class="media">
+      <div class="mrow"><div class="art"><svg viewBox="0 0 24 24"><path d="M4 9h3.5L12 5v14l-4.5-4H4z"/></svg></div><div class="mt"><b id="lk-title"></b><span>Station 1 · Old market square</span><span>A town walk · Tour Viewer</span></div></div>
+      <div class="scrub"><div id="lk-fill"></div></div>
+      <div class="times"><span id="lk-t0">0:00</span><span id="lk-t1">0:00</span></div>
+      <div class="ctl"><button class="sm" id="lk-back" aria-label="Back 10 seconds"></button><button id="lk-play" aria-label="Play or pause"></button><button class="sm" id="lk-fwd" aria-label="Forward 10 seconds"></button></div>
+    </div>
+    <button class="unlock" id="lk-unlock">Unlock the phone</button>
+  </div>
+  <div id="away" hidden><div class="simtag">simulated: another app is open</div><div class="app"></div><div id="away-t"></div><button class="pill primary" id="away-back">Back to the tour</button></div>
+  <div id="call" hidden><div class="av">A</div><div class="ct"><b>Anna</b><span id="call-t">mobile · calling</span></div><button class="no" id="call-no" aria-label="Decline or hang up"><svg viewBox="0 0 24 24"><path d="M3 14.5c5-4.6 13-4.6 18 0l-2.3 2.6-3.4-1.6.2-2.4c-2.3-.8-4.7-.8-7 0l.2 2.4-3.4 1.6z"/></svg></button><button class="yes" id="call-yes" aria-label="Accept"><svg viewBox="0 0 24 24"><path d="M6.6 3.5l2.8 3.2-1.6 2.6c1.2 2.4 3 4.2 5.4 5.4l2.6-1.6 3.2 2.8-1.6 3.6C10 19 5 14 3 5.1z"/></svg></button></div>
+  <div id="toast"></div>
+</div>
+</div>
+
+<div id="debug">
+  <div id="dbg-panel" hidden>
+    <div class="dg"><div class="lb">View (also the pill at the top left)</div><div class="opts" data-g="view"><button data-v="caption">Captions</button><button data-v="reading">Reading</button><button data-v="silent">Sound off</button></div></div>
+    <div class="dg"><div class="lb">The voice file, from the next press of play</div><div class="opts" data-g="cond"><button data-v="works">Works</button><button data-v="slow">Slow to load (and one stall)</button><button data-v="missing">Missing or failing</button></div></div>
+    <div class="dg"><div class="lb">Happens now</div><div class="opts"><button data-ev="lock">Lock the phone</button><button data-ev="hidden">Switch to another app</button><button data-ev="call">Incoming call</button><button data-ev="end">Jump to 9 s before the end</button><button data-ev="mid">Jump to 4:00</button></div></div>
+    <div class="dg"><div class="lb">Where the visitor is</div><div class="opts" data-g="where"><button data-v="sign">At the sign</button><button data-v="within">Walking in the station</button><button data-v="out">Walked out, to the next</button></div></div>
+    <div class="dg"><div class="lb">Orientation (frame)</div><div class="opts" data-g="frame"><button data-v="fill">Fill the window</button><button data-v="upright">Phone upright 390 x 844</button><button data-v="sideways">Phone sideways 844 x 390</button></div></div>
+    <div class="dg"><div class="lb">Visit</div><div class="opts"><button data-ev="reset">Start the visit again (forgets speed)</button><button data-ev="hide">Hide these controls</button></div><div id="dbg-read"></div></div>
+  </div>
+  <div id="dbg-bar"><b>PROTOTYPE CONTROLS</b><span id="dbg-sum"></span><button id="dbg-toggle">open</button></div>
+</div>
+<button id="dbg-tab" hidden>controls</button>
+</div>
+
+<script type="module">
+/* =====================================================================
+   1. The example text (the same record as station-blocks-1-narrated-text)
+   ===================================================================== */
+const PARAGRAPHS = [
+`You are standing in the old market square, almost exactly where the town's weekly market has been held for more than six hundred years. Turn to face north. The tall stone front with the single door and the two windows is the guild house, finished in the spring of 1612. To your left, in the north-west corner, a low and broken wall runs along the edge of the paving. It looks like nothing much, a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all. Over the next few minutes we will move through four centuries of this place: the keep that came first, the guild house that still stands, the great timber market hall that once filled the whole west half of the square, and the October night in 1890 when that hall burned to the ground.`,
+`Long before there was a market, there was a rise in the ground and a tower on top of it. The keep was built of rough field stone, bedded in lime mortar that the builders burned in a kiln down by the river. Nobody wrote down the year it was begun. The first record that mentions it is a dispute about firewood, which tells us that by then somebody lived in the tower through the winter and expected the farms around it to keep him warm. The walls were nearly three metres thick at the base. The only door was on the first floor, reached by a wooden stair that could be pulled up or burned in an emergency. From the top a guard could see the ford across the river and the road coming down from the hills, which is exactly what the tower was for.`,
+`A tower that watches a road soon attracts people who want to use the road. Carters stopped below the keep because it was safe there. Smiths and saddlers followed the carters, and bakers followed everyone. By the time the town received the right to hold a market, the open ground at the foot of the tower had already been trampled flat by generations of traders who had not waited for permission. The charter gave them two market days, Wednesday and Saturday, a fair at the end of harvest, and the duty to keep the ground free of dung, carts and quarrels. The last of these duties was the hardest to fulfil, and the town records are full of fines for all three.`,
+`The keep lost its purpose slowly and then all at once. Once the town had its own walls and gates, a single tower in one corner of the market was more of a nuisance than a defence. In a hard winter the council allowed citizens to take stone from the upper storeys, and in the years that followed nobody quite remembered to stop them. Much of that stone is still in the town. It sits in cellar walls, in garden steps and in the foundations of the guild house in front of you. What remained of the keep was cut down to the height of a man's waist, and a cart road was broken through the middle of it. That is the gap you can see in the wall today. Carts loaded with turnips rolled for two hundred years through the place where the lords of the tower once kept their stores.`,
+`The guild house was a joint venture, which in this town meant it took eleven years of argument and four of building. The bakers, the butchers, the weavers and the smiths each wanted the hall for themselves, and each refused to pay for a hall they would have to share. What finally brought them together was not friendship but the town scales. Every sack of grain, every bale of wool and every barrel of salt sold in the square had to be weighed, and the weighing had always been done under an awning that leaked. The guilds agreed to build one solid house with a dry ground floor for the scales and an upper hall for their meetings, and to split the cost by the weight of goods each trade brought to market. The weavers, who sold light cloth, paid the least, and the smiths never forgave them.`,
+`Look at the front of the house. The door in the middle is not the original. The first door was twice as wide, so that a loaded hand-cart could be pushed straight in onto the scales. It was narrowed in the eighteenth century, when the scales moved and the ground floor became a store. The two windows on either side belong to the upper hall. In the original plan there were to be five, one for each guild and one for the town, but the money ran out after the stone was cut for two, and the builders filled the rest of the front with plain wall. The guild masters had the year carved in the stone above the door. If you look closely you may still be able to make out the numbers, softened by four hundred winters of rain.`,
+`Now turn to your left and look across the west half of the square, towards the broken wall. For most of the town's history you would not have been able to see it from here, because this whole half of the square was covered by a roof. The market hall was built about forty years after the guild house, entirely of oak. It stood on thirty-two posts, each one a single trunk, in four rows of eight. The ground floor was open on all sides, so that traders could set up beneath it in rain and in heat. Above the posts there was a closed upper floor where the cloth merchants kept their bales and where, on fair days, the town council held its court. The upper floor was reached by an outside stair at the north end, close to where the keep had stood.`,
+`Those who remembered the hall described it above all by its smell. Under the roof the air was thick with flour dust, with tar from the ropes, with wet wool and with the cheese that the farmers' wives brought in from the villages on Saturdays. Children played between the posts and were chased out again. Dogs slept in the shade. A bell hung under the eaves at the south end, and it was rung at the start and close of each market. Nobody was allowed to sell before the first bell, and anybody still selling after the last one paid a fine to the wardens. On the posts the wardens nailed up the prices of bread and beer, and the posts were so full of old nail holes that a carpenter who repaired one of them claimed it was held together mainly by iron.`,
+`The fire began in the upper floor on a dry night in October 1890, a few hours after the autumn fair had closed. The most likely cause was a lamp left burning in one of the cloth stores, although at the inquiry each of the merchants was able to prove that it had not been his. A wind was blowing from the east. Within a quarter of an hour the roof was alight from end to end, and burning cloth was carried over the square like enormous moths. The town's fire engine was pulled out of the guild house, where it had been stored for decades, and it was found that the leather hose had dried and cracked. So the townspeople did what their grandparents would have done. They formed a line from the well behind the guild house and passed buckets from hand to hand.`,
+`They could not save the market hall, and after the first hour they did not try. The buckets went instead to the guild house, whose roof was only twenty metres downwind of the flames. Men climbed onto it and spread wet sailcloth across the tiles, and others threw water on the sailcloth as fast as the line could deliver it. Twice the cloth caught fire and twice it was beaten out. Shortly before dawn the burning roof of the market hall collapsed into the floor below, and with it the danger was over. When the sun rose, the hall was a field of black posts standing in ash, and the guild house was soot from the ground to the eaves, but it was whole. The sailcloth was later cut into pieces and sold as keepsakes, and one of them still hangs in the upper hall.`,
+`The town never rebuilt the market hall. The council argued about it for six years, as it had once argued about the guild house, and by the end of the argument the traders had grown used to the open sky. Stalls with canvas roofs replaced the posts, and in the new century they were joined by the first carts selling things nobody in the old hall had heard of. The burnt posts were pulled out of the ground in the winter after the fire. Their sockets were filled with stone, and when the square was paved again, the masons laid the stones over them without marking where they had been. Old people in the town could still point to them a generation later. Today nobody can, which is one reason this walk exists.`,
+`The guild house had a quieter century. The guilds themselves faded as their trades changed, and the building passed to the town. For a while it held the town archive, and shelves for the records were built along the walls of the upper hall, right up to the windows. Then it served as a school, and two generations of children learned their letters in the room where the guild masters had once fined each other for bad bread. Later the scales came back, not to weigh anything, but to be looked at, and the ground floor was opened again on market days. If the door is open when you pass, you are welcome to step inside.`,
+`Take a moment to look at the square as it is now. The open paving to your left, between the path and the broken wall, is the floor of the market hall, and if you walk across it you are walking under a roof that has not existed for more than a century. The bench and the tree on the east side mark the place where the carters once watered their horses, beside a trough that was taken away when the first motor car arrived. The broken wall in the corner is what is left of the tower that made the town a town. The guild house still has two windows where there were meant to be five. Nothing on this square is complete, and that is perhaps the most honest thing about it. Each generation took what it needed from the one before, a few stones, a market right, a habit of arguing, and left the rest for the next to find.`,
+`When you are ready, follow the path that leaves the square to the east. About sixty metres along it you will come to the next station, at the place where the carts once queued for the town scales on market mornings. If you would like to hear any part of this story again, come back into the square at any time, and the text will remember where you stopped.`
+];
+const BODY = PARAGRAPHS.join('\n\n');
+const TITLE = 'The Guild House and the Burnt Hall';
+const CREDIT = 'Synthetic voice · demo narration';
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const $ = id => document.getElementById(id);
+
+/* paragraphs, sentences and words, as in the reference prototype */
+function analyze(body) {
+  const paragraphs = [], sentences = [], words = [];
+  const pre = /\n[ \t]*\n/g; let start = 0, m; const cuts = [];
+  while ((m = pre.exec(body))) { cuts.push([start, m.index]); start = pre.lastIndex; }
+  cuts.push([start, body.length]);
+  for (let [a, b] of cuts) { while (a < b && /\s/.test(body[a])) a++; while (b > a && /\s/.test(body[b - 1])) b--; if (b > a) paragraphs.push({ from: a, to: b, s0: 0, s1: 0 }); }
+  paragraphs.forEach((p, pi) => {
+    p.s0 = sentences.length; const t = body.slice(p.from, p.to);
+    const pushS = (a, b) => { while (a < b && /\s/.test(t[a])) a++; while (b > a && /\s/.test(t[b - 1])) b--; if (b > a) sentences.push({ from: p.from + a, to: p.from + b, p: pi, w0: -1, w1: -1 }); };
+    const re = /[.!?]+["'”’)\]]*(?=\s|$)/g; let last = 0, mm;
+    while ((mm = re.exec(t))) { const end = mm.index + mm[0].length; let k = end; while (k < t.length && /\s/.test(t[k])) k++; if (k >= t.length || /[\p{Lu}\p{N}"'“‘(\[]/u.test(t[k])) { pushS(last, end); last = end; } }
+    pushS(last, t.length); p.s1 = sentences.length;
+  });
+  const re = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu; let si = 0;
+  while ((m = re.exec(body))) { const from = m.index, to = from + m[0].length; while (si < sentences.length - 1 && from >= sentences[si].to) si++; words.push({ from, to, s: si }); }
+  words.forEach((w, i) => { const s = sentences[w.s]; if (s.w0 < 0) s.w0 = i; s.w1 = i + 1; });
+  return { body, paragraphs, sentences, words };
+}
+const A = analyze(BODY);
+
+/* a fake narration track: word durations from word length, pauses at commas, sentence ends and paragraphs */
+const SEG = []; (() => { let t = 600;
+  for (let i = 0; i < A.words.length; i++) {
+    const w = A.words[i], dur = Math.min(720, 105 + 44 * (w.to - w.from));
+    SEG.push({ s: Math.round(t), e: Math.round(t + dur) }); t += dur + 40;
+    const nx = A.words[i + 1]; if (!nx) break; const gap = BODY.slice(w.to, nx.from);
+    if (/\n\s*\n/.test(gap)) t += 1100; else if (/[.!?]/.test(gap)) t += 430; else if (/[,;:]/.test(gap)) t += 190;
+  } })();
+const DUR = SEG[SEG.length - 1].e + 900;
+const LISTEN_MIN = Math.round(DUR / 60000), READ_MIN = Math.max(1, Math.round(A.words.length / 200));
+function wordAt(ms) { let lo = 0, hi = SEG.length - 1, k = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (SEG[mid].s <= ms) { k = mid; lo = mid + 1; } else hi = mid - 1; } return k; }
+const sentenceAt = ms => { const w = wordAt(ms); return w < 0 ? 0 : A.words[w].s; };
+const sentenceStart = s => SEG[A.sentences[clamp(s, 0, A.sentences.length - 1)].w0].s;
+
+/* caption chunks: one sentence, split at clause or word boundaries to fit about three lines */
+const chunkCache = new Map();
+function chunksFor(si, maxChars) {
+  const key = si + ':' + maxChars; if (chunkCache.has(key)) return chunkCache.get(key);
+  const S0 = A.sentences[si], from = S0.from, to = S0.to, ws = []; for (let i = S0.w0; i < S0.w1; i++) ws.push(i);
+  const chunks = []; let start = from, startW = 0;
+  for (let k = 0; k < ws.length; k++) {
+    const w = A.words[ws[k]];
+    if (w.to - start > maxChars && k > startW) {
+      let cut = k - 1;
+      for (let b = k - 1; b > startW + 2; b--) { const ww = A.words[ws[b]]; if ((ww.to - start) < maxChars * 0.55) break; if (/[,;:]/.test(BODY.slice(ww.to, A.words[ws[b + 1]].from))) { cut = b; break; } }
+      let e = A.words[ws[cut]].to; while (e < to && /[,;:.!?'"’”)]/.test(BODY[e])) e++;
+      chunks.push({ from: start, to: e, w0: ws[startW], w1: ws[cut] + 1 });
+      startW = cut + 1; start = A.words[ws[startW]].from; k = cut;
+    }
+  }
+  if (startW < ws.length) chunks.push({ from: start, to, w0: ws[startW], w1: ws[ws.length - 1] + 1 });
+  chunkCache.set(key, chunks); return chunks;
+}
+
+/* =====================================================================
+   2. State
+   ===================================================================== */
+const RATES = [0.75, 1, 1.25, 1.5];
+const RATE_KEY = 'tour-viewer.visitor.narrationRate';
+function readRate() { try { const v = parseFloat(localStorage.getItem(RATE_KEY)); return RATES.includes(v) ? v : 1; } catch (e) { return 1; } }
+function writeRate(v) { try { localStorage.setItem(RATE_KEY, String(v)); return true; } catch (e) { return false; } }
+function forgetRate() { try { localStorage.removeItem(RATE_KEY); } catch (e) { /* storage blocked: nothing kept anyway */ } }
+
+const S = {
+  view: 'caption', where: 'sign', cond: 'works', frame: 'fill', layout: 'portrait',
+  ps: 'idle',            // idle | loading | playing | buffering | paused | failed | ended
+  pos: 0, rate: readRate(), loaded: false, loadT: 0, loadSince: 0, fadeSince: 0, stallUntil: 0, stalled: false, playFrom: 0,
+  session: false,        // the visitor has started this narration in this visit: the player exists
+  folded: false,         // the visitor stopped it with x: only the resume chip remains
+  quiet: false,          // the sheet is open for reading without the voice (chosen, or the voice failed)
+  sheetOpen: false, follow: true, readSentence: 0,
+  reason: null, pausedAt: 0, hintUntil: 0, firstPlayDone: false, failedVisit: false, failMid: false,
+  locked: false, away: false, call: null, veil: false, dbgOpen: false, dbgHidden: false
+};
+
+/* =====================================================================
+   3. Playback: one clock, started only by a tap
+   ===================================================================== */
+let loadTimer = 0;
+function startListening(why) {
+  if (S.view === 'silent') { openSheet(true, { quiet: true }); return; }
+  if (['playing', 'loading', 'buffering'].includes(S.ps)) return;
+  S.session = true; S.folded = false; S.quiet = false;
+  if (S.ps === 'ended') S.pos = 0;
+  // after an interruption, or a long pause, carry on from the start of the sentence that was cut
+  if (S.ps === 'paused' && (S.reason || performance.now() - S.pausedAt > 30000) && S.pos > 0) {
+    const back = sentenceStart(sentenceAt(S.pos));
+    if (S.pos - back > 700) { S.pos = Math.max(0, back - 150); toast('From the start of the sentence.'); }
+  }
+  S.reason = null; S.failMid = false;
+  if (S.cond === 'missing' || !S.loaded) {
+    S.ps = 'loading'; S.loadSince = performance.now();
+    const d = S.cond === 'missing' ? 1500 : S.cond === 'slow' && !S.loaded ? 6500 : 450;
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(() => { if (S.ps !== 'loading') return; if (S.cond === 'missing') fail(false); else { S.loaded = true; beginPlaying(); } }, d);
+  } else beginPlaying();
+  if (S.view === 'reading' && !S.sheetOpen) openSheet(true);
+  changed();
+}
+function beginPlaying() {
+  S.ps = 'playing'; S.fadeSince = performance.now(); S.playFrom = S.pos;
+  if (!S.firstPlayDone) { S.firstPlayDone = true; S.hintUntil = performance.now() + 7000; }
+  if (S.failedVisit) { S.failedVisit = false; }
+  changed();
+}
+function pause(reason) {
+  if (S.ps === 'loading') { clearTimeout(loadTimer); S.ps = S.pos > 0 ? 'paused' : 'idle'; }
+  else if (S.ps === 'playing' || S.ps === 'buffering') S.ps = 'paused';
+  else return;
+  S.reason = reason || null; S.pausedAt = performance.now(); S.hintUntil = 0; changed();
+}
+function toggle() { ['playing', 'loading', 'buffering'].includes(S.ps) ? pause(null) : startListening('button'); }
+function seek(ms) { S.pos = clamp(ms, 0, DUR - 1); if (S.ps === 'ended') S.ps = 'paused'; S.follow = true; ui.forceScroll = true; changed(); }
+function fail(mid) {
+  clearTimeout(loadTimer); S.ps = 'failed'; S.failedVisit = true; S.failMid = mid; S.hintUntil = 0;
+  S.readSentence = sentenceAt(S.pos);
+  if (S.sheetOpen) { S.quiet = true; ui.forceScroll = true; }
+  changed();
+}
+function stopAndFold() { pause(null); S.folded = true; if (S.sheetOpen) openSheet(false); changed(); }
+function setRate() {
+  const i = RATES.indexOf(S.rate); S.rate = RATES[(i + 1) % RATES.length];
+  const kept = writeRate(S.rate);
+  toast(`Speed ${rateTxt(S.rate)}${kept ? ', kept on this phone for every voice' : ' for this visit'}.`);
+  changed();
+}
+const rateTxt = r => (r === 1 ? '1' : String(r)) + 'x';
+
+/* =====================================================================
+   4. The sheet
+   ===================================================================== */
+const ui = { sentEls: [], wordEls: [], curS: null, curW: null, key: '', forceScroll: false, instant: false, capKey: '', capWord: -2 };
+(function buildSheet() {
+  let html = '';
+  for (const p of A.paragraphs) {
+    html += '<p>';
+    for (let si = p.s0; si < p.s1; si++) {
+      const s = A.sentences[si]; let pos = s.from; html += `<span class="s" data-s="${si}">`;
+      for (let wi = s.w0; wi < s.w1; wi++) { const w = A.words[wi]; html += esc(BODY.slice(pos, w.from)) + `<span class="w" data-w="${wi}">` + esc(BODY.slice(w.from, w.to)) + '</span>'; pos = w.to; }
+      html += esc(BODY.slice(pos, s.to)) + '</span>' + (si < p.s1 - 1 ? ' ' : '');
+    }
+    html += '</p>';
+  }
+  $('sh-text').innerHTML = html; $('sh-title').textContent = TITLE;
+  ui.sentEls = [...document.querySelectorAll('#sh-text .s')]; ui.wordEls = [...document.querySelectorAll('#sh-text .w')];
+})();
+function openSheet(open, opt = {}) {
+  S.sheetOpen = open;
+  if (open) { S.quiet = !!opt.quiet || S.view === 'silent' || S.ps === 'failed'; if (S.quiet && opt.from !== undefined) S.readSentence = opt.from; S.follow = true; ui.forceScroll = true; ui.instant = true; ui.key = ''; }
+  else S.quiet = false;
+  const sh = $('sheet'); sh.classList.toggle('open', open); sh.setAttribute('aria-hidden', String(!open));
+  changed();
+}
+function setCursor(si, wi) {
+  const key = si + ':' + wi; if (key === ui.key && !ui.forceScroll) return;
+  const sentenceChanged = !ui.key || ui.key.split(':')[0] !== String(si); ui.key = key;
+  if (ui.curS) ui.curS.classList.remove('cur'); ui.curS = ui.sentEls[si] || null; if (ui.curS) ui.curS.classList.add('cur');
+  if (ui.curW) ui.curW.classList.remove('on'); ui.curW = wi >= 0 ? ui.wordEls[wi] : null; if (ui.curW) ui.curW.classList.add('on');
+  if (ui.curS && S.sheetOpen && ((sentenceChanged && S.follow) || ui.forceScroll)) {
+    const wrap = $('sh-wrap'); wrap.scrollTo({ top: Math.max(0, ui.curS.offsetTop - wrap.clientHeight * 0.28), behavior: ui.instant ? 'instant' : 'smooth' });
+  }
+  ui.forceScroll = false; ui.instant = false;
+}
+
+/* =====================================================================
+   5. Drawing, every frame (cheap: text is only written when it changed)
+   ===================================================================== */
+const ICON = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
+  back10: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text></svg>',
+  fwd10: '<svg viewBox="0 0 24 24"><path d="M12 5V2l4.5 3.8L12 9.6V6.8A6.2 6.2 0 1 0 18.2 13H20a8 8 0 1 1-8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text></svg>',
+  prev: '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.7 13a1.2 1.2 0 0 1 0-2l7.9-5.55a.9.9 0 0 1 1.4.75z"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><rect x="16.6" y="5" width="2.4" height="14" rx="1"/><path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L14.3 13a1.2 1.2 0 0 0 0-2L6.4 5.45A.9.9 0 0 0 5 6.2z"/></svg>',
+  lines: '<svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="2.2" rx="1.1"/><rect x="5" y="10.5" width="14" height="2.2" rx="1.1"/><rect x="5" y="15" width="9" height="2.2" rx="1.1"/></svg>',
+  replay: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/></svg>',
+  headphones: '<svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/></svg>',
+  page: '<svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M10 11h5M10 14.5h5M10 18h3"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16.2 9.4"/></svg>'
+};
+const EQ = '<span class="eq"><i></i><i></i><i></i><i></i></span>';
+$('st-back').innerHTML = ICON.back10; $('q-prev').innerHTML = ICON.prev; $('q-next').innerHTML = ICON.next;
+$('lk-back').innerHTML = ICON.back10; $('lk-fwd').innerHTML = ICON.fwd10;
+const put = (el, html) => { if (el._v !== html) { el._v = html; el.innerHTML = html; } };
+const txt = (el, t) => { if (el._t !== t) { el._t = t; el.textContent = t; } };
+const show = (el, on) => { if (el.hidden === on) el.hidden = !on; };
+const busy = () => S.ps === 'loading' || S.ps === 'buffering';
+const audible = () => S.view !== 'silent' && !S.failedVisit;
+
+function gain(now) { return S.ps === 'playing' ? Math.min(1, 0.15 + 0.85 * (now - S.fadeSince) / 1500) : 0; }
+
+function drawSign(now) {
+  const sign = $('sign'), disc = $('disc'); const left = DUR - S.pos;
+  let ov, sb, ic, cls = '';
+  if (!audible()) { ov = `Read · ${READ_MIN} min`; sb = S.failedVisit && S.view !== 'silent' ? 'The voice is not available now · tap to read' : 'Tap to open the text'; ic = ICON.lines; }
+  else if (busy()) { ov = 'Starting the voice'; sb = 'Tap to cancel'; ic = ICON.pause; cls = 'busy'; }
+  else if (S.ps === 'playing') { ov = `Now playing · ${fmt(S.pos)}`; sb = 'Tap to pause'; ic = EQ; }
+  else if (S.ps === 'paused') { ov = `Resume · ${Math.max(1, Math.round(left / S.rate / 60000))} min left`; sb = 'Tap to carry on listening'; ic = ICON.play; }
+  else if (S.ps === 'ended') { ov = `Listened · ${LISTEN_MIN} min`; sb = 'Tap to hear it again'; ic = ICON.replay; }
+  else { ov = `Listen · ${LISTEN_MIN} min`; sb = S.view === 'reading' ? 'Plays aloud, with the full text' : 'Plays aloud · tap to start'; ic = ICON.play; }
+  txt($('sg-ov'), ov); txt($('sg-tt'), TITLE); txt($('sg-sb'), sb); put(disc, ic);
+  disc.className = 'disc ' + cls; sign.classList.toggle('playing', S.ps === 'playing');
+  const eq = disc.querySelector('.eq'); if (eq) eq.style.setProperty('--g', Math.max(0.25, gain(now)).toFixed(2));
+  // the quiet way in: on the sign whenever the voice is not already talking
+  show($('sg-quiet'), audible() && !['playing', 'loading', 'buffering'].includes(S.ps));
+  // where the sign stands on screen, by where the visitor is and how the phone is held
+  const L = S.layout, W = S.where;
+  const pos = L === 'portrait' ? (W === 'within' ? [32, 20, 0.72] : [50, 17, 1]) : L === 'landscape' ? (W === 'within' ? [17, 19, 0.6] : [27, 17, 0.7]) : (W === 'within' ? [20, 18, 0.8] : [34, 16, 1.05]);
+  sign.style.setProperty('--sx', pos[0] + '%'); sign.style.setProperty('--sy', pos[1] + '%'); sign.style.setProperty('--ss', pos[2]);
+}
+
+function statusRow(now) {
+  // one line above the captions, by priority: loading, a stall, why it paused, the first-play nudge
+  if (S.ps === 'loading') {
+    if (now - S.loadSince > 2200) return `<span class="warm">The voice is on its way.</span> The text is ready now: <button class="lk" data-a="read-now">read while it loads</button>`;
+    return 'Starting the voice…';
+  }
+  if (S.ps === 'buffering') return '<span class="warm">Waiting for the voice…</span> it carries on by itself.';
+  if (S.ps === 'paused' && S.reason === 'call') return '<span class="warm">Paused for your call.</span> Play carries on from the start of the sentence.';
+  if (S.ps === 'paused' && S.reason === 'away') return '<span class="warm">Paused while you were away.</span> Play carries on from the start of the sentence.';
+  if (S.ps === 'paused' && S.reason === 'silent') return 'Paused: sound off is chosen for this phone.';
+  if (S.ps === 'playing' && now < S.hintUntil) return `${EQ} <span class="warm">Playing aloud.</span> Too loud here? <button class="lk" data-a="quiet-now">Read quietly instead</button>`;
+  return '';
+}
+
+function drawStrip(now) {
+  const strip = $('strip'), chip = $('chip');
+  const hasPlayer = S.session && audible() || (S.session && S.ps === 'failed');
+  const stripOn = hasPlayer && !S.folded && !(S.sheetOpen && S.quiet);
+  show(strip, stripOn);
+  show(chip, S.session && S.folded && audible() && !S.sheetOpen);
+  if (!chip.hidden) { put($('chip-ic'), S.ps === 'ended' ? ICON.replay : ICON.play); txt($('chip-t'), S.ps === 'ended' ? 'Play again' : `Resume · ${fmt(S.pos)}`); }
+  if (!stripOn) return;
+  const compact = S.sheetOpen || S.where === 'out';
+  strip.classList.toggle('compact', compact); strip.classList.toggle('withsheet', S.sheetOpen);
+  const card = S.ps === 'failed' ? 'failed' : S.ps === 'ended' ? 'ended' : null;
+  show($('st-card'), !!card && !compact); show($('cap'), !card); show($('st-crow'), !card || compact);
+  txt($('st-ttl'), TITLE);
+  put($('st-row'), card ? '' : statusRow(now));
+  if (card && !compact) {
+    if (card === 'failed') put($('st-card'), `<div class="ic">${ICON.page}<div><h4>${S.failMid ? 'The voice stopped' : 'The voice cannot play right now'}</h4><p>${S.failMid ? 'You can read on from where it stopped, at your own pace.' : 'The whole text is here to read, at your own pace.'}</p><div class="btns"><button class="pill primary" data-a="read-fail">${S.failMid ? 'Read on from here' : 'Read the text'}</button><button class="pill" data-a="retry">Try the voice again</button></div></div></div>`);
+    else put($('st-card'), `<div class="ic">${ICON.check}<div><h4>That is the end of this story</h4><p>${LISTEN_MIN} minutes at the guild house. The next station is 60 m to the east.</p><div class="btns"><button class="pill primary" data-a="next">Show the way on</button><button class="pill" data-a="again">Play again</button></div></div></div>`);
+  }
+  // controls
+  const p = $('st-play'); put(p, ['playing', 'loading', 'buffering'].includes(S.ps) ? ICON.pause : S.ps === 'ended' ? ICON.replay : ICON.play);
+  p.classList.toggle('busy', busy());
+  p.disabled = S.ps === 'failed'; p.style.opacity = S.ps === 'failed' ? .35 : '';
+  txt($('st-rate'), rateTxt(S.rate)); $('st-rate').classList.toggle('off1', S.rate !== 1);
+  txt($('st-open'), S.sheetOpen ? 'Close text' : 'Full text');
+  const left = Math.max(0, DUR - S.pos) / S.rate;
+  const eqOn = S.ps === 'playing' ? EQ : '';
+  if (compact) {
+    put($('st-t'), `${eqOn}<span>${esc(TITLE)}</span>`);
+    txt($('st-sub'), S.ps === 'failed' ? 'The voice is not available now' : busy() ? (S.ps === 'loading' ? 'Starting the voice…' : 'Waiting for the voice…') : S.reason === 'call' ? 'Paused for your call' : S.reason === 'away' ? 'Paused while you were away' : `${fmt(S.pos)} / ${fmt(DUR)} · ${fmt(left)} left${S.rate !== 1 ? ' at ' + rateTxt(S.rate) : ''}`);
+  } else {
+    put($('st-t'), `<span>${fmt(S.pos)} / ${fmt(DUR)}</span>`);
+    txt($('st-sub'), `${fmt(left)} left${S.rate !== 1 ? ' at ' + rateTxt(S.rate) : ''}`);
+  }
+  const eq = $('strip').querySelectorAll('.eq'); eq.forEach(e => e.style.setProperty('--g', Math.max(0.25, gain(now)).toFixed(2)));
+  $('st-fill').style.width = (S.pos / DUR * 100).toFixed(2) + '%';
+  if (!card && !compact) drawCaption();
+}
+
+function drawCaption() {
+  const el = $('cap'), wi = wordAt(S.pos), si = wi < 0 ? 0 : A.words[wi].s;
+  const maxC = S.layout === 'portrait' ? 92 : S.layout === 'landscape' ? 96 : 120;
+  const chunks = chunksFor(si, maxC); let ci = 0; if (wi >= 0) { ci = chunks.findIndex(c => wi >= c.w0 && wi < c.w1); if (ci < 0) ci = 0; }
+  const ch = chunks[ci], key = si + ':' + ci + ':' + maxC;
+  if (ui.capKey !== key) {
+    ui.capKey = key; ui.capWord = -2; let html = '<span class="chunk">', pos = ch.from;
+    for (let i = ch.w0; i < ch.w1; i++) { const w = A.words[i]; html += esc(BODY.slice(pos, w.from)) + `<span class="w" data-w="${i}">${esc(BODY.slice(w.from, w.to))}</span>`; pos = w.to; }
+    el.innerHTML = html + esc(BODY.slice(pos, ch.to)) + '</span>';
+  }
+  const live = S.ps === 'playing'; const w = live ? wi : -1;
+  el.classList.toggle('dim', !live && S.ps !== 'buffering');
+  const k = w + ':' + S.ps; if (ui.capWord !== k) { ui.capWord = k; for (const sp of el.querySelectorAll('.w')) { const i = +sp.dataset.w; sp.classList.toggle('on', i === w || (S.ps === 'buffering' && i === wi)); sp.classList.toggle('todo', w >= 0 && i > w); } }
+}
+
+function drawSheet() {
+  if (!S.sheetOpen) return;
+  const sh = $('sheet'); sh.classList.toggle('quiet', S.quiet);
+  txt($('sh-meta'), S.quiet
+    ? (S.ps === 'failed' || S.failedVisit ? `${A.words.length.toLocaleString('en')} words · about ${READ_MIN} min to read · the voice is not available now` : `${A.words.length.toLocaleString('en')} words · about ${READ_MIN} min to read · no sound`)
+    : `${A.words.length.toLocaleString('en')} words · ${LISTEN_MIN} min to listen · ${CREDIT}`);
+  if (S.quiet) {
+    setCursor(S.readSentence, -1);
+    txt($('q-pos'), `Sentence ${S.readSentence + 1} of ${A.sentences.length}`);
+    show($('q-listen'), S.view !== 'silent' && S.ps !== 'failed' && !S.failedVisit);
+  } else {
+    const wi = wordAt(S.pos); setCursor(wi < 0 ? 0 : A.words[wi].s, S.ps === 'playing' || S.ps === 'buffering' ? wi : -1);
+  }
+}
+
+function drawChrome() {
+  const labels = { caption: 'Captions', reading: 'Reading', silent: 'Sound off' };
+  txt($('vs-cur'), labels[S.view]);
+  const tap = $('tapHint'); const idleAtSign = S.where !== 'out' && !S.session && !S.sheetOpen;
+  show(tap, idleAtSign);
+  if (idleAtSign) put(tap, audible() ? `${ICON.headphones}<span>Best with earphones</span><span class="sep"></span><span>Tap the <b>sign</b> to listen</span>` : `<span>Tap the <b>sign</b> to read</span>`);
+  show($('walk'), S.where === 'out');
+  $('stage').classList.toggle('sheet-open', S.sheetOpen);
+  $('stage').classList.toggle('walking', S.where !== 'sign' && !S.locked && !S.away);
+  $('stage').dataset.where = S.where; $('stage').dataset.view = S.view;
+  // simulated phone states
+  show($('lock'), S.locked); show($('away'), S.away); show($('veil'), S.veil && !S.locked && !S.away);
+  $('stage').classList.toggle('veiled', S.veil && !S.locked && !S.away);
+  if (S.locked) {
+    const d = new Date(); txt($('lk-clock'), d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'));
+    txt($('lk-date'), d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }));
+    txt($('lk-title'), TITLE); put($('lk-play'), S.ps === 'playing' || busy() ? ICON.pause : ICON.play);
+    $('lk-fill').style.width = (S.pos / DUR * 100) + '%'; txt($('lk-t0'), fmt(S.pos)); txt($('lk-t1'), '-' + fmt(DUR - S.pos));
+  }
+  if (S.veil) txt($('veil-t'), S.veilWhy || '');
+  if (S.away) txt($('away-t'), S.reason === 'away' ? 'Here the browser paused the voice when the page went to the background.' : 'The tour is in the background.');
+  if (S.call) {
+    show($('call'), true); show($('call-yes'), S.call.phase === 'ringing');
+    txt($('call-t'), S.call.phase === 'ringing' ? 'mobile · calling' : 'on a call · ' + fmt(performance.now() - S.call.t0));
+  } else show($('call'), false);
+  $('stage').style.setProperty('--dockH', $('dock').offsetHeight + 'px');
+}
+
+function drawDebug() {
+  document.querySelectorAll('#debug .opts[data-g]').forEach(g => g.querySelectorAll('button').forEach(b => b.classList.toggle('on', S[g.dataset.g] === b.dataset.v)));
+  txt($('dbg-sum'), `${S.view} · ${S.ps}${S.reason ? ' (' + S.reason + ')' : ''} · ${fmt(S.pos)} · ${rateTxt(S.rate)} · file ${S.cond} · ${S.where} · ${S.layout}`);
+  txt($('dbg-read'), `sound level ${(gain(performance.now()) * 100).toFixed(0)}% (fades in over 1.5 s) · first-play nudge ${S.firstPlayDone ? 'shown' : 'not yet'} · voice ${S.loaded ? 'loaded' : 'not loaded'}`);
+  txt($('dbg-toggle'), S.dbgOpen ? 'close' : 'open'); show($('dbg-panel'), S.dbgOpen);
+  show($('debug'), !S.dbgHidden); show($('dbg-tab'), S.dbgHidden);
+}
+
+let msDirty = true;
+function changed() { msDirty = true; }
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(250, now - last); last = now;
+  if (S.ps === 'playing') {
+    if (S.cond === 'slow' && !S.stalled && S.pos - S.playFrom > 20000) { S.stalled = true; S.ps = 'buffering'; S.stallUntil = now + 2600; changed(); }
+    else { S.pos += dt * S.rate; if (S.pos >= DUR) { S.pos = DUR; S.ps = 'ended'; S.hintUntil = 0; changed(); } }
+  } else if (S.ps === 'buffering' && now > S.stallUntil) { S.ps = 'playing'; S.fadeSince = now - 1500; changed(); }
+  drawSign(now); drawStrip(now); drawSheet(); drawChrome(); drawDebug();
+  if (msDirty) { msDirty = false; mediaSession(); }
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   6. Lock-screen controls (Media Session). Shown here as a mock-up; the real
+   page sets the same metadata and handlers on its audio element's page.
+   ===================================================================== */
+function mediaSession() {
+  const ms = navigator.mediaSession; if (!ms) return;
+  try {
+    if (!ms._set) {
+      ms._set = true;
+      ms.metadata = new MediaMetadata({ title: TITLE, artist: 'Station 1 · Old market square', album: 'A town walk' });
+      ms.setActionHandler('play', () => startListening('lock-screen'));
+      ms.setActionHandler('pause', () => pause(null));
+      ms.setActionHandler('seekbackward', () => seek(S.pos - 10000));
+      ms.setActionHandler('seekforward', () => seek(S.pos + 10000));
+    }
+    ms.playbackState = S.ps === 'playing' || busy() ? 'playing' : S.session ? 'paused' : 'none';
+  } catch (e) { /* a browser without part of the API: the page still works */ }
+}
+
+/* =====================================================================
+   7. Events
+   ===================================================================== */
+let toastTimer = 0;
+function toast(t, ms = 3200) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms); }
+
+function setView(v) {
+  if (v === S.view) return;
+  S.view = v;
+  if (v === 'silent') { if (['playing', 'loading', 'buffering'].includes(S.ps)) { pause('silent'); toast(`Sound off: the voice stops at ${fmt(S.pos)}. Reading only, on this phone.`); } if (S.sheetOpen) openSheet(true, { quiet: true, from: sentenceAt(S.pos) }); }
+  else if (v === 'reading') { if (S.session && !S.folded && !S.sheetOpen) openSheet(true); else if (S.sheetOpen && S.quiet && S.ps !== 'failed') openSheet(true); }
+  else if (v === 'caption') { if (S.sheetOpen && !S.quiet) openSheet(false); else if (S.sheetOpen && S.quiet && S.ps !== 'failed') openSheet(false); }
+  if (v !== 'silent' && S.reason === 'silent') S.reason = null;
+  changed();
+}
+function setWhere(w) {
+  const was = S.where; S.where = w;
+  if (w === 'out' && was !== 'out') {
+    if (S.sheetOpen) openSheet(false);
+    if (S.ps === 'playing') toast('Still playing while you walk. Pause any time below.');
+  }
+  changed();
+}
+function tapSign() {
+  if (!audible()) { openSheet(true, { quiet: true, from: S.readSentence }); return; }
+  if (['playing', 'loading', 'buffering'].includes(S.ps)) { pause(null); return; }
+  startListening('sign');
+}
+function event(ev) {
+  if (ev === 'lock') { S.locked = true; S.dbgOpen = false; }
+  else if (ev === 'hidden') { S.away = true; S.dbgOpen = false; if (['playing', 'buffering', 'loading'].includes(S.ps)) pause('away'); }
+  else if (ev === 'call') { S.call = { phase: 'ringing', t0: 0 }; S.dbgOpen = false; if (['playing', 'buffering', 'loading'].includes(S.ps)) pause('call'); }
+  else if (ev === 'end' || ev === 'mid') {
+    if (S.view === 'silent') S.view = 'caption';
+    S.pos = ev === 'end' ? DUR - 9000 : 240000; S.session = true; S.folded = false; S.loaded = true; S.firstPlayDone = true; S.reason = null;
+    if (S.ps !== 'playing') { S.ps = 'paused'; startListening('debug'); }
+  }
+  else if (ev === 'reset') {
+    clearTimeout(loadTimer); forgetRate();
+    Object.assign(S, { ps: 'idle', pos: 0, rate: 1, loaded: false, session: false, folded: false, quiet: false, reason: null, firstPlayDone: false, failedVisit: false, failMid: false, stalled: false, locked: false, away: false, call: null, veil: false, readSentence: 0 });
+    if (S.sheetOpen) openSheet(false); toast('A new visit: nothing started, speed back to 1x.');
+  }
+  else if (ev === 'hide') { S.dbgHidden = true; S.dbgOpen = false; requestAnimationFrame(layout); }
+  changed();
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) { if (!e.target.closest('#vswitch')) $('vs-menu').hidden = true; return; }
+  if (b.closest('#debug')) {
+    const g = b.closest('.opts')?.dataset.g;
+    if (g === 'view') setView(b.dataset.v);
+    else if (g === 'cond') { S.cond = b.dataset.v; if (S.cond === 'missing' && ['playing', 'buffering'].includes(S.ps)) fail(true); else if (S.cond === 'slow' && S.ps === 'playing') { S.stalled = false; S.playFrom = S.pos - 20001; } changed(); }
+    else if (g === 'where') setWhere(b.dataset.v);
+    else if (g === 'frame') { S.frame = b.dataset.v; layout(); }
+    else if (b.dataset.ev) event(b.dataset.ev);
+    else if (b.id === 'dbg-toggle') { S.dbgOpen = !S.dbgOpen; }
+    return;
+  }
+  const a = b.dataset.a;
+  if (a === 'read-now') { openSheet(true, { quiet: false }); toast('The voice starts here as soon as it arrives.'); return; }
+  if (a === 'quiet-now') { const si = sentenceAt(S.pos); pause(null); openSheet(true, { quiet: true, from: si }); toast('Voice paused. Read on from here.'); return; }
+  if (a === 'read-fail') { openSheet(true, { quiet: true, from: sentenceAt(S.pos) }); return; }
+  if (a === 'retry') { S.ps = 'paused'; S.failedVisit = false; startListening('retry'); return; }
+  if (a === 'again') { S.pos = 0; S.ps = 'paused'; startListening('again'); return; }
+  if (a === 'next') { S.folded = true; setWhere('out'); toast('Follow the arrow to station 2.'); return; }
+  if (b.dataset.vs) { setView(b.dataset.vs); $('vs-menu').hidden = true; return; }
+  switch (b.id) {
+    case 'plate': tapSign(); break;
+    case 'sg-quiet': openSheet(true, { quiet: true, from: S.ps === 'paused' ? sentenceAt(S.pos) : S.readSentence }); break;
+    case 'exit': toast('Exit AR (a mock-up here).'); break;
+    case 'vs-btn': { const m = $('vs-menu'); if (m.hidden) renderMenu(); m.hidden = !m.hidden; b.setAttribute('aria-expanded', String(!m.hidden)); break; }
+    case 'st-play': if (S.ps === 'ended') { S.pos = 0; S.ps = 'paused'; } toggle(); break;
+    case 'st-back': seek(S.pos - 10000); break;
+    case 'st-rate': setRate(); break;
+    case 'st-open': openSheet(!S.sheetOpen); break;
+    case 'st-x': case 'st-x2': stopAndFold(); break;
+    case 'chip': if (S.ps === 'ended') { S.pos = 0; S.ps = 'paused'; } startListening('chip'); break;
+    case 'sh-close': case 'q-close': openSheet(false); break;
+    case 'sh-follow': S.follow = true; ui.forceScroll = true; b.hidden = true; break;
+    case 'q-prev': S.readSentence = Math.max(0, S.readSentence - 1); ui.forceScroll = true; break;
+    case 'q-next': S.readSentence = Math.min(A.sentences.length - 1, S.readSentence + 1); ui.forceScroll = true; break;
+    case 'q-listen': { const si = S.readSentence; S.quiet = false; S.pos = Math.max(0, sentenceStart(si) - 150); if (S.ps === 'idle' || S.ps === 'ended') S.ps = 'paused'; S.reason = null; if (S.view === 'caption') openSheet(false); startListening('from-here'); break; }
+    case 'lk-play': S.ps === 'playing' || busy() ? pause(null) : startListening('lock-screen'); break;
+    case 'lk-back': seek(S.pos - 10000); break;
+    case 'lk-fwd': seek(S.pos + 10000); break;
+    case 'lk-unlock': S.locked = false; S.veil = true; S.veilWhy = S.ps === 'playing' ? 'The camera view stops while the phone is locked. The voice played on.' : 'The camera view stops while the phone is locked.'; break;
+    case 'away-back': S.away = false; S.veil = true; S.veilWhy = 'The camera view stopped while you were in another app.'; break;
+    case 'veil-go': S.veil = false; break;
+    case 'call-yes': S.call = { phase: 'on', t0: performance.now() }; break;
+    case 'call-no': S.call = null; S.veil = true; S.veilWhy = 'The camera view stopped during the call. The voice waits for you below.'; break;
+    case 'dbg-tab': S.dbgHidden = false; requestAnimationFrame(layout); break;
+  }
+  changed();
+});
+function renderMenu() {
+  const rows = [
+    ['caption', 'Captions', 'The voice, a few lines at a time, eyes on the place', 'this tour'],
+    ['reading', 'Reading', 'The voice with the whole text open', ''],
+    ['silent', 'Sound off', 'The whole text to read, no voice', ''],
+  ];
+  $('vs-menu').innerHTML = rows.map(([v, l, d, tag]) => `<button data-vs="${v}" class="${v === S.view ? 'on' : ''}" role="menuitemradio" aria-checked="${v === S.view}"><b>${l}<i>${tag ? "creator's choice" : ''}</i></b><span>${d}</span></button>`).join('')
+    + `<button disabled><b>Lectern<i>not in this prototype</i></b><span>A reading stand in the square</span></button><div class="foot">Your choice is kept on this phone for every narrated text.</div>`;
+}
+$('sh-text').addEventListener('click', e => {
+  const s = e.target.closest('.s'); if (!s) return; const i = +s.dataset.s;
+  if (S.quiet) { S.readSentence = i; ui.key = ''; return; }
+  S.pos = Math.max(0, sentenceStart(i) - 150); S.follow = true; ui.forceScroll = true;
+  if (!['playing', 'buffering', 'loading'].includes(S.ps)) { if (S.ps === 'idle' || S.ps === 'ended') S.ps = 'paused'; S.reason = null; startListening('sentence'); }
+});
+for (const ev of ['wheel', 'touchmove']) $('sh-wrap').addEventListener(ev, () => { if (!S.quiet && S.follow) { S.follow = false; $('sh-follow').hidden = false; } }, { passive: true });
+document.addEventListener('keydown', e => { if (e.key === 'd' && !e.target.closest('input,textarea')) { S.dbgHidden = !S.dbgHidden; layout(); } });
+
+/* =====================================================================
+   8. Frame and layout
+   ===================================================================== */
+function layout() {
+  drawDebug();
+  const area = $('area'), stage = $('stage'), aw = area.clientWidth, ah = area.clientHeight;
+  let w = aw, h = ah;
+  if (S.frame === 'upright') { w = 390; h = 844; } else if (S.frame === 'sideways') { w = 844; h = 390; }
+  const s = S.frame === 'fill' ? 1 : Math.min(1, (aw - 16) / w, (ah - 16) / h);
+  stage.style.width = w + 'px'; stage.style.height = h + 'px';
+  stage.style.transform = `translate(-50%,-50%) scale(${s})`; stage.classList.toggle('framed', S.frame !== 'fill');
+  const L = w / h < 0.85 ? 'portrait' : h < 520 ? 'landscape' : 'desktop';
+  if (L !== S.layout) { S.layout = L; ui.capKey = ''; ui.forceScroll = true; ui.instant = true; }
+  stage.dataset.layout = L;
+}
+new ResizeObserver(layout).observe($('area'));
+
+/* a hook for screenshots and checks: #frame=upright&view=caption&where=sign&at=240&play=1&sheet=1&event=lock&cond=missing&debug=0 */
+function applyParams(p) {
+  if (p.frame) S.frame = p.frame;
+  if (p.view && ['caption', 'reading', 'silent'].includes(p.view)) S.view = p.view;
+  if (p.where && ['sign', 'within', 'out'].includes(p.where)) S.where = p.where;
+  if (p.cond && ['works', 'slow', 'missing'].includes(p.cond)) S.cond = p.cond;
+  if (p.rate && RATES.includes(+p.rate)) S.rate = +p.rate;
+  if (p.at !== undefined && Number.isFinite(+p.at)) { S.pos = clamp(+p.at * 1000, 0, DUR - 1); }
+  if (p.play === '1' || p.play === true) { S.session = true; S.loaded = S.cond !== 'slow'; S.firstPlayDone = p.nudge === '1' ? false : true; S.ps = 'paused'; startListening('hook'); }
+  else if (p.at !== undefined && +p.at > 0) { S.session = true; S.ps = 'paused'; S.loaded = true; }
+  if (p.sheet === '1' || p.sheet === true) openSheet(true, { quiet: p.quiet === '1' || S.view === 'silent', from: sentenceAt(S.pos) });
+  if (p.event) event(p.event);
+  if (p.debug === '0') S.dbgHidden = true;
+  if (p.debug === 'open') S.dbgOpen = true;
+  layout(); changed();
+}
+window.__narrationProto = {
+  set: async o => { applyParams(o || {}); await new Promise(r => setTimeout(r, 400)); },
+  state: () => ({ view: S.view, ps: S.ps, posMs: Math.round(S.pos), durMs: DUR, rate: S.rate, sheetOpen: S.sheetOpen, quiet: S.quiet, where: S.where, layout: S.layout, session: S.session, folded: S.folded })
+};
+applyParams(Object.fromEntries(new URLSearchParams(location.hash.slice(1))));
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
