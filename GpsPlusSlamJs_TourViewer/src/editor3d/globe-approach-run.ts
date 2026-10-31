@@ -45,9 +45,9 @@ import {
 /** How long the line takes to fade out (ms), as its CSS transition. */
 export const LINE_FADE_MS = 400;
 
-export type ApproachPhase = "flying" | "arrived";
+type ApproachPhase = "flying" | "arrived";
 
-export interface ApproachRunStats {
+interface ApproachRunStats {
   readonly phase: ApproachPhase;
   /** Whether the flight still moves the camera. */
   readonly flying: boolean;

@@ -51,7 +51,7 @@ export const ARRIVAL_REDUCED: ArrivalTiming = Object.freeze({
 
 /** The ring's look: it spreads from `ringFrom` to `ringTo` times the
  *  station's radius, fading out. */
-export const ARRIVAL_RING = Object.freeze({ ringFrom: 0.15, ringTo: 1.2 });
+const ARRIVAL_RING = Object.freeze({ ringFrom: 0.15, ringTo: 1.2 });
 
 function share(elapsedMs: number, startMs: number, lengthMs: number): number {
   if (Number.isNaN(elapsedMs)) return 1;

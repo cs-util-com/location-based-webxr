@@ -13,7 +13,7 @@ tour has one.
   900, `ringDelayMs` 450, `ringMs` 1200, `walkGapMs` 400, `walkMs` 1400.
 - `ARRIVAL_REDUCED` - the same under reduced motion: no stagger, no
   rings, a 200 ms pop and a 300 ms walk.
-- `ARRIVAL_RING` - the ring's radius from 0.15 to 1.2 of the station's
+- `ARRIVAL_RING` (module-internal) - the ring's radius from 0.15 to 1.2 of the station's
   found radius (at least 1 m).
 - `stationPop(elapsedMs, index, timing)` - `{ scale, ring }`: the scale is
   0 before its turn and eases with an overshoot to 1; the ring
