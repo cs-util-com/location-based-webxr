@@ -131,6 +131,9 @@ const ZOOM_SHARE = 0.35;
 /** Top view looks this close to straight down (deg): exactly down has no
  *  heading to keep. */
 const TOP_PITCH_DEG = -89;
+/** The approach's line reads the map's coverage this often (ms): four
+ *  times a second, against a line that holds each wording 600 ms. */
+const COVERAGE_EVERY_MS = 250;
 
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
@@ -204,7 +207,9 @@ export async function openGlobeEditor(
             relief ? ground.terrain.tiles.group : view.globe.tiles.group,
           );
           // The approach places the camera while it flies; the controls
-          // take it from where it is once it lands or is taken.
+          // take it from where it is once it lands or is taken. Its clock
+          // starts at the first drawn frame (this one, the first time).
+          approach?.start(performance.now());
           const flying = approach?.poseAt(performance.now()) ?? null;
           if (flying !== null) {
             view.placeView(flying);
@@ -538,10 +543,11 @@ export async function openGlobeEditor(
 
     const up = new THREE.Vector3();
     /**
-     * A camera move (the world) shortened so the camera stays `eyeM` over
-     * the loaded ground under it now; unchanged where none has loaded
-     * there, or where it does not go down. The ground is taken as level
-     * over the step.
+     * A camera move (the world) whose downward part is capped so the
+     * camera stays `eyeM` over the loaded ground under it now; its level
+     * part is kept whole, so from eye height a step walks forward.
+     * Unchanged where no ground has loaded there, or where it does not go
+     * down that far. The ground is taken as level over the step.
      */
     const keepOverGround = (move: THREE.Vector3): THREE.Vector3 => {
       const pose = poseNow();
@@ -555,13 +561,30 @@ export async function openGlobeEditor(
         0,
         pose.altitudeKm * 1000 - groundM - GLOBE_EDITOR_LOOK.eyeM,
       );
-      return drop <= room ? move : move.multiplyScalar(room / drop);
+      if (drop > room) move.addScaledVector(up, drop - room);
+      return move;
     };
 
-    /** What is still loading, for the approach's line: the stations not
-     *  uploaded yet, and the imagery of the ground's carrier now. No
-     *  buildings are drawn in this view yet, so none are waited for. */
-    const pendingNow = (held: Set<string> | null): ApproachPending => {
+    /** The map's coverage, read at most every `COVERAGE_EVERY_MS`: it
+     *  walks the map's tiles, and its doc says not per frame. */
+    let coverage: ReturnType<typeof ground.osm.coverage> | null = null;
+    let coverageAt = Number.NEGATIVE_INFINITY;
+    const readCoverage = (now: number) => {
+      if (coverage === null || now - coverageAt >= COVERAGE_EVERY_MS) {
+        coverage = ground.osm.coverage();
+        coverageAt = now;
+      }
+      return coverage;
+    };
+
+    /** What is still loading at `now`, for the approach's line: the
+     *  stations not uploaded yet, and the imagery of the ground's carrier
+     *  now. No buildings are drawn in this view yet, so none are waited
+     *  for. */
+    const pendingNow = (
+      held: Set<string> | null,
+      now: number,
+    ): ApproachPending => {
       let textures: number;
       if (relief) {
         // The tiles library's load counts (untyped in its declarations).
@@ -570,7 +593,7 @@ export async function openGlobeEditor(
             stats?: { queued?: number; downloading?: number; parsing?: number };
           }
         ).stats;
-        const cover = ground.osm.coverage();
+        const cover = readCoverage(now);
         textures =
           (s?.queued ?? 0) +
           (s?.downloading ?? 0) +
@@ -606,7 +629,7 @@ export async function openGlobeEditor(
         marks.drawWalk(1);
         return null;
       }
-      run.step(now, altitudeM / 1000, pendingNow(held));
+      run.step(now, altitudeM / 1000, pendingNow(held, now));
       if (run.holdsStations()) return stations.map((s) => s.id);
       const notYet: string[] = [];
       const growth = new Map<string, number>();
@@ -875,7 +898,6 @@ export async function openGlobeEditor(
             ? {}
             : { durationMs: deps.approach.durationMs }),
         }),
-        startMs: performance.now(),
         reducedMotion,
       });
       approach = run;

@@ -65,6 +65,8 @@ interface Fakes {
   inputScene: null | {
     zoomTowards?(pointer: { x: number; y: number }): void;
   };
+  /** How often the map's coverage was read. */
+  coverageCalls: number;
 }
 
 const fakes = vi.hoisted((): Fakes => ({
@@ -77,6 +79,7 @@ const fakes = vi.hoisted((): Fakes => ({
   controls: null,
   groundM: 500,
   inputScene: null,
+  coverageCalls: 0,
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -207,7 +210,13 @@ vi.mock("./editor3d-terrain.js", async () => {
       groundAt: () => fakes.groundM,
       update() {},
       credits: [],
-      osm: { stats: () => ({}), coverage: () => 0 },
+      osm: {
+        stats: () => ({}),
+        coverage: () => {
+          fakes.coverageCalls++;
+          return { waiting: 0, failed: 0 };
+        },
+      },
       dispose() {},
     }),
   };
@@ -226,6 +235,7 @@ vi.mock("./editor3d-stations.js", async () => {
       itemPointOf: () => null,
       codePointOf: () => null,
       setHidden() {},
+      setGrowth() {},
       update() {},
       setShown() {},
       setPreview() {},
@@ -323,9 +333,15 @@ function deps(): Editor3dDeps {
 }
 
 let open: Editor3dView | null = null;
-async function openAt(heightM: number): Promise<Editor3dView> {
+async function openAt(
+  heightM: number,
+  extra: Partial<Editor3dDeps> = {},
+): Promise<Editor3dView> {
   tourAt(heightM);
-  open = await openGlobeEditor(deps(), { hidePx: 4, crowdPx: 16 });
+  open = await openGlobeEditor(
+    { ...deps(), ...extra },
+    { hidePx: 4, crowdPx: 16 },
+  );
   return open;
 }
 
@@ -400,8 +416,10 @@ beforeEach(() => {
   fakes.busy = false;
   fakes.groundM = DRAWN_M;
   fakes.inputScene = null;
+  fakes.coverageCalls = 0;
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   open?.dispose();
   open = null;
   document.body.replaceChildren();
@@ -549,6 +567,57 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the editor lands at eye height looking a little down, and the
+  // library keeps it there. The cap that keeps the camera over the ground
+  // scaled the WHOLE move by the room left under it, which at eye height
+  // is none, so "+", a double click on the ground and the phone's double
+  // tap did nothing there. Only the move's downward part is capped: the
+  // camera walks forward at eye height. The bound above (never under eye
+  // height) passed a move of nothing, so this pins the progress. Swept
+  // over -3, -5 and -10 degrees, by the button and by the double click.
+  it.each([
+    [-3, "button"],
+    [-5, "button"],
+    [-10, "button"],
+    [-3, "click"],
+    [-5, "click"],
+    [-10, "click"],
+  ] as const)(
+    "walks forward from eye height looking %s deg down (%s)",
+    async (pitchDeg, how) => {
+      fakes.groundM = 200;
+      await openAt(0);
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      placeCamera(GLOBE_EDITOR_LOOK.eyeM, pitchDeg, 200);
+      const before = camera.position.clone();
+      const heightBefore = heightOfWorld(before);
+      // The ground straight ahead (the screen's middle; jsdom's canvas is
+      // 1 px, so 0.5 is its middle).
+      const groundAheadM = GLOBE_EDITOR_LOOK.eyeM / Math.sin(-pitchDeg * DEG);
+      const act = {
+        button: () => open?.zoom(1),
+        click: () => {
+          zoomTowards({ x: 0.5, y: 0.5 });
+        },
+      }[how];
+      const stepM = {
+        button: 0.35 * Math.max(GLOBE_EDITOR_LOOK.backM, groundAheadM),
+        click: 0.35 * groundAheadM,
+      }[how];
+      act();
+      const move = camera.position.clone().sub(before);
+      const rise = heightOfWorld(camera.position) - heightBefore;
+      const level = Math.sqrt(Math.max(0, move.lengthSq() - rise * rise));
+      expect(level / (stepM * Math.cos(pitchDeg * DEG))).toBeCloseTo(1, 1);
+      expect(heightOfWorld(camera.position) - 200).toBeGreaterThanOrEqual(
+        GLOBE_EDITOR_LOOK.eyeM - 1e-3,
+      );
+    },
+  );
+
   // Why: with no ground loaded the place under the camera was given at
   // the CAMERA's height, so "+" from 3 km up put a station 3 km in the
   // air. Near the ground it is now the camera's height less eye height;
@@ -579,6 +648,53 @@ describe("openGlobeEditor's wiring", () => {
       expect(view.centre()).toBeNull();
     },
   );
+
+  /** One frame of the view at `now` (ms), as its loop runs it. */
+  const frameAt = (now: number) => {
+    fakes.seams?.driveCamera?.();
+    fakes.seams?.update?.(now);
+  };
+
+  // Why: the flight's clock started when the view was made, before its
+  // first drawn frame (the box is laid out, the first frame compiles), so
+  // a slow start ate the flight's opening and could land the camera on its
+  // first frame. It starts at the first drawn frame.
+  it("starts the approach's clock at its first drawn frame", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    await openAt(0, { approach: { durationMs: 1_000 } });
+    now = 5_000;
+    frameAt(now);
+    expect(fakes.view?.camera).toBeDefined();
+    const flyingAt = (t: number) => {
+      now = t;
+      frameAt(t);
+      fakes.coverageCalls = 0;
+      return open?.stats().flying;
+    };
+    expect(flyingAt(5_016)).toBe(true);
+    expect(flyingAt(5_900)).toBe(true);
+    expect(flyingAt(6_100)).toBe(false);
+  });
+
+  // Why: the map's coverage walks its tiles and its doc says not to read
+  // it every frame; the approach's line read it every frame once the
+  // relief carries the ground (after the landing). A few times a second is
+  // enough for a line that holds each wording 600 ms. Over one second of
+  // frames at 60 Hz after the landing it is read 4 or 5 times, not 60.
+  it("reads the map's coverage a few times a second during the approach", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    await openAt(0, { approach: { durationMs: 1_000 } });
+    // The flight, frame by frame, to the street.
+    for (now = 0; now < 1_100; now += 1000 / 60) frameAt(now);
+    expect(open?.stats().flying).toBe(false);
+    expect(open?.stats().globe?.carrier).toBe("relief");
+    fakes.coverageCalls = 0;
+    for (; now < 2_100; now += 1000 / 60) frameAt(now);
+    expect(fakes.coverageCalls).toBeGreaterThanOrEqual(3);
+    expect(fakes.coverageCalls).toBeLessThanOrEqual(5);
+  });
 
   // Why: a frame drawn while the view is being freed draws with freed
   // parts; and the loss dispose forces must not reach the page as a lost

@@ -13,7 +13,10 @@ still loading.
 
 - `LINE_FADE_MS` - 400, the line's fade (as its CSS transition).
 - `createApproachRun({ box, flight, startMs, reducedMotion })` mounts the
-  bar and the line in `box` and returns an `ApproachRun`:
+  bar and the line in `box` and returns an `ApproachRun` (`startMs` is
+  optional: without it the flight's clock starts at the first `start`):
+  - `start(nowMs)` - the first drawn frame starts the clock (later calls
+    do nothing); before it the flight is at its first pose;
   - `poseAt(nowMs)` - the camera's pose while flying, else null;
   - `step(nowMs, altitudeKm, pending)` - each frame after the camera is
     placed: lands at the flight's end, moves the bar, holds or fades the

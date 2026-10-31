@@ -328,11 +328,15 @@ describe("a click", () => {
       );
     }
     expect(t.scene.frame).toHaveBeenCalledWith("pin");
-    t.element.dispatchEvent(
+    t.input.dispose();
+    // A mouse's double click frames too (the dblclick after a finger's
+    // double tap does not: it would frame twice, see the globe's extras).
+    const m = setup({ pick: "pin" });
+    m.element.dispatchEvent(
       new MouseEvent("dblclick", { bubbles: true, clientX: 5, clientY: 5 }),
     );
-    expect(t.scene.frame).toHaveBeenCalledTimes(2);
-    t.input.dispose();
+    expect(m.scene.frame).toHaveBeenCalledWith("pin");
+    m.input.dispose();
   });
 });
 
@@ -932,6 +936,49 @@ describe("the globe's extras (`globe-gestures.ts`'s routes)", () => {
     expect(zooms).toHaveLength(1);
     expect(u.scene.frame).toHaveBeenCalledWith("pin");
     u.input.dispose();
+  });
+
+  // Why: after a finger's double tap Chromium may send a compatibility
+  // dblclick too; zoomed (or framed) by both, one double tap would step
+  // twice. The tap path answers a finger, the dblclick only a mouse.
+  it("answer a double tap once when the browser adds a dblclick", () => {
+    const zooms: ScreenPoint[] = [];
+    const frames: number[] = [];
+    for (const pick of [null, "pin"] as const) {
+      const t = setup({ pick });
+      t.scene.zoomTowards = (at) => {
+        zooms.push(at);
+      };
+      for (let i = 0; i < 2; i++) {
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 7, y: 9 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer("pointerup", { x: 7, y: 9 }, { touch: true }),
+        );
+      }
+      t.element.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+      );
+      frames.push(vi.mocked(t.scene.frame).mock.calls.length);
+      t.input.dispose();
+    }
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(frames).toEqual([0, 1]);
+    // A mouse's double click after its own presses still zooms.
+    const m = setup({ pick: null });
+    m.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    for (let i = 0; i < 2; i++) {
+      m.element.dispatchEvent(pointer("pointerdown", { x: 7, y: 9 }));
+      window.dispatchEvent(pointer("pointerup", { x: 7, y: 9 }));
+    }
+    m.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toHaveLength(2);
+    m.input.dispose();
   });
 });
 

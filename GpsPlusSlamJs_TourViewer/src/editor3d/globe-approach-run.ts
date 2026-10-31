@@ -65,8 +65,11 @@ interface ApproachRunStats {
 }
 
 export interface ApproachRun {
-  /** The camera's pose at `nowMs` while flying, else null (the camera is
-   *  the controls'). */
+  /** Start the flight's clock at `nowMs` (the first drawn frame); later
+   *  calls do nothing. Given `startMs`, the run is started already. */
+  start(nowMs: number): void;
+  /** The camera's pose at `nowMs` while flying (its first pose before
+   *  `start`), else null (the camera is the controls'). */
   poseAt(nowMs: number): GlobeViewPose | null;
   /** Each frame, after the camera is placed: its altitude (km over the
    *  ellipsoid) and what is still loading. */
@@ -96,20 +99,24 @@ export interface ApproachRun {
 }
 
 /**
- * The approach `flight`, begun at `startMs`, its bar and line in `box`
- * (the 3D view's box). `reducedMotion` takes the short arrival and no
- * fade.
+ * The approach `flight`, begun at `startMs` (or at `start`), its bar and
+ * line in `box` (the 3D view's box). `reducedMotion` takes the short
+ * arrival and no fade.
  */
 export function createApproachRun(deps: {
   readonly box: HTMLElement;
   readonly flight: ApproachFlight;
-  readonly startMs: number;
+  readonly startMs?: number;
   readonly reducedMotion: boolean;
 }): ApproachRun {
   const { box, reducedMotion } = deps;
   const timing = reducedMotion ? ARRIVAL_REDUCED : ARRIVAL;
   let flight = deps.flight;
-  let flightStart = deps.startMs;
+  /** When the flight's clock started; null before `start`. */
+  let flightStart: number | null = deps.startMs ?? null;
+  /** The flight's time at `nowMs` (0 before its start). */
+  const flightMs = (nowMs: number) =>
+    flightStart === null ? 0 : nowMs - flightStart;
   let phase: ApproachPhase = "flying";
   let ended: ApproachRunStats["ended"] = null;
   let arrivedAt = Number.NaN;
@@ -156,13 +163,16 @@ export function createApproachRun(deps: {
   };
 
   return {
+    start(nowMs) {
+      flightStart ??= nowMs;
+    },
     poseAt(nowMs) {
       if (phase !== "flying") return null;
-      return flightPoseAt(flight, nowMs - flightStart);
+      return flightPoseAt(flight, flightMs(nowMs));
     },
     step(nowMs, altitudeKm, pending) {
       if (phase === "flying") {
-        if (flightDone(flight, nowMs - flightStart)) arrive(nowMs, "landed");
+        if (flightDone(flight, flightMs(nowMs))) arrive(nowMs, "landed");
         else showProgress(barValue(flight, altitudeKm));
       }
       // Once gone, the line stays gone: what loads as the creator moves
@@ -191,7 +201,7 @@ export function createApproachRun(deps: {
     },
     retarget(nowMs, now, goal, groundM) {
       if (phase !== "flying") return false;
-      flight = retargetFlight(flight, now, nowMs - flightStart, goal, groundM);
+      flight = retargetFlight(flight, now, flightMs(nowMs), goal, groundM);
       flightStart = nowMs;
       retargets++;
       return true;

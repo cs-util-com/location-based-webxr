@@ -101,11 +101,14 @@ ground.
   `stats().distanceM` is - not to the frame's origin on the ellipsoid,
   which lies the tour's height under it. `setDistance` is measured to
   that tour centre.
-- A step that goes down (a zoom button's, a double click's) is shortened
-  so the camera stays `eyeM` over the loaded ground under it
-  (`keepOverGround`; the ground taken as level over the step, so a slope
-  rising ahead is not seen); with no ground loaded under the camera it is
-  not shortened.
+- A step that goes down (a zoom button's, a double click's) keeps the
+  camera `eyeM` over the loaded ground under it (`keepOverGround`): only
+  the step's vertical part is cut, by lifting the end point, so its
+  horizontal part is kept whole and a zoom from eye height looking a few
+  degrees down still walks forward (scaling the whole step would freeze
+  it there). The ground is taken as level over the step, so a slope
+  rising ahead is not seen; with no ground loaded under the camera the
+  step is not changed.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the
@@ -165,7 +168,12 @@ the controls' own step. The bar and the line hang in the view's box.
 - The line's counts (`pendingNow`): the stations still held for upload;
   the relief's tile loads plus the map's waiting tiles while the relief
   carries, else the globe's pending tiles; no buildings are mounted, so
-  none are waited for.
+  none are waited for. The map's coverage walks its tiles, so it is read
+  every `COVERAGE_EVERY_MS` (250 ms, four times a second) and the last
+  reading kept between, not every frame.
+- The flight's clock starts at its first drawn frame (`run.start` in the
+  frame's camera step), not at mount: the box's fit and the first tiles
+  can take a while, and a flight timed from mount would skip its start.
 - Takeover: a pointerdown or a wheel on the canvas (capture phase), the
   controls' `onTake`, the arrows, the zoom steps and the toolbar's camera
   verbs stop the flight where it is.
@@ -209,7 +217,10 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   (the place under the camera right after the first view and after a
   recentre), `centre` and `groundAt` with N added, the zoom and the
   distance measured to the tour's centre where no ground answers at tour
-  heights 0, 515 and 2,500 m, the double click's zoom from 300 m, 8 km
+  heights 0, 515 and 2,500 m, the zoom (button and double click) walking
+  forward from eye height 3 to 10 degrees down, the approach's clock
+  starting at its first frame, the coverage read three to five times
+  over a second of flight, the double click's zoom from 300 m, 8 km
   and 40 km (the ground beyond 5 km; loaded, and not), a button's step
   50 km from the tour (to the ground ahead), no step under eye height
   (from 1.8 to 40 m up, steep and shallow), `centre` with no ground

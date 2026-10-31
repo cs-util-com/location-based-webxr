@@ -459,6 +459,9 @@ export function createSceneInput(input: {
   };
 
   const onDoubleClick = (event: MouseEvent) => {
+    // A finger's double tap is answered on its release (`onEnd`); the
+    // dblclick a browser may add after it would zoom or frame twice.
+    if (lastPress?.touch === true) return;
     if (scene.clickWaited?.() === true) return;
     const at = pointOf(event);
     const hit = scene.pickAt(at);

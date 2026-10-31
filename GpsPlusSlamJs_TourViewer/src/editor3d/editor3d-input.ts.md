@@ -34,6 +34,9 @@ move the camera only, and a second finger during a drag cancels it.
     `gesture()` (its handle, `"key"`, or null), `dispose()`.
 - `INPUT` - a click moved less than 4 px (a tap 8 px); a double tap within
   400 ms and 30 px.
+  - A `dblclick` after a touch press is ignored: a browser adds one to a
+    double tap, which the input already answered, so it would frame (or
+    zoom) twice.
   - One rule in both views: a press that moved the click distance or
     more is a drag. The globe's routing table draws its line there, and
     the OrbitControls (default) view follows the same `>=`, so a mouse
@@ -130,7 +133,8 @@ finger cancels it, writes nothing, says so, then tilts the camera and
 keeps it locked until the last finger lifts; a selection change cancels a
 drag; a press off the gizmo, or on a code, starts nothing; a click selects
 what is under it or nothing, a moved press selects nothing; a double tap
-and a double click frame, and on nothing zoom toward the point; every key of the design, a held key as one
+and a double click frame, and on nothing zoom toward the point; a double
+tap answers once though the browser adds a dblclick; every key of the design, a held key as one
 gesture, Del, Backspace and Ctrl+D, the keys left to others, fields and
 dialogs, codes, and keys during a drag; with nothing selected only the
 arrows are taken from the page. A cancel (an undo) and a pointercancel
