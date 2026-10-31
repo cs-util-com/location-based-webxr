@@ -32,11 +32,11 @@ export interface ReadAlongCursor {
 
 /** How long into a sentence "previous sentence" goes back to its own
  *  start rather than to the one before (the prototype's rule). */
-export const PREV_SENTENCE_RESTART_MS = 1600;
+const PREV_SENTENCE_RESTART_MS = 1600;
 
 /** How far before a sentence's first segment a seek lands, so its first
  *  sound is not cut (the prototype's 30 ms). */
-export const SEEK_LEAD_MS = 30;
+const SEEK_LEAD_MS = 30;
 
 /** A word is marked only on a word track read from a file; a marked
  *  track (a creator tapping along) is only good to the sentence. */

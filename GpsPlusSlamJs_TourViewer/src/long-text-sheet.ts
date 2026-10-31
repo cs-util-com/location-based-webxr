@@ -106,7 +106,7 @@ export interface LongTextSheetDeps {
   caretAt?(x: number, y: number): { node: Node; offset: number } | null;
 }
 
-export type LongTextSheetMode = "silent" | "plain" | "live";
+type LongTextSheetMode = "silent" | "plain" | "live";
 
 export interface LongTextSheetState {
   readonly open: boolean;
