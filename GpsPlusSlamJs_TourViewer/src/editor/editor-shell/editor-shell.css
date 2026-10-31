@@ -1815,8 +1815,19 @@ body[data-view="3d"] .view3d-credits {
 }
 
 .approach[hidden],
+.approach-title[hidden],
 .approach-track[hidden] {
   display: none;
+}
+
+/* The box's fixed title over the bar; the line under it is the detail. */
+.approach-title {
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: var(--s-text);
+  font: 600 12px/16px var(--s-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .approach-track {
@@ -1854,6 +1865,11 @@ body[data-view="3d"] .view3d-credits {
     width: min(640px, calc(100% - 24px));
     padding: 3px 8px 4px;
     border-radius: 12px;
+  }
+
+  .approach-title {
+    margin-bottom: 3px;
+    font-size: 11px;
   }
 
   .approach-line {

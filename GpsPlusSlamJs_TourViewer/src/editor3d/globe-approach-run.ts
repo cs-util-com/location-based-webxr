@@ -9,10 +9,13 @@
  * - Flying: `poseAt` gives the camera's pose, the bar follows the
  *   camera's height, the stations are held back (`holdsStations`).
  * - The camera lands, or the creator takes it (`takeOver`: an input in
- *   the 3D view, the camera kept where it is): the bar goes, the
- *   stations pop in from then, then the walk draws itself.
+ *   the 3D view, the camera kept where it is): the stations pop in from
+ *   then, then the walk draws itself. A landed bar stays full for
+ *   `BAR_DONE_MS` so its finish is seen; a taken one goes at once.
  * - The line stays while anything is still loading and fades out once
- *   nothing is.
+ *   nothing has been for a hold (`LINE_HOLD_MS`); a load meanwhile
+ *   cancels the fade. `LINE_CAP_MS` after the arrival it goes whatever
+ *   still loads.
  * - `retarget` (a station picked in the list mid-flight) sends the flight
  *   to it from where the camera is; after the flight it does nothing.
  *
@@ -29,8 +32,10 @@ import {
   type StationPop,
 } from "./approach-arrival.js";
 import {
+  APPROACH_TITLE,
   approachLine,
   createLineHold,
+  LINE_HOLD_MS,
   type ApproachLine,
   type ApproachPending,
 } from "./approach-status.js";
@@ -44,6 +49,21 @@ import {
 
 /** How long the line takes to fade out (ms), as its CSS transition. */
 export const LINE_FADE_MS = 400;
+
+/** How long a landed bar stays full before it goes (ms): long enough to
+ *  be seen to finish (a few frames would be missed), short enough not to
+ *  read as a second wait. */
+export const BAR_DONE_MS = 300;
+
+/**
+ * The line's end, however much still loads (ms after the arrival). Weighed
+ * over 5 to 20 s: at 5 s it would leave while a phone on a slow link is
+ * plainly still filling in the ground, so the scene would look finished
+ * and broken at once; at 20 s a box over the view outstays the opening
+ * the creator is already working in. 10 s covers a normal load and ends
+ * a hung one. Not measured on a device.
+ */
+export const LINE_CAP_MS = 10_000;
 
 type ApproachPhase = "flying" | "arrived";
 
@@ -123,15 +143,23 @@ export function createApproachRun(deps: {
   let progress = 0;
   let retargets = 0;
   let lineGoneAt: number | null = null;
+  /** Since when nothing has been pending; null while something is. */
+  let quietSince: number | null = null;
   const hold = createLineHold();
 
   const root = document.createElement("div");
   root.className = "approach";
   root.dataset["phase"] = "flying";
+  // The progress bar carries the same words as its label, so the title
+  // is not read twice.
+  const title = document.createElement("div");
+  title.className = "approach-title";
+  title.setAttribute("aria-hidden", "true");
+  title.textContent = APPROACH_TITLE;
   const track = document.createElement("div");
   track.className = "approach-track";
   track.setAttribute("role", "progressbar");
-  track.setAttribute("aria-label", "Loading tour");
+  track.setAttribute("aria-label", APPROACH_TITLE);
   track.setAttribute("aria-valuemin", "0");
   track.setAttribute("aria-valuemax", "100");
   track.setAttribute("aria-valuenow", "0");
@@ -142,7 +170,7 @@ export function createApproachRun(deps: {
   line.className = "approach-line";
   line.setAttribute("role", "status");
   line.setAttribute("aria-live", "polite");
-  root.append(track, line);
+  root.append(title, track, line);
   box.append(root);
 
   const showProgress = (k: number) => {
@@ -158,8 +186,42 @@ export function createApproachRun(deps: {
     ended = how;
     arrivedAt = nowMs;
     if (how === "landed") showProgress(1);
-    root.dataset["phase"] = "arrived";
-    track.hidden = true;
+  };
+
+  /** The bar and its title go: at once after a takeover, a beat after a
+   *  landing (the bar finishes when the camera lands). */
+  const barDone = (nowMs: number) =>
+    phase === "arrived" &&
+    (ended === "taken" || nowMs - arrivedAt >= BAR_DONE_MS);
+
+  /** Whether the line should go: never while the bar shows, at the cap
+   *  after the arrival, or once nothing has been pending for a hold. */
+  const lineQuiet = (nowMs: number) =>
+    track.hidden &&
+    (nowMs - arrivedAt >= LINE_CAP_MS ||
+      (quietSince !== null && nowMs - quietSince >= LINE_HOLD_MS));
+
+  /** The line shown: a fade under way is cancelled. While flying it
+   *  follows what is named (blank when nothing is); after the arrival it
+   *  keeps its last words until it goes. */
+  const showLine = (nowMs: number, words: ApproachLine | null) => {
+    lineGoneAt = null;
+    root.classList.remove("gone");
+    const wanted = phase === "flying" ? words : (words ?? hold.shown);
+    const shown = hold.step(nowMs, wanted) ?? "";
+    if (line.textContent !== shown) line.textContent = shown;
+  };
+
+  /** The line fading, then gone. The words stay while it fades; the live
+   *  region is not told twice. */
+  const fadeLine = (nowMs: number) => {
+    if (lineGoneAt === null) {
+      lineGoneAt = nowMs;
+      root.classList.add("gone");
+    }
+    if (nowMs - lineGoneAt >= (reducedMotion ? 0 : LINE_FADE_MS)) {
+      root.hidden = true;
+    }
   };
 
   return {
@@ -175,26 +237,19 @@ export function createApproachRun(deps: {
         if (flightDone(flight, flightMs(nowMs))) arrive(nowMs, "landed");
         else showProgress(barValue(flight, altitudeKm));
       }
+      if (!track.hidden && barDone(nowMs)) {
+        track.hidden = true;
+        title.hidden = true;
+        root.dataset["phase"] = "arrived";
+      }
       // Once gone, the line stays gone: what loads as the creator moves
       // about later is no part of the opening.
       if (root.hidden === true) return;
-      const shown = hold.step(nowMs, approachLine(pending, phase === "flying"));
-      if (shown !== null) {
-        lineGoneAt = null;
-        if (line.textContent !== shown) line.textContent = shown;
-        root.classList.remove("gone");
-      } else if (lineGoneAt === null) {
-        // The words stay while the line fades; the live region is not
-        // told twice.
-        lineGoneAt = nowMs;
-        root.classList.add("gone");
-      }
-      if (
-        lineGoneAt !== null &&
-        nowMs - lineGoneAt >= (reducedMotion ? 0 : LINE_FADE_MS)
-      ) {
-        root.hidden = true;
-      }
+      const words = approachLine(pending);
+      if (words !== null) quietSince = null;
+      else quietSince ??= nowMs;
+      if (lineQuiet(nowMs)) fadeLine(nowMs);
+      else showLine(nowMs, words);
     },
     takeOver(nowMs) {
       arrive(nowMs, "taken");
@@ -229,7 +284,7 @@ export function createApproachRun(deps: {
         flying: phase === "flying",
         ended,
         progress: track.hidden === true ? null : progress,
-        line: root.hidden === true ? null : hold.shown,
+        line: root.hidden === true || lineGoneAt !== null ? null : hold.shown,
         retargets,
         durationMs: deps.flight.durationMs,
       };

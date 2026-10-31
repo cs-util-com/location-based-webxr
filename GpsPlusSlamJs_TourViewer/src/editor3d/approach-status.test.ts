@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   APPROACH_LINES,
+  APPROACH_TITLE,
   approachLine,
   createLineHold,
   LINE_HOLD_MS,
@@ -25,35 +26,37 @@ describe("approachLine", () => {
   it("names the tour first, then the textures, then the buildings", () => {
     // Why: the stations are what the creator came for, so their loading
     // is named over the ground's.
-    expect(approachLine({ tour: 1, textures: 4, buildings: 2 }, true)).toBe(
+    expect(approachLine({ tour: 1, textures: 4, buildings: 2 })).toBe(
       APPROACH_LINES.tour,
     );
-    expect(approachLine({ tour: 0, textures: 4, buildings: 2 }, true)).toBe(
+    expect(approachLine({ tour: 0, textures: 4, buildings: 2 })).toBe(
       APPROACH_LINES.textures,
     );
-    expect(approachLine({ tour: 0, textures: 0, buildings: 2 }, false)).toBe(
+    expect(approachLine({ tour: 0, textures: 0, buildings: 2 })).toBe(
       APPROACH_LINES.buildings,
     );
   });
 
-  it("says Loading tour while flying with nothing named, and goes after", () => {
-    // Why: the bar is never shown wordless during the flight, and after
-    // the landing a line that stays with nothing loading would be a lie.
-    expect(approachLine(none, true)).toBe(APPROACH_LINES.tour);
-    expect(approachLine(none, false)).toBeNull();
+  it("names nothing when nothing is waiting, and leaves the title to the box", () => {
+    // Why: the box's fixed title says the tour is loading; the line is
+    // only the detail, so it does not repeat the title, and a line that
+    // names something with nothing loading would be a lie.
+    expect(approachLine(none)).toBeNull();
+    expect(APPROACH_TITLE).toBe("Loading tour");
+    expect(Object.values(APPROACH_LINES)).not.toContain(APPROACH_TITLE);
   });
 
   it("reads a count that is not a positive number as nothing waiting", () => {
     // Why: a stats source that is not up yet reports NaN or -1; that
     // must not hold the line forever.
     expect(
-      approachLine({ tour: Number.NaN, textures: -1, buildings: 0 }, false),
+      approachLine({ tour: Number.NaN, textures: -1, buildings: 0 }),
     ).toBeNull();
   });
 
   it("never names an internal concept", () => {
     // Why: the owner's rule - no tiles, LOD, OSM or workers in the text.
-    for (const line of Object.values(APPROACH_LINES)) {
+    for (const line of [APPROACH_TITLE, ...Object.values(APPROACH_LINES)]) {
       expect(line).not.toMatch(/tile|lod|osm|worker|mesh|relief/i);
     }
   });

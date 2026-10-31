@@ -100,9 +100,16 @@ for (const [width, height] of [
     await expect(bar).toBeVisible();
     const viewBox = await box(page.locator("#view3d"));
     const barBox = await box(bar);
+    const titleBox = await box(bar.locator(".approach-title"));
     const trackBox = await box(bar.locator(".approach-track"));
     const lineBox = await box(bar.locator(".approach-line"));
     const narrow = width <= 820;
+    // The fixed title over the bar, the detail line under it.
+    await expect(bar.locator(".approach-title")).toHaveText("Loading tour");
+    expect(trackBox.y - (titleBox.y + titleBox.height)).toBeCloseTo(
+      narrow ? 3 : 4,
+      0,
+    );
     expect(barBox.y - viewBox.y).toBeCloseTo(narrow ? 42 : 10, 0);
     expect(
       Math.abs(barBox.x + barBox.width / 2 - (viewBox.x + viewBox.width / 2)),
@@ -139,7 +146,10 @@ test("the bar is a progressbar with a value and the line a polite status", async
   const line = page.locator("#view3d .approach-line");
   await expect(line).toHaveAttribute("role", "status");
   await expect(line).toHaveAttribute("aria-live", "polite");
-  await expect(line).toHaveText(/^Loading (tour|textures|buildings)$/);
+  await expect(line).toHaveText(/^(Loading (stations|textures|buildings))?$/);
+  await expect(page.locator("#view3d .approach-title")).toHaveText(
+    "Loading tour",
+  );
   const stats = await approachOf(page);
   expect(stats).toMatchObject({ flying: true, durationMs: 600_000 });
 });

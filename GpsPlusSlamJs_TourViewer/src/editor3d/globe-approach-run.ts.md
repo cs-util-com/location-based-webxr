@@ -12,6 +12,10 @@ still loading.
 ## Public API
 
 - `LINE_FADE_MS` - 400, the line's fade (as its CSS transition).
+- `BAR_DONE_MS` - 300, how long a landed bar stays full before it goes.
+- `LINE_CAP_MS` - 10 000, the line's end after the arrival however much
+  still loads (weighed over 5 to 20 s in the source's comment; not
+  measured on a device).
 - `createApproachRun({ box, flight, startMs, reducedMotion })` mounts the
   bar and the line in `box` and returns an `ApproachRun` (`startMs` is
   optional: without it the flight's clock starts at the first `start`):
@@ -34,6 +38,8 @@ still loading.
 ## DOM
 
 - `div.approach[data-phase]`, holding
+  - `div.approach-title[aria-hidden]`, "Loading tour" (the bar's label
+    says it to a screen reader), hidden with the track;
   - `div.approach-track[role=progressbar]` with `aria-valuemin` 0,
     `aria-valuemax` 100 and `aria-valuenow`, and an `.approach-fill`
     scaled on x;
@@ -42,17 +48,24 @@ still loading.
 
 ## Invariants and assumptions
 
-- The bar's value only rises; on landing it reads 100 and the track goes.
-  A takeover hides the track without filling it.
-- The line stays while anything loads, fades once nothing does, and once
-  hidden never comes back: what loads later as the creator moves about is
-  no part of the opening.
+- The bar's value only rises; on landing it reads 100 and the track and
+  title go `BAR_DONE_MS` later, so the finish is seen. A takeover hides
+  them at once without filling the bar. `data-phase` turns "arrived" when
+  they go.
+- While flying the line names what is pending, or nothing. After the
+  arrival it keeps its last words while anything loads, and fades only
+  once nothing has been pending for `LINE_HOLD_MS` (a single frame of
+  zero counts does not end it); a load during the fade cancels it. At
+  `LINE_CAP_MS` after the arrival it fades whatever still loads. It never
+  fades while the bar shows. Once hidden it never comes back: what loads
+  later as the creator moves about is no part of the opening.
 - Under reduced motion the short arrival is used and the line goes
   without a fade.
 
 ## Tests
 
-- `globe-approach-run.test.ts` (jsdom) - the landing, the takeover, the
-  retarget, the line's hold and fade, the ARIA values, the stations held
-  while flying.
+- `globe-approach-run.test.ts` (jsdom) - the landing and the bar's beat
+  after it, the takeover, the retarget, the title and the detail line,
+  the line's hold and fade, a single quiet frame, a cancelled fade, the
+  cap, the ARIA values, the stations held while flying.
 - `playwright-tests/editor3d-globe-approach.spec.js` - in the page.

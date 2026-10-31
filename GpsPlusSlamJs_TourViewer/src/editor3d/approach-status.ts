@@ -4,17 +4,20 @@
  * enough to be read (a line that flickers between two words every frame
  * says nothing, and would flood a screen reader).
  *
- * The words never name internal concepts: "Loading tour" while the tour's
- * own objects are on their way (and while the camera flies with nothing
- * else named), "Loading textures" while the ground's imagery is, and
- * "Loading buildings" while buildings are. After the landing the line
- * names what is still missing and goes when nothing is.
+ * The box's fixed title says "Loading tour"; the line under it carries
+ * only the detail. The words never name internal concepts: "Loading
+ * stations" while the tour's own objects are on their way, "Loading
+ * textures" while the ground's imagery is, and "Loading buildings" while
+ * buildings are; nothing while nothing is named.
  *
  * @see approach-status.ts.md
  */
 
+/** The approach box's fixed title, over the bar. */
+export const APPROACH_TITLE = "Loading tour";
+
 export const APPROACH_LINES = Object.freeze({
-  tour: "Loading tour",
+  tour: "Loading stations",
   textures: "Loading textures",
   buildings: "Loading buildings",
 });
@@ -32,18 +35,15 @@ export interface ApproachPending {
 const waiting = (n: number): boolean => Number.isFinite(n) && n > 0;
 
 /**
- * The line's words for `pending`, `flying` or not, or null once nothing
- * is waiting after the flight. The tour comes first (its stations are what
- * the creator came for), then the textures, then the buildings.
+ * The line's words for `pending`, or null when nothing is waiting. The
+ * tour comes first (its stations are what the creator came for), then the
+ * textures, then the buildings.
  */
-export function approachLine(
-  pending: ApproachPending,
-  flying: boolean,
-): ApproachLine | null {
+export function approachLine(pending: ApproachPending): ApproachLine | null {
   if (waiting(pending.tour)) return APPROACH_LINES.tour;
   if (waiting(pending.textures)) return APPROACH_LINES.textures;
   if (waiting(pending.buildings)) return APPROACH_LINES.buildings;
-  return flying ? APPROACH_LINES.tour : null;
+  return null;
 }
 
 /** The hold's timing: a wording stays at least this long (ms). */
