@@ -5,6 +5,7 @@ import {
   afterFrames,
   answerHosts,
   keepRejections,
+  noApproach,
   openSampleIn3d,
   rejections,
   view3d,
@@ -29,6 +30,7 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   test.setTimeout(180_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
+  await noApproach(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
@@ -147,6 +149,7 @@ test("the sky over the tour is blue at noon and dark at its midnight", async ({
   await page.clock.setFixedTime(new Date("2026-03-20T23:14:00Z"));
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
+  await noApproach(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
@@ -243,6 +246,7 @@ test("drags a selected station's radius dot on the globe: one edit, the camera a
   test.setTimeout(180_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
+  await noApproach(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
@@ -305,54 +309,102 @@ test.describe("on a touch screen", () => {
   // twist and tilt, as in the globe lab). The editor's input used to lock
   // the camera for two fingers and read them for the OrbitControls view's
   // own gestures, which the globe view ignored: a pinch held the camera
-  // still. A pinch on the ground must move the camera.
-  test("a pinch on the ground moves the camera on the globe", async ({
-    page,
-  }) => {
-    test.setTimeout(180_000);
-    await answerHosts(page, { globeAssets: "serve" });
-    await keepRejections(page);
-    await page.goto("/edit.html?globe=1");
-    await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
-    await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
-      timeout: 120_000,
+  // still. Then the controls zoomed toward what they picked from the
+  // relief's DRAWN mesh, a point 15 km off and 5.8 km under the ground: a
+  // spread from eye height flew the camera 6 km through the ground, a
+  // close climbed 4 km. A pinch on the ground must step toward the ground
+  // under the fingers (spread) or away from it (close), by a share of the
+  // distance to it, and never take the camera under the ground. The
+  // fingers sit at the view's centre, so the ground they hold is where
+  // the line of sight meets it: the camera's height over the ground over
+  // the sine of its pitch down. Separations in CSS px, frames drawn
+  // between the moves as on a phone, both fingers down together as in the
+  // globe lab's pinch.
+  for (const pinch of [
+    { from: 60, to: 120, least: 0.05, most: 1 },
+    { from: 60, to: 300, least: 0.2, most: 1 },
+    { from: 300, to: 60, least: 0.2, most: 3 },
+  ]) {
+    const way = pinch.to > pinch.from ? "toward" : "away from";
+    test(`a pinch ${pinch.from} -> ${pinch.to} px steps ${way} the ground under the fingers`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      await answerHosts(page, { globeAssets: "serve" });
+      await keepRejections(page);
+      await noApproach(page);
+      await page.goto("/edit.html?globe=1");
+      await expect(page.locator("body")).toHaveAttribute(
+        "data-editor",
+        "ready",
+      );
+      await page.locator("#sample-btn").click();
+      await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+        timeout: 120_000,
+      });
+      await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+      await afterFrames(page, 5);
+      const box = await page.locator("#view3d canvas").boundingBox();
+      if (box === null) throw new Error("no canvas");
+      const before = await view3d(page);
+      const cdp = await page.context().newCDPSession(page);
+      /** @param {string} type @param {{x: number, y: number, id: number}[]} points */
+      const touch = (type, points) =>
+        cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      /** @param {number} apart */
+      const pair = (apart) => [
+        { x: x - apart / 2, y, id: 1 },
+        { x: x + apart / 2, y, id: 2 },
+      ];
+      await touch("touchStart", pair(pinch.from));
+      for (let i = 1; i <= 12; i++) {
+        await touch(
+          "touchMove",
+          pair(pinch.from + ((pinch.to - pinch.from) * i) / 12),
+        );
+        await afterFrames(page, 2);
+      }
+      await touch("touchEnd", []);
+      await afterFrames(page, 10);
+      const after = await view3d(page);
+      const b = before.globe;
+      const a = after.globe;
+      const overGround = b.altitudeM - b.groundUnderCameraM;
+      const down = (-b.pose.pitchDeg * Math.PI) / 180;
+      expect(down).toBeGreaterThan(0.02);
+      const toGroundM = overGround / Math.sin(down);
+      // The camera's move along its heading over the ground (m), from the
+      // change in latitude and longitude, and its change of height.
+      const mPerDeg = 111_320;
+      const northM = (a.pose.lat - b.pose.lat) * mPerDeg;
+      const eastM =
+        (a.pose.lng - b.pose.lng) *
+        mPerDeg *
+        Math.cos((b.pose.lat * Math.PI) / 180);
+      const h = (b.pose.headingDeg * Math.PI) / 180;
+      const forwardM = northM * Math.cos(h) + eastM * Math.sin(h);
+      const upM = a.altitudeM - b.altitudeM;
+      const movedM = Math.hypot(northM, eastM, upM);
+      const ratio = movedM / toGroundM;
+      const overAfter = a.altitudeM - a.groundUnderCameraM;
+      console.log(
+        `pinch ${pinch.from}->${pinch.to}: ground ${toGroundM.toFixed(2)} m ahead, moved ${movedM.toFixed(2)} m (forward ${forwardM.toFixed(2)}, up ${upM.toFixed(2)}), ratio ${ratio.toFixed(3)}, over ground ${overGround.toFixed(2)} -> ${overAfter.toFixed(2)} m`,
+      );
+      if (pinch.to > pinch.from) {
+        expect(forwardM).toBeGreaterThan(0);
+        expect(upM).toBeLessThanOrEqual(0.01);
+      } else {
+        expect(forwardM).toBeLessThan(0);
+        expect(upM).toBeGreaterThan(0);
+      }
+      expect(ratio).toBeGreaterThan(pinch.least);
+      expect(ratio).toBeLessThan(pinch.most);
+      // Never under the ground (eye mode keeps 1.7 m; a little slack for
+      // the sampled ground changing under the camera's own move).
+      expect(overAfter).toBeGreaterThan(1);
+      expect(await rejections(page)).toEqual([]);
     });
-    await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
-    await afterFrames(page, 5);
-    const box = await page.locator("#view3d canvas").boundingBox();
-    if (box === null) throw new Error("no canvas");
-    const before = await view3d(page);
-    const cdp = await page.context().newCDPSession(page);
-    /** @param {string} type @param {{x: number, y: number, id: number}[]} points */
-    const touch = (type, points) =>
-      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
-    // On the ground below the tour, the two fingers 60 px apart, opened
-    // to 300 px over twelve steps.
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height * 0.8;
-    /** @param {number} half */
-    const pair = (half) => [
-      { x: x - half, y, id: 1 },
-      { x: x + half, y, id: 2 },
-    ];
-    await touch("touchStart", [{ x: x - 30, y, id: 1 }]);
-    await touch("touchStart", pair(30));
-    for (let i = 1; i <= 12; i++) {
-      await touch("touchMove", pair(30 + i * 10));
-    }
-    await touch("touchEnd", []);
-    await afterFrames(page, 10);
-    const after = await view3d(page);
-    console.log(
-      `pinch distance ${before.distanceM.toFixed(1)} -> ${after.distanceM.toFixed(1)} m`,
-    );
-    // The controls moved the camera: before the change the input locked
-    // them and the camera stayed exactly where it was.
-    expect(after.camera).not.toEqual(before.camera);
-    expect(Math.abs(after.distanceM - before.distanceM)).toBeGreaterThan(
-      before.distanceM * 0.05,
-    );
-    expect(await rejections(page)).toEqual([]);
-  });
+  }
 });

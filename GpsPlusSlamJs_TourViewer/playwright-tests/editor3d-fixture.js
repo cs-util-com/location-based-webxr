@@ -160,3 +160,15 @@ export async function openZip(page, zip, name) {
     await chooser
   ).setFiles({ name, mimeType: "application/zip", buffer: zip });
 }
+
+/**
+ * Open the next tours straight at street level on the globe view, without
+ * the approach from high above: for a spec about the view itself, whose
+ * camera must be where the tour opens from its first frame.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function noApproach(page) {
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).__tourEditorApproach = { off: true };
+  });
+}

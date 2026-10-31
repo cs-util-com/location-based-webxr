@@ -56,6 +56,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   script) keeps the open on the map, for the specs that edit there
   (`opensIn3d()`; stripped from a production build like the other dev
   hooks).
+- **The approach on opening (globe view):** a tour opened without a
+  draft to restore, straight into the 3D view, flies in on the globe
+  view (`approachNext`, taken by the next 3D open: `globeOpening()`,
+  which also hands the view the debug layer's captures as the recorded
+  walk). A restored draft and a later switch from the map go straight
+  to the tour. In the dev server only, `window.__tourEditorApproach`
+  (`{ off?, durationMs? }`, an init script) turns it off or sets its
+  length, for the specs.
 - **File > Open…** shows the dialog with Cancel (and Esc) back to
   the open tour; the open tour stays until the new file has opened, so a
   refused file costs nothing (E1 review #4). A tour of an older format is

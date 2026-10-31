@@ -125,6 +125,40 @@ ground.
   unwritten. Before, the input locked the camera for two fingers and read
   them for the OrbitControls view's gestures, which the globe view
   ignored: two fingers held the camera still.
+- What the controls zoom toward, drag on and keep their height over is the
+  SAMPLED ground (their `groundRay` is `groundPointOfRay` of the relief),
+  the ellipsoid where none is found. They used to pick the relief's drawn
+  mesh, which put a pinch's zoom point 15 km off and 5.8 km under the
+  ground: a spread from eye height flew the camera about 6 km through the
+  ground, a close climbed about 4 km. The page's checks carry the camera's
+  pose and the sampled ground under it (`globe.pose`,
+  `globe.groundUnderCameraM`) to measure a pinch by.
+
+## The approach on opening
+
+With `deps.approach` (the page sets it for a tour opened afresh into the
+3D view, never for a restored draft or a switch from the map) the view
+flies in from high above (`globe-approach-run.ts`): each frame its pose
+is placed through `placeView` with `controls.followIntro()` instead of
+the controls' own step. The bar and the line hang in the view's box.
+
+- While it flies the stations are held back (added to what `setHidden`
+  gets); on arrival they pop in one after another (`layer.setGrowth`)
+  with a ring each on the ground (`globe-approach-marks.ts`), then the
+  recorded walk (`deps.walk()`, the captures' heights lowered by the
+  geoid) draws itself. No walk, no line.
+- The line's counts (`pendingNow`): the stations still held for upload;
+  the relief's tile loads plus the map's waiting tiles while the relief
+  carries, else the globe's pending tiles; no buildings are mounted, so
+  none are waited for.
+- Takeover: a pointerdown or a wheel on the canvas (capture phase), the
+  controls' `onTake`, the arrows, the zoom steps and the toolbar's camera
+  verbs stop the flight where it is.
+- A flight to a station (a pick in the list) while flying retargets the
+  flight (`retarget`) instead of jumping.
+- `stats().flying`, `stats().globe.approach` (the run's stats, or the
+  last run's once it ended) and `stats().globe.marks` are the page's
+  checks.
 
 ## Invariants & assumptions
 
@@ -170,4 +204,6 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   finds the globe and a station through the page's test hooks; the sky
   (blue at noon, dark at midnight); a handle drag holding the camera and
   the frame still (the frame even with the camera taken 60 km away); a
-  pinch moving the camera on a touch screen.
+  pinch on a touch screen at three separations (60 to 120, 60 to 300 and
+  300 to 60 px) stepping toward or away from the ground under the fingers
+  by a bounded share of the distance to it, never under the ground.

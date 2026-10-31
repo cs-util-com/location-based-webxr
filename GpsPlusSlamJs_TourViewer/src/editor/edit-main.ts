@@ -49,7 +49,7 @@ import {
   type TourSaveStatus,
 } from "../tour-document.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
-import { debugCapturesOf } from "../debug-captures.js";
+import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
 import { objectLook } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
@@ -280,6 +280,37 @@ function opensIn3d(): boolean {
   }
   return true;
 }
+
+/**
+ * The globe view's approach for the next 3D open, or undefined for none:
+ * set when a tour opens without a draft to restore (a restored draft goes
+ * straight to the tour), taken by the first 3D open after it. In the dev
+ * server an e2e may set `window.__tourEditorApproach` (an init script):
+ * `{ off: true }` opens at the tour as before, `{ durationMs }` sets the
+ * flight's length. Inert in a production build.
+ */
+let approachNext = false;
+function takeApproach(): { durationMs?: number } | undefined {
+  const due = approachNext;
+  approachNext = false;
+  if (!due) return undefined;
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const knob = (
+      window as {
+        __tourEditorApproach?: { off?: boolean; durationMs?: number };
+      }
+    ).__tourEditorApproach;
+    if (knob?.off === true) return undefined;
+    if (typeof knob?.durationMs === "number" && knob.durationMs > 0) {
+      return { durationMs: knob.durationMs };
+    }
+  }
+  return {};
+}
+
+/** The walk's camera captures as the debug layer last drew them, for the
+ *  3D view's walk; null while none is drawn. */
+let walkCaptures: readonly DebugCapture[] | null = null;
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -1772,6 +1803,7 @@ function startDebugLayer(): void {
     thumbnail: decodeDebugThumbnail,
     view: {
       draw: (captures) => {
+        walkCaptures = captures;
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
@@ -1781,6 +1813,7 @@ function startDebugLayer(): void {
         map.debugVisible(on);
       },
       clear: () => {
+        walkCaptures = null;
         map.debugClear();
       },
     },
@@ -2116,6 +2149,9 @@ async function openFile(
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }
+  // A tour opened afresh into the 3D view flies in; a draft to restore
+  // goes straight to it, as does a later switch from the map.
+  approachNext = drafted.offer === null && opensIn3d();
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   // After the open, never before it: the replay must not hold up the tour.
@@ -3739,6 +3775,14 @@ const shell = createEditorShell({
 });
 /** The link switch to the 3D view on the whole globe (`globe=1`). */
 const globeSwitch = readGlobeSwitch(location.search);
+/** What only the globe view takes: its approach and the recorded walk. */
+function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
+  const approach = takeApproach();
+  return {
+    ...(approach === undefined ? {} : { approach }),
+    walk: () => (walkCaptures === null ? null : walkCaptures.map((c) => c.geo)),
+  };
+}
 // Only the globe view has a sky of its own to set the clock of.
 realTimeSwitch.hidden = !globeSwitch.on;
 // View state only - no edit, nothing pending; kept for the next open.
@@ -3778,6 +3822,7 @@ const viewSwitch = createViewSwitch({
       levels: () => openedLevels,
       loadContent: readContent,
       events,
+      ...(globeSwitch.on ? globeOpening() : {}),
       edits: {
         commit: commitSceneEdit,
         select: (id) => {

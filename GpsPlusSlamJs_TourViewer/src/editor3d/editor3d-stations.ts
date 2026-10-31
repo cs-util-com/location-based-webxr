@@ -461,6 +461,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   /** What a drag shows now (`setPreview`). */
   let preview: LayerPreview | null = null;
 
+  // The arrival's growth about a station's point (`setGrowth`).
+  const growth = new THREE.Matrix4();
+  const growthScale = new THREE.Matrix4();
+  const growthBack = new THREE.Matrix4();
+
   const rootAt = (geo: { lat: number; lon: number }): THREE.Group => {
     const root = new THREE.Group();
     root.matrixAutoUpdate = false;
@@ -950,6 +955,31 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       codes.forEach((code, i) => {
         code.visible = codeShown(codeIds[i] ?? "");
       });
+    },
+    /**
+     * The globe view's arrival: each station of `scales` drawn at that
+     * scale about its point (a pop-in), every other one as the tour has it.
+     * A station a drag previews keeps the preview. A scale is held above
+     * zero (a degenerate matrix breaks the picking rays); the caller hides
+     * a station not grown yet.
+     */
+    setGrowth(scales: ReadonlyMap<string, number>) {
+      for (const entry of stations.values()) {
+        if (preview?.kind === "station" && preview.id === entry.id) continue;
+        const s = scales.get(entry.id);
+        if (s === undefined || s === 1 || !Number.isFinite(s)) {
+          entry.root.matrix.copy(entry.base);
+        } else {
+          const alt = entry.station.geo.alt;
+          const k = Math.max(1e-3, s);
+          growth
+            .makeTranslation(0, alt, 0)
+            .multiply(growthScale.makeScale(k, k, k))
+            .multiply(growthBack.makeTranslation(0, -alt, 0));
+          entry.root.matrix.multiplyMatrices(entry.base, growth);
+        }
+        entry.root.updateMatrixWorld(true);
+      }
     },
     /** Whether the codes show (the page's checks). */
     codesVisible(): boolean {

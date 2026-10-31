@@ -17,6 +17,11 @@
  * hides what is too small or too crowded on screen; under the relief's
  * ceiling the relief carries the ground, above it the globe's surface.
  *
+ * A tour opened afresh flies in from high above first
+ * (`globe-approach-run.ts`): a bar at the top follows the fall, one line
+ * says what still loads, the stations pop in on arrival and the recorded
+ * walk draws itself; any input in the view takes the camera where it is.
+ *
  * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
  * globe's camera as its `EditingCamera`: a handle drag leases the controls
  * off, and the world frame holds still while any gesture runs (the view's
@@ -59,6 +64,7 @@ import {
   type GlobeView,
   type GlobeViewAir,
 } from "gps-plus-slam-globe/view";
+import { groundPointOfRay } from "gps-plus-slam-globe/editor";
 
 import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
@@ -104,6 +110,10 @@ import {
   type GlobeHiddenSet,
   type GlobeObjectOnScreen,
 } from "./globe-editor-look.js";
+import type { ApproachPending } from "./approach-status.js";
+import { approachFlight } from "./globe-approach-flight.js";
+import { createArrivalMarks } from "./globe-approach-marks.js";
+import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
@@ -172,6 +182,10 @@ export async function openGlobeEditor(
     // The air (the blue sky, the haze over the relief), mounted once the
     // view and its relief exist; the view's sky alone is black at noon.
     let air: GlobeViewAir | null = null;
+    // The approach on opening the tour while it runs (`globe-approach-run.ts`).
+    let approach: ApproachRun | null = null;
+    /** How the last approach ended, for the page's checks. */
+    let approachEnded: ReturnType<ApproachRun["stats"]> | null = null;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -186,7 +200,15 @@ export async function openGlobeEditor(
           controls.pickFrom(
             relief ? ground.terrain.tiles.group : view.globe.tiles.group,
           );
-          controls.update();
+          // The approach places the camera while it flies; the controls
+          // take it from where it is once it lands or is taken.
+          const flying = approach?.poseAt(performance.now()) ?? null;
+          if (flying !== null) {
+            view.placeView(flying);
+            controls.followIntro();
+          } else {
+            controls.update();
+          }
           view.recentreFrame();
         },
         update: (now) => {
@@ -360,8 +382,34 @@ export async function openGlobeEditor(
     });
     undo.push(unsubscribe);
 
+    // The arrival's rings and the recorded walk, in the tour's frame.
+    const marks = createArrivalMarks(tourFrame);
+    undo.push(() => {
+      marks.dispose();
+    });
+    marks.resize(canvas.clientWidth, canvas.clientHeight);
+    /** The walk's points are read once, when the page knows them. */
+    let walkSet = false;
+    const walkPoints = (): THREE.Vector3[] | null => {
+      const captures = deps.walk?.() ?? null;
+      if (captures === null) return null;
+      const ecef = new THREE.Vector3();
+      return captures.flatMap((c) => {
+        if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return [];
+        // As a station is drawn: its height over the ellipsoid less N.
+        ellipsoid.getCartographicToPosition(
+          c.lat * DEG,
+          c.lon * DEG,
+          c.alt - undulationAt(c),
+          ecef,
+        );
+        return [ecef.clone().applyMatrix4(tourFromEcef)];
+      });
+    };
+
     const resize = new ResizeObserver(() => {
       viewportPx = Math.max(1, deps.container.clientHeight);
+      marks.resize(canvas.clientWidth, canvas.clientHeight);
       layer.group.traverse((o) => {
         if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
           resizeBillboard(o as THREE.Sprite, billboardView());
@@ -411,11 +459,17 @@ export async function openGlobeEditor(
     // radii as the items the near plane keeps clear of.
     const eyeSpheres: THREE.Sphere[] = [];
     const controls = createGlobeCameraControls(scene, camera, canvas, globe, {
-      onTake: () => undefined,
+      // The creator's own gesture ends the approach where it is.
+      onTake: () => {
+        approach?.takeOver(performance.now());
+      },
       // The editor zooms a double click itself (`zoomTowards`); the
       // library's own double-tap zoom would add a second, animated one.
       doubleTapZoom: false,
       eyeItems: () => eyeSpheres,
+      // A pinch, a drag and the wheel step toward the SAMPLED ground under
+      // the fingers: the relief's drawn mesh can lie kilometres off it.
+      groundRay: groundPointOfRay(ground.terrain),
     });
     undo.push(() => {
       controls.dispose();
@@ -477,6 +531,94 @@ export async function openGlobeEditor(
     /** The view's pose read back (its compass, tilt and verbs). */
     const poseNow = () => viewPoseOf(ellipsoid, view.ecefCamera());
 
+    /** What is still loading, for the approach's line: the stations not
+     *  uploaded yet, and the imagery of the ground's carrier now. No
+     *  buildings are drawn in this view yet, so none are waited for. */
+    const pendingNow = (held: Set<string> | null): ApproachPending => {
+      let textures: number;
+      if (relief) {
+        // The tiles library's load counts (untyped in its declarations).
+        const s = (
+          ground.terrain.tiles as unknown as {
+            stats?: { queued?: number; downloading?: number; parsing?: number };
+          }
+        ).stats;
+        const cover = ground.osm.coverage();
+        textures =
+          (s?.queued ?? 0) +
+          (s?.downloading ?? 0) +
+          (s?.parsing ?? 0) +
+          Math.max(0, cover.waiting - cover.failed);
+      } else {
+        textures = globe.state().pendingTiles;
+      }
+      return { tour: held?.size ?? 0, textures, buildings: 0 };
+    };
+
+    /**
+     * The approach's part of a frame at `now`: its bar and line stepped
+     * from the camera's altitude, the stations it holds back or grows, the
+     * rings and the walk. The stations not to draw this frame, null for
+     * none. With no approach running, the walk is drawn whole once known.
+     */
+    function approachFrame(
+      now: number,
+      held: Set<string> | null,
+      altitudeM: number,
+    ): string[] | null {
+      const stations = tourNow?.stations ?? [];
+      if (!walkSet) {
+        const points = walkPoints();
+        if (points !== null) {
+          marks.setWalk(points);
+          walkSet = true;
+        }
+      }
+      const run = approach;
+      if (run === null) {
+        marks.drawWalk(1);
+        return null;
+      }
+      run.step(now, altitudeM / 1000, pendingNow(held));
+      if (run.holdsStations()) return stations.map((s) => s.id);
+      const notYet: string[] = [];
+      const growth = new Map<string, number>();
+      stations.forEach((s, i) => {
+        const pop = run.pop(i, now);
+        const at = layer.pointOf(s.id);
+        if (pop?.ring && at !== null) {
+          const groundM = ground.groundAt(s.geo.lat * DEG, s.geo.lon * DEG);
+          marks.ring(
+            s.id,
+            new THREE.Vector3(
+              at.x,
+              groundM ?? at.y - GLOBE_EDITOR_LOOK.eyeM,
+              at.z,
+            ),
+            {
+              radius: pop.ring.radius * Math.max(1, s.foundRadiusM),
+              opacity: pop.ring.opacity,
+            },
+          );
+        } else {
+          marks.ring(s.id, null, null);
+        }
+        if (pop === null) return;
+        if (pop.scale <= 0) notYet.push(s.id);
+        else growth.set(s.id, pop.scale);
+      });
+      layer.setGrowth(growth);
+      marks.drawWalk(run.walk(now, stations.length));
+      if (run.finished(now, stations.length)) {
+        layer.setGrowth(new Map());
+        for (const s of stations) marks.ring(s.id, null, null);
+        approachEnded = run.stats();
+        run.dispose();
+        approach = null;
+      }
+      return notYet;
+    }
+
     function updateLayers(now: number): void {
       if (lastFrameAt !== null) {
         frameTimes.push(now - lastFrameAt);
@@ -527,10 +669,16 @@ export async function openGlobeEditor(
         selectedStation,
       );
       const held = unadmitted();
+      const arriving = approachFrame(now, held, altitudeM);
+      const notShown = [
+        ...hidden.stations,
+        ...(held ?? []),
+        ...(arriving ?? []),
+      ];
       layer.setHidden(
-        held === null
+        notShown.length === hidden.stations.size
           ? hidden.stations
-          : new Set([...hidden.stations, ...held]),
+          : new Set(notShown),
         hidden.codes,
       );
       layer.update({
@@ -559,13 +707,21 @@ export async function openGlobeEditor(
 
     const aimAt = (at: THREE.Vector3, radiusM: number) => {
       const place = placeOfTour(at);
-      controls.release();
-      view.placeView(
-        aimView({ lat: place.lat, lng: place.lng }, place.heightM, radiusM),
+      const goal = aimView(
+        { lat: place.lat, lng: place.lng },
+        place.heightM,
+        radiusM,
       );
+      // Mid-approach a flight to a station (a pick in the list) sends the
+      // approach there instead of jumping.
+      if (approach?.retarget(performance.now(), poseNow(), goal, place.heightM))
+        return;
+      controls.release();
+      view.placeView(goal);
       controls.followIntro();
     };
     const placePose = (change: { headingDeg?: number; pitchDeg?: number }) => {
+      approach?.takeOver(performance.now());
       const pose = poseNow();
       controls.release();
       view.placeView({ ...pose, ...change });
@@ -642,6 +798,7 @@ export async function openGlobeEditor(
       // click, more a drag the controls already had.
       clickPx: GLOBE_GESTURES.dragPx,
       stepCamera(code) {
+        approach?.takeOver(performance.now());
         const pose = poseNow();
         const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
         const aboveM = Math.max(0, pose.altitudeKm * 1000 - (groundM ?? 0));
@@ -653,6 +810,7 @@ export async function openGlobeEditor(
         // Along the ray under the pointer: what is there stays there.
         const hit = editing.groundUnder(pointer);
         if (!("at" in hit)) return;
+        approach?.takeOver(performance.now());
         controls.release();
         camera.position.lerp(
           new THREE.Vector3(hit.at.x, hit.at.y, hit.at.z),
@@ -669,10 +827,50 @@ export async function openGlobeEditor(
     // drawn height (the ground is not loaded yet).
     const centreHeightM =
       centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng });
-    view.placeView(
-      streetView({ lat: centre.lat, lng: centre.lng }, centreHeightM),
+    const street = streetView(
+      { lat: centre.lat, lng: centre.lng },
+      centreHeightM,
     );
+    // Opening a tour (not a restored draft, not a switch back from the
+    // map): the approach from high above, its bar and line over the view.
+    if (deps.approach !== undefined) {
+      const reducedMotion =
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
+        true;
+      const run = createApproachRun({
+        box: deps.container,
+        flight: approachFlight(street, centreHeightM, {
+          reducedMotion,
+          ...(deps.approach.durationMs === undefined
+            ? {}
+            : { durationMs: deps.approach.durationMs }),
+        }),
+        startMs: performance.now(),
+        reducedMotion,
+      });
+      approach = run;
+      undo.push(() => {
+        approach = null;
+        run.dispose();
+      });
+      view.placeView(run.poseAt(performance.now()) ?? street);
+    } else {
+      view.placeView(street);
+    }
     controls.followIntro();
+    /** An input in the 3D view takes the camera where it is. */
+    const takeOver = () => {
+      approach?.takeOver(performance.now());
+    };
+    canvas.addEventListener("pointerdown", takeOver, { capture: true });
+    canvas.addEventListener("wheel", takeOver, {
+      capture: true,
+      passive: true,
+    });
+    undo.push(() => {
+      canvas.removeEventListener("pointerdown", takeOver, { capture: true });
+      canvas.removeEventListener("wheel", takeOver, { capture: true });
+    });
 
     /** The tour's centre at its drawn height in the world (what the zoom
      *  and the distance are measured to, as `stats().distanceM` is; the
@@ -726,6 +924,7 @@ export async function openGlobeEditor(
         placePose({ pitchDeg: Math.min(89, Math.max(0, deg)) - 90 });
       },
       setDistance(m) {
+        approach?.takeOver(performance.now());
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
@@ -747,6 +946,7 @@ export async function openGlobeEditor(
         });
       },
       zoom(step) {
+        approach?.takeOver(performance.now());
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
@@ -784,6 +984,7 @@ export async function openGlobeEditor(
           names: !hiddenLayers.includes("names"),
           codes: !hiddenLayers.includes("codes"),
         });
+        marks.showWalk(!hiddenLayers.includes("walk"));
       },
       // The tour file's heights (ellipsoidal): the drawn ground plus N.
       centre: () => editing.centre(),
@@ -835,7 +1036,7 @@ export async function openGlobeEditor(
             cameraTour.y - centreHeightM,
             cameraTour.z,
           ),
-          flying: false,
+          flying: approach?.stats().flying ?? false,
           top,
           ground: (tourNow?.stations ?? []).map((s) => ({
             id: s.id,
@@ -845,6 +1046,10 @@ export async function openGlobeEditor(
           globe: {
             carrier: relief ? "relief" : "globe",
             altitudeM: pose.altitudeKm * 1000,
+            // Where the camera is and looks, and the sampled ground under
+            // it: what a pinch's direction and size are measured by.
+            pose,
+            groundUnderCameraM: ground.groundAt(pose.lat * DEG, pose.lng * DEG),
             frameTarget: view.frameTarget(),
             hiddenStations: [...hidden.stations],
             hiddenCodes: [...hidden.codes],
@@ -859,6 +1064,8 @@ export async function openGlobeEditor(
             },
             surface: globe.state(),
             air: air?.state() ?? null,
+            approach: approach?.stats() ?? approachEnded,
+            marks: marks.stats(),
           },
         };
       },

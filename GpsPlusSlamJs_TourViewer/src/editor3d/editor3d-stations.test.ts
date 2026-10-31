@@ -848,6 +848,45 @@ describe("createStationsLayer", () => {
     layer.dispose();
   });
 
+  // Why: the globe view's arrival pops each station in by scaling it
+  // about its own point; the point must stay where it is (a pop that
+  // scales about the root would sink the station into the Earth), the
+  // other stations must not move, and a growth of 1 must give back the
+  // tour's own matrix exactly.
+  it("grows a station about its point and puts it back exactly", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    const [rootA] = layer.stationObjects("a")!;
+    const [rootB] = layer.stationObjects("b")!;
+    const baseA = rootA!.matrix.clone();
+    const baseB = rootB!.matrix.clone();
+    const pointA = layer.pointOf("a")!.clone();
+    const alt = 515 + N;
+    const local = new THREE.Vector3(0, alt, 0);
+    layer.setGrowth(new Map([["a", 0.5]]));
+    rootA!.updateWorldMatrix(true, false);
+    const grownPoint = local.clone().applyMatrix4(rootA!.matrixWorld);
+    const basePoint = local
+      .clone()
+      .applyMatrix4(rootA!.parent!.matrixWorld.clone().multiply(baseA));
+    expect(grownPoint.distanceTo(basePoint)).toBeLessThan(1e-6);
+    // A unit step up from the point is half as long, grown by a half.
+    const up = new THREE.Vector3(0, alt + 1, 0).applyMatrix4(
+      rootA!.matrixWorld,
+    );
+    expect(up.distanceTo(grownPoint)).toBeCloseTo(0.5, 6);
+    expect(rootB!.matrix.equals(baseB)).toBe(true);
+    expect(layer.pointOf("a")!.equals(pointA)).toBe(true);
+    layer.setGrowth(new Map());
+    expect(rootA!.matrix.equals(baseA)).toBe(true);
+    layer.dispose();
+  });
+
   // Why: a selected station has no ring of its own in the gizmo - its
   // found-radius circle IS the ring its radius dots sit on - so the circle
   // must show the selection's amber, and a selected item's station a

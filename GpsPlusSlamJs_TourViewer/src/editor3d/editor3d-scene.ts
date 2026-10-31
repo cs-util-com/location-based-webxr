@@ -126,6 +126,23 @@ export interface Editor3dDeps {
    *  rejects instead). */
   readonly events: { contextLost(): void; failed(): void };
   readonly edits: Editor3dEdits;
+  /**
+   * The globe view's approach on opening a tour: given, the view flies in
+   * from high above the Earth (`durationMs` overrides the flight's length,
+   * for the page's checks only); absent, it opens at the tour. The
+   * OrbitControls view has no approach and ignores it.
+   */
+  readonly approach?: { readonly durationMs?: number };
+  /** The recorded walk's camera captures in their order (the globe view
+   *  draws them as a line after its arrival), null while none is known.
+   *  The OrbitControls view ignores it. */
+  walk?():
+    | readonly {
+        readonly lat: number;
+        readonly lon: number;
+        readonly alt: number;
+      }[]
+    | null;
 }
 
 /** A shown 3D view. */

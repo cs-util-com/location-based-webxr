@@ -81,6 +81,12 @@ standing`). A distance, size or focal length that is not a positive
     chips say; the rest follow the chips. `pick` skips any hit under a
     hidden ancestor, so a code hidden by its chip is not picked either
     (before, only the hit object's own flag was read).
+  - `setGrowth(scales)` - the globe view's arrival: each named station's
+    root grown by its scale about the station's own point (its root
+    matrix the tour's times a scale about (0, alt, 0); at least 1e-3), and
+    a station absent from the map or at 1 put back exactly to the tour's
+    matrix. A station under a preview is left alone. The billboards are
+    not scaled.
   - `dispose()` - everything out of the scene and freed.
 - `stationObjects(id)` - every object a station draws: its root (ring,
   pole, items) and its billboard once made (the billboard hangs in the

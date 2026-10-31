@@ -22,6 +22,9 @@ keys), and writes only through the page's `edits`.
     `say(text)` and `keysFree(event)`;
   - `levels()` - the open tour's codes; `loadContent(entry)` - a content
     entry's bytes;
+  - `approach` (optional, the globe view only) - fly in on opening,
+    `{ durationMs? }` to set its length; `walk()` (optional, the globe
+    view only) - the recorded walk's captures (lat, lon, alt), or null.
   - `events.contextLost()` / `events.failed()` - once the view shows, its
     WebGL context lost, or an error in a frame that stopped its drawing.
   - Rejects with an error whose `reason` is `empty` (nothing with a

@@ -134,6 +134,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **The ground menu** returns the focus to the view's box (`#view3d`,
   `tabindex="-1"`), where the window's view keys keep working; hiding the
   view closes it.
+- **The approach's bar** (`.approach`, `globe-approach-run.ts`): 10 px
+  under the view's top, centred between the docks (its width
+  `min(640px, 100% - 2 x (290 px + 12 px))`, at least 160 px), the 4 px
+  track and the 12 px line 5 px under it; at 820 px and below under the
+  docks' heads (42 px), the line 3 px under it. It takes no pointer, and
+  under reduced motion it goes without a fade.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
