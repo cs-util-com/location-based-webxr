@@ -509,10 +509,18 @@ pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
   `shownView` (`visitor-prefs.ts`) over the store's stored preference
   (`visitor-prefs-slice.ts`); a creator's carry none (rule 1).
 - `syncContent` first runs `redrawForPrefs`: when the stored preference is
-  no longer the one the parts were drawn with, every station's `items`
-  part is made again (the side table replaces it, and draws a shown
-  station's at once) and every reached story part is taken out, so the
-  next `syncStoryParts` makes them again. A choice is rare, so the rebuild
-  is whole rather than per block.
+  no longer the one the parts were drawn with, a station's `items` part is
+  made again only when one of its free blocks' `shownView` differs between
+  the old and the new value, and a reached story part only when its own
+  block's does. The side table replaces a part in place (and draws a
+  shown station's at once); a story part is never taken out first, which
+  would tear down a station holding only story parts and make it blink.
+  Every other part stands: a rebuild re-parses models, snaps a moved toy
+  back, closes a model's card and turns a lectern to its first page. The
+  same choice stored again (a new value, the same content) rebuilds
+  nothing.
 - Tests: `viewer-placement-story-blocks.test.ts` "draws a standing long
-  text again in the chosen view, and back"; the e2e `view-switch.spec.js`.
+  text again in the chosen view, and back", "keeps a station's part when
+  no block's shown view changes", "replaces a story block's part without
+  taking its station down", "keeps the choice for the next tour opened in
+  the same page"; the e2e `view-switch.spec.js`.

@@ -1006,7 +1006,10 @@ export function createViewerPlacement(deps: {
     ((station: TourStation, block: TourBlock) => ContentPart) | null = null;
   /** The reached story blocks the side table holds a part for, by part key,
    *  with their station; reset with the table. */
-  let storyParts = new Map<string, string>();
+  let storyParts = new Map<
+    string,
+    { readonly station: TourStation; readonly block: TourBlock }
+  >();
   let storyPartsTo: StationContent | null = null;
   /** A station's free blocks' part, made by `tryPlaceContent`; null
    *  before it ran. */
@@ -1015,26 +1018,38 @@ export function createViewerPlacement(deps: {
    *  draws them again (`redrawForPrefs`). */
   let prefsDrawn: unknown = null;
 
-  /** A visitor's view choice changed what a block shows (station blocks
-   *  design §4): every part is made again, and the side table draws a
-   *  shown station's replacement at once. A creator's parts never change
-   *  (rule 1). */
+  /** A visitor's view choice (station blocks design §4): a part is made
+   *  again only where a block's shown view changed, and the side table
+   *  draws a shown station's replacement at once, in place. Every other
+   *  part stands as it is: a rebuild re-parses models, snaps a moved toy
+   *  back, closes a model's card and turns a lectern to its first page. A
+   *  creator's parts never change (rule 1). */
   function redrawForPrefs(content: StationContent): void {
     if (authorMode) return;
     const stored = selectVisitorPrefs(arStore.getState());
     if (stored === prefsDrawn) return;
+    const before = prefsDrawn;
     prefsDrawn = stored;
+    const changed = (block: TourBlock): boolean =>
+      shownView({ audience: "visitor", block, stored: before }) !==
+      shownView({ audience: "visitor", block, stored });
     const items = itemsPartOf;
-    if (items === null) return;
-    for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
-      if (tourFreeBlocks(station).length === 0) continue;
-      content.setPart(station.id, "items", items(station));
+    if (items !== null) {
+      for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+        if (tourFreeBlocks(station).some(changed)) {
+          content.setPart(station.id, "items", items(station));
+        }
+      }
     }
-    // The next `syncStoryParts` makes every reached story block again.
-    for (const [key, stationId] of storyParts) {
-      content.setPart(stationId, key, null);
+    // Replaced, never taken out first: a station holding only story parts
+    // would be torn down in between, and blink.
+    const partOf = storyPartOf;
+    if (partOf === null) return;
+    for (const [key, { station, block }] of storyParts) {
+      if (changed(block)) {
+        content.setPart(station.id, key, partOf(station, block));
+      }
     }
-    storyParts = new Map();
   }
 
   /** Each reached story world block (`selectShownBlocks`) gets one part of
@@ -1048,20 +1063,20 @@ export function createViewerPlacement(deps: {
     const partOf = storyPartOf;
     if (partOf === null) return;
     const state = arStore.getState();
-    const wanted = new Map<string, string>();
+    const wanted: typeof storyParts = new Map();
     for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
       const reached = selectShownBlocks(state, station.id);
       if (reached.length === 0) continue;
       for (const block of reachedWorldBlocks(station, reached)) {
         const key = `story:${block.id}`;
-        wanted.set(key, station.id);
+        wanted.set(key, { station, block });
         if (!storyParts.has(key)) {
           content.setPart(station.id, key, partOf(station, block));
         }
       }
     }
-    for (const [key, stationId] of storyParts) {
-      if (!wanted.has(key)) content.setPart(stationId, key, null);
+    for (const [key, { station }] of storyParts) {
+      if (!wanted.has(key)) content.setPart(station.id, key, null);
     }
     storyParts = wanted;
   }

@@ -31,7 +31,7 @@ import {
   createUnwiredHooks,
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
-import { showAllContentSet } from "./visitor-guide-slice.js";
+import { guideTourChanged, showAllContentSet } from "./visitor-guide-slice.js";
 import { blockShown, walkStarted } from "./visitor-walk-slice.js";
 import { visitorViewChosen } from "./visitor-prefs-slice.js";
 
@@ -308,5 +308,193 @@ describe("a visitor's view choice", () => {
     choose(null);
     await h.sync();
     expect(nameOf()).toBe("reading-sign");
+  });
+
+  /** The object a block is drawn as, by its id (null: not drawn). */
+  function objectOf(scene: Scene, id: string): Object3D | null {
+    let found: Object3D | null = null;
+    scene.traverse((o) => {
+      if (o.userData["objectId"] === id) found = o;
+    });
+    return found;
+  }
+
+  const choose = (
+    h: ReturnType<typeof harness>,
+    view: string | null,
+  ): unknown =>
+    h.store.dispatch(
+      visitorViewChosen({ kind: "longText", placement: "world", view }),
+    );
+
+  // Why this test matters: a station's part is drawn again only when what
+  // one of its blocks shows changes. Rebuilding it otherwise re-parses its
+  // models, snaps a moved toy back, closes an open model card and turns a
+  // lectern back to its first page. The same choice stored again (a new
+  // value, the same content), and a choice a block cannot follow (a body
+  // with a picture stays a reading sign), keep the part as it stands.
+  it("keeps a station's part when no block's shown view changes", async () => {
+    const station: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "plain",
+          kind: "longText",
+          view: "reading",
+          title: "P",
+          body: "Plain words.",
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    const pictured: TourStation = {
+      ...STATION,
+      id: "mill",
+      blocks: [
+        {
+          id: "pictured",
+          kind: "longText",
+          view: "reading",
+          title: "M",
+          body: "Before.\n\n![The mill](asset:mill)",
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    const h = harness([station, pictured]);
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    const millSign = objectOf(h.scene, "pictured");
+    expect(millSign?.name).toBe("reading-sign");
+    choose(h, "lectern");
+    await h.sync();
+    const lectern = objectOf(h.scene, "plain");
+    expect(lectern?.name).toBe("lectern");
+    expect(objectOf(h.scene, "pictured"), "no picture on a lectern").toBe(
+      millSign,
+    );
+    choose(h, "lectern");
+    await h.sync();
+    expect(objectOf(h.scene, "plain"), "the same choice again").toBe(lectern);
+    expect(objectOf(h.scene, "pictured")).toBe(millSign);
+  });
+
+  // Why this test matters: a reached story block's part is replaced in
+  // place when its shown view changes. Taking it out first left a
+  // station that holds only story parts with none for a moment, which
+  // tore its whole group down: everything it showed blinked out and
+  // faded in again.
+  it("replaces a story block's part without taking its station down", async () => {
+    const station: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "essay",
+          kind: "longText",
+          view: "reading",
+          title: "E",
+          body: "Plain words.",
+          pose: POSE,
+        },
+      ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "essay" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    const h = harness([station]);
+    h.store.dispatch(
+      walkStarted({ order: "fixed", route: walkRoute([station], new Set()) }),
+    );
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    h.store.dispatch(blockShown({ stationId: "gate", blockId: "essay" }));
+    await h.sync();
+    expect(objectOf(h.scene, "essay")?.name).toBe("reading-sign");
+    const group = h.scene.getObjectByName("station-content:gate");
+    expect(group).toBeDefined();
+    choose(h, "lectern");
+    await h.sync();
+    expect(objectOf(h.scene, "essay")?.name).toBe("lectern");
+    expect(h.frames(), "replaced, not added to").toBe(1);
+    expect(
+      h.scene.getObjectByName("station-content:gate"),
+      "the station's group stood throughout",
+    ).toBe(group);
+  });
+
+  // Why this test matters: the choice is the device's, not the tour's. A
+  // visitor's page has no way to open another tour without loading the
+  // page again (the open form is a creator's), so the e2e reloads per
+  // tour; this pins the in-page half: after the tour switch's teardown
+  // (its content disposed, its guide reset) the next tour's long text is
+  // placed in the view chosen in the last one.
+  it("keeps the choice for the next tour opened in the same page", async () => {
+    const first: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "essay",
+          kind: "longText",
+          view: "reading",
+          title: "E",
+          body: "Plain words.",
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    const h = harness([first]);
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    choose(h, "lectern");
+    await h.sync();
+    expect(objectOf(h.scene, "essay")?.name).toBe("lectern");
+    // The tour switch's teardown (`archive-open.ts`), then the next tour.
+    h.ctx.stationContent?.dispose();
+    h.ctx.stationContent = null;
+    h.ctx.contentAttempted = false;
+    h.store.dispatch(guideTourChanged());
+    h.ctx.tourDocument.close();
+    h.ctx.tourDocument.open(
+      tourOf([], {
+        stations: [
+          {
+            ...first,
+            id: "keep",
+            blocks: [
+              {
+                id: "keep-essay",
+                kind: "longText",
+                view: "reading",
+                title: "K",
+                body: "Other words.",
+                pose: POSE,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    h.store.dispatch(showAllContentSet(true));
+    h.placement.tryPlaceTour();
+    await h.sync();
+    expect(objectOf(h.scene, "essay"), "the first tour's text is gone").toBe(
+      null,
+    );
+    expect(objectOf(h.scene, "keep-essay")?.name).toBe("lectern");
   });
 });
