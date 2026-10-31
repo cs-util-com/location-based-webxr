@@ -466,6 +466,17 @@ describe("withReferencedAssets", () => {
       { kind: "longText", view: "card", title: "Note", body: "Read me" },
       [],
     ],
+    [
+      // A body's pictures are named only in its Markdown, at any depth.
+      "a long text's body pictures",
+      {
+        kind: "longText",
+        view: "card",
+        title: "Note",
+        body: "Look.\n\n![The guide](asset:guide)\n\n- ![A picture](asset:picture)",
+      },
+      ["picture", "guide"],
+    ],
     ["a short text", { kind: "shortText", view: "card", caption: "Hi" }, []],
   ];
   for (const [name, block, ids] of cases) {

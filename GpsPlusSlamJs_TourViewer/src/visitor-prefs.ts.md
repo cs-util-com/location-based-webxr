@@ -20,9 +20,10 @@ defensive read and write of the one storage key.
   `silent` is not a member yet.
 - `bodyHasPictures(body)` - whether a long text's body holds a picture
   block, at any depth (in a list, in a quote); an inline picture is not
-  one. Each body is parsed once: the answers are kept by body (up to 16,
-  emptied whole when full), since the switch asks every camera frame and
-  a 32 000-character body took about 2 ms to parse on desktop Node.
+  one. Each body is parsed once: `bodyPictureAssets`
+  (`long-text-body-assets.ts`) keeps the answers by body, since the switch
+  asks every camera frame and a 32 000-character body took about 2 ms to
+  parse on desktop Node.
 - `viewNeedsFail(block, view, verdict?)` - the reason `view` cannot show
   `block` whole, or null. A lectern shows no pictures ("shows no
   pictures"); captions need a read-along that holds ("needs a timing":
@@ -85,7 +86,8 @@ saveVisitorPrefs(localStorage, stored); // false in a browser that refuses
   a choice merged into a fresh read keeps another tab's key, and builds on
   the store's value when the device cannot be read.
 - `visitor-prefs.memo.test.ts` - each body parsed once, two bodies in
-  turn included (the parser spied on).
+  turn included, and parsed again once 65 others filled the memo (the
+  parser spied on; the memo is `long-text-body-assets.ts`'s).
 - `visitor-prefs.property.test.ts` - the needs hold and the placement
   stays for any stored value; a read never rewrites it; a chosen member
   shows whenever its needs hold.

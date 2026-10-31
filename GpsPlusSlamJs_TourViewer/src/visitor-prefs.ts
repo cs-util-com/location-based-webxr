@@ -11,11 +11,8 @@
  */
 
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  parseTourMarkdown,
-  type TourMdBlock,
-} from "gps-plus-slam-app-framework/ar/tour-markdown";
 
+import { bodyPictureAssets } from "./long-text-body-assets.js";
 import type { NarrationVerdict } from "./narration-timing.js";
 
 /** The one versioned key: views per kind and placement, and later the
@@ -73,38 +70,11 @@ function setAt(kind: string, placement: string): ViewSet | null {
   return set === undefined || floor === undefined ? null : { ...set, floor };
 }
 
-function anyPicture(blocks: readonly TourMdBlock[]): boolean {
-  return blocks.some((b) => {
-    switch (b.kind) {
-      case "picture":
-        return true;
-      case "list":
-        return b.items.some(anyPicture);
-      case "quote":
-        return anyPicture(b.blocks);
-      default:
-        return false;
-    }
-  });
-}
-
-/** Bodies already judged, by body: the switch asks on every camera frame
- *  and store dispatch, and parsing a long body costs milliseconds. A few
- *  entries, so two long texts at one station never push each other out;
- *  emptied whole when full (the keys are the manifest's own strings). */
-const PICTURES_KNOWN_MAX = 16;
-const picturesByBody = new Map<string, boolean>();
-
 /** Whether a long text's body shows a picture (a picture block at any
  *  depth; an inline one shows only its alt text). Each body is parsed
- *  once (`picturesByBody`). */
+ *  once (`bodyPictureAssets` remembers it). */
 export function bodyHasPictures(body: string): boolean {
-  const known = picturesByBody.get(body);
-  if (known !== undefined) return known;
-  const has = anyPicture(parseTourMarkdown(body).blocks);
-  if (picturesByBody.size >= PICTURES_KNOWN_MAX) picturesByBody.clear();
-  picturesByBody.set(body, has);
-  return has;
+  return bodyPictureAssets(body).length > 0;
 }
 
 /**

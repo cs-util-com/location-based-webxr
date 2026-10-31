@@ -649,3 +649,52 @@ describe("finishedFileName (M6 E2a: the Finish's naming rule, shared)", () => {
     );
   });
 });
+
+describe("a long text's media survive a Finish", () => {
+  /** A free reading sign whose body shows `picture` (top level and in a
+   *  quote, so a nested picture counts too). */
+  function readingSign(
+    narration?: Extract<TourObject, { kind: "longText" }>["narration"],
+  ): TourObject {
+    return {
+      id: "essay",
+      kind: "longText",
+      view: "reading",
+      title: "The mill",
+      body: "It turned.\n\n![The wheel](asset:wheel)\n\n> ![The race](asset:race)",
+      ...(narration === undefined ? {} : { narration }),
+      createdAtIso: "2026-10-31T00:00:01.000Z",
+      geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+    };
+  }
+
+  // Why this test matters: a long text names the pictures its body shows
+  // (`![alt](asset:<id>)`) only inside its Markdown. A Finish that did not
+  // count them as used dropped their assets and DELETED their files from
+  // the zip, so every Finish silently stripped a text's pictures. Read
+  // from the zip's bytes, so a manifest that only lists them cannot pass.
+  it("keeps the files of the pictures a long text's body shows", async () => {
+    const manifest = tourOf([readingSign()], {
+      assets: [
+        { id: "wheel", path: "content/wheel.png", kind: "image" },
+        { id: "race", path: "content/race.png", kind: "image" },
+        { id: "stray", path: "content/stray.png", kind: "image" },
+      ],
+    });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        { path: `${WRAP}content/wheel.png`, data: "w" },
+        { path: `${WRAP}content/race.png`, data: "r" },
+        { path: `${WRAP}content/stray.png`, data: "s" },
+      ]),
+    );
+    const result = await rebuildFinishedTour({ tour, manifest, ...NO_EDITS });
+    const names = await namesOf(result!.blob);
+    expect(names).toContain(`${WRAP}content/wheel.png`);
+    expect(names).toContain(`${WRAP}content/race.png`);
+    expect(names).not.toContain(`${WRAP}content/stray.png`);
+    const written = await zipManifest(result!.blob);
+    expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race"]);
+  });
+});

@@ -30,8 +30,8 @@
  *   lead to it. An empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
  *   no block (a picture's image, a video and its poster, a sound, a model,
- *   a character's image and voice), no station's card image and not the
- *   cover.
+ *   a character's image and voice, a picture a long text's body shows),
+ *   no station's card image and not the cover.
  *
  * Pure.
  *
@@ -56,6 +56,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { tourShownBlockIds } from "gps-plus-slam-app-framework/ar/tour-story";
 
+import { bodyPictureAssets } from "./long-text-body-assets.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -322,13 +323,14 @@ export function keepsItself(
 }
 
 /** The assets `block` names: its media, a video's poster, a character's
- *  image and voice. A new kind fails to compile here until it says which
- *  assets it keeps. */
+ *  image and voice, the pictures a long text's body shows. A new kind
+ *  fails to compile here until it says which assets it keeps. */
 function blockAssetIds(block: TourBlock | TourObject): readonly string[] {
   switch (block.kind) {
     case "shortText":
-    case "longText":
       return [];
+    case "longText":
+      return bodyPictureAssets(block.body);
     case "picture":
       return [block.image];
     case "video":

@@ -27,14 +27,14 @@ describe("whether a body shows a picture, remembered", () => {
     expect(parsed).toHaveBeenCalledTimes(2);
   });
 
-  // Why this test matters: the memo is bounded (a tour's bodies are
+  // Why this test matters: the memo (`long-text-body-assets.ts`) is bounded to 64 bodies (a tour's bodies are
   // many, and an editor may produce endless edits of one); when it is
   // full it empties, so a body judged before is parsed again rather than
   // kept forever.
-  it("parses a body again after seventeen others filled the memo", () => {
+  it("parses a body again after sixty-five others filled the memo", () => {
     const parsed = vi.mocked(parseTourMarkdown);
     const bodies = Array.from(
-      { length: 17 },
+      { length: 65 },
       (_, i) => `Body number ${String(i)}.`,
     );
     for (const body of bodies) bodyHasPictures(body);
