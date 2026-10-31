@@ -158,6 +158,14 @@
   }
 }
 
+/* The text and the "Back to the voice" pill over its foot. */
+.lt-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
 .lt-wrap {
   position: relative;
   flex: 1;
@@ -254,6 +262,35 @@
   background-color: rgb(150 196 220 / 13%);
   color: #fdfaf3;
 }
+/* The voice's sentence and word (the prototype's amber; a highlight
+   cannot draw its 3 px spread or an underline offset). */
+::highlight(long-text-voice) {
+  background-color: rgb(242 180 90 / 16%);
+  color: #fdfaf3;
+}
+::highlight(long-text-word) {
+  color: #ffd391;
+  text-decoration: underline 2px #f2b45a;
+}
+.lt-plain .lt-text {
+  cursor: auto;
+}
+.lt-follow {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 50%;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #f6f2ea;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  color: #16171a;
+  font-size: 12.5px;
+  font-weight: 650;
+  transform: translateX(-50%);
+}
 
 .lt-ask {
   display: flex;
@@ -311,6 +348,9 @@
 .lt-fill {
   left: 0;
   width: 0;
+  background: var(--lt-amber);
+}
+.lt-silent .lt-fill {
   background: #96c4dc;
 }
 .lt-tick {
@@ -368,6 +408,16 @@
   width: 24px;
   height: 24px;
 }
+.lt-cb.lt-play {
+  width: 58px;
+  height: 58px;
+  background: var(--lt-amber);
+  color: #1a1408;
+}
+.lt-cb.lt-play svg {
+  width: 26px;
+  height: 26px;
+}
 .lt-pos {
   min-width: 120px;
   color: var(--lt-ink3);
@@ -380,6 +430,10 @@
   font-size: 11.5px;
   letter-spacing: 0.01em;
   text-align: center;
+}
+.lt-credit i {
+  color: #b8b1a4;
+  font-style: normal;
 }
 .lt-sheet svg.lt-icon-fill {
   fill: currentcolor;
@@ -405,6 +459,10 @@
   }
   .lt-foot {
     padding: 2px 14px 8px;
+  }
+  .lt-cb.lt-play {
+    width: 48px;
+    height: 48px;
   }
 }
 @media (min-aspect-ratio: 17/20) and (min-height: 520px) {

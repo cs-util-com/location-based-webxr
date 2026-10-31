@@ -1,6 +1,7 @@
 /**
  * The sentences of a rendered long text: where each one starts and ends
- * in the sheet's DOM, as `Range`s over its text nodes, so the reading
+ * in its plain text `P` and in the sheet's DOM, as `Range`s over its
+ * text nodes, so the reading
  * mark can be drawn over a sentence (the CSS Custom Highlight API) and a
  * tap can be turned into the sentence under it - without wrapping a
  * sentence in an element of its own, which the renderer's fixed element
@@ -8,6 +9,8 @@
  *
  * @see long-text-sentences.ts.md
  */
+
+import { rangeOf, type PlacedLeaf } from "./long-text-leaves.js";
 
 /** A stretch of a string, `from` inclusive, `to` exclusive. */
 export interface TextSpan {
@@ -67,103 +70,106 @@ export function sentenceSpans(text: string, lang = "en"): TextSpan[] {
   return out;
 }
 
-/** One sentence of the sheet: its text in the DOM and the paragraph
- *  (block of text) it belongs to, counted from 0. */
+/**
+ * The sentences of a plain text `P`, cut leaf by leaf (`leaves` are its
+ * paragraphs' and headings' stretches, `plainTextOf(...).leaves`), in
+ * order: the same cut `indexSentences` makes, without a DOM - what the
+ * captions strip follows the voice by.
+ */
+export function plainSentences(
+  plainText: string,
+  leaves: readonly TextSpan[],
+  lang = "en",
+): TextSpan[] {
+  const out: TextSpan[] = [];
+  for (const leaf of leaves) {
+    for (const span of sentenceSpans(
+      plainText.slice(leaf.from, leaf.to),
+      lang,
+    )) {
+      out.push({ from: leaf.from + span.from, to: leaf.from + span.to });
+    }
+  }
+  return out;
+}
+
+/** One sentence of the sheet: its stretch of `P`, its words in the
+ *  DOM, and the paragraph (leaf) it belongs to, counted from 0. */
 interface SheetSentence {
+  readonly from: number;
+  readonly to: number;
   readonly range: Range;
   readonly paragraph: number;
 }
 
 export interface SentenceIndex {
   readonly sentences: readonly SheetSentence[];
-  /** How many blocks of text hold at least one sentence. */
+  /** How many leaves (paragraphs and headings) hold at least one
+   *  sentence. */
   readonly paragraphs: number;
-  /** The first sentence of each such block. */
+  /** The first sentence of each such leaf. */
   readonly paragraphStarts: readonly number[];
 }
 
-/** The blocks of text a rendered body is read in: its paragraphs and
- *  headings (list items and quotes hold paragraphs of their own). */
-const TEXT_BLOCKS = "p, h3, h4, h5";
-
-/** A block's text and where each of its text nodes starts in it; a hard
- *  break (`br`) is a line break in the text, in no node. */
-function blockText(block: Element): {
-  readonly nodes: readonly { readonly node: Text; readonly start: number }[];
-  readonly text: string;
-} {
-  const nodes: { readonly node: Text; readonly start: number }[] = [];
-  let text = "";
-  const walker = block.ownerDocument.createTreeWalker(
-    block,
-    1 | 4 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT */,
-  );
-  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
-    if (n.nodeType === 1) {
-      if ((n as Element).localName === "br") text += "\n";
-      continue;
-    }
-    const t = n as Text;
-    nodes.push({ node: t, start: text.length });
-    text += t.data;
-  }
-  return { nodes, text };
-}
-
 /**
- * The sentences of the body rendered under `root`, in reading order.
- * `skip` names blocks that are not read (a picture's holder). A block's
- * text is the text of all its text nodes, so a sentence may run across
- * an emphasis or a link; each hard break (`br`) adds a line break to it,
- * which ends a sentence, so two lines are never read as one.
+ * The sentences of a rendered body, in reading order, cut from its plain
+ * text `P` (`plainText`, the narrator's text) leaf by leaf, so a
+ * sentence's offsets are the ones a read-along timing counts in. A
+ * sentence never runs from one paragraph or heading into the next; it
+ * may run across an emphasis or a link (its range then covers the host
+ * shown beside the link). A hard break is a line break in `P`, which ends
+ * a sentence, so two lines are never read as one. Pictures are in no
+ * leaf.
  */
 export function indexSentences(
-  root: Element,
-  skip: ReadonlySet<Element>,
+  doc: Document,
+  plainText: string,
+  leaves: readonly PlacedLeaf[],
   lang = "en",
 ): SentenceIndex {
-  const doc = root.ownerDocument;
   const sentences: SheetSentence[] = [];
   const paragraphStarts: number[] = [];
-  for (const block of root.querySelectorAll(TEXT_BLOCKS)) {
-    if (skip.has(block)) continue;
-    const { nodes, text } = blockText(block);
-    const spans = sentenceSpans(text, lang);
-    if (spans.length === 0) continue;
-    // A point in the block's text as a (node, offset) pair: the first
-    // node whose text reaches it.
-    const at = (offset: number): { node: Text; offset: number } => {
-      for (const { node, start } of nodes) {
-        if (offset <= start + node.data.length) {
-          return { node, offset: offset - start };
-        }
-      }
-      const last = nodes[nodes.length - 1];
-      return last === undefined
-        ? { node: doc.createTextNode(""), offset: 0 }
-        : { node: last.node, offset: last.node.data.length };
-    };
-    paragraphStarts.push(sentences.length);
-    const paragraph = paragraphStarts.length - 1;
-    for (const span of spans) {
-      // A start at a node's very end belongs to the next node.
-      let start = at(span.from);
-      if (start.offset === start.node.data.length) {
-        const next = nodes.find((n) => n.start === span.from);
-        if (next !== undefined) start = { node: next.node, offset: 0 };
-      }
-      const end = at(span.to);
-      const range = doc.createRange();
-      range.setStart(start.node, start.offset);
-      range.setEnd(end.node, end.offset);
-      sentences.push({ range, paragraph });
+  for (const leaf of leaves) {
+    const first = sentences.length;
+    const paragraph = paragraphStarts.length;
+    const text = plainText.slice(leaf.from, leaf.to);
+    for (const span of sentenceSpans(text, lang)) {
+      const from = leaf.from + span.from;
+      const to = leaf.from + span.to;
+      const range = rangeOf(doc, [leaf], from, to);
+      if (range !== null) sentences.push({ from, to, range, paragraph });
     }
+    if (sentences.length > first) paragraphStarts.push(first);
   }
   return {
     sentences,
     paragraphs: paragraphStarts.length,
     paragraphStarts,
   };
+}
+
+/**
+ * The sentence holding offset `at` of `P`, or, between two sentences,
+ * the one before it; -1 before the first or with none. A binary search,
+ * so a read-along can ask on every frame.
+ */
+export function sentenceHolding(
+  index: { readonly sentences: readonly TextSpan[] },
+  at: number,
+): number {
+  const { sentences } = index;
+  if (!Number.isFinite(at)) return -1;
+  let lo = 0;
+  let hi = sentences.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if ((sentences[mid]?.from ?? Infinity) <= at) {
+      found = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return found;
 }
 
 /**

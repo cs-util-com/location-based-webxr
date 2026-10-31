@@ -23,7 +23,15 @@ Design: `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`
     alt text where the picture cannot show (an inline picture, one not yet
     decoded, one over the cap or the decode budget).
 - `renderLongText(doc, { document, onLinkTap }): RenderedLongText` -
-  `{ fragment, pictures }`.
+  `{ fragment, pictures, leaves }`.
+  - `leaves` maps every paragraph and heading block (by object identity)
+    to its `RenderedLeaf`: its element, the text nodes carrying the
+    body's own words with where each starts in `raw`, and `raw`, the
+    leaf's text before the plain text's trim (soft breaks as spaces, a
+    hard break as a line break in no node, a link's text without its
+    shown host, an inline picture as nothing). `long-text-leaves.ts`
+    lays the plain text `P` over these, so a read-along offset finds
+    its words.
   - Headings render one level below the sheet's title: `#` as `h3`, `##`
     as `h4`, `###` as `h5`.
   - A soft break is a space, a hard break a `br`.

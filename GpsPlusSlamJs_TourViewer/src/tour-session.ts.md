@@ -68,9 +68,10 @@ not-checked`): a link's complete copies are checked through
   - `budget` - the archive's one `DecompressionBudget`; the creator's
     Finish passes it to `rebuildZipWithEntries` when the rebuild's input
     is this archive (K0 milestone review R1).
-  - `loadEntryText(filename)` - one entry as UTF-8 under the text cap
-    (`maxTextEntryBytes`), for JSON a caller parses itself (the hosted
-    level file, K0 milestone review R10).
+  - `loadEntryText(filename, maxBytes?)` - one entry as UTF-8 under the
+    text cap (`maxTextEntryBytes`, or `maxBytes` for an entry type with a
+    cap of its own: a read-along timing, `TOUR_TIMING_MAX_BYTES`), for JSON
+    a caller parses itself (the hosted level file, K0 milestone review R10).
     — `hasRecording` is the synchronous `actions/` pre-check
     `loadRecordingActions()` applies: the framework parser's rule
     (`tour-read-set.ts` `isActionEntryName`: an `actions/` path segment,

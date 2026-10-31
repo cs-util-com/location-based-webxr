@@ -57,10 +57,25 @@ export interface LongTextPictureSlot {
   readonly holder: HTMLElement;
 }
 
+/** A paragraph's or heading's text as rendered: its element, the text
+ *  nodes that carry the body's own words, each with where it starts in
+ *  `raw`, and `raw` itself - the leaf's text before the plain text's
+ *  trim (`plainTextOf`): soft breaks as spaces, hard breaks as line
+ *  breaks in no node, a link's text without the host shown beside it, an
+ *  inline picture's alt box as nothing. */
+export interface RenderedLeaf {
+  readonly element: HTMLElement;
+  readonly pieces: readonly { readonly node: Text; readonly start: number }[];
+  readonly raw: string;
+}
+
 export interface RenderedLongText {
   readonly fragment: DocumentFragment;
   /** The body's pictures in document order (at most the parser's 20). */
   readonly pictures: readonly LongTextPictureSlot[];
+  /** Every paragraph and heading by its parsed block (object identity),
+   *  so a plain-text offset finds its words (`long-text-leaves.ts`). */
+  readonly leaves: ReadonlyMap<TourMdBlock, RenderedLeaf>;
 }
 
 export interface LongTextRenderDeps {
@@ -90,12 +105,43 @@ export function renderLongText(
 ): RenderedLongText {
   const d = deps.document;
   const pictures: LongTextPictureSlot[] = [];
+  const leaves = new Map<TourMdBlock, RenderedLeaf>();
+  /** The leaf being rendered, while inside a paragraph or a heading. */
+  let leaf: {
+    pieces: { readonly node: Text; readonly start: number }[];
+    raw: string;
+  } | null = null;
+
+  /** A text node of the body's own words, recorded in the open leaf. */
+  function words(text: string): Text {
+    const node = d.createTextNode(text);
+    if (leaf !== null) {
+      if (text !== "") leaf.pieces.push({ node, start: leaf.raw.length });
+      leaf.raw += text;
+    }
+    return node;
+  }
 
   function inlines(parent: Node, list: readonly TourMdInline[]): void {
     for (const inline of list) {
       const node = inlineNode(inline);
       if (node !== null) parent.appendChild(node);
     }
+  }
+
+  /** A paragraph's or heading's element with its inlines, recorded. */
+  function leafElement(
+    b: TourMdBlock,
+    tag: string,
+    list: readonly TourMdInline[],
+  ): HTMLElement {
+    const element = d.createElement(tag);
+    const outer = leaf;
+    leaf = { pieces: [], raw: "" };
+    inlines(element, list);
+    leaves.set(b, { element, pieces: leaf.pieces, raw: leaf.raw });
+    leaf = outer;
+    return element;
   }
 
   function blocksInto(parent: Node, list: readonly TourMdBlock[]): void {
@@ -109,10 +155,11 @@ export function renderLongText(
   function inlineNode(inline: TourMdInline): Node | null {
     switch (inline.kind) {
       case "text":
-        return d.createTextNode(inline.text);
+        return words(inline.text);
       case "softBreak":
-        return d.createTextNode(" ");
+        return words(" ");
       case "hardBreak":
+        if (leaf !== null) leaf.raw += "\n";
         return d.createElement("br");
       case "pictureAlt": {
         const box = d.createElement("span");
@@ -154,16 +201,10 @@ export function renderLongText(
   /** A block's node, or null for a kind the renderer does not know. */
   function block(b: TourMdBlock): Node | null {
     switch (b.kind) {
-      case "paragraph": {
-        const p = d.createElement("p");
-        inlines(p, b.inlines);
-        return p;
-      }
-      case "heading": {
-        const h = d.createElement(`h${String(b.level + 2)}`);
-        inlines(h, b.inlines);
-        return h;
-      }
+      case "paragraph":
+        return leafElement(b, "p", b.inlines);
+      case "heading":
+        return leafElement(b, `h${String(b.level + 2)}`, b.inlines);
       case "list": {
         const list = d.createElement(b.ordered ? "ol" : "ul");
         if (b.ordered && b.start !== 1) {
@@ -200,7 +241,7 @@ export function renderLongText(
     ? (given as readonly TourMdBlock[])
     : [];
   blocksInto(fragment, blocks);
-  return { fragment, pictures };
+  return { fragment, pictures, leaves };
 }
 
 /** The question asked before a link leaves an AR session (design §5.3). */

@@ -8,12 +8,18 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
+import {
+  parseTourMarkdown,
+  plainTextOf,
+} from "gps-plus-slam-app-framework/ar/tour-markdown";
 
+import { placeLeaves } from "./long-text-leaves.js";
 import { renderLongText } from "./long-text-render.js";
 import {
   indexSentences,
+  plainSentences,
   sentenceAt,
+  sentenceHolding,
   sentenceSpans,
 } from "./long-text-sentences.js";
 
@@ -23,14 +29,20 @@ function texts(text: string): string[] {
 
 function rendered(body: string) {
   const host = document.createElement("article");
-  const out = renderLongText(parseTourMarkdown(body), {
+  const doc = parseTourMarkdown(body);
+  const out = renderLongText(doc, {
     document,
     onLinkTap: () => undefined,
   });
   host.appendChild(out.fragment);
   document.body.replaceChildren(host);
-  const skip = new Set<Element>(out.pictures.map((p) => p.holder));
-  return { host, index: indexSentences(host, skip) };
+  const plain = plainTextOf(doc);
+  const leaves = placeLeaves(plain, out.leaves);
+  return {
+    host,
+    plain: plain.text,
+    index: indexSentences(document, plain.text, leaves),
+  };
 }
 
 describe("sentenceSpans", () => {
@@ -124,6 +136,56 @@ describe("indexSentences", () => {
     const second = index.sentences[1]?.range;
     expect(second?.toString()).toBe("Two three.");
     expect(second?.startContainer.parentElement?.tagName).toBe("EM");
+  });
+});
+
+describe("sentences cut from the plain text", () => {
+  // Why this test matters: a read-along timing counts in offsets of the
+  // narrator's plain text P. Sentences cut from the page's DOM text (with
+  // a link's host in it) would sit at other offsets than the timing's, and
+  // the voice's sentence would be marked one stretch off after every link.
+  it("gives each sentence its stretch of P, the link host not counted", () => {
+    const { index, plain } = rendered(
+      "See [the map](https://example.org/map) here. Then *walk* on.\n\n## Inside\n\nThe hall.",
+    );
+    expect(index.sentences.map((s) => plain.slice(s.from, s.to))).toEqual([
+      "See the map here.",
+      "Then walk on.",
+      "Inside",
+      "The hall.",
+    ]);
+    // The page's own range still spans what the visitor sees.
+    expect(index.sentences[0]?.range.toString()).toBe(
+      "See the map (example.org) here.",
+    );
+  });
+
+  // Why this test matters: the captions strip follows the voice by the
+  // same sentences the sheet marks, without a DOM; a cut that differed
+  // would show one sentence in the strip while the sheet marks another.
+  it("cuts the same sentences without a DOM", () => {
+    const body =
+      "See [the map](https://example.org/map) here. Then *walk* on.\n\n## Inside\n\nThe hall.";
+    const { index, plain } = rendered(body);
+    const p = plainTextOf(parseTourMarkdown(body));
+    expect(plainSentences(p.text, p.leaves)).toEqual(
+      index.sentences.map((s) => ({ from: s.from, to: s.to })),
+    );
+    expect(plain).toBe(p.text);
+    expect(plainSentences("", [])).toEqual([]);
+  });
+
+  it("finds the sentence holding an offset, the one before a gap, and -1 before all", () => {
+    const { index, plain } = rendered("One two. Three four.\n\nFive six.");
+    expect(sentenceHolding(index, 0)).toBe(0);
+    expect(sentenceHolding(index, plain.indexOf("Three"))).toBe(1);
+    // The space between two sentences, and the blank line between leaves.
+    expect(sentenceHolding(index, plain.indexOf(" Three"))).toBe(0);
+    expect(sentenceHolding(index, plain.indexOf("\n\n") + 1)).toBe(1);
+    expect(sentenceHolding(index, plain.length + 5)).toBe(2);
+    expect(sentenceHolding(index, -1)).toBe(-1);
+    expect(sentenceHolding(index, Number.NaN)).toBe(-1);
+    expect(sentenceHolding({ sentences: [] }, 3)).toBe(-1);
   });
 });
 
