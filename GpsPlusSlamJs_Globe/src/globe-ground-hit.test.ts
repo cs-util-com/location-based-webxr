@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   GROUND_HIT,
   groundHit,
+  ellipsoidPointOfRay,
   groundPointOfRay,
   groundReachM,
   marchToGround,
@@ -560,4 +561,40 @@ describe("groundPointOfRay", () => {
     const ecef = point.clone().applyMatrix4(frame.clone().invert());
     expect(heightOf(ecef)).toBeCloseTo(516, 3);
   });
+});
+
+describe("ellipsoidPointOfRay", () => {
+  // Why: where no heights have loaded (or the sampled ground is out of
+  // reach) the camera's zoom and the controls still need a point to step
+  // toward: the ellipsoid under the ray, in the WORLD, read through the
+  // tiles' frame as it is now (the editor moves it). Swept over three
+  // camera heights; the sky has none.
+  it.each([300, 8_000, 40_000])(
+    "meets the ellipsoid from %s m through the tiles' frame, null for the sky",
+    (aboveM) => {
+      const terrain = fakeTerrain(() => null);
+      const frame = WGS84_ELLIPSOID.getEastNorthUpFrame(
+        MUNICH.lat,
+        MUNICH.lon,
+        0,
+        new THREE.Matrix4(),
+      ).invert();
+      terrain.tiles.group.matrix.copy(frame);
+      terrain.tiles.group.updateMatrixWorld(true);
+      const ray = rayFrom(0, aboveM, -30).applyMatrix4(frame);
+      const point = ellipsoidPointOfRay(terrain.tiles, ray);
+      if (point === null) throw new Error("no point");
+      const ecef = point.clone().applyMatrix4(frame.clone().invert());
+      expect(heightOf(ecef)).toBeCloseTo(0, 2);
+      // On the ray, ahead of its origin: about aboveM / sin 30 out.
+      expect(ray.distanceToPoint(point)).toBeLessThan(1e-3);
+      expect(point.distanceTo(ray.origin) / (2 * aboveM)).toBeCloseTo(1, 1);
+      expect(
+        ellipsoidPointOfRay(
+          terrain.tiles,
+          rayFrom(0, aboveM, 10).applyMatrix4(frame),
+        ),
+      ).toBeNull();
+    },
+  );
 });

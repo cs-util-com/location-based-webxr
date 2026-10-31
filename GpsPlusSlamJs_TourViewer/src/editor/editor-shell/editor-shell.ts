@@ -926,7 +926,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     );
   });
   tree.add.addEventListener("click", () => {
-    if (view !== null) deps.stations.add(view.centre(), "centre");
+    if (view === null) return;
+    const place = view.centre();
+    if (place === null) {
+      deps.say("Come closer to the ground to add a station here");
+      return;
+    }
+    deps.stations.add(place, "centre");
   });
   createTreeDrag({
     body: tree.body,

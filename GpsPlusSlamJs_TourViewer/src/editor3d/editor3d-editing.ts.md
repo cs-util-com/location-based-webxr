@@ -24,8 +24,8 @@ pure gesture maths reads (`GestureWorld`).
   - `cancel()` - a gesture under way ends unwritten.
   - `gesture()` - the handle of the gesture under way (`"key"` for a
     held key) or null; the globe holds its frame still meanwhile.
-  - `groundUnder(pointer)` - the sampled ground under a pointer, or why
-    none (the globe's double-click zoom).
+  - `rayUnder(pointer)` - the world ray under a pointer, a copy (the
+    globe's double-click zoom finds its own ground along it).
   - `centre()` - the place the view looks at (`view.lookAt()`) with
     the ground's ellipsoidal height there, or the centre's own height
     plus the geoid's N where no ground has loaded (the tree's "+").

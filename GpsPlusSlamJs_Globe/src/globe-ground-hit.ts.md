@@ -51,6 +51,11 @@
     (the default where none is loaded under it), and the tiles' frame is
     read again for every ray. The camera's controls pick with it
     (`createGlobeCameraControls`' `groundRay`).
+  - `ellipsoidPointOfRay(tiles, ray)`: where a WORLD-space ray meets the
+    ellipsoid of `tiles` (their group's frame read now), in the world, or
+    null (the sky): the fallback where no sampled ground answers (the
+    controls' pick, the editor's double-click zoom). Tested from 300 m,
+    8 km and 40 km through a moved frame.
 - What G2 (the editor's picking) uses:
   - a ray from `THREE.Raycaster.setFromCamera(ndc, camera)` (its `.ray`),
     passed to

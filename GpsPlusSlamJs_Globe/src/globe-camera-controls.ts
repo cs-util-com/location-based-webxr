@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { GlobeControls, type Ellipsoid } from "3d-tiles-renderer";
 
 import { clipPlanes } from "./globe-camera.js";
+import { ellipsoidPointOfRay } from "./globe-ground-hit.js";
 import {
   applyEyeControls,
   eyeClipPlanes,
@@ -127,18 +128,10 @@ function groundPick(
   groundRay: (ray: THREE.Ray) => THREE.Vector3 | null,
   globe: GlobeControlsGlobe,
 ): ControlsInternals["_raycast"] {
-  const toFrame = new THREE.Matrix4();
-  const local = new THREE.Ray();
   return ({ ray }) => {
     const ground = groundRay(ray);
-    let point: THREE.Vector3 | null = ground === null ? null : ground.clone();
-    if (point === null) {
-      const { group, ellipsoid } = globe.tiles;
-      toFrame.copy(group.matrixWorld).invert();
-      local.copy(ray).applyMatrix4(toFrame);
-      point = ellipsoid.intersectRay(local, new THREE.Vector3());
-      point?.applyMatrix4(group.matrixWorld);
-    }
+    const point =
+      ground === null ? ellipsoidPointOfRay(globe.tiles, ray) : ground.clone();
     return point === null
       ? null
       : { point, distance: point.distanceTo(ray.origin) };

@@ -504,8 +504,8 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     /** The handle of the gesture under way (a drag, or "key" for a held
      *  key), or null: the globe holds its frame still meanwhile. */
     gesture: () => input.gesture(),
-    /** The sampled ground under a pointer (the world), or why none. */
-    groundUnder: (pointer: ScreenPoint) => world.groundUnder(pointer),
+    /** The ray under a pointer (the world; a copy). */
+    rayUnder: (pointer: ScreenPoint) => rayAt(pointer).ray.clone(),
     /** The ground's ellipsoidal height at a place, as loaded (null where
      *  none has loaded yet). */
     groundAt: (place: { readonly lat: number; readonly lon: number }) =>

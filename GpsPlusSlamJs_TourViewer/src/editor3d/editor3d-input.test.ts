@@ -900,6 +900,39 @@ describe("the globe's extras (`globe-gestures.ts`'s routes)", () => {
     expect(u.scene.frame).toHaveBeenCalledWith("pin");
     u.input.dispose();
   });
+
+  // Why: on a phone the double tap is the double click; on the ground it
+  // did nothing (only a hit was framed), so the globe's zoom toward a
+  // point was out of a finger's reach.
+  it("zoom toward a double tap on nothing; one on an object frames it", () => {
+    const doubleTap = (t: ReturnType<typeof setup>) => {
+      for (let i = 0; i < 2; i++) {
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 7, y: 9 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer("pointerup", { x: 7, y: 9 }, { touch: true }),
+        );
+      }
+    };
+    const zooms: ScreenPoint[] = [];
+    const t = setup({ pick: null });
+    t.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    doubleTap(t);
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(t.scene.frame).not.toHaveBeenCalled();
+    t.input.dispose();
+    const u = setup({ pick: "pin" });
+    u.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    doubleTap(u);
+    expect(zooms).toHaveLength(1);
+    expect(u.scene.frame).toHaveBeenCalledWith("pin");
+    u.input.dispose();
+  });
 });
 
 describe("the globe's routing table, event by event", () => {

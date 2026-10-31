@@ -46,6 +46,7 @@ export {
 export {
   GROUND_HIT,
   groundHit,
+  ellipsoidPointOfRay,
   groundPointOfRay,
   groundReachM,
   marchToGround,

@@ -343,6 +343,22 @@ export function groundReachM(heightM: number): number {
 }
 
 /**
+ * The point where a WORLD-space ray meets the ellipsoid of `tiles` (their
+ * group's frame read now), in the world; null where it misses (the sky).
+ * The fallback where no sampled ground answers a ray: heights not loaded,
+ * or the ground out of reach.
+ */
+export function ellipsoidPointOfRay(
+  tiles: SampledTerrain["tiles"],
+  ray: THREE.Ray,
+): THREE.Vector3 | null {
+  const toTiles = tiles.group.matrixWorld.clone().invert();
+  const local = ray.clone().applyMatrix4(toTiles);
+  const point = tiles.ellipsoid.intersectRay(local, new THREE.Vector3());
+  return point === null ? null : point.applyMatrix4(tiles.group.matrixWorld);
+}
+
+/**
  * The point where a WORLD-space ray meets the sampled ground of `terrain`,
  * or null (the sky, past the horizon, heights not loaded, a ray from under
  * the ground). The reach runs to the horizon of the ray's origin

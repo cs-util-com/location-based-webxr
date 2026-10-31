@@ -427,7 +427,9 @@ export function createSceneInput(input: {
       Math.hypot(at.x - lastTap.at.x, at.y - lastTap.at.y) < INPUT.doubleTapPx
     ) {
       lastTap = null;
+      // As a double click: an object is framed, nothing zoomed toward.
       if (hit !== null) scene.frame(hit);
+      else scene.zoomTowards?.(at);
     } else {
       lastTap = { t, at };
     }

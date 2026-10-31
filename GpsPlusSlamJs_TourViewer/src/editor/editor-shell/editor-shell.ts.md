@@ -15,7 +15,9 @@ the page's and keep their logic; the shell's stylesheet
 the 3D view shows.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
-station at the centre of the view, the scene's ground menu one where it
+station at the centre of the view (where the view has none, `centre()`
+null, it says to come closer to the ground and adds nothing), the scene's
+ground menu one where it
 was pressed (`scene-menu.ts`); a card's grip reorders the tour by drag
 (`tree-drag.ts`), the inspector's Earlier and Later by the keyboard; the
 inspector's Delete and "Move to a new station"; the bottom bar's power

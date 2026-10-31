@@ -62,7 +62,8 @@ keys), and writes only through the page's `edits`.
   - `pointOf(selection)` - where it stands in the world (the page's
     checks);
   - `centre()` - the place the view looks at, on the ground (the tree's
-    "+"); `turn(selection, deg)` - one turn edit through the page (the
+    "+"; null where the view has none, which only the globe's gives,
+    high over a ground not loaded yet); `turn(selection, deg)` - one turn edit through the page (the
     bar's Align to station, the inspector's typed heading), both the
     editing's (`editor3d-editing.ts`);
   - `groundAt(place)` - the ground's ellipsoidal height at a place, null

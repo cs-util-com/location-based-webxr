@@ -93,14 +93,26 @@ ground.
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field
   changed.
-- `zoom` and `setDistance` move the camera along its line of sight,
-  measured to the tour's centre at its drawn height (the tour frame's
-  point `centreHeightM` up), as `stats().distanceM` is - not to the
-  frame's origin on the ellipsoid, which lies the tour's height under it.
+- `zoom` moves the camera along its line of sight `ZOOM_SHARE` of the
+  distance to the sampled ground under the screen's centre (to the
+  camera's horizon), `backM` at least; where none answers (the sky,
+  heights not loaded) the distance to the tour's centre at its drawn
+  height (the tour frame's point `centreHeightM` up), as
+  `stats().distanceM` is - not to the frame's origin on the ellipsoid,
+  which lies the tour's height under it. `setDistance` is measured to
+  that tour centre.
+- A step that goes down (a zoom button's, a double click's) is shortened
+  so the camera stays `eyeM` over the loaded ground under it
+  (`keepOverGround`; the ground taken as level over the step, so a slope
+  rising ahead is not seen); with no ground loaded under the camera it is
+  not shortened.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
-  has none), and `groundAt(place)` the ground there; both are the
-  editing's, in the tour file's ellipsoidal heights: the drawn ground plus
-  the geoid's N (the point's own height plus N where no ground has loaded).
+  has none), and `groundAt(place)` the ground there, in the tour file's
+  ellipsoidal heights: the drawn ground plus the geoid's N (the
+  editing's). With no ground loaded under the camera, `centre()` is the
+  camera's height less `eyeM` (plus N) at or under the relief's ceiling,
+  and null above it: the tree's "+" then says to come closer instead of
+  adding a station kilometres in the air.
 - Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
   `cancelGesture`, `handleScreen`, `gizmoSizes`, `modelParts` and
   `modelScreenOf` are the editing's. Its camera leases the globe's
@@ -115,14 +127,17 @@ ground.
   and the library's own animated double-tap zoom would add a second one.
 - The routing table's extras: an arrow with nothing selected steps the
   camera (`steppedView`, the height over the loaded ground); a double
-  click on the ground moves the camera `ZOOM_SHARE` of the way toward the
-  ground under the pointer, along its ray (what is under the pointer stays
-  there).
+  click (or a finger's double tap) on nothing moves the camera
+  `ZOOM_SHARE` of the way toward the sampled ground under the pointer,
+  along its ray (what is under the pointer stays there), reaching to the
+  camera's horizon (`groundPointOfRay`), and toward the ellipsoid where
+  no ground answers (`ellipsoidPointOfRay`: heights not loaded); a ray
+  into the sky does nothing.
 - Two fingers are the globe's controls' (their pinch, twist and tilt, as
   in the globe lab; the routing table's `fingers` row): the editing
   camera says `takesTwoFingers`, so the input leaves the controls free
   for them; a handle drag a second finger interrupts is cancelled
-  unwritten. Before, the input locked the camera for two fingers and read
+  unwritten, and the camera then stays still until every finger is up. Before, the input locked the camera for two fingers and read
   them for the OrbitControls view's gestures, which the globe view
   ignored: two fingers held the camera still.
 - What the controls zoom toward, drag on and keep their height over is the
@@ -193,8 +208,13 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   frame move releasing the controls and refreshing the editing's matrices
   (the place under the camera right after the first view and after a
   recentre), `centre` and `groundAt` with N added, the zoom and the
-  distance measured to the tour's centre at tour heights 0, 515 and
-  2,500 m, and the order of `dispose`.
+  distance measured to the tour's centre where no ground answers at tour
+  heights 0, 515 and 2,500 m, the double click's zoom from 300 m, 8 km
+  and 40 km (the ground beyond 5 km; loaded, and not), a button's step
+  50 km from the tour (to the ground ahead), no step under eye height
+  (from 1.8 to 40 m up, steep and shallow), `centre` with no ground
+  loaded either side of the relief's ceiling, and the order of
+  `dispose` (the air freed before the view).
 - `globe-editor-look.test.ts` (the pure rules), `editor3d-stations.test.ts`
   ("hides single stations and codes, and nothing hidden is picked"),
   `editor3d-terrain.test.ts` (the ECEF placement).

@@ -211,6 +211,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("the tree's add", () => {
+  // Why: the globe's view has no place for a station high above a ground
+  // that has not loaded (the place under the camera would be kilometres
+  // in the air); the "+" then says why instead of adding one there.
+  it("adds a station at the view's centre, and says why when the view has none", () => {
+    const { deps, shell } = setUp();
+    const add = () => {
+      document.getElementById("tree-add")?.click();
+    };
+    add();
+    expect(deps.stations.add).toHaveBeenCalledWith(
+      { lat: 48.1371, lon: 11.5754, alt: 560 },
+      "centre",
+    );
+    shell.show({ ...fakeView(), centre: () => null });
+    add();
+    expect(deps.stations.add).toHaveBeenCalledTimes(1);
+    expect(deps.say).toHaveBeenCalledWith(
+      "Come closer to the ground to add a station here",
+    );
+    shell.hide();
+  });
+});
+
 describe("the inspector's typed fields", () => {
   it("are written to the selection they were typed for when the selection changes", () => {
     const { select, edits, shell } = setUp();

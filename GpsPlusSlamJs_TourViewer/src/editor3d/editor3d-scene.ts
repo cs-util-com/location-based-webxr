@@ -178,8 +178,10 @@ export interface Editor3dView {
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
-  /** The place the view looks at, on the ground (the tree's "+"). */
-  centre(): GroundPlace;
+  /** The place the view looks at, on the ground (the tree's "+"); null
+   *  where the view has none to give (the globe's, high over a ground not
+   *  loaded yet). */
+  centre(): GroundPlace | null;
   /** Turn the selection `deg` clockwise about up, as one edit through the
    *  page (the bar's Align to station); false for one without a pose. */
   turn(selection: string, deg: number): boolean;

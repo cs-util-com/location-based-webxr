@@ -64,7 +64,10 @@ import {
   type GlobeView,
   type GlobeViewAir,
 } from "gps-plus-slam-globe/view";
-import { groundPointOfRay } from "gps-plus-slam-globe/editor";
+import {
+  ellipsoidPointOfRay,
+  groundPointOfRay,
+} from "gps-plus-slam-globe/editor";
 
 import { loadGlbModel } from "../glb-model.js";
 import { mountLectern } from "../lectern-view.js";
@@ -122,8 +125,8 @@ const DEG = Math.PI / 180;
 /** The size an item is framed by (m): about a pin or a photo (the
  *  OrbitControls view's). */
 const ITEM_RADIUS_M = 1.6;
-/** One zoom step moves the camera this share of its distance to what it
- *  looks at. */
+/** One zoom step (a button's, a double click's) moves the camera this
+ *  share of its distance to the ground it looks at. */
 const ZOOM_SHARE = 0.35;
 /** Top view looks this close to straight down (deg): exactly down has no
  *  heading to keep. */
@@ -458,6 +461,8 @@ export async function openGlobeEditor(
     // The camera: the globe's controls in eye mode, the stations' found
     // radii as the items the near plane keeps clear of.
     const eyeSpheres: THREE.Sphere[] = [];
+    /** The SAMPLED ground a world ray meets, to its origin's horizon. */
+    const groundPoint = groundPointOfRay(ground.terrain);
     const controls = createGlobeCameraControls(scene, camera, canvas, globe, {
       // The creator's own gesture ends the approach where it is.
       onTake: () => {
@@ -469,7 +474,7 @@ export async function openGlobeEditor(
       eyeItems: () => eyeSpheres,
       // A pinch, a drag and the wheel step toward the SAMPLED ground under
       // the fingers: the relief's drawn mesh can lie kilometres off it.
-      groundRay: groundPointOfRay(ground.terrain),
+      groundRay: groundPoint,
     });
     undo.push(() => {
       controls.dispose();
@@ -530,6 +535,28 @@ export async function openGlobeEditor(
 
     /** The view's pose read back (its compass, tilt and verbs). */
     const poseNow = () => viewPoseOf(ellipsoid, view.ecefCamera());
+
+    const up = new THREE.Vector3();
+    /**
+     * A camera move (the world) shortened so the camera stays `eyeM` over
+     * the loaded ground under it now; unchanged where none has loaded
+     * there, or where it does not go down. The ground is taken as level
+     * over the step.
+     */
+    const keepOverGround = (move: THREE.Vector3): THREE.Vector3 => {
+      const pose = poseNow();
+      const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
+      if (groundM === null) return move;
+      ellipsoid
+        .getPositionToNormal(view.ecefCamera().position, up)
+        .transformDirection(globe.group.matrixWorld);
+      const drop = -move.dot(up);
+      const room = Math.max(
+        0,
+        pose.altitudeKm * 1000 - groundM - GLOBE_EDITOR_LOOK.eyeM,
+      );
+      return drop <= room ? move : move.multiplyScalar(room / drop);
+    };
 
     /** What is still loading, for the approach's line: the stations not
      *  uploaded yet, and the imagery of the ground's carrier now. No
@@ -807,14 +834,17 @@ export async function openGlobeEditor(
         controls.followIntro();
       },
       zoomTowards(pointer) {
-        // Along the ray under the pointer: what is there stays there.
-        const hit = editing.groundUnder(pointer);
-        if (!("at" in hit)) return;
+        // Along the ray under the pointer: what is there stays there. The
+        // sampled ground to the camera's horizon, else the ellipsoid
+        // (heights not loaded there yet); the sky has neither.
+        const ray = editing.rayUnder(pointer);
+        const at =
+          groundPoint(ray) ?? ellipsoidPointOfRay(ground.terrain.tiles, ray);
+        if (at === null) return;
         approach?.takeOver(performance.now());
         controls.release();
-        camera.position.lerp(
-          new THREE.Vector3(hit.at.x, hit.at.y, hit.at.z),
-          ZOOM_SHARE,
+        camera.position.add(
+          keepOverGround(at.sub(camera.position).multiplyScalar(ZOOM_SHARE)),
         );
         camera.updateMatrixWorld();
       },
@@ -950,11 +980,19 @@ export async function openGlobeEditor(
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
-        const toTour = camera.position.distanceTo(tourTarget());
-        camera.position.addScaledVector(
-          forward,
-          step * ZOOM_SHARE * Math.max(GLOBE_EDITOR_LOOK.backM, toTour),
+        // Measured to the ground under the screen's centre; to the tour
+        // where none answers (the sky, heights not loaded).
+        const ahead = groundPoint(
+          new THREE.Ray(camera.position.clone(), forward.clone()),
         );
+        const toWhat =
+          ahead === null
+            ? camera.position.distanceTo(tourTarget())
+            : ahead.distanceTo(camera.position);
+        const move = forward.multiplyScalar(
+          step * ZOOM_SHARE * Math.max(GLOBE_EDITOR_LOOK.backM, toWhat),
+        );
+        camera.position.add(keepOverGround(move));
         camera.updateMatrixWorld();
       },
       northUp() {
@@ -987,7 +1025,21 @@ export async function openGlobeEditor(
         marks.showWalk(!hiddenLayers.includes("walk"));
       },
       // The tour file's heights (ellipsoidal): the drawn ground plus N.
-      centre: () => editing.centre(),
+      // With no ground loaded under the camera: eye height under it near
+      // the ground; none above the relief's ceiling (a station kilometres
+      // in the air is no place).
+      centre() {
+        const pose = poseNow();
+        if (ground.groundAt(pose.lat * DEG, pose.lng * DEG) !== null)
+          return editing.centre();
+        const altitudeM = pose.altitudeKm * 1000;
+        if (altitudeM > GLOBE_EDITOR_LOOK.reliefCeilingM) return null;
+        const place = { lat: pose.lat, lon: pose.lng };
+        return {
+          ...place,
+          alt: altitudeM - GLOBE_EDITOR_LOOK.eyeM + undulationAt(place),
+        };
+      },
       groundAt: (place) => editing.groundAt(place),
       origin: () => ({ lat: centre.lat, lng: centre.lng }),
       turn: (selection, deg) => editing.turn(selection, deg),
