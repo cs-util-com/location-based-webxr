@@ -29,6 +29,7 @@ import {
   arrivalDone,
   stationPop,
   walkShare,
+  type ArrivalTiming,
   type StationPop,
 } from "./approach-arrival.js";
 import {
@@ -85,6 +86,8 @@ interface ApproachRunStats {
 }
 
 export interface ApproachRun {
+  /** The arrival's timing (the short one under reduced motion). */
+  readonly timing: ArrivalTiming;
   /** Start the flight's clock at `nowMs` (the first drawn frame); later
    *  calls do nothing. Given `startMs`, the run is started already. */
   start(nowMs: number): void;
@@ -225,6 +228,7 @@ export function createApproachRun(deps: {
   };
 
   return {
+    timing,
     start(nowMs) {
       flightStart ??= nowMs;
     },

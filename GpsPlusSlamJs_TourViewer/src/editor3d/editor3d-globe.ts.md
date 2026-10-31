@@ -164,7 +164,13 @@ the controls' own step. The bar and the line hang in the view's box.
   gets); on arrival they pop in one after another (`layer.setGrowth`)
   with a ring each on the ground (`globe-approach-marks.ts`), then the
   recorded walk (`deps.walk()`, the captures' heights lowered by the
-  geoid) draws itself. No walk, no line.
+  geoid) draws itself. No walk, no line. The walk is read each frame and
+  rebuilt only when the page's array changes (`deps.walk` keeps its
+  array while the walk is unchanged); a walk that comes after the
+  arrival's walk began, or after the approach ended, draws itself from
+  when it came (`walkDrawShare`), not whole in one frame. With no
+  approach at all it is drawn whole. It follows the walk layer chip
+  (`showWalk`), not the page's debug switch.
 - The line's counts (`pendingNow`): the stations still held for upload;
   the relief's tile loads plus the map's waiting tiles while the relief
   carries, else the globe's pending tiles; no buildings are mounted, so
@@ -220,7 +226,8 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   heights 0, 515 and 2,500 m, the zoom (button and double click) walking
   forward from eye height 3 to 10 degrees down, the approach's clock
   starting at its first frame, the coverage read three to five times
-  over a second of flight, the double click's zoom from 300 m, 8 km
+  over a second of flight, a walk that comes after the approach drawn
+  from its arrival and re-read when it changes, the double click's zoom from 300 m, 8 km
   and 40 km (the ground beyond 5 km; loaded, and not), a button's step
   50 km from the tour (to the ground ahead), no step under eye height
   (from 1.8 to 40 m up, steep and shallow), `centre` with no ground

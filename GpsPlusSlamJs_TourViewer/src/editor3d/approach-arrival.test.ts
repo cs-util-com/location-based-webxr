@@ -17,6 +17,7 @@ import {
   ARRIVAL_REDUCED,
   arrivalDone,
   stationPop,
+  walkDrawShare,
   walkShare,
   walkStartMs,
 } from "./approach-arrival.js";
@@ -95,4 +96,29 @@ describe("the walk", () => {
       last = s;
     }
   });
+});
+
+describe("walkDrawShare", () => {
+  it.each([
+    ["full", ARRIVAL],
+    ["reduced", ARRIVAL_REDUCED],
+  ] as const)(
+    "draws a walk that came late from its own start over the walk's time (%s)",
+    (_name, timing) => {
+      // Why: a walk known only after the stations popped in still draws
+      // itself, from when it came, in the arrival's own walk time; and it
+      // matches the arrival's walk once that walk has begun.
+      expect(walkDrawShare(0, timing)).toBe(0);
+      expect(walkDrawShare(-5, timing)).toBe(0);
+      expect(walkDrawShare(timing.walkMs, timing)).toBe(1);
+      expect(walkDrawShare(Number.NaN, timing)).toBe(1);
+      const mid = walkDrawShare(timing.walkMs / 2, timing);
+      expect(mid).toBeGreaterThan(0);
+      expect(mid).toBeLessThan(1);
+      const start = walkStartMs(3, timing);
+      expect(walkDrawShare(timing.walkMs / 2, timing)).toBeCloseTo(
+        walkShare(start + timing.walkMs / 2, 3, timing),
+      );
+    },
+  );
 });

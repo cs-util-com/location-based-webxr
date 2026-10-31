@@ -59,8 +59,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The approach on opening (globe view):** a tour opened without a
   draft to restore, straight into the 3D view, flies in on the globe
   view (`approachNext`, taken by the next 3D open: `globeOpening()`,
-  which also hands the view the debug layer's captures as the recorded
-  walk). A restored draft and a later switch from the map go straight
+  which also hands the view the recorded walk: the tour's own captures
+  as its debug layer last drew them, one array per drawing so the view
+  sees a change by identity. Debug data added from elsewhere never
+  becomes the 3D walk (it may be another tour's); the tour's own walk is
+  kept while it shows. The 3D walk follows the view's own walk layer
+  chip, not the debug switch, which hides the map's capture dots only).
+  The page's filter has no unit test of its own; the view's side is in
+  `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
   to the tour. In the dev server only, `window.__tourEditorApproach`
   (`{ off?, durationMs? }`, an init script) turns it off or sets its
   length, for the specs.

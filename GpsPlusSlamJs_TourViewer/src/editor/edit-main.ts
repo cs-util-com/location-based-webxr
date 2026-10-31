@@ -308,9 +308,11 @@ function takeApproach(): { durationMs?: number } | undefined {
   return {};
 }
 
-/** The walk's camera captures as the debug layer last drew them, for the
- *  3D view's walk; null while none is drawn. */
-let walkCaptures: readonly DebugCapture[] | null = null;
+/** The tour's own recorded walk as its debug layer last drew it, for the
+ *  3D view's walk: one array per drawing, so the view sees a new walk by
+ *  its identity. Debug data added from elsewhere never sets it (it may be
+ *  another tour's walk); null while none is drawn. */
+let walkGeo: readonly DebugCapture["geo"][] | null = null;
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -1791,7 +1793,10 @@ function forgetAddedDebug(): void {
 function startDebugLayer(): void {
   debugLayer?.stop();
   debugLayer = null;
+  // The tour's own walk is kept while added debug data is shown.
+  if (addedDebug === null) walkGeo = null;
   const from = debugSource();
+  const ownWalk = from !== null && from.source === tourWalk;
   debugSwitch.hidden = from === null;
   debugStatus.textContent = from?.line ?? "";
   if (from === null) return;
@@ -1803,7 +1808,7 @@ function startDebugLayer(): void {
     thumbnail: decodeDebugThumbnail,
     view: {
       draw: (captures) => {
-        walkCaptures = captures;
+        if (ownWalk) walkGeo = captures.map((c) => c.geo);
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
@@ -1813,7 +1818,6 @@ function startDebugLayer(): void {
         map.debugVisible(on);
       },
       clear: () => {
-        walkCaptures = null;
         map.debugClear();
       },
     },
@@ -3780,7 +3784,7 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
   const approach = takeApproach();
   return {
     ...(approach === undefined ? {} : { approach }),
-    walk: () => (walkCaptures === null ? null : walkCaptures.map((c) => c.geo)),
+    walk: () => walkGeo,
   };
 }
 // Only the globe view has a sky of its own to set the clock of.

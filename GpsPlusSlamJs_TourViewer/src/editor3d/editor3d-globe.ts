@@ -115,6 +115,11 @@ import {
 } from "./globe-editor-look.js";
 import type { ApproachPending } from "./approach-status.js";
 import { approachFlight } from "./globe-approach-flight.js";
+import {
+  ARRIVAL,
+  walkDrawShare,
+  type ArrivalTiming,
+} from "./approach-arrival.js";
 import { createArrivalMarks } from "./globe-approach-marks.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
@@ -192,6 +197,8 @@ export async function openGlobeEditor(
     let approach: ApproachRun | null = null;
     /** How the last approach ended, for the page's checks. */
     let approachEnded: ReturnType<ApproachRun["stats"]> | null = null;
+    /** The arrival's timing of the approach (reduced motion or not). */
+    let arrivalTiming: ArrivalTiming = ARRIVAL;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -396,11 +403,16 @@ export async function openGlobeEditor(
       marks.dispose();
     });
     marks.resize(canvas.clientWidth, canvas.clientHeight);
-    /** The walk's points are read once, when the page knows them. */
-    let walkSet = false;
-    const walkPoints = (): THREE.Vector3[] | null => {
-      const captures = deps.walk?.() ?? null;
-      if (captures === null) return null;
+    type WalkCaptures = ReturnType<NonNullable<Editor3dDeps["walk"]>>;
+    /** The walk as last read from the page: a new array is a new walk
+     *  (`deps.walk` keeps its array while the walk is unchanged). */
+    let walkFrom: WalkCaptures | undefined;
+    /** When a walk that came after the stations popped in began drawing;
+     *  null when the arrival draws it (or there is none). */
+    let lateWalkAt: number | null = null;
+    const walkPoints = (
+      captures: NonNullable<WalkCaptures>,
+    ): THREE.Vector3[] => {
       const ecef = new THREE.Vector3();
       return captures.flatMap((c) => {
         if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return [];
@@ -605,6 +617,32 @@ export async function openGlobeEditor(
       return { tour: held?.size ?? 0, textures, buildings: 0 };
     };
 
+    /** The page's walk read again when its array changed. After the
+     *  arrival's walk began (or the approach ended) a walk that comes now
+     *  draws itself from now, not whole in one frame. */
+    function readWalk(now: number, run: ApproachRun | null, stations: number) {
+      const captures = deps.walk?.() ?? null;
+      if (captures === walkFrom) return;
+      walkFrom = captures;
+      marks.setWalk(captures === null ? null : walkPoints(captures));
+      const begun =
+        run === null ? approachEnded !== null : run.walk(now, stations) > 0;
+      lateWalkAt = captures !== null && begun ? now : null;
+    }
+
+    /** The share of the walk to draw at `now`: a late walk's own, else the
+     *  arrival's, whole with no approach running. */
+    function walkShareAt(
+      now: number,
+      run: ApproachRun | null,
+      stations: number,
+    ): number {
+      if (lateWalkAt !== null) {
+        return walkDrawShare(now - lateWalkAt, arrivalTiming);
+      }
+      return run === null ? 1 : run.walk(now, stations);
+    }
+
     /**
      * The approach's part of a frame at `now`: its bar and line stepped
      * from the camera's altitude, the stations it holds back or grows, the
@@ -617,16 +655,10 @@ export async function openGlobeEditor(
       altitudeM: number,
     ): string[] | null {
       const stations = tourNow?.stations ?? [];
-      if (!walkSet) {
-        const points = walkPoints();
-        if (points !== null) {
-          marks.setWalk(points);
-          walkSet = true;
-        }
-      }
       const run = approach;
+      readWalk(now, run, stations.length);
       if (run === null) {
-        marks.drawWalk(1);
+        marks.drawWalk(walkShareAt(now, null, 0));
         return null;
       }
       run.step(now, altitudeM / 1000, pendingNow(held, now));
@@ -658,7 +690,7 @@ export async function openGlobeEditor(
         else growth.set(s.id, pop.scale);
       });
       layer.setGrowth(growth);
-      marks.drawWalk(run.walk(now, stations.length));
+      marks.drawWalk(walkShareAt(now, run, stations.length));
       if (run.finished(now, stations.length)) {
         layer.setGrowth(new Map());
         for (const s of stations) marks.ring(s.id, null, null);
@@ -900,6 +932,7 @@ export async function openGlobeEditor(
         }),
         reducedMotion,
       });
+      arrivalTiming = run.timing;
       approach = run;
       undo.push(() => {
         approach = null;

@@ -120,6 +120,16 @@ export function walkShare(
   );
 }
 
+/** The share of a walk drawn `elapsedMs` after it began drawing (0 to 1,
+ *  eased out, over the walk's time): for a walk that came after the
+ *  stations popped in, drawn from when it came. */
+export function walkDrawShare(
+  elapsedMs: number,
+  timing: ArrivalTiming = ARRIVAL,
+): number {
+  return easeOut(share(elapsedMs, 0, timing.walkMs));
+}
+
 /** Whether the arrival is over (every pop, ring and the walk). */
 export function arrivalDone(
   elapsedMs: number,

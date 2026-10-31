@@ -19,6 +19,8 @@ still loading.
 - `createApproachRun({ box, flight, startMs, reducedMotion })` mounts the
   bar and the line in `box` and returns an `ApproachRun` (`startMs` is
   optional: without it the flight's clock starts at the first `start`):
+  - `timing` - the arrival's timing (the short one under reduced
+    motion), for a walk the view draws after the arrival;
   - `start(nowMs)` - the first drawn frame starts the clock (later calls
     do nothing); before it the flight is at its first pose;
   - `poseAt(nowMs)` - the camera's pose while flying, else null;

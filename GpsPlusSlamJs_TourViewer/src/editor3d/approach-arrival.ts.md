@@ -19,6 +19,7 @@ tour has one.
   0 before its turn and eases with an overshoot to 1; the ring
   `{ radius, opacity }` while it spreads, else null.
 - `walkStartMs(stations, timing)`, `walkShare(elapsed, stations, t)` (0 to 1, eased) and `arrivalDone(elapsedMs, stations, timing)`.
+- `walkDrawShare(elapsedMs, timing)` - the share of a walk drawn `elapsedMs` after it began drawing (0 to 1, eased over `walkMs`), for a walk that came after the stations popped in; the same curve as `walkShare` from its start.
 
 ## Invariants and assumptions
 
@@ -28,5 +29,5 @@ tour has one.
 
 ## Tests
 
-- `approach-arrival.test.ts` - the order, the end, reduced motion, swept
+- `approach-arrival.test.ts` - the late walk's share (both timings), the order, the end, reduced motion, swept
   over 1, 3, 12 and 60 stations and the stagger at 0.5, 1 and 2 times.

@@ -76,4 +76,37 @@ describe("createArrivalMarks", () => {
     expect(line.visible).toBe(false);
     marks.dispose();
   });
+
+  it("builds the walk's line once and reveals it by its share", () => {
+    // Why: the walk draws itself over many frames; a geometry made anew
+    // each frame is a GPU upload and a garbage object per frame for a
+    // line whose points never change. One geometry, its segments shown
+    // up to the share and the last one cut where the share ends.
+    const parent = new THREE.Group();
+    const marks = createArrivalMarks(parent);
+    marks.setWalk([v(0, 0), v(10, 0), v(10, 10), v(0, 10)]);
+    marks.drawWalk(0.1);
+    const line = parent.getObjectByName("approach-walk") as THREE.Mesh;
+    const geometry = line.geometry as THREE.InstancedBufferGeometry;
+    const end = () => geometry.getAttribute("instanceEnd");
+    expect(geometry.instanceCount).toBe(1);
+    expect(end().getX(0)).toBeCloseTo(3, 6);
+    marks.drawWalk(0.5);
+    expect(parent.getObjectByName("approach-walk")).toBe(line);
+    expect(line.geometry).toBe(geometry);
+    expect(geometry.instanceCount).toBe(2);
+    expect([end().getX(0), end().getZ(0)]).toEqual([10, 0]);
+    expect(end().getZ(1)).toBeCloseTo(5, 6);
+    expect(marks.stats().walkDrawn).toBe(3);
+    marks.drawWalk(1);
+    expect(line.geometry).toBe(geometry);
+    expect(geometry.instanceCount).toBe(3);
+    expect([end().getX(1), end().getZ(1)]).toEqual([10, 10]);
+    expect([end().getX(2), end().getZ(2)]).toEqual([0, 10]);
+    expect(marks.stats().walkDrawn).toBe(4);
+    marks.drawWalk(0);
+    expect(line.visible).toBe(false);
+    expect(marks.stats().walkDrawn).toBe(0);
+    marks.dispose();
+  });
 });

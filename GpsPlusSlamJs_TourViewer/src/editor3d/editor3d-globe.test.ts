@@ -696,6 +696,48 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.coverageCalls).toBeLessThanOrEqual(5);
   });
 
+  // Why: the page learns the recorded walk only once its captures are
+  // replayed, often after the stations popped in, and learns it again
+  // when they are replayed anew. The view read it once: a walk that came
+  // late appeared whole in one frame, and a changed walk was never drawn.
+  // It is re-read when the page's array changes (by identity, so an
+  // unchanged walk is not rebuilt each frame) and a late one draws itself
+  // from when it came.
+  it("re-reads the walk when it changes and draws a late walk as it arrives", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    let walkNow: { lat: number; lon: number; alt: number }[] | null = null;
+    const capturesOf = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        lat: MUNICH.lat + i * 1e-4,
+        lon: MUNICH.lon,
+        alt: N,
+      }));
+    await openAt(0, {
+      approach: { durationMs: 1_000 },
+      walk: () => walkNow,
+    });
+    for (now = 0; now < 6_000; now += 1000 / 60) frameAt(now);
+    const marks = () =>
+      open?.stats().globe?.marks as
+        { walkPoints: number; walkDrawn: number } | undefined;
+    expect(open?.stats().flying).toBe(false);
+    expect(marks()?.walkPoints).toBe(0);
+    walkNow = capturesOf(3);
+    frameAt(now);
+    expect(marks()?.walkPoints).toBe(3);
+    expect(marks()?.walkDrawn).toBeLessThan(3);
+    const cameAt = now;
+    for (; now < cameAt + 3_000; now += 1000 / 60) frameAt(now);
+    expect(marks()?.walkDrawn).toBe(3);
+    // The same array again: nothing is rebuilt, the walk stays whole.
+    frameAt(now + 16);
+    expect(marks()?.walkDrawn).toBe(3);
+    walkNow = capturesOf(4);
+    frameAt(now + 32);
+    expect(marks()?.walkPoints).toBe(4);
+  });
+
   // Why: a frame drawn while the view is being freed draws with freed
   // parts; and the loss dispose forces must not reach the page as a lost
   // context. The air (its sky and haze passes) is freed too, before the

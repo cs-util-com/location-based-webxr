@@ -7,9 +7,11 @@
  * recentre of the globe's frame moves nothing.
  *
  * The walk's line is three's screen-space line (`Line2`), 3 px wide in
- * the shell's accent colour, as the chosen prototype draws its route; a
- * share of it is drawn by cutting the polyline at that share of its
- * length.
+ * the shell's accent colour, as the chosen prototype draws its route. Its
+ * geometry is built once per walk; a share of it is drawn by showing the
+ * segments up to that share of its length and cutting the last one there
+ * (its end point written in place), so a frame of the walk's drawing
+ * uploads one point, not a new line.
  *
  * @see globe-approach-marks.ts.md
  */
@@ -99,10 +101,26 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
     depthWrite: false,
   });
   let walk: THREE.Vector3[] = [];
+  /** The walk's length up to each point (`along[0]` 0). */
+  let along: number[] = [];
   let line: Line2 | null = null;
+  /** The segment whose end is cut, null for none. */
+  let cutSegment: number | null = null;
   let drawn = 0;
   let drawnShare = -1;
   let walkOn = true;
+
+  /** The segments' end points, as the line's geometry holds them. */
+  const endsOf = (l: Line2) =>
+    l.geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
+
+  /** The cut segment's end put back where the walk has it. */
+  const uncut = (l: Line2) => {
+    if (cutSegment === null) return;
+    const b = walk[cutSegment + 1]!;
+    endsOf(l).setXYZ(cutSegment, b.x, b.y, b.z);
+    cutSegment = null;
+  };
 
   const dropLine = () => {
     if (line === null) return;
@@ -142,29 +160,64 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
     },
     setWalk(points) {
       walk = (points ?? []).map((p) => p.clone().setY(p.y + WALK_LIFT_M));
+      along = [0];
+      for (let i = 1; i < walk.length; i++) {
+        along.push(along[i - 1]! + walk[i]!.distanceTo(walk[i - 1]!));
+      }
       drawn = 0;
       drawnShare = -1;
+      cutSegment = null;
       dropLine();
+      const total = along[along.length - 1] ?? 0;
+      if (walk.length < 2 || !(total > 0)) return;
+      const geometry = new LineGeometry();
+      geometry.setPositions(walk.flatMap((p) => [p.x, p.y, p.z]));
+      geometry.instanceCount = 0;
+      line = new Line2(geometry, lineMaterial);
+      line.name = "approach-walk";
+      line.visible = false;
+      line.computeLineDistances();
+      group.add(line);
     },
     drawWalk(share) {
       const k = Math.min(1, Math.max(0, Number.isFinite(share) ? share : 1));
       if (k === drawnShare) return;
       drawnShare = k;
-      const part = walkPrefix(walk, k);
-      drawn = part.length;
-      dropLine();
-      if (part.length < 2) return;
-      const geometry = new LineGeometry();
-      geometry.setPositions(part.flatMap((p) => [p.x, p.y, p.z]));
-      line = new Line2(geometry, lineMaterial);
-      line.name = "approach-walk";
-      line.visible = walkOn;
-      line.computeLineDistances();
-      group.add(line);
+      const l = line;
+      if (l === null) {
+        drawn = 0;
+        return;
+      }
+      uncut(l);
+      const ends = endsOf(l);
+      if (!(k > 0)) {
+        drawn = 0;
+        l.geometry.instanceCount = 0;
+        l.visible = false;
+        ends.data.needsUpdate = true;
+        return;
+      }
+      // The first segment whose end reaches the drawn length, as
+      // `walkPrefix` cuts it.
+      const left = along[along.length - 1]! * k;
+      let i = 0;
+      while (i < walk.length - 2 && along[i + 1]! < left) i++;
+      const a = walk[i]!;
+      const b = walk[i + 1]!;
+      const d = along[i + 1]! - along[i]!;
+      if (k < 1) {
+        const at = a.clone().lerp(b, d === 0 ? 1 : (left - along[i]!) / d);
+        ends.setXYZ(i, at.x, at.y, at.z);
+        cutSegment = i;
+      }
+      ends.data.needsUpdate = true;
+      l.geometry.instanceCount = i + 1;
+      l.visible = walkOn;
+      drawn = i + 2;
     },
     showWalk(on) {
       walkOn = on;
-      if (line !== null) line.visible = on;
+      if (line !== null) line.visible = on && drawn > 0;
     },
     resize(widthPx, heightPx) {
       lineMaterial.resolution.set(Math.max(1, widthPx), Math.max(1, heightPx));
