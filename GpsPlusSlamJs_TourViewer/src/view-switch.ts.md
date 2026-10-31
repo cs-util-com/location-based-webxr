@@ -12,11 +12,15 @@ and offers "Use the creator's choice again" while a choice is stored.
 
 ## Public API
 
-- `viewSwitchModel(blocks, stored)` - pure: the model for a station's
+- `viewSwitchModel(blocks, stored, verdictOf?)` - pure: the model for a station's
   free blocks (`kind`, `placement`, `current` label, `chosen`,
   `preferred` (the stored choice or null), `rows` with `view`, `label`,
   `line`, `tag`, `disabled`, `on`), or null when no block is in a set.
-  The FIRST block in a set describes the switch.
+  The FIRST block in a set describes the switch. `verdictOf(block)`
+  gives a text's read-along verdict: the captions row is offered while a
+  timing holds and greyed "needs a timing" otherwise, and the reading
+  row's line becomes "The whole text in a sheet, the voice highlighted"
+  for a text whose timing holds.
 - `switchBlocks({ stations, presentId, contentPlaced })` - pure: the
   present station's free blocks once its content is placed, else none
   (no station, an unknown id, content not placed yet). `main.ts` passes
@@ -25,7 +29,7 @@ and offers "Use the creator's choice again" while a choice is stored.
 - `createViewSwitch({ host, read, choose, say })` - mounts the switch in
   `host`, hidden until `sync()` finds a model.
   - `read()` gives the present station's free blocks (none outside a
-    station) and the stored value.
+    station), the stored value and, optionally, `verdictOf`.
   - `choose(kind, placement, view | null)` stores the choice and returns
     whether the device keeps it.
   - `say(text)` tells the visitor: "Lectern from now on, for every long

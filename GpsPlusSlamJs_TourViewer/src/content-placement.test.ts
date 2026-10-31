@@ -765,8 +765,9 @@ describe("renderTourStation", () => {
 
   // Why (station blocks, the visitor's view preference): the visitor's
   // page draws a block in the view `viewOf` names (a reading sign as a
-  // stand, design §4) at the same pose; a view no world drawing has is
-  // nothing, and without `viewOf` the creator's view is drawn.
+  // stand, design §4) at the same pose; a visitor's captions stand as the
+  // reading sign (the strip is the page's); a view no world drawing has
+  // is nothing, and without `viewOf` the creator's view is drawn.
   it("draws a block in the view viewOf names, at the same pose", async () => {
     const scene = new Group();
     const station = stationAt(
@@ -812,12 +813,15 @@ describe("renderTourStation", () => {
     swapped.dispose();
     const none = await renderTourStation(station, {
       ...deps,
-      viewOf: () => "captions",
+      viewOf: () => "silent",
     });
     expect(none.count).toBe(0);
     none.dispose();
+    (
+      await renderTourStation(station, { ...deps, viewOf: () => "captions" })
+    ).dispose();
     (await renderTourStation(station, deps)).dispose();
-    expect(drawn).toEqual(["lectern:sign", "reading:sign"]);
+    expect(drawn).toEqual(["lectern:sign", "reading:sign", "reading:sign"]);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

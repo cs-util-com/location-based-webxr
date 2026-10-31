@@ -191,5 +191,9 @@ the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.
   sign draws as a lectern for a visitor who chose it. The pose, the id and
   everything else stay the block's; without `viewOf` (the creator, the 3D
   editor) every block draws in its own view.
+- A long text stands in the world in `lectern`, `reading` and `captions`
+  (`LONG_TEXT_WORLD_VIEWS`). `captions` is a visitor's view only (by
+  `viewOf`): its world part is the reading sign, and the strip itself is
+  the page's (`captions-strip.ts`). Any other view draws nothing.
 - Tests: `content-placement.test.ts` "draws a block in the view viewOf
   names, at the same pose".

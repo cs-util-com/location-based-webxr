@@ -33,11 +33,11 @@ const WITH_PICTURE = "Before.\n\n![The gate](asset:gate)\n\nAfter.";
 describe("the view sets", () => {
   // Why this test matters: the switch offers exactly a set, and a view in
   // no set (the story's `card`) must never be swapped (design §2.4, §3.2).
-  it("puts reading and lectern in one world set, with reading as its floor", () => {
+  it("puts reading, lectern and captions in one world set, with reading as its floor", () => {
     expect(viewSetOf("longText", "lectern")).toEqual({
       kind: "longText",
       placement: "world",
-      members: ["reading", "lectern"],
+      members: ["reading", "lectern", "captions"],
       floor: "reading",
     });
     expect(viewSetOf("longText", "card")).toBeNull();
@@ -67,6 +67,57 @@ describe("a view's needs", () => {
   });
 });
 
+describe("the captions' needs", () => {
+  const narrated = (timing?: string): TourBlock =>
+    ({
+      ...longText("reading"),
+      narration: {
+        audio: "voice",
+        synthetic: false,
+        ...(timing === undefined ? {} : { timing }),
+      },
+    }) as TourBlock;
+
+  // Why this test matters: captions follow the voice by its read-along
+  // timing, so a text without one, or whose timing was found stale, must
+  // never show the strip; and since the timing is read only when its text
+  // opens, a verdict not known yet must count as holding, or captions
+  // could never be chosen before a first visit read it.
+  it("needs a timing that is not found stale", () => {
+    expect(viewNeedsFail(longText("reading"), "captions")).toBe(
+      "needs a timing",
+    );
+    expect(viewNeedsFail(narrated(), "captions")).toBe("needs a timing");
+    const timed = narrated("timing/t.json");
+    expect(viewNeedsFail(timed, "captions")).toBe(null);
+    for (const v of ["unread", "pending", "live"] as const) {
+      expect(viewNeedsFail(timed, "captions", v)).toBe(null);
+    }
+    expect(viewNeedsFail(timed, "captions", "stale")).toBe("needs a timing");
+    // The verdict concerns captions only.
+    expect(viewNeedsFail(timed, "reading", "stale")).toBe(null);
+  });
+
+  // Why this test matters: a visitor who chose captions sees them on a
+  // text whose timing holds, and the creator's view on one whose timing
+  // is stale (rules 3-4), never an empty strip.
+  it("shows captions where chosen and the timing holds, else the creator's view", () => {
+    const stored = withPreferredView(null, "longText", "world", "captions");
+    const block = narrated("timing/t.json");
+    expect(shownView({ audience: "visitor", block, stored })).toBe("captions");
+    expect(
+      shownView({ audience: "visitor", block, stored, verdict: "live" }),
+    ).toBe("captions");
+    expect(
+      shownView({ audience: "visitor", block, stored, verdict: "stale" }),
+    ).toBe("reading");
+    expect(
+      shownView({ audience: "visitor", block: longText("lectern"), stored }),
+    ).toBe("lectern");
+    expect(shownView({ audience: "creator", block, stored })).toBe("reading");
+  });
+});
+
 describe("the stored preference, read defensively", () => {
   // Why this test matters: another version of the app may share this
   // device's storage; anything this one cannot use is ignored, never an
@@ -81,7 +132,7 @@ describe("the stored preference, read defensively", () => {
       { views: "lectern" },
       { views: { longText: "lectern" } },
       { views: { longText: { world: 7 } } },
-      { views: { longText: { world: "captions" } } },
+      { views: { longText: { world: "silent" } } },
       { views: { longText: { world: "card" } } },
       { views: { longText: { world: "toString" } } },
       { views: { longText: { screen: "lectern" } } },

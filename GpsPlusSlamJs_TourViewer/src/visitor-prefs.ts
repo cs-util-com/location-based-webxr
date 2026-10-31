@@ -16,6 +16,8 @@ import {
   type TourMdBlock,
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
+import type { NarrationVerdict } from "./narration-timing.js";
+
 /** The one versioned key: views per kind and placement, and later the
  *  video's sound and captions choices (design §4). */
 export const VISITOR_PREFS_KEY = "tour-viewer.visitor.prefs.v1";
@@ -36,12 +38,20 @@ export interface ViewSet {
 
 /**
  * The interchangeable sets this reader draws (design §3.2). A set lists
- * only views with a renderer here: the long text's screen set
- * (`silent`, `captions`) joins with those views. Each set's FIRST member
- * is its floor, whose needs always hold.
+ * only views with a renderer here; `silent` joins with its view. Each
+ * set's FIRST member is its floor, whose needs always hold.
+ *
+ * `captions` is a visitor's member only: no creator's view names it (a
+ * creator places a text; the strip is how a visitor follows its voice),
+ * so it joins the world set it is chosen from. Its world drawing is the
+ * reading sign; the strip is the page's (`captions-strip.ts`).
  */
 const VIEW_SETS: readonly Omit<ViewSet, "floor">[] = [
-  { kind: "longText", placement: "world", members: ["reading", "lectern"] },
+  {
+    kind: "longText",
+    placement: "world",
+    members: ["reading", "lectern", "captions"],
+  },
 ];
 
 /** The set `view` of `kind` belongs to, or null (a story's `card`, a kind
@@ -100,15 +110,26 @@ export function bodyHasPictures(body: string): boolean {
 /**
  * Why `view` cannot show `block` whole, as the switch says it, or null
  * when its needs hold. The lectern shows the plain text only, so a body
- * with pictures would lose them there.
+ * with pictures would lose them there. Captions follow the voice by its
+ * read-along timing: a text that declares none, or whose timing was
+ * found stale (`verdict`, `narration-timing.ts`), cannot show them. A
+ * verdict not known yet counts as holding: the timing is read only when
+ * the text opens, and a stale one then moves the text back.
  */
-export function viewNeedsFail(block: TourBlock, view: string): string | null {
-  if (
-    block.kind === "longText" &&
-    view === "lectern" &&
-    bodyHasPictures(block.body)
-  ) {
+export function viewNeedsFail(
+  block: TourBlock,
+  view: string,
+  verdict?: NarrationVerdict,
+): string | null {
+  if (block.kind !== "longText") return null;
+  if (view === "lectern" && bodyHasPictures(block.body)) {
     return "shows no pictures";
+  }
+  if (
+    view === "captions" &&
+    (block.narration?.timing === undefined || verdict === "stale")
+  ) {
+    return "needs a timing";
   }
   return null;
 }
@@ -181,8 +202,10 @@ export function shownView(input: {
   readonly audience: ViewAudience;
   readonly block: TourBlock;
   readonly stored: unknown;
+  /** The block's read-along verdict, where the page knows it. */
+  readonly verdict?: NarrationVerdict;
 }): string {
-  const { block } = input;
+  const { block, verdict } = input;
   if (input.audience !== "visitor") return block.view;
   const set = viewSetOf(block.kind, block.view);
   if (set === null) return block.view;
@@ -190,7 +213,7 @@ export function shownView(input: {
     creator: block.view,
     preferred: preferredView(input.stored, block.kind, set.placement),
     floor: set.floor,
-    fails: (view) => viewNeedsFail(block, view) !== null,
+    fails: (view) => viewNeedsFail(block, view, verdict) !== null,
   });
 }
 

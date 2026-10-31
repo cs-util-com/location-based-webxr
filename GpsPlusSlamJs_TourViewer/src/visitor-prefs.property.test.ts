@@ -3,7 +3,8 @@
  * preference function"): for ANY stored value (garbage included), any
  * creator view and any block, the view shown has its needs met, stays in
  * the creator's view's placement, is the creator's view outside every set
- * and for the creator, and reading never rewrites what is stored.
+ * and for the creator, and reading never rewrites what is stored - for
+ * any narration and any read-along verdict too.
  */
 
 import fc from "fast-check";
@@ -34,7 +35,11 @@ const body = fc.oneof(
   ),
 );
 
-function longTextBlock(view: string, text: string): TourBlock {
+function longTextBlock(
+  view: string,
+  text: string,
+  narration: "none" | "voice" | "timed",
+): TourBlock {
   return {
     id: "t",
     kind: "longText",
@@ -42,16 +47,44 @@ function longTextBlock(view: string, text: string): TourBlock {
     title: "T",
     body: text,
     pose: POSE,
+    ...(narration === "none"
+      ? {}
+      : {
+          narration: {
+            audio: "v",
+            synthetic: false,
+            ...(narration === "timed" ? { timing: "timing/t.json" } : {}),
+          },
+        }),
   } as TourBlock;
 }
+
+/** A read-along verdict, or none known. */
+const verdict = fc.option(
+  fc.constantFrom(
+    "none" as const,
+    "unread" as const,
+    "pending" as const,
+    "live" as const,
+    "stale" as const,
+  ),
+  { nil: undefined },
+);
 
 const block: fc.Arbitrary<TourBlock> = fc.oneof(
   fc
     .record({
       view: fc.constantFrom(...TOUR_BLOCK_VIEWS.longText),
       body,
+      narration: fc.constantFrom(
+        "none" as const,
+        "voice" as const,
+        "timed" as const,
+      ),
     })
-    .map(({ view, body: text }) => longTextBlock(view, text)),
+    .map(({ view, body: text, narration }) =>
+      longTextBlock(view, text, narration),
+    ),
   fc.constantFrom<TourBlock>(
     {
       id: "p",
@@ -73,8 +106,8 @@ const block: fc.Arbitrary<TourBlock> = fc.oneof(
 
 /** Stored values: anything, and well-formed values with any view names. */
 const viewName = fc.oneof(
-  { arbitrary: fc.constantFrom("reading", "lectern"), weight: 4 },
-  fc.constantFrom("card", "captions", "silent", "pin"),
+  { arbitrary: fc.constantFrom("reading", "lectern", "captions"), weight: 4 },
+  fc.constantFrom("card", "silent", "pin"),
   fc.string({ maxLength: 8 }),
 );
 const stored = fc.oneof(
@@ -103,8 +136,13 @@ describe("the preference function's promises", () => {
   // lectern losing a body's pictures); the switch must never cause that.
   it("shows a view whose needs hold, in the creator's view's placement", () => {
     fc.assert(
-      fc.property(audience, block, stored, (who, b, s) => {
-        const shown = shownView({ audience: who, block: b, stored: s });
+      fc.property(audience, block, stored, verdict, (who, b, s, v) => {
+        const shown = shownView({
+          audience: who,
+          block: b,
+          stored: s,
+          ...(v === undefined ? {} : { verdict: v }),
+        });
         const set = viewSetOf(b.kind, b.view);
         // A creator, and a view in no set: the creator's own view. Else
         // its needs hold, and it never moves a block between the world
@@ -112,7 +150,7 @@ describe("the preference function's promises", () => {
         const holds =
           who === "creator" || set === null
             ? shown === b.view
-            : viewNeedsFail(b, shown) === null &&
+            : viewNeedsFail(b, shown, v) === null &&
               viewSetOf(b.kind, shown)?.placement === set.placement &&
               set.members.includes(shown);
         expect(holds, `${who} ${b.view} shows ${shown}`).toBe(true);
@@ -142,8 +180,9 @@ describe("the preference function's promises", () => {
       fc.property(
         block,
         stored,
-        fc.constantFrom("reading", "lectern"),
-        (b, s, v) => {
+        fc.constantFrom("reading", "lectern", "captions"),
+        verdict,
+        (b, s, v, known) => {
           const set = viewSetOf(b.kind, b.view);
           fc.pre(set !== null);
           const next = withPreferredView(s, b.kind, "world", v);
@@ -151,9 +190,10 @@ describe("the preference function's promises", () => {
             audience: "visitor",
             block: b,
             stored: next,
+            ...(known === undefined ? {} : { verdict: known }),
           });
           const holds =
-            viewNeedsFail(b, v) === null ? shown === v : shown !== v;
+            viewNeedsFail(b, v, known) === null ? shown === v : shown !== v;
           expect(holds, `${v} chosen, ${shown} shown`).toBe(true);
         },
       ),

@@ -62,6 +62,7 @@ describe("the switch's model", () => {
     expect(model?.rows.map((r) => [r.view, r.tag, r.disabled, r.on])).toEqual([
       ["reading", "creator's choice", false, true],
       ["lectern", "shows no pictures", true, false],
+      ["captions", "needs a timing", true, false],
     ]);
     const plain = viewSwitchModel([longText("t", "lectern")], null);
     expect(plain?.current).toBe("Lectern");
@@ -69,7 +70,43 @@ describe("the switch's model", () => {
     expect(plain?.rows.map((r) => [r.view, r.tag, r.on])).toEqual([
       ["reading", "", false],
       ["lectern", "creator's choice", true],
+      ["captions", "needs a timing", false],
     ]);
+  });
+
+  // Why this test matters: the captions row is the visitor's way to the
+  // strip; it must be offered on a text whose timing holds (or is not
+  // read yet) and greyed "needs a timing" once it is found stale, and the
+  // reading row must promise the highlight only where there is one.
+  it("offers captions while a timing holds, and greys them once it is stale", () => {
+    const narrated = {
+      ...longText("t", "reading"),
+      narration: { audio: "v", synthetic: false, timing: "timing/t.json" },
+    } as TourBlock;
+    const stored = withPreferredView(null, "longText", "world", "captions");
+    const live = viewSwitchModel([narrated], stored, () => "live");
+    expect(live?.current).toBe("Captions");
+    expect(live?.rows.map((r) => [r.view, r.tag, r.disabled, r.on])).toEqual([
+      ["reading", "creator's choice", false, false],
+      ["lectern", "", false, false],
+      ["captions", "", false, true],
+    ]);
+    expect(live?.rows[0]?.line).toBe(
+      "The whole text in a sheet, the voice highlighted",
+    );
+    expect(live?.rows[2]?.line).toBe(
+      "A few lines at a time with the voice, eyes on the place",
+    );
+    const stale = viewSwitchModel([narrated], stored, () => "stale");
+    expect(stale?.current).toBe("Reading");
+    expect(stale?.rows[2]).toMatchObject({
+      tag: "needs a timing",
+      disabled: true,
+      on: false,
+    });
+    expect(stale?.rows[0]?.line).toBe(
+      "The whole text in a sheet, read at your own pace",
+    );
   });
 });
 

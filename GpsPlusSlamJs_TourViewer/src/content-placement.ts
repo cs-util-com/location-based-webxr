@@ -422,7 +422,17 @@ type Drawn =
     }
   | { readonly id: string; readonly as: "none" };
 
-/** A long text as its reading stand or its reading sign draws it. */
+/** The views a long text stands in the world in; `captions` is a
+ *  visitor's (`viewOf`), never a creator's. */
+const LONG_TEXT_WORLD_VIEWS: ReadonlySet<string> = new Set([
+  "lectern",
+  "reading",
+  "captions",
+]);
+
+/** A long text as its reading stand or its reading sign draws it. A
+ *  visitor's captions stand in the world as the reading sign; the strip
+ *  itself is the page's. */
 function longTextOf(text: {
   readonly id: string;
   readonly view: string;
@@ -431,7 +441,10 @@ function longTextOf(text: {
 }): Drawn {
   return {
     id: text.id,
-    as: text.view === "reading" ? "reading" : "lectern",
+    as:
+      text.view === "reading" || text.view === "captions"
+        ? "reading"
+        : "lectern",
     title: text.title,
     body: text.body,
   };
@@ -460,10 +473,7 @@ function drawnBlock(
   if (block.kind === "shortText" && block.view === "pin") {
     return { id: block.id, as: "label", text: block.caption };
   }
-  if (
-    block.kind === "longText" &&
-    (block.view === "lectern" || block.view === "reading")
-  ) {
+  if (block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(block.view)) {
     return longTextOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {

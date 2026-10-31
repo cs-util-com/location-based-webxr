@@ -59,6 +59,7 @@ import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
 import { selectVisitorPrefs } from "./visitor-prefs-slice.js";
+import type { NarrationVerdict } from "./narration-timing.js";
 import { shownView } from "./visitor-prefs.js";
 import type {
   TourBlock,
@@ -192,6 +193,14 @@ export function createViewerPlacement(deps: {
    *  until item photos join the prefetch. Absent: the
    *  open tour's own read. */
   loadContent?: (path: string) => Promise<Blob>;
+  /** A text's read-along verdict, which a visitor's captions need
+   *  (`narration-visitor.ts`), and a count bumped whenever one settles:
+   *  a text whose captions turn out stale is drawn again in the view it
+   *  falls back to. Absent: no verdict is known. */
+  narration?: {
+    verdictOf(block: TourBlock): NarrationVerdict | undefined;
+    revision(): number;
+  };
 }): ViewerPlacement {
   const {
     ctx,
@@ -1017,22 +1026,41 @@ export function createViewerPlacement(deps: {
   /** The visitor's stored preference the parts were drawn with: a choice
    *  draws them again (`redrawForPrefs`). */
   let prefsDrawn: unknown = null;
+  /** The read-along count the parts were drawn at. */
+  let verdictsDrawn = 0;
+  /** The view each block was last drawn in, by block id. */
+  const viewsDrawn = new Map<string, string>();
+
+  /** The view a visitor sees `block` in, now. */
+  function visitorView(block: TourBlock, stored: unknown): string {
+    const verdict = deps.narration?.verdictOf(block);
+    return shownView({
+      audience: "visitor",
+      block,
+      stored,
+      ...(verdict === undefined ? {} : { verdict }),
+    });
+  }
 
   /** A visitor's view choice (station blocks design §4): a part is made
    *  again only where a block's shown view changed, and the side table
    *  draws a shown station's replacement at once, in place. Every other
    *  part stands as it is: a rebuild re-parses models, snaps a moved toy
    *  back, closes a model's card and turns a lectern to its first page. A
-   *  creator's parts never change (rule 1). */
+   *  creator's parts never change (rule 1). A settled read-along is
+   *  looked at the same way: captions found stale fall back to another
+   *  view. */
   function redrawForPrefs(content: StationContent): void {
     if (authorMode) return;
     const stored = selectVisitorPrefs(arStore.getState());
-    if (stored === prefsDrawn) return;
+    const verdicts = deps.narration?.revision() ?? 0;
+    if (stored === prefsDrawn && verdicts === verdictsDrawn) return;
     const before = prefsDrawn;
     prefsDrawn = stored;
+    verdictsDrawn = verdicts;
     const changed = (block: TourBlock): boolean =>
-      shownView({ audience: "visitor", block, stored: before }) !==
-      shownView({ audience: "visitor", block, stored });
+      (viewsDrawn.get(block.id) ?? visitorView(block, before)) !==
+      visitorView(block, stored);
     const items = itemsPartOf;
     if (items !== null) {
       for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
@@ -1150,15 +1178,19 @@ export function createViewerPlacement(deps: {
       ...(authorMode
         ? {}
         : {
-            viewOf: (block: TourBlock) =>
-              shownView({
-                audience: "visitor",
+            viewOf: (block: TourBlock) => {
+              const view = visitorView(
                 block,
-                stored: selectVisitorPrefs(arStore.getState()),
-              }),
+                selectVisitorPrefs(arStore.getState()),
+              );
+              viewsDrawn.set(block.id, view);
+              return view;
+            },
           }),
     });
     prefsDrawn = selectVisitorPrefs(arStore.getState());
+    verdictsDrawn = deps.narration?.revision() ?? 0;
+    viewsDrawn.clear();
     itemsPartOf = (station) => {
       // One group per station, its pins and photos as children at their
       // local poses (tour editor plan W3).

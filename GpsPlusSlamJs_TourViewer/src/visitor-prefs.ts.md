@@ -13,20 +13,27 @@ defensive read and write of the one storage key.
   device.
 - `viewSetOf(kind, view)` - the `ViewSet` (`kind`, `placement` world or
   screen, `members`, `floor`) a view belongs to, or null. Today one set:
-  a long text's world views `reading` and `lectern`; `reading` is its
-  floor. The screen set (`silent`, `captions`) joins with those views.
+  a long text's world views `reading`, `lectern` and `captions`;
+  `reading` is its floor. `captions` is a visitor's view only (a creator
+  places a reading sign or a lectern; the strip is how a visitor follows
+  the same text by its voice), and its world part is the reading sign.
+  `silent` is not a member yet.
 - `bodyHasPictures(body)` - whether a long text's body holds a picture
   block, at any depth (in a list, in a quote); an inline picture is not
   one. Each body is parsed once: the answers are kept by body (up to 16,
   emptied whole when full), since the switch asks every camera frame and
   a 32 000-character body took about 2 ms to parse on desktop Node.
-- `viewNeedsFail(block, view)` - the reason `view` cannot show `block`
-  whole, or null. A lectern shows no pictures ("shows no pictures").
+- `viewNeedsFail(block, view, verdict?)` - the reason `view` cannot show
+  `block` whole, or null. A lectern shows no pictures ("shows no
+  pictures"); captions need a read-along that holds ("needs a timing":
+  no `narration.timing`, or a `stale` verdict). Captions do not fail on
+  pictures: "Full text" opens the sheet, which shows them.
 - `preferredView(stored, kind, placement)` - the stored choice, or null
   for anything unreadable.
 - `withPreferredView(stored, kind, placement, view | null)` - a NEW value
   with that choice set (null clears it); every other key is kept.
-- `shownView({ audience, block, stored })` - the view shown:
+- `shownView({ audience, block, stored, verdict? })` - the view shown
+  (`verdict` is the text's read-along verdict, `narration-timing.ts`):
   1. a creator sees their own choice;
   2. a view in no set is the creator's (the preference is kept, not
      applied);
@@ -57,6 +64,10 @@ defensive read and write of the one storage key.
 - A consequence of rules 4 and 5: a creator's lectern over a body with
   pictures shows as a reading sign to a visitor even without a choice,
   since a lectern cannot show the pictures.
+- Captions whose timing turns out stale fall back by rules 4 and 5, so to
+  the creator's view (which may be a lectern), not always to reading as
+  the prototype does; an unread or pending timing still counts as
+  holding, so the strip's first frame does not flicker to another view.
 
 ## Examples
 

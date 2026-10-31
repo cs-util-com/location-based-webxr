@@ -33,7 +33,12 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { guideTourChanged, showAllContentSet } from "./visitor-guide-slice.js";
 import { blockShown, walkStarted } from "./visitor-walk-slice.js";
-import { visitorViewChosen } from "./visitor-prefs-slice.js";
+import type { NarrationVerdict } from "./narration-timing.js";
+import {
+  visitorPrefsLoaded,
+  visitorViewChosen,
+} from "./visitor-prefs-slice.js";
+import { withPreferredView } from "./visitor-prefs.js";
 
 const fake = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -124,7 +129,13 @@ const flush = async (): Promise<void> => {
   for (let i = 0; i < 50; i += 1) await Promise.resolve();
 };
 
-function harness(stations: readonly TourStation[] = [STATION]) {
+function harness(
+  stations: readonly TourStation[] = [STATION],
+  narration?: {
+    verdictOf(block: unknown): NarrationVerdict | undefined;
+    revision(): number;
+  },
+) {
   fake.configs.length = 0;
   const ctx = createTourViewerSession();
   const level: QrLevel = {
@@ -176,6 +187,7 @@ function harness(stations: readonly TourStation[] = [STATION]) {
     } as unknown as HTMLButtonElement,
     hooks: createUnwiredHooks(),
     now: () => 1000,
+    ...(narration === undefined ? {} : { narration }),
   });
   placement.startViewerPipeline();
   const config = fake.configs[0];
@@ -308,6 +320,68 @@ describe("a visitor's view choice", () => {
     choose(null);
     await h.sync();
     expect(nameOf()).toBe("reading-sign");
+  });
+
+  // Why this test matters: captions are chosen before the text's
+  // read-along has been read; when it turns out stale the text must fall
+  // back to the creator's view in the world. Nothing but the settled
+  // read-along changes then (no choice, no new placement), so the part is
+  // drawn again only if the narration's revision is looked at.
+  it("draws a captions text again in the creator's view once its read-along turns out stale", async () => {
+    const station: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "essay",
+          kind: "longText",
+          view: "lectern",
+          title: "E",
+          body: "Plain words.",
+          narration: {
+            audio: "voice",
+            timing: "timing/essay.json",
+            synthetic: true,
+          },
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    let verdict: NarrationVerdict = "live";
+    let revision = 0;
+    const h = harness([station], {
+      verdictOf: () => verdict,
+      revision: () => revision,
+    });
+    h.store.dispatch(
+      visitorPrefsLoaded(
+        withPreferredView(null, "longText", "world", "captions"),
+      ),
+    );
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    const nameOf = (): string | undefined => {
+      let name: string | undefined;
+      h.scene.traverse((o) => {
+        if (o.userData["objectId"] === "essay") name = o.name;
+      });
+      return name;
+    };
+    expect(nameOf(), "captions draw the reading sign in the world").toBe(
+      "reading-sign",
+    );
+    verdict = "stale";
+    await h.sync();
+    expect(nameOf(), "nothing settled yet: the part stands").toBe(
+      "reading-sign",
+    );
+    revision = 1;
+    await h.sync();
+    expect(nameOf()).toBe("lectern");
+    expect(h.frames(), "the old part is replaced, not added to").toBe(1);
   });
 
   /** The object a block is drawn as, by its id (null: not drawn). */

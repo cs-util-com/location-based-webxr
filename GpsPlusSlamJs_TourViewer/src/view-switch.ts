@@ -17,6 +17,7 @@ import type {
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import "./view-switch.css";
+import type { NarrationVerdict } from "./narration-timing.js";
 import {
   preferredView,
   shownView,
@@ -25,8 +26,8 @@ import {
   type ViewPlacement,
 } from "./visitor-prefs.js";
 
-/** What each member is called, and its one line (the prototype's copy,
- *  without the narration it does not have here). */
+/** What each member is called, and its one line (the prototype's copy;
+ *  reading's line for a text with a read-along is `READING_NARRATED`). */
 const VIEW_COPY: Readonly<Record<string, { label: string; line: string }>> = {
   reading: {
     label: "Reading",
@@ -36,7 +37,34 @@ const VIEW_COPY: Readonly<Record<string, { label: string; line: string }>> = {
     label: "Lectern",
     line: "A reading stand in place, read up close",
   },
+  captions: {
+    label: "Captions",
+    line: "A few lines at a time with the voice, eyes on the place",
+  },
 };
+
+const READING_NARRATED = "The whole text in a sheet, the voice highlighted";
+
+/** A block's read-along verdict, where the page knows it. */
+export type VerdictOf = (block: TourBlock) => NarrationVerdict | undefined;
+
+/** Whether `block` is a text whose voice the sheet highlights (a timing
+ *  declared and not found stale). */
+function readsAlong(
+  block: TourBlock,
+  verdict: NarrationVerdict | undefined,
+): boolean {
+  return (
+    block.kind === "longText" &&
+    block.narration?.timing !== undefined &&
+    verdict !== "stale"
+  );
+}
+
+function lineOf(view: string, narrated: boolean): string {
+  if (view === "reading" && narrated) return READING_NARRATED;
+  return VIEW_COPY[view]?.line ?? "";
+}
 
 /** What a kind is called in the toast ("for every long text"). */
 const KIND_NOUN: Readonly<Record<string, string>> = { longText: "long text" };
@@ -78,16 +106,25 @@ function nounOf(kind: string): string {
 /**
  * The switch for a station's blocks, or null when none is in a set. The
  * FIRST block in a set describes it; a choice applies to every block of
- * that kind at that placement, each through `shownView`.
+ * that kind at that placement, each through `shownView`. `verdictOf`
+ * gives a text's read-along verdict, which captions need.
  */
 export function viewSwitchModel(
   blocks: readonly TourBlock[],
   stored: unknown,
+  verdictOf?: VerdictOf,
 ): ViewSwitchModel | null {
   for (const block of blocks) {
     const set = viewSetOf(block.kind, block.view);
     if (set === null) continue;
-    const shown = shownView({ audience: "visitor", block, stored });
+    const verdict = verdictOf?.(block);
+    const shown = shownView({
+      audience: "visitor",
+      block,
+      stored,
+      ...(verdict === undefined ? {} : { verdict }),
+    });
+    const narrated = readsAlong(block, verdict);
     const preferred = preferredView(stored, block.kind, set.placement);
     return {
       kind: block.kind,
@@ -96,13 +133,13 @@ export function viewSwitchModel(
       chosen: preferred !== null,
       preferred,
       rows: set.members.map((view) => {
-        const fail = viewNeedsFail(block, view);
+        const fail = viewNeedsFail(block, view, verdict);
         const tags = view === block.view ? [CREATOR_TAG] : [];
         if (fail !== null) tags.push(fail);
         return {
           view,
           label: labelOf(view),
-          line: VIEW_COPY[view]?.line ?? "",
+          line: lineOf(view, narrated),
           tag: tags.join(", "),
           disabled: fail !== null,
           on: view === shown,
@@ -132,8 +169,12 @@ export interface ViewSwitchDeps {
   /** Where the switch is mounted (the AR overlay root). */
   readonly host: HTMLElement;
   /** The present station's free blocks (empty outside a station) and
-   *  the stored preference. */
-  read(): { readonly blocks: readonly TourBlock[]; readonly stored: unknown };
+   *  the stored preference, and a text's read-along verdict where known. */
+  read(): {
+    readonly blocks: readonly TourBlock[];
+    readonly stored: unknown;
+    readonly verdictOf?: VerdictOf;
+  };
   /** Stores a choice (null: the creator's again); returns whether the
    *  device keeps it (false: it lasts the visit). */
   choose(kind: string, placement: ViewPlacement, view: string | null): boolean;
@@ -269,8 +310,8 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
   }
 
   function sync(): void {
-    const { blocks, stored } = deps.read();
-    model = viewSwitchModel(blocks, stored);
+    const { blocks, stored, verdictOf } = deps.read();
+    model = viewSwitchModel(blocks, stored, verdictOf);
     const key = model === null ? "" : JSON.stringify(model);
     if (key === drawnKey) return;
     drawnKey = key;

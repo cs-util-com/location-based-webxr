@@ -69,6 +69,16 @@ listed in `index.html.md`. The concerns and their modules:
   reading stands in `routeVisitorTap`'s order), with the station's line
   above the title (`readingSheetContent`), and closes it in
   `hooks.stopStations`.
+- `narration-visitor.ts`, `captions-strip.ts` and `captions-follow.ts` -
+  a narrated long text: `main.ts` builds one narration visitor for the
+  open tour (each text's voice, its read-along read when the text opens),
+  hands the sheet its voice in `openLongText` (the block found by id in
+  the open tour), and gives the viewer placement and the view switch its
+  `verdictOf`. In visitor mode it builds the captions strip under
+  `#ar-root` and its follower; `hooks.tickStations` ticks the sheet's
+  marks and syncs the follower each frame, and `hooks.stopStations` stops
+  the follower and pauses every voice. The strip's "Full text" opens the
+  same sheet.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
