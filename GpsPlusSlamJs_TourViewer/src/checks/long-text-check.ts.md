@@ -17,6 +17,17 @@ headings, a nested list with strong text, a link to
 in the page); `?ar=1` makes the sheet behave as during an AR session, so
 a link asks before it opens.
 
+Three more for a narrated text: `?voice=timed` gives it a voice and a
+word read-along that fits it, `?voice=stale` one whose text hash is of
+other words; both run through the visitor's own narration
+(`narration-visitor.ts`), with a stand-in clock that stands still until
+moved (no sound plays) and a timing made in the page the way the
+prototype makes its own (`checkSegments`), opened at the prototype's
+demo position (`checkDemoMs`). `?view=captions` shows the captions strip
+(`captions-strip.ts` through `captions-follow.ts`) in place of the sheet;
+"Full text" opens the sheet. `?open=0` opens nothing until `show()` or
+`follow()`.
+
 ## Public API
 
 - `startLongTextCheck(host)` - builds the sheet under `host`, opens it on
@@ -28,9 +39,20 @@ a link asks before it opens.
   whether the reading mark is registered) and `markRect()` (the marked
   sentence's first line box) and `opened()` (the links
   the sheet opened through its `openLink`, which only a yes in AR calls).
+  With a voice also: `follow()` (starts the strip), `at(ms)` (moves the
+  clock and lets the views follow), `demoMs`, `segments`, `voice()`
+  (the verdict, how often the timing entry was read, the narration's
+  warnings, the sheet's marked word, the strip's state and its parts'
+  boxes, the clock), `voiceRect()` and `wordRect()` (the voice's marks'
+  first line boxes); `voice()` is null without `?voice=`.
 - `CHECK_RICH_BODY` - the rich text.
-- `longTextCheckOptions(search)` - `{ rich, ar }` from the query
-  (`text=rich`, `ar=1`; anything else is off).
+- `longTextCheckOptions(search)` - `{ rich, ar, voice, view, open }`
+  from the query (`text=rich`, `ar=1`, `voice=timed|stale`,
+  `view=captions`, `open=0`; anything else is the default).
+- `checkSegments(plain)` - a word track over `P` timed as the
+  prototype's stand-in narration; `checkDemoMs(sentences, segments)` -
+  60 ms into the third sentence's seventh word;
+  `createCheckClock(durationMs)` - the clock; `CHECK_VOICE_CREDIT`.
 
 ## Invariants & assumptions
 
@@ -43,5 +65,8 @@ a link asks before it opens.
 
 `playwright-tests/long-text-check.spec.js` (the layout at three viewports,
 the mark, and the rich text: pictures after a scroll, the link's question
-in AR, allowlisted tags only); `src/checks/long-text-check.test.ts` (the
-query and the rich body's forms).
+in AR, allowlisted tags only); `playwright-tests/narration-check.spec.js`
+(reading along, a stale track, the read on open, the strip's layout at
+three viewports); `src/checks/long-text-check.test.ts` (the query, the
+rich body's forms, the check timing parsed and fitting its text, the
+demo position, the clock).
