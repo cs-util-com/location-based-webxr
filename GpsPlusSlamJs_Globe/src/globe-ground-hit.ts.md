@@ -47,10 +47,16 @@
     reach. RangeError for a non-finite height.
   - `groundPointOfRay(terrain)`: a function of a WORLD-space ray giving the
     point where it meets the sampled ground, or null for any miss; its
-    reach is `groundReachM` of the ray origin's height over the ground
-    (the default where none is loaded under it), and the tiles' frame is
-    read again for every ray. The camera's controls pick with it
-    (`createGlobeCameraControls`' `groundRay`).
+    reach is the farther of `groundReachM` of the ray origin's height over
+    the ground and the distance to the ray's ellipsoid hit (from a summit
+    a valley floor beyond the summit's own horizon is found: tested at 3,
+    5 and 8 degrees down, the floor 5.7 to 15.3 km out), and the tiles'
+    frame is read again for every ray. With no heights loaded under the
+    origin it is null after that one sample (no march). A call otherwise
+    costs one march, measured over flat ground: 29 to 62 samples 10-45
+    degrees down from 1.7 m to 3 km up, 124 from 1.7 m 1 degree down, 345
+    from 300 m 2 degrees down. The camera's controls pick with it
+    (`createGlobeCameraControls`' `groundRay`), up to twice a frame.
   - `ellipsoidPointOfRay(tiles, ray)`: where a WORLD-space ray meets the
     ellipsoid of `tiles` (their group's frame read now), in the world, or
     null (the sky): the fallback where no sampled ground answers (the

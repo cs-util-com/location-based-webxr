@@ -561,6 +561,38 @@ describe("groundPointOfRay", () => {
     const ecef = point.clone().applyMatrix4(frame.clone().invert());
     expect(heightOf(ecef)).toBeCloseTo(516, 3);
   });
+
+  // Why: the reach was the horizon of the origin's height over the ground
+  // UNDER it, so from eye height on a summit (1.7 m: the 5 km default) a
+  // ray down to the valley floor 10 km out fell back to the ellipsoid,
+  // about twice as far, and the zoom stepped toward a point under the
+  // valley. The reach also runs to where the ray meets the ellipsoid, which
+  // ground above the ellipsoid always comes before. Swept over three
+  // pitches, the floor 7 to 15 km out.
+  it.each([-3, -5, -8])(
+    "finds a valley floor beyond the summit's horizon at %s deg",
+    (pitchDeg) => {
+      // A summit 1 000 m up falling at 1:2 to a floor at 200 m, northward.
+      const terrain = fakeTerrain((lat) =>
+        Math.max(200, 1000 - 0.5 * Math.max(0, (lat - MUNICH.lat) * 6.37e6)),
+      );
+      const ray = rayFrom(1000, 1.7, pitchDeg);
+      const point = groundPointOfRay(terrain)(ray);
+      if (point === null) throw new Error("no ground");
+      expect(heightOf(point)).toBeCloseTo(200, 1);
+      const floorM = 801.7 / Math.tan(-pitchDeg * DEG);
+      expect(point.distanceTo(ray.origin) / floorM).toBeCloseTo(1, 1);
+    },
+  );
+
+  // Why: under a high camera with no heights loaded beneath it the march
+  // sampled about 280 empty heights per ray, twice a frame through the
+  // controls, for an answer that is always null there. One sample decides.
+  it("samples once and gives null when no heights are loaded under the origin", () => {
+    const terrain = fakeTerrain(() => null);
+    expect(groundPointOfRay(terrain)(rayFrom(0, 3_000, -30))).toBeNull();
+    expect(terrain.calls()).toBe(1);
+  });
 });
 
 describe("ellipsoidPointOfRay", () => {

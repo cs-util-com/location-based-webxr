@@ -362,8 +362,15 @@ export function ellipsoidPointOfRay(
  * The point where a WORLD-space ray meets the sampled ground of `terrain`,
  * or null (the sky, past the horizon, heights not loaded, a ray from under
  * the ground). The reach runs to the horizon of the ray's origin
- * (`groundReachM` of its height over the ground; the default where none
- * is loaded under it), so a shallow ray from a raised camera is found.
+ * (`groundReachM` of its height over the ground under it) or to where the
+ * ray meets the ellipsoid, whichever is farther: from a summit a valley
+ * floor beyond the summit's own horizon is found, as ground above the
+ * ellipsoid comes before the ray's ellipsoid hit. With no heights loaded
+ * under the origin it is null after that one sample, never a march (a
+ * high camera over unloaded ground would sample about 280 empty heights a
+ * ray). Otherwise a call costs one march, measured over flat ground: 29
+ * to 62 samples looking 10-45 degrees down from 1.7 m to 3 km up, 124
+ * from 1.7 m 1 degree down, 345 from 300 m 2 degrees down.
  * The tiles' frame is read for every ray: the editor moves the group.
  * For the camera's controls (`createGlobeCameraControls`' `groundRay`).
  */
@@ -373,8 +380,13 @@ export function groundPointOfRay(
   return (ray) => {
     const above = terrainAboveGround(terrain);
     const heightM = above(ray.origin);
+    if (heightM === null) return null;
+    const ellipsoidAt = ellipsoidPointOfRay(terrain.tiles, ray);
     const hit = marchToGround(ray, above, {
-      maxDistanceM: groundReachM(heightM ?? 0),
+      maxDistanceM: Math.max(
+        groundReachM(heightM),
+        ellipsoidAt === null ? 0 : ellipsoidAt.distanceTo(ray.origin),
+      ),
     });
     return hit.miss === null ? hit.point : null;
   };
