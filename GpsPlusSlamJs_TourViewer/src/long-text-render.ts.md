@@ -38,9 +38,11 @@ Design: `GpsPlusSlamJs_Docs/docs/2026-10-25-2052-station-blocks-build-plan.md`
     `long-text-pictures.ts` to fill.
   - An inline picture (the parser's `pictureAlt`) is a `span` with its alt
     text; an empty alt shows as "picture" (`altBoxText`).
-  - Never throws: a value that is not a tree renders an empty fragment,
-    and a block or an inline of a kind the renderer does not know (a
-    newer parser's, a hand-built tree's) is skipped.
+  - A value without a `blocks` array renders an empty fragment, and a
+    block or an inline of a kind the renderer does not know (a newer
+    parser's, a hand-built tree's) is skipped. A malformed entry (a null
+    block, a known kind without its field) is not guarded: the tree is
+    the parser's output.
 - `altBoxText(alt)` - the alt box's text.
 - `leaveArQuestion(host)` - "Open {host}? You may lose your place in the
   AR view."

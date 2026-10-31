@@ -26,7 +26,7 @@ a link asks before it opens.
   screen boxes of its parts by name, the first paragraph's box, the gap
   between the first two paragraphs, the text's font size and line height,
   whether the reading mark is registered) and `markRect()` (the marked
-  sentence's first line box), `setArActive(on)` and `opened()` (the links
+  sentence's first line box) and `opened()` (the links
   the sheet opened through its `openLink`, which only a yes in AR calls).
 - `CHECK_RICH_BODY` - the rich text.
 - `longTextCheckOptions(search)` - `{ rich, ar }` from the query
@@ -36,8 +36,7 @@ a link asks before it opens.
 
 - Linked from nothing; a Vite input (`vite.config.ts`) and a knip entry.
 - Pictures only in the rich text: its `loadAsset` serves the two check
-  pictures and refuses any other id. AR only with `?ar=1` or
-  `setArActive(true)`; a link then opens through `window.open` on yes.
+  pictures and refuses any other id. AR only with `?ar=1`; a link then opens through `window.open` on yes.
 - A part's box is null when it is not rendered.
 
 ## Tests

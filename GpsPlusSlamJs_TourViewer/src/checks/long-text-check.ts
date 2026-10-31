@@ -68,8 +68,6 @@ interface LongTextCheck {
   state(): LongTextCheckState;
   /** The first line box of the marked sentence, or null. */
   markRect(): PartRect | null;
-  /** Behave as during an AR session, or not (`?ar=1` starts it on). */
-  setArActive(on: boolean): void;
   /** The links the sheet opened (only ever after a yes in AR). */
   opened(): readonly string[];
 }
@@ -170,7 +168,7 @@ function registry(): HighlightRegistry | undefined {
 
 export function startLongTextCheck(host: HTMLElement): void {
   const options = longTextCheckOptions(window.location.search);
-  let arActive = options.ar;
+  const arActive = options.ar;
   const opened: string[] = [];
   const sheet = createLongTextSheet({
     host,
@@ -227,9 +225,6 @@ export function startLongTextCheck(host: HTMLElement): void {
       const mark = registry()?.get(LONG_TEXT_MARK);
       const range = mark === undefined ? undefined : [...mark][0];
       return range instanceof Range ? box(range.getClientRects()[0]) : null;
-    },
-    setArActive: (on) => {
-      arActive = on;
     },
     opened: () => [...opened],
   };

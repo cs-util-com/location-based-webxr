@@ -193,8 +193,8 @@ test("a tap on a sentence moves the mark there; the buttons step it; close shuts
  * tests can only pin in jsdom: a picture is decoded into an object URL
  * once it is scrolled near, a link tapped during an AR session asks first
  * and opens nothing before the answer, and the sheet holds only the
- * elements the design's allowlist names (copied here from the design, not
- * from the renderer).
+ * elements the allowlist names: the design's list plus the alt box's
+ * `span` (the recorded deviation), copied here, not from the renderer.
  */
 const DESIGN_ALLOWLIST = [
   "p",
@@ -240,16 +240,36 @@ test("a rich text: pictures load when scrolled near, a link asks before it leave
   // (only pictures within a screen of the view are decoded, so the mill is
   // let go again by the time the bell, far below it, is reached).
   for (const alt of ["The mill", "The bell"]) {
-    await page.getByTestId("long-text-wrap").evaluate((wrap, want) => {
-      const box = [...wrap.querySelectorAll("p > span")].find(
-        (s) => s.textContent === want,
-      );
-      box?.scrollIntoView({ block: "center" });
-    }, alt);
+    // The alt box is still standing before the scroll: the picture was not
+    // decoded while it was far away.
+    const found = await page
+      .getByTestId("long-text-wrap")
+      .evaluate((wrap, want) => {
+        const box = [...wrap.querySelectorAll("p > span")].find(
+          (s) => s.textContent === want,
+        );
+        box?.scrollIntoView({ block: "center" });
+        return box !== undefined;
+      }, alt);
+    expect(found, `the alt box of "${alt}" before scrolling`).toBe(true);
     const shown = text.locator(`img[src^="blob:"][alt="${alt}"]`);
     await expect(shown).toHaveCount(1);
     await expect(shown).toBeVisible();
   }
+  // The mill stands more than the release distance (two screens) above
+  // the bell, so with the bell in view it is let go again: its picture is
+  // gone and its alt box back.
+  const millAway = await page.getByTestId("long-text-wrap").evaluate((wrap) => {
+    const view = wrap.getBoundingClientRect();
+    const mill = [...wrap.querySelectorAll("p > span, p > img")].find(
+      (e) =>
+        e.textContent === "The mill" || e.getAttribute("alt") === "The mill",
+    );
+    if (mill === undefined) return -1;
+    return (view.top - mill.getBoundingClientRect().bottom) / view.height;
+  });
+  expect(millAway).toBeGreaterThan(2.2);
+  await expect(text.locator('img[alt="The mill"]')).toHaveCount(0);
 
   const tags = await text.evaluate((root) => [
     ...new Set([...root.querySelectorAll("*")].map((e) => e.localName)),

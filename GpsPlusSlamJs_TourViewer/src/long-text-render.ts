@@ -77,9 +77,11 @@ export function altBoxText(alt: string): string {
 }
 
 /**
- * Builds a body's tree as DOM nodes. Never throws: a value that is not a
- * tree renders nothing, and a block or an inline of a kind it does not
- * know (a newer parser's, a hand-built tree's) is skipped. Headings render
+ * Builds a body's tree as DOM nodes. A value without a `blocks` array
+ * renders nothing, and a block or an inline of a kind it does not know (a
+ * newer parser's, a hand-built tree's) is skipped. A malformed entry (a
+ * null block, a known kind without its field) is not guarded: the tree
+ * is the parser's output. Headings render
  * one level below the sheet's own title (`#` as `h3`).
  */
 export function renderLongText(
