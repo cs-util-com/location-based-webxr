@@ -119,6 +119,9 @@ describe("the switch on the page", () => {
     document.body.replaceChildren();
   });
 
+  /** The switch's clock, moved by the tests. */
+  let clockMs = 0;
+
   function mount(blocks: TourBlock[], keeps = true, initial: unknown = null) {
     let stored: unknown = initial;
     const said: string[] = [];
@@ -134,6 +137,7 @@ describe("the switch on the page", () => {
       say: (text) => {
         said.push(text);
       },
+      now: () => clockMs,
     });
     made.push(sw);
     sw.sync();
@@ -240,6 +244,7 @@ describe("the switch on the page", () => {
       say: (text) => {
         said.push(text);
       },
+      now: () => clockMs,
     });
     made.push(sw);
     sw.sync();
@@ -275,6 +280,84 @@ describe("the switch on the page", () => {
     expect(selectCancelled(outside), "the closing tap").toBe(true);
     outside.dispatchEvent(new Event("pointerup", { bubbles: true }));
     expect(selectCancelled(outside), "the next tap").toBe(false);
+  });
+
+  /** A pointer event of `type` by finger `id` on `target`. */
+  function finger(target: EventTarget, type: string, id: number): void {
+    const event = new Event(type, { bubbles: true });
+    Object.defineProperty(event, "pointerId", { value: id });
+    target.dispatchEvent(event);
+  }
+
+  function openOutside() {
+    clockMs = 1000;
+    const m = mount([longText("t", "reading")]);
+    const outside = document.createElement("div");
+    document.body.append(outside);
+    m.q("view-switch-button")?.click();
+    return { ...m, outside };
+  }
+
+  // Why this test matters: XR input reaches the page about once a camera
+  // frame, so the closing tap's select may be asked for only after its
+  // pointerup; it must still be cancelled then, for a short grace, and
+  // only that one select: the tap after it reaches the world.
+  it("cancels the closing tap's select when it comes just after pointerup, once", () => {
+    const { outside } = openOutside();
+    finger(outside, "pointerdown", 1);
+    finger(outside, "pointerup", 1);
+    clockMs += 40;
+    expect(selectCancelled(outside), "a frame after pointerup").toBe(true);
+    expect(selectCancelled(outside), "the next select").toBe(false);
+  });
+
+  // Why this test matters: the grace is short; a select long after the
+  // closing tap lifted is a new tap and reaches the world.
+  it("lets a select through once the grace after pointerup has passed", () => {
+    const { outside } = openOutside();
+    finger(outside, "pointerdown", 1);
+    finger(outside, "pointerup", 1);
+    clockMs += 300;
+    expect(selectCancelled(outside)).toBe(false);
+  });
+
+  // Why this test matters: one boolean for all fingers let a second
+  // finger's pointerup clear the closing finger's mark, so its select
+  // reached the world behind the menu.
+  it("keeps the closing finger's mark when another finger lifts", () => {
+    const { outside } = openOutside();
+    finger(outside, "pointerdown", 1);
+    finger(outside, "pointerdown", 2);
+    finger(outside, "pointerup", 2);
+    expect(selectCancelled(outside), "the closing finger's select").toBe(true);
+    expect(selectCancelled(outside), "the other finger's select").toBe(false);
+  });
+
+  // Why this test matters: a cancelled pointer (a system gesture took
+  // it) may still be followed by its select; it is treated as a lift,
+  // with the same grace.
+  it("treats a pointercancel as a lift, with the same grace", () => {
+    const first = openOutside();
+    finger(first.outside, "pointerdown", 1);
+    finger(first.outside, "pointercancel", 1);
+    clockMs += 40;
+    expect(selectCancelled(first.outside), "within the grace").toBe(true);
+    first.sw.dispose();
+    // Without the cancel ending it, the mark would hold for good.
+    const second = openOutside();
+    finger(second.outside, "pointerdown", 1);
+    finger(second.outside, "pointercancel", 1);
+    clockMs += 300;
+    expect(selectCancelled(second.outside), "after the grace").toBe(false);
+  });
+
+  // Why this test matters: close() ends the AR session's switch; a
+  // closing tap's mark must not outlive it into the next session.
+  it("drops the closing tap's mark on close()", () => {
+    const { outside, sw } = openOutside();
+    finger(outside, "pointerdown", 1);
+    sw.close();
+    expect(selectCancelled(outside)).toBe(false);
   });
 
   // Why this test matters: the menu's open state must not outlive the AR

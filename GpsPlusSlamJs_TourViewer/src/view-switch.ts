@@ -152,8 +152,9 @@ export function viewSwitchModel(
 
 /**
  * The blocks the switch describes: the present station's free blocks,
- * once its content is placed (`contentPlaced`), else none - the switch
- * never offers to change a text that is not standing yet.
+ * once its content is set (`contentPlaced`), else none - the switch
+ * never offers to change a text before the station's content is set
+ * (a part may still be loading then).
  */
 export function switchBlocks(input: {
   readonly stations: readonly TourStation[] | undefined;
@@ -180,6 +181,9 @@ export interface ViewSwitchDeps {
   choose(kind: string, placement: ViewPlacement, view: string | null): boolean;
   /** Tells the visitor what happened (the walk's toast). */
   say(text: string): void;
+  /** The clock for a closing tap's grace, in ms (default
+   *  `performance.now`). */
+  readonly now?: () => number;
 }
 
 export interface ViewSwitch {
@@ -189,6 +193,21 @@ export interface ViewSwitch {
   /** Closes the menu (the end of an AR session). */
   close(): void;
   dispose(): void;
+}
+
+/** How long after the tap that closed the menu lifts its AR select is
+ *  still cancelled. XR input reaches the page about once a camera frame
+ *  (about 33 ms at 30 fps), so the select may be asked for after
+ *  pointerup: 100 ms leaves three frames, which a busy phone can miss;
+ *  400 ms comes near a quick deliberate second tap. A mark goes with the
+ *  first select it cancels, so the grace eats a later tap only when the
+ *  closing tap's own select never came. */
+const CLOSING_TAP_GRACE_MS = 250;
+
+/** The pointer an event is from (0 when it carries none). */
+function pointerIdOf(event: Event): number {
+  const id = (event as { readonly pointerId?: unknown }).pointerId;
+  return typeof id === "number" ? id : 0;
 }
 
 /** Each switch's menu box gets its own id, for the pill's
@@ -242,9 +261,11 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
 
   let model: ViewSwitchModel | null = null;
   let drawnKey = "";
-  /** The tap that closed the menu from outside is still down: its AR
-   *  select is cancelled too (`onSelect`). */
-  let closingTapDown = false;
+  const now = deps.now ?? (() => performance.now());
+  /** The taps that closed the menu from outside, by pointer, to when
+   *  their AR select is still cancelled (`onSelect`): while the finger is
+   *  down, and `CLOSING_TAP_GRACE_MS` after it lifts. */
+  const closingTaps = new Map<number, number>();
 
   function setOpen(open: boolean): void {
     menu.hidden = !open;
@@ -340,17 +361,30 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     if (menu.hidden) return;
     if (event.target instanceof Node && root.contains(event.target)) return;
     setOpen(false);
-    closingTapDown = true;
+    closingTaps.set(pointerIdOf(event), Infinity);
   };
-  const onTapEnd = (): void => {
-    closingTapDown = false;
+  const onTapEnd = (event: Event): void => {
+    const id = pointerIdOf(event);
+    if (closingTaps.has(id)) closingTaps.set(id, now() + CLOSING_TAP_GRACE_MS);
   };
   // In AR a tap on the DOM overlay asks `beforexrselect` before it becomes
   // the world's select. While the menu is open no tap may reach the world,
-  // nor may the tap that closed it - whether the browser asks before or
-  // after that tap's pointerdown; its pointerup ends it.
+  // nor may the tap that closed it: its select is cancelled while it is
+  // down and for a short grace after it lifts, once. A select carries no
+  // pointer, so it takes the oldest mark still in force.
   const onSelect = (event: Event): void => {
-    if (!menu.hidden || closingTapDown) event.preventDefault();
+    if (!menu.hidden) {
+      event.preventDefault();
+      return;
+    }
+    const t = now();
+    for (const [id, until] of closingTaps) {
+      closingTaps.delete(id);
+      if (until >= t) {
+        event.preventDefault();
+        return;
+      }
+    }
   };
   button.addEventListener("click", onButton);
   root.addEventListener("keydown", onKey);
@@ -363,7 +397,7 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     sync,
     close() {
       setOpen(false);
-      closingTapDown = false;
+      closingTaps.clear();
     },
     dispose() {
       button.removeEventListener("click", onButton);

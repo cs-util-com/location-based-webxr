@@ -54,7 +54,7 @@ listed in `index.html.md`. The concerns and their modules:
   visitor's view preference: in visitor mode `main.ts` loads the stored
   value from the page's guarded storage (`stepStore`) into the store,
   mounts the switch under `#ar-root` (fed the present station's free
-  blocks once its content is placed, `switchBlocks`), syncs it in
+  blocks once its content is set, `switchBlocks`), syncs it in
   `hooks.tickStations`, closes it in `hooks.stopStations`, and on a choice
   merges it into a fresh read of the device and writes it back
   (`storeVisitorChoice`; a refused write keeps it for the visit),

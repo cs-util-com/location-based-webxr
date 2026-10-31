@@ -35,10 +35,30 @@ import { guideTourChanged, showAllContentSet } from "./visitor-guide-slice.js";
 import { blockShown, walkStarted } from "./visitor-walk-slice.js";
 import type { NarrationVerdict } from "./narration-timing.js";
 import {
+  selectVisitorPrefs,
   visitorPrefsLoaded,
-  visitorViewChosen,
+  type VisitorPrefsState,
 } from "./visitor-prefs-slice.js";
-import { withPreferredView } from "./visitor-prefs.js";
+import { storeVisitorChoice, withPreferredView } from "./visitor-prefs.js";
+
+/** A visitor's choice the way the page makes it (no device storage
+ *  here): merged into the store's value and dispatched. */
+function chooseView(
+  store: {
+    getState(): { readonly visitorPrefs: VisitorPrefsState };
+    dispatch(action: ReturnType<typeof visitorPrefsLoaded>): unknown;
+  },
+  view: string | null,
+): void {
+  const { value } = storeVisitorChoice(
+    undefined,
+    selectVisitorPrefs(store.getState()),
+    "longText",
+    "world",
+    view,
+  );
+  store.dispatch(visitorPrefsLoaded(value));
+}
 
 const fake = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
@@ -309,10 +329,9 @@ describe("a visitor's view choice", () => {
       return name;
     };
     expect(nameOf()).toBe("reading-sign");
-    const choose = (view: string | null) =>
-      h.store.dispatch(
-        visitorViewChosen({ kind: "longText", placement: "world", view }),
-      );
+    const choose = (view: string | null) => {
+      chooseView(h.store, view);
+    };
     choose("lectern");
     await h.sync();
     expect(nameOf()).toBe("lectern");
@@ -393,13 +412,9 @@ describe("a visitor's view choice", () => {
     return found;
   }
 
-  const choose = (
-    h: ReturnType<typeof harness>,
-    view: string | null,
-  ): unknown =>
-    h.store.dispatch(
-      visitorViewChosen({ kind: "longText", placement: "world", view }),
-    );
+  const choose = (h: ReturnType<typeof harness>, view: string | null) => {
+    chooseView(h.store, view);
+  };
 
   // Why this test matters: a station's part is drawn again only when what
   // one of its blocks shows changes. Rebuilding it otherwise re-parses its

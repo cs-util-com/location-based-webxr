@@ -13,11 +13,6 @@ the device at the page's start, and every choice made since. The renderer
 - `visitorPrefsLoaded(value)` - the value read from the device (any
   shape, or null): `loadVisitorPrefs` at the page's start, and after each
   choice the merged value `storeVisitorChoice` returns.
-- `visitorViewChosen({ kind, placement, view })` - a choice into the
-  store's value alone; `view: null` takes the creator's choice again.
-  Built by `withPreferredView`, so another app version's keys survive.
-  The page uses `storeVisitorChoice` + `visitorPrefsLoaded` instead, so a
-  choice also keeps the keys another tab wrote since the page started.
 - `selectVisitorPrefs(state)` - the stored value (read it through
   `preferredView` / `shownView`).
 
@@ -46,4 +41,6 @@ store.dispatch(visitorPrefsLoaded(value));
 ## Tests
 
 - `visitor-prefs-slice.test.ts` - load, choose and clear keep other keys;
-  another tour keeps the choice.
+  another tour keeps the choice. A choice is made the page's way:
+  `storeVisitorChoice` against a storage in memory, then
+  `visitorPrefsLoaded`.

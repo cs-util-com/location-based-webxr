@@ -22,10 +22,12 @@ and offers "Use the creator's choice again" while a choice is stored.
   row's line becomes "The whole text in a sheet, the voice highlighted"
   for a text whose timing holds.
 - `switchBlocks({ stations, presentId, contentPlaced })` - pure: the
-  present station's free blocks once its content is placed, else none
-  (no station, an unknown id, content not placed yet). `main.ts` passes
-  `ctx.stationContent?.showsAny()` as `contentPlaced`, so the switch never
-  shows before the station's content does.
+  present station's free blocks once its content is set, else none (no
+  station, an unknown id, content not set yet). `main.ts` passes
+  `ctx.stationContent?.showsAny()` as `contentPlaced`, which is true from
+  the moment the station's content is set, while a part may still be
+  loading; so the switch never shows before the content is set, but may
+  show before every part stands.
 - `createViewSwitch({ host, read, choose, say })` - mounts the switch in
   `host`, hidden until `sync()` finds a model.
   - `read()` gives the present station's free blocks (none outside a
@@ -70,9 +72,23 @@ and offers "Use the creator's choice again" while a choice is stored.
 - While the menu is open the switch cancels every `beforexrselect` on the
   document (capture), so the tap outside that closes it never reaches the
   world either. That tap's own select is also cancelled when the browser
-  asks after its pointerdown (which closed the menu): a flag set by the
-  closing pointerdown, cleared by its pointerup or pointercancel. Which
-  order a browser uses is not specified, so both are handled.
+  asks after its pointerdown (which closed the menu): the closing
+  pointerdown marks its pointer; the mark holds while the finger is down
+  and 250 ms after its pointerup or pointercancel (`CLOSING_TAP_GRACE_MS`:
+  XR input arrives about once a camera frame, so the select may come
+  after pointerup; 100 ms leaves three frames, 400 ms comes near a quick
+  second tap), and goes with the first select it cancels. Each finger has
+  its own mark, so another finger lifting does not clear it. Handled: a
+  select before the closing pointerdown (the menu is still open), while
+  the finger is down, and up to 250 ms after it lifts. Not handled: a
+  select later than that (it reaches the world), and which finger a
+  select belongs to (a select carries no pointer, so it takes the oldest
+  mark in force). `close()` drops every mark.
+- A re-pick (the stored choice picked again) is compared with the page's
+  store, not with a fresh read of the device: if another tab changed the
+  device's value since the page started, the re-pick does not write the
+  choice back. Accepted: it needs several tabs open at once, and the next
+  real choice merges into a fresh read anyway (`storeVisitorChoice`).
 
 ## Examples
 

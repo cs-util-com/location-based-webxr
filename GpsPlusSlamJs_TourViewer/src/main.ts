@@ -1125,7 +1125,7 @@ function openLongText(block: {
     ...(voice === undefined ? {} : { narration: voice }),
   });
 }
-/** The present station's free blocks, once its content is placed. */
+/** The present station's free blocks, once its content is set. */
 function presentBlocks() {
   return switchBlocks({
     stations: ctx.tourDocument.manifest()?.stations,
@@ -1184,7 +1184,7 @@ const viewSwitch =
           read: () => {
             const state = arStore.getState();
             return {
-              // Only once the station's content is placed.
+              // Only once the station's content is set.
               blocks: presentBlocks(),
               stored: selectVisitorPrefs(state),
               verdictOf: (block) => narration.verdictOf(block),

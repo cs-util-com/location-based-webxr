@@ -26,4 +26,20 @@ describe("whether a body shows a picture, remembered", () => {
     }
     expect(parsed).toHaveBeenCalledTimes(2);
   });
+
+  // Why this test matters: the memo is bounded (a tour's bodies are
+  // many, and an editor may produce endless edits of one); when it is
+  // full it empties, so a body judged before is parsed again rather than
+  // kept forever.
+  it("parses a body again after seventeen others filled the memo", () => {
+    const parsed = vi.mocked(parseTourMarkdown);
+    const bodies = Array.from(
+      { length: 17 },
+      (_, i) => `Body number ${String(i)}.`,
+    );
+    for (const body of bodies) bodyHasPictures(body);
+    const before = parsed.mock.calls.length;
+    expect(bodyHasPictures(bodies[0] ?? "")).toBe(false);
+    expect(parsed.mock.calls.length).toBe(before + 1);
+  });
 });
