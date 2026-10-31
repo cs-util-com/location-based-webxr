@@ -367,7 +367,7 @@ describe("createGlobeCameraControls: groundRay", () => {
   });
 });
 
-describe("the library's private pick (a guard)", () => {
+describe("the library's private methods the controls use (a guard)", () => {
   // Why: `groundRay` replaces this undocumented method of 3d-tiles-renderer
   // 0.5.3; an upgrade that renames it would silently bring the drawn-mesh
   // pick back.
@@ -376,5 +376,16 @@ describe("the library's private pick (a guard)", () => {
       _raycast?: unknown;
     };
     expect(typeof proto._raycast).toBe("function");
+  });
+
+  // Why: `release` stops a running double-tap zoom through this private
+  // method, called with ?. because a test double lacks it; an upgrade
+  // that renamed it would leave a released camera still zooming, with
+  // nothing failing.
+  it("still has the double-tap zoom's cancel that release calls", () => {
+    const proto = LibraryControls.prototype as unknown as {
+      _cancelDoubleTapZoom?: unknown;
+    };
+    expect(typeof proto._cancelDoubleTapZoom).toBe("function");
   });
 });
