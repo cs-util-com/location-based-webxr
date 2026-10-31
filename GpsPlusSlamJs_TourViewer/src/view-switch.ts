@@ -10,7 +10,11 @@
  * @see view-switch.ts.md
  */
 
-import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourBlock,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import "./view-switch.css";
 import {
@@ -58,6 +62,8 @@ export interface ViewSwitchModel {
   readonly current: string;
   /** Whether the device holds a choice for this kind and placement. */
   readonly chosen: boolean;
+  /** That choice, or null. */
+  readonly preferred: string | null;
   readonly rows: readonly ViewSwitchRow[];
 }
 
@@ -82,11 +88,13 @@ export function viewSwitchModel(
     const set = viewSetOf(block.kind, block.view);
     if (set === null) continue;
     const shown = shownView({ audience: "visitor", block, stored });
+    const preferred = preferredView(stored, block.kind, set.placement);
     return {
       kind: block.kind,
       placement: set.placement,
       current: labelOf(shown),
-      chosen: preferredView(stored, block.kind, set.placement) !== null,
+      chosen: preferred !== null,
+      preferred,
       rows: set.members.map((view) => {
         const fail = viewNeedsFail(block, view);
         const tags = view === block.view ? [CREATOR_TAG] : [];
@@ -103,6 +111,21 @@ export function viewSwitchModel(
     };
   }
   return null;
+}
+
+/**
+ * The blocks the switch describes: the present station's free blocks,
+ * once its content is placed (`contentPlaced`), else none - the switch
+ * never offers to change a text that is not standing yet.
+ */
+export function switchBlocks(input: {
+  readonly stations: readonly TourStation[] | undefined;
+  readonly presentId: string | null;
+  readonly contentPlaced: boolean;
+}): readonly TourBlock[] {
+  if (!input.contentPlaced || input.presentId === null) return [];
+  const station = input.stations?.find((s) => s.id === input.presentId);
+  return station === undefined ? [] : tourFreeBlocks(station);
 }
 
 export interface ViewSwitchDeps {
@@ -122,8 +145,14 @@ export interface ViewSwitch {
   /** Re-reads `read()` and redraws only when the model changed; cheap
    *  enough for every frame. */
   sync(): void;
+  /** Closes the menu (the end of an AR session). */
+  close(): void;
   dispose(): void;
 }
+
+/** Each switch's menu box gets its own id, for the pill's
+ *  `aria-controls`. */
+let menusMade = 0;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -155,20 +184,26 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
   const button = el("button", "vs-btn");
   button.type = "button";
   button.dataset.testid = "view-switch-button";
-  button.setAttribute("aria-haspopup", "true");
+  // A disclosure: the pill shows and hides a box of plain buttons (no
+  // menu roles, which promise arrow keys this box does not have).
   button.setAttribute("aria-expanded", "false");
   const current = el("span");
   current.dataset.testid = "view-switch-current";
   button.append(listIcon(), current, el("small", undefined, "change"));
   const menu = el("div", "vs-menu");
   menu.dataset.testid = "view-switch-menu";
-  menu.setAttribute("role", "menu");
+  menusMade += 1;
+  menu.id = `view-switch-menu-${String(menusMade)}`;
+  button.setAttribute("aria-controls", menu.id);
   menu.hidden = true;
   root.append(button, menu);
   deps.host.append(root);
 
   let model: ViewSwitchModel | null = null;
   let drawnKey = "";
+  /** The tap that closed the menu from outside is still down: its AR
+   *  select is cancelled too (`onSelect`). */
+  let closingTapDown = false;
 
   function setOpen(open: boolean): void {
     menu.hidden = !open;
@@ -177,14 +212,22 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
 
   function pick(view: string | null): void {
     if (model === null) return;
-    const { kind, placement } = model;
-    const kept = deps.choose(kind, placement, view);
+    const { kind, placement, preferred } = model;
     setOpen(false);
+    // The redraw below takes the focused row out of the page.
+    button.focus();
+    // The stored choice again changes nothing: nothing is stored, said or
+    // drawn again.
+    if (view === preferred) return;
+    const kept = deps.choose(kind, placement, view);
     sync();
     const label = model?.current ?? labelOf(view ?? "");
     let text: string;
-    if (view === null) text = `Back to the creator's choice: ${label}.`;
-    else if (kept) {
+    if (view === null) {
+      text = kept
+        ? `Back to the creator's choice: ${label}.`
+        : `Back to the creator's choice for this visit: ${label} (this browser does not keep the choice).`;
+    } else if (kept) {
       text = `${label} from now on, for every ${nounOf(kind)} on this phone.`;
     } else {
       text = `${label} for this visit (this browser does not keep the choice).`;
@@ -198,8 +241,7 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
       const item = el("button", row.on ? "vo on" : "vo");
       item.type = "button";
       item.dataset.testid = `view-switch-${row.view}`;
-      item.setAttribute("role", "menuitemradio");
-      item.setAttribute("aria-checked", String(row.on));
+      item.setAttribute("aria-pressed", String(row.on));
       item.disabled = row.disabled;
       const head = el("b", undefined, row.label);
       if (row.tag !== "") head.append(el("i", undefined, row.tag));
@@ -257,17 +299,38 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     if (menu.hidden) return;
     if (event.target instanceof Node && root.contains(event.target)) return;
     setOpen(false);
+    closingTapDown = true;
+  };
+  const onTapEnd = (): void => {
+    closingTapDown = false;
+  };
+  // In AR a tap on the DOM overlay asks `beforexrselect` before it becomes
+  // the world's select. While the menu is open no tap may reach the world,
+  // nor may the tap that closed it - whether the browser asks before or
+  // after that tap's pointerdown; its pointerup ends it.
+  const onSelect = (event: Event): void => {
+    if (!menu.hidden || closingTapDown) event.preventDefault();
   };
   button.addEventListener("click", onButton);
   root.addEventListener("keydown", onKey);
   doc.addEventListener("pointerdown", onOutside, true);
+  doc.addEventListener("pointerup", onTapEnd, true);
+  doc.addEventListener("pointercancel", onTapEnd, true);
+  doc.addEventListener("beforexrselect", onSelect, true);
 
   return {
     sync,
+    close() {
+      setOpen(false);
+      closingTapDown = false;
+    },
     dispose() {
       button.removeEventListener("click", onButton);
       root.removeEventListener("keydown", onKey);
       doc.removeEventListener("pointerdown", onOutside, true);
+      doc.removeEventListener("pointerup", onTapEnd, true);
+      doc.removeEventListener("pointercancel", onTapEnd, true);
+      doc.removeEventListener("beforexrselect", onSelect, true);
       root.remove();
     },
   };

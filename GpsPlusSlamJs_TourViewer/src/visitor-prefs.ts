@@ -78,10 +78,23 @@ function anyPicture(blocks: readonly TourMdBlock[]): boolean {
   });
 }
 
+/** Bodies already judged, by body: the switch asks on every camera frame
+ *  and store dispatch, and parsing a long body costs milliseconds. A few
+ *  entries, so two long texts at one station never push each other out;
+ *  emptied whole when full (the keys are the manifest's own strings). */
+const PICTURES_KNOWN_MAX = 16;
+const picturesByBody = new Map<string, boolean>();
+
 /** Whether a long text's body shows a picture (a picture block at any
- *  depth; an inline one shows only its alt text). */
+ *  depth; an inline one shows only its alt text). Each body is parsed
+ *  once (`picturesByBody`). */
 export function bodyHasPictures(body: string): boolean {
-  return anyPicture(parseTourMarkdown(body).blocks);
+  const known = picturesByBody.get(body);
+  if (known !== undefined) return known;
+  const has = anyPicture(parseTourMarkdown(body).blocks);
+  if (picturesByBody.size >= PICTURES_KNOWN_MAX) picturesByBody.clear();
+  picturesByBody.set(body, has);
+  return has;
 }
 
 /**
@@ -173,12 +186,29 @@ export function shownView(input: {
   if (input.audience !== "visitor") return block.view;
   const set = viewSetOf(block.kind, block.view);
   if (set === null) return block.view;
-  const preferred = preferredView(input.stored, block.kind, set.placement);
-  if (preferred !== null && viewNeedsFail(block, preferred) === null) {
-    return preferred;
-  }
-  if (viewNeedsFail(block, block.view) === null) return block.view;
-  return set.floor;
+  return shownMember({
+    creator: block.view,
+    preferred: preferredView(input.stored, block.kind, set.placement),
+    floor: set.floor,
+    fails: (view) => viewNeedsFail(block, view) !== null,
+  });
+}
+
+/**
+ * Rules 3-5 of `shownView` within one set: the preferred member if its
+ * needs hold, else the creator's view if its needs hold, else the floor.
+ * `fails` says whether a member's needs fail for the block.
+ */
+export function shownMember(input: {
+  readonly creator: string;
+  readonly preferred: string | null;
+  readonly floor: string;
+  readonly fails: (view: string) => boolean;
+}): string {
+  const { creator, preferred, floor, fails } = input;
+  if (preferred !== null && !fails(preferred)) return preferred;
+  if (!fails(creator)) return creator;
+  return floor;
 }
 
 /** The two `Storage` methods used (`localStorage` has them). */
@@ -211,4 +241,25 @@ export function saveVisitorPrefs(
   } catch {
     return false;
   }
+}
+
+/**
+ * A visitor's choice for `kind` at `placement` (null: the creator's
+ * again), merged into a FRESH read of the device - never into the value
+ * read at the page's start, which would delete keys another tab (a newer
+ * app) wrote since - and stored. When the device gives nothing (no value,
+ * or it cannot be read), `inStore` (the page's value, with this visit's
+ * earlier choices) is the base. `value` is what the page's store takes;
+ * `kept`: whether the device keeps it.
+ */
+export function storeVisitorChoice(
+  storage: PrefsStorage | undefined,
+  inStore: unknown,
+  kind: string,
+  placement: ViewPlacement,
+  view: string | null,
+): { readonly value: Record<string, unknown>; readonly kept: boolean } {
+  const fresh = loadVisitorPrefs(storage);
+  const value = withPreferredView(fresh ?? inStore, kind, placement, view);
+  return { value, kept: saveVisitorPrefs(storage, value) };
 }

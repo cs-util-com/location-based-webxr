@@ -17,7 +17,9 @@ defensive read and write of the one storage key.
   floor. The screen set (`silent`, `captions`) joins with those views.
 - `bodyHasPictures(body)` - whether a long text's body holds a picture
   block, at any depth (in a list, in a quote); an inline picture is not
-  one.
+  one. Each body is parsed once: the answers are kept by body (up to 16,
+  emptied whole when full), since the switch asks every camera frame and
+  a 32 000-character body took about 2 ms to parse on desktop Node.
 - `viewNeedsFail(block, view)` - the reason `view` cannot show `block`
   whole, or null. A lectern shows no pictures ("shows no pictures").
 - `preferredView(stored, kind, placement)` - the stored choice, or null
@@ -31,9 +33,17 @@ defensive read and write of the one storage key.
   3. else the preferred member, if its needs hold;
   4. else the creator's view, if its needs hold;
   5. else the set's floor.
+- `shownMember({ creator, preferred, floor, fails })` - rules 3-5 within
+  one set, `fails(view)` saying whether a member's needs fail; what
+  `shownView` uses, and what pins rule 4 on a set of three.
 - `loadVisitorPrefs(storage)` - the parsed value, or null; never throws.
 - `saveVisitorPrefs(storage, value)` - true when written; false when the
   storage is missing or throws (the choice then lasts the visit).
+- `storeVisitorChoice(storage, inStore, kind, placement, view | null)` -
+  a choice merged into a FRESH read of the device (the page's start-up
+  read would delete keys another tab wrote since), or into `inStore` when
+  the device gives nothing, then saved: `{ value, kept }`, `value` for the
+  page's store.
 
 ## Invariants & assumptions
 
@@ -59,7 +69,12 @@ saveVisitorPrefs(localStorage, stored); // false in a browser that refuses
 ## Tests
 
 - `visitor-prefs.test.ts` - the sets, the needs, the defensive reads, the
-  five rules, storage that throws or holds garbage.
+  five rules, storage that throws or holds garbage; rule 4 on a
+  three-member set made for the test (the creator's view, not the floor);
+  a choice merged into a fresh read keeps another tab's key, and builds on
+  the store's value when the device cannot be read.
+- `visitor-prefs.memo.test.ts` - each body parsed once, two bodies in
+  turn included (the parser spied on).
 - `visitor-prefs.property.test.ts` - the needs hold and the placement
   stays for any stored value; a read never rewrites it; a chosen member
   shows whenever its needs hold.

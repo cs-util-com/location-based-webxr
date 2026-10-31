@@ -10,11 +10,14 @@ the device at the page's start, and every choice made since. The renderer
 
 - `visitorPrefsReducer` - mounted as `visitorPrefs` by
   `createTourViewerStore`.
-- `visitorPrefsLoaded(value)` - the value `loadVisitorPrefs` read (any
-  shape, or null).
-- `visitorViewChosen({ kind, placement, view })` - a choice; `view: null`
-  takes the creator's choice again. Built by `withPreferredView`, so
-  another app version's keys survive.
+- `visitorPrefsLoaded(value)` - the value read from the device (any
+  shape, or null): `loadVisitorPrefs` at the page's start, and after each
+  choice the merged value `storeVisitorChoice` returns.
+- `visitorViewChosen({ kind, placement, view })` - a choice into the
+  store's value alone; `view: null` takes the creator's choice again.
+  Built by `withPreferredView`, so another app version's keys survive.
+  The page uses `storeVisitorChoice` + `visitorPrefsLoaded` instead, so a
+  choice also keeps the keys another tab wrote since the page started.
 - `selectVisitorPrefs(state)` - the stored value (read it through
   `preferredView` / `shownView`).
 
@@ -29,10 +32,15 @@ the device at the page's start, and every choice made since. The renderer
 
 ```ts
 store.dispatch(visitorPrefsLoaded(loadVisitorPrefs(stepStore)));
-store.dispatch(
-  visitorViewChosen({ kind: "longText", placement: "world", view: "lectern" }),
+// A choice: merged into a fresh read, saved, and the merged value stored.
+const { value, kept } = storeVisitorChoice(
+  stepStore,
+  selectVisitorPrefs(store.getState()),
+  "longText",
+  "world",
+  "lectern",
 );
-saveVisitorPrefs(stepStore, selectVisitorPrefs(store.getState()));
+store.dispatch(visitorPrefsLoaded(value));
 ```
 
 ## Tests

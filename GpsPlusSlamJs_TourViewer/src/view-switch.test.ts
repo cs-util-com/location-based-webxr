@@ -2,9 +2,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
 import { cancelsXrSelect } from "./pin-sheet.js";
-import { createViewSwitch, viewSwitchModel } from "./view-switch.js";
-import { withPreferredView, type ViewPlacement } from "./visitor-prefs.js";
+import {
+  createViewSwitch,
+  switchBlocks,
+  viewSwitchModel,
+} from "./view-switch.js";
+import {
+  storeVisitorChoice,
+  withPreferredView,
+  type ViewPlacement,
+} from "./visitor-prefs.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -64,12 +74,16 @@ describe("the switch's model", () => {
 });
 
 describe("the switch on the page", () => {
+  /** Every switch made, disposed after each test: an old one would go on
+   *  listening on the document. */
+  const made: { dispose(): void }[] = [];
   afterEach(() => {
+    for (const sw of made.splice(0)) sw.dispose();
     document.body.replaceChildren();
   });
 
-  function mount(blocks: TourBlock[], keeps = true) {
-    let stored: unknown = null;
+  function mount(blocks: TourBlock[], keeps = true, initial: unknown = null) {
+    let stored: unknown = initial;
     const said: string[] = [];
     const chosen: [string, ViewPlacement, string | null][] = [];
     const sw = createViewSwitch({
@@ -84,11 +98,160 @@ describe("the switch on the page", () => {
         said.push(text);
       },
     });
+    made.push(sw);
     sw.sync();
     const q = (id: string) =>
       document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
     return { sw, said, chosen, q };
   }
+
+  /** A `beforexrselect` (the overlay's question before a tap becomes an
+   *  AR select) on `target`; whether something cancelled it. */
+  function selectCancelled(target: EventTarget): boolean {
+    const event = new Event("beforexrselect", {
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  // Why this test matters: the menu is a disclosure (a button that shows
+  // a list of buttons), not an ARIA menu: menu roles promise arrow-key
+  // navigation it does not have, and they put the footer's sentence and
+  // its reset inside a "menu". The pill says it is expanded and which
+  // box it controls; each row says whether it is the one shown.
+  it("is a disclosure: no menu roles, pressed rows, a pill that controls the box", () => {
+    const { q } = mount([longText("t", "reading")]);
+    const button = q("view-switch-button");
+    const menu = q("view-switch-menu");
+    expect(document.querySelector("[role]")).toBeNull();
+    expect(button?.hasAttribute("aria-haspopup")).toBe(false);
+    expect(menu?.id).not.toBe("");
+    expect(button?.getAttribute("aria-controls")).toBe(menu?.id);
+    button?.click();
+    expect(button?.getAttribute("aria-expanded")).toBe("true");
+    expect(q("view-switch-reading")?.getAttribute("aria-pressed")).toBe("true");
+    expect(q("view-switch-lectern")?.getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(document.querySelector("[aria-checked]")).toBeNull();
+  });
+
+  // Why this test matters: a pick redraws the rows, which takes the
+  // focused row out of the page; focus would fall to the body, and a
+  // keyboard or screen reader user would lose their place. It goes back
+  // to the pill.
+  it("gives the focus back to the pill after a pick", () => {
+    const { q } = mount([longText("t", "reading")]);
+    q("view-switch-button")?.click();
+    const lectern = q("view-switch-lectern");
+    lectern?.focus();
+    lectern?.click();
+    expect(document.activeElement).toBe(q("view-switch-button"));
+  });
+
+  // Why this test matters: re-picking the row already chosen changes
+  // nothing, so nothing is stored, nothing is said - and the page does
+  // not rebuild the station's parts (a moved toy, an open card, a
+  // lectern's page would all reset).
+  it("does nothing but close when the stored choice is picked again", () => {
+    const { q, said, chosen } = mount(
+      [longText("t", "reading")],
+      true,
+      withPreferredView(null, "longText", "world", "lectern"),
+    );
+    q("view-switch-button")?.click();
+    q("view-switch-lectern")?.click();
+    expect(chosen).toEqual([]);
+    expect(said).toEqual([]);
+    expect(q("view-switch-menu")?.hidden).toBe(true);
+    expect(document.activeElement).toBe(q("view-switch-button"));
+  });
+
+  // Why this test matters: "Use the creator's choice again" on a browser
+  // that cannot store it clears the choice for this visit only; the toast
+  // must not claim the device is back to the creator's choice.
+  it("says a clear the device could not store lasts the visit", () => {
+    const blocked = {
+      getItem: (): string | null => null,
+      setItem: (): void => {
+        throw new DOMException("refused", "QuotaExceededError");
+      },
+    };
+    let stored: unknown = withPreferredView(
+      null,
+      "longText",
+      "world",
+      "lectern",
+    );
+    const said: string[] = [];
+    const sw = createViewSwitch({
+      host: document.body,
+      read: () => ({ blocks: [longText("t", "reading")], stored }),
+      choose: (kind, placement, view) => {
+        const result = storeVisitorChoice(
+          blocked,
+          stored,
+          kind,
+          placement,
+          view,
+        );
+        stored = result.value;
+        return result.kept;
+      },
+      say: (text) => {
+        said.push(text);
+      },
+    });
+    made.push(sw);
+    sw.sync();
+    document
+      .querySelector<HTMLElement>('[data-testid="view-switch-button"]')
+      ?.click();
+    document
+      .querySelector<HTMLElement>('[data-testid="view-switch-reset"]')
+      ?.click();
+    expect(said).toEqual([
+      "Back to the creator's choice for this visit: Reading (this browser does not keep the choice).",
+    ]);
+  });
+
+  // Why this test matters: in AR the tap outside that closes the menu
+  // would also reach the world as a select (open a sign, turn a page)
+  // behind it. While the menu is open every select is cancelled, and so
+  // is the one of the closing tap itself, whichever of the two events
+  // the browser sends first; the tap after that reaches the world again.
+  it("keeps the closing tap outside from being an AR select, and only that tap", () => {
+    const { q } = mount([longText("t", "reading")]);
+    const outside = document.createElement("div");
+    document.body.append(outside);
+    expect(selectCancelled(outside), "menu closed: the world's tap").toBe(
+      false,
+    );
+    q("view-switch-button")?.click();
+    // The select before the tap's pointerdown.
+    expect(selectCancelled(outside), "menu open").toBe(true);
+    outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(q("view-switch-menu")?.hidden).toBe(true);
+    // The select after the tap's pointerdown, in the same tap.
+    expect(selectCancelled(outside), "the closing tap").toBe(true);
+    outside.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    expect(selectCancelled(outside), "the next tap").toBe(false);
+  });
+
+  // Why this test matters: the menu's open state must not outlive the AR
+  // session: the next session would start with it open over the view.
+  it("closes on demand (the end of an AR session)", () => {
+    const { q, sw } = mount([longText("t", "reading")]);
+    q("view-switch-button")?.click();
+    expect(q("view-switch-menu")?.hidden).toBe(false);
+    sw.close();
+    expect(q("view-switch-menu")?.hidden).toBe(true);
+    expect(q("view-switch-button")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+  });
 
   // Why this test matters: in AR the switch sits in the DOM overlay; a tap
   // on its menu's text or padding that the overlay does not claim becomes
@@ -177,5 +340,45 @@ describe("the switch on the page", () => {
     lectern?.click();
     expect(chosen).toEqual([]);
     expect(q("view-switch-reset")).toBeNull();
+  });
+});
+
+describe("the blocks the switch describes", () => {
+  const station = (id: string, blocks: TourBlock[]): TourStation => ({
+    id,
+    geo: { lat: 0, lon: 0, alt: 0, rotation: [0, 0, 0, 1] },
+    activateRadiusM: 20,
+    foundRadiusM: 5,
+    hint: "arrow",
+    blocks,
+    steps: [],
+  });
+  const stations = [station("gate", [longText("t", "reading")])];
+
+  // Why this test matters: the switch must not show before the present
+  // station's content is placed - it would offer to change a text that is
+  // not standing yet (the gate still scanning, the zero not set).
+  it("are the present station's free blocks, once its content is placed", () => {
+    expect(
+      switchBlocks({ stations, presentId: "gate", contentPlaced: false }),
+    ).toEqual([]);
+    expect(
+      switchBlocks({ stations, presentId: "gate", contentPlaced: true }).map(
+        (b) => b.id,
+      ),
+    ).toEqual(["t"]);
+    expect(
+      switchBlocks({ stations, presentId: null, contentPlaced: true }),
+    ).toEqual([]);
+    expect(
+      switchBlocks({ stations, presentId: "other", contentPlaced: true }),
+    ).toEqual([]);
+    expect(
+      switchBlocks({
+        stations: undefined,
+        presentId: "gate",
+        contentPlaced: true,
+      }),
+    ).toEqual([]);
   });
 });

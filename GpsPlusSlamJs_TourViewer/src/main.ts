@@ -42,14 +42,12 @@ import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { turnShownLecternUnderTap } from "./lectern-view.js";
 import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
-import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { createViewSwitch } from "./view-switch.js";
+import { createViewSwitch, switchBlocks } from "./view-switch.js";
 import {
   selectVisitorPrefs,
   visitorPrefsLoaded,
-  visitorViewChosen,
 } from "./visitor-prefs-slice.js";
-import { loadVisitorPrefs, saveVisitorPrefs } from "./visitor-prefs.js";
+import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
 import {
   readingSheetContent,
   shownReadingSignUnderTap,
@@ -1094,9 +1092,11 @@ const longTextSheet = createLongTextSheet({
     window.open(href, "_blank", "noopener,noreferrer");
   },
 });
-// The visitor's view preference (station blocks design §4): read once
-// from this device, kept in the page's store, mirrored back on a choice.
-// A store that throws keeps the choice for the visit.
+// The visitor's view preference (station blocks design §4): read from
+// this device at the start, kept in the page's store; a choice is merged
+// into a fresh read (another tab may have written since) and stored, and
+// the store takes the merged value. A store that throws keeps the choice
+// for the visit.
 const viewSwitch =
   mode === "visitor"
     ? (() => {
@@ -1105,21 +1105,26 @@ const viewSwitch =
           host: element("ar-root"),
           read: () => {
             const state = arStore.getState();
-            const present = selectPresentStationId(state);
-            const station = ctx.tourDocument
-              .manifest()
-              ?.stations.find((s) => s.id === present);
             return {
-              blocks: station === undefined ? [] : tourFreeBlocks(station),
+              // Only once the station's content is placed.
+              blocks: switchBlocks({
+                stations: ctx.tourDocument.manifest()?.stations,
+                presentId: selectPresentStationId(state),
+                contentPlaced: ctx.stationContent?.showsAny() === true,
+              }),
               stored: selectVisitorPrefs(state),
             };
           },
           choose: (kind, placement, view) => {
-            arStore.dispatch(visitorViewChosen({ kind, placement, view }));
-            return saveVisitorPrefs(
+            const { value, kept } = storeVisitorChoice(
               stepStore,
               selectVisitorPrefs(arStore.getState()),
+              kind,
+              placement,
+              view,
             );
+            arStore.dispatch(visitorPrefsLoaded(value));
+            return kept;
           },
           say: (text) => {
             walkToast.say([text]);
@@ -1171,6 +1176,8 @@ hooks.stopStations = () => {
   stations.stop();
   pinSheet.close();
   longTextSheet.close();
+  // An open menu does not outlive the AR session.
+  viewSwitch?.close();
   modelVisitor.stop();
 };
 // Every device fix goes through the viewer placement: while a scanned code's

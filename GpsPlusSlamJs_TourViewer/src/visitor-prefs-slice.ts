@@ -28,7 +28,9 @@ const visitorPrefsSlice = createSlice({
   name: "visitorPrefs",
   initialState: initialVisitorPrefsState,
   reducers: {
-    /** The value read from the device at the page's start. */
+    /** The value read from the device: at the page's start, and after
+     *  each choice, which the page merges into a fresh read
+     *  (`storeVisitorChoice`) so keys another tab wrote are kept. */
     visitorPrefsLoaded(_state, action: PayloadAction<unknown>) {
       return { stored: action.payload };
     },

@@ -6,7 +6,9 @@ import {
   loadVisitorPrefs,
   preferredView,
   saveVisitorPrefs,
+  shownMember,
   shownView,
+  storeVisitorChoice,
   VISITOR_PREFS_KEY,
   viewNeedsFail,
   viewSetOf,
@@ -227,5 +229,103 @@ describe("the preference on the device", () => {
     storage.items.set(VISITOR_PREFS_KEY, "[1,2]");
     expect(loadVisitorPrefs(storage)).toEqual([1, 2]);
     expect(preferredView([1, 2], "longText", "world")).toBeNull();
+  });
+});
+
+describe("the creator's view as the second choice (rule 4)", () => {
+  // Why this test matters: with the long text's two-member set the
+  // creator's view and the floor coincide whenever rule 4 decides, so
+  // nothing there can tell "the creator's view" from "the floor". A
+  // three-member set, made for this test, can: a mutant that shows the
+  // floor when the preferred view fails must fail here.
+  it("shows the creator's view, not the floor, when the preferred view fails", () => {
+    const shown = (preferred: string | null, failing: readonly string[]) =>
+      shownMember({
+        creator: "b",
+        preferred,
+        floor: "a",
+        fails: (view) => failing.includes(view),
+      });
+    expect(shown("c", []), "rule 3: the preference").toBe("c");
+    expect(shown("c", ["c"]), "rule 4: the creator's view").toBe("b");
+    expect(shown(null, []), "no preference: the creator's view").toBe("b");
+    expect(shown("c", ["c", "b"]), "rule 5: the floor").toBe("a");
+    expect(shown(null, ["b"]), "rule 5 without a preference").toBe("a");
+  });
+});
+
+describe("a choice stored on the device", () => {
+  function memory(initial?: unknown): {
+    items: Map<string, string>;
+    getItem(k: string): string | null;
+    setItem(k: string, v: string): void;
+  } {
+    const items = new Map<string, string>();
+    if (initial !== undefined) {
+      items.set(VISITOR_PREFS_KEY, JSON.stringify(initial));
+    }
+    return {
+      items,
+      getItem: (k) => items.get(k) ?? null,
+      setItem: (k, v) => {
+        items.set(k, v);
+      },
+    };
+  }
+
+  // Why this test matters: the page reads the device once, at its start.
+  // A choice written from that old snapshot would delete every key
+  // another tab (a newer version of the app) wrote since; design §4 keeps
+  // keys this app does not know. The choice is merged into a fresh read.
+  it("merges into a fresh read, keeping a key another tab wrote since the start", () => {
+    const storage = memory({ views: {} });
+    const atStart = loadVisitorPrefs(storage);
+    storage.setItem(
+      VISITOR_PREFS_KEY,
+      JSON.stringify({ views: {}, captions: { size: "large" } }),
+    );
+    const { value, kept } = storeVisitorChoice(
+      storage,
+      atStart,
+      "longText",
+      "world",
+      "lectern",
+    );
+    expect(kept).toBe(true);
+    const expected = {
+      views: { longText: { world: "lectern" } },
+      captions: { size: "large" },
+    };
+    expect(value).toEqual(expected);
+    expect(loadVisitorPrefs(storage)).toEqual(expected);
+  });
+
+  // Why this test matters: a storage that cannot be read gives nothing
+  // fresh; the store's value (with this visit's earlier choices) is then
+  // the base, and the device does not keep the new choice.
+  it("builds on the store's value when the device cannot be read", () => {
+    const blocked = {
+      getItem: (): string | null => {
+        throw new Error("SecurityError");
+      },
+      setItem: (): void => {
+        throw new Error("SecurityError");
+      },
+    };
+    const inStore = { views: { picture: { world: "framed" } } };
+    const { value, kept } = storeVisitorChoice(
+      blocked,
+      inStore,
+      "longText",
+      "world",
+      "lectern",
+    );
+    expect(kept).toBe(false);
+    expect(value).toEqual({
+      views: { picture: { world: "framed" }, longText: { world: "lectern" } },
+    });
+    const none = storeVisitorChoice(undefined, null, "longText", "world", null);
+    expect(none.kept).toBe(false);
+    expect(preferredView(none.value, "longText", "world")).toBeNull();
   });
 });
