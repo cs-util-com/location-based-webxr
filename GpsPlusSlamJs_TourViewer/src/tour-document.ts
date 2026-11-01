@@ -42,6 +42,7 @@ import {
   TOUR_MODEL_MIN_SIZE_M,
   tourTextCount,
   type TourBlock,
+  type TourNarration,
   type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
@@ -2225,6 +2226,18 @@ function copyText(text: string, max: number): string {
   return tourTextCount(marked) <= max ? marked : text;
 }
 
+/** A long text under a new id keeps its voice but not its read-along: the
+ *  timing entry is named by the block's own id (`timing/<blockId>.json`),
+ *  so the format refuses a copy naming the original's, and every save of
+ *  the tour would throw. */
+function copiedNarration<T extends { readonly narration?: TourNarration }>(
+  text: T,
+): T {
+  if (text.narration?.timing === undefined) return text;
+  const { timing: _timing, ...narration } = text.narration;
+  return { ...text, narration };
+}
+
 /** `object` as a new item `newId` at `geo` in `station`: made now
  *  (`createdAtIso`), a captured photo under its own image asset (the new
  *  id, `content/<id>.` its extension), its text marked as a copy where
@@ -2258,10 +2271,10 @@ function copiedObject(
         ? base
         : { ...base, title: copyText(base.title, rules.model.title.max) };
     case "longText":
-      return {
+      return copiedNarration({
         ...base,
         title: copyText(base.title, rules.longText.title.max),
-      };
+      });
     case "picture": {
       const marked =
         base.caption === undefined
@@ -2477,7 +2490,11 @@ function stationDuplicate(
     id: payload.newStationId,
     geo,
     title: copyTitle(shownTitle(before, frame)),
-    blocks: frame.blocks.map((b) => ({ ...b, id: renamed(b.id) })),
+    blocks: frame.blocks.map((b) =>
+      b.kind === "longText"
+        ? copiedNarration({ ...b, id: renamed(b.id) })
+        : { ...b, id: renamed(b.id) },
+    ),
     steps: frame.steps.map((s) =>
       s.action.kind === "show"
         ? {
