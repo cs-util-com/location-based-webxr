@@ -96,7 +96,9 @@ lives here.
     open tour's stations); the hooks `tickStations` (a store change or a
     camera frame), `stationCodeLocked(levelId)` (a trusted lock, after the
     scan gate's part), `unlockStationAudio` (inside the start tap) and
-    `stopStations` (the session ended or the tour closed);
+    `stopStations` (the session ended or the tour closed) and
+    `releaseTourMedia` (the tour closed: the narration's audio and blob
+    URLs go);
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
     code keep-alive, created per AR entry by `startViewerPipeline`, stopped

@@ -201,7 +201,13 @@ export interface ViewSwitch {
  *  pointerup: 100 ms leaves three frames, which a busy phone can miss;
  *  400 ms comes near a quick deliberate second tap. A mark goes with the
  *  first select it cancels, so the grace eats a later tap only when the
- *  closing tap's own select never came. */
+ *  closing tap's own select never came. The same span decides whether a
+ *  select cancelled while the menu was open, just before an outside
+ *  pointerdown, was that tap's own (its select came first): the tap then
+ *  arms no mark. PROVISIONAL (100, 250 and 400 ms were weighed, as
+ *  above); a phone that delivers the closing tap's select more than
+ *  250 ms after pointerup, or a visitor whose second tap comes within
+ *  250 ms of a tap on the open menu, would argue for another value. */
 const CLOSING_TAP_GRACE_MS = 250;
 
 /** The pointer an event is from (0 when it carries none). */
@@ -266,6 +272,9 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
    *  their AR select is still cancelled (`onSelect`): while the finger is
    *  down, and `CLOSING_TAP_GRACE_MS` after it lifts. */
   const closingTaps = new Map<number, number>();
+  /** When a select was last cancelled because the menu was open: a tap
+   *  whose select comes before its pointerdown has had it cancelled so. */
+  let openSelectAt = -Infinity;
 
   function setOpen(open: boolean): void {
     menu.hidden = !open;
@@ -361,6 +370,12 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     if (menu.hidden) return;
     if (event.target instanceof Node && root.contains(event.target)) return;
     setOpen(false);
+    // The tap's select came first and is already cancelled: a mark armed
+    // now would outlive it and eat the next tap.
+    if (now() - openSelectAt <= CLOSING_TAP_GRACE_MS) {
+      openSelectAt = -Infinity;
+      return;
+    }
     closingTaps.set(pointerIdOf(event), Infinity);
   };
   const onTapEnd = (event: Event): void => {
@@ -374,6 +389,7 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
   // pointer, so it takes the oldest mark still in force.
   const onSelect = (event: Event): void => {
     if (!menu.hidden) {
+      openSelectAt = now();
       event.preventDefault();
       return;
     }
@@ -398,6 +414,7 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     close() {
       setOpen(false);
       closingTaps.clear();
+      openSelectAt = -Infinity;
     },
     dispose() {
       button.removeEventListener("click", onButton);

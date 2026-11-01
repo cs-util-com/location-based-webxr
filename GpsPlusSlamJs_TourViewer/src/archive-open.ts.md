@@ -129,6 +129,8 @@ DOM glue, its own module since the flows plan M6.
   print-size check) is kept for the tour about to open. When a tour closes,
   it stops the visitor's stations (`hooks.stopStations`, tour kit plan
   K4: the story and the HUD; the next tour's stations start a new run),
+  lets the tour's media go (`hooks.releaseTourMedia`: a narration's
+  audio element and blob URL, which an AR session's end only pauses),
   closes the tour document (`ctx.tourDocument.close()`: the creator's
   placed objects, their deletions - authoring plan 2026-09-28-0953 M4 - and
   their pictures and AR placements) and drops the previews,
@@ -269,7 +271,8 @@ and that a link that did not open (offline, missing) is never handed on. `archiv
 a failed open: the tour switch clears the fused-pose hint state, the
 failed levels read and the voted-lock count (r857 review #9). It also holds that
 a closing tour stops the stations once (`hooks.stopStations`: the walk's
-views start anew with the next tour), and never with no tour open. Its "the levels' settle reaches the visitor
+views start anew with the next tour), and never with no tour open; and
+that it lets the tour's media go once (`hooks.releaseTourMedia`). Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`
 on a read and on a failed read, and `levelsUnreadable`. The logic
 beneath: `tour-session.test.ts`,

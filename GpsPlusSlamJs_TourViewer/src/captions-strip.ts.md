@@ -24,5 +24,5 @@ The captions view of a narrated text: a strip at the bottom of the AR view with 
 
 ## Tests
 
-- `captions-strip.test.ts` - show and hide, the word mark and the dimmed words, the sentence-track fallback, play, back 10 s, Full text, the layout change.
+- `captions-strip.test.ts` - show and hide, the word mark and the dimmed words, the sentence-track fallback, play, back 10 s, Full text, the layout change, a tap anywhere on the strip kept from being an AR select (`cancelsXrSelect`).
 - `playwright-tests/narration-check.spec.js` - where the strip lands at three viewports against the prototype's numbers, and the word mark in a browser.

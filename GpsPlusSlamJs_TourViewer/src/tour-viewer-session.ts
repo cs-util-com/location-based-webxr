@@ -300,6 +300,9 @@ export interface TourViewerHooks {
   /** The AR session ended or the tour closed: the story stops, the HUD
    *  goes; the progress stays with the open tour. */
   stopStations(): void;
+  /** The tour closed: what was loaded from its files and outlives an AR
+   *  session (a narration's audio element and blob URL) goes. */
+  releaseTourMedia(): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
@@ -335,6 +338,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     stationCodeLocked: () => undefined,
     unlockStationAudio: () => undefined,
     stopStations: () => undefined,
+    releaseTourMedia: () => undefined,
   };
 }
 

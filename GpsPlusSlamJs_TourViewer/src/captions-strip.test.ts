@@ -22,6 +22,7 @@ import {
   type CaptionsContent,
 } from "./captions-strip.js";
 import { sentenceSpans } from "./long-text-sentences.js";
+import { cancelsXrSelect } from "./pin-sheet.js";
 import type { NarrationClock } from "./narration-player.js";
 
 const LONG =
@@ -223,6 +224,18 @@ describe("the captions strip", () => {
     expect(q(host, "captions-strip").classList.contains("cs-hide")).toBe(true);
     strip.dispose();
     expect(host.querySelector('[data-testid="captions-strip"]')).toBeNull();
+  });
+
+  // Why this test matters: in AR the strip sits in the DOM overlay; a tap
+  // on its words or the gaps between its controls that the overlay does
+  // not claim becomes an XR select - a sign opening behind the strip.
+  it("keeps a tap anywhere on the strip from being an AR select", () => {
+    const { host, strip, content } = make();
+    strip.show(content(track("word")));
+    for (const id of ["captions-strip", "captions-text", "captions-title"]) {
+      expect(cancelsXrSelect(q(host, id)), id).toBe(true);
+    }
+    expect(cancelsXrSelect(host)).toBe(false);
   });
 });
 

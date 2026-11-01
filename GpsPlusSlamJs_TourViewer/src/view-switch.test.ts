@@ -261,25 +261,44 @@ describe("the switch on the page", () => {
 
   // Why this test matters: in AR the tap outside that closes the menu
   // would also reach the world as a select (open a sign, turn a page)
-  // behind it. While the menu is open every select is cancelled, and so
-  // is the one of the closing tap itself, whichever of the two events
-  // the browser sends first; the tap after that reaches the world again.
-  it("keeps the closing tap outside from being an AR select, and only that tap", () => {
-    const { q } = mount([longText("t", "reading")]);
+  // behind it. A tap brings ONE select, which the browser may ask for
+  // before or after the tap's pointerdown. Either way that select is
+  // cancelled and the next tap's reaches the world again - even a quick
+  // one, inside the grace a lifted closing tap keeps.
+  it("keeps the closing tap outside from being an AR select, and only that tap, whichever event comes first", () => {
+    const cases = ["select first", "pointerdown first"].flatMap((order) =>
+      [10, 40, 120, 240].map((gapMs) => ({ order, gapMs })),
+    );
+    for (const { order, gapMs } of cases) {
+      const { q, outside, sw } = openOutside();
+      const selectFirst = order === "select first";
+      const early = selectFirst ? selectCancelled(outside) : null;
+      finger(outside, "pointerdown", 1);
+      const late = selectFirst ? null : selectCancelled(outside);
+      expect(early ?? late, `${order}: the closing tap`).toBe(true);
+      expect(q("view-switch-menu")?.hidden, order).toBe(true);
+      finger(outside, "pointerup", 1);
+      // The next tap, inside the 250 ms grace a lifted closing tap keeps.
+      clockMs += gapMs;
+      finger(outside, "pointerdown", 2);
+      expect(
+        selectCancelled(outside),
+        `${order}: the next tap ${String(gapMs)} ms later`,
+      ).toBe(false);
+      finger(outside, "pointerup", 2);
+      sw.dispose();
+    }
+  });
+
+  // Why this test matters: with the menu closed the switch claims no tap.
+  it("lets every select through while the menu is closed", () => {
+    mount([longText("t", "reading")]);
     const outside = document.createElement("div");
     document.body.append(outside);
+    finger(outside, "pointerdown", 1);
     expect(selectCancelled(outside), "menu closed: the world's tap").toBe(
       false,
     );
-    q("view-switch-button")?.click();
-    // The select before the tap's pointerdown.
-    expect(selectCancelled(outside), "menu open").toBe(true);
-    outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    expect(q("view-switch-menu")?.hidden).toBe(true);
-    // The select after the tap's pointerdown, in the same tap.
-    expect(selectCancelled(outside), "the closing tap").toBe(true);
-    outside.dispatchEvent(new Event("pointerup", { bubbles: true }));
-    expect(selectCancelled(outside), "the next tap").toBe(false);
   });
 
   /** A pointer event of `type` by finger `id` on `target`. */

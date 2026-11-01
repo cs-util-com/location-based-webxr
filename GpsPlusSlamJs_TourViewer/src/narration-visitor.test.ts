@@ -24,6 +24,7 @@ import {
   createNarrationVisitor,
   type NarratedTour,
 } from "./narration-visitor.js";
+import { createNarrationPlayer } from "./narration-player.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 const BODY = "The hall burned. It was built again.";
@@ -236,5 +237,57 @@ describe("the visitor's narrated texts", () => {
     expect(audioAssetPath(assets, "v")).toBe("v.ogg");
     expect(audioAssetPath(assets, "a")).toBeNull();
     expect(audioAssetPath(undefined, "v")).toBeNull();
+  });
+});
+
+describe("a closed tour's voices", () => {
+  // Why this test matters: a voice holds an audio element and a blob URL
+  // of the tour's file. The page calls `reset()` where a tour closes; if
+  // that did not let the real player go, the closed tour's audio would
+  // stay loaded and its blob URL would never be revoked.
+  it("removes the audio's source and revokes its blob URL on reset", async () => {
+    const audio = {
+      src: "",
+      currentTime: 0,
+      duration: 3,
+      paused: true,
+      preload: "",
+      play: vi.fn(() => Promise.resolve()),
+      pause: vi.fn(),
+      addEventListener: vi.fn(),
+      removeAttribute: vi.fn((name: string) => {
+        if (name === "src") audio.src = "";
+      }),
+      load: vi.fn(),
+    };
+    const revoked: string[] = [];
+    const tour: NarratedTour = {
+      manifestWrap: "",
+      loadEntryText: () => timingFile(),
+    };
+    const visitor = createNarrationVisitor({
+      tour: () => tour,
+      assets: () => [{ id: "voice", path: "media/voice.ogg", kind: "audio" }],
+      loadAsset: () => Promise.resolve(new Blob(["x"])),
+      onError: () => undefined,
+      makePlayer: (deps) =>
+        createNarrationPlayer({
+          ...deps,
+          audio: () => audio,
+          createUrl: () => "blob:voice",
+          revokeUrl: (url) => {
+            revoked.push(url);
+          },
+        }),
+    });
+    const player = visitor.sheetNarration(text())?.player;
+    player?.play();
+    await vi.waitFor(() => {
+      expect(audio.src).toBe("blob:voice");
+    });
+    visitor.reset();
+    expect(audio.removeAttribute).toHaveBeenCalledWith("src");
+    expect(audio.src).toBe("");
+    expect(revoked).toEqual(["blob:voice"]);
   });
 });

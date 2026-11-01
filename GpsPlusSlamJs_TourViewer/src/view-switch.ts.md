@@ -83,7 +83,15 @@ and offers "Use the creator's choice again" while a choice is stored.
   the finger is down, and up to 250 ms after it lifts. Not handled: a
   select later than that (it reaches the world), and which finger a
   select belongs to (a select carries no pointer, so it takes the oldest
-  mark in force). `close()` drops every mark.
+  mark in force). A tap whose select comes BEFORE its pointerdown has it
+  cancelled while the menu is still open; the pointerdown that follows
+  within 250 ms of such a select arms no mark, which would otherwise
+  outlive the tap and eat the next one. Residual: a tap on the open menu
+  (a greyed row) and a tap outside within 250 ms of it, the outside
+  tap's select coming after its pointerdown, lets that select through.
+  The 250 ms is PROVISIONAL (100, 250 and 400 ms weighed); a phone
+  delivering the closing select later, or that residual seen in use,
+  would reopen it. `close()` drops every mark.
 - A re-pick (the stored choice picked again) is compared with the page's
   store, not with a fresh read of the device: if another tab changed the
   device's value since the page started, the re-pick does not write the
@@ -104,7 +112,8 @@ sw.sync(); // every frame
   refused write said as "for this visit", a refused clear too; a greyed
   member refused; the disclosure's attributes and the focus back on the
   pill; the stored choice picked again does nothing; the closing tap's
-  select cancelled, and only that tap's; `close()`; `switchBlocks` waits
+  select cancelled, and only that tap's, whichever of its select and
+  pointerdown comes first and for a next tap 10-240 ms later; `close()`; `switchBlocks` waits
   for the placed content. Each test disposes its switch (an old one would
   go on listening on the document).
 - `playwright-tests/view-switch.spec.js` - the choice across two tours,

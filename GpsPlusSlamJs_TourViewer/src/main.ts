@@ -1253,6 +1253,9 @@ hooks.stopStations = () => {
   viewSwitch?.close();
   modelVisitor.stop();
 };
+hooks.releaseTourMedia = () => {
+  narration.reset();
+};
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.

@@ -188,6 +188,8 @@ export function wireArchiveOpen(deps: {
     hooks.presentTourInfo(null);
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
+    // Its voices' audio and blob URLs, which an AR session's end keeps.
+    hooks.releaseTourMedia();
     ctx.rebuiltZip = null;
     ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION

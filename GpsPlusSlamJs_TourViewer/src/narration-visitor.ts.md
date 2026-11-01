@@ -23,4 +23,4 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
 
 ## Tests
 
-- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, a silent text, a block of another kind.
+- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, `reset()` letting a real player's audio source and blob URL go, a silent text, a block of another kind.

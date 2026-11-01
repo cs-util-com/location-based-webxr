@@ -77,7 +77,8 @@ listed in `index.html.md`. The concerns and their modules:
   `verdictOf`. In visitor mode it builds the captions strip under
   `#ar-root` and its follower; `hooks.tickStations` ticks the sheet's
   marks and syncs the follower each frame, and `hooks.stopStations` stops
-  the follower and pauses every voice. The strip's "Full text" opens the
+  the follower and pauses every voice; `hooks.releaseTourMedia` (a
+  tour's close) lets every voice go (`narration.reset()`). The strip's "Full text" opens the
   same sheet.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
