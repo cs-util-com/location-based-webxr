@@ -10,6 +10,9 @@
   only when non-empty (see "Narrowed changes" below). `docOnlyDirs(docsOnly)`
   maps doc-only files to their package dirs; `describeRun(selection, ref)` is
   the one line the shell prints.
+  `isPackageDocMarkdown(path)` (a normalized path inside a package) is the
+  doc-markdown rule itself, exported so the Tour Viewer's e2e plan
+  (`playwright-tests/e2e-plan.js`) skips exactly the markdown this gate skips.
 - Invariants & assumptions (speedup plan Phase B.2 guard rails — load-bearing):
   - Any path outside a known package dir ⇒ `mode: 'all'` (root configs are
     outside pnpm's dependency graph), except the narrowed root classes in

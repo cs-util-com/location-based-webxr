@@ -328,6 +328,20 @@ describe('browser-stage exclusion (DEC-G2)', () => {
     ).not.toContain('test:e2e');
   });
 
+  it('marks exactly the stages that run the project runner as narrowable', () => {
+    // A narrowable stage records no timing row inside test:changed
+    // (run-stage.mjs). A stage marked by mistake loses its history; one the
+    // runner narrows but that is unmarked records a part of its suite as the
+    // whole.
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        expect(Boolean(stage.narrowable), `${project.name} ${stage.name}`).toBe(
+          stage.command.includes('scripts/e2e/run-projects.mjs')
+        );
+      }
+    }
+  });
+
   it('leaves the full stage list untouched when the mode is off', () => {
     for (const project of PROJECTS) {
       expect(gateStages(project).map((s) => s.name)).toEqual(stageOrder(project));

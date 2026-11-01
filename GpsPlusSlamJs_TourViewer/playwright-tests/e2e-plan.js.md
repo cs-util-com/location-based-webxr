@@ -18,8 +18,11 @@ cannot reach.
   (the GitHub runner always uses one; `E2E_DOM_WORKERS` overrides it, see
   `scripts/e2e/project-runs.mjs`).
 - `pathArea(path)`: the area a changed repo path can affect: `editor`,
-  `viewer`, `spec` (a spec file), `none` (a unit test, a sidecar, docs, the
-  timings file) or `null` (unknown or shared: everything runs).
+  `viewer`, `spec` (a spec file), `none` (a unit test, the timings file, or
+  doc markdown by `test:changed`'s own rule, `isPackageDocMarkdown` in
+  `scripts/test-changed/select.mjs`: a sidecar, a README or CHANGELOG, a
+  `docs/` file) or `null` (unknown or shared: everything runs). Other
+  markdown keeps its folder's area (the app may read it).
 - `selectSpecs(changedPaths)`: `{ all: true, reason }` when any path is
   `null` or both areas changed; else `{ all: false, areas, specs }`, the
   changed area's specs, the `both` specs and any changed spec file.
@@ -37,8 +40,9 @@ cannot reach.
 - **The area criterion:** `editor` opens only `edit.html`; `viewer` opens
   only other pages; `both` opens the editor and another page.
 - **What `pathArea` calls editor-only:** `edit.html`, `src/editor/`,
-  `src/editor3d/`, the editor kit's `src/chrome/`, `src/scene/`,
-  `src/globe/`, and the editor-only spec helpers `editor3d-fixture.js` and
+  `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
+  a new kit folder is `null` until classified), and the editor-only spec
+  helpers `editor3d-fixture.js` and
   `editor-menus.js`. **Viewer-only:** `index.html` and `src/landing/`,
   except the modules the editor imports too (`film-math.ts`, `clamp01.ts`).
   Everything else in the package (the shared `src/*.ts`, the other pages,
@@ -90,4 +94,6 @@ files on disk and splits them between the projects with nothing doubled;
 each spec's area agrees with what its text opens (`/edit.html`, another
 page, the editor fixture); editor-fixture specs are `webgl`; no module the
 plan calls editor-only is reachable by imports from a non-editor page, and
-no viewer-only one from the editor; `selectSpecs` per case.
+no viewer-only one from the editor (the scan follows any file kind, drops a
+`?raw` or `?url` suffix, follows the kit's exports into its sources, and
+fails on an import it cannot resolve); `selectSpecs` per case.

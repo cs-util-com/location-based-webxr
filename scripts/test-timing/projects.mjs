@@ -48,6 +48,10 @@ import path from "node:path";
  *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
  *   webServer `pnpm run dev` spawns reference the script and must not
  *   record timing rows); the gate still runs this stage via its `command`.
+ * @property {boolean} [narrowable] - true for a stage whose command may cut
+ *   itself to the changed area inside a `test:changed` run (the Tour
+ *   Viewer's e2e through scripts/e2e/run-projects.mjs). Such a run records no
+ *   timing row (`narrowedStageRun` in scripts/e2e/project-runs.mjs).
  */
 
 /**
@@ -617,6 +621,7 @@ export const PROJECTS = [
                   ...stage,
                   command:
                     "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
+                  narrowable: true,
                 }
               : stage,
       ),

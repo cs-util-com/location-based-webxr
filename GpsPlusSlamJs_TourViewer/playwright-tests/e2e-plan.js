@@ -8,6 +8,8 @@
  * table to the spec files on disk.
  */
 
+import { isPackageDocMarkdown } from "../../scripts/test-changed/select.mjs";
+
 /** The Playwright projects, in the order the runner runs them. */
 export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
 
@@ -121,14 +123,18 @@ const AREA_HELPERS = {
  *
  * - `"editor"` / `"viewer"`: only that area's pages;
  * - `"spec"`: a spec file, which runs itself (see `selectSpecs`);
- * - `"none"`: nothing an e2e spec runs (a unit test, a sidecar, docs);
+ * - `"none"`: nothing an e2e spec runs (a unit test, the timings file, doc
+ *   markdown by `test:changed`'s own rule, `isPackageDocMarkdown`: a
+ *   sidecar, a README or CHANGELOG, a `docs/` file);
  * - `null`: unknown or shared, so every spec runs. Fail safe: a path not
  *   named here is `null`.
  *
  * The editor-only folders are held by the Tour Viewer's dependency-cruiser
- * rules (no viewer module imports `src/editor/`, `src/editor3d/`, nor the
- * kit's `chrome/`, `scene/` or `globe/`); the viewer-only ones, and both sets
- * transitively, by `tests/repo-config/tour-viewer-e2e-plan.test.js`.
+ * rules (no viewer module imports `src/editor/` or `src/editor3d/`) and its
+ * `src/editor-only-packages.test.ts` (nor the kit's `./chrome`, the kit's
+ * only folder today); the viewer-only ones, and both
+ * sets transitively (the kit's sources included), by
+ * `tests/repo-config/tour-viewer-e2e-plan.test.js`.
  *
  * @param {string} rawPath - repo-relative, either slash style
  * @returns {"editor" | "viewer" | "spec" | "none" | null}
@@ -136,9 +142,7 @@ const AREA_HELPERS = {
 export function pathArea(rawPath) {
   const path = String(rawPath).replaceAll("\\", "/");
   if (/(^|\/)docs\/test-timings\.md$/.test(path)) return "none";
-  if (path.endsWith(".md") && !/\/(public|assets|fixtures)\//.test(path)) {
-    return "none";
-  }
+  if (isPackageDocMarkdown(path)) return "none";
   if (path.startsWith(KIT)) return kitArea(path.slice(KIT.length));
   if (path.startsWith(PKG)) return packageArea(path);
   return null;
@@ -150,7 +154,7 @@ export function pathArea(rawPath) {
  */
 function kitArea(inKit) {
   if (/\.test\.ts$/.test(inKit)) return "none";
-  return /^(chrome|scene|globe)\//.test(inKit) ? "editor" : null;
+  return inKit.startsWith("chrome/") ? "editor" : null;
 }
 
 /**

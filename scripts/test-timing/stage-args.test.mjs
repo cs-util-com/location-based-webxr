@@ -52,8 +52,9 @@ describe('decideRecording', () => {
 
   it('records a local gate run that sets CI=1', () => {
     // Every local gate sets CI=1 (for Playwright's CI mode), so keying the skip
-    // on CI recorded nothing locally from mid-October 2026 on and the versioned
-    // test-timings.md files went stale. Only the GitHub runner counts as CI here.
+    // on CI recorded no gate run from 2026-09-30 on (when CI=1 entered the
+    // commit gate) and the versioned test-timings.md files went stale. Only the
+    // GitHub runner counts as CI here.
     expect(decideRecording([], { CI: '1' })).toEqual({
       record: true,
       extraArgs: [],

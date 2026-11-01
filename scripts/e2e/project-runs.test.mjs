@@ -1,7 +1,7 @@
 // Why these tests matter: run-projects.mjs replaces one Playwright run with
 // one run per project, so three things can silently lose checks: a report
-// merge that drops a project's failures or counts (the gate's timing row and
-// CI's artifact read the merged file), a filter that matches the wrong spec
+// merge that drops a project's failures or counts (the gate's timing row
+// reads the merged file), a filter that matches the wrong spec
 // (`stations.spec.js` is a suffix of `creator-stations.spec.js`), and an area
 // narrowing that leaks onto the GitHub runner, which must run everything.
 import { describe, expect, it } from 'vitest';
@@ -9,11 +9,14 @@ import { describe, expect, it } from 'vitest';
 import {
   CHANGED_REF_ENV,
   DOM_WORKERS_ENV,
+  developerFiltered,
   domWorkers,
   mayNarrow,
   mergeReports,
+  narrowedStageRun,
   projectArgs,
   projectReportName,
+  readReport,
   specFilter,
 } from './project-runs.mjs';
 
@@ -93,17 +96,98 @@ describe('specFilter', () => {
   });
 });
 
-describe('projectArgs', () => {
-  it('runs one project at its workers, passing with no tests, then the specs', () => {
-    expect(
-      projectArgs({ base: ['test', '--config', 'c.js'], project: 'webgl', workers: 1, specs: ['a.spec.js'] })
-    ).toEqual(['test', '--config', 'c.js', '--project', 'webgl', '--workers', '1', '--pass-with-no-tests', specFilter('a.spec.js')]);
+describe('developerFiltered', () => {
+  it("is false for nothing forwarded and for the gate's own reporter flag", () => {
+    expect(developerFiltered([])).toBe(false);
+    expect(developerFiltered(['--reporter=list,json'])).toBe(false);
   });
 
-  it('adds no file filter when every spec runs', () => {
+  it('is true for a file filter or any other flag a developer typed', () => {
+    expect(developerFiltered(['editor3d.spec.js'])).toBe(true);
+    expect(developerFiltered(['--reporter=list', '--grep', 'credits'])).toBe(true);
+  });
+});
+
+// Why these tests matter: `--pass-with-no-tests` turns "this filter matched
+// nothing" into green. That is right for a developer's filter (it may match
+// only the other project's specs) and wrong for the runner's own choice of
+// specs or a full run: a stale spec list or an empty project would then pass
+// with 0 tests run.
+describe('projectArgs', () => {
+  it('runs one project at its workers, then the specs, failing when they match nothing', () => {
+    expect(
+      projectArgs({ base: ['test', '--config', 'c.js'], project: 'webgl', workers: 1, specs: ['a.spec.js'] })
+    ).toEqual(['test', '--config', 'c.js', '--project', 'webgl', '--workers', '1', specFilter('a.spec.js')]);
+  });
+
+  it('adds no file filter and no pass-with-no-tests when every spec runs', () => {
     expect(projectArgs({ base: ['test'], project: 'dom', workers: 3 })).toEqual([
-      'test', '--project', 'dom', '--workers', '3', '--pass-with-no-tests',
+      'test', '--project', 'dom', '--workers', '3',
     ]);
+  });
+
+  it("passes with no tests only behind a developer's filter", () => {
+    expect(
+      projectArgs({ base: ['test', 'x.spec.js'], project: 'dom', workers: 3, passWithNoTests: true })
+    ).toEqual(['test', 'x.spec.js', '--project', 'dom', '--workers', '3', '--pass-with-no-tests']);
+  });
+});
+
+// Why these tests matter: a narrowed run (an editor-only change runs only the
+// editor's specs) is not the full suite, and an empty selection runs nothing.
+// Recording either as a timing row puts a part-suite or a 1-second duration
+// into the history that every later comparison reads as the full suite.
+describe('narrowedStageRun', () => {
+  const stage = { name: 'test:e2e', narrowable: true };
+
+  it('is true for a narrowable stage inside a test:changed run', () => {
+    expect(narrowedStageRun(stage, { [CHANGED_REF_ENV]: 'abc123' })).toBe(true);
+  });
+
+  it('is false outside test:changed, on the GitHub runner, or for any other stage', () => {
+    expect(narrowedStageRun(stage, {})).toBe(false);
+    expect(narrowedStageRun(stage, { [CHANGED_REF_ENV]: '' })).toBe(false);
+    expect(narrowedStageRun(stage, { [CHANGED_REF_ENV]: 'abc', GITHUB_ACTIONS: 'true' })).toBe(false);
+    expect(narrowedStageRun({ name: 'test:e2e' }, { [CHANGED_REF_ENV]: 'abc' })).toBe(false);
+    expect(narrowedStageRun({ name: 'test:e2e', narrowable: false }, { [CHANGED_REF_ENV]: 'abc' })).toBe(false);
+  });
+});
+
+// Why these tests matter: the runner reads each project's report after its
+// run. A missing one used to be skipped in silence, and a truncated one threw,
+// which aborted the runner before the next project ran a single spec.
+describe('readReport', () => {
+  /** @param {Record<string, string>} files */
+  const io = (files) => ({
+    exists: (/** @type {string} */ f) => Object.hasOwn(files, f),
+    read: (/** @type {string} */ f) => files[f],
+  });
+  const good = JSON.stringify(report({ expected: 3 }, 'dom'));
+
+  it('returns a readable report', () => {
+    const r = readReport('a.json', true, io({ 'a.json': good }));
+    expect(r.failed).toBe(false);
+    expect(r.warning).toBe(null);
+    expect(r.report?.stats.expected).toBe(3);
+  });
+
+  it('warns about an expected report that is missing, without failing the run', () => {
+    const r = readReport('a.json', true, io({}));
+    expect(r).toMatchObject({ report: null, failed: false });
+    expect(r.warning).toContain('a.json');
+  });
+
+  it('says nothing about a report nobody asked for', () => {
+    expect(readReport('a.json', false, io({}))).toEqual({ report: null, warning: null, failed: false });
+  });
+
+  it('warns and fails on a truncated report or one without stats, instead of throwing', () => {
+    for (const text of [good.slice(0, 20), '{"suites": []}', 'null']) {
+      const r = readReport('a.json', true, io({ 'a.json': text }));
+      expect(r.report, text).toBe(null);
+      expect(r.failed, text).toBe(true);
+      expect(r.warning, text).toContain('a.json');
+    }
   });
 });
 

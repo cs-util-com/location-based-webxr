@@ -26,8 +26,8 @@ readiness.
   3 locally), as before the split.
 - **The CI JSON report's file name comes from `E2E_RESULTS_NAME`** when the
   runner sets it (one file per project), else `results.json`; the runner
-  merges the per-project files into `test-results/results.json`, the one
-  CI uploads.
+  merges the per-project files into `test-results/results.json`. The
+  GitHub workflow uploads only the Recorder's results, not this file.
 
 - **Every spec starts as a creator who chose a host** (`storageState` seeds
   `tour-viewer.wizard.host` = `drive`; polish round M2): the page then

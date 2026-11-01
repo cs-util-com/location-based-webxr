@@ -1,8 +1,10 @@
 // Pure parts of run-projects.mjs: the Playwright arguments of one project's
 // run, the DOM project's worker count, whether a run may be narrowed to an
-// area, and the merge of the per-project JSON reports into the one report the
-// gate's counts and CI's artifact read. No I/O here, so every rule is
-// unit-testable.
+// area, whether such a run may record a timing row, the reading of each
+// project's JSON report and their merge into the one file the gate's counts
+// read (and the config's CI-mode reporter names; the GitHub workflow uploads
+// only the Recorder's results). No I/O here (the report reader takes its file
+// access as an argument), so every rule is unit-testable.
 
 import { onGithubRunner } from '../test-timing/stage-args.mjs';
 
@@ -50,7 +52,34 @@ export function domWorkers(env, localDefault) {
 export function mayNarrow(env, forwarded) {
   if (onGithubRunner(env)) return false;
   if (!env[CHANGED_REF_ENV]) return false;
-  return forwarded.every((arg) => arg.startsWith('--reporter='));
+  return !developerFiltered(forwarded);
+}
+
+/**
+ * Whether the forwarded arguments hold a developer's own selection: anything
+ * but the gate's `--reporter=...` recording flag.
+ *
+ * @param {readonly string[]} forwarded - args after the canonical command
+ * @returns {boolean}
+ */
+export function developerFiltered(forwarded) {
+  return forwarded.some((arg) => !arg.startsWith('--reporter='));
+}
+
+/**
+ * Whether a stage run may be cut to the changed area, so it is not a
+ * full-suite run and must not record a timing row: a stage marked
+ * `narrowable` (projects.mjs), inside a `test:changed` run, off the GitHub
+ * runner. Whether the runner then narrows (an unknown path runs every spec)
+ * is decided later, in the stage's own process; the row is skipped either
+ * way, so neither a part-suite run nor an empty selection reads as the suite.
+ *
+ * @param {{ narrowable?: boolean }} stage
+ * @param {Record<string, string | undefined>} env
+ * @returns {boolean}
+ */
+export function narrowedStageRun(stage, env) {
+  return stage.narrowable === true && !onGithubRunner(env) && Boolean(env[CHANGED_REF_ENV]);
 }
 
 /**
@@ -67,22 +96,62 @@ export function specFilter(name) {
 /**
  * The CLI arguments of one project's run.
  *
- * `--pass-with-no-tests`: a developer's filter that matches only the other
- * project's specs leaves this one empty, which is not a failure.
+ * `passWithNoTests` adds `--pass-with-no-tests`, for a developer's filter
+ * only: one that matches just the other project's specs leaves this one
+ * empty, which is not a failure. Without it (the runner's own spec list, or
+ * a full run) a project that matches no test fails, so a stale list can
+ * never pass with 0 tests run.
  *
- * @param {{ base: readonly string[], project: string, workers: number, specs?: readonly string[] | null }} run
+ * @param {{ base: readonly string[], project: string, workers: number, specs?: readonly string[] | null, passWithNoTests?: boolean }} run
  * @returns {string[]}
  */
-export function projectArgs({ base, project, workers, specs = null }) {
+export function projectArgs({ base, project, workers, specs = null, passWithNoTests = false }) {
   return [
     ...base,
     '--project',
     project,
     '--workers',
     String(workers),
-    '--pass-with-no-tests',
+    ...(passWithNoTests ? ['--pass-with-no-tests'] : []),
     ...(specs ?? []).map(specFilter),
   ];
+}
+
+/**
+ * Reads one project's JSON report without throwing, so a bad report never
+ * stops the next project from running.
+ *
+ * - missing and `expected`: a warning (its counts are lost), not a failure;
+ *   missing and not expected (the reporter was off): nothing;
+ * - unparsable (a truncated write) or without a `stats` object: a warning
+ *   and `failed`, so the run fails closed after every project ran.
+ *
+ * @param {string} file
+ * @param {boolean} expected - whether the run was asked to write it
+ * @param {{ exists: (file: string) => boolean, read: (file: string) => string }} io
+ * @returns {{ report: any, warning: string | null, failed: boolean }}
+ */
+export function readReport(file, expected, io) {
+  if (!io.exists(file)) {
+    return {
+      report: null,
+      warning: expected ? `no JSON report at ${file}; its counts are missing from the merged report` : null,
+      failed: false,
+    };
+  }
+  try {
+    const report = JSON.parse(io.read(file));
+    if (!report || typeof report !== 'object' || !report.stats || typeof report.stats !== 'object') {
+      throw new TypeError('a Playwright report without a stats object');
+    }
+    return { report, warning: null, failed: false };
+  } catch (error) {
+    return {
+      report: null,
+      warning: `unreadable JSON report at ${file} (${String(error)}); the run fails`,
+      failed: true,
+    };
+  }
 }
 
 /** @param {unknown} v @returns {number} */

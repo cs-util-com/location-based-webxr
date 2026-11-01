@@ -6,16 +6,19 @@
 //   node ../scripts/e2e/run-projects.mjs <plan.js> playwright test --config <config> [forwarded...]
 //
 // `<plan.js>` (relative to the package) exports `PROJECTS` (names, in run
-// order), `specsOf(project)`, `LOCAL_DOM_WORKERS`, `RESULTS_DIR`,
-// `RESULTS_NAME` and `selectSpecs(changedPaths)`; see
+// order), `SPECS` (spec file name -> project and area), `specsOf(project)`,
+// `LOCAL_DOM_WORKERS`, `RESULTS_DIR`, `RESULTS_NAME` and
+// `selectSpecs(changedPaths)`; see
 // GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js. The first project
 // runs at the DOM worker count, every later one at one worker.
 //
 // Not Playwright's project `dependencies`: a red spec of the first project
 // would skip every spec of the next one. Here every project runs, and the
-// exit code is the first non-zero one. The per-project JSON reports (the
-// config's own reporter on CI, the gate's injected one when it records) are
-// merged into the one file their reader expects.
+// exit code is the first non-zero one (1 when a report was unreadable). The
+// per-project JSON reports (the config's own reporter in CI mode, the gate's
+// injected one when it records) are merged into the one file their reader
+// expects; a missing one is warned about, an unreadable one fails the run
+// after every project ran.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,11 +29,13 @@ import { pathToFileURL } from 'node:url';
 import { changedPaths } from '../test-changed/changed-paths.mjs';
 import {
   CHANGED_REF_ENV,
+  developerFiltered,
   domWorkers,
   mayNarrow,
   mergeReports,
   projectArgs,
   projectReportName,
+  readReport,
 } from './project-runs.mjs';
 
 const [planFile, cli, verb, configFlag, configFile, ...forwarded] =
@@ -78,14 +83,16 @@ const base = ['test', '--config', configFile, ...forwarded];
 const resultsDir = path.resolve(cwd, plan.RESULTS_DIR);
 /**
  * The JSON reports to merge after the runs: the config's own reporter (CI
- * mode; the config reads its file name from E2E_RESULTS_NAME inside
- * RESULTS_DIR) and the gate's injected one (a path, when it records).
- * @type {{ env: string, file: string, valueFor: (project: string) => string, fileFor: (project: string) => string }[]}
+ * mode, so expected only when CI is set; the config reads its file name from
+ * E2E_RESULTS_NAME inside RESULTS_DIR) and the gate's injected one (a path,
+ * when it records).
+ * @type {{ env: string, file: string, expected: boolean, valueFor: (project: string) => string, fileFor: (project: string) => string }[]}
  */
 const reportTargets = [
   {
     env: 'E2E_RESULTS_NAME',
     file: path.join(resultsDir, plan.RESULTS_NAME),
+    expected: Boolean(process.env.CI),
     valueFor: (p) => projectReportName(plan.RESULTS_NAME, p),
     fileFor: (p) => path.join(resultsDir, projectReportName(plan.RESULTS_NAME, p)),
   },
@@ -95,6 +102,7 @@ if (gateReport) {
   reportTargets.push({
     env: 'PLAYWRIGHT_JSON_OUTPUT_NAME',
     file: gateReport,
+    expected: true,
     valueFor: (p) => projectReportName(gateReport, p),
     fileFor: (p) => projectReportName(gateReport, p),
   });
@@ -121,7 +129,13 @@ e2e project ${project}: no spec selected, skipped`);
     env[t.env] = t.valueFor(project);
     rmSync(t.fileFor(project), { force: true });
   }
-  const args = projectArgs({ base, project, workers, specs: specs ?? null });
+  const args = projectArgs({
+    base,
+    project,
+    workers,
+    specs: specs ?? null,
+    passWithNoTests: developerFiltered(forwarded),
+  });
   console.log(`
 e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);
   const child = spawnSync(process.execPath, [playwrightCli, ...args], {
@@ -133,8 +147,13 @@ e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);
   if (status !== 0 && exitCode === 0) exitCode = status;
   for (const t of reportTargets) {
     const file = t.fileFor(project);
-    if (!existsSync(file)) continue;
-    reports.get(t.file)?.push(JSON.parse(readFileSync(file, 'utf8')));
+    const read = readReport(file, t.expected, {
+      exists: existsSync,
+      read: (f) => readFileSync(f, 'utf8'),
+    });
+    if (read.warning) console.warn(`e2e project ${project}: ${read.warning}`);
+    if (read.failed && exitCode === 0) exitCode = 1;
+    if (read.report) reports.get(t.file)?.push(read.report);
     rmSync(file, { force: true });
   }
 }

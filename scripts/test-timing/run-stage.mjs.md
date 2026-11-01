@@ -25,11 +25,15 @@
 - Invariants & assumptions:
   - Recording NEVER fails the gate: all timing errors are warnings; the
     spawned command's exit code is returned untouched.
-  - Records only full-suite non-CI runs (`decideRecording`): any forwarded
-    arg or `CI` env ⇒ run executes but is not recorded. A run on a stage's
-    per-commit `fastGateCommand` (`gateBaseCommand` in `projects.mjs`) is
-    not recorded either: its duration is not comparable with the canonical
-    command's history (gate-speed plan 2026-10-04, G4).
+  - Records only full-suite runs off the GitHub runner (`decideRecording`):
+    any forwarded arg or `GITHUB_ACTIONS` ⇒ run executes but is not
+    recorded (a local `CI=1` is recorded). A run on a stage's per-commit
+    `fastGateCommand` (`gateBaseCommand` in `projects.mjs`) is not
+    recorded either: its duration is not comparable with the canonical
+    command's history (gate-speed plan 2026-10-04, G4). Nor is a run of a
+    `narrowable` stage inside `test:changed` (`narrowedStageRun` in
+    `scripts/e2e/project-runs.mjs`; the Tour Viewer's e2e, which may run
+    only the changed area's specs, or none); it prints one line saying so.
   - Counts capture: vitest `--reporter=default --reporter=json
     --outputFile.json=<scratch>`; playwright `--reporter=list,json` +
     `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.

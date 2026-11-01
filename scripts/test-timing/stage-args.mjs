@@ -14,10 +14,13 @@
  * Is this run on the GitHub Actions runner? Keyed on `GITHUB_ACTIONS`, NOT on
  * `CI`: every local gate sets `CI=1` (Playwright's CI mode: retries, one
  * worker, no reused dev server), so a `CI` check skipped every local run as
- * well and the versioned `docs/test-timings.md` files stopped updating in
- * mid-October 2026. The runner sets `GITHUB_ACTIONS=true`; an empty value
- * counts as unset. `budget.mjs` uses the same predicate, so the stage
- * budgets are skipped exactly where nothing is recorded.
+ * well: once `CI=1` entered the commit gate (2026-09-30), the gates recorded
+ * nothing, and the browser stages, which only gates run, have no rows after
+ * the end of September 2026. The runner sets `GITHUB_ACTIONS=true`; an empty
+ * value counts as unset. `budget.mjs` uses the same predicate, so the runner
+ * skips both the budgets and the recording; a local run that records nothing
+ * for another reason (a filtered, fast-command or narrowed run) still has its
+ * budget checked.
  *
  * @param {Record<string, string | undefined>} env - process.env (or a stub)
  * @returns {boolean}

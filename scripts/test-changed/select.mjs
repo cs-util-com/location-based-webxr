@@ -103,7 +103,7 @@ const ROOT_NARROW = [
  * @param {string} path - normalized, inside a package
  * @returns {boolean}
  */
-function isPackageDocMarkdown(path) {
+export function isPackageDocMarkdown(path) {
   if (!path.toLowerCase().endsWith('.md')) return false;
   if (/\/(?:assets|public|fixtures|testdata)\//.test(path)) return false;
   const base = path.split('/').pop() ?? '';

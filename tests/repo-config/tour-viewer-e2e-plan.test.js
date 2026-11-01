@@ -13,11 +13,14 @@
 //   from the table: a spec that opens the editor but says `viewer` would be
 //   skipped by exactly the change that can break it.
 // Coverage limits: the import scan follows relative static and dynamic
-// imports, `new URL("./...", import.meta.url)` and the editor kit's
-// subpaths; an import built from a variable is invisible to it. CI and the
-// full cascade run every spec whatever this plan says.
+// imports (any file kind, a `?raw` or `?url` suffix dropped),
+// `new URL("./...", import.meta.url)`, and the editor kit's subpaths into the
+// kit's own sources; a relative import it cannot resolve to a file fails the
+// test rather than being skipped. An import built from a variable is
+// invisible to it. CI and the full cascade run every spec whatever this plan
+// says.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -105,39 +108,57 @@ describe('each spec is classified by what it opens', () => {
   });
 });
 
+const KIT = join(ROOT, 'GpsPlusSlamJs_EditorKit');
+/** @type {Record<string, string>} the kit's `exports`: "./chrome" -> "./src/chrome/index.ts" */
+const KIT_EXPORTS = JSON.parse(readFileSync(join(KIT, 'package.json'), 'utf8')).exports;
+
+/** @param {string} file - absolute @returns {string} repo-relative, forward slashes */
+const repoPath = (file) => relative(ROOT, file).replaceAll('\\', '/');
+
 /**
- * Every module reachable from `entries` by relative imports, as
- * package-relative paths, plus `kit:<subpath>` for each editor-kit subpath.
+ * Every file reachable from `entries` by relative imports and by the editor
+ * kit's subpaths (followed into the kit's sources), as repo-relative paths,
+ * plus every import the scan could not resolve to a file.
  * @param {string[]} entries - absolute paths
- * @returns {Set<string>}
+ * @returns {{ seen: Set<string>, unresolved: string[] }}
  */
 function reachable(entries) {
   const seen = new Set();
+  /** @type {string[]} */
+  const unresolved = [];
   const queue = [...entries];
   const SPECIFIER =
     /(?:from\s+|import\s*\(\s*|import\s+|new URL\(\s*)["']([^"']+)["']/g;
   while (queue.length > 0) {
     const file = /** @type {string} */ (queue.pop());
-    const key = relative(PKG, file).replaceAll('\\', '/');
+    const key = repoPath(file);
     if (seen.has(key)) continue;
     seen.add(key);
     if (!/\.(ts|js|mjs)$/.test(file)) continue;
     const text = readFileSync(file, 'utf8');
-    for (const [, spec] of text.matchAll(SPECIFIER)) {
-      const kit = /^gps-plus-slam-editor-kit\/([^/]+)/.exec(spec);
+    for (const [, raw] of text.matchAll(SPECIFIER)) {
+      const spec = raw.replace(/\?.*$/, '');
+      const kit = /^gps-plus-slam-editor-kit\/(.+)$/.exec(spec);
       if (kit) {
-        seen.add(`kit:${kit[1]}`);
+        const target = KIT_EXPORTS[`./${kit[1]}`];
+        if (target) queue.push(join(KIT, target));
+        else unresolved.push(`${key}: ${raw} (not a kit export)`);
         continue;
       }
       if (!spec.startsWith('.')) continue;
       const base = resolve(dirname(file), spec);
-      const candidate = [base, base.replace(/\.js$/, '.ts'), `${base}.ts`, join(base, 'index.ts')].find(
-        (p) => existsSync(p) && /\.(ts|js|mjs|css)$/.test(p)
-      );
+      const candidate = [
+        base,
+        base.replace(/\.js$/, '.ts'),
+        `${base}.ts`,
+        `${base}.js`,
+        join(base, 'index.ts'),
+      ].find((p) => existsSync(p) && statSync(p).isFile());
       if (candidate) queue.push(candidate);
+      else unresolved.push(`${key}: ${raw}`);
     }
   }
-  return seen;
+  return { seen, unresolved };
 }
 
 /** @param {string} html - a page in the package @returns {string[]} its module entries */
@@ -164,21 +185,34 @@ describe("the plan's editor-only and viewer-only folders hold", () => {
     expect(pageEntries('index.html').length).toBeGreaterThan(0);
   });
 
+  const fromOthers = reachable(pages.filter((p) => p !== 'edit.html').flatMap(pageEntries));
+  const fromEditor = reachable(pageEntries('edit.html'));
+
+  it('resolves every relative and kit import it meets to a file', () => {
+    // A skipped import is a blind spot: whatever sits behind it (a JSON
+    // table, an SVG, a `?raw` text, a kit module) would never be checked.
+    expect(fromOthers.unresolved).toEqual([]);
+    expect(fromEditor.unresolved).toEqual([]);
+  });
+
+  it('follows the editor into the kit, and the other pages into non-script files', () => {
+    // A guard against a scan that silently stops at the package's edge or
+    // at the first stylesheet (the landing imports its own CSS).
+    expect(
+      [...fromEditor.seen].some((p) => p.startsWith('GpsPlusSlamJs_EditorKit/src/chrome/'))
+    ).toBe(true);
+    expect([...fromOthers.seen].some((p) => p.endsWith('.css'))).toBe(true);
+  });
+
   it('reaches no editor-only module from any page other than the editor', () => {
-    const fromOthers = reachable(pages.filter((p) => p !== 'edit.html').flatMap(pageEntries));
-    expect(fromOthers.size).toBeGreaterThan(20);
-    const leaks = [...fromOthers].filter(
-      (p) => plan.pathArea(p.startsWith('kit:') ? `GpsPlusSlamJs_EditorKit/src/${p.slice(4)}/x.ts` : `GpsPlusSlamJs_TourViewer/${p}`) === 'editor'
-    );
+    expect(fromOthers.seen.size).toBeGreaterThan(20);
+    const leaks = [...fromOthers.seen].filter((p) => plan.pathArea(p) === 'editor');
     expect(leaks).toEqual([]);
   });
 
   it('reaches no viewer-only module from the editor', () => {
-    const fromEditor = reachable(pageEntries('edit.html'));
-    expect(fromEditor.size).toBeGreaterThan(20);
-    const leaks = [...fromEditor].filter(
-      (p) => !p.startsWith('kit:') && plan.pathArea(`GpsPlusSlamJs_TourViewer/${p}`) === 'viewer'
-    );
+    expect(fromEditor.seen.size).toBeGreaterThan(20);
+    const leaks = [...fromEditor.seen].filter((p) => plan.pathArea(p) === 'viewer');
     expect(leaks).toEqual([]);
   });
 });
@@ -234,6 +268,30 @@ describe('selectSpecs', () => {
   it('keeps markdown the app serves or reads as input in the full run', () => {
     expect(plan.pathArea('GpsPlusSlamJs_TourViewer/public/notes.md')).toBe(null);
     expect(plan.pathArea('GpsPlusSlamJs_TourViewer/playwright-tests/fixtures/x.md')).toBe(null);
+  });
+
+  it('skips only doc markdown, by the same rule as test:changed', () => {
+    // A free-standing .md that is no sidecar, README, CHANGELOG or docs/
+    // file may be read by the app (a `?raw` import), so it keeps its area.
+    for (const doc of [
+      'GpsPlusSlamJs_TourViewer/src/editor/edit-main.ts.md',
+      'GpsPlusSlamJs_TourViewer/README.md',
+      'GpsPlusSlamJs_TourViewer/docs/plan.md',
+      'GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts.md',
+    ]) {
+      expect(plan.pathArea(doc), doc).toBe('none');
+    }
+    expect(plan.pathArea('GpsPlusSlamJs_TourViewer/notes.md')).toBe(null);
+    expect(plan.pathArea('GpsPlusSlamJs_TourViewer/src/landing/copy.md')).toBe('viewer');
+    expect(plan.pathArea('GpsPlusSlamJs_TourViewer/src/editor/help.md')).toBe('editor');
+  });
+
+  it('calls only the kit folders that exist editor-only', () => {
+    expect(plan.pathArea('GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts')).toBe('editor');
+    expect(plan.pathArea('GpsPlusSlamJs_EditorKit/src/chrome/menu-button.test.ts')).toBe('none');
+    // No such folders today: a new one runs every spec until it is classified.
+    expect(plan.pathArea('GpsPlusSlamJs_EditorKit/src/scene/x.ts')).toBe(null);
+    expect(plan.pathArea('GpsPlusSlamJs_EditorKit/src/globe/x.ts')).toBe(null);
   });
 
   it('accepts either slash style', () => {
