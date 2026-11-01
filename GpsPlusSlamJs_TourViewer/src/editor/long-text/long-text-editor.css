@@ -32,9 +32,16 @@
   background: var(--s-accent-bg);
   color: var(--s-accent-text);
 }
-/* A writer fills the inspector's height: its own text scrolls. */
+/* While it holds a writer the inspector takes its full allowed height
+ * (its max-height, editor-shell.css) and the writer fills it: the item's
+ * actions and Position sit under it, as in the prototype. Its own text
+ * scrolls. */
+#shell-inspector.lw:not(.collapsed) {
+  height: 100%; /* capped by its max-height */
+}
 #shell-inspector.lw .dbody {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
 }
 
@@ -629,6 +636,14 @@ button.lw-iss:hover {
   align-items: center;
   gap: 6px;
   margin-top: 5px;
+}
+.ln-sec .ln-acts .lw-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.ln-sec .ln-acts .lw-btn svg {
+  flex: none;
 }
 .ln-sec .ln-drop {
   padding: 8px 10px;

@@ -136,6 +136,21 @@ test("a long text is written in the inspector: one save per pause, the preview f
   await expect(area).toHaveValue(/Use code here\.$/);
   await expect(chip).not.toHaveClass(/has/);
 
+  // Esc stays in the writer (the page's Esc would deselect the text), and
+  // Esc then Tab, or Shift+Tab, leaves it without touching the text.
+  const typed = await area.inputValue();
+  await area.focus();
+  await page.keyboard.press("Escape");
+  await expect(area).toBeVisible();
+  await expect(area).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(area).not.toBeFocused();
+  await area.focus();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Shift+Tab");
+  await expect(area).not.toBeFocused();
+  await expect(area).toHaveValue(typed);
+
   // The view picker: Screen only is the visitor's choice, explained and
   // never written; Captions offers a narration.
   const view = (/** @type {string} */ id) =>
@@ -209,6 +224,33 @@ async function expectWriterLayout(page, size) {
     area.y,
     area.width,
   ]);
+  // The inspector takes its full allowed height (all but the 150 px over
+  // the map controls) and the writer fills it: nothing in the inspector's
+  // body is left over under its last part (the item's actions and
+  // Position). In a window too short for that, the writer section keeps
+  // its least height (280 px) and the body scrolls to the rest.
+  const allowed = await page
+    .locator("#shell-inspector")
+    .evaluate((e) => (e.parentElement?.clientHeight ?? 0) - 150);
+  expect(Math.abs(dock.height - allowed), at).toBeLessThanOrEqual(1);
+  const fit = await page.locator("#shell-inspector .dbody").evaluate((b) => {
+    const last = b.lastElementChild;
+    const pad = Number.parseFloat(getComputedStyle(b).paddingBottom) || 0;
+    return {
+      overflow: b.scrollHeight - b.clientHeight,
+      slack:
+        b.getBoundingClientRect().bottom -
+        pad -
+        (last?.getBoundingClientRect().bottom ?? 0),
+    };
+  });
+  if (size.height >= 900) expect(fit.overflow, at).toBeLessThanOrEqual(1);
+  if (fit.overflow > 1) {
+    const wsec = await box(page.locator(".lw-wsec"));
+    expect(Math.round(wsec.height), at).toBe(280);
+  } else {
+    expect(Math.abs(fit.slack), at).toBeLessThanOrEqual(1);
+  }
   expect(writer.height, at).toBeGreaterThanOrEqual(150);
   // The stat line under the writer, inside the dock.
   const stat = await box(page.locator(".lw-stat"));
