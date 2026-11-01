@@ -3,7 +3,8 @@
  * element of a list sorted by a key whose key is at or before a value.
  * The voice's segment at a time (`read-along.ts`), the sentence and the
  * caption word holding an offset (`long-text-sentences.ts`,
- * `caption-chunks.ts`) are all this search.
+ * `caption-chunks.ts`) are all this search, and so is the landing film's
+ * part at a time (`landing/film-timeline.ts`).
  *
  * @see last-at-or-before.ts.md
  */

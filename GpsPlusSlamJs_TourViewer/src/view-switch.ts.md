@@ -79,7 +79,10 @@ and offers "Use the creator's choice again" while a choice is stored.
   after pointerup; 100 ms leaves three frames, 400 ms comes near a quick
   second tap), and goes with the first select it cancels. Each finger has
   its own mark, so another finger lifting does not clear it. Handled: a
-  select before the closing pointerdown (the menu is still open), while
+  select before the closing pointerdown (the menu is still open; one up
+  to 250 ms before it, `SELECT_BEFORE_TAP_MS`, is taken for that tap's
+  own, so the pointerdown arms no mark; the same value as the grace, a
+  constant of its own because it answers another question), while
   the finger is down, and up to 250 ms after it lifts. Not handled: a
   select later than that (it reaches the world), and which finger a
   select belongs to (a select carries no pointer, so it takes the oldest

@@ -5,8 +5,10 @@
 The one "last element with key <= x" binary search of the read-along: the
 voice's segment at a time (`read-along.ts` `segmentAt`), the sentence
 holding an offset (`long-text-sentences.ts` `sentenceHolding`) and the
-caption word holding an offset (`caption-chunks.ts` `wordHolding`). Each
-of those keeps its own name and its own guard; the search is here once.
+caption word holding an offset (`caption-chunks.ts` `wordHolding`), and
+the landing film's part at a time (`landing/film-timeline.ts`
+`segmentAt`, which clamps -1 to the first part). Each of those keeps its
+own name and its own guard; the search is here once in the package.
 
 ## Public API
 

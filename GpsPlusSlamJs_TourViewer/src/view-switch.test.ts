@@ -290,6 +290,34 @@ describe("the switch on the page", () => {
     }
   });
 
+  // Why this test matters: the browser may ask for a tap's select a frame
+  // or more BEFORE its pointerdown (XR input reaches the page about once a
+  // camera frame). That select is cancelled because the menu is open; the
+  // closing pointerdown after it must then arm no mark, or the mark would
+  // outlive the select it is for and eat the visitor's next tap. Swept
+  // over gaps of 0, 16, 33 (a frame at 30 fps) and 100 ms.
+  it("lets the next tap through when the closing tap's select came a frame or more before its pointerdown", () => {
+    for (const gapMs of [0, 16, 33, 100]) {
+      const { q, outside, sw } = openOutside();
+      expect(
+        selectCancelled(outside),
+        `${String(gapMs)} ms: the closing tap's select`,
+      ).toBe(true);
+      clockMs += gapMs;
+      finger(outside, "pointerdown", 1);
+      expect(q("view-switch-menu")?.hidden).toBe(true);
+      finger(outside, "pointerup", 1);
+      clockMs += 40;
+      finger(outside, "pointerdown", 2);
+      expect(
+        selectCancelled(outside),
+        `${String(gapMs)} ms: the next tap 40 ms after the closing one`,
+      ).toBe(false);
+      finger(outside, "pointerup", 2);
+      sw.dispose();
+    }
+  });
+
   // Why this test matters: with the menu closed the switch claims no tap.
   it("lets every select through while the menu is closed", () => {
     mount([longText("t", "reading")]);

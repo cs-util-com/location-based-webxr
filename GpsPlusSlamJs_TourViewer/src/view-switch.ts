@@ -201,14 +201,23 @@ export interface ViewSwitch {
  *  pointerup: 100 ms leaves three frames, which a busy phone can miss;
  *  400 ms comes near a quick deliberate second tap. A mark goes with the
  *  first select it cancels, so the grace eats a later tap only when the
- *  closing tap's own select never came. The same span decides whether a
- *  select cancelled while the menu was open, just before an outside
- *  pointerdown, was that tap's own (its select came first): the tap then
- *  arms no mark. PROVISIONAL (100, 250 and 400 ms were weighed, as
- *  above); a phone that delivers the closing tap's select more than
- *  250 ms after pointerup, or a visitor whose second tap comes within
- *  250 ms of a tap on the open menu, would argue for another value. */
+ *  closing tap's own select never came. PROVISIONAL (100, 250 and 400 ms
+ *  were weighed, as above); a phone that delivers the closing tap's
+ *  select more than 250 ms after pointerup would argue for another
+ *  value. */
 const CLOSING_TAP_GRACE_MS = 250;
+
+/** How long before an outside pointerdown a select cancelled while the
+ *  menu was open is taken for that tap's own (the browser asked for its
+ *  select first): the tap then arms no mark, which would otherwise
+ *  outlive the select it is for and eat the next tap. The same value as
+ *  `CLOSING_TAP_GRACE_MS` but its own question: how far a tap's select
+ *  may run ahead of its pointerdown. PROVISIONAL (250 ms, a few camera
+ *  frames, swept at 0, 16, 33 and 100 ms in the tests); a visitor whose
+ *  tap outside comes within 250 ms of a tap on the open menu has that
+ *  tap's select let through, and a device log of a select running further
+ *  ahead would argue for a longer value. */
+const SELECT_BEFORE_TAP_MS = 250;
 
 /** The pointer an event is from (0 when it carries none). */
 function pointerIdOf(event: Event): number {
@@ -372,7 +381,7 @@ export function createViewSwitch(deps: ViewSwitchDeps): ViewSwitch {
     setOpen(false);
     // The tap's select came first and is already cancelled: a mark armed
     // now would outlive it and eat the next tap.
-    if (now() - openSelectAt <= CLOSING_TAP_GRACE_MS) {
+    if (now() - openSelectAt <= SELECT_BEFORE_TAP_MS) {
       openSelectAt = -Infinity;
       return;
     }

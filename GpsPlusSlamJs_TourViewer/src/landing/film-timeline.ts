@@ -16,6 +16,7 @@
  *
  * @see film-timeline.ts.md
  */
+import { lastAtOrBefore } from "../last-at-or-before.js";
 import { clamp01 } from "./clamp01.js";
 
 /** One part of the film: its own length and the views it uses. */
@@ -176,16 +177,15 @@ export function createTimeline<V extends string>(
         ? totalS
         : 0;
 
-  const segmentAt = (t: number): Segment => {
-    let lo = 0;
-    let hi = segments.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (segments[mid]!.startS <= t) lo = mid;
-      else hi = mid - 1;
-    }
-    return segments[lo]!;
-  };
+  // The last segment starting at or before `t`; the first for a `t`
+  // before every start (the clamped position never is).
+  const segmentAt = (t: number): Segment =>
+    segments[
+      Math.max(
+        0,
+        lastAtOrBefore(segments, (s) => s.startS, t),
+      )
+    ]!;
 
   return {
     totalS,
