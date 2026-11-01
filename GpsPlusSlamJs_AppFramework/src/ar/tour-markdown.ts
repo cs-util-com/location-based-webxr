@@ -118,6 +118,55 @@ export type TourLinkCheck =
   | { readonly ok: true; readonly href: string; readonly host: string }
   | { readonly ok: false };
 
+/**
+ * What a part of a body that is shown as typed is, as
+ * {@link diagnoseTourMarkdown} names it:
+ *
+ * - `heading` a heading deeper than `###`; `quote` a quote inside a quote;
+ *   `list` a third list level, or a `+` bullet or `1)` number; `rule` a
+ *   divider line (`---`, `***`) or a setext underline (`===`);
+ * - `code` a fenced code box (its fence lines and the lines between);
+ *   `icode` a code span; `table` a table; `tabs` columns separated by tabs;
+ *   `html` raw HTML (the marks of one line as one part); `entity` an entity
+ *   or numeric reference; `autolink` an address in angle brackets;
+ *   `strike` strikethrough; `fnref` a footnote mark; `fndef` a footnote's
+ *   line; `refdef` a reference link definition;
+ * - `webpic` a picture whose target is no tour asset; `inlinepic` a tour
+ *   picture inside a line of text; `manypic` a tour picture past the
+ *   twentieth; `missingpic` a picture naming an asset the tour lacks;
+ *   `link` a link whose target {@link checkTourLink} refuses.
+ */
+export type TourMdDiagnosticKind =
+  | 'heading'
+  | 'quote'
+  | 'list'
+  | 'rule'
+  | 'code'
+  | 'icode'
+  | 'table'
+  | 'tabs'
+  | 'html'
+  | 'entity'
+  | 'autolink'
+  | 'strike'
+  | 'fnref'
+  | 'fndef'
+  | 'refdef'
+  | 'webpic'
+  | 'inlinepic'
+  | 'manypic'
+  | 'missingpic'
+  | 'link';
+
+/** A part of a body shown as typed: its kind, its range `[from, to)` in
+ *  the body (UTF-16 code units) and the 1-based line it starts on. */
+export interface TourMdDiagnostic {
+  readonly kind: TourMdDiagnosticKind;
+  readonly from: number;
+  readonly to: number;
+  readonly line: number;
+}
+
 /** The most pictures a body shows; later ones show their alt text. */
 export const TOUR_MARKDOWN_MAX_PICTURES = 20;
 
@@ -135,6 +184,19 @@ const PICTURE_TARGET_PREFIX = 'asset:';
  *  {@link __tourMarkdownWalkStepsForTests} reads it. */
 let walkSteps = 0;
 
+/** The parts shown as typed while {@link diagnoseTourMarkdown} reads a
+ *  body; null otherwise, and then no decision point records anything. */
+interface Collector {
+  readonly found: { kind: TourMdDiagnosticKind; from: number; to: number }[];
+  readonly assetExists: ((id: string) => boolean) | null;
+}
+
+let collector: Collector | null = null;
+
+function note(kind: TourMdDiagnosticKind, from: number, to: number): void {
+  if (collector !== null && to > from) collector.found.push({ kind, from, to });
+}
+
 // ---------------------------------------------------------------------------
 // Characters
 
@@ -142,10 +204,12 @@ const C_TAB = 9;
 const C_NEWLINE = 10;
 const C_SPACE = 32;
 const C_BANG = 33;
+const C_AMPERSAND = 38;
 const C_HASH = 35;
 const C_OPEN_PAREN = 40;
 const C_CLOSE_PAREN = 41;
 const C_ASTERISK = 42;
+const C_PLUS = 43;
 const C_DASH = 45;
 const C_DOT = 46;
 const C_GREATER = 62;
@@ -154,6 +218,9 @@ const C_OPEN_BRACKET = 91;
 const C_BACKSLASH = 92;
 const C_CLOSE_BRACKET = 93;
 const C_UNDERSCORE = 95;
+const C_BACKTICK = 96;
+const C_CARET = 94;
+const C_TILDE = 126;
 const C_DELETE = 127;
 
 const ASCII_PUNCTUATION = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
@@ -213,19 +280,27 @@ function trimSpacesAndTabs(s: string): string {
 /** The lines of `body`, split at CRLF, LF and CR; a final line ending
  *  opens no further line. */
 function splitLines(body: string): string[] {
+  return splitLinesAt(body).lines;
+}
+
+/** {@link splitLines}, with where each line starts in `body`. */
+function splitLinesAt(body: string): { lines: string[]; starts: number[] } {
   const lines: string[] = [];
+  const starts: number[] = [];
   let start = 0;
   for (let i = 0; i < body.length; i++) {
     const c = body.charCodeAt(i);
     if (c !== C_NEWLINE && c !== 13) continue;
     lines.push(body.slice(start, i));
+    starts.push(start);
     if (c === 13 && body.charCodeAt(i + 1) === C_NEWLINE) i++;
     start = i + 1;
   }
   if (start < body.length || !body.endsWith('\n')) {
     lines.push(body.slice(start));
+    starts.push(start);
   }
-  return lines;
+  return { lines, starts };
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +329,8 @@ interface BlockNode {
   open: boolean;
   /** A paragraph's lines, or a heading's one line of content. */
   readonly lines: string[];
+  /** Where each of `lines` starts in the body. */
+  readonly starts: number[];
   level: number;
   list: ListData | null;
 }
@@ -265,6 +342,8 @@ interface BlockParser {
   lastMatched: BlockNode;
   allClosed: boolean;
   line: string;
+  /** Where `line` starts in the body. */
+  lineStart: number;
   offset: number;
   column: number;
   nextNonspace: number;
@@ -280,6 +359,7 @@ function newBlock(type: BlockType, parent: BlockNode | null): BlockNode {
     children: [],
     open: true,
     lines: [],
+    starts: [],
     level: 0,
     list: null,
   };
@@ -427,7 +507,10 @@ function countAncestors(node: BlockNode, type: BlockType): number {
 
 function startQuote(bp: BlockParser, container: BlockNode): boolean {
   // One level of quotes: a further `>` is shown as typed.
-  if (countAncestors(container, 'quote') >= 1) return false;
+  if (countAncestors(container, 'quote') >= 1) {
+    noteRestOfLine(bp, 'quote');
+    return false;
+  }
   advanceNextNonspace(bp);
   advanceOffset(bp, 1, false);
   if (isSpaceOrTab(peekAt(bp, bp.offset))) advanceOffset(bp, 1, true);
@@ -456,7 +539,11 @@ function startHeading(bp: BlockParser): boolean {
   const level = at - bp.nextNonspace;
   const next = peekAt(bp, at);
   // Levels 4 to 6 are shown as typed, as is a `#` run with no space after.
-  if (level > 3 || (next !== -1 && !isSpaceOrTab(next))) return false;
+  if (next !== -1 && !isSpaceOrTab(next)) return false;
+  if (level > 3) {
+    noteRestOfLine(bp, 'heading');
+    return false;
+  }
   while (isSpaceOrTab(peekAt(bp, at))) at++;
   advanceNextNonspace(bp);
   advanceOffset(bp, at - bp.nextNonspace, false);
@@ -464,6 +551,7 @@ function startHeading(bp: BlockParser): boolean {
   const heading = addChild(bp, 'heading');
   heading.level = level;
   heading.lines.push(withoutClosingHashes(bp.line.slice(bp.offset)));
+  heading.starts.push(bp.lineStart + bp.offset);
   bp.offset = bp.line.length;
   return true;
 }
@@ -576,7 +664,10 @@ function startListItem(bp: BlockParser, container: BlockNode): boolean {
     ? countAncestors(container, 'list')
     : countAncestors(listParentOf(container), 'list') + 1;
   // Two list levels: a deeper marker is shown as typed.
-  if (depth > 2) return false;
+  if (depth > 2) {
+    noteRestOfLine(bp, 'list');
+    return false;
+  }
   const markerOffset = bp.indent;
   const padding = consumeListMarker(bp, marker);
   const data: ListData = { ...marker, markerOffset, padding };
@@ -596,8 +687,47 @@ function tryBlockStart(bp: BlockParser, container: BlockNode): BlockStart {
   const c = bp.line.charCodeAt(bp.nextNonspace);
   if (c === C_GREATER) return startQuote(bp, container) ? 'container' : 'none';
   if (c === C_HASH) return startHeading(bp) ? 'leaf' : 'none';
-  if ((c === C_DASH || c === C_ASTERISK) && isThematicBreak(bp)) return 'none';
+  if ((c === C_DASH || c === C_ASTERISK) && isThematicBreak(bp)) {
+    noteRestOfLine(bp, 'rule');
+    return 'none';
+  }
+  noteOtherListMarker(bp);
   return startListItem(bp, container) ? 'container' : 'none';
+}
+
+/** A list marker this subset shows as typed, noted while diagnosing. */
+function noteOtherListMarker(bp: BlockParser): void {
+  if (collector !== null && isOtherListMarker(bp.line, bp.nextNonspace)) {
+    noteRestOfLine(bp, 'list');
+  }
+}
+
+/** The line from its next non-space character on, as a part shown as
+ *  typed. */
+function noteRestOfLine(bp: BlockParser, kind: TourMdDiagnosticKind): void {
+  note(kind, bp.lineStart + bp.nextNonspace, bp.lineStart + bp.line.length);
+}
+
+/** A `+` bullet or a `1)` number at `at`, followed by a space, a tab or
+ *  the line's end: a list marker in CommonMark that this subset shows as
+ *  typed. */
+function isOtherListMarker(line: string, at: number): boolean {
+  let end = at;
+  if (line.charCodeAt(at) === C_PLUS) end = at + 1;
+  else {
+    while (
+      end < line.length &&
+      end - at < 10 &&
+      isDigit(line.charCodeAt(end))
+    ) {
+      end++;
+    }
+    if (end === at || end - at > 9 || line.charCodeAt(end) !== C_CLOSE_PAREN) {
+      return false;
+    }
+    end++;
+  }
+  return end >= line.length || isSpaceOrTab(line.charCodeAt(end));
 }
 
 function lastOpenChild(node: BlockNode): BlockNode | null {
@@ -633,7 +763,9 @@ function openNewBlocks(bp: BlockParser, matched: BlockNode): BlockNode {
 }
 
 function addLine(bp: BlockParser): void {
-  tipOf(bp).lines.push(bp.line.slice(bp.offset));
+  const tip = tipOf(bp);
+  tip.lines.push(bp.line.slice(bp.offset));
+  tip.starts.push(bp.lineStart + bp.offset);
 }
 
 function addLineText(bp: BlockParser, container: BlockNode): void {
@@ -651,8 +783,9 @@ function addLineText(bp: BlockParser, container: BlockNode): void {
   }
 }
 
-function incorporateLine(bp: BlockParser, raw: string): void {
+function incorporateLine(bp: BlockParser, raw: string, start: number): void {
   bp.line = raw.includes('\u0000') ? raw.replaceAll('\u0000', '\uFFFD') : raw;
+  bp.lineStart = start;
   bp.offset = 0;
   bp.column = 0;
   bp.blank = false;
@@ -672,6 +805,7 @@ function parseBlocks(body: string): BlockNode {
     lastMatched: doc,
     allClosed: true,
     line: '',
+    lineStart: 0,
     offset: 0,
     column: 0,
     nextNonspace: 0,
@@ -679,7 +813,10 @@ function parseBlocks(body: string): BlockNode {
     indent: 0,
     blank: false,
   };
-  for (const line of splitLines(body)) incorporateLine(bp, line);
+  const { lines, starts } = splitLinesAt(body);
+  lines.forEach((line, i) => {
+    incorporateLine(bp, line, starts[i] ?? 0);
+  });
   for (let n: BlockNode | null = bp.tip; n !== null; n = n.parent) {
     n.open = false;
   }
@@ -696,6 +833,10 @@ interface InlineNode {
   readonly type: InlineType;
   text: string;
   dest: string;
+  /** A link's or a picture's range in the inline subject (`[` or `![` to
+   *  the closing `)`); -1 for every other node. */
+  from: number;
+  to: number;
   parent: InlineNode | null;
   first: InlineNode | null;
   last: InlineNode | null;
@@ -719,6 +860,8 @@ interface Bracket {
   readonly previous: Bracket | null;
   readonly previousDelimiter: Delimiter | null;
   readonly image: boolean;
+  /** Where its `[` or `![` starts in the subject. */
+  readonly pos: number;
   /** Position in the bracket stack, for the deactivation floor. */
   readonly index: number;
 }
@@ -756,6 +899,8 @@ function inlineNode(type: InlineType, text = ''): InlineNode {
     type,
     text,
     dest: '',
+    from: -1,
+    to: -1,
     parent: null,
     first: null,
     last: null,
@@ -1055,12 +1200,18 @@ function processEmphasis(
   }
 }
 
-function pushBracket(ip: InlineParser, node: InlineNode, image: boolean): void {
+function pushBracket(
+  ip: InlineParser,
+  node: InlineNode,
+  image: boolean,
+  pos: number
+): void {
   ip.brackets = {
     node,
     previous: ip.brackets,
     previousDelimiter: ip.delimiters,
     image,
+    pos,
     index: ip.bracketCount,
   };
   ip.bracketCount++;
@@ -1075,7 +1226,7 @@ function popBracket(ip: InlineParser): void {
 
 function parseOpenBracket(ip: InlineParser): void {
   ip.pos++;
-  pushBracket(ip, appendText(ip, '['), false);
+  pushBracket(ip, appendText(ip, '['), false, ip.pos - 1);
 }
 
 function parseBang(ip: InlineParser): void {
@@ -1085,7 +1236,7 @@ function parseBang(ip: InlineParser): void {
     return;
   }
   ip.pos++;
-  pushBracket(ip, appendText(ip, '!['), true);
+  pushBracket(ip, appendText(ip, '!['), true, ip.pos - 2);
 }
 
 /** Whitespace or an ASCII control character (U+0000 to U+001F, U+007F):
@@ -1221,6 +1372,8 @@ function parseCloseBracket(ip: InlineParser): void {
   }
   const node = inlineNode(opener.image ? 'image' : 'link');
   node.dest = dest;
+  node.from = opener.pos;
+  node.to = ip.pos;
   moveSiblingsAfter(opener.node, null, node);
   appendChild(ip.root, node);
   processEmphasis(ip, opener.previousDelimiter);
@@ -1250,9 +1403,9 @@ function parseInline(ip: InlineParser): void {
   }
 }
 
-function parseInlines(content: string): InlineNode {
+function parseInlineSubject(s: string): InlineNode {
   const ip: InlineParser = {
-    s: trimSpacesAndTabs(content),
+    s,
     pos: 0,
     root: inlineNode('root'),
     delimiters: null,
@@ -1325,6 +1478,7 @@ function convertInline(
       out.push({ kind: 'hardBreak' });
       return null;
     case 'image':
+      notePictureAlt(node);
       out.push(pictureAltOf(node, altTextOf(node)));
       return null;
     case 'link':
@@ -1340,7 +1494,10 @@ function convertLink(
   depth: number
 ): InlineFrame {
   const check = checkTourLink(node.dest);
-  if (!check.ok) return { node: node.first, out, depth };
+  if (!check.ok) {
+    noteNode('link', node);
+    return { node: node.first, out, depth };
+  }
   const children: MutableInline[] = [];
   out.push({ kind: 'link', href: check.href, host: check.host, children });
   return { node: node.first, out: children, depth };
@@ -1427,7 +1584,8 @@ function convertParagraph(
   node: BlockNode,
   context: ConvertContext
 ): TourMdBlock[] {
-  const root = parseInlines(node.lines.join('\n'));
+  if (collector !== null) noteParagraphLines(node);
+  const root = inlinesOf(node);
   const pictures = pictureLines(root);
   if (pictures === null) {
     return [{ kind: 'paragraph', inlines: convertInlines(root) }];
@@ -1435,11 +1593,330 @@ function convertParagraph(
   return pictures.map((picture): TourMdBlock => {
     const alt = altTextOf(picture);
     if (context.picturesLeft <= 0) {
+      if (collector !== null) {
+        noteNode(missingAsset(picture) ? 'missingpic' : 'manypic', picture);
+      }
       return { kind: 'paragraph', inlines: [pictureAltOf(picture, alt)] };
     }
     context.picturesLeft--;
+    if (collector !== null && missingAsset(picture)) {
+      noteNode('missingpic', picture);
+    }
     return { kind: 'picture', alt, asset: pictureAsset(picture) ?? '' };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics: where the body is shown as typed. Recorded only while a
+// collector listens (`diagnoseTourMarkdown`); reading never pays for them.
+
+/** Maps a position in the inline subject being converted to the body:
+ *  set while a paragraph's or a heading's inlines are converted with a
+ *  collector listening. */
+let subjectToBody: ((at: number) => number) | null = null;
+
+/** The inline tree of a paragraph's or a heading's lines; with a
+ *  collector, the map from its subject to the body is set for the
+ *  conversion that follows. */
+function inlinesOf(node: BlockNode): InlineNode {
+  const joined = node.lines.join('\n');
+  const subject = trimSpacesAndTabs(joined);
+  if (collector !== null) subjectToBody = bodyMap(node, joined);
+  return parseInlineSubject(subject);
+}
+
+/** Positions in `joined` (a node's lines joined, trimmed at its start)
+ *  as positions in the body. */
+function bodyMap(node: BlockNode, joined: string): (at: number) => number {
+  let lead = 0;
+  while (lead < joined.length && isSpaceOrTab(joined.charCodeAt(lead))) {
+    lead++;
+  }
+  const lineAt: number[] = [];
+  let at = 0;
+  for (const line of node.lines) {
+    lineAt.push(at);
+    at += line.length + 1;
+  }
+  const starts = node.starts;
+  return (p: number): number => {
+    const q = p + lead;
+    const k = lastAtOrBelow(lineAt, q);
+    return (starts[k] ?? 0) + (q - (lineAt[k] ?? 0));
+  };
+}
+
+/** The last index of the ascending `values` whose value is at most `at`
+ *  (0 when none is). */
+function lastAtOrBelow(values: readonly number[], at: number): number {
+  let lo = 0;
+  let hi = values.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((values[mid] ?? 0) <= at) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+function noteNode(kind: TourMdDiagnosticKind, node: InlineNode): void {
+  if (collector === null || subjectToBody === null || node.from < 0) return;
+  note(kind, subjectToBody(node.from), subjectToBody(node.to));
+}
+
+/** Whether a picture names a tour asset that is no id, or one the caller
+ *  says the tour lacks. */
+function missingAsset(node: InlineNode): boolean {
+  if (!node.dest.startsWith(PICTURE_TARGET_PREFIX)) return false;
+  const id = pictureAsset(node);
+  if (id === null) return true;
+  return collector?.assetExists?.(id) === false;
+}
+
+/** A picture shown as its alt text, named by why. */
+function notePictureAlt(node: InlineNode): void {
+  if (collector === null) return;
+  if (!node.dest.startsWith(PICTURE_TARGET_PREFIX)) noteNode('webpic', node);
+  else noteNode(missingAsset(node) ? 'missingpic' : 'inlinepic', node);
+}
+
+const FENCE = /^[ \t]*(`{3,}|~{3,})/;
+const SETEXT_UNDERLINE = /^[ \t]*=+[ \t]*$/;
+const FOOTNOTE_DEFINITION = /^\[\^[^\]\s]+\]:/;
+const REFERENCE_DEFINITION = /^\[[^\]^\n][^\]\n]*\]:[ \t]*\S/;
+const TABLE_DELIMITER_ROW =
+  /^[ \t]*\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+const TAB_COLUMN = /\S\t/;
+
+/** The parts of a paragraph shown as typed line by line (code boxes,
+ *  tables, tab columns, setext underlines, footnote and reference
+ *  definitions), then the inline parts of its other lines. */
+function noteParagraphLines(node: BlockNode): void {
+  const { lines, starts } = node;
+  let i = 0;
+  while (i < lines.length) {
+    walkSteps++;
+    const part = wholeLinePartAt(lines, i);
+    if (part === null) noteInlineParts(lineOf(lines, i), starts[i] ?? 0);
+    else {
+      const end = (starts[part.last] ?? 0) + lineOf(lines, part.last).length;
+      note(part.kind, starts[i] ?? 0, end);
+    }
+    i = (part?.last ?? i) + 1;
+  }
+}
+
+function lineOf(lines: readonly string[], i: number): string {
+  return lines[i] ?? '';
+}
+
+/** The part shown as typed by whole lines that starts at line `i` (its
+ *  kind and its last line), or null. */
+function wholeLinePartAt(
+  lines: readonly string[],
+  i: number
+): { kind: TourMdDiagnosticKind; last: number } | null {
+  const line = lineOf(lines, i);
+  const next = lineOf(lines, i + 1);
+  const fence = FENCE.exec(line);
+  if (fence !== null) {
+    return { kind: 'code', last: fenceEnd(lines, i, fence[1] ?? '```') };
+  }
+  if (line.includes('|') && TABLE_DELIMITER_ROW.test(next)) {
+    return {
+      kind: 'table',
+      last: runEnd(lines, i + 1, (l) => l.includes('|')),
+    };
+  }
+  if (TAB_COLUMN.test(line) && TAB_COLUMN.test(next)) {
+    return {
+      kind: 'tabs',
+      last: runEnd(lines, i + 1, (l) => TAB_COLUMN.test(l)),
+    };
+  }
+  const kind = oneLinePartKind(line, i);
+  return kind === null ? null : { kind, last: i };
+}
+
+/** A code box's last line: its closing fence (one at least as long as
+ *  `mark`), else the paragraph's last line. */
+function fenceEnd(lines: readonly string[], i: number, mark: string): number {
+  let last = i + 1;
+  while (last < lines.length - 1) {
+    const close = FENCE.exec(lineOf(lines, last));
+    if (close !== null && (close[1] ?? '').startsWith(mark)) break;
+    last++;
+  }
+  return Math.min(last, lines.length - 1);
+}
+
+/** The last line of the run going on from `last` while `more` holds. */
+function runEnd(
+  lines: readonly string[],
+  last: number,
+  more: (line: string) => boolean
+): number {
+  let end = last;
+  while (end + 1 < lines.length && more(lineOf(lines, end + 1))) end++;
+  return end;
+}
+
+/** A one-line part shown as typed: a setext underline, a footnote or a
+ *  reference definition. */
+function oneLinePartKind(line: string, i: number): TourMdDiagnosticKind | null {
+  if (i > 0 && SETEXT_UNDERLINE.test(line)) return 'rule';
+  if (FOOTNOTE_DEFINITION.test(line)) return 'fndef';
+  if (REFERENCE_DEFINITION.test(line)) return 'refdef';
+  return null;
+}
+
+const AUTOLINK =
+  /<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>/y;
+const HTML_MARK =
+  /<!--[^\n]*?-->|<\/?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>\n]*)?\/?>/y;
+const ENTITY =
+  /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/y;
+const FOOTNOTE_MARK = /\[\^[^\]\s]+\](?!:)/y;
+
+/** A sticky pattern's match at `at` in `text`, or null. */
+function matchAt(pattern: RegExp, text: string, at: number): string | null {
+  pattern.lastIndex = at;
+  return pattern.exec(text)?.[0] ?? null;
+}
+
+/** The end of the backtick run starting at `at`. */
+function backtickRunEnd(text: string, at: number): number {
+  let end = at;
+  while (end < text.length && text.charCodeAt(end) === C_BACKTICK) end++;
+  return end;
+}
+
+/**
+ * The inline parts of one line shown as typed: raw HTML (a line's marks as
+ * one part), autolinks, code spans, entities, strikethrough and footnote
+ * marks. A backslash escape and a link's destination are skipped. A search
+ * for a closer that failed is not repeated (a later one starts later and
+ * cannot succeed), so a line is scanned in linear time.
+ */
+function noteInlineParts(text: string, base: number): void {
+  const scan = inlineScanner(text);
+  let htmlFrom = -1;
+  let htmlTo = -1;
+  let i = 0;
+  while (i < text.length) {
+    const step = scan(i);
+    if (step.kind === 'html') {
+      if (htmlFrom < 0) htmlFrom = i;
+      htmlTo = step.next;
+    } else if (step.kind !== null) note(step.kind, base + i, base + step.next);
+    i = step.next;
+  }
+  if (htmlFrom >= 0) note('html', base + htmlFrom, base + htmlTo);
+}
+
+/** One step of the inline scan: where it goes on, and the part it passed
+ *  over (`html`: one mark of the line's raw HTML, all of whose marks
+ *  make one part), or null. */
+interface InlineStep {
+  readonly next: number;
+  readonly kind: TourMdDiagnosticKind | null;
+}
+
+type InlineStepAt = (i: number, after: number) => InlineStep | null;
+
+/** The scan's step function for `text`: at each position, the part that
+ *  starts there. A backslash escape and a link's destination are passed
+ *  over. Searches for a closer share one memory of closers not found. */
+function inlineScanner(text: string): (i: number) => InlineStep {
+  const noCloser = new Set<string>();
+  const find = (closer: string, from: number): number => {
+    if (noCloser.has(closer)) return -1;
+    const at = text.indexOf(closer, from);
+    if (at < 0) noCloser.add(closer);
+    return at;
+  };
+  /** The code span opened by the run `[at, run)`: its end, or -1. */
+  const codeSpanEnd = (at: number, run: number): number => {
+    const ticks = text.slice(at, run);
+    let close = find(ticks, run);
+    // Only a run of exactly the same length closes it.
+    while (close >= 0) {
+      const end = backtickRunEnd(text, close);
+      if (
+        end - close === ticks.length &&
+        text.charCodeAt(close - 1) !== C_BACKTICK
+      ) {
+        return end;
+      }
+      close = find(ticks, end);
+    }
+    return -1;
+  };
+  const part = (kind: TourMdDiagnosticKind, next: number): InlineStep => ({
+    kind,
+    next,
+  });
+  const steps = new Map<number, InlineStepAt>([
+    [
+      C_BACKSLASH,
+      (i, after) =>
+        isAsciiPunctuation(after) ? { kind: null, next: i + 2 } : null,
+    ],
+    [
+      C_CLOSE_BRACKET,
+      (i, after) => {
+        if (after !== C_OPEN_PAREN) return null;
+        const end = find(')', i + 2);
+        return { kind: null, next: end < 0 ? i + 2 : end + 1 };
+      },
+    ],
+    [
+      C_LESS,
+      (i) => {
+        const auto = matchAt(AUTOLINK, text, i);
+        if (auto !== null) return part('autolink', i + auto.length);
+        const mark = matchAt(HTML_MARK, text, i);
+        return mark === null ? null : part('html', i + mark.length);
+      },
+    ],
+    [
+      C_BACKTICK,
+      (i) => {
+        const run = backtickRunEnd(text, i);
+        const to = codeSpanEnd(i, run);
+        return to < 0 ? { kind: null, next: run } : part('icode', to);
+      },
+    ],
+    [
+      C_AMPERSAND,
+      (i) => {
+        const entity = matchAt(ENTITY, text, i);
+        return entity === null ? null : part('entity', i + entity.length);
+      },
+    ],
+    [
+      C_TILDE,
+      (i, after) => {
+        if (after !== C_TILDE) return null;
+        const close = find('~~', i + 3);
+        return close >= 0 && !isSpaceOrTab(text.charCodeAt(i + 2))
+          ? part('strike', close + 2)
+          : null;
+      },
+    ],
+    [
+      C_OPEN_BRACKET,
+      (i, after) => {
+        if (after !== C_CARET) return null;
+        const mark = matchAt(FOOTNOTE_MARK, text, i);
+        return mark === null ? null : part('fnref', i + mark.length);
+      },
+    ],
+  ]);
+  return (i) => {
+    const at = steps.get(text.charCodeAt(i));
+    return at?.(i, text.charCodeAt(i + 1)) ?? { kind: null, next: i + 1 };
+  };
 }
 
 function convertChildren(
@@ -1449,16 +1926,24 @@ function convertChildren(
   return node.children.flatMap((child) => convertBlock(child, context));
 }
 
+/** A heading's inline parts shown as typed, noted while diagnosing. */
+function noteHeading(node: BlockNode): void {
+  if (collector !== null) {
+    noteInlineParts(node.lines[0] ?? '', node.starts[0] ?? 0);
+  }
+}
+
 function convertBlock(node: BlockNode, context: ConvertContext): TourMdBlock[] {
   switch (node.type) {
     case 'paragraph':
       return convertParagraph(node, context);
     case 'heading':
+      noteHeading(node);
       return [
         {
           kind: 'heading',
           level: node.level as 1 | 2 | 3,
-          inlines: convertInlines(parseInlines(node.lines[0] ?? '')),
+          inlines: convertInlines(inlinesOf(node)),
         },
       ];
     case 'list':
@@ -1487,6 +1972,48 @@ export function parseTourMarkdown(body: string): TourMarkdown {
   if (typeof body !== 'string') return { blocks: [] };
   const context: ConvertContext = { picturesLeft: TOUR_MARKDOWN_MAX_PICTURES };
   return { blocks: convertChildren(parseBlocks(body), context) };
+}
+
+/**
+ * The parts of `body` shown as the characters typed rather than formatted,
+ * as the reader itself decides them: the same parse as
+ * {@link parseTourMarkdown}, its decision points recording. In body order
+ * and never overlapping (where two would, the one starting first, then
+ * the longer, is kept). `assetExists`, when given, tells a picture naming
+ * an asset the tour lacks (`missingpic`); without it only a target that is
+ * no asset id is. Never throws; a value that is not a string has none.
+ */
+export function diagnoseTourMarkdown(
+  body: string,
+  options: { readonly assetExists?: (id: string) => boolean } = {}
+): TourMdDiagnostic[] {
+  if (typeof body !== 'string') return [];
+  const listening: Collector = {
+    found: [],
+    assetExists:
+      typeof options.assetExists === 'function' ? options.assetExists : null,
+  };
+  const outer = collector;
+  collector = listening;
+  try {
+    parseTourMarkdown(body);
+  } finally {
+    collector = outer;
+    subjectToBody = null;
+  }
+  const sorted = listening.found
+    .slice()
+    .sort((a, b) => a.from - b.from || b.to - a.to);
+  const { starts } = splitLinesAt(body);
+  const kept: TourMdDiagnostic[] = [];
+  let end = -1;
+  for (const d of sorted) {
+    if (d.from < end) continue;
+    const line = lastAtOrBelow(starts, d.from) + 1;
+    kept.push({ kind: d.kind, from: d.from, to: d.to, line });
+    end = d.to;
+  }
+  return kept;
 }
 
 /**
