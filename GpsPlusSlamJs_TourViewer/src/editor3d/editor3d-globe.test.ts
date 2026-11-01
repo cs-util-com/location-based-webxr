@@ -61,6 +61,12 @@ interface Fakes {
   /** The relief's ground everywhere (drawn, m over the ellipsoid), as its
    *  sampled heights and `groundAt` read it; null: none loaded. */
   groundM: number | null;
+  /** The ground's rise per metre north of the tour (0.3: a 30 % grade
+   *  climbing north); 0: level. */
+  grade: number;
+  /** The ground (drawn, m) at a latitude (radians), as `groundM` and
+   *  `grade` make it; null: none loaded. */
+  groundAt(latRad: number): number | null;
   /** The scene the editing hands its input (its double-click zoom). */
   inputScene: null | {
     zoomTowards?(pointer: { x: number; y: number }): void;
@@ -78,6 +84,12 @@ const fakes = vi.hoisted((): Fakes => ({
   view: null,
   controls: null,
   groundM: 500,
+  grade: 0,
+  groundAt(latRad: number): number | null {
+    if (this.groundM === null) return null;
+    const northM = ((latRad * 180) / Math.PI - 48.1374) * 111_200;
+    return this.groundM + this.grade * northM;
+  },
   inputScene: null,
   coverageCalls: 0,
 }));
@@ -205,9 +217,12 @@ vi.mock("./editor3d-terrain.js", async () => {
     createEditorTerrain: () => ({
       terrain: {
         tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
-        plugin: { sampleCartographicElevation: () => fakes.groundM },
+        plugin: {
+          sampleCartographicElevation: (latRad: number) =>
+            fakes.groundAt(latRad),
+        },
       },
-      groundAt: () => fakes.groundM,
+      groundAt: (latRad: number) => fakes.groundAt(latRad),
       update() {},
       credits: [],
       osm: {
@@ -415,6 +430,7 @@ beforeEach(() => {
   fakes.gesture = null;
   fakes.busy = false;
   fakes.groundM = DRAWN_M;
+  fakes.grade = 0;
   fakes.inputScene = null;
   fakes.coverageCalls = 0;
 });
@@ -615,6 +631,47 @@ describe("openGlobeEditor's wiring", () => {
       expect(heightOfWorld(camera.position) - 200).toBeGreaterThanOrEqual(
         GLOBE_EDITOR_LOOK.eyeM - 1e-3,
       );
+    },
+  );
+
+  // Why: the cap measured the room left over the ground under the step's
+  // START only, so on ground rising ahead a step from eye height (at least
+  // 10.5 m by the button) ended under eye height from about a 6 % grade and
+  // under the ground itself on a 30 % one. The ground at the step's end
+  // counts too: the camera ends eye height over the higher of the two.
+  // Swept over grades from falling 30 % to rising 40 %, at the landed pitch
+  // and at -10 deg, by the button and by the double click; each step still
+  // walks north.
+  const LANDED_PITCH_DEG =
+    -Math.atan2(GLOBE_EDITOR_LOOK.eyeM, GLOBE_EDITOR_LOOK.backM) / DEG;
+  it.each(
+    [-0.3, 0, 0.06, 0.1, 0.2, 0.3, 0.4].flatMap((grade) =>
+      [LANDED_PITCH_DEG, -10].flatMap((pitchDeg) =>
+        (["button", "click"] as const).map(
+          (how) => [grade, pitchDeg, how] as const,
+        ),
+      ),
+    ),
+  )(
+    "stays eye height over a %s grade from eye height at %s deg (%s)",
+    async (grade, pitchDeg, how) => {
+      fakes.groundM = 200;
+      fakes.grade = grade;
+      await openAt(0);
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      placeCamera(GLOBE_EDITOR_LOOK.eyeM, pitchDeg, 200);
+      if (how === "button") open?.zoom(1);
+      else zoomTowards({ x: 0.5, y: 0.5 });
+      const place = cameraPlace();
+      const groundEndM = fakes.groundAt(place.lat * DEG);
+      if (groundEndM === null) throw new Error("no ground");
+      expect(
+        heightOfWorld(camera.position) - groundEndM,
+      ).toBeGreaterThanOrEqual(GLOBE_EDITOR_LOOK.eyeM - 1e-3);
+      expect((place.lat - MUNICH.lat) * 111_200).toBeGreaterThan(0.3);
     },
   );
 

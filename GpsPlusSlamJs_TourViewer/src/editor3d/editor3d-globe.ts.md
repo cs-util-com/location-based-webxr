@@ -101,14 +101,15 @@ ground.
   `stats().distanceM` is - not to the frame's origin on the ellipsoid,
   which lies the tour's height under it. `setDistance` is measured to
   that tour centre.
-- A step that goes down (a zoom button's, a double click's) keeps the
-  camera `eyeM` over the loaded ground under it (`keepOverGround`): only
-  the step's vertical part is cut, by lifting the end point, so its
-  horizontal part is kept whole and a zoom from eye height looking a few
-  degrees down still walks forward (scaling the whole step would freeze
-  it there). The ground is taken as level over the step, so a slope
-  rising ahead is not seen; with no ground loaded under the camera the
-  step is not changed.
+- A zoom step (a zoom button's, a double click's) ends the camera at
+  least `eyeM` over the higher of the loaded grounds under its start and
+  under its end (`keepOverGround`), so a slope rising ahead counts: only
+  the step's vertical part changes, by lifting the end point along the
+  end's up, so its horizontal part is kept whole and a zoom from eye
+  height looking a few degrees down still walks forward (scaling the
+  whole step would freeze it there). With no ground loaded at either end
+  the step is not changed. Tested with a fake ground rising north, swept
+  over grades from -30 % to 40 %.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the

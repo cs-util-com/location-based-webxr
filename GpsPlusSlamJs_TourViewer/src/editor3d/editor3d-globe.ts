@@ -140,6 +140,13 @@ const TOP_PITCH_DEG = -89;
  *  times a second, against a line that holds each wording 600 ms. */
 const COVERAGE_EVERY_MS = 250;
 
+/** The higher of two heights; either alone where the other is null; null
+ *  where both are. */
+function higherOf(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b === null ? a : Math.max(a, b);
+}
+
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
@@ -554,27 +561,32 @@ export async function openGlobeEditor(
     const poseNow = () => viewPoseOf(ellipsoid, view.ecefCamera());
 
     const up = new THREE.Vector3();
+    const endEcef = new THREE.Vector3();
+    const ecefOfWorldNow = new THREE.Matrix4();
+    const endPlace = { lat: 0, lon: 0, height: 0 };
     /**
-     * A camera move (the world) whose downward part is capped so the
-     * camera stays `eyeM` over the loaded ground under it now; its level
-     * part is kept whole, so from eye height a step walks forward.
-     * Unchanged where no ground has loaded there, or where it does not go
-     * down that far. The ground is taken as level over the step.
+     * A camera move (the world) lifted at its end so the camera ends
+     * `eyeM` over the higher of the loaded grounds under its start and
+     * under its end (a slope rising ahead counts); its level part is kept
+     * whole, so from eye height a step walks forward. Unchanged where it
+     * ends higher than that, or where no ground has loaded at either.
      */
     const keepOverGround = (move: THREE.Vector3): THREE.Vector3 => {
       const pose = poseNow();
-      const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
-      if (groundM === null) return move;
-      ellipsoid
-        .getPositionToNormal(view.ecefCamera().position, up)
-        .transformDirection(globe.group.matrixWorld);
-      const drop = -move.dot(up);
-      const room = Math.max(
-        0,
-        pose.altitudeKm * 1000 - groundM - GLOBE_EDITOR_LOOK.eyeM,
+      ecefOfWorldNow.copy(globe.group.matrixWorld).invert();
+      endEcef.copy(camera.position).add(move).applyMatrix4(ecefOfWorldNow);
+      ellipsoid.getPositionToCartographic(endEcef, endPlace);
+      const floorM = higherOf(
+        ground.groundAt(pose.lat * DEG, pose.lng * DEG),
+        ground.groundAt(endPlace.lat, endPlace.lon),
       );
-      if (drop > room) move.addScaledVector(up, drop - room);
-      return move;
+      if (floorM === null) return move;
+      const liftM = floorM + GLOBE_EDITOR_LOOK.eyeM - endPlace.height;
+      if (liftM <= 0) return move;
+      ellipsoid
+        .getPositionToNormal(endEcef, up)
+        .transformDirection(globe.group.matrixWorld);
+      return move.addScaledVector(up, liftM);
     };
 
     /** The map's coverage, read at most every `COVERAGE_EVERY_MS`: it
