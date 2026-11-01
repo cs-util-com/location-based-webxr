@@ -48,7 +48,7 @@ import { matchWords, wordTokens } from "./word-diff.js";
 
 /** A line of a subtitle file, or a run of a word list's words, that is not
  *  in the text; the voice still plays it, with nothing lit up. */
-interface ImportMismatch {
+export interface ImportMismatch {
   /** `Line N`, `Word N` or `Words N-M`. */
   readonly label: string;
   readonly startMs: number;

@@ -11,13 +11,24 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
+  TourAsset,
   TourManifest,
+  TourNarration,
   TourObject,
   TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  TOUR_MEDIA_EXTENSIONS,
+  tourMediaTypeOf,
+} from "gps-plus-slam-app-framework/ar/tour-media";
+import {
+  TOUR_TIMING_MAX_BYTES,
+  tourTimingEntryName,
+} from "gps-plus-slam-app-framework/ar/tour-timing";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
   TOUR_BLOCK_VIEWS,
+  TOUR_NARRATION_MAX_DURATION_MS,
   TOUR_WORLD_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
@@ -292,6 +303,55 @@ function onMap(geo: QrGeoPose): boolean {
 /** Said for a new order that does not name every station once. */
 const NOT_AN_ORDER = "The new order must name every station of the tour once.";
 
+/** Said for a narration asked of anything but a long text. */
+const NOT_A_LONG_TEXT = "Only a long text can be read aloud.";
+
+/** Said for a voice file of a type a tour cannot carry. */
+const NOT_A_VOICE = `That file is not a sound file a tour can carry (${TOUR_MEDIA_EXTENSIONS.filter(
+  (ext) => tourMediaTypeOf(ext)?.kind === "audio",
+).join(", ")}).`;
+
+/** Said for a timing without a voice to time. */
+const NO_VOICE =
+  "Add the voice first: a timing says when the voice reads each word.";
+
+/** Said when the tour's timing for a text cannot be read. */
+const TIMING_UNREAD =
+  "The tour's timing for this text could not be read, so it cannot be changed here.";
+
+/** Said for a timing text over the format's cap. */
+const TIMING_TOO_LARGE = `That timing is too large for a tour (over ${String(TOUR_TIMING_MAX_BYTES / 1_000_000)} MB).`;
+
+/** A long text's narration as the inspector reads it (`narration`). */
+export interface NarrationFacts {
+  readonly kind: "narration";
+  readonly hasVoice: boolean;
+  /** The voice's length, when known. */
+  readonly durationMs: number | null;
+  /** The text of its read-along entry; null: it names none, or the entry
+   *  could not be read (`timingUnread`). */
+  readonly timingText: string | null;
+  /** The entry is named but could not be read. */
+  readonly timingUnread: boolean;
+}
+
+/** A change of a long text's narration (`editNarration`). */
+export type NarrationChange =
+  /** A voice file brought in: the narration's audio from now on (a timing
+   *  it names is kept: the section says when it no longer fits). */
+  | {
+      readonly kind: "voice";
+      readonly file: Blob;
+      readonly fileName: string;
+      readonly durationMs?: number;
+    }
+  /** The narration taken off, its timing with it. */
+  | { readonly kind: "removeVoice" }
+  /** The timing taken off, the voice kept. */
+  | { readonly kind: "removeTiming" }
+  /** The read-along entry's new text (a `TourTiming`, compact JSON). */
+  | { readonly kind: "timing"; readonly text: string };
+
 /** Said for a size given to anything but a model. */
 const NOT_A_MODEL = "Only a 3D model has a size.";
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
@@ -464,6 +524,21 @@ export interface EditorSession {
     id: string,
     edit: ModelEdit,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** The narration of the free long text `id`: its voice, and its
+   *  read-along text as it stands here (read from the newest bytes when
+   *  this page has not set it). Refused for an id the tour does not carry
+   *  and for anything but a long text. */
+  narration(id: string): Promise<NarrationFacts | EditorRefusal>;
+  /** Change it (`NarrationChange`): one step, undone like any other, the
+   *  voice and the timing written by the next save. Refused in words,
+   *  changing nothing, for an id the tour does not carry, a block that is
+   *  not a long text, a file that is not a sound file, a timing without a
+   *  voice or over the format's cap, and a timing whose written text
+   *  could not be read first (what an undo would bring back). */
+  editNarration(
+    id: string,
+    change: NarrationChange,
+  ): Promise<{ kind: "edited" | "unchanged" } | EditorRefusal>;
   /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
   resizeModel(
     id: string,
@@ -584,12 +659,15 @@ export function createEditorSession(input: {
   /** Pictures being read: a save waits for them, so an undo right after
    *  the save that wrote a photo's delete finds its picture. */
   const pictureReads = new Set<Promise<void>>();
+  /** The voices brought in here, by asset id (Blobs are never state). */
+  const voices = new Map<string, Blob>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
   const saves = createTourSaves({
     tour: session,
     generation,
     pictureOf: (id) => pictures.get(id),
+    voiceOf: (id) => voices.get(id),
     picturesRead: () => Promise.all(pictureReads),
   });
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
@@ -845,6 +923,70 @@ export function createEditorSession(input: {
     kind: "refused",
     reason: NO_SUCH_STATION,
   };
+
+  /** What the written file holds at the read-along entry `entry` (null:
+   *  none): known since a save here, else read from the newest bytes.
+   *  Rejects when it cannot be read or is over the format's cap. */
+  async function writtenTiming(entry: string): Promise<string | null> {
+    const state = own();
+    if (Object.hasOwn(state.timingsWritten, entry)) {
+      return state.timingsWritten[entry] ?? null;
+    }
+    const name = `${session.manifestWrap}${entry}`;
+    const newest = saves.newest();
+    if (newest === null) {
+      if (!session.entries.some((e) => e.filename === name)) return null;
+      return session.loadEntryText(name, TOUR_TIMING_MAX_BYTES);
+    }
+    if (!(await zipBlobEntryNames(newest.blob)).includes(name)) return null;
+    const blob = await readZipBlobEntry(newest.blob, name);
+    if (blob.size > TOUR_TIMING_MAX_BYTES) {
+      throw new Error(`${entry} is over the timing cap`);
+    }
+    return blob.text();
+  }
+
+  /** The read-along text at `entry` as it stands here: the one set here,
+   *  else the written file's. */
+  function timingNow(entry: string): Promise<string | null> {
+    const state = own();
+    return Object.hasOwn(state.timings, entry)
+      ? Promise.resolve(state.timings[entry] ?? null)
+      : writtenTiming(entry);
+  }
+
+  /** The narration a change makes of `was` (undefined: none); `voice`,
+   *  the asset a voice change brings in. */
+  function narrationAfter(
+    was: TourNarration | undefined,
+    change: NarrationChange,
+    voice: TourAsset | undefined,
+    entry: string,
+  ): TourNarration | undefined {
+    if (change.kind === "removeVoice") return undefined;
+    if (change.kind === "removeTiming") {
+      if (was === undefined) return undefined;
+      const { timing: _off, ...kept } = was;
+      return kept;
+    }
+    if (change.kind === "timing") {
+      return was === undefined ? undefined : { ...was, timing: entry };
+    }
+    if (voice === undefined) return was;
+    // A new recording's length is its own: the old one's never carries
+    // over, and one out of the format's range is left out.
+    const base: Omit<TourNarration, "audio"> = was ?? { synthetic: false };
+    const { durationMs: _old, ...kept } = base;
+    const ms =
+      change.durationMs === undefined ? NaN : Math.round(change.durationMs);
+    return {
+      ...kept,
+      audio: voice.id,
+      ...(ms >= 1 && ms <= TOUR_NARRATION_MAX_DURATION_MS
+        ? { durationMs: ms }
+        : {}),
+    };
+  }
 
   /** The pictures of `objects`' photos, by id; null when one cannot be
    *  read (a copy without its picture would save a broken tour). */
@@ -1225,6 +1367,127 @@ export function createEditorSession(input: {
         ),
       );
       return applied ? { kind: "edited" } : notApplied;
+    },
+    async narration(id) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "longText") {
+        return { kind: "refused", reason: NOT_A_LONG_TEXT };
+      }
+      const narration = object.narration;
+      const facts = {
+        kind: "narration" as const,
+        hasVoice: narration !== undefined,
+        durationMs: narration?.durationMs ?? null,
+      };
+      if (narration?.timing === undefined) {
+        return { ...facts, timingText: null, timingUnread: false };
+      }
+      try {
+        const text = await timingNow(narration.timing);
+        return { ...facts, timingText: text, timingUnread: false };
+      } catch {
+        return { ...facts, timingText: null, timingUnread: true };
+      }
+    },
+    async editNarration(id, change) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      if (found.object.kind !== "longText") {
+        return { kind: "refused", reason: NOT_A_LONG_TEXT };
+      }
+      let entry: string;
+      try {
+        entry = tourTimingEntryName(id);
+      } catch {
+        return notApplied;
+      }
+      let voice: TourAsset | undefined;
+      if (change.kind === "voice") {
+        const dot = change.fileName.lastIndexOf(".");
+        const ext = dot < 0 ? "" : change.fileName.slice(dot + 1).toLowerCase();
+        if (tourMediaTypeOf(ext)?.kind !== "audio") {
+          return { kind: "refused", reason: NOT_A_VOICE };
+        }
+        const voiceId = newObjectId();
+        voice = {
+          id: voiceId,
+          path: `content/${voiceId}.${ext}`,
+          kind: "audio",
+        };
+      }
+      if (change.kind === "timing") {
+        if (found.object.narration === undefined) {
+          return { kind: "refused", reason: NO_VOICE };
+        }
+        if (
+          new TextEncoder().encode(change.text).length > TOUR_TIMING_MAX_BYTES
+        ) {
+          return { kind: "refused", reason: TIMING_TOO_LARGE };
+        }
+      }
+      // What the written file holds at the entry, read before the page
+      // first changes it: what an undo to a step before that brings back.
+      const touchesTiming =
+        change.kind === "timing" ||
+        ((change.kind === "removeVoice" || change.kind === "removeTiming") &&
+          found.object.narration?.timing !== undefined);
+      let previous: string | null = null;
+      if (touchesTiming && !Object.hasOwn(own().timings, entry)) {
+        try {
+          previous = await writtenTiming(entry);
+        } catch {
+          return { kind: "refused", reason: TIMING_UNREAD };
+        }
+      }
+      // The text as it stands now: an edit may have landed while reading.
+      const latest = find(id)?.object;
+      if (latest?.kind !== "longText") return notInTour;
+      const was = latest.narration;
+      if (change.kind === "timing" && was === undefined) {
+        return { kind: "refused", reason: NO_VOICE };
+      }
+      if (change.kind === "removeVoice" && was === undefined) {
+        return { kind: "unchanged" };
+      }
+      if (change.kind === "removeTiming" && was?.timing === undefined) {
+        return { kind: "unchanged" };
+      }
+      const narration = narrationAfter(was, change, voice, entry);
+      const { narration: _was, ...rest } = latest;
+      const what =
+        change.kind === "voice"
+          ? `the voice of ${objectName(latest)}`
+          : change.kind === "removeVoice"
+            ? `the removal of the voice of ${objectName(latest)}`
+            : change.kind === "removeTiming"
+              ? `the removal of the timing of ${objectName(latest)}`
+              : `the timing of ${objectName(latest)}`;
+      if (voice !== undefined && change.kind === "voice") {
+        voices.set(voice.id, change.file);
+      }
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.narrationEdited({
+            object: narration === undefined ? rest : { ...rest, narration },
+            ...(touchesTiming
+              ? {
+                  timing: {
+                    entry,
+                    text: change.kind === "timing" ? change.text : null,
+                    previous,
+                  },
+                }
+              : {}),
+            ...(voice === undefined ? {} : { voice }),
+            what,
+          }),
+        ),
+      );
+      if (applied) return { kind: "edited" };
+      if (voice !== undefined) voices.delete(voice.id);
+      return change.kind === "timing" ? { kind: "unchanged" } : notApplied;
     },
     resizeModel(id, sizeM) {
       const found = find(id);

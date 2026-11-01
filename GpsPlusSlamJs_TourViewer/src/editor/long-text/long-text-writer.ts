@@ -46,6 +46,11 @@ import { readMinutes, wordCount } from "../../long-text-sheet.js";
 import { shellIcon, type ShellIcon } from "../editor-shell/shell-icons.js";
 import type { InspectorLongText } from "../editor-shell/inspector-model.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
+import {
+  createNarrationSection,
+  type NarrationSectionDeps,
+} from "../narration/narration-section.js";
+import { truncated } from "../truncated.js";
 
 /** How long typing pauses before the text is written into the tour. */
 export const WRITER_SAVE_MS = 700;
@@ -58,6 +63,12 @@ export interface LongTextWriterDeps {
   readonly writeBody: (blockId: string, body: string) => TypedEditOutcome;
   /** Writes the text's view into the tour. */
   readonly writeView: (blockId: string, view: string) => TypedEditOutcome;
+  /** The text's narration, read and changed: the Narration section (none
+   *  given: the section says it is not offered here). */
+  readonly narration?: Pick<
+    NarrationSectionDeps,
+    "read" | "edit" | "durationOf"
+  >;
   /** A tour file's content (a picture's thumbnail). */
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A passing line (the page's toast). */
@@ -84,11 +95,6 @@ export interface LongTextWriter {
 }
 
 let ids = 0;
-
-/** Kept short in the list and the link's note. */
-function trunc(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 3).trimEnd()}...` : s;
-}
 
 export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   const doc = deps.document;
@@ -337,7 +343,7 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   list.hidden = true;
   wsec.append(slab, tools, linkRow, picPop, help, writer, callout, stat, list);
 
-  // --- the narration's spot (built in a later step) ----------------------------
+  // --- the narration ------------------------------------------------------------
   const nsec = el("div", "lw-nsec");
   const narrHead = el("button", "disc");
   narrHead.type = "button";
@@ -349,12 +355,28 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   narrBody.hidden = true;
   narrBody.id = `lw-narr-${String(n)}`;
   narrHead.setAttribute("aria-controls", narrBody.id);
+  const narration =
+    deps.narration === undefined
+      ? null
+      : createNarrationSection({
+          document: doc,
+          read: deps.narration.read,
+          edit: deps.narration.edit,
+          ...(deps.narration.durationOf === undefined
+            ? {}
+            : { durationOf: deps.narration.durationOf }),
+          say: deps.say,
+          onSummary: (summary, tone) => {
+            narrSum.className = tone === "" ? "sum" : `sum ${tone}`;
+            narrSum.replaceChildren(el("i"), summary);
+          },
+          onShow: (from, to, plain) => {
+            deps.onShow?.(from, to, plain);
+          },
+        });
   narrBody.append(
-    el(
-      "div",
-      "note",
-      "A voice and its timing are added here in the next step of the editor.",
-    ),
+    narration?.node ??
+      el("div", "note", "A voice and its timing are not offered here."),
   );
   nsec.append(narrHead, narrBody);
 
@@ -408,10 +430,13 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
     if (picker.offerNarration) {
       vdesc.append(" ", button("", "add-narration", "", "Add a narration"));
     }
-    narrSum.replaceChildren(
-      el("i"),
-      model.hasNarration ? "Has a voice" : "No voice yet",
-    );
+    // The section says more once it has read the narration.
+    if (narration === null || narrSum.childNodes.length === 0) {
+      narrSum.replaceChildren(
+        el("i"),
+        model.hasNarration ? "Has a voice" : "No voice yet",
+      );
+    }
   }
 
   function drawMirror(): void {
@@ -649,7 +674,7 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
     const words = area.value.slice(linkSel[0], linkSel[1]).trim();
     linkNote.textContent =
       words !== ""
-        ? `The words "${trunc(words, 40)}" become the link.`
+        ? `The words "${truncated(words, 40)}" become the link.`
         : "Select some words first to make them the link; otherwise the address itself is shown.";
     linkRow.hidden = false;
     linkUrl.value = "";
@@ -1044,8 +1069,14 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       if (next === null) {
         commit(true);
         model = null;
+        narration?.update(null);
         return;
       }
+      narration?.update({
+        blockId: next.blockId,
+        body: next.body,
+        key: next.narrationKey,
+      });
       const other = model?.blockId !== next.blockId;
       if (other) {
         commit(true);

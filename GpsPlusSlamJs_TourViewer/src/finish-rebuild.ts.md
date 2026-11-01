@@ -157,3 +157,7 @@ additions and deletions: each id once, edits in place, a deleted
 photo's file gone, kept ones present, the zip opens again. The phone's
 wiring around it stays pinned by `creator-finish.test.ts` and
 `authoring-settle.test.ts`.
+
+## Extra files (narration)
+
+`input.files` (a path in the tour's folder, text or Blob) are written only where the written tour names them (`visitorEntryNames`). An entry an earlier rebuild of the same open wrote is read from that rebuild's bytes (`zipBlobEntryNames`), so a later write that drops its narration leaves no stale read-along entry behind.

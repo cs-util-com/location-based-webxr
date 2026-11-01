@@ -15,6 +15,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -329,7 +330,40 @@ interface Holders {
   opened(id: string): boolean;
 }
 
-/** One id's draft writes for a change from `was` to `now`. */
+/**
+ * `object` as a draft can keep it: a long text whose narration needs what
+ * only this page holds - a voice brought in here, a read-along text set
+ * here and written nowhere yet - keeps the narration the written file
+ * gives it (none when it has none). A draft keeps records, never a
+ * voice's bytes or a timing's text: a reload offering that narration
+ * would name a file the tour lacks, and every save would fail.
+ */
+export function draftableObject(
+  object: TourObject,
+  state: TourDocumentState,
+): TourObject {
+  if (object.kind !== "longText" || object.narration === undefined) {
+    return object;
+  }
+  const { audio, timing } = object.narration;
+  const assets = new Set((state.written?.assets ?? []).map((a) => a.id));
+  const timingHeld =
+    timing === undefined ||
+    !Object.hasOwn(state.timingsWritten, timing) ||
+    state.timingsWritten[timing] !== null;
+  if (assets.has(audio) && timingHeld) return object;
+  const filed =
+    state.written === null
+      ? undefined
+      : tourObjects(state.written).find((o) => o.id === object.id);
+  const { narration: _unheld, ...rest } = object;
+  return filed?.kind === "longText" && filed.narration !== undefined
+    ? { ...rest, narration: filed.narration }
+    : rest;
+}
+
+/** One id's draft writes for a change from `was` to `now`; `kept` gives
+ *  an object as the draft can keep it (`draftableObject`). */
 function followId(
   draft: TourDocumentDraft,
   id: string,
@@ -337,6 +371,7 @@ function followId(
   now: Standing,
   pictureOf: (id: string) => Blob | undefined,
   holds: Holders,
+  kept: (object: TourObject) => TourObject,
 ): void {
   if (now === "deleted") {
     if (was !== "deleted") void draft.saveDeletion(id);
@@ -358,7 +393,7 @@ function followId(
     was !== null &&
     was !== "deleted" &&
     objectContentKey(was.object) === objectContentKey(now.object);
-  if (!same) void draft.saveObject(now.object, pictureOf(id));
+  if (!same) void draft.saveObject(kept(now.object), pictureOf(id));
   // An object back that the written file lacks may be a delete a save
   // already wrote (and took out of the document's deletions, not the
   // draft's tombstone): an undo across that save. Its tombstone goes too,
@@ -417,6 +452,7 @@ export function followDocument(
       standing(after, id),
       pictureOf,
       holds,
+      (object) => draftableObject(object, after),
     );
   }
   const was = settingsRecord(before);

@@ -454,3 +454,13 @@ leaves a name without the stamp as it is (`editor-session.test.ts` has its
 examples).
 
 `station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.
+
+## Narration
+
+- `narration(itemId)`: the long text's `NarrationFacts` (voice, length, the read-along text from the newest bytes or the page's state), or a refusal.
+- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason.
+  - `voice`: a sound file, stored under `content/`.
+  - `removeVoice`: takes the timing off too.
+  - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
+  - `removeTiming`: keeps the voice.
+- Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.

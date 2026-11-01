@@ -95,6 +95,20 @@ import {
 import { buildTree } from "./tree-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
 import { createLongTextDock } from "../long-text/long-text-dock.js";
+import type { NarrationChange, NarrationFacts } from "../editor-session.js";
+
+/** A stamp per read-along texts object of the tour document: the reducer
+ *  makes a new one on each change of them. */
+const timingStamps = new WeakMap<object, string>();
+let timingStampCount = 0;
+function timingsStampOf(timings: object): string {
+  let stamp = timingStamps.get(timings);
+  if (stamp === undefined) {
+    stamp = String(++timingStampCount);
+    timingStamps.set(timings, stamp);
+  }
+  return stamp;
+}
 
 /** The 3D view's commands the shell drives. */
 type ShellView = Pick<
@@ -156,6 +170,17 @@ interface ShellEditCommands {
   ): void;
   /** A new pin in the station, at a free spot near its anchor. */
   addPin(stationId: string): void;
+  /** A long text's narration as it stands (`EditorSession.narration`). */
+  narration(
+    itemId: string,
+  ): Promise<
+    NarrationFacts | { readonly kind: "refused"; readonly reason: string }
+  >;
+  /** One change of it: one undo step, a refusal said by the page. */
+  editNarration(
+    itemId: string,
+    change: NarrationChange,
+  ): Promise<TypedEditOutcome>;
 }
 
 /** The page's store, as the shell reads it. */
@@ -318,6 +343,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     kept: createKeptStore(),
     writeBody: (id, body) => deps.edits.block(id, "body", body),
     writeView: (id, view) => deps.edits.view(id, view),
+    readNarration: (id) => deps.edits.narration(id),
+    editNarration: (id, change) => deps.edits.editNarration(id, change),
     loadPicture: (path) => deps.loadPicture(path),
     say: (text) => {
       deps.say(text);
@@ -380,6 +407,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       groundAt,
       modelFocus: ui.modelFocus,
       modelPick: ui.modelPick,
+      timingsStamp: timingsStampOf(state().tourDocument.timings),
     });
   };
 

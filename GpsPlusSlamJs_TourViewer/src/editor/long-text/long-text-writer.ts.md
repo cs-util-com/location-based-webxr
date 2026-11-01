@@ -85,3 +85,7 @@ system zeroes margins, so every gap is set there.
   written and a refused text, the trimmed store, the toolbar and keys,
   the parts, the view picker, and the invariant.
 - The layout in a browser: `playwright-tests/editor3d-long-text.spec.js`.
+
+## Narration section
+
+The writer's Narration fold holds `createNarrationSection` (`../narration/narration-section.ts`), updated with the block, its body and `narrationKey`; the section's summary and tone go on the fold's head (`sum ok` / `sum amber`). Quotes are cut with the package's one `truncated` helper (`../truncated.ts`).

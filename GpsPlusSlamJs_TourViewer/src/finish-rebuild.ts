@@ -29,7 +29,12 @@ import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { applyObjectChanges, hostedObjects } from "./authoring-draft.js";
 import type { LevelText } from "./code-book.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
-import { scanEntryNames, unnamedTimingEntryNames } from "./tour-read-set.js";
+import {
+  scanEntryNames,
+  unnamedTimingEntryNames,
+  visitorEntryNames,
+} from "./tour-read-set.js";
+import { zipBlobEntryNames } from "./zip-blob.js";
 import {
   downloadSafeName,
   nameSurvivesDownload,
@@ -79,6 +84,14 @@ export interface FinishInput {
    *  folder) the undo history still names (`historyTimingEntries`): kept,
    *  though no narration of the written tour names them. */
   readonly keepEntries?: ReadonlySet<string>;
+  /** Files besides the manifest, the levels and the photos, by path in
+   *  the tour's folder (a narration's read-along text, a voice brought
+   *  in): each is written where the written tour names it - a visitor
+   *  reads it (`visitorEntryNames`) - and left out where it does not. */
+  readonly files?: readonly {
+    readonly path: string;
+    readonly data: string | Blob;
+  }[];
   /** Keep the entries visitors never read (the walk, S-D10). */
   readonly keepScan: boolean;
   /** The last rebuild of this open tour; null or absent for the first,
@@ -258,6 +271,11 @@ export async function rebuildFinishedTour(
   const scanLeftOut = input.keepScan
     ? []
     : scanEntryNames(entryNames, written, wrap);
+  // A read-along entry an earlier rebuild of this open wrote is in its
+  // bytes, not in the opened file's names: it is read from those bytes,
+  // or a later write that drops its narration would leave it behind.
+  const timingNames =
+    previous === null ? entryNames : await zipBlobEntryNames(previous.blob);
   const removed = entriesToRemove({
     wrap,
     before: manifest,
@@ -265,7 +283,7 @@ export async function rebuildFinishedTour(
     // A narration removed (or its block deleted) leaves its timing behind;
     // like an asset, it goes unless an undo step still names it.
     timingUnnamed: unnamedTimingEntryNames(
-      entryNames,
+      timingNames,
       written,
       wrap,
       input.keepEntries,
@@ -290,6 +308,16 @@ export async function rebuildFinishedTour(
         : [],
     ),
   });
+  const files = (input.files ?? []).map((f) => ({
+    path: `${wrap}${f.path}`,
+    data: f.data,
+  }));
+  const read = visitorEntryNames(
+    files.map((f) => f.path),
+    written,
+    wrap,
+  );
+  entries.push(...files.filter((f) => read.has(f.path)));
   // The input is the NEWEST bytes for this tour: a previous finish's
   // rebuild when there is one, because it already carries that
   // batch's content entries - rebuilding from the hosted zip again

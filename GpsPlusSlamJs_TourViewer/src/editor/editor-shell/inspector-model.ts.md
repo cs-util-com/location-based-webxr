@@ -124,3 +124,7 @@ ground changing by a few millimetres without crossing a shown tenth
 leaves the model unchanged: the shell's readout draws the inspector again
 whenever its model changes, so a model carrying raw heights was drawn
 again under the creator's typing on every tile of finer ground.
+
+## Narration key
+
+`InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.

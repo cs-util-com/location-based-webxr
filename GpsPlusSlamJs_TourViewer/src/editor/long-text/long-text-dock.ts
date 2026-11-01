@@ -10,6 +10,7 @@
  */
 import type { InspectorLongText } from "../editor-shell/inspector-model.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
+import type { NarrationSectionDeps } from "../narration/narration-section.js";
 import type { KeptStore } from "./kept-store.js";
 import {
   createLongTextPreview,
@@ -31,6 +32,9 @@ export interface LongTextDockDeps {
   readonly kept: KeptStore;
   readonly writeBody: (blockId: string, body: string) => TypedEditOutcome;
   readonly writeView: (blockId: string, view: string) => TypedEditOutcome;
+  /** The text's narration, read and changed (the Narration section). */
+  readonly readNarration: NarrationSectionDeps["read"];
+  readonly editNarration: NarrationSectionDeps["edit"];
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
   readonly say: (text: string) => void;
@@ -99,6 +103,7 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
     kept: deps.kept,
     writeBody: deps.writeBody,
     writeView: deps.writeView,
+    narration: { read: deps.readNarration, edit: deps.editNarration },
     loadPicture: deps.loadPicture,
     say: deps.say,
     onText: (body) => {

@@ -132,6 +132,7 @@ import {
   datedFileName,
   type EditorSave,
   type EditorSession,
+  type NarrationChange,
 } from "./editor-session.js";
 import { waitForSaveSlot } from "./save-slot-wait.js";
 import {
@@ -1302,6 +1303,33 @@ function writeInspectorEdit(
   if (editor === null) return "refused";
   endUndo();
   const outcome = write(editor);
+  refresh();
+  if ("reason" in outcome) {
+    toast(outcome.reason);
+    return "refused";
+  }
+  if (outcome.kind !== "unchanged") autosave.changed();
+  return "written";
+}
+
+/** A narration change from the Narration section, as an inspector edit:
+ *  one step, the page refreshed once the session holds it, a refusal
+ *  toasted, the autosave told. */
+async function writeNarrationEdit(
+  id: string,
+  change: NarrationChange,
+): Promise<TypedEditOutcome> {
+  if (editor === null) return "refused";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["editNarration"]>>;
+  try {
+    outcome = await editor.editNarration(id, change);
+  } catch {
+    outcome = {
+      kind: "refused",
+      reason: "The narration could not be changed.",
+    };
+  }
   refresh();
   if ("reason" in outcome) {
     toast(outcome.reason);
@@ -3724,6 +3752,14 @@ const shell = createEditorShell({
       writeInspectorEdit((e) => e.groundItems(items));
     },
     addPin: addPinTo,
+    narration: (id) =>
+      editor === null
+        ? Promise.resolve({
+            kind: "refused" as const,
+            reason: "No tour is open.",
+          })
+        : editor.narration(id),
+    editNarration: writeNarrationEdit,
   },
   say: (text) => {
     toast(text);

@@ -787,3 +787,13 @@ store.dispatch(tourDocumentActions.undone());
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
   The slice is kind-agnostic; this pins that it stays so.
+
+## Narration (read-along timings and voices)
+
+- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each), `voices` (audio assets brought in here; `manifestNow` lists the ones the written tour does not).
+- `narrationEdited({ object, timing?, voice?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when a voice is not audio, reuses a held id or is not the narration's audio, when the narration names an audio the tour does not hold, or when the entry is not the object's own.
+  - An undo brings back the entry's text the step started from.
+  - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
+- `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.
+- A duplicated narrated text keeps its voice but not the original's timing entry (`copiedNarration`).

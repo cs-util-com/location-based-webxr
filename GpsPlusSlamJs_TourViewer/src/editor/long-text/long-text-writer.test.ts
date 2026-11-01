@@ -39,6 +39,7 @@ function model(over: Partial<InspectorLongText> = {}): InspectorLongText {
     title: "The gate",
     body: BODY,
     hasNarration: false,
+    narrationKey: "null|",
     over: "Gate · Station 1",
     pictures: [
       {

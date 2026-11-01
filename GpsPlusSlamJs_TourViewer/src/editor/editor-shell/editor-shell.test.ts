@@ -130,6 +130,10 @@ function setUp() {
     scene: vi.fn(),
     groundItems: vi.fn(),
     addPin: vi.fn(),
+    narration: vi.fn(() =>
+      Promise.resolve({ kind: "refused" as const, reason: "none" }),
+    ),
+    editNarration: vi.fn(() => Promise.resolve("written" as const)),
   };
   const deps: EditorShellDeps = {
     store,

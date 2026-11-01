@@ -34,3 +34,7 @@ the inspector's "Wider" width and whether the preview shows.
 ## Tests
 
 - Through the shell in a browser: `playwright-tests/editor3d-long-text.spec.js`.
+
+## Narration
+
+The dock passes the shell's `readNarration` / `editNarration` to the writer as `narration: { read, edit }`.

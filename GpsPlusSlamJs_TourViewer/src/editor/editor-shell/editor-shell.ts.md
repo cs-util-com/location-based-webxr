@@ -323,3 +323,7 @@ the four sizes, the Delete's key in dim letters as the prototype has it) and `ed
 position, Move to a new station). Its parts' own tests:
 `tree-reorder.test.ts`, `tree-drag.test.ts`, `bar-actions.test.ts`,
 `scene-menu.test.ts`.
+
+## Narration
+
+`ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.

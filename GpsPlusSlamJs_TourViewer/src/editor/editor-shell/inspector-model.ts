@@ -240,6 +240,9 @@ export interface InspectorLongText {
   /** Its text, the tour's Markdown. */
   readonly body: string;
   readonly hasNarration: boolean;
+  /** Changes whenever its narration may have: the record and a stamp of
+   *  the tour's read-along texts (the Narration section re-reads on it). */
+  readonly narrationKey: string;
   /** The line over its title in the visitor's sheet ("Gate · Station 1"). */
   readonly over: string;
   /** The tour's pictures a text may show, by asset id, with their file
@@ -468,6 +471,8 @@ export function buildInspector(input: {
    *  none. */
   readonly modelFocus?: ModelFocus | null;
   readonly modelPick?: ModelPick | null;
+  /** Changes whenever the tour's read-along texts do; none given: "". */
+  readonly timingsStamp?: string;
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -562,6 +567,7 @@ export function buildInspector(input: {
               title: item.title,
               body: item.body,
               hasNarration: item.narration !== undefined,
+              narrationKey: `${JSON.stringify(item.narration ?? null)}|${input.timingsStamp ?? ""}`,
               over: readingSheetContent(stations, item).over,
               pictures: textPictures(input.assets),
             }

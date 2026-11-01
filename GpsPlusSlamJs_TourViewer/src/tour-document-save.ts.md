@@ -141,3 +141,7 @@ open (one begun before lands nowhere, one asked for after rejects). The
 desktop's whole save and walk move are covered through the session
 (`editor/editor-session.test.ts`), and both pages' writes by the parity
 contract (`tour-document-parity.test.ts`).
+
+## Narration files
+
+The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each voice brought in here that it does not list, with the bytes the page keeps (`voiceOf`). After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.

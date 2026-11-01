@@ -166,3 +166,7 @@ const stop = store.listenToDocument({
   download, undo, redo, then a reload that offers the delete again) and the
   parity contract `tour-document-parity.test.ts` (the draft records
   compared).
+
+## Narration in a draft
+
+`draftableObject(object, state)`: a long text whose narration needs what only this page holds (a voice brought in here, a read-along text set here and written nowhere yet) is drafted with the narration the written file gives it, or none. A draft keeps records, never a voice's bytes or a timing's text; a reload offering such a narration would name a file the tour lacks, and every save would fail.

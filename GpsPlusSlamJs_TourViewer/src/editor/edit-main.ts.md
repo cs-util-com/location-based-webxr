@@ -819,3 +819,7 @@ leaving the tour in the browser (the status line says so) and the first
 Save asking again, under the dated name; a Ctrl+S pressed while a copy
 is being saved saving the tour once the copy is done; and on Android (its client hints) the same dialog as
 on a desktop.
+
+## Narration
+
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`.
