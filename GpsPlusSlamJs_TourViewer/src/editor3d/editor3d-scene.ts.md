@@ -24,7 +24,8 @@ keys), and writes only through the page's `edits`.
   - `levels()` - the open tour's codes; `loadContent(entry)` - a content
     entry's bytes;
   - `approach` (optional, the globe view only) - fly in on opening,
-    `{ durationMs? }` to set its length; `walk()` (optional, the globe
+    `{ durationMs?, landed? }`: its length, and `landed()` called once
+    when its bar goes (not when the view closes before); `walk()` (optional, the globe
     view only) - the recorded walk's captures (lat, lon, alt), or null.
   - `events.contextLost()` / `events.failed()` - once the view shows, its
     WebGL context lost, or an error in a frame that stopped its drawing.

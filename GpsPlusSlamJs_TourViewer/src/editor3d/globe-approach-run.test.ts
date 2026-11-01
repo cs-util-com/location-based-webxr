@@ -9,7 +9,7 @@
  * whole flight and after it without telling him anything. A wrong phase
  * here would be an input fought or a box that never leaves.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { aimView, streetView } from "./globe-editor-look.js";
 import { approachFlight } from "./globe-approach-flight.js";
@@ -172,6 +172,67 @@ describe("createApproachRun", () => {
     expect(rootOf(box).hidden).toBe(false);
     stepAt(r, flight.durationMs + BAR_DONE_MS);
     expect(rootOf(box).hidden).toBe(true);
+  });
+
+  /** A run that reports to `done` when its box goes. */
+  const reporting = (done: () => void) => {
+    const box = document.createElement("div");
+    document.body.append(box);
+    const flight = approachFlight(GOAL, GROUND_M, { reducedMotion: false });
+    const r = createApproachRun({
+      box,
+      flight,
+      startMs: 0,
+      reducedMotion: false,
+      onDone: done,
+    });
+    return { flight, r };
+  };
+
+  it("calls onDone once, after the bar's hold that follows a landing", () => {
+    // Why: the editor unfolds its rail when the bar goes; a call before the
+    // hold, or a second one, would unfold it at the wrong time.
+    const done = vi.fn();
+    const { flight, r } = reporting(done);
+    const land = flight.durationMs;
+    stepAt(r, land);
+    expect(done).not.toHaveBeenCalled();
+    stepAt(r, land + BAR_DONE_MS - 1);
+    expect(done).not.toHaveBeenCalled();
+    stepAt(r, land + BAR_DONE_MS);
+    expect(done).toHaveBeenCalledTimes(1);
+    stepAt(r, land + 60_000);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onDone once, at once after a takeover", () => {
+    // Why: a taken bar goes at once, and the rail with it.
+    const done = vi.fn();
+    const { r } = reporting(done);
+    stepAt(r, 3_000);
+    r.takeOver(3_000);
+    stepAt(r, 3_016);
+    expect(done).toHaveBeenCalledTimes(1);
+    stepAt(r, 60_000);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onDone when disposed before the box goes", () => {
+    // Why: a view closed mid-flight never landed; the editor gives the
+    // rail back on its own close.
+    const box = document.createElement("div");
+    const flight = approachFlight(GOAL, GROUND_M, { reducedMotion: false });
+    const done = vi.fn();
+    const r = createApproachRun({
+      box,
+      flight,
+      startMs: 0,
+      reducedMotion: false,
+      onDone: done,
+    });
+    stepAt(r, 1_000);
+    r.dispose();
+    expect(done).not.toHaveBeenCalled();
   });
 
   it("removes its element on dispose", () => {

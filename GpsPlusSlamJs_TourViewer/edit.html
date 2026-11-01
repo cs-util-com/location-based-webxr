@@ -18,16 +18,12 @@
          nothing differently). -->
     <header id="topbar" class="panel" hidden>
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">T</div>
         <div class="brand-text">
-          <!-- The tour's name opens its details (W2 of the tour editor plan). -->
-          <button
-            class="tour-name"
-            id="tour-name"
-            type="button"
-            aria-haspopup="dialog"
-            title="Edit the tour's details"
-          ></button>
+          <!-- The tour's name opens its details; the pen right of it says
+               so (its words are the name's alone: no whitespace inside the
+               button, so its text is the name exactly). -->
+          <!-- prettier-ignore -->
+          <button class="tour-name" id="tour-name" type="button" aria-haspopup="dialog" title="Edit the tour's details"><span class="tour-name-text" id="tour-name-text"></span><span class="tour-name-pen" aria-hidden="true"><i data-icon="pencil"></i></span></button>
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
@@ -198,15 +194,6 @@
       <!-- The 3D view's studio controls (editor-shell.ts); the map page
            hides them. -->
       <div class="studio grp">
-        <button
-          class="tbtn"
-          id="studio-details"
-          type="button"
-          aria-haspopup="dialog"
-          title="Tour details: name, cover, description"
-        >
-          <i data-icon="pencil"></i><span class="lbl">Details</span>
-        </button>
         <button
           class="tbtn"
           id="studio-undo"

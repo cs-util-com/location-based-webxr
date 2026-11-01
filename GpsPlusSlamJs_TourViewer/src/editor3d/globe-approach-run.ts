@@ -103,13 +103,15 @@ export interface ApproachRun {
 /**
  * The approach `flight`, begun at `startMs` (or at `start`), its title and
  * bar in `box` (the 3D view's box). `reducedMotion` takes the short
- * arrival.
+ * arrival. `onDone` is called once, when the bar goes (a beat after a
+ * landing, at once after a takeover); never when disposed before.
  */
 export function createApproachRun(deps: {
   readonly box: HTMLElement;
   readonly flight: ApproachFlight;
   readonly startMs?: number;
   readonly reducedMotion: boolean;
+  readonly onDone?: () => void;
 }): ApproachRun {
   const { box, reducedMotion } = deps;
   const timing = reducedMotion ? ARRIVAL_REDUCED : ARRIVAL;
@@ -182,7 +184,10 @@ export function createApproachRun(deps: {
         if (flightDone(flight, flightMs(nowMs))) arrive(nowMs, "landed");
         else showProgress(barValue(flight, altitudeKm));
       }
-      if (root.hidden !== true && barDone(nowMs)) root.hidden = true;
+      if (root.hidden !== true && barDone(nowMs)) {
+        root.hidden = true;
+        deps.onDone?.();
+      }
     },
     takeOver(nowMs) {
       arrive(nowMs, "taken");

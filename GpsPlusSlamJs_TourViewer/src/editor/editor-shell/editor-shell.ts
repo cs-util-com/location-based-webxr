@@ -177,8 +177,6 @@ export interface EditorShellDeps {
   readonly select: (id: string | null) => void;
   /** One step of the edit history, as Ctrl+Z and Ctrl+Shift+Z. */
   readonly step: (which: "undo" | "redo") => void;
-  /** The tour's details dialog. */
-  readonly openDetails: () => void;
   /** The open tour's codes, in the phone's numbering. */
   readonly codes: () => readonly InspectorCode[];
   /** A picture's bytes from the open tour (its content path). */
@@ -192,9 +190,15 @@ export interface EditorShellDeps {
 }
 
 export interface EditorShell {
-  /** The 3D view shows: the shell drives `view` until `hide`. */
-  show(view: ShellView): void;
+  /** The 3D view shows: the shell drives `view` until `hide`. With
+   *  `approach` the view opens on its approach: the tree stays folded
+   *  until `approachLanded`. */
+  show(view: ShellView, options?: { readonly approach?: boolean }): void;
   hide(): void;
+  /** The approach's bar went: the tree folded for it unfolds (animated,
+   *  unless reduced motion), as the dock rule allows at this width. Once;
+   *  a creator's fold or unfold before it ends the hold. */
+  approachLanded(): void;
   /** The scene's ground menu at `point` (px in the view), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
@@ -294,7 +298,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     debug: byId<HTMLButtonElement>("shell-debug"),
   };
   const top = {
-    details: byId<HTMLButtonElement>("studio-details"),
     undo: byId<HTMLButtonElement>("studio-undo"),
     redo: byId<HTMLButtonElement>("studio-redo"),
     editUndo: byId<HTMLButtonElement>("edit-undo"),
@@ -382,6 +385,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       },
       pictures,
     );
+  };
+
+  /** The tree is folded for the approach, not by the creator. */
+  let approachHold = false;
+  /** The tree's unfolding animation (`dock-unfold`) ends: its class goes. */
+  const endUnfolding = (event?: AnimationEvent) => {
+    if (event !== undefined && event.animationName !== "dock-unfold") return;
+    tree.root.classList.remove("unfolding");
+  };
+  tree.root.addEventListener("animationend", endUnfolding);
+  tree.root.addEventListener("animationcancel", endUnfolding);
+  /** The creator folds or unfolds the tree: the approach's hold ends. */
+  const creatorTouchesTree = () => {
+    approachHold = false;
+    endUnfolding();
   };
 
   /** The docks after `change` by the dock rule, stored. */
@@ -924,6 +942,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (plan.fly && plan.select !== null) view?.flyTo(plan.select);
   });
   tree.stationsHead.addEventListener("click", () => {
+    creatorTouchesTree();
     const { openSections, foldedDocks } = state().editorView;
     // On a folded dock the header is the larger target of its head: a tap
     // there only unfolds the dock, its sections as they were.
@@ -966,6 +985,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   });
   tree.fold.addEventListener("click", () => {
+    creatorTouchesTree();
     const folded = !state().editorView.foldedDocks.tree;
     store.dispatch(editorViewActions.dockFolded({ dock: "tree", folded }));
     if (!folded) applyDocks("tree-unfolded");
@@ -1065,9 +1085,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
 
   // --- the top bar, the map controls and the bottom bar --------------------
-  top.details.addEventListener("click", () => {
-    deps.openDetails();
-  });
   for (const button of [top.undo, top.editUndo]) {
     button.addEventListener("click", () => {
       deps.step("undo");
@@ -1151,11 +1168,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   return {
-    show(next) {
+    show(next, options) {
       view = next;
       drawn = null;
       lastSelected = state().editorView.selected;
       applyDocks("opened");
+      approachHold = options?.approach === true;
+      endUnfolding();
+      // During the approach the tree is a folded tab: the flight is the
+      // view's to show.
+      if (approachHold && !state().editorView.foldedDocks.tree) {
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "tree", folded: true }),
+        );
+      }
       unsubscribe?.();
       unsubscribe = store.subscribe(onStore);
       draw();
@@ -1168,6 +1194,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("resize", onResize);
     },
     hide() {
+      // Closed mid-approach: the fold was the approach's, so the next open
+      // starts as the creator left it.
+      if (approachHold) {
+        approachHold = false;
+        store.dispatch(
+          editorViewActions.dockFolded({ dock: "tree", folded: false }),
+        );
+      }
+      endUnfolding();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       busy?.stop.abort();
@@ -1196,6 +1231,31 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     groundMenu(point, place) {
       if (view === null) return;
       ground.openAt(point, place);
+    },
+    approachLanded() {
+      if (!approachHold || view === null) return;
+      approachHold = false;
+      const ui = state().editorView;
+      if (!ui.foldedDocks.tree) return;
+      // The rule as at an open with the tree unfolded: it stays a tab on a
+      // narrow window, or where the inspector already has the room.
+      const after = docksAfter(
+        "opened",
+        {
+          widthPx: window.innerWidth,
+          folded: { tree: false, inspector: ui.foldedDocks.inspector },
+          inspectorShows: inspectorModel(ui) !== null,
+        },
+        DEFAULT_DOCK_LAYOUT,
+      );
+      if (after.tree) return;
+      const still =
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
+        true;
+      if (!still) tree.root.classList.add("unfolding");
+      store.dispatch(
+        editorViewActions.dockFolded({ dock: "tree", folded: false }),
+      );
     },
   };
 }

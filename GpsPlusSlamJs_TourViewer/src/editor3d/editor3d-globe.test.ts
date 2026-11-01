@@ -889,6 +889,19 @@ describe("openGlobeEditor's wiring", () => {
     expect(flyingAt(6_100)).toBe(false);
   });
 
+  // Why: the page unfolds its rail when the approach's bar goes; the view
+  // tells it once, after the bar's hold, never during the flight.
+  it("tells the page once when the approach's bar goes", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const landed = vi.fn();
+    await openAt(0, { approach: { durationMs: 1_000, landed } });
+    for (now = 0; now < 900; now += 1000 / 60) frameAt(now);
+    expect(landed).not.toHaveBeenCalled();
+    for (; now < 6_000; now += 1000 / 60) frameAt(now);
+    expect(landed).toHaveBeenCalledTimes(1);
+  });
+
   // Why: the globe view's credits are one button whose overlay lists
   // every source and GIBS's acknowledgement in full (the sources' terms),
   // and closing the view empties the box for the next one.

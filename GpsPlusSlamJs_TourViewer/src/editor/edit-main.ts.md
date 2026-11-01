@@ -65,6 +65,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   becomes the 3D walk (it may be another tour's); the tour's own walk is
   kept while it shows. The 3D walk follows the view's own walk layer
   chip, not the debug switch, which hides the map's capture dots only).
+  While the approach flies (`approachHolds`) the shell is shown with
+  `{ approach: true }`, its tree a folded tab; the view's
+  `approach.landed` calls `shell.approachLanded()`, which unfolds it.
   The page's filter is `tour-walk-kept.ts` (its own unit test); the view's side is in
   `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
   to the tour. In the dev server only, `window.__tourEditorApproach`
@@ -747,8 +750,8 @@ pin to "..."`).
   while the 3D view shows (out of the Tab order under it), and shows the
   shell over the shown view or hides it. Its selection is the page's `select` (so
   the map's markers follow), Undo and Redo (the bar's and Edit's) are
-  `runStep`, Details is
-  `openDetails` (the tour's name opens the same dialog), its pictures
+  `runStep` (the tour's details open from the tour's name and its pen,
+  `openDetails`, not from the shell), its pictures
   and the scene's content are read through `readContent` (the copy the
   page reads now), and its codes come from `shellCodes` (the model's
   codes with their stored position and print size as opened).

@@ -134,7 +134,6 @@ function setUp() {
     store,
     select,
     step: vi.fn(),
-    openDetails: vi.fn(),
     codes: () => [],
     loadPicture: () => Promise.reject(new Error("no pictures here")),
     dialogOpen: () => false,
@@ -752,5 +751,98 @@ describe("a story character's chips", () => {
     click("character-advance:w1:tap");
     expect(edits.station).not.toHaveBeenCalled();
     shell.hide();
+  });
+});
+
+describe("the tree during the approach", () => {
+  /** The shell shown again on a view that opens on its approach. */
+  function onApproach() {
+    const set = setUp();
+    set.shell.hide();
+    set.shell.show(fakeView(), { approach: true });
+    return set;
+  }
+  const treeFolded = (store: ReturnType<typeof setUp>["store"]) =>
+    store.getState().editorView.foldedDocks.tree;
+  const treeRoot = () => document.getElementById("shell-tree")!;
+
+  it("folds the tree for the flight and unfolds it, animated, at the landing", () => {
+    // Why: the flight is the view's to show, so the rail is a tab during
+    // it; at the landing it opens with a short animation, and the class
+    // that runs it goes when the animation ends (a later unfold of the
+    // creator's must not replay it).
+    const { store, shell } = onApproach();
+    expect(treeFolded(store)).toBe(true);
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(false);
+    expect(treeRoot().classList.contains("unfolding")).toBe(true);
+    const end = new Event("animationend") as AnimationEvent;
+    Object.defineProperty(end, "animationName", { value: "dock-unfold" });
+    treeRoot().dispatchEvent(end);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+  });
+
+  it("unfolds at once, without the animation, under reduced motion", () => {
+    // Why: reduced motion skips the animation, never the unfold.
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: q.includes("reduce"),
+    }));
+    const { store, shell } = onApproach();
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(false);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+  });
+
+  it("lands only once, and not at all on a view opened without an approach", () => {
+    // Why: a creator who folds the rail after the landing keeps it folded;
+    // nothing but the approach's own landing unfolds it, and only once.
+    const { store, shell } = setUp();
+    expect(treeFolded(store)).toBe(false);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(true);
+    shell.hide();
+    shell.show(fakeView(), { approach: true });
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(false);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("leaves the tree as the creator set it during the flight", () => {
+    // Why: a creator who opens and folds the rail mid-flight has decided;
+    // the landing must not undo that.
+    const { store, shell } = onApproach();
+    document.getElementById("tree-fold")!.click();
+    expect(treeFolded(store)).toBe(false);
+    document.getElementById("tree-fold")!.click();
+    expect(treeFolded(store)).toBe(true);
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("keeps the tree a tab at the landing on a narrow window", () => {
+    // Why: below the dock rule's width the tree starts folded at any
+    // open; the landing follows the same rule.
+    vi.stubGlobal("innerWidth", 600);
+    const { store, shell } = onApproach();
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("gives the fold back when the view closes mid-flight", () => {
+    // Why: the fold was the approach's, not the creator's; the next open
+    // (without an approach) starts with the tree as the creator left it.
+    const { store, shell } = onApproach();
+    shell.hide();
+    expect(treeFolded(store)).toBe(false);
+    shell.show(fakeView());
+    shell.approachLanded();
+    expect(treeFolded(store)).toBe(false);
   });
 });

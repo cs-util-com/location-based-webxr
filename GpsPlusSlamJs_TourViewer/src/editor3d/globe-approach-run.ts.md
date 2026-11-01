@@ -15,9 +15,11 @@ and each station's growth, and tells it the camera's altitude.
   accessible name.
 - `BAR_DONE_MS` - 300, how long a landed bar stays full before the box
   goes.
-- `createApproachRun({ box, flight, startMs, reducedMotion })` mounts the
-  box in `box` and returns an `ApproachRun` (`startMs` is optional:
-  without it the flight's clock starts at the first `start`):
+- `createApproachRun({ box, flight, startMs, reducedMotion, onDone })`
+  mounts the box in `box` and returns an `ApproachRun` (`startMs` is
+  optional: without it the flight's clock starts at the first `start`;
+  `onDone`, optional, is called once when the box goes, a beat after a
+  landing or at once after a takeover, and never when disposed before):
   - `timing` - the arrival's timing (the short one under reduced
     motion), for a walk the view draws after the arrival;
   - `start(nowMs)` - the first drawn frame starts the clock (later calls

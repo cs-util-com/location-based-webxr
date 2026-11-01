@@ -302,26 +302,16 @@ body:not([data-view="3d"]) .leaflet-bottom {
   min-width: 0;
 }
 
-.brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex: none;
-  background: var(--ink);
-  color: var(--accent);
-  display: grid;
-  place-items: center;
-  font-family: var(--serif);
-  font-weight: 700;
-}
-
 .brand-text {
   min-width: 0;
 }
 
-/* A button: the name opens the tour's details (W2). */
+/* A button: the name opens the tour's details (W2); the pen right of it
+ * says it can be clicked. */
 .tour-name {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   padding: 0;
   border: 0;
@@ -338,9 +328,25 @@ body:not([data-view="3d"]) .leaflet-bottom {
   line-height: 1.15;
 }
 
-.tour-name:hover {
+.tour-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tour-name-pen {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.7;
+}
+
+.tour-name:hover .tour-name-text {
   text-decoration: underline;
   text-decoration-color: var(--accent);
+}
+
+.tour-name:hover .tour-name-pen {
+  opacity: 1;
 }
 
 .tour-file {

@@ -202,6 +202,8 @@ test("a drag in the 3D view takes the camera where it is; typing in the panel an
   await afterFrames(page, 3);
   expect(await approachOf(page)).toMatchObject({ flying: true, retargets: 0 });
 
+  // The rail is a tab while it flies; the creator opens it.
+  await page.locator("#tree-fold").click();
   await page.locator("#tree-body .card .pick").first().click();
   await expect.poll(async () => (await approachOf(page))?.retargets).toBe(1);
   expect((await approachOf(page)).flying).toBe(true);
@@ -305,6 +307,100 @@ test.describe("with reduced motion", () => {
       .poll(async () => (await approachOf(page))?.durationMs)
       .toBe(2_000);
   });
+
+  test("the rail unfolds at the landing without its animation", async ({
+    page,
+  }) => {
+    // Why: reduced motion skips the rail's unfolding animation, never the
+    // unfold itself.
+    test.setTimeout(180_000);
+    await answerHosts(page, { globeAssets: "serve" });
+    await recordAnimations(page);
+    await openSampleOnGlobe(page);
+    await expect
+      .poll(async () => (await approachOf(page))?.ended ?? null, {
+        timeout: 60_000,
+      })
+      .toBe("landed");
+    await expect(page.locator("#tree-body")).toBeVisible({ timeout: 5_000 });
+    expect(await animationsOf(page)).not.toContain("dock-unfold");
+  });
+});
+
+/**
+ * Record the names of the page's CSS animations as they start.
+ * @param {import("@playwright/test").Page} page
+ */
+async function recordAnimations(page) {
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).__animations = [];
+    document.addEventListener(
+      "animationstart",
+      (event) => {
+        /** @type {any} */ (window).__animations.push(event.animationName);
+      },
+      true,
+    );
+  });
+}
+
+/**
+ * The names of the animations started so far.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<string[]>}
+ */
+async function animationsOf(page) {
+  return page.evaluate(() => /** @type {any} */ (window).__animations ?? []);
+}
+
+test("the rail is a tab during the flight, unfolds with an animation at the landing and stays open on zoom-out", async ({
+  page,
+}) => {
+  // Why: the owner wants the flight to have the view: the rail is folded
+  // while it flies and opens, animated, when the bar finishes. After that
+  // it is the creator's: zooming out never folds it again.
+  test.setTimeout(240_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await recordAnimations(page);
+  await approachLasting(page, 6_000);
+  await openSampleOnGlobe(page);
+  await expect(page.locator("#view3d .approach")).toBeVisible();
+  await expect(page.locator("#shell-tree")).toHaveClass(/\bcollapsed\b/);
+  await expect(page.locator("#tree-body")).toBeHidden();
+  expect(await animationsOf(page)).not.toContain("dock-unfold");
+  await expect
+    .poll(async () => (await approachOf(page))?.ended ?? null, {
+      timeout: 60_000,
+    })
+    .toBe("landed");
+  await expect(page.locator("#tree-body")).toBeVisible({ timeout: 5_000 });
+  await expect
+    .poll(() => animationsOf(page), { timeout: 5_000 })
+    .toContain("dock-unfold");
+  const canvas = await box(page.locator("#view3d canvas"));
+  await page.mouse.move(
+    canvas.x + canvas.width / 2,
+    canvas.y + canvas.height / 2,
+  );
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 600);
+  await afterFrames(page, 10);
+  await expect(page.locator("#tree-body")).toBeVisible();
+  await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
+});
+
+test("a view opened without the approach starts with the rail open", async ({
+  page,
+}) => {
+  // Why: only the approach folds the rail; any other open shows it as
+  // the creator left it.
+  test.setTimeout(180_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await recordAnimations(page);
+  await noApproach(page);
+  await openSampleOnGlobe(page);
+  await expect(page.locator("#tree-body")).toBeVisible();
+  await afterFrames(page, 3);
+  expect(await animationsOf(page)).not.toContain("dock-unfold");
 });
 
 test("a restored draft goes straight to the tour, without the approach", async ({

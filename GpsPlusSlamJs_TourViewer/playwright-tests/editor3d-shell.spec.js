@@ -12,6 +12,7 @@ import {
   afterFrames,
   answerHosts,
   keepRejections,
+  openSample,
   openSampleIn3d,
   rejections,
   view3d,
@@ -785,3 +786,39 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
   );
   await expect(card(page, "The old gate")).toHaveCount(0);
 });
+
+for (const view of ["3d", "2d"]) {
+  test(`the tour's name carries a pen that opens its details, with no Details button and no mark (${view})`, async ({
+    page,
+  }) => {
+    // Why: the owner found Details a second copy of what the tour's name
+    // already opens, and the "T" mark mere decoration. Both went; a pen
+    // right of the name says it can be clicked, in both views (they share
+    // the top bar). A pen elsewhere, or a Details button left behind, is
+    // what this pins.
+    test.setTimeout(150_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await answerHosts(page);
+    if (view === "3d") await openSampleIn3d(page);
+    else await openSample(page);
+    await expect(page.locator("#studio-details")).toHaveCount(0);
+    await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
+    const name = page.locator("#tour-name");
+    const text = await box(name.locator(".tour-name-text"));
+    const pen = name.locator(".tour-name-pen svg.i");
+    await expect(pen).toBeVisible();
+    const penBox = await box(pen);
+    // Right of the name, close beside it, on its line.
+    expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
+    expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
+    expect(
+      Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
+    ).toBeLessThanOrEqual(3);
+    // The name is the button's words: the pen adds none.
+    await expect(name).toHaveAccessibleName(
+      (await name.locator(".tour-name-text").textContent()) ?? "",
+    );
+    await pen.click();
+    await expect(page.locator("#details-modal")).toBeVisible();
+  });
+}

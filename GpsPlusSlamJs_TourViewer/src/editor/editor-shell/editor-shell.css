@@ -41,7 +41,7 @@
   --s-load-tab-h: 22px;
   --s-dock-gap: 8px;
   --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
-  /* The narrowest the brand (its mark, 37 px, and the tour's name) gets
+  /* The narrowest the brand (the tour's name and its pen) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
   --s-name-min: 134px;
@@ -100,15 +100,6 @@ body[data-view="3d"] #topbar .brand {
   min-width: var(--s-name-min);
 }
 
-body[data-view="3d"] #topbar .brand-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--s-accent);
-  color: #1c1c1c;
-  font: 700 11px/1 var(--s-sans);
-}
-
 body[data-view="3d"] #topbar .tour-file {
   display: none;
 }
@@ -118,6 +109,7 @@ body[data-view="3d"] #topbar .brand-text {
 }
 
 body[data-view="3d"] #topbar .tour-name {
+  gap: 5px;
   max-width: min(260px, 100%);
   margin-left: -3px;
   padding: 2px 5px;
@@ -1550,8 +1542,7 @@ button.thumb:focus-visible {
  * with a 40 px name) and 301 after the last.
  * - 820 px: the unsaved mark keeps its dot (its words are the bottom
  *   bar's status line, and its title);
- * - 720 px: Details goes (File's Tour details… and the tour's name open
- *   the same dialog), and the buttons drop their icons, keeping words;
+ * - 720 px: the buttons drop their icons, keeping words;
  * - 520 px: Undo and Redo fold into the Edit menu;
  * - 400 px: the menus' carets go and the groups close up. */
 #edit-menu-wrap {
@@ -1567,10 +1558,6 @@ button.thumb:focus-visible {
 @media (width <= 720px) {
   :root {
     --s-name-min: 94px;
-  }
-
-  body[data-view="3d"] #studio-details {
-    display: none;
   }
 
   body[data-view="3d"] #topbar .tbtn > svg.i:first-child:not(:last-child) {
@@ -1834,4 +1821,26 @@ button.thumb:focus-visible {
   font: 600 12px/22px var(--s-sans);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The tree unfolds at the approach's landing: it opens downwards from its
+ * folded tab (38 px). Reduced motion unfolds it at once. */
+@keyframes dock-unfold {
+  from {
+    clip-path: inset(0 0 calc(100% - 38px) 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}
+
+body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
+  animation: dock-unfold 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
+    animation: none;
+  }
 }

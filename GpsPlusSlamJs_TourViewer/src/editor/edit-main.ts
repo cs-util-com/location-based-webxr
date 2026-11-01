@@ -391,6 +391,8 @@ const cancelButton = element<HTMLButtonElement>("open-cancel");
 const topbar = element("topbar");
 /** The tour's name in the top bar: it opens the tour's details (W2). */
 const tourName = element<HTMLButtonElement>("tour-name");
+/** The name's words inside its button (the pen beside them stays). */
+const tourNameText = element("tour-name-text");
 const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
@@ -938,7 +940,7 @@ function renderNoGps(): void {
  *  use the tour's name, not the app's). */
 function renderTourName(): void {
   const title = model?.title;
-  tourName.textContent = title ?? "";
+  tourNameText.textContent = title ?? "";
   document.title =
     title === undefined ? EDITOR_TITLE : `${title} - ${EDITOR_TITLE}`;
 }
@@ -1599,8 +1601,8 @@ const details = wireDetailsDialog({
   },
 });
 
-/** The tour's details dialog: from the tour's name, and from the 3D
- *  view's pencil. */
+/** The tour's details dialog: from the tour's name (and its pen), and
+ *  from File's Tour details…. */
 function openDetails(): void {
   if (editor === null || ui().busy) return;
   // Typing in the card is committed first: the dialog shows the tour as it
@@ -3750,7 +3752,6 @@ const shell = createEditorShell({
     select(id);
   },
   step: runStep,
-  openDetails,
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
@@ -3782,11 +3783,25 @@ const shell = createEditorShell({
 });
 /** The link switch to the 3D view on the whole globe (`globe=1`). */
 const globeSwitch = readGlobeSwitch(location.search);
+/** True from a 3D open with an approach until its bar goes: the shell
+ *  keeps the tree folded meanwhile and unfolds it at the landing. */
+let approachHolds = false;
 /** What only the globe view takes: its approach and the recorded walk. */
 function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
   const approach = takeApproach();
+  approachHolds = approach !== undefined;
   return {
-    ...(approach === undefined ? {} : { approach }),
+    ...(approach === undefined
+      ? {}
+      : {
+          approach: {
+            ...approach,
+            landed: () => {
+              approachHolds = false;
+              shell.approachLanded();
+            },
+          },
+        }),
     walk: () => walkGeo,
   };
 }
@@ -3822,6 +3837,7 @@ const viewSwitch = createViewSwitch({
         { reason: "chunk" },
       );
     });
+    approachHolds = false;
     const view = await openView({
       container: view3dBox,
       credits: element("view3d-credits"),
@@ -3885,8 +3901,9 @@ const viewSwitch = createViewSwitch({
     // Covered by the 3D view, the map's markers and controls leave the
     // tab order and the accessibility tree.
     mapBox.inert = on;
-    if (on && shown3d !== null) shell.show(shown3d);
-    else shell.hide();
+    if (on && shown3d !== null) {
+      shell.show(shown3d, { approach: approachHolds });
+    } else shell.hide();
     if (on) {
       view3dFailureToast?.remove();
       view3dFailureToast = null;

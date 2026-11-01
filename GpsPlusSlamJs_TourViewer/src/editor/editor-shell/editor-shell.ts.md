@@ -3,7 +3,7 @@
 ## Purpose
 
 The 3D view's studio shell: the top bar's studio controls
-(Details, Undo, Redo, Help), the Edit menu's Undo and Redo (where those
+(Undo, Redo, Help), the Edit menu's Undo and Redo (where those
 fold at a phone's width), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, and the bottom bar's 3D parts (the view
@@ -41,7 +41,6 @@ character's view and advance chips (`characterChipEdit`: his station's
     `editorView`, `subscribe`, `dispatch`);
   - `deps.select(id)` - the page's selection (the map follows it);
   - `deps.step("undo" | "redo")` - one step of the edit history;
-  - `deps.openDetails()` - the tour's details dialog;
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
@@ -58,11 +57,24 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   the ground menu (a right click, a long press): opened at `point` (px in
   the view) for `place` (null: no ground loaded there); nothing while the
   view is hidden.
-- `EditorShell.show(view)` - the 3D view shows: the shell draws from the
-  store, applies the dock rule's `opened`, follows the store, the window's
-  size and the keys, and reads the camera every 200 ms (`READOUT_MS`).
+- `EditorShell.show(view, { approach })` - the 3D view shows: the shell
+  draws from the store, applies the dock rule's `opened`, follows the
+  store, the window's size and the keys, and reads the camera every 200 ms
+  (`READOUT_MS`). With `approach: true` (the globe view opens on its
+  approach) the tree is folded to its tab for the flight.
+- `EditorShell.approachLanded()` - the approach's bar went (the page
+  calls it from the view's `approach.landed`): the tree folded for the
+  flight unfolds, with the `dock-unfold` animation (the class
+  `unfolding`, gone at its `animationend`) unless reduced motion asks
+  for none. It follows the dock rule as at an open with the tree unfolded
+  (a tab below 700 px, or where the open inspector has the room). Once
+  per approach, and not at all after the creator folded or unfolded the
+  tree during the flight; nothing folds the tree again afterwards (no
+  zoom-out rule exists).
 - `EditorShell.hide()` - stops all of that and lets the pictures go
-  (each draw also sweeps the cards a redraw replaced).
+  (each draw also sweeps the cards a redraw replaced). Closed mid-approach
+  it gives the approach's fold back, so the next open starts with the tree
+  as the creator left it.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and
@@ -136,12 +148,13 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **The ground menu** returns the focus to the view's box (`#view3d`,
   `tabindex="-1"`), where the window's view keys keep working; hiding the
   view closes it.
-- **The approach's bar** (`.approach`, `globe-approach-run.ts`): 10 px
-  under the view's top, centred between the docks (its width
-  `min(640px, 100% - 2 x (290 px + 12 px))`, at least 160 px), the 4 px
-  track and the 12 px line 5 px under it; at 820 px and below under the
-  docks' heads (42 px), the line 3 px under it. It takes no pointer, and
-  under reduced motion it goes without a fade.
+- **The approach's bar** (`.approach`, `globe-approach-run.ts`): a
+  full-width 5 px bar (`--s-load-h`) glued under the menu bar, "Loading
+  tour" on a 22 px tab (`--s-load-tab-h`) hanging from its middle,
+  rounded below only. The docks sit `--s-dock-top` (bar, tab and an 8 px
+  gap) under the view's top in every 3D view, so they never move when the
+  bar goes. It takes no pointer, and under reduced motion it goes without
+  a fade.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
@@ -161,8 +174,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     that is less, and the hint goes; a folded tree's head ends where the
     inspector begins (156 px at 390), so the inspector never covers its
     fold arrow;
-  - at 720 px Details goes (File's Tour details… and the tour's name open
-    the same dialog) and the buttons drop their icons, keeping words;
+  - at 720 px the buttons drop their icons, keeping words;
   - at 520 px Undo and Redo fold into the Edit menu;
   - at 400 px the menus' carets go and the groups close up.
   - Each step starts where the bar, in its most crowded state (the unsaved
@@ -232,7 +244,6 @@ const shell = createEditorShell({
   store,
   select,
   step: runStep,
-  openDetails,
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
