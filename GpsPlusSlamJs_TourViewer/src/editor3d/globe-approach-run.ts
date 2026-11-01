@@ -124,15 +124,18 @@ export interface ApproachRun {
 /**
  * The approach `flight`, begun at `startMs` (or at `start`), its bar and
  * line in `box` (the 3D view's box). `reducedMotion` takes the short
- * arrival and no fade.
+ * arrival and no fade. `lineCapMs` replaces `LINE_CAP_MS` (the page's
+ * checks only, which render slowly in software).
  */
 export function createApproachRun(deps: {
   readonly box: HTMLElement;
   readonly flight: ApproachFlight;
   readonly startMs?: number;
   readonly reducedMotion: boolean;
+  readonly lineCapMs?: number | undefined;
 }): ApproachRun {
   const { box, reducedMotion } = deps;
+  const lineCapMs = deps.lineCapMs ?? LINE_CAP_MS;
   const timing = reducedMotion ? ARRIVAL_REDUCED : ARRIVAL;
   let flight = deps.flight;
   /** When the flight's clock started; null before `start`. */
@@ -201,7 +204,7 @@ export function createApproachRun(deps: {
    *  after the arrival, or once nothing has been pending for a hold. */
   const lineQuiet = (nowMs: number) =>
     track.hidden &&
-    (nowMs - arrivedAt >= LINE_CAP_MS ||
+    (nowMs - arrivedAt >= lineCapMs ||
       (quietSince !== null && nowMs - quietSince >= LINE_HOLD_MS));
 
   /** The line shown: a fade under way is cancelled. While flying it

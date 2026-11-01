@@ -290,20 +290,28 @@ function opensIn3d(): boolean {
  * flight's length. Inert in a production build.
  */
 let approachNext = false;
-function takeApproach(): { durationMs?: number } | undefined {
+function takeApproach():
+  { durationMs?: number; lineCapMs?: number } | undefined {
   const due = approachNext;
   approachNext = false;
   if (!due) return undefined;
   if (import.meta.env.DEV && !import.meta.env.VITEST) {
     const knob = (
       window as {
-        __tourEditorApproach?: { off?: boolean; durationMs?: number };
+        __tourEditorApproach?: {
+          off?: boolean;
+          durationMs?: number;
+          lineCapMs?: number;
+        };
       }
     ).__tourEditorApproach;
     if (knob?.off === true) return undefined;
-    if (typeof knob?.durationMs === "number" && knob.durationMs > 0) {
-      return { durationMs: knob.durationMs };
-    }
+    const positive = (v: unknown): v is number =>
+      typeof v === "number" && v > 0;
+    return {
+      ...(positive(knob?.durationMs) ? { durationMs: knob.durationMs } : {}),
+      ...(positive(knob?.lineCapMs) ? { lineCapMs: knob.lineCapMs } : {}),
+    };
   }
   return {};
 }

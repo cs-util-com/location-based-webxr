@@ -128,11 +128,15 @@ export interface Editor3dDeps {
   readonly edits: Editor3dEdits;
   /**
    * The globe view's approach on opening a tour: given, the view flies in
-   * from high above the Earth (`durationMs` overrides the flight's length,
-   * for the page's checks only); absent, it opens at the tour. The
+   * from high above the Earth (`durationMs` overrides the flight's length
+   * and `lineCapMs` how long its line may stay after the landing, both for
+   * the page's checks only); absent, it opens at the tour. The
    * OrbitControls view has no approach and ignores it.
    */
-  readonly approach?: { readonly durationMs?: number };
+  readonly approach?: {
+    readonly durationMs?: number;
+    readonly lineCapMs?: number;
+  };
   /** The recorded walk's camera captures in their order (the globe view
    *  draws them as a line after its arrival), null while none is known.
    *  The OrbitControls view ignores it. */

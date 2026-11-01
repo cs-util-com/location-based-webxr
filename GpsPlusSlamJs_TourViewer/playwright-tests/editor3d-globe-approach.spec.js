@@ -32,15 +32,20 @@ async function approachOf(page) {
 }
 
 /**
- * Set the next approach's length (ms) before the page loads; the line and
- * the arrival keep their own timings.
+ * Set the next approach's length (ms) before the page loads, and
+ * optionally how long its line may stay after the landing; the arrival
+ * keeps its own timings.
  * @param {import("@playwright/test").Page} page
  * @param {number} durationMs
+ * @param {number} [lineCapMs]
  */
-async function approachLasting(page, durationMs) {
-  await page.addInitScript((ms) => {
-    /** @type {any} */ (window).__tourEditorApproach = { durationMs: ms };
-  }, durationMs);
+async function approachLasting(page, durationMs, lineCapMs) {
+  await page.addInitScript(
+    (knob) => {
+      /** @type {any} */ (window).__tourEditorApproach = knob;
+    },
+    { durationMs, ...(lineCapMs === undefined ? {} : { lineCapMs }) },
+  );
 }
 
 /**
@@ -83,6 +88,7 @@ for (const [width, height] of [
   [1440, 900],
   [1024, 768],
   [844, 390],
+  [390, 844],
 ]) {
   test(`the bar sits at the top of the view between the docks at ${width}x${height}`, async ({
     page,
@@ -215,21 +221,28 @@ test("after the landing the line stays while the relief still loads, then goes",
     }
     return route.fallback();
   });
-  await approachLasting(page, 3_000);
-  await openSampleOnGlobe(page);
-  await expect
-    .poll(async () => (await approachOf(page))?.ended, { timeout: 60_000 })
-    .toBe("landed");
-  await expect(page.locator("#view3d .approach-track")).toBeHidden();
-  await expect(page.locator("#view3d .approach-line")).toHaveText(
-    "Loading textures",
-  );
-  await afterFrames(page, 10);
-  await expect(page.locator("#view3d .approach-line")).toHaveText(
-    "Loading textures",
-  );
-  holding = false;
-  for (const release of held.splice(0)) release();
+  // Every held tile goes through however the checks end: a failed check
+  // must not leave route handlers waiting on promises nobody resolves.
+  try {
+    // Software rendering is slow: the line's own cap (seconds after the
+    // landing) would take it before the checks below have looked.
+    await approachLasting(page, 3_000, 600_000);
+    await openSampleOnGlobe(page);
+    await expect
+      .poll(async () => (await approachOf(page))?.ended, { timeout: 60_000 })
+      .toBe("landed");
+    await expect(page.locator("#view3d .approach-track")).toBeHidden();
+    await expect(page.locator("#view3d .approach-line")).toHaveText(
+      "Loading textures",
+    );
+    await afterFrames(page, 10);
+    await expect(page.locator("#view3d .approach-line")).toHaveText(
+      "Loading textures",
+    );
+  } finally {
+    holding = false;
+    for (const release of held.splice(0)) release();
+  }
   await expect(page.locator("#view3d .approach")).toBeHidden({
     timeout: 60_000,
   });

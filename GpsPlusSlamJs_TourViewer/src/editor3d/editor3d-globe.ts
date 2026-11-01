@@ -931,6 +931,7 @@ export async function openGlobeEditor(
             : { durationMs: deps.approach.durationMs }),
         }),
         reducedMotion,
+        lineCapMs: deps.approach.lineCapMs,
       });
       arrivalTiming = run.timing;
       approach = run;

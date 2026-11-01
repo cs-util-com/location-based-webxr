@@ -16,9 +16,11 @@ still loading.
 - `LINE_CAP_MS` - 10 000, the line's end after the arrival however much
   still loads (weighed over 5 to 20 s in the source's comment; not
   measured on a device).
-- `createApproachRun({ box, flight, startMs, reducedMotion })` mounts the
-  bar and the line in `box` and returns an `ApproachRun` (`startMs` is
-  optional: without it the flight's clock starts at the first `start`):
+- `createApproachRun({ box, flight, startMs, reducedMotion, lineCapMs })`
+  mounts the bar and the line in `box` and returns an `ApproachRun`
+  (`startMs` is optional: without it the flight's clock starts at the first
+  `start`; `lineCapMs`, also optional, replaces `LINE_CAP_MS` for the
+  page's checks, which render slowly in software):
   - `timing` - the arrival's timing (the short one under reduced
     motion), for a walk the view draws after the arrival;
   - `start(nowMs)` - the first drawn frame starts the clock (later calls

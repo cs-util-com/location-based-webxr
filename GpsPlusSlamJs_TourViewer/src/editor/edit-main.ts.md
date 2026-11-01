@@ -68,8 +68,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   The page's filter has no unit test of its own; the view's side is in
   `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
   to the tour. In the dev server only, `window.__tourEditorApproach`
-  (`{ off?, durationMs? }`, an init script) turns it off or sets its
-  length, for the specs.
+  (`{ off?, durationMs?, lineCapMs? }`, an init script) turns it off or
+  sets its length and its line's cap after the landing, for the specs.
 - **File > Open…** shows the dialog with Cancel (and Esc) back to
   the open tour; the open tour stays until the new file has opened, so a
   refused file costs nothing (E1 review #4). A tour of an older format is

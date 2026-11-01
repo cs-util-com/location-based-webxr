@@ -215,6 +215,30 @@ describe("createApproachRun", () => {
     expect(root.hidden).toBe(true);
   });
 
+  it("keeps the line to a cap it is given instead of its own", () => {
+    // Why: the page's checks render slowly in software and must look at
+    // the line after the landing without the default cap taking it first.
+    const box = document.createElement("div");
+    document.body.append(box);
+    const flight = approachFlight(GOAL, GROUND_M, { reducedMotion: false });
+    const r = createApproachRun({
+      box,
+      flight,
+      startMs: 0,
+      reducedMotion: false,
+      lineCapMs: 3 * LINE_CAP_MS,
+    });
+    const land = flight.durationMs;
+    const busy = { tour: 0, textures: 3, buildings: 0 };
+    for (let t = land; t <= land + 2 * LINE_CAP_MS; t += 100) {
+      stepAt(r, t, busy);
+    }
+    const root = box.querySelector<HTMLElement>(".approach")!;
+    expect(root.classList.contains("gone")).toBe(false);
+    stepAt(r, land + 3 * LINE_CAP_MS, busy);
+    expect(root.classList.contains("gone")).toBe(true);
+  });
+
   it("under reduced motion lands soon and drops the line without a fade", () => {
     // Why: reduced motion shortens the flight and the pop-in, and must
     // not leave a fading line either.
