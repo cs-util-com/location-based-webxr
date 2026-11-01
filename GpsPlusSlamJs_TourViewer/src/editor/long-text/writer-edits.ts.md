@@ -20,7 +20,9 @@ editing, so Ctrl+Z undoes it like typing.
 - `touchesList(value, start, end)` - whether one of them is a list line.
 - `wrapInline(value, start, end, "**" | "*")` - wraps the selected words
   (spaces around them left outside), unwraps words already wrapped, and
-  puts an empty pair at a bare caret with the caret between.
+  puts an empty pair at a bare caret with the caret between. Over a blank
+  line each paragraph is wrapped (or, when each already is, unwrapped) on
+  its own: the reader formats marks only inside one paragraph.
 - `toggleList(value, start, end, "bullet" | "number")` - makes the lines a
   list, numbered from 1, or plain again when they already are that list;
   null for no lines.
@@ -34,9 +36,12 @@ editing, so Ctrl+Z undoes it like typing.
 - `insertBlock(value, caret, text)` - `text` on a line of its own at the
   caret, blank lines kept around it.
 - `linkTarget(typed)` - a typed address as a link's target (`https://`
-  added to a bare domain), null for one that is no web address.
+  added to a bare domain), null for one that is no web address; spaces
+  and angle brackets inside it escaped (`%20`, `%3C`, `%3E`).
 - `linkEdit(value, start, end, typed)` - the selected words as a link, or
-  the address shown as its own words; null for no address.
+  the address shown as its own words; null for no address. Line breaks in
+  the words become spaces and their brackets are escaped (`[`, `]`),
+  so the link stays one link.
 - `applied(value, edit)` - the text and the selection after `edit`.
 
 ## Invariants & assumptions

@@ -118,7 +118,7 @@ export const TYPED_PART_TEXT: Readonly<
   },
   webpic: {
     title: "A picture from the web",
-    why: "Only pictures from this tour's files are shown; visitors see this one as its address.",
+    why: "Only pictures from this tour's files are shown; visitors see only its description.",
     fixNote: PICTURE_NOTE,
     picture: true,
   },
@@ -137,7 +137,7 @@ export const TYPED_PART_TEXT: Readonly<
   },
   missingpic: {
     title: "A picture that is not in this tour",
-    why: "No file of this tour has that name, so visitors see the line as typed.",
+    why: "No file of this tour has that name, so visitors see only its description.",
     fixNote: PICTURE_NOTE,
     picture: true,
   },

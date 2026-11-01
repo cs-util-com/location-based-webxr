@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
+
 import {
   applied,
   continueList,
@@ -181,5 +183,45 @@ describe("linkTarget and linkEdit", () => {
       "[[https://a.b]](https://a.b)",
     );
     expect(linkEdit(v, 0, 3, "")).toBeNull();
+  });
+});
+
+describe("marks and links that stay what they were meant to be", () => {
+  // Why: the reader formats bold and italic only inside one paragraph and
+  // reads a link's words up to the first "]" and its address up to the
+  // first space; marks or a link written across those were shown as typed
+  // characters, where the creator had pressed a button.
+  it("wraps bold over a blank line paragraph by paragraph", () => {
+    const v = "one\n\ntwo";
+    expect(after(v, wrapInline(v, 0, v.length, "**"))).toBe(
+      "[**one**\n\n**two**]",
+    );
+  });
+
+  it("takes bold off every paragraph when each is bold, and reads no bold as italic", () => {
+    const v = "**one**\n\n**two**";
+    expect(after(v, wrapInline(v, 0, v.length, "**"))).toBe("[one\n\ntwo]");
+    expect(after(v, wrapInline(v, 0, v.length, "*"))).toBe(
+      "[***one***\n\n***two***]",
+    );
+  });
+
+  it("puts spaces and angle brackets of an address in its escaped form", () => {
+    expect(linkTarget("example.org/a b<c>")).toBe(
+      "https://example.org/a%20b%3Cc%3E",
+    );
+  });
+
+  it("keeps brackets and line breaks in a link's words from ending the link", () => {
+    const v = "see [the]\narchive";
+    expect(after(v, linkEdit(v, 4, v.length, "example.org"))).toBe(
+      "see [[\\[the\\] archive]](https://example.org)",
+    );
+    // The reader takes it as one link with those words.
+    const edit = linkEdit(v, 4, v.length, "example.org");
+    if (edit === null) throw new Error("no link");
+    const read = JSON.stringify(parseTourMarkdown(applied(v, edit).value));
+    expect(read).toContain("[the] archive");
+    expect(read).toContain("https://example.org");
   });
 });

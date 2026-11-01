@@ -77,6 +77,13 @@ export function wrapInline(
   const n = mark.length;
   if (a === b) return { from: a, to: b, text: mark + mark, select: [n, n] };
   const words = value.slice(a, b);
+  // The reader formats marks only inside one paragraph: over a blank line
+  // each paragraph is marked (or unmarked) on its own.
+  const pieces = words.split(BLANK_LINES);
+  if (pieces.length > 1) {
+    const text = perParagraph(pieces, mark);
+    return { from: a, to: b, text, select: [0, text.length] };
+  }
   // Italic's one star beside a bold's two is not an italic mark.
   const lone = n === 2 || (value[a - n - 1] !== "*" && value[b + n] !== "*");
   if (
@@ -97,6 +104,42 @@ export function wrapInline(
     text: mark + words + mark,
     select: [n, n + words.length],
   };
+}
+
+/** One blank line or more, with the spaces around them (kept in a split). */
+const BLANK_LINES = /(\s*\n[ \t]*\n\s*)/;
+
+/** `text`'s words between its outer spaces. */
+function splitSpaces(text: string): [string, string, string] {
+  const words = text.trim();
+  const lead = text.length - text.trimStart().length;
+  return [text.slice(0, lead), words, text.slice(lead + words.length)];
+}
+
+/** Words marked with `mark` and nothing more (a bold is no italic). */
+function markedWith(words: string, mark: "**" | "*"): boolean {
+  const n = mark.length;
+  return (
+    words.length > 2 * n &&
+    words.startsWith(mark) &&
+    words.endsWith(mark) &&
+    (n === 2 || !(words.startsWith("**") && !words.startsWith("***")))
+  );
+}
+
+/** The paragraphs of a split (`BLANK_LINES` between them) each marked, or
+ *  each unmarked when every one already is. */
+function perParagraph(pieces: readonly string[], mark: "**" | "*"): string {
+  const paragraphs = pieces.filter((p, k) => k % 2 === 0 && p.trim() !== "");
+  const off = paragraphs.every((p) => markedWith(p.trim(), mark));
+  const n = mark.length;
+  return pieces
+    .map((piece, k) => {
+      if (k % 2 === 1 || piece.trim() === "") return piece;
+      const [lead, words, trail] = splitSpaces(piece);
+      return lead + (off ? words.slice(n, -n) : mark + words + mark) + trail;
+    })
+    .join("");
 }
 
 /** The lines `[start, end]` touch, each transformed; null when nothing
@@ -265,9 +308,13 @@ export function insertBlock(
 /**
  * A typed web address as a link's target: `https://` put in front unless
  * it starts with `http:`, `https:` or `mailto:`; null for an empty one.
+ * Spaces and angle brackets inside it are escaped (`%20`, `%3C`, `%3E`):
+ * the reader ends an address at a space.
  */
 export function linkTarget(typed: string): string | null {
-  const url = typed.trim();
+  const url = typed
+    .trim()
+    .replace(/\s|<|>/g, (c) => (c === "<" ? "%3C" : c === ">" ? "%3E" : "%20"));
   if (url === "") return null;
   if (/^(https?:|mailto:)/i.test(url)) return url;
   return `https://${url.replace(/^\/+/, "")}`;
@@ -276,7 +323,9 @@ export function linkTarget(typed: string): string | null {
 /**
  * The selected words made a link to `typed` (`[words](target)`); with
  * no words selected, the address itself is the link's words. The words
- * are selected after. Null for an empty address.
+ * are selected after. Null for an empty address. A link is one line and
+ * its words end at a bracket: line breaks in the words become spaces and
+ * their brackets are escaped (`\[`, `\]`).
  */
 export function linkEdit(
   value: string,
@@ -287,7 +336,9 @@ export function linkEdit(
   const target = linkTarget(typed);
   if (target === null) return null;
   const [a, b] = held(value, start, end);
-  const words = value.slice(a, b).trim() || target;
+  const words = (value.slice(a, b).trim() || target)
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/[[\]]/g, "\\$&");
   return {
     from: a,
     to: b,

@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
+
 import {
   pictureAlt,
   plainTextEdit,
@@ -143,5 +145,24 @@ describe("pictures", () => {
       "a [b]",
     );
     expect(edit.text).toBe("![a  b](asset:pic-1)");
+  });
+});
+
+describe("what the picture parts say visitors see", () => {
+  it("says a web picture and a missing one show only their description", () => {
+    // Why: both said visitors see the address, or the line as typed. The
+    // reader shows such a picture as its description (its alt words) and
+    // nothing of its address, so the explanation sent creators looking
+    // for a problem visitors never see.
+    const read = JSON.stringify(
+      parseTourMarkdown("Before\n\n![a view](https://e.com/a.png)"),
+    );
+    expect(read).toContain("a view");
+    expect(read).not.toContain("e.com");
+    for (const kind of ["webpic", "missingpic"] as const) {
+      const why = TYPED_PART_TEXT[kind].why;
+      expect(why).toMatch(/only its description/);
+      expect(why).not.toMatch(/address|as typed/);
+    }
   });
 });
