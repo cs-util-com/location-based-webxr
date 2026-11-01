@@ -37,7 +37,9 @@ picture the body names).
   and the memo is emptied whole when full. The size is PROVISIONAL (a
   tour's long texts are expected to be a few dozen at most); past it a
   write empties the memo, which costs parse time, never a wrong answer. A
-  32 000-character body takes about 2 ms to parse on desktop Node.
+  30 000-character body takes about 4.6-6.4 ms to parse on desktop Node
+  (measured 2026-11-01 in a code review, on the Windows development
+  machine while other test runs loaded it).
 - A write asks about every long text of every undo and redo step (up to
   200, `historyAssetIds`), on every document change: far more bodies than
   the string memo holds, so by string every write re-parsed every past
