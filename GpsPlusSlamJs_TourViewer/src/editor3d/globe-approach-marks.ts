@@ -10,8 +10,9 @@
  * the shell's accent colour, as the chosen prototype draws its route. Its
  * geometry is built once per walk; a share of it is drawn by showing the
  * segments up to that share of its length and cutting the last one there
- * (its end point written in place), so a frame of the walk's drawing
- * uploads one point, not a new line.
+ * (its end point written in place, and the end cut before put back), so a
+ * frame of the walk's drawing uploads those ends only (update ranges of the
+ * shared buffer), not a new line or the whole walk.
  *
  * @see globe-approach-marks.ts.md
  */
@@ -109,11 +110,19 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
   const endsOf = (l: Line2) =>
     l.geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
 
+  /** Segment `i`'s end written as `p`, and only those three numbers of
+   *  the shared buffer flagged for upload. */
+  const writeEnd = (l: Line2, i: number, p: THREE.Vector3) => {
+    const ends = endsOf(l);
+    ends.setXYZ(i, p.x, p.y, p.z);
+    ends.data.addUpdateRange(i * ends.data.stride + ends.offset, 3);
+    ends.data.needsUpdate = true;
+  };
+
   /** The cut segment's end put back where the walk has it. */
   const uncut = (l: Line2) => {
     if (cutSegment === null) return;
-    const b = walk[cutSegment + 1]!;
-    endsOf(l).setXYZ(cutSegment, b.x, b.y, b.z);
+    writeEnd(l, cutSegment, walk[cutSegment + 1]!);
     cutSegment = null;
   };
 
@@ -184,7 +193,6 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
         return;
       }
       uncut(l);
-      const ends = endsOf(l);
       // A line has two points and a length, so only a share of 0 cuts
       // nothing.
       const cut = walkCut(along, k);
@@ -192,16 +200,13 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
         drawn = 0;
         l.geometry.instanceCount = 0;
         l.visible = false;
-        ends.data.needsUpdate = true;
         return;
       }
       const i = cut.segment;
       if (cut.t < 1) {
-        const at = walk[i]!.clone().lerp(walk[i + 1]!, cut.t);
-        ends.setXYZ(i, at.x, at.y, at.z);
+        writeEnd(l, i, walk[i]!.clone().lerp(walk[i + 1]!, cut.t));
         cutSegment = i;
       }
-      ends.data.needsUpdate = true;
       l.geometry.instanceCount = i + 1;
       l.visible = walkOn;
       drawn = i + 2;

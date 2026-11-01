@@ -22,7 +22,9 @@ between stations.
     hidden until drawn;
   - `drawWalk(share)` - draws that share of the same line: its segments
     up to the share (`instanceCount`) with the last one's end written
-    where the share ends, the end of the segment cut before put back; no
+    where the share ends, the end of the segment cut before put back; only
+    the ends written are uploaded (an update range of three numbers each
+    in the shared interleaved buffer, nothing when none is written); no
     new geometry per frame, nothing done when the share is unchanged;
   - `showWalk(on)` - the layer switch;
   - `resize(width, height)` - the line's resolution in CSS px;
@@ -38,4 +40,5 @@ between stations.
 
 - `globe-approach-marks.test.ts` - `walkCut` by length, its monotone
   growth, no line without a walk, the one geometry revealed by its share
-  (the cut end, restored ends, share 0 hidden), rings added and removed.
+  (the cut end, restored ends, share 0 hidden), the update ranges (only
+  the ends written, none at share 0), rings added and removed.

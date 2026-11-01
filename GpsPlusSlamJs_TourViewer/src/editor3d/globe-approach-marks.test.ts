@@ -120,4 +120,53 @@ describe("createArrivalMarks", () => {
     expect(marks.stats().walkDrawn).toBe(0);
     marks.dispose();
   });
+
+  it("uploads only the segment ends it writes", () => {
+    // Why: a frame of the walk's drawing writes one cut end (and puts the
+    // one cut before back), so that is all it should upload; flagging the
+    // whole buffer sends every point of a long walk each frame. The ends
+    // sit in one interleaved buffer of six numbers a segment (its start,
+    // then its end at offset 3), so segment i's end is at 6 i + 3.
+    const parent = new THREE.Group();
+    const marks = createArrivalMarks(parent);
+    marks.setWalk([v(0, 0), v(10, 0), v(10, 10), v(0, 10)]);
+    marks.drawWalk(0.01);
+    const line = parent.getObjectByName("approach-walk") as THREE.Mesh;
+    const ends = line.geometry.getAttribute(
+      "instanceEnd",
+    ) as THREE.InterleavedBufferAttribute;
+    const data = ends.data;
+    expect([data.stride, ends.offset]).toEqual([6, 3]);
+    const drawAt = (share: number) => {
+      data.clearUpdateRanges();
+      const version = data.version;
+      marks.drawWalk(share);
+      return {
+        ranges: [...data.updateRanges],
+        uploads: data.version > version,
+      };
+    };
+    expect(drawAt(0.1)).toEqual({
+      // Segment 0 put back, then cut again further on.
+      ranges: [
+        { start: 3, count: 3 },
+        { start: 3, count: 3 },
+      ],
+      uploads: true,
+    });
+    expect(drawAt(0.5)).toEqual({
+      ranges: [
+        { start: 3, count: 3 },
+        { start: 9, count: 3 },
+      ],
+      uploads: true,
+    });
+    expect(drawAt(1)).toEqual({
+      ranges: [{ start: 9, count: 3 }],
+      uploads: true,
+    });
+    // Nothing cut and nothing to write: no upload at all.
+    expect(drawAt(0)).toEqual({ ranges: [], uploads: false });
+    marks.dispose();
+  });
 });
