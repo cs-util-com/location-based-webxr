@@ -8,6 +8,11 @@ the creator's live preview and the visitor's session share.
 
 ## Public API
 
+- `drawnKindOf(block, view)` - what `block` is drawn as in `view`: a long
+  text's `reading` and a visitor's `captions` both give `reading` (the
+  reading sign), `lectern` gives `lectern`; any other view is its own
+  name. What `viewer-placement.ts` compares to tell whether a changed
+  view changes anything drawn.
 - `newObjectId(random?)` - 12 base-36 characters; the manifest id and the
   content file's stem.
 - `mintPin({ id, label, description?, worldNuePosition, zero, nowIso }): TourPin | null` -

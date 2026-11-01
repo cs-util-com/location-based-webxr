@@ -160,7 +160,8 @@ describe("the stored preference, read defensively", () => {
   it("keeps every other key when a choice is set or cleared", () => {
     const stored = {
       views: {
-        longText: { world: "reading", screen: "captions" },
+        // A screen view this app does not know (a newer app's `silent`).
+        longText: { world: "reading", screen: "silent" },
         picture: { world: "framed" },
       },
       videoSound: "on",
@@ -172,19 +173,96 @@ describe("the stored preference, read defensively", () => {
       ...before,
       views: {
         ...before.views,
-        longText: { world: "lectern", screen: "captions" },
+        longText: { world: "lectern", screen: "silent" },
       },
     });
     expect(stored).toEqual(before);
     const cleared = withPreferredView(chosen, "longText", "world", null);
     expect(cleared).toEqual({
       ...before,
-      views: { ...before.views, longText: { screen: "captions" } },
+      views: { ...before.views, longText: { screen: "silent" } },
     });
     // From nothing usable: a fresh value.
     expect(withPreferredView("junk", "longText", "world", "lectern")).toEqual({
       views: { longText: { world: "lectern" } },
     });
+  });
+});
+
+describe("captions, stored on the screen", () => {
+  const timed = {
+    ...longText("reading"),
+    narration: { audio: "voice", synthetic: false, timing: "timing/t.json" },
+  } as TourBlock;
+
+  // Why this test matters: the design stores the strip as a SCREEN view
+  // beside the world's reading sign or lectern
+  // (`{"world":"lectern","screen":"captions"}`). A value written in
+  // another shape would not be read by an app that follows the design,
+  // and choosing captions must not throw the world choice away.
+  it("stores captions at screen, keeping the world's choice", () => {
+    const lectern = withPreferredView(null, "longText", "world", "lectern");
+    const captions = withPreferredView(
+      lectern,
+      "longText",
+      "world",
+      "captions",
+    );
+    expect(captions).toEqual({
+      views: { longText: { world: "lectern", screen: "captions" } },
+    });
+    expect(preferredView(captions, "longText", "world")).toBe("captions");
+    // A world view chosen again ends the captions; the creator's again
+    // clears both.
+    expect(withPreferredView(captions, "longText", "world", "reading")).toEqual(
+      { views: { longText: { world: "reading" } } },
+    );
+    expect(withPreferredView(captions, "longText", "world", null)).toEqual({
+      views: { longText: {} },
+    });
+  });
+
+  // Why this test matters: only an earlier preview build wrote captions as a
+  // world value. No migration is written; the defensive read ignores it,
+  // so such a device shows the creator's view until a new choice.
+  it("ignores captions stored as a world value", () => {
+    const old = { views: { longText: { world: "captions" } } };
+    expect(preferredView(old, "longText", "world")).toBeNull();
+    expect(shownView({ audience: "visitor", block: timed, stored: old })).toBe(
+      "reading",
+    );
+  });
+
+  // Why this test matters: with both stored, the strip shows where its
+  // timing holds; where it does not, the world choice stands next (rule 3
+  // over the visitor's two choices), before the creator's view.
+  it("falls back from captions to the world's choice, then the creator's view", () => {
+    const stored = {
+      views: { longText: { world: "lectern", screen: "captions" } },
+    };
+    expect(shownView({ audience: "visitor", block: timed, stored })).toBe(
+      "captions",
+    );
+    expect(
+      shownView({
+        audience: "visitor",
+        block: timed,
+        stored,
+        verdict: "stale",
+      }),
+    ).toBe("lectern");
+    const pictured = {
+      ...timed,
+      body: WITH_PICTURE,
+    } as TourBlock;
+    expect(
+      shownView({
+        audience: "visitor",
+        block: pictured,
+        stored,
+        verdict: "stale",
+      }),
+    ).toBe("reading");
   });
 });
 

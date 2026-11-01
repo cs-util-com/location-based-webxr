@@ -30,15 +30,24 @@ defensive read and write of the one storage key.
   no `narration.timing`, or a `stale` verdict). Captions do not fail on
   pictures: "Full text" opens the sheet, which shows them.
 - `preferredView(stored, kind, placement)` - the stored choice, or null
-  for anything unreadable.
+  for anything unreadable; captions where stored, else the world's view.
 - `withPreferredView(stored, kind, placement, view | null)` - a NEW value
   with that choice set (null clears it); every other key is kept.
+  `placement` is the set's (`world` for a long text); each member is
+  stored under its own key, as the design writes it
+  (`{"world":"lectern","screen":"captions"}`): captions at `screen`,
+  keeping the world's view; a world view clears stored captions; null
+  clears both. A `world: "captions"` (written by an earlier preview
+  build) is not read and gets no migration: such a device shows the
+  creator's view until a new choice.
 - `shownView({ audience, block, stored, verdict? })` - the view shown
   (`verdict` is the text's read-along verdict, `narration-timing.ts`):
   1. a creator sees their own choice;
   2. a view in no set is the creator's (the preference is kept, not
      applied);
-  3. else the preferred member, if its needs hold;
+  3. else the preferred member, if its needs hold (captions first, then
+     the world's stored view, so stale captions fall to a stored
+     lectern before the creator's view);
   4. else the creator's view, if its needs hold;
   5. else the set's floor.
 - `shownMember({ creator, preferred, floor, fails })` - rules 3-5 within
@@ -84,7 +93,9 @@ saveVisitorPrefs(localStorage, stored); // false in a browser that refuses
   five rules, storage that throws or holds garbage; rule 4 on a
   three-member set made for the test (the creator's view, not the floor);
   a choice merged into a fresh read keeps another tab's key, and builds on
-  the store's value when the device cannot be read.
+  the store's value when the device cannot be read; captions stored at
+  `screen` beside the world's view, an old `world: "captions"` ignored,
+  and the fall from captions to the world's view, then the creator's.
 - `visitor-prefs.memo.test.ts` - each body parsed once, two bodies in
   turn included, and parsed again once 65 others filled the memo (the
   parser spied on; the memo is `long-text-body-assets.ts`'s).

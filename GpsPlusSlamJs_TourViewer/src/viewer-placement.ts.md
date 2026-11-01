@@ -524,10 +524,13 @@ pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
   verdict. A read-along settling bumps `revision`; `redrawForPrefs` then
   looks again, so a text a visitor sees in captions whose timing turns out
   stale is drawn again in the creator's view. `viewsDrawn` keeps the view
-  each block was last drawn in, which is what a change is measured from.
+  each block was last drawn in, which is what a change is measured from,
+  by what it DRAWS (`drawnKindOf`, `content-placement.ts`): captions found
+  stale that fall back to the reading sign they stood as rebuild nothing.
 - Tests: `viewer-placement-story-blocks.test.ts` "draws a standing long
   text again in the chosen view, and back", "draws a captions text again
-  in the creator's view once its read-along turns out stale", "keeps a station's part when
+  in the creator's view once its read-along turns out stale", "keeps the
+  part when stale captions fall back to the same reading sign", "keeps a station's part when
   no block's shown view changes", "replaces a story block's part without
   taking its station down", "keeps the choice for the next tour opened in
   the same page"; the e2e `view-switch.spec.js`.

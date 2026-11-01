@@ -42,32 +42,80 @@ export interface ViewSet {
  * creator places a text; the strip is how a visitor follows its voice),
  * so it joins the world set it is chosen from. Its world drawing is the
  * reading sign; the strip is the page's (`captions-strip.ts`).
+ *
+ * `storedAt` names a member the device stores under another placement
+ * key than the set's: captions are a SCREEN view in the design (§3.2,
+ * §4: `{"world":"lectern","screen":"captions"}`), so they are stored at
+ * `screen`, beside the world's choice, and a `world: "captions"` is not
+ * read.
  */
-const VIEW_SETS: readonly Omit<ViewSet, "floor">[] = [
+const VIEW_SETS: readonly (Omit<ViewSet, "floor"> & {
+  readonly storedAt?: Readonly<Partial<Record<string, ViewPlacement>>>;
+})[] = [
   {
     kind: "longText",
     placement: "world",
     members: ["reading", "lectern", "captions"],
+    storedAt: { captions: "screen" },
   },
 ];
+
+type SetSpec = (typeof VIEW_SETS)[number];
+
+function asSet(spec: SetSpec | undefined): ViewSet | null {
+  const floor = spec?.members[0];
+  return spec === undefined || floor === undefined
+    ? null
+    : {
+        kind: spec.kind,
+        placement: spec.placement,
+        members: spec.members,
+        floor,
+      };
+}
 
 /** The set `view` of `kind` belongs to, or null (a story's `card`, a kind
  *  with no set). */
 export function viewSetOf(kind: string, view: string): ViewSet | null {
-  const set = VIEW_SETS.find(
-    (s) => s.kind === kind && s.members.includes(view),
+  return asSet(
+    VIEW_SETS.find((s) => s.kind === kind && s.members.includes(view)),
   );
-  const floor = set?.members[0];
-  return set === undefined || floor === undefined ? null : { ...set, floor };
 }
 
-/** The set of `kind` at `placement`, or null. */
-function setAt(kind: string, placement: string): ViewSet | null {
-  const set = VIEW_SETS.find(
-    (s) => s.kind === kind && s.placement === placement,
+/** The set of `kind` at `placement`, or undefined. */
+function specAt(kind: string, placement: string): SetSpec | undefined {
+  return VIEW_SETS.find((s) => s.kind === kind && s.placement === placement);
+}
+
+/** The placement key a member of `spec` is stored under. */
+function slotOf(spec: SetSpec, view: string): ViewPlacement {
+  return spec.storedAt?.[view] ?? spec.placement;
+}
+
+/** The placement keys `spec`'s members are stored under, those of the
+ *  members stored elsewhere first (they are the more specific choice). */
+function slotsOf(spec: SetSpec): readonly ViewPlacement[] {
+  const others = Object.values(spec.storedAt ?? {}).filter(
+    (slot): slot is ViewPlacement =>
+      slot !== undefined && slot !== spec.placement,
   );
-  const floor = set?.members[0];
-  return set === undefined || floor === undefined ? null : { ...set, floor };
+  return [...new Set([...others, spec.placement])];
+}
+
+/** The member stored at `slot` of `byKind`, or null for anything else (a
+ *  name not in the set, or a member that belongs under another key). */
+function memberAt(
+  spec: SetSpec,
+  byKind: Record<string, unknown>,
+  slot: ViewPlacement,
+): string | null {
+  if (!Object.prototype.hasOwnProperty.call(byKind, slot)) return null;
+  const view = byKind[slot];
+  return typeof view === "string" &&
+    spec.members.includes(view) &&
+    slotOf(spec, view) === slot
+    ? view
+    : null;
 }
 
 /** Whether a long text's body shows a picture (a picture block at any
@@ -119,21 +167,30 @@ function objectAt(value: unknown, key: string): Record<string, unknown> | null {
  * The stored choice for `kind` at `placement`, read defensively: a value
  * that is not an object, an unknown kind or placement, or a name that is
  * not a member of that set is ignored (null) - never deleted, since a
- * newer app sharing the storage may know it.
+ * newer app sharing the storage may know it. With captions stored (at
+ * `screen`) and a world view too, captions are the choice.
  */
 export function preferredView(
   stored: unknown,
   kind: string,
   placement: ViewPlacement,
 ): string | null {
-  const set = setAt(kind, placement);
-  const byPlacement = objectAt(objectAt(stored, "views"), kind);
-  if (set === null || byPlacement === null) return null;
-  if (!Object.prototype.hasOwnProperty.call(byPlacement, placement)) {
-    return null;
-  }
-  const view = byPlacement[placement];
-  return typeof view === "string" && set.members.includes(view) ? view : null;
+  return preferredViews(stored, kind, placement)[0] ?? null;
+}
+
+/** Every stored choice for the set of `kind` at `placement`, the more
+ *  specific first (captions, then the world's view). */
+function preferredViews(
+  stored: unknown,
+  kind: string,
+  placement: ViewPlacement,
+): readonly string[] {
+  const spec = specAt(kind, placement);
+  const byKind = objectAt(objectAt(stored, "views"), kind);
+  if (spec === undefined || byKind === null) return [];
+  return slotsOf(spec)
+    .map((slot) => memberAt(spec, byKind, slot))
+    .filter((view): view is string => view !== null);
 }
 
 /**
@@ -141,6 +198,11 @@ export function preferredView(
  * cleared with null ("Use the creator's choice again"). Every other key
  * is kept as it was, those this app does not know included; `stored` is
  * not changed. A stored value that is not an object starts afresh.
+ *
+ * A member is stored under its own key (`slotOf`): captions at `screen`,
+ * keeping the world's choice; a world view clears stored captions (the
+ * visitor picked it over them); null clears both. A value at `screen`
+ * this app does not know is kept.
  */
 export function withPreferredView(
   stored: unknown,
@@ -153,9 +215,20 @@ export function withPreferredView(
       ? (stored as Record<string, unknown>)
       : {};
   const views = objectAt(root, "views") ?? {};
-  const { [placement]: _old, ...others } = objectAt(views, kind) ?? {};
-  const byPlacement = view === null ? others : { ...others, [placement]: view };
-  return { ...root, views: { ...views, [kind]: byPlacement } };
+  const byKind: Record<string, unknown> = { ...(objectAt(views, kind) ?? {}) };
+  const spec = specAt(kind, placement);
+  const slot =
+    spec === undefined || view === null ? placement : slotOf(spec, view);
+  if (spec !== undefined && slot === spec.placement) {
+    for (const other of slotsOf(spec)) {
+      if (other !== slot && memberAt(spec, byKind, other) !== null) {
+        delete byKind[other];
+      }
+    }
+  }
+  if (view === null) delete byKind[slot];
+  else byKind[slot] = view;
+  return { ...root, views: { ...views, [kind]: byKind } };
 }
 
 /**
@@ -179,11 +252,19 @@ export function shownView(input: {
   if (input.audience !== "visitor") return block.view;
   const set = viewSetOf(block.kind, block.view);
   if (set === null) return block.view;
+  const fails = (view: string): boolean =>
+    viewNeedsFail(block, view, verdict) !== null;
+  // Captions first where stored, then the world's choice (rule 3 over
+  // the visitor's two stored choices).
+  const preferred =
+    preferredViews(input.stored, block.kind, set.placement).find(
+      (view) => !fails(view),
+    ) ?? null;
   return shownMember({
     creator: block.view,
-    preferred: preferredView(input.stored, block.kind, set.placement),
+    preferred,
     floor: set.floor,
-    fails: (view) => viewNeedsFail(block, view, verdict) !== null,
+    fails,
   });
 }
 

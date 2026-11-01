@@ -416,6 +416,55 @@ describe("a visitor's view choice", () => {
     chooseView(h.store, view);
   };
 
+  // Why this test matters: captions stand in the world as the reading
+  // sign. When their read-along turns out stale and the text falls back to
+  // a reading sign too, nothing drawn changes: rebuilding the station's
+  // part would re-parse its models, snap a moved toy back and close a
+  // card for nothing. The drawn kind is compared, not the view's name.
+  it("keeps the part when stale captions fall back to the same reading sign", async () => {
+    const station: TourStation = {
+      ...STATION,
+      blocks: [
+        {
+          id: "essay",
+          kind: "longText",
+          view: "reading",
+          title: "E",
+          body: "Plain words.",
+          narration: {
+            audio: "voice",
+            timing: "timing/essay.json",
+            synthetic: true,
+          },
+          pose: POSE,
+        },
+      ],
+      steps: [],
+    };
+    let verdict: NarrationVerdict = "live";
+    let revision = 0;
+    const h = harness([station], {
+      verdictOf: () => verdict,
+      revision: () => revision,
+    });
+    h.store.dispatch(
+      visitorPrefsLoaded(
+        withPreferredView(null, "longText", "world", "captions"),
+      ),
+    );
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    const sign = objectOf(h.scene, "essay");
+    expect(sign?.name).toBe("reading-sign");
+    verdict = "stale";
+    revision = 1;
+    await h.sync();
+    expect(objectOf(h.scene, "essay"), "the same sign, not rebuilt").toBe(sign);
+  });
+
   // Why this test matters: a station's part is drawn again only when what
   // one of its blocks shows changes. Rebuilding it otherwise re-parses its
   // models, snaps a moved toy back, closes an open model card and turns a

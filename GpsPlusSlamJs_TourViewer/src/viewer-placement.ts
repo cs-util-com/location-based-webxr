@@ -53,7 +53,11 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
-import { renderStationBlocks, renderTourStation } from "./content-placement.js";
+import {
+  drawnKindOf,
+  renderStationBlocks,
+  renderTourStation,
+} from "./content-placement.js";
 import { mountLectern } from "./lectern-view.js";
 import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
@@ -1058,9 +1062,14 @@ export function createViewerPlacement(deps: {
     const before = prefsDrawn;
     prefsDrawn = stored;
     verdictsDrawn = verdicts;
+    // What is DRAWN is compared, not the view's name: captions found
+    // stale that fall back to the reading sign they stood as change
+    // nothing in the world.
     const changed = (block: TourBlock): boolean =>
-      (viewsDrawn.get(block.id) ?? visitorView(block, before)) !==
-      visitorView(block, stored);
+      drawnKindOf(
+        block,
+        viewsDrawn.get(block.id) ?? visitorView(block, before),
+      ) !== drawnKindOf(block, visitorView(block, stored));
     const items = itemsPartOf;
     if (items !== null) {
       for (const station of ctx.tourDocument.manifest()?.stations ?? []) {

@@ -430,9 +430,25 @@ const LONG_TEXT_WORLD_VIEWS: ReadonlySet<string> = new Set([
   "captions",
 ]);
 
-/** A long text as its reading stand or its reading sign draws it. A
- *  visitor's captions stand in the world as the reading sign; the strip
- *  itself is the page's. */
+/** What a long text's world view draws: the reading sign for `reading`
+ *  and a visitor's `captions` (the strip itself is the page's), the
+ *  reading stand for `lectern`. */
+function longTextDrawnAs(view: string): "reading" | "lectern" {
+  return view === "reading" || view === "captions" ? "reading" : "lectern";
+}
+
+/**
+ * What a block is drawn as in `view`: two views that draw the same thing
+ * (a long text's `reading` and `captions`) give the same answer, so a
+ * caller comparing two views can tell whether anything drawn changed.
+ */
+export function drawnKindOf(block: TourBlock, view: string): string {
+  return block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(view)
+    ? longTextDrawnAs(view)
+    : view;
+}
+
+/** A long text as its reading stand or its reading sign draws it. */
 function longTextOf(text: {
   readonly id: string;
   readonly view: string;
@@ -441,10 +457,7 @@ function longTextOf(text: {
 }): Drawn {
   return {
     id: text.id,
-    as:
-      text.view === "reading" || text.view === "captions"
-        ? "reading"
-        : "lectern",
+    as: longTextDrawnAs(text.view),
     title: text.title,
     body: text.body,
   };
