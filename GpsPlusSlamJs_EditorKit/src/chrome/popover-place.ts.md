@@ -1,4 +1,4 @@
-# editor/popover-place.ts
+# popover-place.ts
 
 ## Purpose
 

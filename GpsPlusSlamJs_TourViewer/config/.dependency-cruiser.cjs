@@ -78,9 +78,10 @@ module.exports = {
     // the editor's shell chrome and its 3D blocks; of it the visitor's and
     // the phone's pages (`src/*.ts`) and the landing may reach only the
     // touch gestures (`src/touch/`). The workspace link resolves to the
-    // kit's source (`../GpsPlusSlamJs_EditorKit/src/...`), which the
-    // unanchored `includeOnly: "src"` keeps in the graph, so this rule sees
-    // the kit's modules - a package import the scan
+    // kit's source (`../GpsPlusSlamJs_EditorKit/src/...`), which
+    // `includeOnly`'s anchored kit entry (`^\.\./GpsPlusSlamJs_EditorKit/src/`)
+    // keeps in the graph, so this rule sees the kit's modules - a package
+    // import the scan
     // `src/editor-only-packages.test.ts` holds too, by specifier.
     {
       name: "viewer-not-to-kit-editor",

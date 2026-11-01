@@ -17,10 +17,14 @@ imports alike).
   touch gestures a visitor's page may share. The only entry a visitor's
   page may load.
 - `gps-plus-slam-editor-kit/chrome` (`src/chrome/index.ts`) - the shell
-  chrome: DOM only, no three. The menu button and its item states, the key
-  target rules, the page-inert hold, the popover placement, the status
-  lines, the ground wait and the shell's icons. An editor's page loads it
-  statically.
+  chrome: DOM only, no three. The menu button and its item states
+  (`menu-button`), the key target rules (`key-target`), the page-inert
+  hold (`page-inert`), the popover placement (`popover-place`), the status
+  lines (`status-lines`), the ground wait (`ground-wait`), the shell's
+  icons (`shell-icons`), the docks' fold rule and its default layout
+  (`dock-rule`), the tree's reorder, drag and click rules (`tree-reorder`,
+  `tree-drag`, `tree-click`) and the scene's menu (`scene-menu`). An
+  editor's page loads it statically.
 - `gps-plus-slam-editor-kit/scene` (`src/scene/`, not created yet) - the 3D
   scene's blocks; brings three. An editor's page reaches it by `import()`
   only.

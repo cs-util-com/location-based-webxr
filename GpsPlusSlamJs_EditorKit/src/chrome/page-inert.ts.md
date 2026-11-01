@@ -1,4 +1,4 @@
-# editor/page-inert.ts
+# page-inert.ts
 
 ## Purpose
 

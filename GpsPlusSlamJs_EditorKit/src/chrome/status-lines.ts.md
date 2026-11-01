@@ -1,4 +1,4 @@
-# editor/status-lines.ts
+# status-lines.ts
 
 ## Purpose
 
