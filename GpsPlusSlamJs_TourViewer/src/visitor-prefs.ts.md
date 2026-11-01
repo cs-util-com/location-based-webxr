@@ -37,7 +37,8 @@ defensive read and write of the one storage key.
   stored under its own key, as the design writes it
   (`{"world":"lectern","screen":"captions"}`): captions at `screen`,
   keeping the world's view; a world view clears stored captions; null
-  clears both. A `world: "captions"` (written by an earlier preview
+  clears both. That a world pick deletes stored captions is revisited
+  when the screen set's `silent` member lands. A `world: "captions"` (written by an earlier preview
   build) is not read and gets no migration: such a device shows the
   creator's view until a new choice.
 - `shownView({ audience, block, stored, verdict? })` - the view shown
