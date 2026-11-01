@@ -27,6 +27,8 @@
  *     tour/             ← TourViewer, base=/tour/
  *     blog/             ← rendered from the project WIKI repo (not a Vite app)
  *     lookdev/          ← the design system's 3D look-dev page (not a Vite app)
+ *     globe-assets/     ← the Globe's imagery, ONE copy for every page that
+ *                         loads the globe (the editor's globe view, lookdev)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -57,6 +59,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 
 import { buildLookdev } from '../GpsPlusSlamJs_DesignSystem/build-lookdev.mjs';
+import {
+  GLOBE_ASSETS_PREFIX,
+  assertGlobeAssetsShipped,
+  copyGlobeAssets,
+} from './globe-assets-deploy.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distSite = join(repoRoot, 'dist-site');
@@ -402,9 +409,36 @@ run('node', [
 // following its import graph through the same route table its dev server
 // uses. Deployed so a PR preview can be opened on a phone; not linked from
 // the landing page, because it is a developer tool, not a demo.
+//
+// The globe's imagery is NOT copied into lookdev/: its pages ask for it at the
+// site root (`siteRootPrefixes`), where the copy below serves them and the
+// Tour Viewer's editor alike.
 console.log('• Building 3D look-dev page (base=/lookdev/)');
-buildLookdev({ outDir: join(distSite, 'lookdev'), base: '/lookdev/' });
+buildLookdev({
+  outDir: join(distSite, 'lookdev'),
+  base: '/lookdev/',
+  siteRootPrefixes: [GLOBE_ASSETS_PREFIX],
+});
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'lookdev'), '/lookdev/');
+
+// The globe's imagery, once, at the site root (the Globe asks for it by
+// root-absolute paths, `/globe-assets/...`). Only the creator's editor on the
+// globe view and the look-dev labs load it; no visitor page does
+// (GpsPlusSlamJs_TourViewer/src/editor3d-lazy.test.ts holds that). The guard
+// fails the build when an app's chunk names the folder and it is not there.
+console.log('• Copying the globe assets (once, /globe-assets/)');
+const globeAssets = copyGlobeAssets({
+  from: join(repoRoot, 'GpsPlusSlamJs_Globe', 'assets'),
+  to: join(distSite, 'globe-assets'),
+});
+console.log(
+  `  ${globeAssets.files} files, ${(globeAssets.bytes / 1e6).toFixed(2)} MB`
+);
+const namingGlobeAssets = assertGlobeAssetsShipped({
+  siteDir: distSite,
+  appDirs: [join(distSite, 'tour'), join(distSite, 'lookdev')],
+});
+console.log(`  named by ${namingGlobeAssets.length} chunk(s), all served`);
 
 assertLandingHtml(join(distSite, 'index.html'));
 

@@ -123,6 +123,29 @@ describe('the multi-app site build', () => {
     }
   });
 
+  it('ships the globe imagery once at the root, after every build that names it, and checks it', () => {
+    // The deployed globe editor got 404s for its imagery while every
+    // dev-server run was green: the dev server answers /globe-assets/, the
+    // deploy had no copy. One copy at the root (the look-dev build told not
+    // to make its own), and the guard after both builds whose chunks name it.
+    const copy = SCRIPT.indexOf('copyGlobeAssets({');
+    const guard = SCRIPT.indexOf('assertGlobeAssetsShipped({');
+    const tour = SCRIPT.indexOf("--base=/tour/");
+    const lookdev = SCRIPT.indexOf('buildLookdev({');
+    for (const [name, at] of Object.entries({ copy, guard, tour, lookdev })) {
+      expect(at, `${name} is missing`).toBeGreaterThan(-1);
+    }
+    expect(copy).toBeLessThan(guard);
+    expect(tour).toBeLessThan(guard);
+    expect(lookdev).toBeLessThan(guard);
+    expect(SCRIPT.slice(lookdev, copy)).toMatch(
+      /siteRootPrefixes:\s*\[GLOBE_ASSETS_PREFIX\]/
+    );
+    expect(SCRIPT.slice(guard)).toMatch(
+      /appDirs:\s*\[join\(distSite, 'tour'\), join\(distSite, 'lookdev'\)\]/
+    );
+  });
+
   it('keeps the header comment honest about which apps it deploys', () => {
     // The header draws the output tree, and it is the only place a reader
     // learns what the deployed site contains. A new app whose build is added

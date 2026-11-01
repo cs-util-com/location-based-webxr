@@ -2,8 +2,9 @@
  * The dev server's `/globe-assets/` route (the e2e runs on the same
  * server): the globe package's `assets/` folder, which the globe's surface
  * asks for by these absolute paths. Only the editor on the globe view
- * (`editor3d-globe.ts`, behind its link switch) loads them; the built site
- * does not carry them.
+ * (`editor3d-globe.ts`, behind its link switch) loads them. The Vite build
+ * does not copy them: the site build ships one copy at the site root
+ * (`scripts/build-site.mjs`), which answers the same absolute paths.
  *
  * @see globe-assets-route.ts.md
  */

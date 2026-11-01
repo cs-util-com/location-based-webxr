@@ -226,6 +226,37 @@ describe("the 3D view's code in the app's bundle", () => {
     expect(kb).toBeLessThanOrEqual(LANDING_BUDGET_KB);
   });
 
+  // Why (the full-globe editor plan's cold review, finding 13): the site
+  // ships /globe-assets/ now, so nothing but a reference keeps a visitor's
+  // phone from fetching 12.6 MB of whole-Earth imagery. No chunk a
+  // visitor's page can reach, even by import(), may name the path; the
+  // editor's globe view does, which proves the check sees it.
+  it.each(VISITOR_PAGES)(
+    "names no /globe-assets/ path in the %s page's bundle, even through import()",
+    (page) => {
+      const reached = chunksFrom(
+        chunks,
+        chunks.filter((c) => c.entry === page),
+        true,
+      );
+      expect(reached.length).toBeGreaterThan(0);
+      expect(
+        reached
+          .filter((c) => c.code.includes("/globe-assets/"))
+          .map((c) => c.fileName),
+      ).toEqual([]);
+    },
+  );
+
+  it("names /globe-assets/ in the editor's globe view, so the check sees it", () => {
+    const globeOwn = chunksFrom(
+      chunks,
+      [chunkOf(chunks, "/src/editor3d/editor3d-globe.ts")],
+      false,
+    );
+    expect(globeOwn.some((c) => c.code.includes("/globe-assets/"))).toBe(true);
+  });
+
   it("is reached from the editor's page by import(), the geoid with it", () => {
     const edit = chunks.find((c) => c.entry === "edit");
     expect(edit).toBeDefined();
@@ -249,8 +280,8 @@ describe("the 3D view's code in the app's bundle", () => {
     expect(reachedLazily).toBe(true);
   });
 
-  // Why: the globe's whole-Earth imagery (about 13 MB, served only by the
-  // dev server's /globe-assets/ route) belongs to the editor on the globe
+  // Why: the globe's whole-Earth imagery (about 12.6 MB at /globe-assets/:
+  // the dev server's route, the site build's root copy) belongs to the editor on the globe
   // view alone, behind its link switch: no other code may hold its
   // factory, the OrbitControls view (a plain ground under the map)
   // included, and the reach is by import() only.
@@ -285,7 +316,8 @@ describe("the 3D view's code in the app's bundle", () => {
     expect(
       chunks.some((c) => c.dynamicImports.includes(globeView.fileName)),
     ).toBe(true);
-    // The files themselves are not the app's: the dev server routes them.
+    // The files themselves are not the app's: the dev server routes them and
+    // the site build copies them to the site root.
     expect(existsSync(new URL("../public/globe-assets", import.meta.url))).toBe(
       false,
     );

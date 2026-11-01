@@ -34,9 +34,12 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   (`src/dev-server/globe-assets-route.ts`): the dev server (and so the e2e)
   answers `/globe-assets/*` from the Globe package's committed assets,
   which the editor on the globe view (`?globe=1`, `src/editor3d/editor3d-globe.ts`)
-  loads. The build does NOT copy them: the deployed `/tour/` has no such
-  route yet, so the globe view is a dev-server view until a deploy decision
-  is made (the assets are about 13 MB).
+  loads. This build does NOT copy them: the site build
+  (`scripts/build-site.mjs`) ships one copy at the site root,
+  `dist-site/globe-assets/` (about 12.6 MB), shared with the look-dev
+  labs, so the deployed `/tour/edit.html?globe=1` resolves the same
+  absolute paths. No visitor page's bundle names them
+  (`src/editor3d-lazy.test.ts`).
 
 ## Invariants & assumptions
 

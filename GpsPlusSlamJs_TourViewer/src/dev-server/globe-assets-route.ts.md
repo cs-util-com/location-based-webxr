@@ -6,7 +6,10 @@ The Tour Viewer's dev server route `/globe-assets/` (the e2e runs on the
 same server): it serves the Globe package's committed `assets/` folder,
 which the globe's surface asks for by these absolute paths. Only the editor
 on the globe view (`../editor3d/editor3d-globe.ts`, behind `globe=1`) loads
-them. The build does not copy them, so the deployed site has no such route.
+them. The Vite build does not copy them: the site build
+(`scripts/build-site.mjs`, `scripts/globe-assets-deploy.mjs`) ships ONE copy
+at the site root, `dist-site/globe-assets/`, which the deployed editor and
+the look-dev labs share, so the same absolute paths resolve there.
 
 ## Public API
 
@@ -26,8 +29,8 @@ them. The build does not copy them, so the deployed site has no such route.
 
 - Never serves outside `dir`: the path is resolved and checked against it.
 - Files are read whole (the tiles are about 6 KB each).
-- Dev and e2e only; a deploy of the globe view needs its own decision about
-  the about 13 MB of assets.
+- Dev and e2e only; the deployed site serves the same paths from the site
+  build's root copy (about 12.6 MB, 2 736 files).
 
 ## Example
 

@@ -211,6 +211,65 @@ describe("buildLookdev", () => {
   });
 });
 
+// WHY (globe editor feedback plan 2026-11-01-0745, cold review 14; the
+// full-globe editor plan's "one copy of /globe-assets/ at the site root"):
+// the site build ships the globe's imagery once at its root, for the Tour
+// Viewer's editor and the labs alike. A prefix the caller serves at the root
+// must therefore be neither copied under the base (a second 12.6 MB copy)
+// nor rebased (its references would point at that missing copy).
+describe("buildLookdev with a prefix served at the site root", () => {
+  let root;
+  let assets;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/globe/index.html":
+        "<title>Globe lab</title>" +
+        '<script type="module" src="./globe.js"></script>',
+      "labs/globe/globe.js": 'export const TILE = "/assets/tiles/0/0.jpg";\n',
+    });
+    assets = fixture({ "tiles/0/0.jpg": "tile" });
+    out = mkdtempSync(join(tmpdir(), "lookdev-site-root-"));
+    const routes = [
+      { prefix: "/assets/", dir: assets, typescript: false, copyAll: true },
+    ];
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes,
+      siteRootPrefixes: ["/assets/"],
+    });
+  });
+  after(() => {
+    for (const dir of [root, assets, out]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("copies nothing of it and keeps its references at the root", () => {
+    assert.ok(!files.some((f) => f.startsWith("assets/")), files.join());
+    const lab = readFileSync(join(out, "labs/globe/globe.js"), "utf8");
+    assert.match(lab, /"\/assets\/tiles\/0\/0\.jpg"/);
+    assert.doesNotMatch(lab, /\/lookdev\/assets\//);
+  });
+
+  it("refuses a site-root prefix that is not a route's", () => {
+    assert.throws(
+      () =>
+        buildLookdev({
+          outDir: out,
+          base: "/lookdev/",
+          packageRoot: root,
+          routes: [],
+          siteRootPrefixes: ["/assets/"],
+        }),
+      /not a route/,
+    );
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §7.1, W7 M0): the globe lab serves a new
 // package's source, its vendored library and its imagery through new routes.
 // Three things a crawl alone cannot do, each a blank or broken phone page if

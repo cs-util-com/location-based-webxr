@@ -9,7 +9,8 @@ import { createBuildMetadataDefine } from "../GpsPlusSlamJs_AppFramework/scripts
 // package owns 5187.
 export default defineConfig({
   // The globe package's imagery at /globe-assets/, for the editor on the
-  // globe view (dev and e2e only; globe-assets-route.ts).
+  // globe view (the dev server and the e2e; the deployed site serves the
+  // site build's root copy, scripts/build-site.mjs; globe-assets-route.ts).
   plugins: [
     globeAssetsRoute(
       fileURLToPath(new URL("../GpsPlusSlamJs_Globe/assets", import.meta.url)),

@@ -56,8 +56,9 @@ is the one recorded exception, contained in this private package:
 
 `assets/` holds the imagery, committed (DEC-PRG-12; level 4 added by
 DEC-FB2-4, level 5 by round 4's DEC-GL4-3, about 2.4 km a pixel; WebP
-since round 4, DEC-GL4-10; 8.85 MB against the 10 MB budget DEC-GL4-9
-that `globe-sources.test.ts` holds): the Blue Marble tile pyramid (EPSG:4326, WebP,
+since round 4, DEC-GL4-10; NASA's full cloud map since round 3,
+DEC-R3-13; 12.58 MB in 2 736 files, measured 2026-11-01, against the 13 MB
+budget that `globe-sources.test.ts` holds): the Blue Marble tile pyramid (EPSG:4326, WebP,
 the water mask in each tile's alpha, DEC-GL4-6) and two global maps (night
 lights, clouds), all NASA, public domain.
 `scripts/fetch-globe-assets.mjs` regenerates them by hand (never in CI) and
@@ -104,7 +105,10 @@ and not on the Osm library: its URLs, attributions and geoid are passed in.
 
 The design system's route table (`serve-routes.mjs`) maps `/globe/` to
 `src/` (TypeScript, type-stripped on the fly), `/globe-assets/` to
-`assets/` (copied whole by the deploy), and `/vendor/3d-tiles-renderer/`
+`assets/`. The site build ships ONE copy at the site root,
+`dist-site/globe-assets/` (`scripts/build-site.mjs`, the `.md` notes left
+out), which the look-dev labs and the Tour Viewer's editor on the globe view
+share, and `/vendor/3d-tiles-renderer/`
 to the installed library. So the source keeps to the served dialect:
 `.js`-suffixed relative imports, only the lab's import-mapped bare
 specifiers, and erasable syntax (`verbatimModuleSyntax`,
