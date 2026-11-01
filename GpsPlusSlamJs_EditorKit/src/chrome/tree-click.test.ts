@@ -18,8 +18,8 @@ import {
 } from "./tree-click.js";
 
 const STATIONS = [
-  { id: "a", blocks: [{ id: "pin-1" }, { id: "photo-1" }] },
-  { id: "b", blocks: [] },
+  { id: "a", children: ["pin-1", "photo-1"] },
+  { id: "b", children: [] },
 ];
 
 describe("treeClick", () => {
@@ -187,7 +187,7 @@ describe("treeClickPlan", () => {
       select: "station:a",
       unfold: "a",
       fold: null,
-      openCodes: false,
+      ungrouped: false,
       fly: true,
     });
   });
@@ -205,7 +205,7 @@ describe("treeClickPlan", () => {
       select: "level-1",
       unfold: null,
       fold: null,
-      openCodes: true,
+      ungrouped: true,
       fly: true,
     });
   });
@@ -215,7 +215,7 @@ describe("treeClickPlan", () => {
       select: null,
       unfold: null,
       fold: "a",
-      openCodes: false,
+      ungrouped: false,
       fly: false,
     });
     // An item deselected folds nothing.
@@ -227,5 +227,24 @@ describe("treeClickPlan", () => {
 
   it("does nothing for a click that does not toggle", () => {
     expect(treeClickPlan("none", "station:a", STATIONS)).toBeNull();
+  });
+
+  // Why: the groups are the app's (the Tour Viewer's stations); another
+  // editor names its groups' selections with its own prefix.
+  it("reads the groups' selections by the app's prefix", () => {
+    const folders = { groupPrefix: "folder:" };
+    expect(
+      treeClickPlan("select", "folder:a", STATIONS, folders),
+    ).toMatchObject({ select: "folder:a", unfold: "a", ungrouped: false });
+    expect(treeClickPlan("select", "photo-1", STATIONS, folders)).toMatchObject(
+      { unfold: "a", ungrouped: false },
+    );
+    // The default prefix means nothing under another one.
+    expect(
+      treeClickPlan("select", "station:a", STATIONS, folders),
+    ).toMatchObject({ unfold: null, ungrouped: true });
+    expect(() =>
+      treeClickPlan("select", "a", STATIONS, { groupPrefix: "" }),
+    ).toThrow(RangeError);
   });
 });

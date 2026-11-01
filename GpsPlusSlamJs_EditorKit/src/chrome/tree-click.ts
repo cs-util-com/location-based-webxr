@@ -66,49 +66,66 @@ export interface TreeClickPlan {
   readonly unfold: string | null;
   /** The station to fold, or none. */
   readonly fold: string | null;
-  /** The codes' section is opened (a code was selected). */
-  readonly openCodes: boolean;
+  /** The selection belongs to no group: the app opens where such
+   *  selections live (the Tour Viewer's codes). */
+  readonly ungrouped: boolean;
   /** The camera flies to the new selection. */
   readonly fly: boolean;
 }
 
-/** A station's id in the page's selection (`editor-model.ts`). */
-const STATION = "station:";
+/** A group of the tree: its id, and the ids of the cards inside it. */
+export interface TreeGroup {
+  readonly id: string;
+  readonly children: readonly string[];
+}
+
+/** A group's selection by default: the Tour Viewer's `station:<id>`
+ *  (`editor-model.ts`). */
+const GROUP_PREFIX = "station:";
+
+/** The group a selection `id` names, or holds as a child, and whether it
+ *  is the group itself; null for an ungrouped selection. */
+function groupOf(
+  id: string,
+  groups: readonly TreeGroup[],
+  prefix: string,
+): { readonly id: string; readonly own: boolean } | null {
+  if (id.startsWith(prefix)) return { id: id.slice(prefix.length), own: true };
+  const holder = groups.find((g) => g.children.includes(id));
+  return holder === undefined ? null : { id: holder.id, own: false };
+}
 
 /**
- * The plan for `outcome` on the card `id` (a station's `station:<id>`,
- * an item of `stations`, or else a code), or null when nothing happens.
- * A selected station unfolds, a selected item unfolds its station, a
- * selected code opens the codes; a deselected station folds.
+ * The plan for `outcome` on the card `id` (a group's `<groupPrefix><id>`,
+ * a child of one of `groups`, or else ungrouped), or null when nothing
+ * happens. A selected group unfolds, a selected child unfolds its group,
+ * an ungrouped selection says so; a deselected group folds. Throws for
+ * an empty prefix (every id would read as a group).
  */
 export function treeClickPlan(
   outcome: TreeClickOutcome,
   id: string,
-  stations: readonly {
-    readonly id: string;
-    readonly blocks: readonly { readonly id: string }[];
-  }[],
+  groups: readonly TreeGroup[],
+  options: { readonly groupPrefix?: string } = {},
 ): TreeClickPlan | null {
+  const prefix = options.groupPrefix ?? GROUP_PREFIX;
+  if (prefix === "") throw new RangeError("a group prefix must not be empty");
   if (outcome === "none") return null;
-  const station = id.startsWith(STATION) ? id.slice(STATION.length) : null;
-  const holder =
-    station === null
-      ? (stations.find((s) => s.blocks.some((i) => i.id === id))?.id ?? null)
-      : null;
+  const group = groupOf(id, groups, prefix);
   if (outcome === "deselect") {
     return {
       select: null,
       unfold: null,
-      fold: station,
-      openCodes: false,
+      fold: group?.own === true ? group.id : null,
+      ungrouped: false,
       fly: false,
     };
   }
   return {
     select: id,
-    unfold: station ?? holder,
+    unfold: group?.id ?? null,
     fold: null,
-    openCodes: station === null && holder === null,
+    ungrouped: group === null,
     fly: true,
   };
 }

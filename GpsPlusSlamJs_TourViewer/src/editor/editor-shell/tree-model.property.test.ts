@@ -24,7 +24,12 @@ import {
   treeClickPlan,
   type TreeClickMemory,
 } from "gps-plus-slam-editor-kit/chrome";
-import { buildTree, treeFoldOf, type TreeInput } from "./tree-model.js";
+import {
+  buildTree,
+  stationGroups,
+  treeFoldOf,
+  type TreeInput,
+} from "./tree-model.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -135,7 +140,7 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       last,
     });
     last = click.memory;
-    const plan = treeClickPlan(click.outcome, id, stations);
+    const plan = treeClickPlan(click.outcome, id, stationGroups(stations));
     if (plan === null) continue;
     view = reduce(view, act.selected({ id: plan.select }));
     if (plan.unfold !== null) {
@@ -144,7 +149,7 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
     if (plan.fold !== null) {
       view = reduce(view, act.stationFolded({ id: plan.fold, open: false }));
     }
-    if (plan.openCodes) {
+    if (plan.ungrouped) {
       view = reduce(view, act.sectionFolded({ section: "codes", open: true }));
     }
   }

@@ -26,4 +26,5 @@ export {
   treeClick,
   treeClickPlan,
   type TreeClickMemory,
+  type TreeGroup,
 } from "./tree-click.js";

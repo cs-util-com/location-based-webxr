@@ -41,10 +41,43 @@ export interface DockFolds {
   readonly inspector: boolean;
 }
 
+/** The docks' layout, in CSS px: the widths the app's stylesheet draws,
+ *  the scene's floor between them, and where the tree starts folded. */
+export interface DockLayout {
+  readonly treePx: number;
+  readonly inspectorPx: number;
+  readonly sceneFloorPx: number;
+  readonly treeStartsFoldedPx: number;
+}
+
+/** The Tour Viewer's layout, the default. */
+export const DEFAULT_DOCK_LAYOUT: DockLayout = Object.freeze({
+  treePx: TREE_DOCK_PX,
+  inspectorPx: INSPECTOR_DOCK_PX,
+  sceneFloorPx: SCENE_FLOOR_PX,
+  treeStartsFoldedPx: TREE_STARTS_FOLDED_PX,
+});
+
+/** From this window width (px) up, both docks of `layout` may be open:
+ *  the two docks and the scene's floor between them. Throws for a width
+ *  that is not finite and non-negative. */
+export function docksSideBySidePx(layout: DockLayout): number {
+  for (const [name, px] of Object.entries(layout)) {
+    if (!Number.isFinite(px) || px < 0) {
+      throw new RangeError(
+        `a dock layout's ${name} must be a width, got ${String(px)}`,
+      );
+    }
+  }
+  return layout.treePx + layout.inspectorPx + layout.sceneFloorPx;
+}
+
 /**
  * The docks' folds after `change`, on a window `widthPx` wide, while the
  * docks are `folded` and the inspector shows (something is selected) or
- * not. Above the breakpoint nothing is folded by the rule.
+ * not, for the app's `layout` (default: the Tour Viewer's). Above the
+ * breakpoint nothing is folded by the rule. Throws for a layout that is
+ * not a set of widths.
  */
 export function docksAfter(
   change: DockChange,
@@ -53,11 +86,13 @@ export function docksAfter(
     readonly folded: DockFolds;
     readonly inspectorShows: boolean;
   },
+  layout: DockLayout = DEFAULT_DOCK_LAYOUT,
 ): DockFolds {
   const { widthPx, folded, inspectorShows } = state;
+  const sideBySidePx = docksSideBySidePx(layout);
   let { tree, inspector } = folded;
-  if (change === "opened" && widthPx < TREE_STARTS_FOLDED_PX) tree = true;
-  if (!(widthPx < DOCKS_SIDE_BY_SIDE_PX) || !inspectorShows) {
+  if (change === "opened" && widthPx < layout.treeStartsFoldedPx) tree = true;
+  if (!(widthPx < sideBySidePx) || !inspectorShows) {
     return { tree, inspector };
   }
   if (change === "tree-unfolded") {

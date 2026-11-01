@@ -26,7 +26,13 @@ at a time. Below `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
 SCENE_FLOOR_PX`, so 900; `TREE_STARTS_FOLDED_PX` - 700.
 - `DockChange` - `"opened" | "selected" | "resized" | "tree-unfolded" |
 "inspector-unfolded"`; `DockFolds` - `{ tree, inspector }`.
-- `docksAfter(change, { widthPx, folded, inspectorShows })` -> the folds:
+- `DockLayout` - `{ treePx, inspectorPx, sceneFloorPx, treeStartsFoldedPx }`,
+  the app's docks in CSS px; `DEFAULT_DOCK_LAYOUT` is the four constants
+  above (the Tour Viewer's). `docksSideBySidePx(layout)` - the sum of the
+  docks and the floor; throws `RangeError` for a width that is not finite
+  and non-negative.
+- `docksAfter(change, { widthPx, folded, inspectorShows }, layout?)` -> the
+  folds (the numbers below are the default layout's):
   - `opened` below 700 px folds the tree;
   - from 900 px up, or while no inspector shows, nothing else changes;
   - below 900 px with the inspector showing: `tree-unfolded` folds the
@@ -54,5 +60,7 @@ const folds = docksAfter("selected", {
 
 `dock-rule.test.ts`: wide windows untouched, the tablet widths (768,
 820), each unfold folding the other, the breakpoint as the sum of the
-docks and the floor (and the docks' widths read from the CSS), the phone start, no inspector, and
-the property over any width and change.
+docks and the floor, the phone start, no inspector, and
+the property over any width and change; a layout of the app's own moving
+the breakpoint and the phone start, a layout that is not widths refused,
+and the one-dock property over any layout.

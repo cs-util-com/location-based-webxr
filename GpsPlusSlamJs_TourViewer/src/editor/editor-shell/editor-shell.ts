@@ -99,7 +99,7 @@ import {
   treeClickPlan,
   type TreeClickMemory,
 } from "gps-plus-slam-editor-kit/chrome";
-import { buildTree } from "./tree-model.js";
+import { buildTree, stationGroups } from "./tree-model.js";
 
 /** The 3D view's commands the shell drives. */
 type ShellView = Pick<
@@ -894,7 +894,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       last: memory,
     });
     memory = click.memory;
-    const plan = treeClickPlan(click.outcome, id, manifest()?.stations ?? []);
+    const plan = treeClickPlan(
+      click.outcome,
+      id,
+      stationGroups(manifest()?.stations ?? []),
+    );
     if (plan === null) return;
     deps.select(plan.select);
     if (plan.unfold !== null) {
@@ -907,7 +911,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         editorViewActions.stationFolded({ id: plan.fold, open: false }),
       );
     }
-    if (plan.openCodes) {
+    if (plan.ungrouped) {
       store.dispatch(
         editorViewActions.sectionFolded({ section: "codes", open: true }),
       );

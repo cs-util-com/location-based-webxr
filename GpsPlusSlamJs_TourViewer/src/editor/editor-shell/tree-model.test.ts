@@ -17,6 +17,7 @@ import type {
 import { initialEditorViewState } from "../editor-view.js";
 import {
   buildTree,
+  stationGroups,
   stationImagePath,
   treeFoldOf,
   type TreeInput,
@@ -214,5 +215,19 @@ describe("stationImagePath", () => {
       stationImagePath(station("a", { image: "gone" }, [PHOTO]), ASSETS),
     ).toBe("content/photo-1.jpg");
     expect(stationImagePath(station("a"), ASSETS)).toBeNull();
+  });
+});
+
+describe("stationGroups", () => {
+  // Why: the tree's click rule (the editor kit's) knows groups and their
+  // children, not stations and their blocks; a station's group must name
+  // every one of its items, or a click on an item would not unfold it.
+  it("is each station's id with its items' ids, in the tour's order", () => {
+    expect(
+      stationGroups([station("a", {}, [PIN, PHOTO]), station("b")]),
+    ).toEqual([
+      { id: "a", children: [PIN.id, PHOTO.id] },
+      { id: "b", children: [] },
+    ]);
   });
 });

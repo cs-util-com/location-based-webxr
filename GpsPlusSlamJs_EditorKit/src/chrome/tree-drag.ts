@@ -37,9 +37,9 @@ const EDGE_PX = 32;
 /** The scroll per frame at the very edge, in CSS px (less farther in). */
 const SCROLL_PX = 12;
 
-function stationCards(body: HTMLElement): HTMLElement[] {
-  return [...body.querySelectorAll<HTMLElement>(".card[data-station]")];
-}
+/** The Tour Viewer's cards, the default: a station's card. */
+const CARDS = ".card[data-station]";
+const ID_ATTRIBUTE = "station";
 
 /** The cards' middles where they are now (the dock may have scrolled). */
 function middlesOf(cards: readonly HTMLElement[]): number[] {
@@ -50,15 +50,31 @@ function middlesOf(cards: readonly HTMLElement[]): number[] {
 }
 
 export function createTreeDrag(deps: {
-  /** The tree's body: its `.card[data-station]` elements, in order. */
+  /** The tree's body: its cards, in order. */
   readonly body: HTMLElement;
-  /** Write the stations' new order (every station once). */
+  /** The cards' selector inside `body` (default `.card[data-station]`). */
+  readonly cards?: string;
+  /** The `dataset` key of a card's id (default `station`, so
+   *  `data-station`); a grip's `data-drag` names the same id. */
+  readonly idAttribute?: string;
+  /** Write the cards' new order (every id once). */
   readonly reorder: (order: readonly string[]) => void;
   /** The frame scheduler (default: the window's animation frames). */
   readonly frame?: (run: FrameRequestCallback) => number;
   readonly cancelFrame?: (id: number) => void;
 }): { dispose(): void } {
   const { body } = deps;
+  const selector = deps.cards ?? CARDS;
+  const idAttribute = deps.idAttribute ?? ID_ATTRIBUTE;
+  if (selector === "" || idAttribute === "") {
+    throw new RangeError(
+      "a tree drag needs a card selector and an id attribute",
+    );
+  }
+  const cardsNow = (): HTMLElement[] => [
+    ...body.querySelectorAll<HTMLElement>(selector),
+  ];
+  const idOf = (card: HTMLElement): string => card.dataset[idAttribute] ?? "";
   const frame =
     deps.frame ?? ((run: FrameRequestCallback) => requestAnimationFrame(run));
   const cancelFrame =
@@ -81,8 +97,8 @@ export function createTreeDrag(deps: {
    *  stations carry on (marked again), others end the drag unwritten. */
   const current = (now: Drag): boolean => {
     if (now.cards.every((card) => card.isConnected)) return true;
-    const cards = stationCards(body);
-    const ids = cards.map((card) => card.dataset["station"] ?? "");
+    const cards = cardsNow();
+    const ids = cards.map(idOf);
     if (
       ids.length !== now.ids.length ||
       ids.some((id, i) => id !== now.ids[i])
@@ -190,8 +206,8 @@ export function createTreeDrag(deps: {
     );
     if (grip == null || !body.contains(grip) || event.button !== 0) return;
     if (drag !== null) return;
-    const cards = stationCards(body);
-    const ids = cards.map((card) => card.dataset["station"] ?? "");
+    const cards = cardsNow();
+    const ids = cards.map(idOf);
     const from = ids.indexOf(grip.dataset["drag"] ?? "");
     if (from < 0) return;
     // Neither a scroll of the dock nor a text selection: a drag.

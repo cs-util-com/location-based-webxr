@@ -9,12 +9,15 @@ Later (`editor-shell.ts`).
 
 ## Public API
 
-- `createTreeDrag({ body, reorder, frame?, cancelFrame? })` ->
+- `createTreeDrag({ body, reorder, cards?, idAttribute?, frame?, cancelFrame? })` ->
   `{ dispose() }`:
-  - `body` - the tree's body (`#tree-body`); its `.card[data-station]`
-    elements are the cards, in the tour's order, each with a grip
-    `[data-drag="<station id>"]` (`shell-tree.ts`);
-  - `reorder(order)` - writes the new order (every station once); the
+  - `body` - the tree's body (`#tree-body`); its cards (by default
+    `.card[data-station]`, the Tour Viewer's), in the tour's order, each
+    with a grip `[data-drag="<card id>"]` (`shell-tree.ts`);
+  - `cards` - the cards' selector and `idAttribute` - the `dataset` key of
+    a card's id (default `station`); an empty one of either throws
+    `RangeError`;
+  - `reorder(order)` - writes the new order (every id once); the
     shell passes the page's reorder.
   - `frame` / `cancelFrame` - the frame scheduler of the edge scroll
     (default: `requestAnimationFrame`); tests pass their own.
@@ -66,4 +69,6 @@ and the main button start it; the press is the drag's; nothing after
 `dispose`; a redraw of the same stations carries the drag on and one of
 other stations ends it unwritten, at a move or at the release; held near the bottom edge it scrolls
 the dock and lands by where the cards are then; away from the edges it
-does not scroll. End to end: `playwright-tests/editor3d-tree.spec.js`.
+does not scroll; cards of the app's own selector and attribute drag the
+same way, an empty one refused. End to end (the Tour Viewer's):
+`playwright-tests/editor3d-tree.spec.js`.

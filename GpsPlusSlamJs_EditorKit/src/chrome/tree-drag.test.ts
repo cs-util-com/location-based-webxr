@@ -104,6 +104,54 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("createTreeDrag with the app's own cards", () => {
+  // Why: the cards are the app's markup (the Tour Viewer's
+  // `.card[data-station]`); another editor's rows must drag the same way
+  // when it names its own selector and id attribute.
+  it("finds its cards by the given selector and reads their ids from the given attribute", () => {
+    document.body.innerHTML = `<div id="rows">${IDS.map(
+      (id) =>
+        `<div class="row" data-node="${id}"><span data-drag="${id}"></span></div>`,
+    ).join("")}<div class="card" data-station="x"></div></div>`;
+    const body = document.getElementById("rows") as HTMLElement;
+    for (const [index, row] of [
+      ...body.querySelectorAll<HTMLElement>(".row"),
+    ].entries()) {
+      vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
+        top: 100 + index * 40,
+        bottom: 140 + index * 40,
+        height: 40,
+        left: 0,
+        right: 200,
+        width: 200,
+      } as DOMRect);
+    }
+    const reorder = vi.fn();
+    const drag = createTreeDrag({
+      body,
+      reorder,
+      cards: ".row[data-node]",
+      idAttribute: "node",
+    });
+    const grip = body.querySelector('[data-drag="c"]') as HTMLElement;
+    pointer(grip, "pointerdown", 200);
+    pointer(window, "pointermove", 110);
+    pointer(window, "pointerup", 110);
+    expect(reorder).toHaveBeenCalledWith(["c", "a", "b"]);
+    drag.dispose();
+  });
+
+  it("refuses an empty selector or attribute", () => {
+    const body = document.createElement("div");
+    expect(() =>
+      createTreeDrag({ body, reorder: () => undefined, cards: "" }),
+    ).toThrow(RangeError);
+    expect(() =>
+      createTreeDrag({ body, reorder: () => undefined, idAttribute: "" }),
+    ).toThrow(RangeError);
+  });
+});
+
 describe("createTreeDrag", () => {
   it("moves a card to where it is dropped: one reorder of every station", () => {
     const { grip, reorder, body } = setUp();

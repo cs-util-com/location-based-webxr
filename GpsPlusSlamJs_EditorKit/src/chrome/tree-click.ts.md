@@ -30,18 +30,23 @@ deselected: only the first click of a quick run on one card counts.
     - selected, same card, quick: none;
     - selected, otherwise: deselect;
     - not selected, otherwise: select.
-- `treeClickPlan(outcome, id, stations)` -> `{ select, unfold, fold,
-openCodes, fly }`, or null for `none`:
-  - select a station (`station:<id>`): unfold it, fly;
-  - select an item: unfold its station, fly;
-  - select anything else (a code's level id): open the codes, fly;
-  - deselect: select none, fold a station, no flight.
+- `TreeGroup` - `{ id, children: string[] }`, a group of the tree (the
+  Tour Viewer's stations, through its `tree-model.ts` `stationGroups`).
+- `treeClickPlan(outcome, id, groups, { groupPrefix? })` -> `{ select,
+unfold, fold, ungrouped, fly }`, or null for `none`; `groupPrefix`
+  (default `station:`) is how the app's selection names a group, and an
+  empty one throws `RangeError`:
+  - select a group (`<groupPrefix><id>`): unfold it, fly;
+  - select a child: unfold its group, fly;
+  - select anything else (the Tour Viewer's code level ids): `ungrouped`
+    (the Tour Viewer opens the codes), fly;
+  - deselect: select none, fold a group, no flight.
 
 ## Invariants & assumptions
 
 - Pure: no DOM, no clock; the shell passes `performance.now()` and the
   event's `detail`.
-- Selection ids are the page's (`editor-model.ts`): `station:<id>`, an
+- Selection ids are the app's; in the Tour Viewer (`editor-model.ts`) `station:<id>`, an
   item's id, a code's level id.
 
 ## Examples
@@ -56,7 +61,7 @@ const { outcome, memory: next } = treeClick({
   last: memory,
 });
 memory = next;
-const plan = treeClickPlan(outcome, id, manifest.stations);
+const plan = treeClickPlan(outcome, id, stationGroups(manifest.stations));
 ```
 
 ## Tests
@@ -67,5 +72,5 @@ card it just deselected (a double click on a selected card must not
 reselect it), another card at once, a click with no usable time, the
 property that any run of clicks follows the rule's table (an oracle
 written apart from the code; it found the reselect case against the old
-rule), and each plan (station, item, code, deselect, none). The page's
+rule), each plan (station, item, code, deselect, none) and a group prefix of the app's own (an empty one refused). The page's
 use: `playwright-tests/editor3d-shell.spec.js`.
