@@ -11,7 +11,7 @@ A timing file lined up with a long text's body: the read-along track a narration
   - A word list gives a `word` track: one segment per matched word, the unit's time split among its words by length. Each run of unmatched entries is one mismatch (`Word N` or `Words N-M`).
   - `unvoiced` - the text's sentences (`plainSentences`) no segment starts in (`sentenceStarts` of `read-along.ts`).
 - `importTiming(body, fileText, lang?)` - reads the file, lines it up and names the track by `textHashOf(P)`; `timing` is null when nothing matched; `problems` are the file's own faults. Rejects with `TimingFileError` for a file that is no timing, or a track over the entry's caps.
-- `timingFitsEntry(timing)` - within `TOUR_TIMING_MAX_SEGMENTS` and `TOUR_TIMING_MAX_BYTES` as compact JSON.
+- (module-private) `timingFitsEntry(timing)` - within `TOUR_TIMING_MAX_SEGMENTS` and `TOUR_TIMING_MAX_BYTES` as compact JSON.
 - `ImportMismatch { label, startMs, endMs, text }`, `LinedUpFile`, `TimingImport`.
 
 ## Invariants

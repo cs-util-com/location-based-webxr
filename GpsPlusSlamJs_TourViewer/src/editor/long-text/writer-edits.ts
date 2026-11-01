@@ -20,7 +20,7 @@ export interface WriterEdit {
 }
 
 /** A list line's indent, its mark and the space after it. */
-export const LIST_LINE = /^(\s*)([-*+]|\d{1,3}[.)])\s+/;
+const LIST_LINE = /^(\s*)([-*+]|\d{1,3}[.)])\s+/;
 
 /** `n` held inside `[0, max]`, a non-number as 0. */
 function clampTo(n: number, max: number): number {

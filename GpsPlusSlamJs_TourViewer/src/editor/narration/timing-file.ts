@@ -17,7 +17,7 @@
 export const TIMING_FILE_MAX_CHARS = 5_000_000;
 
 /** A file is refused with more units than this. */
-export const TIMING_FILE_MAX_UNITS = 50_000;
+const TIMING_FILE_MAX_UNITS = 50_000;
 
 /** One timed line (a cue) or word of the file. */
 export interface TimedUnit {

@@ -13,7 +13,7 @@ A stale read-along track lined up again with its edited text, by the segments' o
   - A marked track's anchors move with the first old word at or after them, or go.
 - `lineUpAgain(timing, body, lang?, options?)` - `reAnchorSegments` against `P` of `body`, plus the new track named by `textHashOf(P)` (null when no segment is left), `unvoiced` sentences and the sentence count.
 - `wordSimilarity(a, b)` - 1 less the optimal-string-alignment distance (a swap of two neighbouring letters is one slip) over the longer key's length; a key with a figure in it is alike only to itself ("1890" and "1891" are two years).
-- `REANCHOR_MIN_SIMILARITY` (0.8), `SEGMENT_MIN_SHARE` (0.5), `ReAnchorOptions`, `LostVoice`, `ReAnchored`, `LinedUpAgain`.
+- `REANCHOR_MIN_SIMILARITY` (0.8), `ReAnchorOptions`, `ReAnchored`, `LinedUpAgain`; the segment share (0.5) and the `LostVoice` / `ChangedVoice` shapes are module-private.
 
 ## Invariants
 

@@ -48,7 +48,7 @@ import { matchWords, wordTokens } from "./word-diff.js";
 
 /** A line of a subtitle file, or a run of a word list's words, that is not
  *  in the text; the voice still plays it, with nothing lit up. */
-export interface ImportMismatch {
+interface ImportMismatch {
   /** `Line N`, `Word N` or `Words N-M`. */
   readonly label: string;
   readonly startMs: number;
@@ -289,7 +289,7 @@ export function lineUpFile(
 
 /** Whether `timing` fits a timing entry (`TOUR_TIMING_MAX_BYTES`, written
  *  as compact JSON, `TOUR_TIMING_MAX_SEGMENTS`). */
-export function timingFitsEntry(timing: TourTiming): boolean {
+function timingFitsEntry(timing: TourTiming): boolean {
   return (
     timing.segments.length <= TOUR_TIMING_MAX_SEGMENTS &&
     new TextEncoder().encode(JSON.stringify(timing)).length <=

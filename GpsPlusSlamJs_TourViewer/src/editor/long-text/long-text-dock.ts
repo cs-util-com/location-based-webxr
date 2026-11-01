@@ -20,10 +20,6 @@ import {
   type LongTextWriter,
 } from "./long-text-writer.js";
 
-/** The inspector's head buttons the long text owns. */
-export const LONG_TEXT_ACTS = ["lt-preview", "lt-wide"] as const;
-export type LongTextAct = (typeof LONG_TEXT_ACTS)[number];
-
 export interface LongTextDockDeps {
   readonly document: Document;
   /** The 3D view's box (the preview is drawn over it). */
@@ -42,7 +38,7 @@ export interface LongTextDockDeps {
   readonly changed: () => void;
 }
 
-export interface LongTextDockState {
+interface LongTextDockState {
   readonly preview: boolean;
   readonly wide: boolean;
 }

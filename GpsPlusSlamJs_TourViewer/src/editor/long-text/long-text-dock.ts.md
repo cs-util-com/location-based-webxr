@@ -9,7 +9,7 @@ the inspector's "Wider" width and whether the preview shows.
 
 ## Public API
 
-- `LONG_TEXT_ACTS` - the head buttons it owns: `lt-preview`, `lt-wide`.
+- The head buttons it owns (`act`): `lt-preview`, `lt-wide`.
 - `createLongTextDock(deps)` -> `LongTextDock`; deps: `document`, `box`,
   `inspectorRoot`, `treeRoot`, `kept`, `writeBody`, `writeView`,
   `loadPicture(path)`, `say`, `changed()` (its state changed outside a

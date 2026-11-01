@@ -40,7 +40,7 @@ export const REANCHOR_MIN_SIMILARITY = 0.8;
 /** A segment of several words keeps its voice when at least this share
  *  of its words is still in the text (a sentence of a subtitle file with
  *  one word edited keeps it; one rewritten does not). */
-export const SEGMENT_MIN_SHARE = 0.5;
+const SEGMENT_MIN_SHARE = 0.5;
 
 /** A gap between two words that match exactly gets the word-by-word
  *  comparison up to this many pairs of words. */
@@ -53,14 +53,14 @@ export interface ReAnchorOptions {
 
 /** A part of the voice no longer in the text: the voice still says it,
  *  with nothing lit up. */
-export interface LostVoice {
+interface LostVoice {
   readonly startMs: number;
   readonly endMs: number;
   readonly text: string;
 }
 
 /** A segment kept around an edit: its new place, and what it said. */
-export interface ChangedVoice {
+interface ChangedVoice {
   readonly startMs: number;
   readonly from: number;
   readonly to: number;

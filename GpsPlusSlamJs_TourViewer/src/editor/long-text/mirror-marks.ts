@@ -10,7 +10,7 @@
  */
 
 /** A look of the mirror; each maps to an `m-<look>` class. */
-export type MirrorLook =
+type MirrorLook =
   "mk" | "hd" | "b" | "i" | "ln" | "pic" | "iss" | "kept" | "cur";
 
 /** A stretch `[from, to)` of the body with its looks. */

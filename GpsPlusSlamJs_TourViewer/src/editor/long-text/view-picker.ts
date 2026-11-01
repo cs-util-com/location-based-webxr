@@ -20,7 +20,7 @@ export const LONG_TEXT_SEGMENTS: readonly LongTextSegment[] = [
 ];
 
 /** One segment as drawn. */
-export interface SegmentModel {
+interface SegmentModel {
   readonly id: LongTextSegment;
   readonly label: string;
   /** Pressed: the block's view is this one. */

@@ -25,11 +25,11 @@ export const PHONE_MAX_H = 760;
 /** The narrowest the phone is drawn. */
 export const PHONE_MIN_W = 180;
 /** How long the flashed words stay lit. */
-export const FLASH_MS = 1400;
+const FLASH_MS = 1400;
 /** How long typing pauses before the preview follows. */
-export const PREVIEW_FOLLOW_MS = 140;
+const PREVIEW_FOLLOW_MS = 140;
 /** The highlight's name in the frame. */
-export const FLASH_HIGHLIGHT = "lw-flash";
+const FLASH_HIGHLIGHT = "lw-flash";
 
 /**
  * The phone's drawn size: as tall as the room allows (at most
