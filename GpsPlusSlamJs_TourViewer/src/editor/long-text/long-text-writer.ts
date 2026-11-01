@@ -51,9 +51,37 @@ import {
   type NarrationSectionDeps,
 } from "../narration/narration-section.js";
 import { truncated } from "../truncated.js";
+import { inputText } from "../../input-text.js";
+import { TOUR_BLOCK_TEXT_RULES } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 /** How long typing pauses before the text is written into the tour. */
 export const WRITER_SAVE_MS = 700;
+
+/** The most a long text holds, in UTF-16 units (the format's cap). */
+const BODY_MAX = TOUR_BLOCK_TEXT_RULES.longText.body.max;
+/** From this length on the stat line counts toward the cap. */
+const BODY_NEAR = Math.floor(BODY_MAX * 0.9);
+
+/** Keys that only modify the next one: Esc, then Shift and Tab, leaves. */
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  "Shift",
+  "Control",
+  "Alt",
+  "Meta",
+]);
+
+/** A text as the tour keeps it: in NFC (as every field the editor writes,
+ *  `input-text.ts`), with plain line ends (a browser's text area hands
+ *  them over so), without the spaces around it (`blockFieldEdit`). The
+ *  one form the writer writes and compares. */
+function norm(text: string): string {
+  return inputText(text).replace(/\r\n?/g, "\n").trim();
+}
+
+/** The pictures a writer's thumbnails were made for. */
+function picturesKey(model: InspectorLongText): string {
+  return JSON.stringify(model.pictures.map((p) => [p.id, p.path]));
+}
 
 export interface LongTextWriterDeps {
   readonly document: Document;
@@ -386,11 +414,13 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
 
   // --- state -----------------------------------------------------------------
   let model: InspectorLongText | null = null;
-  /** The body the tour holds, as last seen. */
+  /** The body the tour holds, as last seen (`norm`'s form). */
   let known = "";
-  /** The tour keeps a text without the spaces around it
-   *  (`blockFieldEdit`): a text that differs only there is the same. */
-  const same = (a: string, b: string) => a.trim() === b.trim();
+  const same = (a: string, b: string) => norm(a) === norm(b);
+  /** A text the tour refused (over its cap), per block: shown again when
+   *  its block is, until it is written or the tour's own text changes
+   *  (`base`, the text it was refused over: an undo, another tour). */
+  const refused = new Map<string, { text: string; base: string }>();
   let parts: TypedPart[] = [];
   let current = -1;
   let asked: LongTextSegment | null = null;
@@ -483,7 +513,12 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   function drawStat(): void {
     const body = area.value;
     const words = wordCount(body);
-    count.textContent = `${words.toLocaleString("en")} ${words === 1 ? "word" : "words"} · ${String(readMinutes(words))} min read`;
+    const length = norm(body).length;
+    const cap =
+      length >= BODY_NEAR
+        ? ` · ${length.toLocaleString("en")} of ${BODY_MAX.toLocaleString("en")}`
+        : "";
+    count.textContent = `${words.toLocaleString("en")} ${words === 1 ? "word" : "words"} · ${String(readMinutes(words))} min read${cap}`;
     const shown = open();
     const kept = parts.filter((p) => p.kept);
     const listOpen = !list.hidden;
@@ -574,23 +609,27 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       saveTimer = null;
     }
     if (model === null) return;
-    const value = area.value;
-    if (same(value, known)) {
+    const value = norm(area.value);
+    if (value === known) {
       save.textContent = "Saved";
       return;
     }
     // An emptied text is written only when it is left: the tour refuses
     // it, and a pause while rewriting should not say so.
-    if (!force && value.trim() === "") return;
+    if (!force && value === "") return;
+    const { blockId } = model;
     committing = true;
     let outcome: TypedEditOutcome;
     try {
-      outcome = deps.writeBody(model.blockId, value);
+      outcome = deps.writeBody(blockId, value);
     } finally {
       committing = false;
     }
     save.textContent = outcome === "written" ? "Saved" : "Not saved";
-    if (outcome === "written") known = value.trim();
+    if (outcome === "written") {
+      known = value;
+      refused.delete(blockId);
+    } else refused.set(blockId, { text: area.value, base: known });
   }
 
   function changed(): void {
@@ -858,12 +897,21 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       event.stopPropagation();
       if (edit !== null) apply(edit);
     };
+    // A key while an input method composes is the method's (its Esc ends
+    // the composition): neither the writer's nor the page's.
+    if (event.isComposing) {
+      event.stopPropagation();
+      return;
+    }
     const { selectionStart: a, selectionEnd: b, value } = area;
     if (event.key === "Escape") {
+      // The writer's own: the page's Esc would deselect the item.
+      event.stopPropagation();
       escForTab = true;
       closePops();
       return;
     }
+    if (MODIFIER_KEYS.has(event.key)) return;
     if (mod && !event.shiftKey && key === "b")
       return run(wrapInline(value, a, b, "**"));
     if (mod && !event.shiftKey && key === "i")
@@ -1069,8 +1117,14 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       if (next === null) {
         commit(true);
         model = null;
+        releaseThumbs();
         narration?.update(null);
         return;
+      }
+      // A thumbnail is kept by its picture's path: a picture replaced
+      // under the same path must be read again.
+      if (model !== null && picturesKey(model) !== picturesKey(next)) {
+        releaseThumbs();
       }
       narration?.update({
         blockId: next.blockId,
@@ -1088,19 +1142,24 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
         narrHead.classList.remove("open");
         narrBody.hidden = true;
         model = next;
-        known = next.body;
-        area.value = next.body;
-        save.textContent = "Saved";
+        known = norm(next.body);
+        const kept = refused.get(next.blockId);
+        const again = kept !== undefined && kept.base === known;
+        if (!again) refused.delete(next.blockId);
+        area.value = again ? kept.text : next.body;
+        save.textContent = again ? "Not saved" : "Saved";
         drawAll();
         return;
       }
       model = next;
-      if (next.body !== known) {
-        known = next.body;
+      const body = norm(next.body);
+      if (body !== known) {
+        known = body;
         // The tour's text changed from outside (its undo, a write taking
         // spaces off): shown, unless it is this writer's own write.
         if (!committing && !same(area.value, next.body)) {
           area.value = next.body;
+          refused.delete(next.blockId);
           save.textContent = "Saved";
         }
       }

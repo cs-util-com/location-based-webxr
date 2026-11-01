@@ -27,8 +27,10 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
   - `update(model | null)` - the inspector's long text
     (`InspectorLongText`); another text writes the typing of the first
     and starts afresh; the same text with another body from outside
-    (the tour's undo) is shown;
-  - `flush()` - typing not yet written is written now;
+    (the tour's undo) is shown; `null` writes the typing and lets the
+    picture thumbnails go;
+  - `flush()` - typing not yet written is written now (the page calls it
+    through the shell before a save);
   - `destroy()`.
 
 ## Behaviour
@@ -41,7 +43,11 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
 - Keys in the text: Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+Shift+8, Ctrl+Shift+7;
   Enter continues a list (an empty item ends it); Tab and Shift+Tab move
   list lines in and out, elsewhere Tab leaves; Esc closes a popover, and
-  Esc then Tab always leaves the writer.
+  Esc then Tab (or Shift+Tab) always leaves the writer: a modifier's own
+  keydown between them keeps the Esc. Esc stays in the writer (stopped:
+  the page's Esc would deselect the item), and every key while an input
+  method composes is the method's (its Esc ends the composition; it
+  neither leaves nor reaches the page).
 - Every edit goes through `execCommand("insertText")` where the browser
   has it (Ctrl+Z undoes it like typing), else `setRangeText` and an
   `input` event.
@@ -49,9 +55,20 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
   text, "Not saved" when it refused it (over its cap; the page says why).
   An emptied text is written only when the writer is left (blur, another
   selection, hide), since the tour refuses it.
-- The tour stores a text trimmed: a text differing only in the spaces
-  around it counts as the same, so a space typed at the end is never
-  taken away by the store's answer.
+- One form of the text (`norm`): NFC (as every field, `input-text.ts`),
+  plain line ends, trimmed (the tour stores it so). The writer writes it,
+  keeps the tour's text in it and compares in it: a text differing only
+  in the spaces around it, its line ends or its Unicode form counts as
+  the same, so a space typed at the end is never taken away by the
+  store's answer, and a text only selected and left is never written.
+- The cap: from 90 % of the format's 32,000 (`TOUR_BLOCK_TEXT_RULES`,
+  UTF-16 units of the normalized text) the stat line adds "N of 32,000".
+  A text the tour refused is kept per block in memory and shown again,
+  "Not saved", when its block is selected again, until it is written or
+  the tour's own text for that block changes (an undo, another tour).
+- Picture thumbnails are blob addresses kept by the picture's path; they
+  are released when the writer is emptied and when the tour's pictures
+  change (a picture replaced under the same path is read again).
 - Parts shown as typed: `typedParts` with the tour's pictures; the
   callout offers "Make it plain text" (a kind's own fix label), "Use a
   tour picture" (picture kinds, with pictures in the tour) and "Keep as

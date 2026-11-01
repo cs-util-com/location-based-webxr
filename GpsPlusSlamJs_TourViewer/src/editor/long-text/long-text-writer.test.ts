@@ -67,6 +67,8 @@ let writeBody: Mock<LongTextWriterDeps["writeBody"]>;
 let writeView: Mock<LongTextWriterDeps["writeView"]>;
 let say: Mock<(text: string) => void>;
 let onShow: Mock<(from: number, to: number, body: string) => void>;
+let createUrl: Mock<(blob: Blob) => string>;
+let revokeUrl: Mock<(url: string) => void>;
 
 const q = <E extends Element = HTMLElement>(sel: string): E => {
   const e = writer.node.querySelector<E>(sel);
@@ -97,6 +99,9 @@ beforeEach(() => {
   writeView = vi.fn((): "written" => "written");
   say = vi.fn();
   onShow = vi.fn();
+  let urls = 0;
+  createUrl = vi.fn(() => `blob:${String(++urls)}`);
+  revokeUrl = vi.fn();
   writer = createLongTextWriter({
     document,
     kept: createKeptStore(memory()),
@@ -105,8 +110,8 @@ beforeEach(() => {
     loadPicture: () => Promise.resolve(new Blob(["x"])),
     say,
     onShow,
-    createUrl: () => "blob:x",
-    revokeUrl: () => undefined,
+    createUrl,
+    revokeUrl,
   });
   document.body.replaceChildren(writer.node);
   writer.update(model());
@@ -141,12 +146,13 @@ describe("the writer's text", () => {
 
   it("writes an emptied text only when it is left, not on a pause", () => {
     // Why: the tour refuses an empty text; a pause while rewriting must
-    // not report that as a failure.
+    // not report that as a failure. Written as the tour keeps a text
+    // (`norm`): the spaces alone are an empty text.
     type("   ");
     vi.advanceTimersByTime(WRITER_SAVE_MS * 3);
     expect(writeBody).not.toHaveBeenCalled();
     writer.flush();
-    expect(writeBody).toHaveBeenCalledWith("essay", "   ");
+    expect(writeBody).toHaveBeenCalledWith("essay", "");
   });
 
   it("writes typed text at once when it is flushed, and once only", () => {
@@ -213,6 +219,39 @@ describe("writing with the toolbar and the keys", () => {
     key({ key: "Escape" });
     expect(key({ key: "Tab" }).defaultPrevented).toBe(false);
     expect(writer.area.value).toBe(before);
+  });
+
+  it("keeps Esc in the writer: the page, which deselects on Esc, never sees it", () => {
+    // Why: the page's Esc deselects the item, which closed the writer
+    // under the creator's hands; an input method's Esc (ending a
+    // composition) did the same.
+    const page = vi.fn();
+    document.addEventListener("keydown", page);
+    key({ key: "Escape" });
+    key({ key: "Escape", isComposing: true });
+    document.removeEventListener("keydown", page);
+    expect(page).not.toHaveBeenCalled();
+    expect(writer.node.isConnected).toBe(true);
+  });
+
+  it("does not leave on Tab after an input method's Esc", () => {
+    // Why: that Esc ends a composition; it is no request to leave, so the
+    // Tab after it still nests the list line.
+    const at = BODY.indexOf("- two") + 3;
+    writer.area.setSelectionRange(at, at);
+    key({ key: "Escape", isComposing: true });
+    expect(key({ key: "Tab" }).defaultPrevented).toBe(true);
+  });
+
+  it("leaves on Esc then Shift+Tab: the Shift key's own keydown keeps the Esc", () => {
+    // Why: Shift is pressed before Tab and fires a keydown of its own,
+    // which reset the Esc, so Shift+Tab outdented instead of leaving.
+    const at = BODY.indexOf("- two") + 3;
+    writer.area.setSelectionRange(at, at);
+    key({ key: "Escape" });
+    key({ key: "Shift", shiftKey: true });
+    expect(key({ key: "Tab", shiftKey: true }).defaultPrevented).toBe(false);
+    expect(writer.area.value).toBe(BODY);
   });
 
   it("explains indent outside a list instead of writing", () => {
@@ -307,6 +346,104 @@ describe("the view picker", () => {
     );
     expect(document.activeElement).toBe(q('[data-lw="view:silent"]'));
     expect(writeView).not.toHaveBeenCalled();
+  });
+});
+
+describe("one form of the text", () => {
+  // Why: the writer, the tour and every other field must agree on when two
+  // texts are the same. The tour keeps a text in NFC (as every field the
+  // editor writes, `input-text.ts`), with plain line ends and without the
+  // spaces around it; compared or written in another form, a text that
+  // reads the same was written again (a change to save) merely by being
+  // selected.
+  it("writes the text in NFC, as every other field", () => {
+    type("Café au lait");
+    writer.flush();
+    expect(writeBody).toHaveBeenCalledWith("essay", "Café au lait");
+  });
+
+  it("writes nothing for a text stored with Windows line ends that is only selected and left", () => {
+    writer.update(model({ blockId: "crlf", body: "One\r\nTwo" }));
+    // As a browser's text area holds it: its value has plain line ends.
+    writer.area.value = "One\nTwo";
+    writer.flush();
+    expect(writeBody).not.toHaveBeenCalled();
+    expect(saveText()).toBe("Saved");
+  });
+
+  it("writes nothing for a text stored decomposed that is only selected and left", () => {
+    writer.update(model({ blockId: "nfd", body: "Café" }));
+    writer.area.value = "Café";
+    writer.flush();
+    expect(writeBody).not.toHaveBeenCalled();
+  });
+});
+
+describe("the length cap", () => {
+  it("counts toward the 32,000 near the cap, and says nothing well below it", () => {
+    expect(q(".lw-stat").textContent).not.toMatch(/of 32,000/);
+    type("x".repeat(31_000));
+    expect(q(".lw-stat").textContent).toMatch(/31,000 of 32,000/);
+  });
+
+  it("keeps a refused text for its block until it is written: leaving and coming back shows it again", () => {
+    // Why: a text over the cap is refused when it is left, and was then
+    // thrown away: coming back showed the tour's older text, the typing
+    // lost without a word.
+    writeBody.mockReturnValue("refused");
+    const long = "x".repeat(32_001);
+    type(long);
+    writer.update(model({ blockId: "other", body: "Other." }));
+    expect(writeBody).toHaveBeenCalledWith("essay", long);
+    writer.update(null);
+    writer.update(model());
+    expect(writer.area.value).toBe(long);
+    expect(saveText()).toBe("Not saved");
+    // Shortened and written, it is the tour's again.
+    writeBody.mockReturnValue("written");
+    type("Short now.");
+    writer.flush();
+    writer.update(model({ blockId: "other", body: "Other." }));
+    writer.update(model());
+    expect(writer.area.value).toBe(BODY);
+  });
+
+  it("drops a kept refused text once the tour's own text changed (an undo, another tour)", () => {
+    writeBody.mockReturnValue("refused");
+    type("x".repeat(32_001));
+    writer.update(model({ blockId: "other", body: "Other." }));
+    writer.update(model({ body: "Changed meanwhile." }));
+    expect(writer.area.value).toBe("Changed meanwhile.");
+    expect(saveText()).toBe("Saved");
+  });
+});
+
+describe("picture thumbnails", () => {
+  it("are released when the writer is emptied and when the tour's pictures change", async () => {
+    // Why: a thumbnail is a blob address kept by the picture's path; kept
+    // for the page's life, a picture replaced under the same path showed
+    // its old look, and every address stayed allocated.
+    const loaded = async () => {
+      click("picture");
+      await vi.waitFor(() => {
+        expect(createUrl).toHaveBeenCalled();
+      });
+      click("pic-cancel");
+    };
+    await loaded();
+    expect(revokeUrl).not.toHaveBeenCalled();
+    writer.update(
+      model({
+        pictures: [
+          { id: "tower-photo", path: "content/tower-2.jpg", label: "t.jpg" },
+        ],
+      }),
+    );
+    expect(revokeUrl).toHaveBeenCalledWith("blob:1");
+    createUrl.mockClear();
+    await loaded();
+    writer.update(null);
+    expect(revokeUrl).toHaveBeenCalledWith("blob:2");
   });
 });
 
