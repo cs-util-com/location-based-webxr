@@ -1081,7 +1081,9 @@ interface Seating {
 }
 
 /** `frames` with `back` (one frame) where it stood in `file`: before the
- *  first of them the file lists after it, else after them all. */
+ *  first of them the file lists after it, or that the file does not list
+ *  (a station made since, which a reload puts after the file's own), else
+ *  after them all. */
 function atFilePlace(
   frames: readonly StationFrame[],
   back: readonly StationFrame[],
@@ -1090,7 +1092,10 @@ function atFilePlace(
   const ids = file.map((s) => s.id);
   const at = ids.indexOf(back[0]?.id ?? "");
   const later = new Set(at < 0 ? [] : ids.slice(at + 1));
-  const i = frames.findIndex((f) => later.has(f.id));
+  const i =
+    at < 0
+      ? -1
+      : frames.findIndex((f) => later.has(f.id) || !ids.includes(f.id));
   return i < 0
     ? [...frames, ...back]
     : [...frames.slice(0, i), ...back, ...frames.slice(i)];
