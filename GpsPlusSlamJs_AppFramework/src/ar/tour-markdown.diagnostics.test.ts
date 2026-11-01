@@ -50,6 +50,37 @@ describe('diagnoseTourMarkdown', () => {
     expect(parts(body)).toEqual([['code', '```\ncode line\n```']]);
   });
 
+  it('follows a code box over a blank line inside it, and stops at its closing fence', () => {
+    // Why: a blank line splits the box into two paragraphs. Read paragraph
+    // by paragraph, the closing fence looked like a new box and marked the
+    // plain text after it as code, while the box's own second half went
+    // unmarked. The fence state follows the whole body, as the writer's
+    // mirror does (mirror-marks.ts in the Tour Viewer).
+    const body = 'Before\n```\nfirst\n\nsecond\n```\nAfter the box';
+    expect(parts(body)).toEqual([
+      ['code', '```\nfirst'],
+      ['code', 'second\n```'],
+    ]);
+  });
+
+  it('runs a code box that is never closed to the end of the body', () => {
+    const body = '```\na\n\nb\n\nc';
+    expect(parts(body)).toEqual([
+      ['code', '```\na'],
+      ['code', 'b'],
+      ['code', 'c'],
+    ]);
+  });
+
+  it('closes a code box only with its own mark, at least as long', () => {
+    const body = '~~~~\nx\n\n```\n~~~\n\n~~~~\nplain';
+    expect(parts(body)).toEqual([
+      ['code', '~~~~\nx'],
+      ['code', '```\n~~~'],
+      ['code', '~~~~'],
+    ]);
+  });
+
   it('reports a table and tab columns as one part each', () => {
     expect(parts('| a | b |\n|---|---|\n| 1 | 2 |')).toEqual([
       ['table', '| a | b |\n|---|---|\n| 1 | 2 |'],

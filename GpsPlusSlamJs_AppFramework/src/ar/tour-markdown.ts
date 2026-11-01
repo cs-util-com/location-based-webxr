@@ -189,6 +189,10 @@ let walkSteps = 0;
 interface Collector {
   readonly found: { kind: TourMdDiagnosticKind; from: number; to: number }[];
   readonly assetExists: ((id: string) => boolean) | null;
+  /** The mark of a code box still open at the end of the paragraph read
+   *  last (a blank line inside it), else null: its lines go on in the
+   *  next paragraph, up to its closing fence. */
+  openFence: string | null;
 }
 
 let collector: Collector | null = null;
@@ -1693,17 +1697,38 @@ const TAB_COLUMN = /\S\t/;
  *  definitions), then the inline parts of its other lines. */
 function noteParagraphLines(node: BlockNode): void {
   const { lines, starts } = node;
-  let i = 0;
+  const lineEnd = (k: number) => (starts[k] ?? 0) + lineOf(lines, k).length;
+  let i = continueOpenFence(node);
   while (i < lines.length) {
     walkSteps++;
     const part = wholeLinePartAt(lines, i);
     if (part === null) noteInlineParts(lineOf(lines, i), starts[i] ?? 0);
     else {
-      const end = (starts[part.last] ?? 0) + lineOf(lines, part.last).length;
-      note(part.kind, starts[i] ?? 0, end);
+      note(part.kind, starts[i] ?? 0, lineEnd(part.last));
+      if (part.openFence !== undefined && collector !== null) {
+        collector.openFence = part.openFence;
+      }
     }
     i = (part?.last ?? i) + 1;
   }
+}
+
+/** Notes the lines of a code box left open by an earlier paragraph (a
+ *  blank line inside it) up to its closing fence, or the whole paragraph
+ *  if it does not close here; returns the first line after it. */
+function continueOpenFence(node: BlockNode): number {
+  const open = collector?.openFence ?? null;
+  if (open === null || collector === null) return 0;
+  const { lines, starts } = node;
+  const close = closingFence(lines, 0, open);
+  if (close !== null) collector.openFence = null;
+  const last = close ?? lines.length - 1;
+  note(
+    'code',
+    starts[0] ?? 0,
+    (starts[last] ?? 0) + lineOf(lines, last).length
+  );
+  return last + 1;
 }
 
 function lineOf(lines: readonly string[], i: number): string {
@@ -1715,12 +1740,21 @@ function lineOf(lines: readonly string[], i: number): string {
 function wholeLinePartAt(
   lines: readonly string[],
   i: number
-): { kind: TourMdDiagnosticKind; last: number } | null {
+): {
+  kind: TourMdDiagnosticKind;
+  last: number;
+  /** A code box not closed in this paragraph: its mark. */
+  openFence?: string;
+} | null {
   const line = lineOf(lines, i);
   const next = lineOf(lines, i + 1);
   const fence = FENCE.exec(line);
   if (fence !== null) {
-    return { kind: 'code', last: fenceEnd(lines, i, fence[1] ?? '```') };
+    const mark = fence[1] ?? '```';
+    const close = closingFence(lines, i + 1, mark);
+    return close === null
+      ? { kind: 'code', last: lines.length - 1, openFence: mark }
+      : { kind: 'code', last: close };
   }
   if (line.includes('|') && TABLE_DELIMITER_ROW.test(next)) {
     return {
@@ -1738,16 +1772,19 @@ function wholeLinePartAt(
   return kind === null ? null : { kind, last: i };
 }
 
-/** A code box's last line: its closing fence (one at least as long as
- *  `mark`), else the paragraph's last line. */
-function fenceEnd(lines: readonly string[], i: number, mark: string): number {
-  let last = i + 1;
-  while (last < lines.length - 1) {
-    const close = FENCE.exec(lineOf(lines, last));
-    if (close !== null && (close[1] ?? '').startsWith(mark)) break;
-    last++;
+/** The first line from `from` on that closes a code box opened with
+ *  `mark` (a fence of the same sign, at least as long), or null. */
+function closingFence(
+  lines: readonly string[],
+  from: number,
+  mark: string
+): number | null {
+  for (let k = from; k < lines.length; k++) {
+    walkSteps++;
+    const close = FENCE.exec(lineOf(lines, k));
+    if (close !== null && (close[1] ?? '').startsWith(mark)) return k;
   }
-  return Math.min(last, lines.length - 1);
+  return null;
 }
 
 /** The last line of the run going on from `last` while `more` holds. */
@@ -1990,6 +2027,7 @@ export function diagnoseTourMarkdown(
   if (typeof body !== 'string') return [];
   const listening: Collector = {
     found: [],
+    openFence: null,
     assetExists:
       typeof options.assetExists === 'function' ? options.assetExists : null,
   };
