@@ -70,3 +70,8 @@ the inside-the-free-area property; a card moved up clear of the box it
 avoids with its arrow at the marker, one that does not reach the box left
 where it was, and the never-covers property; `revealPadding` on a desktop and a
 phone, and the never-inside-out property.
+`popover-place.property.test.ts` sweeps the free area itself (position and
+size, with a card that fits it): the card lies inside it, clear of its
+marker by the gap on the side it names, its arrow on its edge; a marker
+more than the slack outside it hides the card. Shown failing by scratch
+mutations (half the gap, an unclamped arrow, a 60 px slack).

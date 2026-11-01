@@ -56,6 +56,11 @@ window.addEventListener("keydown", (event) => {
   plain button, null and the window; a menu, its item and an element
   inside the item, a menu button and an element inside it; a dialog's
   button and the body are not a menu's.
+- `key-target.property.test.ts` (jsdom): over generated element trees,
+  any target and any key, `inMenu` against the rule walked by hand up the
+  ancestors, and `inField` by the target's own kind alone. Shown failing
+  by scratch mutations (Home among the button's keys, a field read from
+  an enclosing menu).
 - End to end: `playwright-tests/editor3d-edit.spec.js` ("keys pressed in
   a menu stay in the menu"): with a pin selected in 3D, View opened by
   ArrowDown, then ArrowDown, ArrowDown, End, Home, T and Escape change
