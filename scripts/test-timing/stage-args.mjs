@@ -11,6 +11,22 @@
  */
 
 /**
+ * Is this run on the GitHub Actions runner? Keyed on `GITHUB_ACTIONS`, NOT on
+ * `CI`: every local gate sets `CI=1` (Playwright's CI mode: retries, one
+ * worker, no reused dev server), so a `CI` check skipped every local run as
+ * well and the versioned `docs/test-timings.md` files stopped updating in
+ * mid-October 2026. The runner sets `GITHUB_ACTIONS=true`; an empty value
+ * counts as unset. `budget.mjs` uses the same predicate, so the stage
+ * budgets are skipped exactly where nothing is recorded.
+ *
+ * @param {Record<string, string | undefined>} env - process.env (or a stub)
+ * @returns {boolean}
+ */
+export function onGithubRunner(env) {
+  return Boolean(env.GITHUB_ACTIONS);
+}
+
+/**
  * @param {readonly string[]} argvRest - process argv after the stage name
  * @param {Record<string, string | undefined>} env - process.env (or a stub)
  * @returns {RecordingDecision}
@@ -19,7 +35,7 @@ export function decideRecording(argvRest, env) {
   // pnpm forwards a literal "--" separator in some invocation styles; it is
   // not an argument for the wrapped command.
   const extraArgs = argvRest[0] === '--' ? argvRest.slice(1) : [...argvRest];
-  if (env.CI) {
+  if (onGithubRunner(env)) {
     return { record: false, extraArgs, reason: 'ci' };
   }
   if (extraArgs.length > 0) {

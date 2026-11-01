@@ -23,7 +23,7 @@ What it does (same as upstream): wraps each test-gate stage, measures
 wall-clock, extracts exact test counts from injected JSON reporters, and
 maintains one generated `docs/test-timings.md` **per package** (plus one at
 the workspace root for the whole cascade). Recording never fails a gate,
-skips CI and filtered runs, and only compares same-machine history.
+skips the GitHub runner (`GITHUB_ACTIONS`, not a local `CI=1`) and filtered runs, and only compares same-machine history.
 
 These modules' own tests run in the root repo-config gate
 (`pnpm run test:repo-config`), wired via the root `vitest.config.js` include.

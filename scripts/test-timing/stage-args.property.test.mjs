@@ -12,10 +12,14 @@ import {
 const argvArb = fc.array(fc.string(), { maxLength: 8 });
 
 describe('decideRecording properties', () => {
-  it('records iff no effective extra args remain and CI is not set', () => {
+  it('records iff no effective extra args remain and it is not the GitHub runner, whatever CI says', () => {
     fc.assert(
-      fc.property(argvArb, fc.boolean(), (argvRest, onCI) => {
-        const env = onCI ? { CI: '1' } : {};
+      fc.property(argvArb, fc.boolean(), fc.boolean(), (argvRest, onCI, localCi) => {
+        const env = onCI
+          ? { GITHUB_ACTIONS: 'true', CI: 'true' }
+          : localCi
+            ? { CI: '1' }
+            : {};
         const decision = decideRecording(argvRest, env);
         const effective =
           argvRest[0] === '--' ? argvRest.slice(1) : [...argvRest];
@@ -29,7 +33,7 @@ describe('decideRecording properties', () => {
     fc.assert(
       fc.property(argvArb, (argvRest) => {
         const copy = [...argvRest];
-        decideRecording(argvRest, { CI: 'true' });
+        decideRecording(argvRest, { GITHUB_ACTIONS: 'true' });
         decideRecording(argvRest, {});
         expect(argvRest).toEqual(copy);
       })
@@ -78,7 +82,7 @@ describe('buildStageCommand properties', () => {
   it('is the identity on the canonical command whenever no args are forwarded, for ANY filteredRunArgs', () => {
     fc.assert(
       fc.property(cmdArb, neutralizersArb, fc.boolean(), (cmd, nf, onCI) => {
-        const decision = decideRecording([], onCI ? { CI: '1' } : {});
+        const decision = decideRecording([], onCI ? { GITHUB_ACTIONS: 'true' } : {});
         expect(buildStageCommand(cmd, decision, nf)).toBe(cmd);
       })
     );
