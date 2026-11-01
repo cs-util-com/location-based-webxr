@@ -57,10 +57,26 @@ import {
 } from "../editor-view.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
-import { inField, inMenu } from "gps-plus-slam-editor-kit/chrome";
 import {
+  inField,
+  inMenu,
   closeOpenMenu,
   setItemDisabled,
+  DEFAULT_DOCK_LAYOUT,
+  docksAfter,
+  type DockChange,
+  waitForGround,
+  createSceneMenu,
+  type GroundPlace,
+  placeShellIcons,
+  shellIcon,
+  type ShellIcon,
+  createTreeDrag,
+  movedTo,
+  NO_TREE_CLICK,
+  treeClick,
+  treeClickPlan,
+  type TreeClickMemory,
 } from "gps-plus-slam-editor-kit/chrome";
 import {
   ALIGNED_DEG,
@@ -68,12 +84,6 @@ import {
   positionText,
   type BarAction,
 } from "./bar-actions.js";
-import {
-  DEFAULT_DOCK_LAYOUT,
-  docksAfter,
-  type DockChange,
-} from "gps-plus-slam-editor-kit/chrome";
-import { waitForGround } from "gps-plus-slam-editor-kit/chrome";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 import {
   buildInspector,
@@ -82,30 +92,13 @@ import {
   type InspectorModel,
 } from "./inspector-model.js";
 import {
-  createSceneMenu,
-  type GroundPlace,
-} from "gps-plus-slam-editor-kit/chrome";
-import {
   controlName,
   drawInspector,
   focusControl,
   inspectorDrawing,
 } from "./shell-inspector.js";
-import {
-  placeShellIcons,
-  shellIcon,
-  type ShellIcon,
-} from "gps-plus-slam-editor-kit/chrome";
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
-import { createTreeDrag } from "gps-plus-slam-editor-kit/chrome";
-import { movedTo } from "gps-plus-slam-editor-kit/chrome";
-import {
-  NO_TREE_CLICK,
-  treeClick,
-  treeClickPlan,
-  type TreeClickMemory,
-} from "gps-plus-slam-editor-kit/chrome";
 import { buildTree, stationGroups } from "./tree-model.js";
 
 /** The 3D view's commands the shell drives. */

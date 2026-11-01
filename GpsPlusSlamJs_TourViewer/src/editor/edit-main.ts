@@ -85,7 +85,18 @@ import {
   droppedStationFieldsLine,
   openTourForEditing,
 } from "./editor-open.js";
-import { holdPageInert } from "gps-plus-slam-editor-kit/chrome";
+import {
+  holdPageInert,
+  revealPadding,
+  type Box,
+  createStatusLines,
+  createMenuButton,
+  menuItemControl,
+  setItemDisabled,
+  inField,
+  inMenu,
+  type GroundPlace,
+} from "gps-plus-slam-editor-kit/chrome";
 import {
   doneHostedName,
   fetchTourFile,
@@ -147,15 +158,7 @@ import {
   notAddedLine,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
-import { revealPadding, type Box } from "gps-plus-slam-editor-kit/chrome";
-import { createStatusLines } from "gps-plus-slam-editor-kit/chrome";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
-import {
-  createMenuButton,
-  menuItemControl,
-  setItemDisabled,
-} from "gps-plus-slam-editor-kit/chrome";
-import { inField, inMenu } from "gps-plus-slam-editor-kit/chrome";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -164,7 +167,6 @@ import { newPin } from "./new-pin.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
-import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";

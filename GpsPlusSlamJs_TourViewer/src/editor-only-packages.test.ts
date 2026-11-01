@@ -38,6 +38,10 @@ const EDITOR_ONLY =
  *  `import()` may name them. */
 const KIT_LAZY = /^gps-plus-slam-editor-kit\/(?:scene|globe)(?:\/|$)/;
 
+/** An import statement of a kit entry, by its specifier. */
+const KIT_IMPORT =
+  /^\s*import\s+[^'";]*?\sfrom\s+["'](gps-plus-slam-editor-kit(?:\/[^"']*)?)["']/gm;
+
 /** The globe's whole view: only the 3D view's modules import it. */
 const GLOBE_VIEW = /^gps-plus-slam-globe\/view$/;
 
@@ -130,6 +134,24 @@ describe("the editor's heavy packages", () => {
           .filter((spec) => KIT_LAZY.test(spec))
           .map((spec) => `${relative(SRC, file)} imports ${spec}`),
       );
+    expect(offenders).toEqual([]);
+  });
+
+  // Why: a module that names one kit entry in several import statements
+  // reads as several dependencies and hides which blocks it uses; one
+  // statement per entry per module keeps the kit's surface in a module
+  // readable at a glance. (The app's editor page had six, its shell nine.)
+  it("names each kit entry in one import statement per module", () => {
+    const offenders = productionFiles(SRC).flatMap((file) => {
+      const counts = new Map<string, number>();
+      for (const match of readFileSync(file, "utf8").matchAll(KIT_IMPORT)) {
+        const entry = match[1]!;
+        counts.set(entry, (counts.get(entry) ?? 0) + 1);
+      }
+      return [...counts]
+        .filter(([, count]) => count > 1)
+        .map(([entry, count]) => `${relative(SRC, file)}: ${count} x ${entry}`);
+    });
     expect(offenders).toEqual([]);
   });
 
