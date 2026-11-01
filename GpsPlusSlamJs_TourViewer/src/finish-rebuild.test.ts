@@ -698,6 +698,51 @@ describe("a long text's media survive a Finish", () => {
     expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race"]);
   });
 
+  // Why this test matters: a body still NAMES a picture it does not show
+  // - one inside a paragraph (the creator's words on its line) and one
+  // past the parser's cap of 20 (an earlier picture of 21 removed in the
+  // Body field brings it back) - and a Finish that kept only the shown
+  // ones deleted those files, so the picture was gone for good the moment
+  // it could show again. The rule: every `![alt](asset:<id>)` the body
+  // holds keeps its asset; a plain link `[text](asset:<id>)` and the bare
+  // words `asset:<id>` are no picture and keep nothing. Read from the
+  // zip's bytes.
+  it("keeps the files of pictures the body names but does not show: an inline one and one past the cap", async () => {
+    const shown = Array.from({ length: 21 }, (_, i) => `p${String(i)}`);
+    const body = [
+      "Look ![The sluice](asset:sluice) here.",
+      ...shown.map((id) => `![Picture ${id}](asset:${id})`),
+      "See [the race](asset:race), or asset:stray.",
+    ].join("\n\n");
+    const sign = readingSign();
+    const essay: TourObject =
+      sign.kind === "longText" ? { ...sign, body } : sign;
+    const ids = ["sluice", ...shown, "race", "stray"];
+    const manifest = tourOf([essay], {
+      assets: ids.map((id) => ({
+        id,
+        path: `content/${id}.png`,
+        kind: "image" as const,
+      })),
+    });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        ...ids.map((id) => ({ path: `${WRAP}content/${id}.png`, data: id })),
+      ]),
+    );
+    const result = await rebuildFinishedTour({ tour, manifest, ...NO_EDITS });
+    const names = await namesOf(result!.blob);
+    for (const id of ["sluice", "p20"]) {
+      expect(names, id).toContain(`${WRAP}content/${id}.png`);
+    }
+    for (const id of ["race", "stray"]) {
+      expect(names, id).not.toContain(`${WRAP}content/${id}.png`);
+    }
+    const written = await zipManifest(result!.blob);
+    expect(written.assets.map((a) => a.id)).toEqual(["sluice", ...shown]);
+  });
+
   // Why this test matters: a narration's voice is an audio asset the
   // manifest's reader REQUIRES. A Finish that dropped it wrote a manifest
   // its own re-parse refused, so no narrated tour could be finished. The
@@ -737,5 +782,58 @@ describe("a long text's media survive a Finish", () => {
     expect(essay?.kind === "longText" ? essay.narration : null).toEqual(
       narration,
     );
+  });
+
+  // Why this test matters: a narration's timing is an archive entry, not
+  // an asset, so the asset rule never removed one: a narration removed,
+  // or its text deleted, left its `timing/<id>.json` in every later copy.
+  // A Finish removes a timing no narration names, but keeps one an undo
+  // step still names (`keepEntries`), as it keeps such an asset; a file
+  // under `timing/` that is no timing entry (deeper, or not `.json`)
+  // stays. Read from the zip's bytes.
+  it("removes a read-along entry no narration names, unless the undo history names it", async () => {
+    const manifest = tourOf(
+      [
+        readingSign({
+          audio: "voice",
+          timing: "timing/essay.json",
+          synthetic: true,
+        }),
+      ],
+      {
+        assets: [
+          { id: "wheel", path: "content/wheel.png", kind: "image" },
+          { id: "race", path: "content/race.png", kind: "image" },
+          { id: "voice", path: "content/voice.mp3", kind: "audio" },
+        ],
+      },
+    );
+    const timings = [
+      "timing/essay.json",
+      "timing/gone.json",
+      "timing/undone.json",
+      "timing/notes/draft.json",
+      "timing/readme.txt",
+    ];
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        { path: `${WRAP}content/wheel.png`, data: "w" },
+        { path: `${WRAP}content/race.png`, data: "r" },
+        { path: `${WRAP}content/voice.mp3`, data: "v" },
+        ...timings.map((path) => ({ path: `${WRAP}${path}`, data: "{}" })),
+      ]),
+    );
+    const result = await rebuildFinishedTour({
+      tour,
+      manifest,
+      ...NO_EDITS,
+      keepEntries: new Set(["timing/undone.json"]),
+    });
+    const names = await namesOf(result!.blob);
+    for (const kept of timings.filter((t) => t !== "timing/gone.json")) {
+      expect(names, kept).toContain(`${WRAP}${kept}`);
+    }
+    expect(names).not.toContain(`${WRAP}timing/gone.json`);
   });
 });

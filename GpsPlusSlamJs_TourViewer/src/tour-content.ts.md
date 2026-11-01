@@ -57,8 +57,9 @@ camera captures are debug data, never in a station (an earlier file's
   `referencedAssetIds`): every block's of every station, story or free
   (`blockAssetIds`: a picture's image, a video and its poster, an audio,
   a model's file, a character's image and voice, the pictures a long
-  text's body shows (`blockBodyAssets`, `long-text-body-assets.ts`, remembered by the block)
-  and its narration's voice (the reader requires it; the timing is an
+  text's body names, shown or not: inline, past the cap
+  (`blockBodyAssets`, `long-text-body-assets.ts`, remembered by the
+  block), and its narration's voice (the reader requires it; the timing is an
   entry, not an asset);
   none for a short text), every station's card image and the cover. A
   body's pictures are named only inside its Markdown; before they were

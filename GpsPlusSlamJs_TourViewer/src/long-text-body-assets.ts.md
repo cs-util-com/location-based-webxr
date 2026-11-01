@@ -2,31 +2,37 @@
 
 ## Purpose
 
-The assets a long text's body shows: the picture blocks of its parsed
-Markdown (`![alt](asset:<id>)` on a line of its own), at any depth. One
-walk for the two readers that need it: the view switch (a lectern "shows
-no pictures", `visitor-prefs.ts` `bodyHasPictures`) and a write's asset
-rule (`tour-content.ts` `blockAssetIds`, which must not drop the file of
-a picture a body shows).
+The assets a long text's body shows and names, from one parse. Shown:
+the picture blocks of its parsed Markdown (`![alt](asset:<id>)` on a
+line of its own), at any depth; the view switch reads them (a lectern
+"shows no pictures", `visitor-prefs.ts` `bodyHasPictures`). Named: those
+and every other `asset:` picture the body holds (inline, or past the
+parser's cap), which show their alt text; a write's asset rule reads them
+(`tour-content.ts` `blockAssetIds`, which must not drop the file of a
+picture the body names).
 
 ## Public API
 
 - `bodyPictureAssets(body: string): readonly string[]` - the asset ids of
   the pictures `body` shows, in document order, each once. Never throws
   (the parser takes any string).
-- `blockBodyAssets(block: { body: string }): readonly string[]` - the same
-  answer for `block.body`, remembered by the block object (a `WeakMap`).
-  The write's asset rule (`tour-content.ts` `blockAssetIds`) asks through
-  it.
+- `blockBodyAssets(block: { body: string }): readonly string[]` - the
+  asset ids `block.body` NAMES, in document order, each once: every
+  picture whose target is `asset:<id>`, shown or not (the parser's
+  `pictureAlt.asset` for one that is not). Remembered by the block object
+  (a `WeakMap`). The write's asset rule (`tour-content.ts`
+  `blockAssetIds`) asks through it.
 
 ## Invariants & assumptions
 
-- Only a picture BLOCK names an asset: one inside a paragraph (inline)
-  and one past the parser's cap (`TOUR_MARKDOWN_MAX_PICTURES`, 20) show
-  their alt text only, so a write does not keep their asset. A creator
-  who moves such a picture to a line of its own after a Finish finds its
-  file gone; the parsed tree is the rule because it is what a visitor
-  sees.
+- Shown is only a picture BLOCK: one inside a paragraph (inline) and one
+  past the parser's cap (`TOUR_MARKDOWN_MAX_PICTURES`, 20) show their alt
+  text only. Named is every picture with an `asset:<id>` target, shown
+  or not: a write keeps their files, since a creator who moves such a
+  picture to a line of its own, or removes an earlier one of 21, must
+  find it. A plain link `[text](asset:<id>)` and the bare words name
+  nothing (neither is a picture); the parser decides, so what names an
+  asset is exactly what could show as a picture.
 - Each body is parsed once: the answers are kept by body string, up to 64,
   and the memo is emptied whole when full. The size is PROVISIONAL (a
   tour's long texts are expected to be a few dozen at most); past it a
@@ -58,6 +64,7 @@ a picture a body shows).
 bodyPictureAssets("Intro.\n\n![The mill](asset:mill)\n\n> ![x](asset:bell)");
 // ["mill", "bell"]
 bodyPictureAssets("Look ![x](asset:a) here."); // [] (inline)
+blockBodyAssets({ body: "Look ![x](asset:a) here." }); // ["a"] (named)
 ```
 
 ## Tests
@@ -67,11 +74,15 @@ bodyPictureAssets("Look ![x](asset:a) here."); // [] (inline)
 - `visitor-prefs.memo.test.ts` (through `bodyHasPictures`, the switch's
   per-frame question): each body parsed once with two asked in turn;
   parsed again after 65 others filled the memo (the real parser, spied).
+- `long-text-body-assets.test.ts` also: the named assets of a body with
+  inline pictures (also inside emphasis and a quoted heading), 21
+  pictures, a plain link and the bare words.
 - `tour-document.body-memo.test.ts`: a second `manifestToWrite` with 65,
   100 and 200 past bodies parses none of them again (at most the current
   body; the real parser, spied).
 - `long-text-body-assets.property.test.ts`: any mix of nesting and repeats
   lists each shown picture once, in the body's order.
 - Through `tour-content.test.ts` (`withReferencedAssets` keeps a body's
-  pictures) and `finish-rebuild.test.ts` (a Finish keeps their files, read
-  from the zip's bytes).
+  pictures) and `finish-rebuild.test.ts` (a Finish keeps their files, also
+  an inline picture's and the 21st's, and drops a linked or merely written
+  asset; read from the zip's bytes).

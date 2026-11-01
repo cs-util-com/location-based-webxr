@@ -49,8 +49,16 @@ export type TourMdInline =
     }
   | { readonly kind: 'softBreak' }
   | { readonly kind: 'hardBreak' }
-  /** A picture that cannot show where it stands: its alt text, in a box. */
-  | { readonly kind: 'pictureAlt'; readonly alt: string };
+  /** A picture that cannot show where it stands: its alt text, in a box.
+   *  `asset` is the tour asset its target names (`asset:<id>`), when it
+   *  names one: the picture is not shown, but the body still names the
+   *  asset (an inline picture, one past the cap), so a write keeps its
+   *  file. Absent for any other target. Never rendered. */
+  | {
+      readonly kind: 'pictureAlt';
+      readonly alt: string;
+      readonly asset?: string;
+    };
 
 export interface TourMdParagraph {
   readonly kind: 'paragraph';
@@ -1317,7 +1325,7 @@ function convertInline(
       out.push({ kind: 'hardBreak' });
       return null;
     case 'image':
-      out.push({ kind: 'pictureAlt', alt: altTextOf(node) });
+      out.push(pictureAltOf(node, altTextOf(node)));
       return null;
     case 'link':
       return convertLink(node, out, depth);
@@ -1378,6 +1386,15 @@ function pictureAsset(node: InlineNode): string | null {
   return TOUR_ID_PATTERN.test(id) ? id : null;
 }
 
+/** The alt text box of a picture that cannot show where it stands,
+ *  naming the asset its target names, if any. */
+function pictureAltOf(node: InlineNode, alt: string): TourMdInline {
+  const asset = pictureAsset(node);
+  return asset === null
+    ? { kind: 'pictureAlt', alt }
+    : { kind: 'pictureAlt', alt, asset };
+}
+
 function isBlankText(node: InlineNode): boolean {
   return node.type === 'text' && trimSpacesAndTabs(node.text) === '';
 }
@@ -1418,7 +1435,7 @@ function convertParagraph(
   return pictures.map((picture): TourMdBlock => {
     const alt = altTextOf(picture);
     if (context.picturesLeft <= 0) {
-      return { kind: 'paragraph', inlines: [{ kind: 'pictureAlt', alt }] };
+      return { kind: 'paragraph', inlines: [pictureAltOf(picture, alt)] };
     }
     context.picturesLeft--;
     return { kind: 'picture', alt, asset: pictureAsset(picture) ?? '' };

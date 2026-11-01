@@ -35,7 +35,11 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
 - **Pictures that cannot stand where they are** - inside a paragraph, two
   on one line, with a target other than `asset:<id>`, or past the
   twentieth - become a
-  `pictureAlt` inline: the alt text, meant to be shown in a box.
+  `pictureAlt` inline: the alt text, meant to be shown in a box. One whose
+  target is `asset:<id>` (inline, or past the twentieth) carries that
+  `asset`: it is not shown, but the body still names the asset, so a
+  write must keep its file (the Tour Viewer's `long-text-body-assets.ts`).
+  A renderer reads `alt` only.
 - **A link whose target fails `checkTourLink`** keeps its text and loses
   the link.
 - **Emphasis nested deeper than 16** is read as its content.
@@ -45,7 +49,7 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
 
 - Types: `TourMdInline` (`text`, `emphasis`, `strong`,
   `link {href, host, children}`, `softBreak`, `hardBreak`,
-  `pictureAlt {alt}`), `TourMdParagraph`, `TourMdHeading {level: 1|2|3}`,
+  `pictureAlt {alt, asset?}`), `TourMdParagraph`, `TourMdHeading {level: 1|2|3}`,
   `TourMdList {ordered, start, items}`, `TourMdQuote`,
   `TourMdPicture {alt, asset}`, `TourMdBlock`, `TourMarkdown {blocks}`,
   `TourMdLeaf {block, from, to}`, `TourPlainText {text, leaves}`,
