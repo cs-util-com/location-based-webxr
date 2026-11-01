@@ -323,14 +323,17 @@ export function keepsItself(
 }
 
 /** The assets `block` names: its media, a video's poster, a character's
- *  image and voice, the pictures a long text's body shows. A new kind
+ *  image and voice, the pictures a long text's body shows and its
+ *  narration's voice (the timing is an entry, not an asset). A new kind
  *  fails to compile here until it says which assets it keeps. */
 function blockAssetIds(block: TourBlock | TourObject): readonly string[] {
   switch (block.kind) {
     case "shortText":
       return [];
     case "longText":
-      return bodyPictureAssets(block.body);
+      return block.narration === undefined
+        ? bodyPictureAssets(block.body)
+        : [...bodyPictureAssets(block.body), block.narration.audio];
     case "picture":
       return [block.image];
     case "video":

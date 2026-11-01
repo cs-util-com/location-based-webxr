@@ -477,6 +477,18 @@ describe("withReferencedAssets", () => {
       },
       ["picture", "guide"],
     ],
+    [
+      // A narrated text's voice: dropped, the written manifest is refused.
+      "a narrated long text",
+      {
+        kind: "longText",
+        view: "reading",
+        title: "Note",
+        body: "Read me\n\n![The guide](asset:guide)",
+        narration: { audio: "song", synthetic: false },
+      },
+      ["guide", "song"],
+    ],
     ["a short text", { kind: "shortText", view: "card", caption: "Hi" }, []],
   ];
   for (const [name, block, ids] of cases) {

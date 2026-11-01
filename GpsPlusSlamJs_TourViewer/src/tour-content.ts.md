@@ -57,7 +57,9 @@ camera captures are debug data, never in a station (an earlier file's
   `referencedAssetIds`): every block's of every station, story or free
   (`blockAssetIds`: a picture's image, a video and its poster, an audio,
   a model's file, a character's image and voice, the pictures a long
-  text's body shows (`bodyPictureAssets`, `long-text-body-assets.ts`);
+  text's body shows (`bodyPictureAssets`, `long-text-body-assets.ts`)
+  and its narration's voice (the reader requires it; the timing is an
+  entry, not an asset);
   none for a short text), every station's card image and the cover. A
   body's pictures are named only inside its Markdown; before they were
   counted, every Finish dropped their assets and deleted their files.
@@ -165,14 +167,18 @@ const written = withTourContent(opened, {
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a
   character with and without a voice, an audio, a video, a model, a long
-  text's body pictures at any depth; a short text and a long text without
+  text's body pictures at any depth, a narrated text's voice; a short text and a long text without
   pictures name none) and dropping the rest, the cover and a station's card
   image kept though no step names them, a block in any station counted, the tour's asset order kept,
   and the same manifest when every asset is used.
 - Through `finish-rebuild.test.ts` (a micrometre stored copy counted as
   written, a placed model's file
   kept and a model asset nothing names dropped, a long text's body
-  pictures' files kept, read from the zip's bytes), `editor/editor-session.test.ts` (an undo across a save brings a
+  pictures' files kept, a narrated text's voice and timing kept and the
+  tour read back, read from the zip's bytes),
+  `narrated-tour.integration.test.ts` (a real listed zip read through the
+  session, its voice through the stations' prefetch, then finished),
+  `editor/editor-session.test.ts` (an undo across a save brings a
   deleted model back with its file: the history's keep set),
   `tour-document.test.ts` and `tour-document.property.test.ts` (the open
   dropping a file's captures, and no write carrying them),

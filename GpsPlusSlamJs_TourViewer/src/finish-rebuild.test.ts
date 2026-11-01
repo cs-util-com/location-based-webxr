@@ -697,4 +697,45 @@ describe("a long text's media survive a Finish", () => {
     const written = await zipManifest(result!.blob);
     expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race"]);
   });
+
+  // Why this test matters: a narration's voice is an audio asset the
+  // manifest's reader REQUIRES. A Finish that dropped it wrote a manifest
+  // its own re-parse refused, so no narrated tour could be finished. The
+  // timing is a plain entry of the zip, kept since it is no walk file.
+  it("keeps a narrated text's voice, its timing and its pictures, and writes a tour that reads", async () => {
+    const narration = {
+      audio: "voice",
+      timing: "timing/essay.json",
+      synthetic: true,
+    };
+    const manifest = tourOf([readingSign(narration)], {
+      assets: [
+        { id: "wheel", path: "content/wheel.png", kind: "image" },
+        { id: "race", path: "content/race.png", kind: "image" },
+        { id: "voice", path: "content/voice.mp3", kind: "audio" },
+      ],
+    });
+    const tour = await open(
+      await packFilesAsZip([
+        { path: `${WRAP}tour.json`, data: serializeTourManifest(manifest) },
+        { path: `${WRAP}content/wheel.png`, data: "w" },
+        { path: `${WRAP}content/race.png`, data: "r" },
+        { path: `${WRAP}content/voice.mp3`, data: "v" },
+        { path: `${WRAP}timing/essay.json`, data: "{}" },
+      ]),
+    );
+    const result = await rebuildFinishedTour({ tour, manifest, ...NO_EDITS });
+    const names = await namesOf(result!.blob);
+    for (const name of ["content/voice.mp3", "timing/essay.json"]) {
+      expect(names, name).toContain(`${WRAP}${name}`);
+    }
+    const written = await zipManifest(result!.blob);
+    expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race", "voice"]);
+    const essay = written.stations
+      .flatMap((s) => s.blocks)
+      .find((b) => b.id === "essay");
+    expect(essay?.kind === "longText" ? essay.narration : null).toEqual(
+      narration,
+    );
+  });
 });
