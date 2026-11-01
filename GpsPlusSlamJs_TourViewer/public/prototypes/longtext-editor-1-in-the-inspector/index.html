@@ -1,0 +1,1787 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Long Text Inspector</title>
+<link rel="icon" href="data:,">
+<!--
+  Throwaway prototype: writing a long text and its narration in the desktop
+  tour editor. Direction 1, "everything stays in the inspector": the body is
+  written in a compact writer inside the right-hand inspector, the 3D view
+  keeps its place, and the preview is a phone-sized reading sheet that pops
+  over the 3D view next to the inspector. Visual language of the editor from
+  the "Studio 3" prototype (editor3d-1-studio-r3); the reading sheet, sign and
+  caption strip from "Narrated text" (station-blocks-1-narrated-text).
+  Original code, no libraries. The 3D view is a static drawing (context
+  only). The narration is faked: no audio plays, a clock stands in for the
+  voice. Imports of real .vtt / .json files work (parsed in this page only).
+  Nothing is saved or uploaded.
+-->
+<style>
+:root {
+  --bg0: #18191c; --bg1: #1f2023; --bg2: #26282c; --bg3: #2f3136; --bg4: #383a40;
+  --line: #313338; --line2: #3c3f46;
+  --text: #d9dbe0; --muted: #8a8f99; --dim: #646973;
+  --accent: #e9a23b; --accentBg: rgba(233,162,59,.14); --accentLine: rgba(233,162,59,.55);
+  --focus: #5b9cf0; --info: #86b4ea; --infoBg: rgba(134,180,234,.09); --ok: #8fcf9b;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+  --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --inspW: 360px;
+  color-scheme: dark;
+}
+@media (max-width: 1100px) { :root { --inspW: 340px; } }
+body.wide { --inspW: min(540px, 52vw); }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg0); color: var(--text); font: 12px/1.4 var(--sans); overflow: hidden; }
+body { display: grid; grid-template-rows: 40px minmax(0,1fr) 24px auto; grid-template-columns: minmax(0,1fr); }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+button { font: inherit; color: inherit; }
+kbd { font: 10px var(--mono); color: var(--dim); }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* ---------- top toolbar (Studio 3) ---------- */
+#tb { display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--bg1); border-bottom: 1px solid var(--line); min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; padding-right: 10px; border-right: 1px solid var(--line); height: 24px; white-space: nowrap; }
+.brand b { font-weight: 600; }
+.brand .doc { color: var(--muted); border: 1px solid transparent; background: transparent; border-radius: 4px; padding: 2px 5px; cursor: pointer; }
+.brand .doc:hover { color: var(--text); border-color: var(--line2); background: var(--bg2); }
+.grp { display: flex; align-items: center; gap: 2px; padding: 0 6px; border-right: 1px solid var(--line); height: 26px; }
+.grp:last-child { border-right: 0; }
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; cursor: pointer; white-space: nowrap; }
+.tbtn:hover:not(:disabled) { background: var(--bg3); }
+.tbtn:disabled { color: var(--dim); cursor: default; }
+.spacer { flex: 1; }
+
+/* ---------- viewport with the static 3D view ---------- */
+#vp { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #2b2d31; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#mapCtl { position: absolute; left: 12px; bottom: 14px; z-index: 4; display: flex; flex-direction: column; gap: 8px; }
+.pill { background: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(60,64,67,.25), 0 2px 8px rgba(60,64,67,.15); display: flex; flex-direction: column; overflow: hidden; }
+.pill button { width: 34px; height: 34px; border: none; background: #fff; cursor: pointer; display: grid; place-items: center; color: #5f6670; padding: 0; }
+.pill button + button { border-top: 1px solid #e4e7eb; }
+#toast { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40; padding: 6px 8px 6px 12px; border-radius: 4px; background: rgba(30,31,34,.97); border: 1px solid var(--line2); color: var(--text);
+  opacity: 0; transition: opacity .25s; pointer-events: none; max-width: min(560px, calc(100% - 32px)); display: flex; gap: 10px; align-items: center; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+#toast.show { opacity: 1; pointer-events: auto; }
+#toast button { border: 0; background: transparent; color: #f3c47e; cursor: pointer; font-weight: 600; padding: 2px 4px; }
+
+/* ---------- docked tree (left rail) ---------- */
+.dock { position: absolute; top: 0; z-index: 5; display: flex; flex-direction: column; background: rgba(31,32,35,.97); border: 1px solid var(--line); border-top: 0; box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+#tree { left: 0; width: 248px; border-left: 0; border-radius: 0 0 8px 0; max-height: calc(100% - 120px); }
+.dhead { flex: none; height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 5px 0 12px; border-bottom: 1px solid var(--line); }
+#tree.collapsed .dhead { border-bottom: 0; }
+#tree.collapsed .dbody { display: none; }
+.ttlh { font-size: 10.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.count { font: 10px var(--mono); color: var(--dim); }
+.sp { flex: 1; }
+.ib { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; background: transparent; border-radius: 4px; color: var(--muted); cursor: pointer; flex: none; }
+.ib:hover { background: var(--bg3); color: var(--text); }
+.ib[aria-pressed="true"] { color: #f3c47e; background: var(--accentBg); }
+.dbody { overflow: auto; min-height: 0; }
+.cards { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 6px; }
+.card { border-radius: 6px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line2); }
+.card.ctx { border-color: var(--accentLine); }
+.hero { position: relative; height: 54px; cursor: pointer; user-select: none; background: linear-gradient(135deg, #5d6a73, #3a4046); }
+.hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,11,13,.05), rgba(10,11,13,.82)); }
+.hero > * { position: absolute; z-index: 1; }
+.hero .n { left: 7px; top: 6px; font: 600 10px var(--mono); background: rgba(20,21,24,.78); color: #e6f0fa; border-radius: 3px; padding: 1px 5px; }
+.hero .tw { right: 5px; top: 4px; width: 22px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 4px; color: #e8eaee; background: rgba(20,21,24,.6); border: 0; cursor: pointer; padding: 0; }
+.hero .nm { left: 9px; right: 9px; bottom: 6px; font-weight: 600; font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kids { padding: 3px 0 4px; }
+.kid { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 8px 0 12px; border: 0; background: transparent; text-align: left; cursor: pointer; white-space: nowrap; color: var(--text); }
+.kid:hover { background: var(--bg3); }
+.kid.sel { background: var(--accentBg); }
+.kid.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+.kid .nm { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.kid.sel .nm { color: #fff; }
+.kid .meta { font: 10.5px var(--mono); color: var(--dim); display: inline-flex; gap: 4px; align-items: center; }
+.kid .meta .warnDot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.kid.add { color: var(--dim); }
+.ic { display: inline-flex; color: var(--muted); }
+.ic.longtext { color: #e7c88f; } .ic.shorttext { color: #c9cfd8; } .ic.photo { color: #c9a66b; } .ic.video { color: #a8b8e8; } .ic.model { color: #a3b1c2; }
+
+/* ---------- inspector (right, full height while a long text is selected) ---------- */
+#insp { position: absolute; top: 0; right: 0; bottom: 0; width: var(--inspW); z-index: 6; display: flex; flex-direction: column; background: rgba(31,32,35,.985); border-left: 1px solid var(--line); box-shadow: -8px 0 22px rgba(0,0,0,.28); transition: width .18s; }
+#insp .dhead { padding-left: 8px; gap: 2px; }
+.hic { display: inline-flex; width: 22px; justify-content: center; }
+.ttlin { flex: 1; min-width: 0; height: 26px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #f0f1f3; font: 600 13.5px var(--sans); padding: 0 5px; outline: none; text-overflow: ellipsis; }
+.ttlin:hover { border-color: var(--line2); }
+.ttlin:focus { border-color: var(--focus); background: var(--bg2); }
+.ibody { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: var(--bg4) transparent; }
+.sub { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 12px 4px; color: var(--dim); font-size: 11px; }
+.isec { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--line); }
+.slab { display: flex; align-items: center; gap: 6px; height: 20px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.slab .save { font: 10.5px var(--sans); letter-spacing: 0; text-transform: none; color: var(--dim); font-weight: 400; }
+.note { color: var(--dim); font-size: 11px; line-height: 1.45; margin: 3px 0 2px; }
+
+/* view picker: a compact segmented control */
+.seg3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0; margin-top: 3px; background: var(--bg2); border: 1px solid var(--line2); border-radius: 5px; padding: 2px; }
+.seg3 button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 26px; border: 0; border-radius: 3px; background: transparent; cursor: pointer; color: var(--muted); white-space: nowrap; padding: 0 4px; min-width: 0; }
+.seg3 button span { overflow: hidden; text-overflow: ellipsis; }
+.seg3 button:hover { color: var(--text); background: var(--bg3); }
+.seg3 button[aria-checked="true"] { background: var(--accentBg); color: #f3c47e; box-shadow: inset 0 0 0 1px var(--accentLine); }
+.seg3 button.off { color: var(--dim); }
+.seg3 button.off svg { opacity: .55; }
+.vdesc { margin: 6px 1px 0; font-size: 11.5px; line-height: 1.45; color: #b6bac2; min-height: 2.9em; }
+.vdesc .soft { color: #e9c07e; }
+.vdesc button { border: 0; background: none; padding: 0; color: #f3c47e; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* writer */
+.wsec { flex: 1 0 auto; min-height: 280px; display: flex; flex-direction: column; }
+body.narrOpen .wsec { min-height: 250px; }
+.wtools { flex: none; display: flex; align-items: center; gap: 1px; margin: 3px 0 5px; flex-wrap: nowrap; }
+.wtools .wb { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #c3c7cf; cursor: pointer; padding: 0; font: 600 12px var(--sans); }
+.wtools .wb:hover { background: var(--bg3); color: #fff; }
+.wtools .wb[aria-pressed="true"] { background: var(--accentBg); border-color: var(--accentLine); color: #f3c47e; }
+.wtools .wb.h { font: 700 12.5px var(--serif); } .wtools .wb.h.small { font-size: 10.5px; }
+.wtools .wb.it { font-style: italic; font-family: var(--serif); font-size: 13px; }
+.wtools .sepv { width: 1px; height: 16px; background: var(--line2); margin: 0 4px; flex: none; }
+.pop { flex: none; margin: 0 0 6px; padding: 7px 8px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg2); }
+.pop .row { display: flex; gap: 6px; align-items: center; }
+.tfield { height: 24px; background: var(--bg1); border: 1px solid var(--line2); border-radius: 3px; font: 12px var(--sans); color: var(--text); padding: 0 7px; width: 100%; outline: none; min-width: 0; }
+.tfield:focus { border-color: var(--focus); }
+.pics { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.picb { width: 92px; border: 1px solid var(--line2); border-radius: 4px; background: var(--bg1); padding: 3px; cursor: pointer; text-align: left; color: var(--muted); font-size: 10.5px; }
+.picb:hover { border-color: #6a6f78; color: var(--text); }
+.picb img { display: block; width: 100%; height: 50px; object-fit: cover; border-radius: 2px; margin-bottom: 3px; }
+.help { font-size: 11.5px; color: #b6bac2; line-height: 1.55; }
+.help kbd { font: 10px var(--mono); padding: 0 4px; border: 1px solid var(--line2); border-bottom-width: 2px; border-radius: 3px; background: var(--bg1); color: var(--text); }
+.help code { font: 11px var(--mono); color: #e6d3ae; }
+
+.writer { position: relative; flex: 1 1 auto; min-height: 150px; border: 1px solid var(--line2); border-radius: 4px; background: #222327; overflow: hidden; }
+.writer:focus-within { border-color: var(--focus); }
+.writer .mirror, .writer textarea { position: absolute; inset: 0; margin: 0; border: 0; padding: 10px 12px 40px; width: 100%; height: 100%;
+  font: 13px/1.62 var(--sans); letter-spacing: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4;
+  overflow-y: scroll; overflow-x: hidden; scrollbar-width: thin; }
+.writer .mirror { color: #c9ccd3; pointer-events: none; scrollbar-color: transparent transparent; }
+.writer textarea { background: transparent; color: transparent; caret-color: #fff; resize: none; outline: none; scrollbar-color: var(--bg4) transparent; }
+.writer textarea::selection { background: rgba(91,156,240,.38); color: transparent; }
+.writer textarea::placeholder { color: var(--dim); }
+.m-mk { color: #5f646d; }
+.m-hd { color: #fff; }
+.m-b { color: #fff; }
+.m-i { color: #e8d4ab; }
+.m-ln { color: #9cc2f0; text-decoration: underline; text-decoration-color: rgba(156,194,240,.5); text-underline-offset: 2px; }
+.m-pic { color: #c4ad83; }
+.m-iss { text-decoration: underline dotted rgba(134,180,234,.95); text-decoration-thickness: 2px; text-underline-offset: 4px; background: var(--infoBg); border-radius: 2px; }
+.m-kept { text-decoration: underline dotted rgba(160,165,175,.55); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.m-cur { background: rgba(134,180,234,.2); }
+.m-chg { background: rgba(233,162,59,.14); box-shadow: inset 0 -1px 0 rgba(233,162,59,.55); }
+.m-fr { background: rgba(233,162,59,.34); }
+
+.callout { flex: none; margin-top: 6px; padding: 7px 9px 8px; border: 1px solid rgba(134,180,234,.38); border-left: 3px solid var(--info); border-radius: 4px; background: rgba(134,180,234,.07); }
+.callout .ct { display: flex; align-items: center; gap: 6px; color: #dce8f7; }
+.callout .ct b { font-weight: 600; }
+.callout .ct .ln { color: var(--dim); font: 10.5px var(--mono); }
+.callout .ct .nav { display: inline-flex; align-items: center; gap: 1px; color: var(--dim); font-size: 10.5px; }
+.callout .ct .nav .ib { width: 20px; height: 20px; }
+.callout .cw { margin: 3px 0 6px; color: #b9c5d4; font-size: 11.5px; line-height: 1.45; }
+.callout .cb { display: flex; gap: 6px; flex-wrap: wrap; }
+.callout .cn { margin-top: 5px; color: var(--dim); font-size: 10.5px; line-height: 1.4; }
+.btn { height: 26px; padding: 0 11px; border-radius: 4px; border: 1px solid var(--line2); background: var(--bg2); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover:not(:disabled) { background: var(--bg3); }
+.btn:disabled { color: var(--dim); cursor: default; }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #1c1c1c; font-weight: 600; }
+.btn.pri:hover:not(:disabled) { background: #f0b257; }
+.btn.blue { background: #2c3b4f; border-color: #3f5a7c; color: #e3eefb; }
+.btn.blue:hover { background: #34465e; }
+.btn svg { width: 14px; height: 14px; }
+.lnk { border: 0; background: none; padding: 0 2px; color: #f3c47e; cursor: pointer; font-size: 11px; white-space: nowrap; }
+.lnk:hover { text-decoration: underline; }
+.wstat { flex: none; display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--dim); font-size: 11px; min-height: 22px; }
+.chip { border: 1px solid var(--line2); background: rgba(255,255,255,.03); border-radius: 999px; padding: 0 9px 0 7px; height: 22px; cursor: pointer; font-size: 11px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.chip.has { color: #dce8f7; border-color: rgba(134,180,234,.45); background: rgba(134,180,234,.08); }
+.chip.has i { background: var(--info); }
+.chip svg { width: 12px; height: 12px; }
+.isslist { flex: none; margin-top: 6px; max-height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--bg1); scrollbar-width: thin; }
+.iss { display: flex; align-items: baseline; gap: 7px; width: 100%; padding: 5px 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; color: var(--text); }
+.iss:last-child { border-bottom: 0; }
+.iss:hover { background: var(--bg3); }
+.iss .t { flex: none; font-weight: 600; color: #dce8f7; }
+.iss .x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font: 10.5px var(--mono); }
+.iss .l { flex: none; color: var(--dim); font: 10px var(--mono); }
+.isshd { padding: 5px 8px 3px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); display: flex; align-items: center; }
+.iss.kept .t { color: var(--muted); font-weight: 500; }
+
+/* disclosures (narration, position) */
+.disc { flex: none; display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-top: 1px solid var(--line); background: transparent; cursor: pointer; color: var(--muted); text-align: left; }
+.disc:hover { color: var(--text); background: var(--bg2); }
+.disc .lab { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.disc .sum { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.disc .sum i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: none; }
+.disc .sum.ok i { background: var(--ok); } .disc .sum.amber { color: #e9c07e; } .disc .sum.amber i { background: var(--accent); }
+.disc > svg { transition: transform .15s; }
+.disc[aria-expanded="true"] > svg { transform: rotate(90deg); }
+.nsec, .psec { flex: none; }
+.nbody { padding: 2px 12px 12px; }
+.nrow { margin: 6px 0 8px; }
+.nk { display: flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.nk .h { color: var(--dim); font-size: 10.5px; }
+.file { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 6px 0 8px; border: 1px solid var(--line2); border-radius: 4px; background: var(--bg2); min-width: 0; }
+.file .fn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e6e8ec; }
+.file .du { font: 10.5px var(--mono); color: var(--dim); white-space: nowrap; }
+.file svg { color: #f3c47e; }
+.nrow .acts2 { display: flex; gap: 6px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
+.drop { border: 1.5px dashed var(--line2); border-radius: 6px; padding: 8px 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.nsec.hot .drop, .nsec.hot .file { border-color: var(--accent); }
+.notice, .result { margin: 8px 0; padding: 8px 10px 9px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg2); }
+.notice { border-left: 3px solid var(--accent); }
+.result { border-left: 3px solid var(--ok); }
+.result.part { border-left-color: var(--info); }
+.notice .nt, .result .nt { display: flex; gap: 6px; align-items: center; color: #eceef1; font-weight: 600; }
+.notice .nt svg { color: #f3c47e; } .result .nt svg { color: var(--ok); } .result.part .nt svg { color: var(--info); }
+.notice .nd, .result .nd { margin: 3px 0 6px; color: #b6bac2; font-size: 11.5px; line-height: 1.45; }
+.notice .row2, .result .row2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.ul2 { list-style: none; margin: 4px 0 2px; padding: 0; }
+.ul2 li { padding: 5px 0 5px 10px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.45; color: #c3c7cf; position: relative; }
+.ul2 li::before { content: ""; position: absolute; left: 0; top: 11px; width: 4px; height: 4px; border-radius: 50%; background: var(--dim); }
+.ul2 li.fl::before { background: var(--info); } .ul2 li.voice::before { background: var(--accent); }
+.ul2 q { color: #eceef1; quotes: "\201C" "\201D"; }
+.ul2 .when { font: 10.5px var(--mono); color: var(--muted); }
+.ul2 .lnk { margin-left: 2px; }
+.err { margin: 8px 0; padding: 7px 9px; border: 1px solid #6b3b3b; border-left: 3px solid #d97d79; border-radius: 4px; background: rgba(217,125,121,.08); color: #efc3c1; font-size: 11.5px; line-height: 1.45; }
+.notes { margin: 8px 0; border: 1px solid var(--line); border-radius: 5px; background: var(--bg1); }
+.notes > button { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 11.5px; text-align: left; }
+.notes > button svg { transition: transform .15s; }
+.notes > button[aria-expanded="true"] svg { transform: rotate(90deg); }
+.notes .ul2 { padding: 0 8px 4px; margin: 0; }
+.playrow { display: flex; align-items: center; gap: 9px; margin: 10px 0 2px; padding: 8px; border: 1px solid var(--line2); border-radius: 6px; background: var(--bg2); }
+.pbtn { width: 34px; height: 34px; flex: none; border-radius: 50%; border: 0; background: var(--accent); color: #1c1c1c; cursor: pointer; display: grid; place-items: center; }
+.pbtn:disabled { background: var(--bg4); color: var(--dim); cursor: default; }
+.pbtn svg { width: 15px; height: 15px; }
+.pmid { flex: 1; min-width: 0; }
+.pbar { position: relative; height: 14px; cursor: pointer; }
+.pbar .tr { position: absolute; left: 0; right: 0; top: 5px; height: 4px; border-radius: 4px; background: var(--bg4); }
+.pbar .fi { position: absolute; left: 0; top: 5px; height: 4px; border-radius: 4px; background: var(--accent); width: 0; }
+.pbar .kn { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #fff; left: 0; }
+.ptime { display: flex; align-items: center; gap: 7px; font: 10.5px var(--mono); color: var(--muted); margin-top: 1px; }
+.ptime .pn { font: 10.5px var(--sans); color: var(--dim); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.snd { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.snd i { width: 2.5px; height: 3px; border-radius: 1px; background: var(--dim); }
+.snd.on i { background: var(--accent); animation: eq .9s ease-in-out infinite; }
+.snd.on i:nth-child(2) { animation-delay: -.3s; } .snd.on i:nth-child(3) { animation-delay: -.6s; } .snd.on i:nth-child(4) { animation-delay: -.15s; }
+@keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+.pos { padding: 2px 12px 10px; }
+.f2 { display: grid; grid-template-columns: 74px minmax(0,1fr); align-items: center; gap: 6px; min-height: 26px; margin: 3px 0; color: var(--muted); }
+.f2 span.v { height: 24px; display: flex; align-items: center; padding: 0 7px; background: var(--bg2); border: 1px solid var(--line2); border-radius: 3px; font: 11px var(--mono); color: var(--text); }
+
+/* ---------- the preview: a phone-sized reading sheet next to the inspector ---------- */
+#pv { position: absolute; top: 10px; right: calc(var(--inspW) + 14px); z-index: 7; width: var(--phW, 280px); display: flex; flex-direction: column; gap: 6px; transition: right .18s; }
+.pvhead { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 3px 0 9px; border-radius: 5px; background: rgba(31,32,35,.95); border: 1px solid var(--line2); }
+.pvhead .ttlh { color: #c9ccd2; }
+.pvhead .vn { color: #f3c47e; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pvhead .ib { width: 22px; height: 22px; }
+.pvnote { font-size: 11px; line-height: 1.4; color: #c6cad1; padding: 5px 9px; border-radius: 5px; background: rgba(31,32,35,.92); border: 1px solid var(--line2); }
+.pvnote.warn { color: #f0d3a2; border-color: rgba(233,162,59,.45); }
+.phone { position: relative; width: var(--phW, 280px); height: var(--phH, 606px); border-radius: calc(40px * var(--phK, .72)); background: #0b0c0e; overflow: hidden;
+  box-shadow: 0 0 0 5px #121315, 0 0 0 6px #3b3c42, 0 22px 60px rgba(0,0,0,.6); }
+#pvOpen { position: absolute; top: 10px; right: calc(var(--inspW) + 14px); z-index: 7; }
+
+/* inside the phone: 390 x 844 CSS px, scaled */
+.screen { position: absolute; left: 0; top: 0; width: 390px; height: 844px; transform-origin: 0 0; transform: scale(var(--phK, .72)); overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #f6f2ea; background: #dfe5e8; }
+.screen .cam { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pstat { position: absolute; left: 0; right: 0; top: 0; height: 44px; display: flex; align-items: center; padding: 0 26px; font: 600 15px system-ui, sans-serif; color: #1d1e21; z-index: 30; }
+.pstat .sp { flex: 1; }
+.pstat .spk { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; background: rgba(17,18,21,.8); color: #f2b45a; font-size: 12px; }
+.pstat .spk svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.pstat .spk .snd i { background: #f2b45a; }
+.sign { position: absolute; left: 50%; top: 112px; transform: translateX(-50%); width: 300px; display: flex; flex-direction: column; align-items: center; cursor: pointer; z-index: 2; }
+.sign .plate { width: 300px; display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 18px; background: rgba(17,18,21,.93); border: 1px solid rgba(255,255,255,.1); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.sign .seal { width: 52px; height: 52px; border-radius: 50%; background: #f2b45a; flex: none; display: grid; place-items: center; }
+.sign .seal svg { width: 28px; height: 28px; fill: none; stroke: #1a1408; stroke-width: 2.4; stroke-linecap: round; }
+.sign .po { font: 700 10.5px/1.2 system-ui, sans-serif; letter-spacing: .14em; color: #f2b45a; }
+.sign .ptt { font: 600 19px/1.15 var(--serif); color: #fff; margin: 4px 0 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sign .ps { font-size: 11.5px; color: #b9b2a5; }
+.sign .stem { width: 4px; height: 70px; background: #2a2b2f; opacity: .85; }
+.sign .ring { width: 60px; height: 16px; border-radius: 50%; border: 3px solid rgba(242,180,90,.85); margin-top: -8px; }
+.marker { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; z-index: 2; }
+.marker .disc2 { width: 70px; height: 70px; border-radius: 50%; background: rgba(17,18,21,.92); display: grid; place-items: center; }
+.marker .disc2 svg { width: 34px; height: 34px; fill: #f2b45a; stroke: #f2b45a; stroke-width: 2.4; stroke-linecap: round; }
+.marker .stem { width: 3px; height: 90px; background: #2a2b2f; }
+.taphint { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); padding: 9px 16px; border-radius: 999px; background: rgba(17,18,21,.9); color: #d8d2c6; font-size: 13.5px; white-space: nowrap; z-index: 3; }
+.taphint b { color: #f2b45a; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 63%; z-index: 10; display: flex; flex-direction: column; background: rgba(18,19,22,.95); border: 1px solid rgba(255,255,255,.07); border-radius: 24px 24px 0 0;
+  box-shadow: 0 -10px 40px rgba(0,0,0,.25); transform: translateY(104%); transition: transform .32s cubic-bezier(.2,.8,.2,1); color: #d8d2c6; overflow: hidden; }
+.sheet.open { transform: none; }
+.v-silent .sheet { height: auto; top: 58px; }
+.sheet .grab { width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.18); margin: 8px auto 0; flex: none; }
+.sheet header { position: relative; padding: 12px 58px 8px 24px; flex: none; }
+.sheet .over { font: 700 10.5px/1.2 system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #f2b45a; }
+.sheet h2.st { font: 600 24px/1.18 var(--serif); color: #fff; margin: 7px 0 6px; }
+.sheet .meta { font-size: 12.5px; color: #a49e92; }
+.sheet .x { position: absolute; right: 14px; top: 12px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.07); display: grid; place-items: center; cursor: pointer; }
+.sheet .x svg { width: 16px; height: 16px; stroke: #ddd; stroke-width: 2.2; fill: none; }
+.v-silent .sheet .x, .v-silent .sheet .grab { display: none; }
+.tw2 { position: relative; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(transparent 0, #000 18px, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(transparent 0, #000 18px, #000 calc(100% - 26px), transparent); }
+.tw2::-webkit-scrollbar { display: none; }
+.art { font-family: var(--serif); font-size: 18.5px; line-height: 1.6; color: #d8d2c6; padding: 12px 26px 220px 24px; hyphens: auto; text-wrap: pretty; }
+.art p { margin: 0 0 1.05em; }
+.art h2, .art h3, .art h4 { font-family: var(--serif); color: #fff; font-weight: 600; margin: 1.2em 0 .45em; line-height: 1.2; }
+.art h2 { font-size: 25px; } .art h3 { font-size: 22px; } .art h4 { font-size: 19.5px; }
+.art ul, .art ol { margin: 0 0 1.05em; padding-left: 1.25em; }
+.art li { margin: .2em 0; } .art li > ul, .art li > ol { margin: .2em 0 .2em; }
+.art a { color: #ffd391; text-decoration-color: rgba(242,180,90,.6); }
+.art figure { margin: .4em 0 1.2em; }
+.art figure img { display: block; width: 100%; border-radius: 12px; }
+.art figcaption { font: 13px/1.4 system-ui, sans-serif; color: #a49e92; margin-top: 6px; }
+.art img.inl { height: 1.4em; vertical-align: -.3em; border-radius: 3px; }
+.art .lit { white-space: pre-wrap; }
+.art .u { border-radius: 4px; padding: 2px 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; transition: background-color .3s, color .3s; }
+.sheet.live .art .u, .v-silent .art .u { cursor: pointer; }
+.art .u.cur { background: rgba(242,180,90,.16); color: #fdfaf3; }
+.art .u.on { color: #ffd391; text-decoration: underline; text-decoration-color: #f2b45a; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.v-silent .art .u.cur { background: rgba(150,196,220,.14); }
+.art .u.flash { background: rgba(134,180,234,.28); }
+.sheet footer { flex: none; padding: 6px 18px 18px; border-top: 1px solid rgba(255,255,255,.07); }
+.vbar { position: relative; height: 18px; margin: 2px 4px 0; cursor: pointer; }
+.vbar .tr { position: absolute; left: 0; right: 0; top: 7px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.12); }
+.vbar .fi { position: absolute; left: 0; top: 7px; height: 4px; border-radius: 4px; background: #f2b45a; width: 0; }
+.v-silent .vbar .fi { background: #96c4dc; }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; }
+.prow .time { font: 500 12px var(--mono); color: #a49e92; min-width: 62px; }
+.prow .time.r { text-align: right; }
+.cbs { display: flex; align-items: center; gap: 6px; }
+.cbx { width: 46px; height: 46px; border-radius: 50%; border: 0; background: transparent; display: grid; place-items: center; color: #e9e4da; cursor: pointer; }
+.cbx svg { width: 24px; height: 24px; fill: currentColor; }
+.cbx.play { width: 58px; height: 58px; background: #f2b45a; color: #1a1408; }
+.credit { text-align: center; font-size: 11.5px; color: #8f897e; margin-top: 4px; }
+.spos { font-size: 12.5px; color: #a49e92; text-align: center; min-width: 120px; }
+.cap { position: absolute; left: 10px; right: 10px; bottom: 16px; z-index: 8; display: none; background: rgba(14,15,18,.88); border: 1px solid rgba(255,255,255,.07); border-radius: 22px; padding: 15px 18px 10px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.v-captions .cap { display: block; }
+.v-captions .marker { display: flex; }
+.v-captions .sign, .v-silent .sign, .v-silent .taphint, .v-captions .taphint { display: none; }
+.captx { font: 600 22px/1.33 system-ui, sans-serif; color: #f7f3eb; min-height: calc(1.33em * 3); display: flex; align-items: flex-end; }
+.captx .w.todo { color: #bdb7ab; }
+.captx .w.on { color: #ffd391; text-decoration: underline; text-decoration-color: #f2b45a; text-decoration-thickness: 3px; text-underline-offset: 6px; }
+.captx .muted { font-weight: 500; color: #cfc9bd; font-size: .8em; }
+.crow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.crow .cbx { width: 40px; height: 40px; } .crow .cbx.play { width: 44px; height: 44px; }
+.crow .cbx svg { width: 20px; height: 20px; }
+.cmeta { flex: 1; min-width: 0; font: 600 13px/1.25 var(--serif); color: #efe9de; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpill { border: 1px solid rgba(255,255,255,.14); background: transparent; border-radius: 999px; height: 34px; padding: 0 13px; font-size: 12.5px; font-weight: 600; color: #e9e4da; cursor: pointer; }
+.capbar { height: 3px; border-radius: 3px; background: rgba(255,255,255,.1); margin-top: 9px; overflow: hidden; }
+.capbar div { height: 100%; width: 0; background: #f2b45a; }
+
+/* ---------- status bar and the debug strip ---------- */
+#sb { display: flex; align-items: center; background: var(--bg1); border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); min-width: 0; }
+#sb > div { padding: 0 10px; border-right: 1px solid var(--line); height: 100%; display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+#sb .grow { flex: 1; min-width: 0; text-overflow: ellipsis; display: block; line-height: 23px; }
+#sb b { color: var(--text); font-weight: 500; }
+#dbg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; padding: 4px 8px; min-height: 30px; white-space: nowrap;
+  background: repeating-linear-gradient(135deg, #2a1f10 0 10px, #241b0e 10px 20px); border-top: 2px dashed #8a6420; font: 11px var(--mono); color: #e7c88f; }
+#dbg .dl { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-right: 4px; color: #f3c47e; flex: none; }
+#dbg button { flex: none; height: 22px; padding: 0 8px; border-radius: 3px; border: 1px solid #6e5222; background: #1a140b; color: #f1d9a8; cursor: pointer; font: 11px var(--mono); }
+#dbg button:hover { background: #33260f; }
+#dbg .dsep { width: 1px; height: 16px; background: #6e5222; flex: none; }
+</style>
+</head>
+<body>
+<header id="tb">
+  <div class="brand"><svg class="i" viewBox="0 0 16 16" style="color:var(--accent)"><path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/></svg><b>Tour Editor</b><button class="doc" title="Edit the tour's details">Old Town Walk</button></div>
+  <div class="grp"><button class="tbtn" disabled title="Undo (Ctrl+Z in the writer)"><i data-icon="undo"></i><span>Undo</span></button><button class="tbtn" disabled><i data-icon="redo"></i><span>Redo</span></button></div>
+  <div class="spacer"></div>
+  <div class="grp"><button class="tbtn" data-deco="1"><i data-icon="frame"></i><span>Frame</span><kbd>F</kbd></button><button class="tbtn" data-deco="1"><i data-icon="top"></i><span>Top view</span><kbd>T</kbd></button></div>
+  <div class="grp"><button class="tbtn" data-deco="1" title="Keyboard and mouse"><i data-icon="help"></i></button></div>
+</header>
+
+<main id="vp">
+  <svg id="map" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <pattern id="pave" width="22" height="22" patternUnits="userSpaceOnUse"><rect width="22" height="22" fill="#3b3d42"/><path d="M0 .5H22M.5 0V22" stroke="#35373c"/></pattern>
+      <radialGradient id="vig" cx="50%" cy="45%" r="78%"><stop offset="62%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".5"/></radialGradient>
+    </defs>
+    <rect width="1600" height="1000" fill="#2c2e32"/>
+    <g transform="translate(800 520) scale(1 .6) rotate(-16) translate(-800 -520)">
+      <path d="M-400 540H2000M560 -500V1500M1180 -500V1500M-200 -200L1600 1300" stroke="#383b41" stroke-width="54" fill="none"/>
+      <path d="M-400 540H2000M560 -500V1500M1180 -500V1500" stroke="#41444a" stroke-width="2" stroke-dasharray="18 22" fill="none"/>
+      <rect x="610" y="300" width="520" height="420" fill="url(#pave)"/>
+      <g fill="#45484f" stroke="#2a2c30" stroke-width="2">
+        <rect x="620" y="150" width="500" height="120"/><rect x="250" y="140" width="270" height="340"/><rect x="250" y="600" width="270" height="300"/>
+        <rect x="1230" y="130" width="300" height="350"/><rect x="1230" y="610" width="300" height="310"/><rect x="620" y="760" width="500" height="160"/>
+      </g>
+      <g fill="#4e525a"><rect x="620" y="150" width="500" height="22"/><rect x="250" y="140" width="270" height="20"/><rect x="1230" y="130" width="300" height="20"/></g>
+      <path d="M640 320h60v14h-60z" fill="#6a665f"/>
+      <circle cx="870" cy="520" r="250" fill="rgba(141,184,227,.05)" stroke="rgba(141,184,227,.55)" stroke-width="3" stroke-dasharray="14 12"/>
+      <circle cx="1460" cy="545" r="150" fill="none" stroke="rgba(141,184,227,.35)" stroke-width="3" stroke-dasharray="14 12"/>
+      <path d="M870 520 C1050 560 1250 560 1460 545" stroke="rgba(233,162,59,.6)" stroke-width="6" fill="none" stroke-dasharray="2 14" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(796 468)">
+      <ellipse cx="0" cy="58" rx="22" ry="7" fill="none" stroke="#e9a23b" stroke-width="3"/>
+      <rect x="-2" y="10" width="4" height="48" fill="#1e1f22"/>
+      <rect x="-46" y="-26" width="92" height="38" rx="7" fill="#151619" stroke="#e9a23b" stroke-width="2.5"/>
+      <circle cx="-28" cy="-7" r="10" fill="#e9a23b"/>
+      <path d="M-12 -14h44M-12 -6h44M-12 2h30" stroke="#9a9488" stroke-width="3"/>
+    </g>
+    <g font-family="Segoe UI, system-ui, sans-serif" font-size="15">
+      <rect x="850" y="430" width="252" height="26" rx="4" fill="rgba(28,29,32,.9)" stroke="#e9a23b"/>
+      <text x="862" y="448" fill="#f0f1f3">The guild house and the burnt hall</text>
+      <rect x="610" y="640" width="168" height="26" rx="4" fill="rgba(28,29,32,.86)" stroke="rgba(255,255,255,.12)"/>
+      <rect x="616" y="645" width="20" height="16" rx="2" fill="#e9a23b"/><text x="622" y="658" font-size="12" fill="#1c1c1c" font-family="Consolas, monospace">1</text>
+      <text x="644" y="658" fill="#e6e8ec">Old market square</text>
+      <rect x="1370" y="660" width="112" height="26" rx="4" fill="rgba(28,29,32,.86)" stroke="rgba(255,255,255,.12)"/>
+      <rect x="1376" y="665" width="20" height="16" rx="2" fill="#3d5a78"/><text x="1382" y="678" font-size="12" fill="#e6f0fa" font-family="Consolas, monospace">2</text>
+      <text x="1404" y="678" fill="#e6e8ec">East path</text>
+    </g>
+    <rect width="1600" height="1000" fill="url(#vig)"/>
+  </svg>
+  <div id="mapCtl" aria-hidden="true">
+    <div class="pill"><button tabindex="-1"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M12 3 15 12H9z" fill="#e5483f"/><path d="M12 21 9 12h6z" fill="#9aa0a6"/></svg></button></div>
+    <div class="pill"><button tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button><button tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button></div>
+  </div>
+
+  <aside class="dock" id="tree" aria-label="Stations and blocks">
+    <div class="dhead"><span class="ttlh">Stations</span><span class="count">3</span><span class="sp"></span>
+      <button class="ib" data-deco="1" title="Add a station"><i data-icon="plus"></i></button>
+      <button class="ib" id="bTreeFold" title="Collapse the panel"><i data-icon="up"></i></button></div>
+    <div class="dbody" id="treeBody"></div>
+  </aside>
+
+  <section id="pv" aria-label="Preview as a visitor sees it">
+    <div class="pvhead"><span class="ttlh">Preview</span><span class="vn" id="pvView"></span><span class="sp"></span>
+      <button class="ib" id="pvClose" title="Hide the preview"><i data-icon="close"></i></button></div>
+    <div class="pvnote" id="pvNote"></div>
+    <div class="phone" id="phone">
+      <div class="screen" id="screen">
+        <svg class="cam" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b5c5d2"/><stop offset="1" stop-color="#e3e8eb"/></linearGradient>
+            <linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c3beb5"/><stop offset="1" stop-color="#a39e94"/></linearGradient>
+          </defs>
+          <rect width="390" height="470" fill="url(#sky)"/>
+          <rect x="-20" y="214" width="430" height="256" fill="#c8c3ba"/><rect x="-24" y="206" width="438" height="10" fill="#b7b2a9"/>
+          <rect x="172" y="372" width="46" height="98" fill="#6f6a63"/>
+          <rect x="62" y="270" width="48" height="64" fill="#8d959b"/><rect x="280" y="270" width="48" height="64" fill="#8d959b"/>
+          <path d="M0 470H390V844H0z" fill="url(#gnd)"/>
+          <path d="M195 470L-260 844M195 470L650 844M195 470L40 844M195 470L350 844M0 500H390M0 552H390M0 640H390M0 780H390" stroke="rgba(0,0,0,.07)" stroke-width="2"/>
+        </svg>
+        <div class="pstat"><span>9:41</span><span class="sp"></span><span class="spk" id="phSpk" hidden><svg viewBox="0 0 24 24"><path d="M4 9h3.5L12 5v14l-4.5-4H4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg><span class="snd" id="phSnd"><i></i><i></i><i></i><i></i></span></span></div>
+        <div class="sign" id="phSign" role="button" tabindex="0" aria-label="The reading sign in the world: open or close the text">
+          <div class="plate"><div class="seal" id="phSeal"></div><div><div class="po" id="phOver"></div><div class="ptt" id="phTitle"></div><div class="ps">Tap to open the text</div></div></div>
+          <div class="stem"></div><div class="ring"></div>
+        </div>
+        <div class="marker" aria-hidden="true"><div class="disc2"><svg viewBox="0 0 24 24"><path d="M4 9h3.5L12 5v14l-4.5-4H4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none"/></svg></div><div class="stem"></div></div>
+        <div class="taphint" id="phHint">Tap the <b>sign</b> to open the text</div>
+        <section class="sheet" id="phSheet">
+          <div class="grab"></div>
+          <header><div class="over">Old market square &middot; Station 1</div><h2 class="st" id="phSTitle"></h2><div class="meta" id="phMeta"></div>
+            <button class="x" id="phClose" aria-label="Close the text"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+          <div class="tw2" id="phWrap"><article class="art" id="phArt" lang="en"></article></div>
+          <footer id="phFoot"></footer>
+        </section>
+        <div class="cap" id="phCap">
+          <div class="captx" id="capTx"></div>
+          <div class="crow"><button class="cbx play" id="capPlay" aria-label="Play or pause"></button><div class="cmeta" id="capTitle"></div><button class="cpill" id="capOpen">Full text</button></div>
+          <div class="capbar"><div id="capBar"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <button class="btn" id="pvOpen" hidden><i data-icon="eye"></i>Preview</button>
+
+  <aside id="insp" aria-label="Inspector: long text">
+    <div class="dhead">
+      <span class="hic ic longtext"><i data-icon="longtext"></i></span>
+      <input class="ttlin" id="bTitle" aria-label="Title of the text" spellcheck="true">
+      <button class="ib" id="bPreview" aria-pressed="true" title="Show or hide the preview"><i data-icon="eye"></i></button>
+      <button class="ib" id="bWide" aria-pressed="false" title="Make the inspector wider for writing"><i data-icon="wide"></i></button>
+      <button class="ib" data-deco="1" title="Deselect (Esc)"><i data-icon="close"></i></button>
+    </div>
+    <div class="ibody" id="ibody">
+      <div class="sub"><span>Long text in Old market square</span><span class="sp"></span><span id="subCount"></span></div>
+      <div class="isec">
+        <div class="slab">Visitors see it as</div>
+        <div class="seg3" id="vseg" role="radiogroup" aria-label="How visitors see this text"></div>
+        <div class="vdesc" id="vdesc" aria-live="polite"></div>
+      </div>
+      <div class="isec wsec">
+        <div class="slab">Text<span class="sp"></span><span class="save" id="saveState">Saved</span></div>
+        <div class="wtools" role="toolbar" aria-label="Formatting">
+          <button class="wb h" data-w="h2" title="Heading">H</button>
+          <button class="wb h small" data-w="h3" title="Subheading">H</button>
+          <button class="wb" data-w="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="wb it" data-w="italic" title="Italic (Ctrl+I)">I</button>
+          <span class="sepv"></span>
+          <button class="wb" data-w="ul" title="Bulleted list (Ctrl+Shift+8)"><i data-icon="ul"></i></button>
+          <button class="wb" data-w="ol" title="Numbered list (Ctrl+Shift+7)"><i data-icon="ol"></i></button>
+          <button class="wb" data-w="outdent" title="Less indent (Shift+Tab in a list)"><i data-icon="outdent"></i></button>
+          <button class="wb" data-w="indent" title="More indent: a list inside a list (Tab in a list)"><i data-icon="indent"></i></button>
+          <span class="sepv"></span>
+          <button class="wb" data-w="link" title="Link (Ctrl+K)"><i data-icon="link"></i></button>
+          <button class="wb" data-w="picture" title="Picture from the tour's files"><i data-icon="photo"></i></button>
+          <span class="sp"></span>
+          <button class="wb" data-w="help" title="Shortcuts and how the text is stored" aria-expanded="false"><i data-icon="help"></i></button>
+        </div>
+        <div class="pop" id="linkRow" hidden>
+          <div class="row"><input class="tfield" id="linkUrl" placeholder="Web address, e.g. https://example.org" aria-label="Web address of the link"><button class="btn pri" data-w="link-add">Add link</button><button class="btn" data-w="link-cancel">Cancel</button></div>
+          <div class="note" id="linkNote"></div>
+        </div>
+        <div class="pop" id="picPop" hidden>
+          <div class="row"><span style="color:var(--muted)">Pick a picture from this tour's files</span><span class="sp"></span><button class="ib" data-w="pic-cancel" title="Close"><i data-icon="close"></i></button></div>
+          <div class="pics" id="pics"></div>
+        </div>
+        <div class="pop help" id="wHelp" hidden>
+          <div><kbd>Ctrl</kbd>+<kbd>B</kbd> bold, <kbd>Ctrl</kbd>+<kbd>I</kbd> italic, <kbd>Ctrl</kbd>+<kbd>K</kbd> link, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>8</kbd> bulleted list, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>7</kbd> numbered list. In a list, <kbd>Enter</kbd> starts the next line and <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> moves a line in or out. <kbd>Esc</kbd> then <kbd>Tab</kbd> leaves the writer.</div>
+          <div style="margin-top:4px;color:var(--dim)">The marks the buttons add are kept faint in the writer, so you can also type them: <code>**bold**</code>, <code>*italic*</code>, <code>## Heading</code>, <code>- list</code>. Anything else shows to visitors exactly as typed, and the writer marks it with a dotted underline.</div>
+        </div>
+        <div class="writer" id="writer"><div class="mirror" id="mirror" aria-hidden="true"></div><textarea id="wta" spellcheck="true" lang="en" aria-label="The text visitors read" aria-describedby="wCount" placeholder="Write what visitors read at this station..."></textarea></div>
+        <div class="callout" id="callout" hidden role="region" aria-label="A part shown as typed">
+          <div class="ct"><i data-icon="note"></i><b id="coTitle"></b><span class="ln" id="coLine"></span><span class="sp"></span>
+            <span class="nav" id="coNav"><span id="coPos"></span><button class="ib" data-w="iss-prev" title="Previous part shown as typed"><i data-icon="up"></i></button><button class="ib" data-w="iss-next" title="Next part shown as typed"><i data-icon="down"></i></button></span></div>
+          <div class="cw" id="coWhy"></div>
+          <div class="cb"><button class="btn blue" data-w="iss-fix" id="coFix">Make it plain text</button><button class="btn" data-w="iss-pic" id="coPic" hidden>Use a tour picture</button><button class="btn" data-w="iss-keep" id="coKeep">Keep as typed</button></div>
+          <div class="cn" id="coNote"></div>
+        </div>
+        <div class="wstat"><span id="wCount"></span><span class="sp"></span><button class="chip" id="issChip" data-w="iss-list" aria-expanded="false"></button></div>
+        <div class="isslist" id="issList" hidden></div>
+      </div>
+      <div class="nsec" id="nsec">
+        <button class="disc" id="narrHead" aria-expanded="false" aria-controls="narrBody"><i data-icon="right"></i><span class="lab">Narration</span><span class="sum" id="narrSum"></span></button>
+        <div class="nbody" id="narrBody" hidden></div>
+      </div>
+      <div class="psec">
+        <button class="disc" id="posHead" aria-expanded="false"><i data-icon="right"></i><span class="lab">Position</span><span class="sum">E 2.4 N -6.1 &middot; faces visitors</span></button>
+        <div class="pos" id="posBody" hidden>
+          <div class="f2"><span>Moved by</span><span class="v">E 2.40 m &nbsp; N -6.10 m</span></div>
+          <div class="f2"><span>Height</span><span class="v">0.00 m above the ground</span></div>
+          <div class="note">The sign turns to face each visitor; drag it in the 3D view to move it.</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div id="toast" role="status" aria-live="polite"><span id="toastT"></span><button id="toastB" hidden></button></div>
+</main>
+
+<footer id="sb">
+  <div><b>Long text</b>&nbsp;selected</div>
+  <div class="grow" id="sbHint">Ctrl+B bold &middot; Ctrl+I italic &middot; Ctrl+K link &middot; the preview follows as you type</div>
+  <div>Prototype: nothing leaves this page</div>
+</footer>
+
+<div id="dbg" role="toolbar" aria-label="Prototype debug controls, not part of the design">
+  <span class="dl">Prototype debug</span>
+  <button data-d="table">Paste a table</button>
+  <button data-d="html">Paste web code</button>
+  <span class="dsep"></span>
+  <button data-d="vtt">Import WebVTT (2 mismatches)</button>
+  <button data-d="words">Import word list (fits)</button>
+  <span class="dsep"></span>
+  <button data-d="stale">Edit a word (goes stale)</button>
+  <button data-d="reanchor">Re-anchor (1 unmatched)</button>
+  <span class="dsep"></span>
+  <button data-d="novoice">No narration</button>
+  <button data-d="voice">Attach voice only</button>
+  <button data-d="reset">Reset</button>
+</div>
+<input type="file" id="fVoice" accept="audio/*,.mp3,.m4a,.ogg,.opus,.wav" hidden>
+<input type="file" id="fTiming" accept=".vtt,.json,text/vtt,application/json" hidden>
+
+<script type="module">
+/* =====================================================================
+   0. Helpers, icons
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmt = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const norm = (w) => w.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/['’]/g, '');
+const wordRe = () => /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+const trunc = (s, n = 90) => (s.length > n ? s.slice(0, n - 3).trimEnd() + '...' : s);
+const plural = (n, one, many) => (n === 1 ? one : many || one + 's');
+
+const ICON = {
+  plus: '<path d="M8 3v10M3 8h10"/>', up: '<path d="M4.5 9.5L8 6l3.5 3.5"/>', down: '<path d="M4.5 6.5L8 10l3.5-3.5"/>', right: '<path d="M6.5 4.5L10 8l-3.5 3.5"/>',
+  close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  undo: '<path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a3.6 3.6 0 0 1 0 7.2H6.5"/>', redo: '<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a3.6 3.6 0 0 0 0 7.2h3"/>',
+  frame: '<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/><circle cx="8" cy="8" r="1.6"/>', top: '<path d="M8 1.5v4M6 3.5l2 2 2-2"/><path d="M2 10.5l6-2.5 6 2.5-6 3z"/>',
+  help: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
+  eye: '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+  wide: '<path d="M1.5 8h13M4.5 5L1.5 8l3 3M11.5 5l3 3-3 3"/>',
+  longtext: '<path d="M3 3.5h10M3 6.5h10M3 9.5h10M3 12.5h6"/>', shorttext: '<path d="M3 5.5h10M3 9h6"/>',
+  photo: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+  video: '<rect x="2" y="4" width="9" height="8" rx="1"/><path d="M11 7l3-2v6l-3-2"/>',
+  model: '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+  ul: '<circle cx="3.3" cy="4.5" r=".8"/><circle cx="3.3" cy="8" r=".8"/><circle cx="3.3" cy="11.5" r=".8"/><path d="M6.5 4.5h7M6.5 8h7M6.5 11.5h7"/>',
+  ol: '<path d="M6.5 4.5h7M6.5 8h7M6.5 11.5h7"/><path d="M2.4 3.6l1.1-.7v3.4M2.3 9.4c.3-.7 1.8-.7 1.8.2 0 .8-1.8 1.4-1.8 2.2h1.9"/>',
+  indent: '<path d="M7 4h7M7 8h7M7 12h7M2 5.5L4.5 8 2 10.5"/>', outdent: '<path d="M7 4h7M7 8h7M7 12h7M4.5 5.5L2 8l2.5 2.5"/>',
+  link: '<path d="M6.6 9.4l2.8-2.8"/><path d="M7.4 4.6l1.1-1.1a2.6 2.6 0 0 1 3.7 3.7l-1.1 1.1M8.6 11.4l-1.1 1.1a2.6 2.6 0 0 1-3.7-3.7l1.1-1.1"/>',
+  note: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.8v.2"/>',
+  pen: '<path d="M10.6 2.9l2.5 2.5-7.6 7.6-3.1.6.6-3.1z"/><path d="M9.2 4.3l2.5 2.5"/>',
+  wave: '<path d="M2 7v2M4.5 5v6M7 3v10M9.5 5.5v5M12 6.5v3M14 7.3v1.4"/>',
+  file: '<path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5h3.5"/>',
+  sync: '<path d="M13 6.5A5 5 0 0 0 3.6 5M3 9.5A5 5 0 0 0 12.4 11"/><path d="M3.4 2.6V5.2H6M12.6 13.4V10.8H10"/>',
+  check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+  play: '<path d="M5 3v10l8.3-5z" fill="currentColor" stroke="none"/>', pause: '<path d="M4.3 3h2.6v10H4.3zM9.1 3h2.6v10H9.1z" fill="currentColor" stroke="none"/>',
+  reading: '<rect x="2" y="2" width="8" height="5" rx="1"/><path d="M6 7v7M11 9h3M11 11.5h3"/>',
+  silent: '<rect x="4" y="1.8" width="8" height="12.4" rx="1.6"/><path d="M6 5h4M6 7.5h4M6 10h2.5"/>',
+  captions: '<rect x="1.8" y="8" width="12.4" height="5.5" rx="1.3"/><path d="M4 10.8h5M10.5 10.8h1.5M8 2v3.5M6 3.7h4"/>'
+};
+const icon = (n) => `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${ICON[n] || ''}</svg>`;
+const PH = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
+  back10: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text></svg>',
+  prev: '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.7 13a1.2 1.2 0 0 1 0-2l7.9-5.55a.9.9 0 0 1 1.4.75z"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><rect x="16.6" y="5" width="2.4" height="14" rx="1"/><path d="M5 6.2v11.6a.9.9 0 0 0 1.4.75L14.3 13a1.2 1.2 0 0 0 0-2L6.4 5.45A.9.9 0 0 0 5 6.2z"/></svg>'
+};
+document.querySelectorAll('i[data-icon]').forEach((el) => { el.outerHTML = icon(el.dataset.icon); });
+
+/* =====================================================================
+   1. Sample data: the tour's own pictures and the text
+   ===================================================================== */
+const ASSET_SVG = {
+  'keep-wall': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 190"><rect width="320" height="190" fill="#bfcdd7"/><rect y="124" width="320" height="66" fill="#a8a296"/><path d="M14 124h80v-24h-9v-9h-11v7h-13v-12h-15v9h-11v7h-9v22zM112 124h96v-30h-13v-8h-17v12h-15v-17h-19v11h-13v9h-19z" fill="#867e72"/><circle cx="262" cy="64" r="28" fill="#98a68c"/><rect x="258" y="78" width="8" height="46" fill="#7a7266"/></svg>',
+  'guild-front': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 190"><rect width="320" height="190" fill="#c3d0d9"/><rect x="30" y="40" width="260" height="150" fill="#cbc5bb"/><rect x="26" y="34" width="268" height="9" fill="#b2ada4"/><rect x="142" y="112" width="36" height="78" fill="#6f6a63"/><rect x="62" y="70" width="36" height="46" fill="#8d959b"/><rect x="222" y="70" width="36" height="46" fill="#8d959b"/><text x="160" y="104" font-size="11" text-anchor="middle" fill="#6f6a63" font-family="Georgia">1612</text></svg>',
+  'hall-1880': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 190"><rect width="320" height="190" fill="#d8d0c0"/><path d="M20 80L160 26l140 54z" fill="#8a6f55"/><rect x="30" y="80" width="260" height="34" fill="#a68a6c"/><g fill="#6b5640"><rect x="38" y="114" width="7" height="60"/><rect x="88" y="114" width="7" height="60"/><rect x="138" y="114" width="7" height="60"/><rect x="188" y="114" width="7" height="60"/><rect x="238" y="114" width="7" height="60"/><rect x="278" y="114" width="7" height="60"/></g><rect y="174" width="320" height="16" fill="#b9ae9a"/></svg>'
+};
+const ASSETS = {
+  'keep-wall': { file: 'keep-wall.jpg', alt: 'The broken wall of the keep' },
+  'guild-front': { file: 'guild-house-front.jpg', alt: 'The front of the guild house' },
+  'hall-1880': { file: 'market-hall-1880.jpg', alt: 'The market hall in 1880, before the fire' }
+};
+for (const [id, a] of Object.entries(ASSETS)) a.src = 'data:image/svg+xml,' + encodeURIComponent(ASSET_SVG[id]);
+
+const SAMPLE = `The old market square has held a weekly market for more than six hundred years. Stand by the bench and face north: the tall stone front with the single door is the **guild house**, finished in the spring of 1612.
+
+## The keep that came first
+
+In the north-west corner a low, broken wall runs along the paving. It looks like a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all.
+
+![The broken wall of the keep, seen from the bench](asset:keep-wall)
+
+## The guild house
+
+The guilds argued for eleven years before they built it. What finally brought them together was not friendship but the *town scales*:
+
+- every sack of grain had to be weighed,
+- every bale of wool, and
+  - every barrel of salt, even on fair days.
+
+Look at the front. The door in the middle is not the original. The first door was twice as wide, so that a loaded hand-cart could be pushed straight in onto the scales.
+
+## The night of the fire
+
+The great timber market hall burned on a dry night in October 1890. The townspeople formed a line from the well and passed buckets from hand to hand. They could not save the hall, but the guild house survived.
+
+You can read more in the [town archive's collection](https://example.org/archive).`;
+
+/* =====================================================================
+   2. Reading the body: the safe Markdown subset, what is "shown as typed",
+      and the words and sentences a voice reads
+   ===================================================================== */
+const ISSUE = {
+  table: { title: 'A table', why: 'Tables are not drawn as tables: visitors see the | and - signs exactly as typed.', fixNote: 'Each row becomes a list line. No words are removed.' },
+  tabs: { title: 'Columns from a spreadsheet', why: 'The columns run together for visitors: the gaps between them are not kept.', fixNote: 'Each row becomes a list line. No words are removed.' },
+  html: { title: 'Web page code', why: 'Marks in <angle brackets> are shown as typed, brackets and all.', fixNote: 'Removes the <...> marks and keeps every word; bold and italic stay bold and italic.' },
+  code: { title: 'A code box', why: 'The ``` lines are shown as typed; the lines between them show as ordinary text.', fixNote: 'Removes the ``` lines only.' },
+  icode: { title: 'Code marks', why: 'The ` signs around these words are shown as typed.', fixNote: 'Removes the ` signs; the words stay.' },
+  quote: { title: 'A quote mark', why: 'A > at the start of a line is shown as typed.', fixNote: 'Removes the > signs; the words stay. Italic is a good way to show a quote.' },
+  rule: { title: 'A divider line', why: 'A line like --- is shown as typed, not as a divider.', fix: 'Remove the line', fixNote: 'The line has no words in it.' },
+  fnref: { title: 'A footnote', why: 'Footnotes are not supported: the [^...] mark is shown as typed.', fixNote: 'Becomes "(note 1)" in the sentence.' },
+  fndef: { title: 'A footnote', why: 'Footnotes are not supported: this line is shown as typed.', fixNote: 'Becomes an ordinary line starting with "Note 1:".' },
+  webpic: { title: 'A picture from the web', why: 'Only pictures from this tour\'s files are shown; visitors see this one as its address.', fixNote: 'Keeps its description as text. Or put in one of the tour\'s pictures.', pic: true },
+  missingpic: { title: 'A picture that is not in this tour', why: 'No file of this tour has that name, so visitors see the line as typed.', fixNote: 'Keeps its description as text. Or put in one of the tour\'s pictures.', pic: true }
+};
+const RE_IN = /(<!--[\s\S]*?-->|<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>\n]*)?\/?>)|(`[^`\n]+`)|(\[\^[^\]\s]+\])|(!\[([^\]\n]*)\]\(([^)\s]*)\))|(\[([^\]\n]+)\]\(([^)\s]+)\))|(\*\*(?=\S)([^*\n]+?)\*\*)|(\*(?=[^\s*])([^*\n]+?)\*)|((?<![\p{L}\p{N}])_(?=\S)([^_\n]+?)_(?![\p{L}\p{N}]))/gu;
+
+function parseInline(text, base, ctx) {
+  const runs = []; let last = 0, m; const re = new RegExp(RE_IN.source, 'gu');
+  const plain = (a, b) => { if (b > a) runs.push({ text: text.slice(a, b), from: base + a }); };
+  const D = (a, b, c) => { if (b > a) ctx.deco.push({ from: base + a, to: base + b, c }); };
+  const lit = (a, e, kind, extra) => { runs.push({ text: text.slice(a, e), from: base + a, lit: 1 }); ctx.inl.push({ kind, from: base + a, to: base + e, ...extra }); };
+  while ((m = re.exec(text))) {
+    const a = m.index, e = a + m[0].length; plain(last, a); last = e;
+    if (m[1]) lit(a, e, 'html');
+    else if (m[2]) lit(a, e, 'icode');
+    else if (m[3]) lit(a, e, 'fnref');
+    else if (m[4]) {
+      const url = m[6];
+      if (/^asset:/.test(url) && ASSETS[url.slice(6)]) { runs.push({ pic: url.slice(6), alt: m[5], text: '', from: base + a }); D(a, e, 'pic'); }
+      else lit(a, e, /^asset:/.test(url) ? 'missingpic' : 'webpic', { alt: m[5] });
+    } else if (m[7]) { const t = m[8]; D(a, a + 1, 'mk'); D(a + 1, a + 1 + t.length, 'ln'); D(a + 1 + t.length, e, 'mk'); runs.push({ text: t, from: base + a + 1, href: m[9] }); }
+    else if (m[10]) { D(a, a + 2, 'mk'); D(a + 2, e - 2, 'b'); D(e - 2, e, 'mk'); runs.push({ text: m[11], from: base + a + 2, b: 1 }); }
+    else if (m[12]) { D(a, a + 1, 'mk'); D(a + 1, e - 1, 'i'); D(e - 1, e, 'mk'); runs.push({ text: m[13], from: base + a + 1, i: 1 }); }
+    else if (m[14]) { D(a, a + 1, 'mk'); D(a + 1, e - 1, 'i'); D(e - 1, e, 'mk'); runs.push({ text: m[15], from: base + a + 1, i: 1 }); }
+  }
+  plain(last, text.length);
+  return runs;
+}
+
+// Words and sentences of one text container (a paragraph, a heading, a list line, a shown-as-typed block).
+function tokenize(runs, isLit, A, bi) {
+  let plain = ''; const starts = [];
+  for (const r of runs) { starts.push(plain.length); plain += r.text; }
+  const off = (p) => { for (let k = runs.length - 1; k >= 0; k--) if (!runs[k].pic && starts[k] <= p) return runs[k].from + (p - starts[k]); return runs[0] ? runs[0].from : 0; };
+  const ws = []; const re = wordRe(); let m;
+  while ((m = re.exec(plain))) ws.push({ a: m.index, b: m.index + m[0].length, t: m[0] });
+  const units = [];
+  if (!ws.length) { units.push({ wi: -1, si: -1, a: 0, b: plain.length }); return { units, plain, runs, starts }; }
+  if (ws[0].a > 0) units.push({ wi: -1, si: -1, a: 0, b: ws[0].a });
+  let s0 = A.words.length;
+  for (let k = 0; k < ws.length; k++) {
+    const w = ws[k], nx = ws[k + 1], b = nx ? nx.a : plain.length;
+    const gap = plain.slice(w.b, b), wi = A.words.length, si = A.sentences.length;
+    A.words.push({ norm: norm(w.t), text: w.t, si, from: off(w.a), to: off(w.b - 1) + 1, tail: gap.replace(/\s+/g, ' ') });
+    units.push({ wi, si, a: w.a, b });
+    const end = !nx || (/[.!?…]/.test(gap) && /^[\p{Lu}\p{N}]/u.test(nx.t)) || (isLit && gap.includes('\n'));
+    if (end) {
+      const list = A.words.slice(s0, A.words.length);
+      A.sentences.push({ wi0: s0, wi1: A.words.length, key: list.map((x) => x.norm).join(' '), text: list.map((x) => x.text + x.tail).join('').trim(), from: list[0].from, to: list[list.length - 1].to, block: bi });
+      s0 = A.words.length;
+    }
+  }
+  return { units, plain, runs, starts };
+}
+
+function analyze(body) {
+  const lines = []; { let p = 0; for (const t of body.split('\n')) { lines.push({ t, from: p, to: p + t.length }); p += t.length + 1; } }
+  const blocks = [], issues = [], ctx = { inl: [], deco: [] };
+  const blank = (t) => !t.trim();
+  const R = { fence: /^\s*```/, head: /^(#{1,6})(\s+)(.*)$/, li: /^(\s*)([-*+]|\d{1,3}[.)])(\s+)(.*)$/, pic: /^\s*!\[([^\]\n]*)\]\(([^)\s]*)\)\s*$/,
+    quote: /^\s*>/, rule: /^\s*([-*_])(?:\s*\1){2,}\s*$/, fndef: /^\s*\[\^[^\]\s]+\]:/, html: /^\s*<(?:\/?[A-Za-z][A-Za-z0-9-]*(?:[\s>/]|$)|!--)/ };
+  const pipe = (t) => t != null && (/^\s*\|/.test(t) || t.split('|').length >= 3);
+  const tabbed = (t) => t != null && t.includes('\t');
+  const startsBlock = (i) => { const t = lines[i].t; return blank(t) || R.fence.test(t) || R.head.test(t) || R.li.test(t) || R.pic.test(t) || R.quote.test(t) || R.rule.test(t) || R.fndef.test(t) || R.html.test(t) || (pipe(t) && pipe(lines[i + 1]?.t)) || (tabbed(t) && tabbed(lines[i + 1]?.t)); };
+  const lit = (i0, i1, kind, extra) => { const from = lines[i0].from, to = lines[i1].to; blocks.push({ type: 'lit', from, to, runs: [{ text: body.slice(from, to), from, lit: 1 }] }); issues.push({ kind, from, to, ...extra }); };
+  let i = 0, m;
+  while (i < lines.length) {
+    const t = lines[i].t;
+    if (blank(t)) { i++; continue; }
+    if (R.fence.test(t)) { let j = i + 1; while (j < lines.length && !R.fence.test(lines[j].t)) j++; j = Math.min(j, lines.length - 1); lit(i, j, 'code'); i = j + 1; continue; }
+    if (pipe(t) && pipe(lines[i + 1]?.t)) { let j = i; while (j + 1 < lines.length && pipe(lines[j + 1].t)) j++; lit(i, j, 'table'); i = j + 1; continue; }
+    if (tabbed(t) && tabbed(lines[i + 1]?.t)) { let j = i; while (j + 1 < lines.length && tabbed(lines[j + 1].t)) j++; lit(i, j, 'tabs'); i = j + 1; continue; }
+    if (R.html.test(t)) { let j = i; while (j + 1 < lines.length && !blank(lines[j + 1].t)) j++; lit(i, j, 'html'); i = j + 1; continue; }
+    if (R.quote.test(t)) { let j = i; while (j + 1 < lines.length && R.quote.test(lines[j + 1].t)) j++; lit(i, j, 'quote'); i = j + 1; continue; }
+    if (R.rule.test(t)) { lit(i, i, 'rule'); i++; continue; }
+    if (R.fndef.test(t)) { lit(i, i, 'fndef'); i++; continue; }
+    if ((m = R.head.exec(t))) {
+      const L = lines[i], mk = m[1].length + m[2].length;
+      ctx.deco.push({ from: L.from, to: L.from + mk, c: 'mk' }, { from: L.from + mk, to: L.to, c: 'hd' });
+      blocks.push({ type: 'h', level: Math.min(3, m[1].length), from: L.from, to: L.to, runs: parseInline(m[3], L.from + mk, ctx) }); i++; continue;
+    }
+    if ((m = R.pic.exec(t))) {
+      const L = lines[i], id = m[2].startsWith('asset:') ? m[2].slice(6) : null;
+      if (id && ASSETS[id]) { ctx.deco.push({ from: L.from, to: L.to, c: 'pic' }); blocks.push({ type: 'pic', alt: m[1], id, from: L.from, to: L.to }); }
+      else lit(i, i, id ? 'missingpic' : 'webpic', { alt: m[1] });
+      i++; continue;
+    }
+    if (R.li.test(t)) {
+      const items = []; let j = i;
+      while (j < lines.length && (m = R.li.exec(lines[j].t))) {
+        const L = lines[j], ind = m[1].replace(/\t/g, '    ').length, mf = L.from + m[1].length;
+        ctx.deco.push({ from: mf, to: mf + m[2].length, c: 'mk' });
+        items.push({ ind, ord: /\d/.test(m[2]), from: L.from, to: L.to, runs: parseInline(m[4], mf + m[2].length + m[3].length, ctx) }); j++;
+      }
+      blocks.push({ type: 'list', items, from: lines[i].from, to: lines[j - 1].to }); i = j; continue;
+    }
+    let j = i; while (j + 1 < lines.length && !startsBlock(j + 1)) j++;
+    const from = lines[i].from, to = lines[j].to;
+    blocks.push({ type: 'p', from, to, runs: parseInline(body.slice(from, to), from, ctx) }); i = j + 1;
+  }
+  // inline issues: web page code within one line counts as one part
+  ctx.inl.sort((a, b) => a.from - b.from);
+  for (const it of ctx.inl) {
+    const p = issues.length ? issues[issues.length - 1] : null;
+    if (p && p.inline && p.kind === 'html' && it.kind === 'html' && !body.slice(p.to, it.from).includes('\n')) p.to = it.to;
+    else issues.push({ ...it, inline: true });
+  }
+  issues.sort((a, b) => a.from - b.from);
+  const A = { body, blocks, issues, deco: ctx.deco, words: [], sentences: [] };
+  blocks.forEach((b, bi) => {
+    if (b.type === 'list') for (const it of b.items) it.tk = tokenize(it.runs, false, A, bi);
+    else if (b.runs) b.tk = tokenize(b.runs, b.type === 'lit', A, bi);
+  });
+  A.key = A.sentences.map((s) => s.key).join('\n');
+  for (const is of issues) {
+    is.text = body.slice(is.from, is.to); is.key = is.kind + ':' + is.text;
+    is.line = body.slice(0, is.from).split('\n').length; is.kept = S.kept.has(is.key);
+  }
+  return A;
+}
+
+/* "Make it plain text": the fix for each kind. It never drops a word. */
+function fixFor(is) {
+  const t = is.text;
+  const rowsToList = (rows) => {
+    const out = []; rows.forEach((cells, k) => {
+      if (!cells.length) return;
+      if (k === 0 && rows.length > 1) out.push(cells.join(', ') + ':');
+      else out.push('- ' + (cells.length > 1 ? cells[0] + ': ' + cells.slice(1).join(', ') : cells[0]));
+    }); return out.join('\n');
+  };
+  switch (is.kind) {
+    case 'table': return rowsToList(t.split('\n').filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l)).map((l) => l.split('|').map((c) => c.trim()).filter(Boolean)));
+    case 'tabs': return rowsToList(t.split('\n').map((l) => l.split('\t').map((c) => c.trim()).filter(Boolean)));
+    case 'html': return t.replace(/<!--\s*([\s\S]*?)\s*-->/g, '$1').replace(/<\s*(b|strong)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '**$2**').replace(/<\s*(i|em)\s*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, '*$2*')
+      .replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\s*\/?\s*(p|div|h\d|li|ul|ol|section|article)\b[^>]*>/gi, (s) => (/^<\s*\//.test(s) ? '' : '')).replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/[ \t]+\n/g, '\n').trim();
+    case 'code': return t.split('\n').filter((l) => !/^\s*```/.test(l)).join('\n');
+    case 'icode': return t.replace(/`/g, '');
+    case 'quote': return t.split('\n').map((l) => l.replace(/^\s*>\s?/, '')).join('\n');
+    case 'rule': return '';
+    case 'fnref': return ' (note ' + t.replace(/^\[\^|\]$/g, '') + ')';
+    case 'fndef': return t.replace(/^\s*\[\^([^\]\s]+)\]:\s*/, 'Note $1: ');
+    case 'webpic': case 'missingpic': return is.alt ? is.alt : '';
+  }
+  return t;
+}
+
+/* =====================================================================
+   3. State
+   ===================================================================== */
+const S = {
+  title: 'The guild house and the burnt hall', body: SAMPLE, view: 'reading',
+  voice: null, timing: null, last: null, lastSeen: false, notesOpen: false, importError: null,
+  kept: new Set(), previewOpen: true, sheetOpen: true, wide: false, narrOpen: false, posOpen: false,
+  readMark: 0, focus: null, captionsAsk: false, treeFolded: false, treeAuto: false, A: null
+};
+S.A = analyze(S.body);
+const fits = () => !!(S.timing && S.timing.key === S.A.key);
+const stale = () => !!(S.timing && S.timing.key !== S.A.key);
+
+/* =====================================================================
+   4. Timing: a fake voice, imports (WebVTT, word list), lining up again
+   ===================================================================== */
+// A plausible fake narration for a text: word lengths, pauses at sentences and paragraphs.
+function fakeTimes(A, t0 = 400) {
+  const out = new Array(A.words.length); let t = t0;
+  A.words.forEach((w, i) => {
+    const d = Math.min(640, 150 + 30 * w.text.length); out[i] = { s: Math.round(t), e: Math.round(t + d) }; t += d + 45;
+    const s = A.sentences[w.si];
+    if (s && i === s.wi1 - 1) { t += 420; const nx = A.sentences[w.si + 1]; if (nx && nx.block !== s.block) t += 380; }
+  });
+  return { times: out, end: Math.round(t) };
+}
+function buildIdx(times) {
+  const arr = []; times.forEach((t, wi) => { if (t) arr.push([t.s, wi]); }); arr.sort((a, b) => a[0] - b[0]);
+  return { starts: Float64Array.from(arr, (x) => x[0]), wi: Int32Array.from(arr, (x) => x[1]) };
+}
+function makeTiming(A, times, meta) {
+  const sents = A.sentences.map((s) => ({ key: s.key, text: s.text, words: A.words.slice(s.wi0, s.wi1).map((w) => w.norm), times: times.slice(s.wi0, s.wi1) }));
+  let end = 0; for (const t of times) if (t) end = Math.max(end, t.e);
+  return { fileMismatches: [], rewritten: [], unused: [], ...meta, key: A.key, times: times.slice(), sents, end, idx: buildIdx(times) };
+}
+// Fill words without a time inside one sentence from their timed neighbours.
+function fillSentence(times, i0, i1, fallback) {
+  let any = false; for (let i = i0; i < i1; i++) if (times[i]) { any = true; break; }
+  if (!any) {
+    if (!fallback) return;
+    const n = i1 - i0, step = (fallback.e - fallback.s) / Math.max(1, n);
+    for (let i = i0; i < i1; i++) times[i] = { s: Math.round(fallback.s + step * (i - i0)), e: Math.round(fallback.s + step * (i - i0 + 1) - 30) };
+    return;
+  }
+  let i = i0;
+  while (i < i1) {
+    if (times[i]) { i++; continue; }
+    let j = i; while (j < i1 && !times[j]) j++;
+    const p = i - 1 >= i0 ? times[i - 1] : null, q = j < i1 ? times[j] : null, n = j - i;
+    const a = p ? p.e + 30 : q.s - 330 * n, b = q ? q.s - 30 : p.e + 330 * n, step = (b - a) / n;
+    for (let k = i; k < j; k++) times[k] = { s: Math.round(a + step * (k - i)), e: Math.round(a + step * (k - i + 1) - 20) };
+    i = j;
+  }
+}
+function lcsMap(B, F) { // file index -> body index (or -1), longest common word sequence
+  const n = B.length, m = F.length, map = new Int32Array(m).fill(-1);
+  if (!n || !m) return map;
+  if (n * m > 6e6) { let i = 0; for (let j = 0; j < m && i < n; j++) { const k = B.indexOf(F[j], i); if (k >= 0 && k - i < 12) { map[j] = k; i = k + 1; } } return map; }
+  const W = m + 1, L = new Uint16Array((n + 1) * W);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i * W + j] = B[i] === F[j] ? L[(i + 1) * W + j + 1] + 1 : Math.max(L[(i + 1) * W + j], L[i * W + j + 1]);
+  let i = 0, j = 0;
+  while (i < n && j < m) { if (B[i] === F[j]) { map[j] = i; i++; j++; } else if (L[(i + 1) * W + j] >= L[i * W + j + 1]) i++; else j++; }
+  // a single word matching by chance is not a match
+  const keep = new Int32Array(m).fill(-1);
+  for (let k = 0; k < m; k++) { const b = map[k]; if (b < 0) continue; if ((k > 0 && map[k - 1] === b - 1) || (k + 1 < m && map[k + 1] === b + 1) || (n === 1)) keep[k] = b; }
+  return keep;
+}
+function lcsPairs(a, b) { // index pairs of the longest common subsequence of two string arrays
+  const n = a.length, m = b.length, W = m + 1, L = new Uint16Array((n + 1) * W);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i * W + j] = a[i] === b[j] ? L[(i + 1) * W + j + 1] + 1 : Math.max(L[(i + 1) * W + j], L[i * W + j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (a[i] === b[j]) { out.push([i, j]); i++; j++; } else if (L[(i + 1) * W + j] >= L[i * W + j + 1]) i++; else j++; }
+  return out;
+}
+const sim = (a, b) => (Math.max(a.length, b.length) ? lcsPairs(a, b).length / Math.max(a.length, b.length) : 1);
+
+function parseTime(s) { const p = s.trim().replace(',', '.').split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p.length === 2 ? p[0] * 60 + p[1] : p[0]; }
+function parseVTT(text) {
+  const L = text.replace(/\r/g, '').split('\n');
+  if (!/^﻿?WEBVTT/.test(L[0] || '')) throw new Error('it does not start with WEBVTT, so it is not a subtitle file.');
+  const tre = /^\s*((?:\d+:)?\d{1,2}:\d{2}[.,]\d{1,3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[.,]\d{1,3})/; const units = [];
+  for (let i = 1; i < L.length; i++) {
+    const m = tre.exec(L[i]); if (!m) continue;
+    const s = parseTime(m[1]) * 1000, e = parseTime(m[2]) * 1000, line = i + 1, buf = []; i++;
+    while (i < L.length && L[i].trim() !== '') { buf.push(L[i]); i++; }
+    const txt = buf.join(' ').replace(/<[^>]*>/g, '').trim();
+    if (txt && Number.isFinite(s) && Number.isFinite(e)) units.push({ text: txt, s, e: Math.max(s, e), label: 'Line ' + line });
+  }
+  if (!units.length) throw new Error('no timed lines were found in it.');
+  return units;
+}
+function parseWordList(text) {
+  let j; try { j = JSON.parse(text); } catch { throw new Error('it is not a readable word list.'); }
+  const list = Array.isArray(j) ? j : Array.isArray(j?.words) ? j.words : Array.isArray(j?.segments) ? j.segments.flatMap((s) => (Array.isArray(s?.words) ? s.words : [])) : null;
+  if (!list) throw new Error('no list of words with start and end times was found in it.');
+  const units = []; list.forEach((w, k) => {
+    const t = typeof w?.word === 'string' ? w.word : typeof w?.text === 'string' ? w.text : null, s = Number(w?.start), e = Number(w?.end);
+    if (t !== null && Number.isFinite(s) && Number.isFinite(e) && e >= s && s >= 0) units.push({ text: t, s: s * 1000, e: e * 1000, label: 'Word ' + (k + 1) });
+  });
+  if (!units.length) throw new Error('none of its entries has a word with a start and end time.');
+  return units;
+}
+function unitsToTokens(units) {
+  const toks = []; units.forEach((u, ui) => {
+    const ws = [...u.text.matchAll(wordRe())]; if (!ws.length) return;
+    const total = ws.reduce((a, w) => a + w[0].length, 0); let acc = 0;
+    for (const w of ws) { const a = u.s + (u.e - u.s) * acc / total; acc += w[0].length; toks.push({ norm: norm(w[0]), s: a, e: u.s + (u.e - u.s) * acc / total, ui }); }
+  });
+  return toks;
+}
+// Import a timing file. It never touches the body; every line that does not fit is listed.
+function importTiming(fileName, text) {
+  let units, kind;
+  try {
+    if (/^﻿?\s*WEBVTT/.test(text)) { kind = 'vtt'; units = parseVTT(text); }
+    else if (/^\s*[[{]/.test(text)) { kind = 'words'; units = parseWordList(text); }
+    else throw new Error('it is neither a subtitle file (.vtt) nor a word list (.json).');
+  } catch (e) { S.importError = { fileName, msg: e.message }; S.narrOpen = true; renderAll(); toast(`Could not use ${fileName}: ${e.message}`, 6000); return false; }
+  S.importError = null;
+  const A = S.A, B = A.words.map((w) => w.norm);
+  let toks = unitsToTokens(units), map = lcsMap(B, toks.map((t) => t.norm));
+  const unitHit = (mp, tk) => { const c = units.map(() => [0, 0]); tk.forEach((t, j) => { c[t.ui][1]++; if (mp[j] >= 0) c[t.ui][0]++; }); return c; };
+  const mism = [];
+  if (kind === 'vtt') {
+    let c = unitHit(map, toks); const bad = new Set(); c.forEach(([h, n], ui) => { if (n && h / n < 0.5) bad.add(ui); });
+    if (bad.size) { toks = toks.filter((t) => !bad.has(t.ui)); map = lcsMap(B, toks.map((t) => t.norm)); }
+    units.forEach((u, ui) => { if (bad.has(ui)) mism.push({ type: 'file', label: u.label, s: u.s, e: u.e, text: u.text }); });
+  } else {
+    let run = null; toks.forEach((t, j) => {
+      if (map[j] < 0) { if (!run) run = { a: j, b: j }; else run.b = j; }
+      if ((map[j] >= 0 || j === toks.length - 1) && run) { const u0 = units[toks[run.a].ui], u1 = units[toks[run.b].ui]; mism.push({ type: 'file', label: run.a === run.b ? u0.label : `${u0.label}-${toks[run.b].ui + 1}`, s: u0.s, e: u1.e, text: units.slice(toks[run.a].ui, toks[run.b].ui + 1).map((u) => u.text).join(' ') }); run = null; }
+    });
+  }
+  const times = new Array(A.words.length).fill(null);
+  toks.forEach((t, j) => { const b = map[j]; if (b >= 0 && !times[b]) times[b] = { s: Math.round(t.s), e: Math.round(t.e) }; });
+  for (const s of A.sentences) fillSentence(times, s.wi0, s.wi1, null);
+  const lines = units.length, mlines = kind === 'vtt' ? mism.length : 0;
+  S.timing = makeTiming(A, times, { source: kind, fileName, fileMismatches: mism });
+  const noVoice = A.sentences.filter((s) => !times[s.wi0]).length;
+  S.last = { type: 'import', kind, fileName, lines, matchedLines: lines - mlines, mism: mism.length, noVoice, sentences: A.sentences.length };
+  S.lastSeen = false; S.narrOpen = true; S.focus = null;
+  if (S.voice) S.voice.durMs = Math.max(S.voice.durMs, S.timing.end + 900);
+  renderAll(); revealResult();
+  toast(mism.length ? `${fileName}: ${mism.length} ${plural(mism.length, kind === 'vtt' ? 'line' : 'stretch', kind === 'vtt' ? 'lines' : 'stretches')} of the file do not match your text. They are listed under Narration.` : `${fileName}: every ${kind === 'vtt' ? 'line' : 'word'} lines up with your text.`, 5500);
+  return true;
+}
+
+// Why the timing no longer fits: the sentences that differ from the ones the voice was lined up with.
+function diffGroups() {
+  const T = S.timing, A = S.A; if (!T) return [];
+  const oK = T.sents.map((s) => s.key), nK = A.sentences.map((s) => s.key), pairs = lcsPairs(oK, nK), groups = [];
+  let po = 0, pn = 0;
+  const gap = (o1, n1) => { if (o1 > po || n1 > pn) groups.push({ o0: po, o1, n0: pn, n1 }); };
+  for (const [o, n] of pairs) { gap(o, n); po = o + 1; pn = n + 1; }
+  gap(oK.length, nK.length);
+  return { groups, pairs };
+}
+function changeWords(oldW, newW, newWords) {
+  const p = lcsPairs(oldW, newW), oi = new Set(p.map((x) => x[0])), ni = new Set(p.map((x) => x[1]));
+  const rem = oldW.filter((_, k) => !oi.has(k)), add = newWords.filter((_, k) => !ni.has(k)).map((w) => w.text);
+  if (rem.length === 1 && add.length === 1) return `you changed "${rem[0]}" to "${add[0]}"`;
+  if (!rem.length && add.length) return `you added "${trunc(add.join(' '), 40)}"`;
+  if (rem.length && !add.length) return `you took out "${trunc(rem.join(' '), 40)}"`;
+  return 'you changed a few words';
+}
+function staleInfo() {
+  const T = S.timing, A = S.A, { groups } = diffGroups(); let count = 0; const items = [];
+  for (const g of groups) {
+    count += Math.max(g.o1 - g.o0, g.n1 - g.n0);
+    const olds = T.sents.slice(g.o0, g.o1), news = A.sentences.slice(g.n0, g.n1);
+    if (olds.length === 1 && news.length === 1 && sim(olds[0].words, A.words.slice(news[0].wi0, news[0].wi1).map((w) => w.norm)) >= 0.6)
+      items.push({ text: `"${trunc(news[0].text, 70)}": ${changeWords(olds[0].words, A.words.slice(news[0].wi0, news[0].wi1).map((w) => w.norm), A.words.slice(news[0].wi0, news[0].wi1))}.`, from: news[0].from, to: news[0].to });
+    else if (!olds.length) news.forEach((n) => items.push({ text: `New: "${trunc(n.text, 70)}". The voice does not read it yet.`, from: n.from, to: n.to }));
+    else if (!news.length) { const nx = A.sentences[g.n0]; items.push({ text: `Taken out: "${trunc(olds.map((o) => o.text).join(' '), 70)}". The voice still reads it.`, from: nx ? nx.from : null, to: nx ? nx.from : null }); }
+    else news.forEach((n) => items.push({ text: `Rewritten: "${trunc(n.text, 70)}".`, from: n.from, to: n.to }));
+  }
+  return { count, items, groups };
+}
+const oldPart = (o) => { const ts = o.times.filter(Boolean); return { text: o.text, s: ts.length ? ts[0].s : 0, e: ts.length ? ts[ts.length - 1].e : 0, has: ts.length > 0 }; };
+
+// "Line the voice up again": keeps every sentence that still matches, and the timing of words that survive an edit.
+function lineUpAgain() {
+  const T = S.timing, A = S.A; if (!T) return;
+  const { groups, pairs } = diffGroups();
+  const times = new Array(A.words.length).fill(null);
+  const nw = (n) => A.words.slice(A.sentences[n].wi0, A.sentences[n].wi1).map((w) => w.norm);
+  for (const [o, n] of pairs) { const os = T.sents[o], ns = A.sentences[n]; for (let k = 0; k < ns.wi1 - ns.wi0; k++) times[ns.wi0 + k] = os.times[k] ? { ...os.times[k] } : null; }
+  let adjusted = 0; const rewritten = [], unused = [...T.unused, ...T.rewritten.map((r) => r.old)], noVoiceNew = [];
+  for (const g of groups) {
+    const leftO = []; for (let o = g.o0; o < g.o1; o++) leftO.push(o);
+    const leftN = []; let lastO = -1;
+    for (let n = g.n0; n < g.n1; n++) {
+      let best = -1, bs = 0; for (const o of leftO) { if (o <= lastO) continue; const v = sim(T.sents[o].words, nw(n)); if (v > bs) { bs = v; best = o; } }
+      if (best >= 0 && bs >= 0.6) {
+        const os = T.sents[best], ns = A.sentences[n], p = lcsPairs(os.words, nw(n));
+        for (const [a, b] of p) if (os.times[a]) times[ns.wi0 + b] = { ...os.times[a] };
+        fillSentence(times, ns.wi0, ns.wi1, oldPart(os).has ? oldPart(os) : null);
+        leftO.splice(leftO.indexOf(best), 1); lastO = best; adjusted++;
+      } else leftN.push(n);
+    }
+    while (leftN.length && leftO.length) { const n = leftN.shift(), o = leftO.shift(), op = oldPart(T.sents[o]); if (op.has) rewritten.push({ type: 'rewritten', key: A.sentences[n].key, old: op }); else noVoiceNew.push(n); }
+    noVoiceNew.push(...leftN);
+    for (const o of leftO) { const op = oldPart(T.sents[o]); if (op.has) unused.push(op); }
+  }
+  const total = A.sentences.length;
+  const voiced = A.sentences.filter((s) => times[s.wi0]).length;
+  S.timing = makeTiming(A, times, { source: T.source, fileName: T.fileName, fileMismatches: T.fileMismatches, rewritten, unused });
+  S.last = { type: 'lineup', total, voiced, adjusted, notMatched: rewritten.length + noVoiceNew.length };
+  S.lastSeen = false; S.narrOpen = true; S.focus = null;
+  renderAll(); revealResult();
+  toast(S.last.notMatched ? `Lined up again: ${voiced} of ${total} sentences have their voice. ${S.last.notMatched} ${plural(S.last.notMatched, 'sentence')} could not be matched; see Narration.` : `Lined up again: every sentence has its voice.`, 5500);
+}
+
+// Notes that stay listed as long as they are true: file lines not in the text, sentences without a voice, voice parts no longer used.
+function notesList() {
+  const T = S.timing; if (!T || !fits()) return [];
+  const A = S.A, out = [...T.fileMismatches];
+  const rwKeys = new Map(T.rewritten.map((r) => [r.key, r]));
+  for (const s of A.sentences) {
+    if (S.timing.times[s.wi0]) continue;
+    const r = rwKeys.get(s.key);
+    out.push(r ? { type: 'rewritten', si: A.sentences.indexOf(s), old: r.old } : { type: 'novoice', si: A.sentences.indexOf(s) });
+  }
+  for (const u of T.unused) out.push({ type: 'unused', old: u });
+  return out;
+}
+
+/* =====================================================================
+   5. The fake voice clock (no audio; a visible sound indicator stands in)
+   ===================================================================== */
+const C = { playing: false, pos: 0, t0: 0, p0: 0, stopAt: null, raf: 0 };
+const dur = () => (S.voice ? S.voice.durMs : 0);
+const now = () => (C.playing ? C.p0 + (performance.now() - C.t0) : C.pos);
+function play() {
+  if (!S.voice) { toast('Add a voice file first: there is nothing to play yet.'); return; }
+  if (C.playing) return;
+  if (C.pos >= dur() - 80) C.pos = 0;
+  C.playing = true; C.t0 = performance.now(); C.p0 = C.pos; cancelAnimationFrame(C.raf); C.raf = requestAnimationFrame(tick); tick();
+}
+function pause() { if (!C.playing) return; C.pos = now(); C.playing = false; C.stopAt = null; tick(); }
+function toggle() { C.playing ? pause() : play(); }
+function seek(ms) { const was = C.playing; C.pos = clamp(ms, 0, Math.max(0, dur() - 1)); if (was) { C.p0 = C.pos; C.t0 = performance.now(); } tick(); }
+function tick() {
+  let t = now();
+  if (C.playing && C.stopAt != null && t >= C.stopAt) { C.pos = C.stopAt; C.playing = false; C.stopAt = null; t = C.pos; }
+  if (C.playing && t >= dur()) { C.pos = dur(); C.playing = false; t = C.pos; }
+  updatePlayUI(t); updateCursor(false, t);
+  if (C.playing) C.raf = requestAnimationFrame(tick);
+}
+function cursorAt(ms) {
+  if (!fits()) return null;
+  const T = S.timing, st = T.idx.starts; let lo = 0, hi = st.length - 1, k = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (st[mid] <= ms) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+  if (k < 0) return null;
+  const wi = T.idx.wi[k], tw = T.times[wi];
+  if (ms > tw.e + 1000) return null;   // the voice says something that is not in the text: no highlight
+  return { wi, si: S.A.words[wi].si, on: ms <= tw.e + 120 };
+}
+function listen(s, e) {
+  if (!S.voice) { toast('Add a voice file to listen.'); return; }
+  if (!S.previewOpen) setPreview(true);
+  if (S.view !== 'silent' && !S.sheetOpen) { S.sheetOpen = true; renderPreview(); }
+  seek(Math.max(0, s - 250)); C.stopAt = e + 350; play();
+  toast(`Playing ${fmt(s)}-${fmt(e)} in the preview.`);
+}
+
+/* =====================================================================
+   6. The writer: a plain textarea over a mirror that marks the text
+   ===================================================================== */
+const W = $('#wta'), MIR = $('#mirror');
+W.value = S.body;
+let curIssue = -1, escForTab = false, saveTimer = 0;
+function caretIssue() {
+  if (document.activeElement !== W && curIssue >= 0) return curIssue;
+  const a = W.selectionStart, b = W.selectionEnd;
+  return S.A.issues.findIndex((is) => !is.kept && a >= is.from && b <= is.to + (a === b ? 0 : 0) && a <= is.to);
+}
+function renderMirror() {
+  const b = S.body, n = b.length, A = S.A, fl = new Uint16Array(n + 1), iss = new Int16Array(n + 1).fill(-1);
+  const F = { mk: 1, hd: 2, b: 4, i: 8, ln: 16, pic: 32 };
+  for (const d of A.deco) for (let k = d.from; k < d.to && k < n; k++) fl[k] |= F[d.c];
+  A.issues.forEach((is, idx) => { for (let k = is.from; k < is.to && k < n; k++) { fl[k] |= is.kept ? 128 : 64; iss[k] = idx; if (idx === curIssue) fl[k] |= 256; } });
+  if (stale()) for (const it of staleInfo().items) if (it.from != null && it.to > it.from) for (let k = it.from; k < it.to && k < n; k++) fl[k] |= 512;
+  if (S.focus) for (let k = S.focus.from; k < S.focus.to && k < n; k++) fl[k] |= 1024;
+  const CL = [[1, 'm-mk'], [2, 'm-hd'], [4, 'm-b'], [8, 'm-i'], [16, 'm-ln'], [32, 'm-pic'], [64, 'm-iss'], [128, 'm-kept'], [256, 'm-cur'], [512, 'm-chg'], [1024, 'm-fr']];
+  let h = '', k = 0;
+  while (k < n) {
+    let j = k + 1; while (j < n && fl[j] === fl[k] && iss[j] === iss[k]) j++;
+    const f = fl[k], t = esc(b.slice(k, j));
+    if (f) { const c = CL.filter(([bit]) => f & bit).map((x) => x[1]).join(' '); h += `<span class="${c}"${iss[k] >= 0 ? ` data-i="${iss[k]}"` : ''}${f & 1024 ? ' data-fr="1"' : ''}>${t}</span>`; }
+    else h += t;
+    k = j;
+  }
+  MIR.innerHTML = h + '\n​';
+  MIR.scrollTop = W.scrollTop;
+}
+function scrollWriterTo(sel) {
+  const el = MIR.querySelector(sel); if (!el) return;
+  const top = el.offsetTop - 50; if (top < W.scrollTop || top > W.scrollTop + W.clientHeight - 80) W.scrollTop = Math.max(0, top);
+  MIR.scrollTop = W.scrollTop;
+}
+function onBody() {
+  S.body = W.value; S.A = analyze(S.body);
+  if (S.focus && (S.focus.to > S.body.length)) S.focus = null;
+  curIssue = caretIssue();
+  renderMirror(); renderCallout(); renderWriterStat(); renderView();
+  $('#saveState').textContent = 'Saving...'; clearTimeout(saveTimer); saveTimer = setTimeout(() => { $('#saveState').textContent = 'Saved'; }, 700);
+  schedule('narr', renderNarr, 180); schedule('pv', renderPreview, 140); renderTree();
+}
+const timers = {};
+function schedule(k, fn, ms) { clearTimeout(timers[k]); timers[k] = setTimeout(fn, ms); }
+function onCaret() {
+  escForTab = escForTab && document.activeElement === W;
+  const ci = caretIssue();
+  if (ci !== curIssue) { curIssue = ci; renderMirror(); renderCallout(); }
+  if (S.focus && document.activeElement === W && (W.selectionStart < S.focus.from || W.selectionStart > S.focus.to)) { S.focus = null; renderMirror(); }
+}
+// Every edit goes through the browser's own editing, so Ctrl+Z undoes it like typing.
+function replaceRange(from, to, text, sel) {
+  W.focus(); W.setSelectionRange(from, to);
+  let ok = false;
+  try { ok = text ? document.execCommand('insertText', false, text) : (from === to ? true : document.execCommand('delete')); } catch { ok = false; }
+  if (!ok) { W.setRangeText(text, from, to, 'end'); W.dispatchEvent(new Event('input', { bubbles: true })); }
+  if (sel) W.setSelectionRange(from + sel[0], from + sel[1]);
+  onCaret();
+}
+function lineRange(v, a, b) { const s = v.lastIndexOf('\n', a - 1) + 1; let e = v.indexOf('\n', b); if (e < 0) e = v.length; return [s, e]; }
+function wrapInline(mk) {
+  let a = W.selectionStart, b = W.selectionEnd; const v = W.value;
+  while (b > a && /\s/.test(v[b - 1])) b--; while (a < b && /\s/.test(v[a])) a++;
+  const L = mk.length;
+  if (a === b) { replaceRange(a, b, mk + mk, [L, L]); return; }
+  const sel = v.slice(a, b);
+  const outer = v.slice(a - L, a) === mk && v.slice(b, b + L) === mk && !(L === 1 && (v[a - 2] === '*' || v[b + 1] === '*'));
+  if (outer) { replaceRange(a - L, b + L, sel, [0, sel.length]); return; }
+  if (sel.length > 2 * L && sel.startsWith(mk) && sel.endsWith(mk)) { const inner = sel.slice(L, -L); replaceRange(a, b, inner, [0, inner.length]); return; }
+  replaceRange(a, b, mk + sel + mk, [L, L + sel.length]);
+}
+const LI_RE = /^(\s*)([-*+]|\d{1,3}[.)])\s+/;
+function setLines(transform) {
+  const v = W.value, [s, e] = lineRange(v, W.selectionStart, W.selectionEnd);
+  const out = transform(v.slice(s, e).split('\n')).join('\n');
+  if (out !== v.slice(s, e)) replaceRange(s, e, out, [out.length, out.length]);
+}
+function toggleList(kind) {
+  setLines((lines) => {
+    const isKind = (l) => { const m = LI_RE.exec(l); return m && (kind === 'ol') === /\d/.test(m[2]); };
+    const all = lines.filter((l) => l.trim()).every(isKind); let n = 0;
+    return lines.map((l) => {
+      if (!l.trim()) return l;
+      const body = l.replace(LI_RE, '$1').replace(/^(\s*)#{1,6}\s+/, '$1'); if (all) return body;
+      const ind = /^\s*/.exec(body)[0]; n++; return ind + (kind === 'ol' ? n + '. ' : '- ') + body.slice(ind.length);
+    });
+  });
+}
+function toggleHeading(level) {
+  setLines((lines) => {
+    const re = new RegExp('^#{' + level + '}\\s+'); const all = lines.filter((l) => l.trim()).every((l) => re.test(l) && !/^#{4,}/.test(l.slice(0, level + 1)) && l[level] !== '#');
+    return lines.map((l) => { if (!l.trim()) return l; const body = l.replace(/^#{1,6}\s+/, '').replace(LI_RE, ''); return all ? body : '#'.repeat(level) + ' ' + body; });
+  });
+}
+function indent(dir) {
+  const v = W.value, [s, e] = lineRange(v, W.selectionStart, W.selectionEnd), lines = v.slice(s, e).split('\n');
+  if (!lines.some((l) => LI_RE.test(l))) { toast('Indent moves list lines in and out. Put the cursor in a list first.'); return; }
+  setLines((ls) => ls.map((l) => (!LI_RE.test(l) ? l : dir > 0 ? '  ' + l : l.replace(/^( {1,2}|\t)/, ''))));
+}
+function insertBlock(text) {
+  const v = W.value, a = W.selectionStart, [s, e] = lineRange(v, a, a), line = v.slice(s, e);
+  let at = line.trim() ? e : s; const before = v.slice(0, at), after = v.slice(at);
+  const pre = !before.length || /\n\n$/.test(before) ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+  const post = !after.length || /^\n\n/.test(after) ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+  replaceRange(at, at, pre + text + post, [pre.length, pre.length + text.length]);
+}
+W.addEventListener('input', onBody);
+W.addEventListener('scroll', () => { MIR.scrollTop = W.scrollTop; });
+for (const ev of ['keyup', 'click', 'focus', 'select']) W.addEventListener(ev, onCaret);
+W.addEventListener('keydown', (e) => {
+  const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+  if (e.key === 'Escape') { escForTab = true; closePops(); return; }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); wrapInline('**'); return; }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); wrapInline('*'); return; }
+  if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openLink(); return; }
+  if (mod && e.shiftKey && e.code === 'Digit8') { e.preventDefault(); toggleList('ul'); return; }
+  if (mod && e.shiftKey && e.code === 'Digit7') { e.preventDefault(); toggleList('ol'); return; }
+  if (e.key === 'Tab' && !mod && !e.altKey) {
+    if (escForTab) { escForTab = false; return; }   // Esc, then Tab: leave the writer
+    const v = W.value, [s, en] = lineRange(v, W.selectionStart, W.selectionEnd);
+    if (v.slice(s, en).split('\n').some((l) => LI_RE.test(l))) { e.preventDefault(); indent(e.shiftKey ? -1 : 1); }
+    return;
+  }
+  escForTab = false;
+  if (e.key === 'Enter' && !e.shiftKey && !mod && !e.altKey && !e.isComposing && W.selectionStart === W.selectionEnd) {
+    const v = W.value, a = W.selectionStart, [s, en] = lineRange(v, a, a), line = v.slice(s, en);
+    const m = /^(\s*)(?:([-*+])|(\d{1,3})([.)]))(\s+)(.*)$/.exec(line); if (!m) return;
+    const mkEnd = s + m[1].length + (m[2] || m[3] + m[4]).length + m[5].length; if (a < mkEnd) return;
+    e.preventDefault();
+    if (!m[6].trim()) { replaceRange(s, en, '', null); return; }   // Enter on an empty list line ends the list
+    const next = m[2] ? m[2] : (parseInt(m[3], 10) + 1) + m[4];
+    replaceRange(a, a, '\n' + m[1] + next + ' ', null);
+  }
+});
+
+/* toolbar, link row, pictures, help */
+function closePops() { $('#linkRow').hidden = true; $('#picPop').hidden = true; $('#wHelp').hidden = true; $('[data-w="help"]').setAttribute('aria-expanded', 'false'); }
+let linkSel = null;
+function openLink() {
+  closePops(); linkSel = [W.selectionStart, W.selectionEnd];
+  const t = W.value.slice(linkSel[0], linkSel[1]).trim();
+  $('#linkNote').textContent = t ? `The words "${trunc(t, 40)}" become the link.` : 'Select some words first to make them the link; otherwise the address itself is shown.';
+  $('#linkRow').hidden = false; $('#linkUrl').value = ''; $('#linkUrl').focus();
+}
+function addLink() {
+  let url = $('#linkUrl').value.trim(); if (!url) { $('#linkUrl').focus(); return; }
+  if (!/^(https?:|mailto:)/i.test(url)) url = 'https://' + url.replace(/^\/+/, '');
+  const [a, b] = linkSel || [W.selectionStart, W.selectionEnd]; const t = W.value.slice(a, b).trim() || url;
+  $('#linkRow').hidden = true; replaceRange(a, b, `[${t}](${url})`, [1, 1 + t.length]);
+}
+$('#linkUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } else if (e.key === 'Escape') { e.preventDefault(); $('#linkRow').hidden = true; W.focus(); } });
+let picTarget = null;
+function openPics(target) {
+  closePops(); picTarget = target || null;
+  $('#pics').innerHTML = Object.entries(ASSETS).map(([id, a]) => `<button class="picb" data-pic="${id}" title="${esc(a.alt)}"><img src="${a.src}" alt="">${esc(a.file)}</button>`).join('');
+  $('#picPop').hidden = false; $('#pics button').focus();
+}
+function insertPic(id) {
+  const a = ASSETS[id]; $('#picPop').hidden = true; const md = `![${a.alt}](asset:${id})`;
+  if (picTarget) { const is = picTarget; picTarget = null; replaceRange(is.from, is.to, md, [2, 2 + a.alt.length]); toast(`Put in the tour's picture ${a.file}.`); return; }
+  insertBlock(md); toast(`Picture ${a.file} added. The words in [ ] describe it for visitors who cannot see it.`, 4500);
+}
+
+/* =====================================================================
+   7. Rendering: view picker, writer status, callout, tree
+   ===================================================================== */
+const VIEWS = [
+  { id: 'reading', label: 'Reading sign', short: 'Reading' },
+  { id: 'silent', label: 'Screen only', short: 'Screen' },
+  { id: 'captions', label: 'Captions', short: 'Captions' }
+];
+const hasNarr = () => !!(S.voice && S.timing);
+// What a visitor actually gets: Captions need a narration whose timing fits; otherwise the reading sign.
+const shownView = () => (S.view === 'captions' && !(hasNarr() && fits()) ? 'reading' : S.view);
+function renderView() {
+  const capOk = hasNarr();
+  $('#vseg').innerHTML = VIEWS.map((v) => { const off = v.id === 'captions' && !capOk; return `<button role="radio" aria-checked="${S.view === v.id}" data-view="${v.id}" class="${off ? 'off' : ''}" ${off ? 'aria-disabled="true"' : ''} tabindex="${S.view === v.id ? 0 : -1}" title="${v.label}">${icon(v.id)}<span>${S.wide ? v.label : v.label}</span></button>`; }).join('');
+  const voice = !!S.voice;
+  let d = '';
+  if (S.captionsAsk && !capOk) d = `Captions show the sentence being spoken in a strip at the bottom, so they need a narration. <button data-a="open-narr">Add a narration</button>`;
+  else if (S.view === 'reading') d = `A sign stands at the station. Visitors tap it to read the text in a sheet${voice ? ' and can listen while the words light up' : ''}.`;
+  else if (S.view === 'silent') d = 'No sign in the world: the text opens on the visitor\'s screen at the station, to read at their own pace. No voice.';
+  else if (!capOk) d = `<span class="soft">Captions need a narration.</span> Until there is one, visitors get the reading sign. <button data-a="open-narr">Add a narration</button>`;
+  else if (stale()) d = `The voice plays and the sentence being spoken shows in a strip at the bottom. <span class="soft">Until the voice lines up with your text again, visitors get the reading sign.</span>`;
+  else d = 'The voice plays and the sentence being spoken shows in a strip at the bottom; the full text is one tap away.';
+  $('#vdesc').innerHTML = d;
+}
+function setView(id) {
+  if (id === 'captions' && !hasNarr()) { S.captionsAsk = true; renderView(); return; }
+  S.captionsAsk = false;
+  if (S.view === id) return;
+  S.view = id; if (id === 'silent' && C.playing) pause();
+  if (id !== 'silent') S.sheetOpen = id === 'reading';
+  renderView(); renderPreview(); renderTree();
+  $(`#vseg [data-view="${id}"]`)?.focus();
+}
+function renderWriterStat() {
+  const A = S.A, words = A.words.length, min = Math.max(1, Math.round(words / 200));
+  $('#wCount').textContent = `${words.toLocaleString('en')} words · ${min} min read`;
+  $('#subCount').textContent = S.voice ? `${fmt(S.voice.durMs)} narration` : '';
+  const open = A.issues.filter((i) => !i.kept), kept = A.issues.filter((i) => i.kept), chip = $('#issChip');
+  chip.classList.toggle('has', open.length > 0);
+  chip.innerHTML = open.length ? `<i></i>${open.length} ${plural(open.length, 'part')} shown as typed ${icon($('#issList').hidden ? 'down' : 'up')}`
+    : kept.length ? `<i></i>Everything else formatted &middot; ${kept.length} kept as typed ${icon($('#issList').hidden ? 'down' : 'up')}` : `<i></i>Every part shows as formatted`;
+  chip.disabled = !A.issues.length; chip.setAttribute('aria-expanded', String(!$('#issList').hidden));
+  if (!A.issues.length) $('#issList').hidden = true;
+  if (!$('#issList').hidden) {
+    let h = '';
+    if (open.length) h += open.map((is) => `<button class="iss" data-iss="${A.issues.indexOf(is)}"><span class="t">${esc(ISSUE[is.kind].title)}</span><span class="x">${esc(is.text.replace(/\s+/g, ' '))}</span><span class="l">line ${is.line}</span></button>`).join('');
+    if (kept.length) h += `<div class="isshd">Kept as typed, on purpose</div>` + kept.map((is) => `<div class="iss kept"><span class="t">${esc(ISSUE[is.kind].title)}</span><span class="x">${esc(is.text.replace(/\s+/g, ' '))}</span><button class="lnk" data-unkeep="${esc(is.key)}">Mark it again</button></div>`).join('');
+    $('#issList').innerHTML = h;
+  }
+}
+function renderCallout() {
+  const co = $('#callout'), A = S.A, is = A.issues[curIssue];
+  if (!is || is.kept) { co.hidden = true; return; }
+  const I = ISSUE[is.kind], open = A.issues.filter((i) => !i.kept);
+  co.hidden = false;
+  $('#coTitle').textContent = I.title + ' is shown as typed';
+  $('#coLine').textContent = 'line ' + is.line;
+  $('#coWhy').textContent = I.why;
+  $('#coFix').textContent = I.fix || 'Make it plain text';
+  $('#coPic').hidden = !I.pic;
+  $('#coNote').textContent = I.fixNote + ' Ctrl+Z undoes it.';
+  $('#coPos').textContent = open.length > 1 ? `${open.indexOf(is) + 1} of ${open.length}` : '';
+  $('#coNav').hidden = open.length < 2;
+}
+function gotoIssue(idx) {
+  const is = S.A.issues[idx]; if (!is) return;
+  curIssue = idx; W.focus(); W.setSelectionRange(is.from, is.to);
+  renderMirror(); renderCallout(); scrollWriterTo(`[data-i="${idx}"]`);
+  flashPreview(is.from, is.to);
+}
+function stepIssue(d) {
+  const open = S.A.issues.map((x, i) => [x, i]).filter(([x]) => !x.kept); if (!open.length) return;
+  let k = open.findIndex(([, i]) => i === curIssue); k = (k + d + open.length) % open.length; gotoIssue(open[k][1]);
+}
+function fixIssue() {
+  const is = S.A.issues[curIssue]; if (!is) return;
+  const out = fixFor(is), from = is.from;
+  let to = is.to; if (!out && S.body[to] === '\n') to++;   // a removed divider takes its line with it
+  curIssue = -1; replaceRange(from, to, out, [out.length, out.length]);
+  toast(`${ISSUE[is.kind].title} is plain text now.`, 5000, 'Undo', () => { W.focus(); document.execCommand('undo'); });
+}
+function keepIssue() {
+  const is = S.A.issues[curIssue]; if (!is) return;
+  S.kept.add(is.key); curIssue = -1; onBody();
+  toast(`Kept as typed. It stays listed under "Kept as typed" below the writer.`, 4500, 'Undo', () => { S.kept.delete(is.key); onBody(); });
+}
+
+const TREE = [
+  { n: 1, name: 'Old market square', img: 'linear-gradient(135deg,#6d7a83,#3d454c)', kids: [
+    { t: 'shorttext', name: 'Welcome to the square' }, { t: 'longtext', name: null, sel: true }, { t: 'photo', name: 'Guild house front, 1880' }, { t: 'video', name: 'The night of the fire' }] },
+  { n: 2, name: 'East path', img: 'linear-gradient(135deg,#6b7563,#3f4639)', kids: [{ t: 'shorttext', name: 'Where the carts queued' }, { t: 'model', name: 'Town scales' }] },
+  { n: 3, name: 'River ford', img: 'linear-gradient(135deg,#5f7386,#38444f)', kids: [{ t: 'photo', name: 'The ford at low water' }] }
+];
+const openStations = new Set([1]);
+function renderTree() {
+  const tr = $('#tree'); tr.classList.toggle('collapsed', S.treeFolded);
+  $('#bTreeFold').innerHTML = icon(S.treeFolded ? 'down' : 'up'); $('#bTreeFold').title = S.treeFolded ? 'Show the panel' : 'Collapse the panel';
+  const narrMeta = S.voice ? (stale() ? '<span class="warnDot" title="The voice needs lining up"></span>voice' : 'voice') : '';
+  $('#treeBody').innerHTML = '<div class="cards">' + TREE.map((s) => {
+    const open = openStations.has(s.n);
+    return `<div class="card${s.n === 1 ? ' ctx' : ''}"><div class="hero" data-st="${s.n}" style="background:${s.img}"><span class="n">${s.n}</span><button class="tw" data-st="${s.n}" title="${open ? 'Hide' : 'Show'} the blocks">${icon(open ? 'down' : 'right')}</button><span class="nm">${esc(s.name)}</span></div>`
+      + (open ? '<div class="kids">' + s.kids.map((k) => `<button class="kid${k.sel ? ' sel' : ''}" ${k.sel ? 'aria-current="true"' : 'data-other="1"'}><span class="ic ${k.t}">${icon(k.t)}</span><span class="nm">${esc(k.name || S.title || 'Untitled text')}</span><span class="meta">${k.sel ? narrMeta + (k.sel && S.voice ? '' : 'long text') : ''}</span></button>`).join('') + `<button class="kid add" data-other="1"><span class="ic">${icon('plus')}</span><span class="nm">Add block</span></button></div>` : '')
+      + '</div>';
+  }).join('') + '</div>';
+}
+
+/* =====================================================================
+   8. The narration section
+   ===================================================================== */
+function renderNarrHead() {
+  const sum = $('#narrSum'); let cls = '', t = '';
+  if (!S.voice && !S.timing) t = 'No voice yet';
+  else if (S.voice && !S.timing) { t = 'Voice, no timing yet'; }
+  else if (!S.voice) { t = 'Timing, no voice file'; cls = 'amber'; }
+  else if (stale()) { const n = staleInfo().count; t = `Needs lining up: ${n} ${plural(n, 'sentence')}`; cls = 'amber'; }
+  else { const n = notesList().length; t = `Reads along, ${fmt(S.voice.durMs)}${n ? ` &middot; ${n} ${plural(n, 'note')}` : ''}`; cls = 'ok'; }
+  sum.className = 'sum ' + cls; sum.innerHTML = `<i></i>${t}`;
+  $('#narrHead').setAttribute('aria-expanded', String(S.narrOpen)); $('#narrBody').hidden = !S.narrOpen;
+  document.body.classList.toggle('narrOpen', S.narrOpen);
+}
+function noteLI(n) {
+  const A = S.A, sent = n.si != null ? A.sentences[n.si] : null;
+  const show = sent ? `<button class="lnk" data-a="show" data-from="${sent.from}" data-to="${sent.to}">Show in text</button>` : '';
+  const lis = (o) => `<button class="lnk" data-a="listen" data-s="${o.s}" data-e="${o.e}">Listen</button>`;
+  if (n.type === 'file') return `<li class="fl"><span class="when">${esc(n.label)} of the file &middot; ${fmt(n.s)}-${fmt(n.e)}</span><br><q>${esc(trunc(n.text))}</q> is not in your text. ${lis(n)}</li>`;
+  if (n.type === 'rewritten') return `<li class="voice"><q>${esc(trunc(sent.text))}</q> has no voice. The voice at <span class="when">${fmt(n.old.s)}-${fmt(n.old.e)}</span> says <q>${esc(trunc(n.old.text))}</q> instead. ${lis(n.old)} ${show}</li>`;
+  if (n.type === 'novoice') return `<li class="voice"><q>${esc(trunc(sent.text))}</q> has no voice. ${show}</li>`;
+  return `<li class="voice">The voice at <span class="when">${fmt(n.old.s)}-${fmt(n.old.e)}</span> says <q>${esc(trunc(n.old.text))}</q>, which is no longer in your text. ${lis(n.old)}</li>`;
+}
+function renderNarr() {
+  renderNarrHead(); renderTree();
+  if (!S.narrOpen) return;
+  const T = S.timing, V = S.voice; let h = '';
+  h += '<div class="nrow"><div class="nk">Voice</div>' + (V
+    ? `<div class="file">${icon('wave')}<span class="fn" title="${esc(V.name)}">${esc(V.name)}</span><span class="du">${fmt(V.durMs)}</span></div><div class="acts2"><button class="lnk" data-a="voice-pick">Replace</button><button class="lnk" data-a="voice-remove">Remove</button></div>`
+    : `<div class="drop">A recording, or a voice made with a speech tool (MP3, M4A, OGG or WAV). You can also drop the file here.<div class="acts2"><button class="btn" data-a="voice-pick">${icon('wave')}Add a voice file</button></div></div>`) + '</div>';
+  h += '<div class="nrow"><div class="nk">Timing <span class="h">which words are spoken when</span></div>' + (T
+    ? `<div class="file">${icon('file')}<span class="fn" title="${esc(T.fileName)}">${esc(T.fileName)}</span><span class="du">${T.source === 'vtt' ? 'subtitle file' : 'word list'}</span></div>`
+    : `<div class="note">No timing yet: ${V ? 'the voice plays, but no words light up' : 'add a voice first, then its timing'}.</div>`)
+    + `<div class="acts2"><button class="btn" data-a="timing-pick">${icon('file')}${T ? 'Import a new timing...' : 'Import timing...'}</button>${T ? '<button class="lnk" data-a="timing-remove">Remove timing</button>' : ''}</div><div class="note">A subtitle file (.vtt) or a word list (.json) that a speech tool exports. Importing never changes your text.</div></div>`;
+  if (S.importError) h += `<div class="err">Could not use <b>${esc(S.importError.fileName)}</b>: ${esc(S.importError.msg)} Your text and the current timing are unchanged.</div>`;
+  if (T && !V) h += '<div class="note" style="color:#e9c07e">Add the voice file too: the timing has nothing to play yet.</div>';
+  if (stale()) {
+    const si = staleInfo();
+    h += `<div class="notice"><div class="nt">${icon('pen')}You edited the text after the voice was lined up</div>
+      <div class="nd">The voice no longer lines up with ${si.count} ${plural(si.count, 'sentence')}. Until it does, visitors see this text without the words lighting up; the voice still plays.</div>
+      <ul class="ul2">${si.items.map((it) => `<li>${esc(it.text)} ${it.from != null ? `<button class="lnk" data-a="show" data-from="${it.from}" data-to="${it.to}">Show</button>` : ''}</li>`).join('')}</ul>
+      <div class="row2"><button class="btn pri" data-a="lineup">${icon('sync')}Line the voice up again</button><span class="note">Your text stays exactly as it is.</span></div></div>`;
+  } else if (T) {
+    const notes = notesList(), L = S.last;
+    if (L && !S.lastSeen) {
+      if (L.type === 'import') {
+        const okAll = !L.mism && !L.noVoice;
+        h += `<div class="result ${okAll ? '' : 'part'}"><div class="nt">${icon(okAll ? 'check' : 'note')}Imported ${esc(L.fileName)}</div><div class="nd">`
+          + (L.kind === 'vtt' ? `${L.matchedLines} of ${L.lines} lines of the file match your text.` : `The word list lines up with your text${L.mism ? ', except for the words below' : ''}.`)
+          + (L.mism ? ` ${L.mism} ${plural(L.mism, L.kind === 'vtt' ? 'line does' : 'stretch does', L.kind === 'vtt' ? 'lines do' : 'stretches do')} not match your text; ${L.mism === 1 ? 'it is' : 'they are'} listed below. The voice still plays ${L.mism === 1 ? 'it' : 'them'}, with nothing lit up.` : '')
+          + (L.noVoice ? ` ${L.noVoice} ${plural(L.noVoice, 'sentence')} of your text ${L.noVoice === 1 ? 'has' : 'have'} no voice.` : ` Every sentence of your text has its voice.`) + '</div>';
+      } else {
+        const okAll = !L.notMatched;
+        h += `<div class="result ${okAll ? '' : 'part'}"><div class="nt">${icon(okAll ? 'check' : 'note')}Lined up again</div><div class="nd">${L.voiced} of ${L.total} sentences have their voice.`
+          + (L.adjusted ? ` ${L.adjusted === 1 ? 'The sentence you edited keeps its' : `The ${L.adjusted} sentences you edited keep their`} voice: the words around the change set the timing.` : '')
+          + (L.notMatched ? ` ${L.notMatched} ${plural(L.notMatched, 'sentence')} could not be matched: visitors see ${L.notMatched === 1 ? 'it' : 'them'} without the highlight, and the rest reads along as before. To give ${L.notMatched === 1 ? 'it' : 'them'} a voice, record that part again and import a new timing.` : ' Nothing was lost.') + '</div>';
+      }
+      if (notes.length) h += `<ul class="ul2">${notes.map(noteLI).join('')}</ul>`;
+      h += `<div class="row2"><button class="lnk" data-a="last-ok">OK, fold this away</button></div></div>`;
+    } else if (notes.length) {
+      h += `<div class="notes"><button data-a="notes" aria-expanded="${S.notesOpen}">${icon('right')}${notes.length} ${plural(notes.length, 'note')} about this narration</button>${S.notesOpen ? `<ul class="ul2">${notes.map(noteLI).join('')}</ul>` : ''}</div>`;
+    }
+  }
+  const t = now();
+  if (V) h += `<div class="playrow"><button class="pbtn" id="nPlay" data-a="play" ${V ? '' : 'disabled'} aria-label="${C.playing ? 'Pause' : 'Play'} the narration in the preview">${icon(C.playing ? 'pause' : 'play')}</button>
+    <div class="pmid"><div class="pbar" id="nBar" role="slider" tabindex="${V ? 0 : -1}" aria-label="Position in the narration" aria-valuemin="0" aria-valuemax="${Math.round(dur() / 1000)}" aria-valuenow="${Math.round(t / 1000)}"><div class="tr"></div><div class="fi"></div><div class="kn"></div></div>
+    <div class="ptime"><span id="nT">${fmt(t)}</span>/<span>${fmt(dur())}</span><span class="snd${C.playing ? ' on' : ''}" id="nSnd" title="Sound indicator: the voice is simulated"><i></i><i></i><i></i><i></i></span><span class="pn" id="nPn"></span></div></div></div>`;
+  $('#narrBody').innerHTML = h;
+  updatePlayUI(t);
+}
+function updatePlayUI(t) {
+  const d = dur(), f = d ? clamp(t / d, 0, 1) * 100 : 0;
+  const nb = $('#nBar'); if (nb) { nb.querySelector('.fi').style.width = f + '%'; nb.querySelector('.kn').style.left = f + '%'; nb.setAttribute('aria-valuenow', String(Math.round(t / 1000))); }
+  const nt = $('#nT'); if (nt) nt.textContent = fmt(t);
+  const np = $('#nPlay'); if (np) { const want = C.playing ? 'pause' : 'play'; if (np.dataset.st !== want) { np.dataset.st = want; np.innerHTML = icon(want); np.setAttribute('aria-label', (C.playing ? 'Pause' : 'Play') + ' the narration in the preview'); } }
+  const sn = $('#nSnd'); if (sn) sn.classList.toggle('on', C.playing);
+  const pn = $('#nPn'); if (pn) pn.textContent = !S.voice ? '' : S.view === 'silent' ? 'Screen only has no voice' : stale() ? 'plays without the highlight' : !S.timing ? 'plays, nothing lit up' : 'plays in the preview';
+  $('#phSpk').hidden = !C.playing; $('#phSnd').classList.toggle('on', C.playing);
+  // phone footer
+  const pf = $('#phBar'); if (pf) pf.style.width = f + '%';
+  const t0 = $('#phT0'), t1 = $('#phT1'); if (t0 && S.view !== 'silent') { t0.textContent = fmt(t); t1.textContent = '-' + fmt(d - t); }
+  const pp = $('#phPlay'); if (pp) { const want = C.playing ? 'pause' : 'play'; if (pp.dataset.st !== want) { pp.dataset.st = want; pp.innerHTML = PH[want]; } }
+  const cp = $('#capPlay'); if (cp.dataset.st !== (C.playing ? 'pause' : 'play')) { cp.dataset.st = C.playing ? 'pause' : 'play'; cp.innerHTML = PH[cp.dataset.st]; }
+  $('#capBar').style.width = f + '%';
+}
+
+/* =====================================================================
+   9. The preview: the phone-sized reading sheet over the 3D view
+   ===================================================================== */
+function picHTML(id, alt, inline) {
+  const a = ASSETS[id]; if (!a) return '';
+  return inline ? `<img class="inl" src="${a.src}" alt="${esc(alt)}">` : `<figure><img src="${a.src}" alt="${esc(alt)}">${alt ? `<figcaption>${esc(alt)}</figcaption>` : ''}</figure>`;
+}
+function unitsHTML(tk) {
+  let h = '';
+  for (const u of tk.units) {
+    let inner = '';
+    tk.runs.forEach((r, k) => {
+      const s = tk.starts[k];
+      if (r.pic) { if (s >= u.a && (s < u.b || (u.b === tk.plain.length && s === u.b))) inner += picHTML(r.pic, r.alt, true); return; }
+      const e = s + r.text.length, a = Math.max(s, u.a), b = Math.min(e, u.b); if (b <= a) return;
+      let t = esc(r.text.slice(a - s, b - s));
+      if (r.b) t = `<b>${t}</b>`; if (r.i) t = `<i>${t}</i>`; if (r.href) t = `<a href="${esc(r.href)}" data-link="1">${t}</a>`;
+      inner += t;
+    });
+    h += u.wi >= 0 ? `<span class="u" data-w="${u.wi}" data-s="${u.si}">${inner}</span>` : inner;
+  }
+  return h;
+}
+function listHTML(items) {
+  let h = ''; const st = [];
+  for (const it of items) {
+    while (st.length && it.ind < st[st.length - 1].ind) h += `</li></${st.pop().ord ? 'ol' : 'ul'}>`;
+    if (!st.length || it.ind > st[st.length - 1].ind) { st.push({ ind: it.ind, ord: it.ord }); h += `<${it.ord ? 'ol' : 'ul'}><li>`; }
+    else h += '</li><li>';
+    h += unitsHTML(it.tk);
+  }
+  while (st.length) h += `</li></${st.pop().ord ? 'ol' : 'ul'}>`;
+  return h;
+}
+function blocksHTML(A) {
+  let h = '';
+  for (const b of A.blocks) {
+    if (b.type === 'h') h += `<h${b.level + 1} data-from="${b.from}">${unitsHTML(b.tk)}</h${b.level + 1}>`;
+    else if (b.type === 'p') h += `<p data-from="${b.from}">${unitsHTML(b.tk)}</p>`;
+    else if (b.type === 'lit') h += `<p class="lit" data-from="${b.from}">${unitsHTML(b.tk)}</p>`;
+    else if (b.type === 'pic') h += picHTML(b.id, b.alt, false);
+    else if (b.type === 'list') h += `<div data-from="${b.from}">${listHTML(b.items)}</div>`;
+  }
+  return h || '<p style="color:#8f897e">(No text yet.)</p>';
+}
+let pv = { body: null, sentEls: new Map(), wordEls: [], curS: -2, curW: -2, capS: -2 };
+function renderPreview() {
+  const A = S.A, v = shownView(), scr = $('#screen'), live = !!(S.voice && fits()) && v !== 'silent', voice = !!S.voice && v !== 'silent';
+  scr.className = 'screen v-' + v;
+  $('#pvView').textContent = VIEWS.find((x) => x.id === v).label;
+  const min = Math.max(1, Math.round(A.words.length / 200));
+  $('#phOver').textContent = voice ? `LISTEN OR READ · ${Math.max(1, Math.round(dur() / 60000))} MIN` : `READ · ${min} MIN`;
+  $('#phSeal').innerHTML = voice ? '<svg viewBox="0 0 24 24"><path d="M6 10v4M9 7v10M12 4v16M15 8v8M18 11v2"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M6 7h12M6 11h12M6 15h8"/></svg>';
+  $('#phTitle').textContent = S.title || 'Untitled'; $('#phSTitle').textContent = S.title || 'Untitled'; $('#capTitle').textContent = S.title || 'Untitled';
+  $('#phMeta').textContent = v === 'silent' ? `${A.words.length} words · about ${min} min to read` : voice ? `${A.words.length} words · ${fmt(dur())} narration` : `${A.words.length} words · about ${min} min to read`;
+  const sh = $('#phSheet'); sh.classList.toggle('open', v === 'silent' || S.sheetOpen); sh.classList.toggle('live', live);
+  $('#phHint').hidden = S.sheetOpen || v !== 'reading';
+  if (pv.body !== A.body) {
+    pv.body = A.body; $('#phArt').innerHTML = blocksHTML(A);
+    pv.sentEls = new Map(); pv.wordEls = [];
+    for (const el of $$('#phArt .u')) { const s = +el.dataset.s; if (!pv.sentEls.has(s)) pv.sentEls.set(s, []); pv.sentEls.get(s).push(el); pv.wordEls[+el.dataset.w] = el; }
+    pv.curS = -2; pv.curW = -2; pv.capS = -2;
+  }
+  // footer: voice controls, or the reading mark for Screen only, or nothing
+  const ft = $('#phFoot');
+  if (v === 'silent') {
+    S.readMark = clamp(S.readMark, 0, Math.max(0, A.sentences.length - 1));
+    ft.innerHTML = `<div class="vbar"><div class="tr"></div><div class="fi" id="phBar" style="width:${A.sentences.length ? (S.readMark + 1) / A.sentences.length * 100 : 0}%"></div></div><div class="prow"><span class="time">&nbsp;</span><div class="cbs"><button class="cbx" id="phPrevS" aria-label="Previous sentence">${PH.prev}</button><span class="spos">Sentence ${S.readMark + 1} of ${A.sentences.length}</span><button class="cbx" id="phNextS" aria-label="Next sentence">${PH.next}</button></div><span class="time r">&nbsp;</span></div><div class="credit">No narration in this view &middot; tap a sentence to keep your place</div>`;
+  } else if (voice) {
+    ft.innerHTML = `<div class="vbar" id="phVbar"><div class="tr"></div><div class="fi" id="phBar"></div></div><div class="prow"><span class="time" id="phT0">0:00</span><div class="cbs"><button class="cbx" id="phBack" aria-label="Back 10 seconds">${PH.back10}</button><button class="cbx play" id="phPlay" aria-label="Play or pause"></button></div><span class="time r" id="phT1"></span></div><div class="credit">${live ? 'Voice recorded for this tour' : 'The voice plays; the words do not light up'}</div>`;
+  } else ft.innerHTML = '';
+  ft.hidden = !ft.innerHTML;
+  // editor-only note above the phone
+  const n = $('#pvNote'); let note = '', warn = false;
+  if (S.view === 'captions' && v === 'reading') { note = S.voice && S.timing ? 'Captions are chosen, but the voice no longer lines up, so visitors get the reading sign for now.' : 'Captions are chosen, but there is no narration, so visitors get the reading sign.'; warn = true; }
+  else if (v === 'silent' && C.playing) { note = 'Screen only has no voice. Choose Reading sign or Captions to see the words light up.'; warn = true; }
+  else if (stale() && S.voice && v !== 'silent') { note = 'You edited the text after the voice was lined up: visitors see it without the words lighting up until you line it up again (Narration).'; warn = true; }
+  else if (v === 'reading') note = S.sheetOpen ? 'What a visitor sees after tapping the sign. Tap the sign or the cross to close the sheet.' : 'Tap the sign in the preview to open the text.';
+  else if (v === 'silent') note = 'The text is on the screen when visitors arrive. Tap a sentence to set the reading mark.';
+  else note = 'The sentence being spoken shows in the strip. Press play under Narration, or in the strip.';
+  n.textContent = note; n.classList.toggle('warn', warn);
+  updateCursor(true, now()); updatePlayUI(now());
+}
+function updateCursor(force, t) {
+  const v = shownView(), live = !!(S.voice && fits()) && v !== 'silent';
+  let si = -1, wi = -1, on = false;
+  if (live) { const c = cursorAt(t); if (c) { si = c.si; wi = c.wi; on = c.on; } }
+  if (v === 'silent') si = S.readMark;
+  const wkey = on ? wi : -1;
+  if (!force && si === pv.curS && wkey === pv.curW) return;
+  if (pv.curS !== si) { for (const el of $$('#phArt .u.cur')) el.classList.remove('cur'); for (const el of pv.sentEls.get(si) || []) el.classList.add('cur'); }
+  if (pv.curW !== wkey || force) { for (const el of $$('#phArt .u.on')) el.classList.remove('on'); if (wkey >= 0 && pv.wordEls[wkey]) pv.wordEls[wkey].classList.add('on'); }
+  const changedS = pv.curS !== si; pv.curS = si; pv.curW = wkey;
+  if (changedS && si >= 0 && (C.playing || v === 'silent')) { const el = (pv.sentEls.get(si) || [])[0]; if (el) { const wr = $('#phWrap'); const y = el.offsetTop - wr.clientHeight * 0.28; wr.scrollTo({ top: Math.max(0, y), behavior: 'smooth' }); } }
+  // caption strip
+  if (v === 'captions') {
+    const A = S.A, cs = si >= 0 ? si : 0, s = A.sentences[cs];
+    if (pv.capS !== cs || force) {
+      pv.capS = cs;
+      $('#capTx').innerHTML = s ? `<span>${A.words.slice(s.wi0, s.wi1).map((w, k) => `<span class="w" data-w="${s.wi0 + k}">${esc(w.text)}</span>${esc(w.tail)}`).join('')}</span>` : '<span class="muted">(No text yet.)</span>';
+    }
+    for (const sp of $$('#capTx .w')) { const i = +sp.dataset.w; sp.classList.toggle('on', i === wkey); sp.classList.toggle('todo', si >= 0 && wi >= 0 && i > wi); }
+  }
+  if (v === 'silent') { const sp = $('#phFoot .spos'); if (sp) sp.textContent = `Sentence ${S.readMark + 1} of ${S.A.sentences.length}`; const b = $('#phBar'); if (b) b.style.width = (S.A.sentences.length ? (S.readMark + 1) / S.A.sentences.length * 100 : 0) + '%'; }
+}
+function flashPreview(from, to) {
+  if (!S.previewOpen) return;
+  const A = S.A, ws = A.words.filter((w) => w.from >= from && w.to <= to + 1);
+  const els = ws.map((w) => pv.wordEls[A.words.indexOf(w)]).filter(Boolean);
+  if (!els.length) { const blk = [...$$('#phArt [data-from]')].filter((e) => +e.dataset.from <= from).pop(); if (blk) els.push(blk); }
+  if (!els.length) return;
+  if (shownView() === 'reading' && !S.sheetOpen) { S.sheetOpen = true; renderPreview(); }
+  const wr = $('#phWrap'), y = els[0].offsetTop - wr.clientHeight * 0.3; wr.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  for (const el of els) el.classList.add('flash'); setTimeout(() => els.forEach((el) => el.classList.remove('flash')), 1400);
+}
+function seekSentence(si, andPlay) {
+  const s = S.A.sentences[si]; if (!s || !fits()) return;
+  for (let w = s.wi0; w < s.wi1; w++) { const t = S.timing.times[w]; if (t) { seek(t.s - 30); if (andPlay) play(); return; } }
+  toast('This sentence has no voice.');
+}
+function sentenceStart(si) { const s = S.A.sentences[si]; if (!s || !fits()) return null; for (let w = s.wi0; w < s.wi1; w++) if (S.timing.times[w]) return S.timing.times[w].s; return null; }
+
+// Fit the phone between the left rail and the inspector; fold the rail on a small screen when there is no room.
+function layout() {
+  const vp = $('#vp'), Wd = vp.clientWidth, H = vp.clientHeight, inspW = $('#insp').offsetWidth;
+  $('#pv').hidden = !S.previewOpen; $('#pvOpen').hidden = S.previewOpen;
+  if (!S.previewOpen) { if (S.treeAuto) { S.treeAuto = false; S.treeFolded = false; renderTree(); } return; }
+  const headH = $('#pv .pvhead').offsetHeight + $('#pvNote').offsetHeight + 12;
+  let phH = Math.min(H - 20 - headH, 760), phW = phH * 390 / 844;
+  const room = (folded) => Wd - inspW - 26 - (folded ? 0 : $('#tree').offsetWidth + 10);
+  if (!S.treeFolded && room(false) < phW) { if (room(false) < 230) { S.treeFolded = true; S.treeAuto = true; renderTree(); } }
+  else if (S.treeFolded && S.treeAuto && room(false) >= phW) { S.treeFolded = false; S.treeAuto = false; renderTree(); }
+  phW = Math.min(phW, room(S.treeFolded)); phW = Math.max(phW, 180); phH = phW * 844 / 390;
+  const pvEl = $('#pv'); pvEl.style.setProperty('--phW', phW.toFixed(1) + 'px'); pvEl.style.setProperty('--phH', phH.toFixed(1) + 'px'); pvEl.style.setProperty('--phK', (phW / 390).toFixed(4));
+}
+function setPreview(on) { S.previewOpen = on; $('#bPreview').setAttribute('aria-pressed', String(on)); layout(); if (on) renderPreview(); }
+
+/* =====================================================================
+   10. Wiring
+   ===================================================================== */
+let toastTimer = 0, toastAct = null;
+function toast(text, ms = 3200, btn, fn) {
+  const t = $('#toast'); $('#toastT').textContent = text; const b = $('#toastB');
+  if (btn) { b.hidden = false; b.textContent = btn; toastAct = fn; } else { b.hidden = true; toastAct = null; }
+  t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+$('#toastB').addEventListener('click', () => { const f = toastAct; $('#toast').classList.remove('show'); if (f) f(); });
+
+$('#bTitle').value = S.title;
+$('#bTitle').addEventListener('input', (e) => { S.title = e.target.value.slice(0, 120); renderTree(); schedule('pv', renderPreview, 100); });
+$('#bTitle').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); W.focus(); } });
+$('#bPreview').addEventListener('click', () => setPreview(!S.previewOpen));
+$('#pvClose').addEventListener('click', () => setPreview(false));
+$('#pvOpen').addEventListener('click', () => setPreview(true));
+$('#bWide').addEventListener('click', () => { S.wide = !S.wide; document.body.classList.toggle('wide', S.wide); $('#bWide').setAttribute('aria-pressed', String(S.wide)); $('#bWide').title = S.wide ? 'Back to the normal width' : 'Make the inspector wider for writing'; setTimeout(layout, 200); layout(); });
+$('#bTreeFold').addEventListener('click', () => { S.treeFolded = !S.treeFolded; S.treeAuto = false; renderTree(); layout(); });
+$('#treeBody').addEventListener('click', (e) => {
+  const st = e.target.closest('[data-st]'); if (st) { const n = +st.dataset.st; openStations.has(n) ? openStations.delete(n) : openStations.add(n); renderTree(); return; }
+  if (e.target.closest('[data-other]')) toast('Only the long text is built in this prototype.');
+});
+$('#narrHead').addEventListener('click', () => { S.narrOpen = !S.narrOpen; renderNarr(); if (S.narrOpen) setTimeout(() => $('#nsec').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30); });
+$('#posHead').addEventListener('click', () => { S.posOpen = !S.posOpen; $('#posHead').setAttribute('aria-expanded', String(S.posOpen)); $('#posBody').hidden = !S.posOpen; });
+document.addEventListener('click', (e) => { if (e.target.closest('[data-deco]')) toast('Part of the editor around the long text; not built in this prototype.'); });
+
+// inspector: writer toolbar, callout, issue list, view picker, narration
+$('#insp').addEventListener('mousedown', (e) => { if (e.target.closest('.wtools .wb')) e.preventDefault(); });   // keep the selection in the writer
+$('#insp').addEventListener('click', (e) => {
+  const v = e.target.closest('[data-view]'); if (v) { setView(v.dataset.view); return; }
+  const w = e.target.closest('[data-w]');
+  if (w) {
+    const k = w.dataset.w;
+    if (k === 'bold') wrapInline('**'); else if (k === 'italic') wrapInline('*');
+    else if (k === 'h2') toggleHeading(2); else if (k === 'h3') toggleHeading(3);
+    else if (k === 'ul') toggleList('ul'); else if (k === 'ol') toggleList('ol');
+    else if (k === 'indent') { W.focus(); indent(1); } else if (k === 'outdent') { W.focus(); indent(-1); }
+    else if (k === 'link') openLink(); else if (k === 'link-add') addLink(); else if (k === 'link-cancel') { $('#linkRow').hidden = true; W.focus(); }
+    else if (k === 'picture') openPics(null); else if (k === 'pic-cancel') { $('#picPop').hidden = true; picTarget = null; W.focus(); }
+    else if (k === 'help') { const open = $('#wHelp').hidden; closePops(); $('#wHelp').hidden = !open; w.setAttribute('aria-expanded', String(open)); }
+    else if (k === 'iss-fix') fixIssue(); else if (k === 'iss-keep') keepIssue();
+    else if (k === 'iss-pic') { const is = S.A.issues[curIssue]; if (is) openPics(is); }
+    else if (k === 'iss-prev') stepIssue(-1); else if (k === 'iss-next') stepIssue(1);
+    else if (k === 'iss-list') { $('#issList').hidden = !$('#issList').hidden; renderWriterStat(); }
+    return;
+  }
+  const pic = e.target.closest('[data-pic]'); if (pic) { insertPic(pic.dataset.pic); return; }
+  const iss = e.target.closest('[data-iss]'); if (iss) { gotoIssue(+iss.dataset.iss); return; }
+  const uk = e.target.closest('[data-unkeep]'); if (uk) { S.kept.delete(uk.dataset.unkeep); onBody(); return; }
+  const a = e.target.closest('[data-a]'); if (!a) return;
+  switch (a.dataset.a) {
+    case 'open-narr': S.narrOpen = true; S.captionsAsk = false; renderView(); renderNarr(); setTimeout(() => { $('#nsec').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); $('#narrBody [data-a="voice-pick"]')?.focus(); }, 40); break;
+    case 'voice-pick': $('#fVoice').click(); break;
+    case 'voice-remove': pause(); S.voice = null; C.pos = 0; renderAll(); toast('Voice file removed. The timing is kept until you remove it too.'); break;
+    case 'timing-pick': $('#fTiming').click(); break;
+    case 'timing-remove': pause(); S.timing = null; S.last = null; renderAll(); toast('Timing removed. Your text is unchanged.'); break;
+    case 'lineup': lineUpAgain(); break;
+    case 'last-ok': S.lastSeen = true; S.notesOpen = false; renderNarr(); break;
+    case 'notes': S.notesOpen = !S.notesOpen; renderNarr(); break;
+    case 'play': toggle(); renderPreview(); break;
+    case 'listen': listen(+a.dataset.s, +a.dataset.e); break;
+    case 'show': { const from = +a.dataset.from, to = +a.dataset.to; S.focus = { from, to }; W.focus(); W.setSelectionRange(from, from); renderMirror(); scrollWriterTo('[data-fr]'); flashPreview(from, to); break; }
+  }
+});
+$('#vseg').addEventListener('keydown', (e) => {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return; e.preventDefault();
+  const ids = VIEWS.map((v) => v.id).filter((id) => id !== 'captions' || hasNarr()); let k = ids.indexOf(S.view);
+  k = (k + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + ids.length) % ids.length; setView(ids[k]);
+});
+$('#narrBody').addEventListener('click', (e) => {
+  const bar = e.target.closest('#nBar'); if (!bar || !S.voice) return;
+  const r = bar.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width, 0, 1) * dur());
+});
+$('#narrBody').addEventListener('keydown', (e) => {
+  if (!e.target.closest('#nBar') || !S.voice) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); seek(now() + 5000); } else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(now() - 5000); }
+  else if (e.key === 'Home') { e.preventDefault(); seek(0); } else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
+});
+// files: chosen or dropped onto the narration section
+async function takeFiles(list) {
+  for (const f of list) {
+    if ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|ogg|opus|wav|aac|webm|flac)$/i.test(f.name)) {
+      pause(); const words = S.A.words.length;
+      S.voice = { name: f.name, durMs: S.timing ? S.timing.end + 900 : Math.round(words * 410 + 4000) }; S.narrOpen = true; renderAll();
+      toast(`Voice ${f.name} added (this prototype does not play it; a clock stands in).`, 4500);
+    } else if (/\.(vtt|json|txt)$/i.test(f.name) || /json|vtt/.test(f.type || '')) {
+      if (f.size > 20 * 1024 * 1024) { S.importError = { fileName: f.name, msg: 'the file is over 20 MB.' }; renderNarr(); continue; }
+      importTiming(f.name, await f.text());
+    } else { S.importError = { fileName: f.name, msg: 'it is neither a voice file nor a timing file.' }; S.narrOpen = true; renderNarr(); }
+  }
+}
+$('#fVoice').addEventListener('change', (e) => { takeFiles([...e.target.files]); e.target.value = ''; });
+$('#fTiming').addEventListener('change', (e) => { takeFiles([...e.target.files]); e.target.value = ''; });
+const nsec = $('#nsec');
+nsec.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); nsec.classList.add('hot'); } });
+nsec.addEventListener('dragleave', () => nsec.classList.remove('hot'));
+nsec.addEventListener('drop', (e) => { e.preventDefault(); nsec.classList.remove('hot'); if (e.dataTransfer?.files?.length) { S.narrOpen = true; takeFiles([...e.dataTransfer.files]); } });
+
+// phone
+const toggleSheet = () => { if (shownView() === 'silent') return; S.sheetOpen = !S.sheetOpen; renderPreview(); };
+$('#phSign').addEventListener('click', toggleSheet);
+$('#phSign').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheet(); } });
+$('#phClose').addEventListener('click', () => { S.sheetOpen = false; renderPreview(); });
+$('#capOpen').addEventListener('click', () => { S.sheetOpen = true; renderPreview(); });
+$('#capPlay').addEventListener('click', () => { toggle(); renderPreview(); });
+$('#phFoot').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b && b.id === 'phPlay') { toggle(); renderPreview(); return; }
+  if (b && b.id === 'phBack') { seek(now() - 10000); return; }
+  if (b && b.id === 'phPrevS') { S.readMark = Math.max(0, S.readMark - 1); updateCursor(true, now()); return; }
+  if (b && b.id === 'phNextS') { S.readMark = Math.min(S.A.sentences.length - 1, S.readMark + 1); updateCursor(true, now()); return; }
+  const vb = e.target.closest('#phVbar'); if (vb) { const r = vb.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width, 0, 1) * dur()); }
+});
+$('#phArt').addEventListener('click', (e) => {
+  if (e.target.closest('[data-link]')) { e.preventDefault(); toast('Links open in the visitor\'s browser; not followed in the preview.'); return; }
+  const u = e.target.closest('.u'); if (!u) return; const si = +u.dataset.s;
+  if (shownView() === 'silent') { S.readMark = si; updateCursor(true, now()); }
+  else if (S.voice && fits()) seekSentence(si, true);
+});
+
+function revealResult() { setTimeout(() => $('#narrBody .result')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60); }
+function renderAll() { renderView(); renderMirror(); renderCallout(); renderWriterStat(); renderNarr(); renderPreview(); renderTree(); layout(); }
+
+/* =====================================================================
+   11. Prototype debug strip (simulates what a creator would do)
+   ===================================================================== */
+const TABLE = '| Year | What happened |\n|------|---------------|\n| 1612 | The guild house is finished |\n| 1890 | The market hall burns down |';
+const HTMLSNIP = '<p>A bell hung under the eaves at the <strong>south end</strong> of the hall and was rung at the start of each market.</p>';
+function debugInsert(text) {
+  const v = W.value, at = v.indexOf('\n\n## The night of the fire');
+  const pos = at >= 0 ? at : v.length;
+  replaceRange(pos, pos, '\n\n' + text, [2 + text.length, 2 + text.length]);
+  curIssue = caretIssue(); if (curIssue < 0) { const k = S.A.issues.findIndex((i) => i.from >= pos); curIssue = k; }
+  renderMirror(); renderCallout(); const ci = curIssue; if (ci >= 0) scrollWriterTo(`[data-i="${ci}"]`);
+}
+function fakeVoice() { if (!S.voice) S.voice = { name: 'guild-house-narration.mp3', durMs: fakeTimes(S.A).end + 900 }; }
+function wordListFor(A) { const { times } = fakeTimes(A); return JSON.stringify({ words: A.words.map((w, i) => ({ word: w.text, start: +(times[i].s / 1000).toFixed(3), end: +(times[i].e / 1000).toFixed(3) })) }, null, 1); }
+function vttFor(A) {
+  const { times } = fakeTimes(A, 3200);
+  const cues = A.sentences.map((s) => ({ s: times[s.wi0].s, e: times[s.wi1 - 1].e, text: s.text }));
+  cues.unshift({ s: 300, e: 2700, text: 'Welcome to the Old Town Walk.' });
+  const at = Math.min(cues.length, 8), t = cues[at - 1].e + 450;
+  for (let k = at; k < cues.length; k++) { cues[k].s += 3300; cues[k].e += 3300; }
+  cues.splice(at, 0, { s: t, e: t + 2500, text: 'Mind the step as you cross the road.' });
+  const vt = (ms) => { const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = (ms / 1000) % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`; };
+  return 'WEBVTT\n\n' + cues.map((c, k) => `${k + 1}\n${vt(c.s)} --> ${vt(c.e)}\n${c.text}`).join('\n\n') + '\n';
+}
+function ensureTiming() { fakeVoice(); if (!S.timing) { S.timing = makeTiming(S.A, fakeTimes(S.A).times, { source: 'words', fileName: 'guild-house-words.json' }); S.voice.durMs = S.timing.end + 900; } }
+function debugAct(k) {
+  if (k === 'table') debugInsert(TABLE);
+  else if (k === 'html') debugInsert(HTMLSNIP);
+  else if (k === 'vtt') { pause(); fakeVoice(); const vtt = vttFor(S.A); importTiming('guild-house-narration.vtt', vtt); S.voice.durMs = Math.max(S.voice.durMs, S.timing.end + 900); renderNarr(); }
+  else if (k === 'words') { pause(); fakeVoice(); importTiming('guild-house-words.json', wordListFor(S.A)); }
+  else if (k === 'stale') {
+    ensureTiming();
+    const v = W.value, m = /\bsix(?= hundred)/.exec(v);
+    if (m) { replaceRange(m.index, m.index + 3, 'seven', null); S.focus = { from: m.index, to: m.index + 5 }; }
+    else { const w = S.A.words.find((x) => x.text.length >= 5); if (!w) { toast('Write a few words first.'); return; } replaceRange(w.from, w.from, 'very ', null); S.focus = { from: w.from, to: w.from + 4 + w.text.length + 1 }; }
+    S.narrOpen = true; renderAll(); scrollWriterTo('[data-fr]');
+    toast('Debug: changed one word, as a creator fixing a fact would. See Narration.', 4500);
+  } else if (k === 'reanchor') {
+    ensureTiming();
+    const OLD = 'The townspeople formed a line from the well and passed buckets from hand to hand.', NEW = 'Neighbours carried water up from the river all through the night.';
+    const v = W.value, i = v.indexOf(OLD);
+    if (i >= 0) replaceRange(i, i + OLD.length, NEW, null);
+    else if (!v.includes(NEW)) {
+      const keys = new Set(S.timing.sents.map((s) => s.key));
+      const s = S.A.sentences.filter((x) => keys.has(x.key) && x.wi1 - x.wi0 >= 6).pop();
+      if (s) { const end = S.body[s.to] && /[.!?]/.test(S.body[s.to]) ? s.to + 1 : s.to; replaceRange(s.from, end, NEW, null); }
+    }
+    lineUpAgain();
+    toast('Debug: rewrote one sentence as a creator would, then pressed "Line the voice up again".', 5000);
+  } else if (k === 'novoice') { pause(); C.pos = 0; S.voice = null; S.timing = null; S.last = null; S.importError = null; renderAll(); toast('Narration removed (voice and timing). The text is unchanged.'); }
+  else if (k === 'voice') { pause(); S.voice = { name: 'guild-house-narration.mp3', durMs: S.timing ? S.timing.end + 900 : fakeTimes(S.A).end + 900 }; S.narrOpen = true; renderAll(); toast('A voice file was attached (no timing comes with it).'); }
+  else if (k === 'reset') location.reload();
+}
+$('#dbg').addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) debugAct(b.dataset.d); });
+
+/* =====================================================================
+   12. Start: the text with a voice and a word list that fits
+   ===================================================================== */
+{
+  const { times, end } = fakeTimes(S.A);
+  S.voice = { name: 'guild-house-narration.mp3', durMs: end + 900 };
+  S.timing = makeTiming(S.A, times, { source: 'words', fileName: 'guild-house-words.json' });
+  C.pos = sentenceStart(1) + 900;
+}
+new ResizeObserver(() => layout()).observe($('#vp'));
+renderAll();
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.activeElement !== W) closePops(); });
+window.__longtextProto = { state: S, debug: debugAct, analyze, fixFor, lineUpAgain, importTiming, notesList, fits };
+</script>
+</body>
+</html>

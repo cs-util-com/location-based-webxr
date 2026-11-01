@@ -204,6 +204,22 @@ wired into its logic: every interaction is faked.
     from unpkg). Weakness: beyond about 7-9 m the letters are too small and the
     caption moves to the screen.
 
+- `longtext-editor-1-in-the-inspector/` ... `longtext-editor-3-preview-first/` -
+  writing a long text and its narration in the tour editor, three directions;
+  made 2026-11-01. Each answers where the body is written and previewed, how
+  "shown as typed" parts are pointed out, the view picker (sign and sheet,
+  screen only, captions), adding a voice and a timing with the mismatches
+  listed, and a timing put out of line by an edit.
+  - `longtext-editor-1-in-the-inspector/` - everything in the right-hand
+    panel, the preview a phone sheet over the 3D view. Weakness: at 1024x768
+    the writer is about 170 px tall while a note is open.
+  - `longtext-editor-2-writing-desk/` - a desk over the 3D view's area: text,
+    a notes margin, a phone preview in step and a narration timeline.
+    Weakness: the 3D view is gone while writing.
+  - `longtext-editor-3-preview-first/` - editing in the visitor's own sheet,
+    a guided "Add a voice" flow. Weakness: rich-text editing covers the
+    common paths only, and at 1024 px the 3D view shrinks to about 260 px.
+
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
 coding agent to build that one. The verdicts are in the polish-round plan
