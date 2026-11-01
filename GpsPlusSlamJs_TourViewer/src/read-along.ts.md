@@ -8,7 +8,7 @@ Where the voice is in a narrated text's words: from a read-along timing and the 
 
 - `ReadAlongCursor` - `{ segment, from, to, s0, s1 }`: the segment spoken (or the last started, between two), its stretch of `P`, and the first and last sentence it lies in.
 - `marksWords(timing)` - only a `word` track read from a `file` marks single words; a `sentence` track, or a creator's `marked` track, marks sentences only (a word estimated between marks is wrong too often).
-- `segmentAt(timing, ms)`, `cursorAt(timing, sentences, ms)` - binary searches; null before the first segment.
+- `segmentAt(timing, ms)`, `cursorAt(timing, sentences, ms)` - binary searches (`segmentAt` is `lastAtOrBefore`, `last-at-or-before.ts`, with -1 for a non-finite time); null before the first segment.
 - `sentenceStarts(timing, sentences)` - per sentence, the first segment in it, or -1.
 - `sentenceSeekMs(timing, starts, i)` - where a tap on sentence `i` plays from (`SEEK_LEAD_MS` early), or null.
 - `previousSentenceMs(timing, sentences, starts, nowMs)` - the start of this sentence, or of the one before when less than `PREV_SENTENCE_RESTART_MS` has been spoken.

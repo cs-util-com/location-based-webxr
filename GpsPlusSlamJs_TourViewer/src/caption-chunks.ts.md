@@ -10,7 +10,7 @@ The captions strip's lines: the sentences the voice is in, cut into chunks that 
 - `wordsOf(text, from, to)` - the words of a stretch.
 - `CAPTION_MAX_CHARS` - `{ portrait: 96, landscape: 118, desktop: 120 }`; `CaptionLayout` is its key.
 - `captionChunks(text, from, to, maxChars)` - `{ words, chunks }`: a chunk ends at the last word that keeps it under `maxChars`, moved back to a clause break (`,` `;` `:`) in its last 45 %, and takes the closing punctuation after its last word. At least one chunk; `maxChars` below 1 reads as 1.
-- `wordHolding(words, at)` - the word holding or last before offset `at`, or -1.
+- `wordHolding(words, at)` - the word holding or last before offset `at`, or -1 (`lastAtOrBefore`, `last-at-or-before.ts`).
 - `chunkHolding(chunks, w)` - the chunk holding word `w` (0 for none).
 
 ## Invariants

@@ -35,7 +35,7 @@ paragraphStarts }`. A "paragraph" is a leaf (paragraph or heading) that
   `P`, which ends a sentence. Pictures are in no leaf.
 - `sentenceHolding(index, at)` - the sentence holding offset `at` of
   `P`, or between two the one before it; -1 before the first or with
-  none. A binary search, so a read-along may ask every frame.
+  none. A binary search (`lastAtOrBefore`, `last-at-or-before.ts`; -1 for a non-finite offset), so a read-along may ask every frame.
 - `sentenceAt(index, node, offset)` - the sentence at a DOM point: the one
   containing it; between two, the one before; the first before them all,
   the last after them all; null for no sentences or a point the ranges

@@ -10,6 +10,7 @@
  * @see long-text-sentences.ts.md
  */
 
+import { lastAtOrBefore } from "./last-at-or-before.js";
 import { rangeOf, type PlacedLeaf } from "./long-text-leaves.js";
 
 /** A stretch of a string, `from` inclusive, `to` exclusive. */
@@ -157,19 +158,8 @@ export function sentenceHolding(
   index: { readonly sentences: readonly TextSpan[] },
   at: number,
 ): number {
-  const { sentences } = index;
   if (!Number.isFinite(at)) return -1;
-  let lo = 0;
-  let hi = sentences.length - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if ((sentences[mid]?.from ?? Infinity) <= at) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
-  }
-  return found;
+  return lastAtOrBefore(index.sentences, (s) => s.from, at);
 }
 
 /**

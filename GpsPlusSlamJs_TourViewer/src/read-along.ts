@@ -12,6 +12,7 @@
 
 import type { TourTiming } from "gps-plus-slam-app-framework/ar/tour-timing";
 
+import { lastAtOrBefore } from "./last-at-or-before.js";
 import { sentenceHolding } from "./long-text-sentences.js";
 
 /** A stretch of `P`, `from` inclusive, `to` exclusive. */
@@ -51,17 +52,7 @@ export function segmentAt(
   ms: number,
 ): number {
   if (!Number.isFinite(ms)) return -1;
-  let lo = 0;
-  let hi = segments.length - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if ((segments[mid]?.startMs ?? Infinity) <= ms) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
-  }
-  return found;
+  return lastAtOrBefore(segments, (s) => s.startMs, ms);
 }
 
 /** The voice at `ms` over `sentences` (in `P` order), or null before its

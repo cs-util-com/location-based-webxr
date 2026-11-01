@@ -9,6 +9,8 @@
  * @see caption-chunks.ts.md
  */
 
+import { lastAtOrBefore } from "./last-at-or-before.js";
+
 /** A word of `P`: letters and digits, with inner apostrophes (the
  *  prototype's word); punctuation lies between words. */
 export interface CaptionWord {
@@ -109,17 +111,7 @@ export function captionChunks(
 
 /** The word holding offset `at` (or the last before it), or -1. */
 export function wordHolding(words: readonly CaptionWord[], at: number): number {
-  let lo = 0;
-  let hi = words.length - 1;
-  let found = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if ((words[mid]?.from ?? Infinity) <= at) {
-      found = mid;
-      lo = mid + 1;
-    } else hi = mid - 1;
-  }
-  return found;
+  return lastAtOrBefore(words, (w) => w.from, at);
 }
 
 /** The chunk holding word `w`; the first for none. */
