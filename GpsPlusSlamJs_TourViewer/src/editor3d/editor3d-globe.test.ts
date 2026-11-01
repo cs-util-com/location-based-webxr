@@ -749,6 +749,32 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the tour's drawn height stands in for missing ground only near
+  // the tour. 50 km from a tour at 2500 m, a step with no ground loaded
+  // lifted the camera from 300 m to 2500 m; there no ground means no
+  // lift. Swept over the button and the double click, 10 and 45 degrees
+  // down.
+  it.each([
+    [-10, "button"],
+    [-45, "button"],
+    [-10, "click"],
+    [-45, "click"],
+  ] as const)(
+    "does not lift a camera far from the tour with no ground loaded (%s deg, %s)",
+    async (pitchDeg, how) => {
+      fakes.groundM = null;
+      await openAt(2500);
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      placeCamera(300, pitchDeg, null, 50_000);
+      if (how === "button") open?.zoom(1);
+      else zoomTowards({ x: 0.5, y: 0.5 });
+      expect(heightOfWorld(camera.position)).toBeLessThan(300 + 1e-3);
+    },
+  );
+
   // Why: with no ground loaded the place under the camera was given at
   // the CAMERA's height, so "+" from 3 km up put a station 3 km in the
   // air. Near the ground it is now the camera's height less eye height;

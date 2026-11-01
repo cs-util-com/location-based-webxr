@@ -110,8 +110,12 @@ ground.
   whole step would freeze it there). With no ground loaded at either end
   the tour's own drawn height (`centreHeightM`) stands in, so a double
   click (which then aims at the ellipsoid) does not take the camera under
-  a tour on a hill. Tested with a fake ground rising north, swept
-  over grades from -30 % to 40 %.
+  a tour on a hill; only within `STAND_IN_REACH_M` (5 km) of the tour's
+  extent (`tourReach`), since far away the tour's height says nothing
+  about the ground, and there no ground means no lift. Tested with a fake
+  ground rising north, swept over grades from -30 % to 40 % (on level or
+  rising ground the camera ends exactly `eyeM` over the end's ground),
+  with ground under the start only, and 50 km from a tour with none.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the

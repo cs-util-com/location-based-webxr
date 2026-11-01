@@ -76,7 +76,7 @@ import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite } from "../tour-document.js";
 import { isStationLocked } from "../editor/editor-view.js";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
-import { tourCentre } from "../editor/tour-origin.js";
+import { tourCentre, tourReach } from "../editor/tour-origin.js";
 import type { GlobeSwitch } from "../editor/globe-switch.js";
 import type {
   Editor3dDeps,
@@ -133,6 +133,9 @@ const ZOOM_SHARE = 0.35;
 /** Top view looks this close to straight down (deg): exactly down has no
  *  heading to keep. */
 const TOP_PITCH_DEG = -89;
+/** How far past the tour's extent (m) its drawn height stands in for
+ *  ground not loaded; farther out no ground means no lift. */
+const STAND_IN_REACH_M = 5000;
 
 /** The higher of two heights; either alone where the other is null; null
  *  where both are. */
@@ -169,6 +172,11 @@ export async function openGlobeEditor(
    *  the geoid's N. */
   const centreHeightM =
     centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng });
+  const nearTour = tourReach(
+    manifest?.stations ?? [],
+    codeGeos,
+    STAND_IN_REACH_M,
+  );
 
   // Everything made from here on is undone, last first, by `dispose` - and
   // by a failure before the view is handed out.
@@ -570,7 +578,9 @@ export async function openGlobeEditor(
      * under its end (a slope rising ahead counts); its level part is kept
      * whole, so from eye height a step walks forward. Unchanged where it
      * ends higher than that. With no ground loaded at either the tour's own
-     * drawn height stands in (a double click there aims at the ellipsoid).
+     * drawn height stands in (a double click there aims at the ellipsoid),
+     * within `STAND_IN_REACH_M` of the tour's extent; farther out the move
+     * is not lifted.
      */
     const keepOverGround = (move: THREE.Vector3): THREE.Vector3 => {
       const pose = poseNow();
@@ -581,7 +591,11 @@ export async function openGlobeEditor(
         higherOf(
           ground.groundAt(pose.lat * DEG, pose.lng * DEG),
           ground.groundAt(endPlace.lat, endPlace.lon),
-        ) ?? centreHeightM;
+        ) ??
+        (nearTour({ lat: endPlace.lat / DEG, lon: endPlace.lon / DEG })
+          ? centreHeightM
+          : null);
+      if (floorM === null) return move;
       const liftM = floorM + GLOBE_EDITOR_LOOK.eyeM - endPlace.height;
       if (liftM <= 0) return move;
       ellipsoid

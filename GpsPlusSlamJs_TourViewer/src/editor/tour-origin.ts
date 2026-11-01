@@ -6,6 +6,8 @@
  * the origin. The inspector says a station's place in these metres, so
  * the number it shows is where the 3D view draws the station, and a
  * place typed there in metres is found back by `placeAtEastNorth`.
+ * `tourReach` says whether a place is near the tour: within a margin of
+ * the box its stations and codes span.
  *
  * @see tour-origin.ts.md
  */
@@ -140,4 +142,48 @@ export function placeAtEastNorth(
     };
   }
   return isPlace(place.lat, place.lon) ? place : null;
+}
+
+/**
+ * Whether a place (degrees) is within `marginM` of the tour's extent: the
+ * box, in metres east and north of its first point, that its stations and
+ * codes span, grown by the margin on every side. A point or a place that
+ * cannot be placed is left out (near nothing); with no point nothing is
+ * near. Throws for a margin that is not a finite, non-negative distance.
+ */
+export function tourReach(
+  stations: readonly { readonly geo: GeoPoint }[],
+  codes: readonly GeoPoint[],
+  marginM: number,
+): (place: { readonly lat: number; readonly lon: number }) => boolean {
+  if (!Number.isFinite(marginM) || marginM < 0) {
+    throw new RangeError(
+      `a tour's reach needs a margin in metres, got ${String(marginM)}`,
+    );
+  }
+  const points = [...stations.map((s) => s.geo), ...codes].filter((p) =>
+    isPlace(p.lat, p.lon),
+  );
+  const first = points[0];
+  if (first === undefined) return () => false;
+  const origin = { lat: first.lat, lng: first.lon };
+  const box = { east0: 0, east1: 0, north0: 0, north1: 0 };
+  for (const p of points) {
+    const en = eastNorthOf(p, origin);
+    if (en === null) continue;
+    box.east0 = Math.min(box.east0, en.eastM);
+    box.east1 = Math.max(box.east1, en.eastM);
+    box.north0 = Math.min(box.north0, en.northM);
+    box.north1 = Math.max(box.north1, en.northM);
+  }
+  return (place) => {
+    const en = eastNorthOf(place, origin);
+    return (
+      en !== null &&
+      en.eastM >= box.east0 - marginM &&
+      en.eastM <= box.east1 + marginM &&
+      en.northM >= box.north0 - marginM &&
+      en.northM <= box.north1 + marginM
+    );
+  };
 }
