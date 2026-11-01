@@ -65,8 +65,11 @@ interface Fakes {
   /** The ground's rise per metre north of the tour (0.3: a 30 % grade
    *  climbing north); 0: level. */
   grade: number;
-  /** The ground (drawn, m) at a latitude (radians), as `groundM` and
-   *  `grade` make it; null: none loaded. */
+  /** How far north of the tour (m) the loaded ground reaches; past it
+   *  none is loaded. Null: everywhere. */
+  groundEndsNorthM: number | null;
+  /** The ground (drawn, m) at a latitude (radians), as `groundM`,
+   *  `grade` and `groundEndsNorthM` make it; null: none loaded. */
   groundAt(latRad: number): number | null;
   /** The scene the editing hands its input (its double-click zoom). */
   inputScene: null | {
@@ -86,9 +89,12 @@ const fakes = vi.hoisted((): Fakes => ({
   controls: null,
   groundM: 500,
   grade: 0,
+  groundEndsNorthM: null,
   groundAt(latRad: number): number | null {
     if (this.groundM === null) return null;
     const northM = ((latRad * 180) / Math.PI - 48.1374) * 111_200;
+    if (this.groundEndsNorthM !== null && northM > this.groundEndsNorthM)
+      return null;
     return this.groundM + this.grade * northM;
   },
   inputScene: null,
@@ -432,6 +438,7 @@ beforeEach(() => {
   fakes.busy = false;
   fakes.groundM = DRAWN_M;
   fakes.grade = 0;
+  fakes.groundEndsNorthM = null;
   fakes.inputScene = null;
   fakes.coverageCalls = 0;
 });
@@ -642,7 +649,9 @@ describe("openGlobeEditor's wiring", () => {
   // counts too: the camera ends eye height over the higher of the two.
   // Swept over grades from falling 30 % to rising 40 %, at the landed pitch
   // and at -10 deg, by the button and by the double click; each step still
-  // walks north.
+  // walks north. On ground level or rising ahead the higher ground is
+  // the end's, so the camera ends exactly eye height over it: a lift
+  // larger than needed fails as well as one too small.
   const LANDED_PITCH_DEG =
     -Math.atan2(GLOBE_EDITOR_LOOK.eyeM, GLOBE_EDITOR_LOOK.backM) / DEG;
   it.each(
@@ -669,10 +678,45 @@ describe("openGlobeEditor's wiring", () => {
       const place = cameraPlace();
       const groundEndM = fakes.groundAt(place.lat * DEG);
       if (groundEndM === null) throw new Error("no ground");
-      expect(
-        heightOfWorld(camera.position) - groundEndM,
-      ).toBeGreaterThanOrEqual(GLOBE_EDITOR_LOOK.eyeM - 1e-3);
+      const overEndM = heightOfWorld(camera.position) - groundEndM;
+      // Exactly eye height where the end's ground is the higher one.
+      const upToM =
+        grade >= 0 ? GLOBE_EDITOR_LOOK.eyeM + 1e-2 : Number.POSITIVE_INFINITY;
+      expect(overEndM).toBeGreaterThanOrEqual(GLOBE_EDITOR_LOOK.eyeM - 1e-3);
+      expect(overEndM).toBeLessThan(upToM);
       expect((place.lat - MUNICH.lat) * 111_200).toBeGreaterThan(0.3);
+    },
+  );
+
+  // Why: the floor is the higher of the grounds under the step's start
+  // and under its end, either alone where the other is not loaded. With
+  // heights loaded under the start only, the start's ground is the floor:
+  // the camera ends eye height over it, neither dropped to the tour's
+  // drawn height (taking the end's ground alone, with the tour as the
+  // stand-in) nor lifted further. Swept over the landed pitch and -10
+  // deg, by the button and by the double click.
+  it.each(
+    [LANDED_PITCH_DEG, -10].flatMap((pitchDeg) =>
+      (["button", "click"] as const).map((how) => [pitchDeg, how] as const),
+    ),
+  )(
+    "stays eye height over the start's ground with none under the end at %s deg (%s)",
+    async (pitchDeg, how) => {
+      fakes.groundM = 200;
+      fakes.groundEndsNorthM = 0.1;
+      await openAt(0);
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      placeCamera(GLOBE_EDITOR_LOOK.eyeM, pitchDeg, 200);
+      if (how === "button") open?.zoom(1);
+      else zoomTowards({ x: 0.5, y: 0.5 });
+      const place = cameraPlace();
+      expect(fakes.groundAt(place.lat * DEG)).toBeNull();
+      expect(
+        Math.abs(heightOfWorld(camera.position) - 200 - GLOBE_EDITOR_LOOK.eyeM),
+      ).toBeLessThan(1e-2);
     },
   );
 
