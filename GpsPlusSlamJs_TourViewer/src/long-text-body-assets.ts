@@ -54,3 +54,25 @@ export function bodyPictureAssets(body: string): readonly string[] {
   assetsByBody.set(body, assets);
   return assets;
 }
+
+/** Answers kept by the long text itself, for a write's asset rule: it asks
+ *  every long text of every undo and redo step (up to 200 steps) on every
+ *  document change, far more bodies than `assetsByBody` holds. A block of
+ *  a tour or of a history step is never changed in place (the document's
+ *  state is immutable; an edit makes a new block), so its answer holds for
+ *  as long as the block lives, and the map lets go of it with the block. */
+const assetsByBlock = new WeakMap<object, readonly string[]>();
+
+/** `bodyPictureAssets(block.body)`, remembered by `block`: the same
+ *  answer, without a lookup by string that a history larger than the
+ *  string memo would empty on every write. `block` must not be changed
+ *  in place after it is asked about. */
+export function blockBodyAssets(block: {
+  readonly body: string;
+}): readonly string[] {
+  const known = assetsByBlock.get(block);
+  if (known !== undefined) return known;
+  const assets = bodyPictureAssets(block.body);
+  assetsByBlock.set(block, assets);
+  return assets;
+}

@@ -56,7 +56,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { tourShownBlockIds } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { bodyPictureAssets } from "./long-text-body-assets.js";
+import { blockBodyAssets } from "./long-text-body-assets.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -332,8 +332,8 @@ function blockAssetIds(block: TourBlock | TourObject): readonly string[] {
       return [];
     case "longText":
       return block.narration === undefined
-        ? bodyPictureAssets(block.body)
-        : [...bodyPictureAssets(block.body), block.narration.audio];
+        ? blockBodyAssets(block)
+        : [...blockBodyAssets(block), block.narration.audio];
     case "picture":
       return [block.image];
     case "video":
