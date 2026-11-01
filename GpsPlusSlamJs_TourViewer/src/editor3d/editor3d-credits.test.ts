@@ -4,9 +4,11 @@
  * row of short names over the canvas) with one "Credits" button at the
  * bottom left. What the sources ask for must still be one click away and
  * in full: every source with its link, GIBS's acknowledgement word for
- * word, Copernicus's whole notice. The overlay is a real button and
- * dialog: Esc and a click outside close it, and focus goes back to the
- * button, or a keyboard user would be stranded in a closed panel.
+ * word, Copernicus's whole notice. The panel is a disclosure (a button
+ * with aria-expanded and aria-controls, no dialog role, since nothing
+ * traps focus): Esc anywhere and a click outside close it, and focus goes
+ * back to the button, or a keyboard user would be stranded in a closed
+ * panel.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -39,7 +41,7 @@ function mount(options?: Parameters<typeof mountCredits>[2]) {
   document.body.append(box, outside);
   const unmount = mountCredits(box, CREDITS, options);
   const button = box.querySelector<HTMLButtonElement>("button")!;
-  const panel = box.querySelector<HTMLElement>('[role="dialog"]')!;
+  const panel = box.querySelector<HTMLElement>(".view3d-credits-panel")!;
   return { box, outside, unmount, button, panel };
 }
 
@@ -68,6 +70,10 @@ describe("mountCredits", () => {
     expect(panel.id).not.toBe("");
     expect(panel.hidden).toBe(true);
     expect(panel.getAttribute("aria-label")).toBe("Credits");
+    // A disclosure, not a dialog: no popup role that would promise a
+    // focus trap the panel does not have.
+    expect(panel.hasAttribute("role")).toBe(false);
+    expect(button.hasAttribute("aria-haspopup")).toBe(false);
     // Nothing else shows: no short names, no OSM link beside it.
     const shown = [...box.children].filter((c) => !(c as HTMLElement).hidden);
     expect(shown).toEqual([button]);
@@ -134,9 +140,9 @@ describe("mountCredits", () => {
     expect(esc(button)).toBe(true);
     expect(seen).toHaveBeenCalledTimes(1);
     document.removeEventListener("keydown", seen);
-    expect(box.querySelector('[role="dialog"]')?.hasAttribute("hidden")).toBe(
-      true,
-    );
+    expect(
+      box.querySelector(".view3d-credits-panel")?.hasAttribute("hidden"),
+    ).toBe(true);
   });
 
   it("stops Esc at the overlay while open", () => {
@@ -148,6 +154,17 @@ describe("mountCredits", () => {
     expect(esc(button)).toBe(false);
     expect(seen).not.toHaveBeenCalled();
     document.removeEventListener("keydown", seen);
+  });
+
+  it("closes on Esc with focus outside the box", () => {
+    // Why: the review found Esc heard only inside the box; a disclosure
+    // left open while focus moved on must still close on Esc.
+    const { button, panel, outside } = mount();
+    button.click();
+    outside.focus();
+    expect(esc(outside)).toBe(false);
+    expect(panel.hidden).toBe(true);
+    expect(document.activeElement).toBe(button);
   });
 
   it("closes on a pointer down outside, not on one inside", () => {
@@ -193,6 +210,7 @@ describe("mountCredits", () => {
       expect.any(Function),
       true,
     );
+    expect(remove).toHaveBeenCalledWith("keydown", expect.any(Function), true);
     outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     remove.mockRestore();
   });

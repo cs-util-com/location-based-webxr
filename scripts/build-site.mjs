@@ -62,6 +62,7 @@ import { buildLookdev } from '../GpsPlusSlamJs_DesignSystem/build-lookdev.mjs';
 import {
   GLOBE_ASSETS_PREFIX,
   assertGlobeAssetsShipped,
+  siteAppDirs,
   copyGlobeAssets,
 } from './globe-assets-deploy.mjs';
 
@@ -425,7 +426,8 @@ assertNoBareAbsoluteUrlsInDir(join(distSite, 'lookdev'), '/lookdev/');
 // root-absolute paths, `/globe-assets/...`). Only the creator's editor on the
 // globe view and the look-dev labs load it; no visitor page does
 // (GpsPlusSlamJs_TourViewer/src/editor3d-lazy.test.ts holds that). The guard
-// fails the build when an app's chunk names the folder and it is not there.
+// fails the build when any app's chunk names the folder and it is not there
+// (every app folder of the site is scanned, not a list of the known ones).
 console.log('• Copying the globe assets (once, /globe-assets/)');
 const globeAssets = copyGlobeAssets({
   from: join(repoRoot, 'GpsPlusSlamJs_Globe', 'assets'),
@@ -436,7 +438,7 @@ console.log(
 );
 const namingGlobeAssets = assertGlobeAssetsShipped({
   siteDir: distSite,
-  appDirs: [join(distSite, 'tour'), join(distSite, 'lookdev')],
+  appDirs: siteAppDirs(distSite),
 });
 console.log(`  named by ${namingGlobeAssets.length} chunk(s), all served`);
 

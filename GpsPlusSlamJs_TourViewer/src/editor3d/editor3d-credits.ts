@@ -1,20 +1,15 @@
 /**
  * The 3D view's credits: one "Credits" button at the bottom left of the
- * view, which opens an overlay listing every source in full with its link,
- * and a note under the list (the globe view's: GIBS's acknowledgement).
- * Esc and a pointer down outside close it; Esc gives focus back to the
- * button. Texts are set as text, never as markup.
+ * view, a disclosure that shows a panel listing every source in full with
+ * its link, and a note under the list (the globe view's: GIBS's
+ * acknowledgement). Esc anywhere while it is open (heard on the document)
+ * and a pointer down outside close it; Esc gives focus back to the button.
+ * Texts are set as text, never as markup.
  *
  * @see editor3d-credits.ts.md
  */
 
-/** One credit: its short name, its full text and its link (the globe's
- *  credit shape). */
-interface Credit {
-  readonly short: string;
-  readonly full: string;
-  readonly href: string;
-}
+import type { EditorCredit as Credit } from "./editor3d-terrain.js";
 
 /** Whether the map's short credit ("© OpenStreetMap contributors") shows
  *  beside the button by default. Off: the owner chose the button alone;
@@ -52,12 +47,10 @@ export function mountCredits(
   button.className = "view3d-credits-button";
   button.textContent = "Credits";
   button.setAttribute("aria-expanded", "false");
-  button.setAttribute("aria-haspopup", "dialog");
 
   const panel = document.createElement("div");
   panel.className = "view3d-credits-panel";
   panel.id = `view3d-credits-panel-${++panels}`;
-  panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", "Credits");
   panel.hidden = true;
   button.setAttribute("aria-controls", panel.id);
@@ -84,6 +77,12 @@ export function mountCredits(
   parts.push(panel);
   box.replaceChildren(...parts);
 
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || panel.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    close(true);
+  };
   const onOutside = (event: Event) => {
     if (event.target instanceof Node && box.contains(event.target)) return;
     close(false);
@@ -93,29 +92,26 @@ export function mountCredits(
     panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", onOutside, true);
+    document.removeEventListener("keydown", onKey, true);
     if (refocus) button.focus();
   };
   const open = () => {
     panel.hidden = false;
     button.setAttribute("aria-expanded", "true");
     document.addEventListener("pointerdown", onOutside, true);
+    // Heard on the document (capture) while open, so Esc closes the panel
+    // wherever focus is, and nothing else hears that Esc.
+    document.addEventListener("keydown", onKey, true);
   };
   const onClick = () => {
     if (panel.hidden) open();
     else close(true);
   };
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || panel.hidden) return;
-    event.preventDefault();
-    event.stopPropagation();
-    close(true);
-  };
   button.addEventListener("click", onClick);
-  box.addEventListener("keydown", onKey);
 
   return () => {
     document.removeEventListener("pointerdown", onOutside, true);
-    box.removeEventListener("keydown", onKey);
+    document.removeEventListener("keydown", onKey, true);
     button.removeEventListener("click", onClick);
     box.replaceChildren();
   };

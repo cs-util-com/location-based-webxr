@@ -38,7 +38,7 @@ and each station's growth, and tells it the camera's altitude.
 
 ## DOM
 
-- `div.approach[data-phase]`, holding only
+- `div.approach`, holding only
   - `div.approach-title[aria-hidden]`, "Loading tour" (the bar's label
     says it to a screen reader);
   - `div.approach-track[role=progressbar]` with `aria-valuemin` 0,
@@ -50,8 +50,7 @@ and each station's growth, and tells it the camera's altitude.
 
 - The bar's value only rises; on landing it reads 100 and the whole box
   goes `BAR_DONE_MS` later, so the finish is seen. A takeover hides it at
-  once without filling the bar. `data-phase` turns "arrived" when it
-  goes; once hidden it never comes back.
+  once without filling the bar. Once hidden it never comes back.
 - What still loads (tiles, the map, stations held for upload) does not
   keep the box: the detail line that used to name it was dropped by the
   owner (it read "Loading textures" through the whole flight and after

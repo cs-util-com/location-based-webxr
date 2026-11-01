@@ -90,7 +90,6 @@ describe("createApproachRun", () => {
     expect(r.stats().progress).toBe(1);
     stepAt(r, flight.durationMs + BAR_DONE_MS);
     expect(rootOf(box).hidden).toBe(true);
-    expect(rootOf(box).dataset["phase"]).toBe("arrived");
     expect(r.stats().progress).toBeNull();
   });
 

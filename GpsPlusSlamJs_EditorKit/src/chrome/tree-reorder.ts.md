@@ -2,10 +2,11 @@
 
 ## Purpose
 
-The tree's reorder of the stations as numbers, pure: the slot a dragged
-card is dropped at (from the cards' middles on screen), and the stations'
-order once it lands there. The drag (`tree-drag.ts`) and the inspector's
-Earlier and Later (`editor-shell.ts`) both move by it.
+A list's reorder as numbers, pure: the slot a dragged card is dropped at
+(from the cards' middles on screen), and the items' order once it lands
+there. The drag (`tree-drag.ts`) and an app's Earlier and Later buttons
+both move by it. It knows no item kind; what the cards stand for is the
+app's.
 
 ## Public API
 

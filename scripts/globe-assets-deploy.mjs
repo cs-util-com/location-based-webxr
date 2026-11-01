@@ -88,6 +88,22 @@ export function chunksNaming(dir, needle) {
 }
 
 /**
+ * Every app folder of the built site: each folder directly under
+ * `siteDir` but the globe's assets, sorted. A new app is scanned without
+ * anyone remembering to add it (a list named per app would miss it).
+ *
+ * @param {string} siteDir
+ * @returns {string[]} absolute folder paths
+ */
+export function siteAppDirs(siteDir) {
+  if (!existsSync(siteDir)) return [];
+  return readdirSync(siteDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== GLOBE_ASSETS_DIR)
+    .map((entry) => join(siteDir, entry.name))
+    .sort();
+}
+
+/**
  * Fail when any app's chunk names `/globe-assets/` while the site root
  * has no such folder with at least one file in it.
  *

@@ -141,9 +141,8 @@ describe('the multi-app site build', () => {
     expect(SCRIPT.slice(lookdev, copy)).toMatch(
       /siteRootPrefixes:\s*\[GLOBE_ASSETS_PREFIX\]/
     );
-    expect(SCRIPT.slice(guard)).toMatch(
-      /appDirs:\s*\[join\(distSite, 'tour'\), join\(distSite, 'lookdev'\)\]/
-    );
+    // Every app folder, so an app added later is scanned unasked.
+    expect(SCRIPT.slice(guard)).toMatch(/appDirs:\s*siteAppDirs\(distSite\)/);
   });
 
   it('keeps the header comment honest about which apps it deploys', () => {

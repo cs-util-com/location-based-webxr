@@ -112,10 +112,13 @@ ground.
   click (which then aims at the ellipsoid) does not take the camera under
   a tour on a hill; only within `STAND_IN_REACH_M` (5 km) of the tour's
   extent (`tourReach`), since far away the tour's height says nothing
-  about the ground, and there no ground means no lift. Tested with a fake
+  about the ground, and there no ground means no lift. The reach follows
+  the tour as edited (set again from `tourNow` and the placed codes on
+  each tour change), so a station added far from the opening tour counts. Tested with a fake
   ground rising north, swept over grades from -30 % to 40 % (on level or
   rising ground the camera ends exactly `eyeM` over the end's ground),
-  with ground under the start only, and 50 km from a tour with none.
+  with ground under the start only, 50 km from a tour with none, and
+  over a station added 50 km away after the open.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the
@@ -231,8 +234,8 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   distance measured to the tour's centre where no ground answers at tour
   heights 0, 515 and 2,500 m, the zoom (button and double click) walking
   forward from eye height 3 to 10 degrees down, the approach's clock
-  starting at its first frame, the coverage read three to five times
-  over the second after the landing, a walk that comes after the approach drawn
+  starting at its first frame, no load counts (the map's coverage, the
+  relief's) read during the approach, a walk that comes after the approach drawn
   from its arrival and re-read when it changes, the double click's zoom from 300 m, 8 km
   and 40 km (the ground beyond 5 km; loaded, and not), a button's step
   50 km from the tour (to the ground ahead), no step under eye height

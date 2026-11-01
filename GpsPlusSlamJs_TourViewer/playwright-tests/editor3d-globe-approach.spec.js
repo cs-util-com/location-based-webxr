@@ -231,15 +231,25 @@ test("the box goes after the bar's done-hold while tiles are still held", async 
     await expect
       .poll(() => held.length, { timeout: 60_000 })
       .toBeGreaterThan(0);
+    // The flight lands (the run's stats outlive it, so this reads the
+    // landing even after the box is gone), and not by a takeover.
+    await expect
+      .poll(async () => (await approachOf(page))?.ended ?? null, {
+        timeout: 60_000,
+      })
+      .toBe("landed");
+    // Then the box goes within a beat of it (BAR_DONE_MS, 300 ms, plus
+    // frames under a loaded machine), not when the held tiles finally load:
+    // the wait starts at the landing, so a box kept by what loads fails
+    // here rather than passing under a long timeout.
     await expect(page.locator("#view3d .approach")).toBeHidden({
-      timeout: 60_000,
+      timeout: 5_000,
     });
     // Still held: the box went while the relief was loading.
     expect(held.length).toBeGreaterThan(0);
     expect(holding).toBe(true);
-    // It went because the flight landed, not because it was taken.
     const run = await approachOf(page);
-    if (run !== null) expect(run.ended).toBe("landed");
+    expect(run?.ended).toBe("landed");
   } finally {
     holding = false;
     for (const release of held.splice(0)) release();

@@ -69,14 +69,19 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
   await expect(page.locator("#view-loading")).toBeHidden();
   await expect(page.locator("#view3d")).toBeVisible();
   await expect(page.locator("#view3d canvas")).toBeVisible();
-  // The credits are one button; its overlay lists every source in full,
-  // and Esc closes it with focus back on the button.
+  // The credits are one disclosure button; its panel lists every source
+  // in full, and Esc closes it with focus back on the button, also with
+  // focus moved out of the panel.
   const credits = page.locator("#view3d-credits");
   const creditsButton = credits.getByRole("button", { name: "Credits" });
-  const creditsPanel = credits.getByRole("dialog", { name: "Credits" });
+  const creditsPanel = credits.locator(".view3d-credits-panel");
   await expect(creditsPanel).toBeHidden();
+  await expect(creditsButton).toHaveAttribute("aria-expanded", "false");
+  await expect(creditsButton).not.toHaveAttribute("aria-haspopup");
+  await expect(creditsPanel).not.toHaveAttribute("role");
   await creditsButton.click();
   await expect(creditsPanel).toBeVisible();
+  await expect(creditsButton).toHaveAttribute("aria-expanded", "true");
   await expect(creditsPanel).toContainText("Mapterhorn");
   await expect(creditsPanel).toContainText("OpenStreetMap");
   await expect(creditsPanel).toContainText("Copernicus");

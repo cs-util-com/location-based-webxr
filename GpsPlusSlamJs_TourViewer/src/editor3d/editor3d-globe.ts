@@ -172,11 +172,18 @@ export async function openGlobeEditor(
    *  the geoid's N. */
   const centreHeightM =
     centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng });
-  const nearTour = tourReach(
-    manifest?.stations ?? [],
-    codeGeos,
-    STAND_IN_REACH_M,
-  );
+  /** Whether a place is near the tour as it is now (its stations and
+   *  placed codes): where the tour's drawn height stands in for ground not
+   *  loaded. Follows the edits (set again on each tour change). */
+  const reachOf = (stations: ReturnType<typeof manifestToWrite>) =>
+    tourReach(
+      stations?.stations ?? [],
+      [...deps.levels().values()].flatMap((l) =>
+        l.qr.geo === undefined ? [] : [l.qr.geo],
+      ),
+      STAND_IN_REACH_M,
+    );
+  let nearTour = reachOf(manifest);
 
   // Everything made from here on is undone, last first, by `dispose` - and
   // by a failure before the view is handed out.
@@ -408,6 +415,7 @@ export async function openGlobeEditor(
       if (next === documentNow) return;
       documentNow = next;
       tourNow = manifestToWrite(next);
+      nearTour = reachOf(tourNow);
       layer.setTour(tourNow, deps.levels());
     });
     undo.push(unsubscribe);

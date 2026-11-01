@@ -17,6 +17,7 @@ import {
   assertGlobeAssetsShipped,
   chunksNaming,
   copyGlobeAssets,
+  siteAppDirs,
 } from './globe-assets-deploy.mjs';
 
 /** @type {string} */
@@ -73,6 +74,33 @@ describe('chunksNaming', () => {
     expect(chunksNaming(join(root, 'tour'), GLOBE_ASSETS_PREFIX)).toEqual([
       'assets/editor3d-globe-abc.js',
     ]);
+  });
+});
+
+describe('siteAppDirs', () => {
+  // Why: the build listed the apps it scanned by name (tour, lookdev), so
+  // a third app that loads the globe would have deployed 404s unguarded.
+  it('lists every folder under the site but the globe assets, sorted', () => {
+    put('site/tour/assets/a.js', 'x');
+    put('site/lookdev/a.js', 'x');
+    put('site/recorder/a.js', 'x');
+    put('site/globe-assets/x.webp', 'x');
+    put('site/index.html', 'x');
+    expect(siteAppDirs(join(root, 'site'))).toEqual(
+      ['lookdev', 'recorder', 'tour'].map((app) => join(root, 'site', app))
+    );
+  });
+
+  it('lets the guard catch a chunk in an app nobody named', () => {
+    put('site/newapp/assets/globe-abc.js', `"${GLOBE_ASSETS_PREFIX}x"`);
+    const siteDir = join(root, 'site');
+    expect(() =>
+      assertGlobeAssetsShipped({ siteDir, appDirs: siteAppDirs(siteDir) })
+    ).toThrow(/globe-abc.js/);
+  });
+
+  it('is empty for a missing site', () => {
+    expect(siteAppDirs(join(root, 'nowhere'))).toEqual([]);
   });
 });
 

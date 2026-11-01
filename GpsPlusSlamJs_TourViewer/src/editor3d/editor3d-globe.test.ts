@@ -775,6 +775,62 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the stand-in's reach was computed once from the tour at open,
+  // so a station added 50 km away later still read as "far from the tour"
+  // there and a step with no ground loaded could sink under its height.
+  // The reach follows the tour as it is edited. Swept over the button and
+  // the double click.
+  it.each(["button", "click"] as const)(
+    "lifts over a station added 50 km away after the open (%s)",
+    async (how) => {
+      fakes.groundM = null;
+      tourAt(2500);
+      let listener: () => void = () => undefined;
+      let doc: object = {};
+      const store = {
+        getState: () => ({
+          tourDocument: doc,
+          editorView: { selected: null, modelFocus: null, modelPick: null },
+        }),
+        subscribe: (l: () => void) => {
+          listener = l;
+          return () => undefined;
+        },
+        dispatch: () => undefined,
+      } as unknown as Editor3dDeps["store"];
+      open = await openGlobeEditor(
+        { ...deps(), store },
+        { hidePx: 4, crowdPx: 16 },
+      );
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      fakes.manifest = {
+        stations: [
+          { id: "s1", geo: { ...MUNICH, alt: 2500 + N }, foundRadiusM: 5 },
+          {
+            id: "far",
+            geo: {
+              lat: MUNICH.lat - 50_000 / 111_200,
+              lon: MUNICH.lon,
+              alt: 2500 + N,
+            },
+            foundRadiusM: 5,
+          },
+        ],
+      };
+      doc = {};
+      listener();
+      placeCamera(300, -10, null, 50_000);
+      if (how === "button") open?.zoom(1);
+      else zoomTowards({ x: 0.5, y: 0.5 });
+      expect(heightOfWorld(camera.position)).toBeGreaterThanOrEqual(
+        2500 + GLOBE_EDITOR_LOOK.eyeM - 1e-3,
+      );
+    },
+  );
+
   // Why: with no ground loaded the place under the camera was given at
   // the CAMERA's height, so "+" from 3 km up put a station 3 km in the
   // air. Near the ground it is now the camera's height less eye height;
@@ -826,7 +882,6 @@ describe("openGlobeEditor's wiring", () => {
     const flyingAt = (t: number) => {
       now = t;
       frameAt(t);
-      fakes.coverageCalls = 0;
       return open?.stats().flying;
     };
     expect(flyingAt(5_016)).toBe(true);
@@ -842,7 +897,7 @@ describe("openGlobeEditor's wiring", () => {
     const view = await openAt(0, { credits });
     const button = credits.querySelector("button");
     expect(button?.textContent).toBe("Credits");
-    const panel = credits.querySelector<HTMLElement>('[role="dialog"]');
+    const panel = credits.querySelector<HTMLElement>(".view3d-credits-panel");
     expect(panel?.hidden).toBe(true);
     expect(panel?.textContent).toContain(GIBS_ACKNOWLEDGEMENT);
     view.dispose();

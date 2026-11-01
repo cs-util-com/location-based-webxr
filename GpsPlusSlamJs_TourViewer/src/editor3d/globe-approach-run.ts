@@ -127,7 +127,6 @@ export function createApproachRun(deps: {
 
   const root = document.createElement("div");
   root.className = "approach";
-  root.dataset["phase"] = "flying";
   // The progress bar carries the same words as its label, so the title
   // is not read twice.
   const title = document.createElement("div");
@@ -182,10 +181,7 @@ export function createApproachRun(deps: {
         if (flightDone(flight, flightMs(nowMs))) arrive(nowMs, "landed");
         else showProgress(barValue(flight, altitudeKm));
       }
-      if (root.hidden !== true && barDone(nowMs)) {
-        root.hidden = true;
-        root.dataset["phase"] = "arrived";
-      }
+      if (root.hidden !== true && barDone(nowMs)) root.hidden = true;
     },
     takeOver(nowMs) {
       arrive(nowMs, "taken");

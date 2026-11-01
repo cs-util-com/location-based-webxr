@@ -20,6 +20,9 @@ globe view and the look-dev labs (the full-globe editor plan 2026-10-27-1850
   Error when `from` is missing or holds no file to copy.
 - `chunksNaming(dir, needle)` -> the `.js`/`.mjs` files under `dir` whose
   text holds `needle`, relative to `dir` with `/`, sorted.
+- `siteAppDirs(siteDir)` -> every folder directly under `siteDir` but
+  `globe-assets`, absolute and sorted (`[]` for a missing site); the
+  build scans these, so a new app is guarded without being named.
 - `assertGlobeAssetsShipped({ siteDir, appDirs })` -> the chunks (under the
   `appDirs`) that name `/globe-assets/`; Error naming them when
   `<siteDir>/globe-assets/` is missing or holds no file. No chunk naming it:
@@ -45,14 +48,16 @@ const { files, bytes } = copyGlobeAssets({
 });
 assertGlobeAssetsShipped({
   siteDir: distSite,
-  appDirs: [join(distSite, 'tour'), join(distSite, 'lookdev')],
+  appDirs: siteAppDirs(distSite),
 });
 ```
 
 ## Tests
 
 `scripts/globe-assets-deploy.test.mjs` (the root vitest config's
-`scripts/*.test.mjs`): the copy without the notes and its counts, the
+`scripts/*.test.mjs`): the app folders listed (every one but the
+assets, an unnamed app's chunk caught), the copy without the notes and
+its counts, the
 refused sources, `chunksNaming`'s filter, and the guard red without the
 folder and with it empty, green with it and with no chunk naming it.
 `tests/repo-config/build-site-wiring.test.js` pins that `build-site.mjs`

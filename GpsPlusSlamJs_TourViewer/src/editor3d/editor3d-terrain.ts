@@ -96,7 +96,7 @@ export function reliefDeviceClass(widthPx: number): ReliefDeviceClass {
 
 /** One credit line: its short name, its full text and its link (the
  *  globe's credit shape). */
-type EditorCredit = ReturnType<typeof reliefCredits>[number];
+export type EditorCredit = ReturnType<typeof reliefCredits>[number];
 
 /** The editor's ground, ready to be added to a scene and updated. */
 export interface EditorTerrain {
