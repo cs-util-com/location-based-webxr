@@ -7,8 +7,11 @@
  * the read-along judge, and the Finish's asset rule. Each had unit tests
  * of its own while a Finish of any narrated tour failed: the asset rule
  * did not count the voice, so the write dropped it and the re-parse
- * refused the manifest. This drives the production wiring end to end on
- * a real zip, so a seam that only its own fakes agree with cannot pass.
+ * refused the manifest. This runs the real modules - the session, the
+ * guard, the prefetch, the narration visitor and the Finish - on a real
+ * zip, composed by this test (not by `main.ts`, whose wiring it does not
+ * load), so a seam that only each module's own fakes agree with cannot
+ * pass.
  */
 import { describe, expect, it } from "vitest";
 import {

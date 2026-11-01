@@ -24,7 +24,10 @@ describe("the last element at or before a value", () => {
     fc.assert(
       fc.property(
         fc
-          .array(fc.integer({ min: -50, max: 50 }), { maxLength: 40 })
+          .array(fc.integer({ min: -50, max: 50 }), {
+            maxLength: 40,
+            size: "max",
+          })
           .map((keys) => [...keys].sort((a, b) => a - b)),
         fc.oneof(
           fc.integer({ min: -60, max: 60 }),
