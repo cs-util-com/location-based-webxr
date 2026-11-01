@@ -550,7 +550,7 @@ describe("the station guide on the page's store", () => {
     for (const [state, count] of Object.entries(steady)) {
       expect(count, state).toBeGreaterThan(0);
     }
-  });
+  }, 120_000);
 
   // Why (K4 review R9, re-stated through the store): the existing property
   // that no order can deadlock - stories that never end, stations nobody

@@ -318,6 +318,27 @@ describe("the switch on the page", () => {
     }
   });
 
+  // Why this test matters: the window has an upper side. A select
+  // cancelled on the open menu long before the closing pointerdown (300 ms,
+  // past the 250 ms window) belongs to an earlier tap, not this one; the
+  // closing tap must still arm its mark, so its own select arriving after
+  // its pointerup is cancelled too. Without the bound every closing tap
+  // after any open-menu select would reach the world.
+  it("still cancels the closing tap's select when the last open-menu select came long before its pointerdown", () => {
+    const { q, outside, sw } = openOutside();
+    expect(selectCancelled(outside), "a select on the open menu").toBe(true);
+    clockMs += 300;
+    finger(outside, "pointerdown", 1);
+    expect(q("view-switch-menu")?.hidden).toBe(true);
+    finger(outside, "pointerup", 1);
+    clockMs += 40;
+    expect(
+      selectCancelled(outside),
+      "the closing tap's select, a frame after its pointerup",
+    ).toBe(true);
+    sw.dispose();
+  });
+
   // Why this test matters: with the menu closed the switch claims no tap.
   it("lets every select through while the menu is closed", () => {
     mount([longText("t", "reading")]);
