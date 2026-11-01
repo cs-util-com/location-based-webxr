@@ -298,6 +298,8 @@ describe("buildInspector", () => {
       sizeM: null,
       // Only a model has notes, sections and a view.
       model: null,
+      // Only a free long text has the writer.
+      longText: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {
@@ -421,6 +423,22 @@ describe("inspectorHint", () => {
     expect(inspectorHint(model)).toBe(
       "The siege - drag the middle to move along the ground, the round arrow to turn",
     );
+    // Why: the long text writer edits this text: its block, view, body and
+    // the words its sheet shows over the title come from here, so the
+    // preview shows what a visitor reads.
+    expect(model).toMatchObject({
+      longText: {
+        blockId: "stand-1",
+        view: "lectern",
+        title: "The siege",
+        body: "In 1632 the town was besieged.",
+        hasNarration: false,
+        pictures: [],
+      },
+    });
+    if (model?.kind !== "item") throw new Error("not an item");
+    // The visitor's own line: the station's name (here none) and number.
+    expect(model.longText?.over).toBe("Station 2");
   });
 });
 

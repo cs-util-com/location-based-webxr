@@ -37,6 +37,21 @@ const PATHS = {
   folder:
     '<path d="M2 4.5a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
+  // A long text's writer (long-text-writer.ts): its toolbar, its note, the
+  // inspector's width and the three ways a visitor meets the text.
+  ul: '<circle cx="3.3" cy="4.5" r=".8"/><circle cx="3.3" cy="8" r=".8"/><circle cx="3.3" cy="11.5" r=".8"/><path d="M6.5 4.5h7M6.5 8h7M6.5 11.5h7"/>',
+  ol: '<path d="M6.5 4.5h7M6.5 8h7M6.5 11.5h7"/><path d="M2.4 3.6l1.1-.7v3.4M2.3 9.4c.3-.7 1.8-.7 1.8.2 0 .8-1.8 1.4-1.8 2.2h1.9"/>',
+  indent: '<path d="M7 4h7M7 8h7M7 12h7M2 5.5L4.5 8 2 10.5"/>',
+  outdent: '<path d="M7 4h7M7 8h7M7 12h7M4.5 5.5L2 8l2.5 2.5"/>',
+  link: '<path d="M6.6 9.4l2.8-2.8"/><path d="M7.4 4.6l1.1-1.1a2.6 2.6 0 0 1 3.7 3.7l-1.1 1.1M8.6 11.4l-1.1 1.1a2.6 2.6 0 0 1-3.7-3.7l1.1-1.1"/>',
+  note: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.8v.2"/>',
+  wide: '<path d="M1.5 8h13M4.5 5L1.5 8l3 3M11.5 5l3 3-3 3"/>',
+  reading:
+    '<rect x="2" y="2" width="8" height="5" rx="1"/><path d="M6 7v7M11 9h3M11 11.5h3"/>',
+  silent:
+    '<rect x="4" y="1.8" width="8" height="12.4" rx="1.6"/><path d="M6 5h4M6 7.5h4M6 10h2.5"/>',
+  captions:
+    '<rect x="1.8" y="8" width="12.4" height="5.5" rx="1.3"/><path d="M4 10.8h5M10.5 10.8h1.5M8 2v3.5M6 3.7h4"/>',
   earlier: '<path d="M8 13.5V3M4.5 6.5L8 3l3.5 3.5"/>',
   later: '<path d="M8 2.5V13M4.5 9.5L8 13l3.5-3.5"/>',
   trash: '<path d="M3 4.2h10M6.2 4.2V2.6h3.6v1.6M4.5 4.2l.7 9.3h5.6l.7-9.3"/>',

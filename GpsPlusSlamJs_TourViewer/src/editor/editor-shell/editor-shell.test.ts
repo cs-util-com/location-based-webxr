@@ -125,6 +125,7 @@ function setUp() {
     station: vi.fn(),
     text: vi.fn(),
     block: vi.fn(),
+    view: vi.fn(),
     model: vi.fn((): "written" => "written"),
     scene: vi.fn(),
     groundItems: vi.fn(),

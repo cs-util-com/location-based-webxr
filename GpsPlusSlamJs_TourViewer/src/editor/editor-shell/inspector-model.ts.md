@@ -78,6 +78,13 @@ origin?, groundAt? })` ->
   whether the sections are full, the clip or null, and the store's
   `modelFocus` and `modelPick`); null for every other item.
 - `buildInspector` takes the store's `modelFocus` and `modelPick`.
+- `ItemInspector.longText` - for a free long text, what its writer shows
+  (`InspectorLongText`: the block id, its stored view, title and body,
+  whether it has a narration, the visitor's line above the title - the
+  station's name and number - and the tour's pictures `{ id, path, label }`
+  for the picture button); null for every other item, and for a long text a
+  station's story shows (its prose stays a field there). Its body and title
+  are not repeated in `fields`.
 
 ## Invariants & assumptions
 

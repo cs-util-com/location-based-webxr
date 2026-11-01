@@ -107,6 +107,13 @@ imperative resources only - that handle and the pictures' side table
     `pinTextChange` (`edited`, `unchanged`, `refused` with the phone's
     sentence; `refused` with `NOT_IN_TOUR` for an id the tour no longer
     carries).
+  - `editBlockView(id, view)` - a free block's view, one undo step named
+    "the view of <name>" through the document's `edited`; `unchanged` for
+    its own view; refused in words (`NOT_ITS_VIEW`) for a view its kind does
+    not have (`TOUR_BLOCK_VIEWS`) or one that does not stand in the world
+    (`TOUR_WORLD_VIEWS`: no step shows a free block, so the format would
+    refuse a card at save), `MODEL_VIEW_ELSEWHERE` for a model (its view is
+    `editModel`'s), `NOT_IN_TOUR` for an id the tour no longer carries.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the

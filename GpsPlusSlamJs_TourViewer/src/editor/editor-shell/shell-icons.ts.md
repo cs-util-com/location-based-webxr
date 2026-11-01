@@ -21,6 +21,9 @@ in the current text colour, as SVG elements.
   unknown name is left as it is, and so is a name of
   `Object.prototype` such as `toString` (`Object.hasOwn`, not `in`).
 
+- The long text's writer adds `ul`, `ol`, `indent`, `outdent`, `link`,
+  `note`, `wide` and the three views `reading`, `silent`, `captions`.
+
 ## Invariants & assumptions
 
 - Constant markup only: nothing from a tour reaches an icon.

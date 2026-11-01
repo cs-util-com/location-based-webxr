@@ -75,8 +75,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   one by `loadContentEntry`, a recorded one by `loadEntry`. The card follows the marker on every map move and on resize;
   Esc, the card's close and a click on the map clear the selection.
   A `refresh()` keeps a selection that is still in the tour (`stillInTour`):
-  an item of the editor model, or a 3D model block, which the model never
-  lists, so an edit of a selected model keeps it selected.
+  an item of the editor model, or any block of the tour the model never
+  lists (a 3D model, a free long text), so an edit of a selected block
+  keeps it selected (only models were kept before, and the long text's
+  first saved pause deselected it, closing its writer).
 - **Editing (M6 E2a)** through `editor-session.ts`: a pin's text (committed
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
@@ -708,6 +710,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`writeInspectorEdit`):
   - `station`, `text` and `block` - `editor.editStation` (name, description,
     radius, card picture), `editor.editText` (a pin's text) and `editor.editBlockField` (a block's other text fields, B2c);
+  - `view` - `editor.editBlockView`, a free block's view (a long text's
+    sign, from its writer's view picker);
   - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
     a station put on the ground);
   - `groundItems` - `editor.groundItems`, items' heights in one step

@@ -900,16 +900,13 @@ function renderTourName(): void {
 }
 
 /** Whether the selection `id` is still in the tour: one of the editor
- *  model's items, or a 3D model block (which the 2D editor does not list,
- *  `editor-model.ts`, but the 3D view selects and edits). */
+ *  model's items, or a block the 2D editor does not list
+ *  (`editor-model.ts`) but the 3D view selects and edits - a 3D model, a
+ *  free long text. */
 function stillInTour(id: string): boolean {
   if (model?.items.some((i) => i.id === id) === true) return true;
   const tour = manifestToWrite(store.getState().tourDocument);
-  return (
-    tour?.stations.some((s) =>
-      s.blocks.some((b) => b.kind === "model" && b.id === id),
-    ) ?? false
-  );
+  return tour?.stations.some((s) => s.blocks.some((b) => b.id === id)) ?? false;
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */
@@ -3720,6 +3717,7 @@ const shell = createEditorShell({
     text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
+    view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
     model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {

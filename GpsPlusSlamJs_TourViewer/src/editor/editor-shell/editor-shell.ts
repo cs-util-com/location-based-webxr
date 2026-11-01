@@ -93,6 +93,8 @@ import {
   type TreeClickMemory,
 } from "./tree-click.js";
 import { buildTree } from "./tree-model.js";
+import { createKeptStore } from "../long-text/kept-store.js";
+import { createLongTextDock } from "../long-text/long-text-dock.js";
 
 /** The 3D view's commands the shell drives. */
 type ShellView = Pick<
@@ -140,6 +142,8 @@ interface ShellEditCommands {
   text(itemId: string, text: string): TypedEditOutcome;
   /** One of a free block's other text fields (`block-fields.ts`). */
   block(itemId: string, field: string, value: string): TypedEditOutcome;
+  /** A free block's view (`TOUR_BLOCK_VIEWS`): a long text's sign. */
+  view(itemId: string, view: string): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
@@ -304,6 +308,24 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     load: (path) => deps.loadPicture(path),
   });
   const viewBox = byId("view3d");
+  /** A long text's writer in the inspector and its preview over the 3D
+   *  view (`long-text-dock.ts`). */
+  const longText = createLongTextDock({
+    document,
+    box: viewBox,
+    inspectorRoot: inspector.root,
+    treeRoot: tree.root,
+    kept: createKeptStore(),
+    writeBody: (id, body) => deps.edits.block(id, "body", body),
+    writeView: (id, view) => deps.edits.view(id, view),
+    loadPicture: (path) => deps.loadPicture(path),
+    say: (text) => {
+      deps.say(text);
+    },
+    changed: () => {
+      draw();
+    },
+  });
   const said = byId("shell-said");
   const ground = createSceneMenu({
     box: viewBox,
@@ -365,6 +387,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
+    const writer = longText.sync(
+      model?.kind === "item" ? model.longText : null,
+    );
     drawInspector(
       inspector,
       model,
@@ -372,8 +397,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         folded: state().editorView.foldedDocks.inspector,
         positionOpen,
         busy: busy?.act ?? null,
+        ...(writer === null ? {} : { longText: longText.state() }),
       },
       pictures,
+      writer,
     );
   };
 
@@ -704,6 +731,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       busy = null;
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
+      longText.flush();
       if (selected !== null) applyDocks("selected");
     }
     draw();
@@ -949,6 +977,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
+    if (act !== undefined && longText.act(act)) {
+      draw();
+      return;
+    }
     if (act === "close") deps.select(null);
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
@@ -1011,8 +1043,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // again, found by its name.
   inspector.root.addEventListener("focusout", (event) => {
     const input = event.target;
+    // Only a field drawn under its name: a long text's writer and its link
+    // line keep their own text and write it themselves.
     if (
       isTyped(input) &&
+      input.dataset["field"] !== undefined &&
       inspector.root.contains(input) &&
       !inspectorDrawing(inspector.root)
     ) {
@@ -1146,6 +1181,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     hide() {
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
+      longText.flush();
+      longText.sync(null);
       busy?.stop.abort();
       busy = null;
       view = null;

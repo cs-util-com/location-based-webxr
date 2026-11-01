@@ -145,6 +145,13 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   - A button waiting for a click on the model reads "Click the model...",
     pressed (`.mini.on`).
 
+- A free long text (`model.longText`) is drawn as its title's field and
+  its writer (`InspectorState.writer`, a node `long-text-dock.ts` owns and
+  the inspector only places, so typing never rebuilds it), with Preview
+  (`lt-preview`) and Wider (`lt-wide`) in the head, pressed while on
+  (`InspectorState.longText`). The writer sits between the narration's
+  spot and Position; its fields are not drawn again under their names.
+
 ## Invariants & assumptions
 
 - Nothing here writes: the shell reads the typed fields and the

@@ -25,6 +25,12 @@
  * `split` ("Move to a new station"), `ground` and `delete`. A command the
  * shell is running (`busy`) shows as waiting.
  *
+ * A long text shows its title in the head, typed there, with the
+ * preview's and the width's buttons beside it (`lt-preview`,
+ * `lt-wide`, pressed while on), and its writer in the body: a node the
+ * shell hands in (`long-text-writer.ts`), kept in the page across draws
+ * so its focus, its selection and the browser's undo survive them.
+ *
  * @see shell-inspector.ts.md
  */
 import type { ShellPictures } from "./shell-pictures.js";
@@ -907,6 +913,8 @@ function modelParts(parts: ModelParts): HTMLElement[] {
 
 function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
   const parts: HTMLElement[] = [];
+  // A long text's title is typed in the head and its text in the writer.
+  const fields = model.longText === null ? model.fields : [];
   if (model.text !== null && severalLines(model.text)) {
     const why = el("div", "note pad", PIN_LINES);
     why.id = PIN_LINES_ID;
@@ -925,9 +933,9 @@ function itemParts(model: ItemModel, state: InspectorState): HTMLElement[] {
       }),
     ]),
   );
-  if (model.fields.length > 0) {
+  if (fields.length > 0) {
     const section = el("div", "isec");
-    section.append(...model.fields.flatMap(blockTextField));
+    section.append(...fields.flatMap(blockTextField));
     parts.push(section);
   }
   if (model.sizeM !== null) {
@@ -1116,6 +1124,8 @@ export interface InspectorState {
   readonly folded: boolean;
   readonly positionOpen: boolean;
   readonly busy?: string | null;
+  /** A long text's preview shown, and the inspector made wider. */
+  readonly longText?: { readonly preview: boolean; readonly wide: boolean };
 }
 
 /**
@@ -1123,7 +1133,8 @@ export interface InspectorState {
  * its position disclosure open or not. Drawn again only when one of them
  * changed, and never from inside a draw (`inspectorDrawing`); the
  * control that had the focus has it again after a draw, with text typed
- * in it and not yet committed.
+ * in it and not yet committed. `writer`, a long text's writer, is put
+ * in the body and stays in the page while the next draw shows it too.
  */
 export function drawInspector(
   dock: {
@@ -1134,15 +1145,16 @@ export function drawInspector(
   model: InspectorModel | null,
   state: InspectorState,
   pictures: ShellPictures,
+  writer: HTMLElement | null = null,
 ): void {
   if (drawing.has(dock.root)) return;
-  const key = JSON.stringify([model, state]);
+  const key = JSON.stringify([model, state, writer !== null]);
   if (lastDrawn.get(dock.root) === key) return;
   drawing.add(dock.root);
   try {
     lastDrawn.set(dock.root, key);
     const kept = focusIn(dock.root);
-    drawDock(dock, model, state, pictures);
+    drawDock(dock, model, state, pictures, writer);
     focusAgain(dock.root, kept);
   } finally {
     drawing.delete(dock.root);
@@ -1152,6 +1164,12 @@ export function drawInspector(
 /** The head's title: a pin's text to type, else the title in words (a
  *  station's name is typed in its labelled field, AU-2). */
 function headTitle(model: InspectorModel): HTMLElement {
+  if (model.kind === "item" && model.longText !== null) {
+    const input = typed("title", model.longText.title, "ttlin");
+    input.setAttribute("aria-label", "Title of the text");
+    input.title = "The text's title (Enter keeps it)";
+    return input;
+  }
   if (model.kind === "item" && model.text !== null) {
     const input = typed("title", model.text, "ttlin");
     input.setAttribute("aria-label", "Pin text");
@@ -1196,6 +1214,7 @@ function drawDock(
   model: InspectorModel | null,
   state: InspectorState,
   pictures: ShellPictures,
+  writer: HTMLElement | null,
 ): void {
   dock.root.hidden = model === null;
   if (model === null) {
@@ -1209,9 +1228,14 @@ function drawDock(
   icon.append(shellIcon(KIND_ICON[kind] ?? "station"));
   const head = headTitle(model);
   const count = pinCount(model, head);
+  const longText =
+    model.kind === "item" && model.longText !== null
+      ? longTextButtons(state)
+      : [];
   dock.head.replaceChildren(
     icon,
     head,
+    ...longText,
     iconButton(
       state.folded ? "down" : "up",
       state.folded ? "Show the details" : "Collapse the details",
@@ -1227,5 +1251,50 @@ function drawDock(
       : model.kind === "item"
         ? itemParts(model, state)
         : codeParts(model, state);
-  dock.body.replaceChildren(sub, ...(count === null ? [] : [count]), ...parts);
+  const before = [sub, ...(count === null ? [] : [count])];
+  placeAround(dock.body, before, writer, parts);
+}
+
+/** A long text's head buttons: the preview's and the width's, pressed
+ *  while on. */
+function longTextButtons(state: InspectorState): HTMLButtonElement[] {
+  const preview = state.longText?.preview ?? false;
+  const wide = state.longText?.wide ?? false;
+  const show = iconButton(
+    "eye",
+    preview ? "Hide the preview" : "Show the preview",
+    "lt-preview",
+  );
+  show.setAttribute("aria-pressed", String(preview));
+  const wider = iconButton(
+    "wide",
+    wide ? "Back to the normal width" : "Make the inspector wider for writing",
+    "lt-wide",
+  );
+  wider.setAttribute("aria-pressed", String(wide));
+  return [show, wider];
+}
+
+/** `body` holding `before`, `middle` and `after` in that order. A
+ *  `middle` already in it stays in the page (only the nodes around it
+ *  change), so a text area in it keeps its focus and its undo. */
+function placeAround(
+  body: HTMLElement,
+  before: readonly HTMLElement[],
+  middle: HTMLElement | null,
+  after: readonly HTMLElement[],
+): void {
+  if (middle === null || middle.parentNode !== body) {
+    body.replaceChildren(
+      ...before,
+      ...(middle === null ? [] : [middle]),
+      ...after,
+    );
+    return;
+  }
+  for (const node of [...body.childNodes]) {
+    if (node !== middle) node.remove();
+  }
+  for (const node of before) body.insertBefore(node, middle);
+  body.append(...after);
 }

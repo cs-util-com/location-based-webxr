@@ -170,6 +170,55 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why: the long text's view picker writes a free block's view through
+  // the tour document like every other inspector edit: one undo step,
+  // counted, saved; a view the block's kind does not have, and a card (a
+  // free block must stand in the world, or the save is refused), are
+  // refused in words and change nothing; the same view again is no step.
+  it("sets a free block's view as one step, saved and undone, and refuses a view it cannot stand in", async () => {
+    const essay: TourObject = {
+      id: "t1",
+      kind: "longText",
+      view: "lectern",
+      title: "The siege",
+      body: "In 1632 the town was besieged.",
+      createdAtIso: "2026-10-20T00:00:00.000Z",
+      geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const { session, manifest } = await opened([pin("a", "Old"), essay]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockView("t1", "lectern")).toEqual({
+      kind: "unchanged",
+    });
+    for (const view of ["pin", "card", "captions"]) {
+      expect(editor.editBlockView("t1", view)).toEqual({
+        kind: "refused",
+        reason: "This block cannot be shown that way.",
+      });
+    }
+    expect(editor.editBlockView("a", "card")).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.editBlockView("nope", "reading")).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.editBlockView("t1", "reading")).toEqual({ kind: "edited" });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "t1"),
+    ).toMatchObject({ view: "reading" });
+    const undone = editor.undo();
+    expect(undone).toMatchObject({ kind: "undone" });
+    expect(JSON.stringify(undone)).toContain("the view of");
+    await session.close();
+  });
+
   // Why: a block's other text fields (a short text's description
   // here) are edited through the same tour document as its caption: one
   // undo step each, counted as a change, written by the save; a text

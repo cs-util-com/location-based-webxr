@@ -75,6 +75,15 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   wait cleared when written); a section flipped (its normal negated, a zero
   kept 0); the clip's autoplay turned.
 
+- A long text's writer and preview come from one `createLongTextDock`
+  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
+  `longText` model on every draw (null closes it), `act` takes the clicks
+  it owns, and `flush` writes pending typing before a selection change or
+  a save. Its body goes through `edits.block(id, "body", ...)` and its view
+  through the new `edits.view(id, view)` (`editor.editBlockView`). The
+  shell's generic field input skips its fields: only an input drawn under
+  a field name (`data-field`) is written by the shell.
+
 ## Invariants & assumptions
 
 - **One copy:** the tree, the inspector, the folds, the layers and the

@@ -17,6 +17,8 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
+  TOUR_BLOCK_VIEWS,
+  TOUR_WORLD_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -294,6 +296,11 @@ const NOT_AN_ORDER = "The new order must name every station of the tour once.";
 const NOT_A_MODEL = "Only a 3D model has a size.";
 const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 
+/** Said for a view a block's kind does not have. */
+const NOT_ITS_VIEW = "This block cannot be shown that way.";
+/** Said when a model's view is asked of the block path. */
+const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
+
 /** Said for a model size out of bounds. */
 const MODEL_SIZE = `A model's size must be from ${String(TOUR_MODEL_MIN_SIZE_M)} m to ${String(TOUR_MODEL_MAX_SIZE_M)} m.`;
 
@@ -378,6 +385,15 @@ export interface EditorSession {
     id: string,
     field: string,
     value: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Set a free block's view, one its kind has (`TOUR_BLOCK_VIEWS`) that
+   *  stands in the world (`TOUR_WORLD_VIEWS`: no step shows a free block,
+   *  so the format refuses it a card): one step. Refused in words,
+   *  changing nothing, for an id the tour does not carry, a model (its view
+   *  is `editModel`'s) and any other view. */
+  editBlockView(
+    id: string,
+    view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Move a note on the map (its height and facing kept): beyond its
    *  station's found radius the station rule seats it anew - the station
@@ -933,6 +949,29 @@ export function createEditorSession(input: {
         }),
       );
       return { kind: "edited" };
+    },
+    editBlockView(id, view) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind === "model") {
+        return { kind: "refused", reason: MODEL_VIEW_ELSEWHERE };
+      }
+      const views: readonly string[] = TOUR_BLOCK_VIEWS[object.kind];
+      if (!views.includes(view) || !TOUR_WORLD_VIEWS.has(view)) {
+        return { kind: "refused", reason: NOT_ITS_VIEW };
+      }
+      if (object.view === view) return { kind: "unchanged" };
+      const after = { ...object, view } as typeof object;
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: after,
+            what: `the view of ${objectName(object)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
     },
     move(id, lat, lon) {
       const state = mine();
