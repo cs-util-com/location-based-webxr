@@ -735,3 +735,63 @@ describe("a story character's chips", () => {
     shell.hide();
   });
 });
+
+// Why: a Save (Ctrl+S, the bar's button) writes the tour as the store
+// holds it, and typing that has not been left or paused on yet - in an
+// inspector field or in a long text's writer - is not in it. The page asks
+// the shell to write that typing first (`flush`); without it a Save while
+// typing saved the text without its last words.
+describe("a save while typing", () => {
+  it("writes the field being typed in when the page flushes", () => {
+    const { select, edits, shell } = setUp();
+    select("station:a");
+    typeInto("description", "By the fountain");
+    shell.flush();
+    expect(edits.station).toHaveBeenCalledWith("a", {
+      description: "By the fountain",
+    });
+    shell.hide();
+  });
+
+  it("writes a long text's typing that has not paused yet when the page flushes", () => {
+    const { store, select, edits, shell } = setUp();
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [
+                {
+                  id: "essay",
+                  kind: "longText",
+                  view: "reading",
+                  title: "Essay",
+                  body: "Old words.",
+                  createdAtIso: AT,
+                  pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+              ],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    select("essay");
+    const area = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="long-text-writer"]',
+    );
+    if (area === null) throw new Error("no writer");
+    area.value = "Old words. New ones";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(edits.block).not.toHaveBeenCalled();
+    shell.flush();
+    expect(edits.block).toHaveBeenCalledWith(
+      "essay",
+      "body",
+      "Old words. New ones",
+    );
+    shell.hide();
+  });
+});

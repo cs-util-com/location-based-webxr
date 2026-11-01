@@ -217,6 +217,10 @@ export interface EditorShell {
   /** The 3D view shows: the shell drives `view` until `hide`. */
   show(view: ShellView): void;
   hide(): void;
+  /** Writes the typing not yet in the tour (an inspector field being
+   *  typed in, a long text's writer before its pause): the page calls it
+   *  before a save, which writes the tour as the store holds it. */
+  flush(): void;
   /** The scene's ground menu at `point` (px in the view), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
@@ -1205,6 +1209,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
+    },
+    flush() {
+      const pending = typedField();
+      if (pending !== null) commitField(pending, lastSelected);
+      longText.flush();
     },
     hide() {
       const pending = typedField();

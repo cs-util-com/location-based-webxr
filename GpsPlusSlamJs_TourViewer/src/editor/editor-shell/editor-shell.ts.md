@@ -61,6 +61,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   size and the keys, and reads the camera every 200 ms (`READOUT_MS`).
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced).
+- `EditorShell.flush()` - writes the typing not yet in the tour (an
+  inspector field being typed in, a long text's writer before its
+  pause); the page calls it before a save.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and

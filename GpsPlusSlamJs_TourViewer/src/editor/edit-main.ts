@@ -2733,6 +2733,7 @@ async function runSave(
       // data, or a Save of a tour closed since: an open keeps the slot's
       // holder). A second Save during this tour's own Save is the same
       // Save.
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2883,6 +2884,7 @@ async function saveTour(
   const ended = claimSave(mode);
   try {
     if (mode === "explicit") {
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
     }

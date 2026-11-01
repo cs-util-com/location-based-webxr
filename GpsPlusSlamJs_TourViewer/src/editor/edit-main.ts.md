@@ -202,7 +202,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   data…" on its button meanwhile, the result in a toast): the save reads
   the opened file, so the copy must not be put in its place first (r901
   review #1). Save is on whenever a tour is open
-  and commits the card's typing first ("Nothing to save" when there is
+  and commits the card's typing and the 3D inspector's (`shell.flush()`: a field or a long text typed in, not yet paused on) first ("Nothing to save" when there is
   none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
   the status line already read "No changes", so the swap alone looked like
   nothing happened); a save belongs to its tour and ends quietly if another was
@@ -338,7 +338,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     toast (one at a time: a new one replaces the last) and PAUSES autosave -
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).
-  - **Ctrl+S during an autosave** commits the card and runs right after
+  - **Ctrl+S during an autosave** commits the card and the 3D inspector's typing and runs right after
     it, and so does Ctrl+S during the write at a link's or the sample's
     open (the `"open"` claim), during a copy being saved (`"copy"`) and
     during a move of the debug data (`"walk"`): every claim but an
