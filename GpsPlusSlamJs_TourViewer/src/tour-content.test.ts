@@ -37,6 +37,8 @@ import { objectContentKey } from "./authoring-draft.js";
 import {
   asStored,
   keepsItself,
+  stepAssetIds,
+  stepRequiredAssetIds,
   withReferencedAssets,
   withTourContent,
 } from "./tour-content.js";
@@ -602,6 +604,59 @@ describe("asStored", () => {
         },
       ),
       { numRuns: 100 },
+    );
+  });
+});
+
+// Why: a draft restore checks a frame with `stepRequiredAssetIds`, so it
+// must ask for no more than the story names (never drop a frame the full
+// check keeps) and leave out exactly a long text body's pictures, which
+// the format lets be missing. A narration's voice stays required.
+describe("stepRequiredAssetIds", () => {
+  it("keeps a long text's narration voice and drops the pictures its body names", () => {
+    const station = {
+      blocks: [
+        {
+          id: "words",
+          kind: "longText",
+          view: "reading",
+          title: "Words",
+          body: "See ![gate](asset:gone) here.\n\n![wall](asset:wall)",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          narration: { audio: "voice", synthetic: false },
+        },
+      ] as TourBlock[],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show" as const, block: "words" },
+          advance: { mode: "tap" as const },
+        },
+      ],
+    };
+    expect([...stepAssetIds(station)].sort()).toEqual([
+      "gone",
+      "voice",
+      "wall",
+    ]);
+    expect(stepRequiredAssetIds(station)).toEqual(["voice"]);
+  });
+
+  it("asks for a subset of what a station's story names, and for all of it without long texts", () => {
+    fc.assert(
+      fc.property(tourManifestArbitrary(), (record) => {
+        const tour = parseTourManifest(record);
+        for (const station of tour.stations) {
+          const all = new Set(stepAssetIds(station));
+          const required = stepRequiredAssetIds(station);
+          expect(required.every((id) => all.has(id))).toBe(true);
+          const hasLongText = station.blocks.some((b) => b.kind === "longText");
+          expect(required).toEqual(
+            hasLongText ? required : stepAssetIds(station),
+          );
+        }
+      }),
+      { numRuns: 60 },
     );
   });
 });

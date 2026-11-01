@@ -250,7 +250,8 @@ rerun?, what, newStationIds? })` - a draft's work,
   A record without these fields (written before stations were kept
   whole) restores as before. Every frame a restore brings - recorded or
   created - is checked against the tour it is restored into: one whose
-  story names an asset the tour lacks is left out (its objects are seated
+  story needs an asset the tour lacks (`stepRequiredAssetIds`: a picture
+  a long text body names is not needed) is left out (its objects are seated
   by the rule), since the format refuses it and every later save would
   fail.
 - `saveStarted({ generation })`, `saved({ generation, written,

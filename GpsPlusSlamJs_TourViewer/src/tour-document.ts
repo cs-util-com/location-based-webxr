@@ -109,6 +109,7 @@ import {
   keepsItself,
   objectAssetIds,
   stepAssetIds,
+  stepRequiredAssetIds,
   storyBlocksOf,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
@@ -2966,10 +2967,11 @@ const tourDocumentSlice = createSlice({
         const writtenAssets = new Set(
           plainBefore.written.assets.map((a) => a.id),
         );
-        // A frame whose story names an asset the tour lacks is left out:
-        // the format refuses it, so every later save would fail.
+        // A frame whose story needs an asset the tour lacks is left out:
+        // the format refuses it, so every later save would fail. A picture
+        // a long text body names is not needed (its alt text is read).
         const fits = (frame: StationFrame): boolean =>
-          stepAssetIds(frame).every((id) => writtenAssets.has(id));
+          stepRequiredAssetIds(frame).every((id) => writtenAssets.has(id));
         const recorded = (work.frames ?? []).filter(fits);
         const replaced = new Map(recorded.map((f) => [f.id, f]));
         // A recorded frame the document carries is an edit beyond its pose:

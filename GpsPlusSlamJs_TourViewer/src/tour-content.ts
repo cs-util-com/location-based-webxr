@@ -371,6 +371,24 @@ export function stepAssetIds(
 }
 
 /**
+ * The assets of `station`'s story the format REQUIRES the tour to carry:
+ * `stepAssetIds` without the pictures a long text's body names, which may
+ * be missing (the visitor reads their alt text). What a restore checks a
+ * drafted frame against, so a body naming a lost picture keeps its station.
+ */
+export function stepRequiredAssetIds(
+  station: Pick<TourStation, "blocks" | "steps">,
+): readonly string[] {
+  return storyBlocksOf(station).flatMap((block) =>
+    block.kind !== "longText"
+      ? blockAssetIds(block)
+      : block.narration === undefined
+        ? []
+        : [block.narration.audio],
+  );
+}
+
+/**
  * The ids of the assets `manifest` uses: every block's of every station,
  * every station's card image and the cover (each of the last two names an
  * image asset).

@@ -75,7 +75,9 @@ camera captures are debug data, never in a station (an earlier file's
 - `blockAssetIds(block)` (module-internal): the assets one block names (a closed switch: a
   new kind fails to compile until it says which it keeps).
   `stepAssetIds(station)`: the assets a station's (or a frame's) story
-  blocks name. `objectAssetIds(object)`: the assets an object in the
+  blocks name. `stepRequiredAssetIds(station)`: the same without the
+  pictures a long text's body names (the format lets those be missing),
+  what a draft restore checks a frame against. `objectAssetIds(object)`: the assets an object in the
   world keeps (a model its file, a picture the tour's image it names, a
   pin none; a captured photo's own asset none, as it is part of its
   picture) - what the write and the document's history read.
