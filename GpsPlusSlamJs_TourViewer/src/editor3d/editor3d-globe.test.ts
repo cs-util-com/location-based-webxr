@@ -675,6 +675,35 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: with no heights loaded under the camera a double click aims at
+  // the ellipsoid, so near a tour on a hill one click took the camera
+  // hundreds of metres under the real ground there. With no ground loaded
+  // the tour's own drawn height stands in for it. Swept over tours at 515
+  // and 2500 m, looking 10 and 45 degrees down.
+  it.each([
+    [515, -10],
+    [515, -45],
+    [2500, -10],
+    [2500, -45],
+  ])(
+    "keeps a double click eye height over a tour at %s m with no ground loaded (%s deg)",
+    async (heightM, pitchDeg) => {
+      fakes.groundM = null;
+      await openAt(heightM);
+      const camera = fakes.view?.camera;
+      const zoomTowards = fakes.inputScene?.zoomTowards;
+      if (camera === undefined || zoomTowards === undefined)
+        throw new Error("no camera or zoom");
+      placeCamera(heightM + GLOBE_EDITOR_LOOK.eyeM, pitchDeg, null);
+      const before = camera.position.clone();
+      zoomTowards({ x: 0.5, y: 0.5 });
+      expect(camera.position.distanceTo(before)).toBeGreaterThan(1);
+      expect(heightOfWorld(camera.position) - heightM).toBeGreaterThanOrEqual(
+        GLOBE_EDITOR_LOOK.eyeM - 1e-3,
+      );
+    },
+  );
+
   // Why: with no ground loaded the place under the camera was given at
   // the CAMERA's height, so "+" from 3 km up put a station 3 km in the
   // air. Near the ground it is now the camera's height less eye height;

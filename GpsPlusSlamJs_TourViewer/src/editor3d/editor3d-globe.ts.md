@@ -108,7 +108,9 @@ ground.
   end's up, so its horizontal part is kept whole and a zoom from eye
   height looking a few degrees down still walks forward (scaling the
   whole step would freeze it there). With no ground loaded at either end
-  the step is not changed. Tested with a fake ground rising north, swept
+  the tour's own drawn height (`centreHeightM`) stands in, so a double
+  click (which then aims at the ellipsoid) does not take the camera under
+  a tour on a hill. Tested with a fake ground rising north, swept
   over grades from -30 % to 40 %.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's

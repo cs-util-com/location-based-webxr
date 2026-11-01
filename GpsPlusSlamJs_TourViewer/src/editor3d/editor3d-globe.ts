@@ -171,6 +171,10 @@ export async function openGlobeEditor(
   const geoid = egm96Geoid();
   const undulationAt = (p: { lat: number; lon: number }) =>
     geoid.undulationMetres({ lat: p.lat, lng: p.lon });
+  /** The tour's centre drawn (m over the ellipsoid): its file height less
+   *  the geoid's N. */
+  const centreHeightM =
+    centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng });
 
   // Everything made from here on is undone, last first, by `dispose` - and
   // by a failure before the view is handed out.
@@ -569,18 +573,19 @@ export async function openGlobeEditor(
      * `eyeM` over the higher of the loaded grounds under its start and
      * under its end (a slope rising ahead counts); its level part is kept
      * whole, so from eye height a step walks forward. Unchanged where it
-     * ends higher than that, or where no ground has loaded at either.
+     * ends higher than that. With no ground loaded at either the tour's own
+     * drawn height stands in (a double click there aims at the ellipsoid).
      */
     const keepOverGround = (move: THREE.Vector3): THREE.Vector3 => {
       const pose = poseNow();
       ecefOfWorldNow.copy(globe.group.matrixWorld).invert();
       endEcef.copy(camera.position).add(move).applyMatrix4(ecefOfWorldNow);
       ellipsoid.getPositionToCartographic(endEcef, endPlace);
-      const floorM = higherOf(
-        ground.groundAt(pose.lat * DEG, pose.lng * DEG),
-        ground.groundAt(endPlace.lat, endPlace.lon),
-      );
-      if (floorM === null) return move;
+      const floorM =
+        higherOf(
+          ground.groundAt(pose.lat * DEG, pose.lng * DEG),
+          ground.groundAt(endPlace.lat, endPlace.lon),
+        ) ?? centreHeightM;
       const liftM = floorM + GLOBE_EDITOR_LOOK.eyeM - endPlace.height;
       if (liftM <= 0) return move;
       ellipsoid
@@ -922,8 +927,6 @@ export async function openGlobeEditor(
 
     // The first view: at street level south of the tour, on the tour's
     // drawn height (the ground is not loaded yet).
-    const centreHeightM =
-      centre.altM - undulationAt({ lat: centre.lat, lon: centre.lng });
     const street = streetView(
       { lat: centre.lat, lng: centre.lng },
       centreHeightM,
