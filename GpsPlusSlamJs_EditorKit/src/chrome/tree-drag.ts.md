@@ -2,21 +2,19 @@
 
 ## Purpose
 
-The tree's reorder by drag: a station's card dragged by its grip lands
-where it is dropped, written as ONE reorder of the whole tour (one undo
-step). The keyboard's way to reorder is the inspector's Earlier and
-Later (`editor-shell.ts`).
+The tree's reorder by drag: a card dragged by its grip lands where it is
+dropped, written as ONE reorder of the whole list (one undo step). The
+cards' markup is the app's: the kit has no selector of its own.
 
 ## Public API
 
-- `createTreeDrag({ body, reorder, cards?, idAttribute?, frame?, cancelFrame? })` ->
+- `createTreeDrag({ body, reorder, cards, idAttribute, frame?, cancelFrame? })` ->
   `{ dispose() }`:
-  - `body` - the tree's body (`#tree-body`); its cards (by default
-    `.card[data-station]`, the Tour Viewer's), in the tour's order, each
-    with a grip `[data-drag="<card id>"]` (`shell-tree.ts`);
+  - `body` - the tree's body; its cards, in the list's order, each with a
+    grip `[data-drag="<card id>"]` (drawn by the app);
   - `cards` - the cards' selector and `idAttribute` - the `dataset` key of
-    a card's id (default `station`); an empty one of either throws
-    `RangeError`;
+    a card's id (`node` reads `data-node`), both required; a missing or
+    empty one of either throws `RangeError`;
   - `reorder(order)` - writes the new order (every id once); the
     shell passes the page's reorder.
   - `frame` / `cancelFrame` - the frame scheduler of the edge scroll
@@ -33,10 +31,10 @@ Later (`editor-shell.ts`).
   stand now.
 - The tree IS redrawn during a drag (the shell draws on any store change,
   an autosave's status among them). When the drag's cards are no longer
-  in the page, the cards are read again: the same stations in the same
+  in the page, the cards are read again: the same cards in the same
   order carry the drag on (the carried card marked again), anything else
   ends it with nothing written - a drop on a list that changed under it
-  could reorder stations the creator never saw. The release checks this
+  could reorder cards the creator never saw. The release checks this
   too, so a redraw between the last move and the release writes nothing.
 - Held within 32 px of the dock's top or bottom edge, the drag scrolls
   the dock each frame (up to 12 px a frame, less farther from the edge),
@@ -56,7 +54,9 @@ Later (`editor-shell.ts`).
 ```ts
 const drag = createTreeDrag({
   body: document.getElementById("tree-body") as HTMLElement,
-  reorder: (order) => deps.stations.reorder(order),
+  cards: ".row[data-node]",
+  idAttribute: "node",
+  reorder: (order) => store.reorder(order),
 });
 ```
 
@@ -66,9 +66,9 @@ const drag = createTreeDrag({
 reorder; the marks while moving and past the last card; a drop in place
 writes nothing; Escape and a cancelled pointer write nothing; only a grip
 and the main button start it; the press is the drag's; nothing after
-`dispose`; a redraw of the same stations carries the drag on and one of
-other stations ends it unwritten, at a move or at the release; held near the bottom edge it scrolls
+`dispose`; a redraw of the same cards carries the drag on and one of
+other cards ends it unwritten, at a move or at the release; held near the bottom edge it scrolls
 the dock and lands by where the cards are then; away from the edges it
 does not scroll; cards of the app's own selector and attribute drag the
-same way, an empty one refused. End to end (the Tour Viewer's):
+same way, an empty or a missing one refused. End to end (the Tour Viewer's):
 `playwright-tests/editor3d-tree.spec.js`.

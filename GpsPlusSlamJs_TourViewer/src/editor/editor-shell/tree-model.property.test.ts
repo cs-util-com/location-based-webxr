@@ -19,6 +19,7 @@ import {
   initialEditorViewState,
   type EditorViewState,
 } from "../editor-view.js";
+import { STATION_PREFIX } from "../editor-model.js";
 import {
   treeClick,
   treeClickPlan,
@@ -140,7 +141,9 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       last,
     });
     last = click.memory;
-    const plan = treeClickPlan(click.outcome, id, stationGroups(stations));
+    const plan = treeClickPlan(click.outcome, id, stationGroups(stations), {
+      groupPrefix: STATION_PREFIX,
+    });
     if (plan === null) continue;
     view = reduce(view, act.selected({ id: plan.select }));
     if (plan.unfold !== null) {

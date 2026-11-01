@@ -21,6 +21,8 @@ const STATIONS = [
   { id: "a", children: ["pin-1", "photo-1"] },
   { id: "b", children: [] },
 ];
+/** The Tour Viewer's prefix, as it passes it: the kit has none of its own. */
+const TOUR = { groupPrefix: "station:" };
 
 describe("treeClick", () => {
   it("selects what is not selected", () => {
@@ -183,7 +185,7 @@ describe("treeClick", () => {
 
 describe("treeClickPlan", () => {
   it("selects a station, unfolds it and flies there", () => {
-    expect(treeClickPlan("select", "station:a", STATIONS)).toEqual({
+    expect(treeClickPlan("select", "station:a", STATIONS, TOUR)).toEqual({
       select: "station:a",
       unfold: "a",
       fold: null,
@@ -193,7 +195,7 @@ describe("treeClickPlan", () => {
   });
 
   it("unfolds the station of a selected item", () => {
-    expect(treeClickPlan("select", "photo-1", STATIONS)).toMatchObject({
+    expect(treeClickPlan("select", "photo-1", STATIONS, TOUR)).toMatchObject({
       select: "photo-1",
       unfold: "a",
       fly: true,
@@ -201,7 +203,7 @@ describe("treeClickPlan", () => {
   });
 
   it("opens the codes for a selected code", () => {
-    expect(treeClickPlan("select", "level-1", STATIONS)).toEqual({
+    expect(treeClickPlan("select", "level-1", STATIONS, TOUR)).toEqual({
       select: "level-1",
       unfold: null,
       fold: null,
@@ -211,7 +213,7 @@ describe("treeClickPlan", () => {
   });
 
   it("deselects and folds a station, the camera staying", () => {
-    expect(treeClickPlan("deselect", "station:a", STATIONS)).toEqual({
+    expect(treeClickPlan("deselect", "station:a", STATIONS, TOUR)).toEqual({
       select: null,
       unfold: null,
       fold: "a",
@@ -219,14 +221,14 @@ describe("treeClickPlan", () => {
       fly: false,
     });
     // An item deselected folds nothing.
-    expect(treeClickPlan("deselect", "pin-1", STATIONS)).toMatchObject({
+    expect(treeClickPlan("deselect", "pin-1", STATIONS, TOUR)).toMatchObject({
       select: null,
       fold: null,
     });
   });
 
   it("does nothing for a click that does not toggle", () => {
-    expect(treeClickPlan("none", "station:a", STATIONS)).toBeNull();
+    expect(treeClickPlan("none", "station:a", STATIONS, TOUR)).toBeNull();
   });
 
   // Why: the groups are the app's (the Tour Viewer's stations); another
@@ -239,12 +241,23 @@ describe("treeClickPlan", () => {
     expect(treeClickPlan("select", "photo-1", STATIONS, folders)).toMatchObject(
       { unfold: "a", ungrouped: false },
     );
-    // The default prefix means nothing under another one.
+    // Another app's prefix means nothing under this one.
     expect(
       treeClickPlan("select", "station:a", STATIONS, folders),
     ).toMatchObject({ unfold: null, ungrouped: true });
     expect(() =>
       treeClickPlan("select", "a", STATIONS, { groupPrefix: "" }),
+    ).toThrow(RangeError);
+  });
+
+  // Why: the kit is generic, so it assumes no app's naming: a prefix of
+  // its own would silently read another editor's ids by the Tour
+  // Viewer's. The prefix is required (a type error to leave out) and a
+  // call without one, from untyped code, is refused.
+  it("has no prefix of its own", () => {
+    expect(() =>
+      // @ts-expect-error the group prefix is the app's, and required
+      treeClickPlan("select", "station:a", STATIONS),
     ).toThrow(RangeError);
   });
 });

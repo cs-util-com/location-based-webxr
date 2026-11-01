@@ -13,6 +13,7 @@ export { createStatusLines } from "./status-lines.js";
 export { waitForGround } from "./ground-wait.js";
 export { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
 export {
+  DEFAULT_DOCK_LAYOUT,
   docksAfter,
   INSPECTOR_DOCK_PX,
   TREE_DOCK_PX,

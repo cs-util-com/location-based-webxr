@@ -12,6 +12,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTreeDrag } from "./tree-drag.js";
 
 const IDS = ["a", "b", "c"];
+/** The Tour Viewer's cards, as it passes them: the kit has none of its own. */
+const TOUR_CARDS = { cards: ".card[data-station]", idAttribute: "station" };
 
 /** The cards drawn again (a store change): new elements, same rects. */
 function redraw(body: HTMLElement, ids: readonly string[]): void {
@@ -69,6 +71,7 @@ function setUp(
   const drag = createTreeDrag({
     body,
     reorder,
+    ...TOUR_CARDS,
     ...(options.frame === undefined
       ? {}
       : { frame: options.frame, cancelFrame: () => undefined }),
@@ -144,10 +147,31 @@ describe("createTreeDrag with the app's own cards", () => {
   it("refuses an empty selector or attribute", () => {
     const body = document.createElement("div");
     expect(() =>
-      createTreeDrag({ body, reorder: () => undefined, cards: "" }),
+      createTreeDrag({
+        body,
+        reorder: () => undefined,
+        ...TOUR_CARDS,
+        cards: "",
+      }),
     ).toThrow(RangeError);
     expect(() =>
-      createTreeDrag({ body, reorder: () => undefined, idAttribute: "" }),
+      createTreeDrag({
+        body,
+        reorder: () => undefined,
+        ...TOUR_CARDS,
+        idAttribute: "",
+      }),
+    ).toThrow(RangeError);
+  });
+
+  // Why: the kit is generic, so it assumes no app's markup: a default
+  // selector would silently find no cards in another editor. Both are
+  // required (a type error to leave out) and refused when missing.
+  it("has no cards of its own", () => {
+    const body = document.createElement("div");
+    expect(() =>
+      // @ts-expect-error the cards' selector and id attribute are the app's
+      createTreeDrag({ body, reorder: () => undefined }),
     ).toThrow(RangeError);
   });
 });

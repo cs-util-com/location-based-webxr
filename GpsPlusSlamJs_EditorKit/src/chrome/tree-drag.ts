@@ -1,18 +1,18 @@
 /**
- * The tree's reorder by drag: a station's card dragged by its grip
- * (`[data-drag]`, drawn by `shell-tree.ts`) lands where it is dropped, as
- * ONE reorder of the whole tour (one undo step). While it moves, the card
+ * The tree's reorder by drag: a card dragged by its grip (`[data-drag]`,
+ * drawn by the app) lands where it is dropped, as ONE reorder of the whole
+ * list (one undo step). While it moves, the card
  * it carries is marked `dragging` and the card it would land before is
  * marked `drop-before` (past the last card: the last is `drop-after`). A
  * drop where the card already was writes nothing; Escape or a cancelled
  * pointer end the drag with nothing written. Held near the dock's top or
  * bottom edge, the drag scrolls the dock, and the slot follows the cards
  * as they move. A redraw of the tree mid-drag (any store change) carries
- * the drag over to the new cards when they are the same stations, and
+ * the drag over to the new cards when they are the same cards, and
  * ends it with nothing written when they are not, at a move or at the
  * release. The slot maths is
- * `tree-reorder.ts`'s. The keyboard's way to reorder is the inspector's
- * Earlier and Later.
+ * `tree-reorder.ts`'s. The cards' selector and id attribute are the
+ * app's: the kit has none of its own.
  *
  * @see tree-drag.ts.md
  */
@@ -37,10 +37,6 @@ const EDGE_PX = 32;
 /** The scroll per frame at the very edge, in CSS px (less farther in). */
 const SCROLL_PX = 12;
 
-/** The Tour Viewer's cards, the default: a station's card. */
-const CARDS = ".card[data-station]";
-const ID_ATTRIBUTE = "station";
-
 /** The cards' middles where they are now (the dock may have scrolled). */
 function middlesOf(cards: readonly HTMLElement[]): number[] {
   return cards.map((card) => {
@@ -52,11 +48,11 @@ function middlesOf(cards: readonly HTMLElement[]): number[] {
 export function createTreeDrag(deps: {
   /** The tree's body: its cards, in order. */
   readonly body: HTMLElement;
-  /** The cards' selector inside `body` (default `.card[data-station]`). */
-  readonly cards?: string;
-  /** The `dataset` key of a card's id (default `station`, so
-   *  `data-station`); a grip's `data-drag` names the same id. */
-  readonly idAttribute?: string;
+  /** The cards' selector inside `body`. */
+  readonly cards: string;
+  /** The `dataset` key of a card's id (`node` reads `data-node`); a
+   *  grip's `data-drag` names the same id. */
+  readonly idAttribute: string;
   /** Write the cards' new order (every id once). */
   readonly reorder: (order: readonly string[]) => void;
   /** The frame scheduler (default: the window's animation frames). */
@@ -64,9 +60,14 @@ export function createTreeDrag(deps: {
   readonly cancelFrame?: (id: number) => void;
 }): { dispose(): void } {
   const { body } = deps;
-  const selector = deps.cards ?? CARDS;
-  const idAttribute = deps.idAttribute ?? ID_ATTRIBUTE;
-  if (selector === "" || idAttribute === "") {
+  const selector: unknown = deps.cards;
+  const idAttribute: unknown = deps.idAttribute;
+  if (
+    typeof selector !== "string" ||
+    typeof idAttribute !== "string" ||
+    selector === "" ||
+    idAttribute === ""
+  ) {
     throw new RangeError(
       "a tree drag needs a card selector and an id attribute",
     );
@@ -94,7 +95,7 @@ export function createTreeDrag(deps: {
   };
 
   /** The drag's cards, drawn again since by a store change: the same
-   *  stations carry on (marked again), others end the drag unwritten. */
+   *  cards carry on (marked again), others end the drag unwritten. */
   const current = (now: Drag): boolean => {
     if (now.cards.every((card) => card.isConnected)) return true;
     const cards = cardsNow();
@@ -182,7 +183,7 @@ export function createTreeDrag(deps: {
 
   function onUp(event: PointerEvent): void {
     if (drag === null || event.pointerId !== drag.pointerId) return;
-    // Stations changed since the last move: the drag ended unwritten.
+    // The cards changed since the last move: the drag ended unwritten.
     if (!current(drag)) return;
     end(true);
   }

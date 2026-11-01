@@ -62,12 +62,12 @@ export function treeClick(input: {
 export interface TreeClickPlan {
   /** The page's new selection (null: none). */
   readonly select: string | null;
-  /** The station to unfold, or none. */
+  /** The group to unfold, or none. */
   readonly unfold: string | null;
-  /** The station to fold, or none. */
+  /** The group to fold, or none. */
   readonly fold: string | null;
   /** The selection belongs to no group: the app opens where such
-   *  selections live (the Tour Viewer's codes). */
+   *  selections live. */
   readonly ungrouped: boolean;
   /** The camera flies to the new selection. */
   readonly fly: boolean;
@@ -78,10 +78,6 @@ export interface TreeGroup {
   readonly id: string;
   readonly children: readonly string[];
 }
-
-/** A group's selection by default: the Tour Viewer's `station:<id>`
- *  (`editor-model.ts`). */
-const GROUP_PREFIX = "station:";
 
 /** The group a selection `id` names, or holds as a child, and whether it
  *  is the group itself; null for an ungrouped selection. */
@@ -99,17 +95,21 @@ function groupOf(
  * The plan for `outcome` on the card `id` (a group's `<groupPrefix><id>`,
  * a child of one of `groups`, or else ungrouped), or null when nothing
  * happens. A selected group unfolds, a selected child unfolds its group,
- * an ungrouped selection says so; a deselected group folds. Throws for
- * an empty prefix (every id would read as a group).
+ * an ungrouped selection says so; a deselected group folds. The prefix
+ * is the app's: the kit has none of its own. Throws for a missing or an
+ * empty prefix (every id would read as a group).
  */
 export function treeClickPlan(
   outcome: TreeClickOutcome,
   id: string,
   groups: readonly TreeGroup[],
-  options: { readonly groupPrefix?: string } = {},
+  options: { readonly groupPrefix: string },
 ): TreeClickPlan | null {
-  const prefix = options.groupPrefix ?? GROUP_PREFIX;
-  if (prefix === "") throw new RangeError("a group prefix must not be empty");
+  const prefix = (options as { groupPrefix?: unknown } | undefined)
+    ?.groupPrefix;
+  if (typeof prefix !== "string" || prefix === "") {
+    throw new RangeError("a tree click plan needs a non-empty group prefix");
+  }
   if (outcome === "none") return null;
   const group = groupOf(id, groups, prefix);
   if (outcome === "deselect") {

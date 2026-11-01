@@ -68,7 +68,11 @@ import {
   positionText,
   type BarAction,
 } from "./bar-actions.js";
-import { docksAfter, type DockChange } from "gps-plus-slam-editor-kit/chrome";
+import {
+  DEFAULT_DOCK_LAYOUT,
+  docksAfter,
+  type DockChange,
+} from "gps-plus-slam-editor-kit/chrome";
 import { waitForGround } from "gps-plus-slam-editor-kit/chrome";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 import {
@@ -390,11 +394,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   /** The docks after `change` by the dock rule, stored. */
   const applyDocks = (change: DockChange) => {
     const ui = state().editorView;
-    const after = docksAfter(change, {
-      widthPx: window.innerWidth,
-      folded: ui.foldedDocks,
-      inspectorShows: inspectorModel(ui) !== null,
-    });
+    const after = docksAfter(
+      change,
+      {
+        widthPx: window.innerWidth,
+        folded: ui.foldedDocks,
+        inspectorShows: inspectorModel(ui) !== null,
+      },
+      DEFAULT_DOCK_LAYOUT,
+    );
     for (const dock of ["tree", "inspector"] as const) {
       if (after[dock] !== ui.foldedDocks[dock]) {
         store.dispatch(
@@ -901,6 +909,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       click.outcome,
       id,
       stationGroups(manifest()?.stations ?? []),
+      { groupPrefix: STATION_PREFIX },
     );
     if (plan === null) return;
     deps.select(plan.select);
@@ -950,6 +959,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
   createTreeDrag({
     body: tree.body,
+    cards: ".card[data-station]",
+    idAttribute: "station",
     reorder: (order) => {
       deps.stations.reorder(order);
     },
