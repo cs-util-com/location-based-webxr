@@ -143,7 +143,14 @@ test("the bar is a progressbar with a value, under the box's title", async ({
   await expect(track).toHaveAttribute("aria-valuemin", "0");
   await expect(track).toHaveAttribute("aria-valuemax", "100");
   await expect(track).toHaveAttribute("aria-valuenow", /^\d+$/);
-  await expect(page.locator('#view3d [role="status"]')).toHaveCount(0);
+  // The box speaks through its bar alone: the detail line (a live region)
+  // is gone. Scoped to the box: the shell's own messages (#shell-said) are
+  // another live region in the view.
+  const approachBox = page.locator("#view3d .approach");
+  await expect(approachBox).toHaveCount(1);
+  await expect(approachBox.locator('[role="status"], [aria-live]')).toHaveCount(
+    0,
+  );
   await expect(page.locator("#view3d .approach-title")).toHaveText(
     "Loading tour",
   );
