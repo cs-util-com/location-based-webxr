@@ -65,7 +65,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   becomes the 3D walk (it may be another tour's); the tour's own walk is
   kept while it shows. The 3D walk follows the view's own walk layer
   chip, not the debug switch, which hides the map's capture dots only).
-  The page's filter has no unit test of its own; the view's side is in
+  The page's filter is `tour-walk-kept.ts` (its own unit test); the view's side is in
   `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
   to the tour. In the dev server only, `window.__tourEditorApproach`
   (`{ off?, durationMs?, lineCapMs? }`, an init script) turns it off or

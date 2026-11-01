@@ -71,6 +71,7 @@ import {
   revokeDebugThumbnail,
   type DebugLayer,
 } from "./debug-capture-layer.js";
+import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   STATION_PREFIX,
   photoSource,
@@ -1801,8 +1802,9 @@ function forgetAddedDebug(): void {
 function startDebugLayer(): void {
   debugLayer?.stop();
   debugLayer = null;
-  // The tour's own walk is kept while added debug data is shown.
-  if (addedDebug === null) walkGeo = null;
+  // The tour's own walk is kept while added debug data is shown
+  // (`tour-walk-kept.ts`).
+  walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
   const from = debugSource();
   const ownWalk = from !== null && from.source === tourWalk;
   debugSwitch.hidden = from === null;
@@ -1816,7 +1818,7 @@ function startDebugLayer(): void {
     thumbnail: decodeDebugThumbnail,
     view: {
       draw: (captures) => {
-        if (ownWalk) walkGeo = captures.map((c) => c.geo);
+        walkGeo = walkAfterDraw(walkGeo, ownWalk, captures);
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
