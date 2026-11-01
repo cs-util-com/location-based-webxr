@@ -41,9 +41,16 @@ import { useWideFont } from "./wide-font.js";
 // about 12 s one after another.
 test.describe.configure({ mode: "default" });
 
-/** A dock folded to its head: the 36 px head and the dock's 1 px
- *  bottom edge. */
-const FOLDED_PX = 37;
+/** A dock folded to its head: the 36 px head and the dock's 1 px top
+ *  and bottom edges (the docks float under the loading bar's band, so
+ *  they have a top edge of their own). */
+const FOLDED_PX = 38;
+
+/** Where the docks begin (px from the window's top): under the 40 px top
+ *  bar, the globe view's 5 px loading bar and its 22 px tab, and an 8 px
+ *  gap. The band is kept in every 3D view, so the docks never jump when
+ *  the bar goes. */
+const DOCK_TOP_PX = 40 + 5 + 22 + 8;
 
 /** @param {import("@playwright/test").Page} page */
 async function open3d(page) {
@@ -172,7 +179,7 @@ async function expectFrame(page, size) {
 async function expectTree(page, width, open) {
   const tree = await box(page.locator("#shell-tree"));
   expect(tree.x).toBe(0);
-  expect(tree.y).toBe(40);
+  expect(tree.y).toBe(DOCK_TOP_PX);
   expect(tree.width).toBeCloseTo(width, 0);
   if (open) {
     await expect(page.locator("#tree-body")).toBeVisible();
@@ -212,7 +219,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await card(page, "The old gate").locator(".hero").click();
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
-  expect(phoneInspector.y).toBe(40);
+  expect(phoneInspector.y).toBe(DOCK_TOP_PX);
   expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
   await expectTree(page, phoneHead, false);
   const phoneFold = await box(page.locator("#tree-fold"));
@@ -250,7 +257,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.locator("#tree-fold").click();
   await expectTree(page, 272, true);
   const inspector = await box(page.locator("#shell-inspector"));
-  expect(inspector).toMatchObject({ x: 1440 - 290, y: 40, width: 290 });
+  expect(inspector).toMatchObject({
+    x: 1440 - 290,
+    y: DOCK_TOP_PX,
+    width: 290,
+  });
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   // The cards: 8 px in from the dock, 6 px apart, 62 px pictures.
@@ -493,7 +504,6 @@ test.describe("on a touch screen", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open3d(page);
     await expect(page.locator("#studio-undo")).toBeHidden();
-    await expect(page.locator("#studio-details")).toBeHidden();
     const editButton = page.locator("#edit-menu-btn");
     await editButton.tap();
     await expect(page.locator("#edit-undo")).toBeVisible();
@@ -544,8 +554,8 @@ test("the unsaved mark shows beside File after an edit and goes with a save", as
   await open3d(page);
   const mark = page.locator("#unsaved-mark");
   await expect(mark).toBeHidden();
-  // An edit: the tour's name, through Details.
-  await page.locator("#studio-details").click();
+  // An edit: the tour's name, through the name's own button.
+  await page.locator("#tour-name").click();
   await page.locator("#details-name").fill("A renamed tour");
   await page.locator("#details-apply").click();
   await expect(mark).toBeVisible();
@@ -609,7 +619,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
     expect.arrayContaining([
       "file-menu-btn",
       "view-menu-btn",
-      "studio-details",
+      "tour-name",
       "studio-help",
     ]),
   );

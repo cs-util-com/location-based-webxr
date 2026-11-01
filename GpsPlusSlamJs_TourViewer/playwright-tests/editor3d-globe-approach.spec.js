@@ -12,8 +12,8 @@ import {
 
 /**
  * Why these tests matter: a tour opened in the globe view flies in from
- * high above, "Loading tour" over a thin bar at the top following the
- * camera's fall. The owner's rules for it:
+ * high above, a full-width bar glued under the menu bar following the
+ * camera's fall, "Loading tour" on a tab hanging from its middle. The owner's rules for it:
  * the creator's own input in the 3D view takes the camera at once, where
  * it is; the list and the panel stay usable while it flies (a pick in the
  * list sends the flight there, typing leaves it alone); the box goes a
@@ -83,50 +83,79 @@ function overlaps(a, b) {
   );
 }
 
+/** The top bar's height, the loading bar's, its tab's, and the gap from
+ *  the tab down to the docks (`editor-shell.css`). */
+const TOP_PX = 40;
+const BAR_PX = 5;
+const TAB_PX = 22;
+const DOCK_GAP_PX = 8;
+
 for (const [width, height] of [
   [1440, 900],
+  [1280, 720],
   [1024, 768],
-  [844, 390],
-  [390, 844],
 ]) {
-  test(`the bar sits at the top of the view between the docks at ${width}x${height}`, async ({
+  test(`the bar is glued under the menu bar, its tab hanging in the middle, the docks under both at ${width}x${height}`, async ({
     page,
   }) => {
-    // Why: the owner chose a minimal bar at the top of the view, never a
-    // modal over the chrome. Its place, its gaps and its distance from
-    // the docks are what made the prototype read as quiet; a bar over a
-    // dock hides the list a creator may use while it flies.
+    // Why: the owner asked for a full-width bar glued under the menu bar,
+    // thick enough to see, "Loading tour" as a rounded tab hanging from
+    // its middle like a bulge, and the rail and the inspector lowered
+    // under both with a gap. Positions and gaps are what make that read;
+    // a presence check passes a bar floating in the view, a tab off
+    // centre, or a dock under the tab.
     test.setTimeout(180_000);
     await page.setViewportSize({ width, height });
     await answerHosts(page, { globeAssets: "serve" });
     await approachLasting(page, 600_000);
     await openSampleOnGlobe(page);
-    const bar = page.locator("#view3d .approach");
-    await expect(bar).toBeVisible();
-    const viewBox = await box(page.locator("#view3d"));
-    const barBox = await box(bar);
-    const titleBox = await box(bar.locator(".approach-title"));
-    const trackBox = await box(bar.locator(".approach-track"));
-    const narrow = width <= 820;
-    // The fixed title over the bar, and nothing under it.
-    await expect(bar.locator(".approach-title")).toHaveText("Loading tour");
-    expect(trackBox.y - (titleBox.y + titleBox.height)).toBeCloseTo(
-      narrow ? 3 : 4,
-      0,
+    const approach = page.locator("#view3d .approach");
+    await expect(approach).toBeVisible();
+    const bar = await box(approach.locator(".approach-track"));
+    const tab = await box(approach.locator(".approach-title"));
+    await expect(approach.locator(".approach-title")).toHaveText(
+      "Loading tour",
     );
-    expect(barBox.y - viewBox.y).toBeCloseTo(narrow ? 42 : 10, 0);
-    expect(
-      Math.abs(barBox.x + barBox.width / 2 - (viewBox.x + viewBox.width / 2)),
-    ).toBeLessThanOrEqual(1);
-    expect(trackBox.height).toBeCloseTo(4, 0);
-    await expect(bar.locator(".approach-line")).toHaveCount(0);
-    for (const dock of ["#shell-tree", "#shell-inspector"]) {
-      const d = page.locator(dock);
-      if (!(await d.isVisible())) continue;
-      expect(overlaps(barBox, await box(d)), dock).toBe(false);
+    // The bar: the window's full width, right under the menu bar.
+    expect(bar).toEqual({ x: 0, y: TOP_PX, width, height: BAR_PX });
+    // The tab: hanging from the bar's bottom, centred, rounded below only.
+    expect(tab.y).toBeCloseTo(TOP_PX + BAR_PX, 0);
+    expect(tab.height).toBeCloseTo(TAB_PX, 0);
+    expect(Math.abs(tab.x + tab.width / 2 - width / 2)).toBeLessThanOrEqual(1);
+    expect(tab.width).toBeGreaterThan(80);
+    expect(tab.width).toBeLessThan(200);
+    const corners = await approach.locator(".approach-title").evaluate((el) => {
+      const c = getComputedStyle(el);
+      return [c.borderTopLeftRadius, c.borderBottomLeftRadius];
+    });
+    expect(corners[0]).toBe("0px");
+    expect(parseFloat(corners[1] ?? "0")).toBeGreaterThan(6);
+    // The docks: open both (a pick in the list shows the inspector), each
+    // flush with its side, both the gap under the tab.
+    if (!(await page.locator("#tree-body").isVisible())) {
+      await page.locator("#tree-fold").click();
     }
-    // It takes no pointer: a drag that starts on it reaches the view.
-    await expect(bar).toHaveCSS("pointer-events", "none");
+    await page.locator("#tree-body .card .pick").first().click();
+    await expect(page.locator("#inspector-body")).toBeVisible();
+    const tree = await box(page.locator("#shell-tree"));
+    const inspector = await box(page.locator("#shell-inspector"));
+    const dockTop = TOP_PX + BAR_PX + TAB_PX + DOCK_GAP_PX;
+    expect(tree.x).toBe(0);
+    expect(tree.y).toBeCloseTo(dockTop, 0);
+    expect(tree.width).toBeCloseTo(272, 0);
+    expect(inspector.x + inspector.width).toBeCloseTo(width, 0);
+    expect(inspector.y).toBeCloseTo(dockTop, 0);
+    expect(inspector.width).toBeCloseTo(290, 0);
+    expect(tree.y - (tab.y + tab.height)).toBeCloseTo(DOCK_GAP_PX, 0);
+    for (const dock of [tree, inspector]) {
+      expect(overlaps(dock, bar)).toBe(false);
+      expect(overlaps(dock, tab)).toBe(false);
+    }
+    // Neither takes a pointer: a drag that starts on them reaches the view.
+    await expect(approach).toHaveCSS("pointer-events", "none");
+    await page.screenshot({
+      path: test.info().outputPath(`approach-${width}x${height}.png`),
+    });
   });
 }
 

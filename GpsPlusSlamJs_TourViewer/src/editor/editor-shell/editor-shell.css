@@ -34,6 +34,13 @@
     "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
   --s-top-h: 40px;
   --s-bar-h: 24px;
+  /* The globe view's loading bar under the top bar, its tab, and the gap
+   * from the tab to the docks; the docks begin under all three in every
+   * 3D view, so they never move when the bar goes. */
+  --s-load-h: 5px;
+  --s-load-tab-h: 22px;
+  --s-dock-gap: 8px;
+  --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
   /* The narrowest the brand (its mark, 37 px, and the tour's name) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
@@ -351,13 +358,12 @@ body[data-view="3d"] #view3d {
 
 .dock {
   position: absolute;
-  top: 0;
+  top: var(--s-dock-top);
   z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: calc(100% - 10px);
+  max-height: calc(100% - 10px - var(--s-dock-top));
   border: 1px solid var(--s-line);
-  border-top: 0;
   background: rgb(31 32 35 / 97%);
   box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
 }
@@ -365,9 +371,9 @@ body[data-view="3d"] #view3d {
 #shell-tree {
   left: 0;
   width: 272px;
-  max-height: calc(100% - 150px);
+  max-height: calc(100% - 150px - var(--s-dock-top));
   border-left: 0;
-  border-radius: 0 0 8px;
+  border-radius: 0 8px 8px 0;
 }
 
 /* Its foot stays above the map controls at the bottom right (they take
@@ -375,9 +381,9 @@ body[data-view="3d"] #view3d {
 #shell-inspector {
   right: 0;
   width: 290px;
-  max-height: calc(100% - 150px);
+  max-height: calc(100% - 150px - var(--s-dock-top));
   border-right: 0;
-  border-radius: 0 0 0 8px;
+  border-radius: 8px 0 0 8px;
 }
 
 .dhead {
@@ -1781,26 +1787,18 @@ button.thumb:focus-visible {
 }
 
 /* --- the globe view's approach on opening a tour ---------------------------
- * "Loading tour" over a thin bar at the top of the view that follows the
- * camera's fall (`globe-approach-run.ts`); the box goes a beat after the
- * landing.
- * Between the docks where they sit side by side (each 272 / 290 px plus a
- * 12 px gap), under their heads where they fold; under the docks, never
- * over them, and never taking a pointer. */
+ * A full-width bar glued under the top bar, following the camera's fall
+ * (`globe-approach-run.ts`), and a rounded "Loading tour" tab hanging from
+ * its middle like a bulge. The docks start under the tab (`--s-dock-top`),
+ * so the two never meet; it takes no pointer, and it goes a beat after the
+ * landing. */
 .approach {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  z-index: 4;
-  box-sizing: border-box;
-  width: min(640px, calc(100% - 2 * (290px + 12px)));
-  min-width: 160px;
-  padding: 6px 10px 7px;
-  border: 1px solid var(--s-line);
-  border-radius: 16px;
-  background: rgb(31 32 35 / 90%);
-  box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
-  transform: translateX(-50%);
+  inset: 0 0 auto;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   pointer-events: none;
 }
 
@@ -1808,20 +1806,10 @@ button.thumb:focus-visible {
   display: none;
 }
 
-/* The box's fixed title over the bar. */
-.approach-title {
-  margin-bottom: 4px;
-  overflow: hidden;
-  color: var(--s-text);
-  font: 600 12px/16px var(--s-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .approach-track {
-  height: 4px;
+  align-self: stretch;
+  height: var(--s-load-h);
   overflow: hidden;
-  border-radius: 4px;
   background: var(--s-bg3);
 }
 
@@ -1832,16 +1820,18 @@ button.thumb:focus-visible {
   transform-origin: left;
 }
 
-@media (width <= 820px) {
-  .approach {
-    top: calc(36px + 6px);
-    width: min(640px, calc(100% - 24px));
-    padding: 3px 8px 4px;
-    border-radius: 12px;
-  }
-
-  .approach-title {
-    margin-bottom: 3px;
-    font-size: 11px;
-  }
+/* The tab: the bar's own colour, so it reads as part of it. */
+.approach-title {
+  box-sizing: border-box;
+  max-width: calc(100% - 24px);
+  height: var(--s-load-tab-h);
+  padding: 0 16px;
+  overflow: hidden;
+  border-radius: 0 0 11px 11px;
+  background: var(--s-bg3);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 30%);
+  color: var(--s-text);
+  font: 600 12px/22px var(--s-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

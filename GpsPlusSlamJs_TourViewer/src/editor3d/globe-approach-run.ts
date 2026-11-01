@@ -1,7 +1,7 @@
 /**
  * One approach on opening a tour in the globe editor: the flight
- * (`globe-approach-flight.ts`), the box over the view (its title and the
- * bar), and the arrival's pop-in and walk (`approach-arrival.ts`), driven
+ * (`globe-approach-flight.ts`), the bar under the top bar with its
+ * "Loading tour" tab hanging from its middle (the box), and the arrival's pop-in and walk (`approach-arrival.ts`), driven
  * by the view's frame loop. No WebGL: the view asks it for the camera's
  * pose each frame and for each station's growth, and tells it the
  * camera's altitude.
@@ -38,7 +38,7 @@ import {
   type ApproachFlight,
 } from "./globe-approach-flight.js";
 
-/** The box's title, and the bar's accessible name. */
+/** The tab's words, and the bar's accessible name. */
 export const APPROACH_TITLE = "Loading tour";
 
 /** How long a landed bar stays full before it goes (ms): long enough to
@@ -143,7 +143,8 @@ export function createApproachRun(deps: {
   const fill = document.createElement("div");
   fill.className = "approach-fill";
   track.append(fill);
-  root.append(title, track);
+  // The bar first, its tab hanging under it.
+  root.append(track, title);
   box.append(root);
 
   const showProgress = (k: number) => {

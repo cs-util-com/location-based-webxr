@@ -3,8 +3,9 @@
 ## Purpose
 
 One approach on opening a tour in the globe editor, driven by the view's
-frame loop: the flight (`globe-approach-flight.ts`), the box over the view
-(its title and the bar), and the arrival's pop-in and walk
+frame loop: the flight (`globe-approach-flight.ts`), the bar glued under
+the top bar with its "Loading tour" tab hanging from the middle (the box),
+and the arrival's pop-in and walk
 (`approach-arrival.ts`). No WebGL: the view asks it for the camera's pose
 and each station's growth, and tells it the camera's altitude.
 
@@ -38,13 +39,16 @@ and each station's growth, and tells it the camera's altitude.
 
 ## DOM
 
-- `div.approach`, holding only
-  - `div.approach-title[aria-hidden]`, "Loading tour" (the bar's label
-    says it to a screen reader);
-  - `div.approach-track[role=progressbar]` with `aria-valuemin` 0,
-    `aria-valuemax` 100 and `aria-valuenow`, and an `.approach-fill`
-    scaled on x.
-- The styles live in `editor-shell.css` (the approach's section).
+- `div.approach` (the view's full width at its top, taking no pointer),
+  holding only, in this order
+  - `div.approach-track[role=progressbar]` (the bar, 5 px) with
+    `aria-valuemin` 0, `aria-valuemax` 100 and `aria-valuenow`, and an
+    `.approach-fill` scaled on x;
+  - `div.approach-title[aria-hidden]`, "Loading tour", the rounded tab
+    centred under the bar (the bar's label says it to a screen reader).
+- The styles live in `editor-shell.css` (the approach's section): the
+  bar's and tab's heights are `--s-load-h` and `--s-load-tab-h`, and the
+  docks begin under them (`--s-dock-top`).
 
 ## Invariants and assumptions
 
