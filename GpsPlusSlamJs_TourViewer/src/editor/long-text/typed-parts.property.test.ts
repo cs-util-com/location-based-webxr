@@ -46,6 +46,7 @@ const piece = fc.constantFrom(
   "](asset:pic-1)",
   "](asset:gone)",
   "[",
+  "]",
   "](javascript:x)",
   "](https://xy.zq)",
 );

@@ -22,7 +22,9 @@ visitor's sheet formats by, never from a second parser here.
 - `plainTextEdit(body, part)` -> `PartEdit` - the part's marks taken off
   so its words show as plain text (a table's cells as lines, a code
   box's fences removed, a web picture as its description, an HTML tag's
-  angle brackets removed, ...). Never removes a word.
+  angle brackets removed, a refused link as its words - up to the last
+  `](`, so words holding brackets of their own stay whole, ...). Never
+  removes a word.
 - `tourPictureEdit(body, part, assetId, alt?)` - a picture part replaced
   by the tour's picture `asset:<id>`, its description kept.
 

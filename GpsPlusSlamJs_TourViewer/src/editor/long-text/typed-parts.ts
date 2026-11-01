@@ -377,8 +377,12 @@ export function plainTextEdit(
       );
     case "inlinepic":
       return ownLine(body, part.from, part.to, t.trim());
-    case "link":
-      return at(/^\[([^\]]*)\]/.exec(t)?.[1] ?? t);
+    case "link": {
+      // Its words may hold brackets of their own: they run to the last
+      // "](", where the address starts.
+      const end = t.lastIndexOf("](");
+      return at(t.startsWith("[") && end > 0 ? t.slice(1, end) : t);
+    }
   }
 }
 

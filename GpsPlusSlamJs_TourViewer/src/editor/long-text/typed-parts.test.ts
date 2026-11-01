@@ -86,6 +86,15 @@ describe("plainTextEdit", () => {
     expect(fixed(body)).toBe(expected);
   });
 
+  // Why: a refused link's words may hold brackets of their own; the fix
+  // once took the words up to the first "]" and dropped the rest (a word
+  // the visitor reads, gone).
+  it("keeps every word of a refused link whose words hold brackets", () => {
+    expect(fixed("[a [note] and more](javascript:x)")).toBe(
+      "a [note] and more",
+    );
+  });
+
   it("removes a divider with its line break", () => {
     expect(fixed("One\n---\nTwo")).toBe("One\nTwo");
     expect(fixed("Title\n=====")).toBe("Title\n");
