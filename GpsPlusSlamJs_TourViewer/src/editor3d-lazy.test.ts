@@ -40,7 +40,26 @@ const THREE_D_ONLY: readonly [string, RegExp][] = [
   ["the 3D tiles renderer", /\/node_modules\/3d-tiles-renderer\//],
   ["the elevation package", /\/GpsPlusSlamJs_Osm\/|\/gps-plus-slam-osm\//],
   ["the 3D view", /\/src\/editor3d\//],
+  [
+    "the editor kit's scene or globe",
+    /\/(?:GpsPlusSlamJs_EditorKit|gps-plus-slam-editor-kit)\/src\/(?:scene|globe)\//,
+  ],
 ];
+
+/** A module of the editor kit (the workspace package's source); its
+ *  first group is the kit's entry folder (`touch`, `chrome`, ...). */
+const KIT_MODULE =
+  /\/(?:GpsPlusSlamJs_EditorKit|gps-plus-slam-editor-kit)\/src\/([^/]+)\//;
+
+/** The kit's entry folders a page's id belongs to (unique, sorted). */
+function kitEntriesOf(ids: Iterable<string>): string[] {
+  const entries = new Set<string>();
+  for (const id of ids) {
+    const match = KIT_MODULE.exec(id);
+    if (match !== null) entries.add(match[1]!);
+  }
+  return [...entries].sort();
+}
 
 /** The landing's modules the main page may load before any `import()`:
  *  the mount shim and the returning-device rule (today's two), and the
@@ -153,6 +172,27 @@ describe("the 3D view's code in the app's bundle", () => {
       }
     },
   );
+
+  // Why: of the editor kit, a visitor's page may load only its touch
+  // gestures; the shell chrome and the 3D blocks are the editor's, and one
+  // import from a visitor's module (even an import()) would ship them.
+  it.each(VISITOR_PAGES)(
+    "reaches no editor kit module but its touch from the %s page",
+    (page) => {
+      expect(
+        kitEntriesOf(fullClosure(chunks, page)).filter((e) => e !== "touch"),
+      ).toEqual([]);
+    },
+  );
+
+  // Why: the editor's page loads the shell chrome at once and nothing of
+  // the kit's 3D blocks; it holds the chrome, which proves the check sees
+  // the kit's modules through the workspace link at all.
+  it("loads of the editor kit only its chrome and touch on the editor's page", () => {
+    const entries = kitEntriesOf(staticClosure(chunks, "edit"));
+    expect(entries).toContain("chrome");
+    expect(entries.filter((e) => e !== "chrome" && e !== "touch")).toEqual([]);
+  });
 
   it("keeps the landing's moving parts out of the main page's first load", () => {
     const loaded = [...staticClosure(chunks, "main")];

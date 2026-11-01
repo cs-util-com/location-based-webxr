@@ -250,6 +250,33 @@ describe('the served-by edge', () => {
     ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_RecorderApp'] });
   });
 
+  // WHY (globe editor plan GV5, finding 9): the Tour Viewer DEPENDS on the
+  // editor kit, so pnpm selects it on a kit change, but only as a dependent,
+  // whose browser stages are dropped (DEC-G2). Its editor e2e is the kit's
+  // only browser check, so the edge selects it as a changed package, in full.
+  it('selects the Tour Viewer, in full, with any editor kit change', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts'],
+        untracked: [],
+        packageDirs: [...SERVED, 'GpsPlusSlamJs_EditorKit', 'GpsPlusSlamJs_TourViewer'],
+      })
+    ).toEqual({
+      mode: 'packages',
+      packages: ['GpsPlusSlamJs_EditorKit', 'GpsPlusSlamJs_TourViewer'],
+    });
+  });
+
+  it('adds nothing for the editor kit when the Tour Viewer is not a workspace package', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts'],
+        untracked: [],
+        packageDirs: [...DIRS, 'GpsPlusSlamJs_EditorKit'],
+      })
+    ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_EditorKit'] });
+  });
+
   it('adds nothing when the design system is not a workspace package', () => {
     expect(
       selectPackages({

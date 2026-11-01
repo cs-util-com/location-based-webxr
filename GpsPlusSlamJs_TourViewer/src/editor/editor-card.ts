@@ -15,7 +15,7 @@ import { pictureProblem } from "../image-cap.js";
 import { wirePinTextCounter } from "../pin-text.js";
 import { BLOCK_KIND_LABEL } from "../object-describe.js";
 import type { EditorItem } from "./editor-model.js";
-import { placePopover, type Box } from "./popover-place.js";
+import { placePopover, type Box } from "gps-plus-slam-editor-kit/chrome";
 
 /** Fired on the card when its content changed size (a photo landed). */
 export const CARD_RESIZED = "card-resized";

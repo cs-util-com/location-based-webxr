@@ -13,7 +13,7 @@
 - **Who lists it:** every vitest config whose tests import fast-check, in
   `test.setupFiles`, by a path resolved from the config file
   (`fileURLToPath(new URL('../scripts/...', import.meta.url))`): the
-  framework, Osm, Globe, Recorder, Tour Viewer, OsmDemo, Landing,
+  framework, Osm, Globe, the editor kit, Recorder, Tour Viewer, OsmDemo, Landing,
   PhysicsDemo, SiteWorker and the root `vitest.config.js`.
 
 ## Public API

@@ -18,7 +18,7 @@
  * @see shell-tree.ts.md
  */
 import type { ShellPictures } from "./shell-pictures.js";
-import { shellIcon } from "./shell-icons.js";
+import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 import type { TreeCard, TreeModel } from "./tree-model.js";
 import type { TreeSection } from "../editor-view.js";
 

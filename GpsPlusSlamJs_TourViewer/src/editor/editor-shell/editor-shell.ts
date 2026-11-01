@@ -57,8 +57,11 @@ import {
 } from "../editor-view.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
-import { inField, inMenu } from "../key-target.js";
-import { closeOpenMenu, setItemDisabled } from "../menu-button.js";
+import { inField, inMenu } from "gps-plus-slam-editor-kit/chrome";
+import {
+  closeOpenMenu,
+  setItemDisabled,
+} from "gps-plus-slam-editor-kit/chrome";
 import {
   ALIGNED_DEG,
   barActions,
@@ -66,7 +69,7 @@ import {
   type BarAction,
 } from "./bar-actions.js";
 import { docksAfter, type DockChange } from "./dock-rule.js";
-import { waitForGround } from "./ground-wait.js";
+import { waitForGround } from "gps-plus-slam-editor-kit/chrome";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 import {
   buildInspector,
@@ -81,7 +84,11 @@ import {
   focusControl,
   inspectorDrawing,
 } from "./shell-inspector.js";
-import { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
+import {
+  placeShellIcons,
+  shellIcon,
+  type ShellIcon,
+} from "gps-plus-slam-editor-kit/chrome";
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
 import { createTreeDrag } from "./tree-drag.js";

@@ -84,7 +84,7 @@ import {
   droppedStationFieldsLine,
   openTourForEditing,
 } from "./editor-open.js";
-import { holdPageInert } from "./page-inert.js";
+import { holdPageInert } from "gps-plus-slam-editor-kit/chrome";
 import {
   doneHostedName,
   fetchTourFile,
@@ -146,15 +146,15 @@ import {
   notAddedLine,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
-import { revealPadding, type Box } from "./popover-place.js";
-import { createStatusLines } from "./status-lines.js";
+import { revealPadding, type Box } from "gps-plus-slam-editor-kit/chrome";
+import { createStatusLines } from "gps-plus-slam-editor-kit/chrome";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
 import {
   createMenuButton,
   menuItemControl,
   setItemDisabled,
-} from "./menu-button.js";
-import { inField, inMenu } from "./key-target.js";
+} from "gps-plus-slam-editor-kit/chrome";
+import { inField, inMenu } from "gps-plus-slam-editor-kit/chrome";
 import {
   createEditorShell,
   type TypedEditOutcome,

@@ -69,16 +69,26 @@ the same framework build first, then `pnpm test`. The cascade runs
 `check:deadcode` (knip resolves workspace packages through their `dist`)
 before any package stage builds the framework.
 
-## The served-by edge (globe plan 2026-09-26-0539 §8, W7 M0)
+## The served-by edges (globe plan 2026-09-26-0539 §8, W7 M0; globe editor plan GV5)
 
-The design system SERVES the globe package through its routes but does not
-depend on it, so pnpm's graph never selects it. A change in
-`GpsPlusSlamJs_Globe` therefore also selects `GpsPlusSlamJs_DesignSystem`,
-in full: its globe lab smoke is the globe's only browser check. The
-framework and OsmDemo are served too but are deliberately NOT listed: that
-would put the design system's ~11 min e2e on every framework commit, an
-owner decision filed with the W7 M0 record. Tested in `select.test.mjs`
-("the served-by edge").
+`SERVED_BY` maps a package whose only browser check is another package's
+browser suite to that package; a change in the first selects the second as
+a changed package, in full.
+
+- The design system SERVES the globe package through its routes but does
+  not depend on it, so pnpm's graph never selects it. A change in
+  `GpsPlusSlamJs_Globe` therefore also selects
+  `GpsPlusSlamJs_DesignSystem`, in full: its globe lab smoke is the globe's
+  only browser check. The framework and OsmDemo are served too but are
+  deliberately NOT listed: that would put the design system's ~11 min e2e
+  on every framework commit, an owner decision filed with the W7 M0 record.
+- The Tour Viewer DEPENDS on `GpsPlusSlamJs_EditorKit`, so pnpm selects it
+  on a kit change, but only as a dependent, without its browser stages
+  (DEC-G2). Its editor e2e is the kit's only browser check, so a kit change
+  selects `GpsPlusSlamJs_TourViewer` in full.
+
+An edge whose second package is not a workspace package adds nothing.
+Tested in `select.test.mjs` ("the served-by edge").
 
 ## Narrowed changes: what a change can skip
 

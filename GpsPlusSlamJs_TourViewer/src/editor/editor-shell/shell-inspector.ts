@@ -28,7 +28,7 @@
  * @see shell-inspector.ts.md
  */
 import type { ShellPictures } from "./shell-pictures.js";
-import { shellIcon, type ShellIcon } from "./shell-icons.js";
+import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 import {
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_SECTION_RULES,

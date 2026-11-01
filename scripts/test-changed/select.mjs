@@ -35,16 +35,23 @@
  */
 
 /**
- * The served-by edge: packages the design system SERVES through its routes
- * (it does not depend on them, so pnpm's graph never selects it). A change
- * in one also selects the design system, in full, since its lab smoke is the
- * served code's only browser check (globe plan 2026-09-26-0539 §8). The
- * framework and OsmDemo are served too but are NOT listed: that would put
- * the design system's ~11 min e2e on every framework commit, an owner
- * decision filed with the W7 M0 record.
+ * The served-by edges: a package whose only browser check is another
+ * package's browser suite, mapped to that package. A change in the first
+ * also selects the second, in full, as a changed package.
+ * - The design system SERVES the globe through its routes (it does not
+ *   depend on it, so pnpm's graph never selects it); its lab smoke is the
+ *   globe's only browser check (globe plan 2026-09-26-0539 §8). The
+ *   framework and OsmDemo are served too but are NOT listed: that would put
+ *   the design system's ~11 min e2e on every framework commit, an owner
+ *   decision filed with the W7 M0 record.
+ * - The Tour Viewer DEPENDS on the editor kit, so pnpm selects it on a kit
+ *   change, but only as a dependent, without its browser stages (DEC-G2);
+ *   its editor e2e is the kit's only browser check (globe editor plan GV5).
  */
-const SERVED_BY_DESIGN_SYSTEM = ['GpsPlusSlamJs_Globe'];
-const DESIGN_SYSTEM = 'GpsPlusSlamJs_DesignSystem';
+const SERVED_BY = {
+  GpsPlusSlamJs_Globe: 'GpsPlusSlamJs_DesignSystem',
+  GpsPlusSlamJs_EditorKit: 'GpsPlusSlamJs_TourViewer',
+};
 
 /** Matches the generated timings file at the root or in any package dir. */
 const GENERATED_TIMINGS_RE = /^(?:[^/]+\/)?docs\/test-timings\.md$/;
@@ -150,11 +157,10 @@ export function selectPackages({ trackedChanges, untracked, packageDirs }) {
     }
     return { mode: 'all', reason: path };
   }
-  if (
-    packageDirs.includes(DESIGN_SYSTEM) &&
-    SERVED_BY_DESIGN_SYSTEM.some((dir) => selected.has(dir))
-  ) {
-    selected.add(DESIGN_SYSTEM);
+  for (const [served, server] of Object.entries(SERVED_BY)) {
+    if (selected.has(served) && packageDirs.includes(server)) {
+      selected.add(server);
+    }
   }
   /** @type {Selection} */
   const selection = { mode: 'packages', packages: [...selected].sort() };

@@ -29,6 +29,12 @@
       "project": ["src/**/*.ts", "scripts/**/*.mjs"],
       "ignoreDependencies": ["dpdm"]
     },
+    "GpsPlusSlamJs_EditorKit": {
+      "project": ["src/**/*.ts"],
+      "eslint": { "config": ["config/eslint.config.mjs"] },
+      "includeEntryExports": true,
+      "ignoreDependencies": ["dpdm"]
+    },
     ".": {
       "entry": ["tests/**/*.test.js"],
       "project": ["tests/**/*.js"]

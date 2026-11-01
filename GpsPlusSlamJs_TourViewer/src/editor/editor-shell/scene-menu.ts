@@ -14,7 +14,10 @@
  *
  * @see scene-menu.ts.md
  */
-import { setItemDisabled, isItemDisabled } from "../menu-button.js";
+import {
+  setItemDisabled,
+  isItemDisabled,
+} from "gps-plus-slam-editor-kit/chrome";
 
 /** A spot on the ground (degrees; its ellipsoidal height). */
 export interface GroundPlace {

@@ -2,7 +2,22 @@
 module.exports = {
   options: {
     doNotFollow: { path: "node_modules" },
-    includeOnly: "src",
+    // The app's own modules, and the editor kit's: the kit is a workspace
+    // package whose `exports` point at its TypeScript source, so with the
+    // resolve options below `gps-plus-slam-editor-kit/chrome` resolves to
+    // `../GpsPlusSlamJs_EditorKit/src/chrome/index.ts` and the kit rule
+    // further down can see it. Anchored, so the other workspace packages
+    // the same options now resolve (the globe's source among them) stay
+    // out of the graph, as before.
+    includeOnly: ["^src/", "^\\.\\./GpsPlusSlamJs_EditorKit/src/"],
+    // Without these the cruiser does not resolve a workspace package's
+    // `exports` to its `.ts` source (it reported the kit's import as
+    // unresolvable, and `includeOnly` hid it).
+    enhancedResolveOptions: {
+      exportsFields: ["exports"],
+      conditionNames: ["import", "default"],
+      extensions: [".ts", ".js"],
+    },
     reporterOptions: { dot: { collapsePattern: "node_modules/[^/]*" } },
   },
   forbidden: [
@@ -57,6 +72,24 @@ module.exports = {
       severity: "error",
       from: { path: "^src/landing/", pathNot: "\\.test\\.ts$" },
       to: { path: "^src/(editor|editor3d)/" },
+    },
+
+    // The editor kit (`gps-plus-slam-editor-kit`, a workspace package) holds
+    // the editor's shell chrome and its 3D blocks; of it the visitor's and
+    // the phone's pages (`src/*.ts`) and the landing may reach only the
+    // touch gestures (`src/touch/`). The workspace link resolves to the
+    // kit's source (`../GpsPlusSlamJs_EditorKit/src/...`), which the
+    // unanchored `includeOnly: "src"` keeps in the graph, so this rule sees
+    // the kit's modules - a package import the scan
+    // `src/editor-only-packages.test.ts` holds too, by specifier.
+    {
+      name: "viewer-not-to-kit-editor",
+      severity: "error",
+      from: {
+        path: ["^src/[^/]+\\.ts$", "^src/landing/"],
+        pathNot: "\\.test\\.ts$",
+      },
+      to: { path: "GpsPlusSlamJs_EditorKit/src/(chrome|scene|globe)/" },
     },
 
     // The walk's camera captures are debug data, shown only in the desktop

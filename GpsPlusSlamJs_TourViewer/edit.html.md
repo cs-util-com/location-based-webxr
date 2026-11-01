@@ -62,7 +62,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   open over the same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, then the menus
-  (`src/editor/menu-button.ts`), each command in words:
+  (`gps-plus-slam-editor-kit/chrome`, `GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts`), each command in words:
   - **File** (`#file-menu-btn`, `#file-menu`; described by
     `#save-status`): Open… (`#file-open`), Save (`#file-save`, Ctrl+S),
     Save a copy… (`#file-save-copy`), Tour details… (`#file-details`),
