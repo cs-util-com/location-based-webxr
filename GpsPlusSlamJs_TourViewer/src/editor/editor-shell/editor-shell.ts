@@ -68,7 +68,7 @@ import {
   positionText,
   type BarAction,
 } from "./bar-actions.js";
-import { docksAfter, type DockChange } from "./dock-rule.js";
+import { docksAfter, type DockChange } from "gps-plus-slam-editor-kit/chrome";
 import { waitForGround } from "gps-plus-slam-editor-kit/chrome";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
 import {
@@ -91,14 +91,14 @@ import {
 } from "gps-plus-slam-editor-kit/chrome";
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
-import { createTreeDrag } from "./tree-drag.js";
-import { movedTo } from "./tree-reorder.js";
+import { createTreeDrag } from "gps-plus-slam-editor-kit/chrome";
+import { movedTo } from "gps-plus-slam-editor-kit/chrome";
 import {
   NO_TREE_CLICK,
   treeClick,
   treeClickPlan,
   type TreeClickMemory,
-} from "./tree-click.js";
+} from "gps-plus-slam-editor-kit/chrome";
 import { buildTree } from "./tree-model.js";
 
 /** The 3D view's commands the shell drives. */

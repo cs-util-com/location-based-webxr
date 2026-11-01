@@ -11,8 +11,9 @@ at a time. Below `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
 ## Public API
 
 - `TREE_DOCK_PX` - 272 and `INSPECTOR_DOCK_PX` - 290, the docks' widths
-  as `editor-shell.css` draws them (a test reads the CSS and holds the two
-  to each other).
+  as the Tour Viewer's `editor-shell.css` draws them (its
+  `editor-shell/dock-widths.test.ts` reads the CSS and holds the two to
+  each other; the kit draws no CSS).
 - `SCENE_FLOOR_PX` - 338, the narrowest strip of scene left between two
   open docks. It is a judgement, not a measurement: about a third of a
   landscape phone, which still shows a station and its surroundings. The

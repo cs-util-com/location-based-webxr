@@ -128,6 +128,24 @@ describe("treeClick", () => {
     "sel/same/slow": "deselect",
   };
 
+  /** The table's row for a click at `click.at`, after `previous`. */
+  function ruleKey(
+    click: {
+      readonly id: string;
+      readonly at: number;
+      readonly detail: number;
+    },
+    selected: string | null,
+    previous: { readonly id: string; readonly at: number } | null,
+  ): keyof typeof RULE {
+    const same = previous?.id === click.id;
+    const quick =
+      same &&
+      (click.detail > 1 ||
+        click.at - (previous?.at ?? 0) < TREE_DOUBLE_CLICK_MS);
+    return `${click.id === selected ? "sel" : "unsel"}/${same ? "same" : "other"}/${quick ? "quick" : "slow"}`;
+  }
+
   // Why: any run of clicks, with any timing and click counts, follows the
   // table - in particular no quick run on one card ever toggles it.
   it("follows the rule's table for any run of clicks", () => {
@@ -148,15 +166,10 @@ describe("treeClick", () => {
           let at = 0;
           for (const click of clicks) {
             at += click.gap;
-            const same = previous?.id === click.id;
-            const quick =
-              same &&
-              (click.detail > 1 ||
-                at - (previous?.at ?? 0) < TREE_DOUBLE_CLICK_MS);
-            const key =
-              `${click.id === selected ? "sel" : "unsel"}/${same ? "same" : "other"}/${quick ? "quick" : "slow"}` as const;
             const out = treeClick({ ...click, at, selected, last });
-            expect(out.outcome).toBe(RULE[key]);
+            expect(out.outcome).toBe(
+              RULE[ruleKey({ ...click, at }, selected, previous)],
+            );
             last = out.memory;
             previous = { id: click.id, at };
             if (out.outcome === "select") selected = click.id;

@@ -13,3 +13,17 @@ export { placePopover, revealPadding, type Box } from "./popover-place.js";
 export { createStatusLines } from "./status-lines.js";
 export { waitForGround } from "./ground-wait.js";
 export { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
+export {
+  docksAfter,
+  INSPECTOR_DOCK_PX,
+  TREE_DOCK_PX,
+  type DockChange,
+} from "./dock-rule.js";
+export { movedTo } from "./tree-reorder.js";
+export { createTreeDrag } from "./tree-drag.js";
+export {
+  NO_TREE_CLICK,
+  treeClick,
+  treeClickPlan,
+  type TreeClickMemory,
+} from "./tree-click.js";

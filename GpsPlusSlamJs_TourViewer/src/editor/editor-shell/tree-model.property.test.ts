@@ -23,7 +23,7 @@ import {
   treeClick,
   treeClickPlan,
   type TreeClickMemory,
-} from "./tree-click.js";
+} from "gps-plus-slam-editor-kit/chrome";
 import { buildTree, treeFoldOf, type TreeInput } from "./tree-model.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;

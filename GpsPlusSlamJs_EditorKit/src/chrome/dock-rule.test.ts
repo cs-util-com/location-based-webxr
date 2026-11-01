@@ -8,7 +8,6 @@
  * folded. Whatever happens, a narrow window never shows both docks open.
  */
 import fc from "fast-check";
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -37,18 +36,9 @@ describe("the breakpoint", () => {
     expect(between(DOCKS_SIDE_BY_SIDE_PX - 1)).toBeLessThan(SCENE_FLOOR_PX);
   });
 
-  // Why: the stylesheet draws the docks; the rule reads their widths from
-  // here, so the two must not drift apart.
-  it("reads the docks' widths the stylesheet draws", () => {
-    const css = readFileSync(
-      new URL("./editor-shell.css", import.meta.url),
-      "utf8",
-    );
-    const width = (id: string) =>
-      new RegExp(String.raw`#${id} [{][^}]*?\bwidth: (\d+)px;`).exec(css)?.[1];
-    expect(width("shell-tree")).toBe(String(TREE_DOCK_PX));
-    expect(width("shell-inspector")).toBe(String(INSPECTOR_DOCK_PX));
-  });
+  // The docks' widths against the stylesheet that draws them are the
+  // app's to hold (the Tour Viewer's `editor-shell/dock-widths.test.ts`):
+  // the kit draws no CSS.
 });
 
 describe("docksAfter", () => {
