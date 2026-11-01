@@ -24,7 +24,9 @@ import { tourUnfinished } from "./tour-unfinished.js";
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
  * level, the signed list and its signature, and the content files the
  * manifest's assets name (under `wrap`, the tour's folder; a captured
- * photo's file is its picture's asset). Nothing else: a
+ * photo's file is its picture's asset), and each narrated long text's
+ * read-along entry (`timing/<blockId>.json`, its `narration.timing`).
+ * Nothing else: a
  * visitor never shows the zip's other images, nor a recorded frame - not
  * even one a file's debug capture spots name.
  */
@@ -37,6 +39,13 @@ export function visitorEntryNames(
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
+    ...manifest.stations.flatMap((station) =>
+      station.blocks.flatMap((block) =>
+        block.kind === "longText" && block.narration?.timing !== undefined
+          ? [`${wrap}${block.narration.timing}`]
+          : [],
+      ),
+    ),
   ]);
   return new Set(
     entryNames.filter(

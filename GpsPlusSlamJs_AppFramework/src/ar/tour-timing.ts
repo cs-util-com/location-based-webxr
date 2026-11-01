@@ -38,6 +38,9 @@ export const TOUR_TIMING_FOLDER = 'timing';
  * The most bytes a timing entry may hold. 20 000 segments at the ~75
  * bytes a compact word segment with its `text` takes (design §11: a
  * 5 000-word text is about 375 KB); a viewer refuses to read more.
+ * CONTRACT: a writer writes the entry as compact JSON (no indent): the cap
+ * holds 18 000-21 500 compact segments but only 11 200-12 500
+ * pretty-printed ones (`tour-timing.ts.md`, "The cap, swept").
  */
 export const TOUR_TIMING_MAX_BYTES = 1_500_000;
 

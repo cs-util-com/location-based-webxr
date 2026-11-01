@@ -50,9 +50,11 @@
  *   reader leaves a free one out and shows a story one as its card). Minor 4
  *   added a long text's world view `reading`, a short sign that opens the
  *   whole text on a tap, and made it the long text's floor view (an older
- *   reader treats it as minor 3 treated `lectern`). A reader of this
- *   version
- *   accepts all of them in a file of any minor.
+ *   reader treats it as minor 3 treated `lectern`). Minor 5 added a long
+ *   text's `narration` (its voice asset, credit, `synthetic` and length)
+ *   and its read-along entry `timing/<blockId>.json` (`tour-timing.ts`);
+ *   an older reader shows the text and ignores the narration. A reader of
+ *   this version accepts all of them in a file of any minor.
  * - A newer minor may also add VALUES to a closed list: a block kind or
  *   view, an order, an advance mode, an asset's media type. Read from a
  *   file of a newer minor, an unknown value degrades - the block or step

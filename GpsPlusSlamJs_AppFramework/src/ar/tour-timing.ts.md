@@ -66,6 +66,11 @@ fits either way, with room. A file at the full 20 000-segment cap fits the
 byte cap only with short words; that file would also need a body of 20 000
 words, which the body cap does not allow.
 
+The writer's side of the contract: a timing entry is written as compact
+JSON (`JSON.stringify` with no indent). The cap is not raised for
+pretty-printed files; a writer that indents gives up about 40 % of the
+segment room.
+
 ## Examples
 
 ```ts
