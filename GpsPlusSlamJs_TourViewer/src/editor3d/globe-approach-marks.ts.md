@@ -9,9 +9,11 @@ between stations.
 
 ## Public API
 
-- `walkPrefix(points, share)` - the polyline cut at `share` of its length
-  (empty for fewer than two points, a walk of no length or a NaN share);
-  `drawWalk` cuts the line at the same place.
+- `walkCut(along, share)` - where the first `share` of a walk ends by
+  its length (`along` the length up to each point): `{ segment, t }`, the
+  first segment whose end reaches it and how far along it; null for fewer
+  than two points, a walk of no length or a share not above 0. `drawWalk`
+  cuts the line there.
 - `createArrivalMarks(parent)` returns:
   - `ring(id, at, ring)` - places, or with nulls removes, a station's
     ring, an accent ring laid flat;
@@ -34,6 +36,6 @@ between stations.
 
 ## Tests
 
-- `globe-approach-marks.test.ts` - the prefix by length, the monotone
+- `globe-approach-marks.test.ts` - `walkCut` by length, its monotone
   growth, no line without a walk, the one geometry revealed by its share
   (the cut end, restored ends, share 0 hidden), rings added and removed.

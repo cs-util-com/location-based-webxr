@@ -8,40 +8,51 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { createArrivalMarks, walkPrefix } from "./globe-approach-marks.js";
+import {
+  createArrivalMarks,
+  walkCut,
+  type WalkCut,
+} from "./globe-approach-marks.js";
 
 const v = (x: number, z: number) => new THREE.Vector3(x, 0, z);
 
-describe("walkPrefix", () => {
-  it("cuts the polyline at a share of its length", () => {
+/** The walk's drawn length at a cut (`along` the lengths up to each point). */
+const drawnAt = (along: readonly number[], cut: WalkCut | null) =>
+  cut === null
+    ? 0
+    : along[cut.segment]! +
+      cut.t * (along[cut.segment + 1]! - along[cut.segment]!);
+
+describe("walkCut", () => {
+  it("cuts the walk at a share of its length", () => {
     // Why: the walk grows by distance walked, so a long leg takes longer
-    // to draw than a short one, as the prototype's route does.
-    const pts = [v(0, 0), v(10, 0), v(10, 30)];
-    expect(walkPrefix(pts, 0)).toEqual([]);
-    expect(walkPrefix(pts, 0.125).map((p) => p.x)).toEqual([0, 5]);
-    const half = walkPrefix(pts, 0.5);
-    expect(half).toHaveLength(3);
-    expect(half[2]!.z).toBeCloseTo(10, 9);
-    expect(walkPrefix(pts, 1)).toEqual(pts);
-    expect(walkPrefix(pts, Number.NaN)).toEqual([]);
+    // to draw than a short one, as the prototype's route does. Legs of 10
+    // and 30 m.
+    const along = [0, 10, 40];
+    expect(walkCut(along, 0)).toBeNull();
+    expect(walkCut(along, 0.125)).toEqual({ segment: 0, t: 0.5 });
+    const half = walkCut(along, 0.5);
+    expect(half?.segment).toBe(1);
+    expect(half?.t).toBeCloseTo(1 / 3, 9);
+    expect(walkCut(along, 1)).toEqual({ segment: 1, t: 1 });
+    expect(walkCut(along, 2)).toEqual({ segment: 1, t: 1 });
+    expect(walkCut(along, Number.NaN)).toBeNull();
   });
 
-  it("draws nothing for fewer than two points or a walk of no length", () => {
+  it("cuts nothing for fewer than two points or a walk of no length", () => {
     // Why: a single capture or captures in one spot are no walk to draw.
-    expect(walkPrefix([v(1, 1)], 1)).toEqual([]);
-    expect(walkPrefix([v(1, 1), v(1, 1)], 0.5)).toEqual([]);
+    expect(walkCut([0], 1)).toBeNull();
+    expect(walkCut([0, 0], 0.5)).toBeNull();
   });
 
-  it("only grows with its share", () => {
-    // Why: a line that draws back reads as a glitch.
-    const pts = [v(0, 0), v(3, 4), v(3, 10), v(-2, 10)];
+  it("only grows with its share, by exactly that share of the length", () => {
+    // Why: a line that draws back reads as a glitch. Legs of 5, 6 and 5 m.
+    const along = [0, 5, 11, 16];
     let last = 0;
-    for (let k = 0; k <= 50; k++) {
-      const part = walkPrefix(pts, k / 50);
-      let len = 0;
-      for (let i = 1; i < part.length; i++)
-        len += part[i]!.distanceTo(part[i - 1]!);
+    for (let k = 1; k <= 50; k++) {
+      const len = drawnAt(along, walkCut(along, k / 50));
       expect(len).toBeGreaterThanOrEqual(last - 1e-9);
+      expect(len).toBeCloseTo((16 * k) / 50, 9);
       last = len;
     }
   });

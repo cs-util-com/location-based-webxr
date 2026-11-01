@@ -29,36 +29,31 @@ const WALK_OPACITY = 0.9;
  *  ground never cuts it. */
 const WALK_LIFT_M = 0.05;
 
+/** Where a share of the walk ends: in segment `segment` (from point
+ *  `segment` to the next), at `t` (0 to 1) along it. */
+export interface WalkCut {
+  readonly segment: number;
+  readonly t: number;
+}
+
 /**
- * The first `share` (0 to 1) of the polyline `points` by its length: the
- * points passed whole, then one cut between the last two. Fewer than two
- * points, or a share that is not a number above 0, give none.
+ * Where the first `share` (0 to 1, more is 1) of a walk ends by its
+ * length, `along` the walk's length up to each point (`along[0]` 0): the
+ * first segment whose end reaches that length, and how far along it.
+ * Fewer than two points, a walk of no length or a share that is not a
+ * number above 0 give null.
  */
-export function walkPrefix(
-  points: readonly THREE.Vector3[],
+export function walkCut(
+  along: readonly number[],
   share: number,
-): THREE.Vector3[] {
-  if (points.length < 2 || !(share > 0)) return [];
-  if (share >= 1) return points.map((p) => p.clone());
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    total += points[i]!.distanceTo(points[i - 1]!);
-  }
-  if (!(total > 0)) return [];
-  let left = total * share;
-  const out = [points[0]!.clone()];
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
-    const d = a.distanceTo(b);
-    if (d >= left) {
-      out.push(a.clone().lerp(b, d === 0 ? 1 : left / d));
-      return out;
-    }
-    out.push(b.clone());
-    left -= d;
-  }
-  return out;
+): WalkCut | null {
+  const total = along[along.length - 1] ?? 0;
+  if (along.length < 2 || !(total > 0) || !(share > 0)) return null;
+  const left = total * Math.min(1, share);
+  let i = 0;
+  while (i < along.length - 2 && along[i + 1]! < left) i++;
+  const d = along[i + 1]! - along[i]!;
+  return { segment: i, t: d === 0 ? 1 : (left - along[i]!) / d };
 }
 
 export interface ArrivalMarks {
@@ -190,23 +185,19 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
       }
       uncut(l);
       const ends = endsOf(l);
-      if (!(k > 0)) {
+      // A line has two points and a length, so only a share of 0 cuts
+      // nothing.
+      const cut = walkCut(along, k);
+      if (cut === null) {
         drawn = 0;
         l.geometry.instanceCount = 0;
         l.visible = false;
         ends.data.needsUpdate = true;
         return;
       }
-      // The first segment whose end reaches the drawn length, as
-      // `walkPrefix` cuts it.
-      const left = along[along.length - 1]! * k;
-      let i = 0;
-      while (i < walk.length - 2 && along[i + 1]! < left) i++;
-      const a = walk[i]!;
-      const b = walk[i + 1]!;
-      const d = along[i + 1]! - along[i]!;
-      if (k < 1) {
-        const at = a.clone().lerp(b, d === 0 ? 1 : (left - along[i]!) / d);
+      const i = cut.segment;
+      if (cut.t < 1) {
+        const at = walk[i]!.clone().lerp(walk[i + 1]!, cut.t);
         ends.setXYZ(i, at.x, at.y, at.z);
         cutSegment = i;
       }
