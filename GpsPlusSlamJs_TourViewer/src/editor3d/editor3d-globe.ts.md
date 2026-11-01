@@ -229,7 +229,7 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   heights 0, 515 and 2,500 m, the zoom (button and double click) walking
   forward from eye height 3 to 10 degrees down, the approach's clock
   starting at its first frame, the coverage read three to five times
-  over a second of flight, a walk that comes after the approach drawn
+  over the second after the landing, a walk that comes after the approach drawn
   from its arrival and re-read when it changes, the double click's zoom from 300 m, 8 km
   and 40 km (the ground beyond 5 km; loaded, and not), a button's step
   50 km from the tour (to the ground ahead), no step under eye height

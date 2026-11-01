@@ -767,7 +767,7 @@ describe("openGlobeEditor's wiring", () => {
   // it every frame; the approach's line read it every frame once the
   // relief carries the ground (after the landing). A few times a second is
   // enough for a line that holds each wording 600 ms. Over one second of
-  // frames at 60 Hz after the landing it is read 4 or 5 times, not 60.
+  // frames at 60 Hz after the landing it is read 3 to 5 times, not 60.
   it("reads the map's coverage a few times a second during the approach", async () => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);

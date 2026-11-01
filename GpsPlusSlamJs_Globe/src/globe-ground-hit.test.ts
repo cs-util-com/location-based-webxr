@@ -568,7 +568,7 @@ describe("groundPointOfRay", () => {
   // about twice as far, and the zoom stepped toward a point under the
   // valley. The reach also runs to where the ray meets the ellipsoid, which
   // ground above the ellipsoid always comes before. Swept over three
-  // pitches, the floor 7 to 15 km out.
+  // pitches, the floor 5.7 to 15.3 km out.
   it.each([-3, -5, -8])(
     "finds a valley floor beyond the summit's horizon at %s deg",
     (pitchDeg) => {
