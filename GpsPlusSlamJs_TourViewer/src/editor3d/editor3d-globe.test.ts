@@ -23,6 +23,7 @@ import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
+import { GIBS_ACKNOWLEDGEMENT } from "gps-plus-slam-globe/view";
 import { WGS84_ELLIPSOID } from "gps-plus-slam-globe/test-utils/view-pose";
 
 import type { Editor3dDeps, Editor3dView } from "./editor3d-scene.js";
@@ -763,23 +764,33 @@ describe("openGlobeEditor's wiring", () => {
     expect(flyingAt(6_100)).toBe(false);
   });
 
-  // Why: the map's coverage walks its tiles and its doc says not to read
-  // it every frame; the approach's line read it every frame once the
-  // relief carries the ground (after the landing). A few times a second is
-  // enough for a line that holds each wording 600 ms. Over one second of
-  // frames at 60 Hz after the landing it is read 3 to 5 times, not 60.
-  it("reads the map's coverage a few times a second during the approach", async () => {
+  // Why: the globe view's credits are one button whose overlay lists
+  // every source and GIBS's acknowledgement in full (the sources' terms),
+  // and closing the view empties the box for the next one.
+  it("puts the credits behind one button, with GIBS's acknowledgement", async () => {
+    const credits = document.createElement("div");
+    const view = await openAt(0, { credits });
+    const button = credits.querySelector("button");
+    expect(button?.textContent).toBe("Credits");
+    const panel = credits.querySelector<HTMLElement>('[role="dialog"]');
+    expect(panel?.hidden).toBe(true);
+    expect(panel?.textContent).toContain(GIBS_ACKNOWLEDGEMENT);
+    view.dispose();
+    open = null;
+    expect(credits.childElementCount).toBe(0);
+  });
+
+  // Why: the approach's detail line read the map's coverage (which walks
+  // its tiles) and the relief's load counts each few frames. The line is
+  // gone (the box says only "Loading tour"), so the frames of an approach
+  // read none of it; a leftover read would be cost for nothing.
+  it("reads no load counts during the approach", async () => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     await openAt(0, { approach: { durationMs: 1_000 } });
-    // The flight, frame by frame, to the street.
-    for (now = 0; now < 1_100; now += 1000 / 60) frameAt(now);
-    expect(open?.stats().flying).toBe(false);
-    expect(open?.stats().globe?.carrier).toBe("relief");
     fakes.coverageCalls = 0;
-    for (; now < 2_100; now += 1000 / 60) frameAt(now);
-    expect(fakes.coverageCalls).toBeGreaterThanOrEqual(3);
-    expect(fakes.coverageCalls).toBeLessThanOrEqual(5);
+    for (now = 0; now < 2_100; now += 1000 / 60) frameAt(now);
+    expect(fakes.coverageCalls).toBe(0);
   });
 
   // Why: the page learns the recorded walk only once its captures are

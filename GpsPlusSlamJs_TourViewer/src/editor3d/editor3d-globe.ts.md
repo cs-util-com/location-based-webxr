@@ -161,25 +161,21 @@ With `deps.approach` (the page sets it for a tour opened afresh into the
 3D view, never for a restored draft or a switch from the map) the view
 flies in from high above (`globe-approach-run.ts`): each frame its pose
 is placed through `placeView` with `controls.followIntro()` instead of
-the controls' own step. The bar and the line hang in the view's box.
+the controls' own step. The box ("Loading tour" over the bar) hangs in
+the view's box and goes a beat after the landing, at once after a
+takeover; what still loads does not keep it (it reads no load counts).
 
 - While it flies the stations are held back (added to what `setHidden`
   gets); on arrival they pop in one after another (`layer.setGrowth`)
   with a ring each on the ground (`globe-approach-marks.ts`), then the
   recorded walk (`deps.walk()`, the captures' heights lowered by the
-  geoid) draws itself. No walk, no line. The walk is read each frame and
+  geoid) draws itself. No walk, no walk line. The walk is read each frame and
   rebuilt only when the page's array changes (`deps.walk` keeps its
   array while the walk is unchanged); a walk that comes after the
   arrival's walk began, or after the approach ended, draws itself from
   when it came (`walkDrawShare`), not whole in one frame. With no
   approach at all it is drawn whole. It follows the walk layer chip
   (`showWalk`), not the page's debug switch.
-- The line's counts (`pendingNow`): the stations still held for upload;
-  the relief's tile loads plus the map's waiting tiles while the relief
-  carries, else the globe's pending tiles; no buildings are mounted, so
-  none are waited for. The map's coverage walks its tiles, so it is read
-  every `COVERAGE_EVERY_MS` (250 ms, four times a second) and the last
-  reading kept between, not every frame.
 - The flight's clock starts at its first drawn frame (`run.start` in the
   frame's camera step), not at mount: the box's fit and the first tiles
   can take a while, and a flight timed from mount would skip its start.
@@ -203,11 +199,14 @@ the controls' own step. The bar and the line hang in the view's box.
 - `dispose` frees in reverse order: the loop stops first, and the
   context-lost listener is taken off before the WebGL context loss is
   forced (the forced loss is not a lost context to tell the page about).
-- Credits are filled once at open (the globe's active sources and the
-  relief's); they do not follow a later change of sources yet.
+- Credits are mounted once at open (`editor3d-credits.ts`: one button,
+  its overlay listing the globe's active sources and the relief's in
+  full, with GIBS's acknowledgement under them); they do not follow a
+  later change of sources yet.
 - The heavy clouds (the shell and its volume) are never mounted.
-- The globe's assets are served at `/globe-assets/` by the dev server only
-  (`../dev-server/globe-assets-route.ts`); the built site lacks them.
+- The globe's assets are served at `/globe-assets/` by the dev server
+  (`../dev-server/globe-assets-route.ts`) and, on the built site, from
+  the one copy the site build puts at its root (`scripts/build-site.mjs`).
 
 ## Stats
 

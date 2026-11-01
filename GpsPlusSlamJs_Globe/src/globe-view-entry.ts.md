@@ -18,7 +18,9 @@
     noon. An app calls its `afterSky` and `afterScene` from the view's
     seams of those names and its `step` once a frame after the camera.
   - The imagery's credits: `creditsFor(globe.activeSources())`
-    (`globe-credits.ts`).
+    (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
+    (`globe-sources.ts`), the sentence GIBS asks to be shown in full
+    wherever its imagery is.
   - Only what an app's production code uses: a name only a test needs
     lives under `./test-utils/*` (`viewPoseEcef` and `WGS84_ELLIPSOID` in
     `./test-utils/view-pose`), because knip reads this entry as public and

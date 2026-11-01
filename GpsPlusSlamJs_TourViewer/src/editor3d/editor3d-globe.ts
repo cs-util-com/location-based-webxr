@@ -18,8 +18,8 @@
  * ceiling the relief carries the ground, above it the globe's surface.
  *
  * A tour opened afresh flies in from high above first
- * (`globe-approach-run.ts`): a bar at the top follows the fall, one line
- * says what still loads, the stations pop in on arrival and the recorded
+ * (`globe-approach-run.ts`): a bar at the top follows the fall under
+ * "Loading tour", the stations pop in on arrival and the recorded
  * walk draws itself; any input in the view takes the camera where it is.
  *
  * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
@@ -60,6 +60,7 @@ import {
   createGlobeCameraControls,
   createGlobeView,
   creditsFor,
+  GIBS_ACKNOWLEDGEMENT,
   mountGlobeViewAir,
   type GlobeView,
   type GlobeViewAir,
@@ -94,11 +95,8 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
-import {
-  createViewRenderer,
-  fillCredits,
-  viewFailure,
-} from "./editor3d-view-parts.js";
+import { mountCredits } from "./editor3d-credits.js";
+import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
@@ -113,7 +111,6 @@ import {
   type GlobeHiddenSet,
   type GlobeObjectOnScreen,
 } from "./globe-editor-look.js";
-import type { ApproachPending } from "./approach-status.js";
 import { approachFlight } from "./globe-approach-flight.js";
 import {
   ARRIVAL,
@@ -136,9 +133,6 @@ const ZOOM_SHARE = 0.35;
 /** Top view looks this close to straight down (deg): exactly down has no
  *  heading to keep. */
 const TOP_PITCH_DEG = -89;
-/** The approach's line reads the map's coverage this often (ms): four
- *  times a second, against a line that holds each wording 600 ms. */
-const COVERAGE_EVERY_MS = 250;
 
 /** The higher of two heights; either alone where the other is null; null
  *  where both are. */
@@ -389,13 +383,15 @@ export async function openGlobeEditor(
       }
       return held;
     };
-    fillCredits(deps.credits, [
-      ...creditsFor(globe.activeSources()),
-      ...ground.credits,
-    ]);
-    undo.push(() => {
-      deps.credits.replaceChildren();
-    });
+    // The globe's imagery is NASA GIBS's, which asks for its
+    // acknowledgement in full: it sits under the list.
+    undo.push(
+      mountCredits(
+        deps.credits,
+        [...creditsFor(globe.activeSources()), ...ground.credits],
+        { note: GIBS_ACKNOWLEDGEMENT },
+      ),
+    );
 
     let documentNow = state.tourDocument;
     let tourNow = manifest;
@@ -594,46 +590,6 @@ export async function openGlobeEditor(
       return move.addScaledVector(up, liftM);
     };
 
-    /** The map's coverage, read at most every `COVERAGE_EVERY_MS`: it
-     *  walks the map's tiles, and its doc says not per frame. */
-    let coverage: ReturnType<typeof ground.osm.coverage> | null = null;
-    let coverageAt = Number.NEGATIVE_INFINITY;
-    const readCoverage = (now: number) => {
-      if (coverage === null || now - coverageAt >= COVERAGE_EVERY_MS) {
-        coverage = ground.osm.coverage();
-        coverageAt = now;
-      }
-      return coverage;
-    };
-
-    /** What is still loading at `now`, for the approach's line: the
-     *  stations not uploaded yet, and the imagery of the ground's carrier
-     *  now. No buildings are drawn in this view yet, so none are waited
-     *  for. */
-    const pendingNow = (
-      held: Set<string> | null,
-      now: number,
-    ): ApproachPending => {
-      let textures: number;
-      if (relief) {
-        // The tiles library's load counts (untyped in its declarations).
-        const s = (
-          ground.terrain.tiles as unknown as {
-            stats?: { queued?: number; downloading?: number; parsing?: number };
-          }
-        ).stats;
-        const cover = readCoverage(now);
-        textures =
-          (s?.queued ?? 0) +
-          (s?.downloading ?? 0) +
-          (s?.parsing ?? 0) +
-          Math.max(0, cover.waiting - cover.failed);
-      } else {
-        textures = globe.state().pendingTiles;
-      }
-      return { tour: held?.size ?? 0, textures, buildings: 0 };
-    };
-
     /** The page's walk read again when its array changed. After the
      *  arrival's walk began (or the approach ended) a walk that comes now
      *  draws itself from now, not whole in one frame. */
@@ -661,16 +617,12 @@ export async function openGlobeEditor(
     }
 
     /**
-     * The approach's part of a frame at `now`: its bar and line stepped
+     * The approach's part of a frame at `now`: its bar stepped
      * from the camera's altitude, the stations it holds back or grows, the
      * rings and the walk. The stations not to draw this frame, null for
      * none. With no approach running, the walk is drawn whole once known.
      */
-    function approachFrame(
-      now: number,
-      held: Set<string> | null,
-      altitudeM: number,
-    ): string[] | null {
+    function approachFrame(now: number, altitudeM: number): string[] | null {
       const stations = tourNow?.stations ?? [];
       const run = approach;
       readWalk(now, run, stations.length);
@@ -678,7 +630,7 @@ export async function openGlobeEditor(
         marks.drawWalk(walkShareAt(now, null, 0));
         return null;
       }
-      run.step(now, altitudeM / 1000, pendingNow(held, now));
+      run.step(now, altitudeM / 1000);
       if (run.holdsStations()) return stations.map((s) => s.id);
       const notYet: string[] = [];
       const growth = new Map<string, number>();
@@ -768,7 +720,7 @@ export async function openGlobeEditor(
         selectedStation,
       );
       const held = unadmitted();
-      const arriving = approachFrame(now, held, altitudeM);
+      const arriving = approachFrame(now, altitudeM);
       const notShown = [
         ...hidden.stations,
         ...(held ?? []),
@@ -932,7 +884,7 @@ export async function openGlobeEditor(
       centreHeightM,
     );
     // Opening a tour (not a restored draft, not a switch back from the
-    // map): the approach from high above, its bar and line over the view.
+    // map): the approach from high above, its bar over the view.
     if (deps.approach !== undefined) {
       const reducedMotion =
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
@@ -946,7 +898,6 @@ export async function openGlobeEditor(
             : { durationMs: deps.approach.durationMs }),
         }),
         reducedMotion,
-        lineCapMs: deps.approach.lineCapMs,
       });
       arrivalTiming = run.timing;
       approach = run;

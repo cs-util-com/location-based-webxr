@@ -1097,12 +1097,6 @@ button.thumb:focus-visible {
   gap: 8px;
 }
 
-body[data-view="3d"] .view3d-credits {
-  right: auto;
-  left: 8px;
-  max-width: calc(100% - 78px);
-}
-
 .pill {
   display: flex;
   flex-direction: column;
@@ -1787,8 +1781,9 @@ body[data-view="3d"] .view3d-credits {
 }
 
 /* --- the globe view's approach on opening a tour ---------------------------
- * A thin bar at the top of the view that follows the camera's fall, and one
- * quiet line under it naming what still loads (`globe-approach-run.ts`).
+ * "Loading tour" over a thin bar at the top of the view that follows the
+ * camera's fall (`globe-approach-run.ts`); the box goes a beat after the
+ * landing.
  * Between the docks where they sit side by side (each 272 / 290 px plus a
  * 12 px gap), under their heads where they fold; under the docks, never
  * over them, and never taking a pointer. */
@@ -1807,20 +1802,13 @@ body[data-view="3d"] .view3d-credits {
   box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
   transform: translateX(-50%);
   pointer-events: none;
-  transition: opacity 400ms ease;
 }
 
-.approach.gone {
-  opacity: 0;
-}
-
-.approach[hidden],
-.approach-title[hidden],
-.approach-track[hidden] {
+.approach[hidden] {
   display: none;
 }
 
-/* The box's fixed title over the bar; the line under it is the detail. */
+/* The box's fixed title over the bar. */
 .approach-title {
   margin-bottom: 4px;
   overflow: hidden;
@@ -1844,21 +1832,6 @@ body[data-view="3d"] .view3d-credits {
   transform-origin: left;
 }
 
-.approach-line {
-  min-height: 16px;
-  margin-top: 5px;
-  overflow: hidden;
-  color: var(--s-muted);
-  font: 600 12px/16px var(--s-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* After the landing only the line stays. */
-.approach[data-phase="arrived"] .approach-line {
-  margin-top: 0;
-}
-
 @media (width <= 820px) {
   .approach {
     top: calc(36px + 6px);
@@ -1870,16 +1843,5 @@ body[data-view="3d"] .view3d-credits {
   .approach-title {
     margin-bottom: 3px;
     font-size: 11px;
-  }
-
-  .approach-line {
-    margin-top: 3px;
-    font-size: 11px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .approach {
-    transition: none;
   }
 }

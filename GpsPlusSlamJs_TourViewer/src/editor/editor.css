@@ -107,20 +107,76 @@ button:disabled {
   touch-action: none;
 }
 
+/* The 3D view's credits (`editor3d-credits.ts`): one small button at the
+ * bottom left; its overlay opens above it with every source in full. */
 .view3d-credits {
   position: absolute;
-  right: 8px;
   bottom: 6px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 78px);
   margin: 0;
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: rgba(24, 25, 28, 0.72);
   color: rgba(230, 232, 236, 0.85);
   font-size: 11px;
 }
 
 .view3d-credits a {
   color: inherit;
+}
+
+.view3d-credits-button,
+.view3d-credits-beside {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(24, 25, 28, 0.72);
+  color: inherit;
+  font: inherit;
+}
+
+.view3d-credits-button {
+  cursor: pointer;
+}
+
+.view3d-credits-button:focus-visible {
+  outline: 2px solid currentcolor;
+  outline-offset: 1px;
+}
+
+.view3d-credits-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(24, 25, 28, 0.94);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  line-height: 1.45;
+}
+
+.view3d-credits-panel[hidden] {
+  display: none;
+}
+
+.view3d-credits-panel ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.view3d-credits-panel li + li {
+  margin-top: 4px;
+}
+
+.view3d-credits-note {
+  margin: 8px 0 0;
+  color: rgba(230, 232, 236, 0.7);
 }
 
 #view-switch[data-state="loading"] {

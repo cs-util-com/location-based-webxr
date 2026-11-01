@@ -619,7 +619,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
     if (i > 0) expect(v.x).toBeGreaterThan(bar[i - 1]?.x ?? 0);
   }
   // The bar is visited first; the next stop is the tree's head (the
-  // scene's credits close the view, after the docks).
+  // scene's Credits button closes the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
   // Then the tree: its head ("Stations", "+", the fold arrow), then the

@@ -69,8 +69,20 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
   await expect(page.locator("#view-loading")).toBeHidden();
   await expect(page.locator("#view3d")).toBeVisible();
   await expect(page.locator("#view3d canvas")).toBeVisible();
-  await expect(page.locator("#view3d-credits")).toContainText("Mapterhorn");
-  await expect(page.locator("#view3d-credits")).toContainText("OpenStreetMap");
+  // The credits are one button; its overlay lists every source in full,
+  // and Esc closes it with focus back on the button.
+  const credits = page.locator("#view3d-credits");
+  const creditsButton = credits.getByRole("button", { name: "Credits" });
+  const creditsPanel = credits.getByRole("dialog", { name: "Credits" });
+  await expect(creditsPanel).toBeHidden();
+  await creditsButton.click();
+  await expect(creditsPanel).toBeVisible();
+  await expect(creditsPanel).toContainText("Mapterhorn");
+  await expect(creditsPanel).toContainText("OpenStreetMap");
+  await expect(creditsPanel).toContainText("Copernicus");
+  await page.keyboard.press("Escape");
+  await expect(creditsPanel).toBeHidden();
+  await expect(creditsButton).toBeFocused();
   // The card points at the map's marker: not over the 3D view.
   await expect(page.locator("#card")).toBeHidden();
 

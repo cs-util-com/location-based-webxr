@@ -1,8 +1,8 @@
 /**
  * What the editor's two 3D views share (the OrbitControls view,
  * `editor3d-scene.ts`, and the globe view, `editor3d-globe.ts`): the
- * failure the view switch reads the reason of, the renderer made or
- * refused, and the credits line.
+ * failure the view switch reads the reason of, and the renderer made or
+ * refused (the credits are `editor3d-credits.ts`).
  *
  * @see editor3d-view-parts.ts.md
  */
@@ -38,22 +38,4 @@ export function createViewRenderer(
     throw viewFailure("webgl", "no WebGL context");
   }
   return renderer;
-}
-
-/** The credits' line: each credit's short name, linked, between dots. */
-export function fillCredits(
-  box: HTMLElement,
-  credits: readonly { short: string; href: string }[],
-): void {
-  const parts: Node[] = [];
-  credits.forEach((credit, i) => {
-    if (i > 0) parts.push(document.createTextNode(" · "));
-    const a = document.createElement("a");
-    a.href = credit.href;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = credit.short;
-    parts.push(a);
-  });
-  box.replaceChildren(...parts);
 }

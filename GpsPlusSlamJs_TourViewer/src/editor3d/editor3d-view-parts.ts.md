@@ -12,15 +12,12 @@
     (`{ antialias: true }` by default), or a `webgl` failure when the
     constructor throws or the context is null (the renderer is then
     disposed).
-  - `fillCredits(box, credits)` - the credits line: each short name as a
-    link opening in a new tab, joined by " · ".
 - Invariants & assumptions: no state; the DOM is the page's.
 - Examples:
   ```ts
   const renderer = createViewRenderer();
-  fillCredits(deps.credits, ground.credits);
   throw viewFailure("empty", "the tour has nothing with a position");
   ```
 - Tests: through the views' e2e (`editor3d.spec.js`, `editor3d-globe.spec.js`:
-  the credits line and a failed open's reason); `createViewRenderer`'s refusal
+  a failed open's reason); `createViewRenderer`'s refusal
   needs a browser without WebGL and is not covered by a unit test.

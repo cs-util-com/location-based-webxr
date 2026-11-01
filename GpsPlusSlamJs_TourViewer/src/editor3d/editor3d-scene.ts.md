@@ -14,7 +14,8 @@ keys), and writes only through the page's `edits`.
 - `openEditor3d(deps)` -> `Promise<Editor3dView>`, resolved once the first
   frame is drawn. `deps` (`Editor3dDeps`):
   - `container` - the view's box over the map (`#view3d`), `credits` -
-    the credits' line in it;
+    the box of the credits' button and overlay in it
+    (`editor3d-credits.ts`);
   - `store` - the page's store (`tourDocument`, `editorView`) and its
     `dispatch` (a gesture's start and end only);
   - `edits` (`Editor3dEdits`) - the page's `commit(edit)` (one undo
@@ -91,7 +92,7 @@ keys), and writes only through the page's `edits`.
   tour's centre, `tourCentre` of `../editor/tour-origin.ts`), the tour (`editor3d-stations.ts`) with the
   phone's pin labels, photo decoding (capped at `TOUR_MAX_IMAGE_PIXELS`)
   and model loader, the billboards and code squares
-  (`editor3d-marks.ts`), the credits as links, under an orbit at the
+  (`editor3d-marks.ts`), the credits behind one button (`editor3d-credits.ts`), under an orbit at the
   design's start (`editor3d-camera.ts`), with fog and a hemisphere and a
   sun light.
 - **Reads the tour, writes through the page:** the tour is what a save
@@ -142,7 +143,7 @@ keys), and writes only through the page's `edits`.
 const { openEditor3d } = await import("../editor3d/editor3d-scene.js");
 const view = await openEditor3d({
   container: view3dBox,
-  credits: creditsLine,
+  credits: creditsBox,
   store,
   levels: () => openedLevels,
   loadContent,

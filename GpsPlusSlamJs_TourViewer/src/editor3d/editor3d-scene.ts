@@ -86,11 +86,8 @@ import {
 import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
-import {
-  createViewRenderer,
-  fillCredits,
-  viewFailure,
-} from "./editor3d-view-parts.js";
+import { mountCredits } from "./editor3d-credits.js";
+import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -115,7 +112,7 @@ export type Editor3dEdits = Omit<InputPage, "dispatch" | "selected"> & {
 export interface Editor3dDeps {
   /** The view's box, over the map (`#view3d`). */
   readonly container: HTMLElement;
-  /** The credits' line in it. */
+  /** The box of the credits' button and overlay, in it. */
   readonly credits: HTMLElement;
   readonly store: Editor3dStore;
   /** The open tour's codes, by level id. */
@@ -128,14 +125,12 @@ export interface Editor3dDeps {
   readonly edits: Editor3dEdits;
   /**
    * The globe view's approach on opening a tour: given, the view flies in
-   * from high above the Earth (`durationMs` overrides the flight's length
-   * and `lineCapMs` how long its line may stay after the landing, both for
-   * the page's checks only); absent, it opens at the tour. The
+   * from high above the Earth (`durationMs` overrides the flight's length,
+   * for the page's checks only); absent, it opens at the tour. The
    * OrbitControls view has no approach and ignores it.
    */
   readonly approach?: {
     readonly durationMs?: number;
-    readonly lineCapMs?: number;
   };
   /** The recorded walk's camera captures in their order (the globe view
    *  draws them as a line after its arrival), null while none is known.
@@ -411,8 +406,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     });
     undo.push(() => layer.dispose());
     layer.setTour(manifest, levels);
-    fillCredits(deps.credits, ground.credits);
-    undo.push(() => deps.credits.replaceChildren());
+    undo.push(mountCredits(deps.credits, ground.credits));
 
     // The tour as the view draws it, read again only when the document
     // changes (never per frame: it is the save's manifest).

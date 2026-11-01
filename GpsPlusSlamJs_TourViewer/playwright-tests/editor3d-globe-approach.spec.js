@@ -12,12 +12,13 @@ import {
 
 /**
  * Why these tests matter: a tour opened in the globe view flies in from
- * high above, a thin bar at the top following the camera's fall and one
- * quiet line under it naming what still loads. The owner's rules for it:
+ * high above, "Loading tour" over a thin bar at the top following the
+ * camera's fall. The owner's rules for it:
  * the creator's own input in the 3D view takes the camera at once, where
  * it is; the list and the panel stay usable while it flies (a pick in the
- * list sends the flight there, typing leaves it alone); the line stays
- * after the landing while anything still loads, then goes; a restored
+ * list sends the flight there, typing leaves it alone); the box goes a
+ * beat after the landing, whatever still loads (he dropped the detail
+ * line that used to stay for it); a restored
  * draft goes straight to the tour. A swallowed input or a bar sitting
  * over the docks is exactly what these pin.
  */
@@ -32,19 +33,17 @@ async function approachOf(page) {
 }
 
 /**
- * Set the next approach's length (ms) before the page loads, and
- * optionally how long its line may stay after the landing; the arrival
+ * Set the next approach's length (ms) before the page loads; the arrival
  * keeps its own timings.
  * @param {import("@playwright/test").Page} page
  * @param {number} durationMs
- * @param {number} [lineCapMs]
  */
-async function approachLasting(page, durationMs, lineCapMs) {
+async function approachLasting(page, durationMs) {
   await page.addInitScript(
     (knob) => {
       /** @type {any} */ (window).__tourEditorApproach = knob;
     },
-    { durationMs, ...(lineCapMs === undefined ? {} : { lineCapMs }) },
+    { durationMs },
   );
 }
 
@@ -108,9 +107,8 @@ for (const [width, height] of [
     const barBox = await box(bar);
     const titleBox = await box(bar.locator(".approach-title"));
     const trackBox = await box(bar.locator(".approach-track"));
-    const lineBox = await box(bar.locator(".approach-line"));
     const narrow = width <= 820;
-    // The fixed title over the bar, the detail line under it.
+    // The fixed title over the bar, and nothing under it.
     await expect(bar.locator(".approach-title")).toHaveText("Loading tour");
     expect(trackBox.y - (titleBox.y + titleBox.height)).toBeCloseTo(
       narrow ? 3 : 4,
@@ -121,10 +119,7 @@ for (const [width, height] of [
       Math.abs(barBox.x + barBox.width / 2 - (viewBox.x + viewBox.width / 2)),
     ).toBeLessThanOrEqual(1);
     expect(trackBox.height).toBeCloseTo(4, 0);
-    expect(lineBox.y - (trackBox.y + trackBox.height)).toBeCloseTo(
-      narrow ? 3 : 5,
-      0,
-    );
+    await expect(bar.locator(".approach-line")).toHaveCount(0);
     for (const dock of ["#shell-tree", "#shell-inspector"]) {
       const d = page.locator(dock);
       if (!(await d.isVisible())) continue;
@@ -135,11 +130,10 @@ for (const [width, height] of [
   });
 }
 
-test("the bar is a progressbar with a value and the line a polite status", async ({
+test("the bar is a progressbar with a value, under the box's title", async ({
   page,
 }) => {
-  // Why: a screen reader user hears that the tour is loading and how far,
-  // and the line's change of words without being interrupted.
+  // Why: a screen reader user hears that the tour is loading and how far.
   test.setTimeout(180_000);
   await answerHosts(page, { globeAssets: "serve" });
   await approachLasting(page, 600_000);
@@ -149,10 +143,7 @@ test("the bar is a progressbar with a value and the line a polite status", async
   await expect(track).toHaveAttribute("aria-valuemin", "0");
   await expect(track).toHaveAttribute("aria-valuemax", "100");
   await expect(track).toHaveAttribute("aria-valuenow", /^\d+$/);
-  const line = page.locator("#view3d .approach-line");
-  await expect(line).toHaveAttribute("role", "status");
-  await expect(line).toHaveAttribute("aria-live", "polite");
-  await expect(line).toHaveText(/^(Loading (stations|textures|buildings))?$/);
+  await expect(page.locator('#view3d [role="status"]')).toHaveCount(0);
   await expect(page.locator("#view3d .approach-title")).toHaveText(
     "Loading tour",
   );
@@ -201,15 +192,18 @@ test("a drag in the 3D view takes the camera where it is; typing in the panel an
   expect((await view3d(page)).globe.altitudeM).toBeGreaterThan(
     taken.globe.altitudeM * 0.5,
   );
-  await expect(page.locator("#view3d .approach-track")).toBeHidden();
+  await expect(page.locator("#view3d .approach")).toBeHidden();
   expect(await rejections(page)).toEqual([]);
 });
 
-test("after the landing the line stays while the relief still loads, then goes", async ({
+test("the box goes after the bar's done-hold while tiles are still held", async ({
   page,
 }) => {
-  // Why: a blank landing reads as broken; the line says what is still
-  // coming until it came, and then leaves the view alone.
+  // Why: the box used to stay after the landing for as long as the relief
+  // still loaded, under a line saying so; the owner dropped the line, and
+  // the box's end is now the bar's own (a beat after the landing). The
+  // relief's tiles are held here so that loading is still under way when
+  // the box must go: a box kept by what loads would stay over the view.
   test.setTimeout(240_000);
   /** @type {(() => void)[]} */
   const held = [];
@@ -224,28 +218,25 @@ test("after the landing the line stays while the relief still loads, then goes",
   // Every held tile goes through however the checks end: a failed check
   // must not leave route handlers waiting on promises nobody resolves.
   try {
-    // Software rendering is slow: the line's own cap (seconds after the
-    // landing) would take it before the checks below have looked.
-    await approachLasting(page, 3_000, 600_000);
+    await approachLasting(page, 3_000);
     await openSampleOnGlobe(page);
+    await expect(page.locator("#view3d .approach")).toBeVisible();
     await expect
-      .poll(async () => (await approachOf(page))?.ended, { timeout: 60_000 })
-      .toBe("landed");
-    await expect(page.locator("#view3d .approach-track")).toBeHidden();
-    await expect(page.locator("#view3d .approach-line")).toHaveText(
-      "Loading textures",
-    );
-    await afterFrames(page, 10);
-    await expect(page.locator("#view3d .approach-line")).toHaveText(
-      "Loading textures",
-    );
+      .poll(() => held.length, { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await expect(page.locator("#view3d .approach")).toBeHidden({
+      timeout: 60_000,
+    });
+    // Still held: the box went while the relief was loading.
+    expect(held.length).toBeGreaterThan(0);
+    expect(holding).toBe(true);
+    // It went because the flight landed, not because it was taken.
+    const run = await approachOf(page);
+    if (run !== null) expect(run.ended).toBe("landed");
   } finally {
     holding = false;
     for (const release of held.splice(0)) release();
   }
-  await expect(page.locator("#view3d .approach")).toBeHidden({
-    timeout: 60_000,
-  });
   // The stations popped in and their rings went.
   await expect
     .poll(async () => (await view3d(page)).globe.marks.rings, {
