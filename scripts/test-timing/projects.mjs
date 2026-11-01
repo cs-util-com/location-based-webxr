@@ -596,7 +596,10 @@ export const PROJECTS = [
   // stage that reads a dist, for the reason OsmDemo's does (see there).
   // Its lint:css also reads the landing's own sheets (src/landing/*.css,
   // imported by its dynamic chunks), which the HTML glob never reached; the
-  // editor's sheets under src/editor are not linted yet.
+  // editor's sheets under src/editor are not linted yet. Its e2e runs through
+  // scripts/e2e/run-projects.mjs: the DOM specs at several workers, then the
+  // WebGL specs at one, each narrowed to the changed area inside a
+  // test:changed run (playwright-tests/e2e-plan.js).
   {
     ...demoAppProject("GpsPlusSlamJs_TourViewer"),
     stages: [
@@ -609,7 +612,13 @@ export const PROJECTS = [
                 command:
                   'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
               }
-            : stage,
+            : stage.name === "test:e2e"
+              ? {
+                  ...stage,
+                  command:
+                    "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
+                }
+              : stage,
       ),
     ],
   },

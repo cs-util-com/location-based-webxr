@@ -25,7 +25,13 @@
 - Invariants & assumptions:
   - Selection logic is pure and lives in `select.mjs` (see its sidecar for
     the guard rails); this shell only gathers `git diff --name-only <ref>` +
-    `git status --porcelain` untracked entries and executes the decision.
+    `git status --porcelain` untracked entries (`changed-paths.mjs`, shared
+    with the Tour Viewer's e2e area selection so both see the same set) and
+    executes the decision.
+  - The changed packages' full gates get the ref as `GATE_CHANGED_REF`, which
+    the Tour Viewer's e2e stage (`scripts/e2e/run-projects.mjs`) reads to
+    skip the specs of an area the change cannot reach. The full cascade and
+    CI set no ref, so they run every spec.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e

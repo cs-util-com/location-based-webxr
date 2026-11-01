@@ -39,7 +39,7 @@
 // - a narrowed change (select.mjs.md "Narrowed changes") runs only what can
 //   read it, and the run prints ONE line naming everything it runs.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,7 @@ import {
   gateCommands,
   selectPackages,
 } from './select.mjs';
+import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -69,17 +70,6 @@ const ref = refIdx !== -1 ? args[refIdx + 1] : 'HEAD';
 if (refIdx !== -1 && !ref) {
   console.error('test-changed: --ref requires a git ref argument');
   process.exit(2);
-}
-
-/** @param {string[]} gitArgs @returns {string[]} non-empty output lines */
-function gitLines(gitArgs) {
-  return execFileSync('git', gitArgs, {
-    cwd: WORKSPACE_ROOT,
-    encoding: 'utf8',
-  })
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
 }
 
 /** @returns {string[]} workspace package dir names from pnpm-workspace.yaml */
@@ -156,10 +146,8 @@ if (runAll) {
 
 const dirs = packageDirs();
 const selection = selectPackages({
-  trackedChanges: gitLines(['diff', '--name-only', ref]),
-  untracked: gitLines(['status', '--porcelain']).flatMap((line) =>
-    line.startsWith('??') ? [line.slice(2).trim()] : []
-  ),
+  trackedChanges: trackedPaths(ref, WORKSPACE_ROOT),
+  untracked: untrackedPaths(WORKSPACE_ROOT),
   packageDirs: dirs,
 });
 
@@ -242,6 +230,7 @@ const status = runInOrder(
     skipBrowserEnv: SKIP_BROWSER_ENV,
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
+    ref,
   })
 );
 

@@ -16,9 +16,14 @@
 // - Generated docs/test-timings.md files (root or per-package) NEVER count:
 //   every full gate rewrites them, so they are near-permanently dirty and
 //   would otherwise pin their package (or the whole cascade) as "changed".
+// - A changed package's full gate gets the diff ref (CHANGED_REF_ENV), so a
+//   stage that can narrow itself to what changed (the Tour Viewer's e2e,
+//   scripts/e2e/run-projects.mjs) can; nothing else reads it.
 // - A package whose only change is doc markdown (isPackageDocMarkdown) runs
 //   its `format` stage, not its gate; markdown a package stage READS is not
 //   doc markdown.
+
+import { CHANGED_REF_ENV } from '../e2e/project-runs.mjs';
 
 /**
  * @typedef {{ mode: 'all', reason: string }
@@ -235,14 +240,17 @@ export function cascadeCommands() {
  *   skipBrowserEnv: string,
  *   rootChecks?: readonly string[],
  *   docOnlyNames?: readonly string[],
+ *   ref?: string,
  * }} options - `skipBrowserEnv` names the env var that puts a gate run in
  *   dependent mode; `rootChecks` are root scripts to run (`check:deadcode`);
- *   `docOnlyNames` are pnpm names of packages that run only `format`
+ *   `docOnlyNames` are pnpm names of packages that run only `format`;
+ *   `ref` is the diff base, handed to the changed packages' full gates as
+ *   CHANGED_REF_ENV (never to the dependents, which run no browser stage)
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
 export function gateCommands(
   names,
-  { skipBrowserEnv, rootChecks = [], docOnlyNames = [] }
+  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref }
 ) {
   /** @type {{ command: string, env: Record<string, string> }[]} */
   const commands = [];
@@ -273,7 +281,7 @@ export function gateCommands(
   // actually edited.
   commands.push({
     command: `pnpm --workspace-concurrency=1 ${filters((n) => `--filter ${n}`)} test`,
-    env: {},
+    env: ref ? { [CHANGED_REF_ENV]: ref } : {},
   });
   // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
   // `!X` subtracts the ones that just ran in full. An empty result is a safe

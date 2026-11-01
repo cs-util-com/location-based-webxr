@@ -28,7 +28,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -48,7 +48,12 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
    - then each doc-only package's `format` stage and each root check
      (`check:deadcode`), see "Narrowed changes" below;
 3. the changed packages’ **full** gates (`--filter <name>`), e2e included,
-   first so a break in what was actually edited fails fast;
+   first so a break in what was actually edited fails fast. With `ref`,
+   this command's env carries `GATE_CHANGED_REF=<ref>`
+   (`CHANGED_REF_ENV`, `scripts/e2e/project-runs.mjs`): a stage that can
+   narrow itself to the changed area reads it (today only the Tour Viewer's
+   e2e, see `scripts/e2e/run-projects.mjs.md`). Without `ref` (and on the
+   full cascade, and on CI) no such env is set, so every spec runs;
 4. their dependents **minus themselves**
    (`--filter "...<name>" --filter "!<name>"`) with `skipBrowserEnv` set.
 
@@ -157,10 +162,11 @@ the gate tooling (21) and `package.json` (9).
   a package the change cannot reach no longer runs on that commit: its
   discovery runs are the package's own commits, the milestone browser run
   and CI's full cascade on every PR.
-- `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames })` emits,
-  in order: the build (as above), `pnpm run test:repo-config`, the doc-only
-  packages' `run --if-present format`, each root check, the changed
-  packages' full gates, their dependents without browser stages.
+- `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
+  emits, in order: the build (as above), `pnpm run test:repo-config`, the
+  doc-only packages' `run --if-present format`, each root check, the changed
+  packages' full gates (with `GATE_CHANGED_REF` when `ref` is given), their
+  dependents without browser stages.
 - `describeRun` prints ONE line naming what was seen and everything that
   runs, e.g. `test-changed: vs HEAD - changed GpsPlusSlamJs_TourViewer; root
   files (1): tests/repo-config/x.test.js => runs: the framework build if

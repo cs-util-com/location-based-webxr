@@ -550,3 +550,30 @@ describe('describeRun', () => {
     );
   });
 });
+
+// Why this test matters: the Tour Viewer's e2e narrows itself to the changed
+// area only when its gate carries the diff ref, so the ref must reach exactly
+// the changed packages' full gates. On a dependent it would be meaningless
+// (no browser stage runs), and on the cascade it must be absent, because
+// that is the run (like CI) that has to execute every spec.
+describe('gateCommands hands the diff ref to the changed packages only', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+
+  it('sets GATE_CHANGED_REF on the full gates and nowhere else', () => {
+    const commands = gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' });
+    const full = commands.find((c) => c.command.endsWith('--filter a test'));
+    expect(full?.env).toEqual({ GATE_CHANGED_REF: 'abc123' });
+    for (const c of commands.filter((x) => x !== full)) {
+      expect(c.env, c.command).not.toHaveProperty('GATE_CHANGED_REF');
+    }
+  });
+
+  it('sets nothing without a ref, and the cascade never carries one', () => {
+    for (const c of gateCommands(['a'], { skipBrowserEnv: ENV })) {
+      expect(c.env).not.toHaveProperty('GATE_CHANGED_REF');
+    }
+    for (const c of cascadeCommands()) {
+      expect(c.env).toEqual({});
+    }
+  });
+});
