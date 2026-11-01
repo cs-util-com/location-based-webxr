@@ -88,6 +88,12 @@ signature, a broken series list (M6 design §5, cold review #2). Design:
   written manifest, and its file leaves the zip - unless `keepAssets`
   (the page's undo history, `historyAssetIds`) names it: an undo across
   the save must still find it.
+- **Read-along entries:** a `timing/<name>.json` no narration of the
+  written tour names (`unnamedTimingEntryNames` of `tour-read-set.ts`, over
+  `visitorEntryNames`) leaves the zip, by the same keep rule as an asset:
+  unless `keepEntries` (the undo history's, `historyTimingEntries`) names
+  it. A narration removed, or its block deleted, so no longer leaves its
+  timing behind in every later copy.
 - **Paths:** the manifest at `${manifestWrap}tour.json` (the session's own
   prefix, never derived again); a level the zip holds is replaced where it
   is, a new one inside a listed tour's folder or at the root

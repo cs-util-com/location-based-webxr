@@ -11,6 +11,7 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_TIMING_FOLDER } from "gps-plus-slam-app-framework/ar/tour-timing";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   LEGACY_SESSION_IMAGES_DIR,
@@ -52,6 +53,31 @@ export function visitorEntryNames(
       (name) => named.has(name) || qrLevelIdFromEntryName(name) !== null,
     ),
   );
+}
+
+/**
+ * The read-along entries of `entryNames` no narration of `manifest`
+ * names, in archive order: a `timing/<name>.json` directly in the tour's
+ * timing folder (under `wrap`) that a visitor does not read
+ * (`visitorEntryNames`) and `keep` does not hold. `keep` holds entry
+ * names relative to `wrap` (`timing/<blockId>.json`, as a narration
+ * names them): the ones the undo history still names. What a Finish
+ * removes; a deeper path or another extension under `timing/` is no
+ * timing entry the format writes, and stays.
+ */
+export function unnamedTimingEntryNames(
+  entryNames: readonly string[],
+  manifest: TourManifest,
+  wrap: string,
+  keep: ReadonlySet<string> = new Set(),
+): string[] {
+  const folder = `${wrap}${TOUR_TIMING_FOLDER}/`;
+  const read = visitorEntryNames(entryNames, manifest, wrap);
+  return entryNames.filter((name) => {
+    if (!name.startsWith(folder) || !name.endsWith(".json")) return false;
+    if (name.slice(folder.length).includes("/")) return false;
+    return !read.has(name) && !keep.has(name.slice(wrap.length));
+  });
 }
 
 /** A recorded frame: `frame-NNNNNN.<ext>` in the recording's images

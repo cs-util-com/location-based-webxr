@@ -481,6 +481,12 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   history no longer names them. The stations are the document's as they
   are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
+- `historyTimingEntries(state)` - the read-along entries
+  (`timing/<blockId>.json`, relative to the tour's folder) the undo and
+  redo steps' long texts name, story or free. Every write keeps them
+  (`keepEntries`: the desktop's save snapshot and the phone's Finish), as
+  `historyAssetIds` keeps assets, so an undo of a narration's removal
+  across a save finds its timing.
 - `createdStationFrames(state)` - the frames of the stations this page
   created (those the tour as opened lacks): what the draft's settings
   record keeps whole (`tour-document-draft.ts`).

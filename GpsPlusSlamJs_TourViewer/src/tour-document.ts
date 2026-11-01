@@ -993,6 +993,26 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
   return ids;
 }
 
+/**
+ * The read-along entries (`timing/<blockId>.json`, relative to the
+ * tour's folder) the undo and redo steps' long texts name, story or free:
+ * a write keeps them (`keepEntries`), as `historyAssetIds` keeps assets,
+ * so an undo of a narration's removal across a save finds its timing.
+ */
+export function historyTimingEntries(state: TourDocumentState): Set<string> {
+  const names = new Set<string>();
+  const add = (block: TourBlock | TourObject): void => {
+    if (block.kind === "longText" && block.narration?.timing !== undefined) {
+      names.add(block.narration.timing);
+    }
+  };
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) frame.blocks.forEach(add);
+    view.objects.forEach(add);
+  }
+  return names;
+}
+
 /** The manifest a write carries now (the Finish's rule,
  *  `finishedManifest`): what a save would write, without the zip - the
  *  same manifest (the r875 milestone review #7). The stations are the

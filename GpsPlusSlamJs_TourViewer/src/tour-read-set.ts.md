@@ -41,6 +41,14 @@ which a visitor never sees.
   (timestamped GPS points)) that are not in `visitorEntryNames`. What a
   lean Finish removes. `recorder-walk-folders.test.ts` reads the
   Recorder's zip contributors and fails when one is added undecided.
+- `unnamedTimingEntryNames(entryNames, manifest, wrap, keep?) -> string[]`
+  - the read-along entries no narration names, in archive order: a
+    `timing/<name>.json` directly in `${wrap}timing/` that is not in
+    `visitorEntryNames` (the one rule for "a narration names it") and that
+    `keep` (names relative to `wrap`, the undo history's,
+    `historyTimingEntries`) does not hold. What a Finish removes. A deeper
+    path or another extension under `timing/` is no entry the format
+    writes and is never listed.
 - `recordingEntryNames(entryNames) -> string[]` - the whole recording, in
   archive order: every entry a recording writes, every frame included;
   none without an action stream. `scanEntryNames` is this minus

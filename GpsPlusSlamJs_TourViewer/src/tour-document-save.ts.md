@@ -97,6 +97,8 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Not here yet: the phone's Finish
 
+The snapshot carries what the undo history still names, kept by the rebuild: `keepAssets` (`historyAssetIds`) and `keepEntries` (`historyTimingEntries`, the read-along entries; a timing nothing names is removed).
+
 `creator-finish.ts` still calls the rebuild itself (its TEMPORARY entry in
 `config/.dependency-cruiser.cjs`), and its save status stays in the
 session object (the named deviation MEDIUM-1, `creator-finish.ts.md`).
