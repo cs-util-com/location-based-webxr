@@ -45,7 +45,7 @@ function setUp() {
     menu,
     item,
     returnFocus: canvas,
-    newStation: started,
+    choose: started,
   });
   return { scene, box, menu, item, canvas, started };
 }
@@ -177,5 +177,28 @@ describe("createSceneMenu", () => {
     // Closing a closed menu is nothing.
     scene.close();
     expect(scene.isOpen()).toBe(false);
+  });
+});
+
+describe("an app's own item", () => {
+  // Why: the item's words and what it does are the app's ("New station
+  // here" is the Tour Viewer's); the kit adds only the reason a disabled
+  // item gives, after the app's label.
+  it("keeps the app's label and hands the place to the app's choice", () => {
+    document.body.innerHTML = `<div id="box"><div id="menu" hidden><button type="button" id="mark">Add a marker here</button></div></div>`;
+    const box = document.getElementById("box") as HTMLElement;
+    const item = document.getElementById("mark") as HTMLElement;
+    const choose = vi.fn();
+    const scene = createSceneMenu({
+      box,
+      menu: document.getElementById("menu") as HTMLElement,
+      item,
+      returnFocus: box,
+      choose,
+    });
+    scene.openAt({ x: 0, y: 0 }, PLACE);
+    expect(item.textContent).toMatch(/^Add a marker here/);
+    item.click();
+    expect(choose).toHaveBeenCalledWith(PLACE);
   });
 });

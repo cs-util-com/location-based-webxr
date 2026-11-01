@@ -3,18 +3,22 @@
 ## Purpose
 
 The 3D view's ground menu: a right click (a long press on a touch
-screen) on the scene opens it where the pointer was, with one command,
-"New station here". The 3D view's input reports the press and the ground
+screen) on the scene opens it where the pointer was, with one command:
+the app's item (the Tour Viewer's
+"New station here"). The 3D view's input reports the press and the ground
 under it (the Tour Viewer's `editor3d-input.ts`, `groundMenu`); its shell opens this menu.
 
 ## Public API
 
-- `createSceneMenu({ box, menu, item, returnFocus, newStation })` ->
+- `createSceneMenu({ box, menu, item, returnFocus, choose })` ->
   `SceneMenu`:
   - `box` - the view's box, the menu's positioned parent;
-  - `menu` / `item` - `#scene-menu` and `#scene-new-station` (`edit.html`);
+  - `menu` / `item` - the menu and its one item, the app's elements and
+    words (the Tour Viewer's `#scene-menu` and `#scene-new-station` in
+    `edit.html`); the kit adds only the `.why` line;
   - `returnFocus` - where the focus goes back after Escape or a choice;
-  - `newStation(place)` - starts a station at a `GroundPlace`
+  - `choose(place)` - the app's action at a `GroundPlace` (the Tour
+    Viewer starts a station there)
     (`{ lat, lon, alt }`, the ground's ellipsoidal height).
 - `SceneMenu.openAt(point, place)` - open at `point` (px from the view's
   top left) for `place`, or for none (`null`: no ground has loaded
@@ -29,8 +33,8 @@ under it (the Tour Viewer's `editor3d-input.ts`, `groundMenu`); its shell opens 
   (`aria-disabled`, `setItemDisabled`), says why in a visible line of
   its own (`.why`, part of its accessible name: a title never shows on a
   touch screen), and its click does nothing; the menu stays open.
-- A choice closes the menu (focus back on the view) before it starts the
-  station, once.
+- A choice closes the menu (focus back on the view) before it runs the
+  app's action, once.
 - Escape closes it with the focus back on the view and goes no further
   (the page's own Escape would deselect); Tab closes it and lets the focus
   move on; a press outside it closes it (a capture listener while open),
@@ -48,7 +52,7 @@ const ground = createSceneMenu({
   menu,
   item,
   returnFocus: canvas,
-  newStation: (place) => deps.stations.add(place, "here"),
+  choose: (place) => deps.stations.add(place, "here"),
 });
 ground.openAt({ x: 120, y: 80 }, { lat: 48.1, lon: 11.5, alt: 561 });
 ```
@@ -56,7 +60,8 @@ ground.openAt({ x: 120, y: 80 }, { lat: 48.1, lon: 11.5, alt: 561 });
 ## Tests
 
 `scene-menu.test.ts` (jsdom, stubbed boxes): the roles; the place and the
-focus on opening; the edges; a choice starts one station and closes; no
+focus on opening; the edges; a choice runs the app's action once and
+closes; an app's own item keeps its label and gets the place; no
 ground: disabled, said in visible text, nothing started; a wheel closes
 it; Escape; Tab and a press outside;
 a press inside. End to end (the Tour Viewer's): `playwright-tests/editor3d-tree.spec.js`.

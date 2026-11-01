@@ -322,7 +322,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // The view's box takes the focus back (`tabindex="-1"`): the view's
     // keys are the window's, and work from there.
     returnFocus: viewBox,
-    newStation: (place) => {
+    choose: (place) => {
       deps.stations.add(place, "here");
     },
   });

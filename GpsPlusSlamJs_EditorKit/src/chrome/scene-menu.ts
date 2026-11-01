@@ -1,7 +1,8 @@
 /**
  * The 3D view's ground menu: a right click (a long press on a touch
- * screen) on the scene opens it where the pointer was, with one command,
- * "New station here". It starts a station only at a spot whose ground has
+ * screen) on the scene opens it where the pointer was, with one command:
+ * the app's item (its label, and `choose`; the Tour Viewer's is "New
+ * station here"). It offers the spot only where its ground has
  * loaded; elsewhere (the sky, ground still loading) the item stays,
  * disabled, and says why in a line of its own. A wheel over the view (a
  * zoom) closes it: the ground it offers is no longer under the spot.
@@ -24,7 +25,7 @@ export interface GroundPlace {
 }
 
 export interface SceneMenu {
-  /** Open at `point` (px from the view's top left), offering a station at
+  /** Open at `point` (px from the view's top left), offering the item at
    *  `place`; null: no ground has loaded there. */
   openAt(point: { x: number; y: number }, place: GroundPlace | null): void;
   close(): void;
@@ -34,7 +35,7 @@ export interface SceneMenu {
 /** The menu's least distance from the view's edges (px). */
 const EDGE_PX = 8;
 
-/** Said by the item where no station can start. */
+/** Said by the item where no ground has loaded under the spot. */
 const NO_GROUND = "There is no ground loaded under that spot yet";
 
 export function createSceneMenu(deps: {
@@ -44,7 +45,8 @@ export function createSceneMenu(deps: {
   readonly item: HTMLElement;
   /** Where the focus goes back when the menu closes by a key or a choice. */
   readonly returnFocus: HTMLElement;
-  readonly newStation: (place: GroundPlace) => void;
+  /** The app's action for the item, at the spot's ground. */
+  readonly choose: (place: GroundPlace) => void;
 }): SceneMenu {
   const { box, menu, item } = deps;
   menu.setAttribute("role", "menu");
@@ -85,7 +87,7 @@ export function createSceneMenu(deps: {
     if (place === null || isItemDisabled(item)) return;
     const at = place;
     close(true);
-    deps.newStation(at);
+    deps.choose(at);
   });
   menu.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
