@@ -11,14 +11,17 @@ added beside the tour may be another tour's walk and never becomes it.
 - `walkAtLayerStart(walk, addedDebugShown)` - the walk kept as the layer
   starts: `walk` while added debug data is shown (its layer never draws
   the tour's walk), else null (the tour's own layer draws it again).
-- `walkAfterDraw(walk, ownWalk, captures)` - after a drawing: a new array
-  of the captures' `geo` when the layer shows the tour's own walk (so the
-  view sees a new walk by its identity), else `walk` unchanged.
+- `walkAfterDraw(walk, source, tourWalk, captures)` - after a drawing
+  from `source`: a new array of the captures' `geo` when `source` is the
+  tour's own walk `tourWalk`, compared by identity (so the view sees a
+  new walk by its identity), else `walk` unchanged; also unchanged while
+  `tourWalk` is null.
 
 ## Invariants and assumptions
 
 - Pure: no state of its own; `edit-main.ts` holds the walk (`walkGeo`)
-  and decides `ownWalk` (the layer's source is the opened file's walk).
+  and hands in the layer's source and the opened file's walk; the
+  comparison is made here, so the page holds no flag that could be wrong.
 - Added debug data's captures never become the walk.
 
 ## Examples
@@ -26,10 +29,11 @@ added beside the tour may be another tour's walk and never becomes it.
 ```ts
 walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
 // in the layer's draw:
-walkGeo = walkAfterDraw(walkGeo, ownWalk, captures);
+walkGeo = walkAfterDraw(walkGeo, from.source, tourWalk, captures);
 ```
 
 ## Tests
 
 - `tour-walk-kept.test.ts` - kept while added data shows, dropped
-  otherwise; captures taken only for the tour's own walk.
+  otherwise; captures taken only for the tour's own walk, never for another source
+  or while the tour has no walk.

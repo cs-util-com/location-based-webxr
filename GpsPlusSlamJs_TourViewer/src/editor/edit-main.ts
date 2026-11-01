@@ -1798,7 +1798,6 @@ function startDebugLayer(): void {
   // (`tour-walk-kept.ts`).
   walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
   const from = debugSource();
-  const ownWalk = from !== null && from.source === tourWalk;
   debugSwitch.hidden = from === null;
   debugStatus.textContent = from?.line ?? "";
   if (from === null) return;
@@ -1810,7 +1809,7 @@ function startDebugLayer(): void {
     thumbnail: decodeDebugThumbnail,
     view: {
       draw: (captures) => {
-        walkGeo = walkAfterDraw(walkGeo, ownWalk, captures);
+        walkGeo = walkAfterDraw(walkGeo, from.source, tourWalk, captures);
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {

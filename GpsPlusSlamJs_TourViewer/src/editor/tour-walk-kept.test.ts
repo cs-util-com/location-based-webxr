@@ -28,10 +28,13 @@ describe("walkAtLayerStart", () => {
 });
 
 describe("walkAfterDraw", () => {
+  const tourWalk = { name: "the opened tour's walk" };
+  const other = { name: "debug data added from elsewhere" };
+
   it("takes the drawn captures' places when the layer shows the tour's walk", () => {
     // Why: one new array per drawing, so the view sees a new walk by its
     // identity.
-    const walk = walkAfterDraw(own, true, captures);
+    const walk = walkAfterDraw(own, tourWalk, tourWalk, captures);
     expect(walk).toEqual([
       { lat: 3, lon: 4 },
       { lat: 5, lon: 6 },
@@ -41,8 +44,23 @@ describe("walkAfterDraw", () => {
 
   it("never takes another source's captures", () => {
     // Why: added debug data may be another tour's walk; the tour's own
-    // (or none) stays.
-    expect(walkAfterDraw(own, false, captures)).toBe(own);
-    expect(walkAfterDraw(null, false, captures)).toBeNull();
+    // (or none) stays. The source is compared by identity here, not by a
+    // flag the page computes, so a page cannot pass the wrong answer.
+    expect(walkAfterDraw(own, other, tourWalk, captures)).toBe(own);
+    expect(walkAfterDraw(null, other, tourWalk, captures)).toBeNull();
+  });
+
+  it("takes nothing while the tour has no walk", () => {
+    // Why: with no walk opened there is nothing a source could be, and a
+    // missing source must not read as matching a missing walk.
+    expect(walkAfterDraw(own, other, null, captures)).toBe(own);
+    expect(
+      walkAfterDraw<{ lat: number; lon: number }, object | null>(
+        null,
+        null,
+        null,
+        captures,
+      ),
+    ).toBeNull();
   });
 });

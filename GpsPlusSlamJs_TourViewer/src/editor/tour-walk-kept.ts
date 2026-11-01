@@ -20,14 +20,18 @@ export function walkAtLayerStart<T>(
 }
 
 /**
- * The walk kept after the layer drew `captures`: their places, a new
- * array, when the layer shows the tour's own walk; `walk` unchanged when
- * it shows another source.
+ * The walk kept after the layer drew `captures` from `source`: their
+ * places, a new array, when `source` is the tour's own walk `tourWalk`
+ * (by identity); `walk` unchanged for any other source, and while the
+ * tour has no walk.
  */
-export function walkAfterDraw<G>(
+export function walkAfterDraw<G, S>(
   walk: readonly G[] | null,
-  ownWalk: boolean,
+  source: S,
+  tourWalk: S | null,
   captures: readonly { readonly geo: G }[],
 ): readonly G[] | null {
-  return ownWalk ? captures.map((c) => c.geo) : walk;
+  return tourWalk !== null && source === tourWalk
+    ? captures.map((c) => c.geo)
+    : walk;
 }
