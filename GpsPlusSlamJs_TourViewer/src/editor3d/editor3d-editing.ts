@@ -32,7 +32,7 @@ import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest"
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { groundHit } from "gps-plus-slam-globe/editor";
 
-import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
+import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import {
   editorViewActions,

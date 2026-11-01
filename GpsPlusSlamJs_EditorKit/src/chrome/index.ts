@@ -4,7 +4,6 @@ export { inField, inMenu } from "./key-target.js";
 export {
   closeOpenMenu,
   createMenuButton,
-  isItemDisabled,
   menuItemControl,
   setItemDisabled,
 } from "./menu-button.js";
@@ -28,3 +27,4 @@ export {
   type TreeClickMemory,
   type TreeGroup,
 } from "./tree-click.js";
+export { createSceneMenu, type GroundPlace } from "./scene-menu.js";

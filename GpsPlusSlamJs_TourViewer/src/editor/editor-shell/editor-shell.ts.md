@@ -18,7 +18,7 @@ The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
 null, it says to come closer to the ground and adds nothing), the scene's
 ground menu one where it
-was pressed (`scene-menu.ts`); a card's grip reorders the tour by drag
+was pressed (the editor kit's `scene-menu.ts`); a card's grip reorders the tour by drag
 (`tree-drag.ts`), the inspector's Earlier and Later by the keyboard; the
 inspector's Delete and "Move to a new station"; the bottom bar's power
 actions (`bar-actions.ts`: Duplicate, Align to station, Copy position).
@@ -320,5 +320,6 @@ touch target on a touch screen; New station here; a station with a photo duplica
 and opened again; the "+", the grips and the bar's actions in place at
 the four sizes, the Delete's key in dim letters as the prototype has it) and `editor3d-edit.spec.js` (Align to station, Copy
 position, Move to a new station). Its parts' own tests:
-`tree-reorder.test.ts`, `tree-drag.test.ts`, `bar-actions.test.ts`,
+`bar-actions.test.ts`, and in the editor kit's `src/chrome/`:
+`tree-reorder.test.ts`, `tree-drag.test.ts`,
 `scene-menu.test.ts`.

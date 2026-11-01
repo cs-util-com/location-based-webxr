@@ -32,7 +32,7 @@
  */
 import type { UnknownAction } from "@reduxjs/toolkit";
 
-import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
+import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { editorViewActions, STATION_LOCKED } from "../editor/editor-view.js";
 import {
   poseLocked,

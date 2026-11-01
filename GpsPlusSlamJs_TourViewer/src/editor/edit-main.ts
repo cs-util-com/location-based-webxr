@@ -163,7 +163,7 @@ import { newPin } from "./new-pin.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
-import type { GroundPlace } from "./editor-shell/scene-menu.js";
+import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";

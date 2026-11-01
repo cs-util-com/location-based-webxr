@@ -5,7 +5,7 @@
 The 3D view's ground menu: a right click (a long press on a touch
 screen) on the scene opens it where the pointer was, with one command,
 "New station here". The 3D view's input reports the press and the ground
-under it (`editor3d-input.ts`, `groundMenu`); the shell opens this menu.
+under it (the Tour Viewer's `editor3d-input.ts`, `groundMenu`); its shell opens this menu.
 
 ## Public API
 
@@ -59,4 +59,4 @@ ground.openAt({ x: 120, y: 80 }, { lat: 48.1, lon: 11.5, alt: 561 });
 focus on opening; the edges; a choice starts one station and closes; no
 ground: disabled, said in visible text, nothing started; a wheel closes
 it; Escape; Tab and a press outside;
-a press inside. End to end: `playwright-tests/editor3d-tree.spec.js`.
+a press inside. End to end (the Tour Viewer's): `playwright-tests/editor3d-tree.spec.js`.

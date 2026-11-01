@@ -17,7 +17,7 @@
  * (`ShellView`); the shell never imports the 3D view's code.
  *
  * The tree's editing (M3b): "+" adds a station at the centre of the view,
- * the scene's ground menu one where it was pressed (`scene-menu.ts`); a
+ * the scene's ground menu one where it was pressed (the kit's `scene-menu.ts`); a
  * card's grip reorders by drag (`tree-drag.ts`), the inspector's Earlier
  * and Later by the keyboard; the inspector's Delete and "Move to a new
  * station"; the bottom bar's power actions (`bar-actions.ts`). Each is the
@@ -77,7 +77,10 @@ import {
   type InspectorCode,
   type InspectorModel,
 } from "./inspector-model.js";
-import { createSceneMenu, type GroundPlace } from "./scene-menu.js";
+import {
+  createSceneMenu,
+  type GroundPlace,
+} from "gps-plus-slam-editor-kit/chrome";
 import {
   controlName,
   drawInspector,

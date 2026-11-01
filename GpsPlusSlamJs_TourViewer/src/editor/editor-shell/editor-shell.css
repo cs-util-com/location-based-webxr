@@ -1494,7 +1494,7 @@ body[data-view="3d"] .view3d-credits {
   white-space: nowrap;
 }
 
-/* The ground menu, where the scene was pressed (`scene-menu.ts` places
+/* The ground menu, where the scene was pressed (the editor kit's `scene-menu.ts` places
  * it). */
 #scene-menu {
   top: auto;

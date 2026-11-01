@@ -48,7 +48,7 @@ import {
   type EditorViewState,
   type ShellLayer,
 } from "../editor/editor-view.js";
-import type { GroundPlace } from "../editor/editor-shell/scene-menu.js";
+import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
