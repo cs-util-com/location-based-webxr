@@ -21,6 +21,9 @@ export {
 export { GLOBE_CLOUD_DRIFT_LAW } from "./globe-cloud-drift.js";
 export { GLOBE_CLOUD_DRIFT_DEG_PER_S } from "./globe-surface-material.js";
 export { creditsFor } from "./globe-credits.js";
+// The whole-Earth imagery, for a relief that draws the globe's own ground
+// under the camera (one overlay per carrier: each keeps its own textures).
+export { createGlobeImagery } from "./globe-surface.js";
 export { GIBS_ACKNOWLEDGEMENT } from "./globe-sources.js";
 // The air (the blue sky below the hand-over, the haze, the halo): the view
 // core draws only the sun disc, the stars and navy space.

@@ -1,7 +1,8 @@
 /**
  * The 3D editor's ground: the globe's relief carrier on Mapterhorn's
- * heights, plain (no whole-Earth imagery: the creator looks at a place,
- * not a planet), with the OpenStreetMap map on it near the camera, and the
+ * heights, plain by default (no whole-Earth imagery: the creator looks at
+ * a place, not a planet; the globe view gives the globe's own imagery and
+ * look), with the OpenStreetMap map on it near the camera, and the
  * credits both need.
  *
  * The map's gate is the editor's, not the flight's. Measured on the
@@ -98,6 +99,9 @@ export function reliefDeviceClass(widthPx: number): ReliefDeviceClass {
  *  globe's credit shape). */
 export type EditorCredit = ReturnType<typeof reliefCredits>[number];
 
+/** What the relief may be drawn with in place of the plain ground. */
+type ReliefLook = Parameters<typeof createGlobeTerrain>[0];
+
 /** The editor's ground, ready to be added to a scene and updated. */
 export interface EditorTerrain {
   readonly terrain: GlobeTerrain;
@@ -143,6 +147,15 @@ export function createEditorTerrain(input: {
    * globe view's Earth-centred group); `worldFromEcef` is the same.
    */
   readonly placement?: "world" | "ecef";
+  /**
+   * The relief's imagery and template; the plain ground (`plainImagery`,
+   * a light standard material) where not given. The globe view gives the
+   * globe's own (`createGlobeImagery`, `globe.template`) so the ground
+   * keeps its look where the relief takes over; this module never imports
+   * them (the OrbitControls view must not carry the whole-Earth imagery).
+   */
+  readonly imagery?: ReliefLook["imagery"];
+  readonly template?: ReliefLook["template"];
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -150,12 +163,14 @@ export function createEditorTerrain(input: {
   });
   const terrain = createGlobeTerrain({
     ...reliefTerrainOptions(source, input.device),
-    imagery: plainImagery(),
-    template: new THREE.MeshStandardMaterial({
-      color: GROUND_COLOUR,
-      roughness: 1,
-      metalness: 0,
-    }),
+    imagery: input.imagery ?? plainImagery(),
+    template:
+      input.template ??
+      new THREE.MeshStandardMaterial({
+        color: GROUND_COLOUR,
+        roughness: 1,
+        metalness: 0,
+      }),
     heightScale: 1,
     meshMaxLevel: EDITOR_MESH_LEVEL,
   });

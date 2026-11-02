@@ -58,6 +58,7 @@ import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import {
   createGlobeCameraControls,
+  createGlobeImagery,
   createGlobeView,
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
@@ -227,6 +228,9 @@ export async function openGlobeEditor(
       // First person: the near plane at a few centimetres, the far one
       // past the horizon.
       reversedDepth: true,
+      // The surface compiles the relief's band: the relief draws the
+      // globe's look, its pixels kept by the carrier share.
+      band: true,
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {
@@ -294,6 +298,10 @@ export async function openGlobeEditor(
       centre: { lat: centre.lat, lng: centre.lng },
       device: reliefDeviceClass(window.innerWidth),
       placement: "ecef",
+      // The globe's own ground and look (as the globe lab's relief), so
+      // the ground keeps its colour where the relief takes over.
+      imagery: createGlobeImagery(),
+      template: globe.template,
     });
     undo.push(() => {
       ground.dispose();
@@ -703,6 +711,8 @@ export async function openGlobeEditor(
         view.ecefCamera().position,
       );
       relief = reliefCarries(altitudeM, relief);
+      // The relief's tiles keep only the pixels under the carrier share.
+      globe.surfaceUniforms.uCarrierShare.value = relief ? 1 : 0;
       globe.tiles.group.visible = !relief;
       ground.terrain.tiles.group.visible = relief;
       if (relief) {

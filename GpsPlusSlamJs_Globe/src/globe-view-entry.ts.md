@@ -17,6 +17,11 @@
     core draws only the sun's disc, the stars and navy space, black at
     noon. An app calls its `afterSky` and `afterScene` from the view's
     seams of those names and its `step` once a frame after the camera.
+  - The whole-Earth imagery: `createGlobeImagery` (`globe-surface.ts`),
+    for a relief carrying the globe's own ground under the camera (the
+    editor's, as the lab's): an overlay of its own, with the view's
+    `globe.template` as the relief's template, so the ground keeps its
+    look where the relief takes over from the surface.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full

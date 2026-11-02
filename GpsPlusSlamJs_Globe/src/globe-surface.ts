@@ -39,6 +39,7 @@ import {
 import { globeMapLoader, type GlobeSurfaceLoader } from "./globe-map-loader.js";
 import { createGlobeCloudMap, type GlobeCloudMap } from "./globe-cloud-map.js";
 import { litCopy, tileMeshes } from "./globe-tile-meshes.js";
+import type { TerrainImagery } from "./globe-terrain.js";
 
 // Shared with the relief, which imports them from their own module.
 export { litCopy, tileMeshes } from "./globe-tile-meshes.js";
@@ -289,13 +290,16 @@ export function firstLookStep(
  * draws it gets its own: an overlay's image cache is shared by every plugin
  * that uses it, so releasing one carrier's tiles freed imagery the other was
  * still composing (review 2026-10-03-1835 major 4 with the band's release).
+ * Typed as a relief's imagery too: the library's declared type leaves out
+ * the image-source methods a relief's terrain plugin calls on it (a test
+ * checks they are there).
  */
-export function createGlobeImagery(): XYZTilesOverlay {
+export function createGlobeImagery(): XYZTilesOverlay & TerrainImagery {
   return new XYZTilesOverlay({
     url: GLOBE_SURFACE.imageryUrl,
     projection: GLOBE_SURFACE.overlayProjection,
     levels: GLOBE_SURFACE.levels,
-  });
+  }) as XYZTilesOverlay & TerrainImagery;
 }
 
 /**

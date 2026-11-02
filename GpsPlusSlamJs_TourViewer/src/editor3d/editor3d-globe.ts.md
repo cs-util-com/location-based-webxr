@@ -43,7 +43,12 @@ ground.
 
 - The ground's carrier by altitude (`reliefCarries`, hysteresis band): the
   relief under the ceiling (with the globe's clouds step only), the globe's
-  surface above it. The two are never both shown.
+  surface above it. The two are never both shown. The carrier share
+  (`globe.surfaceUniforms.uCarrierShare`) is set to match each frame: the
+  relief is drawn with the globe's own imagery (`createGlobeImagery()`, an
+  overlay of its own) and template (`globe.template`), as the globe lab's
+  is, in a view made with `band: true`, and its tiles discard every pixel
+  past that share (0 by default: without it the relief draws nothing).
 - The camera in the tour's frame, and the morph from pins to standing marks
   from the tilt (`morphStanding`).
 - The visibility rule (`globeHidden`): each station and code by its own

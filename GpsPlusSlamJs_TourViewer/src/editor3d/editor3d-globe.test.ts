@@ -77,6 +77,12 @@ interface Fakes {
   };
   /** How often the map's coverage was read. */
   coverageCalls: number;
+  /** The options the view was made with. */
+  viewOptions: null | { band?: boolean };
+  /** What the relief was made with. */
+  terrainInput: null | { imagery?: unknown; template?: unknown };
+  /** The whole-Earth imagery the view's module hands out. */
+  imagery: object;
 }
 
 const fakes = vi.hoisted((): Fakes => ({
@@ -99,6 +105,9 @@ const fakes = vi.hoisted((): Fakes => ({
   },
   inputScene: null,
   coverageCalls: 0,
+  viewOptions: null,
+  terrainInput: null,
+  imagery: { name: "whole-Earth imagery" },
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -113,6 +122,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
   return {
     ...(await importOriginal<object>()),
     creditsFor: () => [],
+    createGlobeImagery: () => fakes.imagery,
     mountGlobeViewAir: () => ({
       afterSky() {},
       step() {},
@@ -136,8 +146,10 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
     },
     createGlobeView: (options: {
       seams: Record<string, (...args: unknown[]) => unknown>;
+      band?: boolean;
     }) => {
       fakes.seams = options.seams;
+      fakes.viewOptions = options;
       const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1e7);
       const group = new THREE.Group();
       group.matrixAutoUpdate = false;
@@ -189,6 +201,8 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         globe: {
           group,
           tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
+          template: new THREE.MeshStandardMaterial(),
+          surfaceUniforms: { uCarrierShare: { value: 0 } },
           activeSources: () => [],
           update() {},
           updateClouds() {},
@@ -221,26 +235,29 @@ vi.mock("./editor3d-terrain.js", async () => {
     await import("gps-plus-slam-globe/test-utils/view-pose");
   return {
     reliefDeviceClass: () => "desktop",
-    createEditorTerrain: () => ({
-      terrain: {
-        tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
-        plugin: {
-          sampleCartographicElevation: (latRad: number) =>
-            fakes.groundAt(latRad),
+    createEditorTerrain: (input: Fakes["terrainInput"]) => {
+      fakes.terrainInput = input;
+      return {
+        terrain: {
+          tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
+          plugin: {
+            sampleCartographicElevation: (latRad: number) =>
+              fakes.groundAt(latRad),
+          },
         },
-      },
-      groundAt: (latRad: number) => fakes.groundAt(latRad),
-      update() {},
-      credits: [],
-      osm: {
-        stats: () => ({}),
-        coverage: () => {
-          fakes.coverageCalls++;
-          return { waiting: 0, failed: 0 };
+        groundAt: (latRad: number) => fakes.groundAt(latRad),
+        update() {},
+        credits: [],
+        osm: {
+          stats: () => ({}),
+          coverage: () => {
+            fakes.coverageCalls++;
+            return { waiting: 0, failed: 0 };
+          },
         },
-      },
-      dispose() {},
-    }),
+        dispose() {},
+      };
+    },
   };
 });
 
@@ -441,6 +458,8 @@ beforeEach(() => {
   fakes.groundEndsNorthM = null;
   fakes.inputScene = null;
   fakes.coverageCalls = 0;
+  fakes.viewOptions = null;
+  fakes.terrainInput = null;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -867,6 +886,32 @@ describe("openGlobeEditor's wiring", () => {
     fakes.seams?.driveCamera?.();
     fakes.seams?.update?.(now);
   };
+
+  // Why: the editor's relief was plain beige on the plain imagery, under a
+  // globe whose surface the relief never blended with, so the ground
+  // changed colour and look where the relief took over. It is drawn as the
+  // globe lab's is: the globe's own imagery (an overlay of its own) and
+  // the globe's template, in a view whose surface compiles the band; and
+  // the relief is told each frame it carries the ground (its tiles discard
+  // every pixel past the carrier share, 0 by default, so without that it
+  // draws nothing).
+  it("draws the relief with the globe's imagery and look, and lets it carry the ground", async () => {
+    await openAt(0);
+    expect(fakes.viewOptions?.band).toBe(true);
+    expect(fakes.terrainInput?.imagery).toBe(fakes.imagery);
+    expect(fakes.terrainInput?.template).toBeDefined();
+    expect(fakes.terrainInput?.template).toBe(
+      (fakes.view?.globe as { template?: unknown }).template,
+    );
+    placeCamera(300, -10, DRAWN_M);
+    frameAt(16);
+    const share = (
+      fakes.view?.globe as unknown as {
+        surfaceUniforms: { uCarrierShare: { value: number } };
+      }
+    ).surfaceUniforms.uCarrierShare;
+    expect(share.value).toBe(1);
+  });
 
   // Why: the flight's clock started when the view was made, before its
   // first drawn frame (the box is laid out, the first frame compiles), so
