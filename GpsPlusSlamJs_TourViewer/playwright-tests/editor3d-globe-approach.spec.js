@@ -320,11 +320,11 @@ test("the box goes after the bar's done-hold while tiles are still held", async 
 test("the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring", async ({
   page,
 }) => {
-  // Why: the owner's meteor ends close to the tour at its landing angle
+  // Why: the meteor ends close to the tour at its landing angle
   // (50 degrees below the horizon by default, 150 m over the ground: about
   // 196 m from the tour), with no settle or tilt of the editor's own. And
   // the frame: the old approach set the view's frame from the camera's
-  // pose every frame, which flickered; now only the view's own recentring
+  // pose every frame; it is no longer moved per frame, only the view's own recentring
   // moves it (plus the first placement at the tour).
   test.setTimeout(240_000);
   await answerHosts(page, { globeAssets: "serve" });

@@ -3,7 +3,7 @@
 ## Purpose
 
 The link switch that opens the desktop editor's 3D view on the full globe
-(`edit.html?globe=1`), and the knobs the owner tunes by eye: the globe's
+(`edit.html?globe=1`), and the knobs tuned by eye: the globe's
 visibility rule (`../editor3d/globe-visibility.ts`) and the approach's
 meteor (`../editor3d/globe-approach-meteor.ts`). Without the
 switch the editor's own 3D view (OrbitControls over a local ground) stays
@@ -18,11 +18,12 @@ the default.
   - `crowdPx` - `globeCrowdPx`, default 24, range 0-500: a station pin
     hides when its nearest neighbour on screen is closer (0 turns the
     crowding off);
-  - `meteorDeg` - default 20, range 1-89: the angle the meteor enters at,
-    below the tour's horizon (the lab's own default entry);
+  - `meteorDeg` - default 20, range 10-89: the angle the meteor enters at,
+    below the tour's horizon (the lab's default is 30; 10 is the lab's
+    floor, so no value outside what the lab's sweeps cover is read);
   - `meteorLandDeg` - default 50, range 10-85, read as at least
     `meteorDeg`: the angle it lands at, held over the final stretch
-    (inside the owner's 45-60, steep enough to see the tour from close);
+    (inside 45-60, steep enough to see the tour from close);
   - `landAglM` - default 150, range 30-5000: the landing's height over
     the tour's ground (about 200 m from the tour at 50 degrees: the
     stations' pins and rings fill the view);

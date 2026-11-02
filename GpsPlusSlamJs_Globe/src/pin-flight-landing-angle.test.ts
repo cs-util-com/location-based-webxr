@@ -49,7 +49,7 @@ function samples(pin: ReturnType<typeof pressPin>) {
   return { meteorDeg: Math.round(path.meteorDeg * 1e4) / 1e4, out };
 }
 
-/** The lab's three kinds of press: a meteor link, R1, a meteor fitted over its own place. */
+/** The lab's three kinds of press: a meteor link, the vertical approach, a meteor fitted over its own place. */
 const presses = {
   link45: () =>
     pressPin(
@@ -144,7 +144,7 @@ describe("the lab's flights are unchanged by the landing-angle option", () => {
       }
     `);
   });
-  it("the vertical approach (R1)", () => {
+  it("the vertical approach (beta 90)", () => {
     expect(samples(presses.r1())).toMatchInlineSnapshot(`
       {
         "meteorDeg": 90,

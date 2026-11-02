@@ -194,9 +194,10 @@ the flight places the camera (`placeCameraEcef`) with
 frame is set once, at the tour, and after that only the view's own
 recentring moves it (`stats().globe.frameChanges` counts every move, for
 the page's check): the old approach set it from the camera's pose every
-frame, which flickered. The meteor's knobs come from the link
-(`globe-switch.ts`); its pacing reads the stations' first uploads (the
-admitted share), and the relief's finest ground revises its landing. The box ("Loading tour" over the bar) hangs in
+frame; the frame is no longer moved per frame. The meteor's knobs come from the link
+(`globe-switch.ts`); its pacing reads what loads at the tour
+(`tourArrivalProgress`: the relief's ground there known, the relief
+settled, then the admitted share of the stations), and the relief's finest ground revises its landing. The box ("Loading tour" over the bar) hangs in
 the view's box (`deps.approach.ended` is called when it goes, with `"landed"` or `"taken"`) and goes a beat after the landing, at once after a
 takeover; what still loads does not keep it (it reads no load counts).
 

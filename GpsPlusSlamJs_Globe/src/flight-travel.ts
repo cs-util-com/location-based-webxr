@@ -194,8 +194,8 @@ export function meteorDiveArcRad(
 /**
  * The flattest beta, no flatter than `meteorDeg`, whose dive sweeps no more
  * than `arcRad` from `h0`, every candidate landing at `landDeg` (default
- * the asked beta, DEC-R3-12; a page that enters shallow and lands steep
- * asks its own; bisection: the sweep falls strictly with beta, up to R1). A
+ * the asked beta; a page that enters shallow and lands steep
+ * asks its own; bisection: the sweep falls strictly with beta, up to 90). A
  * press over its own place has almost no arc: it gets 90 (R1, easing to the
  * asked angle), and never backs off. An arc of the asked beta's sweep or
  * more gets that beta.
@@ -207,7 +207,7 @@ export function fitMeteorDeg(
   meteorDeg: number,
   landDeg = meteorDeg,
 ): number {
-  // Every candidate lands at the same angle (DEC-R3-12), so the family is
+  // Every candidate lands at the same angle, so the family is
   // whole up to R1 and its sweep falls strictly with beta.
   const sweep = (deg: number) => meteorDiveArcRad(h0, landingM, deg, landDeg);
   if (sweep(meteorDeg) <= arcRad) return meteorDeg;

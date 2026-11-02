@@ -171,7 +171,7 @@ R1 looks straight down above the bend and keeps the floor).
   65,000 km at beta 45, about 16 km for R1.
 - `fitMeteorDeg(h0, landing, arc, beta, landDeg = beta)`: the flattest
   beta, no flatter than asked, whose sweep fits the arc, every candidate
-  landing at `landDeg` (the asked beta unless a page asks its own), so the family is whole up to R1 and the sweep falls
+  landing at `landDeg` (the asked beta unless a page asks its own), so the family is whole up to 90 and the sweep falls
   strictly with beta (bisection): a press over its own place gets 90 (R1,
   easing to the asked angle).
 

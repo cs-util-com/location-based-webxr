@@ -170,7 +170,7 @@ export interface PinFlight {
   /**
    * The angle every flight of this press lands at, degrees below the
    * horizontal (`pressPin`'s `meteorLandDeg`; undefined: the law's own, the
-   * asked beta for a meteor and 45 for R1).
+   * asked beta for a meteor and 45 for the vertical approach).
    */
   readonly meteorLandAskedDeg: number | undefined;
 }
@@ -245,7 +245,7 @@ function flyTo(
   landingM: number,
   meteorDeg: number = pin.meteorDeg,
 ): Flight {
-  // Every flight of a press lands at the same angle (DEC-R3-12).
+  // Every flight of a press lands at the same angle.
   const options = {
     landingM,
     viewLandingM: pin.landingM,
@@ -475,8 +475,8 @@ function paceOptions(options: {
 }
 
 /**
- * The press's meteor angles, checked: the entry (default 90, R1) and the
- * landing (default the entry for a meteor, the law's for R1). RangeError
+ * The press's meteor angles, checked: the entry (default 90, the vertical approach) and the
+ * landing (default the entry for a meteor, the law's for the vertical approach). RangeError
  * outside (0, 90].
  */
 function meteorAngles(options: {
@@ -523,7 +523,7 @@ export function pressPin(
     readonly meteorDeg?: number;
     /**
      * The angle every flight lands at, degrees in (0, 90] (default: the
-     * asked beta for a meteor, 45 for R1). Steeper than beta, a meteor
+     * asked beta for a meteor, 45 for the vertical approach). Steeper than beta, a meteor
      * enters shallow and lands steep: the view's angle below the target's
      * horizontal rises from beta to it below the bend.
      */
@@ -679,7 +679,7 @@ function raiseReachable(pin: PinFlight, groundM: number): boolean {
 /**
  * A new target while flying to one (a page that picks another place on the
  * way): a new leg from the camera as it is, joined in position, direction
- * and speed (a CF2 replan), its beta kept unless the new target is too
+ * and speed (a replan), its beta kept unless the new target is too
  * close for it (`meteorTo`), the gate found again, the data's progress
  * kept. `groundM` is the new target's ground (default the current one),
  * taken only where the camera can clear it (as `pinGround`'s raise,

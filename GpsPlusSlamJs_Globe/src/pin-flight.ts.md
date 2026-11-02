@@ -83,10 +83,14 @@ The owner's decisions that this module puts into practice:
   found again). RangeError for a landing that is not positive.
 - `pinRetarget(pin, nowMs, target, groundM = pin.groundM)`: a new target
   while approaching, descending or landed: a new leg from the camera as it
-  is (a CF2 replan, joined in position, direction and speed), its beta
+  is (a replan, joined in position, direction and speed), its beta
   kept unless the new target is too close for it, the gate found again,
-  the progress kept; a landed flight takes off again. Returns the pin
-  unchanged without a flight to a target; RangeError for a ground below 0.
+  the progress kept; a landed flight takes off again. Like `pinLanding`,
+  it takes no new target whose ground the camera can no longer clear (the
+  final stretch onto higher ground would plan from below the surface).
+  A call it ignores (no flight to a target, or that guard) returns the
+  pin with its clock advanced to `nowMs`, as its siblings do; RangeError
+  for a ground below 0.
 - `pinEnd(pin)`: the camera where the flight ends (`{ position,
 quaternion }`), for a page that cuts straight there (reduced motion);
   null without a flight.
@@ -204,11 +208,11 @@ look-back at beta, at the target's radius (the plan review: the start's
 own radius left it 0.2-0.5 degrees off on WGS84). Returns a `FlightStart`
 with its `position` (the lab places its camera there).
 
-### The landing angle (the tour editor's approach, owner 2026-11-02)
+### The landing angle (the tour editor's approach)
 
 `pressPin` also takes `meteorLandDeg`, the angle every flight of the
 press lands at (in (0, 90]; default the asked beta for a meteor, 45 for
-R1: the lab never passes it, and its paths are pinned unchanged). Steeper
+the vertical approach: the lab never passes it, and its paths are pinned unchanged). Steeper
 than beta, the flight enters on beta's straight line and, below the bend,
 eases to the landing angle (`travelLawDeg`'s `landDeg`): seen from the
 target, the view's angle below its horizontal holds at beta and then
@@ -242,6 +246,15 @@ the 60 s cap: the steepest rate change is 1.08 per second today, 0.26 at
 2.5 s in two stages, 0.13 at 5 s, 0.08 at 8 s. The defaults are the flight
 before until the owner's A/B pick. Tests: the defaults unchanged, the
 S-curve's zero start and the spread, 30 against 60 Hz, the refusals.
+
+`METEOR_PACE` (`{ lagMs: 5000, stages: 2 }`) is the meteor's pace as the
+lab and the tour editor fly it: one source, so a page that flies the
+meteor never drifts back to the defaults' 800 ms in one stage (which
+starts slow and jerks to full speed 3-5 times faster within 1-2 s). The
+lab's `paceLagMs` and `paceStages` link knobs fall back to it. Both
+meteor sweeps (`pin-flight-meteor-entry.test.ts` and the editor's
+`globe-approach-meteor.test.ts`) bound the camera's speed from one frame
+to the next over the whole flight below 1.08 (measured worst 1.065).
 
 ## The landing above the ground (round-4 plan 2026-10-11-0122 DEC-R4-1)
 

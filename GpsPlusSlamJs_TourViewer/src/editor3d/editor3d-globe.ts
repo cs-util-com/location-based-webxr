@@ -24,8 +24,8 @@
  * "Loading tour", the stations pop in on arrival and the recorded
  * walk draws itself; any input in the view takes the camera where it is.
  * The flight places the camera only; the view's frame follows it by the
- * view's own recentring, never set from the camera's pose each frame (that
- * made the approach flicker). `stats().globe.frameChanges` counts the
+ * view's own recentring, never set from the camera's pose each frame (the
+ * frame is no longer moved per frame). `stats().globe.frameChanges` counts the
  * frame's moves for the page's checks.
  *
  * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the

@@ -9,7 +9,8 @@ above down to close to the tour, on the editor's camera. It is the
 with the lab: the trajectory, its pacing on loaded data, its safety cap
 and its landing all come from `gps-plus-slam-globe/view`
 (`createGlobeApproach`, `createGlobeLandingFlight`, `createApproachDrive`,
-`PIN_FLIGHT`, `pinEnd`); this file only wires them to the editor.
+`PIN_FLIGHT`, `METEOR_PACE`, `pinEnd`); this file only wires them to the
+editor.
 
 ## Public API
 
@@ -23,7 +24,8 @@ and its landing all come from `gps-plus-slam-globe/view`
     `fitDistance` only (never its frame);
   - `controls` - `{ release() }`, released when the landing takes over;
   - `tour` (`{lat, lng}`, deg) and `groundM` (its ground, m over the
-    ellipsoid; non-finite or negative reads as 0, as the flight needs);
+    ellipsoid; non-finite or negative reads as 0, as the flight needs: a
+    tour below the ellipsoid, at the Dead Sea, lands over the ellipsoid);
   - `knobs` - `MeteorKnobs`;
   - `progress()` - the tour's loading, 0 to 1 (clamped; NaN reads 0);
   - `reliefGroundM(place)` - the relief's finest ground there, or null;
@@ -32,8 +34,14 @@ and its landing all come from `gps-plus-slam-globe/view`
     clock scaled so it lasts that long at a full pace;
   - `now` (optional) - the page clock, default `performance.now`.
 - The returned driver: `durationMs` (0 under reduced motion, else the
-  asked length or the path's own), `start`, `drive`, `retarget`,
-  `takeOver`, `bar` (see `globe-approach-run.ts.md`).
+  asked length or the path's own), `start`, `drive` (true only while the
+  flight approaches or descends), `retarget`, `takeOver`, `bar` (see
+  `globe-approach-run.ts.md`).
+- `TourArrival` and `tourArrivalProgress(arrival)` - the tour's loading
+  as the flight's progress: 0 until the ground at the tour is known and
+  the relief has settled, then the share of stations admitted (1 for a
+  tour without stations), clamped to 0..1.
+- `isFlyingPhase(phase)` - true for `approaching` and `descending` only.
 
 ## Invariants & assumptions
 
@@ -43,26 +51,32 @@ and its landing all come from `gps-plus-slam-globe/view`
   `meteorLandDeg`, which it holds over the final stretch, and lands
   `landAglM` over the ground (so about `landAglM / sin(meteorLandDeg)` from
   the tour). No settle and no tilt of the editor's own.
-- **Paced as in the globe.** The flight's gate reads `progress` with the
-  lab's rate lag (`PIN_FLIGHT.rateLagMs`) and lands without it after the
+- **Paced as in the globe.** The flight flies the lab's meteor pace
+  (`METEOR_PACE`: a 5 s lag in two stages, an S-curve with no jerk at its
+  start), its gate reads `progress`, and it lands without it after the
   lab's safety cap (`PIN_FLIGHT.safetyCapMs`). In the editor "loaded" is
-  the share of stations admitted (their first upload): the uploads run
-  whatever the camera does, so the gate never waits on tiles that load
-  only once the camera is low.
+  what loads at the tour whatever the camera does
+  (`tourArrivalProgress`): the relief's ground at the tour known, the
+  relief settled, then the share of stations admitted. The street map
+  near the tour cannot gate it: it loads only within a few kilometres of
+  the camera, so a gate holding high above would wait for it forever.
 - **The frame is never set here.** Only `placeCameraEcef` is called; the
-  view's frame follows through its own recentring. A frame set from the
-  camera's pose every frame flickered.
+  view's frame follows through its own recentring: the frame is no
+  longer moved per frame.
 - **Reduced motion** places the flight's end camera (as it would land with
   the tour loaded) on the first frame and lands.
 - **Retarget** starts a new leg from the camera as it is: position,
-  direction and speed stay continuous.
+  direction and speed stay continuous. A retarget during the flight lands
+  at the meteor's landing (its angle and `landAglM`), whatever the
+  selection's size; once landed, the same action frames the selection by
+  its radius. The meteor's landing is one rule.
 - **Takeover** stops the flight for good: `drive` returns false and places
   nothing (the approach's "user" phase is never driven).
 - **The bar** reads the height over the ground on a log scale, from the
   start height to `landAglM`: 0 at the start, 1 at the landing, only
   rising as the camera falls.
-- The defaults (`globe-switch.ts`): 20 degrees in (the lab's entry), 50 out
-  (inside the owner's 45-60), 150 m over the ground (about 200 m from the
+- The defaults (`globe-switch.ts`): 20 degrees in (the lab's default is
+  30), 50 out (inside 45-60), 150 m over the ground (about 200 m from the
   tour: its pins and rings fill the view), from 8000 km (the hemisphere
   in view).
 
@@ -91,8 +105,13 @@ const run = createApproachRun({ box, driver, reducedMotion: false });
 high-latitude goal and a goal across the date line, times three knob
 settings (the defaults; 20 to 60; 30 to 45 from 65,000 km): the landing
 within the chosen distance, the angles at the entry and the landing, a
-bounded turn rate and step continuity, the first placement on the line,
-the pacing by loading and its cap, the checks' clock, the reduced-motion
-cut, the takeover, two retargets kept continuous, and the bar.
+bounded turn rate, the speed from one frame to the next bounded over the
+whole flight (below 1.08), the first placement on the line, the pacing by
+loading and its cap, the arrival's parts, the flying phases, a tour below
+the ellipsoid, the checks' clock, the reduced-motion
+cut, the takeover, retargets kept continuous (one below the bend), and the bar.
+`editor3d-globe.test.ts` wires the arrival with a stand-in that admits:
+the flight lands soon after the tour is in, well before the safety cap,
+and only by the cap without each part.
 `playwright-tests/editor3d-globe-approach.spec.js` covers it in the page,
 including the frame moved only by its recentring.
