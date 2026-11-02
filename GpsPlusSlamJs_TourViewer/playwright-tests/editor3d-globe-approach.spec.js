@@ -94,6 +94,8 @@ for (const [width, height] of [
   [1440, 900],
   [1280, 720],
   [1024, 768],
+  [844, 390],
+  [390, 844],
 ]) {
   test(`the bar is glued under the menu bar, its tab hanging in the middle, the docks under both at ${width}x${height}`, async ({
     page,
@@ -103,7 +105,9 @@ for (const [width, height] of [
     // its middle like a bulge, and the rail and the inspector lowered
     // under both with a gap. Positions and gaps are what make that read;
     // a presence check passes a bar floating in the view, a tab off
-    // centre, or a dock under the tab.
+    // centre, or a dock under the tab. The phone sizes (landscape and
+    // portrait) hold the bar and the tab as at a desktop; there one dock
+    // shows at a time (`dock-rule.ts`), so only the shown dock is checked.
     test.setTimeout(180_000);
     await page.setViewportSize({ width, height });
     await answerHosts(page, { globeAssets: "serve" });
@@ -130,27 +134,46 @@ for (const [width, height] of [
     });
     expect(corners[0]).toBe("0px");
     expect(parseFloat(corners[1] ?? "0")).toBeGreaterThan(6);
-    // The docks: open both (a pick in the list shows the inspector), each
-    // flush with its side, both the gap under the tab.
+    // The docks: open the tree, then pick a station (the inspector
+    // shows); each shown dock flush with its side, the gap under the tab.
+    // Below 820 px a dock takes at most about half the width
+    // (`editor-shell.css`, narrow windows).
     if (!(await page.locator("#tree-body").isVisible())) {
       await page.locator("#tree-fold").click();
     }
     await page.locator("#tree-body .card .pick").first().click();
     await expect(page.locator("#inspector-body")).toBeVisible();
-    const tree = await box(page.locator("#shell-tree"));
-    const inspector = await box(page.locator("#shell-inspector"));
+    const narrow = width <= 820;
+    const docks = [
+      {
+        id: "#shell-tree",
+        body: "#tree-body",
+        left: true,
+        widthPx: narrow ? Math.min(272, width * 0.56) : 272,
+      },
+      {
+        id: "#shell-inspector",
+        body: "#inspector-body",
+        left: false,
+        widthPx: narrow ? Math.min(290, width * 0.6) : 290,
+      },
+    ];
     const dockTop = TOP_PX + BAR_PX + TAB_PX + DOCK_GAP_PX;
-    expect(tree.x).toBe(0);
-    expect(tree.y).toBeCloseTo(dockTop, 0);
-    expect(tree.width).toBeCloseTo(272, 0);
-    expect(inspector.x + inspector.width).toBeCloseTo(width, 0);
-    expect(inspector.y).toBeCloseTo(dockTop, 0);
-    expect(inspector.width).toBeCloseTo(290, 0);
-    expect(tree.y - (tab.y + tab.height)).toBeCloseTo(DOCK_GAP_PX, 0);
-    for (const dock of [tree, inspector]) {
-      expect(overlaps(dock, bar)).toBe(false);
-      expect(overlaps(dock, tab)).toBe(false);
+    let shown = 0;
+    for (const dock of docks) {
+      if (!(await page.locator(dock.body).isVisible())) continue;
+      shown++;
+      const d = await box(page.locator(dock.id));
+      if (dock.left) expect(d.x, dock.id).toBe(0);
+      else expect(d.x + d.width, dock.id).toBeCloseTo(width, 0);
+      expect(d.y, dock.id).toBeCloseTo(dockTop, 0);
+      expect(d.y - (tab.y + tab.height), dock.id).toBeCloseTo(DOCK_GAP_PX, 0);
+      expect(d.width, dock.id).toBeCloseTo(dock.widthPx, 0);
+      expect(overlaps(d, bar), dock.id).toBe(false);
+      expect(overlaps(d, tab), dock.id).toBe(false);
     }
+    // Both from 900 px up (the dock rule's side by side), else one.
+    expect(shown).toBe(width >= 900 ? 2 : 1);
     // Neither takes a pointer: a drag that starts on them reaches the view.
     await expect(approach).toHaveCSS("pointer-events", "none");
     await page.screenshot({
