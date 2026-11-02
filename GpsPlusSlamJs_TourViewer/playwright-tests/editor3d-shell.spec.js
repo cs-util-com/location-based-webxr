@@ -818,6 +818,13 @@ for (const view of ["3d", "2d"]) {
     await expect(name).toHaveAccessibleName(
       (await name.locator(".tour-name-text").textContent()) ?? "",
     );
+    // Hovered, the name underlines on the 2D map only: the studio's top
+    // bar (3D) marks a hover by the pen alone, as its other controls.
+    await name.hover();
+    await expect(name.locator(".tour-name-text")).toHaveCSS(
+      "text-decoration-line",
+      view === "3d" ? "none" : "underline",
+    );
     await pen.click();
     await expect(page.locator("#details-modal")).toBeVisible();
   });

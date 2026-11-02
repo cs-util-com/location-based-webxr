@@ -340,7 +340,9 @@ body:not([data-view="3d"]) .leaflet-bottom {
   opacity: 0.7;
 }
 
-.tour-name:hover .tour-name-text {
+/* The underline is the map's hover; the studio's top bar (3D) marks it
+ * by the pen alone. */
+body:not([data-view="3d"]) .tour-name:hover .tour-name-text {
   text-decoration: underline;
   text-decoration-color: var(--accent);
 }
