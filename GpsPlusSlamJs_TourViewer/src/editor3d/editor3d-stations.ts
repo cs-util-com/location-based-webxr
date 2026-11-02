@@ -251,7 +251,7 @@ interface StationEntry {
   /** The root's matrix where the tour has the station (a preview moves
    *  the root; clearing it puts this back). */
   readonly base: THREE.Matrix4;
-  /** The station's point in the world. */
+  /** The station's point in the layer's frame (`layerPoint`). */
   readonly point: THREE.Vector3;
   /** Where its billboard stands: the point, or a preview's. */
   readonly shownPoint: THREE.Vector3;
@@ -308,7 +308,8 @@ interface CodeSquare {
    *  flat at its printed size: along its face's direction, half the code
    *  plus the gap (grown, both grow). */
   readonly flatShift: THREE.Vector3;
-  /** Its anchor in the world: the camera's distance from it grows it. */
+  /** Its anchor in the layer's frame (`layerPoint`): the camera's
+   *  distance from it grows it. */
   readonly point: THREE.Vector3;
   /** Its printed side (m). */
   readonly sizeM: number;
@@ -492,6 +493,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     return root;
   };
 
+  /** The point `y` metres up a root's axis, in the layer's frame (the
+   *  parent's: the layer's group stays at its origin). Read from the
+   *  root's own matrix, never its world one: under the globe the world
+   *  frame moves on each recentre, and a point read through it would carry
+   *  that move into the layer's frame. */
+  const layerPoint = (root: THREE.Object3D, y: number): THREE.Vector3 =>
+    new THREE.Vector3(0, y, 0).applyMatrix4(root.matrix);
+
   const freeContent = (entry: StationEntry) => {
     const content = entry.content;
     if (content === null) return;
@@ -601,9 +610,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       if (geo === undefined) continue;
       const root = rootAt(geo);
       root.visible = codeShown(levelId);
-      const point = new THREE.Vector3(0, geo.alt, 0).applyMatrix4(
-        root.matrixWorld,
-      );
+      const point = layerPoint(root, geo.alt);
       codePoints.set(levelId, point);
       const sizeM = level.qr.physicalSizeM ?? DEFAULT_CODE_SIZE_M;
       const square = deps.makeCodeSquare(sizeM);
@@ -792,9 +799,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         }
         if (old !== undefined) freeStation(old);
         const root = rootAt(station.geo);
-        const point = new THREE.Vector3(0, station.geo.alt, 0).applyMatrix4(
-          root.matrixWorld,
-        );
+        const point = layerPoint(root, station.geo.alt);
         stations.set(station.id, {
           id: station.id,
           index,
@@ -916,7 +921,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         );
       });
     },
-    /** A station's point in the world, or null. */
+    /** A station's point in the layer's frame (the world for a layer in
+     *  the scene; the globe moves it with `layerToWorld`), or null. */
     pointOf(id: string): THREE.Vector3 | null {
       return stations.get(id)?.point.clone() ?? null;
     },
@@ -924,9 +930,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     radiusOf(id: string): number | null {
       return stations.get(id)?.station.foundRadiusM ?? null;
     },
-    /** Where an item of the tour stands in the world (its pose in its
-     *  station's frame), whether its station draws its items now or not;
-     *  null for an id no station holds. */
+    /** Where an item of the tour stands in the layer's frame (its pose in
+     *  its station's frame), whether its station draws its items now or
+     *  not; null for an id no station holds. */
     itemPointOf(id: string): THREE.Vector3 | null {
       for (const entry of stations.values()) {
         const item = worldBlocks(entry.station).find((i) => i.id === id);
@@ -936,11 +942,12 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         return new THREE.Vector3(...item.pose.position)
           .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
           .add(new THREE.Vector3(...frame.positionNue))
-          .applyMatrix4(entry.root.matrixWorld);
+          .applyMatrix4(entry.root.matrix);
       }
       return null;
     },
-    /** Where a code with a position stands in the world, or null. */
+    /** Where a code with a position stands in the layer's frame, or
+     *  null. */
     codePointOf(levelId: string): THREE.Vector3 | null {
       return codePoints.get(levelId)?.clone() ?? null;
     },

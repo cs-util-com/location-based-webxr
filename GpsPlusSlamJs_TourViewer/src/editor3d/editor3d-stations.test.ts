@@ -969,6 +969,74 @@ describe("createStationsLayer", () => {
     );
   });
 
+  // Why: in the globe view the layer hangs under the tour's frame, whose
+  // place in the world changes each time the world frame recentres on the
+  // camera. A station moved by a drag is drawn anew when the tour carries
+  // the move; its point (the billboard's place, the near set, the globe's
+  // visibility and flights) must be in the layer's frame like every other
+  // station's. Read from the world instead, it carried the recentre's
+  // offset: once the station was deselected (no longer drawn as selected)
+  // it showed somewhere else entirely. The same for an item's and a code's
+  // point, read from the world too.
+  it("keeps a moved station, its items and the codes where they are after the world frame moved, also once deselected", () => {
+    // The globe's nesting: the Earth-centred group, the tour's frame in
+    // it, the layer in that.
+    const scene = new THREE.Scene();
+    const earth = new THREE.Group();
+    const tourFrame = new THREE.Group();
+    scene.add(earth);
+    earth.add(tourFrame);
+    const { d } = deps({ parent: tourFrame });
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    const b = station("b", 40, 0);
+    const code = new Map([
+      [
+        "c1",
+        {
+          qr: {
+            geo: { lat: ZERO.lat, lon: ZERO.lng, alt: 517 + N, headingDeg: 0 },
+          },
+        } as QrLevel,
+      ],
+    ]);
+    // Opened before the first frame is drawn.
+    layer.setTour(manifest([a, b]), code);
+    // The world frame recentred on the camera, 400 m away: the renderer
+    // brings every world matrix up to date before it draws.
+    earth.position.set(-400, 3, 120);
+    scene.updateMatrixWorld(true);
+    layer.update(view(0, 0, "a", 1, true));
+    // Dragged 10 m east and let go: the tour carries the move, then the
+    // preview is dropped (the input's order).
+    const moved = { ...a.geo, lon: a.geo.lon + 10 / M_PER_DEG_LON };
+    layer.setPreview({ kind: "station", id: "a", geo: moved, foundRadiusM: 8 });
+    layer.update(view(0, 0, "a", 1, true));
+    layer.setTour(manifest([{ ...a, geo: moved }, b]), code);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1, true));
+    scene.updateMatrixWorld(true);
+    // Deselected.
+    layer.update(view(0, 0, null));
+    const at = layer.pointOf("a")!;
+    expect(at.x).toBeCloseTo(10, 1);
+    expect(at.z).toBeCloseTo(0, 1);
+    expect(at.y).toBeCloseTo(515, 1);
+    const billboard = layer.billboardOf("a")!.position;
+    expect(billboard.x).toBeCloseTo(10, 1);
+    expect(billboard.z).toBeCloseTo(0, 1);
+    // The photo's pose is 1 m north and 1.5 m up of its station.
+    const p = layer.itemPointOf("p")!;
+    expect(p.x).toBeCloseTo(10, 1);
+    expect(p.z).toBeCloseTo(-1, 1);
+    expect(p.y).toBeCloseTo(516.5, 1);
+    const c1 = layer.codePointOf("c1")!;
+    expect(c1.x).toBeCloseTo(0, 1);
+    expect(c1.z).toBeCloseTo(0, 1);
+    expect(c1.y).toBeCloseTo(517, 1);
+    layer.dispose();
+  });
+
   // Why: an item dragged, turned or (a model) resized is drawn at the
   // drag's pose in its station's frame - a photo keeps the flat-or-upright
   // morph, turned with it - and goes back when the drag is cleared.
