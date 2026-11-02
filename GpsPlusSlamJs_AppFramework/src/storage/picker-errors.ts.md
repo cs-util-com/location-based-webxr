@@ -43,8 +43,10 @@ Deep import: `gps-plus-slam-app-framework/storage/picker-errors` (not in the
   cancel, because offering the file input then would be a second dialog;
   the save dialog reads it as unavailable, so its caller downloads. The
   difference is deliberate and pinned in `save-target.test.ts`.
-- Pure, no imports; never throws (nullish is read without a property
-  access).
+- Pure, no imports; never throws. Nullish and other non-objects are read
+  without a property access, and an object whose `name` getter throws (a
+  Proxy, a hostile object) is `unavailable`: callers classify inside their
+  own `catch`, where a second throw would hide the picker's error.
 
 ## Examples
 
@@ -64,5 +66,5 @@ try {
 `picker-errors.test.ts`: the dismissal by name (a `DOMException`, a plain
 `Error` and an object so named); refusals, a string, a number and nullish
 values as unavailable; a property over any name, for a `DOMException` and
-a plain `Error`. Its callers' tests: `download-blob.test.ts`,
+a plain `Error`; a `name` getter that throws reads as unavailable. Its callers' tests: `download-blob.test.ts`,
 `save-target.test.ts`, and the Recorder's `external-file-storage.test.ts`.

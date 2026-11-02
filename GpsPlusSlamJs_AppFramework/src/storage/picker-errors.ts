@@ -21,12 +21,16 @@ export type PickerRejection = 'cancelled' | 'unavailable';
  * anything else - another `DOMException` (`SecurityError`,
  * `NotAllowedError`), a `TypeError`, a non-error, nullish - is
  * `unavailable`. A picker that throws at once, before it returns a
- * promise, is read the same way. Never throws.
+ * promise, is read the same way. Never throws: a `name` getter that throws
+ * reads as `unavailable`.
  */
 export function classifyPickerRejection(err: unknown): PickerRejection {
-  return typeof err === 'object' &&
-    err !== null &&
-    (err as { readonly name?: unknown }).name === 'AbortError'
-    ? 'cancelled'
-    : 'unavailable';
+  if (typeof err !== 'object' || err === null) return 'unavailable';
+  try {
+    return (err as { readonly name?: unknown }).name === 'AbortError'
+      ? 'cancelled'
+      : 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
 }

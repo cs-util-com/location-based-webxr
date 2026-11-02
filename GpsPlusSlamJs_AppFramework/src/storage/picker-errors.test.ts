@@ -53,4 +53,17 @@ describe('classifyPickerRejection', () => {
       )
     );
   });
+
+  // Why: callers read the classifier inside their own catch block, so a
+  // throw from it would escape as a new, unexplained error in place of the
+  // picker's. A rejection is untrusted data; one whose `name` getter throws
+  // (a Proxy, a hostile object) is read as unavailable instead.
+  it('reads an object whose name getter throws as unavailable, without throwing', () => {
+    const hostile = {
+      get name(): string {
+        throw new Error('no name for you');
+      },
+    };
+    expect(classifyPickerRejection(hostile)).toBe('unavailable');
+  });
 });
