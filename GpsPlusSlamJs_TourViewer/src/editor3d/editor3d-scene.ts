@@ -131,9 +131,10 @@ export interface Editor3dDeps {
    */
   readonly approach?: {
     readonly durationMs?: number;
-    /** Called once when the approach's bar goes (the landing, or the
-     *  creator's takeover); not when the view closes before. */
-    readonly landed?: () => void;
+    /** Called once when the approach's bar goes, with how it ended (the
+     *  landing, or the creator's takeover); not when the view closes
+     *  before. */
+    readonly ended?: (how: "landed" | "taken") => void;
   };
   /** The recorded walk's camera captures in their order (the globe view
    *  draws them as a line after its arrival), null while none is known.

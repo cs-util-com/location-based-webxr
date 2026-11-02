@@ -201,18 +201,22 @@ describe("createApproachRun", () => {
     expect(done).not.toHaveBeenCalled();
     stepAt(r, land + BAR_DONE_MS);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith("landed");
     stepAt(r, land + 60_000);
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onDone once, at once after a takeover", () => {
-    // Why: a taken bar goes at once, and the rail with it.
+  it("calls onDone once, at once after a takeover, saying it was taken", () => {
+    // Why: a taken bar goes at once; the editor unfolds the rail only at a
+    // landing, so a takeover (a click, a wheel, "+") must say it was one,
+    // or the rail opens over the whole globe at any height.
     const done = vi.fn();
     const { r } = reporting(done);
     stepAt(r, 3_000);
     r.takeOver(3_000);
     stepAt(r, 3_016);
     expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith("taken");
     stepAt(r, 60_000);
     expect(done).toHaveBeenCalledTimes(1);
   });

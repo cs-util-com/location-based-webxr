@@ -169,7 +169,7 @@ With `deps.approach` (the page sets it for a tour opened afresh into the
 flies in from high above (`globe-approach-run.ts`): each frame its pose
 is placed through `placeView` with `controls.followIntro()` instead of
 the controls' own step. The box ("Loading tour" over the bar) hangs in
-the view's box (`deps.approach.landed` is called when it goes) and goes a beat after the landing, at once after a
+the view's box (`deps.approach.ended` is called when it goes, with `"landed"` or `"taken"`) and goes a beat after the landing, at once after a
 takeover; what still loads does not keep it (it reads no load counts).
 
 - While it flies the stations are held back (added to what `setHidden`

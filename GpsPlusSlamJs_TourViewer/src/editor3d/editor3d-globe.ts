@@ -920,9 +920,9 @@ export async function openGlobeEditor(
             : { durationMs: deps.approach.durationMs }),
         }),
         reducedMotion,
-        ...(deps.approach.landed === undefined
+        ...(deps.approach.ended === undefined
           ? {}
-          : { onDone: deps.approach.landed }),
+          : { onDone: deps.approach.ended }),
       });
       arrivalTiming = run.timing;
       approach = run;

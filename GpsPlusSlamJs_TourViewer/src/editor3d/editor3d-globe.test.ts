@@ -889,17 +889,19 @@ describe("openGlobeEditor's wiring", () => {
     expect(flyingAt(6_100)).toBe(false);
   });
 
-  // Why: the page unfolds its rail when the approach's bar goes; the view
-  // tells it once, after the bar's hold, never during the flight.
-  it("tells the page once when the approach's bar goes", async () => {
+  // Why: the page unfolds its rail when the approach's bar goes after a
+  // landing (not after a takeover); the view tells it once, after the
+  // bar's hold, never during the flight, and says how it ended.
+  it("tells the page once when the approach's bar goes, and how it ended", async () => {
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
-    const landed = vi.fn();
-    await openAt(0, { approach: { durationMs: 1_000, landed } });
+    const ended = vi.fn();
+    await openAt(0, { approach: { durationMs: 1_000, ended } });
     for (now = 0; now < 900; now += 1000 / 60) frameAt(now);
-    expect(landed).not.toHaveBeenCalled();
+    expect(ended).not.toHaveBeenCalled();
     for (; now < 6_000; now += 1000 / 60) frameAt(now);
-    expect(landed).toHaveBeenCalledTimes(1);
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(ended).toHaveBeenCalledWith("landed");
   });
 
   // Why: the globe view's credits are one button whose overlay lists

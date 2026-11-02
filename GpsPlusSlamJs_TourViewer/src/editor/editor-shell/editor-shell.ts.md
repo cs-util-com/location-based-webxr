@@ -62,8 +62,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   store, the window's size and the keys, and reads the camera every 200 ms
   (`READOUT_MS`). With `approach: true` (the globe view opens on its
   approach) the tree is folded to its tab for the flight.
-- `EditorShell.approachLanded()` - the approach's bar went (the page
-  calls it from the view's `approach.landed`): the tree folded for the
+- `EditorShell.approachEnded(how)` - the approach's bar went (the page
+  calls it from the view's `approach.ended`). After a takeover
+  (`"taken"`: a click, a wheel, "+", at any height) the hold ends and the
+  tree stays a tab for the creator to open. After a landing the tree folded for the
   flight unfolds, with the `dock-unfold` animation (the class
   `unfolding`, gone at its `animationend`) unless reduced motion asks
   for none. It follows the dock rule as at an open with the tree unfolded

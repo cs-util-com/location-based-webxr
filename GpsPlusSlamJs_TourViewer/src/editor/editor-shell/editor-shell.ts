@@ -192,13 +192,14 @@ export interface EditorShellDeps {
 export interface EditorShell {
   /** The 3D view shows: the shell drives `view` until `hide`. With
    *  `approach` the view opens on its approach: the tree stays folded
-   *  until `approachLanded`. */
+   *  until `approachEnded`. */
   show(view: ShellView, options?: { readonly approach?: boolean }): void;
   hide(): void;
-  /** The approach's bar went: the tree folded for it unfolds (animated,
-   *  unless reduced motion), as the dock rule allows at this width. Once;
-   *  a creator's fold or unfold before it ends the hold. */
-  approachLanded(): void;
+  /** The approach's bar went. After a landing the tree folded for it
+   *  unfolds (animated, unless reduced motion), as the dock rule allows at
+   *  this width; after a takeover it stays a tab for the creator to open.
+   *  Once; a creator's fold or unfold before it ends the hold. */
+  approachEnded(how: "landed" | "taken"): void;
   /** The scene's ground menu at `point` (px in the view), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
@@ -1232,9 +1233,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (view === null) return;
       ground.openAt(point, place);
     },
-    approachLanded() {
+    approachEnded(how) {
       if (!approachHold || view === null) return;
       approachHold = false;
+      // A takeover can come at any height: the rail stays a tab rather
+      // than opening over the whole globe.
+      if (how === "taken") return;
       const ui = state().editorView;
       if (!ui.foldedDocks.tree) return;
       // The rule as at an open with the tree unfolded: it stays a tab on a

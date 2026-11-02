@@ -3796,9 +3796,9 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
       : {
           approach: {
             ...approach,
-            landed: () => {
+            ended: (how) => {
               approachHolds = false;
-              shell.approachLanded();
+              shell.approachEnded(how);
             },
           },
         }),

@@ -67,7 +67,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   chip, not the debug switch, which hides the map's capture dots only).
   While the approach flies (`approachHolds`) the shell is shown with
   `{ approach: true }`, its tree a folded tab; the view's
-  `approach.landed` calls `shell.approachLanded()`, which unfolds it.
+  `approach.ended` calls `shell.approachEnded(how)`, which unfolds it
+  after a landing and leaves it a tab after a takeover.
   The page's filter is `tour-walk-kept.ts` (its own unit test); the view's side is in
   `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
   to the tour. In the dev server only, `window.__tourEditorApproach`

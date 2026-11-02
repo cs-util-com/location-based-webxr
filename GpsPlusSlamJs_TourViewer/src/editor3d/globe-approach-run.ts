@@ -48,13 +48,16 @@ export const BAR_DONE_MS = 300;
 
 type ApproachPhase = "flying" | "arrived";
 
+/** How an approach ended: the camera landed, or the creator took it. */
+type ApproachEnd = "landed" | "taken";
+
 interface ApproachRunStats {
   readonly phase: ApproachPhase;
   /** Whether the flight still moves the camera. */
   readonly flying: boolean;
   /** How the flight ended: landed, taken by the creator, or null while
    *  flying. */
-  readonly ended: "landed" | "taken" | null;
+  readonly ended: ApproachEnd | null;
   /** The bar's value (0 to 1), null once the bar is gone. */
   readonly progress: number | null;
   /** How many times the flight was sent to a station. */
@@ -104,14 +107,15 @@ export interface ApproachRun {
  * The approach `flight`, begun at `startMs` (or at `start`), its title and
  * bar in `box` (the 3D view's box). `reducedMotion` takes the short
  * arrival. `onDone` is called once, when the bar goes (a beat after a
- * landing, at once after a takeover); never when disposed before.
+ * landing, at once after a takeover), with how the flight ended; never
+ * when disposed before.
  */
 export function createApproachRun(deps: {
   readonly box: HTMLElement;
   readonly flight: ApproachFlight;
   readonly startMs?: number;
   readonly reducedMotion: boolean;
-  readonly onDone?: () => void;
+  readonly onDone?: (how: ApproachEnd) => void;
 }): ApproachRun {
   const { box, reducedMotion } = deps;
   const timing = reducedMotion ? ARRIVAL_REDUCED : ARRIVAL;
@@ -156,7 +160,7 @@ export function createApproachRun(deps: {
   };
   showProgress(0);
 
-  const arrive = (nowMs: number, how: "landed" | "taken") => {
+  const arrive = (nowMs: number, how: ApproachEnd) => {
     if (phase !== "flying") return;
     phase = "arrived";
     ended = how;
@@ -186,7 +190,7 @@ export function createApproachRun(deps: {
       }
       if (root.hidden !== true && barDone(nowMs)) {
         root.hidden = true;
-        deps.onDone?.();
+        if (ended !== null) deps.onDone?.(ended);
       }
     },
     takeOver(nowMs) {

@@ -773,7 +773,7 @@ describe("the tree during the approach", () => {
     // creator's must not replay it).
     const { store, shell } = onApproach();
     expect(treeFolded(store)).toBe(true);
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(false);
     expect(treeRoot().classList.contains("unfolding")).toBe(true);
     const end = new Event("animationend") as AnimationEvent;
@@ -788,7 +788,7 @@ describe("the tree during the approach", () => {
       matches: q.includes("reduce"),
     }));
     const { store, shell } = onApproach();
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(false);
     expect(treeRoot().classList.contains("unfolding")).toBe(false);
   });
@@ -801,16 +801,16 @@ describe("the tree during the approach", () => {
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: true }),
     );
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(true);
     shell.hide();
     shell.show(fakeView(), { approach: true });
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(false);
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: true }),
     );
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(true);
   });
 
@@ -822,7 +822,22 @@ describe("the tree during the approach", () => {
     expect(treeFolded(store)).toBe(false);
     document.getElementById("tree-fold")!.click();
     expect(treeFolded(store)).toBe(true);
-    shell.approachLanded();
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("keeps the tree a tab when the creator takes the camera mid-flight", () => {
+    // Why: a takeover (a click, a wheel, "+") can come at any height; the
+    // owner found the rail unfolding over the whole globe senseless. The
+    // hold ends, so a later landing call does nothing; the creator opens
+    // the rail.
+    const { store, shell } = onApproach();
+    shell.approachEnded("taken");
+    expect(treeFolded(store)).toBe(true);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+    shell.hide();
     expect(treeFolded(store)).toBe(true);
   });
 
@@ -831,7 +846,7 @@ describe("the tree during the approach", () => {
     // open; the landing follows the same rule.
     vi.stubGlobal("innerWidth", 600);
     const { store, shell } = onApproach();
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(true);
   });
 
@@ -842,7 +857,7 @@ describe("the tree during the approach", () => {
     shell.hide();
     expect(treeFolded(store)).toBe(false);
     shell.show(fakeView());
-    shell.approachLanded();
+    shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(false);
   });
 });

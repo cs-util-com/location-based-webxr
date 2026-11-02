@@ -18,8 +18,9 @@ and each station's growth, and tells it the camera's altitude.
 - `createApproachRun({ box, flight, startMs, reducedMotion, onDone })`
   mounts the box in `box` and returns an `ApproachRun` (`startMs` is
   optional: without it the flight's clock starts at the first `start`;
-  `onDone`, optional, is called once when the box goes, a beat after a
-  landing or at once after a takeover, and never when disposed before):
+  `onDone(how)`, optional, is called once when the box goes, a beat after a
+  landing or at once after a takeover, with `how` (`ApproachEnd`,
+  `"landed"` or `"taken"`), and never when disposed before):
   - `timing` - the arrival's timing (the short one under reduced
     motion), for a walk the view draws after the arrival;
   - `start(nowMs)` - the first drawn frame starts the clock (later calls
