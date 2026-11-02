@@ -3,8 +3,9 @@
 ## Purpose
 
 The link switch that opens the desktop editor's 3D view on the full globe
-(`edit.html?globe=1`), and the two knobs the owner tunes by eye for the
-globe's visibility rule (`../editor3d/globe-visibility.ts`). Without the
+(`edit.html?globe=1`), and the knobs the owner tunes by eye: the globe's
+visibility rule (`../editor3d/globe-visibility.ts`) and the approach's
+meteor (`../editor3d/globe-approach-meteor.ts`). Without the
 switch the editor's own 3D view (OrbitControls over a local ground) stays
 the default.
 
@@ -16,8 +17,19 @@ the default.
     below this size on screen (CSS px);
   - `crowdPx` - `globeCrowdPx`, default 24, range 0-500: a station pin
     hides when its nearest neighbour on screen is closer (0 turns the
-    crowding off).
-- `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`)
+    crowding off);
+  - `meteorDeg` - default 20, range 1-89: the angle the meteor enters at,
+    below the tour's horizon (the lab's own default entry);
+  - `meteorLandDeg` - default 50, range 10-85, read as at least
+    `meteorDeg`: the angle it lands at, held over the final stretch
+    (inside the owner's 45-60, steep enough to see the tour from close);
+  - `landAglM` - default 150, range 30-5000: the landing's height over
+    the tour's ground (about 200 m from the tour at 50 degrees: the
+    stations' pins and rings fill the view);
+  - `startKm` - default 8000, range 500-65000: the start height (the
+    whole hemisphere in view; 65000 starts with the whole Earth small).
+- `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
+  `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
@@ -45,5 +57,6 @@ if (globe.on) {
 ## Tests
 
 `globe-switch.test.ts`: off with its defaults without the switch, on only
-for `globe=1`, both knobs read, a bad or out-of-range knob read as its
-default, the bounds themselves accepted, the defaults inside their ranges.
+for `globe=1`, every knob read, a landing never shallower than the
+entry, a bad or out-of-range knob read as its default, the bounds
+themselves accepted, the defaults inside their ranges.

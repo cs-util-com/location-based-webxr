@@ -17,6 +17,10 @@ describe("readGlobeSwitch", () => {
       on: false,
       hidePx: GLOBE_SWITCH.hidePx.fallback,
       crowdPx: GLOBE_SWITCH.crowdPx.fallback,
+      meteorDeg: 20,
+      meteorLandDeg: 50,
+      landAglM: 150,
+      startKm: 8_000,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
       false,
@@ -32,7 +36,9 @@ describe("readGlobeSwitch", () => {
   });
 
   it("reads both knobs", () => {
-    expect(readGlobeSwitch("?globe=1&globeHidePx=5&globeCrowdPx=40")).toEqual({
+    expect(
+      readGlobeSwitch("?globe=1&globeHidePx=5&globeCrowdPx=40"),
+    ).toMatchObject({
       on: true,
       hidePx: 5,
       crowdPx: 40,
@@ -65,8 +71,47 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?globeCrowdPx=0").crowdPx).toBe(0);
   });
 
+  // Why: the approach's meteor is tuned by eye from the link, as the globe
+  // lab's is (same names): the start angle, the landing angle, the landing
+  // height over the tour's ground and the start height.
+  it("reads the approach's meteor knobs", () => {
+    expect(
+      readGlobeSwitch(
+        "?globe=1&meteorDeg=30&meteorLandDeg=60&landAglM=300&startKm=65000",
+      ),
+    ).toMatchObject({
+      meteorDeg: 30,
+      meteorLandDeg: 60,
+      landAglM: 300,
+      startKm: 65_000,
+    });
+    for (const bad of ["0", "90", "abc"]) {
+      expect(readGlobeSwitch(`?meteorDeg=${bad}`).meteorDeg).toBe(20);
+      expect(readGlobeSwitch(`?meteorLandDeg=${bad}`).meteorLandDeg).toBe(50);
+    }
+    expect(readGlobeSwitch("?landAglM=5").landAglM).toBe(150);
+    expect(readGlobeSwitch("?startKm=10").startKm).toBe(8_000);
+  });
+
+  // Why: the meteor never lands shallower than it enters (the owner's
+  // "shallow to steep"); a landing angle under the start angle is held at
+  // the start angle, a straight line.
+  it("never lands shallower than the meteor enters", () => {
+    expect(readGlobeSwitch("?meteorDeg=40&meteorLandDeg=30")).toMatchObject({
+      meteorDeg: 40,
+      meteorLandDeg: 40,
+    });
+  });
+
   it("keeps its defaults inside their own ranges", () => {
-    for (const knob of [GLOBE_SWITCH.hidePx, GLOBE_SWITCH.crowdPx]) {
+    for (const knob of [
+      GLOBE_SWITCH.hidePx,
+      GLOBE_SWITCH.crowdPx,
+      GLOBE_SWITCH.meteorDeg,
+      GLOBE_SWITCH.meteorLandDeg,
+      GLOBE_SWITCH.landAglM,
+      GLOBE_SWITCH.startKm,
+    ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);
     }

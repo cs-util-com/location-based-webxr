@@ -187,9 +187,16 @@ ground.
 
 With `deps.approach` (the page sets it for a tour opened afresh into the
 3D view, never for a restored draft or a switch from the map) the view
-flies in from high above (`globe-approach-run.ts`): each frame its pose
-is placed through `placeView` with `controls.followIntro()` instead of
-the controls' own step. The box ("Loading tour" over the bar) hangs in
+flies in from high above on the globe's own meteor
+(`globe-approach-meteor.ts`, run by `globe-approach-run.ts`): each frame
+the flight places the camera (`placeCameraEcef`) with
+`controls.followIntro()` instead of the controls' own step. The view's
+frame is set once, at the tour, and after that only the view's own
+recentring moves it (`stats().globe.frameChanges` counts every move, for
+the page's check): the old approach set it from the camera's pose every
+frame, which flickered. The meteor's knobs come from the link
+(`globe-switch.ts`); its pacing reads the stations' first uploads (the
+admitted share), and the relief's finest ground revises its landing. The box ("Loading tour" over the bar) hangs in
 the view's box (`deps.approach.ended` is called when it goes, with `"landed"` or `"taken"`) and goes a beat after the landing, at once after a
 takeover; what still loads does not keep it (it reads no load counts).
 
@@ -204,8 +211,8 @@ takeover; what still loads does not keep it (it reads no load counts).
   when it came (`walkDrawShare`), not whole in one frame. With no
   approach at all it is drawn whole. It follows the walk layer chip
   (`showWalk`), not the page's debug switch.
-- The flight's clock starts at its first drawn frame (`run.start` in the
-  frame's camera step), not at mount: the box's fit and the first tiles
+- The flight's clock starts at its first drawn frame (the run's first
+  `drive` in the frame's camera step), not at mount: the box's fit and the first tiles
   can take a while, and a flight timed from mount would skip its start.
 - Takeover: a pointerdown or a wheel on the canvas (capture phase), the
   controls' `onTake`, the arrows, the zoom steps and the toolbar's camera

@@ -18,10 +18,15 @@
  * mount hands the ground between the relief (low) and the globe's surface
  * (high) across a band of heights, as in the globe lab.
  *
- * A tour opened afresh flies in from high above first
- * (`globe-approach-run.ts`): a bar at the top follows the fall under
+ * A tour opened afresh flies in from high above first, on the globe's own
+ * meteor flight (`globe-approach-meteor.ts`, its knobs the link's), run
+ * by `globe-approach-run.ts`: a bar at the top follows the fall under
  * "Loading tour", the stations pop in on arrival and the recorded
  * walk draws itself; any input in the view takes the camera where it is.
+ * The flight places the camera only; the view's frame follows it by the
+ * view's own recentring, never set from the camera's pose each frame (that
+ * made the approach flicker). `stats().globe.frameChanges` counts the
+ * frame's moves for the page's checks.
  *
  * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
  * globe's camera as its `EditingCamera`: a handle drag leases the controls
@@ -116,7 +121,7 @@ import {
   type GlobeHiddenSet,
   type GlobeObjectOnScreen,
 } from "./globe-editor-look.js";
-import { approachFlight } from "./globe-approach-flight.js";
+import { createMeteorApproach } from "./globe-approach-meteor.js";
 import {
   ARRIVAL,
   walkDrawShare,
@@ -152,7 +157,15 @@ function higherOf(a: number | null, b: number | null): number | null {
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
-  knobs: Pick<GlobeSwitch, "hidePx" | "crowdPx">,
+  knobs: Pick<
+    GlobeSwitch,
+    | "hidePx"
+    | "crowdPx"
+    | "meteorDeg"
+    | "meteorLandDeg"
+    | "landAglM"
+    | "startKm"
+  >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
   const levels = deps.levels();
@@ -224,6 +237,8 @@ export async function openGlobeEditor(
     let approachEnded: ReturnType<ApproachRun["stats"]> | null = null;
     /** The arrival's timing of the approach (reduced motion or not). */
     let arrivalTiming: ArrivalTiming = ARRIVAL;
+    /** How often the view's frame moved (its first placement included). */
+    let frameChanges = 0;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -247,13 +262,11 @@ export async function openGlobeEditor(
           controls.pickFrom(
             relief ? ground.terrain.tiles.group : view.globe.tiles.group,
           );
-          // The approach places the camera while it flies; the controls
-          // take it from where it is once it lands or is taken. Its clock
-          // starts at the first drawn frame (this one, the first time).
-          approach?.start(performance.now());
-          const flying = approach?.poseAt(performance.now()) ?? null;
-          if (flying !== null) {
-            view.placeView(flying);
+          // The approach places the camera while it flies (the camera
+          // only: the frame follows below); the controls take it from where
+          // it is once it lands or is taken. Its clock starts at the first
+          // drawn frame (this one, the first time).
+          if (approach?.drive(performance.now()) === true) {
             controls.followIntro();
           } else {
             controls.update();
@@ -275,6 +288,7 @@ export async function openGlobeEditor(
         // A frame move (the first view's too): the controls let go, and the
         // editing's ECEF matrices follow at once, not at the next frame.
         frameChanged: () => {
+          frameChanges++;
           controls.release();
           followFrame();
         },
@@ -819,7 +833,7 @@ export async function openGlobeEditor(
       );
       // Mid-approach a flight to a station (a pick in the list) sends the
       // approach there instead of jumping.
-      if (approach?.retarget(performance.now(), poseNow(), goal, place.heightM))
+      if (approach?.retarget({ lat: place.lat, lng: place.lng }, place.heightM))
         return;
       controls.release();
       view.placeView(goal);
@@ -931,8 +945,8 @@ export async function openGlobeEditor(
       editing.dispose();
     });
 
-    // The first view: at street level south of the tour, on the tour's
-    // drawn height (the ground is not loaded yet).
+    // The first view without an approach: at street level south of the
+    // tour, on its drawn height (the ground is not loaded yet).
     const street = streetView(
       { lat: centre.lat, lng: centre.lng },
       centreHeightM,
@@ -943,14 +957,29 @@ export async function openGlobeEditor(
       const reducedMotion =
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
         true;
+      // The frame at the tour, once: the flight moves the camera only.
+      view.setFrameTarget({ lat: centre.lat, lng: centre.lng });
+      const driver = createMeteorApproach({
+        ellipsoid,
+        view,
+        controls,
+        tour: { lat: centre.lat, lng: centre.lng },
+        groundM: centreHeightM,
+        knobs,
+        // Paced by the tour's own loading: its stations' first uploads.
+        progress: () => {
+          const stations = tourNow?.stations.length ?? 0;
+          return stations === 0 ? 1 : Math.min(1, admitted.size / stations);
+        },
+        reliefGroundM: (p) => ground.groundAt(p.lat * DEG, p.lng * DEG),
+        reducedMotion,
+        ...(deps.approach.durationMs === undefined
+          ? {}
+          : { durationMs: deps.approach.durationMs }),
+      });
       const run = createApproachRun({
         box: deps.container,
-        flight: approachFlight(street, centreHeightM, {
-          reducedMotion,
-          ...(deps.approach.durationMs === undefined
-            ? {}
-            : { durationMs: deps.approach.durationMs }),
-        }),
+        driver,
         reducedMotion,
         ...(deps.approach.ended === undefined
           ? {}
@@ -962,7 +991,6 @@ export async function openGlobeEditor(
         approach = null;
         run.dispose();
       });
-      view.placeView(run.poseAt(performance.now()) ?? street);
     } else {
       view.placeView(street);
     }
@@ -1188,6 +1216,7 @@ export async function openGlobeEditor(
             hiddenStations: [...hidden.stations],
             hiddenCodes: [...hidden.codes],
             recentres: view.state().frameRecentres,
+            frameChanges,
             uploads: { ...uploads.stats(), admitted: admitted.size },
             clock: {
               realTime,

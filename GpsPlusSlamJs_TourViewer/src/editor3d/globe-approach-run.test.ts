@@ -11,29 +11,70 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { aimView, streetView } from "./globe-editor-look.js";
-import { approachFlight } from "./globe-approach-flight.js";
 import {
   APPROACH_TITLE,
   BAR_DONE_MS,
   createApproachRun,
+  type ApproachDriver,
 } from "./globe-approach-run.js";
 
-const GROUND_M = 515.5;
-const GOAL = streetView({ lat: 46.948, lng: 7.4474 }, GROUND_M);
+const START_KM = 8_000;
 
-function run(reducedMotion = false) {
+/**
+ * A flight as the run sees it: started by the first drive, landing
+ * `durationMs` later (0: a cut, landed on its first frame), falling
+ * evenly from `START_KM`; the bar is the share fallen. It records what
+ * the run asked of it.
+ */
+function fakeDriver(durationMs = 13_000) {
+  let startedAt: number | null = null;
+  const calls: string[] = [];
+  const driver: ApproachDriver & {
+    calls: string[];
+    altitudeKm(nowMs: number): number;
+  } = {
+    durationMs,
+    calls,
+    start(nowMs) {
+      calls.push(`start ${nowMs}`);
+      startedAt ??= nowMs;
+    },
+    drive(nowMs) {
+      return nowMs - (startedAt ?? nowMs) < durationMs;
+    },
+    retarget(place, groundM) {
+      calls.push(`retarget ${place.lat} ${place.lng} ${groundM}`);
+    },
+    takeOver(nowMs) {
+      calls.push(`takeOver ${nowMs}`);
+    },
+    bar: (altitudeKm) => 1 - altitudeKm / START_KM,
+    altitudeKm(nowMs) {
+      const t =
+        durationMs > 0 ? (nowMs - (startedAt ?? nowMs)) / durationMs : 1;
+      return START_KM * (1 - Math.min(1, Math.max(0, t)));
+    },
+  };
+  return driver;
+}
+
+function run(reducedMotion = false, durationMs = reducedMotion ? 0 : 13_000) {
   const box = document.createElement("div");
   document.body.append(box);
-  const flight = approachFlight(GOAL, GROUND_M, { reducedMotion });
-  const r = createApproachRun({ box, flight, startMs: 0, reducedMotion });
+  const flight = fakeDriver(durationMs);
+  const r = createApproachRun({ box, driver: flight, reducedMotion });
+  r.drive(0);
   return { box, flight, r };
 }
 
-/** Step the run at `t` with the camera where the flight has it. */
-function stepAt(r: ReturnType<typeof run>["r"], t: number): void {
-  const pose = r.poseAt(t);
-  r.step(t, pose?.altitudeKm ?? GOAL.altitudeKm);
+/** One frame at `t`: the run drives the camera, then reads its altitude. */
+function stepAt(
+  r: ReturnType<typeof run>["r"],
+  t: number,
+  flight?: ReturnType<typeof fakeDriver>,
+): void {
+  r.drive(t);
+  r.step(t, flight?.altitudeKm(t) ?? 0);
 }
 
 /** The box's root element. */
@@ -49,8 +90,8 @@ describe("createApproachRun", () => {
     // Why: the owner's accessibility rule - a progressbar role with a
     // value and a name; and his verdict on the detail line: gone, only
     // "Loading tour" and the bar stay.
-    const { box, r } = run();
-    stepAt(r, 0);
+    const { box, flight, r } = run();
+    stepAt(r, 0, flight);
     const bar = box.querySelector('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("0");
     expect(bar?.getAttribute("aria-label")).toBe("Loading tour");
@@ -69,7 +110,7 @@ describe("createApproachRun", () => {
     // stays full for a beat so its finish is seen, then the whole box
     // goes (it used to wait for the line, which is gone).
     const { box, flight, r } = run();
-    stepAt(r, flight.durationMs / 2);
+    stepAt(r, flight.durationMs / 2, flight);
     const mid = r.stats().progress ?? -1;
     expect(mid).toBeGreaterThan(0.3);
     expect(mid).toBeLessThan(0.7);
@@ -82,7 +123,7 @@ describe("createApproachRun", () => {
       progress: 1,
     });
     expect(r.holdsStations()).toBe(false);
-    expect(r.poseAt(flight.durationMs + 1)).toBeNull();
+    expect(r.drive(flight.durationMs + 1)).toBe(false);
     const bar = box.querySelector<HTMLElement>('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("100");
     stepAt(r, flight.durationMs + BAR_DONE_MS - 1);
@@ -124,10 +165,11 @@ describe("createApproachRun", () => {
     // Why: an input in the 3D view takes over at once; the run must stop
     // giving poses, or the controls and the flight would fight. A taken
     // bar did not finish, so it does not stay to be seen finishing.
-    const { box, r } = run();
+    const { box, flight, r } = run();
     stepAt(r, 3_000);
     r.takeOver(3_000);
-    expect(r.poseAt(3_016)).toBeNull();
+    expect(r.drive(3_016)).toBe(false);
+    expect(flight.calls).toContain("takeOver 3000");
     expect(r.stats().ended).toBe("taken");
     expect(r.holdsStations()).toBe(false);
     stepAt(r, 3_016);
@@ -138,18 +180,36 @@ describe("createApproachRun", () => {
   });
 
   it("retargets a flight to a station picked mid-flight", () => {
-    // Why: a list click mid-flight sends the flight there, from where the
-    // camera is, and the flight still ends.
-    const { r } = run();
-    const at = 4_000;
-    const now = r.poseAt(at)!;
-    const station = aimView({ lat: 46.9485, lng: 7.448 }, GROUND_M, 20);
-    expect(r.retarget(at, now, station, GROUND_M)).toBe(true);
-    expect(r.poseAt(at)).toEqual(now);
+    // Why: a list click mid-flight sends the flight there (the flight's own
+    // leg from where the camera is), and the flight still ends; after the
+    // landing the caller places the camera itself.
+    const { flight, r } = run();
+    stepAt(r, 4_000);
+    expect(r.retarget({ lat: 46.9485, lng: 7.448 }, 515.5)).toBe(true);
+    expect(flight.calls).toContain("retarget 46.9485 7.448 515.5");
     expect(r.stats().retargets).toBe(1);
-    stepAt(r, at + 60_000);
+    stepAt(r, 60_000);
     expect(r.stats().ended).toBe("landed");
-    expect(r.retarget(at + 60_001, station, GOAL, GROUND_M)).toBe(false);
+    expect(r.retarget({ lat: 46.9, lng: 7.4 }, 515.5)).toBe(false);
+    expect(r.stats().retargets).toBe(1);
+  });
+
+  it("starts the flight on its first drive, once", () => {
+    // Why: the flight's clock starts at the first drawn frame, not when
+    // the view was made (the first frame can come much later).
+    const { flight, r } = run();
+    r.drive(16);
+    r.drive(32);
+    expect(flight.calls.filter((c) => c.startsWith("start"))).toEqual([
+      "start 0",
+    ]);
+  });
+
+  it("reports the flight's length, 0 for a cut", () => {
+    // Why: the page's checks read how long the flight was meant to take;
+    // under reduced motion it is a cut, no flight at all.
+    expect(run().r.stats().durationMs).toBe(13_000);
+    expect(run(true).r.stats().durationMs).toBe(0);
   });
 
   it("does not hide the box while flying", () => {
@@ -163,12 +223,13 @@ describe("createApproachRun", () => {
     );
   });
 
-  it("under reduced motion lands soon and goes after the same hold", () => {
-    // Why: reduced motion shortens the flight and the pop-in; the hold is
-    // no motion, so the finish is still seen.
+  it("under reduced motion lands on its first frame and goes after the same hold", () => {
+    // Why: reduced motion cuts to the end view (no flight) and shortens
+    // the pop-in; the hold is no motion, so the finish is still seen.
     const { box, flight, r } = run(true);
-    expect(flight.durationMs).toBeLessThanOrEqual(3_000);
-    stepAt(r, flight.durationMs);
+    expect(flight.durationMs).toBe(0);
+    r.step(0, 0);
+    expect(r.stats().ended).toBe("landed");
     expect(rootOf(box).hidden).toBe(false);
     stepAt(r, flight.durationMs + BAR_DONE_MS);
     expect(rootOf(box).hidden).toBe(true);
@@ -178,14 +239,14 @@ describe("createApproachRun", () => {
   const reporting = (done: () => void) => {
     const box = document.createElement("div");
     document.body.append(box);
-    const flight = approachFlight(GOAL, GROUND_M, { reducedMotion: false });
+    const flight = fakeDriver();
     const r = createApproachRun({
       box,
-      flight,
-      startMs: 0,
+      driver: flight,
       reducedMotion: false,
       onDone: done,
     });
+    r.drive(0);
     return { flight, r };
   };
 
@@ -225,15 +286,14 @@ describe("createApproachRun", () => {
     // Why: a view closed mid-flight never landed; the editor gives the
     // rail back on its own close.
     const box = document.createElement("div");
-    const flight = approachFlight(GOAL, GROUND_M, { reducedMotion: false });
     const done = vi.fn();
     const r = createApproachRun({
       box,
-      flight,
-      startMs: 0,
+      driver: fakeDriver(),
       reducedMotion: false,
       onDone: done,
     });
+    r.drive(0);
     stepAt(r, 1_000);
     r.dispose();
     expect(done).not.toHaveBeenCalled();

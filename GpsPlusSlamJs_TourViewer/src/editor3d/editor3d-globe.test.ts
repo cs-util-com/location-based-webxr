@@ -29,6 +29,7 @@ import { WGS84_ELLIPSOID } from "gps-plus-slam-globe/test-utils/view-pose";
 import type { Editor3dDeps, Editor3dView } from "./editor3d-scene.js";
 import { openGlobeEditor } from "./editor3d-globe.js";
 import { GLOBE_EDITOR_LOOK } from "./globe-editor-look.js";
+import { readGlobeSwitch } from "../editor/globe-switch.js";
 
 const DEG = Math.PI / 180;
 /** The geoid's N everywhere in these tests (m). */
@@ -289,6 +290,11 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         state: () => ({ frameRecentres: 0 }),
         sceneMs: () => 0,
         ecefCamera,
+        // As the view core's: the camera only, the frame kept.
+        placeCameraEcef(position: THREE.Vector3, quaternion: THREE.Quaternion) {
+          place({ position, quaternion });
+        },
+        fitDistance: () => 20_000_000,
         setFrameTarget,
         placeView(pose: Pose) {
           const ecef = viewPoseEcef(WGS84_ELLIPSOID, pose);
@@ -453,7 +459,7 @@ async function openAt(
   tourAt(heightM);
   open = await openGlobeEditor(
     { ...deps(), ...extra },
-    { hidePx: 4, crowdPx: 16 },
+    { ...readGlobeSwitch(""), hidePx: 4, crowdPx: 16 },
   );
   return open;
 }
@@ -898,7 +904,7 @@ describe("openGlobeEditor's wiring", () => {
       } as unknown as Editor3dDeps["store"];
       open = await openGlobeEditor(
         { ...deps(), store },
-        { hidePx: 4, crowdPx: 16 },
+        { ...readGlobeSwitch(""), hidePx: 4, crowdPx: 16 },
       );
       const camera = fakes.view?.camera;
       const zoomTowards = fakes.inputScene?.zoomTowards;
@@ -1085,8 +1091,17 @@ describe("openGlobeEditor's wiring", () => {
       return open?.stats().flying;
     };
     expect(flyingAt(5_016)).toBe(true);
+    let t = 5_016;
+    for (; t < 5_900; t += 1000 / 60) flyingAt(t);
     expect(flyingAt(5_900)).toBe(true);
-    expect(flyingAt(6_100)).toBe(false);
+    // The stand-in's stations never upload, so the flight waits for them
+    // until its safety cap (60 s on the flight's clock, which the asked
+    // length speeds up) and lands a few seconds after its first frame. Had its clock
+    // started at mount it would have landed before 5,900.
+    for (; t < 11_000 && open?.stats().flying === true; t += 1000 / 60) {
+      flyingAt(t);
+    }
+    expect(open?.stats().flying).toBe(false);
   });
 
   // Why: the page unfolds its rail when the approach's bar goes after a
@@ -1099,7 +1114,11 @@ describe("openGlobeEditor's wiring", () => {
     await openAt(0, { approach: { durationMs: 1_000, ended } });
     for (now = 0; now < 900; now += 1000 / 60) frameAt(now);
     expect(ended).not.toHaveBeenCalled();
-    for (; now < 6_000; now += 1000 / 60) frameAt(now);
+    for (; now < 20_000 && open?.stats().flying !== false;) {
+      now += 1000 / 60;
+      frameAt(now);
+    }
+    for (const end = now + 1_000; now < end; now += 1000 / 60) frameAt(now);
     expect(ended).toHaveBeenCalledTimes(1);
     expect(ended).toHaveBeenCalledWith("landed");
   });
@@ -1154,7 +1173,13 @@ describe("openGlobeEditor's wiring", () => {
       approach: { durationMs: 1_000 },
       walk: () => walkNow,
     });
-    for (now = 0; now < 6_000; now += 1000 / 60) frameAt(now);
+    // Until it lands (the stand-in's stations never upload: by the
+    // flight's safety cap), then a beat for the bar.
+    for (now = 0; now < 20_000 && open?.stats().flying !== false;) {
+      now += 1000 / 60;
+      frameAt(now);
+    }
+    for (const end = now + 1_000; now < end; now += 1000 / 60) frameAt(now);
     const marks = () =>
       open?.stats().globe?.marks as
         { walkPoints: number; walkDrawn: number } | undefined;

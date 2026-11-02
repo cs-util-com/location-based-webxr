@@ -317,18 +317,48 @@ test("the box goes after the bar's done-hold while tiles are still held", async 
   await expect.poll(async () => (await view3d(page)).stations).toBe(3);
 });
 
+test("the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring", async ({
+  page,
+}) => {
+  // Why: the owner's meteor ends close to the tour at its landing angle
+  // (50 degrees below the horizon by default, 150 m over the ground: about
+  // 196 m from the tour), with no settle or tilt of the editor's own. And
+  // the frame: the old approach set the view's frame from the camera's
+  // pose every frame, which flickered; now only the view's own recentring
+  // moves it (plus the first placement at the tour).
+  test.setTimeout(240_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await approachLasting(page, 6_000);
+  await openSampleOnGlobe(page);
+  await expect
+    .poll(async () => (await approachOf(page))?.ended ?? null, {
+      timeout: 60_000,
+    })
+    .toBe("landed");
+  const landed = await view3d(page);
+  expect(landed.distanceM).toBeLessThan(400);
+  // Tilt from straight down: 90 less the 50 degrees below the horizon.
+  expect(landed.tiltDeg).toBeGreaterThan(35);
+  expect(landed.tiltDeg).toBeLessThan(45);
+  expect(landed.globe.frameChanges).toBeLessThanOrEqual(
+    landed.globe.recentres + 2,
+  );
+});
+
 test.describe("with reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
 
-  test("the flight is short", async ({ page }) => {
+  test("there is no flight: the view cuts to the landing", async ({ page }) => {
     // Why: a creator who asked for less motion still gets the tour, in a
-    // short flight and a short arrival.
+    // cut to the flight's end view (no flight at all) and a short arrival.
     test.setTimeout(180_000);
     await answerHosts(page, { globeAssets: "serve" });
     await openSampleOnGlobe(page);
     await expect
-      .poll(async () => (await approachOf(page))?.durationMs)
-      .toBe(2_000);
+      .poll(async () => (await approachOf(page))?.ended ?? null)
+      .toBe("landed");
+    expect((await approachOf(page))?.durationMs).toBe(0);
+    expect((await view3d(page)).distanceM).toBeLessThan(400);
   });
 
   test("the rail unfolds at the landing without its animation", async ({
