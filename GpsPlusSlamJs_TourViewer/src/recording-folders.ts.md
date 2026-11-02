@@ -94,8 +94,9 @@ emptyMinAgeMs }`, by default `SAVED_RECORDING_MAX_AGE_MS` (7 days),
   `recording-<UTC ts>[-N]` directory (a file, `drafts`, a malformed name) is
   neither listed nor deleted.
 - **A live page's folder is untouchable.** The recording page holds a Web
-  Lock named after its folder for its whole life (a request whose callback
-  never settles); the browser releases it when the page goes - exactly "the
+  Lock named after its folder for its whole life (the framework's
+  `holdLock` from `storage/save-target`, `withoutLocks: "refuse"`, never
+  released); the browser releases it when the page goes - exactly "the
   tab was killed". The page-open housekeeping skips held folders, so a folder
   another open tab records into is neither offered nor cleaned up. Three
   rules close the gaps the M1b review (#2) found:

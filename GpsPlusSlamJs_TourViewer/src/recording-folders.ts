@@ -36,6 +36,7 @@ import {
   type SessionMetadataRecord,
 } from "gps-plus-slam-app-framework/storage/session-metadata-record";
 import type { BuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
+import { holdLock } from "gps-plus-slam-app-framework/storage/save-target";
 
 /** Where this app's recordings live, under the OPFS root. Both apps share
  *  one origin; the Recorder's recordings are in `gps-plus-slam/sessions/`. */
@@ -108,25 +109,22 @@ export function recordingFileName(startedAt: Date): string {
   return `tour-recording-${formatTimestamp(startedAt)}.zip`;
 }
 
-const LOCK_PREFIX = "gps-plus-slam/tour-viewer/";
-
 /**
- * The Web Lock a page holds on the folder it records into, for the page's
- * whole life. The browser releases it when the page goes - which is exactly
- * "the tab was killed" - so a folder whose lock is held belongs to a live
- * page (this one, or another tab) and is neither offered nor cleaned up.
+ * The family of the Web Locks a page holds on the folder it records into,
+ * for the page's whole life (`<prefix><folder name>`). The browser releases
+ * one when the page goes - which is exactly "the tab was killed" - so a
+ * folder whose lock is held belongs to a live page (this one, or another
+ * tab) and is neither offered nor cleaned up.
  */
-function recordingLockName(folderName: string): string {
-  return `${LOCK_PREFIX}${folderName}`;
-}
+const LOCK_PREFIX = "gps-plus-slam/tour-viewer/";
 
 /** The Web Locks this module needs (`navigator.locks`). */
 export type RecordingLocks = Pick<LockManager, "query" | "request">;
 
 /**
- * Hold the folder's lock until the page goes: the request's callback
- * returns a promise that never settles, so the lock is released only when
- * the browser drops the page. Resolves once the browser answered - true
+ * Hold the folder's lock until the page goes: the framework's `holdLock`
+ * with `withoutLocks: "refuse"`, whose hold is never released here, so the
+ * lock is released only when the browser drops the page. Resolves once the browser answered - true
  * when the lock is now held, false when another page holds the name (the
  * request is `ifAvailable`, so it never waits for a lock held for a page's
  * life), without Web Locks, or when the request fails. The page takes it
@@ -135,25 +133,16 @@ export type RecordingLocks = Pick<LockManager, "query" | "request">;
  * the next page's offer may then offer a folder another open tab still
  * records into - the tab's own writes then fail visibly on its marker).
  */
-export function holdRecordingFolder(
+export async function holdRecordingFolder(
   locks: RecordingLocks | undefined,
   folderName: string,
 ): Promise<boolean> {
-  if (locks === undefined) return Promise.resolve(false);
-  return new Promise<boolean>((resolve) => {
-    locks
-      .request(
-        recordingLockName(folderName),
-        { ifAvailable: true },
-        (lock: Lock | null) => {
-          resolve(lock !== null);
-          return lock === null ? undefined : new Promise<never>(() => {});
-        },
-      )
-      .catch(() => {
-        resolve(false);
-      });
+  // Never released: the browser drops the lock with the page.
+  const hold = await holdLock(locks, folderName, {
+    prefix: LOCK_PREFIX,
+    withoutLocks: "refuse",
   });
+  return hold.granted;
 }
 
 /** The folders a live page holds or waits for (none without Web Locks, or

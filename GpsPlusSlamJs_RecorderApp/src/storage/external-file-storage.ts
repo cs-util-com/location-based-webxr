@@ -26,6 +26,7 @@
  */
 
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
+import { classifyPickerRejection } from 'gps-plus-slam-app-framework/storage/picker-errors';
 
 const log = createLogger('ExternalStorage');
 
@@ -163,7 +164,7 @@ export async function selectReadFolder(): Promise<ReadFolderResult> {
     const error = err instanceof Error ? err : new Error(String(err));
 
     // User cancelled - not an error
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (classifyPickerRejection(err) === 'cancelled') {
       log.info('Folder selection cancelled by user');
       return {
         success: false,
@@ -236,7 +237,7 @@ export async function selectSaveFile(): Promise<SaveFileResult> {
     const error = err instanceof Error ? err : new Error(String(err));
 
     // User cancelled - not an error
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (classifyPickerRejection(err) === 'cancelled') {
       log.info('Save file selection cancelled by user');
       return {
         success: false,
