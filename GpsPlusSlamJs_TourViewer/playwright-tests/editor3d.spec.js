@@ -70,8 +70,8 @@ test("opens the sample tour in 3D after a loading state, and back to the map wit
   await expect(page.locator("#view3d")).toBeVisible();
   await expect(page.locator("#view3d canvas")).toBeVisible();
   // The credits are one disclosure button; its panel lists every source
-  // in full, and Esc closes it with focus back on the button, also with
-  // focus moved out of the panel.
+  // in full, and Esc closes it with focus back on the button (focus was
+  // in the box; focus moved on elsewhere stays there, a unit test).
   const credits = page.locator("#view3d-credits");
   const creditsButton = credits.getByRole("button", { name: "Credits" });
   const creditsPanel = credits.locator(".view3d-credits-panel");

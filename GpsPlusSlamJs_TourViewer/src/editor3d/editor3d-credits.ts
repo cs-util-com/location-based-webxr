@@ -3,7 +3,8 @@
  * view, a disclosure that shows a panel listing every source in full with
  * its link, and a note under the list (the globe view's: GIBS's
  * acknowledgement). Esc anywhere while it is open (heard on the document)
- * and a pointer down outside close it; Esc gives focus back to the button.
+ * and a pointer down outside close it; Esc gives focus back to the button
+ * when focus was in the box or on the page itself.
  * Texts are set as text, never as markup.
  *
  * @see editor3d-credits.ts.md
@@ -81,7 +82,10 @@ export function mountCredits(
     if (event.key !== "Escape" || panel.hidden) return;
     event.preventDefault();
     event.stopPropagation();
-    close(true);
+    // Focus goes back to the button only from the box or the page itself;
+    // focus that has moved on elsewhere stays there.
+    const at = document.activeElement;
+    close(at === null || at === document.body || box.contains(at));
   };
   const onOutside = (event: Event) => {
     if (event.target instanceof Node && box.contains(event.target)) return;

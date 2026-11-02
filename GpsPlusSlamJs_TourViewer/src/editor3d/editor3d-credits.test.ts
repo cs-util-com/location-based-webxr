@@ -156,13 +156,27 @@ describe("mountCredits", () => {
     document.removeEventListener("keydown", seen);
   });
 
-  it("closes on Esc with focus outside the box", () => {
+  it("closes on Esc with focus outside the box, leaving focus where it is", () => {
     // Why: the review found Esc heard only inside the box; a disclosure
-    // left open while focus moved on must still close on Esc.
+    // left open while focus moved on must still close on Esc. Focus that
+    // has moved on stays there: pulling it back to the button would
+    // throw the keyboard user out of whatever they went on to.
     const { button, panel, outside } = mount();
     button.click();
     outside.focus();
     expect(esc(outside)).toBe(false);
+    expect(panel.hidden).toBe(true);
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it("gives focus to the button on Esc when focus was on the page itself", () => {
+    // Why: with focus on the body (a click on nothing focusable), the
+    // button is the nearest place to resume from.
+    const { button, panel } = mount();
+    button.click();
+    button.blur();
+    expect(document.activeElement).toBe(document.body);
+    esc(document.body);
     expect(panel.hidden).toBe(true);
     expect(document.activeElement).toBe(button);
   });

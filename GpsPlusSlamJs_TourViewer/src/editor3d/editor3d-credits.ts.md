@@ -38,7 +38,8 @@ a note under the list (the globe view passes GIBS's acknowledgement).
 
 - Texts are set as `textContent`, never as markup.
 - Closing: the button toggles; Esc anywhere in the page closes it and
-  gives focus back to the button (heard on the document in the capture
+  gives focus back to the button when focus was in the box or on the
+  page itself (focus that moved on elsewhere stays there; heard on the document in the capture
   phase while open and stopped there, so one Esc does nothing else in the
   editor); a pointer down outside the box closes it
   without moving focus (the browser gives focus to what was pressed).
@@ -59,7 +60,7 @@ undo.push(
 ## Tests
 
 - `editor3d-credits.test.ts` (jsdom) - the button alone, the overlay's
-  links and note, text never markup, Esc with focus back (also with focus outside the box), Esc left alone
+  links and note, text never markup, Esc with focus back from the box and from the page itself, kept where it is from outside the box, Esc left alone
   while closed and stopped while open, outside and inside pointer downs,
   the toggle, the OSM option, unmount.
 - `editor3d-globe.test.ts` - the globe view mounts it with GIBS's
