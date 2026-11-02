@@ -479,6 +479,71 @@ describe("viewPoseEcef", () => {
     expect(f2.dot(north)).toBeGreaterThan(0);
   });
 
+  // Why: a view straight down (pitch -90, how the Tour Viewer's approach
+  // falls from space) is where `lookAt` has no up to cross with: its
+  // right axis came out of rounding noise, different for each place, so a
+  // camera flying straight down spun and tipped (up to 180 degrees) from
+  // one frame to the next - the flicker the owner saw (2026-11-02). At
+  // every pitch, the poles of the view included, the camera must look
+  // along the heading and pitch and keep its right axis level, turned by
+  // the heading: straight down, the heading is the turn about the view.
+  it("is exact straight down and up: the heading turns the view about its axis", () => {
+    const { view } = makeView();
+    const ellipsoid = view.globe.tiles.ellipsoid;
+    const east = new THREE.Vector3();
+    const north = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    const check = (
+      lat: number,
+      lng: number,
+      headingDeg: number,
+      pitchDeg: number,
+    ) => {
+      const pose = viewPoseEcef(ellipsoid, {
+        lat,
+        lng,
+        altitudeKm: 500,
+        headingDeg,
+        pitchDeg,
+      });
+      ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
+      const h = headingDeg * DEG;
+      const p = pitchDeg * DEG;
+      const wantForward = east
+        .clone()
+        .multiplyScalar(Math.sin(h) * Math.cos(p))
+        .addScaledVector(north, Math.cos(h) * Math.cos(p))
+        .addScaledVector(up, Math.sin(p));
+      const wantRight = east
+        .clone()
+        .multiplyScalar(Math.cos(h))
+        .addScaledVector(north, -Math.sin(h));
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        pose.quaternion,
+      );
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(pose.quaternion);
+      expect(Math.abs(pose.quaternion.length() - 1)).toBeLessThan(1e-9);
+      expect(forward.distanceTo(wantForward)).toBeLessThan(1e-9);
+      expect(right.distanceTo(wantRight)).toBeLessThan(1e-9);
+    };
+    // The approach's own path (from 35 degrees west and 12 south of
+    // Munich, straight down, north up): random places alone hit the
+    // noise only now and then; on this path it was most frames.
+    for (let i = 0; i <= 100; i++) {
+      check(36.14 + 0.12 * i, -23.42 + 0.35 * i, 0, -90);
+    }
+    fc.assert(
+      fc.property(
+        fc.double({ min: -85, max: 85, noNaN: true }),
+        fc.double({ min: -180, max: 180, noNaN: true }),
+        fc.double({ min: 0, max: 360, noNaN: true, maxExcluded: true }),
+        fc.constantFrom(-90, 90, -89.999999, 89.999999, -45, 0),
+        check,
+      ),
+      { numRuns: 1000 },
+    );
+  });
+
   it("refuses a pose that is not finite", () => {
     const { view } = makeView();
     expect(() =>
