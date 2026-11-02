@@ -109,6 +109,15 @@ voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
   the text shows as it did at minor 4, and that app will not save the
   tour.
 
+- **The parts of a long text shown as typed** (`ar/tour-markdown`):
+  `diagnoseTourMarkdown(body, { assetExists? })` gives each part of a body
+  that a visitor sees as the characters typed rather than formatted, as
+  the reader itself decides it, with the types `TourMdDiagnostic`
+  (`kind`, `from`, `to`, `line`) and `TourMdDiagnosticKind`. A code
+  box's fence state follows the whole body (a blank line inside a box
+  keeps it a box), and a box left open inside a list item or a quote ends
+  with its container.
+
 ### Fixed
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return

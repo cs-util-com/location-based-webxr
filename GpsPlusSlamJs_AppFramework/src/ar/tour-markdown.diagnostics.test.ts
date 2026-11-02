@@ -81,6 +81,18 @@ describe('diagnoseTourMarkdown', () => {
     ]);
   });
 
+  it('ends a code box left open inside a list item or a quote with its container', () => {
+    // Why: a container's lines are its own; a fence never closed inside a
+    // list item or a quote carried past it and marked the plain text after
+    // the container as code.
+    expect(parts('- ```\n  code\n\nPlain after the list')).toEqual([
+      ['code', '```\n  code'],
+    ]);
+    expect(parts('> ```\n> code\n\nPlain after the quote')).toEqual([
+      ['code', '```\n> code'],
+    ]);
+  });
+
   it('reports a table and tab columns as one part each', () => {
     expect(parts('| a | b |\n|---|---|\n| 1 | 2 |')).toEqual([
       ['table', '| a | b |\n|---|---|\n| 1 | 2 |'],

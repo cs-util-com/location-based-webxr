@@ -1963,6 +1963,17 @@ function convertChildren(
   return node.children.flatMap((child) => convertBlock(child, context));
 }
 
+/** The blocks of a container (a list item, a quote): a code box left open
+ *  inside it ends with it, since the lines after it are not its own. */
+function convertContainer(
+  node: BlockNode,
+  context: ConvertContext
+): TourMdBlock[] {
+  const blocks = convertChildren(node, context);
+  if (collector !== null) collector.openFence = null;
+  return blocks;
+}
+
 /** A heading's inline parts shown as typed, noted while diagnosing. */
 function noteHeading(node: BlockNode): void {
   if (collector !== null) {
@@ -1989,11 +2000,11 @@ function convertBlock(node: BlockNode, context: ConvertContext): TourMdBlock[] {
           kind: 'list',
           ordered: node.list?.ordered ?? false,
           start: node.list?.start ?? 1,
-          items: node.children.map((item) => convertChildren(item, context)),
+          items: node.children.map((item) => convertContainer(item, context)),
         },
       ];
     default:
-      return [{ kind: 'quote', blocks: convertChildren(node, context) }];
+      return [{ kind: 'quote', blocks: convertContainer(node, context) }];
   }
 }
 
