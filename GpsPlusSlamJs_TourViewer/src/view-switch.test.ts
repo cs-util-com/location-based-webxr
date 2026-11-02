@@ -6,7 +6,9 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { cancelsXrSelect } from "./pin-sheet.js";
 import {
+  CLOSING_TAP_GRACE_MS,
   createViewSwitch,
+  SELECT_BEFORE_TAP_MS,
   switchBlocks,
   viewSwitchModel,
 } from "./view-switch.js";
@@ -319,7 +321,7 @@ describe("the switch on the page", () => {
   });
 
   // Why this test matters: the window has an upper side. A select
-  // cancelled on the open menu long before the closing pointerdown (300 ms,
+  // cancelled on the open menu long before the closing pointerdown (50 ms
   // past the 250 ms window) belongs to an earlier tap, not this one; the
   // closing tap must still arm its mark, so its own select arriving after
   // its pointerup is cancelled too. Without the bound every closing tap
@@ -327,7 +329,7 @@ describe("the switch on the page", () => {
   it("still cancels the closing tap's select when the last open-menu select came long before its pointerdown", () => {
     const { q, outside, sw } = openOutside();
     expect(selectCancelled(outside), "a select on the open menu").toBe(true);
-    clockMs += 300;
+    clockMs += SELECT_BEFORE_TAP_MS + 50;
     finger(outside, "pointerdown", 1);
     expect(q("view-switch-menu")?.hidden).toBe(true);
     finger(outside, "pointerup", 1);
@@ -385,7 +387,7 @@ describe("the switch on the page", () => {
     const { outside } = openOutside();
     finger(outside, "pointerdown", 1);
     finger(outside, "pointerup", 1);
-    clockMs += 300;
+    clockMs += CLOSING_TAP_GRACE_MS + 50;
     expect(selectCancelled(outside)).toBe(false);
   });
 
@@ -415,7 +417,7 @@ describe("the switch on the page", () => {
     const second = openOutside();
     finger(second.outside, "pointerdown", 1);
     finger(second.outside, "pointercancel", 1);
-    clockMs += 300;
+    clockMs += CLOSING_TAP_GRACE_MS + 50;
     expect(selectCancelled(second.outside), "after the grace").toBe(false);
   });
 

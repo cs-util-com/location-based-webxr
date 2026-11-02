@@ -255,7 +255,7 @@ function withPictureAssets(
 ): TourAsset[] {
   const owned = ownedAssetIds(manifest);
   const named = new Set([
-    ...objects.flatMap(blockAssetIds),
+    ...objects.flatMap((b) => blockAssetIds(b)),
     ...manifest.stations.flatMap(stepAssetIds),
   ]);
   const kept = manifest.assets.filter(
@@ -325,15 +325,23 @@ export function keepsItself(
 /** The assets `block` names: its media, a video's poster, a character's
  *  image and voice, the pictures a long text's body names (shown or not:
  *  inline, past the cap) and its narration's voice (the timing is an entry, not an asset). A new kind
- *  fails to compile here until it says which assets it keeps. */
-function blockAssetIds(block: TourBlock | TourObject): readonly string[] {
+ *  fails to compile here until it says which assets it keeps.
+ *  `required`: only those the format requires the tour to carry, without
+ *  the pictures a long text's body names (they may be missing; the
+ *  visitor reads their alt text). */
+function blockAssetIds(
+  block: TourBlock | TourObject,
+  required = false,
+): readonly string[] {
   switch (block.kind) {
     case "shortText":
       return [];
-    case "longText":
+    case "longText": {
+      const body = required ? [] : blockBodyAssets(block);
       return block.narration === undefined
-        ? blockBodyAssets(block)
-        : [...blockBodyAssets(block), block.narration.audio];
+        ? body
+        : [...body, block.narration.audio];
+    }
     case "picture":
       return [block.image];
     case "video":
@@ -367,7 +375,7 @@ export function objectAssetIds(object: TourObject): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "blocks" | "steps">,
 ): readonly string[] {
-  return storyBlocksOf(station).flatMap(blockAssetIds);
+  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b));
 }
 
 /**
@@ -379,13 +387,7 @@ export function stepAssetIds(
 export function stepRequiredAssetIds(
   station: Pick<TourStation, "blocks" | "steps">,
 ): readonly string[] {
-  return storyBlocksOf(station).flatMap((block) =>
-    block.kind !== "longText"
-      ? blockAssetIds(block)
-      : block.narration === undefined
-        ? []
-        : [block.narration.audio],
-  );
+  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b, true));
 }
 
 /**
@@ -396,7 +398,7 @@ export function stepRequiredAssetIds(
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...station.blocks.flatMap(blockAssetIds),
+      ...station.blocks.flatMap((b) => blockAssetIds(b)),
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),

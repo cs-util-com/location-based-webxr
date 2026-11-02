@@ -205,7 +205,7 @@ export interface ViewSwitch {
  *  were weighed, as above); a phone that delivers the closing tap's
  *  select more than 250 ms after pointerup would argue for another
  *  value. */
-const CLOSING_TAP_GRACE_MS = 250;
+export const CLOSING_TAP_GRACE_MS = 250;
 
 /** How long before an outside pointerdown a select cancelled while the
  *  menu was open is taken for that tap's own (the browser asked for its
@@ -217,7 +217,7 @@ const CLOSING_TAP_GRACE_MS = 250;
  *  tap outside comes within 250 ms of a tap on the open menu has that
  *  tap's select let through, and a device log of a select running further
  *  ahead would argue for a longer value. */
-const SELECT_BEFORE_TAP_MS = 250;
+export const SELECT_BEFORE_TAP_MS = 250;
 
 /** The pointer an event is from (0 when it carries none). */
 function pointerIdOf(event: Event): number {

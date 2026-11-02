@@ -80,7 +80,7 @@ and offers "Use the creator's choice again" while a choice is stored.
   second tap), and goes with the first select it cancels. Each finger has
   its own mark, so another finger lifting does not clear it. Handled: a
   select before the closing pointerdown (the menu is still open; one up
-  to 250 ms before it, `SELECT_BEFORE_TAP_MS`, is taken for that tap's
+  to 250 ms before it, `SELECT_BEFORE_TAP_MS` (exported, with `CLOSING_TAP_GRACE_MS`, so the tests step past each window by its own value), is taken for that tap's
   own, so the pointerdown arms no mark; the same value as the grace, a
   constant of its own because it answers another question), while
   the finger is down, and up to 250 ms after it lifts. Not handled: a

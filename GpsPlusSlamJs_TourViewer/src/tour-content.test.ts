@@ -650,10 +650,15 @@ describe("stepRequiredAssetIds", () => {
           const all = new Set(stepAssetIds(station));
           const required = stepRequiredAssetIds(station);
           expect(required.every((id) => all.has(id))).toBe(true);
-          const hasLongText = station.blocks.some((b) => b.kind === "longText");
-          expect(required).toEqual(
-            hasLongText ? required : stepAssetIds(station),
-          );
+          // Exactly what the story names once every long text's body
+          // names no picture: the body's pictures are all it leaves out.
+          const plainBodies = {
+            ...station,
+            blocks: station.blocks.map((b) =>
+              b.kind === "longText" ? { ...b, body: "Plain words." } : b,
+            ),
+          };
+          expect(required).toEqual(stepAssetIds(plainBodies));
         }
       }),
       { numRuns: 60 },

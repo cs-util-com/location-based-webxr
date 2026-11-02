@@ -72,12 +72,12 @@ camera captures are debug data, never in a station (an earlier file's
   document (`withoutEmptied`) ask.
 - `imageAssetIds(assets) -> ReadonlySet<string>`: the image assets' ids,
   through the framework's `tourImageIds` (what `keepsItself` takes).
-- `blockAssetIds(block)` (module-internal): the assets one block names (a closed switch: a
-  new kind fails to compile until it says which it keeps).
+- `blockAssetIds(block, required?)` (module-internal): the assets one block names (a closed switch: a
+  new kind fails to compile until it says which it keeps); with `required`, without the pictures a long text's body names, the one place that rule lives.
   `stepAssetIds(station)`: the assets a station's (or a frame's) story
   blocks name. `stepRequiredAssetIds(station)`: the same without the
   pictures a long text's body names (the format lets those be missing),
-  what a draft restore checks a frame against. `objectAssetIds(object)`: the assets an object in the
+  what a draft restore checks a frame against (`blockAssetIds(block, true)`; a property test holds it to `stepAssetIds` of the same station with picture-free bodies). `objectAssetIds(object)`: the assets an object in the
   world keeps (a model its file, a picture the tour's image it names, a
   pin none; a captured photo's own asset none, as it is part of its
   picture) - what the write and the document's history read.
