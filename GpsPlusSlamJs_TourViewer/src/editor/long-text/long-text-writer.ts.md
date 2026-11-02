@@ -70,11 +70,16 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
   and coming back shows the tour's text again.
 - Picture thumbnails are blob addresses kept by the picture's path; they
   are released when the writer is emptied and when the tour's pictures
-  change (a picture replaced under the same path is read again).
+  change (their ids or paths; a picture given another file is read
+  again). A picture read that lands after a release is not kept, so no
+  blob address outlives the release that should free it.
 - Parts shown as typed: `typedParts` with the tour's pictures; the
   callout offers "Make it plain text" (a kind's own fix label), "Use a
   tour picture" (picture kinds, with pictures in the tour) and "Keep as
   typed"; prev and next go through the parts and call `onShow`.
+- The formatting toolbar is one tab stop (the last focused button); the
+  arrow keys move along it, wrapping, and Home and End go to its ends.
+  The parts chip names the list it opens (`aria-controls`).
 - View picker: radio segments with a roving tab stop; arrows choose and
   focus; a dimmed segment explains why, and Captions without a voice
   offers "Add a narration", which opens and focuses the narration spot
@@ -107,4 +112,4 @@ system zeroes margins, so every gap is set there.
 
 ## Narration section
 
-The writer's Narration fold holds `createNarrationSection` (`../narration/narration-section.ts`), updated with the block, its body and `narrationKey`; the section's summary and tone go on the fold's head (`sum ok` / `sum amber`). Quotes are cut with the package's one `truncated` helper (`../truncated.ts`).
+The writer's Narration fold holds `createNarrationSection` (`../narration/narration-section.ts`), updated with the block, its body and `narrationKey`; the section's summary and tone go on the fold's head (`sum ok` / `sum amber`). Quotes are cut with the package's one `truncated` helper (`../../truncated.ts`). Without narration deps (a page that offers none) the fold says "A narration cannot be added on this page."

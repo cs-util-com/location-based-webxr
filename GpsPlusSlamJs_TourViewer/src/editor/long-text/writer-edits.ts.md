@@ -22,7 +22,10 @@ editing, so Ctrl+Z undoes it like typing.
   (spaces around them left outside), unwraps words already wrapped, and
   puts an empty pair at a bare caret with the caret between. Over a blank
   line each paragraph is wrapped (or, when each already is, unwrapped) on
-  its own: the reader formats marks only inside one paragraph.
+  its own: the reader formats marks only inside one paragraph. Italic
+  over bold-italic words (exactly three stars on each side) takes one
+  star off each side, leaving them bold; a bold's two stars beside the
+  words are never read as italic's mark.
 - `toggleList(value, start, end, "bullet" | "number")` - makes the lines a
   list, numbered from 1, or plain again when they already are that list;
   null for no lines.

@@ -116,4 +116,66 @@ describe("the frame's sheet", () => {
     ).toHaveLength(1);
     preview.destroy();
   });
+
+  it("names the text's view in its head", () => {
+    // Why: the head's view name was fixed to "Reading sign" whatever the
+    // text's view.
+    const box = document.createElement("div");
+    const inspector = document.createElement("div");
+    document.body.replaceChildren(box, inspector);
+    const preview = createLongTextPreview({
+      document,
+      box,
+      inspector,
+      tree: null,
+      loadAsset: () => Promise.reject(new Error("no pictures here")),
+      say: () => undefined,
+      onOpen: () => undefined,
+    });
+    const name = () => preview.element.querySelector(".lw-vn")?.textContent;
+    expect(name()).toBe("Reading sign");
+    preview.setView("Reading stand");
+    expect(name()).toBe("Reading stand");
+    preview.destroy();
+  });
+
+  it("follows no link: a tap on one says so instead", () => {
+    // Why: outside AR the visitor's sheet lets a link open by itself, so
+    // the preview's own "not followed" opener was never reached and a tap
+    // left the editor for the linked page.
+    const box = document.createElement("div");
+    const inspector = document.createElement("div");
+    document.body.replaceChildren(box, inspector);
+    const said: string[] = [];
+    const preview = createLongTextPreview({
+      document,
+      box,
+      inspector,
+      tree: null,
+      loadAsset: () => Promise.reject(new Error("no pictures here")),
+      say: (text) => said.push(text),
+      onOpen: () => undefined,
+    });
+    preview.setOpen(true);
+    preview.show(
+      {
+        over: "Station 1",
+        title: "The gate",
+        body: "See [the museum](https://example.com/museum).",
+      },
+      true,
+    );
+    const link =
+      preview.element
+        .querySelector("iframe")
+        ?.contentDocument?.querySelector("a[href]") ?? null;
+    if (link === null) throw new Error("no link in the sheet");
+    const tap = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(tap);
+    expect(tap.defaultPrevented).toBe(true);
+    expect(said).toEqual([
+      "Links open in the visitor's browser; not followed in the preview.",
+    ]);
+    preview.destroy();
+  });
 });

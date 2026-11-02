@@ -15,6 +15,7 @@ import {
   manifestToWrite,
   type TourDocumentState,
 } from "../tour-document.js";
+import { truncated } from "../truncated.js";
 
 /** An item a write gave another station. */
 export interface Reseat {
@@ -42,8 +43,7 @@ function itemName(object: TourObject): string {
       : object.caption;
   const label = (text ?? "").replace(/\s+/g, " ").trim();
   if (label === "") return KIND_WORD[object.kind];
-  const chars = [...label];
-  return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
+  return `"${truncated(label, 40)}"`;
 }
 
 function stationOf(

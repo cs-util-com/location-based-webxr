@@ -132,7 +132,7 @@ describe("narrationStatus", () => {
   it("names the word a creator changed after the voice was lined up", async () => {
     const status = await voiced(BODY.replace("brigde", "bridge"));
     expect(status.tone).toBe("amber");
-    expect(status.summary).toBe("Needs lining up: 1 sentence");
+    expect(status.summary).toBe("Needs lining up: 1 place");
     expect(status.stale?.items.map((n) => [n.kind, n.text])).toEqual([
       [
         "changed",
@@ -149,7 +149,7 @@ describe("narrationStatus", () => {
     const status = await voiced(
       BODY.replace("six years.", "six long years, 1904."),
     );
-    expect(status.summary).toBe("Needs lining up: 1 sentence");
+    expect(status.summary).toBe("Needs lining up: 1 place");
     expect(status.stale?.items.map((n) => [n.kind, n.text])).toEqual([
       [
         "changed",
@@ -178,7 +178,19 @@ describe("narrationStatus", () => {
     expect(cut.stale?.items.map((n) => n.kind)).toEqual(["taken-out"]);
     expect(cut.stale?.items[0]?.text).toContain("It was built in six years");
     expect(cut.stale?.items[0]?.text).toContain("The voice still reads it.");
-    expect(cut.summary).toBe("Needs lining up: 1 sentence");
+    // Why: the count holds parts taken out, which are no sentence of the
+    // text, so it counts places; "1 sentence" named one that is gone.
+    expect(cut.summary).toBe("Needs lining up: 1 place");
+  });
+
+  // Why: an edit that changes no word (punctuation only) makes the
+  // timing stale by its hash with nothing to list; the summary must not
+  // read "0 places", and the count is zero.
+  it("says only that it needs lining up when no place can be named", async () => {
+    const status = await voiced(BODY.replace("six years.", "six years!"));
+    expect(status.tone).toBe("amber");
+    expect(status.summary).toBe("Needs lining up");
+    expect(status.stale).toEqual({ count: 0, items: [] });
   });
 
   it("never throws for a timing of another text", async () => {

@@ -76,6 +76,7 @@ import {
   type TourIntegrity,
   type WholeArchiveOutcome,
 } from "./tour-integrity.js";
+import { truncated } from "./truncated.js";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -312,8 +313,9 @@ export function tourLabel(url: string): string {
   return tail === "" ? host : `${host}/${tail}`;
 }
 
+/** `text` cut after `max` characters, then "…". */
 function cut(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+  return truncated(text, max + 1);
 }
 
 export async function openTourSession(

@@ -1,5 +1,8 @@
 // @ts-check
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
+import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
 import { answerHosts, openZip } from "./editor3d-fixture.js";
 
@@ -137,15 +140,24 @@ test("a long text is written in the inspector: one save per pause, the preview f
   await expect(chip).not.toHaveClass(/has/);
 
   // Esc stays in the writer (the page's Esc would deselect the text), and
-  // Esc then Tab, or Shift+Tab, leaves it without touching the text.
+  // Esc then Tab, or Shift+Tab, leaves it without touching the text. The
+  // caret stands on a list line, where Tab and Shift+Tab would otherwise
+  // indent or outdent it, so the steps fail if Esc stops counting.
   const typed = await area.inputValue();
+  const onListLine = () =>
+    area.evaluate((/** @type {HTMLTextAreaElement} */ t) => {
+      const at = t.value.indexOf("- two") + 3;
+      t.setSelectionRange(at, at);
+    });
   await area.focus();
+  await onListLine();
   await page.keyboard.press("Escape");
   await expect(area).toBeVisible();
   await expect(area).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(area).not.toBeFocused();
   await area.focus();
+  await onListLine();
   await page.keyboard.press("Escape");
   await page.keyboard.press("Shift+Tab");
   await expect(area).not.toBeFocused();
@@ -272,6 +284,35 @@ async function expectWriterLayout(page, size) {
   expect(phone.height, at).toBeLessThanOrEqual(760 + 0.5);
   expect(phone.y + phone.height, at).toBeLessThanOrEqual(view.y + view.height);
 }
+
+test("words typed just before Ctrl+S are in the saved tour", async ({
+  page,
+}) => {
+  // Why: the writer writes its text into the tour only after a pause in
+  // typing; a save inside that pause must commit it first (the save's
+  // flush of the shell), or the file is saved without the last words, or
+  // not at all ("Nothing to save").
+  test.slow();
+  await openEssay(page);
+  const area = page.getByTestId("long-text-writer");
+  await area.click();
+  await page.keyboard.press("Control+End");
+  const download = page.waitForEvent("download");
+  await page.keyboard.type(" Saved at once.");
+  await page.keyboard.press("Control+s");
+  const zip = readFileSync(await (await download).path());
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(zip)));
+  const entry = (await reader.getEntries()).find(
+    (e) => e.filename === "tour.json",
+  );
+  const tour = JSON.parse((await entry?.getData?.(new TextWriter())) ?? "{}");
+  await reader.close();
+  const gate = tour.stations.find((/** @type {any} */ s) => s.id === "gate");
+  const essay = gate.blocks.find(
+    (/** @type {any} */ b) => b.id === "gate-essay",
+  );
+  expect(essay.body).toMatch(/ Saved at once\.$/);
+});
 
 test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768, beside the prototype", async ({
   page,

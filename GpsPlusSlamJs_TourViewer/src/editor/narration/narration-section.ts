@@ -95,6 +95,15 @@ export interface NarrationSection {
 /** What a running action says on its button. */
 type Busy = "voice" | "remove" | "timing" | "untime" | "lineup";
 
+/** What a running action is doing, for a file dropped meanwhile. */
+const BUSY_WORDS: Record<Busy, string> = {
+  voice: "The voice is still being added",
+  remove: "The voice is still being removed",
+  timing: "The timing is still being imported",
+  untime: "The timing is still being removed",
+  lineup: "The voice is still being lined up",
+};
+
 /** A voice file by its name: one of the tour's allowlisted sound types. */
 const VOICE_FILE = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i;
 /** A timing file by its name. */
@@ -443,7 +452,7 @@ export function createNarrationSection(
         el(
           "div",
           "ln-nd",
-          `${n === 0 ? "The voice no longer lines up with the text." : `The voice no longer lines up with ${String(n)} ${plural(n, "sentence")}.`} Until it does, visitors see this text without the words lighting up; the voice still plays.`,
+          `${n === 0 ? "The voice no longer lines up with the text." : `The voice no longer lines up with the text in ${String(n)} ${plural(n, "place")}.`} Until it does, visitors see this text without the words lighting up; the voice still plays.`,
         ),
         noteList(status.stale.items),
       );
@@ -665,6 +674,16 @@ export function createNarrationSection(
   }
 
   async function takeFiles(files: readonly File[]): Promise<void> {
+    if (files.length === 0) return;
+    if (busy !== null) {
+      // One action at a time: a file dropped meanwhile is not taken, and
+      // the creator is told so rather than left guessing.
+      const names = files.map((f) => f.name).join(", ");
+      deps.say(
+        `${BUSY_WORDS[busy]}. Wait until it is done, then drop ${names} again.`,
+      );
+      return;
+    }
     for (const file of files) {
       if (VOICE_FILE.test(file.name) || file.type.startsWith("audio/")) {
         await addVoice(file);

@@ -50,7 +50,7 @@ import {
   createNarrationSection,
   type NarrationSectionDeps,
 } from "../narration/narration-section.js";
-import { truncated } from "../truncated.js";
+import { truncated } from "../../truncated.js";
 import { inputText } from "../../input-text.js";
 import { TOUR_BLOCK_TEXT_RULES } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
@@ -92,7 +92,7 @@ export interface LongTextWriterDeps {
   /** Writes the text's view into the tour. */
   readonly writeView: (blockId: string, view: string) => TypedEditOutcome;
   /** The text's narration, read and changed: the Narration section (none
-   *  given: the section says it is not offered here). */
+   *  given: the section says a narration cannot be added here). */
   readonly narration?: Pick<
     NarrationSectionDeps,
     "read" | "edit" | "durationOf"
@@ -240,6 +240,41 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   )) {
     b.setAttribute("aria-label", b.title);
   }
+  // One tab stop: the toolbar's last focused button; the arrow keys, Home
+  // and End move along it (the ARIA toolbar pattern).
+  const toolButtons = [...tools.querySelectorAll<HTMLButtonElement>(".lw-wb")];
+  const rove = (to: HTMLButtonElement) => {
+    for (const b of toolButtons) b.tabIndex = b === to ? 0 : -1;
+  };
+  if (toolButtons[0] !== undefined) rove(toolButtons[0]);
+  tools.addEventListener("focusin", (event) => {
+    const b = toolButtons.find((t) => t === event.target);
+    if (b !== undefined) rove(b);
+  });
+  tools.addEventListener("keydown", (event) => {
+    const at = toolButtons.findIndex((t) => t === event.target);
+    if (at === -1) return;
+    const last = toolButtons.length - 1;
+    const to =
+      event.key === "ArrowRight"
+        ? at === last
+          ? 0
+          : at + 1
+        : event.key === "ArrowLeft"
+          ? at === 0
+            ? last
+            : at - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : -1;
+    const next = toolButtons[to];
+    if (next === undefined) return;
+    event.preventDefault();
+    rove(next);
+    next.focus();
+  });
 
   const linkRow = el("div", "lw-pop");
   linkRow.hidden = true;
@@ -369,6 +404,8 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   stat.append(count, el("span", "sp"), chip);
   const list = el("div", "lw-list");
   list.hidden = true;
+  list.id = `lw-list-${String(n)}`;
+  chip.setAttribute("aria-controls", list.id);
   wsec.append(slab, tools, linkRow, picPop, help, writer, callout, stat, list);
 
   // --- the narration ------------------------------------------------------------
@@ -404,7 +441,7 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
         });
   narrBody.append(
     narration?.node ??
-      el("div", "note", "A voice and its timing are not offered here."),
+      el("div", "note", "A narration cannot be added on this page."),
   );
   nsec.append(narrHead, narrBody);
 
@@ -431,6 +468,9 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   let linkSel: [number, number] | null = null;
   let pictureFor: TypedPart | null = null;
   const thumbs = new Map<string, string>();
+  /** Bumped by each release: a picture read that lands after one is not
+   *  kept, so no blob address outlives the release that should free it. */
+  let thumbsGen = 0;
 
   const assetExists = (id: string) =>
     model?.pictures.some((p) => p.id === id) ?? false;
@@ -739,8 +779,10 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       img.src = have;
       return;
     }
+    const gen = thumbsGen;
     deps.loadPicture(path).then(
       (blob) => {
+        if (gen !== thumbsGen) return;
         if (thumbs.has(path)) {
           img.src = thumbs.get(path) ?? "";
           return;
@@ -1110,6 +1152,7 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   function releaseThumbs(): void {
     for (const url of thumbs.values()) revokeUrl(url);
     thumbs.clear();
+    thumbsGen++;
   }
 
   return {
@@ -1123,8 +1166,9 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
         narration?.update(null);
         return;
       }
-      // A thumbnail is kept by its picture's path: a picture replaced
-      // under the same path must be read again.
+      // Thumbnails are kept by picture path only while the tour's pictures
+      // (their ids and paths) stay the same: any change releases them all,
+      // so a picture given another file is read again.
       if (model !== null && picturesKey(model) !== picturesKey(next)) {
         releaseThumbs();
       }

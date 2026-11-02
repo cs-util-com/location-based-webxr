@@ -63,6 +63,7 @@ import {
   scanEntryNames,
   stopsVisitorDownload,
 } from "./tour-read-set.js";
+import { truncated } from "./truncated.js";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
@@ -798,7 +799,7 @@ export function wireArchiveOpen(deps: {
 function labelOf(source: TourSource): string {
   if (source.kind === "link") return tourLabel(source.url);
   const name = source.file.name;
-  return name.length > 24 ? `${name.slice(0, 24)}…` : name;
+  return truncated(name, 25);
 }
 
 /** The tour's identity for its draft: its link as the creator gave it,

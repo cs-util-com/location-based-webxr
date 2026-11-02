@@ -147,6 +147,22 @@ describe("the voice", () => {
     expect(said.at(-1)).toContain("voice.mp3 (1 B) added");
   });
 
+  // Why: a file dropped while another action runs was ignored without a
+  // word, so the creator could not tell it had not been taken.
+  it("says to wait when a file is dropped while another action runs", async () => {
+    holdNext = true;
+    const done = section.takeFiles([file("x", "voice.mp3")]);
+    await flush();
+    await section.takeFiles([file(VTT, "voice.vtt")]);
+    expect(said.at(-1)).toBe(
+      "The voice is still being added. Wait until it is done, then drop voice.vtt again.",
+    );
+    gate?.release("written");
+    await done;
+    await flush();
+    expect(edits.map((e) => e.kind)).toEqual(["voice"]);
+  });
+
   it("goes back to where it was when the tour refuses the voice", async () => {
     holdNext = true;
     const done = section.takeFiles([file("x", "voice.mp3")]);
@@ -354,6 +370,26 @@ describe("a text edited after the voice was lined up", () => {
     const [from, to, plain] = shown[0] ?? [0, 0, ""];
     expect(plain).toBe(EDITED);
     expect(to).toBeGreaterThan(from);
+  });
+
+  it("counts the places it no longer lines up with", () => {
+    expect(q('[data-testid="narration-stale"]')?.textContent).toContain(
+      "The voice no longer lines up with the text in 1 place.",
+    );
+  });
+
+  // Why: a punctuation-only edit leaves nothing to name; the notice must
+  // not read "in 0 places".
+  it("says only that it no longer lines up when no place can be named", async () => {
+    section.update({
+      blockId: "essay",
+      body: "The mill turned all day! The miller slept at night.",
+      key: "4",
+    });
+    await flush();
+    const notice = q('[data-testid="narration-stale"]')?.textContent ?? "";
+    expect(notice).toContain("The voice no longer lines up with the text.");
+    expect(notice).not.toContain("0 place");
   });
 
   it("lines the voice up again, saying what runs, and the notice goes", async () => {

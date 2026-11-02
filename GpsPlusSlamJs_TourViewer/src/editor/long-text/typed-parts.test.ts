@@ -97,6 +97,20 @@ describe("plainTextEdit", () => {
     );
   });
 
+  // Why: an entity the fix cannot read was turned into its bare name
+  // ("&bogus;" became "bogus", "&#0;" became "#0"), changing words the
+  // creator typed; it stays as typed instead.
+  it("keeps an entity it cannot read as it was typed", () => {
+    expect(fixed("A &bogus; sign")).toBe("A &bogus; sign");
+    expect(fixed("A &#0; sign")).toBe("A &#0; sign");
+  });
+
+  // Why: a footnote mark after a space became "claim  (note 1)", two
+  // spaces in the visitor's sentence.
+  it("adds no second space before a footnote mark's words", () => {
+    expect(fixed("A claim [^1] here")).toBe("A claim (note 1) here");
+  });
+
   it("removes a divider with its line break", () => {
     expect(fixed("One\n---\nTwo")).toBe("One\nTwo");
     expect(fixed("Title\n=====")).toBe("Title\n");

@@ -21,7 +21,9 @@ the desktop panel.
 - `findText(root, needle, nth)` - their `nth` place in the formatted
   text, as a range (the last one there when fewer).
 - `createLongTextPreview(deps)` -> `{ element, show(content, now?),
-flash(from, to, body), setOpen(open), layout(), destroy() }`; deps:
+flash(from, to, body), setView(name), setOpen(open), layout(), destroy() }`
+  (`setView` names the text's view in the head; the dock passes
+  `viewLabel(view)`); deps:
   `document`, `box` (`#view3d`), `inspector`, `tree`, `loadAsset(id)`,
   `say`, `onOpen(open)`.
 
@@ -35,7 +37,10 @@ flash(from, to, body), setOpen(open), layout(), destroy() }`; deps:
   scroll place; the same content is not shown again.
 - `flash` lights the words with the frame's own Custom Highlight API for
   1.4 s and scrolls them to 30 % of the sheet's height.
-- Links are not followed: the sheet's link opener says so in a toast.
+- Links are not followed: outside AR the visitor's sheet lets a link open
+  by itself, so the frame's page holds every tap on a link (a capturing
+  click listener) and says so in a toast; the sheet's own link opener says
+  the same during AR, which the preview never is.
 - Esc in the frame closes the sheet; it opens again, as a visitor's tap
   on the sign would.
 - Laid out from a `ResizeObserver` on the box, the inspector and the

@@ -12,7 +12,7 @@ The long text's Narration section in the writer, as the "in the inspector" proto
   - `deps.say(text)` is the page's toast; `deps.onSummary(summary, tone)` puts the status on the head; `deps.onShow(from, to, plain)` shows a stretch of the PLAIN text (`plainTextOf`), whose offsets a timing counts in.
   - `deps.durationOf(file)` reads a voice's length (default: an `<audio>` element's metadata, 5 s at most, unknown on failure).
 - `section.update({ blockId, body, key } | null)` follows the selected text. A new `key` (the inspector's `narrationKey`: the narration record plus a stamp of the tour's timings) or a new body re-reads; another block also forgets the last result and the import error.
-- `section.takeFiles(files)` takes chosen or dropped files: a sound file is the voice, a `.vtt` / `.json` / `.txt` file a timing.
+- `section.takeFiles(files)` takes chosen or dropped files: a sound file is the voice, a `.vtt` / `.json` / `.txt` file a timing. While another action runs, files are not taken: the creator is told what is still running and to drop them again once it is done.
 - `section.settled()` settles once the reads asked for so far are drawn (for tests).
 - A timing file over 20 MB (`TIMING_FILE_MAX_BYTES`, module-private) is refused before it is read.
 - A voice file above the autosave cap (`AUTOSAVE_MAX_BYTES`, 200 MiB; a voice is written into every save) is refused with its size named; the "added" toast names the size too (`sizeWords`).
@@ -50,6 +50,7 @@ await section.takeFiles([new File([vtt], "voice.vtt")]);
 - a voice above the autosave cap refused with its size, the size in the "added" toast;
 - the voice's and the timing's names after an undo, and the undone import's card dropped;
 - a late import result or failure dropped once another text is shown;
+- a file dropped while another action runs is not taken, with a word to wait;
 - a file of neither kind;
 - an import (running state, compact JSON, the result card and folding it away);
 - a malformed file that never reaches the tour;

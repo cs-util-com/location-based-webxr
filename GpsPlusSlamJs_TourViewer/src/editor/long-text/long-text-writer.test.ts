@@ -432,6 +432,57 @@ describe("the length cap", () => {
   });
 });
 
+describe("the formatting toolbar", () => {
+  // Why: a toolbar is one tab stop with arrow keys inside it (the ARIA
+  // toolbar pattern); eleven tab stops before the text made the keyboard
+  // path to the writing slow.
+  it("is one tab stop, moved along by the arrow keys, Home and End", () => {
+    const tools = q('[role="toolbar"]');
+    const buttons = [...tools.querySelectorAll<HTMLButtonElement>(".lw-wb")];
+    const stops = () => buttons.filter((b) => b.tabIndex === 0);
+    expect(stops()).toEqual([buttons[0]]);
+    const press = (k: string) => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: k,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    };
+    buttons[0]?.focus();
+    press("ArrowRight");
+    expect(document.activeElement).toBe(buttons[1]);
+    expect(stops()).toEqual([buttons[1]]);
+    press("End");
+    expect(document.activeElement).toBe(buttons.at(-1));
+    press("ArrowRight");
+    expect(document.activeElement).toBe(buttons[0]);
+    press("ArrowLeft");
+    expect(document.activeElement).toBe(buttons.at(-1));
+    press("Home");
+    expect(document.activeElement).toBe(buttons[0]);
+  });
+
+  it("names the list the parts chip opens", () => {
+    const chip = q('[data-lw="parts"]');
+    const list = q(".lw-list");
+    expect(list.id).not.toBe("");
+    expect(chip.getAttribute("aria-controls")).toBe(list.id);
+  });
+});
+
+describe("the Narration section without a narration editor", () => {
+  it("says in the creator's words that a narration is not added here", () => {
+    // Why: the placeholder spoke of "a voice and its timing" being "not
+    // offered", a developer's wording a creator cannot act on.
+    expect(writer.node.textContent).toContain(
+      "A narration cannot be added on this page.",
+    );
+    expect(writer.node.textContent).not.toContain("not offered");
+  });
+});
+
 describe("picture thumbnails", () => {
   it("are released when the writer is emptied and when the tour's pictures change", async () => {
     // Why: a thumbnail is a blob address kept by the picture's path; kept
@@ -458,6 +509,51 @@ describe("picture thumbnails", () => {
     await loaded();
     writer.update(null);
     expect(revokeUrl).toHaveBeenCalledWith("blob:2");
+  });
+
+  it("never keeps a thumbnail that finished loading after they were released", async () => {
+    // Why: a picture read that lands after the writer was emptied made a
+    // blob address no release would ever see again, so it stayed
+    // allocated for the page's life.
+    let land: ((blob: Blob) => void) | undefined;
+    writer.destroy();
+    writer = createLongTextWriter({
+      document,
+      kept: createKeptStore(memory()),
+      writeBody,
+      writeView,
+      loadPicture: () =>
+        new Promise<Blob>((resolve) => {
+          land = resolve;
+        }),
+      say,
+      onShow,
+      createUrl,
+      revokeUrl,
+    });
+    document.body.replaceChildren(writer.node);
+    writer.update(model());
+    click("picture");
+    await vi.waitFor(() => {
+      expect(land).toBeDefined();
+    });
+    writer.update(null);
+    land?.(new Blob(["x"]));
+    await Promise.resolve();
+    await Promise.resolve();
+    const made = createUrl.mock.results.map((r) => r.value as string);
+    for (const url of made) expect(revokeUrl).toHaveBeenCalledWith(url);
+    // A read after the release is kept as before.
+    land = undefined;
+    writer.update(model());
+    click("picture");
+    await vi.waitFor(() => {
+      expect(land).toBeDefined();
+    });
+    land?.(new Blob(["x"]));
+    await vi.waitFor(() => {
+      expect(createUrl).toHaveBeenCalledTimes(made.length + 1);
+    });
   });
 });
 

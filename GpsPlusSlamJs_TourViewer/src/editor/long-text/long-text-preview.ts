@@ -28,6 +28,9 @@ export const PHONE_MIN_W = 180;
 const FLASH_MS = 1400;
 /** How long typing pauses before the preview follows. */
 const PREVIEW_FOLLOW_MS = 140;
+/** What a tap on a link in the preview says. */
+const LINK_NOT_FOLLOWED =
+  "Links open in the visitor's browser; not followed in the preview.";
 /** The highlight's name in the frame. */
 const FLASH_HIGHLIGHT = "lw-flash";
 
@@ -145,6 +148,8 @@ export interface LongTextPreview {
   show(content: LongTextSheetContent, now?: boolean): void;
   /** Lights the words of `[from, to)` of `body`, scrolled into view. */
   flash(from: number, to: number, body: string): void;
+  /** Names the text's view in the head ("Reading sign" until told). */
+  setView(name: string): void;
   /** Shows or hides the phone (the "Preview" button shows instead). */
   setOpen(open: boolean): void;
   /** Places and sizes the phone for the room there is now. */
@@ -238,6 +243,18 @@ export function createLongTextPreview(
       '<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>',
     );
     d.close();
+    // No link is followed from the preview: outside AR the visitor's
+    // sheet lets a link open by itself, so the tap is held here.
+    d.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target as Element | null;
+        if (target?.closest?.("a[href]") == null) return;
+        event.preventDefault();
+        deps.say(LINK_NOT_FOLLOWED);
+      },
+      true,
+    );
     const style = d.createElement("style");
     style.textContent = `${sheetCss}\n${PAGE_CSS}`;
     d.head.append(style);
@@ -247,9 +264,7 @@ export function createLongTextPreview(
       loadAsset: (id) => deps.loadAsset(id),
       arActive: () => false,
       openLink: () => {
-        deps.say(
-          "Links open in the visitor's browser; not followed in the preview.",
-        );
+        deps.say(LINK_NOT_FOLLOWED);
       },
       // The sheet closed (Esc in the frame): a visitor would tap the sign
       // again, so it opens again.
@@ -291,6 +306,10 @@ export function createLongTextPreview(
   frame.addEventListener("load", () => {
     if (frame.contentDocument !== mounted) render(true);
   });
+
+  function setView(name: string): void {
+    if (viewName.textContent !== name) viewName.textContent = name;
+  }
 
   function setOpen(next: boolean): void {
     open = next;
@@ -401,6 +420,7 @@ export function createLongTextPreview(
         );
       }
     },
+    setView,
     setOpen,
     layout,
     destroy() {

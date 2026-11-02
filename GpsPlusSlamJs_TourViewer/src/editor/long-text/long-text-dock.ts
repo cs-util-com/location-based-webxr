@@ -20,6 +20,7 @@ import {
   createLongTextWriter,
   type LongTextWriter,
 } from "./long-text-writer.js";
+import { viewLabel } from "./view-picker.js";
 
 export interface LongTextDockDeps {
   readonly document: Document;
@@ -145,6 +146,7 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
         p.setOpen(previewOpen);
         relayout();
       }
+      p.setView(viewLabel(next.view));
       p.show(content(next, writer.area.value), was?.blockId !== next.blockId);
       return writer.node;
     },

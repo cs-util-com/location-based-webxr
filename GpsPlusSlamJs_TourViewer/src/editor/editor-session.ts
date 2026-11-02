@@ -108,6 +108,7 @@ import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
+import { truncated } from "../truncated.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -131,8 +132,7 @@ function objectName(object: TourObject): string {
   ).trim();
   // TourObject kinds (pin, long text, photo, 3D model) all take "a".
   if (label === "") return `a ${kindNoun(object.kind)}`;
-  const chars = [...label];
-  return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
+  return `"${truncated(label, 40)}"`;
 }
 
 /** The outcome of an undo or a redo: the step taken (in words), nothing

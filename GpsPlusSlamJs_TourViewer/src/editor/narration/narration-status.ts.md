@@ -6,7 +6,7 @@ The Narration section's words, page-free: the line on its head ("Reads along, 2:
 
 ## Public API
 
-- `narrationStatus(body, facts, lang?)`: the section's state for a long text's markdown `body` and its `NarrationFacts` (`hasVoice`, `durationMs`, `timingText`). One of: no voice; a voice without timing; a timing that does not read (`problem`); a timing that runs past the voice (`problem`); a timing the text moved away from (`stale: { count, items }`); or one that reads along (`unvoiced` notes for the sentences no segment starts in). `summary` and `tone` (`""`, `"ok"`, `"amber"`) feed the section's head. Never throws.
+- `narrationStatus(body, facts, lang?)`: the section's state for a long text's markdown `body` and its `NarrationStatusFacts` (`hasVoice`, `durationMs`, `timingText`). One of: no voice; a voice without timing; a timing that does not read (`problem`); a timing that runs past the voice (`problem`); a timing the text moved away from (`stale: { count, items }`); or one that reads along (`unvoiced` notes for the sentences no segment starts in). `summary` and `tone` (`""`, `"ok"`, `"amber"`) feed the section's head. Never throws.
 - `staleNotes(timing, P, sentences)` (module-private, behind `narrationStatus`): why `timing` no longer fits the plain text `P`, read as a lining up again would (`reAnchorSegments`).
   - A voiced sentence whose words changed, or that has words no segment covers (words added beside the voiced ones), is one `changed` note.
   - A sentence the voice does not reach is `rewritten` when a lost part of the voice stood where it stands, else `new`.
@@ -20,7 +20,7 @@ The Narration section's words, page-free: the line on its head ("Reads along, 2:
 ## Invariants & assumptions
 
 - All offsets count in the plain text `plainTextOf(parseTourMarkdown(body)).text`, as a timing's do.
-- A timing is stale when `tourTimingStaleReason` says so (the text's hash or length differs). A stale status with no note is still stale: its summary reads "Needs lining up", and the section says the voice no longer lines up with the text.
+- A timing is stale when `tourTimingStaleReason` says so (the text's hash or length differs). A stale status with no note is still stale: its summary reads "Needs lining up", and the section says the voice no longer lines up with the text. The count is of places, not sentences: a part taken out is one place and no sentence of the text ("Needs lining up: 1 place"). `NarrationStatusFacts` is named apart from the session's `NarrationFacts`, which carries more.
 - A damaged timing text is a `problem`, never an exception.
 - Quotes are cut at 40 characters (`truncated`).
 

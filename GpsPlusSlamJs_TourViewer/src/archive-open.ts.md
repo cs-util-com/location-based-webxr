@@ -73,7 +73,7 @@ DOM glue, its own module since the flows plan M6.
     down (the visitor's start page, which leads with the tour's name and
     cover). It resolves an `OpenOutcome` (`opened`,
     `superseded`, or `failed` with the reject cause) and keeps a real
-    in-flight flag; a successful open sets `ctx.tourLabel`.
+    in-flight flag; a successful open sets `ctx.tourLabel` (a file's name cut after 24 characters with `truncated`).
   - `ArchiveOpen.openLink(url)` / `ArchiveOpen.openFile(file)` - the
     "You already have a tour?" box on a phone (`have-tour.ts`, tour editor
     plan 2026-10-17-1816, W1) opens through this same path: `openLink`

@@ -67,6 +67,14 @@ describe("wrapInline", () => {
     expect(after(v, wrapInline(v, 4, 8, "*"))).toBe("a ***[bold]*** word");
   });
 
+  // Why: italic over bold-italic ("***x***") failed the one-star check
+  // and added two more stars; it takes the italic off, leaving bold.
+  it("takes italic off bold-italic words", () => {
+    const v = "a ***bold*** word";
+    expect(after(v, wrapInline(v, 5, 9, "*"))).toBe("a **[bold]** word");
+    expect(after(v, wrapInline(v, 5, 9, "**"))).toBe("a *[bold]* word");
+  });
+
   it("puts the two marks round the caret with no selection", () => {
     expect(after("ab", wrapInline("ab", 1, 1, "*"))).toBe("a*|*b");
   });

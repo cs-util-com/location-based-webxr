@@ -221,7 +221,7 @@ const ENTITIES: Readonly<Record<string, string>> = {
   nbsp: " ",
 };
 
-/** An entity's sign; an unknown one as its name. */
+/** An entity's sign; one it cannot read as it was typed. */
 function decodeEntity(entity: string): string {
   const name = entity.replace(/^&|;$/g, "");
   const num = /^#(x[0-9a-f]+|\d+)$/i.exec(name);
@@ -233,9 +233,9 @@ function decodeEntity(entity: string): string {
         : Number(raw);
     return Number.isInteger(code) && code > 0 && code <= 0x10ffff
       ? String.fromCodePoint(code)
-      : name;
+      : entity;
   }
-  return ENTITIES[name.toLowerCase()] ?? name;
+  return ENTITIES[name.toLowerCase()] ?? entity;
 }
 
 /** Web page code without its marks: bold and italic kept as the
@@ -362,7 +362,10 @@ export function plainTextEdit(
     case "strike":
       return at(t.replace(/^~~|~~$/g, ""));
     case "fnref":
-      return at(` (note ${t.replace(/^\[\^|\]$/g, "")})`);
+      // No second space where one already stands before the mark.
+      return at(
+        `${/\s/.test(body[part.from - 1] ?? "") ? "" : " "}(note ${t.replace(/^\[\^|\]$/g, "")})`,
+      );
     case "fndef":
       return at(t.replace(/^\s*\[\^([^\]\s]+)\]:\s*/, "Note $1: "));
     case "refdef":

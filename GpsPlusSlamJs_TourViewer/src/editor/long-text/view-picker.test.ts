@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { segmentRefusal, stepSegment, viewPickerModel } from "./view-picker.js";
+import {
+  segmentRefusal,
+  stepSegment,
+  viewLabel,
+  viewPickerModel,
+} from "./view-picker.js";
 
 describe("viewPickerModel", () => {
   it("presses Reading sign for a reading text and describes it", () => {
@@ -62,6 +67,17 @@ describe("viewPickerModel", () => {
     expect(segmentRefusal("reading", false)).toBeNull();
     expect(segmentRefusal("silent", true)).not.toBeNull();
     expect(segmentRefusal("captions", true)).not.toBeNull();
+  });
+});
+
+describe("viewLabel", () => {
+  // Why: the preview's head names the text's view; it read "Reading sign"
+  // for a text on a reading stand or in the station's card too.
+  it("names each stored view, and a view it does not know as a long text", () => {
+    expect(viewLabel("reading")).toBe("Reading sign");
+    expect(viewLabel("lectern")).toBe("Reading stand");
+    expect(viewLabel("card")).toBe("Station card");
+    expect(viewLabel("something-new")).toBe("Long text");
   });
 });
 

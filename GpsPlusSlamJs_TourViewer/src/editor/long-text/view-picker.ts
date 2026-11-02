@@ -44,6 +44,22 @@ const LABEL: Readonly<Record<LongTextSegment, string>> = {
   captions: "Captions",
 };
 
+/** What the views a long text can store are called (the preview's head
+ *  names the text's view). */
+const VIEW_LABEL: Readonly<Record<string, string>> = {
+  reading: LABEL.reading,
+  lectern: "Reading stand",
+  card: "Station card",
+};
+
+/** The name of a long text's stored `view`; "Long text" for one this
+ *  editor does not know. */
+export function viewLabel(view: string): string {
+  return Object.hasOwn(VIEW_LABEL, view)
+    ? (VIEW_LABEL[view] ?? "Long text")
+    : "Long text";
+}
+
 /** Why a dimmed segment cannot be chosen; null where it can. */
 export function segmentRefusal(
   id: LongTextSegment,

@@ -16,7 +16,7 @@ view" chip.
   - `place(anchor | null, free, avoid?)` - positions the card with
     `placePopover` (a note's lift 24 px, gap 30; a code's or station's 0
     and 26; `avoid` the box it keeps clear of, the page's debug panel), or, for a marker out of view, hides it and shows the chip
-    ("<title> is off the map view", "Show it" calls `onReveal`). An item
+    ("<title> is off the map view", the title cut after 40 characters with `truncated`; "Show it" calls `onReveal`). An item
     with no position (`anchor` null) gets the card at the free area's
     corner, without arrow or chip (E1 review #3). The card is as wide as
     the free area, up to 320 px (E1 review #7).

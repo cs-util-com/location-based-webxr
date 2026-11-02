@@ -23,7 +23,9 @@ visitor's sheet formats by, never from a second parser here.
   so its words show as plain text (a table's cells as lines, a code
   box's fences removed, a web picture as its description, an HTML tag's
   angle brackets removed, a refused link as its words - up to the last
-  `](`, so words holding brackets of their own stay whole, ...). Never
+  `](`, so words holding brackets of their own stay whole, an entity
+  as its sign or, when it cannot be read, as typed, a footnote mark as
+  "(note 1)" with no second space after one already there, ...). Never
   removes a word.
 - `tourPictureEdit(body, part, assetId, alt?)` - a picture part replaced
   by the tour's picture `asset:<id>`, its description kept.
@@ -31,8 +33,8 @@ visitor's sheet formats by, never from a second parser here.
 ## Invariants & assumptions
 
 - A non-string body has no parts.
-- `plainTextEdit` keeps every letter and digit of the part (property
-  test); its result shows no part of the same kind there.
+- `plainTextEdit` keeps every word, number and question mark of the
+  body (property test); its result shows no part of the same kind there.
 - Kept parts are matched by key only; storing them is
   `kept-store.ts`'s.
 

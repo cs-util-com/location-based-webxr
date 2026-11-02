@@ -4,14 +4,26 @@
  * that no mark contains, mixed with every kind of mark the reader shows
  * as typed, so any fix that dropped or changed a vocabulary word would
  * change its count. A picture's address is built from other letters: it
- * is not read by visitors and goes with the picture's marks.
+ * is not read by visitors and goes with the picture's marks. The
+ * vocabulary holds digits and punctuation too ("42", "?", "%"), none of
+ * which a mark below contains: a fix that ate a number or a question
+ * mark would change a sentence as surely as one that ate a word.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { plainTextEdit, typedParts } from "./typed-parts.js";
 
-const VOCAB = ["alpha", "bravo", "charlie", "delta", "echo"] as const;
+const VOCAB = [
+  "alpha",
+  "bravo",
+  "charlie",
+  "delta",
+  "echo",
+  "42",
+  "?",
+  "%",
+] as const;
 
 const piece = fc.constantFrom(
   ...VOCAB,
@@ -56,7 +68,7 @@ const body = fc.array(piece, { maxLength: 40 }).map((parts) => parts.join(""));
 function counts(text: string): Record<string, number> {
   const out: Record<string, number> = {};
   for (const w of VOCAB) {
-    out[w] = text.match(new RegExp(w, "g"))?.length ?? 0;
+    out[w] = text.split(w).length - 1;
   }
   return out;
 }

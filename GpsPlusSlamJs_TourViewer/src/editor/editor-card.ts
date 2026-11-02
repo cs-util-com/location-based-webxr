@@ -14,6 +14,7 @@
 import { pictureProblem } from "../image-cap.js";
 import { wirePinTextCounter } from "../pin-text.js";
 import { BLOCK_KIND_LABEL } from "../object-describe.js";
+import { truncated } from "../truncated.js";
 import type { EditorItem } from "./editor-model.js";
 import { placePopover, type Box } from "./popover-place.js";
 
@@ -408,9 +409,7 @@ export function createEditorCard(
       if (!placement.visible) {
         dom.card.hidden = true;
         const title = current.title;
-        dom.chipText.textContent = `${
-          title.length > 40 ? `${title.slice(0, 40)}…` : title
-        } is off the map view`;
+        dom.chipText.textContent = `${truncated(title, 41)} is off the map view`;
         dom.chip.hidden = false;
         return;
       }

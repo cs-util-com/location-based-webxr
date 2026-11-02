@@ -27,7 +27,7 @@ import {
   type TextSpan,
 } from "../../long-text-sentences.js";
 import { clockText, sentenceStarts } from "../../read-along.js";
-import { truncated } from "../truncated.js";
+import { truncated } from "../../truncated.js";
 import { reAnchorSegments, type LinedUpAgain } from "./re-anchor.js";
 import type { ImportMismatch, TimingImport } from "./timing-import.js";
 import { matchWords, wordTokens } from "./word-diff.js";
@@ -48,7 +48,7 @@ export interface NarrationNote {
 }
 
 /** What the voice and its timing are, as the section reads them. */
-export interface NarrationFacts {
+export interface NarrationStatusFacts {
   readonly hasVoice: boolean;
   /** The voice's length (`narration.durationMs`), when known. */
   readonly durationMs: number | null;
@@ -67,7 +67,8 @@ export interface NarrationStatus {
   readonly problem: string | null;
   /** The text was edited after the timing was made. */
   readonly stale: {
-    /** How many sentences it no longer voices as they are now. */
+    /** How many places (sentences, and parts taken out) it no longer
+     *  voices as they are now. */
     readonly count: number;
     readonly items: readonly NarrationNote[];
   } | null;
@@ -277,7 +278,7 @@ const NONE = {
  */
 export async function narrationStatus(
   body: string,
-  facts: NarrationFacts,
+  facts: NarrationStatusFacts,
   lang = "en",
 ): Promise<NarrationStatus> {
   if (!facts.hasVoice) return { ...NONE, summary: "No voice yet", tone: "" };
@@ -312,7 +313,7 @@ export async function narrationStatus(
       summary:
         count === 0
           ? "Needs lining up"
-          : `Needs lining up: ${String(count)} ${plural(count, "sentence")}`,
+          : `Needs lining up: ${String(count)} ${plural(count, "place")}`,
       tone: "amber",
       stale: { count, items },
     };

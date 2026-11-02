@@ -84,6 +84,18 @@ export function wrapInline(
     const text = perParagraph(pieces, mark);
     return { from: a, to: b, text, select: [0, text.length] };
   }
+  // Italic over bold-italic: exactly three stars on each side, one taken
+  // off each, leaving bold.
+  if (
+    n === 1 &&
+    a >= 3 &&
+    value.slice(a - 3, a) === "***" &&
+    value.slice(b, b + 3) === "***" &&
+    value[a - 4] !== "*" &&
+    value[b + 3] !== "*"
+  ) {
+    return { from: a - 1, to: b + 1, text: words, select: [0, words.length] };
+  }
   // Italic's one star beside a bold's two is not an italic mark.
   const lone = n === 2 || (value[a - n - 1] !== "*" && value[b + n] !== "*");
   if (

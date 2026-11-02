@@ -19,6 +19,9 @@ description, offerNarration }`; `asked` is the dimmed segment last
   chosen, whose reason the line gives; `offerNarration` only for
   Captions without a narration.
 - `stepSegment(from, 1 | -1)` - the arrow keys' next segment, wrapping.
+- `viewLabel(view)` - a stored view's name (Reading sign, Reading stand,
+  Station card; "Long text" for one this editor does not know), for the
+  preview's head.
 
 ## Invariants & assumptions
 
