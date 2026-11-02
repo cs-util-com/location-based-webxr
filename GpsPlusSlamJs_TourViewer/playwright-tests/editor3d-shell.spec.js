@@ -43,15 +43,16 @@ import { useWideFont } from "./wide-font.js";
 test.describe.configure({ mode: "default" });
 
 /** A dock folded to its head: the 36 px head and the dock's 1 px top
- *  and bottom edges (the docks float under the loading bar's band, so
+ *  and bottom edges (the docks float under a gap below the top bar, so
  *  they have a top edge of their own). */
 const FOLDED_PX = 38;
 
-/** Where the docks begin (px from the window's top): under the 40 px top
- *  bar, the globe view's 5 px loading bar and its 22 px tab, and an 8 px
- *  gap. The band is kept in every 3D view, so the docks never jump when
- *  the bar goes. */
-const DOCK_TOP_PX = 40 + 5 + 22 + 8;
+/** Where the docks begin (px from the window's top) in the default 3D
+ *  view: the 40 px top bar and an 8 px gap. Only the globe view reserves
+ *  the band for its loading bar and tab under the top bar
+ *  (`editor3d-globe-approach.spec.js`); this view never shows the bar,
+ *  and on a landscape phone the band would cost each dock a fifth. */
+const DOCK_TOP_PX = 40 + 8;
 
 /** @param {import("@playwright/test").Page} page */
 async function open3d(page) {

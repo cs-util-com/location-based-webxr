@@ -35,12 +35,12 @@
   --s-top-h: 40px;
   --s-bar-h: 24px;
   /* The globe view's loading bar under the top bar, its tab, and the gap
-   * from the tab to the docks; the docks begin under all three in every
-   * 3D view, so they never move when the bar goes. */
+   * from the view's top (or the tab) to the docks. The default 3D view
+   * never shows the bar: its docks begin a gap under the top bar. */
   --s-load-h: 5px;
   --s-load-tab-h: 22px;
   --s-dock-gap: 8px;
-  --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
+  --s-dock-top: var(--s-dock-gap);
   /* The narrowest the brand (the tour's name and its pen) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
@@ -340,6 +340,13 @@ body:not([data-view="3d"]) .unsaved-mark {
 }
 
 /* --- the viewport and its docks ------------------------------------------ */
+/* The globe view (`data-globe`, set by the page) keeps the band for its
+ * loading bar and tab for its whole life, so the docks never move when
+ * the bar goes. */
+#view3d[data-globe] {
+  --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
+}
+
 body[data-view="3d"] #view3d {
   inset: var(--s-top-h) 0 var(--s-bar-h);
   overflow: hidden;

@@ -50,8 +50,9 @@ and each station's growth, and tells it the camera's altitude.
   - `div.approach-title[aria-hidden]`, "Loading tour", the rounded tab
     centred under the bar (the bar's label says it to a screen reader).
 - The styles live in `editor-shell.css` (the approach's section): the
-  bar's and tab's heights are `--s-load-h` and `--s-load-tab-h`, and the
-  docks begin under them (`--s-dock-top`).
+  bar's and tab's heights are `--s-load-h` and `--s-load-tab-h`, and in the
+  globe view (`#view3d[data-globe]`) the docks begin under them
+  (`--s-dock-top`).
 
 ## Invariants and assumptions
 

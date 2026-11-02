@@ -3807,6 +3807,9 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
 }
 // Only the globe view has a sky of its own to set the clock of.
 realTimeSwitch.hidden = !globeSwitch.on;
+// Only the globe view reserves the band for its loading bar under the top
+// bar (`editor-shell.css`); the default view's docks start right under it.
+view3dBox.toggleAttribute("data-globe", globeSwitch.on);
 // View state only - no edit, nothing pending; kept for the next open.
 realTimeSwitch.addEventListener("click", () => {
   const on = !isChecked(realTimeSwitch);

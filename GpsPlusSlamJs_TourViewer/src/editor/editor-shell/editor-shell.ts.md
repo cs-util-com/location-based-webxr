@@ -153,9 +153,11 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **The approach's bar** (`.approach`, `globe-approach-run.ts`): a
   full-width 5 px bar (`--s-load-h`) glued under the menu bar, "Loading
   tour" on a 22 px tab (`--s-load-tab-h`) hanging from its middle,
-  rounded below only. The docks sit `--s-dock-top` (bar, tab and an 8 px
-  gap) under the view's top in every 3D view, so they never move when the
-  bar goes. It takes no pointer, and under reduced motion it goes without
+  rounded below only. In the globe view (`#view3d[data-globe]`, set by the
+  page) the docks sit `--s-dock-top` (bar, tab and an 8 px gap) under the
+  view's top for the view's whole life, so they never move when the bar
+  goes; the default 3D view never shows the bar, and its docks sit the
+  8 px gap under the top bar. It takes no pointer, and under reduced motion it goes without
   a fade.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
