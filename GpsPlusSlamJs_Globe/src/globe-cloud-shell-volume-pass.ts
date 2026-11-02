@@ -586,7 +586,10 @@ function scaledBasis(
       ],
       rotationRad: anchor.rotationRad,
     },
-    {},
+    // The defaults by the framework's own options object: its resolved
+    // field is cached per options object, and a fresh `{}` missed that
+    // cache on every call.
+    undefined,
     scratch,
   );
   copyBasis(out, scratch);

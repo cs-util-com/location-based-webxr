@@ -192,6 +192,11 @@ radiusM }` from its state, the centre null on the camera, where its flat
   shared uniforms by identity; the resolution's refusals and target size;
   the read-backs; dispose. Each of these was checked to fail on a mutant
   of the line it pins.
+- `globe-cloud-shell-volume-pass.cache.test.ts` (its own file: it mocks
+  the framework noise module): every live-basis call of a pass, both
+  scaled fields and the high layer over two frames, hands one options
+  object, so the framework keeps its resolved field cached instead of
+  recomputing it up to three times a frame.
 - `globe-cloud-shell-light.test.ts` (the ambient table).
 - The lab's `globe-cloud-shell-field.test.mjs` (the two-field mix keeps
   the field's spread and the cover the thresholds draw, on the
