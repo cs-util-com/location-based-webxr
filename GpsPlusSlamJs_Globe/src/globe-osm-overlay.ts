@@ -966,7 +966,6 @@ export function createGlobeOsmOverlay({
       if (!active) return;
       if (pose.nowMs - lastLook < GLOBE_OSM.reevaluateMs) return;
       lastLook = pose.nowMs;
-      retryFailed(pose.nowMs);
       const look = reevaluateGatedTiles(
         plugin as unknown as OverlayPluginInternals,
         overlay,
@@ -974,6 +973,14 @@ export function createGlobeOsmOverlay({
       );
       reevaluateBacklog = look.left;
       if (look.left > 0) cappedLooks++;
+      // After the re-evaluation, never before it: the reset marks its tiles
+      // no longer failed and releases their regions now, but the library
+      // drops a released region a microtask later and locks it anew only on
+      // the next frame. A re-evaluation in between would lock the region
+      // still cached with its rejected request (failing again at once) and
+      // the reset's own lock would then hold it twice. The next look is
+      // `reevaluateMs` away, after that frame.
+      retryFailed(pose.nowMs);
     },
     /**
      * The relief tiles drawn in the last update near the camera, by their

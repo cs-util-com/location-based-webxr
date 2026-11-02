@@ -25,6 +25,7 @@ import {
   GatedOsmOverlay,
   createGlobeOsmOverlay,
   createRequestCeiling,
+  type OverlayPluginInternals,
   osmCredit,
   osmGateLimits,
   osmOverlayActive,
@@ -1172,6 +1173,139 @@ describe("a map tile whose request failed", () => {
     const { reset, runTo } = await withFailedTile();
     runTo(4 * GLOBE_OSM.retryFailedMs, 300);
     expect(reset).not.toHaveBeenCalled();
+  });
+
+  // Why: the retry above only counted calls of a mocked reset, and the
+  // mock hid how the library's reset works: it releases each failed region
+  // at once, its region cache disposes the released entry a microtask
+  // later, and the reset locks the region anew only on the NEXT frame, so
+  // the rejected entry is gone by then. A re-evaluation in the same call
+  // as the reset found the tile no longer failed and not locked, locked
+  // the still-cached rejected entry again (failing at once), and the
+  // reset's own next-frame lock then doubled it: the tile never healed and
+  // every later retry released one lock of two. Here the reset, the
+  // overlay and its region cache are the library's own; only the frame
+  // clock and the plugin's job queue (which needs a live relief) stand in,
+  // the queue's job read from the library's `_fetchTileOverlayTexture`.
+  describe("over the library's own reset and region cache", () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    async function failingOnce() {
+      const frames: Array<() => void> = [];
+      vi.stubGlobal("requestAnimationFrame", (cb: () => void) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      const osm = createGlobeOsmOverlay({
+        url: TEMPLATE,
+        attribution: ATTRIBUTION,
+        maxZoom: 19,
+        renderer: {} as THREE.WebGLRenderer,
+        fadeM: 1000,
+      });
+      await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+      const source = (
+        osm.overlay as unknown as {
+          regionImageSource: {
+            cache: Record<string, { count: number } | undefined>;
+            fetchItem(args: unknown[]): unknown;
+            disposeItem(item: unknown, args: unknown[]): void;
+          };
+        }
+      ).regionImageSource;
+      let fetches = 0;
+      vi.spyOn(source, "fetchItem").mockImplementation(() => {
+        fetches++;
+        return fetches === 1
+          ? Promise.reject(new TypeError("Failed to fetch"))
+          : Promise.resolve({ texture: fetches });
+      });
+      vi.spyOn(source, "disposeItem").mockImplementation(() => {});
+      const lat = 48.137;
+      const lon = 11.575;
+      const range = (
+        osm.overlay.projection as {
+          fromCartographicToNormalizedRange(r: number[]): number[];
+        }
+      ).fromCartographicToNormalizedRange(regionAround(lat, lon, 0.0002));
+      const level = (
+        osm.overlay as unknown as { calculateLevel(r: number[]): number }
+      ).calculateLevel(range);
+      const held = () => source.cache[[...range, level].join("_")];
+      const visible = new Set<object>();
+      osm.attach(fakeTerrain(visible));
+      osm.setEnabled(true);
+      const plugin = osm.plugin as unknown as OverlayPluginInternals & {
+        processedTiles: Set<object>;
+      };
+      const tile = {};
+      const info = {
+        range,
+        target: null as unknown,
+        failed: false,
+        meshInfo: new Map([[1, 1]]),
+      };
+      // The library's job, without its queue: the region's texture, or the
+      // tile marked failed for any error but an abort.
+      plugin._fetchTileOverlayTexture = async () => {
+        info.target = await Promise.resolve(
+          (
+            osm.overlay as unknown as { getTexture(r: number[]): unknown }
+          ).getTexture(range),
+        ).catch((err: Error) => {
+          if (err.name !== "AbortError") info.failed = true;
+          return null;
+        });
+      };
+      plugin._updateLayers = () => {};
+      const settle = () => new Promise((r) => setTimeout(r, 0));
+      const position = cameraAt(lat, lon, 100);
+      /** One frame: the overlay's update, then the frame callbacks queued
+       *  before it (as a browser runs them), then the microtasks. */
+      const frame = async (nowMs: number) => {
+        for (const cb of frames.splice(0)) cb();
+        osm.update({ position, aboveGroundM: 100, speedMps: 0, nowMs });
+        await settle();
+      };
+      /** The plugin's first processing of the tile, with the map on:
+       *  placed, locked, fetched. */
+      const processTile = async () => {
+        await frame(0);
+        plugin.overlayInfo.get(osm.overlay)!.tileInfo.set(tile, info);
+        plugin.processedTiles.add(tile);
+        visible.add(tile);
+        void osm.overlay.lockTextureSafe(range);
+        await plugin._fetchTileOverlayTexture(tile, osm.overlay, info);
+      };
+      return { osm, info, held, frame, processTile, fetches: () => fetches };
+    }
+
+    it("heals a tile whose first request failed, and holds one lock on its region", async () => {
+      const { osm, info, held, frame, processTile, fetches } =
+        await failingOnce();
+      await processTile();
+      expect(info.failed).toBe(true);
+      expect(held()?.count).toBe(1);
+      for (let t = 100; t <= GLOBE_OSM.retryFailedMs + 2_000; t += 100) {
+        await frame(t);
+      }
+      try {
+        expect(osm.stats().failedRetries).toBe(1);
+        expect(fetches()).toBe(2);
+        expect(info.failed).toBe(false);
+        expect(info.target).toEqual({ texture: 2 });
+        expect(held()?.count).toBe(1);
+        expect(osm.coverage()).toMatchObject({
+          near: 1,
+          withMap: 1,
+          failed: 0,
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
   });
 
   // Why: the library's lock rethrows a failed request's error from a

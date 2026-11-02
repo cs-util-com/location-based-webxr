@@ -115,7 +115,14 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       `resetFailedOverlays()` releases every failed tile and locks it
       anew, so the new lock still goes through the gate and the request
       ceiling; at most once per `retryFailedMs`, never while the map is
-      off.
+      off. **The reset runs after the update's re-evaluation, never
+      before it**: the reset releases the regions at once, the library's
+      region cache drops a released region a microtask later, and the
+      library locks it anew only on the next animation frame. A
+      re-evaluation in between would lock the region still cached with its
+      rejected request (the tile failing again at once) and the reset's own
+      lock would then hold it twice, so the tile would never heal and the
+      region would leak a lock.
     - `stats()`: `enabled`, `active`, `on` (the drawn map's strength, the
       ramped shader switch), `requests`, `requestsLastMinute`,
       `unpatchedShaders` (a library change shows here), the overlay's
@@ -287,8 +294,14 @@ failed, unprocessed }`: the relief tiles drawn in the last update
   the active rule and the factory's frame loop and gate over a really
   initialised overlay, a failed tile asked for again once its interval
   passed with the map on, at most once per interval and never with the
-  map off, and a failed lock logging no unhandled error), `globe-osm-overlay.property.test.ts` (random bursts:
-  no sliding minute above the ceiling, no request dropped). The design
+  map off, a failed tile healed with one lock on its region over the
+  library's own `resetFailedOverlays` and region cache (red first with
+  the reset before the re-evaluation: one request only), and a failed
+  lock logging no unhandled error), `globe-osm-overlay.property.test.ts` (random bursts:
+  no sliding minute above the ceiling, no request dropped). The Tour
+  Viewer's `playwright-tests/editor3d-globe.spec.js` aborts the first
+  request of a street-map tile on the real page and waits for that tile
+  to be asked for again and for every near tile to carry its map. The design
   system's `labs/globe/globe-editor-blocks.smoke.spec.mjs` counts the
   requests against a fake tile server on the real page: none by default,
   z15 and finer near the camera under the ceiling with the map drawn at
