@@ -969,9 +969,10 @@ describe("the map's diagnostics", () => {
     });
   });
 
-  // Why: a tile whose map request failed is never asked for again (the
-  // re-evaluation skips failed tiles), so it waits for its map forever. A
-  // check that waits for `waiting === 0` then never ends; it must be able
+  // Why: a tile whose map request failed is asked for again only every
+  // `retryFailedMs` (the re-evaluation skips failed tiles), so it can wait
+  // for its map a long while. A check that waits for `waiting === 0` then
+  // may not end; it must be able
   // to tell the failed tiles apart. They stay inside `waiting`: the drawn
   // picture lacks their map either way.
   it("counts the failed tiles apart, inside waiting", async () => {
@@ -1091,6 +1092,111 @@ describe("the map's diagnostics", () => {
     expect(osm.coverage()).toEqual(none);
     osm.attach(fakeTerrain(new Set([{}])));
     expect(osm.coverage()).toEqual(none);
+  });
+});
+
+describe("a map tile whose request failed", () => {
+  // Why: the library marks a tile failed on any request that rejects (a
+  // dropped connection: "Failed to fetch") and never asks for it again by
+  // itself; the re-evaluation skips failed tiles on purpose. So one dropped
+  // request left that relief tile without its street map, a square with
+  // straight edges, for as long as the tile stayed loaded. The map asks
+  // again through the library's own reset, at most once per
+  // `retryFailedMs`, and only while the map is on (the reset's new lock
+  // still goes through the gate and the request ceiling).
+  async function withFailedTile() {
+    const visible = new Set<object>();
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1000,
+    });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach(fakeTerrain(visible));
+    osm.setEnabled(true);
+    const lat = 48.137;
+    const lon = 11.575;
+    const tile = {};
+    (
+      osm.plugin as unknown as {
+        overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
+      }
+    ).overlayInfo
+      .get(osm.overlay)!
+      .tileInfo.set(tile, {
+        range: (
+          osm.overlay.projection as {
+            fromCartographicToNormalizedRange(r: number[]): number[];
+          }
+        ).fromCartographicToNormalizedRange(regionAround(lat, lon, 0.0002)),
+        target: null,
+        failed: true,
+        meshInfo: new Map([[1, 1]]),
+      });
+    visible.add(tile);
+    const reset = vi.fn();
+    (
+      osm.plugin as unknown as { resetFailedOverlays(): void }
+    ).resetFailedOverlays = reset;
+    const runTo = (untilMs: number, aboveGroundM: number, fromMs = 0) => {
+      for (let t = fromMs; t <= untilMs; t += 100) {
+        osm.update({
+          position: cameraAt(lat, lon, aboveGroundM),
+          aboveGroundM,
+          speedMps: 0,
+          nowMs: t,
+        });
+      }
+    };
+    return { osm, reset, runTo };
+  }
+
+  it("asks again once the retry interval has passed, with the map on", async () => {
+    const { osm, reset, runTo } = await withFailedTile();
+    runTo(GLOBE_OSM.retryFailedMs - 100, 100);
+    expect(reset).not.toHaveBeenCalled();
+    runTo(GLOBE_OSM.retryFailedMs + 400, 100, GLOBE_OSM.retryFailedMs);
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(osm.stats().failedRetries).toBe(1);
+  });
+
+  it("asks at most once per interval while the tile stays failed", async () => {
+    const { reset, runTo } = await withFailedTile();
+    runTo(2 * GLOBE_OSM.retryFailedMs - 100, 100);
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("never asks while the map is off", async () => {
+    const { reset, runTo } = await withFailedTile();
+    runTo(4 * GLOBE_OSM.retryFailedMs, 300);
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  // Why: the library's lock rethrows a failed request's error from a
+  // promise nobody holds, so each dropped request logged an unhandled
+  // TypeError in the console, though the same failure is already recorded
+  // as the tile's failed state (the plugin reads the same request) and is
+  // asked for again from there.
+  it("logs no unhandled error when a lock's request fails", async () => {
+    const { overlay } = gatedOverlay(() => true);
+    vi.spyOn(proto, "lockTexture").mockImplementation(() =>
+      Promise.reject(new TypeError("Failed to fetch")),
+    );
+    const unhandled: unknown[] = [];
+    const listen = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", listen);
+    try {
+      (
+        overlay as unknown as { lockTextureSafe(r: number[]): unknown }
+      ).lockTextureSafe([0.5, 0.5, 0.50001, 0.50001]);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", listen);
+      vi.restoreAllMocks();
+    }
   });
 });
 

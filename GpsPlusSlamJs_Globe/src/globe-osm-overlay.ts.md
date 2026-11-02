@@ -14,7 +14,8 @@
     `maxAboveGroundM` 200, `maxSpeedMps` 50 (off above these),
     `onBelowAboveGroundM` 180, `onBelowSpeedMps` 45 (on only below
     these), `rampMs` 300 (the drawn map's fade in or out), `reevaluateMs` 500,
-    `reevaluateLimit` 8, `resolution` 256, `keepRegions` 64 (released
+    `reevaluateLimit` 8, `retryFailedMs` 5000 (how long a tile whose
+    map request failed waits before it is asked for again), `resolution` 256, `keepRegions` 64 (released
     map textures kept in memory, below).
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
@@ -73,7 +74,11 @@ level)`; a region counts as content only while locked; a release
     under the new level). A region still loading, or one whose fetch
     failed (the library holds a promise for both), is given back at once,
     so a failure is never kept. `setKeep(n)` changes the keep and gives
-    back what is over it at once (all at 0).
+    back what is over it at once (all at 0). `lockTextureSafe` (the
+    plugin's lock) swallows a failed request's rejection, where the
+    library's rethrew it as an unhandled error in the console: the plugin
+    records the same failure as the tile's failed state (it reads the same
+    request), and the factory asks for it again from there.
     `isLocked`, `wanted`, `stats()` (`locks`, `gatedLocks`,
     `lockedRegions`, `releases`: textures given back to the library, which
     drops them, so a re-visit fetches again; `keep`, `keptRegions`,
@@ -101,7 +106,16 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       `attach`, the map on or off: the gate and `coverage` read it), the
       active rule with the last frame's state, the fade's switch ramped over `rampMs`
       (requests follow the rule at once; only the drawn map fades), and
-      every `reevaluateMs` the gated tiles.
+      every `reevaluateMs` the gated tiles and the failed ones. **A failed
+      tile is asked for again**: the library marks a tile failed on any
+      rejected request (a dropped connection) and never retries by
+      itself, which left that tile without its map (a bare square with
+      straight edges) while it stayed loaded. While the map is on, once a
+      failed tile has waited `retryFailedMs`, the library's public
+      `resetFailedOverlays()` releases every failed tile and locks it
+      anew, so the new lock still goes through the gate and the request
+      ceiling; at most once per `retryFailedMs`, never while the map is
+      off.
     - `stats()`: `enabled`, `active`, `on` (the drawn map's strength, the
       ramped shader switch), `requests`, `requestsLastMinute`,
       `unpatchedShaders` (a library change shows here), the overlay's
@@ -114,7 +128,8 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       enabled, whose height over the ground was unknown: the map is off in
       them), `ceilingFullMs` (time on with the request ceiling full: no new
       tile asked for), `reevaluateBacklog` (tiles the last look left for
-      the next), `cappedLooks` (looks that left some).
+      the next), `cappedLooks` (looks that left some), `failedRetries`
+      (times the failed tiles were asked for again).
     - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
 failed, unprocessed }`: the relief tiles drawn in the last update
       (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
@@ -122,8 +137,8 @@ failed, unprocessed }`: the relief tiles drawn in the last update
       map is at full strength), with their map, too coarse for it (the level picked under
       the coarsest zoom: bare relief by design), or waiting for it (gated,
       throttled, loading or failed; `failed` counts the failed ones among
-      them apart, since a failed tile is never asked for again and a check
-      waiting for the map must not wait on it); and drawn tiles the plugin
+      them apart, since a failed tile is asked for again only every
+      `retryFailedMs` and a check waiting for the map must not wait on it); and drawn tiles the plugin
       has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.
@@ -270,7 +285,9 @@ failed, unprocessed }`: the relief tiles drawn in the last update
   the library (red first: the TypeError) with a guard on the plugin's
   init order in its source, the caller's limits through `osmGateLimits`,
   the active rule and the factory's frame loop and gate over a really
-  initialised overlay), `globe-osm-overlay.property.test.ts` (random bursts:
+  initialised overlay, a failed tile asked for again once its interval
+  passed with the map on, at most once per interval and never with the
+  map off, and a failed lock logging no unhandled error), `globe-osm-overlay.property.test.ts` (random bursts:
   no sliding minute above the ceiling, no request dropped). The design
   system's `labs/globe/globe-editor-blocks.smoke.spec.mjs` counts the
   requests against a fake tile server on the real page: none by default,

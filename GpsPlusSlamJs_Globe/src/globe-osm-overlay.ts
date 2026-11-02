@@ -48,6 +48,15 @@ export const GLOBE_OSM = Object.freeze({
   reevaluateMs: 500,
   /** At most this many tiles started per look. */
   reevaluateLimit: 8,
+  /**
+   * How long a tile whose map request failed waits before the map asks
+   * for it again (ms; at most one retry of all failed tiles per this
+   * long). The library never retries by itself, so a dropped request left
+   * its tile bare while loaded. 5 s: long enough not to hammer a server
+   * that is down (each retry still passes the gate and the ceiling), short
+   * enough that a creator who stops to look sees the map come back.
+   */
+  retryFailedMs: 5_000,
   /** The overlay texture per relief tile (px, the plugin's default). */
   resolution: 256,
   /**
@@ -543,6 +552,19 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     }
   }
 
+  /**
+   * The plugin's lock (the library's rethrows a failed request's error
+   * from a promise nobody holds: an unhandled error in the console per
+   * dropped request). The failure is not lost: the plugin reads the same
+   * request for the tile and records it as the tile's failed state, which
+   * the map asks for again (`retryFailedMs`).
+   */
+  lockTextureSafe(range: number[]): Promise<unknown> {
+    const result = this.lockTexture(range);
+    result.catch(() => {});
+    return result;
+  }
+
   async fetch(
     url: string,
     options: { signal?: AbortSignal } = {},
@@ -660,6 +682,19 @@ export function reevaluateGatedTiles(
   return { started, left };
 }
 
+/** Whether any processed tile's map request failed. */
+function anyFailed(
+  plugin: OverlayPluginInternals,
+  overlay: GatedOsmOverlay,
+): boolean {
+  const tileInfo = plugin.overlayInfo.get(overlay)?.tileInfo;
+  if (!tileInfo) return false;
+  for (const info of tileInfo.values()) {
+    if (info.failed && info.range !== null) return true;
+  }
+  return false;
+}
+
 /** What `createGlobeOsmOverlay` attaches to: the relief's tiles. */
 export interface OsmOverlayTerrain {
   readonly tiles: {
@@ -691,8 +726,9 @@ export interface OsmCoverage {
   readonly coarse: number;
   /** Waiting for it: gated, throttled, loading or failed. */
   readonly waiting: number;
-  /** Of those, the ones whose request failed: never asked for again, so
-   *  a check that waits for the map stops waiting on these. */
+  /** Of those, the ones whose request failed: asked for again only every
+   *  `GLOBE_OSM.retryFailedMs`, so a check that waits for the map stops
+   *  waiting on these. */
   readonly failed: number;
   /** Drawn tiles the plugin has not placed yet (no range). */
   readonly unprocessed: number;
@@ -775,6 +811,9 @@ export function createGlobeOsmOverlay({
   let ceilingFullMs = 0;
   let reevaluateBacklog = 0;
   let cappedLooks = 0;
+  let failedRetries = 0;
+  /** When a failed tile was first seen since the last retry (ms), or null. */
+  let failedSince: number | null = null;
   /** Whether a range (normalised) comes within `withinM` of the camera;
    *  false for one the projection cannot place. */
   const rangeNear = (range: number[], withinM: number): boolean => {
@@ -848,6 +887,23 @@ export function createGlobeOsmOverlay({
       ceilingFullMs += Math.max(0, pose.nowMs - lastNow);
     }
   };
+  /**
+   * The library never asks again for a tile whose request failed: once a
+   * failed tile has waited `retryFailedMs`, its reset releases every
+   * failed tile and locks it anew (through the gate and the ceiling).
+   */
+  const retryFailed = (nowMs: number) => {
+    const internals = plugin as unknown as OverlayPluginInternals;
+    if (!anyFailed(internals, overlay)) {
+      failedSince = null;
+      return;
+    }
+    failedSince ??= nowMs;
+    if (nowMs - failedSince < GLOBE_OSM.retryFailedMs) return;
+    failedSince = null;
+    failedRetries++;
+    plugin.resetFailedOverlays();
+  };
   /** A drawn tile's place in `coverage`. */
   const kindOf = (
     info: TileOverlayInfo,
@@ -910,6 +966,7 @@ export function createGlobeOsmOverlay({
       if (!active) return;
       if (pose.nowMs - lastLook < GLOBE_OSM.reevaluateMs) return;
       lastLook = pose.nowMs;
+      retryFailed(pose.nowMs);
       const look = reevaluateGatedTiles(
         plugin as unknown as OverlayPluginInternals,
         overlay,
@@ -962,6 +1019,8 @@ export function createGlobeOsmOverlay({
         ceilingFullMs,
         reevaluateBacklog,
         cappedLooks,
+        /** How many times the failed tiles were asked for again. */
+        failedRetries,
         ...overlay.stats(),
       };
     },
