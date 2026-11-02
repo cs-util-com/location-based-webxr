@@ -408,6 +408,20 @@ describe("the length cap", () => {
     expect(writer.area.value).toBe(BODY);
   });
 
+  it("never keeps an emptied text: coming back shows the tour's text again", () => {
+    // Why: the tour refuses an empty text, and a kept refused text hides
+    // the tour's text with no way back; for an emptied text that is a
+    // creator who cleared the field and finds it still empty (the r1011
+    // review's finding 2), so only a text with words in it is kept.
+    writeBody.mockReturnValue("refused");
+    type("  \n ");
+    writer.update(model({ blockId: "other", body: "Other." }));
+    expect(writeBody).toHaveBeenCalledWith("essay", "");
+    writer.update(model());
+    expect(writer.area.value).toBe(BODY);
+    expect(saveText()).toBe("Saved");
+  });
+
   it("drops a kept refused text once the tour's own text changed (an undo, another tour)", () => {
     writeBody.mockReturnValue("refused");
     type("x".repeat(32_001));

@@ -419,7 +419,8 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
   const same = (a: string, b: string) => norm(a) === norm(b);
   /** A text the tour refused (over its cap), per block: shown again when
    *  its block is, until it is written or the tour's own text changes
-   *  (`base`, the text it was refused over: an undo, another tour). */
+   *  (`base`, the text it was refused over: an undo, another tour). An
+   *  emptied text is never kept (`commit`). */
   const refused = new Map<string, { text: string; base: string }>();
   let parts: TypedPart[] = [];
   let current = -1;
@@ -626,10 +627,11 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       committing = false;
     }
     save.textContent = outcome === "written" ? "Saved" : "Not saved";
-    if (outcome === "written") {
-      known = value;
-      refused.delete(blockId);
-    } else refused.set(blockId, { text: area.value, base: known });
+    // An emptied text is never kept: it would hide the tour's text with
+    // no way back, so coming back shows the tour's text again.
+    if (outcome === "written" || value === "") refused.delete(blockId);
+    else refused.set(blockId, { text: area.value, base: known });
+    if (outcome === "written") known = value;
   }
 
   function changed(): void {

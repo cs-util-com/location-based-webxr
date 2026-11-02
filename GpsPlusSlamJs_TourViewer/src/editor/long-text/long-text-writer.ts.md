@@ -66,6 +66,8 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
   A text the tour refused is kept per block in memory and shown again,
   "Not saved", when its block is selected again, until it is written or
   the tour's own text for that block changes (an undo, another tour).
+  An emptied (whitespace-only) text is never kept: the tour refuses it,
+  and coming back shows the tour's text again.
 - Picture thumbnails are blob addresses kept by the picture's path; they
   are released when the writer is emptied and when the tour's pictures
   change (a picture replaced under the same path is read again).
