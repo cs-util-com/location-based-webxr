@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
 import {
+  hasPlainTextFix,
   pictureAlt,
   plainTextEdit,
   TYPED_PART_TEXT,
@@ -103,6 +104,21 @@ describe("plainTextEdit", () => {
   it("keeps an entity it cannot read as it was typed", () => {
     expect(fixed("A &bogus; sign")).toBe("A &bogus; sign");
     expect(fixed("A &#0; sign")).toBe("A &#0; sign");
+  });
+
+  // Why: "Make it plain text" on an entity the fix cannot read changes
+  // nothing, so the writer offers only "Keep as typed" there.
+  it("has no fix for an entity it cannot read, and one for every other part", () => {
+    const fixable = (body: string) => {
+      const [part] = typedParts(body, { assetExists });
+      if (part === undefined) throw new Error(`no part in ${body}`);
+      return hasPlainTextFix(body, part);
+    };
+    expect(fixable("A &bogus; sign")).toBe(false);
+    expect(fixable("A &#0; sign")).toBe(false);
+    expect(fixable("Fish &amp; chips")).toBe(true);
+    expect(fixable("Use `code` here")).toBe(true);
+    expect(fixable("#### Deep")).toBe(true);
   });
 
   // Why: a footnote mark after a space became "claim  (note 1)", two

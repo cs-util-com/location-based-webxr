@@ -278,6 +278,15 @@ function listFix(text: string): string {
   return indent + rest;
 }
 
+/** Whether "Make it plain text" changes `part` of `body` at all: not for
+ *  an entity it cannot read, which stays as typed. */
+export function hasPlainTextFix(
+  body: string,
+  part: Pick<TypedPart, "kind" | "from" | "to">,
+): boolean {
+  return plainTextEdit(body, part).text !== body.slice(part.from, part.to);
+}
+
 /**
  * "Make it plain text" for `part` of `body`: the marks that keep it from
  * being formatted taken off (or, for a picture inside a sentence, the

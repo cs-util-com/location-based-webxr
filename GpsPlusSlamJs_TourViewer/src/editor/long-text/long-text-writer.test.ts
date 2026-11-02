@@ -309,6 +309,20 @@ describe("the parts shown as typed", () => {
     expect(q(".lw-chip").textContent).toMatch(/^1 part shown as typed/);
   });
 
+  // Why: "Make it plain text" on an entity the browser does not know
+  // left the text as it was and said it was plain text now.
+  it("offers only Keep as typed for a part its fix cannot change", () => {
+    writer.update(model({ body: "A &bogus; sign" }));
+    click("parts");
+    click("part:0");
+    expect(q('[data-lw="part-fix"]').hidden).toBe(true);
+    expect(q('[data-lw="part-keep"]').hidden).toBe(false);
+    expect(q(".lw-callout").textContent).toMatch(/cannot be made plain text/);
+    writer.update(model({ body: "Fish &amp; chips" }));
+    click("part:0");
+    expect(q('[data-lw="part-fix"]').hidden).toBe(false);
+  });
+
   it("keeps a part as typed without touching the text, and marks it again", () => {
     click("parts");
     click("part:0");
@@ -411,8 +425,8 @@ describe("the length cap", () => {
   it("never keeps an emptied text: coming back shows the tour's text again", () => {
     // Why: the tour refuses an empty text, and a kept refused text hides
     // the tour's text with no way back; for an emptied text that is a
-    // creator who cleared the field and finds it still empty (the r1011
-    // review's finding 2), so only a text with words in it is kept.
+    // creator who cleared the field and finds it still empty, so only a
+    // text with words in it is kept.
     writeBody.mockReturnValue("refused");
     type("  \n ");
     writer.update(model({ blockId: "other", body: "Other." }));

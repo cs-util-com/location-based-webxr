@@ -27,6 +27,8 @@ visitor's sheet formats by, never from a second parser here.
   as its sign or, when it cannot be read, as typed, a footnote mark as
   "(note 1)" with no second space after one already there, ...). Never
   removes a word.
+- `hasPlainTextFix(body, part)` -> `boolean` - whether that edit changes
+  the part at all; false for an entity it cannot read.
 - `tourPictureEdit(body, part, assetId, alt?)` - a picture part replaced
   by the tour's picture `asset:<id>`, its description kept.
 
@@ -34,7 +36,9 @@ visitor's sheet formats by, never from a second parser here.
 
 - A non-string body has no parts.
 - `plainTextEdit` keeps every word, number and question mark of the
-  body (property test); its result shows no part of the same kind there.
+  body (property test). Its result shows no part of the same kind there,
+  except for an entity it cannot read, which it leaves as typed (that
+  part has no fix: `hasPlainTextFix` is false).
 - Kept parts are matched by key only; storing them is
   `kept-store.ts`'s.
 

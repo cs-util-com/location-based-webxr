@@ -18,6 +18,7 @@
  */
 import {
   TYPED_PART_TEXT,
+  hasPlainTextFix,
   plainTextEdit,
   tourPictureEdit,
   typedParts,
@@ -95,7 +96,7 @@ export interface LongTextWriterDeps {
    *  given: the section says a narration cannot be added here). */
   readonly narration?: Pick<
     NarrationSectionDeps,
-    "read" | "edit" | "durationOf"
+    "read" | "edit" | "durationOf" | "voiceMaxBytes"
   >;
   /** A tour file's content (a picture's thumbnail). */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -430,6 +431,9 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
           ...(deps.narration.durationOf === undefined
             ? {}
             : { durationOf: deps.narration.durationOf }),
+          ...(deps.narration.voiceMaxBytes === undefined
+            ? {}
+            : { voiceMaxBytes: deps.narration.voiceMaxBytes }),
           say: deps.say,
           onSummary: (summary, tone) => {
             narrSum.className = tone === "" ? "sum" : `sum ${tone}`;
@@ -542,8 +546,12 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
     coLine.textContent = `line ${String(part.line)}`;
     coWhy.textContent = text.why;
     coFix.textContent = text.fix ?? "Make it plain text";
+    const fixable = hasPlainTextFix(area.value, part);
+    coFix.hidden = !fixable;
     coPic.hidden = text.picture !== true || (model?.pictures.length ?? 0) === 0;
-    coNote.textContent = `${text.fixNote} Ctrl+Z undoes it.`;
+    coNote.textContent = fixable
+      ? `${text.fixNote} Ctrl+Z undoes it.`
+      : "It cannot be made plain text here: change it by typing, or keep it as typed.";
     coPos.textContent =
       shown.length > 1
         ? `${String(shown.indexOf(part) + 1)} of ${String(shown.length)}`
@@ -1103,7 +1111,7 @@ export function createLongTextWriter(deps: LongTextWriterDeps): LongTextWriter {
       }
       case "part-fix": {
         const part = parts[current];
-        if (part === undefined) return;
+        if (part === undefined || !hasPlainTextFix(value, part)) return;
         const fix = plainTextEdit(value, part);
         current = -1;
         apply({ ...fix, select: [fix.text.length, fix.text.length] });

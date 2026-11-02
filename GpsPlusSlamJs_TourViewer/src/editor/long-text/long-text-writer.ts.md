@@ -74,7 +74,8 @@ body)` (a part gone to: the preview flashes it), `createUrl?`,
   again). A picture read that lands after a release is not kept, so no
   blob address outlives the release that should free it.
 - Parts shown as typed: `typedParts` with the tour's pictures; the
-  callout offers "Make it plain text" (a kind's own fix label), "Use a
+  callout offers "Make it plain text" (a kind's own fix label; hidden,
+  with a note saying so, where `hasPlainTextFix` is false), "Use a
   tour picture" (picture kinds, with pictures in the tour) and "Keep as
   typed"; prev and next go through the parts and call `onShow`.
 - The formatting toolbar is one tab stop (the last focused button); the
