@@ -544,7 +544,7 @@ describe("picture thumbnails", () => {
     const made = createUrl.mock.results.map((r) => r.value as string);
     for (const url of made) expect(revokeUrl).toHaveBeenCalledWith(url);
     // A read after the release is kept as before.
-    land = undefined;
+    land = undefined as typeof land; // keeps the type: the callback sets it
     writer.update(model());
     click("picture");
     await vi.waitFor(() => {
