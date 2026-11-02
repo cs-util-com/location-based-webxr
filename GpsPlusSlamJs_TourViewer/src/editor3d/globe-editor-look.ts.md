@@ -47,7 +47,10 @@ and a camera pose read back as a view.
   `moveMinM` (2 m) at least. RangeError for a height not finite or below
   zero. The step values are declared, not tuned on screen. Type `StepKey`.
 - `viewPoseOf(ellipsoid, pose)`: the inverse of the globe's `viewPoseEcef`;
-  heading in [0, 360), 0 when looking straight down.
+  heading in [0, 360). Straight down or up (the line of sight within 1e-6
+  of vertical) the heading is read from the camera's level right axis, the
+  picture's turn about the line of sight, so a view placed straight down
+  reads back with its heading.
 - Types `GlobeObjectOnScreen`, `GlobeHiddenSet`.
 
 ## Invariants & assumptions

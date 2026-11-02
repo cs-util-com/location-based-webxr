@@ -282,12 +282,14 @@ const east = new THREE.Vector3();
 const north = new THREE.Vector3();
 const up = new THREE.Vector3();
 const forward = new THREE.Vector3();
+const right = new THREE.Vector3();
 
 /**
  * The view a camera at an ECEF pose shows (`viewPoseEcef`'s inverse): its
  * place and altitude, the heading its line of sight points toward (deg
  * from north toward east, in [0, 360)) and its pitch above the local
- * horizontal. Straight down the heading is 0.
+ * horizontal. Straight down (or up) the heading is the picture's turn
+ * about the line of sight, read from the camera's level right axis.
  */
 export function viewPoseOf(
   ellipsoid: PoseEllipsoid,
@@ -303,8 +305,14 @@ export function viewPoseOf(
   const pitch = Math.asin(Math.min(1, Math.max(-1, forward.dot(up))));
   const flatE = forward.dot(east);
   const flatN = forward.dot(north);
+  // Straight down or up the line of sight has no heading: the picture's
+  // turn about it does (`viewPoseEcef` keeps the right axis level, at
+  // cos h east - sin h north).
+  right.set(1, 0, 0).applyQuaternion(pose.quaternion);
   const heading =
-    Math.hypot(flatE, flatN) < 1e-9 ? 0 : Math.atan2(flatE, flatN) / DEG;
+    Math.hypot(flatE, flatN) < 1e-6
+      ? Math.atan2(-right.dot(north), right.dot(east)) / DEG
+      : Math.atan2(flatE, flatN) / DEG;
   return {
     lat: at.lat / DEG,
     lng: at.lon / DEG,
