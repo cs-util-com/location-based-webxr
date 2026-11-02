@@ -27,6 +27,10 @@
     the relief (its share, the release, the stencil fill, who is drawn
     and updated, the cloud shell's share), as the lab mounts it. The view
     needs `band: true`, and `stencil: true` for the fill.
+  - The heavy clouds: `globeViewClouds(view)` (`globe-view-clouds.ts`),
+    passed to `mountGlobeViewAir` as its `clouds`: the lab's slab, shell
+    and high layer with the lab's settings, switched by the air's
+    `setClouds`. The view must draw with standard depth.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full

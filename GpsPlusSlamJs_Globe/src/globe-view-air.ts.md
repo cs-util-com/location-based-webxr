@@ -9,26 +9,33 @@
   disc, the stars and navy space: without the air the sky is black at
   noon. Reached through the package's `./view` export.
 - Public API:
-  - `mountGlobeViewAir(view, { coarsePointer, drawers? })` returns
-    `GlobeViewAir`. `view` is a `GlobeView` (structurally: its renderer,
+  - `mountGlobeViewAir(view, { coarsePointer, drawers?, clouds? })`
+    returns `GlobeViewAir`. `clouds` is a `CloudsFactory`
+    (`globeViewClouds(view)`, `globe-view-clouds.ts`): made with the
+    drawers, then stepped, drawn and patched in the lab's order;
+    absent, no heavy clouds. `view` is a `GlobeView` (structurally: its renderer,
     scene, camera, globe, `ecefCamera()`, `frameTarget()`); `drawers` is
     a test seam (default: the real three, made for the view's renderer
     and scene; the haze sets `scene.fog` once).
     - `afterSky()`: call from the view's `afterSky` seam. The ground sky
       over the space sky, before the Earth (nothing above the edge).
-    - `step()`: once a frame after the camera is placed (the editor calls
-      it from its `update` seam). The hand-over at the camera's height
-      (`framed` while the view has a frame target), then at once the
-      globe's sun at the eased exposure and the shell's thickness (there
-      are no cloud volumes to update between).
+    - `step({ shareClouds? })`: once a frame after the camera is placed
+      (the editor calls it from its `update` seam). The hand-over at the
+      camera's height (`framed` while the view has a frame target), then
+      the clouds' step (they read the observer's height and ask
+      `shareClouds(flat)` for the cloud shell's share; without clouds it
+      is asked at a flat share of 1), then the globe's sun at the eased
+      exposure and the shell's thickness.
     - `afterScene()`: call from the view's `afterScene` seam. The space
-      pass over the Earth and the sky.
-    - `haze(tiles)`: hazes every model `tiles` loads from now on; call it
+      pass over the Earth and the sky, after the clouds' drawing.
+    - `haze(tiles)`: the clouds' shadow patch first, then hazes every model `tiles` loads from now on; call it
       for each relief the app draws, before it loads and after the
       relief's own load hooks.
-    - `state()`: `{ weight, observerKm, groundSky }` (the ground sky's
+    - `setClouds(on)`: the heavy clouds' switch (nothing without them).
+    - `state()`: `{ weight, observerKm, groundSky, clouds }` (`clouds`:
+      the clouds' `state()`, or null) (the ground sky's
       `state()`: `supported`, `lastStage`, `rebuilds`, its exposure).
-    - `dispose()`: frees the three drawers (one that throws leaves the
+    - `dispose()`: frees the clouds and the three drawers (one that throws leaves the
       others to run); idempotent; every part then does nothing.
 - Invariants & assumptions:
   - The lab's settings (`globe-lab.js`'s defaults): the hand-over's edge,
@@ -68,6 +75,8 @@
   drawn with the view's camera; the hand-over's edges, the framed flag and
   the eased sun; the space pass's shares at full and no weight, no scene
   depth; the look by pointer; the haze's tiles and sync; dispose once and
-  nothing after; nothing before the first step). The drawing itself is
+  nothing after; nothing before the first step; the clouds stepped,
+  drawn and patched in the lab's order, their switch and state; the
+  flat share of 1 without clouds). The drawing itself is
   checked in a browser by the Tour Viewer's `editor3d-globe.spec.js` (the
   sky's colour at noon and at midnight) and the lab's own smokes.

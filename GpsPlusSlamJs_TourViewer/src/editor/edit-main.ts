@@ -421,6 +421,8 @@ const debugPanel = element("debug-panel");
 const debugSwitch = element<HTMLButtonElement>("view-debug");
 /** The View menu's Real time: the globe view's clock (`globe=1` only). */
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
+/** The View menu's Clouds: the globe view's heavy clouds (`globe=1` only). */
+const cloudsSwitch = element<HTMLButtonElement>("view-clouds");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
  *  plan). */
@@ -3845,6 +3847,7 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
 }
 // Only the globe view has a sky of its own to set the clock of.
 realTimeSwitch.hidden = !globeSwitch.on;
+cloudsSwitch.hidden = !globeSwitch.on;
 // Only the globe view reserves the band for its loading bar under the top
 // bar (`editor-shell.css`); the default view's docks start right under it.
 view3dBox.toggleAttribute("data-globe", globeSwitch.on);
@@ -3853,6 +3856,11 @@ realTimeSwitch.addEventListener("click", () => {
   const on = !isChecked(realTimeSwitch);
   setChecked(realTimeSwitch, on);
   shown3d?.setRealTime?.(on);
+});
+cloudsSwitch.addEventListener("click", () => {
+  const on = !isChecked(cloudsSwitch);
+  setChecked(cloudsSwitch, on);
+  shown3d?.setClouds?.(on);
 });
 const viewSwitch = createViewSwitch({
   button: menuItemControl(element("view-switch")),
@@ -3917,6 +3925,7 @@ const viewSwitch = createViewSwitch({
     });
     shown3d = view;
     if (isChecked(realTimeSwitch)) view.setRealTime?.(true);
+    if (!isChecked(cloudsSwitch)) view.setClouds?.(false);
     const handle: View3dHandle = {
       dispose: () => {
         if (shown3d === view) shown3d = null;

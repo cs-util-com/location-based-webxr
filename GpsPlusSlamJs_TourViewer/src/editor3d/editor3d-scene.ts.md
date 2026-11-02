@@ -59,6 +59,8 @@ keys), and writes only through the page's `edits`.
   - `setRealTime?(on)` - optional: the globe view's clock, the real time
     now (true) or held in daylight over the tour (false, its default);
     this view has no sky of its own and leaves it out;
+  - `setClouds?(on)` - optional: the globe view's heavy clouds on (true,
+    their default) or off; this view has no clouds and leaves it out;
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's

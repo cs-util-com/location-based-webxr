@@ -30,3 +30,4 @@ export { GIBS_ACKNOWLEDGEMENT } from "./globe-sources.js";
 export { mountGlobeViewAir, type GlobeViewAir } from "./globe-view-air.js";
 // The relief under the globe's surface: the band between the two carriers.
 export { mountGlobeRelief } from "./globe-relief-mount.js";
+export { globeViewClouds } from "./globe-view-clouds.js";

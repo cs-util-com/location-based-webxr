@@ -177,6 +177,9 @@ export interface Editor3dView {
    *  in daylight over the tour (false, its default). Absent: the view has
    *  no sky of its own. */
   setRealTime?(on: boolean): void;
+  /** The globe view's heavy clouds on (true, their default) or off.
+   *  Absent: the view has no clouds of its own. */
+  setClouds?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
   /** The layers turned off (the station names and the codes are drawn

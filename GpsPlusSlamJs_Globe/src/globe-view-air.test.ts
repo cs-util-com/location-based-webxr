@@ -232,7 +232,10 @@ describe("mountGlobeViewAir", () => {
       coarsePointer: false,
       drawers: () => fakes.drawers,
     });
-    const tiles = { addEventListener: () => undefined };
+    const tiles = {
+      group: new THREE.Group(),
+      addEventListener: () => undefined,
+    };
     air.haze(tiles);
     expect(fakes.patched).toEqual([tiles]);
     air.step();
@@ -264,6 +267,76 @@ describe("mountGlobeViewAir", () => {
     air.afterSky();
     air.afterScene();
     expect(fakes.log.length).toBe(before);
+  });
+
+  // Why: the heavy clouds are stepped as the lab steps them: after the
+  // hand-over (they read the observer's height), before the sun's eased
+  // exposure (the volumes update with the frame's previous sun), the
+  // cloud shell's share from the page; drawn after the Earth and before
+  // the space pass; their shadow patched before the haze.
+  it("steps, draws and patches the clouds in the lab's order", () => {
+    const view = fakeView(2);
+    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
+    const seen: { intensity: number; skyUpdates: number; share: number }[] = [];
+    let madeWith: unknown = null;
+    const air = mountGlobeViewAir(view, {
+      coarsePointer: false,
+      drawers: () => fakes.drawers,
+      clouds: (drawers) => {
+        madeWith = drawers;
+        return {
+          patch: () => fakes.log.push("clouds patch"),
+          step: ({ shareClouds }) => {
+            seen.push({
+              intensity: view.globe.sun.intensity,
+              skyUpdates: fakes.updates.length,
+              share: shareClouds(0.25),
+            });
+          },
+          render: ({ weight }) => fakes.log.push("clouds " + String(weight)),
+          setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
+          state: () => ({ on: true, flat: 0.25, shellOn: true }),
+          dispose: () => fakes.log.push("dispose clouds"),
+        };
+      },
+    });
+    expect(madeWith).toBe(fakes.drawers);
+    const flats: number[] = [];
+    air.step({
+      shareClouds: (flat) => {
+        flats.push(flat);
+        return 0.5;
+      },
+    });
+    expect(seen).toEqual([{ intensity: 5, skyUpdates: 1, share: 0.5 }]);
+    expect(flats).toEqual([0.25]);
+    expect(view.globe.sun.intensity).toBe(3.5);
+    air.afterScene();
+    expect(fakes.log.slice(-2)).toEqual(["clouds 1", "space"]);
+    air.haze({ group: new THREE.Group(), addEventListener: () => undefined });
+    expect(fakes.log.at(-1)).toBe("clouds patch");
+    expect(fakes.patched.length).toBe(1);
+    air.setClouds(false);
+    expect(fakes.log.at(-1)).toBe("clouds off");
+    expect(air.state().clouds).toEqual({ on: true, flat: 0.25, shellOn: true });
+    air.dispose();
+    expect(fakes.log).toContain("dispose clouds");
+  });
+
+  // Why: without the clouds the flat layer is whole, so the page's cloud
+  // shell share is asked for a flat share of 1, as the editor did before.
+  it("gives the cloud shell its share at a whole flat layer without clouds", () => {
+    const fakes = fakeDrawers();
+    const air = mountGlobeViewAir(fakeView(2), {
+      coarsePointer: false,
+      drawers: () => fakes.drawers,
+    });
+    const flats: number[] = [];
+    air.step({ shareClouds: (flat) => flats.push(flat) });
+    expect(flats).toEqual([1]);
+    expect(air.state().clouds).toBeNull();
+    air.setClouds(false);
+    air.step();
   });
 
   // Why: the space pass needs a step's hand-over; a scene drawn before the

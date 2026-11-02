@@ -46,9 +46,11 @@
  * space pass, the haze over the relief), stepped after the camera is
  * placed; it sets the globe's sun to its eased exposure each frame.
  *
- * Not yet here (later steps of the plan): the layer chips for the clouds
- * and the buildings. The heavy clouds (the shell and its volume) are never
- * mounted.
+ * The air carries the globe lab's heavy clouds too (`globeViewClouds`: the
+ * slab near the ground, the spherical volume from orbit down, the high
+ * layer), on by default; the View menu's Clouds turns them off
+ * (`setClouds`). The cloud shell's share is the relief mount's, as in the
+ * lab. Not yet here: a layer chip for the buildings.
  *
  * @see editor3d-globe.ts.md
  */
@@ -63,6 +65,7 @@ import {
   createGlobeView,
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
+  globeViewClouds,
   mountGlobeRelief,
   mountGlobeViewAir,
   type GlobeView,
@@ -226,9 +229,9 @@ export async function openGlobeEditor(
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
       settings: globeEditorSettings,
       solarPosition,
-      // First person: the near plane at a few centimetres, the far one
-      // past the horizon.
-      reversedDepth: true,
+      // Standard depth (the view's default): the clouds and the air read
+      // the scene's depth as standard, and reversed depth measured no
+      // better on the default 24-bit depth buffer.
       // The surface compiles the relief's band: the relief draws the
       // globe's look, its pixels kept by the carrier share; the stencil
       // lets the globe's surface fill every pixel the relief has not.
@@ -327,6 +330,7 @@ export async function openGlobeEditor(
     const { ellipsoid } = ground.terrain.tiles;
     const mountedAir = mountGlobeViewAir(view, {
       coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
+      clouds: globeViewClouds(view),
     });
     air = mountedAir;
     undo.push(() => {
@@ -733,13 +737,14 @@ export async function openGlobeEditor(
         renderer,
         updateRelief: () => ground.update(camera, renderer, now),
       });
-      reliefMount.shareClouds(true, 1);
 
       camera.updateMatrixWorld();
       followFrame();
       // The hand-over at the camera's height; the globe's sun at its
       // eased exposure.
-      air?.step();
+      air?.step({
+        shareClouds: (flat) => reliefMount.shareClouds(true, flat),
+      });
       tourFromWorld.copy(tourFrame.matrixWorld).invert();
       cameraTour.copy(camera.position).applyMatrix4(tourFromWorld);
       // The tilt from straight down, in the tour's frame.
@@ -1067,6 +1072,9 @@ export async function openGlobeEditor(
       },
       northUp() {
         placePose({ headingDeg: 0 });
+      },
+      setClouds(on) {
+        air?.setClouds(on);
       },
       setRealTime(on) {
         if (on === realTime) return;

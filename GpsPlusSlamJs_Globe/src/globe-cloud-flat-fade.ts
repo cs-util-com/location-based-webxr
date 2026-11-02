@@ -57,7 +57,8 @@ function flatShellBand(options: {
   if (topKm > 0 && out !== null) {
     return { topKm: out.toKm, bandKm: out.fromKm - out.toKm };
   }
-  return { topKm, bandKm: options.shellBandKm };
+  const bandKm = options.shellBandKm;
+  return bandKm === undefined ? { topKm } : { topKm, bandKm };
 }
 
 /**

@@ -188,6 +188,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   default (the sky held in daylight over the tour), ticked the real time
   now (`Editor3dView.setRealTime`). View state only; a view opened again
   takes the item's state.
+- View's "Clouds" (`#view-clouds`, a checkbox item, shown only with the
+  globe link switch `globe=1`): the globe view's heavy 3D clouds, ticked
+  by default, unticked only the flat cloud layer
+  (`Editor3dView.setClouds`). View state only, as Real time.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
     window's lower right corner, and whichever lay on top covered the

@@ -4,7 +4,10 @@
  * Earth, the framework's ground sky, the haze over the relief) made for a
  * `GlobeView` and wired through `globe-air.ts`, so an app gets the blue
  * sky below the hand-over edge with one call. The view core alone draws
- * only the sun's disc, the stars and navy space: black at noon.
+ * only the sun's disc, the stars and navy space: black at noon. With
+ * `clouds` (`globeViewClouds(view)`, `globe-view-clouds.ts`) it draws the
+ * lab's heavy clouds too, stepped between the hand-over and the sun's
+ * eased exposure and drawn before the space pass, as the lab does.
  *
  * The app calls the four parts at the view's places, as the lab does:
  * `afterSky` in the view's `afterSky` seam (the ground sky over the space
@@ -41,6 +44,7 @@ import {
 } from "./globe-ground-sky.js";
 import { createGlobeHaze, type GlobeHaze } from "./globe-haze.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
+import type { CloudsFactory, GlobeViewClouds } from "./globe-view-clouds.js";
 
 /** What the air reads of the view (a `GlobeView` is one). */
 interface AirView {
@@ -64,36 +68,68 @@ interface AirView {
 
 /** The three drawers, as the air uses them (tests pass fakes). */
 interface AirDrawers {
-  readonly spacePass: Pick<GlobeAtmosphere, "setLook" | "render" | "dispose">;
+  readonly spacePass: Pick<
+    GlobeAtmosphere,
+    "setLook" | "render" | "dispose" | "transmittance"
+  >;
   readonly groundSky: Pick<
     GlobeGroundSky,
-    "atmosphere" | "update" | "state" | "render" | "dispose"
+    | "atmosphere"
+    | "update"
+    | "state"
+    | "render"
+    | "dispose"
+    | "supported"
+    | "scene"
   >;
   readonly haze: Pick<GlobeHaze, "patch" | "sync" | "setWeight" | "dispose">;
 }
 
-/** The relief's tiles, as the haze patches them. */
-type HazedTiles = Parameters<GlobeHaze["patch"]>[0];
+/** The relief's tiles, as the haze (and the clouds' shadow) patch them. */
+type HazedTiles = Parameters<GlobeHaze["patch"]>[0] &
+  Parameters<GlobeViewClouds["patch"]>[0];
+
+/** What a frame's `step` is told. */
+interface AirStepFrame {
+  /**
+   * Gives the globe's cloud shell its share for the flat layer's `flat`
+   * (1 without the clouds) and returns it: the page's relief mount's
+   * `shareClouds(true, flat)`. Absent: the shell gets none.
+   */
+  readonly shareClouds?: (flat: number) => number;
+}
 
 export interface GlobeViewAir {
   /** The view's `afterSky` seam: the ground sky over the space sky. */
   afterSky(): void;
   /**
    * Once a frame, after the camera is placed: the hand-over at the
-   * camera's height and the globe's sun at its eased exposure.
+   * camera's height, the clouds (with the cloud shell's share from
+   * `frame.shareClouds`) and the globe's sun at its eased exposure.
    */
-  step(): void;
-  /** The view's `afterScene` seam: the space pass over the Earth and sky. */
+  step(frame?: AirStepFrame): void;
+  /**
+   * The view's `afterScene` seam: the clouds, then the space pass over the
+   * Earth and sky.
+   */
   afterScene(): void;
-  /** Hazes every model `tiles` loads from now on (call before it loads). */
+  /**
+   * Hazes every model `tiles` loads from now on (call before it loads);
+   * with the clouds, their shadow first, and the relief they end at.
+   */
   haze(tiles: HazedTiles): void;
-  /** The ground sky's share now, the observer's height (km), its stage. */
+  /** The heavy clouds on or off (nothing without the clouds). */
+  setClouds(on: boolean): void;
+  /** The ground sky's share now, the observer's height (km), its stage,
+   *  and the clouds' state (null without them). */
   state(): {
     weight: number;
     observerKm: number;
     groundSky: Record<string, unknown>;
+    clouds: ReturnType<GlobeViewClouds["state"]> | null;
   };
-  /** Frees the three drawers; every part then does nothing. Idempotent. */
+  /** Frees the drawers (and the clouds); every part then does nothing.
+   *  Idempotent. */
   dispose(): void;
 }
 
@@ -102,6 +138,9 @@ interface GlobeViewAirOptions {
   readonly coarsePointer: boolean;
   /** Tests: the drawers (default: the real ones, made for the view). */
   readonly drawers?: (view: AirView) => AirDrawers;
+  /** The heavy clouds, made over the drawers (`globeViewClouds(view)`);
+   *  absent: none. */
+  readonly clouds?: CloudsFactory;
 }
 
 /** The real drawers, made for the view's renderer and scene. */
@@ -123,6 +162,7 @@ export function mountGlobeViewAir(
 ): GlobeViewAir {
   const drawers = (options.drawers ?? createDrawers)(view);
   const { spacePass, groundSky, haze } = drawers;
+  const clouds = options.clouds?.(drawers) ?? null;
   const { radius } = view.globe.tiles.ellipsoid;
   const params: AirParams = {
     groundSky: 1,
@@ -157,20 +197,28 @@ export function mountGlobeViewAir(
     afterSky() {
       if (live()) groundSky.render(view.camera);
     },
-    step() {
+    step(frame = {}) {
       if (disposed) return;
       const { position } = view.ecefCamera();
       air.step(params, {
         cameraEcef: [position.x, position.y, position.z],
         framed: view.frameTarget() !== null,
       });
-      // No cloud volumes here: the sun's ease and the shell's thickness
-      // follow the hand-over at once.
+      const shareClouds = frame.shareClouds ?? (() => 0);
+      // The clouds between the hand-over and the sun's ease (the volumes
+      // update with the frame's previous sun, as in the lab); without
+      // them the flat layer is whole.
+      if (clouds) {
+        clouds.step({ observerKm: air.observerKm(), shareClouds });
+      } else {
+        shareClouds(1);
+      }
       air.finish(params);
       stepped = true;
     },
     afterScene() {
       if (!live()) return;
+      clouds?.render({ weight: air.weight() });
       air.render(view.camera, params, {
         drawn: true,
         worldFromEcef: view.globe.tiles.group.matrixWorld,
@@ -179,19 +227,26 @@ export function mountGlobeViewAir(
       });
     },
     haze(tiles) {
-      if (!disposed) haze.patch(tiles);
+      if (disposed) return;
+      // The clouds' shadow first: the haze is applied last.
+      clouds?.patch(tiles);
+      haze.patch(tiles);
+    },
+    setClouds(on) {
+      clouds?.setOn(on);
     },
     state: () => ({
       weight: air.weight(),
       observerKm: air.observerKm(),
       groundSky: air.groundSkyState(),
+      clouds: clouds?.state() ?? null,
     }),
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const drawer of [haze, groundSky, spacePass]) {
+      for (const drawer of [clouds, haze, groundSky, spacePass]) {
         try {
-          drawer.dispose();
+          drawer?.dispose();
         } catch {
           // One drawer that fails to free leaves the others to run.
         }

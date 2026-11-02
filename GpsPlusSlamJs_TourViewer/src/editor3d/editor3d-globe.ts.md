@@ -97,7 +97,17 @@ ground.
   view core's sky is black at noon. It writes the globe's sun intensity
   (the eased exposure) every frame, so nothing here sets it.
   `stats().globe.air` carries its `weight`, `observerKm` and the ground
-  sky's state.
+  sky's state, and `clouds` (`{ on, flat, shellOn }`, or null where the
+  ground sky cannot draw).
+- The heavy clouds: the lab's slab, shell and high layer with the lab's
+  settings (`globeViewClouds(view)`, passed to the air), on by default.
+  The air steps them with the relief mount's cloud-shell share
+  (`shareClouds(true, flat)`), draws them after the Earth and patches
+  their shadow onto the relief; `setClouds(on)` is the View menu's
+  switch. The cloud shell sits at 3 km, the lab's height.
+- Standard depth, not reversed: the clouds' and the air's scene-depth
+  readers assume it, and reversed depth measured no better on the
+  24-bit buffer.
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field
@@ -219,7 +229,6 @@ takeover; what still loads does not keep it (it reads no load counts).
   its overlay listing the globe's active sources and the relief's in
   full, with GIBS's acknowledgement under them); they do not follow a
   later change of sources yet.
-- The heavy clouds (the shell and its volume) are never mounted.
 - The globe's assets are served at `/globe-assets/` by the dev server
   (`../dev-server/globe-assets-route.ts`) and, on the built site, from
   the one copy the site build puts at its root (`scripts/build-site.mjs`).

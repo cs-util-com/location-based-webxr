@@ -78,7 +78,17 @@ interface Fakes {
   /** How often the map's coverage was read. */
   coverageCalls: number;
   /** The options the view was made with. */
-  viewOptions: null | { band?: boolean; stencil?: boolean };
+  viewOptions: null | {
+    band?: boolean;
+    stencil?: boolean;
+    reversedDepth?: boolean;
+  };
+  /** The options the air was mounted with. */
+  airOptions: null | { clouds?: unknown };
+  /** The frames the air was stepped with. */
+  airSteps: { shareClouds?: (flat: number) => number }[];
+  /** What the air's cloud switch was told. */
+  cloudsOn: boolean[];
   /** The share of the ground the relief mount reports (1: the relief
    *  carries all of it, 0: the globe's surface). */
   reliefShare: number;
@@ -88,6 +98,8 @@ interface Fakes {
     altitudesM: number[];
     reliefUpdates: number;
     cloudShares: number[];
+    /** The flat layer's shares the cloud shell was asked for. */
+    cloudFlats: number[];
     disposed: boolean;
   };
   /** What the relief was made with. */
@@ -121,6 +133,9 @@ const fakes = vi.hoisted((): Fakes => ({
   imagery: { name: "whole-Earth imagery" },
   reliefShare: 1,
   reliefMount: null,
+  airOptions: null,
+  airSteps: [],
+  cloudsOn: [],
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -135,6 +150,8 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
   return {
     ...(await importOriginal<object>()),
     creditsFor: () => [],
+    // The air's clouds factory: the air is faked, so it is only passed on.
+    globeViewClouds: () => () => null,
     createGlobeImagery: () => fakes.imagery,
     mountGlobeRelief: (options: {
       globe: unknown;
@@ -146,6 +163,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         altitudesM: [],
         reliefUpdates: 0,
         cloudShares: [],
+        cloudFlats: [],
         disposed: false,
       };
       fakes.reliefMount = mount;
@@ -160,7 +178,8 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
             frame.updateRelief();
           }
         },
-        shareClouds: (on: boolean) => {
+        shareClouds: (on: boolean, flat: number) => {
+          mount.cloudFlats.push(flat);
           const share = on ? fakes.reliefShare : 0;
           mount.cloudShares.push(share);
           return share;
@@ -174,14 +193,20 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         },
       };
     },
-    mountGlobeViewAir: () => ({
-      afterSky() {},
-      step() {},
-      afterScene() {},
-      haze() {},
-      state: () => null,
-      dispose: () => fakes.log.push("air-dispose"),
-    }),
+    mountGlobeViewAir: (_view: unknown, options: Fakes["airOptions"]) => {
+      fakes.airOptions = options;
+      return {
+        afterSky() {},
+        step: (frame: Fakes["airSteps"][number] = {}) => {
+          fakes.airSteps.push(frame);
+        },
+        afterScene() {},
+        haze() {},
+        setClouds: (on: boolean) => fakes.cloudsOn.push(on),
+        state: () => null,
+        dispose: () => fakes.log.push("air-dispose"),
+      };
+    },
     createGlobeCameraControls: () => {
       const controls = {
         pickFrom: vi.fn(),
@@ -513,6 +538,9 @@ beforeEach(() => {
   fakes.terrainInput = null;
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
+  fakes.airOptions = null;
+  fakes.airSteps = [];
+  fakes.cloudsOn = [];
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1000,6 +1028,39 @@ describe("openGlobeEditor's wiring", () => {
       );
     },
   );
+
+  // Why: the owner asked for the lab's heavy 3D clouds in the editor, on
+  // by default with a switch; the air carries them, and the View menu's
+  // switch reaches them through the view.
+  it("mounts the heavy clouds with the air and switches them", async () => {
+    const view = await openAt(0);
+    expect(typeof fakes.airOptions?.clouds).toBe("function");
+    expect(fakes.cloudsOn).toEqual([]);
+    view.setClouds?.(false);
+    view.setClouds?.(true);
+    expect(fakes.cloudsOn).toEqual([false, true]);
+  });
+
+  // Why: the cloud shell takes the clouds as the relief takes the ground,
+  // as in the lab: the air asks the relief mount for the shell's share at
+  // the flat layer's share it planned.
+  it("gives the air's clouds the relief mount's share", async () => {
+    await openAt(0);
+    fakes.reliefShare = 0.75;
+    placeCamera(300, -10, DRAWN_M);
+    frameAt(16);
+    const frame = fakes.airSteps.at(-1);
+    expect(frame?.shareClouds?.(0.3)).toBe(0.75);
+    expect(fakes.reliefMount?.cloudFlats.at(-1)).toBe(0.3);
+  });
+
+  // Why: the clouds and the air read the scene's depth as standard depth
+  // (far at 1); reversed depth left them reading the near plane as the
+  // farthest, and measured no better on the default depth buffer.
+  it("draws with standard depth", async () => {
+    await openAt(0);
+    expect(fakes.viewOptions?.reversedDepth).not.toBe(true);
+  });
 
   it("takes the relief mount down with the view", async () => {
     const view = await openAt(0);

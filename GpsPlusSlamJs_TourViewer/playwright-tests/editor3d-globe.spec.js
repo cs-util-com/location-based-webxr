@@ -91,6 +91,20 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
     .toBe(true);
   const clock = (await view3d(page)).globe.clock;
   expect(Math.abs(clock.sceneMs - Date.now())).toBeLessThan(120_000);
+  // The heavy clouds are on by default; the View menu's Clouds turns them
+  // off.
+  expect((await view3d(page)).globe.air.clouds?.on).toBe(true);
+  const clouds = page.locator("#view-clouds");
+  // The menu may have closed after Real time.
+  if (!(await clouds.isVisible())) {
+    await page.locator("#view-menu-btn").click();
+  }
+  await expect(clouds).toHaveAttribute("aria-checked", "true");
+  await clouds.click();
+  await expect(clouds).toHaveAttribute("aria-checked", "false");
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+    .toBe(false);
   expect(await rejections(page)).toEqual([]);
 });
 
@@ -231,6 +245,7 @@ test("opens the OrbitControls view without the switch, nothing of the globe aske
   expect(imagery.asks).toBe(0);
   // No sky of its own: no clock item in the View menu.
   await expect(page.locator("#view-realtime")).toBeHidden();
+  await expect(page.locator("#view-clouds")).toBeHidden();
 });
 
 /**
