@@ -230,6 +230,28 @@ describe("viewPoseOf", () => {
     }
   });
 
+  // Why: straight down the line of sight has no heading, but the view
+  // still has one: it turns the picture about the line of sight (the
+  // approach falls straight down with the street's heading). Read back as
+  // 0, a step, Top view or North up taken mid-fall would snap the picture
+  // to north up.
+  it("reads the heading straight down from the turn of the picture", () => {
+    for (const pitchDeg of [-90, 90]) {
+      const back = viewPoseOf(
+        WGS84_ELLIPSOID,
+        viewPoseEcef(WGS84_ELLIPSOID, {
+          lat: 48.1,
+          lng: 11.6,
+          altitudeKm: 800,
+          headingDeg: 135,
+          pitchDeg,
+        }),
+      );
+      expect(back.headingDeg).toBeCloseTo(135, 6);
+      expect(back.pitchDeg).toBeCloseTo(pitchDeg, 6);
+    }
+  });
+
   it("gives a heading in [0, 360)", () => {
     const back = viewPoseOf(
       WGS84_ELLIPSOID,

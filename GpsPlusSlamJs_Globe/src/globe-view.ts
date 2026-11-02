@@ -228,11 +228,26 @@ export function viewPoseEcef(
     .multiplyScalar(Math.sin(h) * Math.cos(p))
     .addScaledVector(north, Math.cos(h) * Math.cos(p))
     .addScaledVector(up, Math.sin(p));
-  // A camera looks down its -z: lookAt(eye, target) points -z at target.
-  const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
+  // The camera's axes written out, not `lookAt(forward, up)`: straight
+  // down or up the forward is parallel to the local up, and lookAt's right
+  // axis came out of rounding noise, different at every place (a camera
+  // flying straight down spun and tipped from frame to frame). The right
+  // axis is level and set by the heading alone, so it is exact at every
+  // pitch, and straight down the heading turns the view about its axis.
+  const right = east
+    .clone()
+    .multiplyScalar(Math.cos(h))
+    .addScaledVector(north, -Math.sin(h));
+  const cameraUp = new THREE.Vector3().crossVectors(right, forward);
+  // A camera looks down its -z.
+  const basis = new THREE.Matrix4().makeBasis(
+    right,
+    cameraUp,
+    forward.negate(),
+  );
   return {
     position,
-    quaternion: new THREE.Quaternion().setFromRotationMatrix(look),
+    quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
   };
 }
 

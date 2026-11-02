@@ -36,7 +36,13 @@
   - `viewPoseEcef(ellipsoid, view)`: the ECEF pose of a Debug export's view
     (`lat`, `lng`, `altitudeKm` over the ellipsoid, `headingDeg` from north
     toward east, `pitchDeg` above the local horizontal). RangeError for a
-    value that is not finite.
+    value that is not finite. The camera axes are written out (the right
+    axis level at `cos h east - sin h north`, up = right x forward), not
+    taken from `lookAt`: straight down or up lookAt has no up to cross with
+    and its right axis came from rounding noise, so a camera falling
+    straight down spun and tipped up to 180 degrees between frames (the
+    Tour Viewer approach flicker, 2026-11-02). Exact at every pitch;
+    straight down the heading turns the picture about the line of sight.
 - The frame, in order:
   1. `seams.frameStart(now)`; with `seams.paused()` true, `seams.frameEnd`
      and nothing else (the recorder's refresh calibration).
@@ -93,6 +99,8 @@
   runs, with a fake sun that moves with the time), the drift,
   the frame move (a property over places and altitudes), the recentre and
   the gesture, `placeView` (the frame on the place, the camera on its
-  pose, from a camera that started elsewhere), `viewPoseEcef`. The browser check is the lab's smokes and the
+  pose, from a camera that started elsewhere), `viewPoseEcef` (its axes
+  exact at every pitch, straight down and up included, over random places
+  and along the approach path). The browser check is the lab's smokes and the
   reference-view screenshots
   (`GpsPlusSlamJs_DesignSystem/labs/globe/globe-reference-shots.smoke.spec.mjs`).
