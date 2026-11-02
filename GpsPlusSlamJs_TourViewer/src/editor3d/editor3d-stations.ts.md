@@ -63,9 +63,10 @@ standing`). A distance, size or focal length that is not a positive
   - `pointOf(id)`, `billboardOf(id)`, `photoPlanes(id)`, `models(id)` - for
     the tests and the page's checks;
   - for the flights: `radiusOf(id)` (a station's found radius),
-    `itemPointOf(id)` (an item's place in the world, its station drawn or
-    not), `codePointOf(levelId)` (a code's centre); each null for an id
-    the tour does not have;
+    `itemPointOf(id)` (an item's place, its station drawn or not),
+    `codePointOf(levelId)` (a code's centre); each null for an id the
+    tour does not have. `pointOf`, `itemPointOf` and `codePointOf` are in
+    the layer's frame (`deps.parent`'s), see the invariant below;
   - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
     tour's pose until null: a station's place (its billboard, ring, items
     and models follow) and found radius, or an item's place (a reading
@@ -103,6 +104,15 @@ standing`). A distance, size or focal length that is not a positive
   (drawn N lower than its ellipsoidal `alt`), its group at (0, alt, 0) as
   `renderTourStation` places it, so a station on the ground in the file
   stands on the drawn ground.
+- **Points are in the layer's frame, never the world's:** a station's,
+  an item's and a code's point are read from its root's own matrix
+  (`layerPoint`), not its world matrix. In the plain 3D view the two are
+  the same (the layer hangs in the scene). Under the globe the layer
+  hangs in the tour's frame, whose place in the world changes on each
+  recentre of the world frame; a point read through the world matrix of
+  a station drawn anew after a recentre (a moved station) carried that
+  offset, so its billboard, its near-set place and the globe's visibility
+  and flights put it somewhere else - seen once it was deselected.
 - **Near-K:** a station's items are rendered when it enters the near set
   and freed when it leaves; a render finishing after its station left is
   dropped. Every station keeps its billboard.
@@ -227,7 +237,9 @@ above with no cap (its gap with it, picked at its grown size, its corners
 for the page's measure, its printed size near or tilted up) and for the
 view's own height; where an item and a
 code stand, drawn or not; a station's and an item's (a model's) preview
-shown and taken back; the selected station's circle amber and a selected
+shown and taken back; a moved station, its items and the codes kept in
+the layer's frame after the world frame moved (the globe's nesting), also
+once deselected; the selected station's circle amber and a selected
 item's station lighter; what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its

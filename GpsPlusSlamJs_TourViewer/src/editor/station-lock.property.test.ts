@@ -27,7 +27,13 @@ import {
 } from "../tour-viewer-session.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import { createEditorSession } from "./editor-session.js";
-import { STATION_LOCKED } from "./editor-view.js";
+import {
+  editorViewActions,
+  editorViewReducer,
+  isStationLocked,
+  STATION_LOCKED,
+} from "./editor-view.js";
+import { applySceneEdit } from "./scene-edits.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -329,6 +335,47 @@ describe("the station lock", () => {
     expect(
       editor.moveStation(STATIONS[0] ?? "", { ...geo, lat: geo.lat + 0.0001 }),
     ).toEqual({ kind: "moved" });
+    await session.close();
+  });
+
+  // Why: a station unlocked, moved in the 3D view and then deselected was
+  // reported to jump elsewhere. These are the page's own actions, in its
+  // order, on a store with the page's view slice: the tour keeps the moved
+  // place through the deselect, so the jump is not the document's (it was
+  // the globe's drawing of the moved station, `editor3d-stations.test.ts`).
+  it("keeps a station where it was moved once it is deselected (the page's actions)", async () => {
+    const { session, manifest } = await opened();
+    const store = createTourViewerStore(undefined, {
+      editorView: editorViewReducer,
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+      stationLocked: (id) => isStationLocked(store.getState().editorView, id),
+    });
+    const id = STATIONS[0] ?? "";
+    const geoNow = () =>
+      manifestToWrite(store.getState().tourDocument)?.stations.find(
+        (s) => s.id === id,
+      )?.geo;
+    const geo = geoNow();
+    if (geo === undefined) throw new Error("no station");
+    store.dispatch(editorViewActions.selected({ id: `station:${id}` }));
+    store.dispatch(editorViewActions.stationLocked({ id, locked: false }));
+    const moved = { ...geo, lat: geo.lat + 0.0001, lon: geo.lon - 0.0002 };
+    // The gizmo's drag ends: its one edit, as the 3D view commits it.
+    store.dispatch(
+      editorViewActions.gestureStarted({ id: `station:${id}`, handle: "move" }),
+    );
+    store.dispatch(editorViewActions.gestureEnded());
+    expect(
+      applySceneEdit(editor, { kind: "station-pose", id, geo: moved }),
+    ).toEqual({ kind: "applied" });
+    store.dispatch(editorViewActions.selected({ id: null }));
+    expect(geoNow()).toEqual(moved);
+    expect(editor.changeCount()).toBe(1);
     await session.close();
   });
 });
