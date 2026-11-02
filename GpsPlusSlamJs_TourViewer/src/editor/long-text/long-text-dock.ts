@@ -36,6 +36,8 @@ export interface LongTextDockDeps {
   /** The text's narration, read and changed (the Narration section). */
   readonly readNarration: NarrationSectionDeps["read"];
   readonly editNarration: NarrationSectionDeps["edit"];
+  /** The largest voice file taken (the page's autosave cap). */
+  readonly voiceMaxBytes?: number;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
   readonly say: (text: string) => void;
@@ -104,7 +106,13 @@ export function createLongTextDock(deps: LongTextDockDeps): LongTextDock {
     kept: deps.kept,
     writeBody: deps.writeBody,
     writeView: deps.writeView,
-    narration: { read: deps.readNarration, edit: deps.editNarration },
+    narration: {
+      read: deps.readNarration,
+      edit: deps.editNarration,
+      ...(deps.voiceMaxBytes === undefined
+        ? {}
+        : { voiceMaxBytes: deps.voiceMaxBytes }),
+    },
     loadPicture: deps.loadPicture,
     say: deps.say,
     onText: (body) => {

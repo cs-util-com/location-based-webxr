@@ -34,7 +34,8 @@ the inspector's "Wider" width and whether the preview shows.
 ## Tests
 
 - Through the shell in a browser: `playwright-tests/editor3d-long-text.spec.js`.
+- Through the shell in jsdom: `editor-shell/editor-shell.test.ts` ("the long text's preview": the head names the selected text's view; "a save while typing": the writer's typing written on `flush`).
 
 ## Narration
 
-The dock passes the shell's `readNarration` / `editNarration` to the writer as `narration: { read, edit }`.
+The dock passes the shell's `readNarration` / `editNarration` (and `voiceMaxBytes`, the page's autosave cap, when given) to the writer as `narration: { read, edit, voiceMaxBytes }`.

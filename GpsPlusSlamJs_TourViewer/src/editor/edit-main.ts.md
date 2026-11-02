@@ -823,4 +823,4 @@ on a desktop.
 
 ## Narration
 
-`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`.
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.

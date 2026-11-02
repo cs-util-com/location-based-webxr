@@ -181,6 +181,9 @@ interface ShellEditCommands {
     itemId: string,
     change: NarrationChange,
   ): Promise<TypedEditOutcome>;
+  /** The largest voice file a long text takes (the page's autosave cap;
+   *  none: the default cap). */
+  readonly voiceMaxBytes?: number;
 }
 
 /** The page's store, as the shell reads it. */
@@ -349,6 +352,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     writeView: (id, view) => deps.edits.view(id, view),
     readNarration: (id) => deps.edits.narration(id),
     editNarration: (id, change) => deps.edits.editNarration(id, change),
+    ...(deps.edits.voiceMaxBytes === undefined
+      ? {}
+      : { voiceMaxBytes: deps.edits.voiceMaxBytes }),
     loadPicture: (path) => deps.loadPicture(path),
     say: (text) => {
       deps.say(text);

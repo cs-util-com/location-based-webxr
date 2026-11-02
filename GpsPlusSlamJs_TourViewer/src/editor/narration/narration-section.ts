@@ -40,11 +40,6 @@ import { importTiming } from "./timing-import.js";
 /** The largest timing file the section reads (the prototype's limit). */
 const TIMING_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
-/** The largest voice file the section takes: the autosave cap, since a
- *  voice is written into every save and one above it would leave a tour
- *  the page can no longer save by itself. */
-const VOICE_FILE_MAX_BYTES = AUTOSAVE_MAX_BYTES;
-
 /** What the section reads and writes through the page. */
 export interface NarrationSectionDeps {
   readonly document: Document;
@@ -71,6 +66,10 @@ export interface NarrationSectionDeps {
   readonly durationOf?: (file: Blob) => Promise<number | undefined>;
   /** The text's language, for its sentences. */
   readonly lang?: string;
+  /** The largest voice file taken (default: `AUTOSAVE_MAX_BYTES`): the
+   *  page's autosave cap, since a voice is written into every save and a
+   *  file above it alone could never be saved by itself. */
+  readonly voiceMaxBytes?: number;
 }
 
 /** What the section follows: the selected text, as the tour holds it. */
@@ -90,6 +89,17 @@ export interface NarrationSection {
   settled(): Promise<void>;
   /** Take dropped or chosen files (a voice, a timing). */
   takeFiles(files: readonly File[]): Promise<void>;
+}
+
+/** A timing text's short key for the file names chosen here: its length
+ *  and a 32-bit FNV-1a hash, so the map never holds whole timings (a long
+ *  text's word track runs to hundreds of kilobytes). */
+function timingKey(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  }
+  return `${String(text.length)}:${(h >>> 0).toString(16)}`;
 }
 
 /** What a running action says on its button. */
@@ -192,9 +202,11 @@ export function createNarrationSection(
   let last: { result: NarrationResult; timingText: string } | null = null;
   let notesOpen = false;
   /** The files' names chosen here: a voice's by its asset id, a timing's
-   *  by its text, so an undo names what the tour holds again. */
+   *  by its text's key (`timingKey`), so an undo names what the tour holds
+   *  again. */
   const voiceNames = new Map<string, string>();
   const timingNames = new Map<string, string>();
+  const voiceMaxBytes = deps.voiceMaxBytes ?? AUTOSAVE_MAX_BYTES;
   /** Each read gets a number: an older one landing late draws nothing. */
   let reads = 0;
   let pending: Promise<void> = Promise.resolve();
@@ -367,7 +379,8 @@ export function createNarrationSection(
           "ln-fn",
           (facts.timingText === null
             ? undefined
-            : timingNames.get(facts.timingText)) ?? "The read-along timing",
+            : timingNames.get(timingKey(facts.timingText))) ??
+            "The read-along timing",
         ),
         el(
           "span",
@@ -538,9 +551,9 @@ export function createNarrationSection(
       );
       return;
     }
-    if (file.size > VOICE_FILE_MAX_BYTES) {
+    if (file.size > voiceMaxBytes) {
       deps.say(
-        `${file.name} is ${sizeWords(file.size)}: a voice file can be at most ${sizeWords(VOICE_FILE_MAX_BYTES)}, or the tour grows too large to save by itself.`,
+        `${file.name} is ${sizeWords(file.size)}: a voice file can be at most ${sizeWords(voiceMaxBytes)}.`,
       );
       return;
     }
@@ -630,7 +643,7 @@ export function createNarrationSection(
       const text = JSON.stringify(done.timing);
       const written = await deps.edit(at.blockId, { kind: "timing", text });
       if (written !== "written") return;
-      timingNames.set(text, file.name);
+      timingNames.set(timingKey(text), file.name);
       if (shown(at)) {
         importError = null;
         last = { result: importResult(file.name, done), timingText: text };
@@ -661,8 +674,8 @@ export function createNarrationSection(
       const name =
         facts?.timingText == null
           ? undefined
-          : timingNames.get(facts.timingText);
-      if (name !== undefined) timingNames.set(text, name);
+          : timingNames.get(timingKey(facts.timingText));
+      if (name !== undefined) timingNames.set(timingKey(text), name);
       if (shown(at)) last = { result: lineUpResult(done), timingText: text };
       const missing = done.unvoiced.length;
       deps.say(

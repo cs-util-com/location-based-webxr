@@ -18,6 +18,7 @@ import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
 import {
   createNarrationSection,
   type NarrationSection,
+  type NarrationSectionDeps,
 } from "./narration-section.js";
 
 const BODY = "The mill turned all day. The miller slept at night.";
@@ -51,7 +52,7 @@ let holdNext: boolean;
 let refuseNext: boolean;
 let section: NarrationSection;
 
-function make(): NarrationSection {
+function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
   return createNarrationSection({
     document,
     read: () =>
@@ -96,6 +97,7 @@ function make(): NarrationSection {
     onSummary: () => undefined,
     onShow: (from, to, plain) => shown.push([from, to, plain]),
     durationOf: () => Promise.resolve(4000),
+    ...over,
   });
 }
 
@@ -176,19 +178,35 @@ describe("the voice", () => {
   });
 
   // Why: a voice file is held in memory and written into every save; one
-  // above the autosave cap would make the tour too large to save by
-  // itself, so it is refused up front with its size named, and the
-  // "added" toast names the size too so a large file is never a surprise.
+  // above the autosave cap could never be saved by itself, so it is
+  // refused up front with its size named, and the "added" toast names the
+  // size too so a large file is never a surprise. The cap is per file:
+  // the words promise nothing about the whole tour, which other files add
+  // to.
   it("refuses a voice above the autosave cap, naming its size", async () => {
     const big = file("x", "long.mp3");
     Object.defineProperty(big, "size", { value: 300 * 1024 * 1024 });
     await section.takeFiles([big]);
     await flush();
     expect(edits).toEqual([]);
-    expect(said.at(-1)).toContain("long.mp3");
-    expect(said.at(-1)).toContain("300.0 MiB");
-    expect(said.at(-1)).toContain("200.0 MiB");
+    expect(said.at(-1)).toBe(
+      "long.mp3 is 300.0 MiB: a voice file can be at most 200.0 MiB.",
+    );
     expect(btn("voice-pick")?.textContent).toBe("Add a voice file");
+  });
+
+  // Why: the page's autosave cap can be set for a run (the dev server's
+  // setting); the voice's limit follows it rather than the default.
+  it("takes the page's cap when it is given one", async () => {
+    section = make({ voiceMaxBytes: 1024 });
+    section.update({ blockId: "essay", body: BODY, key: "k-cap" });
+    await flush();
+    await section.takeFiles([file("x".repeat(2048), "voice.mp3")]);
+    await flush();
+    expect(edits).toEqual([]);
+    expect(said.at(-1)).toBe(
+      "voice.mp3 is 2.0 KiB: a voice file can be at most 1.0 KiB.",
+    );
   });
 
   it("names the voice's size when it is added", async () => {
@@ -199,7 +217,7 @@ describe("the voice", () => {
 
   // Why: the file name describes one recording; after an undo the tour
   // holds the earlier one, and the row must name that one, not the file
-  // chosen last (the r1011 review's finding 1).
+  // chosen last.
   it("names the voice the tour holds after an undo, not the last file chosen", async () => {
     await section.takeFiles([file("x", "first.mp3")]);
     await flush();
@@ -278,7 +296,7 @@ describe("the timing", () => {
 
   // Why: the result card and the timing's file name describe one import;
   // an undo brings back another timing, so both must follow the timing
-  // the tour holds (the r1011 review's finding 1).
+  // the tour holds.
   it("names the timing the tour holds after an undo, and drops the undone import's card", async () => {
     await section.takeFiles([file(VTT, "first.vtt")]);
     await flush();
@@ -304,8 +322,7 @@ describe("the timing", () => {
   });
 
   // Why: an import may finish after the creator selected another text;
-  // its card describes the text it was for, never the one now shown (the
-  // r1011 review's finding 1).
+  // its card describes the text it was for, never the one now shown.
   it("drops a late import result once another text is shown", async () => {
     holdNext = true;
     const done = section.takeFiles([file(VTT, "voice.vtt")]);

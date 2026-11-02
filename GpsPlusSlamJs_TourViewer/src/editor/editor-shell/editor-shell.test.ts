@@ -797,6 +797,43 @@ describe("a save while typing", () => {
   });
 });
 
+// Why: the preview's head names the view the visitor sees the text in;
+// the dock hands it the selected text's view on every draw, so a text
+// set to a reading stand must not be headed "Reading sign".
+describe("the long text's preview", () => {
+  it("names the selected text's view in its head", () => {
+    const { store, select, shell } = setUp();
+    const essay = (id: string, view: string) => ({
+      id,
+      kind: "longText",
+      view,
+      title: "Essay",
+      body: "Words.",
+      createdAtIso: AT,
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    });
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [essay("stand", "lectern"), essay("card", "card")],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    const head = () => document.querySelector(".lw-vn")?.textContent;
+    select("stand");
+    expect(head()).toBe("Reading stand");
+    select("card");
+    expect(head()).toBe("Station card");
+    shell.hide();
+  });
+});
+
 describe("the page keys next to a toolbar", () => {
   // Why: a toolbar moves its focus by the arrows, Home and End. Home on a
   // toolbar button reframed the whole tour behind the writer's toolbar.

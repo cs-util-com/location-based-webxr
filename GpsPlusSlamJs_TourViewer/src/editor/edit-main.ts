@@ -3762,6 +3762,7 @@ const shell = createEditorShell({
           })
         : editor.narration(id),
     editNarration: writeNarrationEdit,
+    voiceMaxBytes: autosaveMaxBytes,
   },
   say: (text) => {
     toast(text);
