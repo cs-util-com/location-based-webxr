@@ -14,8 +14,10 @@
     `maxAboveGroundM` 200, `maxSpeedMps` 50 (off above these),
     `onBelowAboveGroundM` 180, `onBelowSpeedMps` 45 (on only below
     these), `rampMs` 300 (the drawn map's fade in or out), `reevaluateMs` 500,
-    `reevaluateLimit` 8, `retryFailedMs` 5000 (how long a tile whose
-    map request failed waits before it is asked for again), `resolution` 256, `keepRegions` 64 (released
+    `reevaluateLimit` 8, `retryBackoffMs` 5000, 10000, 20000, 60000 (how
+    long the failed tiles wait before they are asked for again: each
+    retry that fails waits the next, then the last again; a retried tile
+    that gets its map starts them over), `resolution` 256, `keepRegions` 64 (released
     map textures kept in memory, below).
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
@@ -75,14 +77,20 @@ level)`; a region counts as content only while locked; a release
     failed (the library holds a promise for both), is given back at once,
     so a failure is never kept. `setKeep(n)` changes the keep and gives
     back what is over it at once (all at 0). `lockTextureSafe` (the
-    plugin's lock) swallows a failed request's rejection, where the
+    plugin's lock) catches a failed request's rejection, where the
     library's rethrew it as an unhandled error in the console: the plugin
     records the same failure as the tile's failed state (it reads the same
-    request), and the factory asks for it again from there.
+    request), and the factory asks for it again from there. The error
+    goes to `noteLockError(err)` (the re-evaluation's locks too): counted
+    by its name, the last kept, the first of each name warned once in the
+    console; an `AbortError` (the library dropping a region it no longer
+    needs) is not recorded.
     `isLocked`, `wanted`, `stats()` (`locks`, `gatedLocks`,
     `lockedRegions`, `releases`: textures given back to the library, which
     drops them, so a re-visit fetches again; `keep`, `keptRegions`,
-    `keptHits`: locks served from the keep; `finestLevel`). RangeError
+    `keptHits`: locks served from the keep; `finestLevel`; `lockErrors`:
+    failed lock requests by error name; `lastLockError`: `{ name,
+message }` of the last, or null). RangeError
     for a url without `{z}/{x}/{y}` or a keep that is not an integer >= 0,
     TypeError without a gate.
   - `reevaluateGatedTiles(plugin, overlay, { limit })`: tiles whose map
@@ -111,11 +119,16 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       rejected request (a dropped connection) and never retries by
       itself, which left that tile without its map (a bare square with
       straight edges) while it stayed loaded. While the map is on, once a
-      failed tile has waited `retryFailedMs`, the library's public
+      failed tile has waited, the library's public
       `resetFailedOverlays()` releases every failed tile and locks it
       anew, so the new lock still goes through the gate and the request
-      ceiling; at most once per `retryFailedMs`, never while the map is
-      off. **The reset runs after the update's re-evaluation, never
+      ceiling; never while the map is off. **The waits back off**
+      (`retryBackoffMs`: 5, 10, 20, then 60 s and 60 s again), so an
+      outage, no connection or a server refusing with 429 does not fill
+      the request ceiling with retries bound to fail (the tile server's
+      usage policy). A retried tile that got its map (no longer failed,
+      with its texture: the reset clears the failed mark at once, so that
+      alone tells nothing) starts the waits over. **The reset runs after the update's re-evaluation, never
       before it**: the reset releases the regions at once, the library's
       region cache drops a released region a microtask later, and the
       library locks it anew only on the next animation frame. A
@@ -136,7 +149,9 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       them), `ceilingFullMs` (time on with the request ceiling full: no new
       tile asked for), `reevaluateBacklog` (tiles the last look left for
       the next), `cappedLooks` (looks that left some), `failedRetries`
-      (times the failed tiles were asked for again).
+      (times the failed tiles were asked for again), `retryWaitMs` (the
+      wait before the next), the overlay's `lockErrors` and
+      `lastLockError`.
     - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
 failed, unprocessed }`: the relief tiles drawn in the last update
       (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
@@ -145,7 +160,7 @@ failed, unprocessed }`: the relief tiles drawn in the last update
       the coarsest zoom: bare relief by design), or waiting for it (gated,
       throttled, loading or failed; `failed` counts the failed ones among
       them apart, since a failed tile is asked for again only every
-      `retryFailedMs` and a check waiting for the map must not wait on it); and drawn tiles the plugin
+      `retryBackoffMs` and a check waiting for the map must not wait on it); and drawn tiles the plugin
       has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.

@@ -971,7 +971,7 @@ describe("the map's diagnostics", () => {
   });
 
   // Why: a tile whose map request failed is asked for again only every
-  // `retryFailedMs` (the re-evaluation skips failed tiles), so it can wait
+  // `retryBackoffMs` (the re-evaluation skips failed tiles), so it can wait
   // for its map a long while. A check that waits for `waiting === 0` then
   // may not end; it must be able
   // to tell the failed tiles apart. They stay inside `waiting`: the drawn
@@ -1102,9 +1102,11 @@ describe("a map tile whose request failed", () => {
   // itself; the re-evaluation skips failed tiles on purpose. So one dropped
   // request left that relief tile without its street map, a square with
   // straight edges, for as long as the tile stayed loaded. The map asks
-  // again through the library's own reset, at most once per
-  // `retryFailedMs`, and only while the map is on (the reset's new lock
-  // still goes through the gate and the request ceiling).
+  // again through the library's own reset, after a wait that grows while
+  // the retries keep failing (`retryBackoffMs`), and only while the map is
+  // on (the reset's new lock still goes through the gate and the request
+  // ceiling).
+  const FIRST_WAIT_MS = GLOBE_OSM.retryBackoffMs[0]!;
   async function withFailedTile() {
     const visible = new Set<object>();
     const osm = createGlobeOsmOverlay({
@@ -1120,22 +1122,23 @@ describe("a map tile whose request failed", () => {
     const lat = 48.137;
     const lon = 11.575;
     const tile = {};
+    const info = {
+      range: (
+        osm.overlay.projection as {
+          fromCartographicToNormalizedRange(r: number[]): number[];
+        }
+      ).fromCartographicToNormalizedRange(regionAround(lat, lon, 0.0002)),
+      target: null as unknown,
+      failed: true,
+      meshInfo: new Map([[1, 1]]),
+    };
     (
       osm.plugin as unknown as {
         overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
       }
     ).overlayInfo
       .get(osm.overlay)!
-      .tileInfo.set(tile, {
-        range: (
-          osm.overlay.projection as {
-            fromCartographicToNormalizedRange(r: number[]): number[];
-          }
-        ).fromCartographicToNormalizedRange(regionAround(lat, lon, 0.0002)),
-        target: null,
-        failed: true,
-        meshInfo: new Map([[1, 1]]),
-      });
+      .tileInfo.set(tile, info);
     visible.add(tile);
     const reset = vi.fn();
     (
@@ -1151,27 +1154,77 @@ describe("a map tile whose request failed", () => {
         });
       }
     };
-    return { osm, reset, runTo };
+    /** The page times of the retries, up to `untilMs` (100 m up: on). */
+    const retriesUntil = (untilMs: number, fromMs = 0) => {
+      const at: number[] = [];
+      for (let t = fromMs; t <= untilMs; t += 100) {
+        const before = reset.mock.calls.length;
+        runTo(t, 100, t);
+        if (reset.mock.calls.length > before) at.push(t);
+      }
+      return at;
+    };
+    return { osm, info, reset, runTo, retriesUntil };
   }
 
-  it("asks again once the retry interval has passed, with the map on", async () => {
+  it("asks again once the first wait has passed, with the map on", async () => {
     const { osm, reset, runTo } = await withFailedTile();
-    runTo(GLOBE_OSM.retryFailedMs - 100, 100);
+    runTo(FIRST_WAIT_MS - 100, 100);
     expect(reset).not.toHaveBeenCalled();
-    runTo(GLOBE_OSM.retryFailedMs + 400, 100, GLOBE_OSM.retryFailedMs);
+    runTo(FIRST_WAIT_MS + 400, 100, FIRST_WAIT_MS);
     expect(reset).toHaveBeenCalledTimes(1);
     expect(osm.stats().failedRetries).toBe(1);
   });
 
-  it("asks at most once per interval while the tile stays failed", async () => {
-    const { reset, runTo } = await withFailedTile();
-    runTo(2 * GLOBE_OSM.retryFailedMs - 100, 100);
-    expect(reset).toHaveBeenCalledTimes(1);
+  // Why: a fixed 5 s retry kept asking through an outage, no connection or
+  // a server refusing with 429: every failed tile again every 5 s, filling
+  // the request ceiling with requests bound to fail, against the tile
+  // server's usage policy. The waits grow to the last and stay there, and
+  // the retries go on (a check that only counted one retry passed a map
+  // that gave up after it).
+  it("waits longer after each retry that fails, then keeps the last wait", async () => {
+    const { osm, retriesUntil } = await withFailedTile();
+    const at = retriesUntil(260_000);
+    const waits = GLOBE_OSM.retryBackoffMs;
+    expect(at.length).toBe(waits.length + 2);
+    const gaps = at.slice(1).map((t, i) => t - at[i]!);
+    const expected = [...waits.slice(1), waits.at(-1)!, waits.at(-1)!];
+    gaps.forEach((gap, i) => {
+      // A wait starts at the next look after a retry (`reevaluateMs`).
+      expect(gap).toBeGreaterThanOrEqual(expected[i]!);
+      expect(gap).toBeLessThanOrEqual(
+        expected[i]! + 2 * GLOBE_OSM.reevaluateMs,
+      );
+    });
+    expect(osm.stats().retryWaitMs).toBe(waits.at(-1));
+  });
+
+  // Why: the waits are for a server that keeps failing; once a retried
+  // tile gets its map the server answers again, and a tile that fails
+  // after that (one dropped request) must not wait the outage's minute.
+  it("starts the waits over once a retried tile gets its map", async () => {
+    const { osm, info, reset, retriesUntil } = await withFailedTile();
+    reset.mockImplementation(() => {
+      if (reset.mock.calls.length === 2) {
+        info.failed = false;
+        info.target = { texture: 1 };
+      }
+    });
+    const first = retriesUntil(30_000);
+    expect(first.length).toBe(2);
+    expect(osm.stats().retryWaitMs).toBe(FIRST_WAIT_MS);
+    info.failed = true;
+    info.target = null;
+    const again = retriesUntil(40_000, 30_100);
+    expect(again.length).toBe(1);
+    expect(again[0]! - 30_100).toBeLessThanOrEqual(
+      FIRST_WAIT_MS + 2 * GLOBE_OSM.reevaluateMs,
+    );
   });
 
   it("never asks while the map is off", async () => {
     const { reset, runTo } = await withFailedTile();
-    runTo(4 * GLOBE_OSM.retryFailedMs, 300);
+    runTo(4 * FIRST_WAIT_MS, 300);
     expect(reset).not.toHaveBeenCalled();
   });
 
@@ -1288,7 +1341,7 @@ describe("a map tile whose request failed", () => {
       await processTile();
       expect(info.failed).toBe(true);
       expect(held()?.count).toBe(1);
-      for (let t = 100; t <= GLOBE_OSM.retryFailedMs + 2_000; t += 100) {
+      for (let t = 100; t <= GLOBE_OSM.retryBackoffMs[0]! + 2_000; t += 100) {
         await frame(t);
       }
       try {
@@ -1313,6 +1366,41 @@ describe("a map tile whose request failed", () => {
   // TypeError in the console, though the same failure is already recorded
   // as the tile's failed state (the plugin reads the same request) and is
   // asked for again from there.
+  // Why: the lock's errors were swallowed whole, so a map that stayed bare
+  // (an outage, a refused request, a wrong address) said nothing about why.
+  // They are counted by kind with the last one kept, and each kind warns
+  // once, so the console stays readable through an outage; an abort is the
+  // library dropping a region it no longer needs, not a failure.
+  it("records a lock's failed request by kind and warns once per kind", async () => {
+    const { overlay } = gatedOverlay(() => true);
+    const errors = [
+      new TypeError("Failed to fetch"),
+      new TypeError("Failed to fetch"),
+      Object.assign(new Error("dropped"), { name: "AbortError" }),
+      new Error("HTTP 429"),
+    ];
+    vi.spyOn(proto, "lockTexture").mockImplementation(() =>
+      Promise.reject(errors.shift()!),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 4; i++) {
+        (
+          overlay as unknown as { lockTextureSafe(r: number[]): unknown }
+        ).lockTextureSafe([0.5, 0.5, 0.50001 + i * 1e-6, 0.50001]);
+      }
+      await new Promise((r) => setTimeout(r, 10));
+      expect(overlay.stats().lockErrors).toEqual({ TypeError: 2, Error: 1 });
+      expect(overlay.stats().lastLockError).toEqual({
+        name: "Error",
+        message: "HTTP 429",
+      });
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("logs no unhandled error when a lock's request fails", async () => {
     const { overlay } = gatedOverlay(() => true);
     vi.spyOn(proto, "lockTexture").mockImplementation(() =>
