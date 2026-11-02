@@ -23,7 +23,7 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
   heading: /^#{4,}/,
   quote: /^>/,
   list: /^(?:[-+*]|\d{1,9}[.)])/,
-  rule: /^(?:[-*_=]\s*){3,}$|^=+$/,
+  rule: /^(?:[-*_=]\s*){3,}$|^=+\s*$/,
   code: /^(?:`{3,}|~{3,})/,
   icode: /^`[\s\S]*`$/,
   table: /\|/,

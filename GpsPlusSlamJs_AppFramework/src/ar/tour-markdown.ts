@@ -2030,7 +2030,7 @@ export function parseTourMarkdown(body: string): TourMarkdown {
  * as the reader itself decides them: the same parse as
  * {@link parseTourMarkdown}, its decision points recording. In body order
  * and never overlapping (where two would, the one starting first, then
- * the longer, is kept). `assetExists`, when given, tells a picture naming
+ * the longer, then a code box's, is kept). `assetExists`, when given, tells a picture naming
  * an asset the tour lacks (`missingpic`); without it only a target that is
  * no asset id is. Never throws; a value that is not a string has none.
  */
@@ -2053,9 +2053,16 @@ export function diagnoseTourMarkdown(
     collector = outer;
     subjectToBody = null;
   }
+  // Where a line inside a code box is noted twice over the same range
+  // (as code, and as the rule or heading it would be outside the box),
+  // the box's note is kept.
+  const codeFirst = (d: { kind: TourMdDiagnosticKind }) =>
+    d.kind === 'code' ? 0 : 1;
   const sorted = listening.found
     .slice()
-    .sort((a, b) => a.from - b.from || b.to - a.to);
+    .sort(
+      (a, b) => a.from - b.from || b.to - a.to || codeFirst(a) - codeFirst(b)
+    );
   const { starts } = splitLinesAt(body);
   const kept: TourMdDiagnostic[] = [];
   let end = -1;

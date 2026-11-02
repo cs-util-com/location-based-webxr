@@ -112,6 +112,23 @@ describe('diagnoseTourMarkdown', () => {
     }
   });
 
+  it('reports a divider or a small heading inside a code box as code', () => {
+    // Why: after a blank line inside a box, a --- or #### line was noted
+    // both as code and as a divider or heading over the same characters,
+    // and the divider or heading was kept: the editor offered to fix a
+    // line that visitors see as part of the box.
+    expect(parts('```\n\n---\n\na')).toEqual([
+      ['code', '```'],
+      ['code', '---'],
+      ['code', 'a'],
+    ]);
+    expect(parts('```\n\n#### h\n\na\n```\nb')).toEqual([
+      ['code', '```'],
+      ['code', '#### h'],
+      ['code', 'a\n```'],
+    ]);
+  });
+
   it('reports a table and tab columns as one part each', () => {
     expect(parts('| a | b |\n|---|---|\n| 1 | 2 |')).toEqual([
       ['table', '| a | b |\n|---|---|\n| 1 | 2 |'],

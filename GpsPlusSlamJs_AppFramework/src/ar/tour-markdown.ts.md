@@ -93,6 +93,8 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   the body's end; the text after the closing fence is not code. A box
   opened inside a list item or a quote ends with its container; one opened
   before it (a box holding "- " or "> " lines) stays open to its own fence.
+  A line inside a box that would be a divider or a small heading outside
+  it is reported as code.
 - `textHashOf(plain): Promise<string>` - `"sha256:"` plus the lowercase hex
   SHA-256 of `P`'s UTF-8 bytes, through `utils/sha256-hex.ts`. Rejects for
   a non-string, and when WebCrypto is unavailable. A lone surrogate is
