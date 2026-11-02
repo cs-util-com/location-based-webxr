@@ -18,7 +18,7 @@ it, so the page always says so.
   - `said` - the line: `"<item>" is now in <station>`, or for a made one
     `"<item>" left its station's circle: it is now in a station of its own, <station>`.
     The item is named by its text (line breaks as
-    spaces, shortened past 40 characters), else "The pin" / "The photo"
+    spaces, shortened past 40 characters with `truncated`), else "The pin" / "The photo"
     / "The 3D model"; the station by its title, else "Station n" by its
     place in the tour.
   - Null when the item kept its station, when the two states are the

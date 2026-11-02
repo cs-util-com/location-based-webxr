@@ -8,6 +8,11 @@ the creator's live preview and the visitor's session share.
 
 ## Public API
 
+- `drawnKindOf(block, view)` - what `block` is drawn as in `view`: a long
+  text's `reading` and a visitor's `captions` both give `reading` (the
+  reading sign), `lectern` gives `lectern`; any other view is its own
+  name. What `viewer-placement.ts` compares to tell whether a changed
+  view changes anything drawn.
 - `newObjectId(random?)` - 12 base-36 characters; the manifest id and the
   content file's stem.
 - `mintPin({ id, label, description?, worldNuePosition, zero, nowIso }): TourPin | null` -
@@ -28,6 +33,12 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   its facing through `rotationFromHeading` (the framework's -heading about
   Up convention) instead of facing East.
 - `rotationFromHeading(headingDeg)` - that quaternion.
+- `uprightTurn(rotation, out?)` - a reading stand's turn from its pose's
+  `[x, y, z, w]`: the turn about up only (YXZ yaw), pitch and roll
+  dropped, written into `out` (a new `Quaternion` when absent). The one
+  rule every page that turns a stand uses: the renderer here and the 3D
+  editor's drag preview (`editor3d-stations.ts`), so a drag or a
+  cancelled one never tilts a stand.
 - `renderTourObjects(objects, { scene, zero, poseOf?, makeLabel, loadPhotoTexture })`
   builds ONE `Group` and adds it to the scene only after the last photo
   decoded (photos decode one at a time - memory), so a session ending
@@ -66,11 +77,14 @@ under - what a tap in AR is cast against to name the object
   back the model's own materials, then `disposeObject3D`); a model whose asset the tour lacks or whose load
   fails (null or a rejection) is named in `skipped`; without
   `loadModel` (the 3D editor, which draws its own) a model is left out
-  quietly as before. A long text in the `lectern` view is drawn by the
+  quietly as before. A long text in the `reading` view is drawn the same
+  way by the page's optional `makeReadingSign(block)` (`reading-sign.ts`
+  `mountReadingSign`), and left out quietly without it. A long text in
+  the `lectern` view is drawn by the
   page's optional `makeLectern(block)` (`lectern-view.ts` `mountLectern`,
   the visitor's), at the block's local position and its turn about up
-  only (a pitch or roll is dropped, as the prototype's stand keeps only
-  its turn), added after the models and
+  only (`uprightTurn`: a pitch or roll is dropped, as the prototype's
+  stand keeps only its turn), added after the models and
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks (shown by its
@@ -173,3 +187,18 @@ the stated bound, swept over zero distances of 0, 100, 1000 and 5000 m.
   block.
 - Tests: `content-placement.test.ts` "draws exactly the given blocks of a
   station, in its frame".
+
+## A visitor's view (`viewOf`)
+
+- `TourStationRendererDeps.viewOf(block)`, optional: the view a block is
+  drawn in, in place of its own. The visitor's page passes `shownView`
+  (`visitor-prefs.ts`), so a long text the creator stands as a reading
+  sign draws as a lectern for a visitor who chose it. The pose, the id and
+  everything else stay the block's; without `viewOf` (the creator, the 3D
+  editor) every block draws in its own view.
+- A long text stands in the world in `lectern`, `reading` and `captions`
+  (`LONG_TEXT_WORLD_VIEWS`). `captions` is a visitor's view only (by
+  `viewOf`): its world part is the reading sign, and the strip itself is
+  the page's (`captions-strip.ts`). Any other view draws nothing.
+- Tests: `content-placement.test.ts` "draws a block in the view viewOf
+  names, at the same pose".

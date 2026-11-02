@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Sign Speaks</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Liberation Mono",monospace;
+  --amber:#f2b45a; --amber-soft:rgba(242,180,90,.16); --ink:#f6f2ea; --ink2:#d8d2c6; --ink3:#a49e92;
+  --plate:rgba(17,18,21,.9); --line:rgba(255,255,255,.09); --calm:#96c4dc;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b0c0e;overflow:hidden;-webkit-tap-highlight-color:transparent;font-family:var(--sans)}
+body{display:flex;flex-direction:column;height:100vh;height:100dvh}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none!important}
+
+#wrap{position:relative;flex:1;min-height:0;overflow:hidden;background:#0b0c0e}
+#stage{position:absolute;inset:0;overflow:hidden;background:#dfe5e8;color:var(--ink)}
+body.framed #stage{inset:auto;left:50%;top:50%;border-radius:34px;box-shadow:0 0 0 8px #1a1b1e,0 0 0 9px #3b3c42,0 30px 80px rgba(0,0,0,.6);transform-origin:center}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+
+/* ---------- AR chrome (static mock-ups) ---------- */
+#ar-top{position:absolute;left:12px;top:12px;display:flex;gap:8px;z-index:30;align-items:flex-start}
+#exit{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:grid;place-items:center;padding:0}
+#exit svg{width:16px;height:16px;stroke:#eee;stroke-width:2.3;fill:none}
+#vpill{display:flex;align-items:center;gap:7px;height:42px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 13px 0 11px;font-size:13px;font-weight:650;color:#efe9de;white-space:nowrap}
+#vpill svg{width:16px;height:16px;fill:none;stroke:var(--amber);stroke-width:1.8;stroke-linecap:round}
+#vpill small{font-weight:500;color:#9f998d;font-size:11px}
+#vmenu{position:absolute;left:50px;top:50px;width:280px;background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px;box-shadow:0 16px 50px rgba(0,0,0,.4)}
+#vmenu button.vo{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:11px;padding:9px 10px;color:#e9e4da}
+#vmenu button.vo b{display:block;font-size:13.5px}
+#vmenu button.vo span{display:block;font-size:11.5px;color:#9f998d;margin-top:2px;line-height:1.35}
+#vmenu button.vo.on{background:rgba(242,180,90,.12)}
+#vmenu button.vo.on b{color:#ffd391}
+#vmenu .foot{font-size:11px;color:#8f897e;padding:6px 10px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:4px;line-height:1.4}
+
+#status{position:absolute;left:50%;top:66px;transform:translateX(-50%);z-index:29;display:flex;align-items:center;gap:9px;background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:999px;padding:8px 15px;font-size:13px;color:var(--ink2);white-space:nowrap}
+#status i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(242,180,90,.3);border-top-color:var(--amber);animation:spin .9s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- the small floating control ---------- */
+#fc{position:absolute;z-index:45;right:14px;bottom:18px;display:flex;align-items:center;gap:8px;transition:bottom .3s,opacity .3s}
+#stage[data-layout=desktop] #fc{right:26px;bottom:26px}
+#stage[data-layout=portrait].walking #fc{bottom:104px}
+#fc.hide{opacity:0;pointer-events:none}
+.chip{height:40px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 14px;font-size:13px;font-weight:650;color:#efe9de;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.chip.ratechip{padding:0 11px;font:650 12.5px var(--mono);color:#ffd391}
+#fc-play{position:relative;width:62px;height:62px;border-radius:50%;border:0;background:rgba(17,18,21,.93);display:grid;place-items:center;box-shadow:0 8px 26px rgba(0,0,0,.35);padding:0;flex:none}
+#fc-play svg.ring{position:absolute;inset:0;width:62px;height:62px;transform:rotate(-90deg)}
+.ring .tr{fill:none;stroke:rgba(255,255,255,.14);stroke-width:4}
+.ring .pg{fill:none;stroke:var(--amber);stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset .25s linear}
+.ring .sp{fill:none;stroke:var(--amber);stroke-width:4;stroke-linecap:round;opacity:0;transform-box:fill-box;transform-origin:center}
+#fc.loading .ring .sp{opacity:1;animation:spin 1s linear infinite}
+#fc.loading .ring .pg{opacity:.25}
+#fc-play .ic{position:relative;width:24px;height:24px;fill:var(--amber)}
+#fc-eq{position:absolute;right:-2px;top:-2px;width:20px;height:20px;border-radius:50%;background:var(--amber);display:none;align-items:flex-end;justify-content:center;gap:1.5px;padding:5px 4px}
+#fc.playing #fc-eq{display:flex}
+#fc-eq i{width:2.4px;background:#1a1408;border-radius:1px;animation:eq .9s ease-in-out infinite}
+#fc-eq i:nth-child(2){animation-delay:-.3s}#fc-eq i:nth-child(3){animation-delay:-.6s}
+@keyframes eq{0%,100%{height:3px}50%{height:10px}}
+
+/* ---------- the caption, when the sign cannot carry it ---------- */
+#bubble{position:absolute;left:0;top:0;z-index:22;width:min(360px,calc(100% - 24px));background:#141518;border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:11px 15px 12px;box-shadow:0 12px 40px rgba(0,0,0,.32);opacity:0;pointer-events:none;transition:opacity .3s;will-change:transform}
+#bubble.on{opacity:1;pointer-events:auto}
+#stage[data-layout=landscape] #bubble{width:min(380px,calc(100% - 120px))}
+#stage[data-layout=desktop] #bubble{width:440px}
+#bubble .tail{position:absolute;width:14px;height:14px;background:#141518;border:1px solid rgba(255,255,255,.09);transform:rotate(45deg);left:30px}
+#bubble .tail.top{top:-8px;border-right:0;border-bottom:0}
+#bubble .tail.bottom{bottom:-8px;border-left:0;border-top:0}
+#bubble .tail.none{display:none}
+#bubble .bl{display:flex;align-items:center;gap:7px;font:700 10px/1.2 var(--sans);letter-spacing:.13em;text-transform:uppercase;color:var(--amber)}
+#bubble .bl .dir{margin-left:auto;letter-spacing:.02em;text-transform:none;font-weight:600;font-size:11.5px;color:#cfc9bd}
+#bubble .bl.calm{color:var(--calm)}
+#bubble .bt{font:600 18px/1.36 var(--sans);color:#f7f3eb;margin-top:6px;min-height:calc(1.36em*2)}
+#stage[data-layout=desktop] #bubble .bt{font-size:21px}
+#bubble .bt .chunk{display:block;animation:capIn .4s cubic-bezier(.2,.8,.2,1)}
+#bubble .bt.msg{font:500 16px/1.42 var(--serif);color:#e9e4da;min-height:0}
+@keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#bubble .w.todo,#rs-cap .w.todo{color:#b3ada1}
+#bubble .w.on,#rs-cap .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:3px;text-underline-offset:5px}
+#bubble .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.act{height:38px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:transparent;padding:0 14px;font-size:13px;font-weight:650;color:#ece7dd}
+.act.primary{background:var(--amber);border-color:var(--amber);color:#1a1408}
+
+/* ---------- walk card (when walking up) ---------- */
+#walk{position:absolute;left:12px;right:12px;bottom:16px;z-index:24;background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:20px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+#stage:not([data-layout=portrait]) #walk{right:auto;width:400px}
+#walk .wa{width:40px;height:40px;border-radius:50%;background:var(--amber);display:grid;place-items:center;flex:none}
+#walk .wa svg{width:20px;height:20px;fill:#1a1408}
+#walk b{display:block;font:600 15px var(--serif);color:#fff}
+#walk span{display:block;font-size:12px;color:var(--ink3);margin-top:2px;line-height:1.35}
+
+/* ---------- the chooser a far sign raises ---------- */
+#chooser{position:absolute;left:12px;right:12px;bottom:16px;z-index:44;background:rgba(18,19,22,.96);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.09);border-radius:22px;padding:14px 14px 14px 18px;box-shadow:0 14px 50px rgba(0,0,0,.4)}
+#stage:not([data-layout=portrait]) #chooser{left:auto;right:12px;width:400px}
+#chooser .over{font:700 10.5px/1.2 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+#chooser b{display:block;font:600 18px/1.25 var(--serif);color:#fff;margin:5px 40px 10px 0}
+#chooser .cb2{display:flex;gap:8px}
+#chooser .cb2 button{flex:1;height:52px;border-radius:16px;font-weight:700;font-size:14.5px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);color:#ece7dd}
+#chooser .cb2 button.primary{background:var(--amber);border-color:var(--amber);color:#1a1408}
+#chooser .cb2 button small{display:block;font-weight:600;font-size:11px;opacity:.7}
+#ch-x{position:absolute;right:12px;top:12px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#ch-x svg{width:14px;height:14px;stroke:#ddd;stroke-width:2.2;fill:none}
+
+/* ---------- reading sheet (kept from the reference prototype) ---------- */
+#sheet{position:absolute;z-index:40;display:flex;flex-direction:column;background:rgba(18,19,22,.94);backdrop-filter:blur(16px) saturate(1.1);-webkit-backdrop-filter:blur(16px) saturate(1.1);border:1px solid rgba(255,255,255,.07);box-shadow:0 -10px 40px rgba(0,0,0,.25);transition:transform .32s cubic-bezier(.2,.8,.2,1);color:var(--ink2);overflow:hidden}
+#stage[data-layout=portrait] #sheet{left:0;right:0;bottom:0;height:63%;border-radius:24px 24px 0 0;transform:translateY(104%)}
+#stage[data-layout=landscape] #sheet{top:8px;bottom:8px;right:8px;width:min(56%,520px);border-radius:20px;transform:translateX(108%)}
+#stage[data-layout=desktop] #sheet{top:18px;bottom:18px;right:18px;width:520px;border-radius:24px;transform:translateX(112%)}
+#sheet.open{transform:none!important}
+#sheet .grab{width:38px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);margin:8px auto 0;flex:none}
+#stage:not([data-layout=portrait]) #sheet .grab{display:none}
+#sheet header{position:relative;padding:12px 58px 10px 24px;flex:none}
+#stage:not([data-layout=portrait]) #sheet header{padding-top:18px}
+#stage[data-layout=landscape] #sheet header{padding-top:12px;padding-bottom:4px}
+#stage[data-layout=landscape] #sh-title{font-size:18px;margin:4px 0 2px}
+#stage[data-layout=landscape] #sh-text{font-size:17px}
+#stage[data-layout=landscape] .cb.play{width:48px;height:48px}
+#stage[data-layout=landscape] #sh-foot{padding:2px 14px 8px}
+.over{font:700 10.5px/1.2 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+#sh-title{font:600 24px/1.18 var(--serif);color:#fff;margin:7px 0 6px}
+#sh-meta{font-size:12.5px;color:var(--ink3)}
+#sh-close{position:absolute;right:14px;top:12px;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#stage:not([data-layout=portrait]) #sh-close{top:16px}
+#sh-close svg{width:16px;height:16px;stroke:#ddd;stroke-width:2.2;fill:none}
+.textwrap{position:relative;flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(transparent 0,#000 22px,#000 calc(100% - 30px),transparent);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+#sh-text{font-family:var(--serif);font-size:18.5px;line-height:1.62;color:var(--ink2);padding:14px 26px 46vh 24px;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty}
+#stage[data-layout=desktop] #sh-text{font-size:19.5px}
+#sh-text p{margin:0 0 1.05em}
+#sh-text .s{border-radius:4px;padding:2px 0;-webkit-box-decoration-break:clone;box-decoration-break:clone;transition:background-color .35s,color .35s,box-shadow .35s;cursor:pointer}
+#sh-text .s.cur{background:var(--amber-soft);box-shadow:0 0 0 3px var(--amber-soft);color:#fdfaf3}
+#sh-text .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:2px;text-underline-offset:4px}
+#sh-follow{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);border:0;border-radius:999px;background:var(--ink);color:#16171a;font-weight:650;font-size:12.5px;height:32px;padding:0 14px;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:2}
+#sh-foot{flex:none;padding:6px 18px 14px;border-top:1px solid rgba(255,255,255,.07)}
+.bar{position:relative;height:18px;cursor:pointer;margin:2px 4px 0}
+.bar .track{position:absolute;left:0;right:0;top:7px;height:4px;border-radius:4px;background:rgba(255,255,255,.12)}
+.bar .fill{position:absolute;left:0;top:7px;height:4px;border-radius:4px;background:var(--amber);width:0}
+.bar .knob{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:2px}
+.prow .time{font:500 12px var(--mono);color:var(--ink3);min-width:52px}
+.prow .time.r{text-align:right}
+.btns{display:flex;align-items:center;gap:4px}
+.cb{width:46px;height:46px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:#e9e4da;padding:0}
+.cb:active{background:rgba(255,255,255,.08)}
+.cb svg{width:24px;height:24px;fill:currentColor}
+.cb.play{width:58px;height:58px;background:var(--amber);color:#1a1408}
+.cb.play svg{width:26px;height:26px}
+.cb.play.loading svg{animation:spin 1s linear infinite}
+.rate{height:34px;min-width:50px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;font:650 12.5px var(--mono);color:#ffd391;padding:0 9px}
+.credit{text-align:center;font-size:11.5px;color:#8f897e;margin-top:4px}
+.credit i{font-style:normal;color:#b8b1a4}
+#sh-novoice{font-size:13px;color:#c9c3b7;line-height:1.45;padding:8px 6px 4px;text-align:center}
+#sh-novoice b{color:var(--calm);font-weight:650}
+#sh-novoice button{border:0;background:none;color:var(--amber);font-weight:650;font-size:13px;padding:6px 0 0;display:block;margin:0 auto}
+
+/* ---------- phone locked, back to the tour, a call ---------- */
+#lock{position:absolute;inset:0;z-index:60;background:radial-gradient(120% 80% at 30% 10%,#2c3440 0,#14171c 55%,#0b0c0e 100%);color:#fff;display:flex;flex-direction:column;align-items:center;padding:56px 16px 22px}
+.lk-time{font:200 72px/1 var(--sans);letter-spacing:-.02em}
+.lk-date{font-size:15px;color:#c8ccd2;margin-top:6px}
+.lk-media{margin-top:30px;width:min(360px,100%);background:rgba(255,255,255,.12);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:24px;padding:14px 16px 10px}
+.lk-row{display:flex;gap:12px;align-items:center}
+.lk-art{width:52px;height:52px;border-radius:12px;background:#17181b;display:grid;place-items:center;flex:none}
+.lk-art svg{width:30px;height:30px}
+.lk-meta b{display:block;font-size:14.5px;line-height:1.25}
+.lk-meta span{display:block;font-size:12px;color:#c8ccd2;margin-top:2px}
+.lk-bar{height:4px;border-radius:4px;background:rgba(255,255,255,.2);margin:14px 2px 4px;overflow:hidden}
+.lk-bar div{height:100%;background:#fff;width:0}
+.lk-times{display:flex;justify-content:space-between;font:500 11px var(--mono);color:#c8ccd2}
+.lk-btns{display:flex;justify-content:center;gap:26px;margin-top:4px}
+.lk-btns button{width:48px;height:48px;border:0;background:transparent;color:#fff;display:grid;place-items:center}
+.lk-btns button svg{width:28px;height:28px;fill:currentColor}
+.lk-note{font-size:11.5px;color:#8a9099;margin-top:10px;text-align:center}
+#lk-unlock{margin-top:auto;border:0;border-radius:999px;background:rgba(255,255,255,.16);height:44px;padding:0 22px;font-size:14px;font-weight:600}
+#stage[data-layout=landscape] #lock{padding-top:18px}
+#stage[data-layout=landscape] .lk-time{font-size:48px}
+#stage[data-layout=landscape] .lk-media{margin-top:12px}
+
+#resume{position:absolute;inset:0;z-index:38;background:#101114;display:flex;align-items:center;justify-content:center;padding:70px 16px 110px}
+#stage[data-layout=landscape] #resume{padding:12px 110px 12px 16px}
+.rs-card{width:min(420px,100%);background:#17181b;border:1px solid rgba(255,255,255,.07);border-radius:24px;padding:20px 20px 16px;color:var(--ink2)}
+#stage[data-layout=landscape] .rs-card{padding:14px 18px 12px}
+.rs-card h3{font:600 21px/1.2 var(--serif);color:#fff;margin:6px 0 6px}
+.rs-card p{font-size:13.5px;line-height:1.45;margin:0 0 12px;color:#c9c3b7}
+#rs-cap{font:600 17px/1.36 var(--sans);color:#f7f3eb;background:#101114;border-radius:14px;padding:12px 14px;min-height:calc(1.36em*2 + 24px)}
+#stage[data-layout=landscape] #rs-cap{font-size:15px;min-height:0}
+.rs-card .big{display:block;width:100%;height:52px;border-radius:16px;border:0;background:var(--amber);color:#1a1408;font-weight:750;font-size:15px;margin-top:14px}
+.rs-card small{display:block;text-align:center;font-size:11.5px;color:#8f897e;margin-top:8px}
+
+#call{position:absolute;left:10px;right:10px;top:10px;z-index:55;background:rgba(32,34,38,.97);border-radius:22px;padding:10px 10px 10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 14px 40px rgba(0,0,0,.45);color:#fff}
+#stage:not([data-layout=portrait]) #call{left:50%;right:auto;width:420px;transform:translateX(-50%)}
+.cl-av{width:42px;height:42px;border-radius:50%;background:#5b6b7d;display:grid;place-items:center;font-weight:700;flex:none}
+.cl-m{flex:1;min-width:0}
+.cl-m b{display:block;font-size:15px}
+.cl-m span{display:block;font-size:12px;color:#b9bec5;margin-top:1px}
+#call button{height:40px;border-radius:999px;border:0;padding:0 14px;font-weight:700;font-size:13px;color:#fff}
+#call .red{background:#e0473e}
+#call .green{background:#2fb35a}
+
+#toast{position:absolute;z-index:70;left:50%;top:64px;transform:translateX(-50%) translateY(-6px);opacity:0;transition:opacity .3s,transform .3s;background:#f6f2ea;color:#17181b;border-radius:14px;padding:10px 16px;font-size:13px;font-weight:550;width:max-content;max-width:min(460px,calc(100% - 30px));box-shadow:0 12px 40px rgba(0,0,0,.35);pointer-events:none;line-height:1.4;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%)}
+
+/* ---------- prototype controls: NOT part of the design ---------- */
+#dbg{flex:none;background:#0f1012;border-top:2px dashed #3d3f45;color:#cfc9bd;font:500 12px var(--sans);padding:5px 8px 6px;position:relative}
+#dbg .row{display:flex;gap:12px;overflow-x:auto;white-space:nowrap;align-items:center;scrollbar-width:thin;scrollbar-color:#3a3c42 transparent;padding-bottom:2px}
+#dbg .grp{display:flex;align-items:center;gap:3px;flex:none}
+#dbg .grp>span{color:#7f796f;font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin-right:3px}
+#dbg button{height:27px;border-radius:7px;border:1px solid #2e3035;background:#1a1b1f;padding:0 8px;font-size:12px;color:#d9d4ca}
+#dbg button.on{background:#e8e2d6;color:#16171a;border-color:#e8e2d6}
+#dbg button.ev{border-style:dashed}
+#dbg .tag{flex:none;font:700 10px var(--mono);letter-spacing:.06em;color:#16171a;background:#8f897e;border-radius:5px;padding:4px 6px}
+#dbg .read{font:500 10.5px/1.4 var(--mono);color:#a49e92;margin-top:4px;max-height:2.8em;overflow-y:auto}
+#dbg .read b{color:#e8e2d6;font-weight:600}
+#dbg .read .snd{color:#ffd391}
+#dbg.min .row,#dbg.min .read{display:none}
+#dbg .row{margin-right:92px}
+#dbg-min{position:absolute;right:8px;top:5px;height:27px;border-radius:7px;border:1px dashed #3d3f45;background:#0f1012;color:#a49e92;font:600 11px var(--mono);padding:0 9px;z-index:2}
+#dbg.min{height:38px}
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="wrap">
+<div id="stage" data-layout="portrait">
+  <canvas id="gl" tabindex="0" aria-label="Camera view of the square with the reading sign"></canvas>
+
+  <div id="ar-top">
+    <button id="exit" aria-label="Exit AR"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <button id="vpill" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span id="vp-cur"></span><small>change</small></button>
+    <div id="vmenu" role="menu" hidden>
+      <button class="vo" data-view="reading" role="menuitemradio"><b>Read or listen</b><span>The sign offers both. Reading opens the full text; listening puts the words on the sign.</span></button>
+      <button class="vo" data-view="caption" role="menuitemradio"><b>Listen, captions on the sign</b><span>The sign is ready to speak: one tap and the words run on it.</span></button>
+      <div class="foot">Kept on this phone for every narrated text, in every tour.</div>
+    </div>
+  </div>
+  <div id="status" hidden><i></i><span id="status-t"></span></div>
+
+  <div id="bubble" aria-live="polite"><div class="tail top"></div><div id="bubble-in"></div></div>
+
+  <div id="walk" hidden><div class="wa"><svg viewBox="0 0 24 24"><path d="M12 3l7 9h-4.5v9h-5v-9H5z"/></svg></div><div><b>Old market square</b><span id="walk-t"></span></div></div>
+
+  <div id="fc" class="hide">
+    <button class="chip ratechip" id="fc-rate" aria-label="Voice speed" hidden>1x</button>
+    <button class="chip" id="fc-text">Read</button>
+    <button id="fc-play" aria-label="Play or pause the voice">
+      <svg class="ring" viewBox="0 0 62 62"><circle class="tr" cx="31" cy="31" r="27"/><circle class="pg" id="fc-pg" cx="31" cy="31" r="27" stroke-dasharray="169.65" stroke-dashoffset="169.65"/><circle class="sp" cx="31" cy="31" r="27" stroke-dasharray="38 132"/></svg>
+      <svg class="ic" id="fc-ic" viewBox="0 0 24 24"></svg>
+      <span id="fc-eq"><i></i><i></i><i></i></span>
+    </button>
+  </div>
+
+  <div id="chooser" hidden>
+    <div class="over">The sign over there</div><b id="ch-title"></b>
+    <div class="cb2"><button id="ch-read">Read<small id="ch-rmin"></small></button><button id="ch-listen" class="primary">Listen<small id="ch-lmin"></small></button></div>
+    <button id="ch-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <section id="sheet" aria-hidden="true">
+    <div class="grab"></div>
+    <header>
+      <div class="over">Old market square · Station 1</div>
+      <h2 id="sh-title"></h2>
+      <div id="sh-meta"></div>
+      <button id="sh-close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="textwrap" id="sh-wrap"><article id="sh-text" lang="en"></article></div>
+    <button id="sh-follow" hidden>Back to the voice</button>
+    <footer id="sh-foot">
+      <div id="sh-live">
+        <div class="bar" id="sh-bar"><div class="track"></div><div class="fill"></div><div class="knob"></div></div>
+        <div class="prow">
+          <span class="time" id="sh-t0">0:00</span>
+          <div class="btns">
+            <button class="cb" id="sh-back10" aria-label="Back 10 seconds"></button>
+            <button class="cb" id="sh-prev" aria-label="Previous sentence"></button>
+            <button class="cb play" id="sh-play" aria-label="Play or pause"></button>
+            <button class="rate" id="sh-rate" aria-label="Voice speed">1x</button>
+          </div>
+          <span class="time r" id="sh-t1">0:00</span>
+        </div>
+        <div class="credit"><i>Synthetic voice</i> · simulated here, no sound plays</div>
+      </div>
+      <div id="sh-novoice" hidden><b>No voice right now.</b> The whole text is here to read.<button id="sh-retry">Try the voice again</button></div>
+    </footer>
+  </section>
+
+  <div id="resume" hidden>
+    <div class="rs-card">
+      <div class="over">Old market square · Station 1</div>
+      <h3 id="rs-title"></h3>
+      <p id="rs-msg"></p>
+      <div id="rs-cap"></div>
+      <button class="big" id="rs-go">Back to the camera view</button>
+      <small>The camera view needs one tap to start again.</small>
+    </div>
+  </div>
+
+  <div id="call" hidden>
+    <div class="cl-av">A</div><div class="cl-m"><b>Anna</b><span id="cl-sub">Incoming call</span></div>
+    <button class="red" id="cl-dec">Decline</button><button class="green" id="cl-acc">Accept</button><button class="red" id="cl-end" hidden>End</button>
+  </div>
+
+  <div id="lock" hidden>
+    <div class="lk-time" id="lk-clock">14:32</div><div class="lk-date">Saturday 31 October</div>
+    <div class="lk-media">
+      <div class="lk-row"><div class="lk-art"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#f2b45a"/><path d="M6.5 10h2.2l3-2.6v9.2l-3-2.6H6.5z" fill="#1a1408"/><path d="M14 9.2a4 4 0 0 1 0 5.6M16.2 7.4a6.6 6.6 0 0 1 0 9.2" stroke="#1a1408" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></div>
+        <div class="lk-meta"><b>The Guild House and the Burnt Hall</b><span>Old market square · Station 1 · Old Town Walk</span></div></div>
+      <div class="lk-bar"><div id="lk-fill"></div></div>
+      <div class="lk-times"><span id="lk-t0">0:00</span><span id="lk-t1">0:00</span></div>
+      <div class="lk-btns"><button id="lk-back" aria-label="Back 10 seconds"></button><button id="lk-play" aria-label="Play or pause"></button><button id="lk-fwd" aria-label="Forward 10 seconds"></button></div>
+    </div>
+    <div class="lk-note">What the phone's lock screen shows (a mock-up): title, station, play/pause, 10 s back and forward.</div>
+    <button id="lk-unlock">Unlock the phone</button>
+  </div>
+
+  <div id="toast" role="status"></div>
+</div>
+</div>
+
+<div id="dbg">
+  <button id="dbg-min" aria-label="Hide or show the prototype controls">prototype ▾</button>
+  <div class="row">
+    <span class="tag">PROTOTYPE</span>
+    <div class="grp" data-k="view"><span>View</span><button data-v="reading">Read or listen</button><button data-v="caption">Captions</button></div>
+    <div class="grp" data-k="mode"><span>Voice file</span><button data-v="normal">Normal</button><button data-v="slow">Slow loading</button><button data-v="missing">Missing</button></div>
+    <div class="grp" data-k="event"><span>Event</span><button class="ev" data-v="ends">Ends now</button><button class="ev" data-v="lock">Phone locked</button><button class="ev" data-v="call">Call</button></div>
+    <div class="grp" data-k="stand"><span>You stand</span><button data-v="close">Close 3 m</button><button data-v="usual">Usual 7 m</button><button data-v="far">Far 16 m</button><button data-v="side">Side 65°</button><button data-v="away">Looking away</button><button data-v="walking">Walking up</button></div>
+    <div class="grp" data-k="fixed"><span>Sign</span><button data-v="turns">Turns to you</button><button data-v="fixed">Fixed (wall)</button></div>
+    <div class="grp" data-k="grow"><span>Far sign grows</span><button data-v="on">On</button><button data-v="off">Off</button></div>
+    <div class="grp" data-k="T"><span>Legible from</span><button data-v="10">10 px</button><button data-v="12">12 px</button><button data-v="14">14 px</button><button data-v="16">16 px</button></div>
+    <div class="grp" data-k="frame"><span>Orientation</span><button data-v="window">Window</button><button data-v="upright">Upright 390×844</button><button data-v="sideways">Sideways 844×390</button></div>
+    <div class="grp" data-k="reset"><button class="ev" data-v="reset">Reset</button></div>
+  </div>
+  <div class="read" id="dbg-read"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =====================================================================
+   1. The text (the reference prototype's record) and a fake narration
+   ===================================================================== */
+const PARAGRAPHS = [
+`You are standing in the old market square, almost exactly where the town's weekly market has been held for more than six hundred years. Turn to face north. The tall stone front with the single door and the two windows is the guild house, finished in the spring of 1612. To your left, in the north-west corner, a low and broken wall runs along the edge of the paving. It looks like nothing much, a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all. Over the next few minutes we will move through four centuries of this place: the keep that came first, the guild house that still stands, the great timber market hall that once filled the whole west half of the square, and the October night in 1890 when that hall burned to the ground.`,
+`Long before there was a market, there was a rise in the ground and a tower on top of it. The keep was built of rough field stone, bedded in lime mortar that the builders burned in a kiln down by the river. Nobody wrote down the year it was begun. The first record that mentions it is a dispute about firewood, which tells us that by then somebody lived in the tower through the winter and expected the farms around it to keep him warm. The walls were nearly three metres thick at the base. The only door was on the first floor, reached by a wooden stair that could be pulled up or burned in an emergency. From the top a guard could see the ford across the river and the road coming down from the hills, which is exactly what the tower was for.`,
+`A tower that watches a road soon attracts people who want to use the road. Carters stopped below the keep because it was safe there. Smiths and saddlers followed the carters, and bakers followed everyone. By the time the town received the right to hold a market, the open ground at the foot of the tower had already been trampled flat by generations of traders who had not waited for permission. The charter gave them two market days, Wednesday and Saturday, a fair at the end of harvest, and the duty to keep the ground free of dung, carts and quarrels. The last of these duties was the hardest to fulfil, and the town records are full of fines for all three.`,
+`The keep lost its purpose slowly and then all at once. Once the town had its own walls and gates, a single tower in one corner of the market was more of a nuisance than a defence. In a hard winter the council allowed citizens to take stone from the upper storeys, and in the years that followed nobody quite remembered to stop them. Much of that stone is still in the town. It sits in cellar walls, in garden steps and in the foundations of the guild house in front of you. What remained of the keep was cut down to the height of a man's waist, and a cart road was broken through the middle of it. That is the gap you can see in the wall today. Carts loaded with turnips rolled for two hundred years through the place where the lords of the tower once kept their stores.`,
+`The guild house was a joint venture, which in this town meant it took eleven years of argument and four of building. The bakers, the butchers, the weavers and the smiths each wanted the hall for themselves, and each refused to pay for a hall they would have to share. What finally brought them together was not friendship but the town scales. Every sack of grain, every bale of wool and every barrel of salt sold in the square had to be weighed, and the weighing had always been done under an awning that leaked. The guilds agreed to build one solid house with a dry ground floor for the scales and an upper hall for their meetings, and to split the cost by the weight of goods each trade brought to market. The weavers, who sold light cloth, paid the least, and the smiths never forgave them.`,
+`Look at the front of the house. The door in the middle is not the original. The first door was twice as wide, so that a loaded hand-cart could be pushed straight in onto the scales. It was narrowed in the eighteenth century, when the scales moved and the ground floor became a store. The two windows on either side belong to the upper hall. In the original plan there were to be five, one for each guild and one for the town, but the money ran out after the stone was cut for two, and the builders filled the rest of the front with plain wall. The guild masters had the year carved in the stone above the door. If you look closely you may still be able to make out the numbers, softened by four hundred winters of rain.`,
+`Now turn to your left and look across the west half of the square, towards the broken wall. For most of the town's history you would not have been able to see it from here, because this whole half of the square was covered by a roof. The market hall was built about forty years after the guild house, entirely of oak. It stood on thirty-two posts, each one a single trunk, in four rows of eight. The ground floor was open on all sides, so that traders could set up beneath it in rain and in heat. Above the posts there was a closed upper floor where the cloth merchants kept their bales and where, on fair days, the town council held its court. The upper floor was reached by an outside stair at the north end, close to where the keep had stood.`,
+`Those who remembered the hall described it above all by its smell. Under the roof the air was thick with flour dust, with tar from the ropes, with wet wool and with the cheese that the farmers' wives brought in from the villages on Saturdays. Children played between the posts and were chased out again. Dogs slept in the shade. A bell hung under the eaves at the south end, and it was rung at the start and close of each market. Nobody was allowed to sell before the first bell, and anybody still selling after the last one paid a fine to the wardens. On the posts the wardens nailed up the prices of bread and beer, and the posts were so full of old nail holes that a carpenter who repaired one of them claimed it was held together mainly by iron.`,
+`The fire began in the upper floor on a dry night in October 1890, a few hours after the autumn fair had closed. The most likely cause was a lamp left burning in one of the cloth stores, although at the inquiry each of the merchants was able to prove that it had not been his. A wind was blowing from the east. Within a quarter of an hour the roof was alight from end to end, and burning cloth was carried over the square like enormous moths. The town's fire engine was pulled out of the guild house, where it had been stored for decades, and it was found that the leather hose had dried and cracked. So the townspeople did what their grandparents would have done. They formed a line from the well behind the guild house and passed buckets from hand to hand.`,
+`They could not save the market hall, and after the first hour they did not try. The buckets went instead to the guild house, whose roof was only twenty metres downwind of the flames. Men climbed onto it and spread wet sailcloth across the tiles, and others threw water on the sailcloth as fast as the line could deliver it. Twice the cloth caught fire and twice it was beaten out. Shortly before dawn the burning roof of the market hall collapsed into the floor below, and with it the danger was over. When the sun rose, the hall was a field of black posts standing in ash, and the guild house was soot from the ground to the eaves, but it was whole. The sailcloth was later cut into pieces and sold as keepsakes, and one of them still hangs in the upper hall.`,
+`The town never rebuilt the market hall. The council argued about it for six years, as it had once argued about the guild house, and by the end of the argument the traders had grown used to the open sky. Stalls with canvas roofs replaced the posts, and in the new century they were joined by the first carts selling things nobody in the old hall had heard of. The burnt posts were pulled out of the ground in the winter after the fire. Their sockets were filled with stone, and when the square was paved again, the masons laid the stones over them without marking where they had been. Old people in the town could still point to them a generation later. Today nobody can, which is one reason this walk exists.`,
+`The guild house had a quieter century. The guilds themselves faded as their trades changed, and the building passed to the town. For a while it held the town archive, and shelves for the records were built along the walls of the upper hall, right up to the windows. Then it served as a school, and two generations of children learned their letters in the room where the guild masters had once fined each other for bad bread. Later the scales came back, not to weigh anything, but to be looked at, and the ground floor was opened again on market days. If the door is open when you pass, you are welcome to step inside.`,
+`Take a moment to look at the square as it is now. The open paving to your left, between the path and the broken wall, is the floor of the market hall, and if you walk across it you are walking under a roof that has not existed for more than a century. The bench and the tree on the east side mark the place where the carters once watered their horses, beside a trough that was taken away when the first motor car arrived. The broken wall in the corner is what is left of the tower that made the town a town. The guild house still has two windows where there were meant to be five. Nothing on this square is complete, and that is perhaps the most honest thing about it. Each generation took what it needed from the one before, a few stones, a market right, a habit of arguing, and left the rest for the next to find.`,
+`When you are ready, follow the path that leaves the square to the east. About sixty metres along it you will come to the next station, at the place where the carts once queued for the town scales on market mornings. If you would like to hear any part of this story again, come back into the square at any time, and the text will remember where you stopped.`
+];
+const BODY = PARAGRAPHS.join('\n\n');
+const TITLE = 'The Guild House and the Burnt Hall';
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const $ = id => document.getElementById(id);
+const WORD_RE = () => /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+
+// Paragraphs, sentences and words with character offsets (the reference prototype's analysis).
+function analyze(body) {
+  const paragraphs = [], sentences = [], words = [];
+  const pre = /\n[ \t]*\n/g; let start = 0, m; const cuts = [];
+  while ((m = pre.exec(body))) { cuts.push([start, m.index]); start = pre.lastIndex; }
+  cuts.push([start, body.length]);
+  for (let [a, b] of cuts) { while (a < b && /\s/.test(body[a])) a++; while (b > a && /\s/.test(body[b - 1])) b--; if (b > a) paragraphs.push({ from: a, to: b, s0: 0, s1: 0 }); }
+  paragraphs.forEach((p, pi) => {
+    p.s0 = sentences.length; const t = body.slice(p.from, p.to);
+    const pushS = (a, b) => { while (a < b && /\s/.test(t[a])) a++; while (b > a && /\s/.test(t[b - 1])) b--; if (b > a) sentences.push({ from: p.from + a, to: p.from + b, p: pi, w0: -1, w1: -1 }); };
+    const re = /[.!?…]+["'”’)\]]*(?=\s|$)/g; let last = 0, mm;
+    while ((mm = re.exec(t))) { const end = mm.index + mm[0].length; let k = end; while (k < t.length && /\s/.test(t[k])) k++; if (k >= t.length || /[\p{Lu}\p{N}"'“‘(\[]/u.test(t[k])) { pushS(last, end); last = end; } }
+    pushS(last, t.length); p.s1 = sentences.length;
+  });
+  const re = WORD_RE(); let si = 0;
+  while ((m = re.exec(body))) { const from = m.index, to = from + m[0].length; while (si < sentences.length - 1 && from >= sentences[si].to) si++; words.push({ from, to, s: si }); }
+  words.forEach((w, i) => { const s = sentences[w.s]; if (s.w0 < 0) s.w0 = i; s.w1 = i + 1; });
+  return { body, paragraphs, sentences, words };
+}
+const A = analyze(BODY);
+
+// A plausible fake narration: one segment per word, durations from word length, pauses at punctuation.
+const SEG = (() => {
+  const segs = []; let t = 600;
+  for (let i = 0; i < A.words.length; i++) {
+    const w = A.words[i], dur = Math.min(720, 105 + 44 * (w.to - w.from));
+    segs.push({ startMs: Math.round(t), endMs: Math.round(t + dur) }); t += dur + 40;
+    const next = A.words[i + 1]; if (!next) break;
+    const gap = BODY.slice(w.to, next.from);
+    if (/\n\s*\n/.test(gap)) t += 1100; else if (/[.!?]/.test(gap)) t += 430; else if (/[,;:]/.test(gap)) t += 190;
+  }
+  return segs;
+})();
+const DUR = SEG[SEG.length - 1].endMs + 900;
+const LISTEN_MIN = Math.max(1, Math.round(DUR / 60000));
+const READ_MIN = Math.max(1, Math.round(A.words.length / 200));
+function wordAtMs(ms) { let lo = 0, hi = SEG.length - 1, r = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (SEG[mid].startMs <= ms) { r = mid; lo = mid + 1; } else hi = mid - 1; } return r; }
+const sentenceStartMs = s => { const w = A.sentences[s]?.w0 ?? -1; return w >= 0 ? SEG[w].startMs : 0; };
+const sentenceAtMs = ms => { const w = wordAtMs(ms); return w >= 0 ? A.words[w].s : 0; };
+
+// Caption chunks: a sentence split at clause or word boundaries to fit about three lines (from the reference).
+const chunkCache = new Map();
+function chunksFor(s, maxChars) {
+  const key = s + ':' + maxChars; if (chunkCache.has(key)) return chunkCache.get(key);
+  const se = A.sentences[s], from = se.from, to = se.to, ws = [];
+  for (let i = se.w0; i < se.w1; i++) ws.push(i);
+  const chunks = []; let start = from, startW = 0;
+  for (let k = 0; k < ws.length; k++) {
+    const w = A.words[ws[k]];
+    if (w.to - start > maxChars && k > startW) {
+      let cut = k - 1;
+      for (let b = k - 1; b > startW + 2; b--) { const ww = A.words[ws[b]]; if ((ww.to - start) < maxChars * 0.55) break; if (/[,;:]/.test(A.body.slice(ww.to, A.words[ws[b + 1]].from))) { cut = b; break; } }
+      let e = A.words[ws[cut]].to; while (e < to && /[,;:.!?'"’”)]/.test(A.body[e])) e++;
+      chunks.push({ from: start, to: e, w0: ws[startW], w1: ws[cut] + 1 });
+      startW = cut + 1; start = A.words[ws[startW]].from; k = cut;
+    }
+  }
+  if (startW < ws.length) chunks.push({ from: start, to, w0: ws[startW], w1: ws[ws.length - 1] + 1 });
+  chunkCache.set(key, chunks); return chunks;
+}
+const CHUNK_CHARS = 84;
+function excerpt(s, n = 44) { const t = A.body.slice(A.sentences[s].from, A.sentences[s].to); if (t.length <= n) return t; const cut = t.lastIndexOf(' ', n); return t.slice(0, cut > 20 ? cut : n) + '…'; }
+
+/* =====================================================================
+   2. State: what the prototype shows, and the simulated voice
+   ===================================================================== */
+const STANDS = {
+  close: { d: 3, ang: 0, look: 0, label: 'close, 3 m' },
+  usual: { d: 7, ang: 0, look: 0, label: 'usual, 7 m' },
+  far: { d: 16, ang: 0, look: 0, label: 'far, 16 m' },
+  side: { d: 5, ang: 65, look: 0, label: 'at the side, 65°, 5 m' },
+  away: { d: 7, ang: 0, look: 118, label: 'looking away, 7 m' },
+  walking: { d: 40, ang: 0, look: 0, label: 'walking up, 40 m' }
+};
+const RADIUS = 25;
+const RATES = [1, 1.25, 1.5, 0.75];
+function readRate() { try { const v = +localStorage.getItem('proto.narration3.rate'); return RATES.includes(v) ? v : 1; } catch (e) { return 1; } }
+function writeRate(v) { try { localStorage.setItem('proto.narration3.rate', String(v)); } catch (e) { /* the choice lasts this visit only */ } }
+const S = {
+  view: 'reading', stand: 'usual', fixed: false, grow: true, T: 12, frame: 'window',
+  sheetOpen: false, follow: true, lock: false, resume: false, relocUntil: 0, chooser: false,
+  vis: { x: 0, z: 7, yaw: 0, pitch: 0.02 }, call: null
+};
+/* The simulated voice. st: idle | loading | playing | paused | failed | ended.
+   reason (paused): user | left | call | exit. mode: the debug "voice file" (normal | slow | missing). */
+const V = { st: 'idle', pos: 0, rate: readRate(), mode: 'normal', loaded: false, loadT0: 0, failT: 0, endT: 0, reason: null, callS: -1 };
+const LOAD_MS = { normal: 450, slow: 7000, missing: 1500 };
+const SLOW_AFTER_MS = 2500;
+
+function insideNow() { return Math.hypot(S.vis.x, S.vis.z) <= RADIUS; }
+function listen(fromStart) {
+  if (!insideNow()) { toast('Walk to the station first: the sign speaks when you are there.'); return; }
+  if (V.st === 'playing' || V.st === 'loading') return;
+  if (V.st === 'ended' || fromStart) V.pos = 0;
+  if (V.st === 'paused' && V.reason === 'call' && V.callS >= 0) V.pos = Math.max(0, sentenceStartMs(V.callS) - 30);
+  V.reason = null; V.callS = -1;
+  if (!V.loaded) { V.st = 'loading'; V.loadT0 = performance.now(); return; }
+  V.st = 'playing';
+}
+function pauseVoice(reason = 'user') {
+  if (V.st !== 'playing' && V.st !== 'loading') return;
+  if (reason === 'call') V.callS = sentenceAtMs(V.pos);
+  V.st = 'paused'; V.reason = reason;
+}
+function toggleVoice() {
+  if (V.st === 'playing' || V.st === 'loading') pauseVoice('user');
+  else if (V.st === 'ended') listen(true);
+  else listen(false);
+}
+function seek(ms) { V.pos = clamp(ms, 0, DUR - 1); if (V.st === 'ended') { V.st = 'paused'; V.reason = 'user'; } S.follow = true; ui.forceScroll = true; }
+function setRate(v) { V.rate = v; writeRate(v); $('fc-rate').textContent = $('sh-rate').textContent = v + 'x'; toast(`Voice speed ${v}x. Kept on this phone.`); }
+function cycleRate() { setRate(RATES[(RATES.indexOf(V.rate) + 1) % RATES.length]); }
+const started = () => V.st !== 'idle' && !(V.st === 'failed');
+
+/* What the caption shows right now: one model, drawn on the sign or in the bubble. */
+function capModel(now) {
+  if (!insideNow()) return null;   // walking up: the sign is a far mark, nothing speaks yet
+  const cv = S.view === 'caption';
+  const cur = () => {
+    const w = wordAtMs(V.pos), s = w >= 0 ? A.words[w].s : 0, chunks = chunksFor(s, CHUNK_CHARS);
+    let ci = 0; if (w >= 0) { ci = chunks.findIndex(c => w >= c.w0 && w < c.w1); if (ci < 0) ci = 0; }
+    return { w, s, ch: chunks[ci], chKey: s + ':' + ci, prog: V.pos / DUR, left: DUR - V.pos };
+  };
+  switch (V.st) {
+    case 'idle': return cv ? { kind: 'preview', w: -1, ch: chunksFor(0, CHUNK_CHARS)[0], chKey: 'pre' } : null;
+    case 'loading': return { kind: now - V.loadT0 > SLOW_AFTER_MS ? 'slow' : 'loading' };
+    case 'failed': return cv || now - V.failT < 9000 ? { kind: 'failed' } : null;
+    case 'ended': return now - V.endT < 10000 ? { kind: 'ended', prog: 1 } : (cv ? { kind: 'preview', w: -1, ch: chunksFor(0, CHUNK_CHARS)[0], chKey: 'pre' } : null);
+    case 'paused': return V.reason === 'call' ? { kind: 'call', prog: V.pos / DUR } : { kind: 'paused', ...cur() };
+    case 'playing': return { kind: 'playing', ...cur() };
+  }
+  return null;
+}
+/* The Listen half of the sign: its state, derived from the voice. */
+function listenState(now) {
+  if (V.st === 'failed') return 'failed';
+  if (V.st === 'loading') return now - V.loadT0 > SLOW_AFTER_MS ? 'slow' : 'loading';
+  if (V.st === 'paused') return V.reason === 'call' ? 'call' : V.reason === 'ready' ? 'ready' : 'paused';
+  return V.st; // idle | playing | ended
+}
+
+/* =====================================================================
+   3. The scene: the square from the reference, and the speaking sign
+   ===================================================================== */
+const canvas = $('gl'), stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#dde4e8'); scene.fog = new THREE.Fog('#dde4e8', 70, 190);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 600); camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xffffff, 0xa9a59d, 2.3));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-20, 40, 25); scene.add(sun);
+const MAXANI = renderer.capabilities.getMaxAnisotropy();
+function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAXANI; return t; }
+const grey = c => new THREE.MeshLambertMaterial({ color: c });
+(function buildPlace() {
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), grey('#bdbab3')); g.rotation.x = -Math.PI / 2; scene.add(g);
+  const pc = document.createElement('canvas'); pc.width = pc.height = 512; const x = pc.getContext('2d');
+  x.fillStyle = '#c9c6bf'; x.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 16; i++) for (let j = 0; j < 16; j++) { const v = 196 + ((i * 7 + j * 13) % 9); x.fillStyle = `rgb(${v},${v - 3},${v - 9})`; x.fillRect(i * 32 + 1, j * 32 + 1, 30, 30); }
+  const pt = canvasTex(pc); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; pt.repeat.set(2.5, 2.5);
+  const sq = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ map: pt })); sq.rotation.x = -Math.PI / 2; sq.position.y = 0.005; scene.add(sq);
+  const p1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 40), grey('#b0ada6')); p1.rotation.x = -Math.PI / 2; p1.position.set(0, 0.004, 40); scene.add(p1);
+  const p2 = new THREE.Mesh(new THREE.PlaneGeometry(70, 3), grey('#b0ada6')); p2.rotation.x = -Math.PI / 2; p2.position.set(55, 0.004, 0); scene.add(p2);
+  const house = new THREE.Mesh(new THREE.BoxGeometry(18, 6, 8), grey('#c3c0ba')); house.position.set(0, 3, -24); scene.add(house);
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(18.4, 0.3, 0.5), grey('#b5b2ab')); cornice.position.set(0, 6.0, -19.9); scene.add(cornice);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.1), grey('#7d7a75')); door.position.set(0, 1.3, -19.97); scene.add(door);
+  for (const wx of [-5, 5]) { const w = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.7, 0.1), grey('#8e959a')); w.position.set(wx, 3.7, -19.97); scene.add(w); }
+  const stoneM = grey('#a9a49b');
+  const seg = (x0, x1, hs) => { const n = hs.length, w = (x1 - x0) / n; hs.forEach((h, i) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, h, 0.8), stoneM); b.position.set(x0 + w * (i + 0.5), h / 2, -14); scene.add(b); }); };
+  seg(-18, -15, [0.95, 1.05, 0.8, 1.0, 0.7]); seg(-13.6, -10, [0.6, 0.9, 1.1, 1.0, 0.85, 0.5]);
+  const bench = new THREE.Group(), bm = grey('#8f8a82');
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.45), bm); seat.position.y = 0.45; bench.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.06), bm); back.position.set(0, 0.75, -0.2); bench.add(back);
+  for (const lx of [-0.8, 0.8]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.4), bm); l.position.set(lx, 0.22, 0); bench.add(l); }
+  bench.position.set(9, 0, -5); bench.rotation.y = -0.3; scene.add(bench);
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 3.2, 10), grey('#8d857b')); trunk.position.set(12, 1.6, -8); scene.add(trunk);
+  const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.3, 1), new THREE.MeshLambertMaterial({ color: '#a7ad9f', flatShading: true })); crown.position.set(12, 4.5, -8); scene.add(crown);
+  const r = new THREE.Mesh(new THREE.RingGeometry(RADIUS - 0.07, RADIUS + 0.07, 160), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55 })); r.rotation.x = -Math.PI / 2; r.position.y = 0.02; scene.add(r);
+})();
+
+/* The sign: a plate (the two halves) over a caption plate on one stem. Sizes in metres. */
+const PW = 2.4;                       // plate width
+const SIGN_H = PW * 512 / 1024;       // 1.2
+const CAP_H = PW * 448 / 1024;        // 1.05
+const SIGN_Y = 2.26, CAP_Y = 1.075;   // plate centres
+const CAP_FONT = 58;                  // caption font size in canvas px (of 1024)
+const EM_CAP = CAP_FONT / 1024 * PW;  // 0.136 m: the caption's letter size in the world
+const TITLE_FONT = 58, EM_TITLE = TITLE_FONT / 1024 * PW;
+const signG = new THREE.Group(); scene.add(signG);
+const plateMat = tex => new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false });
+const signCv = document.createElement('canvas'); signCv.width = 1024; signCv.height = 512; const signTex = canvasTex(signCv);
+const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(PW, SIGN_H), plateMat(signTex)); signMesh.position.set(0, SIGN_Y, 0.03); signMesh.renderOrder = 2; signG.add(signMesh);
+const capCv = document.createElement('canvas'); capCv.width = 1024; capCv.height = 448; const capTex = canvasTex(capCv);
+const capMesh = new THREE.Mesh(new THREE.PlaneGeometry(PW, CAP_H), plateMat(capTex)); capMesh.position.set(0, CAP_Y, 0.03); capMesh.renderOrder = 3; signG.add(capMesh);
+const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, SIGN_Y, 8), grey('#2a2b2f')); stem.position.y = SIGN_Y / 2; signG.add(stem);
+const baseRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.4, 48), new THREE.MeshBasicMaterial({ color: '#f2b45a', transparent: true, opacity: 0.85, depthWrite: false })); baseRing.rotation.x = -Math.PI / 2; baseRing.position.y = 0.025; signG.add(baseRing);
+
+/* ---------- canvas drawing ---------- */
+const SERIF = '"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif';
+const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function wrap(g, text, maxW) { const ws = text.split(/\s+/), out = []; let line = ''; for (const w of ws) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
+function icSpeaker(g, cx, cy, s, col, slash) {
+  g.fillStyle = col; g.beginPath(); g.moveTo(cx - .5 * s, cy - .17 * s); g.lineTo(cx - .2 * s, cy - .17 * s); g.lineTo(cx + .1 * s, cy - .45 * s); g.lineTo(cx + .1 * s, cy + .45 * s); g.lineTo(cx - .2 * s, cy + .17 * s); g.lineTo(cx - .5 * s, cy + .17 * s); g.closePath(); g.fill();
+  g.strokeStyle = col; g.lineWidth = .08 * s; g.lineCap = 'round';
+  if (slash) { g.beginPath(); g.moveTo(cx + .22 * s, cy - .2 * s); g.lineTo(cx + .55 * s, cy + .2 * s); g.moveTo(cx + .55 * s, cy - .2 * s); g.lineTo(cx + .22 * s, cy + .2 * s); g.stroke(); return; }
+  for (const r of [.24, .44]) { g.beginPath(); g.arc(cx + .12 * s, cy, r * s, -.8, .8); g.stroke(); }
+}
+function icBars(g, cx, cy, s, col, t) { g.fillStyle = col; for (let k = 0; k < 5; k++) { const h = (.3 + .7 * Math.abs(Math.sin(t * .006 + k * 1.3))) * s * .9; rr(g, cx - .5 * s + k * .22 * s, cy - h / 2, .13 * s, h, .065 * s); g.fill(); } }
+function icSpin(g, cx, cy, r, col, t) { g.strokeStyle = col; g.lineWidth = r * .24; g.lineCap = 'round'; g.beginPath(); const a = t * .008; g.arc(cx, cy, r, a, a + 4.3); g.stroke(); }
+function icPlay(g, cx, cy, s, col) { g.fillStyle = col; g.beginPath(); g.moveTo(cx - .3 * s, cy - .4 * s); g.lineTo(cx + .42 * s, cy); g.lineTo(cx - .3 * s, cy + .4 * s); g.closePath(); g.fill(); }
+function icReplay(g, cx, cy, s, col) { g.strokeStyle = col; g.lineWidth = .1 * s; g.lineCap = 'round'; g.beginPath(); g.arc(cx, cy, .38 * s, -2.4, 2.6); g.stroke(); g.fillStyle = col; g.beginPath(); const a = -2.4, x = cx + Math.cos(a) * .38 * s, y = cy + Math.sin(a) * .38 * s; g.moveTo(x - .2 * s, y - .05 * s); g.lineTo(x + .12 * s, y - .2 * s); g.lineTo(x + .08 * s, y + .14 * s); g.closePath(); g.fill(); }
+function icLines(g, cx, cy, s, col) { g.fillStyle = col; [[-.33, .8], [-.11, .8], [.11, .8], [.33, .5]].forEach(([dy, w]) => { rr(g, cx - .4 * s, cy + dy * s - .055 * s, w * s, .11 * s, .055 * s); g.fill(); }); }
+
+function drawSign(now, lod) {
+  const g = signCv.getContext('2d'), W = 1024, H = 512; g.clearRect(0, 0, W, H);
+  rr(g, 6, 6, W - 12, H - 12, 44); g.fillStyle = '#111215'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.10)'; g.stroke();
+  const ls = listenState(now), cv = S.view === 'caption';
+  if (lod) {
+    // far away: one big mark that says "this sign speaks", readable from a distance; the halves come back up close
+    g.fillStyle = ls === 'failed' ? '#3a3c41' : '#f2b45a'; g.beginPath(); g.arc(170, 256, 128, 0, 7); g.fill();
+    if (ls === 'playing') icBars(g, 170, 256, 150, '#1a1408', now); else icSpeaker(g, 162, 256, 150, ls === 'failed' ? '#9a958c' : '#1a1408', ls === 'failed');
+    g.fillStyle = '#fff'; g.font = `600 112px ${SERIF}`;
+    const l1 = ls === 'playing' ? 'Speaking' : ls === 'failed' ? 'Read' : cv ? 'Listen' : 'Listen';
+    g.fillText(l1, 340, 236);
+    g.fillStyle = '#d8d2c6'; g.font = `500 58px ${SANS}`;
+    const l2 = ls === 'playing' ? `${fmt(DUR - V.pos)} left` : ls === 'failed' ? `${READ_MIN} min` : cv ? `captions · ${LISTEN_MIN} min` : `or read · ${LISTEN_MIN} min`;
+    g.fillText(l2, 344, 330);
+    signTex.needsUpdate = true; return;
+  }
+  // header
+  g.fillStyle = '#f2b45a'; g.font = `700 26px ${SANS}`; g.letterSpacing = '4px';
+  g.fillText(cv ? 'STATION 1  ·  LISTEN' : 'STATION 1  ·  READ OR LISTEN', 52, 72);
+  if (cv) { g.textAlign = 'right'; g.fillStyle = ls === 'failed' || ls === 'slow' ? '#f2b45a' : '#e9e4da'; g.fillText('READ THE TEXT  ›', W - 52, 72); g.textAlign = 'left'; }
+  g.letterSpacing = '0px'; g.fillStyle = '#fff'; g.font = `600 ${TITLE_FONT}px ${SERIF}`;
+  const lines = wrap(g, TITLE, 920).slice(0, 2);
+  lines.forEach((l, i) => g.fillText(l, 50, (lines.length === 1 ? 168 : 140) + i * 66));
+  const by = 270, bh = 206;
+  if (!cv) { drawReadBtn(g, 30, by, 474, bh, ls); drawListenBtn(g, 520, by, 474, bh, ls, now, false); }
+  else drawListenBtn(g, 30, by, 964, bh, ls, now, true);
+  signTex.needsUpdate = true;
+}
+function drawReadBtn(g, x, y, w, h, ls) {
+  const lead = ls === 'failed' || ls === 'slow';      // reading is the way now: say so with the outline
+  rr(g, x, y, w, h, 30); g.fillStyle = lead ? 'rgba(242,180,90,0.10)' : 'rgba(255,255,255,0.07)'; g.fill();
+  g.lineWidth = lead ? 5 : 3; g.strokeStyle = lead ? '#f2b45a' : 'rgba(255,255,255,0.16)'; g.stroke();
+  icLines(g, x + 78, y + h / 2, 92, lead ? '#f2b45a' : '#e9e4da');
+  g.fillStyle = '#fff'; g.font = `700 60px ${SANS}`; g.fillText('Read', x + 148, y + 98);
+  g.fillStyle = '#b9b2a5'; g.font = `500 30px ${SANS}`; g.fillText(`about ${READ_MIN} min`, x + 150, y + 146);
+}
+function drawListenBtn(g, x, y, w, h, ls, now, wide) {
+  const amber = ['idle', 'loading', 'slow', 'playing', 'ready'].includes(ls), muted = ls === 'failed';
+  rr(g, x, y, w, h, 30);
+  g.fillStyle = muted ? '#2b2d32' : amber ? '#f2b45a' : 'rgba(242,180,90,0.18)'; g.fill();
+  if (!amber) { g.lineWidth = muted ? 3 : 5; g.strokeStyle = muted ? 'rgba(255,255,255,0.12)' : '#f2b45a'; g.stroke(); }
+  const ink = muted ? '#a39e95' : amber ? '#1a1408' : '#ffd391', sub = muted ? '#8f8a81' : amber ? 'rgba(26,20,8,0.72)' : '#d8c7a6';
+  const ix = x + 82, iy = y + h / 2;
+  const L = {
+    idle: ['Listen', wide ? `${LISTEN_MIN} min · captions on this sign` : `${LISTEN_MIN} min, a voice`],
+    loading: ['Loading…', 'one moment'],
+    slow: ['Still loading', wide ? 'slow connection · you can read meanwhile' : 'read meanwhile'],
+    playing: ['Playing', wide ? `tap to pause · ${fmt(DUR - V.pos)} left` : 'tap to pause'],
+    paused: ['Go on', `paused at ${fmt(V.pos)}`],
+    ready: ['Listen', 'the voice is ready'],
+    call: ['Resume', 'paused for your call'],
+    failed: ['No voice', 'read the text instead'],
+    ended: ['Again', 'you heard it all']
+  }[ls];
+  if (ls === 'loading' || ls === 'slow') icSpin(g, ix, iy, 34, ink, now);
+  else if (ls === 'playing') icBars(g, ix, iy, 90, ink, now);
+  else if (ls === 'paused' || ls === 'call' || ls === 'ready') icPlay(g, ix + 4, iy, 84, ink);
+  else if (ls === 'ended') icReplay(g, ix, iy, 96, ink);
+  else icSpeaker(g, ix - 4, iy, 96, ink, muted);
+  let fs = 60; g.font = `700 ${fs}px ${SANS}`; while (g.measureText(L[0]).width > w - 175 && fs > 36) { fs -= 2; g.font = `700 ${fs}px ${SANS}`; }
+  g.fillStyle = ink; g.fillText(L[0], x + 150, y + 98);
+  g.fillStyle = sub; g.font = `600 29px ${SANS}`;
+  let s = L[1]; while (g.measureText(s).width > w - 170 && s.length > 4) s = s.slice(0, -2).trimEnd() + '…';
+  g.fillText(s, x + 152, y + 146);
+}
+
+/* the caption plate: the moving sentence, or what the voice is doing */
+let capHits = [], capAnim = null, capLast = null;
+const layoutCache = new Map();
+function layoutChunk(g, ch, font, maxW) {
+  const key = ch.from + ':' + ch.to + ':' + font; if (layoutCache.has(key)) return layoutCache.get(key);
+  g.font = font; const ws = []; for (let i = ch.w0; i < ch.w1; i++) ws.push(i);
+  // a token runs from its word to the next word; with no space before it (north-west), it is glued to the previous one
+  const toks = ws.map((i, k) => { const a = k === 0 ? ch.from : A.words[i].from, b = k + 1 < ws.length ? A.words[ws[k + 1]].from : ch.to; const raw = A.body.slice(a, b), t = raw.trim(); return { i, t, w: g.measureText(t).width, spaceAfter: /\s$/.test(raw) }; });
+  const space = g.measureText(' ').width, lines = []; let cur = [], x = 0;
+  for (const tk of toks) { const prev = cur[cur.length - 1], gap = prev && !prev.spaceAfter ? 0 : space; if (cur.length && x + gap + tk.w > maxW) { lines.push(cur); cur = []; x = 0; } tk.x = cur.length ? x + gap : 0; x = tk.x + tk.w; cur.push(tk); }
+  if (cur.length) lines.push(cur);
+  const r = { lines, font }; layoutCache.set(key, r); if (layoutCache.size > 300) layoutCache.delete(layoutCache.keys().next().value);
+  return r;
+}
+function capPill(g, x, y, w, h, text, primary, act) {
+  rr(g, x, y, w, h, h / 2); g.fillStyle = primary ? '#f2b45a' : 'rgba(255,255,255,0.06)'; g.fill();
+  if (!primary) { g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.22)'; g.stroke(); }
+  g.fillStyle = primary ? '#1a1408' : '#ece7dd'; g.font = `700 32px ${SANS}`; g.textAlign = 'center'; g.fillText(text, x + w / 2, y + h / 2 + 11); g.textAlign = 'left';
+  capHits.push({ x, y, w, h, act });
+}
+function drawCaption(m, now) {
+  const g = capCv.getContext('2d'), W = 1024, H = 448, P = 50; g.clearRect(0, 0, W, H); capHits = [];
+  rr(g, 6, 6, W - 12, H - 12, 40); g.fillStyle = '#0e0f12'; g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.10)'; g.stroke();
+  if (!m) { capTex.needsUpdate = true; return; }
+  if (m.prog != null) { g.fillStyle = 'rgba(255,255,255,0.13)'; rr(g, P, 30, W - 2 * P, 7, 3.5); g.fill(); g.fillStyle = '#f2b45a'; rr(g, P, 30, Math.max(7, (W - 2 * P) * m.prog), 7, 3.5); g.fill(); }
+  const label = { preview: 'CAPTIONS ON THIS SIGN', loading: 'GETTING THE VOICE READY', slow: 'SLOW CONNECTION', failed: 'NO VOICE RIGHT NOW', ended: 'THE END', call: 'PAUSED FOR YOUR CALL', paused: V.reason === 'ready' ? 'THE VOICE IS READY' : 'PAUSED', playing: 'NOW SPEAKING' }[m.kind];
+  g.font = `700 25px ${SANS}`; g.letterSpacing = '3px'; g.fillStyle = m.kind === 'slow' || m.kind === 'failed' ? '#96c4dc' : '#f2b45a'; g.fillText(label, P, 86); g.letterSpacing = '0px';
+  if (m.kind === 'playing' || m.kind === 'paused') { g.textAlign = 'right'; g.fillStyle = '#a49e92'; g.font = `500 26px ${SANS}`; g.fillText(`${fmt(m.left / V.rate)} left${V.rate !== 1 ? ' · ' + V.rate + 'x' : ''}`, W - P, 86); g.textAlign = 'left'; }
+  if (m.kind === 'playing' || m.kind === 'paused' || m.kind === 'preview') {
+    const font = `600 ${CAP_FONT}px ${SANS}`; let L = layoutChunk(g, m.ch, font, W - 2 * P);
+    let lh = 72, base = 172;
+    if (L.lines.length > 3) { L = layoutChunk(g, m.ch, `600 50px ${SANS}`, W - 2 * P); lh = 62; base = 160; }
+    // the moving caption: the old chunk slides up and away, the new one rises in
+    if (capLast && capLast.key !== m.chKey) capAnim = { prev: capLast, t0: now };
+    const k = capAnim ? clamp((now - capAnim.t0) / 380, 0, 1) : 1; const e = 1 - Math.pow(1 - k, 3);
+    g.save(); g.beginPath(); g.rect(P - 10, 104, W - 2 * P + 20, 264); g.clip();
+    if (capAnim && k < 1) drawLines(g, capAnim.prev.L, capAnim.prev.lh, capAnim.prev.base - 70 * e, 1 - e, capAnim.prev.w, 'playing');
+    drawLines(g, L, lh, base + 44 * (1 - e), e, m.w, m.kind);
+    g.restore();
+    if (k >= 1) capAnim = null;
+    capLast = { key: m.chKey, L, lh, base, w: m.w };
+    g.fillStyle = '#8f897e'; g.font = `500 26px ${SANS}`;
+    if (m.kind === 'preview') capPill(g, P, 360, 330, 64, '▶  Tap to listen', true, 'listen');
+    else g.fillText(m.kind === 'paused' ? 'paused · tap the sign to go on' : 'tap the sign to pause', P, 404);
+  } else {
+    capLast = null; capAnim = null;
+    g.fillStyle = '#ece7dd'; g.font = `500 44px ${SERIF}`;
+    const msg = {
+      loading: 'One moment, the voice is on its way.',
+      slow: 'The voice is still on its way. You can start reading meanwhile.',
+      failed: 'The voice cannot be played here at the moment. The whole text is ready to read.',
+      ended: 'That was the whole story of the square. Next: Station 2, about 60 m east along the path.',
+      call: `Go on from: “${excerpt(V.callS >= 0 ? V.callS : 0)}”`
+    }[m.kind];
+    let x0 = P;
+    if (m.kind === 'loading') { icSpin(g, P + 26, 152, 24, '#f2b45a', now); x0 = P + 74; }
+    wrap(g, msg, W - P - x0).slice(0, 3).forEach((l, i) => g.fillText(l, x0, 166 + i * 56));
+    if (m.kind === 'slow') capPill(g, P, 334, 360, 74, 'Read meanwhile', true, 'read');
+    if (m.kind === 'failed') { capPill(g, P, 334, 340, 74, 'Read the text', true, 'read'); capPill(g, P + 360, 334, 380, 74, 'Try the voice again', false, 'retry'); }
+    if (m.kind === 'ended') { capPill(g, P, 334, 290, 74, 'Play again', false, 'again'); capPill(g, P + 310, 334, 310, 74, 'Read the text', false, 'read'); }
+    if (m.kind === 'call') capPill(g, P, 334, 260, 74, 'Resume', true, 'resume');
+  }
+  capTex.needsUpdate = true;
+}
+function drawLines(g, L, lh, base, alpha, w, kind) {
+  g.globalAlpha = alpha * (kind === 'paused' ? 0.78 : 1); g.font = L.font;
+  L.lines.forEach((line, r) => {
+    const y = base + r * lh;
+    for (const tk of line) {
+      const on = tk.i === w, done = w >= 0 && tk.i < w;
+      g.fillStyle = kind === 'preview' ? '#a59f93' : on ? '#ffd391' : done ? '#f6f2ea' : '#a59f93';
+      g.fillText(tk.t, 50 + tk.x, y);
+      if (on && kind !== 'preview') { g.fillStyle = '#f2b45a'; g.fillRect(50 + tk.x, y + 10, tk.w, 5); }
+    }
+  });
+  g.globalAlpha = 1;
+}
+
+/* =====================================================================
+   4. DOM: sheet, floating control, bubble, overlays
+   ===================================================================== */
+const ICON = {
+  play: '<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/>',
+  pause: '<rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/>',
+  replay: '<path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/>',
+  spin: '<path d="M12 3a9 9 0 1 0 9 9h-2.4A6.6 6.6 0 1 1 12 5.4z"/>',
+  back10: '<path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text>',
+  fwd10: '<path d="M12 5V2l4.5 3.8L12 9.6V6.8a6.2 6.2 0 1 0 6.2 6.2H20a8 8 0 1 1-8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text>',
+  prev: '<rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.7 13a1.2 1.2 0 0 1 0-2l7.9-5.55a.9.9 0 0 1 1.4.75z"/>'
+};
+const svg = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
+$('sh-back10').innerHTML = svg(ICON.back10); $('sh-prev').innerHTML = svg(ICON.prev);
+$('lk-back').innerHTML = svg(ICON.back10); $('lk-fwd').innerHTML = svg(ICON.fwd10);
+$('fc-rate').textContent = $('sh-rate').textContent = V.rate + 'x';
+$('sh-title').textContent = $('rs-title').textContent = $('ch-title').textContent = TITLE;
+$('ch-rmin').textContent = `about ${READ_MIN} min`; $('ch-lmin').textContent = `${LISTEN_MIN} min`;
+const ui = { built: false, sentEls: [], wordEls: [], curS: null, curW: null, forceScroll: false, instant: false, sheetKey: '', bubbleKey: '', bubbleW: -2, fcKey: '', rsKey: '', rsW: -2 };
+
+function buildSheetText() {
+  if (ui.built) return; ui.built = true;
+  const b = A.body; let html = '';
+  for (const p of A.paragraphs) {
+    html += '<p>';
+    for (let si = p.s0; si < p.s1; si++) {
+      const s = A.sentences[si]; let pos = s.from; html += `<span class="s" data-s="${si}">`;
+      for (let wi = s.w0; wi < s.w1; wi++) { const w = A.words[wi]; html += esc(b.slice(pos, w.from)) + `<span class="w" data-w="${wi}">` + esc(b.slice(w.from, w.to)) + '</span>'; pos = w.to; }
+      html += esc(b.slice(pos, s.to)) + '</span>' + (si < p.s1 - 1 ? ' ' : '');
+    }
+    html += '</p>';
+  }
+  $('sh-text').innerHTML = html;
+  ui.sentEls = [...$('sh-text').querySelectorAll('.s')]; ui.wordEls = [...$('sh-text').querySelectorAll('.w')];
+}
+function openSheet(open) {
+  S.sheetOpen = open; $('sheet').classList.toggle('open', open); $('sheet').setAttribute('aria-hidden', String(!open));
+  if (open && V.st === 'loading') V.readWhileLoading = true;
+  if (open) { buildSheetText(); S.follow = true; ui.forceScroll = true; ui.instant = true; ui.sheetKey = ''; S.chooser = false; }
+}
+function sheetCursor(s, w) {
+  const key = s + ':' + w; if (key === ui.sheetKey && !ui.forceScroll) return;
+  const sentenceChanged = !ui.sheetKey || ui.sheetKey.split(':')[0] !== String(s); ui.sheetKey = key;
+  if (ui.curS) ui.curS.classList.remove('cur'); ui.curS = s >= 0 ? ui.sentEls[s] : null; if (ui.curS) ui.curS.classList.add('cur');
+  if (ui.curW) ui.curW.classList.remove('on'); ui.curW = w >= 0 ? ui.wordEls[w] : null; if (ui.curW) ui.curW.classList.add('on');
+  if (ui.curS && ((sentenceChanged && S.follow) || ui.forceScroll)) { const wr = $('sh-wrap'); wr.scrollTo({ top: Math.max(0, ui.curS.offsetTop - wr.clientHeight * 0.28), behavior: ui.instant ? 'instant' : 'smooth' }); }
+  ui.forceScroll = false; ui.instant = false;
+}
+function renderSheet(now) {
+  if (!S.sheetOpen) return;
+  const bad = V.st === 'failed';
+  $('sh-live').hidden = bad; $('sh-novoice').hidden = !bad;
+  $('sh-meta').textContent = bad ? `${A.words.length.toLocaleString('en')} words · about ${READ_MIN} min to read` : `${A.words.length.toLocaleString('en')} words · ${LISTEN_MIN} min with the voice · about ${READ_MIN} min to read`;
+  const showMark = V.st === 'playing' || V.st === 'paused' || (V.st === 'loading' && V.pos > 0);
+  const w = showMark ? wordAtMs(V.pos) : -1; sheetCursor(showMark ? (w >= 0 ? A.words[w].s : 0) : -1, V.st === 'playing' ? w : -1);
+  const f = V.pos / DUR; $('sh-bar').querySelector('.fill').style.width = (f * 100) + '%'; $('sh-bar').querySelector('.knob').style.left = (f * 100) + '%';
+  $('sh-t0').textContent = fmt(V.pos); $('sh-t1').textContent = '-' + fmt((DUR - V.pos) / V.rate);
+  const pk = V.st; if ($('sh-play').dataset.k !== pk) { $('sh-play').dataset.k = pk; $('sh-play').innerHTML = svg(V.st === 'playing' ? ICON.pause : V.st === 'loading' ? ICON.spin : V.st === 'ended' ? ICON.replay : ICON.play); $('sh-play').classList.toggle('loading', V.st === 'loading'); }
+}
+
+function renderFC(now, inside) {
+  const fc = $('fc');
+  const show = inside && !S.sheetOpen && !S.lock && !S.chooser;
+  const key = [show, V.st, V.reason, started()].join('|');
+  if (key !== ui.fcKey) {
+    ui.fcKey = key;
+    fc.classList.toggle('hide', !show);
+    fc.classList.toggle('loading', V.st === 'loading'); fc.classList.toggle('playing', V.st === 'playing');
+    $('fc-play').hidden = V.st === 'failed';
+    $('fc-ic').innerHTML = V.st === 'playing' || V.st === 'loading' ? ICON.pause : V.st === 'ended' ? ICON.replay : ICON.play;
+    $('fc-text').textContent = started() ? 'Full text' : 'Read';
+    $('fc-rate').hidden = !started();
+    $('fc-play').setAttribute('aria-label', V.st === 'playing' ? 'Pause the voice' : V.st === 'idle' ? 'Listen' : 'Play the voice');
+  }
+  $('fc-pg').setAttribute('stroke-dashoffset', String(169.65 * (1 - V.pos / DUR)));
+}
+
+/* bubble: the caption next to the sign when the sign cannot carry it legibly */
+function bubbleHtml(m, mode, dirText) {
+  const labels = { preview: 'Captions', loading: 'Getting the voice ready', slow: 'Slow connection', failed: 'No voice right now', ended: 'The end', call: 'Paused for your call', paused: 'Paused', playing: mode === 'edge' ? 'The sign is speaking' : 'From the sign' };
+  const calm = m.kind === 'slow' || m.kind === 'failed';
+  let h = `<div class="bl${calm ? ' calm' : ''}"><span>${labels[m.kind]}</span>${dirText ? `<span class="dir">${dirText}</span>` : ''}</div>`;
+  if (m.ch) {
+    h += '<div class="bt"><span class="chunk">'; let pos = m.ch.from;
+    for (let i = m.ch.w0; i < m.ch.w1; i++) { const ww = A.words[i]; h += esc(A.body.slice(pos, ww.from)) + `<span class="w" data-w="${i}">${esc(A.body.slice(ww.from, ww.to))}</span>`; pos = ww.to; }
+    h += esc(A.body.slice(pos, m.ch.to)) + '</span></div>';
+    if (m.kind === 'preview') h += '<div class="acts"><button class="act primary" data-act="listen">Listen</button><button class="act" data-act="read">Read</button></div>';
+  } else {
+    const msg = { loading: 'One moment.', slow: 'The voice is still on its way. You can read meanwhile.', failed: 'The voice cannot be played here at the moment. The whole text is ready to read.', ended: 'Next: Station 2, about 60 m east along the path.', call: `Go on from: “${esc(excerpt(V.callS >= 0 ? V.callS : 0))}”` }[m.kind];
+    h += `<div class="bt msg">${msg}</div><div class="acts">` + ({
+      slow: '<button class="act primary" data-act="read">Read meanwhile</button>',
+      failed: '<button class="act primary" data-act="read">Read the text</button><button class="act" data-act="retry">Try the voice again</button>',
+      ended: '<button class="act" data-act="again">Play again</button><button class="act" data-act="read">Read the text</button>',
+      call: '<button class="act primary" data-act="resume">Resume</button>'
+    }[m.kind] || '') + '</div>';
+  }
+  return h;
+}
+function markWords(root, w) { for (const sp of root.querySelectorAll('.w')) { const i = +sp.dataset.w; sp.classList.toggle('on', i === w); sp.classList.toggle('todo', w < 0 || i > w); } }
+const bubblePos = { x: 0, y: 0, init: false };
+function renderBubble(m, place, dt) {
+  const b = $('bubble'), inn = $('bubble-in');
+  const on = !!m && place.mode !== 'sign' && !S.sheetOpen && !S.lock && !S.resume && !S.chooser;
+  b.classList.toggle('on', on); if (!on) { bubblePos.init = false; return; }
+  const key = [m.kind, m.chKey || '', place.mode, place.dirText || '', m.kind === 'call' ? V.callS : ''].join('|');
+  if (key !== ui.bubbleKey) { ui.bubbleKey = key; ui.bubbleW = -2; inn.innerHTML = bubbleHtml(m, place.mode, place.dirText); }
+  if (m.ch && ui.bubbleW !== m.w) { ui.bubbleW = m.w; markWords(inn, m.kind === 'preview' ? -1 : m.w); }
+  const W = stage.clientWidth, H = stage.clientHeight, bw = b.offsetWidth, bh = b.offsetHeight, lay = stage.dataset.layout;
+  const fcH = $('fc').classList.contains('hide') ? 0 : 76;
+  const bottomLimit = H - 14 - (lay === 'portrait' ? fcH + (stage.classList.contains('walking') ? 90 : 0) : 0);
+  let x, y, tail = 'none', tailX = 30, width = '';
+  if (place.mode === 'beside') {
+    x = clamp(place.cx - bw / 2, 12, W - 12 - bw);
+    y = place.bottom + 16; tail = 'top';
+    if (y + bh > bottomLimit) { y = place.top - 16 - bh; tail = 'bottom'; }
+    if (y < 64) {
+      // no room above or below (a sideways phone): beside the sign, left or right, never over it
+      const spR = W - 12 - (place.maxX + 16), spL = place.minX - 16 - 12, sp = Math.max(spR, spL);
+      tail = 'none';
+      if (sp >= 230) { const bw2 = Math.min(380, sp); width = bw2 + 'px'; x = spR >= spL ? place.maxX + 16 : place.minX - 16 - bw2; y = clamp(place.cy - bh / 2, 64, bottomLimit - bh); }
+      else y = clamp(place.cy - bh / 2, 64, bottomLimit - bh);
+    }
+    tailX = clamp(place.cx - x - 7, 18, bw - 32);
+  } else {
+    x = lay === 'desktop' ? (W - bw) / 2 : 12; y = bottomLimit - bh - (lay === 'portrait' ? 4 : 0);
+    if (lay === 'landscape') y = H - bh - 12;
+  }
+  if (b.style.width !== width) b.style.width = width;
+  const k = bubblePos.init ? 1 - Math.exp(-dt * 14) : 1; bubblePos.x += (x - bubblePos.x) * k; bubblePos.y += (y - bubblePos.y) * k; bubblePos.init = true;
+  b.style.transform = `translate(${bubblePos.x.toFixed(1)}px,${bubblePos.y.toFixed(1)}px)`;
+  const t = b.querySelector('.tail'); t.className = 'tail ' + tail; t.style.left = tailX + 'px';
+}
+
+function renderResume(m) {
+  if (!S.resume) return;
+  $('rs-msg').textContent = V.st === 'playing' ? 'The voice kept playing while your phone was locked. Here is where it is now.' : V.st === 'ended' ? 'The voice reached the end while your phone was locked.' : 'The voice is paused where you left it.';
+  const cap = $('rs-cap');
+  const key = m && m.ch ? m.chKey : 'none:' + (m ? m.kind : '');
+  if (key !== ui.rsKey) {
+    ui.rsKey = key; ui.rsW = -2;
+    if (m && m.ch) { let h = '<span class="chunk">', pos = m.ch.from; for (let i = m.ch.w0; i < m.ch.w1; i++) { const ww = A.words[i]; h += esc(A.body.slice(pos, ww.from)) + `<span class="w" data-w="${i}">${esc(A.body.slice(ww.from, ww.to))}</span>`; pos = ww.to; } cap.innerHTML = h + esc(A.body.slice(pos, m.ch.to)) + '</span>'; }
+    else cap.textContent = m && m.kind === 'ended' ? 'That was the whole story of the square.' : '';
+  }
+  if (m && m.ch && ui.rsW !== m.w) { ui.rsW = m.w; markWords(cap, m.w); }
+}
+function renderLock() {
+  if (!S.lock) return;
+  const d = new Date(); $('lk-clock').textContent = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  $('lk-fill').style.width = (V.pos / DUR * 100) + '%'; $('lk-t0').textContent = fmt(V.pos); $('lk-t1').textContent = '-' + fmt((DUR - V.pos) / V.rate);
+  const k = V.st === 'playing' ? 'pause' : 'play'; if ($('lk-play').dataset.k !== k) { $('lk-play').dataset.k = k; $('lk-play').innerHTML = svg(ICON[k]); }
+}
+
+let toastTimer = 0;
+function toast(text, ms = 3200) { const t = $('toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms); }
+
+/* =====================================================================
+   5. Where the caption can live: on the sign, beside it, or at the edge
+   ===================================================================== */
+let lastPlace = 'sign', lodFar = false;
+const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), nrm = new THREE.Vector3();
+function focalPx() { return (canvas.clientHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)); }
+function measure() {
+  const f = focalPx(), sc = signG.scale.x;
+  capMesh.getWorldPosition(tmpV); const dCap = camera.position.distanceTo(tmpV);
+  capMesh.getWorldQuaternion(tmpQ); nrm.set(0, 0, 1).applyQuaternion(tmpQ);
+  const toCam = camera.position.clone().sub(tmpV).normalize(); const cos = nrm.dot(toCam);
+  const em = EM_CAP * sc * f / dCap;
+  signMesh.getWorldPosition(tmpV); const dSign = camera.position.distanceTo(tmpV); const emTitle = EM_TITLE * sc * f / dSign;
+  // the caption plate's rectangle on screen (four corners), and whether it is in view
+  const W = stage.clientWidth, H = stage.clientHeight; let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, behind = false;
+  for (const [cx, cy] of [[-PW / 2, -CAP_H / 2], [PW / 2, -CAP_H / 2], [-PW / 2, SIGN_Y - CAP_Y + SIGN_H / 2], [PW / 2, SIGN_Y - CAP_Y + SIGN_H / 2]]) {
+    const p = capMesh.localToWorld(new THREE.Vector3(cx, cy, 0)); const cs = p.clone().applyMatrix4(camera.matrixWorldInverse); if (cs.z > -0.05) behind = true;
+    p.project(camera); const x = (p.x + 1) / 2 * W, y = (1 - p.y) / 2 * H; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  const capBottom = (() => { const p = capMesh.localToWorld(new THREE.Vector3(0, -CAP_H / 2, 0)).project(camera); return (1 - p.y) / 2 * H; })();
+  const onScreen = !behind && maxX > 20 && minX < W - 20 && maxY > 60 && minY < H - 40;
+  const signCam = signG.position.clone().setY(1.6).applyMatrix4(camera.matrixWorldInverse);
+  return { em, emTitle, cos, angleDeg: Math.round(THREE.MathUtils.radToDeg(Math.acos(clamp(cos, -1, 1)))), dCap, onScreen, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, top: minY, bottom: capBottom, minX, maxX, left: signCam.x < 0, behindYou: signCam.z > 0 };
+}
+function decidePlace(ms, worldHidden) {
+  if (worldHidden) return { mode: 'edge', why: 'the sign is not in view yet', dirText: 'back in a moment' };
+  if (!ms.onScreen) return { mode: 'edge', why: 'the sign is off screen', dirText: ms.behindYou ? 'the sign is behind you' : ms.left ? '‹ the sign is to your left' : 'the sign is to your right ›' };
+  const hy = lastPlace === 'sign' ? 0.95 : 1.05;       // hysteresis, so the caption does not flicker at the threshold
+  if (ms.cos < 0.5 * hy) return { mode: 'beside', why: ms.cos < 0 ? 'seen from behind' : `seen at ${ms.angleDeg}°, too steep`, cx: ms.cx, cy: ms.cy, top: ms.top, bottom: ms.bottom, minX: ms.minX, maxX: ms.maxX };
+  if (ms.em < S.T * hy) return { mode: 'beside', why: `letters ${ms.em.toFixed(1)} px, under ${S.T}`, cx: ms.cx, cy: ms.cy, top: ms.top, bottom: ms.bottom, minX: ms.minX, maxX: ms.maxX };
+  return { mode: 'sign', why: `letters ${ms.em.toFixed(1)} px` };
+}
+
+/* =====================================================================
+   6. Input: looking around, tapping the sign
+   ===================================================================== */
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, moved: 0 }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return; const r = canvas.getBoundingClientRect(), k = canvas.clientWidth / r.width;
+  const dx = (e.clientX - drag.x) * k, dy = (e.clientY - drag.y) * k; drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
+  S.vis.yaw += dx * 0.0042; S.vis.pitch = clamp(S.vis.pitch + dy * 0.0042, -1.2, 1.2);
+});
+canvas.addEventListener('pointerup', e => { const d = drag; drag = null; if (d && d.moved < 6) onTap(e); });
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function onTap(e) {
+  if (!signG.visible) return;
+  const r = canvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(capMesh.visible ? [signMesh, capMesh] : [signMesh], false); const hit = hits[0]; if (!hit) return;
+  if (!insideNow()) { toast('Walk to the station first: the sign opens when you are there.'); return; }
+  if (hit.object === signMesh) {
+    if (lodFar) { S.chooser = true; $('chooser').hidden = false; return; }
+    const cx = hit.uv.x * 1024, cy = (1 - hit.uv.y) * 512;
+    if (S.view === 'reading') { if (cx < 512) openSheet(true); else listenHalf(); }
+    else { if (cy < 110 && cx > 600) openSheet(true); else listenHalf(); }
+    return;
+  }
+  // the caption plate
+  const cx = hit.uv.x * 1024, cy = (1 - hit.uv.y) * 448;
+  const p = capHits.find(h => cx >= h.x && cx <= h.x + h.w && cy >= h.y && cy <= h.y + h.h);
+  if (p) { doAct(p.act); return; }
+  if (V.st === 'playing') pauseVoice('user'); else if (V.st === 'paused' || (V.st === 'idle' && S.view === 'caption')) listen(false);
+}
+function listenHalf() {
+  const ls = listenState(performance.now());
+  if (ls === 'playing') pauseVoice('user');
+  else if (ls === 'loading' || ls === 'slow') toast('The voice is on its way.');
+  else if (ls === 'ended') listen(true);
+  else listen(false);   // idle, paused, call, failed (a retry)
+}
+function doAct(a) {
+  if (a === 'read') openSheet(true);
+  else if (a === 'retry' || a === 'listen' || a === 'resume') listen(false);
+  else if (a === 'again') listen(true);
+}
+
+/* =====================================================================
+   7. Wiring
+   ===================================================================== */
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act) { doAct(b.dataset.act); return; }
+  if (b.closest('#vmenu') && b.dataset.view) { setView(b.dataset.view); $('vmenu').hidden = true; $('vpill').setAttribute('aria-expanded', 'false'); return; }
+  if (b.closest('#dbg')) { debug(b); return; }
+  switch (b.id) {
+    case 'exit': pauseVoice('exit'); toast('Exit: the voice stops and the tour remembers where you stopped. (Nothing else happens in this prototype.)', 4200); break;
+    case 'vpill': { const m = $('vmenu'), open = m.hidden; m.hidden = !open; b.setAttribute('aria-expanded', String(open)); break; }
+    case 'fc-play': if (V.st === 'idle' || V.st === 'failed') listen(false); else toggleVoice(); break;
+    case 'fc-text': openSheet(true); break;
+    case 'fc-rate': case 'sh-rate': cycleRate(); break;
+    case 'sh-close': openSheet(false); break;
+    case 'sh-play': toggleVoice(); S.follow = true; ui.forceScroll = true; break;
+    case 'sh-back10': seek(V.pos - 10000); break;
+    case 'sh-prev': { const s = sentenceAtMs(V.pos), into = V.pos - sentenceStartMs(s); seek(sentenceStartMs(into > 1600 ? s : Math.max(0, s - 1)) - 30); break; }
+    case 'sh-follow': S.follow = true; ui.forceScroll = true; $('sh-follow').hidden = true; break;
+    case 'sh-retry': listen(false); break;
+    case 'ch-read': S.chooser = false; $('chooser').hidden = true; openSheet(true); break;
+    case 'ch-listen': S.chooser = false; $('chooser').hidden = true; listen(false); break;
+    case 'ch-x': S.chooser = false; $('chooser').hidden = true; break;
+    case 'lk-play': toggleVoice(); break;
+    case 'lk-back': seek(V.pos - 10000); break;
+    case 'lk-fwd': seek(V.pos + 10000); break;
+    case 'lk-unlock': S.lock = false; $('lock').hidden = true; S.resume = true; $('resume').hidden = false; ui.rsKey = ''; break;
+    case 'rs-go': S.resume = false; $('resume').hidden = true; S.relocUntil = performance.now() + 2400; break;
+    case 'cl-acc': S.call = { t0: performance.now() }; $('cl-acc').hidden = $('cl-dec').hidden = true; $('cl-end').hidden = false; break;
+    case 'cl-dec': case 'cl-end': S.call = null; $('call').hidden = true; break;
+  }
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#vmenu,#vpill')) { $('vmenu').hidden = true; $('vpill').setAttribute('aria-expanded', 'false'); } });
+$('sh-text').addEventListener('click', e => {
+  const s = e.target.closest('.s'); if (!s || V.st === 'failed') return;
+  seek(sentenceStartMs(+s.dataset.s) - 30); listen(false);
+});
+for (const ev of ['wheel', 'touchmove']) $('sh-wrap').addEventListener(ev, () => { if (S.follow && (V.st === 'playing' || V.st === 'paused')) { S.follow = false; $('sh-follow').hidden = V.st !== 'playing'; } }, { passive: true });
+$('sh-bar').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width, 0, 1) * DUR); });
+
+function setView(v) {
+  if (!['reading', 'caption'].includes(v)) return;
+  S.view = v; try { localStorage.setItem('proto.narration3.view', v); } catch (e) { /* this visit only */ }
+  $('vp-cur').textContent = v === 'caption' ? 'Captions on the sign' : 'Read or listen';
+  document.querySelectorAll('#vmenu .vo').forEach(o => { o.classList.toggle('on', o.dataset.view === v); o.setAttribute('aria-checked', String(o.dataset.view === v)); });
+  syncDbg();
+}
+function applyStand(k) {
+  const st = STANDS[k]; if (!st) return; S.stand = k;
+  const a = THREE.MathUtils.degToRad(st.ang); S.vis.x = st.d * Math.sin(a); S.vis.z = st.d * Math.cos(a);
+  S.vis.yaw = Math.atan2(S.vis.x, S.vis.z) + THREE.MathUtils.degToRad(st.look);
+  S.vis.pitch = Math.atan2(1.72 - 1.6, st.d);
+  S.chooser = false; $('chooser').hidden = true; syncDbg();
+}
+function ensurePlaying(atLeastMs) {
+  if (!insideNow()) applyStand('usual');
+  V.mode = 'normal'; V.loaded = true;
+  if (V.st !== 'playing') { V.pos = Math.max(V.pos, atLeastMs); V.st = 'playing'; V.reason = null; V.callS = -1; }
+}
+function debug(b) {
+  if (b.id === 'dbg-min') { $('dbg').classList.toggle('min'); b.textContent = $('dbg').classList.contains('min') ? 'prototype ▴' : 'prototype ▾'; setTimeout(layoutFrame, 30); return; }
+  const k = b.closest('.grp')?.dataset.k, v = b.dataset.v; if (!k) return;
+  if (k === 'view') setView(v);
+  else if (k === 'mode') {
+    V.mode = v; V.loaded = false; if (V.st !== 'idle') { V.st = 'idle'; V.pos = 0; V.reason = null; }
+    toast(v === 'normal' ? 'Voice file: normal. Tap Listen on the sign.' : v === 'slow' ? 'Voice file: slow. Tap Listen on the sign; the voice takes 7 s to arrive.' : 'Voice file: missing. Tap Listen on the sign; the voice will fail.', 4200);
+  }
+  else if (k === 'event') {
+    if (v === 'ends') { ensurePlaying(0); V.pos = DUR - 12000; }
+    else if (v === 'lock') { ensurePlaying(52000); openSheet(false); S.lock = true; $('lock').hidden = false; }
+    else if (v === 'call') { ensurePlaying(52000); pauseVoice('call'); S.call = null; $('call').hidden = false; $('cl-acc').hidden = $('cl-dec').hidden = false; $('cl-end').hidden = true; $('cl-sub').textContent = 'Incoming call'; }
+  }
+  else if (k === 'stand') applyStand(v);
+  else if (k === 'fixed') S.fixed = v === 'fixed';
+  else if (k === 'grow') S.grow = v === 'on';
+  else if (k === 'T') S.T = +v;
+  else if (k === 'frame') { S.frame = v; layoutFrame(); }
+  else if (k === 'reset') { Object.assign(V, { st: 'idle', pos: 0, mode: 'normal', loaded: false, reason: null, callS: -1 }); openSheet(false); S.lock = S.resume = false; S.call = null; S.relocUntil = 0; $('lock').hidden = $('resume').hidden = $('call').hidden = true; S.fixed = false; S.grow = true; S.T = 12; setView('reading'); applyStand('usual'); }
+  syncDbg();
+}
+function syncDbg() {
+  const cur = { view: S.view, mode: V.mode, stand: S.stand, fixed: S.fixed ? 'fixed' : 'turns', grow: S.grow ? 'on' : 'off', T: String(S.T), frame: S.frame };
+  document.querySelectorAll('#dbg .grp').forEach(g => { const k = g.dataset.k; g.querySelectorAll('button').forEach(b => b.classList.toggle('on', cur[k] === b.dataset.v)); });
+}
+
+/* orientation frames: the stage at exactly 390 x 844 or 844 x 390 CSS px, scaled down to fit when needed */
+function layoutFrame() {
+  const wr = $('wrap');
+  if (S.frame === 'window') { document.body.classList.remove('framed'); stage.style.width = stage.style.height = stage.style.transform = ''; }
+  else {
+    const [w, h] = S.frame === 'upright' ? [390, 844] : [844, 390]; document.body.classList.add('framed');
+    const k = Math.min(1, (wr.clientWidth - 28) / w, (wr.clientHeight - 28) / h);
+    stage.style.width = w + 'px'; stage.style.height = h + 'px'; stage.style.transform = `translate(-50%,-50%) scale(${k.toFixed(4)})`;
+  }
+  resize();
+}
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+  stage.dataset.layout = w / h < 0.85 ? 'portrait' : h < 520 ? 'landscape' : 'desktop';
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  camera.fov = camera.aspect < 1 ? 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(21)) / camera.aspect) * 180 / Math.PI : 50;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', layoutFrame);
+new ResizeObserver(() => resize()).observe(stage);
+
+/* =====================================================================
+   8. Frame loop
+   ===================================================================== */
+let lastT = performance.now(), wasInside = true, capAppear = 0, sc = 1, signKey = '', capKey = '', readT = 0, wasPlayingLock = false;
+function frame() {
+  const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  // the simulated voice
+  if (V.st === 'loading' && now - V.loadT0 >= LOAD_MS[V.mode]) {
+    if (V.mode === 'missing') { V.st = 'failed'; V.failT = now; if (S.sheetOpen) ui.sheetKey = ''; }
+    // the visitor tapped Listen, so starting is not autoplay; but if they went to read meanwhile, the voice waits for them
+    else if (V.readWhileLoading) { V.loaded = true; V.st = 'paused'; V.reason = 'ready'; toast('The voice is ready. Tap play when you want it.'); }
+    else { V.loaded = true; V.st = 'playing'; }
+    V.readWhileLoading = false;
+  }
+  if (V.st === 'playing') { V.pos += dt * 1000 * V.rate; if (V.pos >= DUR) { V.pos = DUR; V.st = 'ended'; V.endT = now; } }
+  // leaving the station pauses the voice (unless the phone is locked: a locked web page cannot follow you)
+  const inside = insideNow();
+  if (wasInside && !inside && !S.lock) { if (V.st === 'playing' || V.st === 'loading') { pauseVoice('left'); toast('Paused: you left the station. Come back to go on.'); } openSheet(false); }
+  wasInside = inside;
+  stage.classList.toggle('walking', !inside);
+  // camera
+  camera.position.set(S.vis.x, 1.6, S.vis.z); camera.rotation.set(S.vis.pitch, S.vis.yaw, 0); camera.updateMatrixWorld();
+  // the sign: turns to the visitor (or stays as placed), and grows a little with distance when allowed
+  const dh = Math.hypot(S.vis.x, S.vis.z);
+  const target = S.grow ? clamp(dh / 4.5, 1, 1.6) : 1; sc += (target - sc) * Math.min(1, dt * 5); if (Math.abs(target - sc) < 0.002) sc = target;
+  signG.scale.setScalar(sc);
+  signG.rotation.y = S.fixed ? 0 : Math.atan2(S.vis.x, S.vis.z);
+  const relocating = now < S.relocUntil, worldHidden = relocating || S.resume || S.lock;
+  signG.visible = !worldHidden;
+  $('status').hidden = !relocating; if (relocating) $('status-t').textContent = 'Finding the sign again… hold the phone up';
+  signG.updateMatrixWorld(true);
+  // measure, choose the level of detail and where the caption lives
+  const ms = measure();
+  lodFar = lodFar ? ms.emTitle < 9 : ms.emTitle < 8;
+  const m = capModel(now);
+  const place = m ? decidePlace(ms, worldHidden) : { mode: 'sign', why: '-' };
+  if (m) lastPlace = place.mode;
+  // draw the plates only when something visible changed
+  const ls = listenState(now);
+  const sk = [S.view, lodFar, ls, ls === 'playing' || ls === 'loading' || ls === 'slow' ? Math.floor(now / 90) : 0, ls === 'paused' ? fmt(V.pos) : '', ls === 'playing' ? fmt(DUR - V.pos) : ''].join('|');
+  if (sk !== signKey) { signKey = sk; drawSign(now, lodFar); }
+  if (m) {
+    const ck = [m.kind, m.chKey || '', m.w, capAnim ? Math.floor(now / 16) : 0, m.kind === 'loading' ? Math.floor(now / 50) : 0, Math.round((m.prog || 0) * 400), V.rate, m.kind === 'playing' || m.kind === 'paused' ? fmt(m.left / V.rate) : ''].join('|');
+    if (ck !== capKey) { capKey = ck; drawCaption(m, now); }
+  }
+  capAppear += ((m ? 1 : 0) - capAppear) * Math.min(1, dt * 6); if (Math.abs((m ? 1 : 0) - capAppear) < 0.003) capAppear = m ? 1 : 0;
+  capMesh.visible = capAppear > 0.01; capMesh.material.opacity = capAppear; capMesh.position.y = CAP_Y + (1 - capAppear) * 0.25;
+  // screen
+  renderFC(now, inside && !S.lock);
+  renderBubble(m, place, dt);
+  renderSheet(now);
+  renderResume(m);
+  renderLock();
+  $('walk').hidden = inside || S.lock || S.resume;
+  if (!inside) $('walk-t').textContent = `${Math.max(1, Math.round(dh - RADIUS))} m · the sign there speaks: listen or read, ${LISTEN_MIN} min`;
+  if (S.call && !$('cl-end').hidden) $('cl-sub').textContent = 'On a call · ' + fmt(now - S.call.t0);
+  if (now - readT > 200) { readT = now; renderReadout(ms, place, m); }
+  renderer.render(scene, camera);
+}
+function renderReadout(ms, place, m) {
+  const lay = { portrait: 'upright phone', landscape: 'sideways phone', desktop: 'desktop' }[stage.dataset.layout];
+  const snd = V.st === 'playing' ? `<span class="snd">♪ sound on (simulated), ${V.rate}x</span>` : `voice ${V.st}${V.reason ? ' (' + V.reason + ')' : ''}`;
+  const where = !m ? 'no caption' : place.mode === 'sign' ? '<b>on the sign</b>' : place.mode === 'beside' ? `<b>beside the sign</b> (${place.why})` : `<b>at the screen edge</b> (${place.why})`;
+  $('dbg-read').innerHTML = `${lay} · you stand ${STANDS[S.stand].label} · sign ${ms.dCap.toFixed(1)} m, ${S.fixed ? `seen at ${ms.angleDeg}°` : 'turned to you'}, grown ${signG.scale.x.toFixed(2)}x · letters on the sign <b>${ms.em.toFixed(1)} px</b> (legible from ${S.T}) · caption: ${where} · ${lodFar ? 'far sign: one mark' : 'sign: two halves'} · ${snd}`;
+}
+
+/* =====================================================================
+   9. Start
+   ===================================================================== */
+let startView = 'reading'; try { const v = localStorage.getItem('proto.narration3.view'); if (v === 'caption') startView = v; } catch (e) { /* no stored view */ }
+setView(startView); applyStand('usual'); layoutFrame(); syncDbg();
+renderer.setAnimationLoop(frame);
+// A hook for screenshot scripts; not part of the design.
+window.__narration3 = { S, V, setView, applyStand, debugClick: (k, v) => debug(document.querySelector(`#dbg .grp[data-k="${k}"] button[data-v="${v}"]`)), listen, openSheet, DUR };
+</script>
+</body>
+</html>

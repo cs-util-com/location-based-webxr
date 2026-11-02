@@ -728,7 +728,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("pin-label")).toBeHidden();
   await page.getByTestId("setup-pin").click();
   await page.getByTestId("pin-label").fill("The old gate");
-  // The pin's optional description (station blocks B2c): typed with the
+  // The pin's optional description: typed with the
   // text, it lands in tour.json with it.
   await expect(page.getByTestId("pin-description")).toBeVisible();
   await page.getByTestId("pin-description").fill("Built in 1540.");

@@ -107,8 +107,15 @@ imperative resources only - that handle and the pictures' side table
     `pinTextChange` (`edited`, `unchanged`, `refused` with the phone's
     sentence; `refused` with `NOT_IN_TOUR` for an id the tour no longer
     carries).
+  - `editBlockView(id, view)` - a free block's view, one undo step named
+    "the view of <name>" through the document's `edited`; `unchanged` for
+    its own view; refused in words (`NOT_ITS_VIEW`) for a view its kind does
+    not have (`TOUR_BLOCK_VIEWS`) or one that does not stand in the world
+    (`TOUR_WORLD_VIEWS`: no step shows a free block, so the format would
+    refuse a card at save), `MODEL_VIEW_ELSEWHERE` for a model (its view is
+    `editModel`'s), `NOT_IN_TOUR` for an id the tour no longer carries.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
-    (`block-fields.ts`, B2c: a short text's description, a picture's
+    (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the
     document's `edited` named "the <label> of <name>"; `refused` in
     words over the format's cap, `NOT_IN_TOUR` for an id the tour no
@@ -117,7 +124,9 @@ imperative resources only - that handle and the pictures' side table
     character's name) is checked by the same `blockFieldEdit` for its
     words, then written as that station's edit (`storyText`, one step
     through `stationEdited`); the document's own refusal (`storyText`)
-    has a sentence of its own.
+    has a sentence of its own. A free short text's `caption` is its pin
+    text: it goes `editText`'s way (`pinTextEdit`'s rule, "the text of
+    <name>"), so a pin's caption has one rule, never two.
   - `move(id, lat, lon)` - `moveObjectTo` (height and facing kept),
     through the document's `objectMoveChange`:
     `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
@@ -197,8 +206,8 @@ imperative resources only - that handle and the pictures' side table
     step of the edit stack: `{ kind: "undone" | "redone", what }` (`what`
     names the step: `the text of "<label>"`, `the move of …`, `the delete
 of …`, `the "needs no GPS" setting`, `the tour details`, `the restored
-changes`; a label is cut at 40 characters, a label-less note is "a
-    photo" / "a note"), `{ kind: "nothing" }` at either end, or `refused`
+changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-less object is named
+    by its kind, "a photo", "a 3D model"), `{ kind: "nothing" }` at either end, or `refused`
     in words: while a save runs (`SAVE_RUNNING`), and for a photo whose
     delete a save wrote and whose picture could not be read
     (`PICTURE_GONE`; the step stays). Every edit kind is one step - a
@@ -274,8 +283,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
     an id, is opened again), the title of the newest written file (an
     edit not yet saved is not the file's), the saved file name. A bundle
     this session saves names the tour id of the newest written file
-    (`debugData`, the move), the copy it was saved beside (r901 review
-    #2).
+    (`debugData`, the move), the copy it was saved beside.
   - `walkEntries()` - the walk recording's entries in the newest bytes
     (the last save's, else the opened file's; `scanEntryNames`): none once
     it was moved out, or when a save left it out.
@@ -337,7 +345,7 @@ changes`; a label is cut at 40 characters, a label-less note is "a
   session whose view the creator has not touched (`defaultViews`): every
   model read from the file, restored from a draft or copied counts as the
   creator's choice, so a reopen never hands a saved view back to the rule
-  (the r973 review: the old in-memory set of chosen views let a first note
+  (a review found that the old in-memory set of chosen views let a first note
   override a saved view after a reopen). A `view` edit - the chip already
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
@@ -446,3 +454,13 @@ leaves a name without the stamp as it is (`editor-session.test.ts` has its
 examples).
 
 `station-lock.property.test.ts` drives a real session with random command sequences (moves, radius, rename, delete, copy, reorder, item moves and poses, grounding, adds, and the lock itself; up to 30 at full length) and checks that no command changes a station's pose while it is locked, plus the refusal's words and the open edits.
+
+## Narration
+
+- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state), or a refusal.
+- `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason.
+  - `voice`: a sound file, stored under `content/`.
+  - `removeVoice`: takes the timing off too.
+  - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
+  - `removeTiming`: keeps the voice.
+- Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.

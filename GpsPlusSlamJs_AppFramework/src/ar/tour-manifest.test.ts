@@ -261,8 +261,8 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy', () => {
-  it('is version 4, minor 3', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([4, 3]);
+  it('is version 4, minor 5', () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([4, 5]);
   });
 
   it.each([1, 2, 3])(

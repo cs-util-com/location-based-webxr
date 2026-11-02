@@ -115,6 +115,30 @@ describe("visitorEntryNames", () => {
     );
   });
 
+  it("reads a narrated long text's read-along entry, and no other timing file", () => {
+    // Why: a narrated text's timing (`timing/<blockId>.json`) is content
+    // a visitor reads beside its voice; a set that leaves it out says the
+    // visitor never reads it, and a timing file no block names is not
+    // the tour's.
+    const narrated = {
+      id: "t1",
+      kind: "longText",
+      view: "reading",
+      body: "Hello.",
+      narration: { audio: "voice", timing: "timing/t1.json", synthetic: true },
+    };
+    const read = visitorEntryNames(
+      ["mytour/tour.json", "mytour/timing/t1.json", "mytour/timing/t9.json"],
+      manifest({
+        stations: [{ id: "s1", blocks: [narrated], steps: [] } as never],
+      }),
+      "mytour/",
+    );
+    expect(read).toEqual(
+      new Set(["mytour/tour.json", "mytour/timing/t1.json"]),
+    );
+  });
+
   it("names only entries the archive has", () => {
     // A manifest naming a file the zip lacks must not make the published
     // copy claim it: the set is a filter over the archive.

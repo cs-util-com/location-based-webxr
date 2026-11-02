@@ -40,6 +40,21 @@ import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { turnShownLecternUnderTap } from "./lectern-view.js";
+import { pictureAssetPath } from "./long-text-pictures.js";
+import { createLongTextSheet } from "./long-text-sheet.js";
+import { createCaptionsFollow } from "./captions-follow.js";
+import { createCaptionsStrip } from "./captions-strip.js";
+import { createNarrationVisitor } from "./narration-visitor.js";
+import { createViewSwitch, switchBlocks } from "./view-switch.js";
+import {
+  selectVisitorPrefs,
+  visitorPrefsLoaded,
+} from "./visitor-prefs-slice.js";
+import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
+import {
+  readingSheetContent,
+  shownReadingSignUnderTap,
+} from "./reading-sign.js";
 import "./model-visitor.css";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
@@ -93,6 +108,7 @@ import {
 import { editorPitch, wireHaveTour } from "./have-tour.js";
 import { readPrintedText } from "./level-printed.js";
 import {
+  selectPresentStationId,
   showAllContentSet,
   showAllStationsFromSearch,
 } from "./visitor-guide-slice.js";
@@ -879,6 +895,18 @@ function wireRecordingHousekeeping(): void {
 }
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");
+// The visitor's narrated texts (one voice per text, shared by its sheet
+// and its captions strip; each read-along read when its text opens).
+// Their voices are read through the stations' prefetch cache.
+const narration = createNarrationVisitor({
+  tour: () => ctx.session,
+  assets: () => ctx.tourDocument.manifest()?.assets,
+  loadAsset: (path) => stations.loadContent(path),
+  onError: (message) => {
+    walkToast.say([message]);
+    walkToast.announce(message);
+  },
+});
 const viewer = createViewerPlacement({
   ctx,
   mode,
@@ -892,6 +920,7 @@ const viewer = createViewerPlacement({
   // It holds story media only, so a return reads an
   // item photo from the archive again until item photos join it.
   loadContent: (path) => stations.loadContent(path),
+  narration,
   // The `tourViewing/*` log (M1b): only where a recording can run, and
   // silent until it does.
   ...(recordingPanel === null
@@ -1035,6 +1064,11 @@ hooks.tickStations = () => {
   viewer.syncContent();
   // A pin's sheet goes with its pin.
   pinSheet.sync();
+  // The view switch follows the present station.
+  viewSwitch?.sync();
+  // A narrated text's voice: the sheet's marks and the captions strip.
+  longTextSheet.tick();
+  captionsFollow?.sync();
   // A model's view, its notes and its card.
   modelVisitor.tick(performance.now());
 };
@@ -1063,6 +1097,117 @@ const modelVisitor = createModelVisitor({
   camera: () => seams.getViewerCamera(),
   pick: (targets, tap) => seams.pickObjectInView(targets, tap),
 });
+// A long text's whole text, opened by a tap on its reading sign. Its
+// pictures are read through the stations' prefetch cache, by the asset's
+// path in the open tour.
+const longTextSheet = createLongTextSheet({
+  host: element("ar-root"),
+  loadAsset: async (id) =>
+    stations.loadContent(
+      pictureAssetPath(ctx.tourDocument.manifest()?.assets, id),
+    ),
+  arActive: () => arSessionLive(arController.getState().status),
+  openLink: (href) => {
+    window.open(href, "_blank", "noopener,noreferrer");
+  },
+});
+/** Opens a long text's whole text in the sheet, with its voice. */
+function openLongText(block: {
+  id: string;
+  title: string;
+  body: string;
+}): void {
+  const found = tourBlocksById(ctx.tourDocument.manifest()).get(block.id);
+  const voice =
+    found?.kind === "longText" ? narration.sheetNarration(found) : undefined;
+  longTextSheet.show({
+    ...readingSheetContent(ctx.tourDocument.manifest()?.stations ?? [], block),
+    ...(voice === undefined ? {} : { narration: voice }),
+  });
+}
+/** The present station's free blocks, once its content is set. */
+function presentBlocks() {
+  return switchBlocks({
+    stations: ctx.tourDocument.manifest()?.stations,
+    presentId: selectPresentStationId(arStore.getState()),
+    contentPlaced: ctx.stationContent?.showsAny() === true,
+  });
+}
+// The captions strip (a visitor's view of a narrated text): "Full text"
+// opens the sheet of the text it shows.
+let captionsShown: string | null = null;
+const captionsFollow =
+  mode === "visitor"
+    ? createCaptionsFollow({
+        strip: (() => {
+          const strip = createCaptionsStrip({
+            host: element("ar-root"),
+            openFullText: () => {
+              const block = tourBlocksById(ctx.tourDocument.manifest()).get(
+                captionsShown ?? "",
+              );
+              if (block?.kind === "longText") openLongText(block);
+            },
+          });
+          return {
+            show: (content) => {
+              captionsShown = content.key;
+              strip.show(content);
+            },
+            hide: () => {
+              strip.hide();
+            },
+          };
+        })(),
+        narration,
+        read: () => {
+          const state = arStore.getState();
+          return {
+            blocks: presentBlocks(),
+            presentId: selectPresentStationId(state),
+            stored: selectVisitorPrefs(state),
+          };
+        },
+      })
+    : null;
+// The visitor's view preference (station blocks design §4): read from
+// this device at the start, kept in the page's store; a choice is merged
+// into a fresh read (another tab may have written since) and stored, and
+// the store takes the merged value. A store that throws keeps the choice
+// for the visit.
+const viewSwitch =
+  mode === "visitor"
+    ? (() => {
+        arStore.dispatch(visitorPrefsLoaded(loadVisitorPrefs(stepStore)));
+        return createViewSwitch({
+          host: element("ar-root"),
+          read: () => {
+            const state = arStore.getState();
+            return {
+              // Only once the station's content is set.
+              blocks: presentBlocks(),
+              stored: selectVisitorPrefs(state),
+              verdictOf: (block) => narration.verdictOf(block),
+            };
+          },
+          choose: (kind, placement, view) => {
+            const { value, kept } = storeVisitorChoice(
+              stepStore,
+              selectVisitorPrefs(arStore.getState()),
+              kind,
+              placement,
+              view,
+            );
+            arStore.dispatch(visitorPrefsLoaded(value));
+            return kept;
+          },
+          say: (text) => {
+            walkToast.say([text]);
+            walkToast.announce(text);
+          },
+        });
+      })()
+    : null;
 if (mode === "visitor") {
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
@@ -1083,13 +1228,33 @@ hooks.visitorTap = (tap) => {
         (targets, at) => seams.pickObjectInView(targets, at),
         t,
       ),
+    // A reading sign under the tap opens its text in the sheet.
+    reading: (t) => {
+      const sign = shownReadingSignUnderTap(
+        seams.getScene(),
+        (targets, at) => seams.pickObjectInView(targets, at),
+        t,
+      );
+      if (sign === null) return false;
+      openLongText(sign.block);
+      return true;
+    },
     pinSheet,
   });
 };
 hooks.stopStations = () => {
   stations.stop();
   pinSheet.close();
+  longTextSheet.close();
+  // No voice outlives the AR session.
+  captionsFollow?.stop();
+  narration.pauseAll();
+  // An open menu does not outlive the AR session.
+  viewSwitch?.close();
   modelVisitor.stop();
+};
+hooks.releaseTourMedia = () => {
+  narration.reset();
 };
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one

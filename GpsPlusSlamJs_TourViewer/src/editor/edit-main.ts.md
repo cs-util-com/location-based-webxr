@@ -101,8 +101,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   one by `loadContentEntry`, a recorded one by `loadEntry`. The card follows the marker on every map move and on resize;
   Esc, the card's close and a click on the map clear the selection.
   A `refresh()` keeps a selection that is still in the tour (`stillInTour`):
-  an item of the editor model, or a 3D model block, which the model never
-  lists, so an edit of a selected model keeps it selected.
+  an item of the editor model, or any block of the tour the model never
+  lists (a 3D model, a free long text), so an edit of a selected block
+  keeps it selected (only models were kept before, and the long text's
+  first saved pause deselected it, closing its writer).
 - **Editing (M6 E2a)** through `editor-session.ts`: a pin's text (committed
   on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
   Move (the marker made draggable, Done applies the drop, Cancel or Esc
@@ -231,7 +233,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   data…" on its button meanwhile, the result in a toast): the save reads
   the opened file, so the copy must not be put in its place first (r901
   review #1). Save is on whenever a tour is open
-  and commits the card's typing first ("Nothing to save" when there is
+  and commits the card's typing and the 3D inspector's (`shell.flush()`: a field or a long text typed in, not yet paused on) first ("Nothing to save" when there is
   none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
   the status line already read "No changes", so the swap alone looked like
   nothing happened); a save belongs to its tour and ends quietly if another was
@@ -367,7 +369,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     toast (one at a time: a new one replaces the last) and PAUSES autosave -
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).
-  - **Ctrl+S during an autosave** commits the card and runs right after
+  - **Ctrl+S during an autosave** commits the card and the 3D inspector's typing and runs right after
     it, and so does Ctrl+S during the write at a link's or the sample's
     open (the `"open"` claim), during a copy being saved (`"copy"`) and
     during a move of the debug data (`"walk"`): every claim but an
@@ -713,7 +715,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     station beside itself, selects the copy and says "Duplicated ...";
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
-  - `keysFree` is false in a field, in a menu, or for the pattern's keys on a menu's button
+  - `keysFree` is false in a field, in a menu, for the pattern's keys on a menu's button,
+    or for the arrows, Home and End inside a toolbar or a radio group
     (`key-target.ts`: the menu's arrows, Home and End must not nudge the
     selection behind it), while a dialog or the modal shows and while the
     page is busy, so the 3D view's keys leave those alone.
@@ -740,6 +743,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`writeInspectorEdit`):
   - `station`, `text` and `block` - `editor.editStation` (name, description,
     radius, card picture), `editor.editText` (a pin's text) and `editor.editBlockField` (a block's other text fields, B2c);
+  - `view` - `editor.editBlockView`, a free block's view (a long text's
+    sign, from its writer's view picker);
   - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
     a station put on the ground);
   - `groundItems` - `editor.groundItems`, items' heights in one step
@@ -849,3 +854,7 @@ leaving the tour in the browser (the status line says so) and the first
 Save asking again, under the dated name; a Ctrl+S pressed while a copy
 is being saved saving the tour once the copy is done; and on Android (its client hints) the same dialog as
 on a desktop.
+
+## Narration
+
+`writeNarrationEdit` runs a section's change through the session (`editNarration`), redraws, and says a refusal through the page's toast; the shell's `narration` command reads `EditorSession.narration`, and `voiceMaxBytes` hands the section the configured autosave cap (`autosaveMaxBytes`) as its voice file limit.

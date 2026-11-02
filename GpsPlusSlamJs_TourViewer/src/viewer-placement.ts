@@ -53,10 +53,18 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
-import { renderStationBlocks, renderTourStation } from "./content-placement.js";
+import {
+  drawnKindOf,
+  renderStationBlocks,
+  renderTourStation,
+} from "./content-placement.js";
 import { mountLectern } from "./lectern-view.js";
+import { mountReadingSign } from "./reading-sign.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
 import { selectShownBlocks } from "./visitor-walk-slice.js";
+import { selectVisitorPrefs } from "./visitor-prefs-slice.js";
+import type { NarrationVerdict } from "./narration-timing.js";
+import { shownView } from "./visitor-prefs.js";
 import type {
   TourBlock,
   TourStation,
@@ -189,6 +197,14 @@ export function createViewerPlacement(deps: {
    *  until item photos join the prefetch. Absent: the
    *  open tour's own read. */
   loadContent?: (path: string) => Promise<Blob>;
+  /** A text's read-along verdict, which a visitor's captions need
+   *  (`narration-visitor.ts`), and a count bumped whenever one settles:
+   *  a text whose captions turn out stale is drawn again in the view it
+   *  falls back to. Absent: no verdict is known. */
+  narration?: {
+    verdictOf(block: TourBlock): NarrationVerdict | undefined;
+    revision(): number;
+  };
 }): ViewerPlacement {
   const {
     ctx,
@@ -1003,8 +1019,75 @@ export function createViewerPlacement(deps: {
     ((station: TourStation, block: TourBlock) => ContentPart) | null = null;
   /** The reached story blocks the side table holds a part for, by part key,
    *  with their station; reset with the table. */
-  let storyParts = new Map<string, string>();
+  let storyParts = new Map<
+    string,
+    { readonly station: TourStation; readonly block: TourBlock }
+  >();
   let storyPartsTo: StationContent | null = null;
+  /** A station's free blocks' part, made by `tryPlaceContent`; null
+   *  before it ran. */
+  let itemsPartOf: ((station: TourStation) => ContentPart) | null = null;
+  /** The visitor's stored preference the parts were drawn with: a choice
+   *  draws them again (`redrawForPrefs`). */
+  let prefsDrawn: unknown = null;
+  /** The read-along count the parts were drawn at. */
+  let verdictsDrawn = 0;
+  /** The view each block was last drawn in, by block id. */
+  const viewsDrawn = new Map<string, string>();
+
+  /** The view a visitor sees `block` in, now. */
+  function visitorView(block: TourBlock, stored: unknown): string {
+    const verdict = deps.narration?.verdictOf(block);
+    return shownView({
+      audience: "visitor",
+      block,
+      stored,
+      ...(verdict === undefined ? {} : { verdict }),
+    });
+  }
+
+  /** A visitor's view choice (station blocks design §4): a part is made
+   *  again only where a block's shown view changed, and the side table
+   *  draws a shown station's replacement at once, in place. Every other
+   *  part stands as it is: a rebuild re-parses models, snaps a moved toy
+   *  back, closes a model's card and turns a lectern to its first page. A
+   *  creator's parts never change (rule 1). A settled read-along is
+   *  looked at the same way: captions found stale fall back to another
+   *  view. */
+  function redrawForPrefs(content: StationContent): void {
+    if (authorMode) return;
+    const stored = selectVisitorPrefs(arStore.getState());
+    const verdicts = deps.narration?.revision() ?? 0;
+    if (stored === prefsDrawn && verdicts === verdictsDrawn) return;
+    const before = prefsDrawn;
+    prefsDrawn = stored;
+    verdictsDrawn = verdicts;
+    // What is DRAWN is compared, not the view's name: captions found
+    // stale that fall back to the reading sign they stood as change
+    // nothing in the world.
+    const changed = (block: TourBlock): boolean =>
+      drawnKindOf(
+        block,
+        viewsDrawn.get(block.id) ?? visitorView(block, before),
+      ) !== drawnKindOf(block, visitorView(block, stored));
+    const items = itemsPartOf;
+    if (items !== null) {
+      for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+        if (tourFreeBlocks(station).some(changed)) {
+          content.setPart(station.id, "items", items(station));
+        }
+      }
+    }
+    // Replaced, never taken out first: a station holding only story parts
+    // would be torn down in between, and blink.
+    const partOf = storyPartOf;
+    if (partOf === null) return;
+    for (const [key, { station, block }] of storyParts) {
+      if (changed(block)) {
+        content.setPart(station.id, key, partOf(station, block));
+      }
+    }
+  }
 
   /** Each reached story world block (`selectShownBlocks`) gets one part of
    *  its station, kept while the walk keeps it; a new walk's empty set
@@ -1017,20 +1100,20 @@ export function createViewerPlacement(deps: {
     const partOf = storyPartOf;
     if (partOf === null) return;
     const state = arStore.getState();
-    const wanted = new Map<string, string>();
+    const wanted: typeof storyParts = new Map();
     for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
       const reached = selectShownBlocks(state, station.id);
       if (reached.length === 0) continue;
       for (const block of reachedWorldBlocks(station, reached)) {
         const key = `story:${block.id}`;
-        wanted.set(key, station.id);
+        wanted.set(key, { station, block });
         if (!storyParts.has(key)) {
           content.setPart(station.id, key, partOf(station, block));
         }
       }
     }
-    for (const [key, stationId] of storyParts) {
-      if (!wanted.has(key)) content.setPart(stationId, key, null);
+    for (const [key, { station }] of storyParts) {
+      if (!wanted.has(key)) content.setPart(station.id, key, null);
     }
     storyParts = wanted;
   }
@@ -1038,6 +1121,7 @@ export function createViewerPlacement(deps: {
   function syncContent(): void {
     const content = ctx.stationContent;
     if (content === null) return;
+    redrawForPrefs(content);
     syncStoryParts(content);
     const ids = shownStationIds();
     const key = [...ids].join("\n");
@@ -1085,6 +1169,8 @@ export function createViewerPlacement(deps: {
       makeLabel: (text: string) => seams.createLabel(text),
       // A long text's reading stand: a canvas page, turned by a tap.
       makeLectern: mountLectern,
+      // A long text's reading sign: a tap opens its text in the sheet.
+      makeReadingSign: mountReadingSign,
       // A placed model at its size (station blocks plan B2b), read
       // through the same cache as the station's story.
       loadModel: async (entryName: string) =>
@@ -1096,9 +1182,25 @@ export function createViewerPlacement(deps: {
         decodeFrameTexture(await loadContent(entryName), PHOTO_DECODE_DIVISOR, {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,
         }),
+      // A visitor sees each block in the view their preference picks
+      // (station blocks design §4); a creator sees their own choice.
+      ...(authorMode
+        ? {}
+        : {
+            viewOf: (block: TourBlock) => {
+              const view = visitorView(
+                block,
+                selectVisitorPrefs(arStore.getState()),
+              );
+              viewsDrawn.set(block.id, view);
+              return view;
+            },
+          }),
     });
-    for (const station of manifest.stations) {
-      if (tourFreeBlocks(station).length === 0) continue;
+    prefsDrawn = selectVisitorPrefs(arStore.getState());
+    verdictsDrawn = deps.narration?.revision() ?? 0;
+    viewsDrawn.clear();
+    itemsPartOf = (station) => {
       // One group per station, its pins and photos as children at their
       // local poses (tour editor plan W3).
       const part: ContentPart = {
@@ -1106,7 +1208,11 @@ export function createViewerPlacement(deps: {
           renderTourStation(station, rendererDeps(parent, alive)),
       };
       partLogs.set(part, { what: "content", basis: "geo", zero });
-      content.setPart(station.id, "items", part);
+      return part;
+    };
+    for (const station of manifest.stations) {
+      if (tourFreeBlocks(station).length === 0) continue;
+      content.setPart(station.id, "items", itemsPartOf(station));
     }
     // A story block its story reached stands with the station's own
     // (B2b, `syncContent`): one part per block, in the station's frame.

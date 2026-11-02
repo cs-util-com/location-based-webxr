@@ -80,6 +80,8 @@ type SceneVideo = Pick<
   onended: ((ev: Event) => void) | null;
   /** The visitor started the clip (the player does not autoplay). */
   onplay: ((ev: Event) => void) | null;
+  /** The clip loaded but cannot be played (it does not decode here). */
+  onerror: OnErrorEventHandler;
 };
 
 /** The sound of a step (one channel: a new clip stops the previous). */
@@ -310,6 +312,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     video.hidden = true;
     video.onended = null;
     video.onplay = null;
+    video.onerror = null;
   }
 
   /** The stage is cleared: nothing of his stands to tap. */
@@ -486,11 +489,11 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         dom.text.textContent = block.caption;
         return;
       case "longText":
-        // On a reading stand the text stands in the world (from this step
-        // on, as a placed model), its page drawn as pixels: the card names
-        // it by its title and carries its words too, so they can be read
-        // here and reached by a screen reader.
-        if (block.view === "lectern") {
+        // On a reading stand or a reading sign the text stands in the world
+        // (from this step on, as a placed model), drawn as pixels: the card
+        // names it by its title and carries its words too, so they can be
+        // read here and reached by a screen reader.
+        if (block.view === "lectern" || block.view === "reading") {
           const words = plainTextOf(parseTourMarkdown(block.body)).text;
           dom.text.textContent =
             words === "" ? block.title : `${block.title}\n\n${words}`;
@@ -637,6 +640,17 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
               if (run !== voiceRun) return;
               lineVoice = "ended";
               rearmLineEnd();
+            };
+            // A clip that loads but does not decode never plays: no
+            // sound to clash with, so as one that cannot be read.
+            dom.video.onerror = () => {
+              if (run !== voiceRun) return;
+              notices.set(
+                "video",
+                "The video could not be played here - the words are below.",
+              );
+              showStatus();
+              lost();
             };
             dom.video.src = stepUrl(blob);
             dom.image.hidden = true;

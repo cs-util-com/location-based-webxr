@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Narration: Quiet Voice</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"Liberation Mono",monospace;
+  --amber:#f2b45a; --amber-soft:rgba(242,180,90,.16); --ink:#f6f2ea; --ink2:#d8d2c6; --ink3:#a49e92;
+  --plate:rgba(17,18,21,.9); --line:rgba(255,255,255,.09);
+  --dbgH:46px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b0c0e;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- the area the design lives in (the debug strip sits below it, never on it) ---------- */
+#wrap{position:fixed;left:0;right:0;top:0;bottom:var(--dbgH);overflow:hidden;background:#141518}
+#stage{position:absolute;inset:0;overflow:hidden;font-family:var(--sans);color:var(--ink);background:#c9d3d8}
+#stage.framed{inset:auto;left:50%;top:50%;border-radius:38px;box-shadow:0 0 0 8px #1a1b1e,0 0 0 9px #3b3c42,0 30px 90px rgba(0,0,0,.6)}
+
+/* ---------- the fake camera image: a soft, sunlit street ---------- */
+#cam{position:absolute;inset:-6px;filter:blur(1.8px) saturate(.92);background:linear-gradient(#bfd2de 0%,#dbe4e8 34%,#e9ece9 56%,#c4beb3 57%,#b3ab9e 100%)}
+#cam div{position:absolute}
+#cam .b{border-radius:2px}
+#cam .b0{left:-4%;width:24%;top:22%;height:36%;background:linear-gradient(#d9cbb2,#c7b89d)}
+#cam .b1{left:20%;width:60%;top:14%;height:43%;background:linear-gradient(#e2d6c0,#cdbfa6)}
+#cam .b1::before{content:"";position:absolute;left:-2%;right:-2%;top:-5%;height:7%;background:#b8aa92}
+#cam .b2{right:-4%;width:26%;top:19%;height:39%;background:linear-gradient(#c9c3b8,#b6afa3)}
+#cam .win{background:#8f989e;opacity:.75;border-radius:1px}
+#cam .door{background:#6f6457}
+#cam .pave{left:0;right:0;top:57%;bottom:0;background:repeating-linear-gradient(90deg,rgba(0,0,0,.035) 0 2px,transparent 2px 42px),repeating-linear-gradient(0deg,rgba(0,0,0,.04) 0 2px,transparent 2px 30px);-webkit-mask-image:linear-gradient(transparent,#000 40%);mask-image:linear-gradient(transparent,#000 40%)}
+#cam .wall{left:4%;width:30%;top:55%;height:5%;background:#a39c90;clip-path:polygon(0 30%,10% 0,22% 20%,30% 5%,42% 25%,44% 100%,0 100%,0 30%,55% 100%,56% 10%,70% 0,84% 30%,100% 15%,100% 100%,55% 100%)}
+#cam .tree{right:9%;width:16%;top:26%;height:22%;border-radius:50%;background:radial-gradient(#b1b8a7,#9aa190)}
+#cam .trunk{right:16.5%;width:1.2%;top:44%;height:14%;background:#857b70}
+#cam .glare{right:-10%;top:-20%;width:70%;height:70%;background:radial-gradient(rgba(255,255,250,.75),transparent 65%)}
+
+/* ---------- the reading sign in the world ---------- */
+#signG{position:absolute;display:flex;flex-direction:column;align-items:center;z-index:2;transition:opacity .4s}
+#stage[data-layout=portrait] #signG{left:50%;top:12%;bottom:37%;width:min(80%,330px);transform:translateX(-50%)}
+#stage[data-layout=landscape] #signG{left:25%;top:19%;bottom:16%;width:min(36%,300px);transform:translateX(-50%)}
+#stage[data-layout=desktop] #signG{left:40%;top:17%;bottom:30%;width:380px;transform:translateX(-50%)}
+#stage[data-at=walk] #signG{opacity:0;pointer-events:none}
+#sign{display:flex;gap:13px;align-items:center;width:100%;text-align:left;border:1.5px solid rgba(255,255,255,.10);background:rgba(17,18,21,.93);border-radius:20px;padding:13px 15px 12px 13px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#sign:active{transform:scale(.985)}
+.seal{flex:none;width:50px;height:50px;border-radius:50%;background:var(--amber);display:grid;place-items:center}
+.seal svg{width:24px;height:24px;fill:#1a1408}
+.st{flex:1;min-width:0}
+.st>span{display:block}
+.over{font:700 10.5px/1.2 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.st .ttl{font:600 19px/1.18 var(--serif);color:#fff;margin:4px 0 7px}
+.st .foot{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:#b9b2a5}
+.vmark{display:inline-flex;align-items:center;gap:4px;color:var(--ink2);font-weight:600;white-space:nowrap}
+.vmark svg{width:15px;height:15px;fill:var(--amber);color:var(--amber)}
+#stage[data-layout=desktop] .st .ttl{font-size:22px}
+#stage[data-layout=landscape] #sign{padding:9px 12px;gap:10px}
+#stage[data-layout=landscape] .seal{width:40px;height:40px}
+#stage[data-layout=landscape] .st .ttl{font-size:16px;margin:2px 0 4px}
+#signG .stem{flex:1;width:3px;background:linear-gradient(#2a2b2f,rgba(42,43,47,.75));min-height:10px}
+#signG .ring{width:64px;height:16px;border:3px solid rgba(242,180,90,.85);border-radius:50%;margin-top:-8px}
+
+/* ---------- AR chrome (existing, shown as static mock-ups) ---------- */
+#exit{position:absolute;left:12px;top:12px;z-index:24;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--plate);display:grid;place-items:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#exit svg{width:18px;height:18px;stroke:#eee;stroke-width:2.2;fill:none}
+#vswitch{position:absolute;left:64px;top:16px;z-index:24}
+#stage[data-at=walk] #vswitch{display:none}
+#vs-btn{display:flex;align-items:center;gap:7px;height:36px;border-radius:999px;border:1px solid var(--line);background:var(--plate);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:0 12px 0 10px;font-size:12.5px;font-weight:650;color:#efe9de}
+#vs-btn svg{width:16px;height:16px;fill:none;stroke:var(--amber);stroke-width:1.8;stroke-linecap:round}
+#vs-btn small{font-weight:500;color:#9f998d;font-size:11px}
+#vs-menu{position:absolute;left:0;top:42px;width:min(280px,calc(100vw - 90px));background:rgba(18,19,22,.97);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:6px;box-shadow:0 16px 50px rgba(0,0,0,.4)}
+#vs-menu .vo{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:11px;padding:9px 10px;color:#e9e4da}
+#vs-menu .vo b{display:block;font-size:13.5px}
+#vs-menu .vo span{display:block;font-size:11.5px;color:#9f998d;margin-top:1px;line-height:1.35}
+#vs-menu .vo.on{background:rgba(242,180,90,.12)}
+#vs-menu .vo.on b{color:#ffd391}
+#vs-menu .vs-foot{font-size:11px;color:#8f897e;padding:6px 10px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:4px;line-height:1.4}
+
+/* walk card (existing): shown while walking towards the station */
+#walk{position:absolute;z-index:14;display:flex;align-items:center;gap:12px;background:var(--plate);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:20px;padding:12px 12px 12px 14px}
+#stage[data-layout=portrait] #walk{left:10px;right:10px;bottom:14px}
+#stage:not([data-layout=portrait]) #walk{left:50%;transform:translateX(-50%);bottom:16px;width:min(460px,80%)}
+#walk .arrow{flex:none;width:40px;height:40px;border-radius:50%;background:rgba(242,180,90,.14);display:grid;place-items:center}
+#walk .arrow svg{width:22px;height:22px;fill:var(--amber);transform:rotate(-18deg)}
+#walk .wt{flex:1;min-width:0}
+#walk .wt b{display:block;font:600 16px/1.2 var(--serif);color:#fff}
+#walk .wt span{display:block;font-size:12px;color:var(--ink3);margin-top:3px}
+#walk button{flex:none;border:0;border-radius:999px;background:var(--amber);color:#1a1408;font-weight:700;font-size:13px;height:40px;padding:0 16px}
+
+/* ---------- ONE surface: the strip is the folded sheet ---------- */
+#surf{position:absolute;z-index:20;display:flex;flex-direction:column;background:rgba(18,19,22,.94);backdrop-filter:blur(16px) saturate(1.1);-webkit-backdrop-filter:blur(16px) saturate(1.1);border:1px solid rgba(255,255,255,.07);box-shadow:0 -10px 40px rgba(0,0,0,.25);color:var(--ink2);overflow:hidden;
+  transition:top .38s cubic-bezier(.2,.8,.2,1),left .38s cubic-bezier(.2,.8,.2,1),right .38s cubic-bezier(.2,.8,.2,1),bottom .38s cubic-bezier(.2,.8,.2,1),border-radius .38s,transform .34s cubic-bezier(.2,.8,.2,1),opacity .3s}
+#stage[data-layout=portrait]{--stripH:210px}
+#stage[data-layout=landscape]{--stripH:166px}
+#stage[data-layout=desktop]{--stripH:196px}
+#stage[data-layout=portrait] #surf.strip{top:calc(100% - 14px - var(--stripH));left:10px;right:10px;bottom:14px;border-radius:22px}
+#stage[data-layout=portrait] #surf.sheet{top:38%;left:0;right:0;bottom:0;border-radius:24px 24px 0 0}
+#stage[data-layout=landscape] #surf.strip{top:calc(100% - 8px - var(--stripH));left:max(10px,calc(50% - 340px));right:max(10px,calc(50% - 340px));bottom:8px;border-radius:20px}
+#stage[data-layout=landscape] #surf.sheet{top:8px;bottom:8px;right:8px;left:calc(100% - 8px - min(56%,500px));border-radius:20px}
+#stage[data-layout=desktop] #surf.strip{top:calc(100% - 22px - var(--stripH));left:calc(50% - 380px);right:calc(50% - 380px);bottom:22px;border-radius:22px}
+#stage[data-layout=desktop] #surf.sheet{top:18px;bottom:18px;right:18px;left:calc(100% - 18px - 500px);border-radius:24px}
+#surf.closed{opacity:0;pointer-events:none;transform:translateY(30px)}
+#stage[data-layout=portrait] #surf.sheet.closed{transform:translateY(100%);opacity:1}
+#stage:not([data-layout=portrait]) #surf.sheet.closed{transform:translateX(110%);opacity:1}
+#surf .fadein{animation:fin .32s ease-out}
+@keyframes fin{from{opacity:0}to{opacity:1}}
+
+#surf .grab{width:38px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);margin:8px auto 0;flex:none}
+#stage:not([data-layout=portrait]) #surf .grab{display:none}
+#sh-head{position:relative;padding:10px 58px 8px 22px;flex:none}
+#stage:not([data-layout=portrait]) #sh-head{padding-top:18px}
+#sh-head h2{font:600 23px/1.18 var(--serif);color:#fff;margin:6px 0 5px;letter-spacing:.003em}
+#sh-meta{font-size:12.5px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:0 6px;align-items:center}
+#sh-meta .vmark{font-weight:500;color:var(--ink3)}
+#sh-meta .vmark svg{width:13px;height:13px}
+#sh-x{position:absolute;right:12px;top:10px;width:42px;height:42px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#stage:not([data-layout=portrait]) #sh-x{top:14px}
+#sh-x svg{width:17px;height:17px;stroke:#ddd;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#stage[data-layout=landscape] #sh-head{padding:10px 54px 4px 18px}
+#stage[data-layout=landscape] #sh-head h2{font-size:17px;margin:3px 0 2px}
+#stage[data-layout=landscape] #sh-meta{font-size:11.5px}
+
+.textwrap{position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-mask-image:linear-gradient(transparent 0,#000 18px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(transparent 0,#000 18px,#000 calc(100% - 24px),transparent);scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
+#txt{font-family:var(--serif);font-size:18.5px;line-height:1.62;color:var(--ink2);padding:12px 26px 40vh 22px;hyphens:auto;-webkit-hyphens:auto;text-wrap:pretty}
+#stage[data-layout=landscape] #txt{font-size:16.5px;padding:8px 20px 40vh 18px}
+#stage[data-layout=desktop] #txt{font-size:19.5px}
+#txt p{margin:0 0 1.05em}
+#txt .s{border-radius:4px;padding:2px 0;-webkit-box-decoration-break:clone;box-decoration-break:clone;transition:background-color .35s,box-shadow .35s,color .35s;cursor:pointer}
+#txt .s.cur{background:var(--amber-soft);box-shadow:0 0 0 3px var(--amber-soft);color:#fdfaf3}
+#txt .s.held{background:rgba(242,180,90,.07);box-shadow:0 0 0 3px rgba(242,180,90,.07)}
+#txt .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:2px;text-underline-offset:4px}
+#follow{position:absolute;left:50%;transform:translateX(-50%);border:0;border-radius:999px;background:var(--ink);color:#16171a;font-weight:650;font-size:12.5px;height:34px;padding:0 15px;box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:3;bottom:92px}
+
+/* strip-only parts */
+.s-top{display:flex;align-items:center;gap:8px;padding:10px 8px 0 18px;flex:none}
+.s-top .s-ttl{flex:1;min-width:0;font:600 13px/1.25 var(--serif);color:#cfc8bb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stage[data-layout=landscape] .s-top{padding-top:6px}
+#st-x{flex:none;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.07);display:grid;place-items:center}
+#st-x svg{width:14px;height:14px;stroke:#ddd;stroke-width:2.4;fill:none;stroke-linecap:round}
+#cap{flex:1;min-height:0;display:flex;align-items:flex-end;padding:2px 18px 0;font:600 20px/1.33 var(--sans);color:#f7f3eb;overflow:hidden}
+#stage[data-layout=landscape] #cap{font-size:18px}
+#stage[data-layout=desktop] #cap{font-size:24px;padding:2px 24px 0}
+#cap .chunk{display:block;animation:capIn .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes capIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#cap .w.todo{color:#bdb7ab}
+#cap .w.on{color:#ffd391;text-decoration:underline;text-decoration-color:var(--amber);text-decoration-thickness:3px;text-underline-offset:6px}
+#cap.dim .chunk{color:#a8a296}
+#surf.strip #sh-head,#surf.strip .textwrap,#surf.strip .grab,#surf.strip #follow{display:none}
+#surf.sheet .s-top,#surf.sheet #cap{display:none}
+
+/* the controls: same element, same place (the bottom), in both forms */
+#ctl{flex:none;display:flex;flex-direction:column;padding:4px 14px 12px;border-top:1px solid rgba(255,255,255,.07)}
+#surf.strip #ctl{border-top:0;padding:4px 10px 10px}
+#stage[data-layout=landscape] #ctl{padding:2px 12px 8px}
+.bar{position:relative;height:18px;cursor:pointer;margin:2px 6px 0}
+.bar .track{position:absolute;left:0;right:0;top:7px;height:4px;border-radius:4px;background:rgba(255,255,255,.12)}
+.bar .fill{position:absolute;left:0;top:7px;height:4px;border-radius:4px;background:var(--amber);width:0}
+.bar .knob{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+#surf.strip .bar{order:2;height:3px;margin:8px 8px 0;cursor:default;pointer-events:none}
+#surf.strip .bar .track,#surf.strip .bar .fill{top:0;height:3px}
+#surf.strip .bar .knob{display:none}
+.row{display:flex;align-items:center;gap:6px;min-height:52px}
+.cb{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:#e9e4da}
+.cb:active{background:rgba(255,255,255,.08)}
+.cb svg{width:22px;height:22px;fill:currentColor}
+.cb.play{width:50px;height:50px;border:2px solid var(--amber);background:rgba(242,180,90,.10);color:var(--amber)}
+.cb.play svg{width:22px;height:22px}
+.spin{width:20px;height:20px;border-radius:50%;border:2.5px solid rgba(242,180,90,.3);border-top-color:var(--amber);animation:rot .9s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.mid{flex:1;min-width:0;font-size:13px;color:var(--ink2);line-height:1.35}
+.mid .listen{font-weight:600;color:#efe9de;font-size:14px}
+.mid .listen small{font-weight:500;color:var(--ink3);font-size:12px}
+.mid .time{font:500 12.5px var(--mono);color:var(--ink3);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.wave{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+.wave i{display:block;width:3px;border-radius:2px;background:var(--amber);height:4px;opacity:.85}
+.wave.on i{animation:wv .9s ease-in-out infinite}
+.wave.on i:nth-child(2){animation-delay:-.3s}.wave.on i:nth-child(3){animation-delay:-.6s}
+@keyframes wv{0%,100%{height:3px}50%{height:12px}}
+.mid .calm{color:#d6d0c4;display:flex;align-items:center;gap:8px}
+.mid .calm svg{flex:none;width:16px;height:16px;fill:var(--ink3)}
+.mid .calm button{border:0;background:none;color:var(--amber);font-weight:650;padding:6px 2px;white-space:nowrap}
+.chip{flex:none;height:36px;min-width:46px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:transparent;font:600 12.5px var(--mono);color:#d9d4ca;padding:0 8px}
+.pill{flex:none;border:1px solid rgba(255,255,255,.16);background:transparent;border-radius:999px;height:40px;padding:0 14px;font-size:12.5px;font-weight:650;color:#e9e4da;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.pill svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.pill.primary{background:var(--amber);border-color:var(--amber);color:#1a1408}
+#stage[data-layout=portrait] #surf.strip .mid .listen small{display:none}
+
+/* ---------- system overlays (simulated) ---------- */
+#lock,#call{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;color:#fff;font-family:var(--sans)}
+#lock{background:linear-gradient(160deg,#283444,#10141b 70%);padding:9% 18px 18px}
+#lock .clk{font:300 68px/1 var(--sans);letter-spacing:-.02em}
+#lock .day{font-size:15px;opacity:.75;margin-top:6px}
+#lock .media{margin-top:28px;width:min(360px,100%);background:rgba(255,255,255,.12);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:22px;padding:14px 16px 10px}
+#lock .mh{display:flex;gap:12px;align-items:center}
+#lock .mh .seal{width:44px;height:44px;border-radius:10px}
+#lock .mh b{display:block;font-size:14.5px;line-height:1.25}
+#lock .mh span{display:block;font-size:12.5px;opacity:.65;margin-top:2px}
+#lock .mbar{height:4px;border-radius:4px;background:rgba(255,255,255,.2);margin:14px 0 4px;overflow:hidden}
+#lock .mbar div{height:100%;background:#fff;width:0}
+#lock .mt{display:flex;justify-content:space-between;font:500 11px var(--mono);opacity:.6}
+#lock .mb{display:flex;justify-content:center;gap:26px;margin-top:4px}
+#lock .mb button{border:0;background:none;width:48px;height:48px;display:grid;place-items:center;color:#fff}
+#lock .mb svg{width:28px;height:28px;fill:currentColor}
+#lock .unlock{margin-top:auto;border:0;background:rgba(255,255,255,.14);border-radius:999px;height:42px;padding:0 20px;font-size:13px;color:#fff}
+#lock .note{font-size:11.5px;opacity:.55;margin-top:10px;text-align:center;max-width:320px;line-height:1.4}
+#stage[data-layout=landscape] #lock{padding-top:18px}
+#stage[data-layout=landscape] #lock .clk{font-size:42px}
+#stage[data-layout=landscape] #lock .media{margin-top:12px}
+#call{background:linear-gradient(#1c2a22,#0c120e);padding:16% 18px 10%}
+#call .who{font:400 34px/1.1 var(--sans);margin-top:10px}
+#call .sub{font-size:15px;opacity:.7;margin-top:8px}
+#call .end{margin-top:auto;width:68px;height:68px;border-radius:50%;border:0;background:#e5484d;display:grid;place-items:center}
+#call .end svg{width:30px;height:30px;fill:#fff;transform:rotate(135deg)}
+#call small{font-size:12px;opacity:.6;margin-top:10px}
+#stage[data-layout=landscape] #call{padding:20px}
+
+/* ---------- debug strip: prototype controls, NOT part of the design ---------- */
+#dbg{position:fixed;left:0;right:0;bottom:0;height:var(--dbgH);z-index:100;background:#050505;border-top:2px dashed #d24fc0;display:flex;align-items:center;gap:6px;padding:0 8px;overflow-x:auto;scrollbar-width:thin;font:500 11px var(--mono);color:#bbb;white-space:nowrap}
+#dbg .tag{flex:none;background:#d24fc0;color:#000;font-weight:800;padding:3px 6px;border-radius:4px;letter-spacing:.06em}
+#dbg .g{flex:none;display:flex;align-items:center;gap:2px;padding-left:8px;border-left:1px solid #2a2a2a}
+#dbg .g>span{color:#777;margin-right:4px}
+#dbg button{flex:none;border:1px solid #333;background:#151515;color:#ccc;border-radius:6px;height:28px;padding:0 8px;font:inherit}
+#dbg button.on{background:#e8e8e8;color:#000;border-color:#e8e8e8}
+#dbg #d-spk{flex:none;color:#888;padding-left:8px;border-left:1px solid #2a2a2a;min-width:150px}
+#dbg #d-spk.on{color:#7ff0a6}
+#dbg #d-lay{flex:none;color:#666}
+body.dbg-min{--dbgH:26px}
+body.dbg-min #dbg .g,body.dbg-min #dbg #d-lay{display:none}
+body.dbg-min #dbg button#d-min{height:20px}
+</style>
+</head>
+<body>
+<div id="wrap">
+<div id="stage" data-layout="portrait" data-at="station" data-view="reading">
+  <div id="cam" aria-hidden="true">
+    <div class="b b0"></div><div class="b b1"></div><div class="b b2"></div>
+    <div class="win" style="left:31%;top:27%;width:6%;height:9%"></div><div class="win" style="left:63%;top:27%;width:6%;height:9%"></div>
+    <div class="door" style="left:46.5%;top:42%;width:7%;height:15%"></div>
+    <div class="win" style="left:3%;top:30%;width:4%;height:7%"></div><div class="win" style="left:11%;top:30%;width:4%;height:7%"></div>
+    <div class="win" style="right:6%;top:28%;width:4%;height:7%"></div>
+    <div class="pave"></div><div class="wall"></div><div class="tree"></div><div class="trunk"></div><div class="glare"></div>
+  </div>
+
+  <div id="signG">
+    <button id="sign">
+      <span class="seal"><svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="2.2" rx="1.1"/><rect x="5" y="10.9" width="14" height="2.2" rx="1.1"/><rect x="5" y="15.8" width="9" height="2.2" rx="1.1"/></svg></span>
+      <span class="st">
+        <span class="over">Old market square</span>
+        <span class="ttl" id="sg-ttl"></span>
+        <span class="foot"><span>Tap to open</span><span id="sg-right"></span></span>
+      </span>
+    </button>
+    <div class="stem"></div><div class="ring"></div>
+  </div>
+
+  <button id="exit" aria-label="Exit AR"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div id="vswitch"><button id="vs-btn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span id="vs-cur"></span><small>change</small></button>
+    <div id="vs-menu" role="menu" hidden>
+      <button class="vo" data-vs="reading" role="menuitemradio"><b>Reading</b><span>The whole text in a sheet, with the voice if you want it</span></button>
+      <button class="vo" data-vs="captions" role="menuitemradio"><b>Captions</b><span>A few lines at a time with the voice, eyes on the place</span></button>
+      <div class="vs-foot">Your choice is kept on this phone for every narrated text.</div>
+    </div>
+  </div>
+
+  <div id="walk" hidden>
+    <div class="arrow"><svg viewBox="0 0 24 24"><path d="M12 3l7 9h-4.5v9h-5v-9H5z"/></svg></div>
+    <div class="wt"><b>Old market square</b><span id="walk-sub">38 m ahead · Station 1</span></div>
+    <button id="walk-in">Walk in</button>
+  </div>
+
+  <section id="surf" class="strip closed" aria-label="The text and its voice" aria-hidden="true">
+    <div class="grab"></div>
+    <header id="sh-head">
+      <div class="over">Old market square · Station 1</div>
+      <h2 id="sh-title"></h2>
+      <div id="sh-meta"></div>
+      <button id="sh-x"></button>
+    </header>
+    <div class="s-top"><span class="s-ttl" id="s-ttl"></span><button id="st-x" aria-label="Close captions"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="cap"></div>
+    <div class="textwrap" id="tw"><article id="txt" lang="en"></article></div>
+    <button id="follow" hidden>Back to the voice</button>
+    <footer id="ctl">
+      <div class="bar" id="bar"><div class="track"></div><div class="fill"></div><div class="knob"></div></div>
+      <div class="row">
+        <button class="cb play" id="b-play"></button>
+        <button class="cb" id="b-back" aria-label="Back 10 seconds"></button>
+        <div class="mid" id="mid"></div>
+        <button class="chip" id="b-rate"></button>
+        <button class="pill" id="b-tog"></button>
+      </div>
+    </footer>
+  </section>
+  <div id="live" class="sr" aria-live="polite"></div>
+
+  <div id="lock" hidden>
+    <div class="clk">9:41</div><div class="day">Saturday, 31 October</div>
+    <div class="media" id="lk-media">
+      <div class="mh"><span class="seal"><svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="2.2" rx="1.1"/><rect x="5" y="10.9" width="14" height="2.2" rx="1.1"/><rect x="5" y="15.8" width="9" height="2.2" rx="1.1"/></svg></span><div><b id="lk-title"></b><span>Old market square · Station 1</span></div></div>
+      <div class="mbar"><div id="lk-fill"></div></div>
+      <div class="mt"><span id="lk-t0">0:00</span><span id="lk-t1">0:00</span></div>
+      <div class="mb"><button id="lk-back" aria-label="Back 10 seconds"></button><button id="lk-play" aria-label="Play or pause"></button></div>
+    </div>
+    <button class="unlock" id="lk-open">Swipe up to open</button>
+    <div class="note">Simulated lock screen. The voice keeps going while the phone is locked; only play, pause and back 10 s are offered here.</div>
+  </div>
+
+  <div id="call" hidden>
+    <div style="font-size:14px;opacity:.7">mobile</div>
+    <div class="who">Anna</div>
+    <div class="sub" id="call-t">0:00</div>
+    <button class="end" id="call-end" aria-label="End call"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></button>
+    <small>Simulated call. The phone paused the voice when it rang.</small>
+  </div>
+</div>
+</div>
+
+<div id="dbg" aria-label="Prototype controls">
+  <span class="tag">PROTO</span>
+  <button id="d-min" title="Fold the prototype controls">_</button>
+  <div class="g"><span>view</span><button data-d="view:reading">reading</button><button data-d="view:captions">captions</button></div>
+  <div class="g"><span>audio</span><button data-d="sc:normal">normal</button><button data-d="sc:slow">slow loading</button><button data-d="sc:never">slow, gives up</button><button data-d="sc:missing">missing file</button></div>
+  <div class="g"><span>do</span><button data-d="do:ends">voice ends</button><button data-d="do:lock">phone locked</button><button data-d="do:call">call</button></div>
+  <div class="g"><span>place</span><button data-d="at:station">at station</button><button data-d="at:walk">walking</button></div>
+  <div class="g"><span>frame</span><button data-d="fr:fill">fill</button><button data-d="fr:upright">upright 390x844</button><button data-d="fr:sideways">sideways 844x390</button></div>
+  <div class="g"><button data-d="do:reset">reset</button></div>
+  <span id="d-spk">speaker: quiet</span>
+  <span id="d-lay"></span>
+</div>
+
+<script type="module">
+/* =====================================================================
+   The record: a narrated text (excerpt of the reference prototype's text)
+   ===================================================================== */
+const TITLE = 'The Guild House and the Burnt Hall';
+const PARAS = [
+`You are standing in the old market square, almost exactly where the town's weekly market has been held for more than six hundred years. Turn to face north. The tall stone front with the single door and the two windows is the guild house, finished in the spring of 1612. To your left, in the north-west corner, a low and broken wall runs along the edge of the paving. It looks like nothing much, a garden wall that lost its garden. It is in fact the oldest thing you can see from here, and the reason the square exists at all. Over the next few minutes we will move through four centuries of this place: the keep that came first, the guild house that still stands, the great timber market hall that once filled the whole west half of the square, and the October night in 1890 when that hall burned to the ground.`,
+`Long before there was a market, there was a rise in the ground and a tower on top of it. The keep was built of rough field stone, bedded in lime mortar that the builders burned in a kiln down by the river. Nobody wrote down the year it was begun. The first record that mentions it is a dispute about firewood, which tells us that by then somebody lived in the tower through the winter and expected the farms around it to keep him warm. The walls were nearly three metres thick at the base. The only door was on the first floor, reached by a wooden stair that could be pulled up or burned in an emergency. From the top a guard could see the ford across the river and the road coming down from the hills, which is exactly what the tower was for.`,
+`The guild house was a joint venture, which in this town meant it took eleven years of argument and four of building. The bakers, the butchers, the weavers and the smiths each wanted the hall for themselves, and each refused to pay for a hall they would have to share. What finally brought them together was not friendship but the town scales. Every sack of grain, every bale of wool and every barrel of salt sold in the square had to be weighed, and the weighing had always been done under an awning that leaked. The guilds agreed to build one solid house with a dry ground floor for the scales and an upper hall for their meetings, and to split the cost by the weight of goods each trade brought to market. The weavers, who sold light cloth, paid the least, and the smiths never forgave them.`,
+`Look at the front of the house. The door in the middle is not the original. The first door was twice as wide, so that a loaded hand-cart could be pushed straight in onto the scales. It was narrowed in the eighteenth century, when the scales moved and the ground floor became a store. The two windows on either side belong to the upper hall. In the original plan there were to be five, one for each guild and one for the town, but the money ran out after the stone was cut for two, and the builders filled the rest of the front with plain wall. The guild masters had the year carved in the stone above the door. If you look closely you may still be able to make out the numbers, softened by four hundred winters of rain.`,
+`When you are ready, follow the path that leaves the square to the east. About sixty metres along it you will come to the next station, at the place where the carts once queued for the town scales on market mornings. If you would like to hear any part of this story again, come back into the square at any time, and the text will remember where you stopped.`
+];
+
+/* ---------- text analysis and a plausible fake word timing ---------- */
+const sentences = [], words = [];
+PARAS.forEach((p, pi) => {
+  for (const t of p.split(/(?<=[.!?])\s+(?=[A-Z0-9"“‘'])/)) {
+    const s = { p: pi, w0: words.length, w1: 0, start: 0 };
+    for (const m of t.matchAll(/\S+/g)) words.push({ s: sentences.length, text: m[0], start: 0, end: 0 });
+    s.w1 = words.length; sentences.push(s);
+  }
+});
+{ let t = 600;
+  words.forEach((w, i) => {
+    const len = w.text.replace(/[^\p{L}\p{N}]/gu, '').length, dur = Math.min(720, 105 + 44 * len);
+    w.start = t; w.end = t + dur; t += dur + 40;
+    const nx = words[i + 1]; if (!nx) return;
+    if (nx.s !== w.s) t += sentences[nx.s].p !== sentences[w.s].p ? 1530 : 430;
+    else if (/[,;:]$/.test(w.text)) t += 190;
+  });
+  sentences.forEach(s => { s.start = words[s.w0].start; });
+}
+const DUR = words[words.length - 1].end + 900;
+const VOICE_MIN = Math.max(1, Math.round(DUR / 60000));
+const READ_MIN = Math.max(1, Math.round(words.length / 200));
+const GIVE_UP_MS = 12000;           // a tap that has waited this long is not a promise to start sound later
+const RESUME_BACK_MS = 2000;        // after an interruption the voice picks up a little earlier
+const LOAD = {                      // the simulated network, per debug scenario
+  normal:  { probe: 250, load: 350 },
+  slow:    { probe: 2500, load: 6000, stall: true },
+  never:   { probe: null, load: null },
+  missing: { probe: 900, fail: true }
+};
+
+/* =====================================================================
+   State
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmt = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const RATES = [1, 1.25, 1.5, 0.75];
+const RATE_KEY = 'tour-viewer.visitor.voiceRate';
+const VIEW_KEY = 'tour-viewer.visitor.view.narratedText';
+function readStore(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+function writeStore(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* the choice then lasts only this visit */ } }
+
+const S = {
+  view: ['reading', 'captions'].includes(readStore(VIEW_KEY)) ? readStore(VIEW_KEY) : 'reading',
+  at: 'station', surf: 'closed', form: 'sheet',     // form: what the surface is (strip or sheet), kept while closed
+  scenario: 'normal', started: false, ended: false, interrupted: false,
+  rate: RATES.includes(+readStore(RATE_KEY)) ? +readStore(RATE_KEY) : 1,
+  follow: true, frame: 'fill', locked: false, call: null
+};
+const P = { playing: false, pos: 0, p0: 0, t0: 0, stalled: false, stallUntil: 0, stallArmed: false, stallDone: false, sessionStart: 0 };
+const AU = { state: 'unknown', timer: 0, loadT0: 0 };   // unknown | probing | known | loading | ready | failed | gaveup
+
+/* =====================================================================
+   The fake voice: a clock, a simulated file, simulated network
+   ===================================================================== */
+function now() { if (!P.playing || P.stalled) return P.pos; return Math.min(DUR, P.p0 + (performance.now() - P.t0) * S.rate); }
+function rebase() { P.pos = now(); P.p0 = P.pos; P.t0 = performance.now(); }
+function startClock() {
+  P.playing = true; P.p0 = P.pos; P.t0 = performance.now(); P.sessionStart = P.pos;
+  P.stallArmed = !!LOAD[S.scenario].stall && !P.stallDone;
+}
+// Asking whether the file is there costs a few bytes, so it is asked when the surface opens: a visitor never
+// taps a play button that cannot work. The sound itself is fetched only on the visitor's tap.
+function probe() {
+  if (AU.state !== 'unknown') return;
+  const c = LOAD[S.scenario]; AU.state = 'probing';
+  if (c.probe == null) return;   // never answers; a play tap gives up after GIVE_UP_MS
+  AU.timer = setTimeout(() => { if (AU.state === 'probing') { AU.state = c.fail ? 'failed' : 'known'; render(); } }, c.probe);
+}
+function play() {
+  if (AU.state === 'failed' || AU.state === 'gaveup') return;
+  if (S.ended) { P.pos = 0; S.ended = false; }
+  if (S.interrupted) { P.pos = Math.max(0, P.pos - RESUME_BACK_MS); S.interrupted = false; }
+  S.started = true;
+  if (AU.state === 'ready') { startClock(); render(); return; }
+  clearTimeout(AU.timer); AU.state = 'loading'; AU.loadT0 = performance.now();
+  const c = LOAD[S.scenario];
+  if (c.fail) AU.timer = setTimeout(() => { AU.state = 'failed'; render(); }, c.probe);
+  else if (c.load == null || c.load > GIVE_UP_MS) AU.timer = setTimeout(() => { AU.state = 'gaveup'; render(); }, GIVE_UP_MS);
+  else AU.timer = setTimeout(() => { AU.state = 'ready'; startClock(); render(); }, c.load);
+  render();
+}
+function pause() {
+  if (AU.state === 'loading') { clearTimeout(AU.timer); AU.state = 'known'; }   // a cancelled wait never starts sound later
+  if (P.playing) { P.pos = now(); P.playing = false; P.stalled = false; }
+  render();
+}
+function toggle() { (P.playing || AU.state === 'loading') ? pause() : play(); }
+function seek(ms) { P.pos = clamp(ms, 0, DUR - 1); if (P.playing) { P.p0 = P.pos; P.t0 = performance.now(); } S.ended = false; S.interrupted = false; }
+function retry() { clearTimeout(AU.timer); AU.state = 'known'; play(); }
+
+/* =====================================================================
+   Cursor: which sentence and word the voice is on
+   ===================================================================== */
+function cursorAt(ms) {
+  let lo = 0, hi = words.length - 1, k = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (words[m].start <= ms) { k = m; lo = m + 1; } else hi = m - 1; }
+  return { w: k, s: k < 0 ? 0 : words[k].s };
+}
+const chunkCache = new Map();
+function chunksOf(si, maxC) {
+  const key = si + ':' + maxC; if (chunkCache.has(key)) return chunkCache.get(key);
+  const s = sentences[si], out = []; let a = s.w0, len = 0;
+  for (let i = s.w0; i < s.w1; i++) {
+    const l = words[i].text.length + 1;
+    if (len + l > maxC && i > a) {
+      let cut = i - 1;
+      for (let b = i - 1; b > a + 2; b--) { if (/[,;:]$/.test(words[b].text)) { cut = b; break; } if (b - a < (i - a) * 0.55) break; }
+      out.push([a, cut + 1]); a = cut + 1; len = 0; i = cut; continue;
+    }
+    len += l;
+  }
+  if (a < s.w1) out.push([a, s.w1]);
+  chunkCache.set(key, out); return out;
+}
+
+/* =====================================================================
+   Building the DOM
+   ===================================================================== */
+const ICON = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>',
+  replay: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/></svg>',
+  back10: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7.5 5.8 12 9.6V6.8a6.2 6.2 0 1 1-6.2 6.2H4a8 8 0 1 0 8-8z"/><text x="12" y="16.6" font-size="7.2" font-family="system-ui,Segoe UI,Arial" font-weight="700" text-anchor="middle">10</text></svg>',
+  spk: '<svg viewBox="0 0 24 24"><path d="M3.5 9h3.6L12 5v14l-4.9-4H3.5z"/><path d="M15.4 8.6a4.8 4.8 0 0 1 0 6.8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  spkOff: '<svg viewBox="0 0 24 24"><path d="M3.5 9h3.6L12 5v14l-4.9-4H3.5z"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="#a49e92" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>'
+};
+$('sg-ttl').textContent = TITLE; $('sh-title').textContent = TITLE; $('s-ttl').textContent = TITLE; $('lk-title').textContent = TITLE;
+$('b-back').innerHTML = ICON.back10; $('lk-back').innerHTML = ICON.back10;
+(function buildText() {
+  let html = '', curP = -1;
+  sentences.forEach((s, si) => {
+    if (s.p !== curP) { if (curP >= 0) html += '</p>'; html += '<p>'; curP = s.p; } else html += ' ';
+    html += `<span class="s" data-s="${si}">`;
+    for (let i = s.w0; i < s.w1; i++) html += (i > s.w0 ? ' ' : '') + `<span class="w" data-w="${i}">${esc(words[i].text)}</span>`;
+    html += '</span>';
+  });
+  $('txt').innerHTML = html + '</p>';
+})();
+const sentEls = [...$('txt').querySelectorAll('.s')], wordEls = [...$('txt').querySelectorAll('.w')];
+
+/* =====================================================================
+   Rendering: structure on state changes, the clock-driven parts per frame
+   ===================================================================== */
+const stage = $('stage');
+function voiceGone() { return AU.state === 'failed'; }
+function problem() { return AU.state === 'failed' ? 'missing' : AU.state === 'gaveup' ? 'slow' : null; }
+function surfOpen(form) {
+  if (S.at !== 'station') return;
+  const wasClosed = S.surf === 'closed';
+  S.form = form; S.surf = 'open';
+  if (wasClosed || form === 'sheet') { S.follow = true; ui.scrollNow = true; }
+  probe(); render(); fadeContent();
+}
+function surfClose() { pause(); S.surf = 'closed'; render(); }
+function fadeContent() { for (const el of [$('cap'), $('tw'), $('sh-head'), $('ctl')]) { el.classList.remove('fadein'); void el.offsetWidth; el.classList.add('fadein'); } }
+function setView(v) {
+  if (!['reading', 'captions'].includes(v)) return;
+  S.view = v; writeStore(VIEW_KEY, v);
+  if (S.surf === 'open' && v === 'reading' && S.form === 'strip') { S.form = 'sheet'; S.follow = true; ui.scrollNow = true; fadeContent(); }
+  if (S.surf === 'closed') S.form = v === 'reading' ? 'sheet' : 'strip';
+  render();
+}
+function setAt(a) {
+  if (a === 'walk') { if (P.playing || AU.state === 'loading') pause(); S.surf = 'closed'; }
+  S.at = a; render();
+}
+
+let lastLive = '';
+function render() {
+  stage.dataset.view = S.view; stage.dataset.at = S.at;
+  const surf = $('surf'), open = S.surf === 'open', form = S.form;
+  surf.className = form + (open ? '' : ' closed'); surf.setAttribute('aria-hidden', String(!open));
+  // the sign: a small speaker mark and the voice length are the only trace of the voice
+  $('sg-right').innerHTML = voiceGone() ? `${READ_MIN} min read` : `<span class="vmark">${ICON.spk}${VOICE_MIN} min</span>`;
+  $('sign').setAttribute('aria-label', `Open the text: ${TITLE}. ` + (voiceGone() ? `About ${READ_MIN} minutes to read.` : `It can also be listened to, ${VOICE_MIN} minutes.`));
+  $('vs-cur').textContent = S.view === 'reading' ? 'Reading' : 'Captions';
+  document.querySelectorAll('#vs-menu .vo').forEach(b => { b.classList.toggle('on', b.dataset.vs === S.view); b.setAttribute('aria-checked', String(b.dataset.vs === S.view)); });
+  $('walk').hidden = S.at !== 'walk';
+  $('walk-sub').textContent = '38 m ahead · Station 1' + (S.started && P.pos > 0 && !S.ended ? ' · your place in the text is kept' : '');
+  // sheet header
+  $('sh-meta').innerHTML = `${words.length.toLocaleString('en')} words · about ${READ_MIN} min to read` + (voiceGone() ? '' : ` · <span class="vmark">${ICON.spk}${VOICE_MIN} min voice</span>`);
+  const fold = S.view === 'captions';
+  $('sh-x').innerHTML = fold ? ICON.down : ICON.x;
+  $('sh-x').setAttribute('aria-label', fold ? 'Back to captions' : 'Close the text');
+  // controls
+  const prob = problem();
+  $('b-play').hidden = !!prob;
+  $('b-back').hidden = !!prob || !S.started;
+  $('bar').style.visibility = !prob && (S.started || P.pos > 0) ? 'visible' : 'hidden';
+  $('b-rate').hidden = !!prob || form !== 'sheet' || !S.started;
+  $('b-rate').textContent = S.rate + 'x';
+  $('b-rate').setAttribute('aria-label', `Voice speed ${S.rate} times. Tap to change.`);
+  const tog = $('b-tog');
+  if (form === 'strip') { tog.hidden = false; tog.innerHTML = `Full text ${ICON.up}`; tog.classList.toggle('primary', !!prob); tog.setAttribute('aria-label', 'Open the full text'); }
+  else if (fold) { tog.hidden = false; tog.innerHTML = `Captions ${ICON.down}`; tog.classList.remove('primary'); tog.setAttribute('aria-label', 'Fold back to captions'); }
+  else tog.hidden = true;
+  ui.midKey = ''; ui.playKey = ''; ui.capKey = ''; ui.markKey = '';
+  update();
+  updateMediaSession();
+  // overlays
+  $('lock').hidden = !S.locked; $('call').hidden = !S.call;
+  $('lk-media').hidden = !S.started;
+  // debug strip state
+  document.querySelectorAll('#dbg [data-d]').forEach(b => {
+    const [k, v] = b.dataset.d.split(':');
+    b.classList.toggle('on', (k === 'view' && S.view === v) || (k === 'sc' && S.scenario === v) || (k === 'at' && S.at === v) || (k === 'fr' && S.frame === v) || (k === 'do' && v === 'lock' && S.locked) || (k === 'do' && v === 'call' && !!S.call));
+  });
+}
+
+const ui = { midKey: '', playKey: '', capKey: '', capWord: -2, markKey: '', lastS: -1, scrollNow: false, timeEl: null, waveEl: null };
+function midState() {
+  if (AU.state === 'failed') return 'missing';
+  if (AU.state === 'gaveup') return 'slow';
+  if (AU.state === 'loading' && performance.now() - AU.loadT0 > 500) return 'loading';
+  if (P.playing && P.stalled) return 'stall';
+  if (S.ended) return 'ended';
+  if (S.interrupted) return 'call';
+  if (!S.started && P.pos === 0) return 'listen';
+  return 'time';
+}
+// Every audio problem is one calm line where the controls were. No error words, no codes.
+const LINES = {
+  missing: () => `<span class="calm">${ICON.spkOff}<span>No voice here right now. The whole text is here to read. <button data-act="retry">Try again</button></span></span>`,
+  slow: () => `<span class="calm">${ICON.spkOff}<span>The voice is slow to arrive here. <button data-act="retry">Try again</button></span></span>`,
+  loading: () => `<span class="calm"><span>Getting the voice ready</span></span>`,
+  stall: () => `<span class="calm"><span>Waiting for the voice</span></span>`,
+  ended: () => `<span class="calm"><span>The voice has finished.</span></span>`,
+  call: () => `<span class="calm"><span>Paused for your call</span></span>`,
+  listen: () => `<span class="listen">Listen <small>· ${VOICE_MIN} min</small></span>`,
+  time: () => `<span class="time"><span class="wave"><i></i><i></i><i></i></span><span class="tt"></span></span>`
+};
+const LIVE_TEXT = { missing: 'No voice here right now. The whole text is here to read.', slow: 'The voice is slow to arrive here.', loading: 'Getting the voice ready', ended: 'The voice has finished.', call: 'Paused for your call' };
+
+function update() {
+  const pos = now(), c = cursorAt(pos);
+  // controls
+  const ms = midState();
+  if (ui.midKey !== ms) {
+    ui.midKey = ms; $('mid').innerHTML = LINES[ms]();
+    ui.timeEl = $('mid').querySelector('.tt'); ui.waveEl = $('mid').querySelector('.wave');
+    const lt = LIVE_TEXT[ms] || ''; if (lt && lt !== lastLive) { $('live').textContent = lt; } lastLive = lt;
+  }
+  if (ui.timeEl) ui.timeEl.textContent = `${fmt(pos)} / ${fmt(DUR)}`;
+  if (ui.waveEl) ui.waveEl.classList.toggle('on', P.playing && !P.stalled);
+  const busy = AU.state === 'loading' || (P.playing && P.stalled);
+  const pk = busy ? 'busy' : P.playing ? 'pause' : S.ended ? 'replay' : 'play';
+  if (ui.playKey !== pk) {
+    ui.playKey = pk; const b = $('b-play');
+    b.innerHTML = pk === 'busy' ? '<span class="spin"></span>' : ICON[pk];
+    b.setAttribute('aria-label', pk === 'busy' ? 'Getting the voice ready. Tap to stop waiting.' : pk === 'pause' ? 'Pause the voice' : pk === 'replay' ? 'Play the voice again' : 'Play the voice');
+    $('lk-play').innerHTML = P.playing ? ICON.pause : ICON.play;
+  }
+  const f = (pos / DUR * 100) + '%';
+  $('bar').querySelector('.fill').style.width = f; $('bar').querySelector('.knob').style.left = f;
+  // the reading mark: amber while the voice speaks, a faint hold where it stopped, none without a voice
+  const marked = !voiceGone() && (S.started || pos > 0);
+  const speaking = P.playing && !P.stalled;
+  const mk = marked ? `${c.s}:${speaking ? c.w : -1}:${speaking}` : 'none';
+  if (ui.markKey !== mk) {
+    const prevS = ui.lastS;
+    ui.markKey = mk;
+    sentEls.forEach(el => el.classList.remove('cur', 'held'));
+    wordEls.forEach(el => el.classList.remove('on'));
+    if (marked) { sentEls[c.s].classList.add(speaking ? 'cur' : 'held'); if (speaking && c.w >= 0) wordEls[c.w].classList.add('on'); }
+    ui.lastS = marked ? c.s : -1;
+    if (marked && c.s !== prevS && S.follow) scrollToSentence(c.s, false);
+  }
+  if (ui.scrollNow && S.surf === 'open' && S.form === 'sheet') { ui.scrollNow = false; if (marked) scrollToSentence(c.s, true); else $('tw').scrollTop = 0; }
+  $('follow').hidden = !(S.form === 'sheet' && !S.follow && speaking);
+  // the strip's caption chunk
+  if (S.form === 'strip') {
+    const lay = stage.dataset.layout, maxC = lay === 'portrait' ? 84 : lay === 'landscape' ? 100 : 104;
+    const chunks = chunksOf(c.s, maxC); let ci = 0;
+    if (c.w >= 0) { ci = chunks.findIndex(([a, b]) => c.w >= a && c.w < b); if (ci < 0) ci = 0; }
+    const [a, b] = chunks[ci], key = `${c.s}:${ci}:${maxC}`;
+    if (ui.capKey !== key) {
+      ui.capKey = key; ui.capWord = -2; let h = '<span class="chunk">';
+      for (let i = a; i < b; i++) h += (i > a ? ' ' : '') + `<span class="w" data-w="${i}">${esc(words[i].text)}</span>`;
+      $('cap').innerHTML = h + '</span>';
+    }
+    const cw = speaking ? c.w : -1;
+    if (ui.capWord !== cw) { ui.capWord = cw; for (const sp of $('cap').querySelectorAll('.w')) { const i = +sp.dataset.w; sp.classList.toggle('on', i === cw); sp.classList.toggle('todo', cw >= 0 && i > cw); } }
+    $('cap').classList.toggle('dim', !speaking);
+  }
+  // lock screen
+  if (S.locked) { $('lk-fill').style.width = f; $('lk-t0').textContent = fmt(pos); $('lk-t1').textContent = '-' + fmt(DUR - pos); }
+  // the debug strip's stand-in for sound
+  const spk = $('d-spk'); const on = speaking;
+  const st = on ? `speaker: VOICE ${S.rate}x ${'|'.repeat(1 + Math.floor((performance.now() / 120) % 4))}` : AU.state === 'loading' ? 'speaker: quiet (loading)' : 'speaker: quiet';
+  if (spk.textContent !== st) spk.textContent = st; spk.classList.toggle('on', on);
+}
+function scrollToSentence(si, instant) {
+  if (S.surf !== 'open' || S.form !== 'sheet') return;
+  const tw = $('tw'), el = sentEls[si]; if (!el) return;
+  tw.scrollTo({ top: Math.max(0, el.offsetTop - tw.clientHeight * 0.28), behavior: instant ? 'instant' : 'smooth' });
+}
+
+/* ---------- lock-screen controls: the real Media Session wiring the app would use ---------- */
+function updateMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const ms = navigator.mediaSession;
+    if (!S.started) { ms.metadata = null; ms.playbackState = 'none'; return; }
+    if (!ms.metadata || ms.metadata.title !== TITLE) ms.metadata = new MediaMetadata({ title: TITLE, artist: 'Old market square · Station 1', album: 'Old town walk' });
+    ms.playbackState = P.playing ? 'playing' : 'paused';
+    ms.setActionHandler('play', () => play());
+    ms.setActionHandler('pause', () => pause());
+    ms.setActionHandler('seekbackward', () => { seek(now() - 10000); render(); });
+    for (const a of ['seekforward', 'previoustrack', 'nexttrack']) { try { ms.setActionHandler(a, null); } catch (e) { /* not supported here */ } }
+    if (ms.setPositionState) ms.setPositionState({ duration: DUR / 1000, playbackRate: S.rate, position: Math.min(DUR, now()) / 1000 });
+  } catch (e) { /* a browser without full Media Session support: lock-screen controls are simply absent */ }
+}
+
+/* =====================================================================
+   Frame loop
+   ===================================================================== */
+function frame() {
+  const t = performance.now();
+  if (P.playing) {
+    if (P.stalled && t >= P.stallUntil) { P.stalled = false; P.p0 = P.pos; P.t0 = t; }
+    if (!P.stalled && P.stallArmed && now() - P.sessionStart > 14000) { P.pos = now(); P.stalled = true; P.stallUntil = t + 3500; P.stallArmed = false; P.stallDone = true; }
+    if (!P.stalled && now() >= DUR) { P.pos = DUR; P.playing = false; S.ended = true; render(); }
+  }
+  if (S.call) $('call-t').textContent = fmt(t - S.call.t0);
+  update();
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   Wiring
+   ===================================================================== */
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'retry') { retry(); return; }
+  if (b.dataset.vs) { setView(b.dataset.vs); $('vs-menu').hidden = true; $('vs-btn').setAttribute('aria-expanded', 'false'); return; }
+  if (b.dataset.d) { debug(b.dataset.d); return; }
+  switch (b.id) {
+    case 'sign': surfOpen(S.view === 'reading' ? 'sheet' : 'strip'); break;
+    case 'vs-btn': { const m = $('vs-menu'), o = m.hidden; m.hidden = !o; b.setAttribute('aria-expanded', String(o)); break; }
+    case 'exit': break;   // a mock: the real app leaves AR here
+    case 'walk-in': setAt('station'); break;
+    case 'sh-x': if (S.view === 'captions') { S.form = 'strip'; render(); fadeContent(); } else surfClose(); break;
+    case 'st-x': surfClose(); break;
+    case 'b-tog': if (S.form === 'strip') { S.form = 'sheet'; S.follow = true; ui.scrollNow = true; } else S.form = 'strip'; render(); fadeContent(); break;
+    case 'b-play': case 'lk-play': toggle(); S.follow = true; break;
+    case 'b-back': case 'lk-back': seek(now() - 10000); S.follow = true; ui.scrollNow = true; render(); break;
+    case 'b-rate': { if (P.playing) rebase(); S.rate = RATES[(RATES.indexOf(S.rate) + 1) % RATES.length]; writeStore(RATE_KEY, String(S.rate)); render(); break; }
+    case 'follow': S.follow = true; ui.scrollNow = true; break;
+    case 'lk-open': S.locked = false; S.follow = true; ui.scrollNow = true; render(); break;
+    case 'call-end': S.call = null; render(); break;
+    case 'd-min': document.body.classList.toggle('dbg-min'); setTimeout(applyFrame, 20); break;
+  }
+});
+// a tap on a sentence moves the voice there; it never starts sound by itself
+$('txt').addEventListener('click', e => {
+  const el = e.target.closest('.s'); if (!el || voiceGone()) return;
+  seek(Math.max(0, sentences[+el.dataset.s].start - 30)); S.follow = true; render();
+});
+for (const ev of ['wheel', 'touchmove']) $('tw').addEventListener(ev, () => { S.follow = false; }, { passive: true });
+$('bar').addEventListener('click', e => { if (S.form !== 'sheet') return; const r = e.currentTarget.getBoundingClientRect(); seek(clamp((e.clientX - r.left) / r.width, 0, 1) * DUR); S.follow = true; ui.scrollNow = true; render(); });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#vswitch')) { $('vs-menu').hidden = true; $('vs-btn').setAttribute('aria-expanded', 'false'); } });
+
+function debug(cmd) {
+  const [k, v] = cmd.split(':');
+  if (k === 'view') setView(v);
+  else if (k === 'at') setAt(v);
+  else if (k === 'fr') { S.frame = v; applyFrame(); render(); }
+  else if (k === 'sc') {
+    pause(); clearTimeout(AU.timer); S.scenario = v; AU.state = 'unknown'; S.ended = false; S.interrupted = false; P.stallDone = false;
+    if (S.surf === 'open') probe();
+    render();
+  } else if (v === 'ends') {
+    if (S.at !== 'station') setAt('station');
+    clearTimeout(AU.timer); AU.state = 'ready'; S.started = true; S.ended = false; S.interrupted = false; P.pos = DUR - 7000; P.stallDone = true;
+    if (S.surf !== 'open') surfOpen(S.view === 'reading' ? 'sheet' : 'strip');
+    S.follow = true; ui.scrollNow = true; startClock(); render();
+  } else if (v === 'lock') { S.locked = !S.locked; if (!S.locked) { S.follow = true; ui.scrollNow = true; } render(); }
+  else if (v === 'call') {
+    if (S.call) { S.call = null; render(); return; }
+    S.interrupted = P.playing || AU.state === 'loading'; pause(); S.call = { t0: performance.now() }; render();
+  } else if (v === 'reset') {
+    pause(); clearTimeout(AU.timer); Object.assign(S, { at: 'station', surf: 'closed', scenario: 'normal', started: false, ended: false, interrupted: false, follow: true, locked: false, call: null });
+    S.form = S.view === 'reading' ? 'sheet' : 'strip'; P.pos = 0; P.stallDone = false; AU.state = 'unknown'; render();
+  }
+}
+
+/* ---------- frames and layout ---------- */
+const FRAMES = { upright: [390, 844], sideways: [844, 390] };
+function applyFrame() {
+  const wr = $('wrap').getBoundingClientRect();
+  if (S.frame === 'fill') { stage.classList.remove('framed'); stage.style.cssText = ''; }
+  else {
+    const [W, H] = FRAMES[S.frame], k = Math.min((wr.width - 30) / W, (wr.height - 30) / H, 1);
+    stage.classList.add('framed');
+    stage.style.cssText = `width:${W}px;height:${H}px;transform:translate(-50%,-50%) scale(${k})`;
+  }
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const lay = w / h < 0.85 ? 'portrait' : h < 520 ? 'landscape' : 'desktop';
+  if (stage.dataset.layout !== lay) { stage.dataset.layout = lay; ui.capKey = ''; }
+  $('d-lay').textContent = `layout: ${lay} ${w}x${h}`;
+}
+new ResizeObserver(applyFrame).observe($('wrap'));
+
+S.form = S.view === 'reading' ? 'sheet' : 'strip';
+applyFrame(); render(); requestAnimationFrame(frame);
+
+// a small hook for screenshot scripts
+window.__narrationProto = {
+  direction: 'quiet-voice',
+  state: () => ({ view: S.view, at: S.at, surf: S.surf, form: S.form, audio: AU.state, playing: P.playing, pos: Math.round(now()), started: S.started, ended: S.ended, interrupted: S.interrupted, rate: S.rate, layout: stage.dataset.layout }),
+  open: () => surfOpen(S.view === 'reading' ? 'sheet' : 'strip'),
+  debug
+};
+</script>
+</body>
+</html>

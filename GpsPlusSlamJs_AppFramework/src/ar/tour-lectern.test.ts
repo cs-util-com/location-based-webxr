@@ -74,7 +74,8 @@ describe('the lectern view of a long text (minor 3)', () => {
   it('is a long text view and a world view', () => {
     expect(TOUR_BLOCK_VIEWS.longText).toContain('lectern');
     expect(TOUR_WORLD_VIEWS.has('lectern')).toBe(true);
-    expect(TOUR_MANIFEST_MINOR).toBe(3);
+    // Known from minor 3 on (`tour-reading.test.ts` pins the current one).
+    expect(TOUR_MANIFEST_MINOR).toBeGreaterThanOrEqual(3);
   });
 
   it('a free lectern stands in the world at its station, as a tour object', () => {

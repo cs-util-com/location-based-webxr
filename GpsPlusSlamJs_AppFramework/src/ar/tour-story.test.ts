@@ -268,21 +268,22 @@ describe('a file of a newer minor (lenient)', () => {
     ).toThrow(/steps\[1\]\.action\.options\[0\]\.goto/);
   });
 
-  it('a free long text in an unknown view is skipped and reported', () => {
+  it('a free long text in an unknown view stands as its reading sign', () => {
     const drops: TourBlockDrop[] = [];
     const content = parse(
-      { blocks: [pin, { ...text, view: 'reading' }], steps: [] },
+      { blocks: [pin, { ...text, view: 'captions' }], steps: [] },
       { lenient: true, drops }
     );
-    expect(content.blocks.map((b) => b.id)).toEqual(['sign']);
-    expect(drops).toEqual([
-      expect.objectContaining({ kind: 'block', block: 'intro' }),
+    expect(content.blocks.map((b) => [b.id, b.view])).toEqual([
+      ['sign', 'pin'],
+      ['intro', 'reading'],
     ]);
+    expect(drops).toEqual([]);
   });
 
   it('a story long text in an unknown view falls back to the card', () => {
     const content = parse(
-      { blocks: [{ ...text, view: 'reading' }], steps: [show('a', 'intro')] },
+      { blocks: [{ ...text, view: 'captions' }], steps: [show('a', 'intro')] },
       { lenient: true }
     );
     expect(content.blocks[0]).toMatchObject({ view: 'card' });

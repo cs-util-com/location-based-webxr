@@ -65,7 +65,8 @@ them.
     (`renderTourStation`: a group per station at its geo pose, its
     free blocks (pins, pictures and, since B2b, placed models through
     `seams.loadGlbModel` over the same read, and since minor 3 a long
-    text's reading stand through `mountLectern`) as children at their local
+    text's reading stand through `mountLectern`, since minor 4 its
+    reading sign through `mountReadingSign`) as children at their local
     poses, the
     stations without free blocks skipped; each
     station one "items" part of the side table, see below; labels
@@ -501,3 +502,35 @@ pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
   placed too (the early return also asks `hasStoryWorldBlocks`).
 - Tests: `viewer-placement-story-blocks.test.ts`; the e2e
   `story-blocks.spec.js` (a pin the story shows stays after its end).
+
+## A visitor's view choice
+
+- In visitor mode the renderer deps carry `viewOf`, the five rules of
+  `shownView` (`visitor-prefs.ts`) over the store's stored preference
+  (`visitor-prefs-slice.ts`); a creator's carry none (rule 1).
+- `syncContent` first runs `redrawForPrefs`: when the stored preference is
+  no longer the one the parts were drawn with, a station's `items` part is
+  made again only when one of its free blocks' `shownView` differs between
+  the old and the new value, and a reached story part only when its own
+  block's does. The side table replaces a part in place (and draws a
+  shown station's at once); a story part is never taken out first, which
+  would tear down a station holding only story parts and make it blink.
+  Every other part stands: a rebuild re-parses models, snaps a moved toy
+  back, closes a model's card and turns a lectern to its first page. The
+  same choice stored again (a new value, the same content) rebuilds
+  nothing.
+- The optional `narration` dep (`{ verdictOf, revision }`,
+  `narration-visitor.ts`) gives `shownView` each text's read-along
+  verdict. A read-along settling bumps `revision`; `redrawForPrefs` then
+  looks again, so a text a visitor sees in captions whose timing turns out
+  stale is drawn again in the creator's view. `viewsDrawn` keeps the view
+  each block was last drawn in, which is what a change is measured from,
+  by what it DRAWS (`drawnKindOf`, `content-placement.ts`): captions found
+  stale that fall back to the reading sign they stood as rebuild nothing.
+- Tests: `viewer-placement-story-blocks.test.ts` "draws a standing long
+  text again in the chosen view, and back", "draws a captions text again
+  in the creator's view once its read-along turns out stale", "keeps the
+  part when stale captions fall back to the same reading sign", "keeps a station's part when
+  no block's shown view changes", "replaces a story block's part without
+  taking its station down", "keeps the choice for the next tour opened in
+  the same page"; the e2e `view-switch.spec.js`.

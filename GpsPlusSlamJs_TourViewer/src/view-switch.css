@@ -1,0 +1,127 @@
+/* The visitor's view switch: the prototype's #vswitch numbers, placed to
+   the right of the round Exit AR button (top left, below the notch).
+   Shown only in a visitor's AR session; above the radar (20), below the
+   toast and the Exit button (30). */
+.view-switch {
+  display: none;
+}
+body[data-mode="visitor"][data-ar-active="true"] .view-switch:not([hidden]) {
+  display: block;
+  position: fixed;
+  left: calc(64px + env(safe-area-inset-left));
+  top: calc(34px + env(safe-area-inset-top));
+  z-index: 25;
+  font-variant-numeric: lining-nums;
+}
+@media (orientation: landscape) and (height <= 520px) {
+  body[data-mode="visitor"][data-ar-active="true"] .view-switch:not([hidden]) {
+    top: calc(14px + env(safe-area-inset-top));
+  }
+}
+.view-switch .vs-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(17, 18, 21, 0.9);
+  backdrop-filter: blur(12px);
+  padding: 0 12px 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #efe9de;
+  cursor: pointer;
+}
+.view-switch .vs-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #f2b45a;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.view-switch .vs-btn small {
+  font-weight: 500;
+  color: #9f998d;
+  font-size: 11px;
+}
+.view-switch .vs-menu {
+  position: absolute;
+  left: 0;
+  top: 42px;
+  width: min(290px, calc(100vw - 30px));
+  box-sizing: border-box;
+  background: rgba(18, 19, 22, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 6px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.4);
+}
+.view-switch .vs-menu[hidden] {
+  display: none;
+}
+.view-switch button.vo {
+  display: block;
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 11px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #e9e4da;
+  cursor: pointer;
+}
+.view-switch .vo b {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.view-switch .vo b i {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 11px;
+  color: #9f998d;
+}
+.view-switch .vo span {
+  display: block;
+  font-size: 11.5px;
+  color: #9f998d;
+  margin-top: 1px;
+  line-height: 1.35;
+}
+.view-switch .vo.on {
+  background: rgba(242, 180, 90, 0.12);
+}
+.view-switch .vo.on b {
+  color: #ffd391;
+}
+.view-switch .vo[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.view-switch .vs-foot {
+  font-size: 11px;
+  color: #8f897e;
+  padding: 6px 10px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.view-switch .vs-foot button {
+  border: 0;
+  background: none;
+  margin: 0;
+  color: #f2b45a;
+  font: inherit;
+  font-weight: 650;
+  font-size: 11.5px;
+  padding: 4px 0 0;
+  display: block;
+  cursor: pointer;
+}

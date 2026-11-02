@@ -68,9 +68,10 @@ not-checked`): a link's complete copies are checked through
   - `budget` - the archive's one `DecompressionBudget`; the creator's
     Finish passes it to `rebuildZipWithEntries` when the rebuild's input
     is this archive (K0 milestone review R1).
-  - `loadEntryText(filename)` - one entry as UTF-8 under the text cap
-    (`maxTextEntryBytes`), for JSON a caller parses itself (the hosted
-    level file, K0 milestone review R10).
+  - `loadEntryText(filename, maxBytes?)` - one entry as UTF-8 under the
+    text cap (`maxTextEntryBytes`, or `maxBytes` for an entry type with a
+    cap of its own: a read-along timing, `TOUR_TIMING_MAX_BYTES`), for JSON
+    a caller parses itself (the hosted level file, K0 milestone review R10).
     — `hasRecording` is the synchronous `actions/` pre-check
     `loadRecordingActions()` applies: the framework parser's rule
     (`tour-read-set.ts` `isActionEntryName`: an `actions/` path segment,
@@ -123,7 +124,7 @@ not-checked`): a link's complete copies are checked through
   link names no `.zip` file (no stand-in): the editor's Done names it as
   the hosted file's name.
 - `tourLabel(url): string` (pure, never throws) - what the creator's panel
-  calls a tour (scan-to-open plan §9 #11): a real `.zip` name (cut at 24),
+  calls a tour (scan-to-open plan §9 #11): a real `.zip` name (cut after 24 with `truncated`),
   else `Google Drive file <first 10 of the id>…` for every Drive spelling
   and the proxy route, else `host/<first 12 of the last segment>…`, else
   "the tour". Short on purpose: it shares a line with the live readout.

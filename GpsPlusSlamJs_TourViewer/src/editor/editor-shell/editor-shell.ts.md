@@ -82,6 +82,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   open keeps that fold and does not restore the one from before the
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
+- `EditorShell.flush()` - writes the typing not yet in the tour (an
+  inspector field being typed in, a long text's writer before its
+  pause); the page calls it before a save.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and
@@ -95,6 +98,15 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   longer), placing a part again also focusing it; a part deleted (focus and
   wait cleared when written); a section flipped (its normal negated, a zero
   kept 0); the clip's autoplay turned.
+
+- A long text's writer and preview come from one `createLongTextDock`
+  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
+  `longText` model on every draw (null closes it), `act` takes the clicks
+  it owns, and `flush` writes pending typing before a selection change or
+  a save. Its body goes through `edits.block(id, "body", ...)` and its view
+  through the new `edits.view(id, view)` (`editor.editBlockView`). The
+  shell's generic field input skips its fields: only an input drawn under
+  a field name (`data-field`) is written by the shell.
 
 ## Invariants & assumptions
 
@@ -127,7 +139,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   is in it or has left it, and the help on the next Escape, also from a
   menu's button. Every other key in a menu is the menu's, and on a menu's button the
   keys that open or move in it (`key-target.ts`); T and F there are the
-  view's.
+  view's. Inside a toolbar or a radio group, Home is the widget's.
 - **Edits are the page's:** the shell writes nothing to the tour; Undo
   and Redo are the page's steps, with their titles from `nextStep`, and
   every tree command is a `deps.stations` call (one step each).
@@ -343,3 +355,7 @@ position, Move to a new station). Its parts' own tests:
 `bar-actions.test.ts`, and in the editor kit's `src/chrome/`:
 `tree-reorder.test.ts`, `tree-drag.test.ts`,
 `scene-menu.test.ts`.
+
+## Narration
+
+`ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.

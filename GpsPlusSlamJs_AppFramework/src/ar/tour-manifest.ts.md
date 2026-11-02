@@ -42,7 +42,7 @@ tour id and the tour details.
 - `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - The WORLD VIEW a creator's pages hold: `TourObject = TourPin |
-TourLectern | TourPicture | TourModel` - a free block without its local pose, plus
+TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without its local pose, plus
   `geo` (its geo pose) and `station?` (absent on a draft object no station
   holds yet). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
@@ -76,7 +76,7 @@ TourLectern | TourPicture | TourModel` - a free block without its local pose, pl
   block of its own station, asks a `choice` (an option's `goto` names a
   step of the station, or is absent: the next step), or asks a `quiz`. A
   block no step shows must stand in the world (`pin`, a long text's
-  `lectern`, `plane`, or a model's `placed`, `ghost`,
+  `lectern` or `reading`, `plane`, or a model's `placed`, `ghost`,
   `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`).
   A station may have no steps (an automatic station: finding it
   completes it).
@@ -177,7 +177,22 @@ TourLectern | TourPicture | TourModel` - a free block without its local pose, pl
   `name` and `image` in step with its declaration, so a 4.0 or 4.1 reader
   shows the character as a `card` by its name, reads `lineEnd` as a tap,
   ignores `characters`, and will not save the tour.
-- **Minor 3** (`TOUR_MANIFEST_MINOR = 3`): a long text's `lectern` view,
+- **Minor 4** (`TOUR_MANIFEST_MINOR = 4`): a long text's `reading` view,
+  a short sign in the square at the block's pose that opens the whole text
+  on a tap (`TourReadingSign`, one of `TourObject`), as a free block or a
+  story block, and from this minor the long text's floor view (a free long
+  text in an unknown view stands as its sign instead of being left out).
+  Written at minor 4 only when a long text uses it; the released reader
+  treats it as it treats a lectern (`tour-reading.test.ts`).
+- **Minor 5** (`TOUR_MANIFEST_MINOR = 5`): a long text's `narration`, a
+  voice and optionally a read-along track in its own archive entry
+  `timing/<blockId>.json` (`tour-blocks.ts.md`, `tour-timing.ts.md`).
+  Written at minor 5 only when a text is narrated. The released reader
+  ignores the field (unknown fields are ignored at every minor), so it
+  shows the text as it did at minor 4 - a story text as its card, a free
+  reading sign left out - and will not save the tour; a minor-4 reader
+  shows the text with no voice (`tour-narration.test.ts`).
+- **Minor 3**: a long text's `lectern` view,
   a reading stand in the square at the block's pose (`TourLectern`, one
   of `TourObject`), as a free block or a story block. A file is written at
   minor 3 only when a long text uses it (`tourBlocksMinor`). The reader
@@ -235,6 +250,17 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
 
 ## Tests
 
+- `tour-narration.test.ts` - a long text's narration: every field read
+  and written back exactly at minor 5, the voice alone, minor 5 only when
+  narrated, the duration's edges, one failure per rule at this minor, a
+  newer minor dropping only the narration, a non-object failing at every
+  minor, the credit cap, and the released reader carding, dropping and
+  refusing to save it.
+- `tour-reading.test.ts` - the long text's `reading` view: a free one
+  read as a tour object and written back exactly at minor 4, a story one
+  kept, minor 4 only when a long text uses it, the floor of a free long
+  text in a newer view, and the released reader dropping, carding and
+  refusing to save it.
 - `tour-lectern.test.ts` - the long text's `lectern` view: a free one
   read as a tour object and written back exactly at minor 3, a story one
   kept, minor 3 only when a long text uses it, a free card refused, and

@@ -93,6 +93,7 @@ import {
   createMenuButton,
   menuItemControl,
   setItemDisabled,
+  inComposite,
   inField,
   inMenu,
   type GroundPlace,
@@ -144,6 +145,7 @@ import {
   datedFileName,
   type EditorSave,
   type EditorSession,
+  type NarrationChange,
 } from "./editor-session.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import {
@@ -946,16 +948,13 @@ function renderTourName(): void {
 }
 
 /** Whether the selection `id` is still in the tour: one of the editor
- *  model's items, or a 3D model block (which the 2D editor does not list,
- *  `editor-model.ts`, but the 3D view selects and edits). */
+ *  model's items, or a block the 2D editor does not list
+ *  (`editor-model.ts`) but the 3D view selects and edits - a 3D model, a
+ *  free long text. */
 function stillInTour(id: string): boolean {
   if (model?.items.some((i) => i.id === id) === true) return true;
   const tour = manifestToWrite(store.getState().tourDocument);
-  return (
-    tour?.stations.some((s) =>
-      s.blocks.some((b) => b.kind === "model" && b.id === id),
-    ) ?? false
-  );
+  return tour?.stations.some((s) => s.blocks.some((b) => b.id === id)) ?? false;
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */
@@ -1351,6 +1350,33 @@ function writeInspectorEdit(
   if (editor === null) return "refused";
   endUndo();
   const outcome = write(editor);
+  refresh();
+  if ("reason" in outcome) {
+    toast(outcome.reason);
+    return "refused";
+  }
+  if (outcome.kind !== "unchanged") autosave.changed();
+  return "written";
+}
+
+/** A narration change from the Narration section, as an inspector edit:
+ *  one step, the page refreshed once the session holds it, a refusal
+ *  toasted, the autosave told. */
+async function writeNarrationEdit(
+  id: string,
+  change: NarrationChange,
+): Promise<TypedEditOutcome> {
+  if (editor === null) return "refused";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["editNarration"]>>;
+  try {
+    outcome = await editor.editNarration(id, change);
+  } catch {
+    outcome = {
+      kind: "refused",
+      reason: "The narration could not be changed.",
+    };
+  }
   refresh();
   if ("reason" in outcome) {
     toast(outcome.reason);
@@ -2761,6 +2787,7 @@ async function runSave(
       // data, or a Save of a tour closed since: an open keeps the slot's
       // holder). A second Save during this tour's own Save is the same
       // Save.
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2911,6 +2938,7 @@ async function saveTour(
   const ended = claimSave(mode);
   try {
     if (mode === "explicit") {
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
     }
@@ -3770,12 +3798,22 @@ const shell = createEditorShell({
     text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
+    view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
     model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
     },
     addPin: addPinTo,
+    narration: (id) =>
+      editor === null
+        ? Promise.resolve({
+            kind: "refused" as const,
+            reason: "No tour is open.",
+          })
+        : editor.narration(id),
+    editNarration: writeNarrationEdit,
+    voiceMaxBytes: autosaveMaxBytes,
   },
   say: (text) => {
     toast(text);
@@ -3866,10 +3904,12 @@ const viewSwitch = createViewSwitch({
         },
         model: (id, edit) =>
           writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
-        // A field's and a menu's keys are their own (`key-target.ts`).
+        // A field's, a menu's and a toolbar's keys are their own
+        // (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&
           !inMenu(event.target, event.key) &&
+          !inComposite(event.target, event.key) &&
           !dialogOpen() &&
           Boolean(modal.hidden) &&
           !ui().busy,

@@ -1,6 +1,6 @@
 // The shell chrome: DOM only, no three. An editor's page may load it
 // statically (the Tour Viewer's edit page does); a visitor's page never.
-export { inField, inMenu } from "./key-target.js";
+export { inComposite, inField, inMenu } from "./key-target.js";
 export {
   closeOpenMenu,
   createMenuButton,

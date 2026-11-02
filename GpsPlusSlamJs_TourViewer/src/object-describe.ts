@@ -46,6 +46,13 @@ export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
   character: "Character",
 };
 
+/** A kind's word inside a sentence ("the delete of the long text"): its
+ *  `BLOCK_KIND_LABEL` with the first letter lower-cased ("3D" kept). */
+export function kindNoun(kind: TourBlockKind): string {
+  const label = BLOCK_KIND_LABEL[kind];
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 /** The texts a block may be named by, first found first: its title (a
  *  character's name), else its caption (a short text's own text). */
 const NAMING_FIELDS = ["title", "name", "caption"] as const;

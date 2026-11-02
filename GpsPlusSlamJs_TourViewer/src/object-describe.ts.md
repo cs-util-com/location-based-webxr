@@ -20,7 +20,7 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
   the world is in the pages' words and icons; `objectLook(kind)` maps the
   format's kinds onto it (a short text is a pin, a picture a photo, a long
   text on its reading stand a text, a model a model; a stand read as a
-  model until B2c, with a model's icon, "Delete 3D model" and a resize
+  model before the editor learnt long texts, with a model's icon, "Delete 3D model" and a resize
   hint). The format's kinds stay out of the pages' words.
 - `BLOCK_KIND_LABEL` - each kind in the ONE word every creator page uses
   for it ("Pin", "Long text", "Photo", "Video", "Audio", "3D model",
@@ -39,6 +39,11 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
     for "a pin or a photo" together ("3 notes", "Find a code or note"),
     and a search still finds a pin or a photo by "note" and by the old
     words (`editor/editor-model.ts` `filterItems`).
+- `kindNoun(kind): string` - a kind's word inside a sentence: its
+  `BLOCK_KIND_LABEL` with the first letter lower-cased ("photo", "long
+  text", "3D model"). The phone's undo and placement words use it for
+  every object that is no pin ("the delete of the long text"), where they
+  once said "photo" for every one.
 - `objectTitle(object): string` - for any object or block (in the world
   or in a station's story): its title (a character's name), else its
   caption (a pin's own text), else its kind's name
@@ -67,7 +72,8 @@ codeDistanceLine(pin, [codeGeo]); // "4 m from the code"
 ## Tests
 
 `object-describe.test.ts` (a pin's text; a picture's title, else its
-caption, else "Photo", trimmed; the kinds' words "Pin" and "Photo"; every block kind by its own text, else
+caption, else "Photo", trimmed; the kinds' words "Pin" and "Photo", and
+inside a sentence (`kindNoun`); every block kind by its own text, else
 its kind's name; the looks of the three kinds,
 the distance to one code or the nearest of several, none without a
 code); `object-list.test.ts` pins that the list uses the same rule.

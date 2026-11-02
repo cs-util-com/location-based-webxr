@@ -58,6 +58,7 @@ import {
 import { STATION_PREFIX } from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
 import {
+  inComposite,
   inField,
   inMenu,
   closeOpenMenu,
@@ -100,6 +101,22 @@ import {
 import { createShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
 import { buildTree, stationGroups } from "./tree-model.js";
+import { createKeptStore } from "../long-text/kept-store.js";
+import { createLongTextDock } from "../long-text/long-text-dock.js";
+import type { NarrationChange, NarrationFacts } from "../editor-session.js";
+
+/** A stamp per read-along texts object of the tour document: the reducer
+ *  makes a new one on each change of them. */
+const timingStamps = new WeakMap<object, string>();
+let timingStampCount = 0;
+function timingsStampOf(timings: object): string {
+  let stamp = timingStamps.get(timings);
+  if (stamp === undefined) {
+    stamp = String(++timingStampCount);
+    timingStamps.set(timings, stamp);
+  }
+  return stamp;
+}
 
 /** The 3D view's commands the shell drives. */
 type ShellView = Pick<
@@ -147,6 +164,8 @@ interface ShellEditCommands {
   text(itemId: string, text: string): TypedEditOutcome;
   /** One of a free block's other text fields (`block-fields.ts`). */
   block(itemId: string, field: string, value: string): TypedEditOutcome;
+  /** A free block's view (`TOUR_BLOCK_VIEWS`): a long text's sign. */
+  view(itemId: string, view: string): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
@@ -159,6 +178,20 @@ interface ShellEditCommands {
   ): void;
   /** A new pin in the station, at a free spot near its anchor. */
   addPin(stationId: string): void;
+  /** A long text's narration as it stands (`EditorSession.narration`). */
+  narration(
+    itemId: string,
+  ): Promise<
+    NarrationFacts | { readonly kind: "refused"; readonly reason: string }
+  >;
+  /** One change of it: one undo step, a refusal said by the page. */
+  editNarration(
+    itemId: string,
+    change: NarrationChange,
+  ): Promise<TypedEditOutcome>;
+  /** The largest voice file a long text takes (the page's autosave cap;
+   *  none: the default cap). */
+  readonly voiceMaxBytes?: number;
 }
 
 /** The page's store, as the shell reads it. */
@@ -200,6 +233,10 @@ export interface EditorShell {
    *  this width; after a takeover it stays a tab for the creator to open.
    *  Once; a creator's fold or unfold before it ends the hold. */
   approachEnded(how: "landed" | "taken"): void;
+  /** Writes the typing not yet in the tour (an inspector field being
+   *  typed in, a long text's writer before its pause): the page calls it
+   *  before a save, which writes the tour as the store holds it. */
+  flush(): void;
   /** The scene's ground menu at `point` (px in the view), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
@@ -315,6 +352,29 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     load: (path) => deps.loadPicture(path),
   });
   const viewBox = byId("view3d");
+  /** A long text's writer in the inspector and its preview over the 3D
+   *  view (`long-text-dock.ts`). */
+  const longText = createLongTextDock({
+    document,
+    box: viewBox,
+    inspectorRoot: inspector.root,
+    treeRoot: tree.root,
+    kept: createKeptStore(),
+    writeBody: (id, body) => deps.edits.block(id, "body", body),
+    writeView: (id, view) => deps.edits.view(id, view),
+    readNarration: (id) => deps.edits.narration(id),
+    editNarration: (id, change) => deps.edits.editNarration(id, change),
+    ...(deps.edits.voiceMaxBytes === undefined
+      ? {}
+      : { voiceMaxBytes: deps.edits.voiceMaxBytes }),
+    loadPicture: (path) => deps.loadPicture(path),
+    say: (text) => {
+      deps.say(text);
+    },
+    changed: () => {
+      draw();
+    },
+  });
   const said = byId("shell-said");
   const ground = createSceneMenu({
     box: viewBox,
@@ -369,6 +429,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       groundAt,
       modelFocus: ui.modelFocus,
       modelPick: ui.modelPick,
+      timingsStamp: timingsStampOf(state().tourDocument.timings),
     });
   };
 
@@ -376,6 +437,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
+    const writer = longText.sync(
+      model?.kind === "item" ? model.longText : null,
+    );
     drawInspector(
       inspector,
       model,
@@ -383,8 +447,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         folded: state().editorView.foldedDocks.inspector,
         positionOpen,
         busy: busy?.act ?? null,
+        ...(writer === null ? {} : { longText: longText.state() }),
       },
       pictures,
+      writer,
     );
   };
 
@@ -737,6 +803,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       busy = null;
       const pending = typedField();
       if (pending !== null) commitField(pending, was);
+      longText.flush();
       if (selected !== null) applyDocks("selected");
     }
     draw();
@@ -997,6 +1064,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
+    if (act !== undefined && longText.act(act)) {
+      draw();
+      return;
+    }
     if (act === "close") deps.select(null);
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
@@ -1059,8 +1130,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // again, found by its name.
   inspector.root.addEventListener("focusout", (event) => {
     const input = event.target;
+    // Only a field drawn under its name: a long text's writer and its link
+    // line keep their own text and write it themselves.
     if (
       isTyped(input) &&
+      input.dataset["field"] !== undefined &&
       inspector.root.contains(input) &&
       !inspectorDrawing(inspector.root)
     ) {
@@ -1148,6 +1222,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // Every other key in a menu is the menu's, and on a menu's button the
     // keys that open or move in it (`key-target.ts`).
     if (inMenu(event.target, event.key)) return;
+    // A toolbar's and a radio group's arrows, Home and End are theirs.
+    if (inComposite(event.target, event.key)) return;
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -1198,6 +1274,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
     },
+    flush() {
+      const pending = typedField();
+      if (pending !== null) commitField(pending, lastSelected);
+      longText.flush();
+    },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree
       // gets back the fold it had at the open (folded or not).
@@ -1213,6 +1294,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       endUnfolding();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
+      longText.flush();
+      longText.sync(null);
       busy?.stop.abort();
       busy = null;
       view = null;

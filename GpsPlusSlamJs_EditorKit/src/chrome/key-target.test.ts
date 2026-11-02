@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 
-import { inField, inMenu } from "./key-target.js";
+import { inComposite, inField, inMenu } from "./key-target.js";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -79,5 +79,37 @@ describe("key targets", () => {
     expect(inMenu(document.body, "ArrowDown")).toBe(false);
     expect(inMenu(null, "ArrowDown")).toBe(false);
     expect(inMenu(window, "ArrowDown")).toBe(false);
+  });
+
+  // Why: a toolbar and a radio group move their focus by the arrows, Home
+  // and End. The 3D view nudged the selected sign by the same arrows (an
+  // undo step) and the shell framed the tour on Home, behind the widget.
+  it("the arrows, Home and End inside a toolbar or a radio group are the widget's; other keys stay the page's", () => {
+    document.body.innerHTML = `
+      <div id="bar" role="toolbar"><button id="bold"><b id="b">B</b></button></div>
+      <div id="views" role="radiogroup"><button id="card" role="radio">Card</button></div>
+      <button id="plain">Help</button>`;
+    const widgetKeys = [
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+    ];
+    for (const id of ["#bar", "#bold", "#b", "#views", "#card"]) {
+      for (const key of widgetKeys) {
+        expect(inComposite(at(id), key), `${id} ${key}`).toBe(true);
+      }
+      for (const key of ["t", "f", "Delete", "Escape", "q"]) {
+        expect(inComposite(at(id), key), `${id} ${key}`).toBe(false);
+      }
+    }
+    for (const key of widgetKeys) {
+      expect(inComposite(at("#plain"), key)).toBe(false);
+      expect(inComposite(document.body, key)).toBe(false);
+    }
+    expect(inComposite(null, "Home")).toBe(false);
+    expect(inComposite(window, "Home")).toBe(false);
   });
 });

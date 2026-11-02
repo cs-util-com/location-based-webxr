@@ -39,7 +39,9 @@
  * in the `plane` view plus an image asset of the picture's own id (its
  * bytes at `content/<id>.jpg`), carried inline until a tour lists it. A
  * reading stand is a long text in the `lectern` view, built by the
- * caller's `makeLectern` (`lectern-view.ts`: a canvas page) at its pose.
+ * caller's `makeLectern` (`lectern-view.ts`: a canvas page) at its pose;
+ * a reading sign is one in the `reading` view, built by the caller's
+ * `makeReadingSign` (`reading-sign.ts`) at its pose.
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -60,7 +62,7 @@ import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-bloc
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
-import { Euler, Group, type Object3D, type Texture } from "three";
+import { Euler, Group, Quaternion, type Object3D, type Texture } from "three";
 
 import { placeCapturedImagePlanes } from "./image-planes.js";
 import { modelScale } from "./model-scale.js";
@@ -188,6 +190,24 @@ export function mintPhoto(input: {
   }
 }
 
+/**
+ * A reading stand's turn from its pose's rotation `[x, y, z, w]`: the
+ * turn about up only (the prototype's "the stand keeps this turn"). It
+ * does not turn to the visitor, and a pitch or roll would tilt it off its
+ * feet. Every page that draws a stand turns it by this one rule (the
+ * renderer here, the 3D editor's drag preview), written into `out`.
+ */
+export function uprightTurn(
+  rotation: readonly [number, number, number, number],
+  out: Quaternion = new Quaternion(),
+): Quaternion {
+  const turn = new Euler().setFromQuaternion(
+    out.set(...rotation).normalize(),
+    "YXZ",
+  );
+  return out.setFromEuler(new Euler(0, turn.y, 0, "YXZ"));
+}
+
 /** An object's pose in one NUE frame: the renderer's input shape. */
 interface ObjectPoseNue {
   positionNue: readonly [number, number, number];
@@ -233,11 +253,21 @@ export interface TourObjectRendererDeps {
    * (`mountLectern`: a canvas texture, so node has none). Absent: a stand
    * is left out quietly (the creator's previews draw none yet).
    */
-  makeLectern?(block: {
+  readonly makeLectern?: (block: {
     readonly id: string;
     readonly title: string;
     readonly body: string;
-  }): { object: Object3D; dispose(): void };
+  }) => { object: Object3D; dispose(): void };
+  /**
+   * A long text's reading sign (`reading` view), built by the page
+   * (`mountReadingSign`: a canvas texture). Absent: the sign is left out
+   * quietly, as a stand is.
+   */
+  readonly makeReadingSign?: (block: {
+    readonly id: string;
+    readonly title: string;
+    readonly body: string;
+  }) => { object: Object3D; dispose(): void };
 }
 
 export interface RenderedTourObjects {
@@ -292,6 +322,12 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * are set, and drawn only where the renderer already clips.
    */
   readonly modelViews?: ModelViewEnv;
+  /**
+   * The view a block is drawn in (the visitor's page: `shownView` of
+   * `visitor-prefs.ts`, design §4), at the block's own pose. Absent: the
+   * creator's view. A view no world drawing has is drawn as nothing.
+   */
+  readonly viewOf?: (block: TourBlock) => string;
 };
 
 /**
@@ -331,7 +367,12 @@ export async function renderStationBlocks(
   const paths = new Map(deps.assets.map((a) => [a.id, a.path]));
   const part = await renderContent(
     blocks.map((block) => ({
-      drawn: drawnBlock(block, paths),
+      drawn: drawnBlock(
+        deps.viewOf === undefined
+          ? block
+          : ({ ...block, view: deps.viewOf(block) } as TourBlock),
+        paths,
+      ),
       pose: {
         positionNue: block.pose.position,
         rotationNue: block.pose.rotation,
@@ -355,12 +396,19 @@ export async function renderStationBlocks(
 /** What the renderer draws of one free block: a label with its text, a
  *  plane with its picture's archive entry, a model in a world view with
  *  its file's entry, its size and its block (null entry: the tour lacks
- *  its asset), a reading stand with its title and body, or nothing. */
+ *  its asset), a reading stand or a reading sign with its title and body,
+ *  or nothing. */
 type Drawn =
   | { readonly id: string; readonly as: "label"; readonly text: string }
   | {
       readonly id: string;
       readonly as: "lectern";
+      readonly title: string;
+      readonly body: string;
+    }
+  | {
+      readonly id: string;
+      readonly as: "reading";
       readonly title: string;
       readonly body: string;
     }
@@ -374,13 +422,45 @@ type Drawn =
     }
   | { readonly id: string; readonly as: "none" };
 
-/** A long text as its reading stand draws it. */
-function lecternOf(text: {
+/** The views a long text stands in the world in; `captions` is a
+ *  visitor's (`viewOf`), never a creator's. */
+const LONG_TEXT_WORLD_VIEWS: ReadonlySet<string> = new Set([
+  "lectern",
+  "reading",
+  "captions",
+]);
+
+/** What a long text's world view draws: the reading sign for `reading`
+ *  and a visitor's `captions` (the strip itself is the page's), the
+ *  reading stand for `lectern`. */
+function longTextDrawnAs(view: string): "reading" | "lectern" {
+  return view === "reading" || view === "captions" ? "reading" : "lectern";
+}
+
+/**
+ * What a block is drawn as in `view`: two views that draw the same thing
+ * (a long text's `reading` and `captions`) give the same answer, so a
+ * caller comparing two views can tell whether anything drawn changed.
+ */
+export function drawnKindOf(block: TourBlock, view: string): string {
+  return block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(view)
+    ? longTextDrawnAs(view)
+    : view;
+}
+
+/** A long text as its reading stand or its reading sign draws it. */
+function longTextOf(text: {
   readonly id: string;
+  readonly view: string;
   readonly title: string;
   readonly body: string;
 }): Drawn {
-  return { id: text.id, as: "lectern", title: text.title, body: text.body };
+  return {
+    id: text.id,
+    as: longTextDrawnAs(text.view),
+    title: text.title,
+    body: text.body,
+  };
 }
 
 /** A world-view object as drawn: a picture's file is its inline asset. */
@@ -389,7 +469,7 @@ function drawnObject(object: TourObject): Drawn {
     case "shortText":
       return { id: object.id, as: "label", text: object.caption };
     case "longText":
-      return lecternOf(object);
+      return longTextOf(object);
     case "picture":
       return { id: object.id, as: "plane", entry: object.imageAsset.path };
     case "model":
@@ -406,8 +486,8 @@ function drawnBlock(
   if (block.kind === "shortText" && block.view === "pin") {
     return { id: block.id, as: "label", text: block.caption };
   }
-  if (block.kind === "longText" && block.view === "lectern") {
-    return lecternOf(block);
+  if (block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(block.view)) {
+    return longTextOf(block);
   }
   if (block.kind === "picture" && block.view === "plane") {
     return { id: block.id, as: "plane", entry: paths.get(block.image) ?? null };
@@ -430,7 +510,8 @@ function drawnBlock(
 
 /** The one renderer: pins as labels, pictures as planes, models at their
  *  size (`modelScale`) in their world view (`mountModelView`, found again
- *  through `mountedModelViews`), reading stands by `makeLectern`, each at
+ *  through `mountedModelViews`), reading stands by `makeLectern` and
+ *  reading signs by `makeReadingSign`, each at
  *  its pose in `scene`'s frame, under one group added once everything
  *  decoded. */
 async function renderContent(
@@ -484,25 +565,19 @@ async function renderContent(
         // load" would claim a download failed.
         continue;
       }
-      if (drawn.as === "lectern") {
+      if (drawn.as === "lectern" || drawn.as === "reading") {
         // No builder (the 3D editor, the creator's previews): left out
         // quietly, as a model without a loader.
-        const stand = deps.makeLectern?.({
+        const make =
+          drawn.as === "lectern" ? deps.makeLectern : deps.makeReadingSign;
+        const stand = make?.({
           id: drawn.id,
           title: drawn.title,
           body: drawn.body,
         });
         if (stand === undefined) continue;
         stand.object.position.set(...pose.positionNue);
-        // It keeps its pose's turn about up only (the prototype's "the
-        // stand keeps this turn"): it does not turn to the visitor, and a
-        // pitch or roll would tilt it off its feet.
-        stand.object.quaternion.set(...pose.rotationNue);
-        const turn = new Euler().setFromQuaternion(
-          stand.object.quaternion,
-          "YXZ",
-        );
-        stand.object.quaternion.setFromEuler(new Euler(0, turn.y, 0, "YXZ"));
+        uprightTurn(pose.rotationNue, stand.object.quaternion);
         stand.object.userData["objectId"] = drawn.id;
         stands.push(stand);
         continue;

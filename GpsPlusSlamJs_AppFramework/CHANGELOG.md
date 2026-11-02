@@ -140,6 +140,52 @@
   - **`sensors/permission-state`** (deep import): the prompt-free
     Permissions-API query.
 
+- **A long text as a reading sign, `tour.json` version 4 minor 4**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `reading`: a short sign at the block's pose, turned toward the viewer,
+  that opens the whole text on a tap, free at its station or reached by a
+  story step. `TOUR_BLOCK_VIEWS.longText` is now `lectern`, `reading`,
+  `card` and `TOUR_WORLD_VIEWS` holds `reading`; the new type
+  `TourReadingSign` joins `TourObject` (a switch over an object's `view`
+  gains a `reading` case); `tourFloorView('longText', 'free')` is now
+  `'reading'` (it was `null`), so a free long text in a view this reader
+  does not know falls back to the reading sign instead of being skipped.
+  `TOUR_MANIFEST_MINOR` is 4; a tour without a reading sign is still
+  written at its lower minor. A reader of 1.31.0 opens a 4.4 tour
+  leniently: a free reading sign is left out and reported, a story one
+  shows as its card, and that app will not save the tour.
+
+- **A long text read aloud, with a read-along track, `tour.json` version 4
+  minor 5** (`ar/tour-blocks`, `ar/tour-manifest`, new `ar/tour-timing`).
+  A long text gains an optional `narration` `{ audio, timing?,
+voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
+  `timing` names the block's own new archive entry `timing/<blockId>.json`
+  (a track of `{ startMs, endMs, from, to, text? }` segments over the
+  body's plain text, with the text's hash), `voiceCredit` is at most 200
+  characters, `synthetic` reads as false when absent, and `durationMs` is
+  1 ms to four hours. New exports: `TourNarration`,
+  `TOUR_NARRATION_RULES`, `TOUR_NARRATION_MAX_DURATION_MS`, and from
+  `ar/tour-timing` `parseTourTiming`, `parseTourTimingText`,
+  `tourTimingStaleReason`, `tourTimingEntryName`, `TourTimingError`, the
+  caps `TOUR_TIMING_MAX_BYTES` (1.5 MB), `TOUR_TIMING_MAX_SEGMENTS`
+  (20 000) and `TOUR_TIMING_MAX_ANCHORS` (2 000), `TOUR_TIMING_FOLDER` and
+  the `TourTiming*` types. A timing's wrong shape is an error; a timing
+  that no longer fits its text (the text was edited, or it runs past the
+  voice) is stale, and a viewer shows the plain text. `TOUR_MANIFEST_MINOR`
+  is 5; a tour without narration is still written at its lower minor. A
+  reader of 1.31.0 opens a 4.5 tour leniently: the narration is ignored,
+  the text shows as it did at minor 4, and that app will not save the
+  tour.
+
+- **The parts of a long text shown as typed** (`ar/tour-markdown`):
+  `diagnoseTourMarkdown(body, { assetExists? })` gives each part of a body
+  that a visitor sees as the characters typed rather than formatted, as
+  the reader itself decides it, with the types `TourMdDiagnostic`
+  (`kind`, `from`, `to`, `line`) and `TourMdDiagnosticKind`. A code
+  box's fence state follows the whole body (a blank line inside a box
+  keeps it a box), and a box left open inside a list item or a quote ends
+  with its container.
+
 ### Changed
 
 - **`downloadBlob` reads its save dialog's rejection through

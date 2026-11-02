@@ -188,6 +188,38 @@ wired into its logic: every interaction is faked.
     the arrow, dragged sideways. Weakness: in the editor at phone width the
     whole bend spans a few pixels, so the slider does it there.
 
+- `narration-1-quiet-voice/` ... `narration-3-sign-speaks/` - a narrated
+  long text for the visitor in AR, three directions; made 2026-10-31. Each
+  answers how the voice is noticed before anything opens, the captions strip
+  next to the full text, the audio states (loading, missing file, the end, a
+  locked phone, a call) and a speed control. A fake clock drives the words.
+  - `narration-1-quiet-voice/` - the voice is a gentle extra: a small speaker
+    mark on the sign, one surface at a time, calm one-line problems.
+    Weakness: "4 min" can read as reading time, so the voice is easy to miss.
+  - `narration-2-audio-guide/` - listening first: one tap on "Listen" plays
+    and shows a persistent mini-player. Weakness: sound starts at once, which
+    can startle in a quiet place without earphones.
+  - `narration-3-sign-speaks/` - the sign has Read and Listen halves and the
+    spoken sentence runs on a plate under it in the world (three.js 0.185.1
+    from unpkg). Weakness: beyond about 7-9 m the letters are too small and the
+    caption moves to the screen.
+
+- `longtext-editor-1-in-the-inspector/` ... `longtext-editor-3-preview-first/` -
+  writing a long text and its narration in the tour editor, three directions;
+  made 2026-11-01. Each answers where the body is written and previewed, how
+  "shown as typed" parts are pointed out, the view picker (sign and sheet,
+  screen only, captions), adding a voice and a timing with the mismatches
+  listed, and a timing put out of line by an edit.
+  - `longtext-editor-1-in-the-inspector/` - everything in the right-hand
+    panel, the preview a phone sheet over the 3D view. Weakness: at 1024x768
+    the writer is about 170 px tall while a note is open.
+  - `longtext-editor-2-writing-desk/` - a desk over the 3D view's area: text,
+    a notes margin, a phone preview in step and a narration timeline.
+    Weakness: the 3D view is gone while writing.
+  - `longtext-editor-3-preview-first/` - editing in the visitor's own sheet,
+    a guided "Add a voice" flow. Weakness: rich-text editing covers the
+    common paths only, and at 1024 px the 3D view shrinks to about 260 px.
+
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
 coding agent to build that one. The verdicts are in the polish-round plan

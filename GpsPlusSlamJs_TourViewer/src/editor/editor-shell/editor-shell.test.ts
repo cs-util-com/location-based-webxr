@@ -125,10 +125,15 @@ function setUp() {
     station: vi.fn(),
     text: vi.fn(),
     block: vi.fn(),
+    view: vi.fn(),
     model: vi.fn((): "written" => "written"),
     scene: vi.fn(),
     groundItems: vi.fn(),
     addPin: vi.fn(),
+    narration: vi.fn(() =>
+      Promise.resolve({ kind: "refused" as const, reason: "none" }),
+    ),
+    editNarration: vi.fn(() => Promise.resolve("written" as const)),
   };
   const deps: EditorShellDeps = {
     store,
@@ -148,8 +153,9 @@ function setUp() {
     say: vi.fn(),
   };
   const shell = createEditorShell(deps);
-  shell.show(fakeView());
-  return { store, select, edits, deps, shell };
+  const view = fakeView();
+  shell.show(view);
+  return { store, select, edits, deps, shell, view };
 }
 
 /** The inspector's field `name`: a line (an input) or prose (a text
@@ -874,5 +880,127 @@ describe("the tree during the approach", () => {
     shell.show(fakeView());
     shell.approachEnded("landed");
     expect(treeFolded(store)).toBe(false);
+  });
+});
+
+// Why: a Save (Ctrl+S, the bar's button) writes the tour as the store
+// holds it, and typing that has not been left or paused on yet - in an
+// inspector field or in a long text's writer - is not in it. The page asks
+// the shell to write that typing first (`flush`); without it a Save while
+// typing saved the text without its last words.
+describe("a save while typing", () => {
+  it("writes the field being typed in when the page flushes", () => {
+    const { select, edits, shell } = setUp();
+    select("station:a");
+    typeInto("description", "By the fountain");
+    shell.flush();
+    expect(edits.station).toHaveBeenCalledWith("a", {
+      description: "By the fountain",
+    });
+    shell.hide();
+  });
+
+  it("writes a long text's typing that has not paused yet when the page flushes", () => {
+    const { store, select, edits, shell } = setUp();
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [
+                {
+                  id: "essay",
+                  kind: "longText",
+                  view: "reading",
+                  title: "Essay",
+                  body: "Old words.",
+                  createdAtIso: AT,
+                  pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+              ],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    select("essay");
+    const area = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="long-text-writer"]',
+    );
+    if (area === null) throw new Error("no writer");
+    area.value = "Old words. New ones";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(edits.block).not.toHaveBeenCalled();
+    shell.flush();
+    expect(edits.block).toHaveBeenCalledWith(
+      "essay",
+      "body",
+      "Old words. New ones",
+    );
+    shell.hide();
+  });
+});
+
+// Why: the preview's head names the view the visitor sees the text in;
+// the dock hands it the selected text's view on every draw, so a text
+// set to a reading stand must not be headed "Reading sign".
+describe("the long text's preview", () => {
+  it("names the selected text's view in its head", () => {
+    const { store, select, shell } = setUp();
+    const essay = (id: string, view: string) => ({
+      id,
+      kind: "longText",
+      view,
+      title: "Essay",
+      body: "Words.",
+      createdAtIso: AT,
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    });
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [essay("stand", "lectern"), essay("card", "card")],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    const head = () => document.querySelector(".lw-vn")?.textContent;
+    select("stand");
+    expect(head()).toBe("Reading stand");
+    select("card");
+    expect(head()).toBe("Station card");
+    shell.hide();
+  });
+});
+
+describe("the page keys next to a toolbar", () => {
+  // Why: a toolbar moves its focus by the arrows, Home and End. Home on a
+  // toolbar button reframed the whole tour behind the writer's toolbar.
+  it("leaves Home on a toolbar button to the toolbar, and frames the tour on Home elsewhere", () => {
+    const { shell, view } = setUp();
+    const bar = document.createElement("div");
+    bar.setAttribute("role", "toolbar");
+    const bold = document.createElement("button");
+    bar.append(bold);
+    const plain = document.createElement("button");
+    document.body.append(bar, plain);
+    const home = () =>
+      new KeyboardEvent("keydown", {
+        key: "Home",
+        code: "Home",
+        bubbles: true,
+      });
+    bold.dispatchEvent(home());
+    expect(view.frame).not.toHaveBeenCalled();
+    plain.dispatchEvent(home());
+    expect(view.frame).toHaveBeenCalledWith(null);
+    shell.hide();
   });
 });

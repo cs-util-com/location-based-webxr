@@ -78,6 +78,13 @@ origin?, groundAt? })` ->
   whether the sections are full, the clip or null, and the store's
   `modelFocus` and `modelPick`); null for every other item.
 - `buildInspector` takes the store's `modelFocus` and `modelPick`.
+- `ItemInspector.longText` - for a free long text, what its writer shows
+  (`InspectorLongText`: the block id, its stored view, title and body,
+  whether it has a narration, the visitor's line above the title - the
+  station's name and number - and the tour's pictures `{ id, path, label }`
+  for the picture button); null for every other item, and for a long text a
+  station's story shows (its prose stays a field there). Its body and title
+  are not repeated in `fields`.
 
 ## Invariants & assumptions
 
@@ -117,3 +124,7 @@ ground changing by a few millimetres without crossing a shown tenth
 leaves the model unchanged: the shell's readout draws the inspector again
 whenever its model changes, so a model carrying raw heights was drawn
 again under the creator's typing on every tile of finer ground.
+
+## Narration key
+
+`InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.

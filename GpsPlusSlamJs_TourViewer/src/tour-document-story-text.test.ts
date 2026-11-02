@@ -315,6 +315,12 @@ describe("stationEdited: a text of a block the station's story shows", () => {
       fc.property(fc.array(step, { maxLength: 12 }), (steps) => {
         let state = open();
         for (const s of steps) state = edit(state, s);
+        // A declared character's name stays his declaration's - asked of
+        // the document before any read-back, since a read writes the
+        // declaration's name over whatever the block carries.
+        const written = manifestToWrite(state);
+        if (written === null) return false;
+        expect(blockOf(written, "w1")["name"]).toBe("Wendel");
         const saved = readBack(state);
         const gate = saved.stations.find((s) => s.id === "gate");
         if (gate === undefined) return false;
@@ -338,8 +344,6 @@ describe("stationEdited: a text of a block the station's story shows", () => {
           view: "pin",
           caption: "Gate",
         });
-        // A declared character's name stays his declaration's.
-        expect(blockOf(saved, "w1")["name"]).toBe("Wendel");
         return true;
       }),
       { numRuns: 150 },

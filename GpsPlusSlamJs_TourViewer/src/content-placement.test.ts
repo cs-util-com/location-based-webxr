@@ -36,6 +36,7 @@ import {
   renderTourStation,
   renderStationBlocks,
   rotationFromHeading,
+  uprightTurn,
 } from "./content-placement";
 import { mountedModelViews } from "./model-views";
 import { contentSegment } from "./tour-flow";
@@ -192,6 +193,36 @@ describe("rotationFromHeading", () => {
       objectPoseNue({ lat: 47.5, lon: 8.7, alt: 1, headingDeg: 90 }, ZERO)
         .rotationNue,
     ).toEqual(rotationFromHeading(90));
+  });
+});
+
+describe("uprightTurn", () => {
+  // Why this matters: a reading stand keeps only its pose's turn about up
+  // on every page that draws it (the phone's renderer and the 3D editor's
+  // drag preview share this one rule); a pitch or roll left in would tilt
+  // it off its feet, and a turn lost would face it the wrong way.
+  it("keeps a pose's turn about up and drops its pitch and roll (property)", () => {
+    const deg = fc.double({ min: -80, max: 80, noNaN: true });
+    fc.assert(
+      fc.property(
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        deg,
+        deg,
+        (yaw, pitch, roll) => {
+          const rad = Math.PI / 180;
+          const q = new Quaternion().setFromEuler(
+            new Euler(pitch * rad, yaw * rad, roll * rad, "YXZ"),
+          );
+          const up = uprightTurn([q.x, q.y, q.z, q.w]);
+          // Its up stays up, and its turn is the pose's.
+          expect(new Vector3(0, 1, 0).applyQuaternion(up).y).toBeCloseTo(1, 9);
+          const expected = new Quaternion().setFromEuler(
+            new Euler(0, yaw * rad, 0, "YXZ"),
+          );
+          expect(up.angleTo(expected)).toBeLessThan(1e-6);
+        },
+      ),
+    );
   });
 });
 
@@ -665,6 +696,132 @@ describe("renderTourStation", () => {
     });
     expect([quiet.count, quiet.skipped]).toEqual([0, []]);
     quiet.dispose();
+  });
+
+  // Why (station blocks, the reading sign): a long text in the `reading`
+  // view stands at its local pose as a short sign drawn by the page's
+  // builder, not as a reading stand; with no builder it is left out
+  // quietly, as a stand is.
+  it("draws a reading sign at its local pose through the page's builder, and leaves it out without one", async () => {
+    const scene = new Group();
+    const stationGeo = geoAt({ ...ZERO, alt: 400 }, 10, 0, 5, yaw(0));
+    const station = stationAt("s", stationGeo, [
+      {
+        id: "sign",
+        kind: "longText" as const,
+        view: "reading" as const,
+        title: "The guild house",
+        body: "It burned in 1612.",
+        pose: {
+          position: [3, 0, -1] as [number, number, number],
+          rotation: yaw(0),
+        },
+      },
+    ]);
+    const signs: string[] = [];
+    let stands = 0;
+    let disposed = 0;
+    const rendered = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: () => {
+        stands += 1;
+        return { object: new Group(), dispose: () => undefined };
+      },
+      makeReadingSign: (block) => {
+        signs.push(`${block.id}:${block.title}:${block.body}`);
+        return {
+          object: new Group(),
+          dispose: () => {
+            disposed += 1;
+          },
+        };
+      },
+    });
+    expect(signs).toEqual(["sign:The guild house:It burned in 1612."]);
+    expect(stands).toBe(0);
+    expect(rendered.count).toBe(1);
+    let found: Object3D | undefined;
+    rendered.root.traverse((o) => {
+      if (o.userData["objectId"] === "sign") found = o;
+    });
+    expect(found?.position.toArray()).toEqual([3, 0, -1]);
+    rendered.dispose();
+    expect(disposed).toBe(1);
+
+    const quiet = await renderTourStation(station, {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect([quiet.count, quiet.skipped]).toEqual([0, []]);
+    quiet.dispose();
+  });
+
+  // Why (station blocks, the visitor's view preference): the visitor's
+  // page draws a block in the view `viewOf` names (a reading sign as a
+  // stand, design §4) at the same pose; a visitor's captions stand as the
+  // reading sign (the strip is the page's); a view no world drawing has
+  // is nothing, and without `viewOf` the creator's view is drawn.
+  it("draws a block in the view viewOf names, at the same pose", async () => {
+    const scene = new Group();
+    const station = stationAt(
+      "s",
+      geoAt({ ...ZERO, alt: 400 }, 0, 0, 0, yaw(0)),
+      [
+        {
+          id: "sign",
+          kind: "longText" as const,
+          view: "reading" as const,
+          title: "The guild house",
+          body: "It burned in 1612.",
+          pose: {
+            position: [3, 0, -1] as [number, number, number],
+            rotation: yaw(0),
+          },
+        },
+      ],
+    );
+    const drawn: string[] = [];
+    const make = (as: string) => (block: { readonly id: string }) => {
+      drawn.push(`${as}:${block.id}`);
+      return { object: new Group(), dispose: () => undefined };
+    };
+    const deps = {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      makeLectern: make("lectern"),
+      makeReadingSign: make("reading"),
+    };
+    const swapped = await renderTourStation(station, {
+      ...deps,
+      viewOf: (block) => (block.view === "reading" ? "lectern" : block.view),
+    });
+    let found: Object3D | undefined;
+    swapped.root.traverse((o) => {
+      if (o.userData["objectId"] === "sign") found = o;
+    });
+    expect(found?.position.toArray()).toEqual([3, 0, -1]);
+    swapped.dispose();
+    const none = await renderTourStation(station, {
+      ...deps,
+      viewOf: () => "silent",
+    });
+    expect(none.count).toBe(0);
+    none.dispose();
+    (
+      await renderTourStation(station, { ...deps, viewOf: () => "captions" })
+    ).dispose();
+    (await renderTourStation(station, deps)).dispose();
+    expect(drawn).toEqual(["lectern:sign", "reading:sign", "reading:sign"]);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

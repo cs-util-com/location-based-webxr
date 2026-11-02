@@ -210,6 +210,23 @@ describe("a tour switch stops the closing tour's stations", () => {
       expect(stopStations).toHaveBeenCalledTimes(open ? 1 : 0);
     }
   });
+
+  // Why this test matters: a narrated text's voice holds an audio element
+  // and a blob URL of the closing tour's file. Pausing them (the AR
+  // session's end) keeps them; only a tour's close lets them go, so the
+  // close must ask for it - the narration visitor alone noticed the new
+  // tour only at its next use, which may never come.
+  it("lets the closing tour's media go once, never with no tour open", async () => {
+    for (const open of [true, false]) {
+      const ctx = createTourViewerSession();
+      if (open) ctx.session = openTour();
+      const hooks = createUnwiredHooks();
+      const release = vi.spyOn(hooks, "releaseTourMedia");
+      const dom = openAnotherTour(ctx, hooks);
+      await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+      expect(release).toHaveBeenCalledTimes(open ? 1 : 0);
+    }
+  });
 });
 
 // (A test that a tour switch forgot the closing tour's bake stood here: the

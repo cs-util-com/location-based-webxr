@@ -856,6 +856,29 @@ describe("the zip-bomb caps (K0)", () => {
     await session.close();
   });
 
+  it("reads a text entry under its own type's cap when one is given", async () => {
+    // Why: a read-along timing has its own cap (1.5 MB), far above the
+    // general text cap; the session must apply the cap the caller names,
+    // in both directions, never the general one silently.
+    const zip = await deflatedZip({
+      "qr/big.json": LEVEL_JSON + " ".repeat(5000),
+      "qr/ok.json": LEVEL_JSON,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    expect((await session.loadEntryText("qr/big.json", 10_000)).length).toBe(
+      LEVEL_JSON.length + 5000,
+    );
+    const err = await session
+      .loadEntryText("qr/ok.json", 10)
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("entry-bytes");
+    expect((err as ArchiveLimitError).limit).toBe(10);
+    await session.close();
+  });
+
   it("surfaces a capture-geo refusal instead of reading it as 'no recording' (K0 milestone review R9)", async () => {
     // The join's caller shows a thrown error in the AR status line ("photo
     // ring (reading the recording failed: ...)"); a swallowed refusal read

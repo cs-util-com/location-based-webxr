@@ -147,8 +147,9 @@ hooks.tickStations = stations.tick;
   aria-hidden): `sayFailureInToast(toast)`, the scene view's
   `sayFailure`; no walk sheet, not said.
   `routeVisitorTap` is `main.ts`'s order: the character, then a model's
-  card, then a reading stand's page (`lectern-view.ts`, which turns it);
-  a tap any of them takes closes the pin sheet, one none of them takes is the
+  card, then a reading stand's page (`lectern-view.ts`, which turns it),
+  then a reading sign (`reading-sign.ts`, whose text opens in the reading
+  sheet); a tap any of them takes closes the pin sheet, one none of them takes is the
   pin sheet's. `declaredCharactersOf` builds the declared characters by
   id once per manifest, for the scene view and the prefetch.
 - **The rows' wiring:** a row's taps go to the guide (`rowTapped`, inside a

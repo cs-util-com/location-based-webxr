@@ -12,9 +12,10 @@
  *   and its heading, and whether that position is locked (every station
  *   is, until unlocked); with the ground known, how far it and its items
  *   stand off it.
- * - An item (pin, photo, 3D model): its name (a pin's text to edit), its
- *   kind and station, a model's size, its offset in the station's frame
- *   and its heading there, and how far it stands off the ground.
+ * - An item (pin, photo, 3D model, long text): its name (a pin's text to
+ *   edit), its kind and station, a model's size, its offset in the
+ *   station's frame and its heading there, and how far it stands off the
+ *   ground; for a long text, what its writer shows (`InspectorLongText`).
  * - A code: its name, its line, its print size and where it stands, in
  *   the same metres.
  *
@@ -42,6 +43,7 @@ import {
   objectTitle,
   type ObjectLook,
 } from "../../object-describe.js";
+import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
 import {
   ownedAssetIds,
@@ -229,6 +231,42 @@ export interface InspectorModelParts {
   readonly pick: ModelPick | null;
 }
 
+/** A long text as its writer shows it (`long-text-writer.ts`). */
+export interface InspectorLongText {
+  readonly blockId: string;
+  /** Its stored view (`TOUR_BLOCK_VIEWS.longText`). */
+  readonly view: string;
+  readonly title: string;
+  /** Its text, the tour's Markdown. */
+  readonly body: string;
+  readonly hasNarration: boolean;
+  /** Changes whenever its narration may have: the record and a stamp of
+   *  the tour's read-along texts (the Narration section re-reads on it). */
+  readonly narrationKey: string;
+  /** The line over its title in the visitor's sheet ("Gate · Station 1"). */
+  readonly over: string;
+  /** The tour's pictures a text may show, by asset id, with their file
+   *  name. */
+  readonly pictures: readonly {
+    readonly id: string;
+    readonly path: string;
+    readonly label: string;
+  }[];
+}
+
+/** The tour's pictures as a long text's writer offers them. */
+function textPictures(
+  assets: readonly TourAsset[],
+): InspectorLongText["pictures"] {
+  return assets
+    .filter((a) => a.kind === "image")
+    .map((a) => ({
+      id: a.id,
+      path: a.path,
+      label: a.path.slice(a.path.lastIndexOf("/") + 1),
+    }));
+}
+
 interface ItemInspector {
   readonly kind: "item";
   readonly itemKind: ObjectLook;
@@ -248,6 +286,8 @@ interface ItemInspector {
   /** A model's view, notes, sections and clip; null for a pin or a
    *  photo. */
   readonly model: InspectorModelParts | null;
+  /** A long text's writer's data; null for any other item. */
+  readonly longText: InspectorLongText | null;
   /** In the station's frame (m). */
   readonly offset: {
     readonly northM: number;
@@ -431,6 +471,8 @@ export function buildInspector(input: {
    *  none. */
   readonly modelFocus?: ModelFocus | null;
   readonly modelPick?: ModelPick | null;
+  /** Changes whenever the tour's read-along texts do; none given: "". */
+  readonly timingsStamp?: string;
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -515,6 +557,19 @@ export function buildInspector(input: {
                     },
               focus: input.modelFocus ?? null,
               pick: input.modelPick ?? null,
+            }
+          : null,
+      longText:
+        item.kind === "longText"
+          ? {
+              blockId: item.id,
+              view: item.view,
+              title: item.title,
+              body: item.body,
+              hasNarration: item.narration !== undefined,
+              narrationKey: `${JSON.stringify(item.narration ?? null)}|${input.timingsStamp ?? ""}`,
+              over: readingSheetContent(stations, item).over,
+              pictures: textPictures(input.assets),
             }
           : null,
       offset: { northM, upM, eastM },

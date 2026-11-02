@@ -69,7 +69,11 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     (`data-field="character-facing:<id>"`, whole degrees, 360 shown as
     0), then his texts. Every other story block with texts to type gets
     a section of its own (`div.isec.story-text`, `data-block` its id)
-    under "<kind> - <name>". A story block's text field is named
+    under "<kind> - <name>". Each story block's section (a character's
+    too) is a `role=group` named by its head, and each of its text
+    fields by its own label only ("Title"): a screen reader says the
+    group's name once on entering it, so two blocks' "Title" fields are
+    told apart by their group without the head said again per field. A story block's text field is named
     `block:<id>:<field>` and drawn as an item's other texts are
     (`blockTextField`, its count under it). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
@@ -140,6 +144,13 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     then "+ Add section (click the model)" and what a section does.
   - A button waiting for a click on the model reads "Click the model...",
     pressed (`.mini.on`).
+
+- A free long text (`model.longText`) is drawn as its title's field and
+  its writer (`InspectorState.writer`, a node `long-text-dock.ts` owns and
+  the inspector only places, so typing never rebuilds it), with Preview
+  (`lt-preview`) and Wider (`lt-wide`) in the head, pressed while on
+  (`InspectorState.longText`). The writer sits between the narration's
+  spot and Position; its fields are not drawn again under their names.
 
 ## Invariants & assumptions
 

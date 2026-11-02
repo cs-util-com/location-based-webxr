@@ -406,7 +406,7 @@ describe('views', () => {
   it('lists the views this reader draws, per kind', () => {
     expect(TOUR_BLOCK_VIEWS).toEqual({
       shortText: ['pin', 'card'],
-      longText: ['lectern', 'card'],
+      longText: ['lectern', 'reading', 'card'],
       picture: ['plane', 'card'],
       video: ['card'],
       audio: ['card'],
@@ -425,7 +425,7 @@ describe('views', () => {
 
   it("refuses a view the kind does not have, at this reader's own minor", () => {
     expect(() => one('shortText', { view: 'plane' })).toThrow(/view/);
-    expect(() => one('longText', { view: 'reading' })).toThrow(/view/);
+    expect(() => one('longText', { view: 'plane' })).toThrow(/view/);
   });
 
   it("refuses a block of an unknown kind at this reader's own minor", () => {
@@ -454,7 +454,8 @@ describe('views', () => {
     expect(tourFloorView('shortText', 'free')).toBe('pin');
     expect(tourFloorView('picture', 'free')).toBe('plane');
     expect(tourFloorView('model', 'free')).toBe('placed');
-    for (const kind of ['longText', 'video', 'audio', 'character'] as const) {
+    expect(tourFloorView('longText', 'free')).toBe('reading');
+    for (const kind of ['video', 'audio', 'character'] as const) {
       expect(tourFloorView(kind, 'free')).toBeNull();
     }
     for (const kind of Object.keys(VALID) as TourBlock['kind'][]) {
@@ -486,19 +487,19 @@ describe('a file of a newer minor (lenient)', () => {
     expect(placed).toMatchObject({ view: 'placed', sizeM: 3 });
   });
 
-  it('a free long text in an unknown view is skipped and reported', () => {
-    // Why: 4.0 has no world view for a long text; the reader cannot draw
-    // it, so it says so instead of inventing a placement.
+  it('a free long text in an unknown view stands as its reading sign', () => {
+    // Why: up to minor 3 a long text had no floor view and was skipped;
+    // from minor 4 the reading sign is its floor, so it is shown.
     const drops: TourBlockDrop[] = [];
-    const blocks = parse([{ ...VALID.longText, view: 'reading' }], {
+    const blocks = parse([{ ...VALID.longText, view: 'captions' }], {
       lenient: true,
       shown: [],
       drops,
     });
-    expect(blocks).toEqual([]);
-    expect(drops).toEqual([
-      expect.objectContaining({ kind: 'block', block: 'b2' }),
+    expect(blocks).toEqual([
+      expect.objectContaining({ id: 'b2', view: 'reading' }),
     ]);
+    expect(drops).toEqual([]);
   });
 
   it('a free model in an unknown view without a size is skipped (no size to place it at)', () => {
@@ -668,6 +669,7 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     expect([...TOUR_WORLD_VIEWS]).toEqual([
       'pin',
       'lectern',
+      'reading',
       'plane',
       ...TOUR_MODEL_WORLD_VIEWS,
     ]);

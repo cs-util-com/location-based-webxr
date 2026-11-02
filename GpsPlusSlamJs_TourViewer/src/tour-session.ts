@@ -76,6 +76,7 @@ import {
   type TourIntegrity,
   type WholeArchiveOutcome,
 } from "./tour-integrity.js";
+import { truncated } from "./truncated.js";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -169,9 +170,10 @@ export interface TourSession {
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
   /** Decompress one entry as UTF-8 text under the text cap
-   *  (`maxTextEntryBytes`): text lives on the JS heap, a Blob need not
-   *  (K0 milestone review R10). */
-  loadEntryText(filename: string): Promise<string>;
+   *  (`maxTextEntryBytes`, or `maxBytes` when an entry type has its own,
+   *  such as a read-along timing): text lives on the JS heap, a Blob need
+   *  not (K0 milestone review R10). */
+  loadEntryText(filename: string, maxBytes?: number): Promise<string>;
   /**
    * One `content/<id>.<ext>` entry named the way the MANIFEST names it.
    * The manifest can only carry the unwrapped name (the parser pins that
@@ -311,8 +313,9 @@ export function tourLabel(url: string): string {
   return tail === "" ? host : `${host}/${tail}`;
 }
 
+/** `text` cut after `max` characters, then "…". */
 function cut(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+  return truncated(text, max + 1);
 }
 
 export async function openTourSession(
@@ -747,7 +750,8 @@ async function buildSession(
         entryNamed(filename),
         tourMediaTypeOfEntry(filename)?.mime ?? "application/octet-stream",
       ),
-    loadEntryText: async (filename) => readText(entryNamed(filename)),
+    loadEntryText: async (filename, maxBytes) =>
+      readText(entryNamed(filename), maxBytes ?? limits.maxTextEntryBytes),
     loadQrLevels: () =>
       // The `qr/<id>.json` convention and its null-tolerance live in the
       // framework, because the recorder WRITES what this reads and the two
