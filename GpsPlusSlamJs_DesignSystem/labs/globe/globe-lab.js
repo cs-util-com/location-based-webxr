@@ -98,7 +98,6 @@ import {
   OSM_TILE_URL,
 } from "/fw/utils/osm-tiles.js";
 import { LANDING_GROUND, readLandingGroundM } from "/globe/landing-ground.js";
-import { createBandRelease, createBandShare } from "/globe/globe-band-step.js";
 import { createGlobeCameraControls } from "/globe/globe-camera-controls.js";
 import { createOsmFrameStep } from "/globe/globe-osm-frame.js";
 import { createReliefPlanes } from "/globe/globe-relief-planes.js";
@@ -107,7 +106,7 @@ import {
   reliefClearance,
   updateRelief,
 } from "/globe/globe-relief-step.js";
-import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
+import { mountGlobeRelief } from "/globe/globe-relief-mount.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
@@ -1598,17 +1597,22 @@ async function start() {
   // The stencil fill (round-6 plan G6-1): the relief draws first and marks
   // its pixels; the globe fills every pixel without a mark.
   const bandFill = Boolean(terrain) && fillAtStart;
-  if (bandFill) {
-    terrain.tiles.group.renderOrder = -1;
-    const roles = (tiles, role) =>
-      tiles.addEventListener("load-model", ({ scene: model }) => {
-        model.traverse((o) => {
-          if (o.isMesh) role(o.material);
-        });
-      });
-    roles(terrain.tiles, asStencilWriter);
-    roles(globe.tiles, asStencilFill);
-  }
+  // The relief under the globe (`/globe/globe-relief-mount.js`): the band's
+  // gated share and the release of a carrier out of the band (review
+  // 2026-10-03-1835 major 4: outside the band the inactive carrier's tiles
+  // are unloaded, not only left undrawn), the stencil fill's roles (here,
+  // before the cloud shadow's and the haze's patches), who is drawn and
+  // updated, and the cloud shell's share. Its events go to the debug log
+  // and the recorder's marks.
+  const reliefMount = terrain
+    ? mountGlobeRelief({
+        globe,
+        relief: terrain,
+        fill: bandFill,
+        log: (kind, detail) => debugLog.log(kind, detail),
+        mark: (kind, detail) => hooks.mark(kind, detail),
+      })
+    : null;
   // The cloud volume (C2; the Globe package's globe-cloud-volume-pass.ts): the ground sky's slab, its
   // clouds from the globe's map, ending at the relief's depth; its shadow
   // (C3) patches the relief before the haze does.
@@ -1671,14 +1675,11 @@ async function start() {
   let groundUnderCameraM = null;
   /** Frames on which the clearance raised the camera. */
   let clearanceLifts = 0;
-  /** The band's cross-fade (`globe-band-step.ts`), made with the relief below. */
-  let band = null;
   /**
-   * The relief's share of the pixels this frame, read from the band, its one
-   * owner: 1 with the relief until the band exists (the band starts at 1),
-   * 0 without the relief.
+   * The relief's share of the pixels this frame, read from the mount, its
+   * one owner: 1 with the relief before its first step, 0 without it.
    */
-  const bandShare = () => (band ? band.share() : terrain ? 1 : 0);
+  const bandShare = () => (reliefMount ? reliefMount.share() : 0);
   /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
   const surfaceTiles = () =>
     terrain && bandShare() >= 0.5 ? terrain.tiles : globe.tiles;
@@ -2122,23 +2123,6 @@ async function start() {
   let reliefHidden = false;
   /** For the cloud smoke: the shell hidden, the ground under it alone. */
   let cloudShellHidden = false;
-  /** Whether the relief's view is refined: nothing of it loading or queued. */
-  const reliefSettled = () =>
-    terrain.tiles.loadProgress === 1 &&
-    !terrain.tiles.downloadQueue.running &&
-    !terrain.tiles.parseQueue.running &&
-    !terrain.tiles.processNodeQueue.running;
-  /** A carrier's coarsest tiles, which a drain keeps (round-6 plan G6-1). */
-  const keepCoarsest = (tile) => (tile?.internal?.depth ?? Infinity) <= 1;
-  /**
-   * What a drain keeps of `tiles`: its coarsest tiles, and any tile its last
-   * update used (with the stencil fill the globe is updated while it fills,
-   * and draining what it draws would only reload it).
-   */
-  const keepFor = (tiles) => (tile) =>
-    keepCoarsest(tile) ||
-    (tile?.traversal?.used === true &&
-      tile.traversal.lastFrameVisited === tiles.frameCount);
   /**
    * The frame's recorder hooks, fanned out to the frame-hitch recorder and
    * the Debug panel; the rare events also go to the debug log.
@@ -2171,37 +2155,6 @@ async function start() {
   };
   /** An exaggeration the recorder holds in place of the altitude's, or null. */
   let eOverride = null;
-  /**
-   * The band's gated share (with its hold, edge and share events) and the
-   * release of a carrier out of the band (review 2026-10-03-1835 major 4:
-   * outside the band the inactive carrier's tiles are unloaded, not only
-   * left undrawn).
-   */
-  const bandLog = (kind, detail) => debugLog.log(kind, detail);
-  const bandMark = (kind, detail) => hooks.mark(kind, detail);
-  band = terrain
-    ? createBandShare({
-        globeTiles: globe.tiles,
-        reliefTiles: terrain.tiles,
-        reliefSettled,
-        log: bandLog,
-        mark: bandMark,
-      })
-    : null;
-  const bandRelease = terrain
-    ? createBandRelease({
-        globe: {
-          cache: globe.tiles.lruCache,
-          keep: () => keepFor(globe.tiles),
-        },
-        relief: {
-          cache: terrain.tiles.lruCache,
-          keep: () => keepFor(terrain.tiles),
-        },
-        log: bandLog,
-        mark: bandMark,
-      })
-    : null;
   /**
    * The recorder's refresh calibration: while true the frame does no work
    * (nothing updated, nothing drawn), so its intervals are the display's.
@@ -2273,28 +2226,22 @@ async function start() {
           law: heightLaw(),
         });
       }
-      const highM = params.bandHigh * 1000;
-      band.step(now, {
+      // The share (written to the surface's carrier share), and a carrier
+      // out of the band for `bandReleaseMs` has its cache released; a
+      // return before then cancels it. Not while frozen: the smokes step the
+      // share over the same tiles.
+      reliefMount.step(now, {
         altitudeM,
         fixedShare: params.bandShare,
-        highM,
-        lowM: Math.min(params.bandLow * 1000, highM - 1),
+        highM: params.bandHigh * 1000,
+        lowM: params.bandLow * 1000,
         gate: params.bandGate !== 0,
         sharp: params.bandSharp !== 0,
-      });
-      bandTarget = band.target();
-      globe.surfaceUniforms.uCarrierShare.value = bandShare();
-      // A carrier out of the band for `bandReleaseMs` has its cache
-      // released; a return before then cancels it. Not while frozen: the
-      // smokes step the share over the same tiles.
-      const frozen = params.bandFreeze === 1;
-      bandRelease.step(now, {
-        share: bandShare(),
-        altitudeM,
-        frozen,
+        frozen: params.bandFreeze === 1,
         releaseMs: params.bandReleaseMs,
         drainTiles: params.bandDrainTiles,
       });
+      bandTarget = reliefMount.target();
       // The clearance every frame (one-scene plan §3.4; review 2026-10-03-1835
       // major 1): wherever the relief draws, the camera never comes closer
       // to the drawn ground under it than the clearance, whoever owns the
@@ -2323,35 +2270,28 @@ async function start() {
         groundUnderCameraM,
         bandShare: bandShare(),
       });
-      // With the fill the globe always draws (only where the relief left a
-      // pixel) and is always updated, coarse while the relief has every
-      // pixel, so it keeps to its top tiles.
-      globe.tiles.group.visible = bandFill || bandShare() < 1;
-      if (bandFill) {
-        globe.tiles.errorTarget =
-          bandShare() >= 1 && bandTarget >= 1
-            ? params.bandFillErrorTarget
-            : params.errorTarget;
-      }
-      // A carrier is updated (so loads) where it draws or where the
-      // altitude wants it to: the gate waits for it to be ready.
-      if ((bandFill || bandShare() < 1 || bandTarget < 1) && !frozen) {
-        globe.update(camera, renderer);
-      }
-      terrain.tiles.group.visible = bandShare() > 0 && !reliefHidden;
-      if ((bandShare() > 0 || bandTarget > 0) && !frozen) {
+      // Who is drawn and updated (so loads): with the fill the globe always,
+      // coarse while the relief has every pixel; each carrier where it draws
+      // or where the altitude wants it to.
+      reliefMount.draw({
+        camera,
+        renderer,
+        errorTarget: params.errorTarget,
+        fillErrorTarget: params.bandFillErrorTarget,
+        reliefHidden,
         // An E step re-walks the relief's tile tree (frame-hitch plan H1):
         // the assignment is timed for the recorder.
-        updateRelief({
-          tiles: terrain.tiles,
-          plugin: terrain.plugin,
-          camera,
-          renderer,
-          resolution: terrainResolution,
-          heightScale: eOverride ?? exaggerationAt(altitudeM, heightLaw()),
-          onEStep: (ms, e) => hooks.eStep(ms, e),
-        });
-      }
+        updateRelief: () =>
+          updateRelief({
+            tiles: terrain.tiles,
+            plugin: terrain.plugin,
+            camera,
+            renderer,
+            resolution: terrainResolution,
+            heightScale: eOverride ?? exaggerationAt(altitudeM, heightLaw()),
+            onEStep: (ms, e) => hooks.eStep(ms, e),
+          }),
+      });
     } else {
       globe.update(camera, renderer);
     }
@@ -2366,7 +2306,6 @@ async function start() {
     // 2026-10-04: from orbit the shell read 25-35 levels (summed) darker than
     // the paint, because each draw is tone-mapped and then blended in
     // display space; the paint mixes before the tone mapping.
-    const shellShare = params.cloudShell === 1 && terrain ? bandShare() : 0;
     // The flat layer's share by the camera's altitude now (the last
     // frame's lagged a fast dive by kilometres): it hands over to the volume
     // where one is drawn, else it only weakens.
@@ -2384,7 +2323,10 @@ async function start() {
       cameraAltM,
       framed: frameTarget() !== null,
     });
-    globe.setCloudShellShare(shellShare, flat);
+    // The shell's share is the relief's (with the shell on), from the mount.
+    const shellShare =
+      reliefMount?.shareClouds(params.cloudShell === 1, flat) ?? 0;
+    if (!reliefMount) globe.setCloudShellShare(0, flat);
     cloudFlatShare = flat;
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
     // The shell's soft shadow, unless the volume's is chosen (C3).
@@ -2878,14 +2820,14 @@ async function start() {
             source: terrarium ? reliefSource.id : "synthetic",
             fallback: terrain.reliefFallback(),
             meshMaxLevel: startParams.reliefMeshLevel,
-            releasedBytes: { ...bandRelease.released },
+            releasedBytes: { ...reliefMount.release.released },
             // The decoded heights kept past their tiles, and the height
             // tiles requested so far (synthetic heights only; DEC-N1).
             keptHeights: terrain.heightKeeperStats(),
             heightRequests: syntheticHeights?.requests.length ?? null,
             lastRelease: {
-              globe: bandRelease.outOfBand.globe.last,
-              relief: bandRelease.outOfBand.relief.last,
+              globe: reliefMount.release.outOfBand.globe.last,
+              relief: reliefMount.release.outOfBand.relief.last,
             },
             settled:
               terrain.tiles.loadProgress === 1 &&
@@ -3743,7 +3685,7 @@ void main() {
       viewReadiness() {
         return {
           band: !terrain || Math.abs(bandShare() - bandTarget) < 1e-3,
-          release: bandRelease?.settled() ?? true,
+          release: reliefMount?.release.settled() ?? true,
           // A delivery that lands inside a held run voids it
           // (`city.arrived`), so a run need not wait for the load's end;
           // the sweep waits for that once, before its first move

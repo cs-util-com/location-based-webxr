@@ -11,17 +11,14 @@ and a camera pose read back as a view.
 ## Public API
 
 - `GLOBE_EDITOR_LOOK` (frozen): `fovYDeg` 50, `backM` 30, `eyeM` (the
-  globe's eye height), `reliefCeilingM` 25,000 and `reliefBandM` 5,000 (the
-  carrier switch; declared, not measured), `aimPitchDeg` -30, `aimRadii` 3.
+  globe's eye height), `reliefCeilingM` 25,000 (over it `centre()`
+  names no place; declared, not measured), `aimPitchDeg` -30, `aimRadii` 3.
 - `globeEditorSettings()`: the view's settings, the same frozen object
   every call (world frame follows the target, sky on, the lab's navy space,
   no debug hole colour, the globe's cloud drift law).
 - `streetView(centre, groundM)`: `backM` south of the centre, `eyeM` over
   `groundM`, facing north and down at the centre's ground. RangeError for a
   value that is not finite.
-- `reliefCarries(altitudeM, wasRelief)`: whether the relief carries the
-  ground; the carrier changes only `reliefBandM` past the ceiling. NaN keeps
-  the carrier.
 - `globeHidden(objects, was, knobs, selected)`: the hidden stations and
   codes. Size first (`sizeShown`, with hysteresis through `was`), then
   crowding over the stations still shown and on screen (`crowdedPins`). The
@@ -63,7 +60,6 @@ and a camera pose read back as a view.
 
 ```ts
 view.placeView(streetView({ lat: 48.1, lng: 11.6 }, 515));
-relief = reliefCarries(altitudeM, relief);
 hidden = globeHidden(onScreen(), hidden, knobs, selectedStation);
 ```
 

@@ -19,7 +19,6 @@ import {
   daylightStartMs,
   globeEditorSettings,
   globeHidden,
-  reliefCarries,
   steppedView,
   streetView,
   viewPoseOf,
@@ -64,30 +63,6 @@ describe("globeEditorSettings", () => {
     expect(s.holeColor).toBe(0);
     expect(s.fovY).toBe(GLOBE_EDITOR_LOOK.fovYDeg);
     expect(globeEditorSettings()).toBe(s);
-  });
-});
-
-describe("reliefCarries", () => {
-  const { reliefCeilingM: ceiling, reliefBandM: band } = GLOBE_EDITOR_LOOK;
-
-  it("carries the ground on the relief low and on the globe high", () => {
-    expect(reliefCarries(2, false)).toBe(true);
-    expect(reliefCarries(400_000, true)).toBe(false);
-  });
-
-  // Why: a camera hovering at the line would swap the ground every frame.
-  it("keeps its carrier inside the band around the ceiling", () => {
-    expect(reliefCarries(ceiling, true)).toBe(true);
-    expect(reliefCarries(ceiling, false)).toBe(false);
-    expect(reliefCarries(ceiling + band * 0.99, true)).toBe(true);
-    expect(reliefCarries(ceiling + band, true)).toBe(false);
-    expect(reliefCarries(ceiling - band * 0.99, false)).toBe(false);
-    expect(reliefCarries(ceiling - band * 1.01, false)).toBe(true);
-  });
-
-  it("keeps its carrier for an altitude that is not a number", () => {
-    expect(reliefCarries(Number.NaN, true)).toBe(true);
-    expect(reliefCarries(Number.NaN, false)).toBe(false);
   });
 });
 

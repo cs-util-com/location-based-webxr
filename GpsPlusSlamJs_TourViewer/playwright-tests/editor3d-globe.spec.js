@@ -50,11 +50,16 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
   await afterFrames(page, 5);
 
+  // Street level: the relief carries the ground once its view is loaded
+  // (the globe's surface fills in until then), the camera is an eye
+  // height over the square, not in orbit.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.carrier, {
+      timeout: 60_000,
+    })
+    .toBe("relief");
   const stats = await view3d(page);
   expect(stats.globe).toBeDefined();
-  // Street level: the relief carries the ground, the camera is an eye
-  // height over the square, not in orbit.
-  expect(stats.globe.carrier).toBe("relief");
   expect(stats.globe.altitudeM).toBeGreaterThan(0);
   expect(stats.globe.altitudeM).toBeLessThan(2_000);
   // The tour sits in front of the camera, a few tens of metres away.

@@ -3,7 +3,8 @@
 - Purpose: the relief's share of the pixels and the release of a carrier
   that left the band, moved out of the globe lab's `updateFrame` (one-scene
   plan §3, round-6 plan G6-1) as a pure refactor: same order, same state,
-  same log and mark events.
+  same log and mark events. Pages use it through the relief mount
+  (`globe-relief-mount.ts`), which owns one band and one release.
 - Public API:
   - `createBandShare({ globeTiles, reliefTiles, reliefSettled, log, mark })`
     returns `{ step(nowMs, frame), share(), target() }`.

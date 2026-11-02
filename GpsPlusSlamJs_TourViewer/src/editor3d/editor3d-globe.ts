@@ -14,8 +14,9 @@
  * and a recentre of the world frame moves nothing.
  *
  * Each frame the visibility rule (`globe-editor-look.ts`'s `globeHidden`)
- * hides what is too small or too crowded on screen; under the relief's
- * ceiling the relief carries the ground, above it the globe's surface.
+ * hides what is too small or too crowded on screen; the globe's relief
+ * mount hands the ground between the relief (low) and the globe's surface
+ * (high) across a band of heights, as in the globe lab.
  *
  * A tour opened afresh flies in from high above first
  * (`globe-approach-run.ts`): a bar at the top follows the fall under
@@ -62,6 +63,7 @@ import {
   createGlobeView,
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
+  mountGlobeRelief,
   mountGlobeViewAir,
   type GlobeView,
   type GlobeViewAir,
@@ -105,7 +107,6 @@ import {
   daylightStartMs,
   globeEditorSettings,
   globeHidden,
-  reliefCarries,
   steppedView,
   streetView,
   viewPoseOf,
@@ -229,8 +230,10 @@ export async function openGlobeEditor(
       // past the horizon.
       reversedDepth: true,
       // The surface compiles the relief's band: the relief draws the
-      // globe's look, its pixels kept by the carrier share.
+      // globe's look, its pixels kept by the carrier share; the stencil
+      // lets the globe's surface fill every pixel the relief has not.
       band: true,
+      stencil: true,
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {
@@ -309,6 +312,17 @@ export async function openGlobeEditor(
     globe.group.add(ground.terrain.tiles.group);
     undo.push(() => {
       ground.terrain.tiles.group.removeFromParent();
+    });
+    // The ground handed between the globe's surface and the relief across
+    // the band of heights, as in the globe lab; before the haze, so the
+    // relief's tiles get their stencil role first.
+    const reliefMount = mountGlobeRelief({
+      globe,
+      relief: ground.terrain,
+      fill: true,
+    });
+    undo.push(() => {
+      reliefMount.dispose();
     });
     const { ellipsoid } = ground.terrain.tiles;
     const mountedAir = mountGlobeViewAir(view, {
@@ -706,21 +720,20 @@ export async function openGlobeEditor(
         if (frameTimes.length > 60) frameTimes.shift();
       }
       lastFrameAt = now;
-      // The carrier of the ground by the camera's altitude.
+      // The ground's share on the relief by the camera's altitude (the
+      // band's hand-over); the carrier the page reports and picks on is
+      // the one holding most of it.
       const altitudeM = ellipsoid.getPositionElevation(
         view.ecefCamera().position,
       );
-      relief = reliefCarries(altitudeM, relief);
-      // The relief's tiles keep only the pixels under the carrier share.
-      globe.surfaceUniforms.uCarrierShare.value = relief ? 1 : 0;
-      globe.tiles.group.visible = !relief;
-      ground.terrain.tiles.group.visible = relief;
-      if (relief) {
-        globe.updateClouds(renderer);
-        ground.update(camera, renderer, now);
-      } else {
-        globe.update(camera, renderer);
-      }
+      reliefMount.step(now, { altitudeM });
+      relief = reliefMount.share() >= 0.5;
+      reliefMount.draw({
+        camera,
+        renderer,
+        updateRelief: () => ground.update(camera, renderer, now),
+      });
+      reliefMount.shareClouds(true, 1);
 
       camera.updateMatrixWorld();
       followFrame();

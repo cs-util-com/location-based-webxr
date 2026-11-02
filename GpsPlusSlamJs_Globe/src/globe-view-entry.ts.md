@@ -22,6 +22,11 @@
     editor's, as the lab's): an overlay of its own, with the view's
     `globe.template` as the relief's template, so the ground keeps its
     look where the relief takes over from the surface.
+  - The relief under the surface: `mountGlobeRelief`
+    (`globe-relief-mount.ts`), the band between the globe's surface and
+    the relief (its share, the release, the stencil fill, who is drawn
+    and updated, the cloud shell's share), as the lab mounts it. The view
+    needs `band: true`, and `stencil: true` for the fill.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full

@@ -367,7 +367,11 @@
       draws or the altitude wants it. The relief draws first and marks its
       pixels; the globe, compiled without the discard (`fill`), draws
       every pixel without a mark, coarse (`bandFillErrorTarget`) while the
-      relief has every pixel (`/globe/globe-stencil-fill.js`).
+      relief has every pixel (`/globe/globe-stencil-fill.js`). All of
+      it (the share, the release, the fill's roles, who is drawn and
+      updated, the cloud shell's share) is the Globe package's relief
+      mount (`/globe/globe-relief-mount.js`), which the Tour Viewer's
+      editor on the globe uses too.
       - The relief takes its first pixels only once its view is refined
         (`bandSharp`, default 1; owner 2026-10-04: no flash from the
         globe's sharp imagery to the relief's coarse first tiles), and keeps
@@ -1102,7 +1106,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     target and the camera to the view's own `placeView`.
   - The frame's relief work comes from typed Globe modules, the page
     keeping only its parameters, its DOM and its hooks: the band's gated
-    share and the carriers' release (`globe-band-step`), the clearance and
+    share and the carriers' release, the stencil fill's roles and who is
+    drawn and updated (`globe-relief-mount`, over `globe-band-step`), the clearance and
     the relief's update with its timed E step (`globe-relief-step`), the
     relief's clip planes (`globe-relief-planes`), the OSM map's step
     (`globe-osm-frame`), the controls (`globe-camera-controls`, on the

@@ -78,7 +78,18 @@ interface Fakes {
   /** How often the map's coverage was read. */
   coverageCalls: number;
   /** The options the view was made with. */
-  viewOptions: null | { band?: boolean };
+  viewOptions: null | { band?: boolean; stencil?: boolean };
+  /** The share of the ground the relief mount reports (1: the relief
+   *  carries all of it, 0: the globe's surface). */
+  reliefShare: number;
+  /** The relief mount: what it was made with and how it was driven. */
+  reliefMount: null | {
+    options: { globe: unknown; relief: unknown; fill: boolean };
+    altitudesM: number[];
+    reliefUpdates: number;
+    cloudShares: number[];
+    disposed: boolean;
+  };
   /** What the relief was made with. */
   terrainInput: null | { imagery?: unknown; template?: unknown };
   /** The whole-Earth imagery the view's module hands out. */
@@ -108,6 +119,8 @@ const fakes = vi.hoisted((): Fakes => ({
   viewOptions: null,
   terrainInput: null,
   imagery: { name: "whole-Earth imagery" },
+  reliefShare: 1,
+  reliefMount: null,
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -123,6 +136,44 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
     ...(await importOriginal<object>()),
     creditsFor: () => [],
     createGlobeImagery: () => fakes.imagery,
+    mountGlobeRelief: (options: {
+      globe: unknown;
+      relief: unknown;
+      fill: boolean;
+    }) => {
+      const mount: NonNullable<Fakes["reliefMount"]> = {
+        options,
+        altitudesM: [],
+        reliefUpdates: 0,
+        cloudShares: [],
+        disposed: false,
+      };
+      fakes.reliefMount = mount;
+      return {
+        step: (_nowMs: number, frame: { altitudeM: number }) => {
+          mount.altitudesM.push(frame.altitudeM);
+          return fakes.reliefShare;
+        },
+        draw: (frame: { updateRelief(): void }) => {
+          if (fakes.reliefShare > 0) {
+            mount.reliefUpdates++;
+            frame.updateRelief();
+          }
+        },
+        shareClouds: (on: boolean) => {
+          const share = on ? fakes.reliefShare : 0;
+          mount.cloudShares.push(share);
+          return share;
+        },
+        share: () => fakes.reliefShare,
+        target: () => fakes.reliefShare,
+        reliefSettled: () => true,
+        release: {},
+        dispose: () => {
+          mount.disposed = true;
+        },
+      };
+    },
     mountGlobeViewAir: () => ({
       afterSky() {},
       step() {},
@@ -460,6 +511,8 @@ beforeEach(() => {
   fakes.coverageCalls = 0;
   fakes.viewOptions = null;
   fakes.terrainInput = null;
+  fakes.reliefShare = 1;
+  fakes.reliefMount = null;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -891,11 +944,8 @@ describe("openGlobeEditor's wiring", () => {
   // globe whose surface the relief never blended with, so the ground
   // changed colour and look where the relief took over. It is drawn as the
   // globe lab's is: the globe's own imagery (an overlay of its own) and
-  // the globe's template, in a view whose surface compiles the band; and
-  // the relief is told each frame it carries the ground (its tiles discard
-  // every pixel past the carrier share, 0 by default, so without that it
-  // draws nothing).
-  it("draws the relief with the globe's imagery and look, and lets it carry the ground", async () => {
+  // the globe's template, in a view whose surface compiles the band.
+  it("draws the relief with the globe's imagery and look", async () => {
     await openAt(0);
     expect(fakes.viewOptions?.band).toBe(true);
     expect(fakes.terrainInput?.imagery).toBe(fakes.imagery);
@@ -903,14 +953,59 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.terrainInput?.template).toBe(
       (fakes.view?.globe as { template?: unknown }).template,
     );
-    placeCamera(300, -10, DRAWN_M);
+  });
+
+  // Why: the editor swapped the whole ground at 25 km (the globe's
+  // surface hidden, the relief shown), so the picture jumped as the camera
+  // passed it, while the globe lab hands the ground over across a band of
+  // heights, the globe's surface filling every pixel the relief has not
+  // loaded. The editor hands it over through the same mount, with the
+  // fill, so it draws as the lab does; the carrier the page reports (and
+  // picks on) is the one holding most of the ground.
+  it("hands the ground over through the globe's relief mount, with the fill", async () => {
+    await openAt(0);
+    expect(fakes.viewOptions?.stencil).toBe(true);
+    const mount = fakes.reliefMount;
+    if (mount === null) throw new Error("no relief mount");
+    expect(mount.options.fill).toBe(true);
+    expect(mount.options.globe).toBe(fakes.view?.globe);
+    // The relief handed over is the one drawn under the globe's group.
+    const reliefTiles = (
+      mount.options.relief as { tiles: { group: THREE.Object3D } }
+    ).tiles;
+    expect(reliefTiles.group.parent).toBe(fakes.view?.globe.group);
+    placeCamera(500_000, -10, null);
     frameAt(16);
-    const share = (
-      fakes.view?.globe as unknown as {
-        surfaceUniforms: { uCarrierShare: { value: number } };
-      }
-    ).surfaceUniforms.uCarrierShare;
-    expect(share.value).toBe(1);
+    expect(mount.altitudesM.at(-1)).toBeCloseTo(500_000, -1);
+    expect(open?.stats().globe?.carrier).toBe("relief");
+    fakes.reliefShare = 0;
+    frameAt(32);
+    expect(open?.stats().globe?.carrier).toBe("globe");
+    const updates = mount.reliefUpdates;
+    frameAt(48);
+    expect(mount.reliefUpdates).toBe(updates);
+  });
+
+  // Why: the same 25 km swap no longer exists, so a hold just above it
+  // must not change the carrier; the mount alone decides it.
+  it.each([0.4, 0.5, 0.6])(
+    "reports the relief as the carrier from half the ground on (share %s)",
+    async (share) => {
+      await openAt(0);
+      fakes.reliefShare = share;
+      placeCamera(30_000, -10, null);
+      frameAt(16);
+      expect(open?.stats().globe?.carrier).toBe(
+        share >= 0.5 ? "relief" : "globe",
+      );
+    },
+  );
+
+  it("takes the relief mount down with the view", async () => {
+    const view = await openAt(0);
+    view.dispose();
+    open = null;
+    expect(fakes.reliefMount?.disposed).toBe(true);
   });
 
   // Why: the flight's clock started when the view was made, before its

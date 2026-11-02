@@ -30,15 +30,12 @@ export const GLOBE_EDITOR_LOOK = Object.freeze({
   /** And this high over the ground there (m): the globe's eye height. */
   eyeM: GLOBE_EYE.clearanceM,
   /**
-   * Under this altitude (m over the ellipsoid) the relief carries the
-   * ground, over it the globe's surface; a carrier changes only once the
-   * camera is `reliefBandM` past the line. Declared, not measured: the
-   * relief's map fades out by 2.4 km over the ground and the globe's
-   * imagery reads from orbit, so any line between is a look to be tuned
-   * on screen.
+   * Over this altitude (m over the ellipsoid) the page names no place
+   * under the camera (`centre()`): a station kilometres up is not one a
+   * "+" means. Declared, not measured. The ground itself is handed between
+   * the relief and the globe's surface by the globe's relief mount.
    */
   reliefCeilingM: 25_000,
-  reliefBandM: 5_000,
   /** A flight to an object (and Frame) looks down at it at this pitch
    *  (deg), from `aimRadii` times its radius away, `backM` at least. */
   aimPitchDeg: -30,
@@ -115,18 +112,6 @@ export function streetView(
     headingDeg: 0,
     pitchDeg: -Math.atan2(eyeM, backM) / DEG,
   };
-}
-
-/**
- * Whether the relief carries the ground at `altitudeM` (over the
- * ellipsoid), given whether it did last frame: below the ceiling less the
- * band it takes over, from the ceiling plus the band it gives up, between
- * nothing changes. An altitude that is not a number changes nothing.
- */
-export function reliefCarries(altitudeM: number, wasRelief: boolean): boolean {
-  if (Number.isNaN(altitudeM)) return wasRelief;
-  const { reliefCeilingM: ceiling, reliefBandM: band } = GLOBE_EDITOR_LOOK;
-  return wasRelief ? altitudeM < ceiling + band : altitudeM < ceiling - band;
 }
 
 /** One object of the tour as the camera sees it this frame. */
