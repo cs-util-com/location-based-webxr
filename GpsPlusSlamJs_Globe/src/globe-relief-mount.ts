@@ -80,7 +80,7 @@ export interface GlobeReliefTiles {
 }
 
 /** What the mount drives of the globe's surface. */
-export interface GlobeReliefSurface {
+interface GlobeReliefSurface {
   readonly tiles: GlobeReliefTiles;
   readonly surfaceUniforms: { readonly uCarrierShare: { value: number } };
   update(camera: THREE.Camera, renderer: THREE.WebGLRenderer): void;
@@ -106,7 +106,7 @@ export interface GlobeReliefMountOptions {
 }
 
 /** One frame's band step; each field the band's default when left out. */
-export interface GlobeReliefStepFrame {
+interface GlobeReliefStepFrame {
   /** The camera's altitude (m); a negative one counts as 0. */
   readonly altitudeM: number;
   readonly highM?: number;
@@ -123,7 +123,7 @@ export interface GlobeReliefStepFrame {
 }
 
 /** One frame's drawing and updates of the carriers. */
-export interface GlobeReliefDrawFrame {
+interface GlobeReliefDrawFrame {
   readonly camera: THREE.Camera;
   readonly renderer: THREE.WebGLRenderer;
   /** The relief's update for this frame (its camera, resolution, tiles). */

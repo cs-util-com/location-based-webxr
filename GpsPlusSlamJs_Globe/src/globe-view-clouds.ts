@@ -134,7 +134,7 @@ type CloudsTiles = Parameters<GlobeCloudVolume["patchShadow"]>[0] & {
 };
 
 /** What `step` is told each frame. */
-export interface CloudsStepFrame {
+interface CloudsStepFrame {
   /** The observer's height over the ellipsoid (km; the air's). */
   readonly observerKm: number;
   /**
@@ -145,7 +145,7 @@ export interface CloudsStepFrame {
 }
 
 /** What `render` is told each frame. */
-export interface CloudsRenderFrame {
+interface CloudsRenderFrame {
   /** The ground sky's share now (the air's `weight()`). */
   readonly weight: number;
 }
