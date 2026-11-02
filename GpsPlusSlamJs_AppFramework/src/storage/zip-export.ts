@@ -350,6 +350,11 @@ export const PDF_FILE_TYPE: DownloadFileType = {
   extension: '.pdf',
 };
 
+/** A rejection's message for a log line; a non-error is stringified. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Trigger a file download, with the picker filtered to `fileType`.
  *
@@ -363,10 +368,6 @@ export const PDF_FILE_TYPE: DownloadFileType = {
  * @returns `true` when a download or save was started; `false` when the
  *   user dismissed the save picker, in which case nothing was written.
  */
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 export async function downloadBlob(
   blob: Blob,
   filename: string,
