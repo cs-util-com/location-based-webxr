@@ -133,6 +133,12 @@ wired into its logic: every interaction is faked.
   error" button that draws every block and its target 1 m off; made
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
+- `editor-approach-1-quiet-camera/`, `editor-approach-2-arrival-board/`,
+  `editor-approach-3-work-while-flying/` - three directions for opening a
+  tour in the editor on the globe: what the creator sees while the camera
+  flies in from space and the map loads (a calm camera with one line of
+  text; a loading board in the left rail; an editor that works during the
+  flight); each has a network-case strip; made 2026-10-30.
 - `use-cases-true-colour/` - the start page's use-case pictures in the
   look the page does not use (the place dimmed, the tour's pictures in
   their own colours), with a switch to the shipped route-light look;

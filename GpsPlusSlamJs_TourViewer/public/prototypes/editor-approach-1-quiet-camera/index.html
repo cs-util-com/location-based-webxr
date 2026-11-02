@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Approach A - The quiet camera</title>
+    <!--
+      Throwaway prototype (see README.md next to this file): the editor's
+      approach on opening a tour, direction A, "the quiet camera". The flight
+      itself is the progress indicator: no progress bar, one plain line of
+      text near the bottom of the view, and the camera slows and circles
+      while it waits for map data instead of stopping. Original code, no
+      libraries: the globe and the ground are a small ray-cast raster drawn
+      on a 2D canvas, the streets and buildings are projected by hand. All
+      data (the tour, the town, the loading) is faked. Hidden URL flags:
+      #sc=fast|normal|slow|never|fail picks the network case, &x=3 runs the
+      clock three times faster (for screenshots).
+    -->
+    <style>
+      :root {
+        --bg0: #17181b;
+        --bg1: #1e1f23;
+        --bg2: #25272c;
+        --bg3: #2e3036;
+        --line: #33363c;
+        --text: #dadce1;
+        --muted: #8b909a;
+        --dim: #656a74;
+        --accent: #e9a23b;
+        --warm: #e3b768;
+        --ok: #8cc48a;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          13px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 42px minmax(0, 1fr) auto;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+
+      /* ---------- top bar (static mock-up) ---------- */
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 12px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: linear-gradient(135deg, var(--accent), #c9782b);
+        flex: none;
+      }
+      .app {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .tourname {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .menu {
+        position: relative;
+      }
+      .menu > button,
+      .save {
+        background: none;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 4px 9px;
+        cursor: pointer;
+      }
+      .menu > button:hover {
+        background: var(--bg3);
+      }
+      .menu-list {
+        position: absolute;
+        top: 30px;
+        left: 0;
+        z-index: 20;
+        min-width: 200px;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      }
+      .menu-list[hidden] {
+        display: none;
+      }
+      .menu-list button {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        gap: 18px;
+        background: none;
+        border: 0;
+        border-radius: 5px;
+        padding: 6px 9px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .menu-list button:hover {
+        background: var(--bg3);
+      }
+      .menu-list kbd {
+        color: var(--dim);
+        font:
+          11px ui-monospace,
+          Consolas,
+          monospace;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .saved {
+        color: var(--dim);
+        white-space: nowrap;
+      }
+      .save {
+        border-color: var(--line);
+        background: var(--bg2);
+      }
+
+      /* ---------- main area ---------- */
+      .main {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 260px;
+        min-height: 0;
+      }
+      .rail,
+      .insp {
+        background: var(--bg1);
+        min-height: 0;
+        overflow: auto;
+      }
+      .rail {
+        border-right: 1px solid var(--line);
+      }
+      .insp {
+        border-left: 1px solid var(--line);
+      }
+      .panel-h {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px 6px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .tree {
+        list-style: none;
+        margin: 0;
+        padding: 0 6px 10px;
+      }
+      .tree button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        background: none;
+        border: 0;
+        border-radius: 6px;
+        padding: 5px 8px;
+        text-align: left;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tree button:hover {
+        background: var(--bg3);
+      }
+      .tree .root {
+        font-weight: 600;
+      }
+      .tree .kid {
+        padding-left: 22px;
+      }
+      .num {
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #20160a;
+        font-size: 10.5px;
+        font-weight: 700;
+      }
+      .rail-foot {
+        padding: 8px 14px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .field {
+        display: grid;
+        gap: 4px;
+        padding: 6px 12px;
+      }
+      .field label {
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+      }
+      .kv {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 12px;
+        color: var(--muted);
+      }
+      .kv b {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      /* ---------- the view ---------- */
+      .view {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #05070b;
+        cursor: grab;
+      }
+      .view.dragging {
+        cursor: grabbing;
+      }
+      .view canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        display: block;
+      }
+      /* a soft lower-third scrim, only as dark as the caption needs */
+      .scrim {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 120px;
+        pointer-events: none;
+        background: linear-gradient(
+          to top,
+          rgba(5, 7, 11, 0.62),
+          rgba(5, 7, 11, 0.3) 45%,
+          rgba(5, 7, 11, 0)
+        );
+        transition: opacity 1.2s ease;
+      }
+      .caption {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: calc(100% - 32px);
+        text-align: center;
+        z-index: 2;
+        pointer-events: none;
+        color: #f2f3f5;
+        text-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.7),
+          0 0 14px rgba(0, 0, 0, 0.45);
+        transition: opacity 1.2s ease;
+      }
+      .caption.gone,
+      .caption.gone + .scrim {
+        opacity: 0;
+      }
+      .cap-main {
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        flex-wrap: wrap;
+        column-gap: 8px;
+        font-size: 14px;
+        letter-spacing: 0.01em;
+      }
+      .cap-text {
+        transition:
+          opacity 0.22s ease,
+          transform 0.22s ease;
+      }
+      .caption.swap .cap-text,
+      .caption.swap .cap-sub {
+        opacity: 0;
+        transform: translateY(3px);
+      }
+      .eta {
+        color: rgba(242, 243, 245, 0.7);
+      }
+      .dot {
+        align-self: center;
+        flex: none;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f2f3f5;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+      }
+      .dot.loading {
+        animation: breathe 1.8s ease-in-out infinite;
+      }
+      .dot.warn {
+        background: var(--warm);
+        box-shadow: 0 0 6px rgba(227, 183, 104, 0.55);
+      }
+      .dot.done {
+        background: var(--ok);
+        box-shadow: 0 0 6px rgba(140, 196, 138, 0.55);
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 0.35;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .cap-sub {
+        margin-top: 3px;
+        font-size: 12px;
+        color: rgba(242, 243, 245, 0.66);
+        transition:
+          opacity 0.22s ease,
+          transform 0.22s ease;
+      }
+      .cap-sub:empty {
+        display: none;
+      }
+      .cap-sub button {
+        pointer-events: auto;
+        background: none;
+        border: 0;
+        padding: 0 2px;
+        color: #fff;
+        text-decoration: underline;
+        text-decoration-color: rgba(255, 255, 255, 0.45);
+        text-underline-offset: 3px;
+        cursor: pointer;
+        text-shadow: inherit;
+      }
+      .cap-sub button:hover {
+        text-decoration-color: #fff;
+      }
+      .cap-sub .sep {
+        margin: 0 6px;
+        opacity: 0.6;
+      }
+
+      /* ---------- debug strip: NOT part of the design ---------- */
+      .debug {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        background: repeating-linear-gradient(
+          -45deg,
+          #101114,
+          #101114 8px,
+          #131417 8px,
+          #131417 16px
+        );
+        border-top: 1px dashed #4a4d55;
+        font:
+          11.5px ui-monospace,
+          Consolas,
+          monospace;
+        color: #9aa0aa;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .debug .tag {
+        color: #c58cf0;
+        font-weight: 700;
+        margin-right: 4px;
+      }
+      .debug button {
+        flex: none;
+        background: #1d1f24;
+        border: 1px solid #3a3d45;
+        border-radius: 4px;
+        padding: 3px 7px;
+        font: inherit;
+        color: #c9ccd3;
+        cursor: pointer;
+      }
+      .debug button[aria-pressed="true"] {
+        border-color: #c58cf0;
+        color: #fff;
+        background: #2c2236;
+      }
+      .debug .gap {
+        width: 10px;
+        flex: none;
+      }
+      .debug .readout {
+        margin-left: 6px;
+        color: #7d838d;
+      }
+
+      /* ---------- tablet landscape ---------- */
+      @media (max-width: 1100px) {
+        .main {
+          grid-template-columns: 190px minmax(0, 1fr) 220px;
+        }
+      }
+      /* ---------- phone landscape: the rail shrinks to numbers, the inspector to a tab ---------- */
+      @media (max-width: 900px) {
+        body {
+          grid-template-rows: 36px minmax(0, 1fr) auto;
+        }
+        .app,
+        .saved {
+          display: none;
+        }
+        .main {
+          grid-template-columns: 46px minmax(0, 1fr) 36px;
+        }
+        .panel-h,
+        .rail-foot,
+        .tree .label,
+        .insp > :not(.insp-tab) {
+          display: none;
+        }
+        .tree {
+          padding: 6px 4px;
+        }
+        .tree .kid,
+        .tree .root {
+          padding: 5px 0;
+          justify-content: center;
+        }
+        .tree .root .num {
+          background: var(--bg3);
+          color: var(--text);
+        }
+        .debug {
+          padding: 4px 8px;
+          font-size: 10.5px;
+        }
+        .debug .readout {
+          display: none;
+        }
+        .cap-main {
+          font-size: 13px;
+        }
+        .caption {
+          bottom: 12px;
+        }
+      }
+      .insp-tab {
+        display: none;
+      }
+      @media (max-width: 900px) {
+        .insp-tab {
+          display: block;
+          writing-mode: vertical-rl;
+          padding: 12px 8px;
+          color: var(--muted);
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="app">Tour editor</span>
+      <span class="tourname">Old Town Walk</span>
+      <div class="menu">
+        <button id="viewBtn" aria-haspopup="true" aria-expanded="false">
+          View
+        </button>
+        <div class="menu-list" id="viewMenu" hidden>
+          <button data-act="tour">Frame the tour <kbd>F</kbd></button>
+          <button data-act="replay">Fly in again</button>
+        </div>
+      </div>
+      <span class="spacer"></span>
+      <span class="saved">Draft saved</span>
+      <button class="save">Save</button>
+    </header>
+
+    <div class="main">
+      <aside class="rail" aria-label="Stations">
+        <div class="panel-h"><span>Stations</span><span>+</span></div>
+        <ul class="tree" id="tree"></ul>
+        <div class="rail-foot">6 stations - 0.4 km walk</div>
+      </aside>
+
+      <section class="view" id="view" aria-label="3D view">
+        <canvas id="cv"></canvas>
+        <div class="caption" id="caption">
+          <div class="cap-main">
+            <span class="dot loading" id="capDot" aria-hidden="true"></span>
+            <span class="cap-text" id="capText" role="status"></span>
+            <span class="eta" id="capEta"></span>
+          </div>
+          <div class="cap-sub" id="capSub"></div>
+        </div>
+        <div class="scrim" id="scrim"></div>
+      </section>
+
+      <aside class="insp" aria-label="Inspector">
+        <div class="insp-tab">Inspector</div>
+        <div class="panel-h"><span>Tour</span></div>
+        <div class="field">
+          <label for="fName">Name</label>
+          <input id="fName" value="Old Town Walk" />
+        </div>
+        <div class="field">
+          <label for="fPlace">Place</label>
+          <input id="fPlace" value="Freiburg, Germany" />
+        </div>
+        <div class="field">
+          <label for="fLang">Language</label>
+          <select id="fLang">
+            <option>English</option>
+            <option>Deutsch</option>
+          </select>
+        </div>
+        <div class="kv"><span>Stations</span><b>6</b></div>
+        <div class="kv"><span>Walk</span><b>0.4 km</b></div>
+        <div class="kv"><span>Last edited</span><b>yesterday</b></div>
+      </aside>
+    </div>
+
+    <footer class="debug" id="debug">
+      <span class="tag">PROTOTYPE CONTROLS</span>
+      <span>network:</span>
+      <button data-sc="fast">Fast</button>
+      <button data-sc="normal">Normal</button>
+      <button data-sc="slow">Slow network</button>
+      <button data-sc="never">City never finishes</button>
+      <button data-sc="fail">One source fails</button>
+      <span class="gap"></span>
+      <button data-dbg="replay">Replay</button>
+      <button data-dbg="draft">Open as restored draft</button>
+      <span class="readout" id="readout"></span>
+    </footer>
+
+    <script type="module" src="./approach.js"></script>
+  </body>
+</html>
