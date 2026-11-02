@@ -32,6 +32,16 @@ A stale read-along track lined up again with its edited text, by the segments' o
 
 No value separates the two sets: a short word's typo ("teh", "adn", "si") is as far from its fix as a replaced short word is from its replacement. A word that loses its voice costs only that word's highlight (its neighbours keep theirs), and a sentence track keeps a sentence with one word edited at any share up to 7/8, so the threshold matters for word tracks only.
 
+The same sweep over 18 German typo fixes and spelling variants (umlauts and the sharp s written out or not, compounds, short words; word keys fold "ü" to "u" but keep "ß") and 18 German replacements (one sentence, "Wir standen an der ... nahe dem Tor."):
+
+- 0.30-0.50: 18 typos, 10-14 replacements.
+- 0.55-0.65: 16-17 typos, 8-10 replacements.
+- 0.70-0.75: 12-14 typos, 7-8 replacements.
+- 0.80: 12 typos, 2 replacements.
+- 0.85: 9 typos, 1 replacement; 0.90: 6, 0; 0.95: none.
+
+Weighing a wrongly lit word at w missed typo fixes (cost = typos lost + w x replacements relit), 0.80 is the cheapest value for w from 1 to 3 on the German pairs, the English pairs and both together. A lower value (0.50) wins only when a wrong highlight counts for half a missed one or less; 0.85-0.90 win only from w = 5 (German alone: 0.90; both: 0.85). 0.80 stays, and the weight is the owner's question if either end is wanted.
+
 ## Tests
 
-- `re-anchor.test.ts` - similarity, an unchanged text, an inserted sentence, a typo fixed and a word replaced, a sentence kept and one rewritten, a segment without words, the one-word-edit property for both kinds of track, the threshold sweep, the segment share over its range, and `lineUpAgain`'s track accepted by the visitor's reader.
+- `re-anchor.test.ts` - similarity, an unchanged text, an inserted sentence, a typo fixed and a word replaced, a sentence kept and one rewritten, a segment without words, the one-word-edit property for both kinds of track, the threshold sweep (English and German pairs), the segment share over its range, and `lineUpAgain`'s track accepted by the visitor's reader.

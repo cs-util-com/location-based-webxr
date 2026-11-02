@@ -281,6 +281,87 @@ describe("the threshold over real edits", () => {
     expect(REANCHOR_MIN_SIMILARITY).toBe(0.8);
   });
 
+  // German tours: umlauts and the sharp s written out or not, long
+  // compounds, and short words. Word keys fold accents (u for ü) but keep
+  // ß, so "Strasse"/"Straße" is a real edit. Why: the threshold was chosen
+  // on English pairs alone; this pins how it fares on German ones.
+  const germanTypos: [string, string][] = [
+    ["Strasse", "Straße"],
+    ["Bruecke", "Brücke"],
+    ["Muenchen", "München"],
+    ["Kirhce", "Kirche"],
+    ["Rathausplaz", "Rathausplatz"],
+    ["Stadmauer", "Stadtmauer"],
+    ["Brunen", "Brunnen"],
+    ["Kathedrahle", "Kathedrale"],
+    ["Jahrhundret", "Jahrhundert"],
+    ["Fluß", "Fluss"],
+    ["daß", "dass"],
+    ["Schloß", "Schloss"],
+    ["Kaiserplfaz", "Kaiserpfalz"],
+    ["Bürgerhuas", "Bürgerhaus"],
+    ["Strassenbahn", "Straßenbahn"],
+    ["ud", "und"],
+    ["dei", "die"],
+    ["Hauptbahnhfo", "Hauptbahnhof"],
+  ];
+  const germanReplaced: [string, string][] = [
+    ["Nord", "Süd"],
+    ["alt", "neu"],
+    ["links", "rechts"],
+    ["König", "Königin"],
+    ["Rathaus", "Rathausplatz"],
+    ["Stadttor", "Stadtturm"],
+    ["Westturm", "Ostturm"],
+    ["Kirche", "Kirsche"],
+    ["Bach", "Dach"],
+    ["Mauer", "Bauer"],
+    ["Burg", "Berg"],
+    ["Marktplatz", "Marktkirche"],
+    ["Stadtmauer", "Stadtpark"],
+    ["Hauptbahnhof", "Hauptpost"],
+    ["zehn", "zwei"],
+    ["Sommer", "Winter"],
+    ["Domplatz", "Domberg"],
+    ["Ostseite", "Westseite"],
+  ];
+  const relitDe = (from: string, to: string, minSimilarity: number) => {
+    const text = `Wir standen an der ${from} nahe dem Tor.`;
+    const out = reAnchorSegments(wordTrack(text), text.replace(from, to), {
+      minSimilarity,
+    });
+    return out.segments.length === 8;
+  };
+
+  it("keeps most German typo fixes and few replacements across the range", () => {
+    const sweep: Record<string, [number, number]> = {};
+    for (let t = 30; t <= 95; t += 5) {
+      const v = t / 100;
+      sweep[v.toFixed(2)] = [
+        germanTypos.filter(([a, b]) => relitDe(a, b, v)).length,
+        germanReplaced.filter(([a, b]) => relitDe(a, b, v)).length,
+      ];
+    }
+    // [typos kept, replacements relit] of 18 each.
+    expect(sweep).toEqual({
+      "0.30": [18, 14],
+      "0.35": [18, 13],
+      "0.40": [18, 12],
+      "0.45": [18, 11],
+      "0.50": [18, 10],
+      "0.55": [17, 10],
+      "0.60": [17, 9],
+      "0.65": [16, 8],
+      "0.70": [14, 8],
+      "0.75": [12, 7],
+      "0.80": [12, 2],
+      "0.85": [9, 1],
+      "0.90": [6, 0],
+      "0.95": [0, 0],
+    });
+    expect(REANCHOR_MIN_SIMILARITY).toBe(0.8);
+  });
+
   it("keeps a sentence with one word edited, and loses one mostly rewritten, across the share's range", () => {
     // The second parameter: how much of a segment must remain. A sentence
     // of eight words with one replaced keeps its voice for any share up to
