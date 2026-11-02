@@ -15,6 +15,7 @@ The long text's Narration section in the writer, as the "in the inspector" proto
 - `section.takeFiles(files)` takes chosen or dropped files: a sound file is the voice, a `.vtt` / `.json` / `.txt` file a timing.
 - `section.settled()` settles once the reads asked for so far are drawn (for tests).
 - A timing file over 20 MB (`TIMING_FILE_MAX_BYTES`, module-private) is refused before it is read.
+- A voice file above the autosave cap (`AUTOSAVE_MAX_BYTES`, 200 MiB; a voice is written into every save) is refused with its size named; the "added" toast names the size too (`sizeWords`).
 
 ## Invariants
 
@@ -23,6 +24,9 @@ The long text's Narration section in the writer, as the "in the inspector" proto
 - A timing is written as compact JSON (`JSON.stringify` of the `TourTiming`), since the format's cap counts bytes.
 - A timing can only be imported once there is a voice. Removing the voice removes the timing with it (the session's rule), and one undo brings both back.
 - Reads are numbered, so a read landing late after a newer one draws nothing.
+- The file names follow what the tour holds, never the file chosen last: a voice's name is kept by its audio asset id (`NarrationFacts.audioId`), a timing's by the timing text written. After an undo the row names the voice or timing the tour holds again (or the generic words, for one not chosen here).
+- The result card belongs to the timing it wrote: it is shown only while the tour holds that timing text, and dropped by the first read that finds another (an undo, an import elsewhere).
+- A result or an import error that lands after the creator selected another text is dropped, never drawn in that text's section.
 
 ## Examples
 
@@ -43,6 +47,9 @@ await section.takeFiles([new File([vtt], "voice.vtt")]);
 `narration-section.test.ts` (jsdom), against a fake session that holds the facts:
 
 - adding a voice, with its running state, and a refused voice that reverts;
+- a voice above the autosave cap refused with its size, the size in the "added" toast;
+- the voice's and the timing's names after an undo, and the undone import's card dropped;
+- a late import result or failure dropped once another text is shown;
 - a file of neither kind;
 - an import (running state, compact JSON, the result card and folding it away);
 - a malformed file that never reaches the tour;

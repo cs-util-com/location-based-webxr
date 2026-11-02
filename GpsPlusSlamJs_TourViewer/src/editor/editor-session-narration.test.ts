@@ -112,6 +112,7 @@ describe("a narration added in the editor", () => {
     expect(await editor.narration("t1")).toEqual({
       kind: "narration",
       hasVoice: true,
+      audioId: expect.any(String),
       durationMs: 4000,
       timingText: text,
       timingUnread: false,
@@ -207,6 +208,7 @@ describe("a narration the opened tour carries", () => {
     );
     expect(await editor.narration("t1")).toMatchObject({
       hasVoice: true,
+      audioId: "voice",
       timingText: text,
     });
     expect(await editor.editNarration("t1", { kind: "removeVoice" })).toEqual({
@@ -214,6 +216,7 @@ describe("a narration the opened tour carries", () => {
     });
     expect(await editor.narration("t1")).toMatchObject({
       hasVoice: false,
+      audioId: null,
       timingText: null,
     });
     editor.undo();

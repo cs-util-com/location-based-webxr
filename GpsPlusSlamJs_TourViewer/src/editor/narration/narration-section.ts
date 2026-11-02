@@ -18,7 +18,9 @@ import {
   plainTextOf,
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
+import { sizeWords } from "../../checks/file-access-check.js";
 import { clockText } from "../../read-along.js";
+import { AUTOSAVE_MAX_BYTES } from "../autosave.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
 import { shellIcon } from "../editor-shell/shell-icons.js";
@@ -37,6 +39,11 @@ import { importTiming } from "./timing-import.js";
 
 /** The largest timing file the section reads (the prototype's limit). */
 const TIMING_FILE_MAX_BYTES = 20 * 1024 * 1024;
+
+/** The largest voice file the section takes: the autosave cap, since a
+ *  voice is written into every save and one above it would leave a tour
+ *  the page can no longer save by itself. */
+const VOICE_FILE_MAX_BYTES = AUTOSAVE_MAX_BYTES;
 
 /** What the section reads and writes through the page. */
 export interface NarrationSectionDeps {
@@ -171,9 +178,12 @@ export function createNarrationSection(
   let status: NarrationStatus | null = null;
   let busy: Busy | null = null;
   let importError: { fileName: string; message: string } | null = null;
-  let last: NarrationResult | null = null;
+  /** What the last import or lining up did, with the timing it wrote:
+   *  shown only while the tour holds that timing (an undo drops it). */
+  let last: { result: NarrationResult; timingText: string } | null = null;
   let notesOpen = false;
-  /** The voice and timing files' names chosen here, by text. */
+  /** The files' names chosen here: a voice's by its asset id, a timing's
+   *  by its text, so an undo names what the tour holds again. */
   const voiceNames = new Map<string, string>();
   const timingNames = new Map<string, string>();
   /** Each read gets a number: an older one landing late draws nothing. */
@@ -194,6 +204,7 @@ export function createNarrationSection(
       } else {
         refusal = null;
         facts = read;
+        if (last !== null && last.timingText !== read.timingText) last = null;
         status = read.timingUnread
           ? {
               summary: "The timing does not read",
@@ -276,7 +287,6 @@ export function createNarrationSection(
       return;
     }
     deps.onSummary(status.summary, status.tone);
-    const id = input.blockId;
     const parts: HTMLElement[] = [];
 
     // The voice.
@@ -286,7 +296,13 @@ export function createNarrationSection(
       const file = el("div", "ln-file");
       file.append(
         shellIcon("note"),
-        el("span", "ln-fn", voiceNames.get(id) ?? "The voice of this text"),
+        el(
+          "span",
+          "ln-fn",
+          (facts.audioId === null
+            ? undefined
+            : voiceNames.get(facts.audioId)) ?? "The voice of this text",
+        ),
         el(
           "span",
           "ln-du",
@@ -337,7 +353,13 @@ export function createNarrationSection(
       const file = el("div", "ln-file");
       file.append(
         shellIcon("text"),
-        el("span", "ln-fn", timingNames.get(id) ?? "The read-along timing"),
+        el(
+          "span",
+          "ln-fn",
+          (facts.timingText === null
+            ? undefined
+            : timingNames.get(facts.timingText)) ?? "The read-along timing",
+        ),
         el(
           "span",
           "ln-du",
@@ -439,16 +461,19 @@ export function createNarrationSection(
       notice.append(row);
       parts.push(notice);
     } else if (timing !== null) {
-      if (last !== null) {
+      if (last !== null && last.timingText === facts.timingText) {
         const card = el(
           "div",
-          last.partial ? "ln-result ln-part" : "ln-result",
+          last.result.partial ? "ln-result ln-part" : "ln-result",
         );
         card.dataset["testid"] = "narration-result";
         const nt = el("div", "ln-nt");
-        nt.append(shellIcon(last.partial ? "note" : "check"), last.title);
-        card.append(nt, el("div", "ln-nd", last.text));
-        const notes = [...last.notes, ...status.unvoiced];
+        nt.append(
+          shellIcon(last.result.partial ? "note" : "check"),
+          last.result.title,
+        );
+        card.append(nt, el("div", "ln-nd", last.result.text));
+        const notes = [...last.result.notes, ...status.unvoiced];
         if (notes.length > 0) card.append(noteList(notes));
         const row = el("div", "ln-row2");
         row.append(button("lw-lnk", "last-ok", "OK, fold this away"));
@@ -472,6 +497,11 @@ export function createNarrationSection(
   }
 
   // --- actions ---------------------------------------------------------------
+  /** Whether `at` is still the text shown: a result landing after the
+   *  creator selected another text is dropped, never drawn there. */
+  const shown = (at: NarrationSectionInput): boolean =>
+    input?.blockId === at.blockId;
+
   /** `work` as the section's one running action: drawn as running, and
    *  drawn again from what the tour holds once it ends. */
   async function running(
@@ -499,6 +529,13 @@ export function createNarrationSection(
       );
       return;
     }
+    if (file.size > VOICE_FILE_MAX_BYTES) {
+      deps.say(
+        `${file.name} is ${sizeWords(file.size)}: a voice file can be at most ${sizeWords(VOICE_FILE_MAX_BYTES)}, or the tour grows too large to save by itself.`,
+      );
+      return;
+    }
+    let added = false;
     await running("voice", async () => {
       const ms = await durationOf(file).catch(() => undefined);
       const done = await deps.edit(at.blockId, {
@@ -508,9 +545,20 @@ export function createNarrationSection(
         ...(ms === undefined ? {} : { durationMs: ms }),
       });
       if (done !== "written") return;
-      voiceNames.set(at.blockId, file.name);
-      deps.say(`Voice ${file.name} added. Save to keep it in the tour.`);
+      added = true;
+      deps.say(
+        `Voice ${file.name} (${sizeWords(file.size)}) added. Save to keep it in the tour.`,
+      );
     });
+    if (!added) return;
+    // The re-read after the write names the new voice's asset id (read
+    // again when the creator has moved on to another text meanwhile).
+    const after = shown(at)
+      ? facts
+      : await deps.read(at.blockId).catch(() => null);
+    if (after?.kind !== "narration" || after.audioId === null) return;
+    voiceNames.set(after.audioId, file.name);
+    if (shown(at)) draw();
   }
 
   async function removeVoice(): Promise<void> {
@@ -519,9 +567,7 @@ export function createNarrationSection(
     await running("remove", async () => {
       const done = await deps.edit(at.blockId, { kind: "removeVoice" });
       if (done !== "written") return;
-      voiceNames.delete(at.blockId);
-      timingNames.delete(at.blockId);
-      last = null;
+      if (shown(at)) last = null;
       deps.say("Voice removed, with its timing. Ctrl+Z brings both back.");
     });
   }
@@ -532,8 +578,7 @@ export function createNarrationSection(
     await running("untime", async () => {
       const done = await deps.edit(at.blockId, { kind: "removeTiming" });
       if (done !== "written") return;
-      timingNames.delete(at.blockId);
-      last = null;
+      if (shown(at)) last = null;
       deps.say(
         "Timing removed: the voice plays without the words lighting up. Ctrl+Z brings it back.",
       );
@@ -551,7 +596,7 @@ export function createNarrationSection(
     }
     await running("timing", async () => {
       const fail = (message: string) => {
-        importError = { fileName: file.name, message };
+        if (shown(at)) importError = { fileName: file.name, message };
         deps.say(`Could not use ${file.name}: ${message}`);
       };
       if (file.size > TIMING_FILE_MAX_BYTES) {
@@ -573,14 +618,14 @@ export function createNarrationSection(
         fail("nothing of it is in your text.");
         return;
       }
-      const written = await deps.edit(at.blockId, {
-        kind: "timing",
-        text: JSON.stringify(done.timing),
-      });
+      const text = JSON.stringify(done.timing);
+      const written = await deps.edit(at.blockId, { kind: "timing", text });
       if (written !== "written") return;
-      importError = null;
-      timingNames.set(at.blockId, file.name);
-      last = importResult(file.name, done);
+      timingNames.set(text, file.name);
+      if (shown(at)) {
+        importError = null;
+        last = { result: importResult(file.name, done), timingText: text };
+      }
       deps.say(
         done.mismatches.length > 0
           ? `${file.name}: ${String(done.mismatches.length)} ${plural(done.mismatches.length, "part")} of the file do not match your text. They are listed under Narration.`
@@ -601,12 +646,15 @@ export function createNarrationSection(
         );
         return;
       }
-      const written = await deps.edit(at.blockId, {
-        kind: "timing",
-        text: JSON.stringify(done.timing),
-      });
+      const text = JSON.stringify(done.timing);
+      const written = await deps.edit(at.blockId, { kind: "timing", text });
       if (written !== "written") return;
-      last = lineUpResult(done);
+      const name =
+        facts?.timingText == null
+          ? undefined
+          : timingNames.get(facts.timingText);
+      if (name !== undefined) timingNames.set(text, name);
+      if (shown(at)) last = { result: lineUpResult(done), timingText: text };
       const missing = done.unvoiced.length;
       deps.say(
         missing > 0

@@ -457,7 +457,7 @@ examples).
 
 ## Narration
 
-- `narration(itemId)`: the long text's `NarrationFacts` (voice, length, the read-along text from the newest bytes or the page's state), or a refusal.
+- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state), or a refusal.
 - `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason.
   - `voice`: a sound file, stored under `content/`.
   - `removeVoice`: takes the timing off too.

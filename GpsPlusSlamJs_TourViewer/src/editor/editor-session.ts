@@ -326,6 +326,9 @@ const TIMING_TOO_LARGE = `That timing is too large for a tour (over ${String(TOU
 export interface NarrationFacts {
   readonly kind: "narration";
   readonly hasVoice: boolean;
+  /** The voice's asset id (null: no voice): what names one recording,
+   *  so a page can tell the voice now held from one an undo replaced. */
+  readonly audioId: string | null;
   /** The voice's length, when known. */
   readonly durationMs: number | null;
   /** The text of its read-along entry; null: it names none, or the entry
@@ -1379,6 +1382,7 @@ export function createEditorSession(input: {
       const facts = {
         kind: "narration" as const,
         hasVoice: narration !== undefined,
+        audioId: narration?.audio ?? null,
         durationMs: narration?.durationMs ?? null,
       };
       if (narration?.timing === undefined) {

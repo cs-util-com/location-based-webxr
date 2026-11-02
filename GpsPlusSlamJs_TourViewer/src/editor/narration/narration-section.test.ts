@@ -34,8 +34,12 @@ const VTT = [
 
 interface Held {
   hasVoice: boolean;
+  audioId: string | null;
   timingText: string | null;
 }
+
+/** Each voice the fake tour takes gets a new asset id, as the session's. */
+let voices = 0;
 
 let held: Held;
 let said: string[];
@@ -54,6 +58,7 @@ function make(): NarrationSection {
       Promise.resolve<NarrationFacts>({
         kind: "narration",
         hasVoice: held.hasVoice,
+        audioId: held.audioId,
         durationMs: held.hasVoice ? 4000 : null,
         timingText: held.timingText,
         timingUnread: false,
@@ -62,9 +67,12 @@ function make(): NarrationSection {
       edits.push(change);
       const apply = (outcome: TypedEditOutcome): TypedEditOutcome => {
         if (outcome !== "written") return outcome;
-        if (change.kind === "voice") held.hasVoice = true;
+        if (change.kind === "voice") {
+          held.hasVoice = true;
+          held.audioId = `voice-${String(++voices)}`;
+        }
         if (change.kind === "removeVoice") {
-          held = { hasVoice: false, timingText: null };
+          held = { hasVoice: false, audioId: null, timingText: null };
         }
         if (change.kind === "timing") held.timingText = change.text;
         if (change.kind === "removeTiming") held.timingText = null;
@@ -102,7 +110,8 @@ async function flush(): Promise<void> {
 }
 
 beforeEach(async () => {
-  held = { hasVoice: false, timingText: null };
+  held = { hasVoice: false, audioId: null, timingText: null };
+  voices = 0;
   said = [];
   shown = [];
   edits = [];
@@ -135,7 +144,7 @@ describe("the voice", () => {
     expect(q(".ln-fn")?.textContent).toBe("voice.mp3");
     expect(btn("voice-pick")?.textContent).toBe("Replace");
     expect(btn("timing-pick")?.disabled).toBe(false);
-    expect(said.at(-1)).toContain("voice.mp3 added");
+    expect(said.at(-1)).toContain("voice.mp3 (1 B) added");
   });
 
   it("goes back to where it was when the tour refuses the voice", async () => {
@@ -148,6 +157,43 @@ describe("the voice", () => {
     expect(btn("voice-pick")?.textContent).toBe("Add a voice file");
     expect(btn("voice-pick")?.disabled).toBe(false);
     expect(said).toEqual([]);
+  });
+
+  // Why: a voice file is held in memory and written into every save; one
+  // above the autosave cap would make the tour too large to save by
+  // itself, so it is refused up front with its size named, and the
+  // "added" toast names the size too so a large file is never a surprise.
+  it("refuses a voice above the autosave cap, naming its size", async () => {
+    const big = file("x", "long.mp3");
+    Object.defineProperty(big, "size", { value: 300 * 1024 * 1024 });
+    await section.takeFiles([big]);
+    await flush();
+    expect(edits).toEqual([]);
+    expect(said.at(-1)).toContain("long.mp3");
+    expect(said.at(-1)).toContain("300.0 MiB");
+    expect(said.at(-1)).toContain("200.0 MiB");
+    expect(btn("voice-pick")?.textContent).toBe("Add a voice file");
+  });
+
+  it("names the voice's size when it is added", async () => {
+    await section.takeFiles([file("x".repeat(2048), "voice.mp3")]);
+    await flush();
+    expect(said.at(-1)).toContain("voice.mp3 (2.0 KiB) added");
+  });
+
+  // Why: the file name describes one recording; after an undo the tour
+  // holds the earlier one, and the row must name that one, not the file
+  // chosen last (the r1011 review's finding 1).
+  it("names the voice the tour holds after an undo, not the last file chosen", async () => {
+    await section.takeFiles([file("x", "first.mp3")]);
+    await flush();
+    await section.takeFiles([file("x", "second.mp3")]);
+    await flush();
+    expect(q(".ln-fn")?.textContent).toBe("second.mp3");
+    held.audioId = "voice-1"; // the undo
+    section.update({ blockId: "essay", body: BODY, key: "undone" });
+    await flush();
+    expect(q(".ln-fn")?.textContent).toBe("first.mp3");
   });
 
   it("refuses a file that is neither a voice nor a timing, naming it", async () => {
@@ -212,6 +258,67 @@ describe("the timing", () => {
     expect(btn("timing-remove")).toBeNull();
     expect(btn("voice-pick")?.textContent).toBe("Replace");
     expect(said.at(-1)).toContain("Timing removed");
+  });
+
+  // Why: the result card and the timing's file name describe one import;
+  // an undo brings back another timing, so both must follow the timing
+  // the tour holds (the r1011 review's finding 1).
+  it("names the timing the tour holds after an undo, and drops the undone import's card", async () => {
+    await section.takeFiles([file(VTT, "first.vtt")]);
+    await flush();
+    const first = held.timingText;
+    btn("last-ok")?.click();
+    await section.takeFiles([
+      file(VTT.replace("00:04.000", "00:04.500"), "second.vtt"),
+    ]);
+    await flush();
+    expect(held.timingText).not.toBe(first);
+    expect(q('[data-testid="narration-result"]')?.textContent).toContain(
+      "second.vtt",
+    );
+    held.timingText = first; // the undo
+    section.update({ blockId: "essay", body: BODY, key: "undone" });
+    await flush();
+    const names = [...section.node.querySelectorAll(".ln-fn")].map(
+      (n) => n.textContent,
+    );
+    expect(names).toContain("first.vtt");
+    expect(names).not.toContain("second.vtt");
+    expect(q('[data-testid="narration-result"]')).toBeNull();
+  });
+
+  // Why: an import may finish after the creator selected another text;
+  // its card describes the text it was for, never the one now shown (the
+  // r1011 review's finding 1).
+  it("drops a late import result once another text is shown", async () => {
+    holdNext = true;
+    const done = section.takeFiles([file(VTT, "voice.vtt")]);
+    await flush();
+    section.update({ blockId: "other", body: BODY, key: "1" });
+    gate?.release("written");
+    await done;
+    await flush();
+    expect(q('[data-testid="narration-result"]')).toBeNull();
+    expect(q(".ln-err")).toBeNull();
+  });
+
+  it("drops a late import failure once another text is shown", async () => {
+    let release: (() => void) | undefined;
+    const slow = file("WEBVTT\n\nnot a cue at all", "bad.vtt");
+    const text = slow.text.bind(slow);
+    slow.text = () =>
+      new Promise<string>((resolve) => {
+        release = () => {
+          void text().then(resolve);
+        };
+      });
+    const done = section.takeFiles([slow]);
+    await flush();
+    section.update({ blockId: "other", body: BODY, key: "1" });
+    release?.();
+    await done;
+    await flush();
+    expect(q(".ln-err")).toBeNull();
   });
 
   it("shows no result when the tour refuses the timing", async () => {
