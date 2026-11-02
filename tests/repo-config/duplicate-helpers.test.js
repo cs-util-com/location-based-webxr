@@ -211,7 +211,7 @@ const JUSTIFIED = [
   {
     name: "formatDistance",
     file: "GpsPlusSlamJs_Globe/src/globe-readout.ts",
-    why: "the Globe package depends only on 3d-tiles-renderer, not on the framework, and its readout wants a different contract (thousands grouping at orbit, 'unknown' for a non-finite value) that the framework's options do not express",
+    why: "the globe's readout wants a different contract (thousands grouping at orbit, 'unknown' for a non-finite value) that the framework's options do not express",
   },
   // No smoothstep entry, deliberately. The framework's one copy
   // (utils/smoothstep.ts, the three-argument GLSL form) and OsmDemo's and

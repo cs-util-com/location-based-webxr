@@ -9,7 +9,7 @@
  * @see have-tour.ts.md
  */
 
-import { hasFilePicker } from "./file-picker.js";
+import { hasFilePicker } from "gps-plus-slam-app-framework/storage/file-picker";
 import { HOST_REFUSED_TEXT, describeOpenCause } from "./open-errors.js";
 import type { OpenOutcome } from "./scan-open.js";
 

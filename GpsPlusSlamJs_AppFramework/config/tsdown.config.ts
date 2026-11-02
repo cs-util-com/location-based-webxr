@@ -83,11 +83,15 @@ const entryFiles = [
   'src/ar/tour-fields.ts',
   'src/ar/tour-blocks.ts',
   'src/ar/tour-story.ts',
+  'src/ar/tour-characters.ts',
   'src/ar/tour-signed-manifest.ts',
   'src/ar/tour-signature.ts',
   // The station text's Markdown subset, its plain text and that text's
   // hash, deep-imported by the Tour Viewer the same way.
   'src/ar/tour-markdown.ts',
+  // A narrated text's read-along timing entry, deep-imported by the Tour
+  // Viewer the same way.
+  'src/ar/tour-timing.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
@@ -159,6 +163,9 @@ const entryFiles = [
   'src/sensors/gps.ts',
   'src/sensors/gps-error-handler.ts',
   'src/sensors/permission-checker.ts',
+  // The prompt-free Permissions-API query, loaded by the globe lab's locate
+  // pin; built so the typed Globe package can import it through `./sensors/*`.
+  'src/sensors/permission-state.ts',
   'src/sensors/absolute-orientation.ts',
 
   // state/
@@ -240,6 +247,15 @@ const entryFiles = [
   // The `session.json` builder the Recorder and the Tour Viewer's
   // troubleshooting recording share (deep-imported, 2026-09-28).
   'src/storage/session-metadata-record.ts',
+  // The save modules moved here from the Tour Viewer's desktop editor so
+  // other apps can share them: saving in place, the picker's rejection,
+  // when to save by itself, the one save slot and the picker check - deep
+  // imports only, kept out of the `storage` barrel the root re-exports.
+  'src/storage/save-target.ts',
+  'src/storage/picker-errors.ts',
+  'src/storage/autosave.ts',
+  'src/storage/save-slot-wait.ts',
+  'src/storage/file-picker.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
@@ -336,6 +352,15 @@ const entryFiles = [
   // deep-imported by OsmDemo's AR sun shadow session and served to the
   // globe lab's recorder; per-file for the './utils/*' wildcard.
   'src/utils/frame-times.ts',
+  // The frame recorder's run, its phone-readable report and the frame
+  // target, loaded by the globe lab's perf panel; per-file for the
+  // './utils/*' wildcard so the typed Globe package can import them.
+  'src/utils/frame-run.ts',
+  'src/utils/frame-run-report.ts',
+  'src/utils/frame-target.ts',
+  // The GLSL float-literal formatter, for shader code that interpolates
+  // TypeScript constants (the globe lab's air and cloud passes).
+  'src/utils/glsl-float.ts',
   // The locate buttons' shared behaviour (labels, error mapping, the fix
   // each failure names, one request) - deep-imported by the OSM demo's
   // locate control and served to the globe lab's pin (round-2 plan
@@ -390,6 +415,8 @@ const entryFiles = [
   // Hex/SHA-256, base58btc and did:key (tour kit plan K1), deep-imported by
   // the Tour Viewer's integrity check and its test fixtures.
   'src/utils/sha256-hex.ts',
+  // Tasks in order per key (moved from the Tour Viewer with the save group).
+  'src/utils/keyed-chain.ts',
   'src/utils/base58btc.ts',
   'src/utils/did-key.ts',
   'src/utils/qr-payload/base64url.ts',
@@ -421,6 +448,23 @@ const entryFiles = [
   'src/visualization/atmosphere/atmosphere-fallback.ts',
   'src/visualization/atmosphere/atmosphere-haze.ts',
   'src/visualization/atmosphere/sky-atmosphere.ts',
+  // The sky's low-level building blocks (its model, CPU scattering twin,
+  // GLSL and LUT passes) and the clouds, loaded by the globe lab by page
+  // path; built per-file so the typed Globe package reaches them through
+  // the published `./visualization/*` wildcard (low-level deep imports:
+  // the README says they are not covered by semver and may change in a
+  // minor release).
+  'src/visualization/atmosphere/atmosphere-glsl.ts',
+  'src/visualization/atmosphere/atmosphere-luts.ts',
+  'src/visualization/atmosphere/atmosphere-model.ts',
+  'src/visualization/atmosphere/atmosphere-scattering.ts',
+  'src/visualization/atmosphere/cloud-coverage.ts',
+  'src/visualization/atmosphere/cloud-hex.ts',
+  'src/visualization/atmosphere/cloud-layer.ts',
+  'src/visualization/atmosphere/cloud-live-noise.ts',
+  'src/visualization/atmosphere/cloud-shadow.ts',
+  'src/visualization/atmosphere/cloud-sheet.ts',
+  'src/visualization/atmosphere/cloud-slab.ts',
   'src/visualization/alignment-lerper.ts',
   // AR shadows on the room mesh (plan 2026-09-26-0549), deep-imported by the
   // PhysicsDemo via `./visualization/*`.

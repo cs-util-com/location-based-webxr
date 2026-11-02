@@ -40,7 +40,10 @@ const link = (
   host: string,
   ...children: TourMdInline[]
 ): TourMdInline => ({ kind: 'link', href, host, children });
-const alt = (text: string): TourMdInline => ({ kind: 'pictureAlt', alt: text });
+const alt = (text: string, asset?: string): TourMdInline =>
+  asset === undefined
+    ? { kind: 'pictureAlt', alt: text }
+    : { kind: 'pictureAlt', alt: text, asset };
 const p = (...inlines: TourMdInline[]): TourMdBlock => ({
   kind: 'paragraph',
   inlines,
@@ -251,24 +254,27 @@ describe('parseTourMarkdown - pictures', () => {
     // Why: a picture block stands on a line of its own; two on one line
     // are a line of text with pictures in it.
     expect(blocksOf('![a](asset:x) ![b](asset:y)')).toEqual([
-      p(alt('a'), t(' '), alt('b')),
+      p(alt('a', 'x'), t(' '), alt('b', 'y')),
     ]);
     expect(blocksOf('![a](asset:x)![b](asset:y)')).toEqual([
-      p(alt('a'), alt('b')),
+      p(alt('a', 'x'), alt('b', 'y')),
     ]);
     expect(blocksOf('![a](asset:x)\n![b](asset:y) ![c](asset:z)')).toEqual([
-      p(alt('a'), soft, alt('b'), t(' '), alt('c')),
+      p(alt('a', 'x'), soft, alt('b', 'y'), t(' '), alt('c', 'z')),
     ]);
     // A line holding no picture (here a lone backslash break) is not a
     // picture line either.
     expect(blocksOf('![a](asset:x)\n\\\n![b](asset:y)')).toEqual([
-      p(alt('a'), soft, hard, alt('b')),
+      p(alt('a', 'x'), soft, hard, alt('b', 'y')),
     ]);
   });
 
-  it('shows a picture inside a paragraph as its alt text box, which adds nothing to P', () => {
+  // Why the box names its asset: the picture is not shown, but the body
+  // still names the file, and a write that kept only shown pictures
+  // deleted it at a Finish (the creator's words on a picture's line).
+  it('shows a picture inside a paragraph as its alt text box, which adds nothing to P and still names its asset', () => {
     expect(blocksOf('see ![A](asset:x) here')).toEqual([
-      p(t('see '), alt('A'), t(' here')),
+      p(t('see '), alt('A', 'x'), t(' here')),
     ]);
     expect(plain('see ![A](asset:x) here')).toBe('see  here');
   });
@@ -305,8 +311,9 @@ describe('parseTourMarkdown - pictures', () => {
         pic(`p${i}`, `a${i}`)
       )
     );
+    // Past the cap the box still names its asset (a write keeps it).
     expect(blocks[TOUR_MARKDOWN_MAX_PICTURES]).toEqual(
-      p(alt(`p${TOUR_MARKDOWN_MAX_PICTURES}`))
+      p(alt(`p${TOUR_MARKDOWN_MAX_PICTURES}`, `a${TOUR_MARKDOWN_MAX_PICTURES}`))
     );
   });
 });
@@ -680,7 +687,7 @@ describe('parseTourMarkdown - edge cases held to CommonMark', () => {
       p(t('[a '), link(X, 'x.org', t('b')), t(' c](https://y.org)')),
     ]);
     expect(blocksOf('[a ![b](asset:x)](https://x.org)')).toEqual([
-      p(link(X, 'x.org', t('a '), alt('b'))),
+      p(link(X, 'x.org', t('a '), alt('b', 'x'))),
     ]);
     expect(blocksOf('![[a](https://x.org)](asset:x)')).toEqual([pic('a', 'x')]);
   });

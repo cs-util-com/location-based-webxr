@@ -42,7 +42,8 @@ target, with the focus rule `walkFocus` every view reads.
   - `chosenId: string | null` - the visitor's chosen target.
 - Actions (all `visitorWalk/*`):
   - `walkStarted({ order, route })` - a new walk (`route` from
-    `walkRoute(stations)`): everything else starts anew;
+    `walkRoute(stations, assets)`, `assets` the open tour's, anything
+    with `has(id)`; see `station-run.ts.md`): everything else starts anew;
   - `walkCleared()` - no tour: the initial state;
   - `walkStepped(step)` - one `WalkStep` through `applyWalkStep`;
   - `skipTaken({ id, atMs })` - the last skip and its note;
@@ -130,7 +131,9 @@ target, with the focus rule `walkFocus` every view reads.
 ## Examples
 
 ```ts
-store.dispatch(walkStarted({ order: "any", route: walkRoute(stations) }));
+store.dispatch(
+  walkStarted({ order: "any", route: walkRoute(stations, assets) }),
+);
 store.dispatch(
   walkBatched([
     skipTaken({ id: "well", atMs: now }),

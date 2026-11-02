@@ -28,7 +28,13 @@ tap on nothing closes the sheet.
 - `cancelsXrSelect(target)` - whether a tap on `target` (a
   `beforexrselect`'s) belongs to the overlay: a control (`button`, `a`,
   `input`, `select`, `textarea`, `summary`), a `.sheet` or the story
-  card (`#scene-panel`). `main.ts` cancels those in visitor mode, so a
+  card (`#scene-panel`), a model's card (`.model-card`), a toy's
+  gesture layer (`.model-gestures`), a long text's reading sheet
+  (`.lt-sheet`, its text, progress bar, padding and ask bar included) or
+  the view switch with its menu (`.view-switch`) or the captions strip
+  (`.captions-strip`, its words and the gaps between its controls). The reading sheet is
+  named by its own class, not `.sheet`, which would pull in the design
+  system's sheet styles. `main.ts` cancels those in visitor mode, so a
   tap on Continue or on the sheet's Close never also hits a pin behind it.
 
 ## Invariants & assumptions

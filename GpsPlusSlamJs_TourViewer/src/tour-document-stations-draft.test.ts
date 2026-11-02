@@ -504,6 +504,51 @@ describe("the draft keeps the stations whole", () => {
       parseTourManifest(JSON.parse(serializeTourManifest(written)));
   });
 
+  // Why: the check above guards only what the format refuses. A long text's
+  // body may name an asset the tour lacks (the visitor sees its alt text),
+  // so a station whose essay names one inline must not be dropped from a
+  // restore: that would silently lose the author's writing.
+  it("a created station whose long text body names a missing asset inline is still restored", () => {
+    const frame: StationFrame = {
+      id: "essay",
+      geo: { lat: 48.6, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      blocks: [
+        {
+          id: "words",
+          kind: "longText",
+          view: "reading",
+          title: "Words",
+          body: "See ![the old gate](asset:gone) here.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "words" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    const restored = reduce(
+      open(),
+      act.restored({
+        objects: [{ ...pin("p", 48.6), station: "essay" }],
+        deleted: [],
+        createdStations: [frame],
+        what: "restore",
+      }),
+    );
+    expect(restored.stations.map((s) => s.id)).toContain("essay");
+    const written = manifestToWrite(restored);
+    expect(written).not.toBeNull();
+    if (written !== null)
+      parseTourManifest(JSON.parse(serializeTourManifest(written)));
+  });
+
   it("a record written before stations were recorded whole still reads and restores its poses", () => {
     const moved = {
       lat: 48.5201,

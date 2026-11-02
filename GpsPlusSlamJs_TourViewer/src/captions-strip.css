@@ -1,0 +1,191 @@
+/* The captions strip of a narrated long text (captions-strip.ts). Its
+   numbers are the narrated-text prototype's (public/prototypes/
+   station-blocks-1-narrated-text/, #caption), laid out by the reading
+   sheet's media queries: upright under 0.85, sideways under 520 px high,
+   else a desktop. The design system zeroes margins, so every gap here is
+   set explicitly. */
+
+.captions-strip {
+  --cs-serif:
+    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia,
+    "Times New Roman", serif;
+  --cs-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --cs-amber: #f2b45a;
+
+  position: fixed;
+  z-index: 15;
+  right: 10px;
+  bottom: 16px;
+  left: 10px;
+  box-sizing: border-box;
+  padding: 15px 18px 10px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 22px;
+  margin: 0;
+  backdrop-filter: blur(14px);
+  background: rgb(14 15 18 / 86%);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 25%);
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+}
+.captions-strip.cs-hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cs-text {
+  display: flex;
+  min-height: calc(1.33em * 3);
+  align-items: flex-end;
+  margin: 0;
+  color: #f7f3eb;
+  font: 600 22px/1.33 var(--cs-sans);
+  letter-spacing: 0.002em;
+}
+.cs-chunk {
+  display: block;
+  animation: cs-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes cs-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cs-w.cs-todo {
+  color: #bdb7ab;
+}
+.cs-w.cs-on {
+  color: #ffd391;
+  text-decoration: underline;
+  text-decoration-color: var(--cs-amber);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
+}
+
+.cs-row {
+  display: flex;
+  align-items: center;
+  margin: 10px 0 0;
+  gap: 8px;
+}
+.cs-cb {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  margin: 0;
+  background: transparent;
+  color: #e9e4da;
+  place-items: center;
+}
+.cs-cb:active {
+  background: rgb(255 255 255 / 8%);
+}
+.cs-cb svg {
+  width: 20px;
+  height: 20px;
+  fill: currentcolor;
+}
+.cs-cb.cs-play {
+  width: 44px;
+  height: 44px;
+  background: var(--cs-amber);
+  color: #1a1408;
+}
+.cs-meta {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+.cs-title {
+  overflow: hidden;
+  margin: 0;
+  color: #efe9de;
+  font: 600 13px/1.25 var(--cs-serif);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-sub {
+  overflow: hidden;
+  margin: 2px 0 0;
+  color: #8f897e;
+  font: 11px/1.3 var(--cs-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-pill {
+  height: 34px;
+  flex: none;
+  padding: 0 13px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  margin: 0;
+  background: transparent;
+  color: #e9e4da;
+  font: 600 12.5px/1 var(--cs-sans);
+  white-space: nowrap;
+}
+.cs-bar {
+  overflow: hidden;
+  height: 3px;
+  border-radius: 3px;
+  margin: 9px 0 0;
+  background: rgb(255 255 255 / 10%);
+}
+.cs-bar > div {
+  width: 0;
+  height: 100%;
+  background: var(--cs-amber);
+}
+
+@media (min-aspect-ratio: 17/20) and (max-height: 519.98px) {
+  .captions-strip {
+    right: auto;
+    bottom: 8px;
+    left: 50%;
+    width: min(660px, 80%);
+    padding: 11px 16px 7px;
+    transform: translateX(-50%);
+  }
+  .cs-text {
+    min-height: calc(1.33em * 2);
+    font-size: 19px;
+  }
+  .cs-cb.cs-play {
+    width: 48px;
+    height: 48px;
+  }
+}
+@media (min-aspect-ratio: 17/20) and (min-height: 520px) {
+  .captions-strip {
+    right: auto;
+    bottom: 26px;
+    left: 50%;
+    width: 780px;
+    padding: 20px 26px 12px;
+    transform: translateX(-50%);
+  }
+  .cs-text {
+    min-height: calc(1.33em * 2);
+    font-size: 27px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .captions-strip,
+  .cs-chunk {
+    animation: none;
+    transition: none;
+  }
+}

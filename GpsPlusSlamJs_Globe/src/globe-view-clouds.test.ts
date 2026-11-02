@@ -1,0 +1,334 @@
+/**
+ * The heavy clouds for an app's globe view, over recording fakes of the
+ * slab, the shell and the scene depth.
+ *
+ * Why this file matters: the globe lab draws its clouds through a careful
+ * order (who draws them by altitude, the cloud shell's share from the
+ * relief, the ground's shadow, the volumes' update, the relief's depth,
+ * the drawing) and an app that wires them itself gets that order wrong or
+ * leaves the clouds out (the 3D editor on the globe had none). These tests
+ * pin the lab's settings with the heavy clouds on, what each frame tells
+ * the parts at heights from orbit to the ground, the switch off, and every
+ * part freed once.
+ */
+import * as THREE from "three";
+import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
+import { describe, expect, it } from "vitest";
+
+import {
+  CLOUD_HIGH_LAYER,
+  CLOUD_SHELL_VOLUME,
+} from "./globe-cloud-shell-volume.js";
+import {
+  createCloudsParts,
+  createGlobeViewClouds,
+  GLOBE_VIEW_CLOUDS,
+  globeViewClouds,
+  type CloudsParts,
+  type CloudsView,
+} from "./globe-view-clouds.js";
+
+/** A view whose camera stands `altitudeM` over the equator at 0 deg. */
+function fakeView(altitudeM: number, framed = true) {
+  let heightM = 0;
+  const camera = new THREE.PerspectiveCamera();
+  const view = {
+    renderer: {} as THREE.WebGLRenderer,
+    camera,
+    globe: {
+      sun: { intensity: 5 },
+      cloudShell: {
+        heightM: () => heightM,
+        setHeightM(next: number) {
+          heightM = next;
+        },
+        setHole() {},
+      },
+      surfaceUniforms: {
+        uCloudShadow: { value: 0 },
+        uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
+      },
+      tiles: { ellipsoid: WGS84_ELLIPSOID, group: new THREE.Group() },
+    },
+    ecefCamera: () => ({
+      position: new THREE.Vector3(WGS84_ELLIPSOID.radius.x + altitudeM, 0, 0),
+    }),
+    frameTarget: () => (framed ? { lat: 0, lng: 0 } : null),
+  };
+  // A fake: only what the clouds read and write of the view.
+  return view as unknown as CloudsView & typeof view;
+}
+
+/** Recording fakes of the three parts. */
+function fakeParts() {
+  const log: string[] = [];
+  const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
+  const shellFrames: { altitudeKm: number }[] = [];
+  const patched: unknown[] = [];
+  const depthDrawn: unknown[] = [];
+  const parts = {
+    sceneDepth: {
+      beginFrame: () => log.push("depth begin"),
+      render: (_camera: THREE.Camera, relief: unknown) => {
+        log.push("depth");
+        depthDrawn.push(relief);
+      },
+      dispose: () => log.push("dispose depth"),
+    },
+    cloudVolume: {
+      setEnabled: (on: boolean) => log.push(`slab ${on ? "on" : "off"}`),
+      setShadow() {},
+      setNoise() {},
+      setFineGain() {},
+      update(frame: { radiusKm: number; altitudeKm: number }) {
+        slabFrames.push(frame);
+        return { share: 1, radiusM: 80_000 };
+      },
+      render: () => {
+        log.push("slab");
+        return true;
+      },
+      texture: new THREE.Texture(),
+      patchShadow: (tiles: unknown) => patched.push(tiles),
+      state: () => ({ discCentre: null, deckY: 3000, radiusM: 80_000 }),
+      dispose: () => log.push("dispose slab"),
+    },
+    shellVolume: {
+      setEnabled: (on: boolean) => log.push(`shell ${on ? "on" : "off"}`),
+      setResolution() {},
+      update(frame: { altitudeKm: number }) {
+        shellFrames.push(frame);
+      },
+      render: () => log.push("shell"),
+      dispose: () => log.push("dispose shell"),
+    },
+  };
+  // A fake: only what the clouds call of the three parts.
+  return {
+    parts: parts as unknown as CloudsParts,
+    log,
+    slabFrames,
+    shellFrames,
+    patched,
+    depthDrawn,
+  };
+}
+
+/** Relief tiles as the slab's shadow patches them. */
+const reliefTiles = () => ({
+  group: new THREE.Group(),
+  addEventListener() {},
+});
+
+describe("GLOBE_VIEW_CLOUDS", () => {
+  // Why: the editor shows the lab's heavy clouds, so its settings are the
+  // lab's defaults with the spherical volume, the high layer and the
+  // shell's shadow on; a drift here is a different look from the lab's.
+  it("is the lab's defaults with the heavy clouds on", () => {
+    expect(GLOBE_VIEW_CLOUDS).toMatchObject({
+      cloudVolume: 2,
+      cloudVolumeKm: 80,
+      cloudVolumeCeilingKm: 40,
+      cloudVolumeFadeKm: 25,
+      cloudVolumeCover: 1,
+      cloudShadowFrom: 0,
+      cloudNoise: "live",
+      cloudFineGain: 0.5,
+      cloudShellVolume: 1,
+      cloudShellTopKm: CLOUD_SHELL_VOLUME.topKm,
+      cloudShellMidKm: 200,
+      cloudShellBandKm: CLOUD_SHELL_VOLUME.bandKm,
+      cloudShellFields: 3,
+      cloudShellCell: CLOUD_SHELL_VOLUME.stations[0].cellScale,
+      cloudShellThick: CLOUD_SHELL_VOLUME.stations[0].thicknessScale,
+      cloudShellNoise: CLOUD_SHELL_VOLUME.stations[0].noiseShare,
+      cloudShellRes: 0.5,
+      cloudShellShadow: 0.5,
+      cloudFlat: 1,
+      cloudFlatTopKm: 5_000,
+      cloudFlatWeak: 0.3,
+      cloudFlatOutFromKm: 900,
+      cloudFlatOutToKm: 700,
+      cloudHigh: 1,
+      cloudHighKm: CLOUD_HIGH_LAYER.altitudeKm,
+      cloudHighCell: CLOUD_HIGH_LAYER.cellScale,
+      cloudHighCover: CLOUD_HIGH_LAYER.cover,
+      cloudHighShare: CLOUD_HIGH_LAYER.noiseShare,
+      cloudShellKm: 3,
+      cloudShadow: 0.6,
+      cloudShellFlat: 1,
+    });
+    expect(Object.isFrozen(GLOBE_VIEW_CLOUDS)).toBe(true);
+  });
+});
+
+describe("createGlobeViewClouds", () => {
+  // Why: the clouds are drawn at every height of a flight, the shell from
+  // orbit down to the slab, the slab near the ground; each frame the
+  // cloud shell sits at the lab's 3 km, takes its share from the page for
+  // the flat layer's share, and both volumes are updated. Swept from orbit
+  // to the ground.
+  it.each([6_000_000, 500_000, 80_000, 10_000, 100])(
+    "steps the shell and the slab at %s m with the page's shell share",
+    (altitudeM) => {
+      const view = fakeView(altitudeM);
+      const fakes = fakeParts();
+      const clouds = createGlobeViewClouds(view, fakes.parts);
+      const flats: number[] = [];
+      clouds.step({
+        observerKm: altitudeM / 1000,
+        shareClouds: (flat) => {
+          flats.push(flat);
+          return 1;
+        },
+      });
+      expect(view.globe.cloudShell.heightM()).toBe(3000);
+      expect(flats).toEqual([clouds.state().flat]);
+      expect(clouds.state()).toMatchObject({ on: true, shellOn: true });
+      expect(fakes.log).toContain("slab on");
+      expect(fakes.log).toContain("shell on");
+      expect(fakes.slabFrames[0]?.radiusKm).toBe(80);
+      expect(fakes.shellFrames[0]?.altitudeKm).toBeCloseTo(altitudeM / 1000, 3);
+    },
+  );
+
+  // Why: the ground's soft shadow is the shell's, so it follows the share
+  // the page gives the shell (none where the globe's surface carries the
+  // ground) and, like the lab's, the plan's flat-layer and map shares: it
+  // is whole from orbit and gone below about 1,000 km, where the volumes
+  // cast their own shadow on the relief instead.
+  it.each([
+    [6000, 0.5, 0.6],
+    [2000, 0.5, 0.6],
+    [1000, 0.3, 0.5],
+    [500, 0, 0],
+    [80, 0, 0],
+    [10, 0, 0],
+  ])(
+    "shades the ground by the shell's share at %d km (%d to %d)",
+    (km, low, high) => {
+      const view = fakeView(km * 1000);
+      const clouds = createGlobeViewClouds(view, fakeParts().parts);
+      clouds.step({ observerKm: km, shareClouds: () => 0 });
+      expect(view.globe.surfaceUniforms.uCloudShadow.value).toBe(0);
+      clouds.step({ observerKm: km, shareClouds: () => 1 });
+      const shadow = view.globe.surfaceUniforms.uCloudShadow.value;
+      expect(shadow).toBeGreaterThanOrEqual(low);
+      expect(shadow).toBeLessThanOrEqual(high);
+    },
+  );
+
+  // Why: with the world in ECEF there is no frame for the shell's law;
+  // the shell stays off and the flat layer draws, as in the lab.
+  it("keeps the shell off without a frame", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(500_000, false), fakes.parts);
+    clouds.step({ observerKm: 500, shareClouds: () => 1 });
+    expect(clouds.state().shellOn).toBe(false);
+    expect(fakes.log).toContain("shell off");
+  });
+
+  // Why: the slab's shadow must reach the relief's tiles before the haze
+  // patches them, and the relief is what ends the march; nothing is drawn
+  // before a relief is named.
+  it("patches the relief's shadow and draws only once it has a relief", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(fakes.log).not.toContain("slab");
+    const tiles = reliefTiles();
+    clouds.patch(tiles);
+    expect(fakes.patched).toEqual([tiles]);
+    clouds.render({ weight: 1 });
+    expect(fakes.log.slice(-4)).toEqual([
+      "depth begin",
+      "depth",
+      "slab",
+      "shell",
+    ]);
+    expect(fakes.depthDrawn).toEqual([tiles.group]);
+  });
+
+  // Why: the relief's depth costs a pass of its own; it is drawn for the
+  // shell's rays only while the ground sky shows (above it the shell's
+  // weight on it is 0 and the slab draws it itself when it needs it).
+  it("draws the relief's depth only while the ground sky shows", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(500_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 500, shareClouds: () => 1 });
+    clouds.render({ weight: 0 });
+    expect(fakes.log).toContain("depth begin");
+    expect(fakes.log).not.toContain("depth");
+    expect(fakes.log).toContain("slab");
+  });
+
+  // Why: the layer switch: off, the slab and the shell are turned off at
+  // the next frame and nothing of them (nor the depth) is drawn; on again,
+  // they come back.
+  it("turns the heavy clouds off and on again", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.setOn(false);
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(clouds.state()).toMatchObject({ on: false, shellOn: false });
+    expect(fakes.log).toContain("slab off");
+    expect(fakes.log).toContain("shell off");
+    expect(fakes.log).not.toContain("depth");
+    expect(fakes.log).not.toContain("slab");
+    clouds.setOn(true);
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(clouds.state().on).toBe(true);
+    expect(fakes.log).toContain("slab");
+  });
+
+  // Why: the editor mounts and unmounts the view; every part is freed
+  // once, and a frame after the dispose touches nothing.
+  it("frees each part once and does nothing afterwards", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.dispose();
+    clouds.dispose();
+    expect(fakes.log.filter((l) => l.startsWith("dispose")).sort()).toEqual([
+      "dispose depth",
+      "dispose shell",
+      "dispose slab",
+    ]);
+    const before = fakes.log.length;
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(fakes.log.length).toBe(before);
+  });
+});
+
+describe("createCloudsParts", () => {
+  // Why: the slab is the ground sky's; where the ground sky cannot draw
+  // (no float render targets) there are no heavy clouds, not a throw.
+  it("makes none where the ground sky cannot draw", () => {
+    expect(
+      createCloudsParts(fakeView(10_000), {
+        groundSky: {
+          supported: false,
+          atmosphere: null,
+          scene: new THREE.Scene(),
+        },
+        spacePass: {} as never,
+      }),
+    ).toBeNull();
+    expect(
+      globeViewClouds(fakeView(10_000))({
+        groundSky: {
+          supported: false,
+          atmosphere: null,
+          scene: new THREE.Scene(),
+        },
+        spacePass: {} as never,
+      }),
+    ).toBeNull();
+  });
+});

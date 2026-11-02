@@ -10,6 +10,9 @@
   only when non-empty (see "Narrowed changes" below). `docOnlyDirs(docsOnly)`
   maps doc-only files to their package dirs; `describeRun(selection, ref)` is
   the one line the shell prints.
+  `isPackageDocMarkdown(path)` (a normalized path inside a package) is the
+  doc-markdown rule itself, exported so the Tour Viewer's e2e plan
+  (`playwright-tests/e2e-plan.js`) skips exactly the markdown this gate skips.
 - Invariants & assumptions (speedup plan Phase B.2 guard rails — load-bearing):
   - Any path outside a known package dir ⇒ `mode: 'all'` (root configs are
     outside pnpm's dependency graph), except the narrowed root classes in
@@ -28,7 +31,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -48,7 +51,12 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
    - then each doc-only package's `format` stage and each root check
      (`check:deadcode`), see "Narrowed changes" below;
 3. the changed packages’ **full** gates (`--filter <name>`), e2e included,
-   first so a break in what was actually edited fails fast;
+   first so a break in what was actually edited fails fast. With `ref`,
+   this command's env carries `GATE_CHANGED_REF=<ref>`
+   (`CHANGED_REF_ENV`, `scripts/e2e/project-runs.mjs`): a stage that can
+   narrow itself to the changed area reads it (today only the Tour Viewer's
+   e2e, see `scripts/e2e/run-projects.mjs.md`). Without `ref` (and on the
+   full cascade, and on CI) no such env is set, so every spec runs;
 4. their dependents **minus themselves**
    (`--filter "...<name>" --filter "!<name>"`) with `skipBrowserEnv` set.
 
@@ -69,16 +77,26 @@ the same framework build first, then `pnpm test`. The cascade runs
 `check:deadcode` (knip resolves workspace packages through their `dist`)
 before any package stage builds the framework.
 
-## The served-by edge (globe plan 2026-09-26-0539 §8, W7 M0)
+## The served-by edges (globe plan 2026-09-26-0539 §8, W7 M0; globe editor plan GV5)
 
-The design system SERVES the globe package through its routes but does not
-depend on it, so pnpm's graph never selects it. A change in
-`GpsPlusSlamJs_Globe` therefore also selects `GpsPlusSlamJs_DesignSystem`,
-in full: its globe lab smoke is the globe's only browser check. The
-framework and OsmDemo are served too but are deliberately NOT listed: that
-would put the design system's ~11 min e2e on every framework commit, an
-owner decision filed with the W7 M0 record. Tested in `select.test.mjs`
-("the served-by edge").
+`SERVED_BY` maps a package whose only browser check is another package's
+browser suite to that package; a change in the first selects the second as
+a changed package, in full.
+
+- The design system SERVES the globe package through its routes but does
+  not depend on it, so pnpm's graph never selects it. A change in
+  `GpsPlusSlamJs_Globe` therefore also selects
+  `GpsPlusSlamJs_DesignSystem`, in full: its globe lab smoke is the globe's
+  only browser check. The framework and OsmDemo are served too but are
+  deliberately NOT listed: that would put the design system's ~11 min e2e
+  on every framework commit, an owner decision filed with the W7 M0 record.
+- The Tour Viewer DEPENDS on `GpsPlusSlamJs_EditorKit`, so pnpm selects it
+  on a kit change, but only as a dependent, without its browser stages
+  (DEC-G2). Its editor e2e is the kit's only browser check, so a kit change
+  selects `GpsPlusSlamJs_TourViewer` in full.
+
+An edge whose second package is not a workspace package adds nothing.
+Tested in `select.test.mjs` ("the served-by edge").
 
 ## Narrowed changes: what a change can skip
 
@@ -147,10 +165,11 @@ the gate tooling (21) and `package.json` (9).
   a package the change cannot reach no longer runs on that commit: its
   discovery runs are the package's own commits, the milestone browser run
   and CI's full cascade on every PR.
-- `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames })` emits,
-  in order: the build (as above), `pnpm run test:repo-config`, the doc-only
-  packages' `run --if-present format`, each root check, the changed
-  packages' full gates, their dependents without browser stages.
+- `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
+  emits, in order: the build (as above), `pnpm run test:repo-config`, the
+  doc-only packages' `run --if-present format`, each root check, the changed
+  packages' full gates (with `GATE_CHANGED_REF` when `ref` is given), their
+  dependents without browser stages.
 - `describeRun` prints ONE line naming what was seen and everything that
   runs, e.g. `test-changed: vs HEAD - changed GpsPlusSlamJs_TourViewer; root
   files (1): tests/repo-config/x.test.js => runs: the framework build if

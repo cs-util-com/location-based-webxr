@@ -91,7 +91,7 @@ import {
   writeDraftMeta,
   isOlderVersionDraft,
 } from "../draft-persistence.js";
-import { createKeyedChain } from "../keyed-chain.js";
+import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { isTourContentKey } from "../tour-file-key.js";
 import type { EditorLock } from "./save-target.js";
 import {

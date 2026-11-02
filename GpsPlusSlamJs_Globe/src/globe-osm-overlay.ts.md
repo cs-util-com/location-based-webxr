@@ -14,7 +14,10 @@
     `maxAboveGroundM` 200, `maxSpeedMps` 50 (off above these),
     `onBelowAboveGroundM` 180, `onBelowSpeedMps` 45 (on only below
     these), `rampMs` 300 (the drawn map's fade in or out), `reevaluateMs` 500,
-    `reevaluateLimit` 8, `resolution` 256, `keepRegions` 64 (released
+    `reevaluateLimit` 8, `retryBackoffMs` 5000, 10000, 20000, 60000 (how
+    long the failed tiles wait before they are asked for again: each
+    retry that fails waits the next, then the last again; a retried tile
+    that gets its map starts them over), `resolution` 256, `keepRegions` 64 (released
     map textures kept in memory, below).
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
@@ -73,11 +76,21 @@ level)`; a region counts as content only while locked; a release
     under the new level). A region still loading, or one whose fetch
     failed (the library holds a promise for both), is given back at once,
     so a failure is never kept. `setKeep(n)` changes the keep and gives
-    back what is over it at once (all at 0).
+    back what is over it at once (all at 0). `lockTextureSafe` (the
+    plugin's lock) catches a failed request's rejection, where the
+    library's rethrew it as an unhandled error in the console: the plugin
+    records the same failure as the tile's failed state (it reads the same
+    request), and the factory asks for it again from there. The error
+    goes to `noteLockError(err)` (the re-evaluation's locks too): counted
+    by its name, the last kept, the first of each name warned once in the
+    console; an `AbortError` (the library dropping a region it no longer
+    needs) is not recorded.
     `isLocked`, `wanted`, `stats()` (`locks`, `gatedLocks`,
     `lockedRegions`, `releases`: textures given back to the library, which
     drops them, so a re-visit fetches again; `keep`, `keptRegions`,
-    `keptHits`: locks served from the keep; `finestLevel`). RangeError
+    `keptHits`: locks served from the keep; `finestLevel`; `lockErrors`:
+    failed lock requests by error name; `lastLockError`: `{ name,
+message }` of the last, or null). RangeError
     for a url without `{z}/{x}/{y}` or a keep that is not an integer >= 0,
     TypeError without a gate.
   - `reevaluateGatedTiles(plugin, overlay, { limit })`: tiles whose map
@@ -101,7 +114,28 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       `attach`, the map on or off: the gate and `coverage` read it), the
       active rule with the last frame's state, the fade's switch ramped over `rampMs`
       (requests follow the rule at once; only the drawn map fades), and
-      every `reevaluateMs` the gated tiles.
+      every `reevaluateMs` the gated tiles and the failed ones. **A failed
+      tile is asked for again**: the library marks a tile failed on any
+      rejected request (a dropped connection) and never retries by
+      itself, which left that tile without its map (a bare square with
+      straight edges) while it stayed loaded. While the map is on, once a
+      failed tile has waited, the library's public
+      `resetFailedOverlays()` releases every failed tile and locks it
+      anew, so the new lock still goes through the gate and the request
+      ceiling; never while the map is off. **The waits back off**
+      (`retryBackoffMs`: 5, 10, 20, then 60 s and 60 s again), so an
+      outage, no connection or a server refusing with 429 does not fill
+      the request ceiling with retries bound to fail (the tile server's
+      usage policy). A retried tile that got its map (no longer failed,
+      with its texture: the reset clears the failed mark at once, so that
+      alone tells nothing) starts the waits over. **The reset runs after the update's re-evaluation, never
+      before it**: the reset releases the regions at once, the library's
+      region cache drops a released region a microtask later, and the
+      library locks it anew only on the next animation frame. A
+      re-evaluation in between would lock the region still cached with its
+      rejected request (the tile failing again at once) and the reset's own
+      lock would then hold it twice, so the tile would never heal and the
+      region would leak a lock.
     - `stats()`: `enabled`, `active`, `on` (the drawn map's strength, the
       ramped shader switch), `requests`, `requestsLastMinute`,
       `unpatchedShaders` (a library change shows here), the overlay's
@@ -114,7 +148,10 @@ setEnabled(on), setFadeM(m), update(pose), stats() }`:
       enabled, whose height over the ground was unknown: the map is off in
       them), `ceilingFullMs` (time on with the request ceiling full: no new
       tile asked for), `reevaluateBacklog` (tiles the last look left for
-      the next), `cappedLooks` (looks that left some).
+      the next), `cappedLooks` (looks that left some), `failedRetries`
+      (times the failed tiles were asked for again), `retryWaitMs` (the
+      wait before the next), the overlay's `lockErrors` and
+      `lastLockError`.
     - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
 failed, unprocessed }`: the relief tiles drawn in the last update
       (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
@@ -122,16 +159,18 @@ failed, unprocessed }`: the relief tiles drawn in the last update
       map is at full strength), with their map, too coarse for it (the level picked under
       the coarsest zoom: bare relief by design), or waiting for it (gated,
       throttled, loading or failed; `failed` counts the failed ones among
-      them apart, since a failed tile is never asked for again and a check
-      waiting for the map must not wait on it); and drawn tiles the plugin
+      them apart, since a failed tile is asked for again only every
+      `retryBackoffMs` and a check waiting for the map must not wait on it); and drawn tiles the plugin
       has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
-    The Globe package depends on neither the framework nor the Osm
-    library; the globe lab passes them.
+    This module imports neither the framework's tile constants nor the
+    Osm library (the Globe package depends on the framework only for its
+    atmosphere and cloud modules, and not on the Osm library); the globe
+    lab passes them.
   - A tile is asked for only when ALL hold: the overlay is ready and
     enabled, the rule is active (by default on below 180 m and 45 m/s,
     kept until above 200 m or 50 m/s; the caller's `limits` otherwise),
@@ -268,8 +307,16 @@ failed, unprocessed }`: the relief tiles drawn in the last update
   the library (red first: the TypeError) with a guard on the plugin's
   init order in its source, the caller's limits through `osmGateLimits`,
   the active rule and the factory's frame loop and gate over a really
-  initialised overlay), `globe-osm-overlay.property.test.ts` (random bursts:
-  no sliding minute above the ceiling, no request dropped). The design
+  initialised overlay, a failed tile asked for again once its interval
+  passed with the map on, at most once per interval and never with the
+  map off, a failed tile healed with one lock on its region over the
+  library's own `resetFailedOverlays` and region cache (red first with
+  the reset before the re-evaluation: one request only), and a failed
+  lock logging no unhandled error), `globe-osm-overlay.property.test.ts` (random bursts:
+  no sliding minute above the ceiling, no request dropped). The Tour
+  Viewer's `playwright-tests/editor3d-globe.spec.js` aborts the first
+  request of a street-map tile on the real page and waits for that tile
+  to be asked for again and for every near tile to carry its map. The design
   system's `labs/globe/globe-editor-blocks.smoke.spec.mjs` counts the
   requests against a fake tile server on the real page: none by default,
   z15 and finer near the camera under the ceiling with the map drawn at

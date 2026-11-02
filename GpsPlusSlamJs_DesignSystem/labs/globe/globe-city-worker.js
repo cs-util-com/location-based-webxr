@@ -12,7 +12,7 @@
  * target, zoom, heightsUrl? }` starts the library's `loadCityData` for the
  * place, on the library's `cityDataPlan` with the relief's own heights (the
  * relief's source `heightsUrl` at the relief's zoom, R13; AWS Terrarium when
- * the message names none; `globe-city-heights.js`, G1 1d), so the warm-up and the build are ONE load and read
+ * the message names none; the Globe's `globe-city-heights.ts`, G1 1d), so the warm-up and the build are ONE load and read
  * the same tiles and heights by construction (validation finding F6). A new
  * load, or `{ kind: "abort", id }`, stops the one before. Replies, each
  * carrying its `id`:
@@ -51,7 +51,7 @@ import {
 } from "gps-plus-slam-osm";
 import { openPersistentOsmStore } from "gps-plus-slam-app-framework/osm-bridge";
 
-import { cityHeights } from "./globe-city-heights.js";
+import { cityHeights } from "/globe/globe-city-heights.js";
 
 /** How the globe identifies itself to the Overpass operators. */
 const USER_AGENT = "gps-plus-slam-globe (github.com/cs-util-com)";

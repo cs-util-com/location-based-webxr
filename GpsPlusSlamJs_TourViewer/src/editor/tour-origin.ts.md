@@ -23,6 +23,13 @@ view draws the point.
   under a millimetre over a tour's reach): the inspector's typed east and
   north become a station's place by it. Null for metres that are not
   finite or an origin that is not a place.
+- `tourReach(stations, codes, marginM)` -> `(place) => boolean`: whether
+  a place (degrees) is within `marginM` of the box the tour's stations
+  and codes span, in metres east and north of its first point. Points and
+  places that cannot be placed are left out (near nothing); no point:
+  nothing is near. Throws `RangeError` for a margin that is not a finite,
+  non-negative distance. The globe view holds its no-ground stand-in to
+  the tour's reach by it.
 
 ## Invariants & assumptions
 
@@ -53,4 +60,6 @@ none, and points that cannot be placed left out; the metres against the
 three latitudes and up to about 1.2 km out; null for a point or an origin
 that is not a place; `placeAtEastNorth` read back by `eastNorthOf` within
 a millimetre (property, 2 km either way, latitudes to 80 degrees), and
-null for metres or an origin that are no place.
+null for metres or an origin that are no place; `tourReach` either side
+of a 5 km margin on all four sides, codes counted, unplaceable points and
+places left out, and a bad margin thrown.

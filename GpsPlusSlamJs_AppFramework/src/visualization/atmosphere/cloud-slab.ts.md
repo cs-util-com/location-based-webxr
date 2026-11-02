@@ -285,3 +285,10 @@ m.opacity; // the column's opacity straight up
   and the same four in the GLSL fail its pinned loop. Surviving by design:
   the thickness clamped BEFORE interpolating (measured within ±7 %, a
   legitimate alternative).
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-slab`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

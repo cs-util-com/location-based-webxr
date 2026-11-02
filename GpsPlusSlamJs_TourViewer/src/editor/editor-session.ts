@@ -11,12 +11,25 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
+  TourAsset,
   TourManifest,
+  TourNarration,
   TourObject,
   TourPicture,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  TOUR_MEDIA_EXTENSIONS,
+  tourMediaTypeOf,
+} from "gps-plus-slam-app-framework/ar/tour-media";
+import {
+  TOUR_TIMING_MAX_BYTES,
+  tourTimingEntryName,
+} from "gps-plus-slam-app-framework/ar/tour-timing";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
+  TOUR_BLOCK_VIEWS,
+  TOUR_NARRATION_MAX_DURATION_MS,
+  TOUR_WORLD_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -50,6 +63,7 @@ import {
   isDocumentEdit,
   manifestNow,
   objectFits,
+  storyBlocksOf,
   nextStep,
   objectMoveChange,
   picturesNeeded,
@@ -83,11 +97,18 @@ import {
 } from "../tour-viewer-session.js";
 import type { DetailsOutcome } from "./details-dialog.js";
 import type { EditorTourSettings } from "./editor-draft.js";
-import { blockFieldEdit, blockFields } from "./block-fields.js";
+import {
+  blockFieldEdit,
+  blockFields,
+  storyBlockFields,
+} from "./block-fields.js";
+import { kindNoun, objectTitle } from "../object-describe.js";
+import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
+import { truncated } from "../truncated.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -105,11 +126,13 @@ const PICTURE_GONE =
  *  it is. */
 function objectName(object: TourObject): string {
   const label = (
-    (object.kind === "model" ? object.title : object.caption) ?? ""
+    (object.kind === "model" || object.kind === "longText"
+      ? object.title
+      : object.caption) ?? ""
   ).trim();
-  if (label === "") return object.kind === "picture" ? "a photo" : "a note";
-  const chars = [...label];
-  return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
+  // TourObject kinds (pin, long text, photo, 3D model) all take "a".
+  if (label === "") return `a ${kindNoun(object.kind)}`;
+  return `"${truncated(label, 40)}"`;
 }
 
 /** The outcome of an undo or a redo: the step taken (in words), nothing
@@ -241,13 +264,20 @@ interface EditorRestore {
 
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
-  Record<"title" | "radius" | "description" | "image", string>
+  Record<
+    "title" | "radius" | "description" | "image" | "character" | "storyText",
+    string
+  >
 > = {
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
   radius: `A station's radius must be from ${String(STATION_RADIUS_MIN_M)} m to ${String(STATION_RADIUS_MAX_M)} m.`,
   description: `A station's description can be at most ${String(TOUR_DESCRIPTION_MAX_CHARS)} characters long.`,
   image:
     "A station's picture must be a photo of that station or an image of this tour.",
+  character:
+    "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
+  storyText:
+    "That text of a block of the station's story is not one the tour can carry.",
 };
 
 /** Said for a delete of the tour's last station. */
@@ -273,8 +303,66 @@ function onMap(geo: QrGeoPose): boolean {
 /** Said for a new order that does not name every station once. */
 const NOT_AN_ORDER = "The new order must name every station of the tour once.";
 
+/** Said for a narration asked of anything but a long text. */
+const NOT_A_LONG_TEXT = "Only a long text can be read aloud.";
+
+/** Said for a voice file of a type a tour cannot carry. */
+const NOT_A_VOICE = `That file is not a sound file a tour can carry (${TOUR_MEDIA_EXTENSIONS.filter(
+  (ext) => tourMediaTypeOf(ext)?.kind === "audio",
+).join(", ")}).`;
+
+/** Said for a timing without a voice to time. */
+const NO_VOICE =
+  "Add the voice first: a timing says when the voice reads each word.";
+
+/** Said when the tour's timing for a text cannot be read. */
+const TIMING_UNREAD =
+  "The tour's timing for this text could not be read, so it cannot be changed here.";
+
+/** Said for a timing text over the format's cap. */
+const TIMING_TOO_LARGE = `That timing is too large for a tour (over ${String(TOUR_TIMING_MAX_BYTES / 1_000_000)} MB).`;
+
+/** A long text's narration as the inspector reads it (`narration`). */
+export interface NarrationFacts {
+  readonly kind: "narration";
+  readonly hasVoice: boolean;
+  /** The voice's asset id (null: no voice): what names one recording,
+   *  so a page can tell the voice now held from one an undo replaced. */
+  readonly audioId: string | null;
+  /** The voice's length, when known. */
+  readonly durationMs: number | null;
+  /** The text of its read-along entry; null: it names none, or the entry
+   *  could not be read (`timingUnread`). */
+  readonly timingText: string | null;
+  /** The entry is named but could not be read. */
+  readonly timingUnread: boolean;
+}
+
+/** A change of a long text's narration (`editNarration`). */
+export type NarrationChange =
+  /** A voice file brought in: the narration's audio from now on (a timing
+   *  it names is kept: the section says when it no longer fits). */
+  | {
+      readonly kind: "voice";
+      readonly file: Blob;
+      readonly fileName: string;
+      readonly durationMs?: number;
+    }
+  /** The narration taken off, its timing with it. */
+  | { readonly kind: "removeVoice" }
+  /** The timing taken off, the voice kept. */
+  | { readonly kind: "removeTiming" }
+  /** The read-along entry's new text (a `TourTiming`, compact JSON). */
+  | { readonly kind: "timing"; readonly text: string };
+
 /** Said for a size given to anything but a model. */
 const NOT_A_MODEL = "Only a 3D model has a size.";
+const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
+
+/** Said for a view a block's kind does not have. */
+const NOT_ITS_VIEW = "This block cannot be shown that way.";
+/** Said when a model's view is asked of the block path. */
+const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 
 /** Said for a model size out of bounds. */
 const MODEL_SIZE = `A model's size must be from ${String(TOUR_MODEL_MIN_SIZE_M)} m to ${String(TOUR_MODEL_MAX_SIZE_M)} m.`;
@@ -348,15 +436,27 @@ export interface EditorSession {
     id: string,
     text: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Set one of a free block's other text fields (`block-fields.ts`: a
-   *  short text's description, a picture's title, caption or alt text, a
-   *  model's title): one step; a blank text removes the field; refused in
-   *  words, changing nothing, over its cap or for an id the tour does not
-   *  carry (B2c). */
+  /** Set one of a block's other text fields (`block-fields.ts`): of a
+   *  free block (a short text's description, a picture's title, caption
+   *  or alt text, a model's title, a long text's title and body) or of a
+   *  block a station's story shows (`storyBlockFields`, an edit of its
+   *  station): one step; a blank text removes the field; refused in
+   *  words, changing nothing, over its cap, for a text the block needs
+   *  emptied or for an id the tour does not carry. A free short text's
+   *  caption is its pin text: it goes `editText`'s way. */
   editBlockField(
     id: string,
     field: string,
     value: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Set a free block's view, one its kind has (`TOUR_BLOCK_VIEWS`) that
+   *  stands in the world (`TOUR_WORLD_VIEWS`: no step shows a free block,
+   *  so the format refuses it a card): one step. Refused in words,
+   *  changing nothing, for an id the tour does not carry, a model (its view
+   *  is `editModel`'s) and any other view. */
+  editBlockView(
+    id: string,
+    view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Move a note on the map (its height and facing kept): beyond its
    *  station's found radius the station rule seats it anew - the station
@@ -415,6 +515,33 @@ export interface EditorSession {
   groundItems(
     items: readonly { readonly id: string; readonly alt: number }[],
   ): { kind: "grounded" | "unchanged" } | EditorRefusal;
+  /** One of a model's own edits (`model-edits.ts`: its view, notes,
+   *  sections, clip): one step. The default rule (a first note
+   *  switches `placed` to `hotspots`, the last one deleted switches it
+   *  back) applies only to a model placed in this session whose view the
+   *  creator has not touched: a view read from the file, or chosen here
+   *  (the chip already pressed included), is never overridden. Refused in words, changing nothing, for an id the
+   *  tour does not carry, a block that is not a model, or what the format
+   *  would refuse. */
+  editModel(
+    id: string,
+    edit: ModelEdit,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** The narration of the free long text `id`: its voice, and its
+   *  read-along text as it stands here (read from the newest bytes when
+   *  this page has not set it). Refused for an id the tour does not carry
+   *  and for anything but a long text. */
+  narration(id: string): Promise<NarrationFacts | EditorRefusal>;
+  /** Change it (`NarrationChange`): one step, undone like any other, the
+   *  voice and the timing written by the next save. Refused in words,
+   *  changing nothing, for an id the tour does not carry, a block that is
+   *  not a long text, a file that is not a sound file, a timing without a
+   *  voice or over the format's cap, and a timing whose written text
+   *  could not be read first (what an undo would bring back). */
+  editNarration(
+    id: string,
+    change: NarrationChange,
+  ): Promise<{ kind: "edited" | "unchanged" } | EditorRefusal>;
   /** Set a model's size (its largest side, 0.05 m to 500 m): one step. */
   resizeModel(
     id: string,
@@ -535,12 +662,15 @@ export function createEditorSession(input: {
   /** Pictures being read: a save waits for them, so an undo right after
    *  the save that wrote a photo's delete finds its picture. */
   const pictureReads = new Set<Promise<void>>();
+  /** The voices brought in here, by asset id (Blobs are never state). */
+  const voices = new Map<string, Blob>();
   const loadPhoto =
     input.loadPhoto ?? ((image: string) => session.loadContentEntry(image));
   const saves = createTourSaves({
     tour: session,
     generation,
     pictureOf: (id) => pictures.get(id),
+    voiceOf: (id) => voices.get(id),
     picturesRead: () => Promise.all(pictureReads),
   });
   /** The saved file's name: the opened one's, made safe (the Finish's rule). */
@@ -617,6 +747,13 @@ export function createEditorSession(input: {
   }
 
   const notInTour: EditorRefusal = { kind: "refused", reason: NOT_IN_TOUR };
+  /** The models the default view rule may still switch (`editModel`):
+   *  those placed in this session whose view the creator has not touched.
+   *  Every model read from the file, restored from a draft or copied counts
+   *  as the creator's choice, so a reopen never hands a saved view back to
+   *  the rule. A view chosen - the chip already pressed too - takes a model
+   *  out for good; an undo does not put it back. */
+  const defaultViews = new Set<string>();
 
   /** Undefined for an id the tour no longer carries, or a tour no longer
    *  open: a page holding an older card gets a refusal, never a throw (E2c
@@ -718,6 +855,64 @@ export function createEditorSession(input: {
       : null;
   }
 
+  /** A free pin's text typed (`editText`, and `editBlockField`'s caption
+   *  of a free pin): by the pin text's rule (`pinTextChange`), one step. */
+  function editPinText(
+    id: string,
+    text: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const state = mine();
+    if (state === null) return notInTour;
+    const edit = pinTextChange(state, id, text);
+    if (edit.kind === "missing") return notInTour;
+    if (edit.kind !== "edited") return edit;
+    store.dispatch(
+      tourDocumentActions.edited({
+        object: edit.after,
+        what: `the text of ${objectName(edit.after)}`,
+      }),
+    );
+    return { kind: "edited" };
+  }
+
+  /** A text of the story block `id` typed (`editBlockField`): checked by
+   *  the same rule as a free block's, for its words, then written as an
+   *  edit of the station whose story shows it. */
+  function editStoryText(
+    id: string,
+    field: string,
+    value: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const state = mine();
+    const station = (state === null ? null : manifestNow(state))?.stations.find(
+      (s) => storyBlocksOf(s).some((b) => b.id === id),
+    );
+    const block = station?.blocks.find((b) => b.id === id);
+    if (state === null || station === undefined || block === undefined) {
+      return notInTour;
+    }
+    const spec = storyBlockFields(block).find((f) => f.name === field);
+    if (spec === undefined) return { kind: "unchanged" };
+    const check = blockFieldEdit(block, field, value);
+    if (check.kind !== "edited") return check;
+    const edit: StationEdit = { storyText: { block: id, field, value } };
+    const change = stationEditChange(state, station.id, edit);
+    if (change.kind === "refused") {
+      return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+    }
+    if (change.kind !== "edited") return { kind: "unchanged" };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.stationEdited({
+          stationId: station.id,
+          edit,
+          what: `the ${spec.label.toLowerCase()} of "${objectTitle(block)}"`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : { kind: "unchanged" };
+  }
+
   /** `edit` dispatched, and whether the document took it (a reducer that
    *  refuses returns the state it had). */
   function took(edit: () => void): boolean {
@@ -731,6 +926,70 @@ export function createEditorSession(input: {
     kind: "refused",
     reason: NO_SUCH_STATION,
   };
+
+  /** What the written file holds at the read-along entry `entry` (null:
+   *  none): known since a save here, else read from the newest bytes.
+   *  Rejects when it cannot be read or is over the format's cap. */
+  async function writtenTiming(entry: string): Promise<string | null> {
+    const state = own();
+    if (Object.hasOwn(state.timingsWritten, entry)) {
+      return state.timingsWritten[entry] ?? null;
+    }
+    const name = `${session.manifestWrap}${entry}`;
+    const newest = saves.newest();
+    if (newest === null) {
+      if (!session.entries.some((e) => e.filename === name)) return null;
+      return session.loadEntryText(name, TOUR_TIMING_MAX_BYTES);
+    }
+    if (!(await zipBlobEntryNames(newest.blob)).includes(name)) return null;
+    const blob = await readZipBlobEntry(newest.blob, name);
+    if (blob.size > TOUR_TIMING_MAX_BYTES) {
+      throw new Error(`${entry} is over the timing cap`);
+    }
+    return blob.text();
+  }
+
+  /** The read-along text at `entry` as it stands here: the one set here,
+   *  else the written file's. */
+  function timingNow(entry: string): Promise<string | null> {
+    const state = own();
+    return Object.hasOwn(state.timings, entry)
+      ? Promise.resolve(state.timings[entry] ?? null)
+      : writtenTiming(entry);
+  }
+
+  /** The narration a change makes of `was` (undefined: none); `voice`,
+   *  the asset a voice change brings in. */
+  function narrationAfter(
+    was: TourNarration | undefined,
+    change: NarrationChange,
+    voice: TourAsset | undefined,
+    entry: string,
+  ): TourNarration | undefined {
+    if (change.kind === "removeVoice") return undefined;
+    if (change.kind === "removeTiming") {
+      if (was === undefined) return undefined;
+      const { timing: _off, ...kept } = was;
+      return kept;
+    }
+    if (change.kind === "timing") {
+      return was === undefined ? undefined : { ...was, timing: entry };
+    }
+    if (voice === undefined) return was;
+    // A new recording's length is its own: the old one's never carries
+    // over, and one out of the format's range is left out.
+    const base: Omit<TourNarration, "audio"> = was ?? { synthetic: false };
+    const { durationMs: _old, ...kept } = base;
+    const ms =
+      change.durationMs === undefined ? NaN : Math.round(change.durationMs);
+    return {
+      ...kept,
+      audio: voice.id,
+      ...(ms >= 1 && ms <= TOUR_NARRATION_MAX_DURATION_MS
+        ? { durationMs: ms }
+        : {}),
+    };
+  }
 
   /** The pictures of `objects`' photos, by id; null when one cannot be
    *  read (a copy without its picture would save a broken tour). */
@@ -815,23 +1074,15 @@ export function createEditorSession(input: {
     noGpsCheck() {
       return checkNoGps({ stations: now().stations, levels });
     },
-    editText(id, text) {
-      const state = mine();
-      if (state === null) return notInTour;
-      const edit = pinTextChange(state, id, text);
-      if (edit.kind === "missing") return notInTour;
-      if (edit.kind !== "edited") return edit;
-      store.dispatch(
-        tourDocumentActions.edited({
-          object: edit.after,
-          what: `the text of ${objectName(edit.after)}`,
-        }),
-      );
-      return { kind: "edited" };
-    },
+    editText: editPinText,
     editBlockField(id, field, value) {
       const found = find(id);
-      if (found === undefined) return notInTour;
+      if (found === undefined) return editStoryText(id, field, value);
+      // A free pin's caption is its text: one rule and one undo wording,
+      // whichever field asks for it.
+      if (found.object.kind === "shortText" && field === "caption") {
+        return editPinText(id, value);
+      }
       const edit = blockFieldEdit(found.object, field, value);
       if (edit.kind !== "edited") return edit;
       const label =
@@ -843,6 +1094,29 @@ export function createEditorSession(input: {
         }),
       );
       return { kind: "edited" };
+    },
+    editBlockView(id, view) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind === "model") {
+        return { kind: "refused", reason: MODEL_VIEW_ELSEWHERE };
+      }
+      const views: readonly string[] = TOUR_BLOCK_VIEWS[object.kind];
+      if (!views.includes(view) || !TOUR_WORLD_VIEWS.has(view)) {
+        return { kind: "refused", reason: NOT_ITS_VIEW };
+      }
+      if (object.view === view) return { kind: "unchanged" };
+      const after = { ...object, view } as typeof object;
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: after,
+            what: `the view of ${objectName(object)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
     },
     move(id, lat, lon) {
       const state = mine();
@@ -872,6 +1146,7 @@ export function createEditorSession(input: {
           what: `the placement of ${objectName(object)}`,
         }),
       );
+      if (object.kind === "model") defaultViews.add(object.id);
       return { kind: "placed" };
     },
     moveStation(stationId, geo) {
@@ -1071,6 +1346,152 @@ export function createEditorSession(input: {
       )
         ? { kind: "grounded" }
         : { kind: "refused", reason: HEIGHT_REFUSED };
+    },
+    editModel(id, edit) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "model") {
+        return { kind: "refused", reason: NOT_A_MODEL_EDIT };
+      }
+      const outcome = applyModelEdit(object, edit, !defaultViews.has(id));
+      // A view clicked is the creator's choice even when it is the one the
+      // model has ("unchanged"); a refused one is no choice.
+      if (edit.kind === "view" && outcome.kind !== "refused") {
+        defaultViews.delete(id);
+      }
+      if (outcome.kind !== "edited") return outcome;
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.edited({
+            object: outcome.after,
+            what: `${outcome.what} of ${objectName(object)}`,
+          }),
+        ),
+      );
+      return applied ? { kind: "edited" } : notApplied;
+    },
+    async narration(id) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      const object = found.object;
+      if (object.kind !== "longText") {
+        return { kind: "refused", reason: NOT_A_LONG_TEXT };
+      }
+      const narration = object.narration;
+      const facts = {
+        kind: "narration" as const,
+        hasVoice: narration !== undefined,
+        audioId: narration?.audio ?? null,
+        durationMs: narration?.durationMs ?? null,
+      };
+      if (narration?.timing === undefined) {
+        return { ...facts, timingText: null, timingUnread: false };
+      }
+      try {
+        const text = await timingNow(narration.timing);
+        return { ...facts, timingText: text, timingUnread: false };
+      } catch {
+        return { ...facts, timingText: null, timingUnread: true };
+      }
+    },
+    async editNarration(id, change) {
+      const found = find(id);
+      if (found === undefined) return notInTour;
+      if (found.object.kind !== "longText") {
+        return { kind: "refused", reason: NOT_A_LONG_TEXT };
+      }
+      let entry: string;
+      try {
+        entry = tourTimingEntryName(id);
+      } catch {
+        return notApplied;
+      }
+      let voice: TourAsset | undefined;
+      if (change.kind === "voice") {
+        const dot = change.fileName.lastIndexOf(".");
+        const ext = dot < 0 ? "" : change.fileName.slice(dot + 1).toLowerCase();
+        if (tourMediaTypeOf(ext)?.kind !== "audio") {
+          return { kind: "refused", reason: NOT_A_VOICE };
+        }
+        const voiceId = newObjectId();
+        voice = {
+          id: voiceId,
+          path: `content/${voiceId}.${ext}`,
+          kind: "audio",
+        };
+      }
+      if (change.kind === "timing") {
+        if (found.object.narration === undefined) {
+          return { kind: "refused", reason: NO_VOICE };
+        }
+        if (
+          new TextEncoder().encode(change.text).length > TOUR_TIMING_MAX_BYTES
+        ) {
+          return { kind: "refused", reason: TIMING_TOO_LARGE };
+        }
+      }
+      // What the written file holds at the entry, read before the page
+      // first changes it: what an undo to a step before that brings back.
+      const touchesTiming =
+        change.kind === "timing" ||
+        ((change.kind === "removeVoice" || change.kind === "removeTiming") &&
+          found.object.narration?.timing !== undefined);
+      let previous: string | null = null;
+      if (touchesTiming && !Object.hasOwn(own().timings, entry)) {
+        try {
+          previous = await writtenTiming(entry);
+        } catch {
+          return { kind: "refused", reason: TIMING_UNREAD };
+        }
+      }
+      // The text as it stands now: an edit may have landed while reading.
+      const latest = find(id)?.object;
+      if (latest?.kind !== "longText") return notInTour;
+      const was = latest.narration;
+      if (change.kind === "timing" && was === undefined) {
+        return { kind: "refused", reason: NO_VOICE };
+      }
+      if (change.kind === "removeVoice" && was === undefined) {
+        return { kind: "unchanged" };
+      }
+      if (change.kind === "removeTiming" && was?.timing === undefined) {
+        return { kind: "unchanged" };
+      }
+      const narration = narrationAfter(was, change, voice, entry);
+      const { narration: _was, ...rest } = latest;
+      const what =
+        change.kind === "voice"
+          ? `the voice of ${objectName(latest)}`
+          : change.kind === "removeVoice"
+            ? `the removal of the voice of ${objectName(latest)}`
+            : change.kind === "removeTiming"
+              ? `the removal of the timing of ${objectName(latest)}`
+              : `the timing of ${objectName(latest)}`;
+      if (voice !== undefined && change.kind === "voice") {
+        voices.set(voice.id, change.file);
+      }
+      const applied = took(() =>
+        store.dispatch(
+          tourDocumentActions.narrationEdited({
+            object: narration === undefined ? rest : { ...rest, narration },
+            ...(touchesTiming
+              ? {
+                  timing: {
+                    entry,
+                    text: change.kind === "timing" ? change.text : null,
+                    previous,
+                  },
+                }
+              : {}),
+            ...(voice === undefined ? {} : { voice }),
+            what,
+          }),
+        ),
+      );
+      if (applied) return { kind: "edited" };
+      if (voice !== undefined) voices.delete(voice.id);
+      return change.kind === "timing" ? { kind: "unchanged" } : notApplied;
     },
     resizeModel(id, sizeM) {
       const found = find(id);

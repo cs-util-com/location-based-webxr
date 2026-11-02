@@ -97,6 +97,8 @@ phone's Finish does not yet: see "Not here yet" below.
 
 ## Not here yet: the phone's Finish
 
+The snapshot carries what the undo history still names, kept by the rebuild: `keepAssets` (`historyAssetIds`) and `keepEntries` (`historyTimingEntries`, the read-along entries; a timing nothing names is removed).
+
 `creator-finish.ts` still calls the rebuild itself (its TEMPORARY entry in
 `config/.dependency-cruiser.cjs`), and its save status stays in the
 session object (the named deviation MEDIUM-1, `creator-finish.ts.md`).
@@ -139,3 +141,7 @@ open (one begun before lands nowhere, one asked for after rejects). The
 desktop's whole save and walk move are covered through the session
 (`editor/editor-session.test.ts`), and both pages' writes by the parity
 contract (`tour-document-parity.test.ts`).
+
+## Narration files
+
+The snapshot carries `timings` and `files`: each read-along text set here that the written file does not hold, and each voice brought in here that it does not list, with the bytes the page keeps (`voiceOf`). After the write, `timingsWritten` follows what the written tour names (`visitorEntryNames`); an entry nothing names is written nowhere.

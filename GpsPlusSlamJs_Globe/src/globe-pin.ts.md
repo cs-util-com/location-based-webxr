@@ -5,7 +5,9 @@
   landing in the globe's own city; pure, so CLAUDE.md's async-feedback rule
   is tested without a browser. The failure's words come from the
   framework's `utils/locate-state.ts` (`labelFor`, `locateAdvice`); the lab
-  joins the two (this package does not depend on the framework). It used to
+  joins the two (this module does not import `locate-state`; the Globe
+  package depends on the framework only for its atmosphere and cloud
+  modules). It used to
   hand over to the OSM demo's city in its own page; that hand-over was
   removed (globe city plan 2026-10-05-0040 §12.5 C6, the owner's D-K3), and
   with it the `handingOver` phase and the `arrived` and `returned` events.

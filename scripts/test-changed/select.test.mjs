@@ -250,6 +250,33 @@ describe('the served-by edge', () => {
     ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_RecorderApp'] });
   });
 
+  // WHY (globe editor plan GV5, finding 9): the Tour Viewer DEPENDS on the
+  // editor kit, so pnpm selects it on a kit change, but only as a dependent,
+  // whose browser stages are dropped (DEC-G2). Its editor e2e is the kit's
+  // only browser check, so the edge selects it as a changed package, in full.
+  it('selects the Tour Viewer, in full, with any editor kit change', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts'],
+        untracked: [],
+        packageDirs: [...SERVED, 'GpsPlusSlamJs_EditorKit', 'GpsPlusSlamJs_TourViewer'],
+      })
+    ).toEqual({
+      mode: 'packages',
+      packages: ['GpsPlusSlamJs_EditorKit', 'GpsPlusSlamJs_TourViewer'],
+    });
+  });
+
+  it('adds nothing for the editor kit when the Tour Viewer is not a workspace package', () => {
+    expect(
+      selectPackages({
+        trackedChanges: ['GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts'],
+        untracked: [],
+        packageDirs: [...DIRS, 'GpsPlusSlamJs_EditorKit'],
+      })
+    ).toEqual({ mode: 'packages', packages: ['GpsPlusSlamJs_EditorKit'] });
+  });
+
   it('adds nothing when the design system is not a workspace package', () => {
     expect(
       selectPackages({
@@ -521,5 +548,32 @@ describe('describeRun', () => {
     ).toBe(
       'test-changed: vs abc123 - root files (4): README.md, a.md, b.md, ... => runs: test:repo-config'
     );
+  });
+});
+
+// Why this test matters: the Tour Viewer's e2e narrows itself to the changed
+// area only when its gate carries the diff ref, so the ref must reach exactly
+// the changed packages' full gates. On a dependent it would be meaningless
+// (no browser stage runs), and on the cascade it must be absent, because
+// that is the run (like CI) that has to execute every spec.
+describe('gateCommands hands the diff ref to the changed packages only', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+
+  it('sets GATE_CHANGED_REF on the full gates and nowhere else', () => {
+    const commands = gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' });
+    const full = commands.find((c) => c.command.endsWith('--filter a test'));
+    expect(full?.env).toEqual({ GATE_CHANGED_REF: 'abc123' });
+    for (const c of commands.filter((x) => x !== full)) {
+      expect(c.env, c.command).not.toHaveProperty('GATE_CHANGED_REF');
+    }
+  });
+
+  it('sets nothing without a ref, and the cascade never carries one', () => {
+    for (const c of gateCommands(['a'], { skipBrowserEnv: ENV })) {
+      expect(c.env).not.toHaveProperty('GATE_CHANGED_REF');
+    }
+    for (const c of cascadeCommands()) {
+      expect(c.env).toEqual({});
+    }
   });
 });

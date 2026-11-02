@@ -30,6 +30,9 @@ imagePath | null, open, selected, context, children }`; `context` is
   else its first photo, else null.
 - `treeFoldOf(tree)` -> `{ openStations, openSections }`: the folds the
   tree shows, stations in list order.
+- `stationGroups(stations)` -> the editor kit's `TreeGroup[]`: each
+  station's id with its items' ids, for the tree's click rule
+  (`treeClickPlan`).
 
 ## Invariants & assumptions
 
@@ -54,7 +57,7 @@ const tree = buildTree({
 
 `tree-model.test.ts`: cards numbered and folded with their items as
 text, the selected and context cards, the chips, the sections, a stale
-unfolded id ignored, `stationImagePath`'s order.
+unfolded id ignored, `stationImagePath`'s order, `stationGroups`.
 `tree-model.property.test.ts`: for any station list and any run of fold
 and select steps, the tree is drawn exactly as `editorView` holds it, a
 fresh view given the drawn folds draws the same tree (the round trip),

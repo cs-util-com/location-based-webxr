@@ -1,7 +1,8 @@
 /**
  * The 3D editor's ground: the globe's relief carrier on Mapterhorn's
- * heights, plain (no whole-Earth imagery: the creator looks at a place,
- * not a planet), with the OpenStreetMap map on it near the camera, and the
+ * heights, plain by default (no whole-Earth imagery: the creator looks at
+ * a place, not a planet; the globe view gives the globe's own imagery and
+ * look), with the OpenStreetMap map on it near the camera, and the
  * credits both need.
  *
  * The map's gate is the editor's, not the flight's. Measured on the
@@ -96,13 +97,19 @@ export function reliefDeviceClass(widthPx: number): ReliefDeviceClass {
 
 /** One credit line: its short name, its full text and its link (the
  *  globe's credit shape). */
-type EditorCredit = ReturnType<typeof reliefCredits>[number];
+export type EditorCredit = ReturnType<typeof reliefCredits>[number];
+
+/** What the relief may be drawn with in place of the plain ground. */
+type ReliefLook = Parameters<typeof createGlobeTerrain>[0];
 
 /** The editor's ground, ready to be added to a scene and updated. */
 export interface EditorTerrain {
   readonly terrain: GlobeTerrain;
-  /** The world frame: ECEF to the world (x east, y up, z south at the
-   *  centre, the ellipsoid's point of the centre at the origin). */
+  /** The frame of `centre`: ECEF to it (x east, y up, z south at the
+   *  centre, the ellipsoid's point of the centre at the origin). With
+   *  `placement: "world"` that frame is the world; with `"ecef"` it is
+   *  not (the parent places the relief, and the world follows the
+   *  camera). */
   readonly worldFromEcef: THREE.Matrix4;
   readonly osm: GlobeOsmOverlay;
   /** The heights' sources, then the map's. */
@@ -134,6 +141,21 @@ export function createEditorTerrain(input: {
   /** The world frame's centre (degrees). */
   readonly centre: { readonly lat: number; readonly lng: number };
   readonly device: ReliefDeviceClass;
+  /**
+   * `world` (the default): the relief is placed in the world frame of
+   * `centre`. `ecef`: it is left in ECEF for a parent that places it (the
+   * globe view's Earth-centred group); `worldFromEcef` is the same.
+   */
+  readonly placement?: "world" | "ecef";
+  /**
+   * The relief's imagery and template; the plain ground (`plainImagery`,
+   * a light standard material) where not given. The globe view gives the
+   * globe's own (`createGlobeImagery`, `globe.template`) so the ground
+   * keeps its look where the relief takes over; this module never imports
+   * them (the OrbitControls view must not carry the whole-Earth imagery).
+   */
+  readonly imagery?: ReliefLook["imagery"];
+  readonly template?: ReliefLook["template"];
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -141,12 +163,14 @@ export function createEditorTerrain(input: {
   });
   const terrain = createGlobeTerrain({
     ...reliefTerrainOptions(source, input.device),
-    imagery: plainImagery(),
-    template: new THREE.MeshStandardMaterial({
-      color: GROUND_COLOUR,
-      roughness: 1,
-      metalness: 0,
-    }),
+    imagery: input.imagery ?? plainImagery(),
+    template:
+      input.template ??
+      new THREE.MeshStandardMaterial({
+        color: GROUND_COLOUR,
+        roughness: 1,
+        metalness: 0,
+      }),
     heightScale: 1,
     meshMaxLevel: EDITOR_MESH_LEVEL,
   });
@@ -156,7 +180,9 @@ export function createEditorTerrain(input: {
     new THREE.Matrix4(),
   );
   const group = terrain.tiles.group;
-  worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  if (input.placement !== "ecef") {
+    worldFromEcef.decompose(group.position, group.quaternion, group.scale);
+  }
   group.updateMatrixWorld(true);
   const osm = createGlobeOsmOverlay({
     url: OSM_TILE_URL,

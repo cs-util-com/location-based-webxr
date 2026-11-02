@@ -11,6 +11,7 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_TIMING_FOLDER } from "gps-plus-slam-app-framework/ar/tour-timing";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   LEGACY_SESSION_IMAGES_DIR,
@@ -24,7 +25,9 @@ import { tourUnfinished } from "./tour-unfinished.js";
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
  * level, the signed list and its signature, and the content files the
  * manifest's assets name (under `wrap`, the tour's folder; a captured
- * photo's file is its picture's asset). Nothing else: a
+ * photo's file is its picture's asset), and each narrated long text's
+ * read-along entry (`timing/<blockId>.json`, its `narration.timing`).
+ * Nothing else: a
  * visitor never shows the zip's other images, nor a recorded frame - not
  * even one a file's debug capture spots name.
  */
@@ -37,12 +40,44 @@ export function visitorEntryNames(
     `${wrap}${TOUR_MANIFEST_ENTRY}`,
     ...signedManifestFilesOf(entryNames),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
+    ...manifest.stations.flatMap((station) =>
+      station.blocks.flatMap((block) =>
+        block.kind === "longText" && block.narration?.timing !== undefined
+          ? [`${wrap}${block.narration.timing}`]
+          : [],
+      ),
+    ),
   ]);
   return new Set(
     entryNames.filter(
       (name) => named.has(name) || qrLevelIdFromEntryName(name) !== null,
     ),
   );
+}
+
+/**
+ * The read-along entries of `entryNames` no narration of `manifest`
+ * names, in archive order: a `timing/<name>.json` directly in the tour's
+ * timing folder (under `wrap`) that a visitor does not read
+ * (`visitorEntryNames`) and `keep` does not hold. `keep` holds entry
+ * names relative to `wrap` (`timing/<blockId>.json`, as a narration
+ * names them): the ones the undo history still names. What a Finish
+ * removes; a deeper path or another extension under `timing/` is no
+ * timing entry the format writes, and stays.
+ */
+export function unnamedTimingEntryNames(
+  entryNames: readonly string[],
+  manifest: TourManifest,
+  wrap: string,
+  keep: ReadonlySet<string> = new Set(),
+): string[] {
+  const folder = `${wrap}${TOUR_TIMING_FOLDER}/`;
+  const read = visitorEntryNames(entryNames, manifest, wrap);
+  return entryNames.filter((name) => {
+    if (!name.startsWith(folder) || !name.endsWith(".json")) return false;
+    if (name.slice(folder.length).includes("/")) return false;
+    return !read.has(name) && !keep.has(name.slice(wrap.length));
+  });
 }
 
 /** A recorded frame: `frame-NNNNNN.<ext>` in the recording's images

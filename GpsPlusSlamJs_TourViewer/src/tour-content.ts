@@ -30,8 +30,8 @@
  *   lead to it. An empty station the tour already had is left alone.
  * - An asset nothing names any more is dropped (`withReferencedAssets`):
  *   no block (a picture's image, a video and its poster, a sound, a model,
- *   a character's image and voice), no station's card image and not the
- *   cover.
+ *   a character's image and voice, a picture a long text's body shows),
+ *   no station's card image and not the cover.
  *
  * Pure.
  *
@@ -56,6 +56,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { tourShownBlockIds } from "gps-plus-slam-app-framework/ar/tour-story";
 
+import { blockBodyAssets } from "./long-text-body-assets.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -126,9 +127,10 @@ export function storyBlocksOf(
   return station.blocks.filter((b) => shown.has(b.id));
 }
 
-/** A block standing in the world: a short text drawn as a pin, a picture
- *  or a placed model, the only kinds a free block can be (its view is a
- *  world view, and only these kinds have one). */
+/** A block standing in the world: a short text drawn as a pin, a picture,
+ *  a long text on its reading stand or a placed model, the only kinds a
+ *  free block can be (its view is a world view, and only these kinds have
+ *  one). */
 export type WorldBlock = Extract<
   TourBlock,
   { readonly kind: TourObject["kind"] }
@@ -141,7 +143,10 @@ export function worldBlocks(
 ): WorldBlock[] {
   return tourFreeBlocks(station).filter(
     (b): b is WorldBlock =>
-      b.kind === "shortText" || b.kind === "picture" || b.kind === "model",
+      b.kind === "shortText" ||
+      b.kind === "picture" ||
+      b.kind === "longText" ||
+      b.kind === "model",
   );
 }
 
@@ -250,7 +255,7 @@ function withPictureAssets(
 ): TourAsset[] {
   const owned = ownedAssetIds(manifest);
   const named = new Set([
-    ...objects.flatMap(blockAssetIds),
+    ...objects.flatMap((b) => blockAssetIds(b)),
     ...manifest.stations.flatMap(stepAssetIds),
   ]);
   const kept = manifest.assets.filter(
@@ -318,13 +323,25 @@ export function keepsItself(
 }
 
 /** The assets `block` names: its media, a video's poster, a character's
- *  image and voice. A new kind fails to compile here until it says which
- *  assets it keeps. */
-function blockAssetIds(block: TourBlock | TourObject): readonly string[] {
+ *  image and voice, the pictures a long text's body names (shown or not:
+ *  inline, past the cap) and its narration's voice (the timing is an entry, not an asset). A new kind
+ *  fails to compile here until it says which assets it keeps.
+ *  `required`: only those the format requires the tour to carry, without
+ *  the pictures a long text's body names (they may be missing; the
+ *  visitor reads their alt text). */
+function blockAssetIds(
+  block: TourBlock | TourObject,
+  required = false,
+): readonly string[] {
   switch (block.kind) {
     case "shortText":
-    case "longText":
       return [];
+    case "longText": {
+      const body = required ? [] : blockBodyAssets(block);
+      return block.narration === undefined
+        ? body
+        : [...body, block.narration.audio];
+    }
     case "picture":
       return [block.image];
     case "video":
@@ -358,7 +375,19 @@ export function objectAssetIds(object: TourObject): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "blocks" | "steps">,
 ): readonly string[] {
-  return storyBlocksOf(station).flatMap(blockAssetIds);
+  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b));
+}
+
+/**
+ * The assets of `station`'s story the format REQUIRES the tour to carry:
+ * `stepAssetIds` without the pictures a long text's body names, which may
+ * be missing (the visitor reads their alt text). What a restore checks a
+ * drafted frame against, so a body naming a lost picture keeps its station.
+ */
+export function stepRequiredAssetIds(
+  station: Pick<TourStation, "blocks" | "steps">,
+): readonly string[] {
+  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b, true));
 }
 
 /**
@@ -369,7 +398,7 @@ export function stepAssetIds(
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...station.blocks.flatMap(blockAssetIds),
+      ...station.blocks.flatMap((b) => blockAssetIds(b)),
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),

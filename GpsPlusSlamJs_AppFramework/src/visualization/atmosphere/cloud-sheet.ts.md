@@ -126,3 +126,10 @@ sky.configure({ sunDirection, cloudCover: 0.5, cloudMode: 'sheet' });
   - the crossing;
   - the far edge.
   - Every threshold is declared there with its measurement.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-sheet`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

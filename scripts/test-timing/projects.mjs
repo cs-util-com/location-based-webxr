@@ -48,6 +48,10 @@ import path from "node:path";
  *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
  *   webServer `pnpm run dev` spawns reference the script and must not
  *   record timing rows); the gate still runs this stage via its `command`.
+ * @property {boolean} [narrowable] - true for a stage whose command may cut
+ *   itself to the changed area inside a `test:changed` run (the Tour
+ *   Viewer's e2e through scripts/e2e/run-projects.mjs). Such a run records no
+ *   timing row (`narrowedStageRun` in scripts/e2e/project-runs.mjs).
  */
 
 /**
@@ -231,6 +235,10 @@ export const PROJECTS = [
       // The globe intro's private package (W7, plan 2026-09-26-0539 §7.1):
       // pure TypeScript with no workspace dependency, like osm.
       packageGateStage("test:globe", "gps-plus-slam-globe"),
+      // The globe editor's generic blocks (the globe editor plan's GV5): a
+      // private source package the Tour Viewer bundles, so a break here is
+      // never caused by an app and surfaces before the app gates.
+      packageGateStage("test:editor-kit", "gps-plus-slam-editor-kit"),
       // Pure server-side package (the Cloudflare site worker) with no
       // workspace dependencies: like osm, a break here is never caused by an
       // app, so it surfaces before the slow app gates run.
@@ -347,6 +355,14 @@ export const PROJECTS = [
         name: "lint:css",
         command:
           'stylelint "*.css" "3d/*.css" --config config/stylelint.config.mjs --allow-empty-input',
+        counts: null,
+      },
+      // The globe lab's scope check: only no-undef and no-shadow, on the
+      // lab's page modules (config/eslint.config.mjs says why).
+      {
+        name: "lint",
+        command:
+          'eslint "labs/globe/*.js" --config config/eslint.config.mjs --max-warnings 0',
         counts: null,
       },
       {
@@ -466,6 +482,50 @@ export const PROJECTS = [
     ],
   },
   {
+    // The globe editor's generic blocks (the globe editor plan's GV5),
+    // modelled on the globe entry: TypeScript source with no build and no
+    // e2e. Its browser check is the Tour Viewer's editor e2e, which the
+    // served-by edge in scripts/test-changed/select.mjs runs in full on a
+    // kit change. One cycle root per entry the package exports.
+    name: "GpsPlusSlamJs_EditorKit",
+    dir: "GpsPlusSlamJs_EditorKit",
+    chainNames: ["test:core"],
+    stages: [
+      {
+        name: "format",
+        command:
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+        counts: null,
+      },
+      {
+        name: "lint",
+        command: "eslint . --config config/eslint.config.mjs --max-warnings 0",
+        counts: null,
+      },
+      {
+        name: "check:cycles",
+        command:
+          "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/chrome/index.ts",
+        counts: null,
+      },
+      {
+        name: "typecheck",
+        command: "tsc -p tsconfig.app.json --noEmit",
+        counts: null,
+      },
+      {
+        name: "typecheck:tests",
+        command: "tsc -p tsconfig.vitest.json --noEmit",
+        counts: null,
+      },
+      {
+        name: "test:unit",
+        command: "vitest run --config=config/vitest.config.ts",
+        counts: "vitest",
+      },
+    ],
+  },
+  {
     name: "GpsPlusSlamJs_RecorderApp",
     dir: "GpsPlusSlamJs_RecorderApp",
     chainNames: ["test:core", "check:all"],
@@ -540,7 +600,10 @@ export const PROJECTS = [
   // stage that reads a dist, for the reason OsmDemo's does (see there).
   // Its lint:css also reads the landing's own sheets (src/landing/*.css,
   // imported by its dynamic chunks), which the HTML glob never reached; the
-  // editor's sheets under src/editor are not linted yet.
+  // editor's sheets under src/editor are not linted yet. Its e2e runs through
+  // scripts/e2e/run-projects.mjs: the DOM specs at several workers, then the
+  // WebGL specs at one, each narrowed to the changed area inside a
+  // test:changed run (playwright-tests/e2e-plan.js).
   {
     ...demoAppProject("GpsPlusSlamJs_TourViewer"),
     stages: [
@@ -553,7 +616,14 @@ export const PROJECTS = [
                 command:
                   'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
               }
-            : stage,
+            : stage.name === "test:e2e"
+              ? {
+                  ...stage,
+                  command:
+                    "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
+                  narrowable: true,
+                }
+              : stage,
       ),
     ],
   },

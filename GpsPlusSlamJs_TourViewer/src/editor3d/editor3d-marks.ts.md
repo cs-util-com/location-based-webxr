@@ -9,7 +9,7 @@ station's billboard and a printed code's square.
 
 - `createBillboard(number, title, selected, { viewportPx, fovDeg })` ->
   `THREE.Sprite`: a dark pill with the station's number in a blue box
-  (amber with an amber edge when selected) and its name (cut at 26
+  (amber with an amber edge when selected) and its name (cut by `truncated` at 26
   characters with an ellipsis), drawn over the scene (no depth test),
   anchored at its bottom middle, named `billboard <number>`, about 34 px
   tall on screen at any distance (`sizeAttenuation` off).

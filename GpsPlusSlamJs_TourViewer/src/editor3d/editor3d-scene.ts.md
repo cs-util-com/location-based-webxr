@@ -14,7 +14,8 @@ keys), and writes only through the page's `edits`.
 - `openEditor3d(deps)` -> `Promise<Editor3dView>`, resolved once the first
   frame is drawn. `deps` (`Editor3dDeps`):
   - `container` - the view's box over the map (`#view3d`), `credits` -
-    the credits' line in it;
+    the box of the credits' button and overlay in it
+    (`editor3d-credits.ts`);
   - `store` - the page's store (`tourDocument`, `editorView`) and its
     `dispatch` (a gesture's start and end only);
   - `edits` (`Editor3dEdits`) - the page's `commit(edit)` (one undo
@@ -22,6 +23,10 @@ keys), and writes only through the page's `edits`.
     `say(text)` and `keysFree(event)`;
   - `levels()` - the open tour's codes; `loadContent(entry)` - a content
     entry's bytes;
+  - `approach` (optional, the globe view only) - fly in on opening,
+    `{ durationMs?, ended? }`: its length, and `ended(how)` called once
+    when its bar goes (`how` is `"landed"` or `"taken"`) (not when the view closes before); `walk()` (optional, the globe
+    view only) - the recorded walk's captures (lat, lon, alt), or null.
   - `events.contextLost()` / `events.failed()` - once the view shows, its
     WebGL context lost, or an error in a frame that stopped its drawing.
   - Rejects with an error whose `reason` is `empty` (nothing with a
@@ -51,12 +56,18 @@ keys), and writes only through the page's `edits`.
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
     the camera looks toward), `top`, `drawCalls`, `frameMs` (the mean of
     the last 60 frames);
+  - `setRealTime?(on)` - optional: the globe view's clock, the real time
+    now (true) or held in daylight over the tour (false, its default);
+    this view has no sky of its own and leaves it out;
+  - `setClouds?(on)` - optional: the globe view's heavy clouds on (true,
+    their default) or off; this view has no clouds and leaves it out;
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's
     checks);
   - `centre()` - the place the view looks at, on the ground (the tree's
-    "+"); `turn(selection, deg)` - one turn edit through the page (the
+    "+"; null where the view has none, which only the globe's gives,
+    high over a ground not loaded yet); `turn(selection, deg)` - one turn edit through the page (the
     bar's Align to station, the inspector's typed heading), both the
     editing's (`editor3d-editing.ts`);
   - `groundAt(place)` - the ground's ellipsoidal height at a place, null
@@ -72,6 +83,11 @@ keys), and writes only through the page's `edits`.
 - Types `Editor3dDeps`, `Editor3dEdits`, `Editor3dStats` (the store it
   takes is structural: `getState()` with `tourDocument` and `editorView`,
   `subscribe` and `dispatch`).
+- `Editor3dEdits.model(id, edit)` - the page's model edit, for a note or
+  a section placed by a click on the model (true when written).
+- `modelParts()` and `modelScreenOf(id, at)` - the selected model's
+  discs and planes, and a point of a drawn model on the canvas (the page's
+  checks).
 
 ## Invariants & assumptions
 
@@ -79,7 +95,7 @@ keys), and writes only through the page's `edits`.
   tour's centre, `tourCentre` of `../editor/tour-origin.ts`), the tour (`editor3d-stations.ts`) with the
   phone's pin labels, photo decoding (capped at `TOUR_MAX_IMAGE_PIXELS`)
   and model loader, the billboards and code squares
-  (`editor3d-marks.ts`), the credits as links, under an orbit at the
+  (`editor3d-marks.ts`), the credits behind one button (`editor3d-credits.ts`), under an orbit at the
   design's start (`editor3d-camera.ts`), with fog and a hemisphere and a
   sun light.
 - **Reads the tour, writes through the page:** the tour is what a save
@@ -130,7 +146,7 @@ keys), and writes only through the page's `edits`.
 const { openEditor3d } = await import("../editor3d/editor3d-scene.js");
 const view = await openEditor3d({
   container: view3dBox,
-  credits: creditsLine,
+  credits: creditsBox,
   store,
   levels: () => openedLevels,
   loadContent,

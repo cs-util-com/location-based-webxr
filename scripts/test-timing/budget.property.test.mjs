@@ -23,7 +23,7 @@ const budgetArb = fc.double({
 });
 
 describe('budgetBreach properties', () => {
-  it('never breaches on CI, for any stage, budget or duration', () => {
+  it('never breaches on the GitHub runner, for any stage, budget or duration', () => {
     fc.assert(
       fc.property(
         fc.string(),
@@ -32,21 +32,29 @@ describe('budgetBreach properties', () => {
         fc.constantFrom('1', 'true', 'yes', 'github'),
         (name, budgetSeconds, durationMs, ciValue) => {
           expect(
-            budgetBreach({ name, budgetSeconds }, durationMs, { CI: ciValue })
+            budgetBreach({ name, budgetSeconds }, durationMs, {
+              GITHUB_ACTIONS: ciValue,
+            })
           ).toBeNull();
         }
       )
     );
   });
 
-  it('off CI, breaches exactly when the duration exceeds the budget', () => {
+  it('off the GitHub runner (a local CI=1 gate included), breaches exactly when the duration exceeds the budget', () => {
     // The complement of the property above: the skip must cost nothing off CI,
     // where the timing history — and therefore the calibration — actually lives.
     fc.assert(
       fc.property(
         budgetArb,
         durationArb,
-        fc.constantFrom(undefined, {}, { CI: '' }, { CI: undefined }),
+        fc.constantFrom(
+          undefined,
+          {},
+          { CI: '1' },
+          { CI: 'true', GITHUB_ACTIONS: '' },
+          { GITHUB_ACTIONS: undefined }
+        ),
         (budgetSeconds, durationMs, env) => {
           const breached =
             budgetBreach({ name: 'test:e2e', budgetSeconds }, durationMs, env) !==

@@ -16,6 +16,19 @@ readiness.
 
 ## Invariants & assumptions
 
+- **Two projects, `dom` and `webgl`**, both Desktop Chrome, each matching
+  its spec list from [`e2e-plan.js`](e2e-plan.js.md) (`testMatch:
+**/<name>`). The stage command runs them one after the other through
+  [`scripts/e2e/run-projects.mjs`](../../scripts/e2e/run-projects.mjs.md):
+  `dom` at `LOCAL_DOM_WORKERS` locally, `webgl` at one, both at one on the
+  GitHub runner. A direct `playwright test --config ...` (headed, UI, a
+  developer's own run) runs both projects together at `workers` (1 on CI,
+  3 locally), as before the split.
+- **The CI JSON report's file name comes from `E2E_RESULTS_NAME`** when the
+  runner sets it (one file per project), else `results.json`; the runner
+  merges the per-project files into `test-results/results.json`. The
+  GitHub workflow uploads only the Recorder's results, not this file.
+
 - **Every spec starts as a creator who chose a host** (`storageState` seeds
   `tour-viewer.wizard.host` = `drive`; polish round M2): the page then
   opens at step 2, the link, where almost every spec starts. The first-visit

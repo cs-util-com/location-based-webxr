@@ -43,7 +43,8 @@ and the codes, or the reason the file cannot be edited, worded by
   them: which details ("This tour's cover and contact could not be
   read..."), that the next save writes the tour without them, and to set
   them again; null for none. A station's drops (the only ones that carry
-  `station`) are not details and are not listed here.
+  `station`) and a block's, a block field's or a character's (the ones
+  that carry `kind`) are not details and are not listed here.
 - `droppedStationFieldsLine(dropped, manifest): string | null` - the toast
   for the dropped station descriptions and card images: which stations,
   named as the rail names them (`stationTitle` against `manifest`: the

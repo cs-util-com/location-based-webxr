@@ -23,6 +23,11 @@ output directory (`dist-site/`) that Cloudflare serves as static assets:
 - `dist-site/lookdev/` — the design system's no-build 3D look-dev page
   (`GpsPlusSlamJs_DesignSystem/build-lookdev.mjs`); deployed for phone
   previews, not linked from the landing page.
+- `dist-site/globe-assets/` - the Globe package's imagery
+  (`GpsPlusSlamJs_Globe/assets`, its `.md` notes left out), ONE copy at
+  the site root, because the Globe asks for it by root-absolute paths: the
+  Tour Viewer's editor on the globe view and the look-dev labs share it
+  (`scripts/globe-assets-deploy.mjs`). About 2 736 files, 12.58 MB.
 
 Invoked via the root script `pnpm run build:site`. This is the command the
 Cloudflare Git integration runs. See
@@ -50,7 +55,15 @@ sub-build fails or any post-build assertion fails.
    `GpsPlusSlamJs_Landing/scripts/blog/`); it depends on nothing else in the
    tree.
 6. Build `lookdev/` with the design system's `buildLookdev` (no Vite), with
-   the same no-bare-absolute-URL assertion.
+   the same no-bare-absolute-URL assertion, and `siteRootPrefixes:
+   ["/globe-assets/"]` so it neither copies nor rebases the globe's imagery.
+6a. Copy the Globe's assets once to `dist-site/globe-assets/`
+   (`copyGlobeAssets`), then `assertGlobeAssetsShipped`: the build FAILS
+   when a chunk under `tour/` or `lookdev/` names `/globe-assets/` and
+   the folder is missing or empty (before this, the deployed editor's globe
+   got 404s while every dev-server run was green). That no VISITOR page's
+   bundle names the folder is held by the Tour Viewer's
+   `src/editor3d-lazy.test.ts`, on the bundle's chunk graph.
 7. Assert the landing HTML still links every demo app (`/starter/`,
    `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`, `/wayfinding/`,
    `/osm/`, `/tour/`) and `/blog/`, and that every local asset URL it
@@ -110,6 +123,11 @@ npx serve dist-site   # or any static server
 ```
 
 ## Tests
+
+`scripts/globe-assets-deploy.test.mjs` - the copy (the `.md` notes left
+out, a missing or empty source refused) and the guard (red for a chunk naming
+the folder without it, or with it empty; green with it, or with no chunk
+naming it), on temp folders.
 
 `tests/repo-config/build-site-wiring.test.js` — **a wiring test, not a build**
 (H11, repo-hygiene loop, owner interview 2026-07-20). It pins the five things

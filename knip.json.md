@@ -138,6 +138,14 @@ entirely after confirming they were only transitively pulled in.
   the `sharp` devDependency (the WebP encoding, round-4 plan 2026-09-28-2105
   DEC-GL4-10) and of `src/water-alpha.ts` outside the tests. Without both
   lines knip reports `sharp` as an unused devDependency.
+- **GpsPlusSlamJs_EditorKit** - `includeEntryExports` is on for this
+  workspace alone: the kit is private, so every export of its entries
+  (`./chrome` today, found through its package `exports`) must have a
+  consumer in the workspace. Verified per workspace in knip 6 by a planted
+  unused export in `src/chrome/index.ts`, which was reported. Because the
+  flag covers every entry, the ESLint config is named under
+  `eslint.config` rather than `entry`: as an entry its default export
+  was reported as unused.
 - **GpsPlusSlamJs_OsmDemo** — two entries are listed explicitly because
   knip's Vite plugin finds neither of them. `src/worker/demo-worker.ts`
   is reached through `new Worker(new URL(...), { type: "module" })`,

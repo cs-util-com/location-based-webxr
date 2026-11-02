@@ -1,54 +1,61 @@
 /**
  * The desktop editor's in-place save (M6 E2b-1): a tour file opened through
  * the browser's file picker with write permission, written back where it
- * came from. Page-free: the page passes the window and the lock manager.
+ * came from. The mechanism is the framework's
+ * (`gps-plus-slam-app-framework/storage/save-target`); this module keeps
+ * what is the tour's: its words, its lock family, its accept list, its size
+ * cap and the zip's tail check. Page-free: the page passes the window and
+ * the lock manager.
  *
  * @see save-target.ts.md
  */
 
+import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
+import { hasFilePicker } from "gps-plus-slam-app-framework/storage/file-picker";
 import {
-  DEFAULT_ARCHIVE_LIMITS,
-  writeFileOrAbort,
-} from "gps-plus-slam-app-framework/storage";
-import { hasFilePicker } from "../file-picker.js";
+  createSaveTarget as createFileSaveTarget,
+  holdLock,
+  pickSaveFile as pickSaveFileOfType,
+  pickWritableFile,
+  releaseUnusedPick as releaseUnusedPickSaying,
+  type LockHold,
+  type PickOutcome,
+  type PickerWindow,
+  type SaveFilePick,
+  type SavePickerWindow,
+  type SaveTarget,
+  type WritableFileHandle,
+} from "gps-plus-slam-app-framework/storage/save-target";
+import {
+  ZIP_FILE_TYPE,
+  type DownloadFileType,
+} from "gps-plus-slam-app-framework/storage/zip-export";
 
-/** The tail of the file a sync client's touch leaves alone: compared when
- *  only the modified time differs, so a touched file is not "changed". */
-const TAIL_BYTES = 64 * 1024;
+export {
+  InPlaceRefusal,
+  isSameFile,
+  type PickOutcome,
+  type PickerWindow,
+  type SaveFilePick,
+  type SavePickerWindow,
+  type SaveTarget,
+  type WritableFileHandle,
+} from "gps-plus-slam-app-framework/storage/save-target";
 
 /** The lock names' family: a sibling of the recordings'
  *  (`gps-plus-slam/tour-viewer/`), so their housekeeping never lists it. */
 const LOCK_PREFIX = "gps-plus-slam/tour-viewer-editor/";
 
-/** A picked file's handle, with the permission calls Chromium has and the
- *  DOM typings do not carry yet. */
-export type WritableFileHandle = FileSystemFileHandle & {
-  requestPermission?: (descriptor: {
-    mode: "read" | "readwrite";
-  }) => Promise<PermissionState>;
+/** The open dialog's filter: a tour is a zip. */
+const TOUR_FILE_TYPE: DownloadFileType = {
+  description: "Tour file",
+  mimeType: "application/zip",
+  extension: ".zip",
 };
 
-/** The part of `window` the picker needs. */
-export interface PickerWindow {
-  showOpenFilePicker?: (options: {
-    types: { description: string; accept: Record<string, string[]> }[];
-    multiple: false;
-  }) => Promise<WritableFileHandle[]>;
-}
-
-export type PickOutcome =
-  | { readonly kind: "unavailable" }
-  | { readonly kind: "cancelled" }
-  /** Picked, but gone before it could be read (moved, deleted, a volume
-   *  unmounted, PR #614 review). */
-  | { readonly kind: "unreadable"; readonly reason: string }
-  | {
-      readonly kind: "picked";
-      readonly file: File;
-      readonly handle: WritableFileHandle;
-      /** Write permission was granted: the file can be saved in place. */
-      readonly writable: boolean;
-    };
+/** The refusal of a tour over the open cap, in the tour's words. */
+const TOO_LARGE =
+  "The saved tour would be larger than a tour may be, so it was not written over the file.";
 
 /**
  * Whether a tour without a file (a link, the sample, a drop, the file
@@ -90,68 +97,15 @@ export function saveFinePrint(win: PickerWindow & SavePickerWindow): string {
 }
 
 /**
- * Let the creator pick a tour zip, and ask to write it on the same gesture.
- * The permission is asked FIRST, before any read of the file, while the
- * picker's activation still holds (E2b plan review #8). `unavailable` is a
- * browser without the picker, or one that refuses it (an iframe): the page
- * then uses its file input.
+ * Let the creator pick a tour zip, and ask to write it on the same gesture
+ * (the framework's `pickWritableFile`: the permission FIRST, E2b plan
+ * review #8; a refused second picker is a cancel, E2b-1 review #5).
+ * `unavailable` is a browser without the picker, or one that refuses it
+ * (an iframe): the page then uses its file input.
  */
-export async function pickTourFile(win: PickerWindow): Promise<PickOutcome> {
-  const picker = win.showOpenFilePicker;
-  if (typeof picker !== "function") return { kind: "unavailable" };
-  let handles: WritableFileHandle[];
-  try {
-    handles = await picker.call(win, {
-      types: [
-        {
-          description: "Tour file",
-          accept: { "application/zip": [".zip"] },
-        },
-      ],
-      multiple: false,
-    });
-  } catch (err) {
-    // Only a picker this page may not use (an iframe's SecurityError, a
-    // TypeError) falls back to the file input. Anything else - a dismissed
-    // picker, or a second one refused while the first is open
-    // (NotAllowedError) - is no choice, and no second dialog (E2b-1 review
-    // #5).
-    if (
-      err instanceof TypeError ||
-      (err instanceof DOMException && err.name === "SecurityError")
-    ) {
-      return { kind: "unavailable" };
-    }
-    return { kind: "cancelled" };
-  }
-  const handle = handles[0];
-  if (handle === undefined) return { kind: "cancelled" };
-  const writable = await askToWrite(handle);
-  try {
-    return { kind: "picked", file: await handle.getFile(), handle, writable };
-  } catch (err) {
-    return {
-      kind: "unreadable",
-      reason: err instanceof Error ? err.message : String(err),
-    };
-  }
+export function pickTourFile(win: PickerWindow): Promise<PickOutcome> {
+  return pickWritableFile(win, TOUR_FILE_TYPE);
 }
-
-/** The part of `window` the save dialog needs. */
-export interface SavePickerWindow {
-  showSaveFilePicker?: (options: {
-    suggestedName: string;
-    types: { description: string; accept: Record<string, string[]> }[];
-  }) => Promise<FileSystemFileHandle>;
-}
-
-export type SaveFilePick =
-  | { readonly kind: "picked"; readonly handle: FileSystemFileHandle }
-  /** The creator dismissed the dialog: nothing is to be written. */
-  | { readonly kind: "cancelled" }
-  /** No save dialog here, or the browser refused one (no click to open it
-   *  on, an iframe): the caller downloads instead. */
-  | { readonly kind: "unavailable" };
 
 /**
  * Ask where a new zip goes with the browser's save dialog. Call it IN the
@@ -164,139 +118,33 @@ export function pickSaveFile(
   win: SavePickerWindow,
   suggestedName: string,
 ): Promise<SaveFilePick> {
-  const picker = win.showSaveFilePicker;
-  if (typeof picker !== "function") {
-    return Promise.resolve({ kind: "unavailable" });
-  }
-  let asked: Promise<FileSystemFileHandle>;
-  try {
-    asked = picker.call(win, {
-      suggestedName,
-      types: [
-        { description: "ZIP Archive", accept: { "application/zip": [".zip"] } },
-      ],
-    });
-  } catch {
-    return Promise.resolve({ kind: "unavailable" });
-  }
-  return asked.then(
-    (handle): SaveFilePick => ({ kind: "picked", handle }),
-    (err: unknown): SaveFilePick =>
-      err instanceof DOMException && err.name === "AbortError"
-        ? { kind: "cancelled" }
-        : { kind: "unavailable" },
-  );
+  return pickSaveFileOfType(win, suggestedName, ZIP_FILE_TYPE);
 }
 
 /**
  * A file the save dialog gave that nothing will be written into (the open
  * it was asked for failed, or was refused, or its write did not land).
- * It is NEVER deleted: the browser empties a chosen file as the dialog
- * returns (the spec, and Chromium), so an empty file may be a new one or
- * a tour the creator chose to replace - and the page cannot tell which.
- * Resolves to one sentence true in both cases, null when no file was
- * picked. Never throws.
+ * It is NEVER deleted (the framework's `releaseUnusedPick` says why).
+ * Resolves to one sentence true whether the file was new or a tour the
+ * creator chose to replace, null when no file was picked. Never throws.
  */
-export async function releaseUnusedPick(
+export function releaseUnusedPick(
   pick: Promise<SaveFilePick> | null,
 ): Promise<string | null> {
-  const picked = await pick;
-  if (picked?.kind !== "picked") return null;
-  const { name } = picked.handle;
-  return `Nothing of the tour was written into ${name}. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.`;
-}
-
-async function askToWrite(handle: WritableFileHandle): Promise<boolean> {
-  if (typeof handle.requestPermission !== "function") return false;
-  try {
-    return (
-      (await handle.requestPermission({ mode: "readwrite" })) === "granted"
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Why an in-place write was refused: the file on disk is not the one this
- *  page last opened or wrote, or the tour grew past what may be opened. */
-export class InPlaceRefusal extends Error {
-  constructor(readonly kind: "changed" | "gone" | "too-large") {
-    super(
-      kind === "gone"
-        ? "The file was moved, renamed or deleted since it was opened."
-        : kind === "too-large"
-          ? "The saved tour would be larger than a tour may be, so it was not written over the file."
-          : "The file changed on disk since it was opened.",
-    );
-    this.name = "InPlaceRefusal";
-  }
-}
-
-/**
- * Whether `other` is the file `opened` names: the browser's answer
- * (`isSameEntry`) where a handle can give one, else the same name -
- * refusing a target costs a retry, writing over the tour costs the tour
- * (the M4b fix re-review #1). `handle` is null for a file opened without
- * one (the file input, a drop, a link).
- */
-export async function isSameFile(
-  opened: { readonly name: string; readonly handle: FileSystemHandle | null },
-  other: FileSystemHandle,
-): Promise<boolean> {
-  const { handle } = opened;
-  try {
-    if (handle !== null && typeof handle.isSameEntry === "function") {
-      return await handle.isSameEntry(other);
-    }
-  } catch {
-    // Unknown: decided by the name below.
-  }
-  return other.name === opened.name;
-}
-
-export interface SaveTarget {
-  /** The file's name, as the picker gave it. */
-  readonly name: string;
-  /** Whether the file on disk is still the one opened or last written. */
-  check(): Promise<"same" | "changed" | "gone">;
-  /**
-   * Write `blob` over the file - unless it changed meanwhile or is larger
-   * than a tour may be, which throws `InPlaceRefusal` and writes nothing.
-   * Resolves once the write landed.
-   */
-  write(blob: Blob): Promise<void>;
-  /**
-   * Whether `other` is this very file (`isSameEntry`) - asked before the
-   * walk's zip is written into a file the save dialog gave (the M4b fix
-   * re-review #1: written over the tour, it left the tour nowhere). Where
-   * the browser cannot tell, the same name counts as the same file.
-   */
-  isSame(other: FileSystemHandle): Promise<boolean>;
-}
-
-interface Baseline {
-  readonly size: number;
-  readonly lastModified: number;
-  readonly tail: Uint8Array;
-}
-
-async function tailOf(blob: Blob): Promise<Uint8Array> {
-  return new Uint8Array(
-    await blob.slice(Math.max(0, blob.size - TAIL_BYTES)).arrayBuffer(),
+  return releaseUnusedPickSaying(
+    pick,
+    (name) =>
+      `Nothing of the tour was written into ${name}. The browser may have emptied it when it was chosen, so if it was an existing file, do not rely on it.`,
   );
-}
-
-function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
-  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /**
  * The in-place target for a file opened through `pickTourFile` with write
- * permission. `opened` is the file as read at the open: its size, time and
- * tail are the baseline, read NOW - a `File` from disk becomes unreadable
- * once the file changes.
+ * permission, with the zip's tail check: a sync client's touch (a new
+ * time, the same size) is "same" when the end of the zip, its central
+ * directory, is. `opened` is the file as read at the open.
  */
-export async function createSaveTarget(
+export function createSaveTarget(
   handle: WritableFileHandle,
   opened: File,
   options: {
@@ -305,55 +153,16 @@ export async function createSaveTarget(
     readonly maxBytes?: number;
   } = {},
 ): Promise<SaveTarget> {
-  const maxBytes = options.maxBytes ?? DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes;
-  let base: Baseline = {
-    size: opened.size,
-    lastModified: opened.lastModified,
-    tail: await tailOf(opened),
-  };
-  async function check(): Promise<"same" | "changed" | "gone"> {
-    let now: File;
-    try {
-      now = await handle.getFile();
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "NotFoundError") {
-        return "gone";
-      }
-      throw err;
-    }
-    if (now.size !== base.size) return "changed";
-    if (now.lastModified === base.lastModified) return "same";
-    // Only the time differs: a sync client may touch a file it uploaded.
-    // The same end of the zip (its central directory) is the same file.
-    if (!sameBytes(await tailOf(now), base.tail)) return "changed";
-    base = { ...base, lastModified: now.lastModified };
-    return "same";
-  }
-  return {
-    name: handle.name,
-    check,
-    isSame: (other) => isSameFile({ name: handle.name, handle }, other),
-    async write(blob) {
-      // The rebuild stores entries uncompressed, so a deflated tour grows.
-      if (blob.size > maxBytes) throw new InPlaceRefusal("too-large");
-      // Checked again right before the write: the build may have taken
-      // seconds. Another program writing DURING our write is not caught;
-      // the check and the write are not one step.
-      const state = await check();
-      if (state !== "same") throw new InPlaceRefusal(state);
-      await writeFileOrAbort(handle, blob);
-      const written = await handle.getFile();
-      // The baseline moves only once the write landed. Its size and tail
-      // are the bytes written (one source, so they describe one file); its
-      // time is the file's, which only a read gives.
-      base = {
-        size: blob.size,
-        lastModified: written.lastModified,
-        tail: await tailOf(blob),
-      };
-    },
-  };
+  return createFileSaveTarget(handle, opened, {
+    check: "tail",
+    maxBytes: options.maxBytes ?? DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes,
+    refusals: { "too-large": TOO_LARGE },
+  });
 }
+
+/** One tab's hold on a file's name or a draft key (the framework's
+ *  `LockHold`). */
+export type EditorLock = LockHold;
 
 /**
  * One editing tab per file name (E2b plan review #6): an exclusive Web Lock
@@ -362,20 +171,14 @@ export async function createSaveTarget(
  * the request fails, it grants: there is nothing to coordinate with, and
  * refusing would only stop this tab from saving.
  */
-/** One tab's hold on a file's name. */
-export interface EditorLock {
-  readonly granted: boolean;
-  release(): void;
-  /** Settles once the hold has let go - a new request for the same name
-   *  made before that is refused (E2b-1 review #3). */
-  readonly released: Promise<void>;
-}
-
 export function holdEditorLock(
   locks: LockManager | undefined,
   fileName: string,
 ): Promise<EditorLock> {
-  return holdLock(locks, `${LOCK_PREFIX}${fileName}`);
+  return holdLock(locks, fileName, {
+    prefix: LOCK_PREFIX,
+    withoutLocks: "grant",
+  });
 }
 
 /**
@@ -388,46 +191,8 @@ export function holdEditorDraftLock(
   locks: LockManager | undefined,
   draftKey: string,
 ): Promise<EditorLock> {
-  return holdLock(locks, `${LOCK_PREFIX}draft/${draftKey}`);
-}
-
-function holdLock(
-  locks: LockManager | undefined,
-  name: string,
-): Promise<EditorLock> {
-  const free: EditorLock = {
-    granted: true,
-    release: () => undefined,
-    released: Promise.resolve(),
-  };
-  if (locks === undefined) return Promise.resolve(free);
-  return new Promise((resolve) => {
-    let markReleased: () => void = () => undefined;
-    const released = new Promise<void>((settle) => {
-      markReleased = settle;
-    });
-    locks
-      .request(name, { ifAvailable: true }, (lock) => {
-        if (lock === null) {
-          resolve({
-            granted: false,
-            release: () => undefined,
-            released: Promise.resolve(),
-          });
-          return undefined;
-        }
-        return new Promise<void>((done) => {
-          resolve({ granted: true, release: () => done(), released });
-        });
-      })
-      .then(
-        () => {
-          markReleased();
-        },
-        () => {
-          markReleased();
-          resolve(free);
-        },
-      );
+  return holdLock(locks, `draft/${draftKey}`, {
+    prefix: LOCK_PREFIX,
+    withoutLocks: "grant",
   });
 }

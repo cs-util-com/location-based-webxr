@@ -17,6 +17,14 @@ editor session as one undo step.
   - A station's `title`, `description` and `radius`: `{ kind: "station",
 stationId, edit }` (a `StationEdit` of `tour-document.ts`). A radius
     lower than its items is allowed: they stay where they are.
+  - A story character's `character-facing:<block>` on his station: `{ kind:
+"station", stationId, edit: { character: { block, facingDeg } } }`;
+    `invalid` for a value that is no number; none for the facing he has
+    (a whole turn round counts as the same, `shortTurn`) and for a block
+    that is no character.
+  - A story block's `block:<id>:<field>` on its station: `{ kind:
+"block", id, field, value }` for a block the station's story shows
+    and a field of its `storyBlockFields`; none otherwise.
   - A pin's `title` (the head's text box): `{ kind: "text", id, text }`.
   - A block's other text field (any of `blockFields(item)`, B2c: a short
     text's `description`, a picture's `title` / `caption` / `alt`, a
@@ -60,6 +68,9 @@ null`:
     nothing left: none.
   - Null while the ground under any of them has not loaded: the shell
     waits (`ground-wait.ts`).
+- A model's `note-title:<i>`, `note-text:<i>`, `section-name:<i>` and
+  `anim-name` fields are `{ kind: "model", id, edit }` (`model-edits.ts`);
+  a clip's name keeps its autoplay, on for a first clip.
 
 ## Invariants & assumptions
 

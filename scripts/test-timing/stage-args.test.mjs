@@ -42,16 +42,28 @@ describe('decideRecording', () => {
     });
   });
 
-  it('never records on CI, even for full-suite runs', () => {
-    expect(decideRecording([], { CI: 'true' })).toEqual({
+  it('never records on the GitHub runner, even for full-suite runs', () => {
+    expect(decideRecording([], { GITHUB_ACTIONS: 'true', CI: 'true' })).toEqual({
       record: false,
       extraArgs: [],
       reason: 'ci',
     });
   });
 
-  it('treats an empty CI env var as not-CI (matches common CI detection)', () => {
-    expect(decideRecording([], { CI: '' }).record).toBe(true);
+  it('records a local gate run that sets CI=1', () => {
+    // Every local gate sets CI=1 (for Playwright's CI mode), so keying the skip
+    // on CI recorded no gate run from 2026-09-30 on (when CI=1 entered the
+    // commit gate) and the versioned test-timings.md files went stale. Only the
+    // GitHub runner counts as CI here.
+    expect(decideRecording([], { CI: '1' })).toEqual({
+      record: true,
+      extraArgs: [],
+      reason: 'full-suite',
+    });
+  });
+
+  it('treats an empty GITHUB_ACTIONS variable as not the runner', () => {
+    expect(decideRecording([], { GITHUB_ACTIONS: '' }).record).toBe(true);
   });
 });
 
@@ -99,7 +111,7 @@ describe('buildStageCommand', () => {
   });
 
   it('keeps the canonical command byte-identical for an unfiltered CI run (CI keeps enforcing thresholds)', () => {
-    const decision = decideRecording([], { CI: 'true' });
+    const decision = decideRecording([], { GITHUB_ACTIONS: 'true' });
     expect(buildStageCommand(CMD, decision, NEUTRALIZERS)).toBe(CMD);
   });
 
@@ -150,12 +162,12 @@ describe('buildStageCommand with filteredRunCommand', () => {
   });
 
   it('keeps the canonical command for unfiltered CI runs', () => {
-    const decision = decideRecording([], { CI: 'true' });
+    const decision = decideRecording([], { GITHUB_ACTIONS: 'true' });
     expect(buildStageCommand(CMD, decision, [], FAST)).toBe(CMD);
   });
 
   it('uses the filtered-run command for CI runs WITH a file filter', () => {
-    const decision = decideRecording(['src/foo.test.ts'], { CI: 'true' });
+    const decision = decideRecording(['src/foo.test.ts'], { GITHUB_ACTIONS: 'true' });
     expect(buildStageCommand(CMD, decision, [], FAST)).toBe(
       `${FAST} src/foo.test.ts`
     );

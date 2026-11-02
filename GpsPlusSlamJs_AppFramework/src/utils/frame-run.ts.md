@@ -62,3 +62,10 @@ the join's hitch frames (property); worst frames (golden, refused frames
 still numbered, exactly the slowest as a property, copied events, option
 refusal); calibration (minimum samples, the median at 60 / 90 / 120 / 144
 Hz with idle slow frames, bad intervals dropped, another minimum).
+
+## Import path
+
+`gps-plus-slam-app-framework/utils/frame-run`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

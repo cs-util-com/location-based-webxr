@@ -40,6 +40,8 @@ const item: InspectorModel = {
   text: "Hello",
   sizeM: null,
   fields: [],
+  model: null,
+  longText: null,
   offset: { northM: 2, upM: 0.5, eastM: -1.25 },
   headingDeg: 15,
   groundOffM: null,

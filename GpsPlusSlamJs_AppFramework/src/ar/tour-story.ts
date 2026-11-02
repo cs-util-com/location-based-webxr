@@ -15,8 +15,10 @@
  * - `quiz`: question, points and answer. There is no `route` (the walk is
  *   not branched by answers); a `route` field is an unknown field and
  *   ignored.
- * - `advance`: how a step moves on - a tap (also when absent), or by
- *   itself after some seconds.
+ * - `advance`: how a step moves on - a tap (also when absent), by itself
+ *   after some seconds, or (minor 2) by itself when its line ends: the
+ *   step's voice or sound has played, or, with none, its words have had
+ *   their time to be read (the viewer's rule).
  *
  * LENIENT for a NEWER MINOR (as `tour-blocks.ts`): a step of an unknown
  * kind, a quiz of an unknown answer type, and a `show` naming a block this
@@ -47,7 +49,9 @@ import {
 } from './tour-fields.js';
 
 export type TourStepAdvance =
-  { readonly mode: 'tap' } | { readonly mode: 'auto'; readonly afterS: number };
+  | { readonly mode: 'tap' }
+  | { readonly mode: 'auto'; readonly afterS: number }
+  | { readonly mode: 'lineEnd' };
 
 /** One way on from a choice. */
 export interface TourChoiceOption {
@@ -141,6 +145,12 @@ export function tourShownBlockIds(
   return new Set(
     steps.flatMap((s) => (s.action.kind === 'show' ? [s.action.block] : []))
   );
+}
+
+/** The lowest minor `steps` need: 2 when one moves on when its line
+ *  ends; 0 otherwise. */
+export function tourStepsMinor(steps: readonly TourStep[]): number {
+  return steps.some((s) => s.advance.mode === 'lineEnd') ? 2 : 0;
 }
 
 // --- quizzes ----------------------------------------------------------
@@ -292,10 +302,11 @@ function parseAdvance(
   if (value === undefined) return { mode: 'tap' };
   if (!isRecord(value)) return fail(`"${at}" must be an object`);
   if (value.mode === 'tap') return { mode: 'tap' };
+  if (value.mode === 'lineEnd') return { mode: 'lineEnd' };
   if (value.mode !== 'auto') {
     // A newer minor's mode: the visitor taps on, as with no rule at all.
     if (options.lenient) return { mode: 'tap' };
-    return fail(`"${at}.mode" must be "tap" or "auto"`);
+    return fail(`"${at}.mode" must be "tap", "auto" or "lineEnd"`);
   }
   if (!isFiniteNumber(value.afterS) || value.afterS <= 0) {
     return fail(`"${at}.afterS" must be a number of seconds > 0`);

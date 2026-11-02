@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { computeDelta } from './delta.mjs';
 import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
+import { narrowedStageRun } from '../e2e/project-runs.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
 import {
   STALL_EXIT,
@@ -511,8 +512,17 @@ export async function runStage(project, stageName, forwardedArgs) {
   // A run on a stage's per-commit fast command (e.g. the framework's unit
   // stage without --coverage, gate-speed plan G4) is NOT recorded: its
   // duration is not comparable with the history of the canonical command.
+  // Nor is a run of a narrowable stage inside test:changed (the Tour
+  // Viewer's e2e cut to the changed area, or to nothing): it is not the full
+  // suite, whatever its command says.
+  const narrowed = narrowedStageRun(stage, process.env);
+  if (narrowed) {
+    console.log(
+      `test-timing: ${stageName} may run only the changed area here (test:changed), so it records no timing row`
+    );
+  }
   const decision =
-    baseCommand === stage.command
+    baseCommand === stage.command && !narrowed
       ? decideRecording(forwardedArgs, process.env)
       : { ...decideRecording(forwardedArgs, process.env), record: false };
   let command = buildStageCommand(

@@ -5,13 +5,20 @@
   can be opened on a phone (plan 2026-09-23-0048, DEC-SKY-2).
 - Public API:
   - `buildLookdev({ outDir, base, packageRoot?, routes?, entries?,
-followDynamic? })` → the written paths relative to `outDir`. `base`
+followDynamic?, workerImports?, siteRootPrefixes? })` → the written paths relative to `outDir`. `base`
     must start and end with `/` (e.g. `/lookdev/`). `packageRoot` defaults
     to this package and `routes` to `serve-routes.mjs`'s table (tests pass
     fixtures). `entries` defaults to `discoverEntries(packageRoot)` (a test
     builds one page). `followDynamic` (default true) follows literal dynamic
-    `import("x")`s; false gives a page's static BOOT graph only. Called by
-    the workspace's `scripts/build-site.mjs`.
+    `import("x")`s; false gives a page's static BOOT graph only.
+    `siteRootPrefixes` (default none) names routes the caller serves at
+    the site root: they are neither copied under `outDir` nor rebased, so
+    the pages ask the root for them; a prefix that is no route's prefix is
+    an Error. The site build passes `["/globe-assets/"]`: it ships the
+    Globe's imagery ONCE at `dist-site/globe-assets/`
+    (`scripts/globe-assets-deploy.mjs`), shared with the Tour Viewer's
+    editor, instead of a second copy under `/lookdev/`. Called by the
+    workspace's `scripts/build-site.mjs`.
   - `discoverEntries(packageRoot)` → the deployable pages as URL paths:
     `/3d/index.html` first (when present), then every
     `labs/<name>/index.html`, sorted, each followed by its lab's further

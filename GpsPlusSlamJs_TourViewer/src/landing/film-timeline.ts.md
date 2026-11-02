@@ -34,6 +34,9 @@ function of this one number, so pausing, jumping and redrawing are free.
 - `totalS` is the sum of the segments; positions are clamped to
   [0, totalS]; NaN and -Infinity read as 0, +Infinity as the end.
 - `positionAt` is monotone in `t`; `startOf(i)` maps back to part `i`.
+- The part at a (clamped) time is the last segment starting at or before
+  it: the package's one search, `lastAtOrBefore` (`../last-at-or-before.ts`),
+  with -1 read as the first part.
 
 ## Example
 

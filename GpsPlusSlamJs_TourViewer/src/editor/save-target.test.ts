@@ -446,6 +446,25 @@ describe("pickSaveFile", () => {
     await expect(picked).resolves.toEqual({ kind: "picked", handle });
   });
 
+  // Why: the dialog's type filter is the zip's, the same one the
+  // framework's download gives a zip; pinned so that sharing the dialog
+  // with the framework cannot change what the creator is offered.
+  it("offers the zip archive type in the dialog", async () => {
+    const asked: unknown[] = [];
+    await pickSaveFile(
+      {
+        showSaveFilePicker: (options) => {
+          asked.push(options.types);
+          return Promise.resolve(handle as unknown as FileSystemFileHandle);
+        },
+      },
+      "castle.zip",
+    );
+    expect(asked).toEqual([
+      [{ description: "ZIP Archive", accept: { "application/zip": [".zip"] } }],
+    ]);
+  });
+
   it("is cancelled only when the creator dismissed the dialog", async () => {
     await expect(
       pickSaveFile(

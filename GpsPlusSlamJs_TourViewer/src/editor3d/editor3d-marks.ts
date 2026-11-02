@@ -14,6 +14,7 @@
 import * as THREE from "three";
 
 import { viewHeightAtOneM } from "./gizmo-maths.js";
+import { truncated } from "../truncated.js";
 
 /** The billboard's canvas (px) and its height on screen (px). */
 const BILLBOARD_W = 512;
@@ -57,7 +58,7 @@ export function createBillboard(
     const num = String(number);
     const numW = Math.max(56, ctx.measureText(num).width + 28);
     ctx.font = `500 46px ${FONT}`;
-    const name = title.length > 26 ? `${title.slice(0, 25).trimEnd()}…` : title;
+    const name = truncated(title, 26);
     const nameW = Math.min(
       BILLBOARD_W - numW - 3 * pad,
       ctx.measureText(name).width,

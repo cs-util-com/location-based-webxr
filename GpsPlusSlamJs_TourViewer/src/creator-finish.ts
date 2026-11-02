@@ -21,7 +21,11 @@ import type { CreatorSettle } from "./creator-settle.js";
 import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
-import { historyAssetIds, manifestNow } from "./tour-document.js";
+import {
+  historyAssetIds,
+  historyTimingEntries,
+  manifestNow,
+} from "./tour-document.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 import type {
@@ -254,6 +258,7 @@ export function wireCreatorFinish(deps: {
           deleted,
           // What an undo after this Finish may still show (a cover).
           keepAssets: historyAssetIds(tour.state()),
+          keepEntries: historyTimingEntries(tour.state()),
           levels,
           keepScan: dom.keepScanInput.checked,
           previous,

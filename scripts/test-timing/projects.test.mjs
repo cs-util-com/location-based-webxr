@@ -311,6 +311,37 @@ describe('browser-stage exclusion (DEC-G2)', () => {
     expect(stages.indexOf('build:osm')).toBeLessThan(stages.indexOf('test:unit'));
   });
 
+  it('TourViewer runs its e2e through the project runner, still as a browser stage', () => {
+    // The runner runs the DOM specs, then the WebGL specs, each at its own
+    // worker count (playwright-tests/e2e-plan.js). It must still be a
+    // browser stage, or GATE_SKIP_BROWSER_STAGES would stop dropping it and
+    // every dependent run would pay for the whole Tour Viewer e2e.
+    const e2e = getProject('GpsPlusSlamJs_TourViewer').stages.find(
+      (s) => s.name === 'test:e2e'
+    );
+    expect(e2e?.command).toBe(
+      'node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js'
+    );
+    expect(e2e && isBrowserStage(e2e)).toBe(true);
+    expect(
+      gateStages(getProject('GpsPlusSlamJs_TourViewer'), { skipBrowser: true }).map((s) => s.name)
+    ).not.toContain('test:e2e');
+  });
+
+  it('marks exactly the stages that run the project runner as narrowable', () => {
+    // A narrowable stage records no timing row inside test:changed
+    // (run-stage.mjs). A stage marked by mistake loses its history; one the
+    // runner narrows but that is unmarked records a part of its suite as the
+    // whole.
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        expect(Boolean(stage.narrowable), `${project.name} ${stage.name}`).toBe(
+          stage.command.includes('scripts/e2e/run-projects.mjs')
+        );
+      }
+    }
+  });
+
   it('leaves the full stage list untouched when the mode is off', () => {
     for (const project of PROJECTS) {
       expect(gateStages(project).map((s) => s.name)).toEqual(stageOrder(project));

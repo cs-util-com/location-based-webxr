@@ -222,7 +222,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   filed #7). A placement's write is unawaited, so a quick delete of it
   could land first and the object come back on the next open. Every write
   and removal for one id - record, bytes, tombstone, a sweep - runs in that
-  id's queue (`keyed-chain.ts`, keys per tour namespace and id), so they
+  id's queue (`gps-plus-slam-app-framework/utils/keyed-chain`, keys per tour namespace and id), so they
   land in call order.
 - **A change to an id the meta rejects CLAIMS the id first** (M4 review
   #1, `writeForObject`). The meta's rejected list outranks an object's

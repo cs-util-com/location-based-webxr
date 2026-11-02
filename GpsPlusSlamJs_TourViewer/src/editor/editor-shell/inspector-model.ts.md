@@ -31,7 +31,7 @@ origin?, groundAt? })` ->
     (`InspectorStoryBlock[]`: the blocks its story shows,
     `storyBlocksOf`, in the station's order, each `{ id, kind, title }`
     with the kind in the block model's words and the name by
-    `objectTitle` (`../../object-describe.ts`, the one naming rule); listed, not edited, here);
+    `objectTitle` (`../../object-describe.ts`, the one naming rule), and `fields` (`storyBlockFields`, its texts to type); listed, neither added, ordered nor removed here (the story editor's); a character also carries `character: InspectorCharacter { view, advance, facingDeg }`: his block's view, the advance mode of the first step showing him (`tap` when none does), his facing by `facingDegOf`);
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `BLOCK_KIND_LABEL`; the
@@ -67,6 +67,24 @@ origin?, groundAt? })` ->
   turn; an item: move and turn, a model also a size dot; a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
+- `MODEL_VIEW_CHOICES` - the format's world views with their labels, in
+  the inspector's order.
+- `CHARACTER_VIEW_CHOICES` - a character's story views
+  (`TOUR_CHARACTER_VIEWS`, in the format's order) with the station-blocks-7
+  prototype's labels: Bubble, Tap to speak, Two stations, Portrait, Pop-up.
+- `ItemInspector.model` - for a model, its parts
+  (`InspectorModelParts`: the view, the notes with title, text and place,
+  whether the notes are full, the sections with name, place and normal,
+  whether the sections are full, the clip or null, and the store's
+  `modelFocus` and `modelPick`); null for every other item.
+- `buildInspector` takes the store's `modelFocus` and `modelPick`.
+- `ItemInspector.longText` - for a free long text, what its writer shows
+  (`InspectorLongText`: the block id, its stored view, title and body,
+  whether it has a narration, the visitor's line above the title - the
+  station's name and number - and the tour's pictures `{ id, path, label }`
+  for the picture button); null for every other item, and for a long text a
+  station's story shows (its prose stays a field there). Its body and title
+  are not repeated in `fields`.
 
 ## Invariants & assumptions
 
@@ -106,3 +124,7 @@ ground changing by a few millimetres without crossing a shown tenth
 leaves the model unchanged: the shell's readout draws the inspector again
 whenever its model changes, so a model carrying raw heights was drawn
 again under the creator's typing on every tile of finer ground.
+
+## Narration key
+
+`InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.

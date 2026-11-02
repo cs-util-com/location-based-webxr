@@ -180,6 +180,11 @@ export interface CreatorSetupDom {
   /** The pin text's "12 / 40" beside the field (`pin-text.ts`). Absent in
    *  the node tests that do not need it. */
   pinLabelCount?: HTMLElement;
+  /** The pin's optional description and its "12 / 160"
+   *  (`creator-placement.ts`). Absent in the node tests that do not need
+   *  them. */
+  pinDescription?: HTMLTextAreaElement;
+  pinDescriptionCount?: HTMLElement;
   pinSave: HTMLButtonElement;
   pinCancel: HTMLButtonElement;
   photoButton: HTMLButtonElement;

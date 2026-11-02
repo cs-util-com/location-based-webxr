@@ -34,7 +34,7 @@ WORKER_IMPORTS)` returns a module's source with every import specifier
   its LICENSE as a notice; first user the globe's arrival prefetch, round-5
   plan 2026-10-01-0945 §3.6), `/vendor/three/` (with its LICENSE as a notice),
   and for the globe lab (W7): `/globe/` (the globe package's TypeScript),
-  `/globe-assets/` (its imagery, `copyAll`), `/vendor/3d-tiles-renderer/`
+  `/globe-assets/` (its imagery, `copyAll`; the site build serves it from its root copy instead, `buildLookdev`'s `siteRootPrefixes`), `/vendor/3d-tiles-renderer/`
   (the installed library, its LICENSE as a notice).
 - Invariants & assumptions:
   - The server binds every interface, so containment is the point: the

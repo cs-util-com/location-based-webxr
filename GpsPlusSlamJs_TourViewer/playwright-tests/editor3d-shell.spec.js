@@ -12,6 +12,7 @@ import {
   afterFrames,
   answerHosts,
   keepRejections,
+  openSample,
   openSampleIn3d,
   rejections,
   view3d,
@@ -41,9 +42,17 @@ import { useWideFont } from "./wide-font.js";
 // about 12 s one after another.
 test.describe.configure({ mode: "default" });
 
-/** A dock folded to its head: the 36 px head and the dock's 1 px
- *  bottom edge. */
-const FOLDED_PX = 37;
+/** A dock folded to its head: the 36 px head and the dock's 1 px top
+ *  and bottom edges (the docks float under a gap below the top bar, so
+ *  they have a top edge of their own). */
+const FOLDED_PX = 38;
+
+/** Where the docks begin (px from the window's top) in the default 3D
+ *  view: the 40 px top bar and an 8 px gap. Only the globe view reserves
+ *  the band for its loading bar and tab under the top bar
+ *  (`editor3d-globe-approach.spec.js`); this view never shows the bar,
+ *  and on a landscape phone the band would cost each dock a fifth. */
+const DOCK_TOP_PX = 40 + 8;
 
 /** @param {import("@playwright/test").Page} page */
 async function open3d(page) {
@@ -172,7 +181,7 @@ async function expectFrame(page, size) {
 async function expectTree(page, width, open) {
   const tree = await box(page.locator("#shell-tree"));
   expect(tree.x).toBe(0);
-  expect(tree.y).toBe(40);
+  expect(tree.y).toBe(DOCK_TOP_PX);
   expect(tree.width).toBeCloseTo(width, 0);
   if (open) {
     await expect(page.locator("#tree-body")).toBeVisible();
@@ -212,7 +221,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await card(page, "The old gate").locator(".hero").click();
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
-  expect(phoneInspector.y).toBe(40);
+  expect(phoneInspector.y).toBe(DOCK_TOP_PX);
   expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
   await expectTree(page, phoneHead, false);
   const phoneFold = await box(page.locator("#tree-fold"));
@@ -250,7 +259,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.locator("#tree-fold").click();
   await expectTree(page, 272, true);
   const inspector = await box(page.locator("#shell-inspector"));
-  expect(inspector).toMatchObject({ x: 1440 - 290, y: 40, width: 290 });
+  expect(inspector).toMatchObject({
+    x: 1440 - 290,
+    y: DOCK_TOP_PX,
+    width: 290,
+  });
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   // The cards: 8 px in from the dock, 6 px apart, 62 px pictures.
@@ -493,7 +506,6 @@ test.describe("on a touch screen", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open3d(page);
     await expect(page.locator("#studio-undo")).toBeHidden();
-    await expect(page.locator("#studio-details")).toBeHidden();
     const editButton = page.locator("#edit-menu-btn");
     await editButton.tap();
     await expect(page.locator("#edit-undo")).toBeVisible();
@@ -544,8 +556,8 @@ test("the unsaved mark shows beside File after an edit and goes with a save", as
   await open3d(page);
   const mark = page.locator("#unsaved-mark");
   await expect(mark).toBeHidden();
-  // An edit: the tour's name, through Details.
-  await page.locator("#studio-details").click();
+  // An edit: the tour's name, through the name's own button.
+  await page.locator("#tour-name").click();
   await page.locator("#details-name").fill("A renamed tour");
   await page.locator("#details-apply").click();
   await expect(mark).toBeVisible();
@@ -609,7 +621,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
     expect.arrayContaining([
       "file-menu-btn",
       "view-menu-btn",
-      "studio-details",
+      "tour-name",
       "studio-help",
     ]),
   );
@@ -619,7 +631,7 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
     if (i > 0) expect(v.x).toBeGreaterThan(bar[i - 1]?.x ?? 0);
   }
   // The bar is visited first; the next stop is the tree's head (the
-  // scene's credits close the view, after the docks).
+  // scene's Credits button closes the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
   // Then the tree: its head ("Stations", "+", the fold arrow), then the
@@ -775,3 +787,46 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
   );
   await expect(card(page, "The old gate")).toHaveCount(0);
 });
+
+for (const view of ["3d", "2d"]) {
+  test(`the tour's name carries a pen that opens its details, with no Details button and no mark (${view})`, async ({
+    page,
+  }) => {
+    // Why: the owner found Details a second copy of what the tour's name
+    // already opens, and the "T" mark mere decoration. Both went; a pen
+    // right of the name says it can be clicked, in both views (they share
+    // the top bar). A pen elsewhere, or a Details button left behind, is
+    // what this pins.
+    test.setTimeout(150_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await answerHosts(page);
+    if (view === "3d") await openSampleIn3d(page);
+    else await openSample(page);
+    await expect(page.locator("#studio-details")).toHaveCount(0);
+    await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
+    const name = page.locator("#tour-name");
+    const text = await box(name.locator(".tour-name-text"));
+    const pen = name.locator(".tour-name-pen svg.i");
+    await expect(pen).toBeVisible();
+    const penBox = await box(pen);
+    // Right of the name, close beside it, on its line.
+    expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
+    expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
+    expect(
+      Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
+    ).toBeLessThanOrEqual(3);
+    // The name is the button's words: the pen adds none.
+    await expect(name).toHaveAccessibleName(
+      (await name.locator(".tour-name-text").textContent()) ?? "",
+    );
+    // Hovered, the name underlines on the 2D map only: the studio's top
+    // bar (3D) marks a hover by the pen alone, as its other controls.
+    await name.hover();
+    await expect(name.locator(".tour-name-text")).toHaveCSS(
+      "text-decoration-line",
+      view === "3d" ? "none" : "underline",
+    );
+    await pen.click();
+    await expect(page.locator("#details-modal")).toBeVisible();
+  });
+}

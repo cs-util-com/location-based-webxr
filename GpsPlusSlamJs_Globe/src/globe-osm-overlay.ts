@@ -48,6 +48,17 @@ export const GLOBE_OSM = Object.freeze({
   reevaluateMs: 500,
   /** At most this many tiles started per look. */
   reevaluateLimit: 8,
+  /**
+   * How long the failed map tiles wait before the map asks for them again
+   * (ms; all of them at once, one retry per wait). The library never
+   * retries by itself, so a dropped request left its tile bare while
+   * loaded. The waits grow while the retries keep failing (an outage, no
+   * connection, a server refusing with 429) and stay at the last, so
+   * doomed retries never fill the request ceiling; a retried tile that
+   * gets its map starts them over. 5 s first: short enough that a creator
+   * who stops to look sees a dropped tile come back.
+   */
+  retryBackoffMs: Object.freeze([5_000, 10_000, 20_000, 60_000]),
   /** The overlay texture per relief tile (px, the plugin's default). */
   resolution: 256,
   /**
@@ -401,6 +412,9 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   private locks = 0;
   private releases = 0;
   private keptHits = 0;
+  /** Failed lock requests by error name (aborts not counted). */
+  private readonly lockErrors = new Map<string, number>();
+  private lastLockError: { name: string; message: string } | null = null;
   /** Released regions still locked in the library, oldest first. */
   private readonly kept = new Map<string, { range: number[]; level: number }>();
   private keep: number;
@@ -543,6 +557,43 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     }
   }
 
+  /**
+   * The plugin's lock (the library's rethrows a failed request's error
+   * from a promise nobody holds: an unhandled error in the console per
+   * dropped request). The failure is not lost: the plugin reads the same
+   * request for the tile and records it as the tile's failed state, which
+   * the map asks for again (`retryBackoffMs`). Recorded here instead
+   * (`noteLockError`).
+   */
+  lockTextureSafe(range: number[]): Promise<unknown> {
+    const result = this.lockTexture(range);
+    result.catch((err: unknown) => {
+      this.noteLockError(err);
+    });
+    return result;
+  }
+
+  /**
+   * Records a lock's failed request: counted by the error's name, the last
+   * one kept, and the first of each name warned in the console (the
+   * console stays readable through an outage: one line per kind, not per
+   * tile). An abort is the library dropping a region it no longer needs,
+   * not a failure, and is not recorded.
+   */
+  noteLockError(err: unknown): void {
+    const { name, message } = errorParts(err);
+    if (name === "AbortError") return;
+    const seen = this.lockErrors.get(name) ?? 0;
+    this.lockErrors.set(name, seen + 1);
+    this.lastLockError = { name, message };
+    if (seen === 0) {
+      // eslint-disable-next-line no-console -- once per kind, the only trace of a bare map
+      console.warn(
+        `street map: a tile request failed (${name}: ${message}); failed tiles are asked for again later`,
+      );
+    }
+  }
+
   async fetch(
     url: string,
     options: { signal?: AbortSignal } = {},
@@ -561,7 +612,8 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
    * fetches again), the keep, the regions kept now and the locks served
    * from it, and the finest level a lock asked for (null before the
    * first): under the coarsest zoom in force, the relief tree is too
-   * coarse for the map.
+   * coarse for the map. Then the failed lock requests by error name and
+   * the last one (`noteLockError`).
    */
   stats(): {
     locks: number;
@@ -572,6 +624,8 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     keptRegions: number;
     keptHits: number;
     finestLevel: number | null;
+    lockErrors: Record<string, number>;
+    lastLockError: { name: string; message: string } | null;
   } {
     return {
       locks: this.locks,
@@ -582,6 +636,8 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
       keptRegions: this.kept.size,
       keptHits: this.keptHits,
       finestLevel: this.finestLevel,
+      lockErrors: Object.fromEntries(this.lockErrors),
+      lastLockError: this.lastLockError,
     };
   }
 }
@@ -651,13 +707,39 @@ export function reevaluateGatedTiles(
     }
     const range = info.range!;
     started++;
-    void overlay.lockTexture(range).catch(() => {});
+    void overlay.lockTexture(range).catch((err: unknown) => {
+      overlay.noteLockError(err);
+    });
     plugin
       ._fetchTileOverlayTexture(tile, overlay, info)
       .then(() => plugin._updateLayers(tile))
       .catch(() => {});
   }
   return { started, left };
+}
+
+/** The processed tiles whose map request failed. */
+function failedTiles(
+  plugin: OverlayPluginInternals,
+  overlay: GatedOsmOverlay,
+): TileOverlayInfo[] {
+  const tileInfo = plugin.overlayInfo.get(overlay)?.tileInfo;
+  if (!tileInfo) return [];
+  return [...tileInfo.values()].filter(
+    (info) => info.failed && info.range !== null,
+  );
+}
+
+/** An error's name and message, whatever was thrown. */
+function errorParts(err: unknown): { name: string; message: string } {
+  if (typeof err === "object" && err !== null) {
+    const { name, message } = err as { name?: unknown; message?: unknown };
+    return {
+      name: typeof name === "string" && name !== "" ? name : "Error",
+      message: typeof message === "string" ? message : "",
+    };
+  }
+  return { name: typeof err, message: String(err) };
 }
 
 /** What `createGlobeOsmOverlay` attaches to: the relief's tiles. */
@@ -691,8 +773,9 @@ export interface OsmCoverage {
   readonly coarse: number;
   /** Waiting for it: gated, throttled, loading or failed. */
   readonly waiting: number;
-  /** Of those, the ones whose request failed: never asked for again, so
-   *  a check that waits for the map stops waiting on these. */
+  /** Of those, the ones whose request failed: asked for again only every
+   *  `GLOBE_OSM.retryFailedMs`, so a check that waits for the map stops
+   *  waiting on these. */
   readonly failed: number;
   /** Drawn tiles the plugin has not placed yet (no range). */
   readonly unprocessed: number;
@@ -775,6 +858,13 @@ export function createGlobeOsmOverlay({
   let ceilingFullMs = 0;
   let reevaluateBacklog = 0;
   let cappedLooks = 0;
+  let failedRetries = 0;
+  /** When a failed tile was first seen since the last retry (ms), or null. */
+  let failedSince: number | null = null;
+  /** Retries since a retried tile last got its map. */
+  let retryStreak = 0;
+  /** The tiles the last retry asked for again. */
+  let retried: TileOverlayInfo[] = [];
   /** Whether a range (normalised) comes within `withinM` of the camera;
    *  false for one the projection cannot place. */
   const rangeNear = (range: number[], withinM: number): boolean => {
@@ -848,6 +938,38 @@ export function createGlobeOsmOverlay({
       ceilingFullMs += Math.max(0, pose.nowMs - lastNow);
     }
   };
+  /** The wait before the next retry (`retryBackoffMs` by the streak). */
+  const retryWaitMs = (): number => {
+    const waits = GLOBE_OSM.retryBackoffMs;
+    return waits[Math.min(retryStreak, waits.length - 1)]!;
+  };
+  /**
+   * The library never asks again for a tile whose request failed: once a
+   * failed tile has waited `retryWaitMs`, its reset releases every failed
+   * tile and locks it anew (through the gate and the ceiling). Each retry
+   * lengthens the next wait; a retried tile that got its map (no longer
+   * failed, with its texture) starts the waits over. The reset clears the
+   * failed mark at once, so only the texture tells a success.
+   */
+  const retryFailed = (nowMs: number) => {
+    const internals = plugin as unknown as OverlayPluginInternals;
+    if (retried.some((info) => !info.failed && info.target !== null)) {
+      retryStreak = 0;
+      retried = [];
+    }
+    const failed = failedTiles(internals, overlay);
+    if (failed.length === 0) {
+      failedSince = null;
+      return;
+    }
+    failedSince ??= nowMs;
+    if (nowMs - failedSince < retryWaitMs()) return;
+    failedSince = null;
+    failedRetries++;
+    retryStreak++;
+    retried = failed;
+    plugin.resetFailedOverlays();
+  };
   /** A drawn tile's place in `coverage`. */
   const kindOf = (
     info: TileOverlayInfo,
@@ -917,6 +1039,14 @@ export function createGlobeOsmOverlay({
       );
       reevaluateBacklog = look.left;
       if (look.left > 0) cappedLooks++;
+      // After the re-evaluation, never before it: the reset marks its tiles
+      // no longer failed and releases their regions now, but the library
+      // drops a released region a microtask later and locks it anew only on
+      // the next frame. A re-evaluation in between would lock the region
+      // still cached with its rejected request (failing again at once) and
+      // the reset's own lock would then hold it twice. The next look is
+      // `reevaluateMs` away, after that frame.
+      retryFailed(pose.nowMs);
     },
     /**
      * The relief tiles drawn in the last update near the camera, by their
@@ -962,6 +1092,10 @@ export function createGlobeOsmOverlay({
         ceilingFullMs,
         reevaluateBacklog,
         cappedLooks,
+        /** How many times the failed tiles were asked for again. */
+        failedRetries,
+        /** The wait before the next retry of failed tiles (ms). */
+        retryWaitMs: retryWaitMs(),
         ...overlay.stats(),
       };
     },

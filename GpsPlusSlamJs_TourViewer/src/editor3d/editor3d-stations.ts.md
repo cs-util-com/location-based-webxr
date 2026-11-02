@@ -15,8 +15,10 @@ ray (`pick`).
 
 - `StationsLayerDeps` - what the page hands in: `parent`, `ellipsoid`,
   `worldFromEcef`, `undulationAt`, `makeLabel`, `loadPhotoTexture`,
-  `loadContent`, `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the
-  drawing is the page's: Node, where the tests run, has no canvas).
+  the optional `makeLectern` (a long text's reading stand, the page's
+  `mountLectern`; absent, no stand is drawn), `loadContent`,
+  `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the drawing is the
+  page's: Node, where the tests run, has no canvas).
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
   world), `selectedStation` (the selected station, or the selected item's),
   `stationSelected` (the selection is that station itself), `standing`
@@ -47,7 +49,11 @@ standing`). A distance, size or focal length that is not a positive
   `localPlaneToEnu`, +y up, the face at heading + 90 degrees).
 - `createStationsLayer(deps)` -> the layer:
   - `setTour(manifest, levels)` - when the document changes; a station
-    whose place in the list and record are unchanged is not rebuilt;
+    whose place in the list and record are unchanged is not rebuilt, and
+    neither is one where only a model's `annotations`, `sections` or
+    `view` changed (the layer does not draw them; the model parts do),
+    so a note's edit never loads the model's file again (its record is
+    still updated);
   - `update(view)` - each frame: near-K (`nearStations`), the morph;
   - `stats()` - `{ stations, codes, codeScales, shown, renders }`
     (`codeScales`: each code's drawn size over its printed one);
@@ -57,19 +63,40 @@ standing`). A distance, size or focal length that is not a positive
   - `pointOf(id)`, `billboardOf(id)`, `photoPlanes(id)`, `models(id)` - for
     the tests and the page's checks;
   - for the flights: `radiusOf(id)` (a station's found radius),
-    `itemPointOf(id)` (an item's place in the world, its station drawn or
-    not), `codePointOf(levelId)` (a code's centre); each null for an id
-    the tour does not have;
+    `itemPointOf(id)` (an item's place, its station drawn or not),
+    `codePointOf(levelId)` (a code's centre); each null for an id the
+    tour does not have. `pointOf`, `itemPointOf` and `codePointOf` are in
+    the layer's frame (`deps.parent`'s), see the invariant below;
   - `setPreview(preview | null)` - a `LayerPreview` shown in place of the
     tour's pose until null: a station's place (its billboard, ring, items
-    and models follow) and found radius, or an item's place (a model also
+    and models follow) and found radius, or an item's place (a reading
+    stand turned by `uprightTurn` only, as the renderer turns it, on
+    the drag and when cleared; a model also
     its size); the tour as drawn is untouched and comes back on null;
   - `pick(raycaster)` - the nearest visible thing under the ray: a
     station's billboard (`station:<id>`), an item's label, plane or model
     (its object id) or a code's square (its level id); null for none;
   - `setShown({ names, codes })` - the billboards and poles, and the code
     squares, off or on (the layer chips); `codesVisible()`;
+  - `setHidden(stationIds, levelIds)` - the globe view's visibility rule
+    (`globe-editor-look.ts`): those stations (root with ring and items,
+    billboard, pole) and codes are neither drawn nor picked, whatever the
+    chips say; the rest follow the chips. `pick` skips any hit under a
+    hidden ancestor, so a code hidden by its chip is not picked either
+    (before, only the hit object's own flag was read).
+  - `setGrowth(scales)` - the globe view's arrival: each named station's
+    root grown by its scale about the station's own point (its root
+    matrix the tour's times a scale about (0, alt, 0); at least 1e-3), and
+    a station absent from the map or at 1 put back exactly to the tour's
+    matrix. A station under a preview is left alone. The billboards are
+    not scaled.
   - `dispose()` - everything out of the scene and freed.
+- `stationObjects(id)` - every object a station draws: its root (ring,
+  pole, items) and its billboard once made (the billboard hangs in the
+  layer's group, not under the root); null for an id the tour does not
+  hold. The globe view stages a station's first upload through these.
+- `modelObject(id)` - an item's drawn model (the glb under its tour
+  pose and scale), or null while its station does not draw it.
 
 ## Invariants & assumptions
 
@@ -77,6 +104,15 @@ standing`). A distance, size or focal length that is not a positive
   (drawn N lower than its ellipsoidal `alt`), its group at (0, alt, 0) as
   `renderTourStation` places it, so a station on the ground in the file
   stands on the drawn ground.
+- **Points are in the layer's frame, never the world's:** a station's,
+  an item's and a code's point are read from its root's own matrix
+  (`layerPoint`), not its world matrix. In the plain 3D view the two are
+  the same (the layer hangs in the scene). Under the globe the layer
+  hangs in the tour's frame, whose place in the world changes on each
+  recentre of the world frame; a point read through the world matrix of
+  a station drawn anew after a recentre (a moved station) carried that
+  offset, so its billboard, its near-set place and the globe's visibility
+  and flights put it somewhere else - seen once it was deselected.
 - **Near-K:** a station's items are rendered when it enters the near set
   and freed when it leaves; a render finishing after its station left is
   dropped. Every station keeps its billboard.
@@ -148,8 +184,11 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
     which reads as a dot.
 - **Codes have no gizmo;** their point and the inspector's printed size do
   not change. Tilted up, a code is its printed size.
-- **Billboards and poles rise with `standing`;** models keep their pose,
-  and pins stand. `renderTourStation` skips placed models (and draws each
+- **Billboards and poles rise with `standing`;** models and reading
+  stands keep their pose (a stand's meshes are no photo planes, so the
+  morph never lays them flat; a preview moves and turns the stand's root,
+  named `lectern`; a reading sign's root, `reading-sign`, is treated the
+  same, drawn by the optional `makeReadingSign`), and pins stand. `renderTourStation` skips placed models (and draws each
   picture from the tour's assets, passed to it), so the layer adds the
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a
@@ -186,7 +225,9 @@ renderer.setAnimationLoop(() => {
 
 `editor3d-stations.test.ts` (a hand-made WGS84 ellipsoid, the licence's
 store): each station at its drawn height where it stands; only the near
-and selected stations rendered, and what leaves freed; a billboard per
+and selected stations rendered, and what leaves freed; a model kept
+drawn through an edit of its notes, sections or view, drawn anew when it
+moves; a billboard per
 station rising with the morph; photos flat looking down and upright
 tilted; a model at its size and pose; a model that cannot be read left
 out; every code as a square of its printed size, laid flat face up in front
@@ -196,7 +237,9 @@ above with no cap (its gap with it, picked at its grown size, its corners
 for the page's measure, its printed size near or tilted up) and for the
 view's own height; where an item and a
 code stand, drawn or not; a station's and an item's (a model's) preview
-shown and taken back; the selected station's circle amber and a selected
+shown and taken back; a moved station, its items and the codes kept in
+the layer's frame after the world frame moved (the globe's nesting), also
+once deselected; the selected station's circle amber and a selected
 item's station lighter; what is under a ray; names and codes hidden and shown; everything removed on
 dispose; `codeQuaternionNue` for a heading and a full rotation;
 `focalPxOf`; `codeGrowth`'s size on screen, its printed size near, its

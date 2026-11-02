@@ -64,14 +64,19 @@ describe('budgetBreach', () => {
     // enforcing it there measured the runner rather than the suite: the same 51
     // e2e tests took 474 s, 576 s, 642 s and 771 s on four consecutive CI runs
     // while the local recording for the same commit range stayed flat at ~588 s.
-    expect(budgetBreach(guarded, 771_000, { CI: 'true' })).toBeNull();
-    expect(budgetBreach(guarded, 9_999_000, { CI: '1' })).toBeNull();
+    expect(
+      budgetBreach(guarded, 771_000, { GITHUB_ACTIONS: 'true', CI: 'true' })
+    ).toBeNull();
+    expect(budgetBreach(guarded, 9_999_000, { GITHUB_ACTIONS: 'true' })).toBeNull();
   });
 
-  it('treats an empty CI variable as not-CI, matching decideRecording', () => {
-    // The two CI checks in this tool must agree on what "on CI" means, or the
-    // budget could be skipped exactly where a timing row still gets recorded.
-    expect(budgetBreach(guarded, 130_000, { CI: '' })).not.toBeNull();
+  it('enforces the budget in a local gate that sets CI=1, matching decideRecording', () => {
+    // Every local gate sets CI=1, and those runs record the median the ceiling
+    // is derived from, so they are judged against it. The two checks must agree
+    // on what "on CI" means, or the budget could be skipped exactly where a
+    // timing row still gets recorded.
+    expect(budgetBreach(guarded, 130_000, { CI: '1' })).not.toBeNull();
+    expect(budgetBreach(guarded, 130_000, { GITHUB_ACTIONS: '' })).not.toBeNull();
   });
 
   it('enforces the budget when no env is supplied at all', () => {

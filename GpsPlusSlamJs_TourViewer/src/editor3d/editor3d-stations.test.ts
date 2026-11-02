@@ -37,6 +37,8 @@ import {
   createStationsLayer,
   type StationsLayerDeps,
 } from "./editor3d-stations.js";
+import { buildLecternStand } from "../lectern-view.js";
+import { buildReadingSign } from "../reading-sign.js";
 
 // The geodesy is licence-gated; the store's construction activates it (the
 // page's own store does at boot).
@@ -313,6 +315,46 @@ describe("createStationsLayer", () => {
     expect(models).toHaveLength(1);
     expect(models[0]!.scale.x).toBeCloseTo(2, 9);
     expect(models[0]!.position.toArray()).toEqual([0, 0, 2]);
+  });
+
+  // Why: the 3D view draws a model by its file, pose and size; its notes,
+  // sections and view are drawn apart (`editor3d-model-parts.ts`). An
+  // edit of those must not load the file again: while it loads, the model
+  // is not drawn and a click waited for on it meets nothing.
+  it("keeps a model drawn through an edit of its notes, sections or view, and draws it anew when it moves", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const assets = [
+      { id: "horse", path: "content/horse.glb", kind: "model" as const },
+    ];
+    const placed = model("m", "horse", 8);
+    layer.setTour(manifest([station("a", 0, 0, [placed])], assets), new Map());
+    layer.update(view(0, 0, null));
+    await settle();
+    const drawn = layer.modelObject("m");
+    expect(drawn).not.toBeNull();
+    const annotated = {
+      ...placed,
+      view: "hotspots",
+      annotations: [{ position: [0, 1, 0], normal: [0, 1, 0], title: "Top" }],
+      sections: [{ name: "Cut", position: [0, 0, 0], normal: [1, 0, 0] }],
+    } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [annotated])], assets),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    expect(layer.modelObject("m")).toBe(drawn);
+    expect(layer.stats().renders).toBe(1);
+    const moved = {
+      ...annotated,
+      pose: { position: [0, 0, 3], rotation: [0, 0, 0, 1] },
+    } as TourBlock;
+    layer.setTour(manifest([station("a", 0, 0, [moved])], assets), new Map());
+    layer.update(view(0, 0, null));
+    await settle();
+    expect(layer.stats().renders).toBe(2);
+    expect(layer.modelObject("m")?.position.toArray()).toEqual([0, 0, 3]);
   });
 
   // Why: a model whose file is gone or broken leaves the station drawn;
@@ -713,6 +755,139 @@ describe("createStationsLayer", () => {
     expect(layer.codesVisible()).toBe(true);
   });
 
+  // Why: on the globe view the visibility rule hides a station too small
+  // or too crowded on screen, and a code too small, one by one; what is
+  // hidden must not draw (its billboard, its root with its items) nor be
+  // picked through, and the chips' own choice must still hold over it.
+  it("hides single stations and codes, and nothing hidden is picked", async () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map([
+        [
+          "c1",
+          {
+            qr: {
+              geo: {
+                lat: ZERO.lat,
+                lon: ZERO.lng,
+                alt: 516 + N,
+                headingDeg: 0,
+              },
+              physicalSizeM: 2,
+            },
+          } as QrLevel,
+        ],
+      ]),
+    );
+    layer.update(view(0, 0, null, 1));
+    await settle();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    const ray = (from: THREE.Vector3, to: THREE.Vector3) => {
+      camera.position.copy(from);
+      camera.lookAt(to);
+      camera.updateMatrixWorld(true);
+      const r = new THREE.Raycaster();
+      r.setFromCamera(new THREE.Vector2(0, 0), camera);
+      return r;
+    };
+    const look = (target: THREE.Vector3) =>
+      ray(target.clone().add(new THREE.Vector3(0, 0, 20)), target);
+    const code = layer.codePointOf("c1")!;
+    const codeRay = () =>
+      ray(code.clone().add(new THREE.Vector3(20, 0, 0)), code);
+    const p = layer.itemPointOf("p")!;
+    const photoRay = () => ray(p.clone().add(new THREE.Vector3(20, 0, 0)), p);
+    expect(layer.pick(photoRay())).toBe("p");
+    expect(layer.pick(codeRay())).toBe("c1");
+
+    layer.setHidden(new Set(["a"]), new Set(["c1"]));
+    layer.update(view(0, 0, null, 1));
+    expect(layer.billboardOf("a")?.visible).toBe(false);
+    expect(layer.billboardOf("b")?.visible).toBe(true);
+    expect(layer.pick(photoRay())).toBeNull();
+    expect(layer.pick(codeRay())).toBeNull();
+    expect(layer.pick(look(layer.billboardOf("a")!.position.clone()))).toBe(
+      null,
+    );
+    expect(layer.pick(look(layer.billboardOf("b")!.position.clone()))).toBe(
+      "station:b",
+    );
+
+    // Shown again by the rule, but the chips have the codes off.
+    layer.setShown({ names: true, codes: false });
+    layer.setHidden(new Set(), new Set());
+    layer.update(view(0, 0, null, 1));
+    expect(layer.billboardOf("a")?.visible).toBe(true);
+    expect(layer.pick(photoRay())).toBe("p");
+    expect(layer.pick(codeRay())).toBeNull();
+    layer.setShown({ names: true, codes: true });
+    expect(layer.pick(codeRay())).toBe("c1");
+    layer.dispose();
+  });
+
+  // Why: the globe view stages each station's first upload (its materials
+  // compiled, its textures uploaded) and needs every object the station
+  // draws - its root and its billboard, which hangs beside it - or a part
+  // left out would still upload in the first frame.
+  it("hands a station's drawn objects (its root and its billboard), null for none", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    const objects = layer.stationObjects("a");
+    expect(objects).not.toBeNull();
+    expect(objects).toContain(layer.billboardOf("a"));
+    const names: string[] = [];
+    for (const o of objects ?? []) o.traverse((c) => names.push(c.name));
+    expect(names).toContain("found-radius");
+    expect(layer.stationObjects("nowhere")).toBeNull();
+    layer.dispose();
+  });
+
+  // Why: the globe view's arrival pops each station in by scaling it
+  // about its own point; the point must stay where it is (a pop that
+  // scales about the root would sink the station into the Earth), the
+  // other stations must not move, and a growth of 1 must give back the
+  // tour's own matrix exactly.
+  it("grows a station about its point and puts it back exactly", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(
+      manifest([station("a", 0, 0, [photo("p")]), station("b", 40, 0)]),
+      new Map(),
+    );
+    layer.update(view(0, 0, null));
+    const [rootA] = layer.stationObjects("a")!;
+    const [rootB] = layer.stationObjects("b")!;
+    const baseA = rootA!.matrix.clone();
+    const baseB = rootB!.matrix.clone();
+    const pointA = layer.pointOf("a")!.clone();
+    const alt = 515 + N;
+    const local = new THREE.Vector3(0, alt, 0);
+    layer.setGrowth(new Map([["a", 0.5]]));
+    rootA!.updateWorldMatrix(true, false);
+    const grownPoint = local.clone().applyMatrix4(rootA!.matrixWorld);
+    const basePoint = local
+      .clone()
+      .applyMatrix4(rootA!.parent!.matrixWorld.clone().multiply(baseA));
+    expect(grownPoint.distanceTo(basePoint)).toBeLessThan(1e-6);
+    // A unit step up from the point is half as long, grown by a half.
+    const up = new THREE.Vector3(0, alt + 1, 0).applyMatrix4(
+      rootA!.matrixWorld,
+    );
+    expect(up.distanceTo(grownPoint)).toBeCloseTo(0.5, 6);
+    expect(rootB!.matrix.equals(baseB)).toBe(true);
+    expect(layer.pointOf("a")!.equals(pointA)).toBe(true);
+    layer.setGrowth(new Map());
+    expect(rootA!.matrix.equals(baseA)).toBe(true);
+    layer.dispose();
+  });
+
   // Why: a selected station has no ring of its own in the gizmo - its
   // found-radius circle IS the ring its radius dots sit on - so the circle
   // must show the selection's amber, and a selected item's station a
@@ -794,6 +969,74 @@ describe("createStationsLayer", () => {
     );
   });
 
+  // Why: in the globe view the layer hangs under the tour's frame, whose
+  // place in the world changes each time the world frame recentres on the
+  // camera. A station moved by a drag is drawn anew when the tour carries
+  // the move; its point (the billboard's place, the near set, the globe's
+  // visibility and flights) must be in the layer's frame like every other
+  // station's. Read from the world instead, it carried the recentre's
+  // offset: once the station was deselected (no longer drawn as selected)
+  // it showed somewhere else entirely. The same for an item's and a code's
+  // point, read from the world too.
+  it("keeps a moved station, its items and the codes where they are after the world frame moved, also once deselected", () => {
+    // The globe's nesting: the Earth-centred group, the tour's frame in
+    // it, the layer in that.
+    const scene = new THREE.Scene();
+    const earth = new THREE.Group();
+    const tourFrame = new THREE.Group();
+    scene.add(earth);
+    earth.add(tourFrame);
+    const { d } = deps({ parent: tourFrame });
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0, [photo("p")]);
+    const b = station("b", 40, 0);
+    const code = new Map([
+      [
+        "c1",
+        {
+          qr: {
+            geo: { lat: ZERO.lat, lon: ZERO.lng, alt: 517 + N, headingDeg: 0 },
+          },
+        } as QrLevel,
+      ],
+    ]);
+    // Opened before the first frame is drawn.
+    layer.setTour(manifest([a, b]), code);
+    // The world frame recentred on the camera, 400 m away: the renderer
+    // brings every world matrix up to date before it draws.
+    earth.position.set(-400, 3, 120);
+    scene.updateMatrixWorld(true);
+    layer.update(view(0, 0, "a", 1, true));
+    // Dragged 10 m east and let go: the tour carries the move, then the
+    // preview is dropped (the input's order).
+    const moved = { ...a.geo, lon: a.geo.lon + 10 / M_PER_DEG_LON };
+    layer.setPreview({ kind: "station", id: "a", geo: moved, foundRadiusM: 8 });
+    layer.update(view(0, 0, "a", 1, true));
+    layer.setTour(manifest([{ ...a, geo: moved }, b]), code);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1, true));
+    scene.updateMatrixWorld(true);
+    // Deselected.
+    layer.update(view(0, 0, null));
+    const at = layer.pointOf("a")!;
+    expect(at.x).toBeCloseTo(10, 1);
+    expect(at.z).toBeCloseTo(0, 1);
+    expect(at.y).toBeCloseTo(515, 1);
+    const billboard = layer.billboardOf("a")!.position;
+    expect(billboard.x).toBeCloseTo(10, 1);
+    expect(billboard.z).toBeCloseTo(0, 1);
+    // The photo's pose is 1 m north and 1.5 m up of its station.
+    const p = layer.itemPointOf("p")!;
+    expect(p.x).toBeCloseTo(10, 1);
+    expect(p.z).toBeCloseTo(-1, 1);
+    expect(p.y).toBeCloseTo(516.5, 1);
+    const c1 = layer.codePointOf("c1")!;
+    expect(c1.x).toBeCloseTo(0, 1);
+    expect(c1.z).toBeCloseTo(0, 1);
+    expect(c1.y).toBeCloseTo(517, 1);
+    layer.dispose();
+  });
+
   // Why: an item dragged, turned or (a model) resized is drawn at the
   // drag's pose in its station's frame - a photo keeps the flat-or-upright
   // morph, turned with it - and goes back when the drag is cleared.
@@ -850,6 +1093,186 @@ describe("createStationsLayer", () => {
     layer.update(view(0, 0, "a", 1));
     expect(horse.position.toArray()).toEqual([0, 0, 2]);
     expect(horse.scale.x).toBeCloseTo(2, 9);
+  });
+
+  // Why: a free long text stands in the world on its reading stand
+  // (format minor 3). The 3D editor drew none, so the creator could
+  // neither see nor click it. Drawn by the page's builder, it keeps its
+  // pose through the morph (a stand is no photo plane), a click on it
+  // selects it, and a drag's preview moves and turns it.
+  it("draws a long text's reading stand, picks it, and moves and turns it with a preview", async () => {
+    const titles: string[] = [];
+    const { d } = deps({
+      makeLectern: (block) => {
+        titles.push(block.title);
+        const stand = buildLecternStand(null);
+        return { object: stand.root, dispose: stand.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const stand = {
+      id: "l",
+      kind: "longText",
+      view: "lectern",
+      title: "The siege",
+      body: "In 1632 the town was besieged.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [photo("p"), stand]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    expect(titles).toEqual(["The siege"]);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    const root = d.parent.getObjectByName("lectern")!;
+    expect(root).toBeDefined();
+    // Looking straight down, the photo lies flat; the stand stays upright.
+    layer.update(view(0, 0, "a", 0));
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+    // Its page faces east (its local +z, the station's east): seen from
+    // the east, a click on it selects the long text.
+    const page = d.parent.getObjectByName("lectern-page")!;
+    page.updateMatrixWorld(true);
+    const at = page.getWorldPosition(new THREE.Vector3());
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    camera.position.copy(at).add(new THREE.Vector3(10, 0, 0));
+    camera.lookAt(at);
+    camera.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    expect(layer.pick(ray)).toBe("l");
+    // A drag's preview moves and turns it; cleared, it is back.
+    const quarter = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      -Math.PI / 2,
+    );
+    layer.setPreview({
+      kind: "item",
+      id: "l",
+      geo: itemGeoPose(
+        {
+          position: [3, 0, 4],
+          rotation: [quarter.x, quarter.y, quarter.z, quarter.w],
+        },
+        a.geo,
+      ),
+      sizeM: null,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(root.position.z).toBeCloseTo(4, 3);
+    expect(root.quaternion.angleTo(quarter)).toBeLessThan(1e-6);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(root.position.toArray()).toEqual([3, 0, 0]);
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+  });
+
+  // Why: a free long text may stand as a short reading sign (format
+  // minor 4). The editor draws it through the page's builder, keeps it
+  // upright through the morph like a stand (it is no photo plane), and a
+  // click on its plate selects the long text.
+  it("draws a long text's reading sign, keeps it upright, and picks it", async () => {
+    const titles: string[] = [];
+    const { d } = deps({
+      makeReadingSign: (block) => {
+        titles.push(block.title);
+        const sign = buildReadingSign(null);
+        return { object: sign.root, dispose: sign.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const sign = {
+      id: "r",
+      kind: "longText",
+      view: "reading",
+      title: "The siege",
+      body: "In 1632 the town was besieged.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [photo("p"), sign]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    expect(titles).toEqual(["The siege"]);
+    expect(layer.photoPlanes("a")).toHaveLength(1);
+    const root = d.parent.getObjectByName("reading-sign")!;
+    expect(root).toBeDefined();
+    layer.update(view(0, 0, "a", 0));
+    expect(root.quaternion.angleTo(new THREE.Quaternion())).toBeLessThan(1e-9);
+    const plate = d.parent.getObjectByName("reading-sign-plate")!;
+    plate.updateMatrixWorld(true);
+    const at = plate.getWorldPosition(new THREE.Vector3());
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    // Unturned, it faces its local +z, the station's east (as a stand).
+    camera.position.copy(at).add(new THREE.Vector3(10, 0, 0));
+    camera.lookAt(at);
+    camera.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    expect(layer.pick(ray)).toBe("r");
+  });
+
+  // Why: a stand keeps only its pose's turn about up, wherever it is
+  // drawn (`uprightTurn`): a pitch or roll in its pose would tilt it off
+  // its feet. The phone's drawing applied that rule and the editor's drag
+  // preview did not, so a drag (or a cancelled one, which draws the tour's
+  // pose again) showed a stand leaning over.
+  it("keeps a reading stand upright through a drag's preview and after it, for a tilted pose", async () => {
+    const { d } = deps({
+      makeLectern: () => {
+        const stand = buildLecternStand(null);
+        return { object: stand.root, dispose: stand.dispose };
+      },
+    });
+    const layer = createStationsLayer(d);
+    const turn = (yawDeg: number, pitchDeg: number) =>
+      new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(
+          THREE.MathUtils.degToRad(pitchDeg),
+          THREE.MathUtils.degToRad(yawDeg),
+          0,
+          "YXZ",
+        ),
+      );
+    const tilted = turn(40, 25);
+    const stand = {
+      id: "lamp",
+      kind: "longText",
+      view: "lectern",
+      title: "The lamp",
+      body: "Lit every evening.",
+      createdAtIso: "2026-10-22T08:00:00Z",
+      pose: {
+        position: [3, 0, 0],
+        rotation: [tilted.x, tilted.y, tilted.z, tilted.w],
+      },
+    } as unknown as TourBlock;
+    const a = station("a", 0, 0, [stand]);
+    layer.setTour(manifest([a]), new Map());
+    layer.update(view(0, 0, "a", 1));
+    await settle();
+    const root = d.parent.getObjectByName("lectern")!;
+    expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
+    const dragged = turn(-70, -35);
+    layer.setPreview({
+      kind: "item",
+      id: "lamp",
+      geo: itemGeoPose(
+        {
+          position: [3, 0, 4],
+          rotation: [dragged.x, dragged.y, dragged.z, dragged.w],
+        },
+        a.geo,
+      ),
+      sizeM: null,
+    });
+    layer.update(view(0, 0, "a", 1));
+    expect(root.quaternion.angleTo(turn(-70, 0))).toBeLessThan(1e-6);
+    layer.setPreview(null);
+    layer.update(view(0, 0, "a", 1));
+    expect(root.quaternion.angleTo(turn(40, 0))).toBeLessThan(1e-6);
   });
 
   // Why: a click in the view selects what is under the pointer - a

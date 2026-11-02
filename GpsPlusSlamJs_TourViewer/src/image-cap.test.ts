@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pictureProblem } from "./image-cap";
+import { pictureFit, pictureProblem } from "./image-cap";
 
 /**
  * Why these tests matter (tour kit K4 review R2): a tour's picture goes
@@ -31,5 +31,33 @@ describe("pictureProblem", () => {
     expect(await pictureProblem(new Blob(["<svg/>"]))).toBe(
       "its size could not be read from its file",
     );
+  });
+});
+
+/**
+ * Why this test matters: the long text's pictures are held to a decode
+ * budget in megapixels, so the sheet needs each picture's size as well as
+ * the verdict; one reading of the header must give both, or the budget and
+ * the cap could disagree about the same file.
+ */
+describe("pictureFit", () => {
+  it("gives a picture's pixel count within the cap", async () => {
+    expect(await pictureFit(new Blob([pngHeader(4032, 3024)]))).toEqual({
+      ok: true,
+      pixels: 4032 * 3024,
+    });
+  });
+
+  it("gives the same reason as pictureProblem over the cap or unreadable", async () => {
+    expect(await pictureFit(new Blob([pngHeader(8064, 6048)]))).toEqual({
+      ok: false,
+      why: "it is 8064 x 6048 pixels, more than a phone can safely decode",
+      tooLarge: true,
+    });
+    expect(await pictureFit(new Blob(["<svg/>"]))).toEqual({
+      ok: false,
+      why: "its size could not be read from its file",
+      tooLarge: false,
+    });
   });
 });

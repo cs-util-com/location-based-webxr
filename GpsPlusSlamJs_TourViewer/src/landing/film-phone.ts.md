@@ -14,6 +14,9 @@ film's markup.
   3D scene projects its own, `film-scene.ts`).
 - `anchorPlacement(A, sw, sh): AnchorPlacement`: each anchored part's
   place, the drawn pin's height, and the sizes that follow the code's board.
+- `chipLift(chipTopPx, chipHeightPx, frameTopPx)`: how far the found-tour
+  chip rises so that it clears the scan frame (3 px gap), 0 where it
+  clears, never above the screen (2 px kept), 0 for input not finite.
 - `screenFontPx(sw)`: 6.6 % of the screen, 13 to 17 px.
 - `NARROW_SCREEN_PX` (158), `PILLS`.
 - `createPhoneView(dom): { apply(u), layout(ly), place(A, ly), eye() }`.
@@ -26,6 +29,10 @@ film's markup.
   and `lf-narrow` below 158 px, which drops the card's body, the share
   sheet's second line, the dots, the close button, the photo caption and
   the code callout's second line, and shrinks the found-tour chip.
+- The found-tour chip is as wide as its words and wraps within the
+  screen; on a small screen `place` measures it and sets `--lf-chip-lift`
+  so that it clears the scan frame (`board.frameTop`), covering the
+  "Scan the code" pill there if it must.
 - The view writes a style only when its value changed.
 
 ## Tests

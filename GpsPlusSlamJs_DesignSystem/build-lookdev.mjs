@@ -212,13 +212,18 @@ function walk(dir, rel = "") {
 /**
  * @param {{ outDir: string, base: string, packageRoot?: string,
  *   routes?: import("./serve-routes.mjs").Route[], entries?: string[],
- *   followDynamic?: boolean, workerImports?: Record<string, string> }} options
+ *   followDynamic?: boolean, workerImports?: Record<string, string>,
+ *   siteRootPrefixes?: string[] }} options
  *   `packageRoot` defaults to this package and `routes` to the dev server's
  *   table (tests pass fixtures). `entries` defaults to every page
  *   (`discoverEntries`); `followDynamic` (default true) follows literal
  *   dynamic `import("x")`s, false gives the static boot graph only.
  *   `workerImports` (default `WORKER_IMPORTS`) is what a bare name means in
  *   the worker view (`/w/`), as the dev server serves it.
+ *   `siteRootPrefixes` (default none) names routes the CALLER serves at the
+ *   site root (the site build's one copy of `/globe-assets/`): they are
+ *   neither copied under `outDir` nor rebased, so the pages ask the root.
+ *   Error for a prefix that is not a route's.
  * @returns {string[]} written paths, relative to `outDir`
  */
 export function buildLookdev({
@@ -229,11 +234,19 @@ export function buildLookdev({
   entries = discoverEntries(packageRoot),
   followDynamic = true,
   workerImports = WORKER_IMPORTS,
+  siteRootPrefixes = [],
 }) {
   if (!base.startsWith("/") || !base.endsWith("/")) {
     throw new Error(`base must start and end with "/", got ${base}`);
   }
-  const rebase = rebaser(routes);
+  for (const prefix of siteRootPrefixes) {
+    if (!routes.some((r) => r.prefix === prefix)) {
+      throw new Error(`site-root prefix ${prefix} is not a route's prefix`);
+    }
+  }
+  /** The routes deployed under `base`: all but the site root's. */
+  const ownRoutes = routes.filter((r) => !siteRootPrefixes.includes(r.prefix));
+  const rebase = rebaser(ownRoutes);
   const load = (url) => {
     const target = resolveRequest(url, { packageRoot, routes });
     if (target.kind !== "file") throw new Error(`refused to read ${url}`);
@@ -343,7 +356,7 @@ export function buildLookdev({
   // emitted page or module references its prefix (fetched tiles are invisible
   // to the crawl); a notice ships beside anything emitted from its route.
   const crawled = [...emittedUrls];
-  for (const route of routes) {
+  for (const route of ownRoutes) {
     const used = crawled.some((u) => u.startsWith(route.prefix));
     const referenced = used || sources.some((t) => t.includes(route.prefix));
     if (route.copyAll && referenced) {

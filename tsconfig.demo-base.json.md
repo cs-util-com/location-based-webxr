@@ -7,7 +7,7 @@
   propagates to all demos in one edit — and demo app #6 copies less.
 - **Consumers:** `GpsPlusSlamJs_AnchorStarter`, `GpsPlusSlamJs_QrTrackingDemo`,
   `GpsPlusSlamJs_PhysicsDemo`, `GpsPlusSlamJs_WayfindingHudDemo`,
-  `GpsPlusSlamJs_Landing` — each via `"extends": "../tsconfig.demo-base.json"`
+  `GpsPlusSlamJs_Landing`, `GpsPlusSlamJs_EditorKit` — each via `"extends": "../tsconfig.demo-base.json"`
   in its `tsconfig.app.json` (whose `tsconfig.vitest.json` /
   `tsconfig.eslint.json` chain onto it unchanged).
 - **Invariants & assumptions:**

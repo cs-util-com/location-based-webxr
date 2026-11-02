@@ -30,8 +30,9 @@ camera captures are debug data, never in a station (an earlier file's
 - `storyBlocksOf(station)`: a station's story blocks, the ones a step
   shows (what a frame of the tour document holds inline).
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
-  (`tourFreeBlocks`, the ones no step shows) as the short texts, pictures
-  and models standing in the world they are.
+  (`tourFreeBlocks`, the ones no step shows) as the short texts,
+  pictures, long texts (on their reading stands, minor 3) and models
+  standing in the world they are.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own
   id (`content/<id>.jpg`, minted with it) - what a creator page takes with
   the camera; a picture naming another of the tour's images is not one.
@@ -55,8 +56,14 @@ camera captures are debug data, never in a station (an earlier file's
   (`finish-rebuild.ts`). Used means (module-private
   `referencedAssetIds`): every block's of every station, story or free
   (`blockAssetIds`: a picture's image, a video and its poster, an audio,
-  a model's file, a character's image and voice; none for a text), every
-  station's card image and the cover.
+  a model's file, a character's image and voice, the pictures a long
+  text's body names, shown or not: inline, past the cap
+  (`blockBodyAssets`, `long-text-body-assets.ts`, remembered by the
+  block), and its narration's voice (the reader requires it; the timing is an
+  entry, not an asset);
+  none for a short text), every station's card image and the cover. A
+  body's pictures are named only inside its Markdown; before they were
+  counted, every Finish dropped their assets and deleted their files.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY
   station carries the creator's own work, which keeps it when its last
   item leaves: a title, story steps, a non-blank description (a blank one
@@ -65,10 +72,12 @@ camera captures are debug data, never in a station (an earlier file's
   document (`withoutEmptied`) ask.
 - `imageAssetIds(assets) -> ReadonlySet<string>`: the image assets' ids,
   through the framework's `tourImageIds` (what `keepsItself` takes).
-- `blockAssetIds(block)` (module-internal): the assets one block names (a closed switch: a
-  new kind fails to compile until it says which it keeps).
+- `blockAssetIds(block, required?)` (module-internal): the assets one block names (a closed switch: a
+  new kind fails to compile until it says which it keeps); with `required`, without the pictures a long text's body names, the one place that rule lives.
   `stepAssetIds(station)`: the assets a station's (or a frame's) story
-  blocks name. `objectAssetIds(object)`: the assets an object in the
+  blocks name. `stepRequiredAssetIds(station)`: the same without the
+  pictures a long text's body names (the format lets those be missing),
+  what a draft restore checks a frame against (`blockAssetIds(block, true)`; a property test holds it to `stepAssetIds` of the same station with picture-free bodies). `objectAssetIds(object)`: the assets an object in the
   world keeps (a model its file, a picture the tour's image it names, a
   pin none; a captured photo's own asset none, as it is part of its
   picture) - what the write and the document's history read.
@@ -160,14 +169,19 @@ const written = withTourContent(opened, {
   image of its own deleted photo; and the `asStored`
   property (it is what a written tour holds, by content key);
   `withReferencedAssets` keeping each block kind's assets (an image, a
-  character with and without a voice, an audio, a video, a model; a text
-  block names none) and dropping the rest, the cover and a station's card
+  character with and without a voice, an audio, a video, a model, a long
+  text's body pictures at any depth, a narrated text's voice; a short text and a long text without
+  pictures name none) and dropping the rest, the cover and a station's card
   image kept though no step names them, a block in any station counted, the tour's asset order kept,
   and the same manifest when every asset is used.
 - Through `finish-rebuild.test.ts` (a micrometre stored copy counted as
   written, a placed model's file
-  kept and a model asset nothing names dropped, read from the zip's
-  bytes), `editor/editor-session.test.ts` (an undo across a save brings a
+  kept and a model asset nothing names dropped, a long text's body
+  pictures' files kept, a narrated text's voice and timing kept and the
+  tour read back, read from the zip's bytes),
+  `narrated-tour.integration.test.ts` (a real listed zip read through the
+  session, its voice through the stations' prefetch, then finished),
+  `editor/editor-session.test.ts` (an undo across a save brings a
   deleted model back with its file: the history's keep set),
   `tour-document.test.ts` and `tour-document.property.test.ts` (the open
   dropping a file's captures, and no write carrying them),

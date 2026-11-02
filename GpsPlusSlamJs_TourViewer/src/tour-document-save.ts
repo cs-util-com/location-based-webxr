@@ -29,11 +29,13 @@ import {
 import { isCapturedPhoto } from "./tour-content.js";
 import {
   historyAssetIds,
+  historyTimingEntries,
   manifestNow,
   tourDocumentActions,
   type StationFrame,
   type TourDocumentState,
 } from "./tour-document.js";
+import { visitorEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 
 /** The store's state as a save reads it. */
@@ -97,12 +99,26 @@ interface TourSaveSnapshot {
   readonly manifest: TourManifest;
   /** The assets the history still names (`historyAssetIds`): kept. */
   readonly keepAssets: ReadonlySet<string>;
+  /** The read-along entries the history still names
+   *  (`historyTimingEntries`): kept. */
+  readonly keepEntries: ReadonlySet<string>;
   /** The frames it starts from: one moved while it runs stays the
    *  document's (`saved`). */
   readonly stationsAtStart: readonly StationFrame[];
   /** The history position of the view it writes (`TourDocumentState`
    *  `position`): an in-place write names it (`saved`'s `inPlaceAt`). */
   readonly position: number;
+  /** The read-along texts set here (`timings`), by entry. */
+  readonly timings: Readonly<Record<string, string | null>>;
+  /** What the write carries besides the manifest and the photos, by path
+   *  in the tour's folder: each read-along text set here that the written
+   *  file does not hold, and each voice brought in here that it does not
+   *  list, with the bytes the page keeps. The rebuild writes the ones the
+   *  written tour names. */
+  readonly files: readonly {
+    readonly path: string;
+    readonly data: string | Blob;
+  }[];
 }
 
 interface TourSaves {
@@ -161,6 +177,8 @@ export function createTourSaves(input: {
   /** A photo's picture the page keeps (the side table: Blobs are never
    *  state). */
   readonly pictureOf: (id: string) => Blob | undefined;
+  /** A voice's bytes the page keeps (`TourDocumentState.voices`). */
+  readonly voiceOf?: (id: string) => Blob | undefined;
   /** Settles once the pictures being read are read. */
   readonly picturesRead: () => Promise<unknown>;
 }): TourSaves {
@@ -184,9 +202,30 @@ export function createTourSaves(input: {
       deleted: [...state.deleted],
       manifest,
       keepAssets: historyAssetIds(state),
+      keepEntries: historyTimingEntries(state),
       stationsAtStart: state.stations,
       position: state.position,
+      timings: state.timings,
+      files: filesOf(state),
     };
+  }
+
+  /** The snapshot's `files`: the texts and voices the written file lacks. */
+  function filesOf(state: TourDocumentState): TourSaveSnapshot["files"] {
+    const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
+    return [
+      ...Object.entries(state.timings).flatMap(([path, text]) =>
+        text === null || text === state.timingsWritten[path]
+          ? []
+          : [{ path, data: text }],
+      ),
+      ...state.voices.flatMap((voice) => {
+        const blob = listed.has(voice.id)
+          ? undefined
+          : input.voiceOf?.(voice.id);
+        return blob === undefined ? [] : [{ path: voice.path, data: blob }];
+      }),
+    ];
   }
 
   const saves: TourSaves = {
@@ -257,6 +296,8 @@ export function createTourSaves(input: {
         placed: snap.placed,
         deleted: snap.deleted,
         keepAssets: snap.keepAssets,
+        keepEntries: snap.keepEntries,
+        files: snap.files,
         levels: [],
         keepScan,
         previous: newest,
@@ -272,6 +313,16 @@ export function createTourSaves(input: {
             ? {}
             : { signedManifest: finished.signedManifest }),
         };
+        // Each text set here is what the file holds where the written
+        // tour names its entry, and none where it does not (a write leaves
+        // an entry nothing names out).
+        const wrap = tour.manifestWrap;
+        const entries = Object.keys(snap.timings);
+        const named = visitorEntryNames(
+          entries.map((entry) => `${wrap}${entry}`),
+          finished.written,
+          wrap,
+        );
         dispatch(
           tourDocumentActions.saved({
             generation,
@@ -279,6 +330,18 @@ export function createTourSaves(input: {
             appliedDeletions: snap.deleted,
             stationsAtStart: snap.stationsAtStart,
             ...(inPlace ? { inPlaceAt: snap.position } : {}),
+            ...(entries.length === 0
+              ? {}
+              : {
+                  timings: Object.fromEntries(
+                    entries.map((entry) => [
+                      entry,
+                      named.has(`${wrap}${entry}`)
+                        ? (snap.timings[entry] ?? null)
+                        : null,
+                    ]),
+                  ),
+                }),
           }),
         );
       };

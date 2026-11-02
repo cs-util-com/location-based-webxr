@@ -15,6 +15,7 @@ import {
   objectTitle,
   type ObjectLook,
 } from "../../object-describe.js";
+import type { TreeGroup } from "gps-plus-slam-editor-kit/chrome";
 import { worldBlocks } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
@@ -180,4 +181,13 @@ export function treeFoldOf(tree: TreeModel): {
     openStations: tree.cards.filter((c) => c.open).map((c) => c.id),
     openSections: { ...tree.sections },
   };
+}
+
+/** The stations as the tree's groups for the kit's click rule: each
+ *  station's id, with its items' ids as its children. */
+export function stationGroups(stations: readonly TourStation[]): TreeGroup[] {
+  return stations.map((s) => ({
+    id: s.id,
+    children: s.blocks.map((block) => block.id),
+  }));
 }

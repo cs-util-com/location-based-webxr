@@ -105,15 +105,19 @@ export function asHosted(object: TourObject): TourObject {
   return tourObjects(tourOf([object]))[0]!;
 }
 
-/** An object's text: a pin's or a picture's caption, a model's title. */
+/** An object's text: a pin's or a picture's caption, a model's or a
+ *  reading stand's title. */
 export function captionOf(object: TourObject): string | undefined {
-  return object.kind === "model" ? object.title : object.caption;
+  return object.kind === "model" || object.kind === "longText"
+    ? object.title
+    : object.caption;
 }
 
 /** `object` with `text` as its caption (a pin's text), or its title for
- *  a model. */
+ *  a model or a reading stand. */
 export function withCaption(object: TourObject, text: string): TourObject {
-  return object.kind === "model"
-    ? { ...object, title: text }
-    : { ...object, caption: text };
+  if (object.kind === "model" || object.kind === "longText") {
+    return { ...object, title: text };
+  }
+  return { ...object, caption: text };
 }

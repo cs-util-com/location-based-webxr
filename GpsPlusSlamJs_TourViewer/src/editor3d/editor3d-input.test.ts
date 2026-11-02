@@ -23,6 +23,7 @@ import {
 } from "./editor3d-input.js";
 import type { GestureEdit, GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
+import { GLOBE_GESTURES, routeGlobeInput } from "./globe-gestures.js";
 import { LONG_PRESS } from "./long-press.js";
 import { liftedGeo, nudgedGeo, turnedGeo } from "./pose-edits.js";
 
@@ -58,6 +59,7 @@ function setup(
     pick?: string | null;
     keysFree?: boolean;
     world?: GestureWorld;
+    clickPx?: number;
   } = {},
 ) {
   const log: string[] = [];
@@ -110,6 +112,7 @@ function setup(
     surface: element,
     scene,
     page,
+    ...(options.clickPx === undefined ? {} : { clickPx: options.clickPx }),
   });
   return {
     input,
@@ -325,11 +328,15 @@ describe("a click", () => {
       );
     }
     expect(t.scene.frame).toHaveBeenCalledWith("pin");
-    t.element.dispatchEvent(
+    t.input.dispose();
+    // A mouse's double click frames too (the dblclick after a finger's
+    // double tap does not: it would frame twice, see the globe's extras).
+    const m = setup({ pick: "pin" });
+    m.element.dispatchEvent(
       new MouseEvent("dblclick", { bubbles: true, clientX: 5, clientY: 5 }),
     );
-    expect(t.scene.frame).toHaveBeenCalledTimes(2);
-    t.input.dispose();
+    expect(m.scene.frame).toHaveBeenCalledWith("pin");
+    m.input.dispose();
   });
 });
 
@@ -819,6 +826,450 @@ describe("the ground menu", () => {
     const t = setup({ selected: null });
     context(t.dock, { x: 5, y: 5 });
     expect(t.page.groundMenu).not.toHaveBeenCalled();
+    t.input.dispose();
+  });
+});
+
+// Why: while the inspector waits for a click on the model (a note or a
+// section placed), the press on the selected model must not start a move
+// of it, and the click must answer the wait, not select something else
+// (it would close the inspector the creator works in); a drag stays the
+// camera's.
+describe("a click the scene waits for", () => {
+  it("answers the wait instead of selecting, and starts no gesture on a handle", () => {
+    const t = setup({ handle: "move", pick: "station:a" });
+    const answered: ScreenPoint[] = [];
+    t.scene.clickWaited = () => true;
+    t.scene.answerClick = (at) => {
+      answered.push(at);
+    };
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(pointer("pointerup", { x: 5, y: 5 }));
+    expect(answered).toEqual([{ x: 5, y: 5 }]);
+    expect(t.page.select).not.toHaveBeenCalled();
+    expect(t.dispatched).toEqual([]);
+    expect(t.scene.handleAt).not.toHaveBeenCalled();
+    // A drag is the camera's: no answer.
+    t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+    window.dispatchEvent(
+      pointer("pointermove", { x: 20, y: 5 }, { buttons: 1 }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 20, y: 5 }));
+    expect(answered).toHaveLength(1);
+    t.input.dispose();
+  });
+});
+
+describe("the globe's extras (`globe-gestures.ts`'s routes)", () => {
+  // Why: on the globe the arrows with nothing selected are the camera's
+  // ("camera-step") and a double click on the ground zooms toward it
+  // ("camera-zoom"); a scene without the hooks keeps the old behaviour.
+  it("step the camera by the arrows with nothing selected, and only then", () => {
+    const t = setup({ selected: null });
+    const steps: string[] = [];
+    t.scene.stepCamera = (code) => {
+      steps.push(code);
+    };
+    expect(tap("ArrowLeft").defaultPrevented).toBe(true);
+    tap("ArrowUp");
+    tap("KeyQ");
+    expect(steps).toEqual(["ArrowLeft", "ArrowUp"]);
+    t.setSelected("pin");
+    tap("ArrowRight");
+    expect(steps).toHaveLength(2);
+    expect(t.commits).toHaveLength(1);
+    t.input.dispose();
+  });
+
+  it("zoom toward a double click on nothing; one on an object frames it", () => {
+    const t = setup({ pick: null });
+    const zooms: ScreenPoint[] = [];
+    t.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    t.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(t.scene.frame).not.toHaveBeenCalled();
+    t.input.dispose();
+    const u = setup({ pick: "pin" });
+    u.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    u.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toHaveLength(1);
+    expect(u.scene.frame).toHaveBeenCalledWith("pin");
+    u.input.dispose();
+  });
+
+  // Why: on a phone the double tap is the double click; on the ground it
+  // did nothing (only a hit was framed), so the globe's zoom toward a
+  // point was out of a finger's reach.
+  it("zoom toward a double tap on nothing; one on an object frames it", () => {
+    const doubleTap = (t: ReturnType<typeof setup>) => {
+      for (let i = 0; i < 2; i++) {
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 7, y: 9 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer("pointerup", { x: 7, y: 9 }, { touch: true }),
+        );
+      }
+    };
+    const zooms: ScreenPoint[] = [];
+    const t = setup({ pick: null });
+    t.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    doubleTap(t);
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(t.scene.frame).not.toHaveBeenCalled();
+    t.input.dispose();
+    const u = setup({ pick: "pin" });
+    u.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    doubleTap(u);
+    expect(zooms).toHaveLength(1);
+    expect(u.scene.frame).toHaveBeenCalledWith("pin");
+    u.input.dispose();
+  });
+
+  // Why: after a finger's double tap Chromium may send a compatibility
+  // dblclick too; zoomed (or framed) by both, one double tap would step
+  // twice. The tap path answers a finger, the dblclick only a mouse.
+  it("answer a double tap once when the browser adds a dblclick", () => {
+    const zooms: ScreenPoint[] = [];
+    const frames: number[] = [];
+    for (const pick of [null, "pin"] as const) {
+      const t = setup({ pick });
+      t.scene.zoomTowards = (at) => {
+        zooms.push(at);
+      };
+      for (let i = 0; i < 2; i++) {
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 7, y: 9 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer("pointerup", { x: 7, y: 9 }, { touch: true }),
+        );
+      }
+      t.element.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+      );
+      frames.push(vi.mocked(t.scene.frame).mock.calls.length);
+      t.input.dispose();
+    }
+    expect(zooms).toEqual([{ x: 7, y: 9 }]);
+    expect(frames).toEqual([0, 1]);
+    // A mouse's double click after its own presses still zooms.
+    const m = setup({ pick: null });
+    m.scene.zoomTowards = (at) => {
+      zooms.push(at);
+    };
+    for (let i = 0; i < 2; i++) {
+      m.element.dispatchEvent(pointer("pointerdown", { x: 7, y: 9 }));
+      window.dispatchEvent(pointer("pointerup", { x: 7, y: 9 }));
+    }
+    m.element.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: 7, clientY: 9 }),
+    );
+    expect(zooms).toHaveLength(2);
+    m.input.dispose();
+  });
+});
+
+describe("the globe's routing table, event by event", () => {
+  // Why: the globe editor shares this input, and the owner's routing table
+  // (`globe-gestures.ts`) is the specification of who owns each event. This
+  // replays every row against the real input and maps what the input DID
+  // back to a route, so the two cannot drift apart unnoticed. The click
+  // distance is the table's (`clickPx`), swept below and above it.
+  const { dragPx } = GLOBE_GESTURES;
+
+  /** The input with the globe's click distance and both extras wired. */
+  function globeSetup(options: Parameters<typeof setup>[0]) {
+    const t = setup({ ...options, clickPx: dragPx });
+    const extras: string[] = [];
+    t.scene.stepCamera = () => extras.push("camera-step");
+    t.scene.zoomTowards = () => extras.push("camera-zoom");
+    return { ...t, extras };
+  }
+
+  it("a left press on a handle edits, elsewhere it is the camera's", () => {
+    for (const on of ["handle", "ground"] as const) {
+      const t = globeSetup({ handle: on === "handle" ? "move" : null });
+      t.element.dispatchEvent(pointer("pointerdown", { x: 0, y: 0 }));
+      const did = t.dispatched.length > 0 ? "edit" : "camera";
+      expect(did, on).toBe(
+        routeGlobeInput({ kind: "press", button: "left", on }),
+      );
+      t.input.dispose();
+    }
+  });
+
+  it("a left release selects, deselects or (after a drag) does nothing", () => {
+    // dragPx itself too: the table and the input must agree at the line.
+    for (const movedPx of [0, 3, dragPx - 0.5, dragPx, dragPx + 0.5, 12]) {
+      for (const on of ["object", "ground"] as const) {
+        const t = globeSetup({
+          selected: null,
+          pick: on === "object" ? "station:a" : null,
+        });
+        t.element.dispatchEvent(pointer("pointerdown", { x: 5, y: 5 }));
+        const end = { x: 5 + movedPx, y: 5 };
+        window.dispatchEvent(pointer("pointermove", end, { buttons: 1 }));
+        window.dispatchEvent(pointer("pointerup", end));
+        const calls = vi.mocked(t.page.select).mock.calls;
+        const did =
+          calls.length === 0
+            ? "none"
+            : calls[0]?.[0] === null
+              ? "deselect"
+              : "select";
+        expect(did, `${on} ${String(movedPx)} px`).toBe(
+          routeGlobeInput({ kind: "release", button: "left", on, movedPx }),
+        );
+        t.input.dispose();
+      }
+    }
+  });
+
+  it("a right click that did not move opens the menu", () => {
+    const t = globeSetup({ selected: null });
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 30, y: 40 }, { button: 2, buttons: 2 }),
+    );
+    t.element.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 30,
+        clientY: 40,
+        button: 2,
+      }),
+    );
+    window.dispatchEvent(pointer("pointerup", { x: 30, y: 40 }, { button: 2 }));
+    const did =
+      vi.mocked(t.page.groundMenu).mock.calls.length > 0 ? "menu" : "none";
+    expect(did).toBe(
+      routeGlobeInput({
+        kind: "release",
+        button: "right",
+        on: "ground",
+        movedPx: 0,
+      }),
+    );
+    t.input.dispose();
+  });
+
+  it("a double click on an object selects and flies, on the ground zooms", () => {
+    for (const on of ["object", "ground"] as const) {
+      const t = globeSetup({ pick: on === "object" ? "station:a" : null });
+      t.element.dispatchEvent(
+        new MouseEvent("dblclick", { bubbles: true, clientX: 5, clientY: 5 }),
+      );
+      const did =
+        vi.mocked(t.scene.frame).mock.calls.length > 0
+          ? "select-and-fly"
+          : (t.extras[0] ?? "none");
+      expect(did, on).toBe(routeGlobeInput({ kind: "double", on }));
+      t.input.dispose();
+    }
+  });
+
+  // Why: the globe's controls pinch, twist and tilt with two fingers (the
+  // lab's gestures); the input used to lock the camera for two fingers and
+  // read them itself, which on the globe moved nothing. With a camera that
+  // takes two fingers the input must leave it free, read nothing, and still
+  // cancel a handle drag the first finger had started.
+  it("two fingers are the camera's, a handle drag under the first cancelled", () => {
+    for (const on of ["ground", "handle"] as const) {
+      const t = globeSetup({ handle: on === "handle" ? "move" : null });
+      t.scene.cameraTakesTwoFingers = true;
+      const one = { x: 10, y: 10 };
+      t.element.dispatchEvent(pointer("pointerdown", one, { touch: true }));
+      t.element.dispatchEvent(
+        pointer("pointerdown", { x: 60, y: 10 }, { id: 2, touch: true }),
+      );
+      for (let i = 1; i <= 4; i++) {
+        window.dispatchEvent(
+          pointer("pointermove", { x: 10 - i * 5, y: 10 }, { touch: true }),
+        );
+        window.dispatchEvent(
+          pointer(
+            "pointermove",
+            { x: 60 + i * 5, y: 10 },
+            { id: 2, touch: true },
+          ),
+        );
+      }
+      const locks = t.log.filter((l) => l.startsWith("lock:"));
+      const locked = locks.at(-1) === "lock:true";
+      const read =
+        vi.mocked(t.scene.twoFinger).mock.calls.length > 0 ||
+        vi.mocked(t.scene.twoFingerStart).mock.calls.length > 0;
+      const did = locked || read ? "none" : "camera";
+      expect(did, on).toBe(routeGlobeInput({ kind: "fingers", on }));
+      expect(t.commits, on).toEqual([]);
+      // The cancel line is said exactly when a handle drag was cancelled.
+      const saidCancel = vi
+        .mocked(t.page.say)
+        .mock.calls.some((call) => call[0] === TWO_FINGER_CANCEL);
+      expect(saidCancel, on).toBe(on === "handle");
+      window.dispatchEvent(pointer("pointerup", one, { touch: true }));
+      window.dispatchEvent(
+        pointer("pointerup", { x: 80, y: 10 }, { id: 2, touch: true }),
+      );
+      expect(
+        t.log.filter((l) => l.startsWith("lock:")).at(-1) ?? "lock:false",
+      ).toBe("lock:false");
+      t.input.dispose();
+    }
+  });
+
+  it("an arrow nudges the selection, or steps the camera without one", () => {
+    for (const selected of [true, false]) {
+      const t = globeSetup({ selected: selected ? "pin" : null });
+      tap("ArrowRight");
+      const did = t.commits.length > 0 ? "nudge" : (t.extras[0] ?? "none");
+      expect(did, String(selected)).toBe(
+        routeGlobeInput({ kind: "arrow", selected }),
+      );
+      t.input.dispose();
+    }
+  });
+});
+
+describe("the OrbitControls view's click distance", () => {
+  // Why: one rule decides click or drag in both views: a press that moved
+  // the click distance or more is a drag. The globe's table puts its line
+  // there, and the default (OrbitControls) view follows the same `>=`, so
+  // its line moved by that one pixel too, on purpose: 4 px with a mouse,
+  // 8 px with a finger, each now a drag, just under them still a click.
+  it("selects after a move just under the line, not on it", () => {
+    for (const touch of [false, true]) {
+      const line = touch ? INPUT.tapPx : INPUT.clickPx;
+      for (const movedPx of [0, line - 0.5, line, line + 1]) {
+        const t = setup({ selected: null, pick: "station:a" });
+        const id = touch ? 7 : 1;
+        t.element.dispatchEvent(
+          pointer("pointerdown", { x: 5, y: 5 }, { id, touch }),
+        );
+        const end = { x: 5 + movedPx, y: 5 };
+        window.dispatchEvent(
+          pointer("pointermove", end, { id, touch, buttons: 1 }),
+        );
+        window.dispatchEvent(pointer("pointerup", end, { id, touch }));
+        const selected = vi.mocked(t.page.select).mock.calls.length > 0;
+        expect(
+          selected,
+          `${touch ? "finger" : "mouse"} ${String(movedPx)} px`,
+        ).toBe(movedPx < line);
+        t.input.dispose();
+      }
+    }
+  });
+});
+
+describe("a second finger after a handle drag, on the globe", () => {
+  /**
+   * A stand-in for the globe's controls, as 3d-tiles-renderer 0.5.3 reads
+   * pointers: its listeners run after the input's (which capture), see
+   * only what arrives while the camera is free, and move the camera for a
+   * tracked finger's move. The library's tracker never saw a finger
+   * pressed while it was locked, and its lift then drops the wrong one.
+   */
+  function controlsDouble(t: ReturnType<typeof setup>) {
+    let locked = false;
+    const tracked = new Set<number>();
+    let moves = 0;
+    vi.mocked(t.scene.lockCamera).mockImplementation((on: boolean) => {
+      locked = on;
+      t.log.push(`lock:${String(on)}`);
+    });
+    t.element.addEventListener("pointerdown", (e) => {
+      if (!locked) tracked.add(e.pointerId);
+    });
+    const onMove = (e: Event) => {
+      if (!locked && tracked.has((e as PointerEvent).pointerId)) moves += 1;
+    };
+    const onUp = (e: Event) => {
+      tracked.delete((e as PointerEvent).pointerId);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return {
+      moves: () => moves,
+      locked: () => locked,
+      dispose() {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      },
+    };
+  }
+
+  // Why: the first finger on a handle locks the controls before they see
+  // it. A second finger cancelled the drag and used to free them, so they
+  // tracked the second finger alone (a pan, not a pinch), and when the
+  // first lifted the library dropped the second while it was still down.
+  // The camera must stay still from the cancel until every finger is up,
+  // and be free again after.
+  it("keeps the camera still from the cancel until every finger is up", () => {
+    const t = setup({ handle: "move" });
+    t.scene.cameraTakesTwoFingers = true;
+    const controls = controlsDouble(t);
+    const one = { x: 10, y: 10 };
+    const two = { x: 60, y: 10 };
+    t.element.dispatchEvent(pointer("pointerdown", one, { touch: true }));
+    t.element.dispatchEvent(
+      pointer("pointerdown", two, { id: 2, touch: true }),
+    );
+    expect(vi.mocked(t.page.say)).toHaveBeenCalledWith(TWO_FINGER_CANCEL);
+    window.dispatchEvent(pointer("pointerup", one, { touch: true }));
+    for (let i = 1; i <= 4; i++) {
+      window.dispatchEvent(
+        pointer(
+          "pointermove",
+          { x: 60 + i * 10, y: 10 },
+          { id: 2, touch: true },
+        ),
+      );
+    }
+    expect(controls.moves()).toBe(0);
+    expect(controls.locked()).toBe(true);
+    window.dispatchEvent(
+      pointer("pointerup", { x: 100, y: 10 }, { id: 2, touch: true }),
+    );
+    expect(controls.locked()).toBe(false);
+    expect(t.commits).toEqual([]);
+    controls.dispose();
+    t.input.dispose();
+  });
+
+  // Why: the fix must not take the pinch away where the controls saw the
+  // first finger (it started on the ground): they get both.
+  it("leaves both fingers to the camera when the first was not a drag", () => {
+    const t = setup({ handle: null });
+    t.scene.cameraTakesTwoFingers = true;
+    const controls = controlsDouble(t);
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 10, y: 10 }, { touch: true }),
+    );
+    t.element.dispatchEvent(
+      pointer("pointerdown", { x: 60, y: 10 }, { id: 2, touch: true }),
+    );
+    window.dispatchEvent(
+      pointer("pointermove", { x: 70, y: 10 }, { id: 2, touch: true }),
+    );
+    window.dispatchEvent(
+      pointer("pointermove", { x: 0, y: 10 }, { touch: true }),
+    );
+    expect(controls.moves()).toBe(2);
+    controls.dispose();
     t.input.dispose();
   });
 });

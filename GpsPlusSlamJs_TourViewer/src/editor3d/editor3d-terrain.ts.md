@@ -19,11 +19,16 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `createEditorTerrain({ renderer, centre, device })` -> `EditorTerrain`:
+- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template? })` ->
+  `EditorTerrain`. `placement` `"ecef"` leaves the tiles' group in ECEF
+  for a parent that places it (the globe view's Earth-centred group,
+  `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
+  into it:
   - `terrain` - the globe's `GlobeTerrain`;
-  - `worldFromEcef` - ECEF to the world (x east, y up, z south at
-    `centre`, the ellipsoid's point of the centre at the origin), also
-    decomposed into the tiles' group;
+  - `worldFromEcef` - ECEF to the frame of `centre` (x east, y up, z
+    south there, the ellipsoid's point of the centre at the origin); with
+    `placement: "world"` the world itself, decomposed into the tiles'
+    group; with `"ecef"` not the world (the parent places the relief);
   - `osm` - the attached, enabled map overlay;
   - `credits` - the heights' sources, then the map's (the globe's credit
     shape: `short`, full text, `href`);
@@ -36,8 +41,12 @@ near the camera under the editor's own gate, and the credits both need.
 
 ## Invariants & assumptions
 
-- **No whole-Earth imagery reaches this app:** the relief's imagery is
-  `plainImagery()`, and `editor3d-lazy.test.ts` checks the build holds no
+- **No whole-Earth imagery reaches this app from here:** the relief's
+  imagery is `plainImagery()` unless the caller passes its own. The globe
+  view (`editor3d-globe.ts`, behind its lazy import) passes the globe's
+  (`createGlobeImagery()` and `globe.template` from
+  `gps-plus-slam-globe/view`), so its relief has the globe's ground and
+  look; this module itself never imports `./view`, and `editor3d-lazy.test.ts` checks the build holds no
   imagery factory and no `globe-assets` folder.
 - **The gate was measured** on the sample tour's square (start view, top
   view, farthest zoom): with the flight's limits (off above 200 m, a 300 m

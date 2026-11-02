@@ -143,6 +143,8 @@ const DOM_KEYS = [
   "pinButton",
   "pinLabel",
   "pinLabelCount",
+  "pinDescription",
+  "pinDescriptionCount",
   "pinSave",
   "pinCancel",
   "photoButton",
@@ -1240,6 +1242,73 @@ describe("a placement reaches the draft", () => {
     );
     expect(dom.pinLabelCount.attributes["data-over"]).toBeUndefined();
     expect(dom.pinLabelCount.hidden, "hidden with the field").toBe(true);
+  });
+
+  it("places a pin with its typed description, counted and capped at 160 characters", async () => {
+    // Why this test matters: a pin is a short text, whose optional
+    // description (at most 160 characters) the 3D editor's inspector
+    // already types; the phone's pin entry took only the caption, so a
+    // creator in the field could not say more than 40 characters. The
+    // description is counted while typing, refused past its cap with the
+    // caption kept, stored trimmed and in NFC, and cleared with the field.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.pinDescriptionCount.textContent).toBe("0 / 160");
+
+    dom.pinButton.click();
+    expect(dom.pinDescription.hidden, "shown with the pin's text").toBe(false);
+    expect(dom.pinDescriptionCount.hidden).toBe(false);
+    dom.pinLabel.value = "Gate";
+    dom.pinDescription.value = "y".repeat(161);
+    dom.pinDescription.handlers.get("input")?.();
+    expect(dom.pinDescriptionCount.textContent).toBe("161 / 160");
+    expect(dom.pinDescriptionCount.attributes["data-over"]).toBe("");
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.placementNote).toBe(
+      "A pin's description takes at most 160 characters.",
+    );
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinLabel.value, "the caption stays").toBe("Gate");
+
+    dom.pinDescription.value = `  The old ${"e"}${String.fromCodePoint(0x301)}cole gate.  `;
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()[0]?.object).toMatchObject({
+      caption: "Gate",
+      description: "The old \u00e9cole gate.",
+    });
+    expect(dom.pinDescription.value, "cleared with the field").toBe("");
+    expect(dom.pinDescriptionCount.textContent).toBe("0 / 160");
+    expect(dom.pinDescription.hidden, "hidden with the field").toBe(true);
+    expect(dom.pinDescriptionCount.hidden).toBe(true);
+  });
+
+  it("places a pin without a description when none is typed, and a cancel clears one", async () => {
+    // Why this test matters: the description is optional - a blank one
+    // must not be stored as an empty string (the file's reader refuses a
+    // blank optional text), and a cancelled entry must not leave its
+    // description behind for the next pin.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinButton.click();
+    dom.pinDescription.value = "Left over";
+    dom.pinCancel.click();
+    expect(dom.pinDescription.value).toBe("");
+    expect(dom.pinDescription.hidden).toBe(true);
+
+    dom.pinButton.click();
+    dom.pinLabel.value = "Gate";
+    dom.pinDescription.value = "   ";
+    dom.pinSave.click();
+    await settle();
+    const placed = ctx.tourDocument.entries()[0]?.object;
+    expect(placed).toMatchObject({ caption: "Gate" });
+    expect(placed).not.toHaveProperty("description");
   });
 
   // Why (B2a review finding 6, design §3): the phone's pin field is a

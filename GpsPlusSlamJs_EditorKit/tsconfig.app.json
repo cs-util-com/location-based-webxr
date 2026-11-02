@@ -1,0 +1,25 @@
+{
+  // The workspace's consumer-app strictness profile (../tsconfig.demo-base.json),
+  // so the kit's source is checked at least as strictly as the Tour Viewer's
+  // `tsc` checks it when the app bundles it, plus `erasableSyntaxOnly` for the
+  // kit's OWN files. Dependencies (the framework) resolve as for any consumer:
+  // through their package `exports` and built types, never through `paths`
+  // into their source, so another package's syntax is not checked under this
+  // package's flags (the spike of the globe editor plan's GV5a-1).
+  "extends": "../tsconfig.demo-base.json",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.property.test.ts",
+    "src/test-utils/**"
+  ]
+}

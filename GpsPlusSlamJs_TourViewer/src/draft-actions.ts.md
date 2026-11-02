@@ -25,7 +25,7 @@ LOW-4).
 
 ## Invariants & assumptions
 
-- The caller's draft queues writes per object id (`keyed-chain.ts`), so
+- The caller's draft queues writes per object id (`gps-plus-slam-app-framework/utils/keyed-chain`), so
   issuing the record before the tombstone removal is what lands them in
   that order; the tombstone outranks a record (`readDraft`), so an undo cut
   short leaves the object deleted, not half restored (M4 review #5).

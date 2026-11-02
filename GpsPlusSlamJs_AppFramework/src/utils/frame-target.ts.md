@@ -46,3 +46,10 @@ checkFrameTarget(snapshot.over).pass; // PASS / FAIL on the page
 fail one past it; the counts reported; the handful sweep; agreement and
 monotonicity (property); refusal of uncounted thresholds and a malformed
 target; another target with other handfuls.
+
+## Import path
+
+`gps-plus-slam-app-framework/utils/frame-target`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

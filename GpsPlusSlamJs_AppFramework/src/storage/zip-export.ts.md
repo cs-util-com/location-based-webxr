@@ -129,7 +129,7 @@ never needs to know about them.
 1. Uses @zip.js/zip.js library with `level: 0` (store mode, no compression)
 2. File paths in ZIP match OPFS paths (relative to session root)
 3. Binary data (frames) is preserved exactly
-4. Download uses `showSaveFilePicker` when available, falls back to `<a download>`
+4. Download uses `showSaveFilePicker` when available, falls back to `<a download>`. The dialog's rejection is read by `classifyPickerRejection` ([picker-errors.ts](picker-errors.ts.md)): an error named `AbortError` is a dismissal (`false`, nothing written), anything else falls back. A write into the picked file that fails is read as before the pick and the write were split: named `AbortError`, `false`; otherwise the file is downloaded as well (pinned in `download-blob.test.ts`).
 5. `syncToExternalZip` writes to the external file handle through
    `writeFileOrAbort` (a failed write is aborted, so the last good ZIP stays);
    so does `downloadBlob`'s save-picker path (Tour Viewer M6 E2 plan review

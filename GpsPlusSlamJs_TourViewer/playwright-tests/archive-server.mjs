@@ -42,6 +42,10 @@
  *   holds, beside its pin, a captured photo (its own image asset), a
  *   picture of the tour's knight image in the world and a placed model of
  *   the arch: every kind of free block a tour can stand in the world.
+ * - `/ranges-ok/long-text-tour.zip` and `/ranges-ok/long-text-tour-b.zip`
+ *   - the stations tour whose gate also holds a long text its creator
+ *   stands as a reading sign; the second tour is another tour (its own
+ *   title and block id), for the visitor's view preference across tours.
  * - `/ranges-ok/story-blocks-tour.zip` - the stations tour whose gate
  *   story first shows a pin with a description in the world (B2b): it
  *   stands from that step on, for the rest of the visit; then a video card
@@ -241,6 +245,8 @@ async function buildStationsZip({
   storyBlocks = false,
   storyless = false,
   storyCount = 0,
+  longText = null,
+  title = "E2E castle",
 } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
@@ -389,8 +395,9 @@ async function buildStationsZip({
     new TextReader(
       JSON.stringify({
         version: 4,
-        minor: 0,
-        title: "E2E castle",
+        // A long text's world views came with minor 4.
+        minor: longText === null ? 0 : 4,
+        title,
         order: "fixed",
         assets: [
           { id: "knight", path: "content/knight.png", width: 1, height: 1 },
@@ -419,6 +426,19 @@ async function buildStationsZip({
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
               }),
               ...gateWorld,
+              // A free long text its creator stands as a reading sign.
+              ...(longText === null
+                ? []
+                : [
+                    {
+                      id: longText.id,
+                      kind: "longText",
+                      view: "reading",
+                      title: longText.title,
+                      body: "The gate was built in 1400.\n\nIt was rebuilt later.",
+                      pose: { position: [-2, 1.5, 1], rotation: [0, 0, 0, 1] },
+                    },
+                  ]),
               ...gateStory,
               ...manyStory,
               // The story's own blocks: a storyless station has none (a
@@ -916,6 +936,17 @@ const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
 const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
 const storylessZipBytes = await buildStationsZip({ storyless: true });
+/** Two tours, each with a long text at its gate (the visitor's view
+ *  preference holds across tours). */
+const longTextZips = {
+  "/ranges-ok/long-text-tour.zip": await buildStationsZip({
+    longText: { id: "gate-essay", title: "The gate's story" },
+  }),
+  "/ranges-ok/long-text-tour-b.zip": await buildStationsZip({
+    longText: { id: "keep-essay", title: "The keep's story" },
+    title: "E2E keep",
+  }),
+};
 /** The frame-time spec's tours, by story block count. */
 const storyCountZips = new Map(
   await Promise.all(
@@ -1145,6 +1176,17 @@ createServer((req, res) => {
       "ranges-ok",
       storyBlocksZipBytes,
       '"e2e-story-blocks-v1"',
+    );
+    return;
+  }
+  const longTextBytes = longTextZips[url.pathname];
+  if (longTextBytes !== undefined) {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      longTextBytes,
+      `"e2e-${url.pathname.slice(11, -4)}-v1"`,
     );
     return;
   }

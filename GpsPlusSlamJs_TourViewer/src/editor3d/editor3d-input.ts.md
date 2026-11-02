@@ -4,13 +4,16 @@
 
 The 3D view's pointer, touch and keys for editing (the design's): select
 first, then drag a handle of the gizmo; a click selects what is under the
-pointer (nothing: none); a double click or a double tap frames it; the
+pointer (nothing: none); a double click or a double tap frames it (on
+nothing, both zoom toward the point where the scene has `zoomTowards`); the
 keys nudge, turn, lift, delete and duplicate the selection; two fingers
 move the camera only, and a second finger during a drag cancels it.
 
 ## Public API
 
-- `createSceneInput({ element, surface, scene, page })` -> the input,
+- `createSceneInput({ element, surface, scene, page, clickPx? })` -> the input
+  (`clickPx`: a mouse press that moved less than this is a click, this far or more a drag; the
+  globe passes its routing table's `dragPx`, 5, in place of `INPUT`'s 4),
   listening until `dispose`:
   - `element` - the view's box (its presses are read in the capture phase,
     before OrbitControls on the canvas sees them);
@@ -19,7 +22,9 @@ move the camera only, and a second finger during a drag cancels it.
   - `scene: InputScene` - `target(selection)`, `handleAt(pointer)`,
     `pickAt(pointer)`, `world`, `preview(target, preview | null)`,
     `hover(handle)`, `lockCamera(on)`, `twoFingerStart()`,
-    `twoFinger(mode, last, now)`, `frame(selection)`;
+    `twoFinger(mode, last, now)`, `frame(selection)`, and the optional
+    `cameraTakesTwoFingers` (the globe's: two fingers are the camera
+    controls' own; see below);
   - `page: InputPage` - `dispatch`, `selected()`, `select(id)`,
     `commit(edit)`, `remove(selection)`, `duplicate(selection)`,
     `say(text)`, `groundMenu(point, place | null)`, `keysFree(event)`.
@@ -29,8 +34,25 @@ move the camera only, and a second finger during a drag cancels it.
     `gesture()` (its handle, `"key"`, or null), `dispose()`.
 - `INPUT` - a click moved less than 4 px (a tap 8 px); a double tap within
   400 ms and 30 px.
+  - A `dblclick` after a touch press is ignored: a browser adds one to a
+    double tap, which the input already answered, so it would frame (or
+    zoom) twice.
+  - One rule in both views: a press that moved the click distance or
+    more is a drag. The globe's routing table draws its line there, and
+    the OrbitControls (default) view follows the same `>=`, so a mouse
+    press that moved exactly 4 px (a finger 8 px) is a drag there too; it
+    was a click before the globe view, a one-pixel move made on purpose
+    (`editor3d-input.test.ts`, "the OrbitControls view's click distance").
 - `TWO_FINGER_CANCEL` - the toast a second finger's cancel says.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
+- `InputScene.clickWaited?()` and `answerClick?(pointer)` - while a click
+  is waited for, a press starts no gesture (and no handle is hovered), a
+  click (a press that did not move) is the scene's answer and selects
+  nothing, a double click frames nothing; a drag stays the camera's.
+- `InputScene.stepCamera?(code)` and `zoomTowards?(pointer)` - the globe's
+  routes (`globe-gestures.ts`): an arrow with nothing selected is
+  `camera-step` (it still stays off the page without the hook), a double
+  click on nothing is `camera-zoom` (without the hook it does nothing).
 
 ## Invariants & assumptions
 
@@ -68,6 +90,17 @@ move the camera only, and a second finger during a drag cancels it.
   handle locks it BEFORE the gesture reads the pointer: the lock stops a
   flight and the orbit's coast, so the camera stands still from the press
   on (a press that finds nothing to grab unlocks again).
+- With `cameraTakesTwoFingers` (the globe view, whose controls pinch,
+  twist and tilt as in the globe lab) a second finger still cancels a
+  drag and blocks new presses until every finger is up, and the fingers
+  are not read here (no `twoFingerStart` or `twoFinger`). The camera is
+  unlocked at once (before the controls read that finger: the listener
+  captures) when the controls saw the first finger; when the second
+  finger cancelled a drag, the first was held from them, so the camera
+  stays locked until every finger is up (given the second alone they
+  panned, then dropped it when the first lifted). Tested as a row of the
+  globe's routing table (`globe-gestures.ts`, `fingers`) and as that
+  sequence against a stand-in for the controls.
 - A drag waiting for its ground shows a `progress` cursor until the
   ground arrives (then `grabbing` again).
 - The handle under the mouse is looked for only when the pointer is over
@@ -100,7 +133,8 @@ finger cancels it, writes nothing, says so, then tilts the camera and
 keeps it locked until the last finger lifts; a selection change cancels a
 drag; a press off the gizmo, or on a code, starts nothing; a click selects
 what is under it or nothing, a moved press selects nothing; a double tap
-and a double click frame; every key of the design, a held key as one
+and a double click frame, and on nothing zoom toward the point; a double
+tap answers once though the browser adds a dblclick; every key of the design, a held key as one
 gesture, Del, Backspace and Ctrl+D, the keys left to others, fields and
 dialogs, codes, and keys during a drag; with nothing selected only the
 arrows are taken from the page. A cancel (an undo) and a pointercancel

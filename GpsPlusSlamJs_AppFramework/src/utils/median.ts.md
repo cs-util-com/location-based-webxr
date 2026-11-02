@@ -14,6 +14,7 @@ The project's two median semantics as named helpers (2026-07-10 quality-review A
 ## Invariants & assumptions
 
 - Neither helper mutates its input (both sort a copy).
+- **No helper returns -0** (2026-10-29): 0 and -0 compare equal, so the stable sort kept them in arrival order and the result's sign followed the input order; `weightedMedian`'s order-independence property failed on seed 32073154. Every return adds +0, which turns -0 into 0 and leaves every other number as it is. The counterexample is pinned as a fast-check example and as a unit test.
 - `interpolatingMedian` never overflows for finite inputs: the even-length mean falls back to `lo / 2 + hi / 2` when `lo + hi` exceeds `Number.MAX_VALUE`, so the result always stays within `[min, max]` (found by the fast-check bound property in CI on 2026-07-10).
 - `NaN` inputs are not filtered — the comparator leaves their order unspecified, matching the former private copies; callers pre-filter.
 - Choosing between the two variants is semantic, not stylistic: interpolating fabricates values, lower-middle never does.

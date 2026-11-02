@@ -11,6 +11,9 @@
     <!-- The 3D view's studio shell (editor-shell.ts): applied while the
          3D view shows. -->
     <link rel="stylesheet" href="/src/editor/editor-shell/editor-shell.css" />
+    <!-- A long text's writer in the inspector and its phone preview
+         (long-text-writer.ts, long-text-preview.ts). -->
+    <link rel="stylesheet" href="/src/editor/long-text/long-text-editor.css" />
   </head>
   <body>
     <!-- The top bar first: the keyboard reaches it before the map, the 3D
@@ -18,16 +21,12 @@
          nothing differently). -->
     <header id="topbar" class="panel" hidden>
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">T</div>
         <div class="brand-text">
-          <!-- The tour's name opens its details (W2 of the tour editor plan). -->
-          <button
-            class="tour-name"
-            id="tour-name"
-            type="button"
-            aria-haspopup="dialog"
-            title="Edit the tour's details"
-          ></button>
+          <!-- The tour's name opens its details; the pen right of it says
+               so (its words are the name's alone: no whitespace inside the
+               button, so its text is the name exactly). -->
+          <!-- prettier-ignore -->
+          <button class="tour-name" id="tour-name" type="button" aria-haspopup="dialog" title="Edit the tour's details"><span class="tour-name-text" id="tour-name-text"></span><span class="tour-name-pen" aria-hidden="true"><i data-icon="pencil"></i></span></button>
           <div class="tour-file" id="tour-file"></div>
         </div>
       </div>
@@ -163,6 +162,31 @@
             >
               Frame<kbd aria-hidden="true">F</kbd>
             </button>
+            <!-- The globe view's clock (globe=1 only): the sky held in
+                 daylight over the tour, or at the real time now. -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              class="studio"
+              id="view-realtime"
+              aria-checked="false"
+              title="The sky at the real time now; off, held in daylight over the tour"
+              hidden
+            >
+              Real time
+            </button>
+            <!-- The globe view's heavy clouds (globe=1 only), on by default. -->
+            <button
+              role="menuitemcheckbox"
+              type="button"
+              class="studio"
+              id="view-clouds"
+              aria-checked="true"
+              title="The 3D clouds over the globe; off, only the flat cloud layer"
+              hidden
+            >
+              Clouds
+            </button>
             <!-- Only while there is debug data to show (the debug layer). -->
             <button
               role="menuitemcheckbox"
@@ -185,15 +209,6 @@
       <!-- The 3D view's studio controls (editor-shell.ts); the map page
            hides them. -->
       <div class="studio grp">
-        <button
-          class="tbtn"
-          id="studio-details"
-          type="button"
-          aria-haspopup="dialog"
-          title="Tour details: name, cover, description"
-        >
-          <i data-icon="pencil"></i><span class="lbl">Details</span>
-        </button>
         <button
           class="tbtn"
           id="studio-undo"
@@ -363,8 +378,9 @@
         </button>
       </div>
       <!-- Last in the view: its links come after the docks in the Tab order,
-           and it paints under them (they carry a z-index). -->
-      <p class="view3d-credits" id="view3d-credits"></p>
+           and, at the docks' z-index and later in the DOM, it paints over
+           them. -->
+      <div class="view3d-credits" id="view3d-credits"></div>
     </div>
 
     <!-- The bottom bar (editor-shell.ts): the save status in both views;

@@ -101,6 +101,18 @@ export const PIN_FLIGHT = Object.freeze({
   arrivalMargin: 1.25,
 });
 
+/**
+ * The meteor's pace (`pressPin`'s `paceLagMs` and `paceStages`): the
+ * rate's lag, ms, in two stages, an S-curve that starts with no
+ * acceleration ("a meteor, not a spaceship"). Picked by eye in the globe
+ * lab against `rateLagMs` in one stage, which started slow and then jerked
+ * to full speed; the lab's default and the tour editor's approach.
+ */
+export const METEOR_PACE = Object.freeze({
+  lagMs: 5_000,
+  stages: 2 as const,
+});
+
 type PinFlightPhase =
   "holding" | "approaching" | "descending" | "landed" | "failed" | "cancelled";
 
@@ -155,6 +167,12 @@ export interface PinFlight {
    */
   readonly meteorAskedDeg: number;
   readonly meteorDeg: number;
+  /**
+   * The angle every flight of this press lands at, degrees below the
+   * horizontal (`pressPin`'s `meteorLandDeg`; undefined: the law's own, the
+   * asked beta for a meteor and 45 for the vertical approach).
+   */
+  readonly meteorLandAskedDeg: number | undefined;
 }
 
 function requireTime(nowMs: number): void {
@@ -227,14 +245,12 @@ function flyTo(
   landingM: number,
   meteorDeg: number = pin.meteorDeg,
 ): Flight {
-  // Every flight of a meteor press lands at the asked angle (DEC-R3-12).
-  const meteorLandDeg =
-    pin.meteorAskedDeg < 90 ? pin.meteorAskedDeg : undefined;
+  // Every flight of a press lands at the same angle.
   const options = {
     landingM,
     viewLandingM: pin.landingM,
     meteorDeg,
-    meteorLandDeg,
+    meteorLandDeg: pin.meteorLandAskedDeg,
     groundM: pin.groundM,
   };
   return pin.flight
@@ -303,6 +319,7 @@ function meteorTo(
     pin.landingM,
     flight.path.cameraArcRad,
     asked,
+    pin.meteorLandAskedDeg,
   );
   return fitted <= fromDeg
     ? { flight, meteorDeg: fromDeg }
@@ -366,7 +383,10 @@ function lookedAt(ellipsoid: Ellipsoid, start: FlightStart): THREE.Vector3 {
  * on WGS84). The result is a flight start with its position. `groundM`
  * (round-4 plan DEC-R4-1; default 0) is the target's ground: the line
  * lands `landingM` above it and the start stands over the ellipsoid lifted
- * to it, as the flight that follows measures.
+ * to it, as the flight that follows measures. `landDeg` is the angle the
+ * line lands at (`pressPin`'s `meteorLandDeg`; default the law's own): a
+ * line that enters shallow and lands steep stands back by its landing's
+ * look-back and sweeps its own arc.
  */
 export function meteorLinkStart(
   base: Ellipsoid,
@@ -376,6 +396,7 @@ export function meteorLinkStart(
   landingM: number,
   meteorDeg: number,
   groundM = 0,
+  landDeg?: number,
 ): FlightStart & {
   readonly position: THREE.Vector3;
   readonly quaternion: THREE.Quaternion;
@@ -391,15 +412,16 @@ export function meteorLinkStart(
     side.addScaledVector(to, -side.dot(to));
   }
   side.normalize();
-  // The landing's look-back: its camera at `landingM` looking `meteorDeg`
-  // down at the target stands this far back (the triangle centre, camera,
-  // target, as `obliqueCamera` builds it, at the target's radius).
+  // The landing's look-back: its camera at `landingM` looking its landing
+  // angle down at the target stands this far back (the triangle centre,
+  // camera, target, as `obliqueCamera` builds it, at the target's radius).
   const rs = surfaceRadiusAlong(ellipsoid, to);
-  const gamma = ((90 - meteorDeg) * Math.PI) / 180;
+  const gamma = ((90 - (landDeg ?? meteorDeg)) * Math.PI) / 180;
   const lookBack =
     Math.asin(Math.min(1, ((rs + landingM) / rs) * Math.sin(gamma))) - gamma;
   const arc =
-    1.0001 * meteorDiveArcRad(fromAltitudeM, landingM, meteorDeg) + lookBack;
+    1.0001 * meteorDiveArcRad(fromAltitudeM, landingM, meteorDeg, landDeg) +
+    lookBack;
   const nadir = to
     .clone()
     .multiplyScalar(Math.cos(arc))
@@ -412,7 +434,7 @@ export function meteorLinkStart(
   const position = nadir.clone().multiplyScalar(rs + fromAltitudeM);
   // Along the line: its angle below the horizontal there, toward the target.
   const ahead = to.clone().addScaledVector(nadir, -to.dot(nadir)).normalize();
-  const pitchDeg = travelLawDeg(fromAltitudeM, landingM, meteorDeg);
+  const pitchDeg = travelLawDeg(fromAltitudeM, landingM, meteorDeg, landDeg);
   const p = (pitchDeg * Math.PI) / 180;
   const forward = ahead
     .clone()
@@ -453,6 +475,32 @@ function paceOptions(options: {
 }
 
 /**
+ * The press's meteor angles, checked: the entry (default 90, the vertical approach) and the
+ * landing (default the entry for a meteor, the law's for the vertical approach). RangeError
+ * outside (0, 90].
+ */
+function meteorAngles(options: {
+  readonly meteorDeg?: number;
+  readonly meteorLandDeg?: number | undefined;
+}): { meteorAskedDeg: number; meteorLandAskedDeg: number | undefined } {
+  const meteorAskedDeg = options.meteorDeg ?? 90;
+  if (!(meteorAskedDeg > 0 && meteorAskedDeg <= 90)) {
+    throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorAskedDeg}`);
+  }
+  const meteorLandAskedDeg =
+    options.meteorLandDeg ?? (meteorAskedDeg < 90 ? meteorAskedDeg : undefined);
+  if (
+    meteorLandAskedDeg !== undefined &&
+    !(meteorLandAskedDeg > 0 && meteorLandAskedDeg <= 90)
+  ) {
+    throw new RangeError(
+      `meteorLandDeg must be in (0, 90], got ${meteorLandAskedDeg}`,
+    );
+  }
+  return { meteorAskedDeg, meteorLandAskedDeg };
+}
+
+/**
  * The press: the camera as the intro left it, the target if already known
  * (a fix, a link), the landing (above the target's ground, `groundM`) and
  * the data's progress so far. RangeError for a time that is not finite, a
@@ -473,16 +521,20 @@ export function pressPin(
     readonly progress: number;
     /** The meteor's beta (F1; 90, the default, is R1). */
     readonly meteorDeg?: number;
+    /**
+     * The angle every flight lands at, degrees in (0, 90] (default: the
+     * asked beta for a meteor, 45 for the vertical approach). Steeper than beta, a meteor
+     * enters shallow and lands steep: the view's angle below the target's
+     * horizontal rises from beta to it below the bend.
+     */
+    readonly meteorLandDeg?: number | undefined;
     /** The pace's lag, ms (default `rateLagMs`), and its stages (1 or 2). */
     readonly paceLagMs?: number;
     readonly paceStages?: 1 | 2;
   },
 ): PinFlight {
   requireTime(nowMs);
-  const meteorAskedDeg = options.meteorDeg ?? 90;
-  if (!(meteorAskedDeg > 0 && meteorAskedDeg <= 90)) {
-    throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorAskedDeg}`);
-  }
+  const { meteorAskedDeg, meteorLandAskedDeg } = meteorAngles(options);
   const { rateLagMs, rateStages } = paceOptions(options);
   if (!(options.landingM > 0 && Number.isFinite(options.landingM))) {
     throw new RangeError(
@@ -512,6 +564,7 @@ export function pressPin(
     paceFloor: 0,
     meteorAskedDeg,
     meteorDeg: 90,
+    meteorLandAskedDeg,
   };
   if (!options.target) return holdOver(base);
   const flying = opened({
@@ -621,6 +674,56 @@ function raiseReachable(pin: PinFlight, groundM: number): boolean {
   return (
     overNew >= pin.landingM && raise <= PIN_FLIGHT.raisePerHeight * overNew
   );
+}
+
+/**
+ * A new target while flying to one (a page that picks another place on the
+ * way): a new leg from the camera as it is, joined in position, direction
+ * and speed (a replan), its beta kept unless the new target is too
+ * close for it (`meteorTo`), the gate found again, the data's progress
+ * kept. `groundM` is the new target's ground (default the current one),
+ * taken only where the camera can clear it (as `pinGround`'s raise,
+ * `PIN_FLIGHT.raisePerHeight`): a new leg onto ground the camera stands
+ * under or close over would start under the surface, so the call is
+ * ignored then. A landed flight takes off again from where it stands.
+ * Ignored without a flight to a target; an ignored call still advances
+ * the clock to `nowMs`, as its siblings do. RangeError for a ground below
+ * 0 or not finite.
+ */
+export function pinRetarget(
+  pin: PinFlight,
+  nowMs: number,
+  target: OrbitPose,
+  groundM: number = pin.groundM,
+): PinFlight {
+  requireGround(groundM);
+  const now = advance(pin, nowMs);
+  const flying =
+    now.phase === "approaching" ||
+    now.phase === "descending" ||
+    now.phase === "landed";
+  if (!flying || !now.target || !now.flight) return now;
+  if (!raiseReachable(now, groundM)) return now;
+  const next: PinFlight = {
+    ...now,
+    target,
+    groundM,
+    phase: now.phase === "landed" ? "descending" : now.phase,
+  };
+  const { flight, meteorDeg } = meteorTo(next, target, now.meteorDeg);
+  return opened({ ...next, meteorDeg, flight, gateClockMs: gateOf(flight) });
+}
+
+/**
+ * The camera where the flight ends (a page that cuts straight to the end:
+ * reduced motion), or null without a flight.
+ */
+export function pinEnd(
+  pin: PinFlight,
+): { position: THREE.Vector3; quaternion: THREE.Quaternion } | null {
+  if (!pin.flight) return null;
+  const cam = flightCameraAt(pin.flight, pin.flight.endsAtMs);
+  return { position: cam.position, quaternion: cam.quaternion };
 }
 
 /** A touch on the globe: the controls take the camera. */

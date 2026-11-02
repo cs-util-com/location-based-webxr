@@ -406,7 +406,7 @@ test("a station's Name and Description are labelled fields: the description grow
   );
 });
 
-test("a short text's Description is a labelled field with its count: one step, refused over its cap, saved and opened again", async ({
+test("a short text's caption and Description are typed in the inspector: one step each, refused over the cap, saved and opened again", async ({
   page,
   context,
 }) => {
@@ -437,13 +437,23 @@ test("a short text's Description is a labelled field with its count: one step, r
       (/** @type {any} */ b) => b.id === "pa",
     );
 
+  // The caption, typed in the head: one step.
+  const caption = field(page, "title");
+  await expect(caption).toHaveValue("Pin a");
+  await caption.fill("The old well");
+  await caption.press("Enter");
+  await expect
+    .poll(async () => (await blockNow())?.caption)
+    .toBe("The old well");
+  expect(await revision(page)).toBe(start + 1);
+
   await description.fill("Under the arch");
   await expect(await countOf()).toHaveText("14 / 160");
   await description.press("Tab");
   await expect
     .poll(async () => (await blockNow())?.description)
     .toBe("Under the arch");
-  expect(await revision(page)).toBe(start + 1);
+  expect(await revision(page)).toBe(start + 2);
   await page.locator("#studio-undo").click();
   await expect.poll(async () => (await blockNow())?.description ?? "").toBe("");
   await page.locator("#studio-redo").click();
@@ -479,7 +489,7 @@ test("a short text's Description is a labelled field with its count: one step, r
   const written = readFileSync(saved);
   expect((await savedTour(written)).stations[0].blocks[0]).toMatchObject({
     id: "pa",
-    caption: "Pin a",
+    caption: "The old well",
     description: "Under the arch",
   });
   const next = await context.newPage();
@@ -491,6 +501,7 @@ test("a short text's Description is a labelled field with its count: one step, r
   await expect(
     next.locator("#shell-inspector").getByLabel("Description", { exact: true }),
   ).toHaveValue("Under the arch");
+  await expect(field(next, "title")).toHaveValue("The old well");
 });
 
 test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a typed place are one step each", async ({
@@ -786,7 +797,8 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   // shared tour document, be backed up by the draft over a reload, be
   // written by the save and read back by a new open. The tree names an
   // untitled picture by its kind, and a station's inspector lists the
-  // blocks its story shows (the 3D view draws none of them).
+  // blocks its story shows (the 3D view draws none of them), with the
+  // texts of each typed there too (a story block's edit is its station's).
   test.slow();
   const zip = Buffer.from(
     await (
@@ -813,6 +825,18 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   const story = inspector.locator("ul.story-blocks li");
   await expect(story.filter({ hasText: "Sir Kay" })).toHaveText(
     "CharacterSir Kay",
+  );
+  // His name heads his own parts, on a line of its own: it once ran into
+  // the "View" label after it ("Sir KayView").
+  const kayLabels = inspector.locator(
+    '.character[data-block="sir-kay"] > .flabel',
+  );
+  await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
+  await expect(kayLabels.nth(1)).toHaveText("View");
+  const nameBox = await kayLabels.nth(0).boundingBox();
+  const viewBox = await kayLabels.nth(1).boundingBox();
+  expect(viewBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (nameBox?.y ?? 0) + (nameBox?.height ?? 0) - 0.5,
   );
   // An untitled picture is named by its kind in the tree.
   const card = page.locator('#tree-body .card[data-station="gate"]');
@@ -854,6 +878,35 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     .poll(async () => (await blockNow("gate-arch"))?.title)
     .toBe("The castle arch");
 
+  // A story character's line, typed in his station's inspector: one step
+  // that undo takes back and redo puts again; over its cap, nothing.
+  await selectStation(page, "gate");
+  const kayCaption = field(page, "block:sir-kay:caption");
+  await expect(kayCaption).toHaveValue("Halt, traveller!");
+  await expect(field(page, "block:sir-kay:name")).toHaveValue("Sir Kay");
+  const beforeKay = await revision(page);
+  await kayCaption.fill("Halt! Who goes there?");
+  await kayCaption.press("Tab");
+  await expect
+    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .toBe("Halt! Who goes there?");
+  expect(await revision(page)).toBe(beforeKay + 1);
+  await page.locator("#studio-undo").click();
+  await expect
+    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .toBe("Halt, traveller!");
+  await page.locator("#studio-redo").click();
+  await expect
+    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .toBe("Halt! Who goes there?");
+  const kayName = field(page, "block:sir-kay:name");
+  await kayName.fill("x".repeat(81));
+  await kayName.press("Tab");
+  await expect(
+    page.locator(".toast", { hasText: "A name takes at most 80 characters." }),
+  ).toBeVisible();
+  expect((await blockNow("sir-kay"))?.name).toBe("Sir Kay");
+
   // A reload: the draft offers the edits, and Restore brings them back.
   await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
   await page.reload();
@@ -871,6 +924,7 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     caption: "The gate at dusk",
   });
   expect((await blockNow("gate-arch"))?.title).toBe("The castle arch");
+  expect((await blockNow("sir-kay"))?.caption).toBe("Halt! Who goes there?");
 
   // Saved, and opened again in a new page: as typed.
   const download = page.waitForEvent("download");
@@ -887,6 +941,10 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     alt: "The gate's two towers against a red sky",
   });
   expect(savedBlock("gate-arch")).toMatchObject({ title: "The castle arch" });
+  expect(savedBlock("sir-kay")).toMatchObject({
+    name: "Sir Kay",
+    caption: "Halt! Who goes there?",
+  });
   const next = await context.newPage();
   await answerHosts(next);
   await next.setViewportSize({ width: 1440, height: 900 });
@@ -903,4 +961,8 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   await expect(
     next.locator("#shell-inspector").getByLabel("Title", { exact: true }),
   ).toHaveValue("The castle arch");
+  await next.locator('#tree-body .card[data-station="gate"] .pick').click();
+  await expect(field(next, "block:sir-kay:caption")).toHaveValue(
+    "Halt! Who goes there?",
+  );
 });

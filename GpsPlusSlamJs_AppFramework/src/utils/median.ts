@@ -10,6 +10,15 @@
  */
 
 /**
+ * A median of -0 is 0. Zero and minus zero compare equal, so a stable sort
+ * keeps them in arrival order and the picked sample's sign would follow the
+ * input's order (found by the order-independence property, seed 32073154).
+ * Adding +0 turns -0 into +0 and leaves every other number, NaN included, as
+ * it is.
+ */
+const unsignedZero = (x: number): number => x + 0;
+
+/**
  * Interpolating median: mean of the two middle values for even-length input.
  * Use when a fabricated in-between value is meaningful (continuous
  * measurements: depths, accuracies, coordinates).
@@ -21,14 +30,14 @@ export function interpolatingMedian(values: readonly number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 !== 0) return sorted[mid]!;
+  if (sorted.length % 2 !== 0) return unsignedZero(sorted[mid]!);
   const lo = sorted[mid - 1]!;
   const hi = sorted[mid]!;
   const mean = (lo + hi) / 2;
   // lo + hi can overflow to ±Infinity for huge finite middle values; the
   // half-then-add form is immune (only reached at magnitudes where halving
   // loses no precision), keeping the result within [min, max].
-  return Number.isFinite(mean) ? mean : lo / 2 + hi / 2;
+  return unsignedZero(Number.isFinite(mean) ? mean : lo / 2 + hi / 2);
 }
 
 /**
@@ -42,7 +51,7 @@ export function interpolatingMedian(values: readonly number[]): number {
 export function lowerMedian(values: readonly number[]): number {
   if (values.length === 0) return NaN;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor((sorted.length - 1) / 2)]!;
+  return unsignedZero(sorted[Math.floor((sorted.length - 1) / 2)]!);
 }
 
 /**
@@ -111,8 +120,8 @@ export function weightedMedian(
   let cumulative = 0;
   for (const pair of pairs) {
     cumulative += pair.weight;
-    if (cumulative + tieSlack >= half) return pair.value;
+    if (cumulative + tieSlack >= half) return unsignedZero(pair.value);
   }
   // Unreachable for finite positive weights; kept total rather than throwing.
-  return pairs[pairs.length - 1]?.value ?? lowerMedian(values);
+  return unsignedZero(pairs[pairs.length - 1]?.value ?? lowerMedian(values));
 }

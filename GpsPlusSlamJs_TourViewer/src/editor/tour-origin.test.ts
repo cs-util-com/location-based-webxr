@@ -14,7 +14,12 @@ import { worldFromEcefAt } from "gps-plus-slam-globe/editor";
 
 import fc from "fast-check";
 
-import { eastNorthOf, placeAtEastNorth, tourCentre } from "./tour-origin.js";
+import {
+  eastNorthOf,
+  placeAtEastNorth,
+  tourCentre,
+  tourReach,
+} from "./tour-origin.js";
 
 describe("tourCentre", () => {
   const geo = (lat: number, lon: number, alt: number) => ({
@@ -148,5 +153,69 @@ describe("placeAtEastNorth", () => {
     expect(
       placeAtEastNorth({ eastM: 0, northM: 0 }, { lat: 91, lng: 11 }),
     ).toBeNull();
+  });
+});
+
+describe("tourReach", () => {
+  const station = (lat: number, lon: number) => ({
+    geo: { lat, lon, alt: 500 },
+  });
+  const origin = { lat: 48.1374, lng: 11.5755 };
+  const at = (eastM: number, northM: number) => {
+    const place = placeAtEastNorth({ eastM, northM }, origin);
+    if (place === null) throw new Error("no place");
+    return place;
+  };
+
+  // Why: with no ground loaded the 3D view keeps the camera over the
+  // tour's own drawn height, which is right only near the tour: 50 km
+  // away it lifted the camera to a height that has nothing to do with the
+  // ground there. The stand-in holds within the tour's extent plus a
+  // margin. Swept either side of a 5 km margin, east, west, north and
+  // south of a tour 1 km long.
+  it("holds within the margin of the tour's extent, not past it", () => {
+    const north = at(0, 1000);
+    const near = tourReach(
+      [station(origin.lat, origin.lng), station(north.lat, north.lon)],
+      [],
+      5000,
+    );
+    for (const [eastM, northM, within] of [
+      [0, 500, true],
+      [4900, 500, true],
+      [5100, 500, false],
+      [-4900, 500, true],
+      [-5100, 500, false],
+      [0, 5900, true],
+      [0, 6100, false],
+      [0, -4900, true],
+      [0, -5100, false],
+    ] as const) {
+      expect(near(at(eastM, northM))).toBe(within);
+    }
+  });
+
+  // Why: a tour's codes are part of where it is, with or without its
+  // stations; points that cannot be placed are left out.
+  it("counts the codes and leaves out what cannot be placed", () => {
+    const far = at(20_000, 0);
+    const near = tourReach(
+      [station(origin.lat, origin.lng), station(Number.NaN, 11)],
+      [{ ...far, alt: 0 }],
+      5000,
+    );
+    expect(near(at(20_000, 4000))).toBe(true);
+    expect(near(at(10_000, 0))).toBe(true);
+    expect(near(at(30_000, 0))).toBe(false);
+  });
+
+  // Why: an empty tour, or a place that is no place, is near nothing;
+  // a margin that is not a distance is a programming error.
+  it("is near nothing without points, and throws for a bad margin", () => {
+    expect(tourReach([], [], 5000)(at(0, 0))).toBe(false);
+    const near = tourReach([station(origin.lat, origin.lng)], [], 5000);
+    expect(near({ lat: Number.NaN, lon: 11 })).toBe(false);
+    expect(() => tourReach([], [], -1)).toThrow(RangeError);
+    expect(() => tourReach([], [], Number.NaN)).toThrow(RangeError);
   });
 });

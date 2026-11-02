@@ -123,3 +123,10 @@ new THREE.ShaderMaterial({
 - Compilation, drawing and GPU/CPU parity: the look-dev smoke
   (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`), the only place a
   GPU exists.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-glsl`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

@@ -250,7 +250,8 @@ rerun?, what, newStationIds? })` - a draft's work,
   A record without these fields (written before stations were kept
   whole) restores as before. Every frame a restore brings - recorded or
   created - is checked against the tour it is restored into: one whose
-  story names an asset the tour lacks is left out (its objects are seated
+  story needs an asset the tour lacks (`stepRequiredAssetIds`: a picture
+  a long text body names is not needed) is left out (its objects are seated
   by the rule), since the format refuses it and every later save would
   fail.
 - `saveStarted({ generation })`, `saved({ generation, written,
@@ -281,7 +282,19 @@ largeTour?, cannotSave? })`.
     (`StationEdit`; `image: null` clears it), by `stationEditChange`'s
     rules: a title of at most 80 characters (`checkTourTitle`, blank
     clears it), a description of at most 2000 (`checkTourDescription`),
-    an image that is a photo of that station or an image asset. Any
+    an image that is a photo of that station or an image asset, a story
+    character (`character: StationCharacterEdit { block, view?, advance?,
+facingDeg? }`): his block's view (one of `TOUR_BLOCK_VIEWS.character`),
+    the advance of every step showing him (`tap` or `lineEnd`), his rest
+    rotation turned to face a heading (`facingRotation`, his place kept);
+    a block that is no character of the station is refused; a text of a
+    block its story shows (`storyText: StationStoryTextEdit { block,
+field, value }`, `withStoryText`): a key of the format's
+    `TOUR_BLOCK_TEXT_RULES` for the block's kind, trimmed, checked by
+    `checkTourBlockText`, a blank one removing an optional text; refused
+    for a block the story does not show (a free block is the world
+    view's), a field the kind has not, a text over its cap, a needed text
+    emptied, or a declared character's name. Any
     station the next write carries is edited, a written one no frame
     names (it follows its items until a write prunes it) too: it becomes
     one of the document's frames (`framesHolding`), and any other emptied
@@ -424,7 +437,14 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   holds it, or an image asset. One pass over the objects per call.
 - `stationEditChange(state, id, edit)` - `edited` with the frame to
   dispatch, `unchanged`, `refused` with the field the format refuses
-  (`title`, `radius`, `description`, `image`), or `missing`.
+  (`title`, `radius`, `description`, `image`, `character`, `storyText`),
+  or `missing`.
+  Tests of the character edit: `tour-document-characters.test.ts` (one
+  undo step, a change, the saved tour read back by the format's parser,
+  the refusals changing nothing); of the story texts:
+  `tour-document-story-text.test.ts` (the same, per kind and field, and
+  a property: any sequence of such edits saves a tour the format reads,
+  every cap held, the free block untouched).
 - `stationDeleteRefusal(state, id)` - `missing`, `last` (a tour keeps at
   least one station) or null.
 - `documentFrames(state)` - every frame the next write carries, whole and
@@ -462,6 +482,12 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   history no longer names them. The stations are the document's as they
   are, and a write assigns nothing. The creator's station HUD (`creator-stations.ts`)
   reads its stations from it.
+- `historyTimingEntries(state)` - the read-along entries
+  (`timing/<blockId>.json`, relative to the tour's folder) the undo and
+  redo steps' long texts name, story or free. Every write keeps them
+  (`keepEntries`: the desktop's save snapshot and the phone's Finish), as
+  `historyAssetIds` keeps assets, so an undo of a narration's removal
+  across a save finds its timing.
 - `createdStationFrames(state)` - the frames of the stations this page
   created (those the tour as opened lacks): what the draft's settings
   record keeps whole (`tour-document-draft.ts`).
@@ -761,3 +787,13 @@ store.dispatch(tourDocumentActions.undone());
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
   The slice is kind-agnostic; this pins that it stays so.
+
+## Narration (read-along timings and voices)
+
+- State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each), `voices` (audio assets brought in here; `manifestNow` lists the ones the written tour does not).
+- `narrationEdited({ object, timing?, voice?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when a voice is not audio, reuses a held id or is not the narration's audio, when the narration names an audio the tour does not hold, or when the entry is not the object's own.
+  - An undo brings back the entry's text the step started from.
+  - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
+- `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.
+- A duplicated narrated text keeps its voice but not the original's timing entry (`copiedNarration`).

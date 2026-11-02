@@ -38,6 +38,7 @@ import {
   checkTourBlockIdsUnique,
   type TourBlock,
   type TourBlockDrop,
+  type TourBlocksReadOptions,
 } from './tour-blocks.js';
 import {
   checkTourDescription,
@@ -104,6 +105,8 @@ export interface TourStation {
  *  its fields). */
 export interface TourStationsReadOptions {
   readonly assets: readonly TourAsset[];
+  /** The tour's declared characters by id, which a character block names. */
+  readonly characters?: TourBlocksReadOptions['characters'];
   readonly fail: TourFail;
   readonly lenient?: boolean;
   readonly onDropped?: (drop: TourStationDrop | TourBlockDrop) => void;
@@ -221,6 +224,9 @@ function parseStation(
   const title = tourTextOf(value.title);
   const content = parseTourStationContent(value, at, {
     assets: options.assets,
+    ...(options.characters === undefined
+      ? {}
+      : { characters: options.characters }),
     fail,
     lenient,
     ...(options.onDropped === undefined

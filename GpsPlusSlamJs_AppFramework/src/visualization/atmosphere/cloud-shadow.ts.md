@@ -130,3 +130,10 @@ cloudShadow.sync(atmosphere);
   (`cloudColumnTransmittanceToward`) says it is, clear ground unchanged, the
   pattern following the drift, with the ring shadow and the haze; the cost
   as an on/off ratio.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-shadow`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

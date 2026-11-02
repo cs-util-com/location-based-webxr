@@ -546,7 +546,7 @@ export function planFlight(
      * for a line, 45 for R1); a press that fitted a steeper line than
      * asked passes the asked angle, and eases to it below the bend.
      */
-    readonly meteorLandDeg?: number;
+    readonly meteorLandDeg?: number | undefined;
     /**
      * The target's ground, m above `ellipsoid` (round-4 plan DEC-R4-1;
      * default 0): the path flies over the ellipsoid lifted to it

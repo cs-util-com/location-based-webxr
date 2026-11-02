@@ -21,6 +21,7 @@ import { createLogger } from '../utils/logger';
 import { getSessionsRootHandle } from './opfs-storage';
 import { assertSafeZipEntryPaths } from './zip-entry-path.js';
 import { writeFileOrAbort } from './write-file-or-abort';
+import { classifyPickerRejection } from './picker-errors.js';
 
 const log = createLogger('ZipExport');
 
@@ -349,6 +350,11 @@ export const PDF_FILE_TYPE: DownloadFileType = {
   extension: '.pdf',
 };
 
+/** A rejection's message for a log line; a non-error is stringified. */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Trigger a file download, with the picker filtered to `fileType`.
  *
@@ -369,8 +375,9 @@ export async function downloadBlob(
 ): Promise<boolean> {
   // Try File System Access API first (better UX on desktop)
   if ('showSaveFilePicker' in window && window.showSaveFilePicker) {
+    let handle: FileSystemFileHandle | null = null;
     try {
-      const handle = await window.showSaveFilePicker({
+      handle = await window.showSaveFilePicker({
         suggestedName: filename,
         types: [
           {
@@ -379,20 +386,38 @@ export async function downloadBlob(
           },
         ],
       });
-      // Aborted on failure: a close() after a failed write would commit a
-      // partial file over the one the user picked (writeFileOrAbort).
-      await writeFileOrAbort(handle, blob);
-      log.info(`Saved via File System Access API: ${filename}`);
-      return true;
     } catch (err) {
-      const error = err as Error;
-      if (error.name === 'AbortError') {
+      if (classifyPickerRejection(err) === 'cancelled') {
         // User cancelled - don't fall through
         log.info('User cancelled save dialog');
         return false;
       }
       // Fall through to <a download> fallback
-      log.warn('showSaveFilePicker failed, using fallback:', error.message);
+      log.warn('showSaveFilePicker failed, using fallback:', messageOf(err));
+    }
+    if (handle !== null) {
+      try {
+        // Aborted on failure: a close() after a failed write would commit a
+        // partial file over the one the user picked (writeFileOrAbort).
+        await writeFileOrAbort(handle, blob);
+        log.info(`Saved via File System Access API: ${filename}`);
+        return true;
+      } catch (err) {
+        // A failed write keeps the rule it had before the pick and the
+        // write were split (download-blob.test.ts): an error NAMED
+        // AbortError ends like a dismissed dialog, anything else falls
+        // through to the download as well.
+        if (
+          (err as { readonly name?: unknown } | null)?.name === 'AbortError'
+        ) {
+          log.info('User cancelled save dialog');
+          return false;
+        }
+        log.warn(
+          'Writing the picked file failed, using fallback:',
+          messageOf(err)
+        );
+      }
     }
   }
 

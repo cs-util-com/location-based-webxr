@@ -35,6 +35,7 @@
     "@reduxjs/toolkit": "^2.12.0",
     "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
+    "gps-plus-slam-editor-kit": "workspace:*",
     "gps-plus-slam-globe": "workspace:*",
     "gps-plus-slam-osm": "workspace:*",
     "leaflet": "^1.9.4",

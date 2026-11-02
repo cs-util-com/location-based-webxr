@@ -2,7 +2,8 @@
 /**
  * The spherical cloud volume from about 700 km (round-4 plan
  * 2026-10-11-0122, R4d / V1, DEC-R4-5 as reconciled with DEC-R3-6 in its
- * §6 item 8; `globe-cloud-shell-volume.js`, `cloudShellVolume=1`).
+ * §6 item 8; the Globe package's `globe-cloud-shell-volume-pass.ts`,
+ * `cloudShellVolume=1`).
  *
  * Why this file matters: the owner saw the clouds "almost gone between
  * about 700 and 30 km" and asked for volumetric clouds that take over from

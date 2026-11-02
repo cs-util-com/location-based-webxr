@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 import {
   GROUND_HIT,
   groundHit,
+  ellipsoidPointOfRay,
+  groundPointOfRay,
   groundReachM,
   marchToGround,
   terrainAboveGround,
@@ -512,4 +514,119 @@ describe("marchToGround", () => {
     expect(hit.t).toBeLessThanOrEqual(8 + GROUND_HIT.minStepM);
     expect(hit.nulls).toBeGreaterThan(0);
   });
+});
+
+describe("groundPointOfRay", () => {
+  // Why: the camera's controls zoom and pivot on the point their ray
+  // meets. Picked from the relief's DRAWN mesh, a pinch from eye height
+  // found a point 15 km off and 5.8 km under the ground, and every step
+  // (a share of the distance to that point) flew the camera kilometres
+  // through the ground. This gives them the SAMPLED ground instead, with
+  // a reach to the ray's own horizon: a shallow ray from 300 m (2 degrees
+  // down, the ground about 8.6 km out) is found, which the default 5 km
+  // reach would call out of reach.
+  it("finds the sampled ground within the ray's horizon, null on a miss", () => {
+    const terrain = fakeTerrain(() => 516);
+    const ray = rayFrom(516, 300, -2);
+    expect(groundHit(terrain, ray).miss).toBe("out-of-reach");
+    const point = groundPointOfRay(terrain)(ray);
+    if (point === null) throw new Error("no ground");
+    expect(heightOf(point)).toBeCloseTo(516, 3);
+    const t = point.distanceTo(ray.origin);
+    expect(t / 1000).toBeGreaterThan(8);
+    expect(t / 1000).toBeLessThan(9.5);
+    // The sky, and ground not loaded: no point (the caller falls back).
+    expect(groundPointOfRay(terrain)(rayFrom(516, 1.7, 10))).toBeNull();
+    expect(
+      groundPointOfRay(fakeTerrain(() => null))(rayFrom(516, 1.7, -10)),
+    ).toBeNull();
+  });
+
+  // Why: the editor moves the globe's group under the camera (its frame
+  // follows the tour), so the ground's frame is read for every ray, not
+  // once when the function is made.
+  it("reads the group's frame for every ray", () => {
+    const terrain = fakeTerrain(() => 516);
+    const find = groundPointOfRay(terrain);
+    const frame = WGS84_ELLIPSOID.getEastNorthUpFrame(
+      MUNICH.lat,
+      MUNICH.lon,
+      0,
+      new THREE.Matrix4(),
+    ).invert();
+    terrain.tiles.group.matrix.copy(frame);
+    terrain.tiles.group.updateMatrixWorld(true);
+    const point = find(rayFrom(516, 1.7, -10).applyMatrix4(frame));
+    if (point === null) throw new Error("no ground");
+    const ecef = point.clone().applyMatrix4(frame.clone().invert());
+    expect(heightOf(ecef)).toBeCloseTo(516, 3);
+  });
+
+  // Why: the reach was the horizon of the origin's height over the ground
+  // UNDER it, so from eye height on a summit (1.7 m: the 5 km default) a
+  // ray down to the valley floor 10 km out fell back to the ellipsoid,
+  // about twice as far, and the zoom stepped toward a point under the
+  // valley. The reach also runs to where the ray meets the ellipsoid, which
+  // ground above the ellipsoid always comes before. Swept over three
+  // pitches, the floor 5.7 to 15.3 km out.
+  it.each([-3, -5, -8])(
+    "finds a valley floor beyond the summit's horizon at %s deg",
+    (pitchDeg) => {
+      // A summit 1 000 m up falling at 1:2 to a floor at 200 m, northward.
+      const terrain = fakeTerrain((lat) =>
+        Math.max(200, 1000 - 0.5 * Math.max(0, (lat - MUNICH.lat) * 6.37e6)),
+      );
+      const ray = rayFrom(1000, 1.7, pitchDeg);
+      const point = groundPointOfRay(terrain)(ray);
+      if (point === null) throw new Error("no ground");
+      expect(heightOf(point)).toBeCloseTo(200, 1);
+      const floorM = 801.7 / Math.tan(-pitchDeg * DEG);
+      expect(point.distanceTo(ray.origin) / floorM).toBeCloseTo(1, 1);
+    },
+  );
+
+  // Why: under a high camera with no heights loaded beneath it the march
+  // sampled about 280 empty heights per ray, twice a frame through the
+  // controls, for an answer that is always null there. One sample decides.
+  it("samples once and gives null when no heights are loaded under the origin", () => {
+    const terrain = fakeTerrain(() => null);
+    expect(groundPointOfRay(terrain)(rayFrom(0, 3_000, -30))).toBeNull();
+    expect(terrain.calls()).toBe(1);
+  });
+});
+
+describe("ellipsoidPointOfRay", () => {
+  // Why: where no heights have loaded (or the sampled ground is out of
+  // reach) the camera's zoom and the controls still need a point to step
+  // toward: the ellipsoid under the ray, in the WORLD, read through the
+  // tiles' frame as it is now (the editor moves it). Swept over three
+  // camera heights; the sky has none.
+  it.each([300, 8_000, 40_000])(
+    "meets the ellipsoid from %s m through the tiles' frame, null for the sky",
+    (aboveM) => {
+      const terrain = fakeTerrain(() => null);
+      const frame = WGS84_ELLIPSOID.getEastNorthUpFrame(
+        MUNICH.lat,
+        MUNICH.lon,
+        0,
+        new THREE.Matrix4(),
+      ).invert();
+      terrain.tiles.group.matrix.copy(frame);
+      terrain.tiles.group.updateMatrixWorld(true);
+      const ray = rayFrom(0, aboveM, -30).applyMatrix4(frame);
+      const point = ellipsoidPointOfRay(terrain.tiles, ray);
+      if (point === null) throw new Error("no point");
+      const ecef = point.clone().applyMatrix4(frame.clone().invert());
+      expect(heightOf(ecef)).toBeCloseTo(0, 2);
+      // On the ray, ahead of its origin: about aboveM / sin 30 out.
+      expect(ray.distanceToPoint(point)).toBeLessThan(1e-3);
+      expect(point.distanceTo(ray.origin) / (2 * aboveM)).toBeCloseTo(1, 1);
+      expect(
+        ellipsoidPointOfRay(
+          terrain.tiles,
+          rayFrom(0, aboveM, 10).applyMatrix4(frame),
+        ),
+      ).toBeNull();
+    },
+  );
 });

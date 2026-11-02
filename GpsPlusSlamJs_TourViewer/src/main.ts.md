@@ -42,6 +42,44 @@ listed in `index.html.md`. The concerns and their modules:
   `#pin-sheet`, binds `hooks.visitorTap` to it, closes it with
   `hooks.stopStations`, and in visitor mode cancels `beforexrselect` on
   `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
+- `model-visitor.ts` - a model's notes, its card and a toy in hand:
+  `main.ts` mounts its DOM under `#ar-root` (`mountModelVisitorDom`, styles
+  in `model-visitor.css`), ticks it in `hooks.tickStations`, gives
+  `hooks.visitorTap` to it after the story's character (in
+  `visitor-stations.ts` `routeVisitorTap`'s order)
+  (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or
+  stage plays or stops his voice, and goes nowhere else; a tap that opens
+  no model card goes to the pin sheet) and stops it in `hooks.stopStations`.
+- `view-switch.ts`, `visitor-prefs.ts` and `visitor-prefs-slice.ts` - the
+  visitor's view preference: in visitor mode `main.ts` loads the stored
+  value from the page's guarded storage (`stepStore`) into the store,
+  mounts the switch under `#ar-root` (fed the present station's free
+  blocks once its content is set, `switchBlocks`), syncs it in
+  `hooks.tickStations`, closes it in `hooks.stopStations`, and on a choice
+  merges it into a fresh read of the device and writes it back
+  (`storeVisitorChoice`; a refused write keeps it for the visit),
+  dispatches the merged value, and says it in the walk's toast and live
+  region.
+- `long-text-sheet.ts` and `reading-sign.ts` - a long text's whole text:
+  `main.ts` builds the reading sheet under `#ar-root` (its pictures read
+  through the stations' prefetch by the asset's path, an image asset only
+  (`pictureAssetPath`), a link asking while
+  an AR session is live), opens it from `hooks.visitorTap` when a shown
+  reading sign is under the tap (`shownReadingSignUnderTap`, after the
+  reading stands in `routeVisitorTap`'s order), with the station's line
+  above the title (`readingSheetContent`), and closes it in
+  `hooks.stopStations`.
+- `narration-visitor.ts`, `captions-strip.ts` and `captions-follow.ts` -
+  a narrated long text: `main.ts` builds one narration visitor for the
+  open tour (each text's voice, its read-along read when the text opens),
+  hands the sheet its voice in `openLongText` (the block found by id in
+  the open tour), and gives the viewer placement and the view switch its
+  `verdictOf`. In visitor mode it builds the captions strip under
+  `#ar-root` and its follower; `hooks.tickStations` ticks the sheet's
+  marks and syncs the follower each frame, and `hooks.stopStations` stops
+  the follower and pauses every voice; `hooks.releaseTourMedia` (a
+  tour's close) lets every voice go (`narration.reset()`). The strip's "Full text" opens the
+  same sheet.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line

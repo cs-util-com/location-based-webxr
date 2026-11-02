@@ -19,6 +19,7 @@
  */
 
 import {
+  createAction,
   createSlice,
   current,
   isAnyOf,
@@ -35,17 +36,24 @@ import {
   tourImageIds,
 } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
+  checkTourBlockText,
   TOUR_BLOCK_TEXT_RULES,
+  TOUR_BLOCK_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
   tourTextCount,
+  type TourBlock,
+  type TourNarration,
+  type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type {
+  TourAsset,
   TourManifest,
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourTimingEntryName } from "gps-plus-slam-app-framework/ar/tour-timing";
 import {
   itemGeoPose,
   localPoseOf,
@@ -53,6 +61,7 @@ import {
   tourObjects,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { hostedObjects, objectContentKey } from "./authoring-draft.js";
+import { facingRotation } from "./character-views.js";
 import {
   afterFinish,
   codesNotHosted,
@@ -104,6 +113,7 @@ import {
   keepsItself,
   objectAssetIds,
   stepAssetIds,
+  stepRequiredAssetIds,
   storyBlocksOf,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
@@ -148,6 +158,9 @@ export interface TourDocumentView {
   /** The written stations deleted at this step (`deletedStations`);
    *  absent for none. */
   readonly deletedStations?: readonly string[];
+  /** The read-along texts at this step (`timings`), by entry; absent
+   *  for none set. */
+  readonly timings?: Readonly<Record<string, string | null>>;
 }
 
 /** A code's saved text a step sets (plan M3b): `to`, while the code still
@@ -306,6 +319,23 @@ export interface TourDocumentState {
    *  An authoring flag of the page, not of the tour - no edit, no undo
    *  step, no draft write; gone with the tour (`opened`, `closed`). */
   readonly newStationArmed: boolean;
+  /**
+   * The read-along texts this page set since the open (a narration's
+   * `timing/<blockId>.json`), by entry: the entry's JSON text, or null
+   * for none. An entry not listed holds what the written file holds. An
+   * entry is listed, with the text the file held, the first time an edit
+   * changes it - in every step of the history too, so an undo across a
+   * save brings that text back (`narrationEdited`).
+   */
+  readonly timings: Readonly<Record<string, string | null>>;
+  /** What the file last written holds for each entry of `timings`
+   *  (null: none). */
+  readonly timingsWritten: Readonly<Record<string, string | null>>;
+  /** The voices (audio assets) brought in here: listed with the tour's
+   *  assets (`manifestNow`), where a write keeps the ones a narration or
+   *  a step of the history names (`withReferencedAssets`). Only grows
+   *  while the tour is open; their bytes are the page's (a side table). */
+  readonly voices: readonly TourAsset[];
   /** The tour's codes and the hosted texts they are judged against
    *  (debug-captures plan M3a): no history step and no draft write, and
    *  not reset by `opened` or `closed` - the levels and `tour.json` are
@@ -549,6 +579,9 @@ export const initialTourDocumentState: TourDocumentState = {
   position: 0,
   save: IDLE,
   newStationArmed: false,
+  timings: {},
+  timingsWritten: {},
+  voices: [],
   codes: NO_CODES,
 };
 
@@ -894,8 +927,35 @@ export function objectMoveChange(
  *  frames, its setting, its details: `changeCount` less the objects'. */
 export function tourFieldChanges(state: TourDocumentState): number {
   return (
-    changeCount(state) - unsavedEntries(state).length - state.deleted.length
+    changeCount(state) -
+    unsavedEntries(state).length -
+    state.deleted.length -
+    timingChanges(state)
   );
+}
+
+/** The read-along texts set here that the written file does not hold,
+ *  each counted once for its long text - and not at all while that text
+ *  is itself pending (its narration changed with it). */
+export function timingChanges(state: TourDocumentState): number {
+  const entries = Object.entries(state.timings);
+  if (entries.length === 0) return 0;
+  const unsaved = new Set(unsavedEntries(state).map((p) => p.object.id));
+  const named = new Map<string, string>();
+  for (const { object } of documentObjects(state)) {
+    if (object.kind === "longText" && object.narration?.timing !== undefined) {
+      named.set(object.narration.timing, object.id);
+    }
+  }
+  return entries.filter(([entry, text]) => {
+    const id = named.get(entry);
+    return (
+      text !== null &&
+      id !== undefined &&
+      !unsaved.has(id) &&
+      text !== state.timingsWritten[entry]
+    );
+  }).length;
 }
 
 /** The manifest the next write starts from: the written tour with the
@@ -905,9 +965,26 @@ export function manifestNow(state: TourDocumentState): TourManifest | null {
   const base = framed(state);
   if (base === null) return null;
   return withDetails(
-    withNeedsNoGps(withEffectiveImages(state, base), state.needsNoGps),
+    withNeedsNoGps(
+      withVoices(withEffectiveImages(state, base), state.voices),
+      state.needsNoGps,
+    ),
     effectiveDetails(state),
   );
+}
+
+/** `manifest` with the voices brought in here that it does not list yet;
+ *  a write drops each one nothing names (`withReferencedAssets`). */
+function withVoices(
+  manifest: TourManifest,
+  voices: readonly TourAsset[],
+): TourManifest {
+  if (voices.length === 0) return manifest;
+  const listed = new Set(manifest.assets.map((a) => a.id));
+  const added = voices.filter((v) => !listed.has(v.id));
+  return added.length === 0
+    ? manifest
+    : { ...manifest, assets: [...manifest.assets, ...added] };
 }
 
 /** The images each station's card may show now, by station id: the image
@@ -986,6 +1063,26 @@ export function historyAssetIds(state: TourDocumentState): Set<string> {
     if (view.details.cover !== undefined) ids.add(view.details.cover);
   }
   return ids;
+}
+
+/**
+ * The read-along entries (`timing/<blockId>.json`, relative to the
+ * tour's folder) the undo and redo steps' long texts name, story or free:
+ * a write keeps them (`keepEntries`), as `historyAssetIds` keeps assets,
+ * so an undo of a narration's removal across a save finds its timing.
+ */
+export function historyTimingEntries(state: TourDocumentState): Set<string> {
+  const names = new Set<string>();
+  const add = (block: TourBlock | TourObject): void => {
+    if (block.kind === "longText" && block.narration?.timing !== undefined) {
+      names.add(block.narration.timing);
+    }
+  };
+  for (const { view } of [...state.past, ...state.future]) {
+    for (const frame of view.stations) frame.blocks.forEach(add);
+    view.objects.forEach(add);
+  }
+  return names;
 }
 
 /** The manifest a write carries now (the Finish's rule,
@@ -1076,7 +1173,9 @@ interface Seating {
 }
 
 /** `frames` with `back` (one frame) where it stood in `file`: before the
- *  first of them the file lists after it, else after them all. */
+ *  first of them the file lists after it, or that the file does not list
+ *  (a station made since, which a reload puts after the file's own), else
+ *  after them all. */
 function atFilePlace(
   frames: readonly StationFrame[],
   back: readonly StationFrame[],
@@ -1085,7 +1184,10 @@ function atFilePlace(
   const ids = file.map((s) => s.id);
   const at = ids.indexOf(back[0]?.id ?? "");
   const later = new Set(at < 0 ? [] : ids.slice(at + 1));
-  const i = frames.findIndex((f) => later.has(f.id));
+  const i =
+    at < 0
+      ? -1
+      : frames.findIndex((f) => later.has(f.id) || !ids.includes(f.id));
   return i < 0
     ? [...frames, ...back]
     : [...frames.slice(0, i), ...back, ...frames.slice(i)];
@@ -1243,7 +1345,8 @@ export function changeCount(state: TourDocumentState): number {
     // follows at the end (`withFrames`), which is no new order.
     (sameOrder(state.stations, written.stations) ? 0 : 1) +
     (state.needsNoGps !== (written.needsNoGps === true) ? 1 : 0) +
-    details
+    details +
+    timingChanges(state)
   );
 }
 
@@ -1305,6 +1408,9 @@ export function viewOf(state: TourDocumentState): TourDocumentView {
     ...(state.deletedStations.length === 0
       ? {}
       : { deletedStations: state.deletedStations }),
+    ...(Object.keys(state.timings).length === 0
+      ? {}
+      : { timings: state.timings }),
   };
 }
 
@@ -1473,6 +1579,7 @@ function goTo(
     ...contentAt(state.written, view, keptStationsOf(state)),
     stations: view.stations,
     deletedStations: view.deletedStations ?? [],
+    timings: view.timings ?? {},
     needsNoGps: view.needsNoGps,
     details: view.details,
     touched: {
@@ -1694,6 +1801,9 @@ interface TourSaved {
    *  holds the view at this history `position` (the save's snapshot's).
    *  Absent for a download and for the phone's Finish. */
   readonly inPlaceAt?: number;
+  /** The read-along texts the write holds, by entry (null: none), for
+   *  the entries of `timings` it started from. */
+  readonly timings?: Readonly<Record<string, string | null>>;
 }
 
 /** A fresh save status that keeps who holds the page's save slot: the
@@ -1736,6 +1846,130 @@ function putObject(
       stations: withoutEmptied({ ...before, placed, stations }, [left]),
     },
     what,
+  );
+}
+
+/** What `narrationEdited` carries. */
+export interface NarrationEditPayload {
+  /** The long text with its narration as it is to be. */
+  readonly object: TourObject;
+  /** Its read-along entry's new text (null: none) and, read by the page,
+   *  what the written file holds there now (null: none) - the text an
+   *  undo to a step before this page first set it brings back. */
+  readonly timing?: {
+    readonly entry: string;
+    readonly text: string | null;
+    readonly previous: string | null;
+  };
+  /** A voice brought in with it (the narration's new audio). */
+  readonly voice?: TourAsset;
+  readonly what: string;
+}
+
+/** `state` with the read-along entry `entry` listed at `previous` (what
+ *  the written file holds) in `timings`, `timingsWritten` and every step
+ *  of the history that does not list it yet. */
+function withTimingListed(
+  state: TourDocumentState,
+  entry: string,
+  previous: string | null,
+): TourDocumentState {
+  const listed = (at: TourHistoryStep): TourHistoryStep =>
+    at.view.timings !== undefined && Object.hasOwn(at.view.timings, entry)
+      ? at
+      : {
+          ...at,
+          view: {
+            ...at.view,
+            timings: { ...at.view.timings, [entry]: previous },
+          },
+        };
+  return {
+    ...state,
+    timings: { ...state.timings, [entry]: previous },
+    timingsWritten: { ...state.timingsWritten, [entry]: previous },
+    past: state.past.map(listed),
+    future: state.future.map(listed),
+  };
+}
+
+/**
+ * A free long text's narration changed (`narrationEdited`), as one step:
+ * its voice (a new one brought in: `voice`), whether it names its
+ * read-along entry, and that entry's text. Refused, changing nothing: for
+ * anything but a free long text of the document, a change of anything but
+ * its narration, a voice the tour neither holds nor brings in (as audio,
+ * under an id no asset has), a read-along entry other than its own
+ * (`timing/<id>.json`), a text where the narration names no entry or none
+ * where it does, and a change that changes nothing.
+ */
+function narrationEdit(
+  before: TourDocumentState,
+  payload: NarrationEditPayload,
+): TourDocumentState {
+  const written = before.written;
+  if (written === null) return before;
+  const { object, timing, voice } = payload;
+  const was = documentObjects(before).find(
+    (o) => o.object.id === object.id,
+  )?.object;
+  if (was?.kind !== "longText" || object.kind !== "longText") return before;
+  if (!sameJson({ ...was, narration: null }, { ...object, narration: null })) {
+    return before;
+  }
+  const narration = object.narration;
+  const held = new Set([...written.assets, ...before.voices].map((a) => a.id));
+  if (
+    voice !== undefined &&
+    (voice.kind !== "audio" ||
+      held.has(voice.id) ||
+      narration?.audio !== voice.id)
+  ) {
+    return before;
+  }
+  if (
+    narration !== undefined &&
+    narration.audio !== voice?.id &&
+    !held.has(narration.audio)
+  ) {
+    return before;
+  }
+  let entry: string;
+  try {
+    entry = tourTimingEntryName(object.id);
+  } catch {
+    return before;
+  }
+  if (narration?.timing !== undefined && narration.timing !== entry) {
+    return before;
+  }
+  let base = before;
+  let timings = before.timings;
+  if (timing !== undefined) {
+    if (timing.entry !== entry) return before;
+    if ((timing.text === null) !== (narration?.timing === undefined)) {
+      return before;
+    }
+    if (!Object.hasOwn(before.timings, entry)) {
+      base = withTimingListed(before, entry, timing.previous);
+    }
+    timings = { ...base.timings, [entry]: timing.text };
+  }
+  if (
+    voice === undefined &&
+    sameJson(was, object) &&
+    timings[entry] === base.timings[entry]
+  ) {
+    return before;
+  }
+  return edited(
+    base,
+    {
+      placed: upsertPlaced(base.placed, { object }),
+      timings,
+      voices: voice === undefined ? base.voices : [...base.voices, voice],
+    },
+    payload.what,
   );
 }
 
@@ -1864,6 +2098,33 @@ export interface StationEdit {
   readonly foundRadiusM?: number;
   readonly description?: string | null;
   readonly image?: string | null;
+  /** A character of the station's story, set in the station's inspector. */
+  readonly character?: StationCharacterEdit;
+  /** A text of a block the station's story shows, typed in the station's
+   *  inspector. */
+  readonly storyText?: StationStoryTextEdit;
+}
+
+/** One text field (`field`, a key of the format's `TOUR_BLOCK_TEXT_RULES`
+ *  for the block's kind) of the story block `block`, set to `value`:
+ *  trimmed at its ends, its lines kept; a blank value removes an optional
+ *  text. */
+export interface StationStoryTextEdit {
+  readonly block: string;
+  readonly field: string;
+  readonly value: string;
+}
+
+/** A story character's settings: his `view` (one of the format's views
+ *  of a character), how the steps showing him move on (`advance`), the
+ *  heading he faces at rest (`facingDeg`, degrees clockwise from the
+ *  station's own north - true north only while the station is not
+ *  turned, since he turns with it); a field left out stays. */
+export interface StationCharacterEdit {
+  readonly block: string;
+  readonly view?: string;
+  readonly advance?: "tap" | "lineEnd";
+  readonly facingDeg?: number;
 }
 
 /** What `stationEditChange` finds: the frame to dispatch, nothing, why
@@ -1873,7 +2134,13 @@ export type StationEditChange =
   | { readonly kind: "unchanged" }
   | {
       readonly kind: "refused";
-      readonly reason: "title" | "radius" | "description" | "image";
+      readonly reason:
+        | "title"
+        | "radius"
+        | "description"
+        | "image"
+        | "character"
+        | "storyText";
     }
   | { readonly kind: "missing" };
 
@@ -1892,13 +2159,100 @@ function withText(
   return checked.ok ? { ...frame, [key]: checked.value } : null;
 }
 
+/** Whether `edit`'s view is one of a character's and its advance a tap
+ *  or the line's end (either left out fits). */
+function characterEditFits(edit: StationCharacterEdit): boolean {
+  const views: readonly string[] = TOUR_BLOCK_VIEWS.character;
+  const advances: readonly string[] = ["tap", "lineEnd"];
+  return (
+    (edit.view === undefined || views.includes(edit.view)) &&
+    (edit.advance === undefined || advances.includes(edit.advance))
+  );
+}
+
+/** `frame` with its story character `edit.block` set by `edit`; null
+ *  when the block is no character of it, the view is none of a
+ *  character's, the advance is neither a tap nor the line's end, or the
+ *  facing is no number. The steps that show him all take the advance. */
+function withCharacter(
+  frame: StationFrame,
+  edit: StationCharacterEdit,
+): StationFrame | null {
+  const block = frame.blocks.find((b) => b.id === edit.block);
+  if (block?.kind !== "character" || !characterEditFits(edit)) return null;
+  let rotation = block.pose.rotation;
+  if (edit.facingDeg !== undefined) {
+    const turned = facingRotation(edit.facingDeg);
+    if (turned === null) return null;
+    rotation = turned;
+  }
+  const character = {
+    ...block,
+    ...(edit.view === undefined ? {} : { view: edit.view }),
+    pose: { ...block.pose, rotation },
+  } as typeof block;
+  const advance = edit.advance;
+  return {
+    ...frame,
+    blocks: frame.blocks.map((b) => (b.id === edit.block ? character : b)),
+    steps:
+      advance === undefined
+        ? frame.steps
+        : frame.steps.map((s) =>
+            s.action.kind === "show" && s.action.block === edit.block
+              ? { ...s, advance: { mode: advance } }
+              : s,
+          ),
+  };
+}
+
+/** `frame` with the text `edit.field` of its story block `edit.block`
+ *  set (`StationStoryTextEdit`); null when the block is none its story
+ *  shows, the kind has no such text, the text breaks its cap or empties a
+ *  text the block needs, or it is a declared character's name (the
+ *  declaration's, written over on every read). */
+function withStoryText(
+  frame: StationFrame,
+  edit: StationStoryTextEdit,
+): StationFrame | null {
+  const block = storyBlocksOf(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const rules = TOUR_BLOCK_TEXT_RULES[block.kind] as Readonly<
+    Record<string, TourTextRule | undefined>
+  >;
+  const rule = Object.hasOwn(rules, edit.field) ? rules[edit.field] : undefined;
+  if (rule === undefined) return null;
+  if (
+    block.kind === "character" &&
+    block.character !== undefined &&
+    edit.field === "name"
+  ) {
+    return null;
+  }
+  const text = edit.value.trim();
+  const next = { ...(block as unknown as Record<string, unknown>) };
+  if (text === "") {
+    if (rule.required) return null;
+    delete next[edit.field];
+  } else {
+    if (!checkTourBlockText(rule, text).ok) return null;
+    next[edit.field] = text;
+  }
+  const after = next as unknown as TourBlock;
+  return {
+    ...frame,
+    blocks: frame.blocks.map((b) => (b.id === edit.block ? after : b)),
+  };
+}
+
 /**
  * What `edit` would make of the station `stationId`, by the format's rules
  * (both a page and the reducer ask it): a title of at most 80 characters
  * (`checkTourTitle`), a found radius from 2 m to 300 m (`isStationRadius`)
  * with the preload radius twice it, a description of at most 2000
  * (`checkTourDescription`), a card image naming a photo of THIS station or
- * an image asset of the tour (`stationImages`).
+ * an image asset of the tour (`stationImages`), a story character set by
+ * `withCharacter`, a story block's text set by `withStoryText`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -1934,6 +2288,16 @@ export function stationEditChange(
       return { kind: "refused", reason: "image" };
     }
     next = { ...next, image: edit.image };
+  }
+  if (edit.character !== undefined) {
+    const characterSet = withCharacter(next, edit.character);
+    if (characterSet === null) return { kind: "refused", reason: "character" };
+    next = characterSet;
+  }
+  if (edit.storyText !== undefined) {
+    const texted = withStoryText(next, edit.storyText);
+    if (texted === null) return { kind: "refused", reason: "storyText" };
+    next = texted;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }
@@ -2069,6 +2433,18 @@ function copyText(text: string, max: number): string {
   return tourTextCount(marked) <= max ? marked : text;
 }
 
+/** A long text under a new id keeps its voice but not its read-along: the
+ *  timing entry is named by the block's own id (`timing/<blockId>.json`),
+ *  so the format refuses a copy naming the original's, and every save of
+ *  the tour would throw. */
+function copiedNarration<T extends { readonly narration?: TourNarration }>(
+  text: T,
+): T {
+  if (text.narration?.timing === undefined) return text;
+  const { timing: _timing, ...narration } = text.narration;
+  return { ...text, narration };
+}
+
 /** `object` as a new item `newId` at `geo` in `station`: made now
  *  (`createdAtIso`), a captured photo under its own image asset (the new
  *  id, `content/<id>.` its extension), its text marked as a copy where
@@ -2101,6 +2477,11 @@ function copiedObject(
       return base.title === undefined
         ? base
         : { ...base, title: copyText(base.title, rules.model.title.max) };
+    case "longText":
+      return copiedNarration({
+        ...base,
+        title: copyText(base.title, rules.longText.title.max),
+      });
     case "picture": {
       const marked =
         base.caption === undefined
@@ -2316,7 +2697,11 @@ function stationDuplicate(
     id: payload.newStationId,
     geo,
     title: copyTitle(shownTitle(before, frame)),
-    blocks: frame.blocks.map((b) => ({ ...b, id: renamed(b.id) })),
+    blocks: frame.blocks.map((b) =>
+      b.kind === "longText"
+        ? copiedNarration({ ...b, id: renamed(b.id) })
+        : { ...b, id: renamed(b.id) },
+    ),
     steps: frame.steps.map((s) =>
       s.action.kind === "show"
         ? {
@@ -2483,6 +2868,15 @@ function applySettle(
   if (last !== undefined) past.push({ ...last, codes: stepCodes });
   return { ...after, past };
 }
+
+/** A free long text's narration changed - its voice, whether it names
+ *  its read-along entry, that entry's text - as one step
+ *  (`narrationEdit`). An action of its own, beside the slice's: one more
+ *  case reducer there makes the slice's type too long for the compiler
+ *  to write out (TS7056). */
+const narrationEdited = createAction<NarrationEditPayload>(
+  "tourDocument/narrationEdited",
+);
 
 const tourDocumentSlice = createSlice({
   name: "tourDocument",
@@ -2806,10 +3200,11 @@ const tourDocumentSlice = createSlice({
         const writtenAssets = new Set(
           plainBefore.written.assets.map((a) => a.id),
         );
-        // A frame whose story names an asset the tour lacks is left out:
-        // the format refuses it, so every later save would fail.
+        // A frame whose story needs an asset the tour lacks is left out:
+        // the format refuses it, so every later save would fail. A picture
+        // a long text body names is not needed (its alt text is read).
         const fits = (frame: StationFrame): boolean =>
-          stepAssetIds(frame).every((id) => writtenAssets.has(id));
+          stepRequiredAssetIds(frame).every((id) => writtenAssets.has(id));
         const recorded = (work.frames ?? []).filter(fits);
         const replaced = new Map(recorded.map((f) => [f.id, f]));
         // A recorded frame the document carries is an edit beyond its pose:
@@ -2968,6 +3363,10 @@ const tourDocumentSlice = createSlice({
         stations: unmoved
           ? [...framesOf(written), ...startedSince]
           : before.stations,
+        timingsWritten:
+          action.payload.timings === undefined
+            ? before.timingsWritten
+            : { ...before.timingsWritten, ...action.payload.timings },
         // An in-place write names its view once it arrives
         // (`saveDelivered`); a download leaves no in-place file.
         save: saveWith(
@@ -3268,11 +3667,19 @@ const tourDocumentSlice = createSlice({
       return withHostedLevels(plain(state), session, { parsed: levels });
     },
   },
+  extraReducers: (builder) => {
+    builder.addCase(narrationEdited, (state, action) =>
+      narrationEdit(plain(state), action.payload),
+    );
+  },
 });
 
 /** The slice's actions, as a namespace: `tourDocumentActions.placed`
  *  (the phone's `tourAuthoring` slice has an `objectPlaced` of its own). */
-export const tourDocumentActions = tourDocumentSlice.actions;
+export const tourDocumentActions = {
+  ...tourDocumentSlice.actions,
+  narrationEdited,
+};
 
 export const tourDocumentReducer = tourDocumentSlice.reducer;
 
@@ -3295,6 +3702,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.itemsGrounded,
   tourDocumentActions.modelResized,
   tourDocumentActions.settleApplied,
+  tourDocumentActions.narrationEdited,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,
   tourDocumentActions.undone,

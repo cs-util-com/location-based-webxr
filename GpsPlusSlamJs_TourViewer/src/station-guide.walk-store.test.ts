@@ -440,7 +440,11 @@ describe("the station guide on the page's store", () => {
   // other dispatch of that call. And a walk that has settled stays quiet:
   // a second tick on the same inputs dispatches nothing to the walk in any
   // steady state (the skip asked, a note run out, GPS too weak, a story
-  // playing, the tour complete), each of which the walks reach.
+  // playing, the tour complete), each of which the walks reach: the
+  // explicit walk below reaches every one on every run, so the vacuity
+  // check cannot fail by chance (an unseeded run once reached no
+  // complete tour), and `size: "max"` lets the walks reach their full 60
+  // calls (fast-check's default size caps `maxLength` at about 12).
   it("sends at most one walk batch per call, after the call's other dispatches, and none on a repeated tick, whatever the visitor does", () => {
     const callArb = fc.oneof(
       fc.record({
@@ -455,6 +459,39 @@ describe("the station guide on the page's store", () => {
         station: fc.integer({ min: 0, max: 2 }),
       }),
     );
+    type Call = typeof callArb extends fc.Arbitrary<infer C> ? C : never;
+    type Move = Extract<Call, { kind: "move" }>;
+    const move = (
+      near: number,
+      dtMs: Move["dtMs"] = 1_000,
+      accuracyM: Move["accuracyM"] = 4,
+    ): Call => ({
+      kind: "move",
+      near,
+      dtMs,
+      accuracyM,
+    });
+    /** A visitor who reaches every steady state: a weak fix; two stations
+     *  found; the third skipped (the skip asked, then confirmed) while both
+     *  stories play; the skip's note run out; both stories ended: the tour
+     *  complete. Checked to reach each of the five states. */
+    const WHOLE_WALK: Call[] = [
+      move(0, 1_000, 40),
+      move(0),
+      move(0),
+      move(0),
+      move(0),
+      move(1),
+      move(1),
+      { kind: "skip" },
+      { kind: "skip" },
+      move(-1, 130_000),
+      move(-1),
+      { kind: "story-end", station: 0 },
+      { kind: "story-end", station: 1 },
+      move(-1),
+    ];
+    let longest = 0;
     const steady = {
       armed: 0,
       noteRunOut: 0,
@@ -465,8 +502,9 @@ describe("the station guide on the page's store", () => {
     fc.assert(
       fc.property(
         fc.constantFrom<TourOrder>("any", "fixed"),
-        fc.array(callArb, { minLength: 1, maxLength: 60 }),
+        fc.array(callArb, { minLength: 1, maxLength: 60, size: "max" }),
         (order, calls) => {
+          longest = Math.max(longest, calls.length);
           const spots = [
             [0, 0],
             [25, 0],
@@ -503,13 +541,16 @@ describe("the station guide on the page's store", () => {
           }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 200, examples: [["any", WHOLE_WALK]] },
     );
-    // Not vacuous: every steady state was reached and ticked twice.
+    // Not vacuous: every steady state was reached and ticked twice, and
+    // a generated walk was longer than the explicit one (fast-check's
+    // default size never makes one past about 12 calls).
+    expect(longest, "the longest walk").toBeGreaterThan(WHOLE_WALK.length);
     for (const [state, count] of Object.entries(steady)) {
       expect(count, state).toBeGreaterThan(0);
     }
-  });
+  }, 120_000);
 
   // Why (K4 review R9, re-stated through the store): the existing property
   // that no order can deadlock - stories that never end, stations nobody

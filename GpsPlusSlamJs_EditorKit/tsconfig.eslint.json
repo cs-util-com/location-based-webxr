@@ -1,0 +1,13 @@
+{
+  // Inherits tsconfig.app.json WITHOUT relaxing `noUncheckedIndexedAccess`,
+  // as the Globe's and the framework's do: relaxing it here would make lint
+  // call the `!` and `=== undefined` guards typecheck requires unnecessary.
+  // It lints the tests and the configs too, so it takes their types.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*", "config/**/*"],
+  "exclude": []
+}

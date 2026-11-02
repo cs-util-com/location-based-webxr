@@ -3,7 +3,7 @@
 ## Purpose
 
 The 3D view's studio shell: the top bar's studio controls
-(Details, Undo, Redo, Help), the Edit menu's Undo and Redo (where those
+(Undo, Redo, Help), the Edit menu's Undo and Redo (where those
 fold at a phone's width), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, and the bottom bar's 3D parts (the view
@@ -15,8 +15,10 @@ the page's and keep their logic; the shell's stylesheet
 the 3D view shows.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
-station at the centre of the view, the scene's ground menu one where it
-was pressed (`scene-menu.ts`); a card's grip reorders the tour by drag
+station at the centre of the view (where the view has none, `centre()`
+null, it says to come closer to the ground and adds nothing), the scene's
+ground menu one where it
+was pressed (the editor kit's `scene-menu.ts`); a card's grip reorders the tour by drag
 (`tree-drag.ts`), the inspector's Earlier and Later by the keyboard; the
 inspector's Delete and "Move to a new station"; the bottom bar's power
 actions (`bar-actions.ts`: Duplicate, Align to station, Copy position).
@@ -28,7 +30,9 @@ inspector (a station's name, description, radius, place and heading; a
 pin's text; an item's offset, height and heading; a model's size)
 becomes one edit (`inspector-edits.ts`) and one page command
 (`deps.edits`), one undo step per field; so do Put on the ground, Put
-items on the ground, the card's picture and Add pin.
+items on the ground, the card's picture and Add pin, and a story
+character's view and advance chips (`characterChipEdit`: his station's
+`StationEdit.character`; the chip already pressed writes nothing).
 
 ## Public API
 
@@ -37,7 +41,6 @@ items on the ground, the card's picture and Add pin.
     `editorView`, `subscribe`, `dispatch`);
   - `deps.select(id)` - the page's selection (the map follows it);
   - `deps.step("undo" | "redo")` - one step of the edit history;
-  - `deps.openDetails()` - the tour's details dialog;
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
@@ -54,16 +57,56 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   the ground menu (a right click, a long press): opened at `point` (px in
   the view) for `place` (null: no ground loaded there); nothing while the
   view is hidden.
-- `EditorShell.show(view)` - the 3D view shows: the shell draws from the
-  store, applies the dock rule's `opened`, follows the store, the window's
-  size and the keys, and reads the camera every 200 ms (`READOUT_MS`).
+- `EditorShell.show(view, { approach })` - the 3D view shows: the shell
+  draws from the store, applies the dock rule's `opened`, follows the
+  store, the window's size and the keys, and reads the camera every 200 ms
+  (`READOUT_MS`). With `approach: true` (the globe view opens on its
+  approach) the tree is folded to its tab for the flight.
+- `EditorShell.approachEnded(how)` - the approach's bar went (the page
+  calls it from the view's `approach.ended`). After a takeover
+  (`"taken"`: a click, a wheel, "+", at any height) the hold ends and the
+  tree stays a tab for the creator to open. After a landing the tree folded for the
+  flight unfolds, with the `dock-unfold` animation (the class
+  `unfolding`, gone at its `animationend`) unless reduced motion asks
+  for none. It follows the dock rule as at an open with the tree unfolded
+  (a tab below 700 px, or where the open inspector has the room). Once
+  per approach, and not at all after the creator folded or unfolded the
+  tree during the flight; nothing folds the tree again afterwards (no
+  zoom-out rule exists).
 - `EditorShell.hide()` - stops all of that and lets the pictures go
-  (each draw also sweeps the cards a redraw replaced).
+  (each draw also sweeps the cards a redraw replaced). Closed mid-approach
+  it gives the tree back the fold it had at `show` (folded or not), so the
+  next open starts with the tree as the creator left it. The exception is
+  a takeover: once it has ended the approach, the tree's fold counts as the
+  creator's (they saw the folded tree and kept it), so a later close and
+  open keeps that fold and does not restore the one from before the
+  approach. Deliberately no flag for it: "stays as you left it" is the
+  rule, and after a takeover the folded tree is what they left.
+- `EditorShell.flush()` - writes the typing not yet in the tour (an
+  inspector field being typed in, a long text's writer before its
+  pause); the page calls it before a save.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and
   `origin` for the inspector); a type only, so the page's code never
   holds the 3D view's.
+- `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
+  (`inspector-edits.ts`) or pressed (`modelAct`).
+- `modelAct` answers a model's part buttons: a view chosen; a note or a
+  section brought into focus (pressed again: out of it); the 3D view asked
+  to wait for a click on the model (`modelPickAsked`; pressed again: no
+  longer), placing a part again also focusing it; a part deleted (focus and
+  wait cleared when written); a section flipped (its normal negated, a zero
+  kept 0); the clip's autoplay turned.
+
+- A long text's writer and preview come from one `createLongTextDock`
+  (`../long-text/long-text-dock.ts`): `sync` hands it the selected item's
+  `longText` model on every draw (null closes it), `act` takes the clicks
+  it owns, and `flush` writes pending typing before a selection change or
+  a save. Its body goes through `edits.block(id, "body", ...)` and its view
+  through the new `edits.view(id, view)` (`editor.editBlockView`). The
+  shell's generic field input skips its fields: only an input drawn under
+  a field name (`data-field`) is written by the shell.
 
 ## Invariants & assumptions
 
@@ -96,7 +139,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   is in it or has left it, and the help on the next Escape, also from a
   menu's button. Every other key in a menu is the menu's, and on a menu's button the
   keys that open or move in it (`key-target.ts`); T and F there are the
-  view's.
+  view's. Inside a toolbar or a radio group, Home is the widget's.
 - **Edits are the page's:** the shell writes nothing to the tour; Undo
   and Redo are the page's steps, with their titles from `nextStep`, and
   every tree command is a `deps.stations` call (one step each).
@@ -124,6 +167,15 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **The ground menu** returns the focus to the view's box (`#view3d`,
   `tabindex="-1"`), where the window's view keys keep working; hiding the
   view closes it.
+- **The approach's bar** (`.approach`, `globe-approach-run.ts`): a
+  full-width 5 px bar (`--s-load-h`) glued under the menu bar, "Loading
+  tour" on a 22 px tab (`--s-load-tab-h`) hanging from its middle,
+  rounded below only. In the globe view (`#view3d[data-globe]`, set by the
+  page) the docks sit `--s-dock-top` (bar, tab and an 8 px gap) under the
+  view's top for the view's whole life, so they never move when the bar
+  goes; the default 3D view never shows the bar, and its docks sit the
+  8 px gap under the top bar. It takes no pointer, and under reduced motion it goes without
+  a fade.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
@@ -143,8 +195,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     that is less, and the hint goes; a folded tree's head ends where the
     inspector begins (156 px at 390), so the inspector never covers its
     fold arrow;
-  - at 720 px Details goes (File's Tour details… and the tour's name open
-    the same dialog) and the buttons drop their icons, keeping words;
+  - at 720 px the buttons drop their icons, keeping words;
   - at 520 px Undo and Redo fold into the Edit menu;
   - at 400 px the menus' carets go and the groups close up.
   - Each step starts where the bar, in its most crowded state (the unsaved
@@ -214,7 +265,6 @@ const shell = createEditorShell({
   store,
   select,
   step: runStep,
-  openDetails,
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
@@ -265,6 +315,8 @@ with the page's commands as spies (`editor-shell.test.ts`): text typed
 and not committed goes to the selection it was typed for on a selection
 change and on `hide()`; a refused text (a block field, a pin text, a
 station name) kept in the field, a written one showing the tour's value;
+a story character's chips written as his station's edit, the pressed one
+writing nothing;
 a draw while typing (a store change, the ground
 arriving on the readout's tick) commits nothing and keeps the text and
 the focus (Chromium's synchronous `focusout` on a removed field is
@@ -300,5 +352,10 @@ touch target on a touch screen; New station here; a station with a photo duplica
 and opened again; the "+", the grips and the bar's actions in place at
 the four sizes, the Delete's key in dim letters as the prototype has it) and `editor3d-edit.spec.js` (Align to station, Copy
 position, Move to a new station). Its parts' own tests:
-`tree-reorder.test.ts`, `tree-drag.test.ts`, `bar-actions.test.ts`,
+`bar-actions.test.ts`, and in the editor kit's `src/chrome/`:
+`tree-reorder.test.ts`, `tree-drag.test.ts`,
 `scene-menu.test.ts`.
+
+## Narration
+
+`ShellEditCommands.narration` and `.editNarration` reach the session; the dock passes them, with `.voiceMaxBytes` (the page's autosave cap), to the writer's Narration section. A stamp per state of the tour's `timings` (`timingsStampOf`) goes into `buildInspector`, so the section re-reads when a timing changes without the narration record changing.

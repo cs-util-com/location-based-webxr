@@ -2,6 +2,16 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // The framework's TypeScript source, as tsconfig.app.json's `paths` and
+  // the lab's import map (`/fw/`) read it: its package `exports` point at
+  // a dist this package never builds.
+  resolve: {
+    alias: {
+      "gps-plus-slam-app-framework": fileURLToPath(
+        new URL("../../GpsPlusSlamJs_AppFramework/src", import.meta.url),
+      ),
+    },
+  },
   test: {
     // The shared fast-check time limit (every interruption is red), so a
     // failing property cannot shrink for hours where testTimeout cannot reach:

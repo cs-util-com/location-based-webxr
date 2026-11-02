@@ -87,6 +87,33 @@ describe("openTourForEditing", () => {
     await out.session.close();
   });
 
+  it("counts only the tour's details as details, never a block's or a character's dropped field", () => {
+    // Why: the reader's drops share one list. A block's note or a
+    // character's frames sheet left out is no tour detail; counted as one,
+    // the line read "This tour's undefined could not be read".
+    expect(
+      droppedDetailsLine([
+        { kind: "field", block: "b1", field: "note", reason: "too long" },
+        { kind: "block", block: "b2", reason: "unknown kind" },
+        {
+          kind: "character",
+          character: "wendel",
+          field: "characters[0].frames",
+          reason: "no image",
+        },
+        { kind: "character", character: "ada", reason: "no image" },
+      ]),
+    ).toBeNull();
+    expect(
+      droppedDetailsLine([
+        { kind: "field", block: "b1", field: "note", reason: "too long" },
+        { field: "cover", reason: "gone" },
+      ]),
+    ).toBe(
+      "This tour's cover could not be read, so the editor left it out: the next save writes the tour without it. Set it again in the tour's details.",
+    );
+  });
+
   it("names the stations whose description or card image the reader dropped, by their names, apart from the details (G2 build plan M1a)", async () => {
     // Why: a station's card image (format minor 2) whose photo or image
     // is gone, or a description or image a hand edit broke, is dropped by

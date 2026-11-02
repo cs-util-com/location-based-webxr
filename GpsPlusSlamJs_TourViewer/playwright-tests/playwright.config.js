@@ -2,6 +2,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
+import { RESULTS_NAME, specsOf } from "./e2e-plan.js";
 
 /**
  * Playwright configuration for the tour viewer.
@@ -13,7 +14,11 @@ import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
  * the specs can prove real range streaming, the fallback, and the
  * second-visit cache hit without any cloud host involved.
  *
- * Chromium-only, matching the other demo apps.
+ * Chromium-only, matching the other demo apps. Two projects, `dom` and
+ * `webgl`, from the plan in `e2e-plan.js`: the stage command
+ * (`scripts/e2e/run-projects.mjs`) runs them one after the other, the DOM
+ * specs at several workers and the WebGL specs at one. A direct
+ * `playwright test` runs both projects together at `workers` below.
  */
 const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
@@ -27,7 +32,18 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : 3,
   reporter: process.env.CI
-    ? [["github"], ["json", { outputFile: "../test-results/results.json" }]]
+    ? [
+        ["github"],
+        // The runner gives each project its own file and merges them into
+        // RESULTS_NAME. (The GitHub workflow uploads only the Recorder's
+        // results, not this file.)
+        [
+          "json",
+          {
+            outputFile: `../test-results/${process.env.E2E_RESULTS_NAME ?? RESULTS_NAME}`,
+          },
+        ],
+      ]
     : [["list"], ["html", { open: "never" }]],
   use: {
     // A browser stage that run-stage lowered below normal priority (Windows)
@@ -53,7 +69,18 @@ export default defineConfig({
     screenshot: captureArtifacts ? "on" : "only-on-failure",
     video: captureArtifacts ? "on" : "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "dom",
+      testMatch: specsOf("dom").map((name) => `**/${name}`),
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "webgl",
+      testMatch: specsOf("webgl").map((name) => `**/${name}`),
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
   webServer: [
     {
       command: "pnpm run dev -- --port 5187",

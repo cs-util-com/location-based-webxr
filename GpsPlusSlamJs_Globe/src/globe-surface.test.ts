@@ -27,6 +27,7 @@ import {
   tileMeshes,
   useLitMaterial,
 } from "./globe-surface.js";
+import type { TerrainImagery } from "./globe-terrain.js";
 import {
   GLOBE_SURFACE_CACHE_KEY,
   applyGlobeSurface,
@@ -66,6 +67,25 @@ function stubLoader(): {
 }
 
 describe("createGlobeImagery", () => {
+  // Why: a relief carrier draws this overlay too (the Tour Viewer's editor
+  // on the globe), and its terrain plugin calls the overlay's image-source
+  // methods, which the library's declared type leaves out. The return type
+  // says the overlay has them; this checks it really does.
+  it("has every method a relief's terrain calls on its imagery", () => {
+    const overlay = createGlobeImagery();
+    const methods: (keyof TerrainImagery)[] = [
+      "init",
+      "hasContent",
+      "lockTexture",
+      "getTexture",
+      "releaseTexture",
+    ];
+    for (const name of methods) {
+      expect(typeof overlay[name], name).toBe("function");
+    }
+    expect(overlay.tiling).toBeDefined();
+  });
+
   // Why (review 2026-10-03-1835 major 4 with the release): one imagery
   // overlay shared by the globe's tiles and the relief's tiles let a
   // release of one carrier free imagery the other was still composing

@@ -25,6 +25,11 @@ A block's text fields as the desktop editor's inspector edits them
   - model: Title (80);
   - character: Name (80, needed), Caption (2000, needed, prose). Its
     image and voice are assets, not text: not fields here.
+- `storyBlockFields(block)` - the fields the station's inspector types
+  for a block its story shows: `blockFields` with a short text's Caption
+  (40, needed, one line) first, since no head types it there, and
+  without a declared character's Name (his declaration's, written over
+  on every read).
 - How a block is named where it is listed is not this module's: the one
   rule is `../object-describe.ts`'s `objectTitle` (and its
   `BLOCK_KIND_LABEL`).
@@ -34,7 +39,8 @@ A block's text fields as the desktop editor's inspector edits them
   - `edited` with the block, the text trimmed at its ends (inner lines
     kept); a blank text removes an optional field;
   - `unchanged` for the same text, or for a field the kind does not have
-    here (a short text's caption, which `pinTextEdit` writes, included);
+    here (a short text's caption is one: a free one's is written by
+    `pinTextEdit` through the head, a story one's through this);
   - `refused` with a sentence ("A title takes at most 40 characters.",
     "A body takes at most 32000 UTF-16 units." - the unit's word is the
     rule's) for a text over its cap, counted in the field's unit, or ("A body

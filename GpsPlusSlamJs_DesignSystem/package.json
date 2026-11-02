@@ -9,6 +9,7 @@
     "format": "node ../scripts/test-timing/timed-stage.mjs format",
     "format:check": "prettier --check --ignore-unknown .",
     "lint:css": "node ../scripts/test-timing/timed-stage.mjs lint:css",
+    "lint": "node ../scripts/test-timing/timed-stage.mjs lint",
     "check:tokens": "node ../scripts/test-timing/timed-stage.mjs check:tokens",
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
     "test:e2e": "node ../scripts/test-timing/timed-stage.mjs test:e2e",
@@ -26,6 +27,8 @@
   "devDependencies": {
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
     "@playwright/test": "^1.63.0",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
     "prettier": "^3.9.6",
     "sharp": "0.35.2",
     "stylelint": "^17.15.0",

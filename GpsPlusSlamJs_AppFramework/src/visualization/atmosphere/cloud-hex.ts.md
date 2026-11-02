@@ -106,3 +106,10 @@ Real-Time Hex-Tiling" (JCGT 11(2)); blend: Heitz and Neyret 2018
   the browser check, plan H2).
 - `cloud-hex.property.test.ts`: continuity across every cell edge (2,000
   random points, cell sizes 1-3) and the barycentric shares.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-hex`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

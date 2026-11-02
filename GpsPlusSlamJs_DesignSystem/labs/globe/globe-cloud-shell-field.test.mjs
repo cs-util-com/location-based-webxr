@@ -1,7 +1,7 @@
 /**
  * The spherical cloud volume's two-field mix (round-4 plan 2026-10-11-0122,
  * R4d; `cloudShellFieldWeights` in the Globe package, the march's
- * `shellNoise` in `globe-cloud-shell-volume.js`).
+ * `shellNoise` in the Globe package's `globe-cloud-shell-volume-pass.ts`).
  *
  * Why this file matters: between two stations the shell mixes two fields of
  * the live noise, each at its own fixed cell scale (a scale moving with the

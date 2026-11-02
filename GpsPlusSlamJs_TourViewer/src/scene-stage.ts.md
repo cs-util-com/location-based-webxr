@@ -25,7 +25,28 @@ tour's other content (`content-placement.ts`). Plan:
       figure mounted at once (the story says what it waits for; the
       guide's `figurePoseOf` holds the pose back until the alignment has
       a heading, r881 re-review M-B);
+  - `showCharacter(stationId, imageBlob, onWaiting?, look?)` with a `look`
+    (`StageCharacterLook { view, name, line, voiced?, sheet?, pose? }`, `sheet` the image being a frames sheet the look slices, a story
+    view of tour format 4.2): the decoded image is painted into a
+    character look (`character-look.ts`) and the decoded texture is
+    freed. He stands at the block's pose position in the station's frame
+    (its holder never turned) and rests at the yaw of the station's
+    rotation times the block's; his beckon starts from where he stands;
+  - `setVoice(voice, durationMs?)` - `"idle" | "speaking" | "spoken"`,
+    with the voice clip's length when known (the look scales its
+    read-along to it), kept across a figure's replacement (the voice may
+    start before the figure stands); it reaches a released look too, so
+    his voice played by a tap after the story moves his mouth;
   - `clear()` - remove and dispose;
+  - `release()` - the story ended: a standing look stays, heard (so it
+    beckons in two stations), unreached by the next story's voice, until
+    its station stops showing; once faded out it is cleared for good, so
+    he does not come back on a return. A plain figure, a model or a look
+    still waiting is cleared as by `clear`;
+  - `characterTapTargets()` - the parts of the standing look that show
+    (`CharacterLook.tapTargets`), for the visitor's tap; empty while none
+    stands in the scene;
+  - `toggleBubble()` - the bubble view's tap;
   - `faceVisitor(nue)` - mount what waits for its position, then turn a
     standing character about the vertical.
   - `follow(isShown)` - which stations' content shows now (the present
@@ -37,7 +58,10 @@ tour's other content (`content-placement.ts`). Plan:
   `checkGlbInert`); optional `now()` (default `Date.now`), `fadeMs`
   (default `CONTENT_FADE_MS`, as the station's own content) and
   `registerFrame(fn)` (the AR frame loop, registered only while a fade
-  runs).
+  runs, and while a character look stands); optional `getCamera()` (the
+  viewer's camera a look turns and opens to; null: it stands still),
+  `beckonOf(stationId)` (the next station as an NUE offset from his pose
+  and its title, or null) and `lookPainters` (tests run without a canvas).
 - `CHARACTER_HEIGHT_M` (1.7).
 
 ## Invariants & assumptions
@@ -71,6 +95,14 @@ tour's other content (`content-placement.ts`). Plan:
   by the framework's `disposeObject3D` (every texture slot of a material,
   not only `map`: K4 review R12; no second dispose walk here, DEC-H3).
 
+- **A character look** turns itself every rendered frame against the
+  camera (its holder is never turned; `faceVisitor` leaves it alone). It
+  opens at once on mounting (the first update snaps), fades by its own
+  `setPresence` (never `setSubtreeOpacity`, which caches material
+  opacities the look changes per frame), and its frame is registered again
+  on every `follow` (a session's end clears the frame registry). `clear`
+  disposes the look and unregisters its frame.
+
 ## Examples
 
 ```ts
@@ -90,3 +122,13 @@ stage.faceVisitor(visitorNue);
   back at 0 and fades in without a second decode; waits off the scene when
   decoded while hidden; `clear` frees a hidden figure; no material write
   while it stands settled).
+- `scene-stage.test.ts` "a character in a story view stands as a
+  character look": it stands unturned and opens at once, ticks per frame
+  (the bubble closes as the camera walks off), follows a voice set before
+  it stood (the beckon is asked), fades by its presence and leaves the
+  scene, `clear` stops its frames, and no camera is no error; the block's
+  pose and the 60 degree turn from its facing; a released look staying,
+  beckoning, until its station is left, never back; `release` clearing
+  anything else; `characterTapTargets` and `toggleBubble`; the voice and
+  its length reaching a released look; a frames sheet sliced
+  by the look only when the spec says `sheet`.

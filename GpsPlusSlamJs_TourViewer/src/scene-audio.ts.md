@@ -16,7 +16,8 @@ battery"): ONE audio element for the page, unlocked by the visitor's
     rejects when the browser refuses (the story then says so);
   - `stop()` - pause, forget the end callback, revoke the clip's URL.
 - `silentWav()` - a 45-byte RIFF/WAVE, PCM mono 8 kHz, one silent sample.
-- `AudioElementLike` - the slice of `HTMLAudioElement` it drives.
+- `AudioElementLike` - the slice of `HTMLAudioElement` it drives (`duration` optional).
+- `durationMs()` - the playing clip's length in ms once its metadata is read (`duration` finite and above 0), else null (no clip, not yet known, a stream).
 
 ## Invariants & assumptions
 
@@ -44,4 +45,5 @@ await audio.play(voiceBlob, () => {}); // later, no tap needed
 
 - `scene-audio.test.ts` - every clip through the one unlocked element; one
   unlock and its URL released; a new clip stops and releases the previous;
-  the end calls back once; a refusal passes on; the WAV's header fields.
+  the end calls back once; a refusal passes on; the WAV's header fields;
+  the clip's length, and null while it is unknown.

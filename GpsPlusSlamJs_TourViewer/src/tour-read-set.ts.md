@@ -21,6 +21,9 @@ which a visitor never sees.
   - each asset's file (`manifest.assets`), under `wrap`: since format
     4.0 every media file is an asset, a captured photo's file its
     picture's image asset;
+  - each narrated long text's read-along entry, `timing/<blockId>.json`
+    (its `narration.timing`), under `wrap`; a timing file no block names
+    is not read;
   - Nothing else: a visitor never shows the zip's other images, nor a
     recorded frame (an earlier file's `captureSpots` named some, read as
     the tour's content until M1 of the debug-captures plan; the field is
@@ -38,6 +41,14 @@ which a visitor never sees.
   (timestamped GPS points)) that are not in `visitorEntryNames`. What a
   lean Finish removes. `recorder-walk-folders.test.ts` reads the
   Recorder's zip contributors and fails when one is added undecided.
+- `unnamedTimingEntryNames(entryNames, manifest, wrap, keep?) -> string[]`
+  - the read-along entries no narration names, in archive order: a
+    `timing/<name>.json` directly in `${wrap}timing/` that is not in
+    `visitorEntryNames` (the one rule for "a narration names it") and that
+    `keep` (names relative to `wrap`, the undo history's,
+    `historyTimingEntries`) does not hold. What a Finish removes. A deeper
+    path or another extension under `timing/` is no entry the format
+    writes and is never listed.
 - `recordingEntryNames(entryNames) -> string[]` - the whole recording, in
   archive order: every entry a recording writes, every frame included;
   none without an action stream. `scanEntryNames` is this minus
@@ -85,7 +96,8 @@ const leftOut = keepWalk ? [] : scanEntryNames(names, written, wrap);
 
 `tour-read-set.test.ts`: the full read set of a finished recording tour,
 no recorded frame read (also one a file's capture spots name), a wrapped
-tour, names the archive lacks; every frame in the walk, also one capture
+tour, a narrated text's timing entry (and no unnamed one), names the archive
+lacks; every frame in the walk, also one capture
 spots name (legacy `frames/` included), files
 a recording never writes (README, credits, other folders, a non-frame
 image) never in it, the whole recording as the walk,

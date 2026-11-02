@@ -17,12 +17,19 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "./move-with-code.js";
 
 /** What an object in the world is, in the pages' words and icons: a short
- *  text is a pin, a picture a photo, a model a model. */
-export type ObjectLook = "pin" | "photo" | "model";
+ *  text is a pin, a picture a photo, a long text (its reading stand) a
+ *  text, a model a model. */
+export type ObjectLook = "pin" | "photo" | "text" | "model";
+
+const LOOK: Readonly<Record<TourObject["kind"], ObjectLook>> = {
+  shortText: "pin",
+  picture: "photo",
+  longText: "text",
+  model: "model",
+};
 
 export function objectLook(kind: TourObject["kind"]): ObjectLook {
-  if (kind === "shortText") return "pin";
-  return kind === "picture" ? "photo" : "model";
+  return LOOK[kind];
 }
 
 /** Each kind in the one word every creator page uses for it: what a block
@@ -38,6 +45,13 @@ export const BLOCK_KIND_LABEL: Readonly<Record<TourBlockKind, string>> = {
   model: "3D model",
   character: "Character",
 };
+
+/** A kind's word inside a sentence ("the delete of the long text"): its
+ *  `BLOCK_KIND_LABEL` with the first letter lower-cased ("3D" kept). */
+export function kindNoun(kind: TourBlockKind): string {
+  const label = BLOCK_KIND_LABEL[kind];
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
 
 /** The texts a block may be named by, first found first: its title (a
  *  character's name), else its caption (a short text's own text). */

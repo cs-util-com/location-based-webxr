@@ -49,7 +49,7 @@ import {
   type TourSaveStatus,
 } from "../tour-document.js";
 import { describeIntegrityError, olderFormatRefusal } from "../open-errors.js";
-import { debugCapturesOf } from "../debug-captures.js";
+import { debugCapturesOf, type DebugCapture } from "../debug-captures.js";
 import { pictureProblem } from "../image-cap.js";
 import { objectLook } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
@@ -71,6 +71,7 @@ import {
   revokeDebugThumbnail,
   type DebugLayer,
 } from "./debug-capture-layer.js";
+import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   STATION_PREFIX,
   photoSource,
@@ -84,7 +85,19 @@ import {
   droppedStationFieldsLine,
   openTourForEditing,
 } from "./editor-open.js";
-import { holdPageInert } from "./page-inert.js";
+import {
+  holdPageInert,
+  revealPadding,
+  type Box,
+  createStatusLines,
+  createMenuButton,
+  menuItemControl,
+  setItemDisabled,
+  inComposite,
+  inField,
+  inMenu,
+  type GroundPlace,
+} from "gps-plus-slam-editor-kit/chrome";
 import {
   doneHostedName,
   fetchTourFile,
@@ -125,15 +138,16 @@ import {
   createAutosave,
   type AutosaveDeps,
   type AutosaveOutcome,
-} from "./autosave.js";
+} from "gps-plus-slam-app-framework/storage/autosave";
 import {
   copyFileName,
   createEditorSession,
   datedFileName,
   type EditorSave,
   type EditorSession,
+  type NarrationChange,
 } from "./editor-session.js";
-import { waitForSaveSlot } from "./save-slot-wait.js";
+import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import {
   bundleMatchesTour,
   debugBundleFileName,
@@ -146,15 +160,7 @@ import {
   notAddedLine,
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
-import { revealPadding, type Box } from "./popover-place.js";
-import { createStatusLines } from "./status-lines.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
-import {
-  createMenuButton,
-  menuItemControl,
-  setItemDisabled,
-} from "./menu-button.js";
-import { inField, inMenu } from "./key-target.js";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -163,14 +169,15 @@ import { newPin } from "./new-pin.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
-import type { GroundPlace } from "./editor-shell/scene-menu.js";
 import { stationTitle } from "../station-run.js";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type {
+  Editor3dDeps,
   Editor3dStats,
   Editor3dView,
 } from "../editor3d/editor3d-scene.js";
+import { readGlobeSwitch } from "./globe-switch.js";
 import {
   adoptsSavedFile,
   createSaveTarget,
@@ -279,6 +286,39 @@ function opensIn3d(): boolean {
   return true;
 }
 
+/**
+ * The globe view's approach for the next 3D open, or undefined for none:
+ * set when a tour opens without a draft to restore (a restored draft goes
+ * straight to the tour), taken by the first 3D open after it. In the dev
+ * server an e2e may set `window.__tourEditorApproach` (an init script):
+ * `{ off: true }` opens at the tour as before, `{ durationMs }` sets the
+ * flight's length. Inert in a production build.
+ */
+let approachNext = false;
+function takeApproach(): { durationMs?: number } | undefined {
+  const due = approachNext;
+  approachNext = false;
+  if (!due) return undefined;
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const knob = (
+      window as {
+        __tourEditorApproach?: { off?: boolean; durationMs?: number };
+      }
+    ).__tourEditorApproach;
+    if (knob?.off === true) return undefined;
+    const positive = (v: unknown): v is number =>
+      typeof v === "number" && v > 0;
+    return positive(knob?.durationMs) ? { durationMs: knob.durationMs } : {};
+  }
+  return {};
+}
+
+/** The tour's own recorded walk as its debug layer last drew it, for the
+ *  3D view's walk: one array per drawing, so the view sees a new walk by
+ *  its identity. Debug data added from elsewhere never sets it (it may be
+ *  another tour's walk); null while none is drawn. */
+let walkGeo: readonly DebugCapture["geo"][] | null = null;
+
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (found === null) throw new Error(`edit.html lacks #${id}`);
@@ -353,6 +393,8 @@ const cancelButton = element<HTMLButtonElement>("open-cancel");
 const topbar = element("topbar");
 /** The tour's name in the top bar: it opens the tour's details (W2). */
 const tourName = element<HTMLButtonElement>("tour-name");
+/** The name's words inside its button (the pen beside them stays). */
+const tourNameText = element("tour-name-text");
 const coverList = element("details-covers");
 const coversNone = element("details-covers-none");
 const toasts = element("toasts");
@@ -377,6 +419,10 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
 const debugSwitch = element<HTMLButtonElement>("view-debug");
+/** The View menu's Real time: the globe view's clock (`globe=1` only). */
+const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
+/** The View menu's Clouds: the globe view's heavy clouds (`globe=1` only). */
+const cloudsSwitch = element<HTMLButtonElement>("view-clouds");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
  *  plan). */
@@ -569,8 +615,14 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
           part: "middle" | "knob" | "dot",
         ) => readonly [number, number] | null;
         view3dGizmoSizes: () => ReturnType<Editor3dView["gizmoSizes"]>;
+        view3dModelParts: () => ReturnType<Editor3dView["modelParts"]> | null;
+        view3dModelScreen: (
+          id: string,
+          at: readonly [number, number, number],
+        ) => readonly [number, number] | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
+        dropTour: (reason: string) => void;
       };
     }
   ).__tourEditor = {
@@ -590,8 +642,13 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,
     view3dHandle: (part) => shown3d?.handleScreen(part) ?? null,
     view3dGizmoSizes: () => shown3d?.gizmoSizes() ?? null,
+    view3dModelParts: () => shown3d?.modelParts() ?? null,
+    view3dModelScreen: (id, at) => shown3d?.modelScreenOf(id, at) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
+    // What a late integrity failure does to the open tour (`openFile`'s
+    // `onIntegrityFailure`), at the moment an e2e chooses.
+    dropTour,
   };
 }
 
@@ -887,9 +944,19 @@ function renderNoGps(): void {
  *  use the tour's name, not the app's). */
 function renderTourName(): void {
   const title = model?.title;
-  tourName.textContent = title ?? "";
+  tourNameText.textContent = title ?? "";
   document.title =
     title === undefined ? EDITOR_TITLE : `${title} - ${EDITOR_TITLE}`;
+}
+
+/** Whether the selection `id` is still in the tour: one of the editor
+ *  model's items, or a block the 2D editor does not list
+ *  (`editor-model.ts`) but the 3D view selects and edits - a 3D model, a
+ *  free long text. */
+function stillInTour(id: string): boolean {
+  if (model?.items.some((i) => i.id === id) === true) return true;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  return tour?.stations.some((s) => s.blocks.some((b) => b.id === id)) ?? false;
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */
@@ -900,7 +967,7 @@ function refresh(): void {
   rail.update(model);
   map.update(model);
   const { selected } = ui();
-  if (selected !== null && !model.items.some((i) => i.id === selected)) {
+  if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
   map.select(ui().selected);
@@ -1294,6 +1361,33 @@ function writeInspectorEdit(
   return "written";
 }
 
+/** A narration change from the Narration section, as an inspector edit:
+ *  one step, the page refreshed once the session holds it, a refusal
+ *  toasted, the autosave told. */
+async function writeNarrationEdit(
+  id: string,
+  change: NarrationChange,
+): Promise<TypedEditOutcome> {
+  if (editor === null) return "refused";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["editNarration"]>>;
+  try {
+    outcome = await editor.editNarration(id, change);
+  } catch {
+    outcome = {
+      kind: "refused",
+      reason: "The narration could not be changed.",
+    };
+  }
+  refresh();
+  if ("reason" in outcome) {
+    toast(outcome.reason);
+    return "refused";
+  }
+  if (outcome.kind !== "unchanged") autosave.changed();
+  return "written";
+}
+
 /** The 3D inspector's Add pin: a new pin in `stationId`, clear of its
  *  items and on the ground where that has loaded (`new-pin.ts`), selected
  *  and said; one step. */
@@ -1535,8 +1629,8 @@ const details = wireDetailsDialog({
   },
 });
 
-/** The tour's details dialog: from the tour's name, and from the 3D
- *  view's pencil. */
+/** The tour's details dialog: from the tour's name (and its pen), and
+ *  from File's Tour details…. */
 function openDetails(): void {
   if (editor === null || ui().busy) return;
   // Typing in the card is committed first: the dialog shows the tour as it
@@ -1732,6 +1826,9 @@ function forgetAddedDebug(): void {
 function startDebugLayer(): void {
   debugLayer?.stop();
   debugLayer = null;
+  // The tour's own walk is kept while added debug data is shown
+  // (`tour-walk-kept.ts`).
+  walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
   const from = debugSource();
   debugSwitch.hidden = from === null;
   debugStatus.textContent = from?.line ?? "";
@@ -1744,6 +1841,7 @@ function startDebugLayer(): void {
     thumbnail: decodeDebugThumbnail,
     view: {
       draw: (captures) => {
+        walkGeo = walkAfterDraw(walkGeo, from.source, tourWalk, captures);
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
@@ -2088,6 +2186,9 @@ async function openFile(
   if (drafted.superseded !== null) {
     fileToasts.push(toast(drafted.superseded, undefined, null));
   }
+  // A tour opened afresh into the 3D view flies in; a draft to restore
+  // goes straight to it, as does a later switch from the map.
+  approachNext = drafted.offer === null && opensIn3d();
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   // After the open, never before it: the replay must not hold up the tour.
@@ -2472,6 +2573,12 @@ let chosenAtOpen = false;
  *  save slot (`keepInChosenFile`, the "open" claim); null otherwise. */
 let openWriting: string | null = null;
 
+/** The tour whose open waits to write into the file it asked for
+ *  (`keepInChosenFile`), from the open until that write holds the save
+ *  slot or is given up. A Save queued for it meanwhile waits for that
+ *  file (`runQueuedSave`) instead of finding none and being dropped. */
+let openWriteOf: EditorSession | null = null;
+
 /**
  * A tour from a link or the sample asks where to save it IN the open's
  * click, before any await (Chromium opens the dialog only within a few
@@ -2563,11 +2670,22 @@ async function keepInChosenFile(
   // queued and runs after it, and Share and publish waits for it
   // (`savesSettled`). No await lies between the wait's last check and the
   // claim (`waitForSaveSlot`).
-  const handle = await waitForSaveSlot(
-    { busy: saving, end: () => saveEnd, settled: savesSettled },
-    () => stillToChoose(mine, pick),
-  );
+  openWriteOf = mine;
+  let handle: FileSystemFileHandle | null;
+  try {
+    handle = await waitForSaveSlot(
+      { busy: saving, end: () => saveEnd, settled: savesSettled },
+      () => stillToChoose(mine, pick),
+    );
+  } finally {
+    // From here the write holds the slot (no await before its claim), or
+    // there is no write: a queued Save no longer waits for it.
+    if (openWriteOf === mine) openWriteOf = null;
+  }
   if (handle === null) {
+    // A Save queued while the open waited (the dialog was dismissed, or
+    // a Save chose a file meanwhile) runs now that no write will come.
+    if (editor !== null) runQueuedSave(editor);
     // Picked, but no longer to be written (another tour opened, or a Save
     // chose a file meanwhile): not left behind empty and unexplained, in
     // a toast that stays.
@@ -2648,6 +2766,11 @@ function abandon(): AutosaveOutcome {
   return "held";
 }
 
+/** The tour whose Save (`runSave`) runs now, or null: an open keeps the
+ *  save slot's holder, so "explicit" alone cannot tell this tour's Save
+ *  from the closed tour's. */
+let explicitSaveOf: EditorSession | null = null;
+
 /**
  * The explicit Save (the button, Ctrl+S, "Download instead"). Asked for
  * while an autosave runs, it waits for it and runs next; what it comes to
@@ -2660,10 +2783,13 @@ async function runSave(
   if (editor === null) return;
   if (saving()) {
     const by = saveState().by;
-    if (by !== "explicit") {
+    if (by !== "explicit" || explicitSaveOf !== editor) {
       // Committed now, saved right after what holds the save (the
       // autosave, the write at the open, a copy, a move of the debug
-      // data). A second Save during a Save is the same Save.
+      // data, or a Save of a tour closed since: an open keeps the slot's
+      // holder). A second Save during this tour's own Save is the same
+      // Save.
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
@@ -2671,7 +2797,13 @@ async function runSave(
     return;
   }
   const mine = editor;
-  const outcome = await saveTour("explicit", pick);
+  explicitSaveOf = mine;
+  let outcome: AutosaveOutcome;
+  try {
+    outcome = await saveTour("explicit", pick);
+  } finally {
+    if (explicitSaveOf === mine) explicitSaveOf = null;
+  }
   if (editor !== mine || outcome === "held") return;
   if (outcome === "saved") autosave.saved();
   else autosave.failed();
@@ -2681,6 +2813,11 @@ async function runSave(
  *  runs once the slot is free, and only for the tour it was asked for. */
 function runQueuedSave(mine: EditorSession): void {
   if (!saveState().queued || editor !== mine || saving()) return;
+  // The open's write into its chosen file is still to come: the Save
+  // stays queued and runs into that file once it is adopted (a save
+  // that ends before the write claims the slot would otherwise find no
+  // file, and drop the Save).
+  if (openWriteOf === mine) return;
   store.dispatch(tourDocumentActions.saveQueued({ queued: false }));
   // A tour with no file to save into asks where to save it, which the
   // browser allows only within a key press or a click - long gone now.
@@ -2803,6 +2940,7 @@ async function saveTour(
   const ended = claimSave(mode);
   try {
     if (mode === "explicit") {
+      shell.flush();
       card.commit();
       if (ui().moving !== null) finishMove();
     }
@@ -3412,14 +3550,12 @@ async function holdForMove(
     // every later save.
     releaseSave();
     ended();
-    if (editor === mine) {
-      refresh();
-      // A Save asked for during the move runs now.
-      runQueuedSave(mine);
-      autosave.poke();
-    } else {
-      renderSaveState();
-    }
+    if (editor === mine) refresh();
+    else renderSaveState();
+    // A Save asked for during the move runs now, for the tour that shows -
+    // also when another tour opened meanwhile (`saveCopy`'s rule).
+    if (editor !== null) runQueuedSave(editor);
+    if (editor === mine) autosave.poke();
   }
 }
 
@@ -3646,7 +3782,6 @@ const shell = createEditorShell({
     select(id);
   },
   step: runStep,
-  openDetails,
   codes: shellCodes,
   loadPicture: readContent,
   dialogOpen,
@@ -3665,15 +3800,67 @@ const shell = createEditorShell({
     text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
     block: (id, field, value) =>
       writeInspectorEdit((e) => e.editBlockField(id, field, value)),
+    view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
+    model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
     },
     addPin: addPinTo,
+    narration: (id) =>
+      editor === null
+        ? Promise.resolve({
+            kind: "refused" as const,
+            reason: "No tour is open.",
+          })
+        : editor.narration(id),
+    editNarration: writeNarrationEdit,
+    voiceMaxBytes: autosaveMaxBytes,
   },
   say: (text) => {
     toast(text);
   },
+});
+/** The link switch to the 3D view on the whole globe (`globe=1`). */
+const globeSwitch = readGlobeSwitch(location.search);
+/** True from a 3D open with an approach until its bar goes: the shell
+ *  keeps the tree folded meanwhile and unfolds it at the landing. */
+let approachHolds = false;
+/** What only the globe view takes: its approach and the recorded walk. */
+function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
+  const approach = takeApproach();
+  approachHolds = approach !== undefined;
+  return {
+    ...(approach === undefined
+      ? {}
+      : {
+          approach: {
+            ...approach,
+            ended: (how) => {
+              approachHolds = false;
+              shell.approachEnded(how);
+            },
+          },
+        }),
+    walk: () => walkGeo,
+  };
+}
+// Only the globe view has a sky of its own to set the clock of.
+realTimeSwitch.hidden = !globeSwitch.on;
+cloudsSwitch.hidden = !globeSwitch.on;
+// Only the globe view reserves the band for its loading bar under the top
+// bar (`editor-shell.css`); the default view's docks start right under it.
+view3dBox.toggleAttribute("data-globe", globeSwitch.on);
+// View state only - no edit, nothing pending; kept for the next open.
+realTimeSwitch.addEventListener("click", () => {
+  const on = !isChecked(realTimeSwitch);
+  setChecked(realTimeSwitch, on);
+  shown3d?.setRealTime?.(on);
+});
+cloudsSwitch.addEventListener("click", () => {
+  const on = !isChecked(cloudsSwitch);
+  setChecked(cloudsSwitch, on);
+  shown3d?.setClouds?.(on);
 });
 const viewSwitch = createViewSwitch({
   button: menuItemControl(element("view-switch")),
@@ -3681,20 +3868,33 @@ const viewSwitch = createViewSwitch({
   store,
   open: async (events) => {
     // A module that does not arrive is the connection's (`chunk`).
-    const { openEditor3d } =
-      await import("../editor3d/editor3d-scene.js").catch((error: unknown) => {
-        throw Object.assign(
-          new Error(`the 3D view did not load: ${String(error)}`),
-          { reason: "chunk" },
-        );
-      });
-    const view = await openEditor3d({
+    // With the link switch on, the view on the whole globe; else the
+    // OrbitControls view.
+    const openView = await (
+      globeSwitch.on
+        ? import("../editor3d/editor3d-globe.js").then(
+            ({ openGlobeEditor }) =>
+              (deps: Editor3dDeps) =>
+                openGlobeEditor(deps, globeSwitch),
+          )
+        : import("../editor3d/editor3d-scene.js").then(
+            ({ openEditor3d }) => openEditor3d,
+          )
+    ).catch((error: unknown) => {
+      throw Object.assign(
+        new Error(`the 3D view did not load: ${String(error)}`),
+        { reason: "chunk" },
+      );
+    });
+    approachHolds = false;
+    const view = await openView({
       container: view3dBox,
       credits: element("view3d-credits"),
       store,
       levels: () => openedLevels,
       loadContent: readContent,
       events,
+      ...(globeSwitch.on ? globeOpening() : {}),
       edits: {
         commit: commitSceneEdit,
         select: (id) => {
@@ -3710,16 +3910,22 @@ const viewSwitch = createViewSwitch({
         groundMenu: (point, place) => {
           shell.groundMenu(point, place);
         },
-        // A field's and a menu's keys are their own (`key-target.ts`).
+        model: (id, edit) =>
+          writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
+        // A field's, a menu's and a toolbar's keys are their own
+        // (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&
           !inMenu(event.target, event.key) &&
+          !inComposite(event.target, event.key) &&
           !dialogOpen() &&
           Boolean(modal.hidden) &&
           !ui().busy,
       },
     });
     shown3d = view;
+    if (isChecked(realTimeSwitch)) view.setRealTime?.(true);
+    if (!isChecked(cloudsSwitch)) view.setClouds?.(false);
     const handle: View3dHandle = {
       dispose: () => {
         if (shown3d === view) shown3d = null;
@@ -3747,8 +3953,9 @@ const viewSwitch = createViewSwitch({
     // Covered by the 3D view, the map's markers and controls leave the
     // tab order and the accessibility tree.
     mapBox.inert = on;
-    if (on && shown3d !== null) shell.show(shown3d);
-    else shell.hide();
+    if (on && shown3d !== null) {
+      shell.show(shown3d, { approach: approachHolds });
+    } else shell.hide();
     if (on) {
       view3dFailureToast?.remove();
       view3dFailureToast = null;

@@ -18,6 +18,7 @@ import {
   tourManifestArbitrary,
 } from '../test-utils/tour-arbitraries';
 import { parseTourAssets } from './tour-assets';
+import { TOUR_WORLD_VIEWS } from './tour-blocks';
 import { parseTourStations } from './tour-stations';
 import { tourShownBlockIds } from './tour-story';
 
@@ -123,8 +124,7 @@ describe('unknown values of a newer minor (properties)', () => {
             expect(refs.every((r) => assetIds.has(r))).toBe(true);
             // A block no step shows stands in the world.
             expect(
-              shown.has(block.id) ||
-                ['pin', 'plane', 'placed'].includes(block.view)
+              shown.has(block.id) || TOUR_WORLD_VIEWS.has(block.view)
             ).toBe(true);
           }
           for (const step of station.steps) {

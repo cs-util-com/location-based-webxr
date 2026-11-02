@@ -166,17 +166,31 @@ test("the look-dev page's tiers, god rays and bloom compile and draw without err
   ]);
 });
 
-test("the globe lab opens with the relief, the band and the recorder, without errors", async ({
-  page,
-}) => {
+/**
+ * The globe lab as every globe test below opens it: the relief on synthetic
+ * heights (no network), both carriers drawn at a fixed share of the band,
+ * and the frame-hitch recorder's overlay, ten frames drawn. Three tests
+ * rather than one: on SwiftShader a frame of this page takes about 1-2 s
+ * and a click about 15-20 s, and the one test that did all three parts
+ * took 174-185 s against the 180 s budget (CI and local, 2026-11-02), so
+ * it failed on whichever run was a little slower. Each part opens the lab
+ * itself and has its own budget with room to spare: measured locally
+ * without a trace, 36-38 s, 96 s and 36-40 s.
+ */
+async function openGlobeLab(page) {
   const problems = await watch(page);
-  // The relief on synthetic heights (no network), both carriers drawn at a
-  // fixed share of the band, and the frame-hitch recorder's overlay.
   await page.goto(
     "/labs/globe/#relief=1&reliefHeights=synthetic&bandShare=0.5&perf=1&spinMs=0&turnMs=0&stars=0&milkyWay=0",
   );
   await ready(page, "__globeLab");
   await frames(page, 10);
+  return problems;
+}
+
+test("the globe lab opens with the relief and the band, and draws, without errors", async ({
+  page,
+}) => {
+  const problems = await openGlobeLab(page);
   const relief = await page.evaluate(
     () => window.__globeLab.state().relief?.visibleTiles ?? null,
   );
@@ -186,8 +200,14 @@ test("the globe lab opens with the relief, the band and the recorder, without er
   const stdev = await drawnStdev(page);
   console.log(`globe lab drawn: stdev ${stdev.toFixed(1)}`);
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
-  // The Debug panel (round-6 plan G6-0): it opens, records, and Copy
-  // produces JSON the owner can paste, with a finite altitude.
+});
+
+test("the globe lab's debug panel opens, records and copies its JSON, without errors", async ({
+  page,
+}) => {
+  const problems = await openGlobeLab(page);
+  // The Debug panel: it opens, records, and Copy produces JSON that can be
+  // pasted, with a finite altitude.
   await page.locator("#globe-debug-toggle").click();
   await expect(page.locator("#globe-debug")).toBeVisible();
   await page.locator('[data-debug="record"]').click();
@@ -202,6 +222,46 @@ test("the globe lab opens with the relief, the band and the recorder, without er
   expect(Number.isFinite(exported.live.altitudeKm)).toBe(true);
   expect(exported.recording.frames).toBeGreaterThan(0);
   expect(exported.events.length).toBeGreaterThan(0);
+  expect(problems).toEqual([]);
+});
+
+test("the globe lab keeps the space shell at x1 low down across hash changes, without errors", async ({
+  page,
+}) => {
+  const problems = await openGlobeLab(page);
+  // The space pass's shell is x1 at or below 300 km, and a later hash
+  // change keeps it so. Why: the lab once wrote the page's whole look,
+  // the far x6 included, on every hash change, and the shell's ramp writes
+  // only when its own value changes, so the shell stayed x6 at low
+  // altitude until the camera moved. The globe smokes do not run in CI;
+  // this does. Two hash changes: the first moves the camera to 100 km
+  // (the ramp then writes x1 itself), the second is the one that used to
+  // put x6 back.
+  const base = await page.evaluate(() => location.hash.slice(1));
+  const thicknessAfter = async (hash) => {
+    await page.evaluate((h) => {
+      location.hash = h;
+    }, hash);
+    await frames(page, 5);
+    return page.evaluate(() => {
+      const s = window.__globeLab.state();
+      return {
+        km: s.groundSky.observerAltitudeKm,
+        thickness: s.atmosphere.thickness,
+        applied: s.appliedHash,
+      };
+    });
+  };
+  const low = `${base}&view=44.94871,6.85455,100.000,353.1,-9.2`;
+  const moved = await thicknessAfter(low);
+  expect(moved.km).toBeLessThanOrEqual(300);
+  expect(moved.thickness).toBe(1);
+  const changed = await thicknessAfter(`${low}&atmoThickness=6`);
+  // The lab must have applied the second change, or the x1 below proves
+  // nothing: a hash change the lab never handled leaves x1 too.
+  expect(changed.applied).toContain("atmoThickness=6");
+  expect(changed.km).toBeLessThanOrEqual(300);
+  expect(changed.thickness).toBe(1);
   expect(problems).toEqual([]);
 });
 

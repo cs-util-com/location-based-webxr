@@ -1,0 +1,3167 @@
+<!doctype html>
+<!-- Throwaway prototype, character sheet variant 3 (make your character, live preview). Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Make your guide - variant 3</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #2a2824;
+        --ink-dim: #57534a;
+        --ink-3: #8c8577;
+        --paper: #f4eedf;
+        --paper-2: #ebe2cc;
+        --card: #fbf8ef;
+        --line: #c9bea3;
+        --line-soft: #e6dcc5;
+        --accent: #f2971f;
+        --accent-deep: #c86f00;
+        --accent-soft: #fde6c4;
+        --ok: #3d6b3a;
+        --ok-soft: #dcebd5;
+        --warn: #8a5a00;
+        --warn-soft: #f6e7c1;
+        --danger: #a3321f;
+        --danger-soft: #f7dcd4;
+        --serif:
+          "Iowan Old Style", "Palatino Linotype", palatino, "Book Antiqua",
+          georgia, serif;
+        --sans: system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
+        --radius: 18px;
+        --shadow: 0 1px 2px rgb(42 40 36 / 8%), 0 10px 30px rgb(42 40 36 / 14%);
+      }
+      .prompt:not(.collapsed) pre {
+        max-height: none;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+      body {
+        overflow-x: hidden;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--serif);
+        margin: 0;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+      }
+
+      /* ---------- header ---------- */
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--line-soft);
+        background: var(--card);
+        position: relative;
+        z-index: 3;
+      }
+      .crumb {
+        font-size: 13px;
+        color: var(--ink-dim);
+        white-space: nowrap;
+      }
+      .crumb b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .trail {
+        display: flex;
+        gap: 6px;
+        list-style: none;
+        margin: 0 0 0 auto;
+        padding: 0;
+        flex-wrap: wrap;
+      }
+      .trail li {
+        font-size: 12.5px;
+        padding: 4px 10px 4px 8px;
+        border-radius: 999px;
+        background: var(--paper);
+        color: var(--ink-3);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .trail li i {
+        font-style: normal;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: inline-grid;
+        place-items: center;
+        background: var(--line-soft);
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .trail li.done {
+        color: var(--ok);
+      }
+      .trail li.done i {
+        background: var(--ok);
+        color: #fff;
+      }
+      .trail li.now {
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .trail li.now i {
+        background: var(--accent);
+        color: #000;
+      }
+      .trail-short {
+        display: none;
+        margin-left: auto;
+        font-size: 12.5px;
+        color: var(--ink-dim);
+      }
+
+      /* ---------- layout ---------- */
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
+        gap: 22px;
+        padding: 18px 20px 30px;
+        max-width: 1400px;
+        margin: 0 auto;
+        align-items: start;
+      }
+      .stage-col {
+        position: sticky;
+        top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+      .steps-col {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      /* ---------- stage ---------- */
+      .stage {
+        position: relative;
+        border-radius: 24px;
+        overflow: hidden;
+        background: #cfe6ef;
+        box-shadow: var(--shadow);
+        height: min(58vh, 540px);
+        min-height: 280px;
+        touch-action: manipulation;
+      }
+      .stage canvas#scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .bubble {
+        position: absolute;
+        max-width: 46%;
+        background: #fff;
+        color: var(--ink);
+        border-radius: 16px;
+        padding: 9px 13px;
+        font-size: 15px;
+        line-height: 1.3;
+        box-shadow: 0 3px 12px rgb(0 0 0 / 15%);
+        opacity: 0;
+        transform: translateY(6px) scale(0.96);
+        transition:
+          opacity 0.18s,
+          transform 0.18s;
+        pointer-events: none;
+        font-weight: 500;
+      }
+      .bubble.on {
+        opacity: 1;
+        transform: none;
+      }
+      .bubble::before {
+        content: "";
+        position: absolute;
+        left: -9px;
+        bottom: 12px;
+        border: 10px solid transparent;
+        border-right-color: #fff;
+        border-left: 0;
+      }
+      .bubble .later {
+        color: #b8b0a0;
+      }
+      .tag {
+        position: absolute;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: var(--ink);
+        color: #fff;
+        padding: 3px 9px;
+        border-radius: 999px;
+        transform: translateX(-50%);
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .tag.mine {
+        background: var(--ok);
+      }
+      .holding {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        background: rgb(42 40 36 / 82%);
+        color: #fff;
+        font-size: 13px;
+        padding: 6px 10px 6px 12px;
+        border-radius: 999px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .holding button {
+        border: 0;
+        background: var(--accent);
+        color: #000;
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-weight: 600;
+        font-size: 12.5px;
+      }
+      .work {
+        position: absolute;
+        left: 50%;
+        top: 14px;
+        transform: translateX(-50%);
+        background: rgb(251 248 239 / 96%);
+        border-radius: 16px;
+        padding: 10px 14px;
+        box-shadow: var(--shadow);
+        width: min(92%, 380px);
+        font-size: 14px;
+      }
+      .work b {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .work ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 2px;
+      }
+      .work li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--ink-3);
+      }
+      .work li.run {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .work li.done {
+        color: var(--ok);
+      }
+      .work li.fail {
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .dot {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        border-radius: 50%;
+        display: inline-grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 800;
+        border: 2px solid currentColor;
+      }
+      li.run .dot {
+        border-color: var(--accent);
+        border-top-color: transparent;
+        animation: spin 0.8s linear infinite;
+      }
+      li.done .dot {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #fff;
+      }
+      li.fail .dot {
+        background: var(--danger);
+        border-color: var(--danger);
+        color: #fff;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .drop {
+        position: absolute;
+        inset: 10px;
+        border: 3px dashed var(--accent-deep);
+        border-radius: 18px;
+        background: rgb(253 230 196 / 80%);
+        display: grid;
+        place-items: center;
+        font-family: var(--serif);
+        font-size: 24px;
+        color: var(--ink);
+        pointer-events: none;
+      }
+
+      /* wobble callout on the character */
+      .ring {
+        position: absolute;
+        border: 3px dashed var(--danger);
+        border-radius: 40%;
+        pointer-events: none;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        50% {
+          box-shadow: 0 0 0 6px rgb(163 50 31 / 18%);
+        }
+      }
+      .callout {
+        position: absolute;
+        background: var(--card);
+        border-radius: 14px;
+        padding: 10px 12px;
+        box-shadow: var(--shadow);
+        width: min(250px, 50%);
+        font-size: 13.5px;
+        border-left: 5px solid var(--danger);
+      }
+      .callout b {
+        display: block;
+        font-size: 14.5px;
+        margin-bottom: 2px;
+      }
+      .callout .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .callout.fixed {
+        width: auto;
+        padding: 6px 10px;
+      }
+      .callout.fixed b {
+        display: inline;
+      }
+      .callout.fixed .why {
+        display: none;
+      }
+      .callout.fixed {
+        border-left-color: var(--ok);
+      }
+
+      /* poses strip */
+      .poses {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .pose {
+        border: 2px solid transparent;
+        background: var(--card);
+        border-radius: 14px;
+        padding: 6px 4px 7px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+        text-align: center;
+        min-width: 0;
+      }
+      .pose canvas {
+        width: 100%;
+        max-width: 64px;
+        aspect-ratio: 1 / 2;
+        display: block;
+      }
+      .pose b {
+        font-size: 13.5px;
+      }
+      .pose small {
+        font-size: 11.5px;
+        color: var(--ink-dim);
+        line-height: 1.2;
+      }
+      .pose.on {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .pose.held {
+        border-color: var(--ink);
+      }
+      .poses-note {
+        font-size: 12.5px;
+        color: var(--ink-dim);
+        text-align: center;
+        margin-top: -4px;
+      }
+
+      /* compare and report panels */
+      .panel {
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 14px 16px;
+      }
+      .panel h3 {
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .compare-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      .compare-grid figure {
+        margin: 0;
+        border-radius: 14px;
+        background: linear-gradient(#cfe6ef, #a9c98f);
+        padding: 6px;
+        text-align: center;
+        border: 3px solid transparent;
+      }
+      .compare-grid figure.chosen {
+        border-color: var(--accent);
+      }
+      .compare-grid canvas {
+        width: 100%;
+        display: block;
+        aspect-ratio: 1 / 1;
+      }
+      .compare-grid figcaption {
+        font-size: 13px;
+        background: rgb(251 248 239 / 92%);
+        border-radius: 10px;
+        padding: 4px 6px;
+        margin-top: 4px;
+      }
+      .compare-grid figcaption b {
+        display: block;
+        font-size: 14px;
+      }
+      .report {
+        border-left: 6px solid var(--danger);
+      }
+      .report .steplist {
+        list-style: none;
+        margin: 8px 0 10px;
+        padding: 0;
+        display: grid;
+        gap: 3px;
+        font-size: 14px;
+      }
+      .report .steplist li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: var(--ink-3);
+      }
+      .report .steplist li.done {
+        color: var(--ok);
+      }
+      .report .steplist li.fail {
+        color: var(--danger);
+        font-weight: 600;
+      }
+      .report .what {
+        background: var(--danger-soft);
+        border-radius: 12px;
+        padding: 9px 12px;
+        font-size: 14.5px;
+      }
+      .report .fixline {
+        margin-top: 8px;
+        font-size: 14px;
+      }
+      .report .fixline q {
+        background: var(--warn-soft);
+        padding: 1px 4px;
+        border-radius: 4px;
+        quotes: none;
+      }
+      .thumbwrap {
+        margin-top: 10px;
+        background: repeating-conic-gradient(#efe8d8 0 25%, #fbf8ef 0 50%) 0 0 /
+          16px 16px;
+        border-radius: 12px;
+        padding: 6px;
+      }
+      .thumbwrap canvas {
+        width: 100%;
+        display: block;
+      }
+
+      /* ---------- steps ---------- */
+      .intro h1 {
+        font-size: 30px;
+        line-height: 1.1;
+      }
+      .intro p {
+        color: var(--ink-dim);
+        margin-top: 6px;
+      }
+      .step {
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 16px 18px;
+        position: relative;
+      }
+      .step.later {
+        opacity: 0.6;
+        box-shadow: none;
+        background: transparent;
+        border: 2px dashed var(--line);
+      }
+      .step h2 {
+        font-size: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #000;
+        font-family: var(--sans);
+        font-size: 14px;
+        font-weight: 800;
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 28px;
+      }
+      .step.isdone .num {
+        background: var(--ok);
+        color: #fff;
+      }
+      .step p.say {
+        color: var(--ink-dim);
+        font-size: 14.5px;
+      }
+      label.field {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin: 10px 0 4px;
+      }
+      textarea,
+      input[type="text"] {
+        width: 100%;
+        border: 2px solid var(--line);
+        background: #fff;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 16px;
+      }
+      textarea {
+        min-height: 76px;
+        resize: vertical;
+      }
+      textarea:focus,
+      input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .need {
+        color: var(--danger);
+        font-size: 13.5px;
+        font-weight: 600;
+        margin-top: 4px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .chip {
+        border: 1.5px solid var(--line);
+        background: #fff;
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 13.5px;
+        min-height: 36px;
+      }
+      .chip:hover {
+        border-color: var(--accent);
+      }
+      .chip.on {
+        background: var(--warn-soft);
+        border-color: var(--warn);
+      }
+      .chip.bad {
+        border-style: dashed;
+        color: var(--danger);
+      }
+      .btn {
+        border: 0;
+        border-radius: 14px;
+        padding: 11px 18px;
+        font-weight: 700;
+        font-size: 15.5px;
+        min-height: 46px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: #000;
+        box-shadow: 0 2px 0 var(--accent-deep);
+      }
+      .btn.primary:active {
+        transform: translateY(1px);
+        box-shadow: none;
+      }
+      .btn.second {
+        background: #fff;
+        border: 2px solid var(--line);
+      }
+      .btn.ok {
+        background: var(--ok);
+        color: #fff;
+      }
+      .btn.small {
+        padding: 6px 12px;
+        min-height: 36px;
+        font-size: 13.5px;
+        border-radius: 10px;
+      }
+      .btn.link {
+        background: none;
+        text-decoration: underline;
+        padding: 6px 4px;
+        min-height: 36px;
+        font-weight: 600;
+        color: var(--ink-dim);
+      }
+      .btn[disabled],
+      .btn.busy {
+        opacity: 0.65;
+        cursor: progress;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .prompt {
+        margin-top: 12px;
+        background: #fffdf7;
+        border: 1.5px solid var(--line-soft);
+        border-radius: 12px;
+        position: relative;
+      }
+      .prompt pre {
+        margin: 0;
+        padding: 12px 14px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: ui-monospace, "Cascadia Mono", consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.5;
+        max-height: 290px;
+        overflow: auto;
+      }
+      .prompt mark.you {
+        background: var(--accent-soft);
+        border-bottom: 2px solid var(--accent);
+        padding: 0 2px;
+      }
+      .prompt mark.you.empty {
+        background: var(--danger-soft);
+        border-bottom-color: var(--danger);
+      }
+      .prompt mark.hint {
+        background: var(--warn-soft);
+        border-bottom: 2px solid var(--warn);
+      }
+      .prompt .phead {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 8px 0 14px;
+        font-size: 12.5px;
+        color: var(--ink-dim);
+      }
+      .howto {
+        margin: 10px 0 0;
+        padding-left: 20px;
+        font-size: 14px;
+        color: var(--ink-dim);
+      }
+      .howto li {
+        margin: 2px 0;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 14px;
+      }
+      .checks {
+        list-style: none;
+        padding: 0;
+        margin: 6px 0 0;
+        display: grid;
+        gap: 6px;
+      }
+      .checks li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 14.5px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: var(--ok-soft);
+      }
+      .checks li.warn {
+        background: var(--warn-soft);
+      }
+      .checks li .ic {
+        flex: 0 0 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 800;
+        color: #fff;
+        background: var(--ok);
+        margin-top: 1px;
+      }
+      .checks li.warn .ic {
+        background: var(--warn);
+      }
+      .checks li .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .checks li small {
+        display: block;
+        color: var(--ink-dim);
+        font-size: 12.5px;
+      }
+      .confirm {
+        margin-top: 10px;
+        background: var(--warn-soft);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 14.5px;
+      }
+      .saved {
+        margin-top: 10px;
+        background: var(--ok-soft);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 14.5px;
+      }
+      .actionbar {
+        display: none;
+      }
+      .toasts {
+        position: fixed;
+        right: 24px;
+        bottom: 20px;
+        display: grid;
+        gap: 8px;
+        z-index: 20;
+        width: min(92vw, 460px);
+        pointer-events: none;
+      }
+      .toast {
+        background: var(--ink);
+        color: #fff;
+        border-radius: 14px;
+        padding: 11px 14px;
+        font-size: 14.5px;
+        box-shadow: var(--shadow);
+        animation: tin 0.2s ease-out;
+        pointer-events: auto;
+      }
+      .toast.err {
+        background: var(--danger);
+      }
+      .toast.good {
+        background: var(--ok);
+      }
+      @keyframes tin {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      .only-phone {
+        display: none;
+      }
+
+      /* ---------- phone portrait ---------- */
+      @media (max-width: 760px) {
+        .top {
+          padding: 8px 14px;
+        }
+        .trail {
+          display: none;
+        }
+        .trail-short {
+          display: block;
+        }
+        main {
+          grid-template-columns: minmax(0, 1fr);
+          padding: 10px 12px 96px;
+          gap: 14px;
+        }
+        .stage-col {
+          position: static;
+        }
+        .stage {
+          height: 46vh;
+          min-height: 300px;
+          border-radius: 20px;
+        }
+        .intro h1 {
+          font-size: 25px;
+        }
+        .prompt.collapsed pre {
+          max-height: 140px;
+          overflow: hidden;
+          -webkit-mask-image: linear-gradient(#000 60%, transparent);
+          mask-image: linear-gradient(#000 60%, transparent);
+        }
+        .only-desk {
+          display: none !important;
+        }
+        .only-phone {
+          display: inline-flex;
+        }
+        .actionbar {
+          display: flex;
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+          background: rgb(251 248 239 / 96%);
+          border-top: 1px solid var(--line-soft);
+          z-index: 10;
+          gap: 8px;
+        }
+        .actionbar .btn {
+          flex: 1;
+          min-height: 52px;
+          font-size: 16.5px;
+        }
+        .toasts {
+          bottom: 86px;
+          right: 4vw;
+        }
+        .callout {
+          width: min(200px, 54%);
+          font-size: 13px;
+        }
+        .callout .why {
+          display: none;
+        }
+      }
+      /* ---------- phone landscape ---------- */
+      @media (max-height: 500px) and (orientation: landscape) {
+        .top {
+          padding: 6px 14px;
+        }
+        .trail {
+          display: none;
+        }
+        .trail-short {
+          display: block;
+        }
+        main {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          padding: 8px 12px 80px;
+          gap: 12px;
+        }
+        .stage-col {
+          position: sticky;
+          top: 8px;
+          max-height: calc(100vh - 16px);
+          overflow-y: auto;
+        }
+        .stage {
+          height: calc(100vh - 110px);
+          min-height: 220px;
+        }
+        .poses {
+          gap: 5px;
+        }
+        .pose canvas {
+          max-width: 30px;
+        }
+        .pose small {
+          display: none;
+        }
+        .poses-note {
+          display: none;
+        }
+        .intro h1 {
+          font-size: 22px;
+        }
+        .prompt.collapsed pre {
+          max-height: 110px;
+          overflow: hidden;
+          -webkit-mask-image: linear-gradient(#000 60%, transparent);
+          mask-image: linear-gradient(#000 60%, transparent);
+        }
+        .only-desk {
+          display: none !important;
+        }
+        .only-phone {
+          display: inline-flex;
+        }
+        .actionbar {
+          display: flex;
+          position: fixed;
+          right: 0;
+          width: 50%;
+          bottom: 0;
+          padding: 8px 12px;
+          background: rgb(251 248 239 / 96%);
+          border-top: 1px solid var(--line-soft);
+          z-index: 10;
+        }
+        .actionbar .btn {
+          flex: 1;
+          min-height: 46px;
+        }
+        .callout {
+          width: min(190px, 50%);
+          font-size: 13px;
+          padding: 8px 10px;
+        }
+        .callout .why {
+          display: none;
+        }
+        .toasts {
+          bottom: 70px;
+          right: 12px;
+          width: 46vw;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="crumb">Old Town walk / <b>Your guide</b></div>
+      <ol class="trail" id="trail"></ol>
+      <div class="trail-short" id="trailShort"></div>
+    </header>
+
+    <main>
+      <section class="stage-col" aria-label="Live preview">
+        <div class="stage" id="stage">
+          <canvas
+            id="scene"
+            aria-label="Your guide standing on the tour path next to the sign of the next station"
+          ></canvas>
+          <div class="bubble" id="bubble" aria-live="off"></div>
+          <div class="tag" id="tag">Stand-in</div>
+          <div class="ring" id="ring" hidden></div>
+          <div class="callout" id="callout" hidden></div>
+          <div class="holding" id="holding" hidden></div>
+          <div
+            class="work"
+            id="work"
+            hidden
+            role="status"
+            aria-live="polite"
+          ></div>
+          <div class="drop" id="drop" hidden>Drop the picture here</div>
+        </div>
+        <div class="panel report" id="report" hidden role="alert"></div>
+        <div class="panel" id="compare" hidden>
+          <h3>Look closely: the body while talking</h3>
+          <p class="say" id="compareSay"></p>
+          <div class="compare-grid">
+            <figure id="figDrawn">
+              <canvas id="cmpA" width="300" height="300"></canvas>
+              <figcaption>
+                <b>As the AI drew it</b><span id="cmpAtxt"></span>
+              </figcaption>
+            </figure>
+            <figure id="figSteady">
+              <canvas id="cmpB" width="300" height="300"></canvas>
+              <figcaption><b>Steadied</b><span id="cmpBtxt"></span></figcaption>
+            </figure>
+          </div>
+          <div class="row" style="margin-top: 10px">
+            <button class="btn primary small" id="cmpUse">
+              Use the steadied body
+            </button>
+            <button class="btn second small" id="cmpKeep">
+              Keep it as drawn
+            </button>
+          </div>
+        </div>
+        <div class="poses" id="poses" aria-label="The four poses"></div>
+        <p class="poses-note" id="posesNote">
+          Tap a pose to hold it in the scene.
+        </p>
+      </section>
+
+      <section class="steps-col">
+        <div class="intro">
+          <h1>Make your tour's guide</h1>
+          <p>
+            A figure that waits at your stations, talks to visitors and waves
+            them on to the next one. You describe it, an image AI draws it, and
+            this page cuts the drawing into the four poses the stand-in is
+            showing you.
+          </p>
+        </div>
+
+        <div class="step" id="s1">
+          <h2><span class="num">1</span>Who is your guide?</h2>
+          <label class="field" for="desc">Describe them in a few words</label>
+          <textarea
+            id="desc"
+            placeholder="For example: a squirrel forest ranger in a green hat, cheerful cartoon style"
+          ></textarea>
+          <div class="need" id="descNeed" hidden>
+            Describe your guide first - a few words are enough.
+          </div>
+          <div class="chips" id="ideas"></div>
+          <label class="field" for="name">Their name (visitors see it)</label>
+          <input
+            type="text"
+            id="name"
+            placeholder="For example: Hazel"
+            maxlength="30"
+          />
+        </div>
+
+        <div class="step" id="s2">
+          <h2><span class="num">2</span>Let an image AI draw it</h2>
+          <p class="say">
+            Copy this prompt into an image AI of your choice, for example
+            ChatGPT or Gemini, in another tab or app. Nothing is sent from this
+            page.
+          </p>
+          <div class="row" style="margin-top: 10px">
+            <button class="btn primary" id="copy">Copy the prompt</button>
+            <button class="btn second only-phone" id="share" hidden>
+              Share to an app
+            </button>
+          </div>
+          <div class="prompt collapsed" id="promptBox">
+            <div class="phead">
+              <span id="promptMeta">The prompt, word for word</span
+              ><button class="btn link small" id="promptToggle">
+                Read the whole prompt
+              </button>
+            </div>
+            <pre id="prompt" tabindex="0"></pre>
+          </div>
+          <ol class="howto">
+            <li>
+              In the AI: paste the prompt, send it and wait for the picture.
+            </li>
+            <li>Save the picture (or copy it), then come back here.</li>
+          </ol>
+        </div>
+
+        <div class="step" id="s3">
+          <h2><span class="num">3</span>Bring the picture back</h2>
+          <div class="row">
+            <button class="btn primary" id="pick">Pick the picture</button>
+            <button class="btn second" id="paste">Paste</button>
+            <span
+              class="say only-desk"
+              style="font-size: 14px; color: var(--ink-dim)"
+              >or drop it on the scene</span
+            >
+          </div>
+          <div
+            class="status"
+            id="importStatus"
+            role="status"
+            aria-live="polite"
+          ></div>
+          <p class="say" style="margin-top: 12px; font-size: 13.5px">
+            No picture yet? Try a sample:
+          </p>
+          <div class="chips" id="samples"></div>
+        </div>
+
+        <div class="step later" id="s4">
+          <h2><span class="num">4</span>Check and save</h2>
+          <div id="checkBody">
+            <p class="say">
+              Once your picture is in, your own guide replaces the stand-in, and
+              you check it here.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="actionbar" id="bar">
+      <button class="btn primary" id="barBtn">Copy the prompt</button>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+    <input
+      type="file"
+      id="file"
+      accept="image/png,image/jpeg,image/webp,image/*"
+      hidden
+    />
+
+    <script type="module">
+      import {
+        cutSheet,
+        CutError,
+        STEP_NAMES,
+        steadyBody,
+        mirrored,
+        canonicalSheet,
+        DEFAULTS,
+      } from "./cut.js";
+
+      const $ = (s) => document.querySelector(s);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const CW = DEFAULTS.cellW,
+        CH = DEFAULTS.cellH,
+        BASE = Math.round(CH * 0.97);
+
+      /* ======================================================
+         The prompt (plan section 2, draft 1, verbatim)
+         ====================================================== */
+      const PLACEHOLDER =
+        "[DESCRIBE YOUR CHARACTER HERE - who they are, rough age, clothing, colours and drawing style. Example: a friendly medieval knight in a blue tabard with a small round shield, warm storybook illustration style.]";
+      const P_HEAD =
+        "Create a character sprite sheet for an outdoor walking-tour app.\n\nCharacter: ";
+      const P_BODY = `
+
+Layout - follow it exactly:
+- One landscape image with a 3:2 shape (for example 1536 x 1024 pixels).
+- Four full-body drawings of the SAME character side by side in a single row. Each drawing sits centred in its own quarter of the width, with clear empty space between neighbours. No part of one drawing reaches into a neighbour's quarter.
+- Order from left to right:
+  1. IDLE - standing relaxed, facing the viewer, arms at rest, mouth closed, friendly expression.
+  2. TALKING A - exactly like drawing 1, only the mouth half open.
+  3. TALKING B - exactly like drawing 1, only the mouth wide open, as if saying "ah".
+  4. POINTING - same stance and facing as drawing 1, one arm stretched out towards the viewer's RIGHT with an open hand, inviting the viewer to follow that way; mouth closed.
+- All four drawings at the same size and scale: same height, feet standing on the same invisible ground line near the bottom edge, the whole figure visible from the top of the head to the feet, nothing cut off.
+- Drawings 2 and 3 must match drawing 1 in every detail except the mouth: same pose, same outline, same colours, same position in their quarter. They will be swapped quickly to animate speech, so any other difference makes the figure jitter.
+
+Background and style:
+- Transparent background (PNG with alpha). If you cannot produce real transparency, use one flat, pure white background instead: no texture, no gradient, no floor, no checkerboard pattern.
+- Give the figure a thin dark outline so it separates cleanly from the background.
+- No shadow on the ground, no text, no labels, no numbers, no frames, borders or grid lines.
+- Front view, soft even lighting, clear shapes that read well at a small size on a phone screen outdoors.
+- An original character, suitable for all ages - not a copy of an existing character, brand or real person.`;
+      const HINT_HEAD =
+        "\n\nImportant - the last try went wrong, so please also follow these:\n";
+      const HINTS = {
+        touching:
+          "Leave a wide empty gap between the four drawings. They must not touch or overlap anywhere.",
+        "too-few":
+          "Draw exactly FOUR figures in one row - the fourth one pointing to the viewer's right.",
+        "too-many":
+          "Draw only the four figures: no text, no numbers, no labels and no loose objects.",
+        "all-joined":
+          "No floor, no ground line, no shadow and no frame: only the four figures on an empty background.",
+        none: "Draw four full-body figures side by side, large and clearly visible.",
+        checker:
+          "The background must be plain flat white. Do NOT draw a grey and white checkerboard pattern.",
+        "not-flat":
+          "Use one flat, pure white background with no texture, gradient or scenery.",
+        empty:
+          "Draw four full-body figures side by side, large and clearly visible.",
+        "no-background":
+          "Leave empty white space around and between the four figures.",
+        wobble:
+          "Drawings 2 and 3 must be exact copies of drawing 1 - only the mouth may change, nothing else.",
+        order:
+          "Keep the order exactly: 1 idle, 2 mouth half open, 3 mouth wide open, 4 pointing.",
+        sizes: "Draw all four figures at exactly the same size.",
+        same: "All four drawings must show the very same character with the same clothes and colours.",
+        "points-left": "In drawing 4 the arm must point to the viewer's RIGHT.",
+        cut: "Show the whole figure in every drawing, from the top of the head to the feet.",
+        "no-mouth":
+          "In drawing 2 the mouth is clearly half open, in drawing 3 clearly wide open.",
+      };
+
+      /* ======================================================
+         State
+         ====================================================== */
+      const state = {
+        desc: "",
+        name: "",
+        hints: [],
+        copied: false,
+        picked: false,
+        phase: "empty", // empty | working | error | ready
+        result: null,
+        steady: null,
+        steadyCells: null,
+        choice: null,
+        flip: false,
+        saved: false,
+        error: null,
+        sample: null,
+        hold: -1,
+        promptOpen: false,
+        confirm: false,
+        saving: false,
+      };
+      let lastBlob = null;
+
+      /* ======================================================
+         Drawing: one simple cartoon figure in three styles
+         (units: x centred on 0, y 0 = top of the head, 1000 = soles)
+         ====================================================== */
+      function rng(seed) {
+        let a = seed >>> 0;
+        return () => {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const STYLES = {
+        standin: {
+          out: "#9b8f78",
+          ow: 9,
+          skin: "#f6eedd",
+          shirt: "#efe4cc",
+          legs: "#e6d9bd",
+          boots: "#d7c7a6",
+          hat: null,
+          painted: false,
+          q: true,
+        },
+        gardener: {
+          out: "#1d1a17",
+          ow: 12,
+          skin: "#f1c39a",
+          shirt: "#d9534a",
+          over: "#3f7d4e",
+          legs: "#3f7d4e",
+          boots: "#5a3a22",
+          hat: "#e8c35a",
+          hair: "#7a4a26",
+          painted: false,
+        },
+        keeper: {
+          out: "#1b1a22",
+          ow: 11,
+          skin: "#e9b996",
+          shirt: "#2f4f86",
+          coat: "#2f4f86",
+          legs: "#3a3340",
+          boots: "#3b2a1e",
+          cap: "#8a2f2a",
+          beard: "#dcd6ca",
+          painted: true,
+        },
+      };
+      function shape(ctx, st, path, fill, r, bbox) {
+        ctx.fillStyle = fill;
+        ctx.fill(path);
+        if (st.painted && r) {
+          ctx.save();
+          ctx.clip(path);
+          const [x0, y0, x1, y1] = bbox;
+          for (let i = 0; i < 70; i++) {
+            const x = x0 + r() * (x1 - x0),
+              y = y0 + r() * (y1 - y0),
+              l = 20 + r() * 50,
+              a = r() * Math.PI;
+            const v = r() < 0.5 ? 255 : 0;
+            ctx.strokeStyle = `rgba(${v},${v},${v},${0.16 + r() * 0.22})`;
+            ctx.lineWidth = 6 + r() * 14;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+        ctx.lineJoin = "round";
+        ctx.lineWidth = st.ow;
+        ctx.strokeStyle = st.out;
+        ctx.stroke(path);
+      }
+      function limb(ctx, st, pts, w, fill) {
+        const p = new Path2D();
+        p.moveTo(pts[0][0], pts[0][1]);
+        for (const q of pts.slice(1)) p.lineTo(q[0], q[1]);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = st.out;
+        ctx.lineWidth = w + st.ow * 2;
+        ctx.stroke(p);
+        ctx.strokeStyle = fill;
+        ctx.lineWidth = w;
+        ctx.stroke(p);
+      }
+      function circ(x, y, r) {
+        const p = new Path2D();
+        p.arc(x, y, r, 0, Math.PI * 2);
+        return p;
+      }
+      function ell(x, y, rx, ry) {
+        const p = new Path2D();
+        p.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+        return p;
+      }
+      function rrect(x, y, w, h, r) {
+        const p = new Path2D();
+        p.roundRect(x, y, w, h, r);
+        return p;
+      }
+
+      // pose: 0 idle, 1 talk-a, 2 talk-b, 3 beckon. opts.lean shifts the body (not the feet); opts.seed reseeds paint
+      function drawFigure(ctx, pose, styleName, opts = {}) {
+        const st = STYLES[styleName];
+        const r = st.painted ? rng(opts.seed ?? 7) : null;
+        const lean = opts.lean || 0;
+        // legs and boots stay put
+        for (const s of [-1, 1]) {
+          shape(
+            ctx,
+            st,
+            rrect(s < 0 ? -92 : 26, 620, 66, 330, 24),
+            st.legs,
+            r,
+            [-100, 600, 100, 960],
+          );
+          shape(
+            ctx,
+            st,
+            ell(s * 66, 958, 56, 32),
+            st.boots,
+            r,
+            [-130, 920, 130, 1000],
+          );
+        }
+        ctx.save();
+        ctx.translate(lean, 0);
+        if (st.coat) {
+          const p = new Path2D();
+          p.moveTo(-126, 312);
+          p.quadraticCurveTo(-150, 600, -196 - (opts.hem || 0), 860);
+          p.quadraticCurveTo(0, 900 + (opts.hem || 0), 196, 860);
+          p.quadraticCurveTo(150, 600, 126, 312);
+          p.closePath();
+          shape(ctx, st, p, st.coat, r, [-200, 300, 200, 900]);
+          shape(
+            ctx,
+            st,
+            rrect(-14, 330, 28, 520, 8),
+            "#c9a24a",
+            r,
+            [-20, 320, 20, 860],
+          );
+        } else {
+          shape(
+            ctx,
+            st,
+            rrect(-122, 300, 244, 360, 70),
+            st.shirt,
+            r,
+            [-130, 300, 130, 660],
+          );
+          if (st.over) {
+            const p = rrect(-92, 420, 184, 250, 30);
+            shape(ctx, st, p, st.over, r, [-100, 420, 100, 680]);
+            limb(
+              ctx,
+              st,
+              [
+                [-70, 430],
+                [-90, 320],
+              ],
+              16,
+              st.over,
+            );
+            limb(
+              ctx,
+              st,
+              [
+                [70, 430],
+                [90, 320],
+              ],
+              16,
+              st.over,
+            );
+            shape(
+              ctx,
+              st,
+              rrect(-38, 470, 76, 60, 10),
+              "#57965f",
+              r,
+              [-40, 470, 40, 530],
+            );
+          }
+          if (st.q) {
+            ctx.fillStyle = st.out;
+            ctx.font = "bold 150px Georgia, serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("?", 0, 490);
+          }
+        }
+        // arms
+        const armFill = st.coat || st.shirt;
+        limb(
+          ctx,
+          st,
+          [
+            [-118, 345],
+            [-158, 480],
+            [-150, 600],
+          ],
+          52,
+          armFill,
+        );
+        shape(ctx, st, circ(-150, 612, 36), st.skin, r, [-190, 570, -110, 650]);
+        if (st.coat) {
+          // lantern in the left hand
+          limb(
+            ctx,
+            st,
+            [
+              [-150, 640],
+              [-150, 680],
+            ],
+            6,
+            st.out,
+          );
+          shape(
+            ctx,
+            st,
+            rrect(-184, 680, 68, 90, 14),
+            "#f3c94c",
+            r,
+            [-190, 680, -110, 770],
+          );
+        }
+        if (pose === 3) {
+          limb(
+            ctx,
+            st,
+            [
+              [118, 345],
+              [250, 300],
+              [350, 236],
+            ],
+            52,
+            armFill,
+          );
+          ctx.save();
+          ctx.translate(372, 220);
+          ctx.rotate(-0.6);
+          shape(
+            ctx,
+            st,
+            rrect(-34, -30, 68, 62, 24),
+            st.skin,
+            r,
+            [-40, -40, 40, 40],
+          );
+          for (const fx of [-24, -8, 8, 24])
+            limb(
+              ctx,
+              st,
+              [
+                [fx, -24],
+                [fx * 1.15, -66],
+              ],
+              13,
+              st.skin,
+            );
+          limb(
+            ctx,
+            st,
+            [
+              [-30, 10],
+              [-62, -14],
+            ],
+            14,
+            st.skin,
+          );
+          ctx.restore();
+        } else {
+          limb(
+            ctx,
+            st,
+            [
+              [118, 345],
+              [158, 480],
+              [150, 600],
+            ],
+            52,
+            armFill,
+          );
+          shape(ctx, st, circ(150, 612, 36), st.skin, r, [110, 570, 190, 650]);
+        }
+        // head
+        shape(ctx, st, circ(0, 180, 122), st.skin, r, [-125, 55, 125, 305]);
+        if (st.hair) {
+          const p = new Path2D();
+          p.ellipse(0, 120, 112, 62, 0, Math.PI, Math.PI * 2);
+          p.closePath();
+          shape(ctx, st, p, st.hair, r, [-120, 50, 120, 130]);
+        }
+        if (st.cap) {
+          const p = new Path2D();
+          p.moveTo(-118, 140);
+          p.quadraticCurveTo(-110, 20, 20, 0);
+          p.quadraticCurveTo(80, -10, 40, 60);
+          p.quadraticCurveTo(110, 70, 118, 140);
+          p.closePath();
+          shape(ctx, st, p, st.cap, r, [-120, 0, 120, 140]);
+        }
+        if (st.beard) {
+          const p = new Path2D();
+          p.moveTo(-104, 230);
+          p.quadraticCurveTo(
+            -96,
+            380 + (opts.beard || 0),
+            0,
+            440 + (opts.beard || 0),
+          );
+          p.quadraticCurveTo(96, 380 + (opts.beard || 0), 104, 230);
+          p.quadraticCurveTo(60, 280, 0, 282);
+          p.quadraticCurveTo(-60, 280, -104, 230);
+          p.closePath();
+          shape(ctx, st, p, st.beard, r, [-110, 225, 110, 450]);
+        }
+        // face
+        for (const ex of [-44, 44]) {
+          ctx.fillStyle = "#fff";
+          ctx.fill(ell(ex, 175, 19, 23));
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = st.out;
+          ctx.stroke(ell(ex, 175, 19, 23));
+          ctx.fillStyle = st.out;
+          ctx.fill(circ(ex + 3, 179, 10));
+          ctx.beginPath();
+          ctx.moveTo(ex - 22, 138);
+          ctx.quadraticCurveTo(ex, 128, ex + 22, 138);
+          ctx.lineWidth = 8;
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+        ctx.fillStyle = "rgba(220,110,100,0.35)";
+        ctx.fill(ell(-78, 222, 20, 12));
+        ctx.fill(ell(78, 222, 20, 12));
+        if (pose === 1) {
+          const m = ell(0, 248, 26, 14);
+          ctx.fillStyle = "#5a1f1a";
+          ctx.fill(m);
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = st.out;
+          ctx.stroke(m);
+        } else if (pose === 2) {
+          const m = ell(0, 254, 30, 32);
+          ctx.fillStyle = "#5a1f1a";
+          ctx.fill(m);
+          ctx.fillStyle = "#d9776b";
+          ctx.fill(ell(0, 272, 17, 9));
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = st.out;
+          ctx.stroke(m);
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-30, 240);
+          ctx.quadraticCurveTo(0, 262, 30, 240);
+          ctx.lineWidth = 8;
+          ctx.lineCap = "round";
+          ctx.strokeStyle = st.out;
+          ctx.stroke();
+        }
+        if (st.hat) {
+          shape(ctx, st, ell(0, 92, 196, 40), st.hat, r, [-200, 50, 200, 135]);
+          shape(
+            ctx,
+            st,
+            rrect(-96, -2, 192, 96, 40),
+            st.hat,
+            r,
+            [-100, 0, 100, 95],
+          );
+          ctx.fillStyle = "#d9534a";
+          ctx.fillRect(-96, 58, 192, 22);
+        }
+        ctx.restore();
+      }
+      function figureTo(ctx, pose, style, cx, baseY, h, opts) {
+        const s = h / 1000;
+        ctx.save();
+        ctx.translate(cx, baseY - h);
+        ctx.scale(s, s);
+        drawFigure(ctx, pose, style, opts);
+        ctx.restore();
+      }
+
+      // the stand-in's four frames, drawn straight into canonical cells
+      const standinCells = [0, 1, 2, 3].map((p) => {
+        const c = document.createElement("canvas");
+        c.width = CW;
+        c.height = CH;
+        figureTo(
+          c.getContext("2d"),
+          p,
+          "standin",
+          CW / 2 - 10,
+          BASE,
+          CH * 0.82,
+        );
+        return c;
+      });
+
+      /* ======================================================
+         Sample sheets (procedural, like an image AI's output)
+         ====================================================== */
+      const SAMPLES = {
+        gardener: {
+          label: "Gardener on white",
+          name: "Rosa",
+          make: () =>
+            sheet(
+              "gardener",
+              [
+                [222, 0],
+                [591, 1],
+                [950, 2],
+                [1284, 3],
+              ],
+              true,
+            ),
+        },
+        keeper: {
+          label: "Lantern keeper (painted, wobbles)",
+          name: "Old Bram",
+          make: () =>
+            sheet(
+              "keeper",
+              [
+                [210, 0],
+                [600, 1],
+                [958, 2],
+                [1280, 3],
+              ],
+              false,
+            ),
+        },
+        three: {
+          label: "Broken: only 3 poses",
+          bad: true,
+          name: "Rosa",
+          make: () =>
+            sheet(
+              "gardener",
+              [
+                [300, 0],
+                [768, 1],
+                [1180, 3],
+              ],
+              true,
+            ),
+        },
+        touching: {
+          label: "Broken: poses touching",
+          bad: true,
+          name: "Rosa",
+          make: () =>
+            sheet(
+              "gardener",
+              [
+                [330, 0],
+                [560, 1],
+                [950, 2],
+                [1284, 3],
+              ],
+              true,
+            ),
+        },
+        checker: {
+          label: "Broken: checkerboard",
+          bad: true,
+          name: "Rosa",
+          make: () =>
+            sheet(
+              "gardener",
+              [
+                [222, 0],
+                [591, 1],
+                [950, 2],
+                [1284, 3],
+              ],
+              "checker",
+            ),
+        },
+      };
+      function sheet(style, placements, bg) {
+        const c = document.createElement("canvas");
+        c.width = 1536;
+        c.height = 1024;
+        const x = c.getContext("2d");
+        if (bg === true) {
+          x.fillStyle = "#fff";
+          x.fillRect(0, 0, 1536, 1024);
+        }
+        if (bg === "checker") {
+          for (let yy = 0; yy < 1024; yy += 32)
+            for (let xx = 0; xx < 1536; xx += 32) {
+              x.fillStyle = ((xx + yy) / 32) % 2 ? "#cccccc" : "#ffffff";
+              x.fillRect(xx, yy, 32, 32);
+            }
+        }
+        for (const [cx, pose] of placements) {
+          // painted style: talking frames redrawn (new brush strokes) and the body shifted a few pixels
+          const opts =
+            style === "keeper"
+              ? {
+                  seed: 11 + pose * 37,
+                  lean: pose === 1 ? 9 : pose === 2 ? -8 : 0,
+                  hem: pose === 1 ? 14 : pose === 2 ? -10 : 0,
+                  beard: pose === 2 ? 12 : pose === 1 ? -6 : 0,
+                }
+              : {};
+          figureTo(x, pose, style, cx, 960, 640, opts);
+        }
+        if (style === "keeper") {
+          // like the real painted sheet: the figure's alpha tops out at 253
+          const im = x.getImageData(0, 0, 1536, 1024);
+          for (let i = 3; i < im.data.length; i += 4)
+            if (im.data[i] === 255) im.data[i] = 253;
+          x.putImageData(im, 0, 0);
+        }
+        return new Promise((res) =>
+          c.toBlob(
+            (b) =>
+              res(new File([b], style + "-sample.png", { type: "image/png" })),
+            "image/png",
+          ),
+        );
+      }
+
+      /* ======================================================
+         Scene: the tour path, the next station's sign, the guide
+         ====================================================== */
+      const stage = $("#stage"),
+        scene = $("#scene"),
+        sctx = scene.getContext("2d");
+      let SW = 0,
+        SH = 0,
+        DPR = 1;
+      function resize() {
+        DPR = Math.min(2, window.devicePixelRatio || 1);
+        SW = stage.clientWidth;
+        SH = stage.clientHeight;
+        scene.width = Math.round(SW * DPR);
+        scene.height = Math.round(SH * DPR);
+      }
+      new ResizeObserver(() => {
+        resize();
+      }).observe(stage);
+      function geo() {
+        const narrow = SW < 520;
+        const horizon = SH * 0.5,
+          baseY = SH * 0.93;
+        let ch = SH * 0.8;
+        if (ch / 2 > SW * 0.42) ch = SW * 0.84;
+        const cx = SW * (narrow ? 0.3 : 0.34);
+        return {
+          horizon,
+          baseY,
+          ch,
+          cw: ch / 2,
+          cx,
+          signX: SW * 0.84,
+          signY: horizon + SH * (narrow ? 0.2 : 0.1),
+          narrow,
+        };
+      }
+      function drawScene(t, frame, beckonOn, popK) {
+        const g = geo(),
+          x = sctx;
+        x.setTransform(DPR, 0, 0, DPR, 0, 0);
+        const sky = x.createLinearGradient(0, 0, 0, g.horizon);
+        sky.addColorStop(0, "#a9d5ea");
+        sky.addColorStop(1, "#f8efd9");
+        x.fillStyle = sky;
+        x.fillRect(0, 0, SW, g.horizon + 2);
+        x.fillStyle = "#fff4c9";
+        x.beginPath();
+        x.arc(SW * 0.86, SH * 0.13, Math.min(SW, SH) * 0.06, 0, Math.PI * 2);
+        x.fill();
+        // hills
+        x.fillStyle = "#b9d39c";
+        x.beginPath();
+        x.moveTo(0, g.horizon);
+        x.quadraticCurveTo(
+          SW * 0.25,
+          g.horizon - SH * 0.16,
+          SW * 0.55,
+          g.horizon,
+        );
+        x.fill();
+        x.fillStyle = "#a6c78a";
+        x.beginPath();
+        x.moveTo(SW * 0.35, g.horizon);
+        x.quadraticCurveTo(
+          SW * 0.75,
+          g.horizon - SH * 0.2,
+          SW * 1.05,
+          g.horizon,
+        );
+        x.fill();
+        // town roofs far away
+        x.fillStyle = "#c98f6b";
+        for (let i = 0; i < 5; i++) {
+          const bx = SW * (0.52 + i * 0.05),
+            bw = SW * 0.035,
+            bh = SH * (0.03 + (i % 2) * 0.02);
+          x.fillRect(bx, g.horizon - bh, bw, bh);
+          x.beginPath();
+          x.moveTo(bx - 2, g.horizon - bh);
+          x.lineTo(bx + bw / 2, g.horizon - bh - SH * 0.025);
+          x.lineTo(bx + bw + 2, g.horizon - bh);
+          x.fill();
+        }
+        // ground
+        const gr = x.createLinearGradient(0, g.horizon, 0, SH);
+        gr.addColorStop(0, "#a3c884");
+        gr.addColorStop(1, "#7fb064");
+        x.fillStyle = gr;
+        x.fillRect(0, g.horizon, SW, SH - g.horizon);
+        // trees
+        for (const [tx, ts] of [
+          [0.06, 1],
+          [0.15, 0.7],
+          [0.93, 0.85],
+          [0.62, 0.5],
+        ]) {
+          const bx = SW * tx,
+            by = g.horizon + SH * 0.04 * ts,
+            s = SH * 0.12 * ts;
+          x.fillStyle = "#7a5a3a";
+          x.fillRect(bx - s * 0.06, by - s * 0.5, s * 0.12, s * 0.5);
+          x.fillStyle = "#5f9a55";
+          x.beginPath();
+          x.arc(bx, by - s * 0.75, s * 0.4, 0, Math.PI * 2);
+          x.fill();
+        }
+        // the path toward the next station
+        x.fillStyle = "#ead9b0";
+        x.beginPath();
+        x.moveTo(SW * 0.02, SH);
+        x.quadraticCurveTo(
+          SW * 0.38,
+          g.horizon + SH * 0.2,
+          SW * 0.74,
+          g.horizon + SH * 0.04,
+        );
+        x.lineTo(SW * 0.79, g.horizon + SH * 0.045);
+        x.quadraticCurveTo(SW * 0.62, g.horizon + SH * 0.28, SW * 0.78, SH);
+        x.closePath();
+        x.fill();
+        x.strokeStyle = "#d1bd8d";
+        x.lineWidth = 2;
+        x.stroke();
+        // signpost of the next station
+        const sx = g.signX,
+          sy = g.signY,
+          sh = SH * (g.narrow ? 0.16 : 0.24);
+        x.fillStyle = "#7a5a3a";
+        x.fillRect(sx - 4, sy - sh, 8, sh);
+        const bw = Math.max(96, SW * 0.17),
+          bh = Math.max(42, SH * 0.1);
+        const bx = Math.min(sx - bw * 0.35, SW - bw - 6),
+          by = sy - sh;
+        x.fillStyle = "#fbf3df";
+        x.strokeStyle = "#7a5a3a";
+        x.lineWidth = 3;
+        x.beginPath();
+        x.moveTo(bx, by);
+        x.lineTo(bx + bw - 14, by);
+        x.lineTo(bx + bw, by + bh / 2);
+        x.lineTo(bx + bw - 14, by + bh);
+        x.lineTo(bx, by + bh);
+        x.closePath();
+        x.fill();
+        x.stroke();
+        x.fillStyle = "#2a2824";
+        x.textAlign = "left";
+        x.textBaseline = "alphabetic";
+        const f1 = Math.max(11, Math.min(15, bw * 0.11));
+        x.font = `700 ${f1}px system-ui, sans-serif`;
+        x.fillText("Next station", bx + 8, by + bh * 0.42);
+        x.font = `${f1}px Georgia, serif`;
+        x.fillText("The old mill", bx + 8, by + bh * 0.8);
+        // chevrons on the path while beckoning
+        if (beckonOn) {
+          const x0 = g.cx + g.cw * 0.55,
+            y0 = g.baseY - SH * 0.08,
+            x1 = sx - bw * 0.4,
+            y1 = sy - SH * 0.01;
+          for (let i = 0; i < 3; i++) {
+            const k = (i + 1) / 4,
+              px = x0 + (x1 - x0) * k,
+              py = y0 + (y1 - y0) * k;
+            const a = 0.25 + 0.75 * Math.max(0, Math.sin(t / 180 - i * 0.9));
+            const s = SH * 0.035 * (1 - k * 0.45);
+            x.strokeStyle = `rgba(242,151,31,${a})`;
+            x.lineWidth = Math.max(3, s * 0.45);
+            x.lineCap = "round";
+            x.lineJoin = "round";
+            x.beginPath();
+            x.moveTo(px - s * 0.6, py - s);
+            x.lineTo(px + s * 0.6, py);
+            x.lineTo(px - s * 0.6, py + s);
+            x.stroke();
+          }
+        }
+        // the guide
+        x.fillStyle = "rgba(40,50,30,0.25)";
+        x.beginPath();
+        x.ellipse(g.cx, g.baseY, g.cw * 0.42, SH * 0.025, 0, 0, Math.PI * 2);
+        x.fill();
+        const cells = currentCells();
+        x.save();
+        x.translate(g.cx, g.baseY);
+        if (popK < 1) {
+          const e =
+            popK < 0.6
+              ? 0.3 + (popK / 0.6) * 0.82
+              : 1.12 - ((popK - 0.6) / 0.4) * 0.12;
+          x.scale(e, e);
+        }
+        x.imageSmoothingQuality = "high";
+        x.drawImage(cells[frame], -g.cw / 2, -g.ch * 0.97, g.cw, g.ch);
+        x.restore();
+        if (popK < 1) {
+          for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2,
+              d = g.ch * (0.2 + popK * 0.45),
+              px = g.cx + Math.cos(a) * d * 0.7,
+              py = g.baseY - g.ch * 0.45 + Math.sin(a) * d * 0.6;
+            x.fillStyle = `rgba(242,151,31,${1 - popK})`;
+            star(x, px, py, 4 + 6 * (1 - popK));
+          }
+        }
+      }
+      function star(x, cx, cy, r) {
+        x.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2 - Math.PI / 2,
+            rr = i % 2 ? r * 0.45 : r;
+          x.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+        }
+        x.fill();
+      }
+
+      /* ======================================================
+         Talking timeline: talk-a / talk-b swap about 9 times a
+         second within a word, idle pauses between words
+         ====================================================== */
+      function buildTimeline(line1, line2) {
+        const seg = [];
+        let t = 0;
+        const push = (frame, d, extra = {}) => {
+          if (d > 0) {
+            seg.push({ t0: t, t1: t + d, frame, ...extra });
+            t += d;
+          }
+        };
+        push(0, 900, { bubble: 0 });
+        const words = line1.split(/\s+/);
+        words.forEach((w, wi) => {
+          const syl = Math.max(
+            1,
+            Math.min(4, Math.round(w.replace(/[^a-z]/gi, "").length / 2.6)),
+          );
+          for (let s = 0; s < syl; s++) {
+            push(1, 110, { bubble: 1, word: wi });
+            push(2, 110, { bubble: 1, word: wi });
+          }
+          push(0, wi === words.length - 1 ? 0 : 130, { bubble: 1, word: wi });
+        });
+        push(0, 800, { bubble: 1, word: words.length });
+        const w2 = line2.split(/\s+/);
+        w2.forEach((w, wi) => {
+          push(1, 110, { bubble: 2, word: wi });
+          push(2, 110, { bubble: 2, word: wi });
+          push(0, 120, { bubble: 2, word: wi });
+        });
+        push(3, 2200, { bubble: 2, word: w2.length, beckon: true });
+        push(0, 900, { bubble: 0 });
+        return { seg, total: t, words, w2 };
+      }
+      let TL = null;
+      function lines() {
+        const nm =
+          state.name.trim() ||
+          (state.sample && SAMPLES[state.sample]?.name) ||
+          "";
+        if (state.phase === "error")
+          return [
+            "Hmm, I could not cut that picture into my four poses.",
+            "Look below: it says which step went wrong and what to do.",
+          ];
+        if (state.phase !== "ready")
+          return [
+            "Hi! I'm only a stand-in. Your own guide will talk to visitors right here.",
+            "Then they wave everyone on to the next station!",
+          ];
+        return [
+          nm
+            ? `Hello, I'm ${nm}! Welcome to the Old Town walk.`
+            : "Hello, I'm your guide! Welcome to the Old Town walk.",
+          "Follow me - this way!",
+        ];
+      }
+      function retime() {
+        const [a, b] = lines();
+        TL = buildTimeline(a, b);
+      }
+      retime();
+
+      function currentCells() {
+        if (state.phase !== "ready" || !state.result) return standinCells;
+        let cells =
+          state.choice === "steady" && state.steadyCells
+            ? state.steadyCells
+            : state.result.cells;
+        if (state.flip)
+          cells = [cells[0], cells[1], cells[2], mirrored(cells[3])];
+        return cells;
+      }
+
+      /* ======================================================
+         Frame loop
+         ====================================================== */
+      let t0 = performance.now(),
+        popAt = -1e9,
+        lastFrame = -1,
+        lastBubble = "";
+      function tick(now) {
+        if (SW && SH) {
+          const tl = (now - t0) % TL.total;
+          const s = TL.seg.find((q) => tl >= q.t0 && tl < q.t1) || TL.seg[0];
+          const frame = state.hold >= 0 ? state.hold : s.frame;
+          const popK = Math.min(1, (now - popAt) / 650);
+          drawScene(
+            now,
+            frame,
+            state.hold < 0 ? !!s.beckon : state.hold === 3,
+            popK,
+          );
+          updateBubble(state.hold >= 0 ? null : s);
+          placeOverlays();
+          if (frame !== lastFrame) {
+            lastFrame = frame;
+            document
+              .querySelectorAll(".pose")
+              .forEach((p, i) => p.classList.toggle("on", i === frame));
+          }
+          drawCompare(now);
+        }
+        requestAnimationFrame(tick);
+      }
+      function updateBubble(s) {
+        const b = $("#bubble");
+        let html = "";
+        if (s && s.bubble) {
+          const words = s.bubble === 1 ? TL.words : TL.w2;
+          html = words
+            .map((w, i) =>
+              i <= s.word ? esc(w) : `<span class="later">${esc(w)}</span>`,
+            )
+            .join(" ");
+        }
+        if (html !== lastBubble) {
+          lastBubble = html;
+          if (html) b.innerHTML = html;
+          b.classList.toggle("on", !!html);
+        }
+      }
+      function placeOverlays() {
+        const g = geo();
+        const headTop = g.baseY - g.ch * 0.97 + g.ch * 0.08;
+        const b = $("#bubble");
+        b.style.left =
+          Math.min(g.cx + g.cw * 0.32, SW - b.offsetWidth - 8) + "px";
+        b.style.top = Math.max(8, headTop - 4) + "px";
+        b.style.maxWidth = (g.narrow ? SW * 0.56 : SW * 0.42) + "px";
+        const tag = $("#tag");
+        tag.style.left = g.cx + "px";
+        tag.style.top = g.baseY - 14 + "px";
+        // wobble ring around the body, below the head band
+        if (!$("#ring").hidden && state.result) {
+          const c = state.result.checks,
+            k = g.ch / CH;
+          const top = g.baseY - g.ch * 0.97 + c.bandEnd * k,
+            bottom = g.baseY - 4;
+          const ring = $("#ring");
+          ring.style.left = g.cx - g.cw * 0.42 + "px";
+          ring.style.width = g.cw * 0.84 + "px";
+          ring.style.top = top + "px";
+          ring.style.height = bottom - top + "px";
+        }
+        if (!$("#callout").hidden) {
+          const co = $("#callout");
+          co.style.left =
+            Math.min(g.cx + g.cw * 0.45, SW - co.offsetWidth - 8) + "px";
+          co.style.top =
+            Math.max(
+              8,
+              Math.min(SH - co.offsetHeight - 8, g.baseY - g.ch * (g.narrow || SH < 360 ? 0.3 : 0.42)),
+            ) + "px";
+        }
+      }
+
+      /* ======================================================
+         Pose strip
+         ====================================================== */
+      const POSES = [
+        ["Resting", "while quiet"],
+        ["Talking", "mouth half open"],
+        ["Talking", "mouth wide open"],
+        ["This way!", "points to the next station"],
+      ];
+      $("#poses").innerHTML = POSES.map(
+        (p, i) =>
+          `<button class="pose" data-i="${i}" aria-pressed="false"><canvas width="80" height="160"></canvas><b>${p[0]}</b><small>${p[1]}</small></button>`,
+      ).join("");
+      function drawPoses() {
+        const cells = currentCells();
+        document.querySelectorAll(".pose canvas").forEach((cv, i) => {
+          const x = cv.getContext("2d");
+          x.clearRect(0, 0, 80, 160);
+          x.imageSmoothingQuality = "high";
+          x.drawImage(cells[i], 0, 0, 80, 160);
+        });
+      }
+      document.querySelectorAll(".pose").forEach((p) =>
+        p.addEventListener("click", () => {
+          const i = +p.dataset.i;
+          state.hold = state.hold === i ? -1 : i;
+          renderHold();
+        }),
+      );
+      function renderHold() {
+        document.querySelectorAll(".pose").forEach((p, i) => {
+          p.classList.toggle("held", i === state.hold);
+          p.setAttribute("aria-pressed", String(i === state.hold));
+        });
+        const h = $("#holding");
+        h.hidden = state.hold < 0;
+        if (state.hold >= 0) {
+          h.innerHTML = `Holding: ${POSES[state.hold][0]} (${POSES[state.hold][1]}) <button id="resume">Play</button>`;
+          $("#resume").onclick = () => {
+            state.hold = -1;
+            renderHold();
+          };
+        }
+      }
+
+      /* ======================================================
+         Compare (as drawn vs steadied), animated in sync
+         ====================================================== */
+      function drawCompare(now) {
+        if ($("#compare").hidden || !state.result || !state.steadyCells) return;
+        const c = state.result.checks;
+        const talk = Math.floor(now / 110) % 2 ? 1 : 2; // continuous talking, about 9 swaps a second
+        const pause = Math.floor(now / 1400) % 3 === 2; // a short idle pause now and then
+        const f = pause ? 0 : talk;
+        const y0 = Math.max(0, c.figTop - 10),
+          hh = Math.min(CH - y0, c.figH * 0.85),
+          x0 = (CW - hh) / 2;
+        for (const [id, cells] of [
+          ["#cmpA", state.result.cells],
+          ["#cmpB", state.steadyCells],
+        ]) {
+          const cv = $(id),
+            x = cv.getContext("2d");
+          x.clearRect(0, 0, 300, 300);
+          x.imageSmoothingQuality = "high";
+          x.drawImage(cells[f], x0, y0, hh, hh, 0, 0, 300, 300);
+          // the head-band line, so the author sees where the steady body starts
+          if (id === "#cmpB") {
+            const yy = ((c.bandEnd - y0) / hh) * 300;
+            x.setLineDash([6, 6]);
+            x.strokeStyle = "rgba(42,40,36,0.5)";
+            x.lineWidth = 2;
+            x.beginPath();
+            x.moveTo(0, yy);
+            x.lineTo(300, yy);
+            x.stroke();
+            x.setLineDash([]);
+            x.font = "700 20px system-ui";
+            const lw = x.measureText("only the head moves above").width + 16;
+            x.fillStyle = "rgba(251,248,239,0.9)";
+            x.fillRect(300 - lw - 6, yy + 6, lw, 28);
+            x.fillStyle = "#2a2824";
+            x.fillText("only the head moves above", 300 - lw + 2, yy + 27);
+          }
+        }
+      }
+
+      /* ======================================================
+         Trail, prompt, steps
+         ====================================================== */
+      const TRAIL = [
+        ["describe", "Describe"],
+        ["copy", "Copy the prompt"],
+        ["bring", "Bring the picture"],
+        ["check", "Check"],
+        ["save", "Save"],
+      ];
+      function stepDone(k) {
+        if (k === "describe") return !!state.desc.trim();
+        if (k === "copy") return state.copied;
+        if (k === "bring") return state.phase === "ready";
+        if (k === "check") return state.phase === "ready" && !wobbleOpen();
+        if (k === "save") return state.saved;
+      }
+      function wobbleOpen() {
+        return (
+          state.result && state.result.checks.suggestSteady && !state.choice
+        );
+      }
+      function renderTrail() {
+        let nowSet = false;
+        $("#trail").innerHTML = TRAIL.map(([k, l], i) => {
+          const d = stepDone(k);
+          let cls = d ? "done" : "";
+          if (!d && !nowSet) {
+            cls = "now";
+            nowSet = true;
+          }
+          return `<li class="${cls}"><i>${d ? "&#10003;" : i + 1}</i>${l}</li>`;
+        }).join("");
+        const ni = TRAIL.findIndex(([k]) => !stepDone(k));
+        $("#trailShort").textContent =
+          ni < 0
+            ? "All done"
+            : `Step ${ni + 1} of ${TRAIL.length}: ${TRAIL[ni][1]}`;
+        $("#s1").classList.toggle("isdone", stepDone("describe"));
+        $("#s2").classList.toggle("isdone", stepDone("copy"));
+        $("#s3").classList.toggle("isdone", stepDone("bring"));
+      }
+      function promptText() {
+        let p = P_HEAD + (state.desc.trim() || PLACEHOLDER) + P_BODY;
+        if (state.hints.length)
+          p += HINT_HEAD + state.hints.map((h) => "- " + HINTS[h]).join("\n");
+        return p;
+      }
+      function renderPrompt() {
+        const you = state.desc.trim();
+        let html =
+          esc(P_HEAD) +
+          `<mark class="you${you ? "" : " empty"}">${esc(you || PLACEHOLDER)}</mark>` +
+          esc(P_BODY);
+        if (state.hints.length)
+          html +=
+            esc(HINT_HEAD) +
+            `<mark class="hint">${state.hints.map((h) => esc("- " + HINTS[h])).join("\n")}</mark>`;
+        $("#prompt").innerHTML = html;
+        const lines = promptText().split("\n").length;
+        $("#promptMeta").textContent = state.hints.length
+          ? `The prompt, word for word (${state.hints.length} fix${state.hints.length > 1 ? "es" : ""} added at the end)`
+          : `The prompt, word for word (${lines} lines)`;
+        $("#promptToggle").textContent = state.promptOpen
+          ? "Show less"
+          : "Read the whole prompt";
+        $("#promptBox").classList.toggle("collapsed", !state.promptOpen);
+        if (!state.flash) $("#copy").textContent = state.hints.length
+          ? "Copy the prompt with the fix"
+          : "Copy the prompt";
+      }
+      $("#promptToggle").onclick = () => {
+        state.promptOpen = !state.promptOpen;
+        renderPrompt();
+      };
+      const IDEAS = [
+        "a squirrel forest ranger with a green hat",
+        "an old lighthouse keeper with a lantern",
+        "a cheerful robot made of tin cans",
+        "a medieval baker with flour on her apron",
+      ];
+      $("#ideas").innerHTML = IDEAS.map(
+        (t) => `<button class="chip" data-t="${esc(t)}">${esc(t)}</button>`,
+      ).join("");
+      document.querySelectorAll("#ideas .chip").forEach(
+        (b) =>
+          (b.onclick = () => {
+            $("#desc").value = b.dataset.t + ", friendly cartoon style";
+            onDesc();
+          }),
+      );
+      function onDesc() {
+        state.desc = $("#desc").value;
+        $("#descNeed").hidden = true;
+        state.saved = false;
+        renderPrompt();
+        renderAll();
+      }
+      $("#desc").addEventListener("input", onDesc);
+      $("#name").addEventListener("input", () => {
+        state.name = $("#name").value;
+        retime();
+        state.saved = false;
+        renderAll();
+      });
+      $("#samples").innerHTML = Object.entries(SAMPLES)
+        .map(
+          ([k, s]) =>
+            `<button class="chip${s.bad ? " bad" : ""}" data-k="${k}">${esc(s.label)}</button>`,
+        )
+        .join("");
+      document.querySelectorAll("#samples .chip").forEach(
+        (b) =>
+          (b.onclick = async () => {
+            const f = await SAMPLES[b.dataset.k].make();
+            importBlob(f, b.dataset.k);
+          }),
+      );
+
+      /* ---------- toasts ---------- */
+      function toast(msg, kind = "") {
+        const t = document.createElement("div");
+        t.className = "toast " + kind;
+        t.textContent = msg;
+        $("#toasts").appendChild(t);
+        while ($("#toasts").children.length > 1) $("#toasts").firstElementChild.remove();
+        setTimeout(() => t.remove(), kind === "err" ? 7000 : 4200);
+      }
+
+      /* ---------- copy ---------- */
+      async function copyPrompt() {
+        if (!state.desc.trim()) {
+          $("#descNeed").hidden = false;
+          $("#desc").focus();
+          $("#s1").scrollIntoView({ behavior: "smooth", block: "center" });
+          toast(
+            "Describe your guide first - the prompt still has the placeholder in it.",
+            "err",
+          );
+          return;
+        }
+        const btn = $("#copy");
+        btn.classList.add("busy");
+        btn.textContent = "Copying...";
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(promptText());
+          ok = true;
+        } catch {
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = promptText();
+            document.body.appendChild(ta);
+            ta.select();
+            ok = document.execCommand("copy");
+            ta.remove();
+          } catch {
+            ok = false;
+          }
+        }
+        btn.classList.remove("busy");
+        if (ok) {
+          state.copied = true;
+          btn.textContent = "Copied"; state.flash = true;
+          setTimeout(() => { state.flash = false; renderPrompt(); }, 1800);
+          toast(
+            "Copied. Paste it into your image AI and send it, then bring the picture back here.",
+            "good",
+          );
+        } else {
+          renderPrompt();
+          state.promptOpen = true;
+          renderPrompt();
+          const r = document.createRange();
+          r.selectNodeContents($("#prompt"));
+          const sel = getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          toast(
+            "Could not copy by itself. The prompt is now selected: press Ctrl+C, or long-press it and choose Copy.",
+            "err",
+          );
+        }
+        renderAll();
+      }
+      $("#copy").onclick = copyPrompt;
+      if (navigator.share) {
+        $("#share").hidden = false;
+        $("#share").onclick = async () => {
+          if (!state.desc.trim()) return copyPrompt();
+          try {
+            await navigator.share({ text: promptText() });
+            state.copied = true;
+            renderAll();
+          } catch (e) {
+            if (e.name !== "AbortError")
+              toast(
+                "Sharing did not work. Use Copy the prompt instead.",
+                "err",
+              );
+          }
+        };
+      }
+
+      /* ---------- bring the picture back ---------- */
+      $("#pick").onclick = () => $("#file").click();
+      $("#file").addEventListener("change", () => {
+        const f = $("#file").files[0];
+        if (f) importBlob(f, null);
+        $("#file").value = "";
+      });
+      $("#paste").onclick = async () => {
+        if (!navigator.clipboard || !navigator.clipboard.read) {
+          toast(
+            "This browser does not let pages read a copied picture. Use Pick the picture instead.",
+            "err",
+          );
+          return;
+        }
+        try {
+          const items = await navigator.clipboard.read();
+          for (const it of items) {
+            const ty = it.types.find((t) => t.startsWith("image/"));
+            if (ty) {
+              importBlob(await it.getType(ty), null);
+              return;
+            }
+          }
+          toast(
+            "There is no picture on the clipboard. In the AI use Copy image, or save the picture and use Pick the picture.",
+            "err",
+          );
+        } catch {
+          toast(
+            "The browser did not allow reading the clipboard. Use Pick the picture instead.",
+            "err",
+          );
+        }
+      };
+      window.addEventListener("paste", (e) => {
+        const f = [...(e.clipboardData?.files || [])].find((x) =>
+          x.type.startsWith("image/"),
+        );
+        if (f) {
+          e.preventDefault();
+          importBlob(f, null);
+        }
+      });
+      let dragN = 0;
+      window.addEventListener("dragenter", (e) => {
+        if ([...e.dataTransfer.types].includes("Files")) {
+          dragN++;
+          $("#drop").hidden = false;
+        }
+      });
+      window.addEventListener("dragleave", () => {
+        dragN = Math.max(0, dragN - 1);
+        if (!dragN) $("#drop").hidden = true;
+      });
+      window.addEventListener("dragover", (e) => e.preventDefault());
+      window.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragN = 0;
+        $("#drop").hidden = true;
+        const f = e.dataTransfer.files[0];
+        if (f) importBlob(f, null);
+      });
+
+      const STEP_KEYS = Object.keys(STEP_NAMES);
+      function stepList(cur, failed) {
+        return STEP_KEYS.map((k, i) => {
+          const ci = STEP_KEYS.indexOf(cur);
+          let cls = i < ci ? "done" : i === ci ? (failed ? "fail" : "run") : "";
+          if (cur === "all") cls = "done";
+          return `<li class="${cls}"><span class="dot">${cls === "done" ? "&#10003;" : cls === "fail" ? "!" : ""}</span>${STEP_NAMES[k]}</li>`;
+        }).join("");
+      }
+      async function importBlob(blob, sampleKey) {
+        if (state.phase === "working") return;
+        lastBlob = blob;
+        state.phase = "working";
+        $("#toasts").replaceChildren();
+        state.error = null;
+        state.sample = sampleKey;
+        state.saved = false;
+        state.confirm = false;
+        state.hold = -1;
+        renderHold();
+        $("#report").hidden = true;
+        $("#compare").hidden = true;
+        $("#ring").hidden = true;
+        $("#callout").hidden = true;
+        $("#pick").classList.add("busy");
+        $("#pick").textContent = "Cutting...";
+        $("#importStatus").textContent =
+          "Cutting your picture into the four poses...";
+        const w = $("#work");
+        w.hidden = false;
+        if (matchMedia("(max-width: 760px)").matches)
+          stage.scrollIntoView({ behavior: "smooth", block: "start" });
+        renderAll();
+        const onStep = async (k) => {
+          w.innerHTML = `<b>Cutting your picture</b><ol>${stepList(k, false)}</ol>`;
+          await new Promise((r) => setTimeout(r, 160));
+        };
+        try {
+          const res = await cutSheet(blob, {}, onStep);
+          w.innerHTML = `<b>Cutting your picture</b><ol>${stepList("all")}</ol>`;
+          await new Promise((r) => setTimeout(r, 250));
+          state.result = res;
+          state.choice = null;
+          state.flip = false;
+          state.steadyCells = steadyBody(res.cells, res.checks, res.opts);
+          state.steadyCheck = steadyMeasure(res);
+          state.phase = "ready";
+          popAt = performance.now();
+          // hints that this result made unnecessary are dropped from the prompt
+          state.hints = state.hints.filter(
+            (h) =>
+              ![
+                "touching",
+                "too-few",
+                "too-many",
+                "all-joined",
+                "checker",
+                "not-flat",
+                "none",
+                "empty",
+                "no-background",
+              ].includes(h),
+          );
+          retime();
+          t0 = performance.now();
+          $("#importStatus").innerHTML =
+            `<span style="color:var(--ok);font-weight:600">Done: 4 poses cut out.</span> Your guide is now in the scene.`;
+          toast(
+            res.checks.suggestSteady
+              ? "Your guide is in the scene - but its body wobbles while it talks. Have a look."
+              : "Your guide is in the scene. Check it, then save.",
+            res.checks.suggestSteady ? "" : "good",
+          );
+        } catch (e) {
+          state.phase = "error";
+          state.error = e;
+          state.result = null;
+          const err =
+            e instanceof CutError
+              ? e
+              : new CutError(
+                  "read",
+                  "unknown",
+                  "Something unexpected went wrong: " + (e && e.message),
+                );
+          state.error = err;
+          w.hidden = true;
+          renderReport(err);
+          $("#importStatus").innerHTML =
+            `<span style="color:var(--danger);font-weight:600">Stopped at: ${esc(STEP_NAMES[err.step])}.</span> What to do is shown next to the scene.`;
+          toast(`That picture did not work: ${err.message}`, "err");
+          retime();
+          if (matchMedia("(max-width: 760px)").matches)
+            $("#report").scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        w.hidden = true;
+        $("#pick").classList.remove("busy");
+        $("#pick").textContent = "Pick the picture";
+        renderAll();
+      }
+      function steadyMeasure(res) {
+        // re-measure the steadied frames, so the number under "Steadied" is measured, not promised
+        const P = (c) => c.getContext("2d").getImageData(0, 0, CW, CH).data;
+        const A = P(res.cells[0]),
+          B = P(state.steadyCells[1]),
+          C = P(state.steadyCells[2]);
+        const ch = res.checks;
+        let u = 0,
+          d = 0;
+        for (const T of [B, C])
+          for (let y = ch.bandEnd + ch.feather; y < BASE; y += 2)
+            for (let x = 0; x < CW; x += 2) {
+              const i = (y * CW + x) * 4,
+                fa = A[i + 3] >= 128,
+                fb = T[i + 3] >= 128;
+              if (!fa && !fb) continue;
+              u++;
+              if (
+                fa !== fb ||
+                Math.max(
+                  Math.abs(A[i] - T[i]),
+                  Math.abs(A[i + 1] - T[i + 1]),
+                  Math.abs(A[i + 2] - T[i + 2]),
+                ) > 48
+              )
+                d++;
+            }
+        return u ? d / u : 0;
+      }
+
+      /* ---------- the failure report: which step, why, what to do ---------- */
+      const WHAT = {
+        "empty-file": [
+          "The file is empty.",
+          "Save the picture from the AI again and pick it once more.",
+          null,
+        ],
+        "not-image": [
+          "That file is not a picture.",
+          "Pick the picture file the AI made (PNG, JPEG or WebP).",
+          null,
+        ],
+        decode: [
+          "This picture could not be opened.",
+          "Save the picture from the AI as PNG or JPEG and pick it again.",
+          null,
+        ],
+        "too-big": [
+          null,
+          "Ask the AI for a smaller picture, or pick a smaller copy.",
+          null,
+        ],
+        "too-small": [
+          null,
+          "In the AI, open the picture full size and save that one.",
+          null,
+        ],
+        checker: [
+          "The AI painted a grey and white checkerboard to look like transparency - but it is part of the picture.",
+          "Ask the AI again with the fix below, which asks for plain white instead.",
+          "checker",
+        ],
+        "not-flat": [
+          null,
+          "Ask the AI again with the fix below: one flat, pure white background.",
+          "not-flat",
+        ],
+        empty: [
+          null,
+          "Pick the picture the AI made (not a blank one), or ask again.",
+          "empty",
+        ],
+        "no-background": [
+          null,
+          "Ask the AI again with the fix below: empty space around the figures.",
+          "no-background",
+        ],
+        touching: [
+          "The AI joined two poses together, so they cannot be cut apart.",
+          "Ask the AI again with the fix below, or pick another picture from it.",
+          "touching",
+        ],
+        "too-few": [
+          null,
+          "Ask the AI again with the fix below, or pick another picture from it.",
+          "too-few",
+        ],
+        "too-many": [
+          null,
+          "Ask the AI again with the fix below: only the four figures, nothing else.",
+          "too-many",
+        ],
+        "all-joined": [
+          null,
+          "Ask the AI again with the fix below: no floor, no shadow, no frame.",
+          "all-joined",
+        ],
+        none: [null, "Ask the AI again, or pick another picture.", "none"],
+        unknown: [
+          null,
+          "Pick the picture again; if it keeps failing, try another picture.",
+          null,
+        ],
+      };
+      function renderReport(err) {
+        const [msg, todo, hint] = WHAT[err.code] || WHAT.unknown;
+        const n = STEP_KEYS.indexOf(err.step) + 1;
+        const r = $("#report");
+        r.hidden = false;
+        r.innerHTML = `<h3>That picture did not work - step ${n} of 5 stopped</h3>
+          <ol class="steplist">${stepList(err.step, true)}</ol>
+          <div class="what"><b>${esc(msg || err.message)}</b>${msg && msg !== err.message ? `<br>${esc(err.message)}` : ""}</div>
+          <p class="fixline">${esc(todo)}${hint ? ` We put this line at the end of the prompt: <q>${esc(HINTS[hint])}</q>` : ""}</p>
+          ${err.source ? `<div class="thumbwrap"><canvas id="thumb"></canvas></div><p class="say" style="font-size:13px;margin-top:4px">${err.detail && err.detail.runs ? "What we found in your picture, piece by piece." : "Your picture as we read it."}</p>` : ""}
+          <div class="row" style="margin-top:10px">${hint ? `<button class="btn primary small" id="rCopy">Copy the prompt with the fix</button>` : ""}<button class="btn second small" id="rPick">Pick another picture</button></div>`;
+        if (hint && !state.hints.includes(hint)) {
+          state.hints.push(hint);
+          renderPrompt();
+        }
+        if (hint) $("#rCopy").onclick = copyPrompt;
+        $("#rPick").onclick = () => $("#file").click();
+        if (err.source) drawThumb($("#thumb"), err.source, err.detail);
+      }
+      function drawThumb(cv, src, det) {
+        const W = 720,
+          H = Math.round((src.height / src.width) * W);
+        cv.width = W;
+        cv.height = H;
+        const x = cv.getContext("2d");
+        x.drawImage(src, 0, 0, W, H);
+        if (!det || !det.runs) return;
+        const k = W / src.width;
+        let poseNo = 1;
+        det.runs.forEach((r, i) => {
+          const joined = det.joined && det.joined.includes(i);
+          const many = det.est ? det.est[i] : 1;
+          const first = poseNo;
+          poseNo += joined ? Math.max(2, many) : 1;
+          x.strokeStyle = joined ? "#a3321f" : "#3d6b3a";
+          x.lineWidth = 4;
+          x.setLineDash(joined ? [10, 6] : []);
+          x.strokeRect(r.x0 * k - 3, r.top * k - 3, r.w * k + 6, r.h * k + 6);
+          x.setLineDash([]);
+          const label = joined ? `poses ${first} + ${first + 1} joined` : `pose ${first}`;
+          x.font = "700 22px system-ui";
+          const tw = x.measureText(label).width + 14;
+          x.fillStyle = joined ? "#a3321f" : "#3d6b3a";
+          x.fillRect(r.x0 * k - 3, r.top * k - 34, tw, 30);
+          x.fillStyle = "#fff";
+          x.fillText(label, r.x0 * k + 4, r.top * k - 12);
+        });
+        if (det.runs.length < 4 && !(det.joined && det.joined.length)) {
+          x.font = "700 24px system-ui";
+          x.fillStyle = "#a3321f";
+          x.fillText(`only ${det.runs.length} of 4`, W - 170, 34);
+        }
+      }
+
+      /* ---------- check and save ---------- */
+      function setChoice(c) {
+        state.choice = c;
+        state.confirm = false;
+        state.saved = false;
+        if (c === "steady")
+          toast(
+            "Steadied: now only the head changes while your guide talks.",
+            "good",
+          );
+        renderAll();
+      }
+      $("#cmpUse").onclick = () => setChoice("steady");
+      $("#cmpKeep").onclick = () => setChoice("asdrawn");
+      function pct(v) {
+        return v < 0.005 ? "under 1 %" : Math.round(v * 100) + " %";
+      }
+      function renderCheck() {
+        const s4 = $("#s4"),
+          body = $("#checkBody");
+        const ready = state.phase === "ready" && state.result;
+        s4.classList.toggle("later", !ready);
+        s4.classList.toggle("isdone", state.saved);
+        if (!ready) {
+          body.innerHTML = `<p class="say">${state.phase === "error" ? "The last picture did not work - see what to do next to the scene." : "Once your picture is in, your own guide replaces the stand-in, and you check it here."}</p>`;
+          return;
+        }
+        const r = state.result,
+          c = r.checks;
+        const items = [];
+        items.push([
+          "ok",
+          "All 4 poses found",
+          `gaps of ${r.gaps.map((g) => Math.round(g / r.workScale)).join(", ")} px between them`,
+        ]);
+        items.push([
+          "ok",
+          r.mode === "alpha"
+            ? "Background: the picture's own transparency"
+            : "Background removed (cut out from the edge inwards)",
+          r.mode === "alpha"
+            ? "nothing was cut by colour"
+            : "white inside the figure, such as eyes, is kept",
+        ]);
+        items.push(
+          r.sizeSpread > 0.12
+            ? [
+                "warn",
+                "The poses are drawn at different sizes",
+                `up to ${pct(r.sizeSpread)} taller or shorter; feet are still on one line`,
+                "sizes",
+              ]
+            : ["ok", "Feet on one ground line, same size", ""],
+        );
+        items.push(
+          c.noMouth
+            ? [
+                "warn",
+                "The mouth hardly moves",
+                "your guide may not seem to talk",
+                "no-mouth",
+              ]
+            : ["ok", "The mouth moves while talking", ""],
+        );
+        if (c.suggestSteady) {
+          if (state.choice === "steady")
+            items.push([
+              "ok",
+              "Body steadied while talking",
+              `body changes ${pct(state.steadyCheck)} instead of ${pct(c.wobble)}`,
+              null,
+              `<button class="btn link small" data-act="undo-steady">Undo</button>`,
+            ]);
+          else if (state.choice === "asdrawn")
+            items.push([
+              "warn",
+              "Kept as drawn: the body wobbles while talking",
+              `${pct(c.wobble)} of the body changes between frames`,
+              null,
+              `<button class="btn primary small" data-act="steady">Steady it</button>`,
+            ]);
+          else
+            items.push([
+              "warn",
+              "The body wobbles while talking",
+              `${pct(c.wobble)} of the body changes between frames - look at the scene`,
+              null,
+              `<button class="btn primary small" data-act="steady">Steady it</button><button class="btn link small" data-act="keep">Keep as drawn</button>`,
+            ]);
+        } else
+          items.push([
+            "ok",
+            "The body stays still while talking",
+            `only ${pct(c.wobble)} changes below the head`,
+          ]);
+        if (c.pointsLeft)
+          items.push([
+            state.flip ? "ok" : "warn",
+            state.flip
+              ? "Pointing pose flipped to the right"
+              : "The pointing arm goes left, away from the next station",
+            state.flip ? "" : "flip it so it points the way",
+            null,
+            `<button class="btn ${state.flip ? "link" : "primary"} small" data-act="flip">${state.flip ? "Undo flip" : "Flip it"}</button>`,
+          ]);
+        else
+          items.push([
+            "ok",
+            "Points to the right, toward the next station",
+            "the app turns it toward whichever station comes next",
+          ]);
+        const nm =
+          state.name.trim() ||
+          (state.sample && SAMPLES[state.sample]?.name) ||
+          "your guide";
+        body.innerHTML = `<ul class="checks">${items.map(([k, t, s, h, extra]) => `<li class="${k}"><span class="ic">${k === "ok" ? "&#10003;" : "!"}</span><span class="t">${esc(t)}${s ? `<small>${esc(s)}</small>` : ""}${extra ? `<span class="row" style="margin-top:4px">${extra}</span>` : ""}</span></li>`).join("")}</ul>
+          <p class="say" style="margin-top:12px;font-size:13.5px">Not quite right? Add a fix to the prompt and ask the AI again:</p>
+          <div class="chips" id="fixes">${[
+            ["order", "Poses in the wrong order"],
+            ["same", "Not the same character"],
+            ["sizes", "Different sizes"],
+            ["cut", "Something cut off"],
+            ["wobble", "Body changes too much"],
+            ["points-left", "Points the wrong way"],
+          ]
+            .map(
+              ([k, l]) =>
+                `<button class="chip${state.hints.includes(k) ? " on" : ""}" data-h="${k}">${state.hints.includes(k) ? "Added: " : ""}${l}</button>`,
+            )
+            .join("")}</div>
+          ${state.confirm ? `<div class="confirm"><b>Its body wobbles while it talks.</b> Visitors will see it shake. Steady it first, or save it as drawn?<div class="row" style="margin-top:8px"><button class="btn primary small" data-act="steady-save">Steady it and save</button><button class="btn second small" data-act="save-anyway">Save as drawn</button></div></div>` : ""}
+          ${state.saved ? `<div class="saved" role="status"><b>Saved.</b> ${esc(nm)} now guides your tour at every station. ${esc(state.savedInfo || "")}</div>` : ""}
+          <div class="row" style="margin-top:12px"><button class="btn ${state.saved ? "ok" : "primary"}" id="save" ${state.saving ? "disabled" : ""}>${state.saving ? "Saving..." : state.saved ? "Saved" : "Save " + esc(nm)}</button><button class="btn second" id="again">Pick another picture</button></div>`;
+        body.querySelectorAll("[data-act]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              const a = b.dataset.act;
+              if (a === "steady") setChoice("steady");
+              if (a === "keep") setChoice("asdrawn");
+              if (a === "undo-steady") setChoice(null);
+              if (a === "flip") {
+                state.flip = !state.flip;
+                state.saved = false;
+                renderAll();
+              }
+              if (a === "steady-save") {
+                setChoice("steady");
+                save(true);
+              }
+              if (a === "save-anyway") {
+                state.choice = "asdrawn";
+                save(true);
+              }
+            }),
+        );
+        body.querySelectorAll("#fixes .chip").forEach(
+          (b) =>
+            (b.onclick = () => {
+              const h = b.dataset.h;
+              if (state.hints.includes(h))
+                state.hints = state.hints.filter((x) => x !== h);
+              else state.hints.push(h);
+              state.promptOpen = true;
+              renderPrompt();
+              renderCheck();
+              toast(
+                state.hints.includes(h)
+                  ? "Fix added at the end of the prompt. Copy it again and ask the AI for a new picture."
+                  : "Fix removed from the prompt.",
+              );
+            }),
+        );
+        $("#save").onclick = () => save(false);
+        $("#again").onclick = () => $("#file").click();
+      }
+      async function save(confirmed) {
+        if (!state.result || state.saving) return;
+        if (wobbleOpen() && !confirmed) {
+          state.confirm = true;
+          renderAll();
+          $("#s4").scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        state.saving = true;
+        state.confirm = false;
+        renderAll();
+        try {
+          const sheetC = canonicalSheet(currentCells());
+          const blob = await new Promise((res, rej) =>
+            sheetC.toBlob(
+              (b) => (b ? res(b) : rej(new Error("encode"))),
+              "image/png",
+            ),
+          );
+          await new Promise((r) => setTimeout(r, 500)); // stands in for the tour's own storage write
+          state.saved = true;
+          state.savedInfo = `(sheet ${sheetC.width} x ${sheetC.height}, ${Math.round(blob.size / 1024)} KB)`;
+          toast("Saved. Your guide is ready at every station.", "good");
+        } catch (e) {
+          toast(
+            "Saving did not work: " +
+              e.message +
+              ". Nothing was changed - try Save again.",
+            "err",
+          );
+        }
+        state.saving = false;
+        renderAll();
+      }
+
+      /* ---------- wobble callout on the character ---------- */
+      function renderWobble() {
+        const r = state.result;
+        const show = state.phase === "ready" && r && r.checks.suggestSteady;
+        const open = show && !state.choice;
+        $("#ring").hidden = !open;
+        $("#compare").hidden = !show || state.choice === "asdrawn";
+        const co = $("#callout");
+        if (!show || state.choice === "asdrawn") {
+          co.hidden = true;
+          return;
+        }
+        co.hidden = false;
+        co.classList.toggle("fixed", state.choice === "steady");
+        co.innerHTML =
+          state.choice === "steady"
+            ? `<b>Steadied</b><span class="why">Only the head moves now.</span> <button class="btn link small" id="coUndo">Undo</button>`
+            : `<b>Its body wobbles while talking</b><span class="why">The AI redrew the whole figure for each mouth.</span><div class="row"><button class="btn primary small" id="coSteady">Steady it</button><button class="btn link small" id="coKeep">Keep as drawn</button></div>`;
+        if ($("#coSteady")) {
+          $("#coSteady").onclick = () => setChoice("steady");
+          $("#coKeep").onclick = () => setChoice("asdrawn");
+        }
+        if ($("#coUndo")) $("#coUndo").onclick = () => setChoice(null);
+        $("#compareSay").textContent =
+          `The talking frames differ by ${pct(r.checks.wobble)} below the head, so the body shakes when they swap. Steadied keeps the resting body and takes only the head from the talking frames.`;
+        $("#cmpAtxt").textContent = `body changes ${pct(r.checks.wobble)}`;
+        $("#cmpBtxt").textContent = `body changes ${pct(state.steadyCheck)}`;
+        $("#figSteady").classList.toggle("chosen", state.choice === "steady");
+        $("#figDrawn").classList.toggle("chosen", state.choice === "asdrawn");
+        $("#cmpUse").hidden = state.choice === "steady";
+      }
+
+      /* ---------- the phone action bar: always the next thing to do ---------- */
+      function renderBar() {
+        const b = $("#barBtn");
+        b.disabled = false;
+        b.className = "btn primary";
+        if (state.phase === "working") {
+          b.textContent = "Cutting your picture...";
+          b.disabled = true;
+          b.onclick = null;
+          return;
+        }
+        if (state.phase === "ready") {
+          if (state.saved) {
+            b.textContent = "Saved";
+            b.className = "btn ok";
+            b.onclick = () => $("#s4").scrollIntoView({ behavior: "smooth" });
+            return;
+          }
+          if (wobbleOpen()) {
+            b.textContent = "Steady the body";
+            b.onclick = () => {
+              setChoice("steady");
+              stage.scrollIntoView({ behavior: "smooth" });
+            };
+            return;
+          }
+          b.textContent = state.saving ? "Saving..." : "Save your guide";
+          b.onclick = () => save(false);
+          return;
+        }
+        if (state.phase === "error") {
+          b.textContent =
+            state.hints.length && !state.copiedFix
+              ? "Copy the prompt with the fix"
+              : "Pick another picture";
+          b.onclick = state.hints.length
+            ? copyPrompt
+            : () => $("#file").click();
+          return;
+        }
+        if (!state.desc.trim()) {
+          b.textContent = "Describe your guide";
+          b.onclick = () => {
+            $("#desc").focus();
+            $("#s1").scrollIntoView({ behavior: "smooth", block: "center" });
+          };
+          return;
+        }
+        if (!state.copied) {
+          b.textContent = "Copy the prompt";
+          b.onclick = copyPrompt;
+          return;
+        }
+        b.textContent = "Pick the picture from the AI";
+        b.onclick = () => $("#file").click();
+      }
+
+      function renderAll() {
+        const mine = state.phase === "ready";
+        $("#tag").textContent = mine
+          ? state.name.trim() ||
+            (state.sample && SAMPLES[state.sample]?.name) ||
+            "Your guide"
+          : "Stand-in";
+        $("#tag").classList.toggle("mine", mine);
+        renderTrail();
+        renderPrompt();
+        renderCheck();
+        renderWobble();
+        renderBar();
+        drawPoses();
+        $("#posesNote").textContent = mine
+          ? "Your guide's four poses. Tap one to hold it in the scene."
+          : "The four poses your guide needs. Tap one to hold it in the scene.";
+      }
+
+      // hooks for the prototype's own screenshot script
+      window.__proto = {
+        state,
+        loadSample: async (k) => {
+          const f = await SAMPLES[k].make();
+          await importBlob(f, k);
+        },
+        analyse: async (params) => {
+          try {
+            const r = await cutSheet(lastBlob, params);
+            return {
+              ok: true,
+              mode: r.mode,
+              n: r.figs.length,
+              gaps: r.gaps.map((g) => Math.round(g / r.workScale)),
+              offQuarter: r.figs.map((f, i) =>
+                Math.round(f.cx / r.workScale - (r.width / 4) * (i + 0.5)),
+              ),
+              wobble: +r.checks.wobble.toFixed(4),
+              wobbleA: +r.checks.wobbleA.toFixed(4),
+              wobbleB: +r.checks.wobbleB.toFixed(4),
+              mouth: +r.checks.mouth.toFixed(4),
+              beckon: +r.checks.beckonDiff.toFixed(3),
+              pointsLeft: r.checks.pointsLeft,
+              suggest: r.checks.suggestSteady,
+              sizeSpread: +r.sizeSpread.toFixed(3),
+              bg: r.bgInfo,
+            };
+          } catch (e) {
+            return {
+              ok: false,
+              step: e.step,
+              code: e.code,
+              msg: e.message,
+              runs:
+                e.detail && e.detail.runs ? e.detail.runs.length : undefined,
+            };
+          }
+        },
+      };
+
+      resize();
+      renderPrompt();
+      renderAll();
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

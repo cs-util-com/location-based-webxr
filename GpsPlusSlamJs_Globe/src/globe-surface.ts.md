@@ -123,7 +123,10 @@ onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights
     `onBeforeCompile` or `customProgramCacheKey`), and records the clone in
     `owned`.
   - `createGlobeImagery()` - a new overlay of the globe's imagery (the
-    committed Blue Marble pyramid, its projection and levels). The surface
+    committed Blue Marble pyramid, its projection and levels), typed as
+    a relief's `TerrainImagery` too (the library's declared type leaves
+    out the image-source methods the terrain plugin calls; a test checks
+    they exist). The surface
     makes its own with it, and the relief carrier gets another: an
     overlay's image cache is shared by its users, so releasing one
     carrier's tiles freed imagery the other was still composing ("the
@@ -134,8 +137,10 @@ onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights
     globe's program outlives a release of every tile.
   - `tileMeshes(root)` (every mesh under a tile model) and
     `litCopy(template)` (a clone keeping the compile hooks and program key)
-    are exported for the relief carrier (`globe-terrain.ts`), so both
-    carriers share one implementation (DEC-H3).
+    live in `globe-tile-meshes.ts` and are re-exported here; the relief
+    carrier (`globe-terrain.ts`) imports them from there, so both carriers
+    share one implementation (DEC-H3) without the relief pulling this
+    module into its bundle.
 - Invariants & assumptions:
   - A tile that fails to load leaves its parent drawn over that area
     (owner decision DEC-PRG-14), through the recorded pnpm patch

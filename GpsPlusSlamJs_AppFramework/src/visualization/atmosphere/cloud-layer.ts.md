@@ -76,3 +76,10 @@ around the threshold and monotone in it, horizon fade, cover = clouded share
 against the atmosphere model; `cloudNoiseSample` at texel centres, periodic
 in whole tiles, and flat on a uniform texture. Pixels: the look-dev smoke asserts cover
 changes the upper sky.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-layer`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

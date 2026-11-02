@@ -56,8 +56,9 @@ is the one recorded exception, contained in this private package:
 
 `assets/` holds the imagery, committed (DEC-PRG-12; level 4 added by
 DEC-FB2-4, level 5 by round 4's DEC-GL4-3, about 2.4 km a pixel; WebP
-since round 4, DEC-GL4-10; 8.85 MB against the 10 MB budget DEC-GL4-9
-that `globe-sources.test.ts` holds): the Blue Marble tile pyramid (EPSG:4326, WebP,
+since round 4, DEC-GL4-10; NASA's full cloud map since round 3,
+DEC-R3-13; 12.58 MB in 2 736 files, measured 2026-11-01, against the 13 MB
+budget that `globe-sources.test.ts` holds): the Blue Marble tile pyramid (EPSG:4326, WebP,
 the water mask in each tile's alpha, DEC-GL4-6) and two global maps (night
 lights, clouds), all NASA, public domain.
 `scripts/fetch-globe-assets.mjs` regenerates them by hand (never in CI) and
@@ -95,18 +96,28 @@ its sidecar; the globe lab shows them all (`eye=1`, `osm=1`,
 `reliefMeshLevel=17`, `reliefSource=mapterhorn`, `reliefDevice=desktop`: the
 relief cache's budget is per device class, and Mapterhorn on the phone's
 budget stalls on a desktop window), and its `globe-editor-blocks` smoke holds
-them on the real page. The package depends on neither the framework nor
-the Osm library: their URLs, attributions and geoid are passed in.
+them on the real page. The package depends on the framework's atmosphere
+modules (the space pass's and the ground sky's models, the haze),
+imported by bare subpath (`gps-plus-slam-app-framework/visualization/...`),
+and not on the Osm library: its URLs, attributions and geoid are passed in.
 
 ## How it is served
 
 The design system's route table (`serve-routes.mjs`) maps `/globe/` to
 `src/` (TypeScript, type-stripped on the fly), `/globe-assets/` to
-`assets/` (copied whole by the deploy), and `/vendor/3d-tiles-renderer/`
+`assets/`. The site build ships ONE copy at the site root,
+`dist-site/globe-assets/` (`scripts/build-site.mjs`, the `.md` notes left
+out), which the look-dev labs and the Tour Viewer's editor on the globe view
+share, and `/vendor/3d-tiles-renderer/`
 to the installed library. So the source keeps to the served dialect:
 `.js`-suffixed relative imports, only the lab's import-mapped bare
 specifiers, and erasable syntax (`verbatimModuleSyntax`,
 `erasableSyntaxOnly`). A root repo-config test walks the graph.
+Each framework module the package imports has its own EXACT entry in the
+lab's import map (`labs/globe/index.html`), pointing at
+`/fw/.../<module>.js`: the route table rewrites only a `.js` request to
+its `.ts` source, so a prefix entry (a key ending in `/`) would map the
+bare, suffix-less subpath to a URL that 404s.
 
 ## Gate
 

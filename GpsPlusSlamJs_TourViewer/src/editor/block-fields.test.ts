@@ -12,10 +12,13 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
+
 import {
   blockFieldEdit,
   blockFieldPlaceholder,
   blockFields,
+  storyBlockFields,
 } from "./block-fields.js";
 
 const GEO = { lat: 48.1, lon: 11.5, alt: 520, headingDeg: 0 };
@@ -130,6 +133,46 @@ describe("blockFields", () => {
   });
 });
 
+// Why: in the station's inspector no head types a story short text's
+// caption, so its fields carry it; a declared character's name is his
+// declaration's (written over on every read), so it is offered nowhere.
+describe("storyBlockFields", () => {
+  it("adds a short text's caption, drops a declared character's name, and keeps the rest", () => {
+    const rows = (b: TourObject) =>
+      storyBlockFields(b as unknown as TourBlock).map((f) => [
+        f.name,
+        f.max,
+        f.required,
+      ]);
+    expect(rows(PIN)).toEqual([
+      ["caption", 40, true],
+      ["description", 160, false],
+    ]);
+    expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
+    expect(
+      rows({ ...CHARACTER, character: "wendel" } as unknown as TourObject).map(
+        (r) => r[0],
+      ),
+    ).toEqual(["caption"]);
+    expect(rows(LONG).map((r) => r[0])).toEqual(["title", "body"]);
+  });
+
+  it("lets blockFieldEdit write and cap a short text's caption", () => {
+    expect(blockFieldEdit(PIN, "caption", "x".repeat(41))).toEqual({
+      kind: "refused",
+      reason: "A caption takes at most 40 characters.",
+    });
+    expect(blockFieldEdit(PIN, "caption", " ")).toEqual({
+      kind: "refused",
+      reason: "A caption cannot be empty.",
+    });
+    expect(blockFieldEdit(PIN, "caption", " Door ")).toMatchObject({
+      kind: "edited",
+      after: { caption: "Door" },
+    });
+  });
+});
+
 describe("blockFieldEdit", () => {
   it("writes a field, trimmed at its ends and keeping its lines", () => {
     expect(
@@ -211,7 +254,8 @@ describe("blockFieldEdit", () => {
       kind: "unchanged",
     });
     expect(blockFieldEdit(PIN, "title", "x")).toEqual({ kind: "unchanged" });
-    expect(blockFieldEdit(PIN, "caption", "x")).toEqual({ kind: "unchanged" });
+    // A short text's caption is one of its fields: the station's inspector
+    // types it for a story one (`storyBlockFields`).
   });
 });
 

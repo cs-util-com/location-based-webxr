@@ -3665,6 +3665,111 @@ test("a Ctrl+S pressed in a tour opened while the last tour's save still ran sav
   );
 });
 
+test("a Ctrl+S pressed in a tour opened while the last tour's Ctrl+S save still ran saves that tour once that save ends", async ({
+  page,
+}) => {
+  // Why: an open keeps who holds the save slot, so the closed tour's
+  // explicit save still reads as "explicit" - and a Ctrl+S was dropped as
+  // "the same Save" although it was pressed in another tour. The earlier
+  // fix covered the autosave holding the slot; this is the Ctrl+S one.
+  // The autosave is held off (an installed clock still runs its timers),
+  // so it cannot take the write and pass the test by another path.
+  await autosaveOutOfTheWay(page);
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await editTownHall(page, "Saved by Ctrl+S in the first tour");
+  await page.keyboard.press("Control+s");
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await openAnother(page);
+  await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await editTownHall(page, "Saved by Ctrl+S in the second tour");
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  // The autosave held off, and the toast only a Save gives: the autosave
+  // cannot be what saves it - the Ctrl+S is.
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  await expect(
+    page.locator(".toast", { hasText: "Saved to second.zip" }),
+  ).toBeVisible();
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Saved by Ctrl+S in the second tour",
+  );
+});
+
+test("a Ctrl+S pressed in the sample while its file waits for the last tour's save is saved into that file once it is adopted", async ({
+  page,
+}) => {
+  // Why (a PR review finding): the sample's open-time write into the file
+  // its click chose waits for the save slot. The closed tour's save, ending,
+  // ran the Ctrl+S queued in the sample before that write claimed the slot:
+  // the sample had no file yet, so it said "Press Save to choose where to
+  // save the tour." and dropped the Save - and the write then put the
+  // unedited sample into the file. The queued Save must wait for the
+  // adopted file and then save the edit into it.
+  await autosaveOutOfTheWay(page);
+  await page.clock.install();
+  await page.goto("/edit.html");
+  await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = true;
+  });
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("editor-fixture.zip");
+  await editTownHall(page, "Saved by Ctrl+S in the first tour");
+  await page.keyboard.press("Control+s");
+  await page.waitForFunction(
+    // @ts-expect-error - set by the held write.
+    () => typeof window.__release === "function",
+  );
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await openAnother(page);
+  await clickBoundSavePicker(page, "my-sample.zip");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
+  await page.locator("#no-gps-input").check();
+  await page.keyboard.press("Control+s");
+  await page.evaluate(() => {
+    // @ts-expect-error - read by the picker.
+    window.__holdWrites = false;
+    // @ts-expect-error - set by the held write.
+    window.__release();
+  });
+  await expect(page.locator("#tour-file")).toHaveText("my-sample.zip");
+  // The autosave is an hour away: only the queued Ctrl+S can save the edit.
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to my-sample.zip",
+  );
+  expect(tourJsonOf(await readOpfsTour(page, "my-sample.zip"))).toContain(
+    '"needsNoGps": true',
+  );
+  await expect(
+    page.locator(".toast", { hasText: "Press Save to choose" }),
+  ).toHaveCount(0);
+});
+
 /**
  * The tour's saved `tour.json`, parsed as written.
  * @param {import("@playwright/test").Page} page
@@ -4352,6 +4457,48 @@ test("Done stays shut and the dialog stays open while the walk is moved out", as
   await publish(page);
   await expect(page.locator("#done-modal")).toBeVisible();
   await expect(page.locator("#done-walk")).toBeHidden();
+});
+
+test("a Ctrl+S pressed in a tour opened while the last tour's debug data was moved saves that tour once the move ends", async ({
+  page,
+}) => {
+  // Why: the move's end ran a queued Save only when its own tour still
+  // showed. A tour dropped mid-move (a late integrity failure) lets the
+  // creator open the next tour while the move still holds the save, and a
+  // Ctrl+S pressed there was lost without a word - a save's, a copy's and
+  // an open's end already run it for the tour that shows; a move must too.
+  await autosaveOutOfTheWay(page);
+  await doneWithWrappedTour(page);
+  await clickBoundSavePicker(page, "wrapped-debug.zip", { hold: true });
+  await page.locator("#done-move").click();
+  await expect(page.locator("#done-move")).toHaveText(
+    "Moving the debug data out…",
+  );
+  // The tour goes mid-move, as a late integrity failure takes it.
+  await page.evaluate(() => {
+    // @ts-expect-error - the dev server's test hook.
+    window.__tourEditor.dropTour("The tour file is damaged.");
+  });
+  await expect(page.locator("#done-modal")).toBeHidden();
+  await offerOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator("#choose-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  await editTownHall(page, "Saved by Ctrl+S during the move");
+  await page.keyboard.press("Control+s");
+  // Queued behind the move, which still holds the save: nothing written.
+  await expect(page.locator("#save-status")).toHaveText("Saving…");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).not.toContain(
+    "Saved by Ctrl+S during the move",
+  );
+  await page.evaluate(() => {
+    // @ts-expect-error - set by the stand-in.
+    window.__releaseWalkPick();
+  });
+  // The autosave is out of the way: only the Ctrl+S can save it.
+  await expect(page.locator("#save-status")).toHaveText("Saved to second.zip");
+  expect((await readOpfsTour(page, "second.zip"))["tour.json"]).toContain(
+    "Saved by Ctrl+S during the move",
+  );
 });
 
 test("the tour file itself is refused as the walk's file, before anything is written", async ({

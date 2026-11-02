@@ -62,7 +62,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   open over the same corner.
 - `#topbar` - the tour's title (`#tour-name`, a button that opens the
   tour's details, W2) and file name, then the menus
-  (`src/editor/menu-button.ts`), each command in words:
+  (`gps-plus-slam-editor-kit/chrome`, `GpsPlusSlamJs_EditorKit/src/chrome/menu-button.ts`), each command in words:
   - **File** (`#file-menu-btn`, `#file-menu`; described by
     `#save-status`): Open… (`#file-open`), Save (`#file-save`, Ctrl+S),
     Save a copy… (`#file-save-copy`), Tour details… (`#file-details`),
@@ -89,8 +89,11 @@ AR (tour editor plan 2026-10-17-1816, W1).
     while the debug layer has a source - the tour's walk or added debug
     data - and only on the map, which alone draws that layer yet); and the view switch `#view-switch` ("3D view" / "2D map",
     `src/editor/view-switch.ts`).
-  - The 3D view's studio buttons, hidden on the map: Details
-    (`#studio-details`), Undo and Redo (`#studio-undo`, `#studio-redo`),
+  - The brand: the tour's name (`#tour-name`, its words in
+    `#tour-name-text`) with a pen right of it (`.tour-name-pen`), one
+    button that opens the tour's details in both views (File's Tour
+    details… too); there is no Details button and no brand mark.
+  - The 3D view's studio buttons, hidden on the map: Undo and Redo (`#studio-undo`, `#studio-redo`),
     and after the spacer Help (`#studio-help`); each an icon and its word
     (`.lbl`), the icons `<i data-icon>` slots the shell fills. The bar
     folds in steps as the window narrows (`editor-shell.css`).

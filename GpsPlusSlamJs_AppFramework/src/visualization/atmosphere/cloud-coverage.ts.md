@@ -75,3 +75,10 @@ shadow.configureMap({ coverage: { glsl: myChunk, uniforms }, disc: true });
 interpolation and clamping, the disc's fade and monotony, the chunk's
 defines and function, the neutral uniforms, and the insertion's refusals.
 The slab's and the shadow's own tests cover their use of it.
+
+## Import path
+
+`gps-plus-slam-app-framework/visualization/atmosphere/cloud-coverage`, a built subpath of the published package
+(a tsdown entry since 2026-10-28): the globe lab loads it by page path, and
+the typed Globe package will import it through the package. The guard
+`tests/repo-config/framework-deep-imports-are-built.test.js` keeps it an entry.

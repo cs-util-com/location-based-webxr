@@ -22,6 +22,7 @@ import {
   getArWorldGroup,
   getCamera,
   getCurrentArPose,
+  getRenderer,
   getScene,
   rgbaImageToJpegBlob,
   startCameraFrameCapture,
@@ -71,7 +72,7 @@ import {
   PDF_FILE_TYPE,
 } from "gps-plus-slam-app-framework/storage";
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
-import type { Object3D } from "three";
+import type { Camera, Object3D } from "three";
 
 import { loadGlbModel } from "./glb-model.js";
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
@@ -248,6 +249,12 @@ export interface TourViewerSeams {
    *  `checkGlbInert`) as a three scene: three's GLTFLoader, loaded on first
    *  use, with no external URIs and no decoders. */
   loadGlbModel(blob: Blob): Promise<Object3D>;
+  /** The camera the visitor sees through (where a model's notes are
+   *  projected), or null outside a session. */
+  getViewerCamera(): Camera | null;
+  /** Switch the renderer's local clipping on: a cutaway model clips its
+   *  materials by a plane. Does nothing without a renderer. */
+  enableClipping(): void;
   /** The page's one audio element for the stories (unlocked by the start
    *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
   createAudioElement(): AudioElementLike;
@@ -381,6 +388,11 @@ export const realSeams: TourViewerSeams = {
     });
   },
   loadGlbModel,
+  getViewerCamera: () => getCamera(),
+  enableClipping: () => {
+    const renderer = getRenderer();
+    if (renderer) renderer.localClippingEnabled = true;
+  },
   createAudioElement: () => new Audio(),
   xrProjection0: () => getCamera()?.projectionMatrix.elements[0] ?? null,
   // The one recipe the 3D editor shares (`pin-label.ts`).

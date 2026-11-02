@@ -156,6 +156,8 @@ See [Examples & Demos](#examples--demos) for runnable apps, from the smallest po
 
 > **Imports.** Prefer subpath imports (`gps-plus-slam-app-framework/ar`, `…/ar/qr`, `…/core`, `…/state`, `…/sensors`, `…/storage`, `…/geo`, `…/visualization`, `…/utils`, `…/types`, `…/licensing`). The root barrel re-exports conflict-free names for convenience.
 
+> **Deep imports are low-level.** The wildcard subpaths (`…/<area>/*`) also reach single built files below a barrel, for example `…/visualization/atmosphere/cloud-layer` or `…/utils/frame-run`. The [CHANGELOG](CHANGELOG.md) names each one that a consumer is meant to use as a deep import. They exist so a typed app can compose a part (the sky, a frame recorder) from its pieces; they are not covered by semver and may change or move in a minor release. Pin the exact framework version when you depend on one.
+
 ## Composing With Your Own Slices
 
 `createSlamAppStore` is the headline composability seam. Your app plugs in its own reducers, middleware, and storage backend without forking the factory:

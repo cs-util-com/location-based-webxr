@@ -624,6 +624,21 @@ describe("tour document (properties)", () => {
     expect(reloadDrift(state)).toBeNull();
   });
 
+  it("a photo placed after a delete emptied a station and a pin moved, then the pin moved again, comes back from the draft the same", () => {
+    // Why: the round trip's seventh shrunk counterexample (seed
+    // 534049170). Deleting the photo empties its station, the pin's moves
+    // take it away from its own, and a photo placed between them: the
+    // live order of the stations then differs from a reload's.
+    const ops: Op[] = [
+      { kind: "delete", id: "f" },
+      { kind: "move", id: "a", dLat: 0.00011 },
+      { kind: "placePhoto", id: "p1" },
+      { kind: "move", id: "a", dLat: 0.0002 },
+    ];
+    const state = ops.reduce(apply, opened);
+    expect(reloadDrift(state)).toBeNull();
+  });
+
   // Why: a station a delete emptied has nothing of its own, so the next
   // write leaves it out and a reload does not list it. An edit of that
   // station alone - its radius, a title set and then cleared - must not

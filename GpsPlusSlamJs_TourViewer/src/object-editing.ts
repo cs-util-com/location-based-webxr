@@ -28,6 +28,7 @@ import { Vector3, type Object3D } from "three";
 
 import type { CreatorObject } from "./creator-document.js";
 import type { UndoOffer } from "./creator-undo.js";
+import { kindNoun } from "./object-describe.js";
 import { objectListModel, type ObjectListView } from "./object-list.js";
 import {
   objectDeleted,
@@ -142,7 +143,8 @@ interface Undoable {
 interface DeletedObject {
   readonly object: TourObject;
   readonly hosted: boolean;
-  /** "the photo" or the pin's quoted text. */
+  /** The kind's word ("the long text", "the photo") or the pin's quoted
+   *  text. */
   readonly name: string;
 }
 
@@ -409,7 +411,9 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
     if (found === undefined) return;
     const object = found.object;
     const name =
-      object.kind === "shortText" ? `"${object.caption}"` : "the photo";
+      object.kind === "shortText"
+        ? `"${object.caption}"`
+        : `the ${kindNoun(object.kind)}`;
     keepPicture(found);
     const gone = tour.remove(id, `the delete of ${name}`);
     if (gone === null) return;

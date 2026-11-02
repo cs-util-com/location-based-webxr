@@ -29,6 +29,11 @@
  * - It is a REGROWTH alarm, not a performance target. It should fire when the
  *   suite has grown a limb, not when the laptop is busy.
  *
+ * "CI" HERE MEANS THE GITHUB RUNNER (`GITHUB_ACTIONS`), since 2026-11-01: every
+ * local gate sets `CI=1`, and keying on `CI` had switched both the recording
+ * and this guard off on the machine the median lives on. Since then the budget
+ * fires in local `CI=1` gates again.
+ *
  * WHY IT IS SKIPPED ON CI, added 2026-08-10 after it failed two PRs whose every
  * test passed. The rule above says "derive it from the stage's recorded median"
  * — and `decideRecording` refuses to record on CI, deliberately, so the GitHub
@@ -51,6 +56,8 @@
  * — the same silence, arriving by a different road.
  */
 
+import { onGithubRunner } from './stage-args.mjs';
+
 /**
  * The ceiling breach for a finished stage, or `null` when it is within budget.
  *
@@ -66,9 +73,9 @@
  * @returns {string | null}
  */
 export function budgetBreach(stage, durationMs, env = {}) {
-  // Same truthiness check as `decideRecording`, and it has to stay the same: if
-  // the two disagreed, a run could skip the budget while still recording a row.
-  if (env.CI) return null;
+  // Same predicate as `decideRecording`, and it has to stay the same: if the
+  // two disagreed, a run could skip the budget while still recording a row.
+  if (onGithubRunner(env)) return null;
 
   const budget = stage.budgetSeconds;
   if (typeof budget !== 'number' || !Number.isFinite(budget) || budget <= 0) {

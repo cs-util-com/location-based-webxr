@@ -133,6 +133,23 @@ wired into its logic: every interaction is faked.
   error" button that draws every block and its target 1 m off; made
   2026-10-25. Section 0 of each page's notes says what it costs and where
   it fails.
+- `editor-approach-1-quiet-camera/`, `editor-approach-2-arrival-board/`,
+  `editor-approach-3-work-while-flying/` - three directions for opening a
+  tour in the editor on the globe: what the creator sees while the camera
+  flies in from space and the map loads (a calm camera with one line of
+  text; a loading board in the left rail; an editor that works during the
+  flight); each has a network-case strip; made 2026-10-30.
+- `character-sheet-1-guided-steps/` ... `character-sheet-3-make-your-character/` -
+  three directions for making a guide character from an image AI (guided
+  steps, one inspector panel, a playful card with a live stand-in); made
+  2026-10-29. Each cuts the AI's four-pose picture in the browser (alpha, or a
+  flood fill from the border on white), offers a steady body when the
+  talking frames jitter, and draws its own sample pictures, good and broken.
+- `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
+  directions for the story editor (step cards, a flow graph, an inline
+  script), each with the same sample station, every edit on an in-memory
+  model with undo, the deletion questions, and a preview through a branch;
+  made 2026-10-29.
 - `use-cases-true-colour/` - the start page's use-case pictures in the
   look the page does not use (the place dimmed, the tour's pictures in
   their own colours), with a switch to the shipped route-light look;
@@ -187,6 +204,38 @@ wired into its logic: every interaction is faked.
   - `station-blocks-2q-ground-styles-bend-drag/` - a handle in the middle of
     the arrow, dragged sideways. Weakness: in the editor at phone width the
     whole bend spans a few pixels, so the slider does it there.
+
+- `narration-1-quiet-voice/` ... `narration-3-sign-speaks/` - a narrated
+  long text for the visitor in AR, three directions; made 2026-10-31. Each
+  answers how the voice is noticed before anything opens, the captions strip
+  next to the full text, the audio states (loading, missing file, the end, a
+  locked phone, a call) and a speed control. A fake clock drives the words.
+  - `narration-1-quiet-voice/` - the voice is a gentle extra: a small speaker
+    mark on the sign, one surface at a time, calm one-line problems.
+    Weakness: "4 min" can read as reading time, so the voice is easy to miss.
+  - `narration-2-audio-guide/` - listening first: one tap on "Listen" plays
+    and shows a persistent mini-player. Weakness: sound starts at once, which
+    can startle in a quiet place without earphones.
+  - `narration-3-sign-speaks/` - the sign has Read and Listen halves and the
+    spoken sentence runs on a plate under it in the world (three.js 0.185.1
+    from unpkg). Weakness: beyond about 7-9 m the letters are too small and the
+    caption moves to the screen.
+
+- `longtext-editor-1-in-the-inspector/` ... `longtext-editor-3-preview-first/` -
+  writing a long text and its narration in the tour editor, three directions;
+  made 2026-11-01. Each answers where the body is written and previewed, how
+  "shown as typed" parts are pointed out, the view picker (sign and sheet,
+  screen only, captions), adding a voice and a timing with the mismatches
+  listed, and a timing put out of line by an edit.
+  - `longtext-editor-1-in-the-inspector/` - everything in the right-hand
+    panel, the preview a phone sheet over the 3D view. Weakness: at 1024x768
+    the writer is about 170 px tall while a note is open.
+  - `longtext-editor-2-writing-desk/` - a desk over the 3D view's area: text,
+    a notes margin, a phone preview in step and a narration timeline.
+    Weakness: the 3D view is gone while writing.
+  - `longtext-editor-3-preview-first/` - editing in the visitor's own sheet,
+    a guided "Add a voice" flow. Weakness: rich-text editing covers the
+    common paths only, and at 1024 px the 3D view shrinks to about 260 px.
 
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own

@@ -125,15 +125,20 @@ function setUp() {
     station: vi.fn(),
     text: vi.fn(),
     block: vi.fn(),
+    view: vi.fn(),
+    model: vi.fn((): "written" => "written"),
     scene: vi.fn(),
     groundItems: vi.fn(),
     addPin: vi.fn(),
+    narration: vi.fn(() =>
+      Promise.resolve({ kind: "refused" as const, reason: "none" }),
+    ),
+    editNarration: vi.fn(() => Promise.resolve("written" as const)),
   };
   const deps: EditorShellDeps = {
     store,
     select,
     step: vi.fn(),
-    openDetails: vi.fn(),
     codes: () => [],
     loadPicture: () => Promise.reject(new Error("no pictures here")),
     dialogOpen: () => false,
@@ -148,8 +153,9 @@ function setUp() {
     say: vi.fn(),
   };
   const shell = createEditorShell(deps);
-  shell.show(fakeView());
-  return { store, select, edits, deps, shell };
+  const view = fakeView();
+  shell.show(view);
+  return { store, select, edits, deps, shell, view };
 }
 
 /** The inspector's field `name`: a line (an input) or prose (a text
@@ -208,6 +214,30 @@ afterEach(() => {
   Element.prototype.replaceChildren = replaceChildren;
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("the tree's add", () => {
+  // Why: the globe's view has no place for a station high above a ground
+  // that has not loaded (the place under the camera would be kilometres
+  // in the air); the "+" then says why instead of adding one there.
+  it("adds a station at the view's centre, and says why when the view has none", () => {
+    const { deps, shell } = setUp();
+    const add = () => {
+      document.getElementById("tree-add")?.click();
+    };
+    add();
+    expect(deps.stations.add).toHaveBeenCalledWith(
+      { lat: 48.1371, lon: 11.5754, alt: 560 },
+      "centre",
+    );
+    shell.show({ ...fakeView(), centre: () => null });
+    add();
+    expect(deps.stations.add).toHaveBeenCalledTimes(1);
+    expect(deps.say).toHaveBeenCalledWith(
+      "Come closer to the ground to add a station here",
+    );
+    shell.hide();
+  });
 });
 
 describe("the inspector's typed fields", () => {
@@ -480,6 +510,497 @@ describe("the readout's tick", () => {
     manifests.built = 0;
     vi.advanceTimersByTime(1_000);
     expect(manifests.built).toBeGreaterThanOrEqual(5);
+    shell.hide();
+  });
+});
+
+/** The tour of `setUp` with a model in station b: two notes, one
+ *  section, a clip that does not play by itself. */
+function withModel(
+  store: ReturnType<typeof setUp>["store"],
+  view = "hotspots",
+  noted = true,
+): void {
+  const b = station("b", 0.0004);
+  store.dispatch(
+    tourDocumentActions.opened({
+      manifest: {
+        ...createEmptyTourManifest(),
+        assets: [{ id: "glb", path: "content/m.glb", kind: "model" }],
+        stations: [
+          station("a", 0),
+          {
+            ...b,
+            blocks: [
+              {
+                id: "m",
+                kind: "model",
+                view,
+                asset: "glb",
+                sizeM: 2,
+                createdAtIso: AT,
+                pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+                animation: { name: "Swing", autoplay: false },
+                annotations: noted
+                  ? [
+                      { position: [0, 1, 0], normal: [0, 1, 0], title: "Top" },
+                      {
+                        position: [0.5, 0, 0],
+                        normal: [1, 0, 0],
+                        title: "Side",
+                        text: "The bell's side",
+                      },
+                    ]
+                  : [],
+                sections: [
+                  { name: "Frame", position: [0, 0.5, 0], normal: [0, 0, 1] },
+                ],
+              },
+            ],
+          } as unknown as TourStation,
+        ],
+      },
+    }),
+  );
+}
+
+function press(act: string): void {
+  const b = document.querySelector<HTMLButtonElement>(
+    `#shell-inspector [data-act="${act}"]`,
+  );
+  if (b === null) throw new Error(`no button ${act}`);
+  b.click();
+}
+
+// Why: the 3D inspector's model parts reach the page as model edits of
+// the model they were typed or pressed for, and the buttons that wait for
+// a click on the model only ask the 3D view to wait (the store's pick),
+// pressed again they stop. A wrong index here would edit another note.
+describe("the inspector's model parts", () => {
+  it("write a note's title and text, a section's name and the clip's name as model edits", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    typeInto("note-title:1", "Bell side");
+    typeInto("note-text:0", "The crown");
+    typeInto("section-name:0", "Oak frame");
+    typeInto("anim-name", "Ring");
+    select("station:a");
+    expect(edits.model.mock.calls).toEqual([
+      [
+        "m",
+        { kind: "note-text", index: 1, field: "title", value: "Bell side" },
+      ],
+      ["m", { kind: "note-text", index: 0, field: "text", value: "The crown" }],
+      ["m", { kind: "section-name", index: 0, value: "Oak frame" }],
+      ["m", { kind: "animation", name: "Ring", autoplay: false }],
+    ]);
+    shell.hide();
+  });
+
+  // Why this test matters: a model's notes are drawn only in the
+  // Hotspots view, so a creator who wrote notes and chose another view
+  // would otherwise wonder where they went.
+  it("tells a model with notes in another view that its notes show only in Hotspots", () => {
+    const hint = "Its notes show only in Hotspots";
+    const note = (): string =>
+      document.querySelector("#shell-inspector .mview .note")?.textContent ??
+      "";
+    for (const [view, noted, shows] of [
+      ["placed", true, true],
+      ["toy", true, true],
+      ["hotspots", true, false],
+      ["placed", false, false],
+    ] as const) {
+      const { store, select, shell } = setUp();
+      withModel(store, view, noted);
+      select("m");
+      expect(note().includes(hint), `${view} ${String(noted)}`).toBe(shows);
+      shell.hide();
+    }
+  });
+
+  it("choose a view, flip a section, turn autoplay and delete parts as model edits", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("view:cutaway");
+    press("section-flip:0");
+    press("anim-autoplay");
+    press("note-delete:1");
+    press("section-delete:0");
+    expect(edits.model.mock.calls).toEqual([
+      ["m", { kind: "view", view: "cutaway" }],
+      [
+        "m",
+        {
+          kind: "section-place",
+          index: 0,
+          at: { position: [0, 0.5, 0], normal: [0, 0, -1] },
+        },
+      ],
+      ["m", { kind: "animation", name: "Swing", autoplay: true }],
+      ["m", { kind: "note-delete", index: 1 }],
+      ["m", { kind: "section-delete", index: 0 }],
+    ]);
+    shell.hide();
+  });
+
+  it("ask the 3D view for a click on the model, and stop asking when pressed again", () => {
+    const { store, select, edits, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("note-add");
+    expect(store.getState().editorView.modelPick).toEqual({ what: "note-add" });
+    expect(
+      document.querySelector('#shell-inspector [data-act="note-add"]')
+        ?.textContent,
+    ).toBe("Click the model...");
+    press("note-add");
+    expect(store.getState().editorView.modelPick).toBeNull();
+    press("note-place:1");
+    expect(store.getState().editorView.modelPick).toEqual({
+      what: "note-place",
+      index: 1,
+    });
+    // Placing a note again brings it into focus.
+    expect(store.getState().editorView.modelFocus).toEqual({
+      part: "note",
+      index: 1,
+    });
+    press("section-add");
+    expect(store.getState().editorView.modelPick).toEqual({
+      what: "section-add",
+    });
+    expect(edits.model).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("marks the note in focus, and a press of its number takes the focus away", () => {
+    const { store, select, shell } = setUp();
+    withModel(store);
+    select("m");
+    press("note:1");
+    const marked = () =>
+      [...document.querySelectorAll("#shell-inspector .anno.on")].map(
+        (e) => (e as HTMLElement).dataset["note"],
+      );
+    expect(marked()).toEqual(["1"]);
+    press("note:1");
+    expect(marked()).toEqual([]);
+    shell.hide();
+  });
+});
+
+// Why these tests matter: a story character's chips must reach the page
+// as an edit of HIS station for HIM - his view, or how the step showing
+// him moves on - and the chip already pressed must write nothing (a
+// second click would otherwise be an undo step that changed nothing).
+describe("a story character's chips", () => {
+  function withCharacter() {
+    const set = setUp();
+    const gate = {
+      ...station("c", 0.0008),
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "w1" },
+          advance: { mode: "tap" },
+        },
+      ],
+      blocks: [
+        {
+          id: "w1",
+          kind: "character",
+          view: "speak",
+          name: "Wendel",
+          image: "cut",
+          caption: "Good day",
+          pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    } as unknown as TourStation;
+    set.store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [station("a", 0), gate],
+        },
+      }),
+    );
+    set.select("station:c");
+    return set;
+  }
+  const click = (act: string) => {
+    const b = document.querySelector<HTMLButtonElement>(
+      `#shell-inspector [data-act="${act}"]`,
+    );
+    if (b === null) throw new Error(`no ${act}`);
+    b.click();
+  };
+
+  it("write his view and how his step moves on as his station's edit", () => {
+    const { edits, shell } = withCharacter();
+    click("character-view:w1:two-stations");
+    click("character-advance:w1:lineEnd");
+    expect(edits.station.mock.calls).toEqual([
+      ["c", { character: { block: "w1", view: "two-stations" } }],
+      ["c", { character: { block: "w1", advance: "lineEnd" } }],
+    ]);
+    expect(edits.model).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("write nothing for the chip already pressed", () => {
+    const { edits, shell } = withCharacter();
+    click("character-view:w1:speak");
+    click("character-advance:w1:tap");
+    expect(edits.station).not.toHaveBeenCalled();
+    shell.hide();
+  });
+});
+
+describe("the tree during the approach", () => {
+  /** The shell shown again on a view that opens on its approach. */
+  function onApproach() {
+    const set = setUp();
+    set.shell.hide();
+    set.shell.show(fakeView(), { approach: true });
+    return set;
+  }
+  const treeFolded = (store: ReturnType<typeof setUp>["store"]) =>
+    store.getState().editorView.foldedDocks.tree;
+  const treeRoot = () => document.getElementById("shell-tree")!;
+
+  it("folds the tree for the flight and unfolds it, animated, at the landing", () => {
+    // Why: the flight is the view's to show, so the rail is a tab during
+    // it; at the landing it opens with a short animation, and the class
+    // that runs it goes when the animation ends (a later unfold of the
+    // creator's must not replay it).
+    const { store, shell } = onApproach();
+    expect(treeFolded(store)).toBe(true);
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(false);
+    expect(treeRoot().classList.contains("unfolding")).toBe(true);
+    const end = new Event("animationend") as AnimationEvent;
+    Object.defineProperty(end, "animationName", { value: "dock-unfold" });
+    treeRoot().dispatchEvent(end);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+  });
+
+  it("unfolds at once, without the animation, under reduced motion", () => {
+    // Why: reduced motion skips the animation, never the unfold.
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: q.includes("reduce"),
+    }));
+    const { store, shell } = onApproach();
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(false);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+  });
+
+  it("lands only once, and not at all on a view opened without an approach", () => {
+    // Why: a creator who folds the rail after the landing keeps it folded;
+    // nothing but the approach's own landing unfolds it, and only once.
+    const { store, shell } = setUp();
+    expect(treeFolded(store)).toBe(false);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+    shell.hide();
+    shell.show(fakeView(), { approach: true });
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(false);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("leaves the tree as the creator set it during the flight", () => {
+    // Why: a creator who opens and folds the rail mid-flight has decided;
+    // the landing must not undo that.
+    const { store, shell } = onApproach();
+    document.getElementById("tree-fold")!.click();
+    expect(treeFolded(store)).toBe(false);
+    document.getElementById("tree-fold")!.click();
+    expect(treeFolded(store)).toBe(true);
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("keeps the tree a tab when the creator takes the camera mid-flight", () => {
+    // Why: a takeover (a click, a wheel, "+") can come at any height; the
+    // owner found the rail unfolding over the whole globe senseless. The
+    // hold ends, so a later landing call does nothing; the creator opens
+    // the rail.
+    const { store, shell } = onApproach();
+    shell.approachEnded("taken");
+    expect(treeFolded(store)).toBe(true);
+    expect(treeRoot().classList.contains("unfolding")).toBe(false);
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+    shell.hide();
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("keeps the tree a tab at the landing on a narrow window", () => {
+    // Why: below the dock rule's width the tree starts folded at any
+    // open; the landing follows the same rule.
+    vi.stubGlobal("innerWidth", 600);
+    const { store, shell } = onApproach();
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(true);
+  });
+
+  it("keeps a tree the creator had folded when the view closes mid-flight", () => {
+    // Why: closing mid-flight gives back the fold the tree had at the
+    // open, not an unfolded tree; a creator who had folded the rail must
+    // not find it opened by a flight they left.
+    const set = setUp();
+    set.store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    set.shell.hide();
+    set.shell.show(fakeView(), { approach: true });
+    expect(treeFolded(set.store)).toBe(true);
+    set.shell.hide();
+    expect(treeFolded(set.store)).toBe(true);
+  });
+
+  it("gives the fold back when the view closes mid-flight", () => {
+    // Why: the fold was the approach's, not the creator's; the next open
+    // (without an approach) starts with the tree as the creator left it.
+    const { store, shell } = onApproach();
+    shell.hide();
+    expect(treeFolded(store)).toBe(false);
+    shell.show(fakeView());
+    shell.approachEnded("landed");
+    expect(treeFolded(store)).toBe(false);
+  });
+});
+
+// Why: a Save (Ctrl+S, the bar's button) writes the tour as the store
+// holds it, and typing that has not been left or paused on yet - in an
+// inspector field or in a long text's writer - is not in it. The page asks
+// the shell to write that typing first (`flush`); without it a Save while
+// typing saved the text without its last words.
+describe("a save while typing", () => {
+  it("writes the field being typed in when the page flushes", () => {
+    const { select, edits, shell } = setUp();
+    select("station:a");
+    typeInto("description", "By the fountain");
+    shell.flush();
+    expect(edits.station).toHaveBeenCalledWith("a", {
+      description: "By the fountain",
+    });
+    shell.hide();
+  });
+
+  it("writes a long text's typing that has not paused yet when the page flushes", () => {
+    const { store, select, edits, shell } = setUp();
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [
+                {
+                  id: "essay",
+                  kind: "longText",
+                  view: "reading",
+                  title: "Essay",
+                  body: "Old words.",
+                  createdAtIso: AT,
+                  pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+                },
+              ],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    select("essay");
+    const area = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="long-text-writer"]',
+    );
+    if (area === null) throw new Error("no writer");
+    area.value = "Old words. New ones";
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(edits.block).not.toHaveBeenCalled();
+    shell.flush();
+    expect(edits.block).toHaveBeenCalledWith(
+      "essay",
+      "body",
+      "Old words. New ones",
+    );
+    shell.hide();
+  });
+});
+
+// Why: the preview's head names the view the visitor sees the text in;
+// the dock hands it the selected text's view on every draw, so a text
+// set to a reading stand must not be headed "Reading sign".
+describe("the long text's preview", () => {
+  it("names the selected text's view in its head", () => {
+    const { store, select, shell } = setUp();
+    const essay = (id: string, view: string) => ({
+      id,
+      kind: "longText",
+      view,
+      title: "Essay",
+      body: "Words.",
+      createdAtIso: AT,
+      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+    });
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              blocks: [essay("stand", "lectern"), essay("card", "card")],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    const head = () => document.querySelector(".lw-vn")?.textContent;
+    select("stand");
+    expect(head()).toBe("Reading stand");
+    select("card");
+    expect(head()).toBe("Station card");
+    shell.hide();
+  });
+});
+
+describe("the page keys next to a toolbar", () => {
+  // Why: a toolbar moves its focus by the arrows, Home and End. Home on a
+  // toolbar button reframed the whole tour behind the writer's toolbar.
+  it("leaves Home on a toolbar button to the toolbar, and frames the tour on Home elsewhere", () => {
+    const { shell, view } = setUp();
+    const bar = document.createElement("div");
+    bar.setAttribute("role", "toolbar");
+    const bold = document.createElement("button");
+    bar.append(bold);
+    const plain = document.createElement("button");
+    document.body.append(bar, plain);
+    const home = () =>
+      new KeyboardEvent("keydown", {
+        key: "Home",
+        code: "Home",
+        bubbles: true,
+      });
+    bold.dispatchEvent(home());
+    expect(view.frame).not.toHaveBeenCalled();
+    plain.dispatchEvent(home());
+    expect(view.frame).toHaveBeenCalledWith(null);
     shell.hide();
   });
 });

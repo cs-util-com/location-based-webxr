@@ -15,6 +15,7 @@ import {
   manifestToWrite,
   type TourDocumentState,
 } from "../tour-document.js";
+import { truncated } from "../truncated.js";
 
 /** An item a write gave another station. */
 export interface Reseat {
@@ -28,18 +29,21 @@ export interface Reseat {
 
 const KIND_WORD: Readonly<Record<TourObject["kind"], string>> = {
   shortText: "The pin",
+  longText: "The reading stand",
   picture: "The photo",
   model: "The 3D model",
 };
 
 /** An item as the line names it: a pin's text, a picture's caption or a
- *  model's title, shortened, else what it is. */
+ *  model's or a reading stand's title, shortened, else what it is. */
 function itemName(object: TourObject): string {
-  const text = object.kind === "model" ? object.title : object.caption;
+  const text =
+    object.kind === "model" || object.kind === "longText"
+      ? object.title
+      : object.caption;
   const label = (text ?? "").replace(/\s+/g, " ").trim();
   if (label === "") return KIND_WORD[object.kind];
-  const chars = [...label];
-  return `"${chars.length > 40 ? `${chars.slice(0, 39).join("")}…` : label}"`;
+  return `"${truncated(label, 40)}"`;
 }
 
 function stationOf(

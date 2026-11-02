@@ -17,17 +17,12 @@ const toModel = new THREE.Matrix4();
 const partToModel = new THREE.Matrix4();
 
 /**
- * The factor that makes `model`'s largest side `sizeM` metres: the
- * format's one rule, the axis-aligned box of the model at rest (its
- * geometries' own boxes), node transforms included, in the model's own
- * frame (wherever it is placed, its own transform left out). 1 for a model
- * with nothing to measure (no extent). RangeError for a size that is not
- * finite and > 0.
+ * `model`'s largest side in its own frame, the format's one rule: the
+ * axis-aligned box of the model at rest (its geometries' own boxes), node
+ * transforms included, its own transform left out. 0 for a model with
+ * nothing to measure (no extent, or an extent that is not finite).
  */
-export function modelScale(model: THREE.Object3D, sizeM: number): number {
-  if (!(Number.isFinite(sizeM) && sizeM > 0)) {
-    throw new RangeError(`a model's size must be finite and > 0, got ${sizeM}`);
-  }
+export function largestSide(model: THREE.Object3D): number {
   model.updateMatrixWorld(true);
   toModel.copy(model.matrixWorld).invert();
   box.makeEmpty();
@@ -40,7 +35,23 @@ export function modelScale(model: THREE.Object3D, sizeM: number): number {
     partToModel.multiplyMatrices(toModel, o.matrixWorld);
     box.union(part.copy(geometry.boundingBox).applyMatrix4(partToModel));
   });
-  if (box.isEmpty()) return 1;
+  if (box.isEmpty()) return 0;
   const largest = Math.max(...box.getSize(size).toArray());
-  return largest > 0 && Number.isFinite(largest) ? sizeM / largest : 1;
+  return largest > 0 && Number.isFinite(largest) ? largest : 0;
+}
+
+/**
+ * The factor that makes `model`'s largest side `sizeM` metres: the
+ * format's one rule, the axis-aligned box of the model at rest (its
+ * geometries' own boxes), node transforms included, in the model's own
+ * frame (wherever it is placed, its own transform left out). 1 for a model
+ * with nothing to measure (no extent). RangeError for a size that is not
+ * finite and > 0.
+ */
+export function modelScale(model: THREE.Object3D, sizeM: number): number {
+  if (!(Number.isFinite(sizeM) && sizeM > 0)) {
+    throw new RangeError(`a model's size must be finite and > 0, got ${sizeM}`);
+  }
+  const largest = largestSide(model);
+  return largest > 0 ? sizeM / largest : 1;
 }

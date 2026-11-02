@@ -31,7 +31,72 @@ const SHELL_START = {
   hiddenLayers: [],
   readout: false,
   unlockedStations: [],
+  modelFocus: null,
+  modelPick: null,
 };
+
+// Why: the 3D inspector's note or section in focus, and the click on the
+// model the 3D view waits for, belong to the selected model. Kept across
+// another selection, a click on the next model would add a note to it, or
+// a stale index would mark another model's note.
+describe("editorView model focus and pick", () => {
+  it("keeps a focus and a pick for the selection, and clears them with it", () => {
+    let state = reduce(initialEditorViewState, act.selected({ id: "m" }));
+    state = reduce(
+      state,
+      act.modelFocused({ focus: { part: "note", index: 2 } }),
+    );
+    state = reduce(state, act.modelPickAsked({ pick: { what: "note-add" } }));
+    expect(state.modelFocus).toEqual({ part: "note", index: 2 });
+    expect(state.modelPick).toEqual({ what: "note-add" });
+    // The same selection again keeps them.
+    state = reduce(state, act.selected({ id: "m" }));
+    expect(state.modelPick).toEqual({ what: "note-add" });
+    state = reduce(state, act.selected({ id: "other" }));
+    expect(state.modelFocus).toBeNull();
+    expect(state.modelPick).toBeNull();
+  });
+
+  it("refuses a focus or a pick that is none", () => {
+    const bad = [
+      { part: "pin", index: 0 },
+      { part: "note", index: -1 },
+      { part: "note", index: 0.5 },
+    ];
+    for (const focus of bad) {
+      expect(
+        reduce(initialEditorViewState, act.modelFocused({ focus } as never))
+          .modelFocus,
+      ).toBeNull();
+    }
+    for (const pick of [
+      { what: "spin" },
+      { what: "note-place" },
+      { what: "section-place", index: -2 },
+    ]) {
+      expect(
+        reduce(initialEditorViewState, act.modelPickAsked({ pick } as never))
+          .modelPick,
+      ).toBeNull();
+    }
+    expect(
+      reduce(
+        initialEditorViewState,
+        act.modelPickAsked({ pick: { what: "section-place", index: 1 } }),
+      ).modelPick,
+    ).toEqual({ what: "section-place", index: 1 });
+  });
+
+  it("clears both when another tour opens", () => {
+    let state = reduce(initialEditorViewState, act.selected({ id: "m" }));
+    state = reduce(
+      state,
+      act.modelPickAsked({ pick: { what: "section-add" } }),
+    );
+    state = reduce(state, tourDocumentActions.closed());
+    expect(state.modelPick).toBeNull();
+  });
+});
 
 describe("editorView", () => {
   it("starts with nothing selected, nothing in flight and no walk", () => {

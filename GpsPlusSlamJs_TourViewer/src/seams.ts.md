@@ -22,6 +22,7 @@ queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf; openPdfTab; copyText;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule; createWayfindingHud; loadGlbModel;
+getViewerCamera; enableClipping;
 createAudioElement; xrProjection0 }`
   - `xrProjection0()` - the session
     camera's `projectionMatrix.elements[0]`, null without a camera; the

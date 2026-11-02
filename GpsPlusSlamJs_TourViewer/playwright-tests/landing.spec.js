@@ -45,6 +45,16 @@ const gap = (
 ) => lower.y - (upper.y + upper.height);
 
 /**
+ * How long a first visit may take to mount its moving parts: the boot
+ * budget of a dev server compiling the landing's module graph on a busy
+ * machine, as the AR specs give their boot 10-15 s. Not a retry - a part
+ * that never mounts still fails, only later. Measured about 1-1.6 s on an
+ * idle machine at every viewport; the misses of a one-worker browser run
+ * were past the 5 s default, and passed on their retry.
+ */
+const MOUNTED = { timeout: 15_000 };
+
+/**
  * A first visit, its moving parts mounted.
  *
  * @param {import("@playwright/test").Page} page
@@ -54,10 +64,12 @@ async function openLanding(page) {
   await expect(page.locator(".landing-cards")).toHaveAttribute(
     "data-mount",
     "ready",
+    MOUNTED,
   );
   await expect(page.getByTestId("landing-uses")).toHaveAttribute(
     "data-mount",
     "ready",
+    MOUNTED,
   );
 }
 
@@ -385,6 +397,7 @@ for (const { viewport, wide } of [
       await expect(page.getByTestId("landing-film")).toHaveAttribute(
         "data-mount",
         "ready",
+        MOUNTED,
       );
       const near = (/** @type {number} */ actual, /** @type {number} */ want) =>
         expect(Math.abs(actual - want)).toBeLessThanOrEqual(1);
@@ -595,6 +608,7 @@ for (const wide of [false, true]) {
       await expect(page.getByTestId("landing-film")).toHaveAttribute(
         "data-mount",
         "ready",
+        MOUNTED,
       );
       /** @type {[number, number, string, number][]} */
       const sizes = [
@@ -909,6 +923,7 @@ test.describe("a returning device", () => {
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await expect(page.getByTestId("setup-card")).toBeVisible();
     expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(1);
@@ -920,6 +935,7 @@ test.describe("a returning device", () => {
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await expect
       .poll(() => stageTop(page).then(Math.abs))
@@ -1004,6 +1020,7 @@ test.describe("a returning device", () => {
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await page.mouse.move(195, 400);
     await page.mouse.wheel(0, 1);
@@ -1020,12 +1037,14 @@ test.describe("a returning device", () => {
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await expect(page.getByTestId("setup-card")).toBeVisible();
     release();
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     // The reserved height is a lower bound of the mounted section's (10 px
     // under it at this width, index.html.md): without it the page landed
@@ -1037,6 +1056,7 @@ test.describe("a returning device", () => {
     await expect(page.getByTestId("landing-film")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(24);
   }
@@ -1067,12 +1087,14 @@ test.describe("a returning device", () => {
     await expect(page.getByTestId("landing-uses")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     // The film too: one that settles after `start` is read lets the skip's
     // hold re-pin the scroll, and the wheel's 40 px would never be seen.
     await expect(page.getByTestId("landing-film")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     // A reader scrolls by a wheel, a touch or a key: that input releases
     // the page from the skip's hold (a scripted scroll alone does not).
@@ -1096,6 +1118,7 @@ test.describe("a returning device", () => {
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await expect.poll(() => page.evaluate(() => Math.round(scrollY))).toBe(300);
   });
@@ -1105,6 +1128,7 @@ test.describe("a returning device", () => {
     await expect(page.locator(".landing-cards")).toHaveAttribute(
       "data-mount",
       "ready",
+      MOUNTED,
     );
     await expect
       .poll(() =>

@@ -14,9 +14,20 @@ import { describe, expect, it } from 'vitest';
 import { parseTourAssets } from './tour-assets';
 import {
   readTourBlocks,
+  TOUR_BLOCK_VIEWS,
+  TOUR_MODEL_MAX_NOTES,
+  TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
+  TOUR_MODEL_NOTE_RULES,
+  TOUR_MODEL_WORLD_VIEWS,
+  tourBlocksMinor,
 } from './tour-blocks';
+import {
+  tourModelAnimationArbitrary,
+  tourModelNoteArbitrary,
+  tourModelSectionArbitrary,
+} from '../test-utils/tour-arbitraries';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -43,6 +54,31 @@ function read(value: unknown, lenient = false) {
   return readTourBlocks([value], 'x', { assets, fail, lenient }).map(
     (r) => r.block
   )[0];
+}
+
+/** What a read makes of a model's notes: their count, 'absent', 'left out'
+ *  (a lenient read skipped the block) or 'refused' (a strict read threw). */
+function noteCount(value: unknown, lenient: boolean): number | string {
+  try {
+    const block = read(value, lenient);
+    if (block === undefined) return 'left out';
+    if (block.kind !== 'model') return 'not a model';
+    return block.annotations?.length ?? 'absent';
+  } catch (error) {
+    return error instanceof Invalid ? 'refused' : 'other error';
+  }
+}
+
+/** The first note's title after a strict read, or why the read refused. */
+function firstNoteTitle(value: unknown): string | undefined {
+  try {
+    const block = read(value);
+    return block?.kind === 'model' ? block.annotations?.[0]?.title : undefined;
+  } catch (error) {
+    return error instanceof Invalid
+      ? `refused: ${/is longer than 64/.exec(error.message)?.[0] ?? error.message}`
+      : 'other error';
+  }
 }
 
 /** The double next to `x` towards `towards` (one ulp). */
@@ -120,6 +156,117 @@ describe('a placed model size (properties)', () => {
         expect(() => read(model(sizeM), lenient)).toThrow(Invalid);
       }),
       { numRuns: 500 }
+    );
+  });
+});
+
+/**
+ * Why these matter: a model's notes, sections and clip (minor 1) are lists
+ * a creator grows freely, so their limits and the minor the writer stamps
+ * must hold for every list, not only the examples in `tour-blocks.test.ts`.
+ */
+describe("a model's notes, sections and clip (properties)", () => {
+  const noteList = (n: number) =>
+    fc.array(tourModelNoteArbitrary, { minLength: n, maxLength: n });
+
+  it('every valid set of notes, sections and clip in any world view reads back exactly through JSON', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...TOUR_MODEL_WORLD_VIEWS),
+        fc.option(tourModelAnimationArbitrary, { nil: undefined }),
+        fc.array(tourModelNoteArbitrary, {
+          minLength: 1,
+          maxLength: TOUR_MODEL_MAX_NOTES,
+        }),
+        fc.array(tourModelSectionArbitrary, {
+          minLength: 1,
+          maxLength: TOUR_MODEL_MAX_SECTIONS,
+        }),
+        (view, animation, annotations, sections) => {
+          const block = {
+            ...model(2),
+            view,
+            ...(animation === undefined ? {} : { animation }),
+            annotations,
+            sections,
+          };
+          const json = JSON.parse(JSON.stringify(block)) as typeof block;
+          expect(read(json)).toEqual(json);
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+
+  it('any number of notes: none reads as absent, up to 32 kept, more refused strictly and left out leniently', () => {
+    fc.assert(
+      fc.property(
+        fc
+          .integer({ min: 0, max: TOUR_MODEL_MAX_NOTES + 8 })
+          .chain((n) => noteList(n).map((notes) => ({ n, notes }))),
+        ({ n, notes }) => {
+          const block = { ...model(2), annotations: notes };
+          const expected =
+            n === 0
+              ? ['absent', 'absent']
+              : n <= TOUR_MODEL_MAX_NOTES
+                ? [n, n]
+                : ['refused', 'left out'];
+          expect([noteCount(block, false), noteCount(block, true)]).toEqual(
+            expected
+          );
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it("a note's title: kept up to 64 counted characters, refused beyond", () => {
+    fc.assert(
+      fc.property(
+        tourModelNoteArbitrary,
+        fc.integer({ min: 1, max: 80 }),
+        (note, n) => {
+          const title = 'n'.repeat(n);
+          const block = { ...model(2), annotations: [{ ...note, title }] };
+          const kept = n <= TOUR_MODEL_NOTE_RULES.title.max;
+          expect(firstNoteTitle(block)).toBe(
+            kept ? title : 'refused: is longer than 64'
+          );
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('the minor a model needs is 1 exactly when it uses a new view or any new field', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...TOUR_BLOCK_VIEWS.model),
+        fc.boolean(),
+        fc.boolean(),
+        fc.boolean(),
+        tourModelNoteArbitrary,
+        tourModelSectionArbitrary,
+        tourModelAnimationArbitrary,
+        (view, hasNote, hasSection, hasClip, note, section, animation) => {
+          const block = {
+            ...model(view === 'stage' ? undefined : 2),
+            view,
+            ...(hasNote ? { annotations: [note] } : {}),
+            ...(hasSection ? { sections: [section] } : {}),
+            ...(hasClip ? { animation } : {}),
+          };
+          if (view === 'stage') delete (block as { sizeM?: unknown }).sizeM;
+          const newView = !['placed', 'stage', 'card'].includes(view);
+          const expected = newView || hasNote || hasSection || hasClip ? 1 : 0;
+          const blocks = readTourBlocks([block], 'x', { assets, fail }).map(
+            (r) => r.block
+          );
+          expect(tourBlocksMinor(blocks)).toBe(expected);
+        }
+      ),
+      { numRuns: 300 }
     );
   });
 });

@@ -40,7 +40,26 @@ const THREE_D_ONLY: readonly [string, RegExp][] = [
   ["the 3D tiles renderer", /\/node_modules\/3d-tiles-renderer\//],
   ["the elevation package", /\/GpsPlusSlamJs_Osm\/|\/gps-plus-slam-osm\//],
   ["the 3D view", /\/src\/editor3d\//],
+  [
+    "the editor kit's scene or globe",
+    /\/(?:GpsPlusSlamJs_EditorKit|gps-plus-slam-editor-kit)\/src\/(?:scene|globe)\//,
+  ],
 ];
+
+/** A module of the editor kit (the workspace package's source); its
+ *  first group is the kit's entry folder (`touch`, `chrome`, ...). */
+const KIT_MODULE =
+  /\/(?:GpsPlusSlamJs_EditorKit|gps-plus-slam-editor-kit)\/src\/([^/]+)\//;
+
+/** The kit's entry folders a page's id belongs to (unique, sorted). */
+function kitEntriesOf(ids: Iterable<string>): string[] {
+  const entries = new Set<string>();
+  for (const id of ids) {
+    const match = KIT_MODULE.exec(id);
+    if (match !== null) entries.add(match[1]!);
+  }
+  return [...entries].sort();
+}
 
 /** The landing's modules the main page may load before any `import()`:
  *  the mount shim and the returning-device rule (today's two), and the
@@ -68,6 +87,52 @@ const LANDING_STATIC = [
  *  (landing-mount.ts.md, "Size"). */
 const LANDING_BUDGET_KB = 74;
 
+/** The visitor's pages (the editor's page is the creator's). */
+const VISITOR_PAGES = ["main", "writeProbe"];
+
+/** Every module a page can load: its entry chunk and every chunk it
+ *  imports, statically or by import(), transitively. */
+function fullClosure(chunks: readonly BuiltChunk[], entry: string) {
+  return chunksFrom(
+    chunks,
+    chunks.filter((c) => c.entry === entry),
+    true,
+  ).flatMap((c) => c.moduleIds);
+}
+
+/** The chunks reached from `start` by static imports (and by import()
+ *  with `dynamic`), transitively, `start` included. */
+function chunksFrom(
+  chunks: readonly BuiltChunk[],
+  start: readonly BuiltChunk[],
+  dynamic: boolean,
+): BuiltChunk[] {
+  const byName = new Map(chunks.map((c) => [c.fileName, c]));
+  const seen = new Map<string, BuiltChunk>();
+  const queue = [...start];
+  for (let chunk = queue.pop(); chunk !== undefined; chunk = queue.pop()) {
+    if (seen.has(chunk.fileName)) continue;
+    seen.set(chunk.fileName, chunk);
+    const next = dynamic
+      ? [...chunk.imports, ...chunk.dynamicImports]
+      : chunk.imports;
+    for (const name of next) {
+      const found = byName.get(name);
+      if (found !== undefined) queue.push(found);
+    }
+  }
+  return [...seen.values()];
+}
+
+/** The chunk holding `module` (a path ending), which must exist. */
+function chunkOf(chunks: readonly BuiltChunk[], module: string): BuiltChunk {
+  const found = chunks.find((c) =>
+    c.moduleIds.some((id) => id.endsWith(module)),
+  );
+  if (found === undefined) throw new Error(`no chunk holds ${module}`);
+  return found;
+}
+
 /** The pages with a script of their own (`legal.html` has none: it loads
  *  no module at all). */
 const PAGES = ["main", "edit", "writeProbe"];
@@ -91,6 +156,43 @@ describe("the 3D view's code in the app's bundle", () => {
       }
     },
   );
+
+  // Why: a visitor's pages must not reach the 3D views even by import():
+  // the static check above lets a lazy chunk through, and one import()
+  // from a visitor's module would ship the globe to the phone on demand.
+  it.each(VISITOR_PAGES)(
+    "is not reached by the %s page even through import()",
+    (page) => {
+      const reached = [...fullClosure(chunks, page)];
+      for (const [what, pattern] of THREE_D_ONLY) {
+        expect(
+          reached.filter((id) => pattern.test(id)),
+          `${page} reaches ${what}`,
+        ).toEqual([]);
+      }
+    },
+  );
+
+  // Why: of the editor kit, a visitor's page may load only its touch
+  // gestures; the shell chrome and the 3D blocks are the editor's, and one
+  // import from a visitor's module (even an import()) would ship them.
+  it.each(VISITOR_PAGES)(
+    "reaches no editor kit module but its touch from the %s page",
+    (page) => {
+      expect(
+        kitEntriesOf(fullClosure(chunks, page)).filter((e) => e !== "touch"),
+      ).toEqual([]);
+    },
+  );
+
+  // Why: the editor's page loads the shell chrome at once and nothing of
+  // the kit's 3D blocks; it holds the chrome, which proves the check sees
+  // the kit's modules through the workspace link at all.
+  it("loads of the editor kit only its chrome and touch on the editor's page", () => {
+    const entries = kitEntriesOf(staticClosure(chunks, "edit"));
+    expect(entries).toContain("chrome");
+    expect(entries.filter((e) => e !== "chrome" && e !== "touch")).toEqual([]);
+  });
 
   it("keeps the landing's moving parts out of the main page's first load", () => {
     const loaded = [...staticClosure(chunks, "main")];
@@ -124,6 +226,37 @@ describe("the 3D view's code in the app's bundle", () => {
     expect(kb).toBeLessThanOrEqual(LANDING_BUDGET_KB);
   });
 
+  // Why (the full-globe editor plan's cold review, finding 13): the site
+  // ships /globe-assets/ now, so nothing but a reference keeps a visitor's
+  // phone from fetching 12.6 MB of whole-Earth imagery. No chunk a
+  // visitor's page can reach, even by import(), may name the path; the
+  // editor's globe view does, which proves the check sees it.
+  it.each(VISITOR_PAGES)(
+    "names no /globe-assets/ path in the %s page's bundle, even through import()",
+    (page) => {
+      const reached = chunksFrom(
+        chunks,
+        chunks.filter((c) => c.entry === page),
+        true,
+      );
+      expect(reached.length).toBeGreaterThan(0);
+      expect(
+        reached
+          .filter((c) => c.code.includes("/globe-assets/"))
+          .map((c) => c.fileName),
+      ).toEqual([]);
+    },
+  );
+
+  it("names /globe-assets/ in the editor's globe view, so the check sees it", () => {
+    const globeOwn = chunksFrom(
+      chunks,
+      [chunkOf(chunks, "/src/editor3d/editor3d-globe.ts")],
+      false,
+    );
+    expect(globeOwn.some((c) => c.code.includes("/globe-assets/"))).toBe(true);
+  });
+
   it("is reached from the editor's page by import(), the geoid with it", () => {
     const edit = chunks.find((c) => c.entry === "edit");
     expect(edit).toBeDefined();
@@ -147,23 +280,44 @@ describe("the 3D view's code in the app's bundle", () => {
     expect(reachedLazily).toBe(true);
   });
 
-  // Why: the globe's whole-Earth imagery (about 13 MB, served only by the
-  // globe's own pages) must not reach this app in any chunk: the editor
-  // draws a plain ground under the map.
-  it("holds none of the globe's whole-Earth imagery", () => {
-    // Its module is bundled (the relief's tile helpers live beside it), so
-    // the code is read: the imagery's factory does not survive the build,
-    // and nothing builds a tile overlay on its files. (The globe's source
-    // registry - a table of names, paths and credits - does ride along:
-    // the surface module reads it at load. Data, never a request.)
+  // Why: the globe's whole-Earth imagery (about 12.6 MB at /globe-assets/:
+  // the dev server's route, the site build's root copy) belongs to the editor on the globe
+  // view alone, behind its link switch: no other code may hold its
+  // factory, the OrbitControls view (a plain ground under the map)
+  // included, and the reach is by import() only.
+  it("holds the globe's whole-Earth imagery only in the globe view's chunks", () => {
+    const withImagery = chunks
+      .filter((c) => c.code.includes("createGlobeImagery"))
+      .map((c) => c.fileName);
+    // The check can see the imagery at all.
+    expect(withImagery.length).toBeGreaterThan(0);
+    const globeView = chunkOf(chunks, "/src/editor3d/editor3d-globe.ts");
+    const scene = chunkOf(chunks, "/src/editor3d/editor3d-scene.ts");
+    const globeOwn = new Set(
+      chunksFrom(chunks, [globeView], false).map((c) => c.fileName),
+    );
+    const sceneOwn = new Set(
+      chunksFrom(chunks, [scene], false).map((c) => c.fileName),
+    );
+    for (const name of withImagery) {
+      expect(globeOwn.has(name), `${name} outside the globe view`).toBe(true);
+      expect(sceneOwn.has(name), `${name} in the OrbitControls view`).toBe(
+        false,
+      );
+    }
+    for (const page of PAGES) {
+      const loaded = staticClosure(chunks, page);
+      expect(
+        globeView.moduleIds.some((id) => loaded.has(id)),
+        `${page} loads the globe view first`,
+      ).toBe(false);
+    }
+    // The editor's page reaches the globe view by import().
     expect(
-      chunks
-        .filter((c) => c.code.includes("createGlobeImagery"))
-        .map((c) => c.fileName),
-    ).toEqual([]);
-    // And the check can see the 3D view's chunk at all.
-    expect(chunks.some((c) => c.code.includes("plainImagery"))).toBe(true);
-    // The files themselves are served only by the globe's own pages.
+      chunks.some((c) => c.dynamicImports.includes(globeView.fileName)),
+    ).toBe(true);
+    // The files themselves are not the app's: the dev server routes them and
+    // the site build copies them to the site root.
     expect(existsSync(new URL("../public/globe-assets", import.meta.url))).toBe(
       false,
     );

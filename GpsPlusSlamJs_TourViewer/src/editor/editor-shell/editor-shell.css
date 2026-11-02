@@ -34,7 +34,14 @@
     "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
   --s-top-h: 40px;
   --s-bar-h: 24px;
-  /* The narrowest the brand (its mark, 37 px, and the tour's name) gets
+  /* The globe view's loading bar under the top bar, its tab, and the gap
+   * from the view's top (or the tab) to the docks. The default 3D view
+   * never shows the bar: its docks begin a gap under the top bar. */
+  --s-load-h: 5px;
+  --s-load-tab-h: 22px;
+  --s-dock-gap: 8px;
+  --s-dock-top: var(--s-dock-gap);
+  /* The narrowest the brand (the tour's name and its pen) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
   --s-name-min: 134px;
@@ -93,15 +100,6 @@ body[data-view="3d"] #topbar .brand {
   min-width: var(--s-name-min);
 }
 
-body[data-view="3d"] #topbar .brand-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--s-accent);
-  color: #1c1c1c;
-  font: 700 11px/1 var(--s-sans);
-}
-
 body[data-view="3d"] #topbar .tour-file {
   display: none;
 }
@@ -111,6 +109,7 @@ body[data-view="3d"] #topbar .brand-text {
 }
 
 body[data-view="3d"] #topbar .tour-name {
+  gap: 5px;
   max-width: min(260px, 100%);
   margin-left: -3px;
   padding: 2px 5px;
@@ -341,6 +340,13 @@ body:not([data-view="3d"]) .unsaved-mark {
 }
 
 /* --- the viewport and its docks ------------------------------------------ */
+/* The globe view (`data-globe`, set by the page) keeps the band for its
+ * loading bar and tab for its whole life, so the docks never move when
+ * the bar goes. */
+#view3d[data-globe] {
+  --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
+}
+
 body[data-view="3d"] #view3d {
   inset: var(--s-top-h) 0 var(--s-bar-h);
   overflow: hidden;
@@ -351,13 +357,12 @@ body[data-view="3d"] #view3d {
 
 .dock {
   position: absolute;
-  top: 0;
+  top: var(--s-dock-top);
   z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: calc(100% - 10px);
+  max-height: calc(100% - 10px - var(--s-dock-top));
   border: 1px solid var(--s-line);
-  border-top: 0;
   background: rgb(31 32 35 / 97%);
   box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
 }
@@ -365,9 +370,9 @@ body[data-view="3d"] #view3d {
 #shell-tree {
   left: 0;
   width: 272px;
-  max-height: calc(100% - 150px);
+  max-height: calc(100% - 150px - var(--s-dock-top));
   border-left: 0;
-  border-radius: 0 0 8px;
+  border-radius: 0 8px 8px 0;
 }
 
 /* Its foot stays above the map controls at the bottom right (they take
@@ -375,9 +380,9 @@ body[data-view="3d"] #view3d {
 #shell-inspector {
   right: 0;
   width: 290px;
-  max-height: calc(100% - 150px);
+  max-height: calc(100% - 150px - var(--s-dock-top));
   border-right: 0;
-  border-radius: 0 0 0 8px;
+  border-radius: 8px 0 0 8px;
 }
 
 .dhead {
@@ -665,6 +670,10 @@ body[data-view="3d"] #view3d {
 
 .ic.model {
   color: #a3b1c2;
+}
+
+.ic.text {
+  color: #b7a7d6;
 }
 
 .ic.code {
@@ -1093,12 +1102,6 @@ button.thumb:focus-visible {
   gap: 8px;
 }
 
-body[data-view="3d"] .view3d-credits {
-  right: auto;
-  left: 8px;
-  max-width: calc(100% - 78px);
-}
-
 .pill {
   display: flex;
   flex-direction: column;
@@ -1490,7 +1493,7 @@ body[data-view="3d"] .view3d-credits {
   white-space: nowrap;
 }
 
-/* The ground menu, where the scene was pressed (`scene-menu.ts` places
+/* The ground menu, where the scene was pressed (the editor kit's `scene-menu.ts` places
  * it). */
 #scene-menu {
   top: auto;
@@ -1546,8 +1549,7 @@ body[data-view="3d"] .view3d-credits {
  * with a 40 px name) and 301 after the last.
  * - 820 px: the unsaved mark keeps its dot (its words are the bottom
  *   bar's status line, and its title);
- * - 720 px: Details goes (File's Tour details… and the tour's name open
- *   the same dialog), and the buttons drop their icons, keeping words;
+ * - 720 px: the buttons drop their icons, keeping words;
  * - 520 px: Undo and Redo fold into the Edit menu;
  * - 400 px: the menus' carets go and the groups close up. */
 #edit-menu-wrap {
@@ -1563,10 +1565,6 @@ body[data-view="3d"] .view3d-credits {
 @media (width <= 720px) {
   :root {
     --s-name-min: 94px;
-  }
-
-  body[data-view="3d"] #studio-details {
-    display: none;
   }
 
   body[data-view="3d"] #topbar .tbtn > svg.i:first-child:not(:last-child) {
@@ -1633,4 +1631,223 @@ body[data-view="3d"] .view3d-credits {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A model's own parts in the inspector (the station blocks prototype's
+ * editor mode): its view as chips, its clip, its notes and sections as
+ * cards with a numbered badge, and the small buttons that wait for a click
+ * on the model. */
+.vchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.vchips .chip {
+  cursor: pointer;
+}
+
+/* A story character's groups of chips, apart from the next label. */
+.character > .vchips {
+  margin-bottom: 8px;
+}
+
+.mnotes > .flabel,
+.msections > .flabel,
+.character > .flabel {
+  margin: 2px 0 4px;
+  color: var(--s-muted);
+}
+
+/* Each of a character's labels on a line of its own: his name heads his
+ * parts, and his groups' labels ("View", "Moves on") sit over their chips
+ * (inline, the name ran into "View"). */
+.character > .flabel {
+  display: block;
+}
+
+.anno {
+  margin: 6px 0;
+  padding: 7px 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+}
+
+.anno.on {
+  border-color: var(--s-accent-line);
+  background: var(--s-accent-bg);
+}
+
+.anno .top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anno .top .tfield {
+  flex: 1;
+  font-weight: 600;
+}
+
+.anno > textarea.tfield {
+  margin-top: 6px;
+  min-height: 38px;
+}
+
+.badge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--s-accent);
+  color: #16120b;
+  font: 700 11.5px var(--s-sans);
+  cursor: pointer;
+}
+
+.anno .tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.anno .tools .pos {
+  margin-left: auto;
+  color: var(--s-dim);
+  font: 10.5px var(--s-mono);
+}
+
+.mini {
+  padding: 3px 9px;
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: 12px var(--s-sans);
+  cursor: pointer;
+}
+
+.mini.on {
+  border-color: var(--s-accent);
+  color: var(--s-accent);
+}
+
+.mini:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.manim > .mini,
+.mnotes > .mini,
+.msections > .mini {
+  margin-top: 4px;
+}
+
+/* A selected model's notes over the 3D view: a numbered disc on each
+ * (`editor3d-model-parts.ts`), placed by a transform each frame. */
+.model-notes {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.note-disc {
+  position: absolute;
+  top: -14px;
+  left: -14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid rgb(255 255 255 / 70%);
+  border-radius: 50%;
+  background: rgb(15 17 21 / 86%);
+  color: #fff;
+  font: 600 13px/1 var(--s-sans);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.note-disc.on {
+  background: var(--s-accent);
+  color: #16120b;
+}
+
+/* --- the globe view's approach on opening a tour ---------------------------
+ * A full-width bar glued under the top bar, following the camera's fall
+ * (`globe-approach-run.ts`), and a rounded "Loading tour" tab hanging from
+ * its middle like a bulge. The docks start under the tab (`--s-dock-top`),
+ * so the two never meet; it takes no pointer, and it goes a beat after the
+ * landing. */
+.approach {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.approach[hidden] {
+  display: none;
+}
+
+.approach-track {
+  align-self: stretch;
+  height: var(--s-load-h);
+  overflow: hidden;
+  background: var(--s-bg3);
+}
+
+.approach-fill {
+  height: 100%;
+  background: var(--s-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* The tab: the bar's own colour, so it reads as part of it. */
+.approach-title {
+  box-sizing: border-box;
+  max-width: calc(100% - 24px);
+  height: var(--s-load-tab-h);
+  padding: 0 16px;
+  overflow: hidden;
+  border-radius: 0 0 11px 11px;
+  background: var(--s-bg3);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 30%);
+  color: var(--s-text);
+  font: 600 12px/22px var(--s-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tree unfolds at the approach's landing: it opens downwards from its
+ * folded tab (38 px). Reduced motion unfolds it at once. */
+@keyframes dock-unfold {
+  from {
+    clip-path: inset(0 0 calc(100% - 38px) 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}
+
+body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
+  animation: dock-unfold 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
+    animation: none;
+  }
 }

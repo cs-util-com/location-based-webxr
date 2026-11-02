@@ -9,6 +9,9 @@ makes the model's largest side the tour's `sizeM` metres. It sits beside
 
 ## Public API
 
+- `largestSide(model)` -> the largest side of the model's box at rest in
+  its own frame (the rule below); 0 for a model with no (finite) extent.
+  The editor's 3D view rounds a clicked note's place relative to it.
 - `modelScale(model, sizeM)` -> the factor that makes the largest side of
   the model's box at rest `sizeM` (node transforms included, the model's
   own transform left out); 1 for a model with no extent. RangeError for a

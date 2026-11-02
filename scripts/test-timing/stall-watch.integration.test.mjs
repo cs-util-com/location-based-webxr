@@ -80,6 +80,10 @@ function drive(stage, limitMin, pidFile = '', mode = '') {
     env: {
       ...process.env,
       CI: '1',
+      // The fixture's stages must never write a timings file into the
+      // fixture dir: since recording keys on the GitHub runner, CI=1 alone
+      // no longer stops it.
+      GITHUB_ACTIONS: 'true',
       GATE_STALL_MIN: limitMin,
       GATE_STALL_POLL_MS: '100',
       GATE_SLOT_DIR: 'off',

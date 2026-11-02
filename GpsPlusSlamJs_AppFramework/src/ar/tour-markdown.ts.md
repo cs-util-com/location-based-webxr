@@ -35,7 +35,11 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
 - **Pictures that cannot stand where they are** - inside a paragraph, two
   on one line, with a target other than `asset:<id>`, or past the
   twentieth - become a
-  `pictureAlt` inline: the alt text, meant to be shown in a box.
+  `pictureAlt` inline: the alt text, meant to be shown in a box. One whose
+  target is `asset:<id>` (inline, or past the twentieth) carries that
+  `asset`: it is not shown, but the body still names the asset, so a
+  write must keep its file (the Tour Viewer's `long-text-body-assets.ts`).
+  A renderer reads `alt` only.
 - **A link whose target fails `checkTourLink`** keeps its text and loses
   the link.
 - **Emphasis nested deeper than 16** is read as its content.
@@ -45,7 +49,7 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
 
 - Types: `TourMdInline` (`text`, `emphasis`, `strong`,
   `link {href, host, children}`, `softBreak`, `hardBreak`,
-  `pictureAlt {alt}`), `TourMdParagraph`, `TourMdHeading {level: 1|2|3}`,
+  `pictureAlt {alt, asset?}`), `TourMdParagraph`, `TourMdHeading {level: 1|2|3}`,
   `TourMdList {ordered, start, items}`, `TourMdQuote`,
   `TourMdPicture {alt, asset}`, `TourMdBlock`, `TourMarkdown {blocks}`,
   `TourMdLeaf {block, from, to}`, `TourPlainText {text, leaves}`,
@@ -75,6 +79,22 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   reading `body` and its `P`. Exact and deterministic, so the linearity
   test can bound it tightly where timings are too noisy. It is on the
   deep-import surface only because the dist entry is per file.
+- `diagnoseTourMarkdown(body, {assetExists?}): TourMdDiagnostic[]` - the
+  parts of `body` the reader shows as typed, for the tour editor's "shown
+  as typed" underlines and list. Each is `{kind, from, to, line}`:
+  `TourMdDiagnosticKind` (see its doc comment for the twenty kinds), a
+  `[from, to)` UTF-16 range in `body`, and the 1-based line `from` is on
+  (CRLF counts once). In body order and never overlapping. `assetExists`
+  tells a picture naming an asset the tour lacks (`missingpic`); without
+  it only a target that is no asset id is. Never throws; a non-string gives
+  `[]`. A code box's fence state follows the whole body: a box with a
+  blank line inside is reported paragraph by paragraph up to its closing
+  fence (the same sign, at least as long), and one never closed runs to
+  the body's end; the text after the closing fence is not code. A box
+  opened inside a list item or a quote ends with its container; one opened
+  before it (a box holding "- " or "> " lines) stays open to its own fence.
+  A line inside a box that would be a divider or a small heading outside
+  it is reported as code.
 - `textHashOf(plain): Promise<string>` - `"sha256:"` plus the lowercase hex
   SHA-256 of `P`'s UTF-8 bytes, through `utils/sha256-hex.ts`. Rejects for
   a non-string, and when WebCrypto is unavailable. A lone surrogate is
@@ -135,6 +155,21 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   destination index: four `Int32Array`s of the paragraph's length, about
   16 bytes per character at the peak (some 16 MB for a 1 MB paragraph).
   The reader sets no length cap; a cap belongs to the format.
+- **Diagnostics come from the reader's own decisions.** The block
+  parser's refusals (a deeper heading, a nested quote, a third list level,
+  a thematic break, a `+` or `1)` marker) and the converter's (a picture
+  shown as alt text, a refused link) record where they decline, through a
+  module-level collector that is null except inside
+  `diagnoseTourMarkdown`, so reading pays nothing and its result is
+  unchanged (a property test holds that). Constructs the subset never
+  parses (code, tables, tab columns, HTML, entities, autolinks,
+  strikethrough, footnotes, reference definitions, setext underlines) are
+  found by a line scan of each paragraph and heading, which skips
+  backslash escapes and link destinations; it is linear per line because a
+  failed search for a closer is never repeated. Each line's start in the
+  body is carried through the block parser (`BlockNode.starts`), and a
+  link's or picture's range is its bracket's position in the inline
+  subject, mapped back through the trimmed lead and the joined lines.
 - **`P` is stable under formatting**: removing emphasis or changing a
   heading's level never changes it; that is what lets a creator restyle a
   text without invalidating a recording.
@@ -184,6 +219,12 @@ const hash = await textHashOf(text); // 'sha256:...'
   compared average about 130 characters), skipping by name the bodies that
   reach a spec departure above; totality up to 1 MB; `P` invariants under
   removed formatting and through the escaper.
+- `tour-markdown.diagnostics.test.ts` - each diagnostic kind with its exact
+  range, escapes and destinations ignored, ranges through list markers and
+  later lines, CRLF line numbers, and the parse left unchanged.
+- `tour-markdown.diagnostics.property.test.ts` - for mark-rich and
+  arbitrary bodies: ranges in bounds, ordered, non-overlapping and on the
+  right line; the parse unchanged; plain words never reported.
 - `tour-markdown.golden.test.ts` - 43 bodies with hand-written `P` and
   hashes from Node's crypto, frozen.
 - `tour-markdown.linearity.test.ts` - walk steps per character at 8 k

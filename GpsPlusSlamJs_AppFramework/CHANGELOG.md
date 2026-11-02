@@ -2,6 +2,204 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`storage/save-target`** (deep import): saving a file in place.
+  `pickWritableFile` (the open dialog for one `DownloadFileType`, write
+  permission asked on the same gesture), `pickSaveFile` (the save dialog,
+  opened before the call returns), `releaseUnusedPick`, `isSameFile`,
+  `createSaveTarget` (writes over the opened file, refusing with
+  `InPlaceRefusal` when it changed, is gone or is over `maxBytes`; a
+  touched file is told from a changed one by the `'tail'` check, the last
+  64 KiB, for a zip, or the `'hash'` check, a SHA-256 of the content), and
+  `holdLock` (an exclusive Web Lock on a prefixed name, with the policy
+  without Web Locks as `withoutLocks: 'grant' | 'refuse'`). Every sentence
+  a user reads can come from the caller. Also exported:
+  `SAME_FILE_TAIL_BYTES` (the tail check's 64 KiB) and
+  `DEFAULT_IN_PLACE_REFUSALS` (the default refusal sentences). Moved from
+  the Tour Viewer.
+- **`storage/picker-errors`** (deep import): one reading of a rejected
+  picker. `classifyPickerRejection` - an error named `AbortError` is
+  `'cancelled'`, anything else `'unavailable'`.
+- **`storage/autosave`** (deep import): when to save by itself.
+  `createAutosave` (a save a quiet delay after the last change, at the
+  latest a maximum wait after the first, never while held, one at a time,
+  paused after a save that did not land), `autosaveFits` and the defaults
+  `AUTOSAVE_DELAY_MS` (3 s), `AUTOSAVE_MAX_WAIT_MS` (30 s) and
+  `AUTOSAVE_MAX_BYTES` (200 MiB). Moved from the Tour Viewer.
+- **`storage/save-slot-wait`** (deep import): waiting for one save slot,
+  `waitForSaveSlot`. Moved from the Tour Viewer.
+- **`storage/file-picker`** (deep import): whether the open file picker
+  exists, `hasFilePicker`. Moved from the Tour Viewer.
+- **`utils/keyed-chain`** (deep import): tasks in order per key,
+  `createKeyedChain` (`run`, `exclusive`, `pendingKeys`). Moved from the
+  Tour Viewer.
+
+- **A model's views, notes, sections and clip, `tour.json` version 4
+  minor 1** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
+  four world views besides `placed` - `ghost`, `hotspots`, `cutaway`,
+  `toy` (`TOUR_MODEL_WORLD_VIEWS`; every one needs `sizeM`) - and three
+  optional fields: `animation` `{ name, autoplay }`, `annotations` (1-32
+  notes `{ position, normal, title (64), text? (1024) }` in the model's own
+  space) and `sections` (1-4 named planes a cutaway steps through; an empty
+  list of either reads as absent). New
+  exports: `TOUR_WORLD_VIEWS` (the one set of world views, for renderers),
+  `TOUR_MODEL_NOTE_RULES`, `TOUR_MODEL_MAX_NOTES`,
+  `TOUR_MODEL_SECTION_RULES`, `TOUR_MODEL_MAX_SECTIONS`,
+  `TOUR_MODEL_ANIMATION_RULES`, `TOUR_MODEL_SPACE_MAX`, `tourBlocksMinor`
+  and the types `TourModelWorldView`, `TourModelNote`, `TourModelSection`,
+  `TourModelAnimation`, `TourModelVector`. `TOUR_MANIFEST_MINOR` is 1, and
+  `serializeTourManifest` writes the lowest minor the tour needs: a tour
+  using none of this is still written at minor 0. A reader of minor 0
+  (1.31.0) opens a 4.1 tour leniently: a free model in a new view falls
+  back to `placed`, a story model to `card`, the new fields are ignored,
+  and that app will not save the tour. `TourModel['view']` widens from
+  `'placed'` to `TourModelWorldView`. A note's or a section's
+  `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9, a policy floor) is a zero direction:
+  it fails a file of the reader's own minor, and a lenient read of a newer
+  minor leaves out just that note or section, reported through
+  `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
+
+- **A tour's recurring characters, five story views and the advance
+  when the line ends, `tour.json` version 4 minor 2** (new `ar/tour-characters`;
+  `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
+  declare `characters` (`{ id, name, image }`, at most
+  32), and a `character` block may name one by its new
+  optional `character` field: the block then takes the declaration's name
+  and image, and the writer keeps them inline too. A character block gains
+  the story views `bubble`, `speak`, `two-stations`, `portrait` and
+  `popup` (`TOUR_CHARACTER_VIEWS`), and a story step the advance
+  `{ mode: 'lineEnd' }`. New exports: `parseTourCharacters`,
+  `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
+  types `TourCharacter`, `TourCharacterDrop`, `TourCharacterView`;
+  `TourManifest` gains an optional `characters`, `TourManifestDrop` a
+  character drop. `TOUR_MANIFEST_MINOR` is 2, and a tour using none of this
+  is still written at its lower minor. A reader of 1.31.0 opens a 4.2 tour
+  leniently: the character shows as a card with its name, caption and
+  voice, `lineEnd` advances on a tap, and that app will not save the tour.
+
+- **A declared character's frames sheet** (`ar/tour-characters`, `tour.json`
+  version 4 minor 2). A declaration may name `frames`, an image asset
+  holding his four poses as one sheet: four equal cells in one row, left to
+  right `idle`, `talk-a` (mouth half open), `talk-b` (mouth open) and
+  `beckon` (an arm out to the viewer's right), on a transparent
+  background, every figure centred in its cell, feet on one baseline. New
+  export `TOUR_CHARACTER_FRAMES`. The
+  `image` stays his one pose and the fallback; a `frames` that is not an
+  image asset, or that is his `image` itself, is refused at this minor.
+  Read leniently, only the field is dropped: he stays with his one image,
+  and `TourCharacterDrop` reports it in its new member that carries a `field`
+  (`characters[i].frames`); a drop without `field` is the whole
+  declaration.
+
+- **A long text on a reading stand, `tour.json` version 4 minor 3**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `lectern`: a reading stand at the block's pose that keeps its facing,
+  free at its station or reached by a story step. `TOUR_WORLD_VIEWS` now
+  holds `lectern`, the new type `TourLectern` joins `TourObject` (a switch
+  over an object's `kind` gains a `longText` case), and
+  `TOUR_MANIFEST_MINOR` is 3; a tour without a lectern is still written at
+  its lower minor. A reader of 1.31.0 opens a 4.3 tour leniently: a free
+  lectern is left out and reported, a story one shows as its card, and
+  that app will not save the tour.
+
+- **The sky's and the clouds' building blocks, the frame recorder and two
+  small helpers are built subpaths**, for a typed globe that composes the
+  sky from its parts. They are low-level deep imports, not semver public
+  API: their signatures may change in a minor release. Their behaviour is
+  unchanged; until now only the no-build globe lab could load them, by
+  page path.
+  - **`visualization/atmosphere/atmosphere-model`** (deep import): the
+    physical atmosphere's numbers and its CPU maths.
+  - **`visualization/atmosphere/atmosphere-scattering`** (deep import):
+    the CPU twin of the scattering passes.
+  - **`visualization/atmosphere/atmosphere-glsl`** (deep import): the
+    atmosphere's GLSL, generated from the model.
+  - **`visualization/atmosphere/atmosphere-luts`** (deep import): the
+    look-up-table passes, the environment bake and the readbacks.
+  - **`visualization/atmosphere/cloud-layer`** (deep import): the 2D cloud
+    layer and its noise texture.
+  - **`visualization/atmosphere/cloud-hex`** (deep import): hex-tiling of
+    the clouds' big shapes.
+  - **`visualization/atmosphere/cloud-live-noise`** (deep import): the
+    clouds' noise evaluated live, per octave.
+  - **`visualization/atmosphere/cloud-coverage`** (deep import): the
+    clouds from a coverage map.
+  - **`visualization/atmosphere/cloud-sheet`** (deep import): the clouds
+    on a flat sheet a camera can fly through.
+  - **`visualization/atmosphere/cloud-slab`** (deep import): the clouds as
+    a thin ray-marched volume.
+  - **`visualization/atmosphere/cloud-shadow`** (deep import): cloud
+    shadows on three.js's lit materials.
+  - **`utils/frame-run`** (deep import): one frame-recorder run.
+  - **`utils/frame-run-report`** (deep import): its phone-readable summary
+    and export.
+  - **`utils/frame-target`** (deep import): a frame target checked from a
+    run's threshold counts.
+  - **`utils/glsl-float`** (deep import): the GLSL float-literal formatter.
+  - **`sensors/permission-state`** (deep import): the prompt-free
+    Permissions-API query.
+
+- **A long text as a reading sign, `tour.json` version 4 minor 4**
+  (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
+  `reading`: a short sign at the block's pose, turned toward the viewer,
+  that opens the whole text on a tap, free at its station or reached by a
+  story step. `TOUR_BLOCK_VIEWS.longText` is now `lectern`, `reading`,
+  `card` and `TOUR_WORLD_VIEWS` holds `reading`; the new type
+  `TourReadingSign` joins `TourObject` (a switch over an object's `view`
+  gains a `reading` case); `tourFloorView('longText', 'free')` is now
+  `'reading'` (it was `null`), so a free long text in a view this reader
+  does not know falls back to the reading sign instead of being skipped.
+  `TOUR_MANIFEST_MINOR` is 4; a tour without a reading sign is still
+  written at its lower minor. A reader of 1.31.0 opens a 4.4 tour
+  leniently: a free reading sign is left out and reported, a story one
+  shows as its card, and that app will not save the tour.
+
+- **A long text read aloud, with a read-along track, `tour.json` version 4
+  minor 5** (`ar/tour-blocks`, `ar/tour-manifest`, new `ar/tour-timing`).
+  A long text gains an optional `narration` `{ audio, timing?,
+voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
+  `timing` names the block's own new archive entry `timing/<blockId>.json`
+  (a track of `{ startMs, endMs, from, to, text? }` segments over the
+  body's plain text, with the text's hash), `voiceCredit` is at most 200
+  characters, `synthetic` reads as false when absent, and `durationMs` is
+  1 ms to four hours. New exports: `TourNarration`,
+  `TOUR_NARRATION_RULES`, `TOUR_NARRATION_MAX_DURATION_MS`, and from
+  `ar/tour-timing` `parseTourTiming`, `parseTourTimingText`,
+  `tourTimingStaleReason`, `tourTimingEntryName`, `TourTimingError`, the
+  caps `TOUR_TIMING_MAX_BYTES` (1.5 MB), `TOUR_TIMING_MAX_SEGMENTS`
+  (20 000) and `TOUR_TIMING_MAX_ANCHORS` (2 000), `TOUR_TIMING_FOLDER` and
+  the `TourTiming*` types. A timing's wrong shape is an error; a timing
+  that no longer fits its text (the text was edited, or it runs past the
+  voice) is stale, and a viewer shows the plain text. `TOUR_MANIFEST_MINOR`
+  is 5; a tour without narration is still written at its lower minor. A
+  reader of 1.31.0 opens a 4.5 tour leniently: the narration is ignored,
+  the text shows as it did at minor 4, and that app will not save the
+  tour.
+
+- **The parts of a long text shown as typed** (`ar/tour-markdown`):
+  `diagnoseTourMarkdown(body, { assetExists? })` gives each part of a body
+  that a visitor sees as the characters typed rather than formatted, as
+  the reader itself decides it, with the types `TourMdDiagnostic`
+  (`kind`, `from`, `to`, `line`) and `TourMdDiagnosticKind`. A code
+  box's fence state follows the whole body (a blank line inside a box
+  keeps it a box), and a box left open inside a list item or a quote ends
+  with its container.
+
+### Changed
+
+- **`downloadBlob` reads its save dialog's rejection through
+  `classifyPickerRejection`** (`storage/zip-export`). Its behaviour is
+  otherwise unchanged (pinned by `download-blob.test.ts`), except that a
+  `null`/`undefined` rejection from the dialog or the write now falls back
+  to the anchor download instead of throwing.
+
+### Fixed
+
+- **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return
+  -0** (`utils/median`). A 0 and a -0 compare equal, so the result's sign
+  used to follow the order the samples arrived in; a median of -0 is now 0.
+
 ## [1.31.0] - 2026-10-28
 
 > ⚠️ **This MINOR carries breaking changes.** It is numbered 1.31.0 rather
