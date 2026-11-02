@@ -46,7 +46,7 @@ export const AUTOSAVE_MAX_BYTES = 200 * 1024 * 1024;
  *  that is not a finite, non-negative number. */
 export function autosaveFits(
   bytes: number,
-  maxBytes: number = AUTOSAVE_MAX_BYTES,
+  maxBytes: number = AUTOSAVE_MAX_BYTES
 ): boolean {
   return Number.isFinite(bytes) && bytes >= 0 && bytes <= maxBytes;
 }
@@ -57,13 +57,13 @@ export function autosaveFits(
  * - a save runs; `paused` - the last save did not land.
  */
 export type AutosaveState =
-  "off" | "idle" | "waiting" | "held" | "saving" | "paused";
+  'off' | 'idle' | 'waiting' | 'held' | 'saving' | 'paused';
 
 /** What a save came to: `saved` (it landed, or there was nothing to
  *  save), `failed` (refused or not written: autosave pauses), `held`
  *  (the page found a hold before it took its snapshot: the save waits for
  *  the next poke, nothing paused). */
-export type AutosaveOutcome = "saved" | "failed" | "held";
+export type AutosaveOutcome = 'saved' | 'failed' | 'held';
 
 export interface AutosaveDeps {
   /** Save the committed changes. Never called while another of its saves
@@ -103,13 +103,13 @@ function positive(name: string, value: number): number {
 }
 
 export function createAutosave(deps: AutosaveDeps): Autosave {
-  const delayMs = positive("delayMs", deps.delayMs ?? AUTOSAVE_DELAY_MS);
+  const delayMs = positive('delayMs', deps.delayMs ?? AUTOSAVE_DELAY_MS);
   const maxWaitMs = positive(
-    "maxWaitMs",
-    deps.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS,
+    'maxWaitMs',
+    deps.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS
   );
   if (maxWaitMs < delayMs) {
-    throw new RangeError("maxWaitMs must not be shorter than delayMs");
+    throw new RangeError('maxWaitMs must not be shorter than delayMs');
   }
 
   let enabled = false;
@@ -121,7 +121,7 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
   let lastChange: number | null = null;
   /** The first change not yet in a save's snapshot. */
   let firstUnsaved: number | null = null;
-  let current: AutosaveState = "off";
+  let current: AutosaveState = 'off';
   /** Bumped by `stop()`: a save of a closed tour ends without effect. */
   let generation = 0;
 
@@ -138,7 +138,7 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
 
   /** The state when no timer, hold or save is in play. */
   function rest(): void {
-    show(!enabled ? "off" : paused ? "paused" : "idle");
+    show(!enabled ? 'off' : paused ? 'paused' : 'idle');
   }
 
   function arm(): void {
@@ -156,14 +156,14 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
     const at = Math.min(last + delayMs, first + maxWaitMs);
     due = false;
     timer = setTimeout(fire, Math.max(0, at - now));
-    show("waiting");
+    show('waiting');
   }
 
   /** Due, but held: looked at again once per delay, so a hold that ends
    *  without a poke still saves (never sooner: no loop). */
   function hold(): void {
     due = true;
-    show("held");
+    show('held');
     clear();
     timer = setTimeout(fire, delayMs);
   }
@@ -191,26 +191,26 @@ export function createAutosave(deps: AutosaveDeps): Autosave {
     // before its first await). The anchor is kept for a "held" answer.
     const anchor = firstUnsaved;
     firstUnsaved = null;
-    show("saving");
+    show('saving');
     const mine = generation;
     const startedAt = Date.now();
     let outcome: Promise<AutosaveOutcome>;
     try {
       outcome = deps.save();
     } catch {
-      outcome = Promise.resolve("failed");
+      outcome = Promise.resolve('failed');
     }
     void outcome
-      .catch((): AutosaveOutcome => "failed")
+      .catch((): AutosaveOutcome => 'failed')
       .then((result) => {
         if (mine !== generation) return;
         inFlight = false;
-        if (result === "failed") paused = true;
+        if (result === 'failed') paused = true;
         if (!enabled || paused) {
           rest();
           return;
         }
-        if (result === "held") {
+        if (result === 'held') {
           // Nothing was saved: the oldest unsaved change keeps its max
           // wait, never re-anchored at a change made after it (PR #626
           // bot finding 4).

@@ -4,6 +4,37 @@
 
 ### Added
 
+- **`storage/save-target`** (deep import): saving a file in place.
+  `pickWritableFile` (the open dialog for one `DownloadFileType`, write
+  permission asked on the same gesture), `pickSaveFile` (the save dialog,
+  opened before the call returns), `releaseUnusedPick`, `isSameFile`,
+  `createSaveTarget` (writes over the opened file, refusing with
+  `InPlaceRefusal` when it changed, is gone or is over `maxBytes`; a
+  touched file is told from a changed one by the `'tail'` check, the last
+  64 KiB, for a zip, or the `'hash'` check, a SHA-256 of the content), and
+  `holdLock` (an exclusive Web Lock on a prefixed name, with the policy
+  without Web Locks as `withoutLocks: 'grant' | 'refuse'`). Every sentence
+  a user reads can come from the caller. Moved from the Tour Viewer.
+- **`storage/picker-errors`** (deep import): one reading of a rejected
+  picker. `classifyPickerRejection` - an error named `AbortError` is
+  `'cancelled'`, anything else `'unavailable'`. `downloadBlob` now reads
+  its save dialog's rejection through it; its behaviour is unchanged
+  (pinned by `download-blob.test.ts`), except that a non-object rejection
+  such as `null` now falls back to the download instead of throwing.
+- **`storage/autosave`** (deep import): when to save by itself.
+  `createAutosave` (a save a quiet delay after the last change, at the
+  latest a maximum wait after the first, never while held, one at a time,
+  paused after a save that did not land), `autosaveFits` and the defaults
+  `AUTOSAVE_DELAY_MS` (3 s), `AUTOSAVE_MAX_WAIT_MS` (30 s) and
+  `AUTOSAVE_MAX_BYTES` (200 MiB). Moved from the Tour Viewer.
+- **`storage/save-slot-wait`** (deep import): waiting for one save slot,
+  `waitForSaveSlot`. Moved from the Tour Viewer.
+- **`storage/file-picker`** (deep import): whether the open file picker
+  exists, `hasFilePicker`. Moved from the Tour Viewer.
+- **`utils/keyed-chain`** (deep import): tasks in order per key,
+  `createKeyedChain` (`run`, `exclusive`, `pendingKeys`). Moved from the
+  Tour Viewer.
+
 - **A model's views, notes, sections and clip, `tour.json` version 4
   minor 1** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
   four world views besides `placed` - `ghost`, `hotspots`, `cutaway`,

@@ -1,4 +1,4 @@
-# keyed-chain.ts
+# utils/keyed-chain.ts
 
 ## Purpose
 
@@ -6,6 +6,8 @@ Tasks run one after another PER KEY, in the order they were queued. The
 creator setup queues every draft write through it: one key per tour's
 meta file, one per object id within a tour (authoring plan
 2026-09-28-0953, M4 review #7; the M2c review's filed #7).
+
+Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/utils/keyed-chain`, not in a barrel. Its users: the Tour Viewer's `creator-draft.ts`, `station-content.ts`, `visitor-stations.ts` and `editor/editor-draft.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 
@@ -37,10 +39,9 @@ meta file, one per object id within a tour (authoring plan
   the map holds only work in flight.
 - A task always starts asynchronously (at least one microtask later),
   even with nothing queued before it.
-- Kept in the Tour Viewer, not the framework: it has one consumer. The
-  framework's `persistence-middleware` and `bounded-local-cache-store`
-  keep single (unkeyed) queues of their own; a second keyed user is the
-  moment to promote this to `gps-plus-slam-app-framework/src/utils/`.
+- Promoted to the framework once a second keyed user was in sight (the
+  editor's draft space, GV5b-2). The framework's `persistence-middleware`
+  and `bounded-local-cache-store` keep single (unkeyed) queues of their own.
 
 ## Examples
 

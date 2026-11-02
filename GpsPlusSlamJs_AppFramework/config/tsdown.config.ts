@@ -244,6 +244,15 @@ const entryFiles = [
   // The `session.json` builder the Recorder and the Tour Viewer's
   // troubleshooting recording share (deep-imported, 2026-09-28).
   'src/storage/session-metadata-record.ts',
+  // The save group moved from the Tour Viewer's desktop editor (GV5b-1 of
+  // the full-globe editor plan): saving in place, the picker's rejection,
+  // when to save by itself, the one save slot and the picker check - deep
+  // imports only, kept out of the `storage` barrel the root re-exports.
+  'src/storage/save-target.ts',
+  'src/storage/picker-errors.ts',
+  'src/storage/autosave.ts',
+  'src/storage/save-slot-wait.ts',
+  'src/storage/file-picker.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
@@ -403,6 +412,8 @@ const entryFiles = [
   // Hex/SHA-256, base58btc and did:key (tour kit plan K1), deep-imported by
   // the Tour Viewer's integrity check and its test fixtures.
   'src/utils/sha256-hex.ts',
+  // Tasks in order per key (moved from the Tour Viewer with the save group).
+  'src/utils/keyed-chain.ts',
   'src/utils/base58btc.ts',
   'src/utils/did-key.ts',
   'src/utils/qr-payload/base64url.ts',

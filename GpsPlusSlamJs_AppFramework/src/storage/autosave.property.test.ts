@@ -1,6 +1,6 @@
-import fc from "fast-check";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAutosave } from "./autosave.js";
+import fc from 'fast-check';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createAutosave } from './autosave.js';
 
 /**
  * Why these tests matter (M6 E2b-2, the E2b plan review #7 and #11, the
@@ -18,10 +18,10 @@ import { createAutosave } from "./autosave.js";
 const UNDO_MS = 8_000;
 
 type Step =
-  | { readonly at: number; readonly kind: "edit" }
-  | { readonly at: number; readonly kind: "delete" }
-  | { readonly at: number; readonly kind: "type"; readonly forMs: number }
-  | { readonly at: number; readonly kind: "revert"; readonly forMs: number };
+  | { readonly at: number; readonly kind: 'edit' }
+  | { readonly at: number; readonly kind: 'delete' }
+  | { readonly at: number; readonly kind: 'type'; readonly forMs: number }
+  | { readonly at: number; readonly kind: 'revert'; readonly forMs: number };
 
 interface Outcome {
   readonly writes: number;
@@ -46,7 +46,7 @@ interface Outcome {
  */
 async function play(
   steps: readonly Step[],
-  options: { delayMs: number; maxWaitMs: number; saveMs: number },
+  options: { delayMs: number; maxWaitMs: number; saveMs: number }
 ): Promise<Outcome> {
   let version = 0;
   let saved = 0;
@@ -70,12 +70,12 @@ async function play(
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       const snapshot = version;
-      return new Promise<"saved">((resolve) => {
+      return new Promise<'saved'>((resolve) => {
         setTimeout(() => {
           inFlight -= 1;
           saved = Math.max(saved, snapshot);
           if (saved === version) lastSavedAt ??= now() - start;
-          resolve("saved");
+          resolve('saved');
         }, options.saveMs);
       });
     },
@@ -87,17 +87,17 @@ async function play(
     end = Math.max(
       end,
       step.at +
-        (step.kind === "type" || step.kind === "revert" ? step.forMs : 0),
+        (step.kind === 'type' || step.kind === 'revert' ? step.forMs : 0)
     );
     setTimeout(() => {
-      if (step.kind === "revert") {
+      if (step.kind === 'revert') {
         typing += 1;
         setTimeout(() => {
           typing -= 1;
         }, step.forMs);
         return;
       }
-      if (step.kind === "type") {
+      if (step.kind === 'type') {
         typing += 1;
         setTimeout(() => {
           typing -= 1;
@@ -109,7 +109,7 @@ async function play(
       }
       version += 1;
       autosave.changed();
-      if (step.kind === "delete") {
+      if (step.kind === 'delete') {
         const until = now() + UNDO_MS;
         undoUntil = until;
         setTimeout(() => {
@@ -120,7 +120,7 @@ async function play(
   }
   // Long enough for the last hold, delay, max wait and save to run out.
   await vi.advanceTimersByTimeAsync(
-    end + UNDO_MS + options.maxWaitMs + options.saveMs * 4 + 1_000,
+    end + UNDO_MS + options.maxWaitMs + options.saveMs * 4 + 1_000
   );
   expect(now() - start).toBeGreaterThan(end);
   autosave.stop();
@@ -157,11 +157,11 @@ function creatorSession(): Step[] {
   while (at < 600_000) {
     const kind = random();
     if (kind < 0.6) {
-      steps.push({ at, kind: "type", forMs: 2_000 + random() * 6_000 });
+      steps.push({ at, kind: 'type', forMs: 2_000 + random() * 6_000 });
     } else if (kind < 0.9) {
-      steps.push({ at, kind: "edit" });
+      steps.push({ at, kind: 'edit' });
     } else {
-      steps.push({ at, kind: "delete" });
+      steps.push({ at, kind: 'delete' });
     }
     const gap = random();
     at +=
@@ -178,7 +178,7 @@ function creatorSession(): Step[] {
 function steadySession(): Step[] {
   return Array.from({ length: 90 }, (_, i) => ({
     at: 1_000 + i * 2_000,
-    kind: "edit" as const,
+    kind: 'edit' as const,
   }));
 }
 
@@ -189,8 +189,8 @@ const REVERT_ENDS_MS = 1_500 + 9_000;
  *  hold ends with no change and no poke (E2b-2 milestone review #4). */
 function revertedSession(): Step[] {
   return [
-    { at: 1_000, kind: "edit" },
-    { at: 1_500, kind: "revert", forMs: 9_000 },
+    { at: 1_000, kind: 'edit' },
+    { at: 1_500, kind: 'revert', forMs: 9_000 },
   ];
 }
 
@@ -205,7 +205,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("autosave across delays and max waits (the sweep)", () => {
+describe('autosave across delays and max waits (the sweep)', () => {
   const creator = creatorSession();
   const steady = steadySession();
   const reverted = revertedSession();
@@ -230,7 +230,7 @@ describe("autosave across delays and max waits (the sweep)", () => {
           // max wait (plus the save and one gap of slack), whatever the
           // delay.
           expect(b.writes).toBeGreaterThanOrEqual(
-            Math.floor(180_000 / (maxWaitMs + saveMs + 2_000)),
+            Math.floor(180_000 / (maxWaitMs + saveMs + 2_000))
           );
           // Never more writes than changes.
           expect(a.writes).toBeLessThanOrEqual(creator.length);
@@ -243,53 +243,53 @@ describe("autosave across delays and max waits (the sweep)", () => {
           expect(c.startedWhileHeld).toBe(0);
           expect(c.lastSavedAt).not.toBeNull();
           expect(c.lastSavedAt!).toBeLessThanOrEqual(
-            Math.max(REVERT_ENDS_MS, 1_000 + delayMs) + delayMs + saveMs,
+            Math.max(REVERT_ENDS_MS, 1_000 + delayMs) + delayMs + saveMs
           );
           report.push(
-            `${String(delayMs)}\t${String(maxWaitMs)}\t${String(saveMs)}\t${String(a.writes)}\t${String(b.writes)}`,
+            `${String(delayMs)}\t${String(maxWaitMs)}\t${String(saveMs)}\t${String(a.writes)}\t${String(b.writes)}`
           );
         });
       }
     }
   }
 
-  it("reports the writes per session", () => {
+  it('reports the writes per session', () => {
     expect(report).toHaveLength(
-      DELAYS_MS.length * MAX_WAITS_MS.length * SAVE_MS.length,
+      DELAYS_MS.length * MAX_WAITS_MS.length * SAVE_MS.length
     );
-    if (process.env["AUTOSAVE_SWEEP_REPORT"] === "1") {
+    if (process.env['AUTOSAVE_SWEEP_REPORT'] === '1') {
       process.stdout.write(
         [
           `creator session: ${String(creator.length)} changes in 10 min; steady: 90 in 3 min`,
-          "delayMs\tmaxWaitMs\tsaveMs\tcreator\tsteady",
+          'delayMs\tmaxWaitMs\tsaveMs\tcreator\tsteady',
           ...report,
-          "",
-        ].join("\n"),
+          '',
+        ].join('\n')
       );
     }
   });
 });
 
-describe("autosave on random sessions (property)", () => {
-  const step: fc.Arbitrary<{ gap: number; step: Omit<Step, "at"> }> = fc.record(
+describe('autosave on random sessions (property)', () => {
+  const step: fc.Arbitrary<{ gap: number; step: Omit<Step, 'at'> }> = fc.record(
     {
       gap: fc.integer({ min: 0, max: 20_000 }),
       step: fc.oneof(
-        fc.constant({ kind: "edit" as const }),
-        fc.constant({ kind: "delete" as const }),
+        fc.constant({ kind: 'edit' as const }),
+        fc.constant({ kind: 'delete' as const }),
         fc.record({
-          kind: fc.constant("type" as const),
+          kind: fc.constant('type' as const),
           forMs: fc.integer({ min: 100, max: 10_000 }),
         }),
         fc.record({
-          kind: fc.constant("revert" as const),
+          kind: fc.constant('revert' as const),
           forMs: fc.integer({ min: 100, max: 10_000 }),
-        }),
+        })
       ),
-    },
+    }
   );
 
-  it("holds the three promises for any delay, max wait, save time and session", async () => {
+  it('holds the three promises for any delay, max wait, save time and session', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.integer({ min: 500, max: 10_000 }),
@@ -306,9 +306,9 @@ describe("autosave on random sessions (property)", () => {
           expect(outcome.maxInFlight).toBeLessThanOrEqual(1);
           expect(outcome.startedWhileHeld).toBe(0);
           expect(outcome.lastSaved).toBe(true);
-        },
+        }
       ),
-      { numRuns: 60 },
+      { numRuns: 60 }
     );
   });
 });

@@ -42,7 +42,7 @@ import {
   setSubtreeOpacity,
   stepAlpha,
 } from "./content-fade.js";
-import { createKeyedChain } from "./keyed-chain.js";
+import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 
 const log = createLogger("StationContent");
 

@@ -13,5 +13,5 @@
 /** True when `win.showOpenFilePicker` is a function. Structural, so a
  *  test passes a plain object. */
 export function hasFilePicker(win: object): boolean {
-  return typeof Reflect.get(win, "showOpenFilePicker") === "function";
+  return typeof Reflect.get(win, 'showOpenFilePicker') === 'function';
 }

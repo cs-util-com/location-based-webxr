@@ -1,4 +1,4 @@
-# file-picker.ts
+# storage/file-picker.ts
 
 ## Purpose
 
@@ -9,6 +9,8 @@ One check for whether this browser has the File System Access file picker
 because viewer modules may not import the editor's
 (`config/.dependency-cruiser.cjs`, viewer-not-to-editor); before (M4a review
 #8) each module carried its own copy.
+
+Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/file-picker`, not in a barrel. Its users: the Tour Viewer's `have-tour.ts` and `editor/save-target.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 

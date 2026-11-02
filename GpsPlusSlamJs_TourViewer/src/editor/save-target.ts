@@ -10,7 +10,7 @@ import {
   DEFAULT_ARCHIVE_LIMITS,
   writeFileOrAbort,
 } from "gps-plus-slam-app-framework/storage";
-import { hasFilePicker } from "../file-picker.js";
+import { hasFilePicker } from "gps-plus-slam-app-framework/storage/file-picker";
 
 /** The tail of the file a sync client's touch leaves alone: compared when
  *  only the modified time differs, so a touched file is not "changed". */

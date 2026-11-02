@@ -47,7 +47,7 @@ import {
   type DraftCodes,
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
-import { createKeyedChain } from "./keyed-chain.js";
+import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { isTourContentKey } from "./tour-file-key.js";
 import {
   createdStationFrames,

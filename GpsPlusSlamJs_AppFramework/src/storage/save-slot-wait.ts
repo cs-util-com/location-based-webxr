@@ -27,7 +27,7 @@ export interface SaveSlotView {
  */
 export async function waitForSaveSlot<T>(
   slot: SaveSlotView,
-  still: () => Promise<T | null>,
+  still: () => Promise<T | null>
 ): Promise<T | null> {
   let value = await still();
   while (value !== null && slot.busy()) {

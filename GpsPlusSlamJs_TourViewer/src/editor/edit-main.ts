@@ -137,7 +137,7 @@ import {
   createAutosave,
   type AutosaveDeps,
   type AutosaveOutcome,
-} from "./autosave.js";
+} from "gps-plus-slam-app-framework/storage/autosave";
 import {
   copyFileName,
   createEditorSession,
@@ -145,7 +145,7 @@ import {
   type EditorSave,
   type EditorSession,
 } from "./editor-session.js";
-import { waitForSaveSlot } from "./save-slot-wait.js";
+import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
 import {
   bundleMatchesTour,
   debugBundleFileName,

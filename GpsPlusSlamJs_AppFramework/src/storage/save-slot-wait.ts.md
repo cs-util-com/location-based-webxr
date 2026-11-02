@@ -1,4 +1,4 @@
-# editor/save-slot-wait.ts
+# storage/save-slot-wait.ts
 
 ## Purpose
 
@@ -6,6 +6,8 @@ Waiting for the desktop editor's one save slot to be free, for a claimant
 that must take it with no await between its last check and its claim: the
 write of a link's or the sample's tour into the file chosen at its open
 (`edit-main.ts` `keepInChosenFile`). Pure over the injected slot.
+
+Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/save-slot-wait`, not in a barrel. Its users: the Tour Viewer's `editor/edit-main.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 
@@ -41,10 +43,10 @@ write of a link's or the sample's tour into the file chosen at its open
 ```ts
 const handle = await waitForSaveSlot(
   { busy: saving, end: () => saveEnd, settled: savesSettled },
-  () => stillToChoose(mine, pick),
+  () => stillToChoose(mine, pick)
 );
 if (handle === null) return;
-const ended = claimSave("open"); // no await in between
+const ended = claimSave('open'); // no await in between
 ```
 
 ## Tests

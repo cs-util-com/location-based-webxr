@@ -35,7 +35,7 @@ import {
   type WalkChipKind,
 } from "./visitor-guide-slice.js";
 import { pictureProblem } from "./image-cap.js";
-import { createKeyedChain } from "./keyed-chain.js";
+import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { createWalkFocusCues } from "./walk-focus-cues.js";
 import { startWalkHuds } from "./walk-hud.js";
