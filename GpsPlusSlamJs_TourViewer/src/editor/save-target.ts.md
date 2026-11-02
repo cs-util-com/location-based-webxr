@@ -13,8 +13,7 @@ cap and the zip's tail check. Page-free: the page passes the window and
 the lock manager. Design: the M6 design doc §9, "E2b - the build plan,
 re-cut" and its cold review
 (`GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`);
-the move: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`,
-GV5b-1.
+the move: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`.
 
 ## Public API
 

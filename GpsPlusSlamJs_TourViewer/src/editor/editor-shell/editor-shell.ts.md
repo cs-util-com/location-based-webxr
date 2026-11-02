@@ -76,7 +76,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced). Closed mid-approach
   it gives the tree back the fold it had at `show` (folded or not), so the
-  next open starts with the tree as the creator left it.
+  next open starts with the tree as the creator left it. The exception is
+  a takeover: once it has ended the approach, the tree's fold counts as the
+  creator's (they saw the folded tree and kept it), so a later close and
+  open keeps that fold and does not restore the one from before the
+  approach. Deliberately no flag for it: "stays as you left it" is the
+  rule, and after a takeover the folded tree is what they left.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and

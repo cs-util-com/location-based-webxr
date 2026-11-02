@@ -7,7 +7,7 @@ that must take it with no await between its last check and its claim: the
 write of a link's or the sample's tour into the file chosen at its open
 (`edit-main.ts` `keepInChosenFile`). Pure over the injected slot.
 
-Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/save-slot-wait`, not in a barrel. Its users: the Tour Viewer's `editor/edit-main.ts`. The paths named below are the Tour Viewer's.
+Moved from the Tour Viewer's desktop editor together with the other save modules, so other apps can share them (plan: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/save-slot-wait`, not in a barrel. Its users: the Tour Viewer's `editor/edit-main.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 

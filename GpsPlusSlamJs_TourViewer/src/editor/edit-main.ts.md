@@ -7,7 +7,7 @@ tour (chosen, dropped, or the sample), builds its model and wires the map,
 the rail and the card in the chosen variant 1 layout, and edits it (E2a);
 where the browser allows it, it saves the opened file in place (E2b-1,
 `save-target.ts`) - by itself too, a few seconds after a change (E2b-2,
-`autosave.ts`); and it keeps every edit since the opened file in this
+`gps-plus-slam-app-framework/storage/autosave`); and it keeps every edit since the opened file in this
 browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
@@ -293,8 +293,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   write ends, and Share and publish waits for it through `savesSettled`;
   the claim is taken with no await after the wait's last `saving()`
   check, a save started during the last await waited for first, and a
-  claim stuck on an ended save stops the wait - `save-slot-wait.ts`'s
-  `waitForSaveSlot`) and ADOPTED (`adoptChosen`, so saves go there in
+  claim stuck on an ended save stops the wait - `waitForSaveSlot` from
+  `gps-plus-slam-app-framework/storage/save-slot-wait`) and ADOPTED (`adoptChosen`, so saves go there in
   place and by themselves from the first edit), a toast says "Saved to
   <name>. Your changes are saved into it by themselves." - or only
   "Saved to <name>." when no in-place save got attached (another tab
@@ -350,7 +350,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     tour's draft, E2b-2 milestone review #1); the hold's end pokes it
     (the field's commit, a move's end, an autosave's end, the
     dialog closing), and a hold that ends without a poke is looked at again
-    once per delay (`autosave.ts`). An explicit save's end does not poke: its
+    once per delay (`gps-plus-slam-app-framework/storage/autosave`). An explicit save's end does not poke: its
     outcome reaches the autosave first, so a failed Save pauses it rather
     than starting a second write at once (milestone review #5). An autosave commits nothing;
     an edit begun while it checked the file (an await before the session's

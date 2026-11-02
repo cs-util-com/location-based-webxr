@@ -6,7 +6,7 @@ The desktop editor's draft (M6 E2c): every edit since the opened file,
 kept in this browser so a closed tab, a crash or a file that no longer
 reads does not lose it, and offered back by the next open of the same
 tour. The phone's records and rules (`draft-persistence.ts`,
-`authoring-draft.ts`) and its per-id queue (`keyed-chain.ts`), under the
+`authoring-draft.ts`) and its per-id queue (`gps-plus-slam-app-framework/utils/keyed-chain`), under the
 editor's own namespace, one tab at a time. Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-13-0832-tour-desktop-editor-and-scan-data-design.md`
 §9, "E2c" and "Cold review of the E2c plan" (its twelve verdicts).

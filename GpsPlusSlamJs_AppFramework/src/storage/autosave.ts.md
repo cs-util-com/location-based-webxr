@@ -10,7 +10,7 @@ runs the save it is asked for. Design and the sweep's verdict:
 ("E2b - the build plan, re-cut", its cold review #3, #7, #11, and "E2b-2
 built").
 
-Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/autosave`, not in a barrel. Its users: the Tour Viewer's desktop editor (`editor/edit-main.ts`); the delays and the cap are options (`delayMs`, `maxWaitMs`, `autosaveFits(bytes, maxBytes)`). The paths named below are the Tour Viewer's.
+Moved from the Tour Viewer's desktop editor together with the other save modules, so other apps can share them (plan: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/autosave`, not in a barrel. Its users: the Tour Viewer's desktop editor (`editor/edit-main.ts`); the delays and the cap are options (`delayMs`, `maxWaitMs`, `autosaveFits(bytes, maxBytes)`). The paths named below are the Tour Viewer's.
 
 ## Public API
 

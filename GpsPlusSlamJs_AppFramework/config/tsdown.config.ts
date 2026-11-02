@@ -244,8 +244,8 @@ const entryFiles = [
   // The `session.json` builder the Recorder and the Tour Viewer's
   // troubleshooting recording share (deep-imported, 2026-09-28).
   'src/storage/session-metadata-record.ts',
-  // The save group moved from the Tour Viewer's desktop editor (GV5b-1 of
-  // the full-globe editor plan): saving in place, the picker's rejection,
+  // The save modules moved here from the Tour Viewer's desktop editor so
+  // other apps can share them: saving in place, the picker's rejection,
   // when to save by itself, the one save slot and the picker check - deep
   // imports only, kept out of the `storage` barrel the root re-exports.
   'src/storage/save-target.ts',

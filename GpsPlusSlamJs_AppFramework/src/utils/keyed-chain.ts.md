@@ -7,7 +7,7 @@ creator setup queues every draft write through it: one key per tour's
 meta file, one per object id within a tour (authoring plan
 2026-09-28-0953, M4 review #7; the M2c review's filed #7).
 
-Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/utils/keyed-chain`, not in a barrel. Its users: the Tour Viewer's `creator-draft.ts`, `station-content.ts`, `visitor-stations.ts` and `editor/editor-draft.ts`. The paths named below are the Tour Viewer's.
+Moved from the Tour Viewer's desktop editor together with the other save modules, so other apps can share them (plan: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/utils/keyed-chain`, not in a barrel. Its users: the Tour Viewer's `creator-draft.ts`, `station-content.ts`, `visitor-stations.ts` and `editor/editor-draft.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 
@@ -40,7 +40,7 @@ Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/do
 - A task always starts asynchronously (at least one microtask later),
   even with nothing queued before it.
 - Promoted to the framework once a second keyed user was in sight (the
-  editor's draft space, GV5b-2). The framework's `persistence-middleware`
+  editor's draft space, which is to move next). The framework's `persistence-middleware`
   and `bounded-local-cache-store` keep single (unkeyed) queues of their own.
 
 ## Examples

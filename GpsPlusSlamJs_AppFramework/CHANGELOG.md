@@ -14,13 +14,13 @@
   64 KiB, for a zip, or the `'hash'` check, a SHA-256 of the content), and
   `holdLock` (an exclusive Web Lock on a prefixed name, with the policy
   without Web Locks as `withoutLocks: 'grant' | 'refuse'`). Every sentence
-  a user reads can come from the caller. Moved from the Tour Viewer.
+  a user reads can come from the caller. Also exported:
+  `SAME_FILE_TAIL_BYTES` (the tail check's 64 KiB) and
+  `DEFAULT_IN_PLACE_REFUSALS` (the default refusal sentences). Moved from
+  the Tour Viewer.
 - **`storage/picker-errors`** (deep import): one reading of a rejected
   picker. `classifyPickerRejection` - an error named `AbortError` is
-  `'cancelled'`, anything else `'unavailable'`. `downloadBlob` now reads
-  its save dialog's rejection through it; its behaviour is unchanged
-  (pinned by `download-blob.test.ts`), except that a non-object rejection
-  such as `null` now falls back to the download instead of throwing.
+  `'cancelled'`, anything else `'unavailable'`.
 - **`storage/autosave`** (deep import): when to save by itself.
   `createAutosave` (a save a quiet delay after the last change, at the
   latest a maximum wait after the first, never while held, one at a time,
@@ -139,6 +139,14 @@
   - **`utils/glsl-float`** (deep import): the GLSL float-literal formatter.
   - **`sensors/permission-state`** (deep import): the prompt-free
     Permissions-API query.
+
+### Changed
+
+- **`downloadBlob` reads its save dialog's rejection through
+  `classifyPickerRejection`** (`storage/zip-export`). Its behaviour is
+  otherwise unchanged (pinned by `download-blob.test.ts`), except that a
+  `null`/`undefined` rejection from the dialog or the write now falls back
+  to the anchor download instead of throwing.
 
 ### Fixed
 

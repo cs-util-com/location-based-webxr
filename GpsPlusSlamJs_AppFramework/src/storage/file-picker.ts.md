@@ -10,7 +10,7 @@ because viewer modules may not import the editor's
 (`config/.dependency-cruiser.cjs`, viewer-not-to-editor); before (M4a review
 #8) each module carried its own copy.
 
-Moved from the Tour Viewer with its save group (GV5b-1 of `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/file-picker`, not in a barrel. Its users: the Tour Viewer's `have-tour.ts` and `editor/save-target.ts`. The paths named below are the Tour Viewer's.
+Moved from the Tour Viewer's desktop editor together with the other save modules, so other apps can share them (plan: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan.md`); deep import `gps-plus-slam-app-framework/storage/file-picker`, not in a barrel. Its users: the Tour Viewer's `have-tour.ts` and `editor/save-target.ts`. The paths named below are the Tour Viewer's.
 
 ## Public API
 

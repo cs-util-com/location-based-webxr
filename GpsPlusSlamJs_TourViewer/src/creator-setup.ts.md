@@ -370,5 +370,5 @@ same moment as "Delete it" surviving its sweep, a rejected file the sweep
 could not remove not coming back after a claim, a rejection after the
 change still holding, a change made while the draft opened written over
 an older one, and a quick delete landing after a slow placement write),
-`keyed-chain.test.ts`, and
+the framework's `src/utils/keyed-chain.test.ts`, and
 `playwright-tests/object-editing.spec.js`.
