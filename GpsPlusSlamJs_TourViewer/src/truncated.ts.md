@@ -6,11 +6,11 @@ Keeps a piece of the creator's text short where a line has room for only so much
 
 ## Public API
 
-- `truncated(s, n)` - `s` unchanged when it has at most `n` code points; otherwise its first `n - 1` code points with trailing space removed, then `…`. Counting code points, never UTF-16 code units, keeps an emoji (a surrogate pair) whole. An `n` below 1 gives just `…`.
+- `truncated(s, n)` - `s` unchanged when it has at most `n` characters; otherwise its first `n - 1` characters with trailing space removed, then `…`. A character is a grapheme cluster (`Intl.Segmenter`), what a reader sees as one: an emoji, a flag, a family emoji joined by ZWJ, a letter with a combining accent. Where the browser has no segmenter it counts code points, which still keeps a surrogate pair whole but may cut a cluster. An `n` below 1 gives just `…`.
 
 ## Invariants
 
-- Pure; never throws. The result is at most `n` code points long for `n >= 1`.
+- Pure; never throws. The result is at most `n` characters long for `n >= 1` (more code points than that when a character is made of several).
 - `n` counts the ellipsis: a caller that wants "at most 24 characters, then the ellipsis" passes 25.
 
 ## Examples
@@ -21,4 +21,4 @@ Keeps a piece of the creator's text short where a line has room for only so much
 
 ## Tests
 
-- `truncated.test.ts`: the cut, the split-safe cut, and a property over any text (never longer than asked, never a lone surrogate the input did not have).
+- `truncated.test.ts`: the cut, the split-safe cut (a surrogate pair, a ZWJ family, a flag, a combining accent), a property that a cut keeps the text's first characters whole, and a property over any text (never longer than asked, never a lone surrogate the input did not have).
