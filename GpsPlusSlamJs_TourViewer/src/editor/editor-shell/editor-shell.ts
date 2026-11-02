@@ -57,7 +57,7 @@ import {
 } from "../editor-view.js";
 import { STATION_PREFIX } from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
-import { inField, inMenu } from "../key-target.js";
+import { inComposite, inField, inMenu } from "../key-target.js";
 import { closeOpenMenu, setItemDisabled } from "../menu-button.js";
 import {
   ALIGNED_DEG,
@@ -1170,6 +1170,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // Every other key in a menu is the menu's, and on a menu's button the
     // keys that open or move in it (`key-target.ts`).
     if (inMenu(event.target, event.key)) return;
+    // A toolbar's and a radio group's arrows, Home and End are theirs.
+    if (inComposite(event.target, event.key)) return;
     if (
       event.ctrlKey ||
       event.metaKey ||

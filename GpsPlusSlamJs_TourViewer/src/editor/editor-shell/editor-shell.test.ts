@@ -154,8 +154,9 @@ function setUp() {
     say: vi.fn(),
   };
   const shell = createEditorShell(deps);
-  shell.show(fakeView());
-  return { store, select, edits, deps, shell };
+  const view = fakeView();
+  shell.show(view);
+  return { store, select, edits, deps, shell, view };
 }
 
 /** The inspector's field `name`: a line (an input) or prose (a text
@@ -792,6 +793,31 @@ describe("a save while typing", () => {
       "body",
       "Old words. New ones",
     );
+    shell.hide();
+  });
+});
+
+describe("the page keys next to a toolbar", () => {
+  // Why: a toolbar moves its focus by the arrows, Home and End. Home on a
+  // toolbar button reframed the whole tour behind the writer's toolbar.
+  it("leaves Home on a toolbar button to the toolbar, and frames the tour on Home elsewhere", () => {
+    const { shell, view } = setUp();
+    const bar = document.createElement("div");
+    bar.setAttribute("role", "toolbar");
+    const bold = document.createElement("button");
+    bar.append(bold);
+    const plain = document.createElement("button");
+    document.body.append(bar, plain);
+    const home = () =>
+      new KeyboardEvent("keydown", {
+        key: "Home",
+        code: "Home",
+        bubbles: true,
+      });
+    bold.dispatchEvent(home());
+    expect(view.frame).not.toHaveBeenCalled();
+    plain.dispatchEvent(home());
+    expect(view.frame).toHaveBeenCalledWith(null);
     shell.hide();
   });
 });

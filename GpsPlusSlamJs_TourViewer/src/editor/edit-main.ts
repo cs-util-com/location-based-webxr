@@ -155,7 +155,7 @@ import {
   menuItemControl,
   setItemDisabled,
 } from "./menu-button.js";
-import { inField, inMenu } from "./key-target.js";
+import { inComposite, inField, inMenu } from "./key-target.js";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -3804,10 +3804,12 @@ const viewSwitch = createViewSwitch({
         },
         model: (id, edit) =>
           writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
-        // A field's and a menu's keys are their own (`key-target.ts`).
+        // A field's, a menu's and a toolbar's keys are their own
+        // (`key-target.ts`).
         keysFree: (event) =>
           !inField(event.target) &&
           !inMenu(event.target, event.key) &&
+          !inComposite(event.target, event.key) &&
           !dialogOpen() &&
           Boolean(modal.hidden) &&
           !ui().busy,

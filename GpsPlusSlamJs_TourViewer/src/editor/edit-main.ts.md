@@ -683,7 +683,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     station beside itself, selects the copy and says "Duplicated ...";
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
-  - `keysFree` is false in a field, in a menu, or for the pattern's keys on a menu's button
+  - `keysFree` is false in a field, in a menu, for the pattern's keys on a menu's button,
+    or for the arrows, Home and End inside a toolbar or a radio group
     (`key-target.ts`: the menu's arrows, Home and End must not nudge the
     selection behind it), while a dialog or the modal shows and while the
     page is busy, so the 3D view's keys leave those alone.

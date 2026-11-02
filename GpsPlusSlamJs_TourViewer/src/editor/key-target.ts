@@ -1,6 +1,7 @@
 /**
- * Whose a key is, by its target: a field's (typing, its own undo) or a
- * menu's (the menu button pattern's keys, `menu-button.ts`). The editor's page keys - the 3D view's nudges and
+ * Whose a key is, by its target: a field's (typing, its own undo), a
+ * menu's (the menu button pattern's keys, `menu-button.ts`) or a
+ * toolbar's or radio group's (their arrows, Home and End). The editor's page keys - the 3D view's nudges and
  * deletes, the shell's T, F and Home, the page's undo - run on the
  * window, so they see these keys too and leave them alone.
  *
@@ -42,5 +43,27 @@ export function inMenu(target: EventTarget | null, key: string): boolean {
   return (
     MENU_BUTTON_KEYS.has(key) &&
     target.closest('[aria-haspopup="menu"]') !== null
+  );
+}
+
+/** The keys a toolbar and a radio group move their focus by. */
+const COMPOSITE_KEYS: ReadonlySet<string> = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+]);
+
+/** `key` is a toolbar's or a radio group's: an arrow, Home or End
+ *  inside an element with `role="toolbar"` or `role="radiogroup"` (the
+ *  long-text writer's toolbar and view picker). Any other key there stays
+ *  the page's. */
+export function inComposite(target: EventTarget | null, key: string): boolean {
+  return (
+    COMPOSITE_KEYS.has(key) &&
+    target instanceof Element &&
+    target.closest('[role="toolbar"], [role="radiogroup"]') !== null
   );
 }

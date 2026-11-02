@@ -118,7 +118,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   is in it or has left it, and the help on the next Escape, also from a
   menu's button. Every other key in a menu is the menu's, and on a menu's button the
   keys that open or move in it (`key-target.ts`); T and F there are the
-  view's.
+  view's. Inside a toolbar or a radio group, Home is the widget's.
 - **Edits are the page's:** the shell writes nothing to the tour; Undo
   and Redo are the page's steps, with their titles from `nextStep`, and
   every tree command is a `deps.stations` call (one step each).
