@@ -31,6 +31,13 @@
     passed to `mountGlobeViewAir` as its `clouds`: the lab's slab, shell
     and high layer with the lab's settings, switched by the air's
     `setClouds`. The view must draw with standard depth.
+  - The approach: `createGlobeApproach` (`globe-approach.ts`), `createGlobeLandingFlight`
+    (`globe-landing-flight.ts`),
+    `createApproachDrive` and `createFovReturn` (`globe-approach-camera.ts`)
+    and `pinEnd` (`pin-flight.ts`): the lab's own pin flight, a meteor from
+    far out down to a place, and its frame loop's drive, for a page that
+    lands on a place (the Tour Viewer's editor). A page sets the camera only
+    through `placeCameraEcef`, never the view's whole pose each frame.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full

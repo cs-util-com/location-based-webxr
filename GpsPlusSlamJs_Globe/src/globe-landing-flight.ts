@@ -22,6 +22,7 @@ import {
   pinFix,
   pinGround,
   pinProgress,
+  pinRetarget,
   pressPin,
 } from "./pin-flight.js";
 import type { LatLng } from "./globe-target.js";
@@ -30,6 +31,11 @@ import type { LatLng } from "./globe-target.js";
 export interface LandingFlightParams {
   readonly landAglM: number;
   readonly meteorDeg: number;
+  /**
+   * The angle the flight lands at, degrees (absent: the law's own, as the
+   * lab flies): steeper than `meteorDeg`, it enters shallow and lands steep.
+   */
+  readonly meteorLandDeg?: number | undefined;
   readonly paceLagMs: number;
   readonly paceStages: number;
   readonly landKm: number;
@@ -136,6 +142,7 @@ export function createGlobeLandingFlight({
         params.landAglM,
         params.meteorDeg,
         groundM,
+        params.meteorLandDeg,
       );
       startPose.position.copy(start.position);
       startPose.quaternion.copy(start.quaternion);
@@ -170,16 +177,18 @@ export function createGlobeLandingFlight({
     });
   };
 
+  /** The flight's place is known: kept (a copy) and returned. */
+  const locate = (place: LatLng): LatLng => {
+    located = { lat: place.lat, lng: place.lng };
+    return located;
+  };
+
   return {
     /** The flight's place once located, or null. */
     get located() {
       return located;
     },
-    /** The flight's place is known: kept (a copy) and returned. */
-    locate(place: LatLng): LatLng {
-      located = { lat: place.lat, lng: place.lng };
-      return located;
-    },
+    locate,
     /**
      * The continuous flight from the camera as it is, to `place` if known
      * (a link), else held above the band until the fix. With
@@ -217,6 +226,9 @@ export function createGlobeLandingFlight({
             groundM,
             progress: 0,
             meteorDeg: params.meteorDeg,
+            ...(params.meteorLandDeg === undefined
+              ? {}
+              : { meteorLandDeg: params.meteorLandDeg }),
             paceLagMs: params.paceLagMs,
             paceStages: params.paceStages === 2 ? 2 : 1,
           },
@@ -236,6 +248,19 @@ export function createGlobeLandingFlight({
         pinFix(p, t, orbitPose(ellipsoid, place)),
       );
       groundArrives(place);
+    },
+    /**
+     * A new place while flying (a pick on the way): located, the readout
+     * aimed, and a new leg from the camera as it is (`pinRetarget`),
+     * landing above `groundM` (its true height; drawn here). The ground
+     * is the caller's: no read is started.
+     */
+    retarget(place: LatLng, groundM: number) {
+      const kept = locate(place);
+      approach.aimPin(kept);
+      approach.updatePin(now(), (p, t) =>
+        pinRetarget(p, t, orbitPose(ellipsoid, kept), drawnGroundM(groundM)),
+      );
     },
     /**
      * The fixed dive to the located place, from wherever the camera is,

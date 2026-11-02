@@ -193,8 +193,9 @@ export function meteorDiveArcRad(
 
 /**
  * The flattest beta, no flatter than `meteorDeg`, whose dive sweeps no more
- * than `arcRad` from `h0`, every candidate landing at the asked angle
- * (DEC-R3-12; bisection: the sweep falls strictly with beta, up to R1). A
+ * than `arcRad` from `h0`, every candidate landing at `landDeg` (default
+ * the asked beta, DEC-R3-12; a page that enters shallow and lands steep
+ * asks its own; bisection: the sweep falls strictly with beta, up to R1). A
  * press over its own place has almost no arc: it gets 90 (R1, easing to the
  * asked angle), and never backs off. An arc of the asked beta's sweep or
  * more gets that beta.
@@ -204,10 +205,11 @@ export function fitMeteorDeg(
   landingM: number,
   arcRad: number,
   meteorDeg: number,
+  landDeg = meteorDeg,
 ): number {
-  // Every candidate lands at the asked angle (DEC-R3-12), so the family is
+  // Every candidate lands at the same angle (DEC-R3-12), so the family is
   // whole up to R1 and its sweep falls strictly with beta.
-  const sweep = (deg: number) => meteorDiveArcRad(h0, landingM, deg, meteorDeg);
+  const sweep = (deg: number) => meteorDiveArcRad(h0, landingM, deg, landDeg);
   if (sweep(meteorDeg) <= arcRad) return meteorDeg;
   if (!(sweep(90) < arcRad)) return 90;
   let flat = meteorDeg;
@@ -409,7 +411,7 @@ export function planTravel(
     readonly landingM: number;
     readonly meteorDeg?: number;
     /** The angle it lands at (DEC-R3-12; the law's default if absent). */
-    readonly meteorLandDeg?: number;
+    readonly meteorLandDeg?: number | undefined;
   },
 ): TravelCurve {
   requirePositive("h0", h0);

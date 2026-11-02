@@ -185,6 +185,46 @@ describe("createGlobeLandingFlight: the continuous flight", () => {
     expect(pin.hover).toEqual(expected);
   });
 
+  // WHY: a page that enters shallow and lands steep (the tour editor)
+  // passes its landing angle; the start must stand on THAT line, and every
+  // flight of the press land at it.
+  it("starts on the line of a meteor that lands at its own angle", () => {
+    const { landing, placed, flies } = setup();
+    const params = { ...PARAMS, meteorDeg: 20, meteorLandDeg: 50 };
+    landing.fly(BERN, params, { fromAltitudeM: 3e6 });
+    const expected = meteorLinkStart(
+      WGS84_ELLIPSOID,
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      cameraPose().position,
+      3e6,
+      150,
+      20,
+      1000,
+      50,
+    );
+    expect(placed[0]?.toArray()).toEqual(expected.position.toArray());
+    const [, pin] = flies[0] as [number, PinFlight];
+    expect(pin.meteorLandAskedDeg).toBe(50);
+  });
+
+  // WHY: a pick on the way (the editor's station picker) flies a new leg
+  // from the camera as it is: the shared `pinRetarget`, the readout aimed,
+  // the place located, and the place's ground as given (drawn).
+  it("retargets a flight to a new place, from the camera as it is", () => {
+    const { landing, log, pin } = setup();
+    landing.fly(BERN, PARAMS, { fromAltitudeM: 3e6 });
+    const before = pin();
+    log.length = 0;
+    landing.retarget(ZURICH, 200);
+    expect(log).toEqual([`aimPin ${ZURICH.lat}`, "updatePin 1000"]);
+    expect(landing.located).toEqual(ZURICH);
+    expect(pin()?.target?.direction.toArray()).toEqual(
+      orbitPose(WGS84_ELLIPSOID, ZURICH).direction.toArray(),
+    );
+    expect(pin()?.groundM).toBe(400);
+    expect(pin()).not.toBe(before);
+  });
+
   it("aims at the located place, flies on to it, and replans onto its ground once read", async () => {
     const { landing, log, pin, resolveGround, setTime } = setup();
     landing.fly(null, PARAMS);

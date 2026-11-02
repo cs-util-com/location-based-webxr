@@ -14,8 +14,13 @@ reliefGroundM, diveFloorM, now? })`:
     controls and presses the pin flight (`pressPin`) from the camera, to
     `place` if known, landing `landAglM` above its read ground as drawn;
     with `fromAltitudeM` the camera is placed out there first (on the
-    meteor's line for a link with `meteorDeg` below 90, else along its own
-    direction) and the speed dust reset;
+    meteor's line for a link with `meteorDeg` below 90, landing at
+    `meteorLandDeg` when given, else along its own direction) and the
+    speed dust reset;
+  - `retarget(place, groundM)`: a new place while flying (a pick on the
+    way): located, the readout aimed (`aimPin`) and a new leg from the
+    camera as it is (`pinRetarget`), landing above `groundM` as drawn;
+    no ground read is started (the caller knows it);
   - `aim()`: the located place named to the approach (`aimPin`), the
     flight on to it (`pinFix`) and its ground read (`groundOf`), the
     flight replanned onto that ground (`pinGround`) if it still flies
