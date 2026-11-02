@@ -48,6 +48,22 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
     timeout: 120_000,
   });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  // The heavy clouds are on by default; the View menu's Clouds turns them
+  // off. Off from here on: in this software renderer they hold the frame
+  // rate near 1 a second, and the relief's tiles load a few a frame, so
+  // the relief would not be ready within the test's time.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+    .toBe(true);
+  await page.locator("#view-menu-btn").click();
+  const clouds = page.locator("#view-clouds");
+  await expect(clouds).toHaveAttribute("aria-checked", "true");
+  await clouds.click();
+  await expect(clouds).toHaveAttribute("aria-checked", "false");
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+    .toBe(false);
+  await page.keyboard.press("Escape");
   await afterFrames(page, 5);
 
   // Street level: the relief carries the ground once its view is loaded
@@ -81,8 +97,11 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   // runs the clock at the real time now.
   expect(stats.globe.clock.realTime).toBe(false);
   expect(stats.globe.clock.sunElevationDeg).toBeGreaterThan(0);
-  await page.locator("#view-menu-btn").click();
   const realTime = page.locator("#view-realtime");
+  // The menu may have closed after Clouds.
+  if (!(await realTime.isVisible())) {
+    await page.locator("#view-menu-btn").click();
+  }
   await expect(realTime).toBeVisible();
   await realTime.click();
   await expect(realTime).toHaveAttribute("aria-checked", "true");
@@ -91,20 +110,6 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
     .toBe(true);
   const clock = (await view3d(page)).globe.clock;
   expect(Math.abs(clock.sceneMs - Date.now())).toBeLessThan(120_000);
-  // The heavy clouds are on by default; the View menu's Clouds turns them
-  // off.
-  expect((await view3d(page)).globe.air.clouds?.on).toBe(true);
-  const clouds = page.locator("#view-clouds");
-  // The menu may have closed after Real time.
-  if (!(await clouds.isVisible())) {
-    await page.locator("#view-menu-btn").click();
-  }
-  await expect(clouds).toHaveAttribute("aria-checked", "true");
-  await clouds.click();
-  await expect(clouds).toHaveAttribute("aria-checked", "false");
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
-    .toBe(false);
   expect(await rejections(page)).toEqual([]);
 });
 
