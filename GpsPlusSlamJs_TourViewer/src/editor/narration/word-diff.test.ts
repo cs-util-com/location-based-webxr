@@ -33,7 +33,17 @@ describe("wordKey", () => {
     expect(wordKey("Café")).toBe("cafe");
     expect(wordKey("DON’T")).toBe("dont");
     expect(wordKey("don't")).toBe("dont");
-    expect(wordKey("Straße")).toBe("straße");
+  });
+
+  // Why: German writes the sharp s as "ss" too (Swiss German always,
+  // older spelling and typing without the key often), so "Strasse" and
+  // "Straße" are one word to a reader; without the fold a voice lost its
+  // place when the creator corrected one to the other.
+  it("folds the sharp s to ss, in either case", () => {
+    expect(wordKey("Straße")).toBe("strasse");
+    expect(wordKey("STRASSE")).toBe("strasse");
+    expect(wordKey("GROẞE")).toBe("grosse");
+    expect(wordKey("Fluß")).toBe(wordKey("Fluss"));
   });
 });
 

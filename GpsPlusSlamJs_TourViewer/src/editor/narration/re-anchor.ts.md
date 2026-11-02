@@ -32,15 +32,22 @@ A stale read-along track lined up again with its edited text, by the segments' o
 
 No value separates the two sets: a short word's typo ("teh", "adn", "si") is as far from its fix as a replaced short word is from its replacement. A word that loses its voice costs only that word's highlight (its neighbours keep theirs), and a sentence track keeps a sentence with one word edited at any share up to 7/8, so the threshold matters for word tracks only.
 
-The same sweep over 18 German typo fixes and spelling variants (umlauts and the sharp s written out or not, compounds, short words; word keys fold "ü" to "u" but keep "ß") and 18 German replacements (one sentence, "Wir standen an der ... nahe dem Tor."):
+The same sweep over 18 German typo fixes and spelling variants (umlauts and the sharp s written out or not, compounds, short words; word keys fold "ü" to "u" and "ß" to "ss", so "Straße"/"Strasse" is no edit at all) and 18 German replacements (one sentence, "Wir standen an der ... nahe dem Tor."):
 
-- 0.30-0.50: 18 typos, 10-14 replacements.
-- 0.55-0.65: 16-17 typos, 8-10 replacements.
-- 0.70-0.75: 12-14 typos, 7-8 replacements.
-- 0.80: 12 typos, 2 replacements.
-- 0.85: 9 typos, 1 replacement; 0.90: 6, 0; 0.95: none.
+- 0.30-0.65: 18 typos, 8-14 replacements.
+- 0.70-0.75: 16 typos, 7-8 replacements.
+- 0.80: 16 typos, 2 replacements ("Kirche"/"Kirsche" and "Mauer"/"Bauer", one letter apart).
+- 0.85: 14 typos, 1 replacement; 0.90: 11, 0; 0.95: 5, 0.
 
-Weighing a wrongly lit word at w missed typo fixes (cost = typos lost + w x replacements relit), 0.80 is the cheapest value for w from 1 to 3 on the German pairs, the English pairs and both together. A lower value (0.50) wins only when a wrong highlight counts for half a missed one or less; 0.85-0.90 win only from w = 5 (German alone: 0.90; both: 0.85). 0.80 stays, and the weight is the owner's question if either end is wanted.
+The two typos 0.80 still loses are short words ("ud"/"und", "dei"/"die"), as in English. Before the sharp s was folded, four of the six misses were sharp-s variants, which no threshold kept.
+
+Weighing a wrongly lit word at w missed typo fixes (cost = typos lost + w x replacements relit), 0.80 is the cheapest value:
+
+- on both sets together for w from 0.5 to 3; from w = 4 on, 0.85;
+- on the English pairs for w from 1 to 4 (tied with 0.85 at 5);
+- on the German pairs for w from 0.5 to 1.5, tied with 0.85 at 2; from 2.5 on, 0.85, then 0.90 (tied at 3, alone from 4).
+
+Below w = 0.5 a lower value wins (0.65 in German, 0.35-0.50 in English). 0.80 stays: it is the cheapest on both sets for every weight from a half to three. German alone would favour 0.85 if a wrongly lit word counted for more than two missed ones; that weight is the owner's question.
 
 ## Tests
 

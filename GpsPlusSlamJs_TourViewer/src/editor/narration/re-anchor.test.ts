@@ -282,8 +282,8 @@ describe("the threshold over real edits", () => {
   });
 
   // German tours: umlauts and the sharp s written out or not, long
-  // compounds, and short words. Word keys fold accents (u for ü) but keep
-  // ß, so "Strasse"/"Straße" is a real edit. Why: the threshold was chosen
+  // compounds, and short words. Word keys fold accents (u for ü) and the
+  // sharp s (ss for ß), so "Strasse"/"Straße" is no edit. Why: the threshold was chosen
   // on English pairs alone; this pins how it fares on German ones.
   const germanTypos: [string, string][] = [
     ["Strasse", "Straße"],
@@ -349,16 +349,26 @@ describe("the threshold over real edits", () => {
       "0.40": [18, 12],
       "0.45": [18, 11],
       "0.50": [18, 10],
-      "0.55": [17, 10],
-      "0.60": [17, 9],
-      "0.65": [16, 8],
-      "0.70": [14, 8],
-      "0.75": [12, 7],
-      "0.80": [12, 2],
-      "0.85": [9, 1],
-      "0.90": [6, 0],
-      "0.95": [0, 0],
+      "0.55": [18, 10],
+      "0.60": [18, 9],
+      "0.65": [18, 8],
+      "0.70": [16, 8],
+      "0.75": [16, 7],
+      "0.80": [16, 2],
+      "0.85": [14, 1],
+      "0.90": [11, 0],
+      "0.95": [5, 0],
     });
+    // At the chosen value: the typos that lose their voice, and the
+    // replacements that keep it.
+    expect(germanTypos.filter(([a, b]) => !relitDe(a, b, 0.8))).toEqual([
+      ["ud", "und"],
+      ["dei", "die"],
+    ]);
+    expect(germanReplaced.filter(([a, b]) => relitDe(a, b, 0.8))).toEqual([
+      ["Kirche", "Kirsche"],
+      ["Mauer", "Bauer"],
+    ]);
     expect(REANCHOR_MIN_SIMILARITY).toBe(0.8);
   });
 

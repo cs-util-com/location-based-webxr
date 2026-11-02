@@ -21,15 +21,18 @@ export interface WordToken {
 
 const MARKS = /\p{M}+/gu;
 const APOSTROPHES = /['’]/gu;
+const SHARP_S = /ß/gu;
 
 /** `word` as it is compared: decomposed (NFKD), without its combining
- *  marks and apostrophes, in lower case. */
+ *  marks and apostrophes, in lower case, the sharp s as "ss" (German
+ *  writes it either way). */
 export function wordKey(word: string): string {
   return word
     .normalize("NFKD")
     .replace(MARKS, "")
     .replace(APOSTROPHES, "")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(SHARP_S, "ss");
 }
 
 /** The words of `text` from `from` to `to`, with their keys. */

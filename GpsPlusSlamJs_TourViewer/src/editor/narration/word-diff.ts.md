@@ -6,7 +6,7 @@ Words compared the way a narration is lined up with its text: a word of the text
 
 ## Public API
 
-- `wordKey(word)` - the word as compared: NFKD, combining marks and apostrophes taken out, lower case ("Café" and "cafe", "don't" and "DON’T" are one word).
+- `wordKey(word)` - the word as compared: NFKD, combining marks and apostrophes taken out, lower case, the sharp s as "ss" ("Café" and "cafe", "don't" and "DON’T", "Straße" and "Strasse" are one word).
 - `wordTokens(text, from?, to?)` - the words of a stretch (`wordsOf` of `caption-chunks.ts`, the captions' word: letters and digits with inner apostrophes) as `{ from, to, key }`.
 - `matchWords(a, b)` - index pairs `[i, j]` with `a[i] === b[j]`, increasing in both.
 
