@@ -850,6 +850,21 @@ describe("the tree during the approach", () => {
     expect(treeFolded(store)).toBe(true);
   });
 
+  it("keeps a tree the creator had folded when the view closes mid-flight", () => {
+    // Why: closing mid-flight gives back the fold the tree had at the
+    // open, not an unfolded tree; a creator who had folded the rail must
+    // not find it opened by a flight they left.
+    const set = setUp();
+    set.store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: true }),
+    );
+    set.shell.hide();
+    set.shell.show(fakeView(), { approach: true });
+    expect(treeFolded(set.store)).toBe(true);
+    set.shell.hide();
+    expect(treeFolded(set.store)).toBe(true);
+  });
+
   it("gives the fold back when the view closes mid-flight", () => {
     // Why: the fold was the approach's, not the creator's; the next open
     // (without an approach) starts with the tree as the creator left it.

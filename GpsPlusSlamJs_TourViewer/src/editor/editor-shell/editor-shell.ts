@@ -390,6 +390,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
 
   /** The tree is folded for the approach, not by the creator. */
   let approachHold = false;
+  /** The tree's fold when the approach began, given back by a close
+   *  mid-flight. */
+  let foldBeforeApproach = false;
   /** The tree's unfolding animation (`dock-unfold`) ends: its class goes. */
   const endUnfolding = (event?: AnimationEvent) => {
     if (event !== undefined && event.animationName !== "dock-unfold") return;
@@ -1175,6 +1178,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       lastSelected = state().editorView.selected;
       applyDocks("opened");
       approachHold = options?.approach === true;
+      foldBeforeApproach = state().editorView.foldedDocks.tree;
       endUnfolding();
       // During the approach the tree is a folded tab: the flight is the
       // view's to show.
@@ -1195,12 +1199,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("resize", onResize);
     },
     hide() {
-      // Closed mid-approach: the fold was the approach's, so the next open
-      // starts as the creator left it.
+      // Closed mid-approach: the fold was the approach's, so the tree
+      // gets back the fold it had at the open (folded or not).
       if (approachHold) {
         approachHold = false;
         store.dispatch(
-          editorViewActions.dockFolded({ dock: "tree", folded: false }),
+          editorViewActions.dockFolded({
+            dock: "tree",
+            folded: foldBeforeApproach,
+          }),
         );
       }
       endUnfolding();

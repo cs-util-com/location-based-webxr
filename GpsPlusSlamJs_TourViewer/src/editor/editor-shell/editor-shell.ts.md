@@ -75,8 +75,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   zoom-out rule exists).
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced). Closed mid-approach
-  it gives the approach's fold back, so the next open starts with the tree
-  as the creator left it.
+  it gives the tree back the fold it had at `show` (folded or not), so the
+  next open starts with the tree as the creator left it.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and
