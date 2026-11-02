@@ -39,4 +39,4 @@ export {
   createApproachDrive,
   createFovReturn,
 } from "./globe-approach-camera.js";
-export { PIN_FLIGHT, pinEnd } from "./pin-flight.js";
+export { METEOR_PACE, PIN_FLIGHT, pinEnd } from "./pin-flight.js";

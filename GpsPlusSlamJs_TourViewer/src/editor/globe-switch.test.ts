@@ -89,12 +89,16 @@ describe("readGlobeSwitch", () => {
       expect(readGlobeSwitch(`?meteorDeg=${bad}`).meteorDeg).toBe(20);
       expect(readGlobeSwitch(`?meteorLandDeg=${bad}`).meteorLandDeg).toBe(50);
     }
+    // The entry's floor is the globe lab's (10): a flatter line was never
+    // flown or swept, so a link asking for one reads the default.
+    expect(readGlobeSwitch("?meteorDeg=5").meteorDeg).toBe(20);
+    expect(readGlobeSwitch("?meteorDeg=10").meteorDeg).toBe(10);
     expect(readGlobeSwitch("?landAglM=5").landAglM).toBe(150);
     expect(readGlobeSwitch("?startKm=10").startKm).toBe(8_000);
   });
 
-  // Why: the meteor never lands shallower than it enters (the owner's
-  // "shallow to steep"); a landing angle under the start angle is held at
+  // Why: the meteor never lands shallower than it enters ("shallow to
+  // steep"); a landing angle under the start angle is held at
   // the start angle, a straight line.
   it("never lands shallower than the meteor enters", () => {
     expect(readGlobeSwitch("?meteorDeg=40&meteorLandDeg=30")).toMatchObject({

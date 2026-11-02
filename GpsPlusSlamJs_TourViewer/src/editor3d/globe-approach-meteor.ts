@@ -9,13 +9,14 @@
  *   `startKm`, entering `meteorDeg` below the tour's horizon and landing
  *   at `meteorLandDeg`, `landAglM` over the tour's ground. The landing and
  *   its settle are the flight's own; the editor adds none.
- * - Paced by the tour's loading (`progress`, 0 to 1), as the lab's flight
- *   is by its city's: it waits before its final stretch until the tour is
- *   in, and lands without it after the flight's safety cap.
+ * - Paced by what loads at the tour (`progress`, 0 to 1,
+ *   `tourArrivalProgress`), as the lab's flight is by its city's: it
+ *   waits before its final stretch until the tour is in, and lands without
+ *   it after the flight's safety cap. It speeds up as the lab's meteor
+ *   does (`METEOR_PACE`).
  * - It places the camera only (`placeCameraEcef`), never the view's frame:
- *   the frame follows the camera through the view's own recentring. A
- *   frame set from the camera's pose each frame made the old approach
- *   flicker.
+ *   the frame follows the camera through the view's own recentring, and
+ *   is no longer moved per frame.
  * - Reduced motion: a cut to the flight's end view, no flight.
  * - `retarget`: a new leg from the camera as it is, continuous in position,
  *   direction and speed.
@@ -26,7 +27,7 @@
  */
 import * as THREE from "three";
 import {
-  PIN_FLIGHT,
+  METEOR_PACE,
   createApproachDrive,
   createFovReturn,
   createGlobeApproach,
@@ -69,7 +70,41 @@ type MeteorView = Pick<
 
 type Ellipsoid = Parameters<typeof createGlobeApproach>[0];
 
-/** A ground height the flight accepts: finite and not below the ellipsoid. */
+/** What has loaded at the tour (`tourArrivalProgress`). */
+export interface TourArrival {
+  /** The tour's stations, and how many of them are admitted (uploaded). */
+  readonly stations: number;
+  readonly admitted: number;
+  /** Whether the relief's ground at the tour is known. */
+  readonly groundKnown: boolean;
+  /** Whether nothing of the relief is loading. */
+  readonly reliefSettled: boolean;
+}
+
+/**
+ * The approach's progress (0 to 1) from what loads at the tour: nothing
+ * until the relief's ground at the tour is known and none of the relief
+ * is loading (the landing stands on it), then the share of its stations
+ * admitted (1 without stations). Above the relief's band its ground is
+ * not known, so the flight waits for nothing it cannot have yet.
+ */
+export function tourArrivalProgress(arrival: TourArrival): number {
+  if (!arrival.groundKnown || !arrival.reliefSettled) return 0;
+  if (!(arrival.stations > 0)) return 1;
+  const share = arrival.admitted / arrival.stations;
+  return Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
+}
+
+/** Whether a pin flight's phase moves the camera: approaching or descending. */
+export function isFlyingPhase(phase: string | undefined): boolean {
+  return phase === "approaching" || phase === "descending";
+}
+
+/**
+ * A ground height the flight accepts: finite and not below the ellipsoid.
+ * A tour below it (the Dead Sea) lands its landing height over the
+ * ellipsoid: higher over its own ground by that much, never under it.
+ */
 const groundOf = (m: number | null): number =>
   m !== null && Number.isFinite(m) ? Math.max(0, m) : 0;
 
@@ -176,8 +211,8 @@ export function createMeteorApproach(deps: {
       landAglM: knobs.landAglM,
       meteorDeg: knobs.meteorDeg,
       meteorLandDeg: knobs.meteorLandDeg,
-      paceLagMs: PIN_FLIGHT.rateLagMs,
-      paceStages: 1,
+      paceLagMs: METEOR_PACE.lagMs,
+      paceStages: METEOR_PACE.stages,
       // The fixed dive's, unused by the continuous flight.
       landKm: knobs.landAglM / 1000,
       diveMs: 0,
@@ -211,7 +246,7 @@ export function createMeteorApproach(deps: {
       if (cut) return false;
       landing.followGround(progress);
       drive(clock());
-      return approach.pinFlight?.phase !== "landed";
+      return isFlyingPhase(approach.pinFlight?.phase);
     },
     retarget(place, toGroundM) {
       landing.retarget(place, groundOf(toGroundM));

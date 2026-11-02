@@ -1,16 +1,19 @@
 /**
  * Why this test matters: a page that shows a small place (the tour editor)
- * enters on a shallow meteor and lands steep, close to the place: the
- * owner's "one continuous meteor trajectory", with no settle and no tilt
- * of its own at the end. These tests fly the shared pin flight at 60 Hz
- * with the landing angle option and check what the owner asked for:
+ * enters on a shallow meteor and lands steep, close to the place: one
+ * continuous meteor trajectory, with no settle and no tilt of its own at
+ * the end. These tests fly the shared pin flight at 60 Hz with the landing
+ * angle option and the meteor's pace (`METEOR_PACE`, the globe lab's) and
+ * check:
  * - the camera moves and turns continuously, at a bounded angular rate and
- *   with a bounded change of that rate;
+ *   with a bounded change of that rate, and its speed changes by a bounded
+ *   ratio from frame to frame over the whole flight;
  * - the view's angle below the place's horizontal never falls (shallow to
  *   steep) and is held at the landing angle over the final stretch;
  * - the flight ends within the landing's distance of the place;
  * - a retarget (`pinRetarget`) flies on from the camera as it is,
- *   continuous in position, direction and speed;
+ *   continuous in position, direction and speed, high up and in the final
+ *   stretch, and never onto ground raised above what the camera can clear;
  * - `pinEnd` is the flight's last camera (the reduced-motion cut).
  * Swept over three places (Munich, the far north, across the date line),
  * two start heights and four knob settings, because a verdict from one
@@ -22,6 +25,7 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
 import {
+  METEOR_PACE,
   meteorLinkStart,
   pinEnd,
   pinFrame,
@@ -110,6 +114,8 @@ function press(
     progress: 0,
     meteorDeg: knobs.meteorDeg,
     meteorLandDeg: knobs.meteorLandDeg,
+    paceLagMs: METEOR_PACE.lagMs,
+    paceStages: METEOR_PACE.stages,
   });
   // The page's data is in from the first frame (nothing to prefetch).
   return pinProgress(pin, 0, 1);
@@ -208,16 +214,40 @@ function turnRates(frames: readonly Frame[]): {
   return { rate, rateStep };
 }
 
-/** How many steps are longer than twice their longer neighbour (1 mm
- *  slack): a jump. */
-function jumps(frames: readonly Frame[]): number {
-  let n = 0;
-  for (let i = 2; i < frames.length - 1; i++) {
-    const around = Math.max(stepAt(frames, i - 1), stepAt(frames, i + 1));
-    if (stepAt(frames, i) > 2 * around + 1e-3) n++;
+/**
+ * The largest ratio of one frame's step to the frame's before (either way
+ * round) over the whole flight, among the steps of at least `floor` times
+ * the flight's longest: the ratio of two steps near rest (the first
+ * frames, the last before the landing) measures rounding, not a jerk.
+ */
+function worstSpeedRatio(
+  frames: readonly Frame[],
+  floor = SPEED_FLOOR,
+): number {
+  const steps = frames.slice(1).map((_, i) => stepAt(frames, i + 1));
+  const least = floor * Math.max(...steps);
+  let worst = 1;
+  for (let i = 1; i < steps.length; i++) {
+    const a = steps[i - 1] ?? 0;
+    const b = steps[i] ?? 0;
+    if (a < least || b < least) continue;
+    worst = Math.max(worst, a / b, b / a);
   }
-  return n;
+  return worst;
 }
+
+/**
+ * The speed's bound: a step at most this many times the one before, or
+ * after (both above 1 % of the longest). Measured at the meteor's pace
+ * (5,000 ms in two stages), every place, start and knob setting here:
+ * 1.064-1.066, all at the speed-up after the press. The pace the lab
+ * replaced (800 ms in one stage, the start's jerk to full speed) measures
+ * 1.23-1.25, 2,000 ms in two stages 1.12, so the bound fails on either.
+ * Swept over the floor: at 0.1 % the meteor's pace measures 1.09-1.11 (the
+ * old one 1.43-1.47), at 5 % 1.049 (the old 1.15).
+ */
+const SPEED_RATIO = 1.08;
+const SPEED_FLOOR = 0.01;
 
 describe("a shallow meteor that lands steep", () => {
   for (const { name, at, from } of PLACES) {
@@ -248,8 +278,9 @@ describe("a shallow meteor that lands steep", () => {
           const { rate, rateStep } = turnRates(frames);
           expect(rate).toBeLessThan(10);
           expect(rateStep).toBeLessThan(0.2);
-          // Continuous: no step longer than twice its neighbours' (no jump).
-          expect(jumps(frames)).toBe(0);
+          // Continuous and gentle in speed over the whole flight: no jerk
+          // to full speed after the press, no jump anywhere.
+          expect(worstSpeedRatio(frames)).toBeLessThan(SPEED_RATIO);
           // Ends within the landing's distance of the place.
           const end = frames.at(-1)?.position ?? new THREE.Vector3();
           expect(end.distanceTo(placePoint(at))).toBeLessThan(
@@ -261,29 +292,58 @@ describe("a shallow meteor that lands steep", () => {
   }
 });
 
+/** The camera's height over the place's ground (the ellipsoid), m. */
+const heightOver = (f: Frame) =>
+  WGS84_ELLIPSOID.getPositionElevation(f.position);
+
+/** When the plain flight first comes down below `belowM` (ms). */
+function firstBelow(place: (typeof PLACES)[number], belowM: number): number {
+  const { frames } = fly(press(place.at, place.from, 8_000, DEFAULT_KNOBS));
+  const f = frames.find((x) => heightOver(x) < belowM);
+  if (!f) throw new Error(`never below ${belowM} m`);
+  return f.t;
+}
+
 describe("a retarget flies on from the camera as it is", () => {
-  for (const { name, at, from } of PLACES) {
-    for (const atMs of [4_000, 12_000]) {
-      it(`${name}, at ${atMs} ms, to a station 400 m away`, () => {
+  for (const place of PLACES) {
+    const { name, at } = place;
+    // High up (two times), and in the final stretch: below the bend at
+    // 100 km, at the landing angle, with about 5 and 1 km to go.
+    const times: readonly { label: string; atMs: () => number }[] = [
+      { label: "at 4000 ms", atMs: () => 4_000 },
+      { label: "at 12000 ms", atMs: () => 12_000 },
+      { label: "5 km up", atMs: () => firstBelow(place, 5_000) },
+      { label: "1 km up", atMs: () => firstBelow(place, 1_000) },
+    ];
+    for (const { label, atMs: timeOf } of times) {
+      it(`${name}, ${label}, to a station 400 m away`, () => {
+        const atMs = timeOf();
         const station = { lat: at.lat + 0.0036, lng: at.lng };
-        const { frames, pin } = fly(press(at, from, 8_000, DEFAULT_KNOBS), [
-          {
-            atMs,
-            apply: (p, t) =>
-              pinRetarget(p, t, orbitPose(WGS84_ELLIPSOID, station)),
-          },
-        ]);
+        const { frames, pin } = fly(
+          press(at, place.from, 8_000, DEFAULT_KNOBS),
+          [
+            {
+              atMs,
+              apply: (p, t) =>
+                pinRetarget(p, t, orbitPose(WGS84_ELLIPSOID, station)),
+            },
+          ],
+        );
         expect(pin.phase).toBe("landed");
         const k = frames.findIndex((f) => f.t >= atMs);
         expect(k).toBeGreaterThan(2);
-        // Position and speed: the step at the retarget within 10 % of the one before.
+        // Position and speed: the step at the retarget within 10 % of the
+        // one before, and the speed's bound over the whole flight.
         const ratio = stepAt(frames, k) / stepAt(frames, k - 1);
         expect(ratio).toBeGreaterThan(0.9);
         expect(ratio).toBeLessThan(1.1);
+        expect(worstSpeedRatio(frames)).toBeLessThan(SPEED_RATIO);
         // Direction: the view turns no faster there than 6 degrees a second.
         for (const i of [k - 1, k, k + 1]) {
           expect(turnRateAt(frames, i)).toBeLessThan(6);
         }
+        // Never under the ground on the way.
+        for (const f of frames) expect(heightOver(f)).toBeGreaterThan(0);
         // And it ends at the station.
         const end = frames.at(-1)?.position ?? new THREE.Vector3();
         expect(end.distanceTo(placePoint(station))).toBeLessThan(
@@ -292,7 +352,60 @@ describe("a retarget flies on from the camera as it is", () => {
       });
     }
   }
-  it("is ignored without a flight to a target", () => {
+
+  // Why: a retarget onto higher ground replans over the ellipsoid lifted
+  // to it. In the final stretch the camera can stand below that ground, or
+  // too close over it, and the new leg then starts under the surface (the
+  // view flips) or nearly level from a diving camera. The ground's own
+  // revision (`pinGround`) refuses such a raise; a retarget must too, and
+  // keep flying to where it was going.
+  it("takes no new target on ground raised above what the camera can clear", () => {
+    const place = PLACES[0];
+    if (!place) throw new Error("no place");
+    const atMs = firstBelow(place, 1_000);
+    const station = orbitPose(WGS84_ELLIPSOID, {
+      lat: place.at.lat + 0.0036,
+      lng: place.at.lng,
+    });
+    let before: PinFlight | null = null;
+    let after: PinFlight | null = null;
+    const { frames, pin } = fly(
+      press(place.at, place.from, 8_000, DEFAULT_KNOBS),
+      [
+        {
+          atMs,
+          apply: (p, t) => {
+            before = p;
+            after = pinRetarget(p, t, station, 2_000);
+            return after;
+          },
+        },
+      ],
+    );
+    if (!before || !after) throw new Error("no retarget");
+    const [was, now] = [before as PinFlight, after as PinFlight];
+    expect(now.target).toBe(was.target);
+    expect(now.groundM).toBe(was.groundM);
+    expect(now.nowMs).toBe(atMs);
+    expect(pin.phase).toBe("landed");
+    expect(
+      (frames.at(-1)?.position ?? new THREE.Vector3()).distanceTo(
+        placePoint(place.at),
+      ),
+    ).toBeLessThan(reachOf(DEFAULT_KNOBS) * 1.05);
+    // A raise the camera can clear (high up) is taken.
+    const high = fly(press(place.at, place.from, 8_000, DEFAULT_KNOBS), [
+      {
+        atMs: 4_000,
+        apply: (p, t) => pinRetarget(p, t, station, 2_000),
+      },
+    ]).pin;
+    expect(high.groundM).toBe(2_000);
+  });
+
+  // Why: an ignored call returns the pin advanced to its time, as every
+  // other event does, so a page that keeps the result loses no time.
+  it("is ignored without a flight to a target, the pin advanced", () => {
     const target = orbitPose(WGS84_ELLIPSOID, { lat: 48, lng: 11 });
     const held = pressPin(
       WGS84_ELLIPSOID,
@@ -300,7 +413,10 @@ describe("a retarget flies on from the camera as it is", () => {
       { pose: target, distanceM: 6_371_000 + 8_000 * KM },
       { target: null, landingM: 150, progress: 1 },
     );
-    expect(pinRetarget(held, 100, target)).toBe(held);
+    const next = pinRetarget(held, 100, target);
+    expect(next.target).toBeNull();
+    expect(next.nowMs).toBe(100);
+    expect(next.clockMs).toBeGreaterThan(held.clockMs);
   });
 });
 

@@ -1,6 +1,6 @@
 /**
- * The link switch for the editor on the globe, and the knobs the owner
- * tunes by eye: what hides on screen, and the approach's meteor (named as
+ * The link switch for the editor on the globe, and the knobs tuned by
+ * eye: what hides on screen, and the approach's meteor (named as
  * in the globe lab). `edit.html?globe=1` opens the 3D view on the full
  * globe; without it the editor's own 3D view stays the default.
  *
@@ -41,17 +41,18 @@ export const GLOBE_SWITCH = Object.freeze({
   /**
    * The approach's meteor enters at this angle below the tour's horizon
    * (deg): shallow, so the globe turns under the camera and the horizon
-   * stays in view on the way down (the owner's "about 20").
+   * stays in view on the way down (about 20). From 10, the globe lab's
+   * own floor: no flatter line was ever flown or swept.
    */
   meteorDeg: Object.freeze({
     param: "meteorDeg",
     fallback: 20,
-    min: 1,
+    min: 10,
     max: 89,
   }) satisfies GlobeSwitchKnob,
   /**
    * ... and lands at this angle (deg), held over the final stretch: the
-   * middle of the owner's 45 to 60, steep enough to see the stations from
+   * middle of 45 to 60, steep enough to see the stations from
    * above, shallow enough to see where they stand. Never under
    * `meteorDeg` (read as it then).
    */

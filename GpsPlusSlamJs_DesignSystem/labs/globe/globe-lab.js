@@ -54,7 +54,7 @@ import {
 } from "/globe/globe-clock.js";
 import { GLOBE_DIVE, obliqueCamera } from "/globe/globe-dive.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
-import { pinFailed } from "/globe/pin-flight.js";
+import { METEOR_PACE, pinFailed } from "/globe/pin-flight.js";
 import {
   approachRestartKey,
   createGlobeApproach,
@@ -469,9 +469,10 @@ const PARAMS = {
   // (the owner on r810: "a meteor, not a spaceship"): the pace's lag, ms,
   // and its stages (1 starts at its steepest; 2, an S-curve, starts with no
   // acceleration). 800 and 1 are the flight before; the owner picks by A/B.
-  // 5 s in two stages: the owner's pick, look C (DEC-R4-3, 2026-10-11).
-  paceLagMs: { fallback: 5000, min: 200, max: 20000 },
-  paceStages: { fallback: 2, min: 1, max: 2 },
+  // 5 s in two stages, picked by eye (`METEOR_PACE`, which the tour
+  // editor's approach flies too).
+  paceLagMs: { fallback: METEOR_PACE.lagMs, min: 200, max: 20000 },
+  paceStages: { fallback: METEOR_PACE.stages, min: 1, max: 2 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps

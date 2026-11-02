@@ -101,6 +101,18 @@ export const PIN_FLIGHT = Object.freeze({
   arrivalMargin: 1.25,
 });
 
+/**
+ * The meteor's pace (`pressPin`'s `paceLagMs` and `paceStages`): the
+ * rate's lag, ms, in two stages, an S-curve that starts with no
+ * acceleration ("a meteor, not a spaceship"). Picked by eye in the globe
+ * lab against `rateLagMs` in one stage, which started slow and then jerked
+ * to full speed; the lab's default and the tour editor's approach.
+ */
+export const METEOR_PACE = Object.freeze({
+  lagMs: 5_000,
+  stages: 2 as const,
+});
+
 type PinFlightPhase =
   "holding" | "approaching" | "descending" | "landed" | "failed" | "cancelled";
 
@@ -669,9 +681,14 @@ function raiseReachable(pin: PinFlight, groundM: number): boolean {
  * way): a new leg from the camera as it is, joined in position, direction
  * and speed (a CF2 replan), its beta kept unless the new target is too
  * close for it (`meteorTo`), the gate found again, the data's progress
- * kept. `groundM` is the new target's ground (default the current one).
- * A landed flight takes off again from where it stands. Ignored without a
- * flight to a target; RangeError for a ground below 0 or not finite.
+ * kept. `groundM` is the new target's ground (default the current one),
+ * taken only where the camera can clear it (as `pinGround`'s raise,
+ * `PIN_FLIGHT.raisePerHeight`): a new leg onto ground the camera stands
+ * under or close over would start under the surface, so the call is
+ * ignored then. A landed flight takes off again from where it stands.
+ * Ignored without a flight to a target; an ignored call still advances
+ * the clock to `nowMs`, as its siblings do. RangeError for a ground below
+ * 0 or not finite.
  */
 export function pinRetarget(
   pin: PinFlight,
@@ -685,7 +702,8 @@ export function pinRetarget(
     now.phase === "approaching" ||
     now.phase === "descending" ||
     now.phase === "landed";
-  if (!flying || !now.target || !now.flight) return pin;
+  if (!flying || !now.target || !now.flight) return now;
+  if (!raiseReachable(now, groundM)) return now;
   const next: PinFlight = {
     ...now,
     target,

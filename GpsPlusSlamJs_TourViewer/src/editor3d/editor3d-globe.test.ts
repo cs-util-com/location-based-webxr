@@ -105,6 +105,11 @@ interface Fakes {
   };
   /** What the relief was made with. */
   terrainInput: null | { imagery?: unknown; template?: unknown };
+  /** Whether the stations layer hands out its objects (a station is then
+   *  admitted at its first upload); false: none ever is. */
+  admits: boolean;
+  /** Whether the relief mount says nothing of the relief is loading. */
+  settled: boolean;
   /** The whole-Earth imagery the view's module hands out. */
   imagery: object;
 }
@@ -134,6 +139,8 @@ const fakes = vi.hoisted((): Fakes => ({
   imagery: { name: "whole-Earth imagery" },
   reliefShare: 1,
   reliefMount: null,
+  admits: false,
+  settled: true,
   airOptions: null,
   airSteps: [],
   cloudsOn: [],
@@ -185,7 +192,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         },
         share: () => fakes.reliefShare,
         target: () => fakes.reliefShare,
-        reliefSettled: () => true,
+        reliefSettled: () => fakes.settled,
         release: {},
         dispose: () => {
           mount.disposed = true;
@@ -348,7 +355,7 @@ vi.mock("./editor3d-stations.js", async () => {
     createStationsLayer: () => ({
       group: new THREE.Group(),
       setTour() {},
-      stationObjects: () => null,
+      stationObjects: () => (fakes.admits ? [] : null),
       pointOf: () => null,
       radiusOf: () => null,
       itemPointOf: () => null,
@@ -542,6 +549,8 @@ beforeEach(() => {
   fakes.terrainInput = null;
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
+  fakes.admits = false;
+  fakes.settled = true;
   fakes.airOptions = null;
   fakes.airSteps = [];
   fakes.cloudsOn = [];
@@ -1102,6 +1111,57 @@ describe("openGlobeEditor's wiring", () => {
       flyingAt(t);
     }
     expect(open?.stats().flying).toBe(false);
+  });
+
+  // Why: the approach is paced by what loads at the tour: its stations'
+  // first uploads, the relief's ground at the tour, and nothing of the
+  // relief loading. Every wiring test above lands only through the safety
+  // cap (the stand-in's stations never upload), so a broken pacing passed
+  // them all. Here all of it comes in at a set time: the flight must land
+  // after that and well before the cap, and with any one part missing only
+  // by the cap. A wiring that read nothing (always in) lands before the
+  // load; one that read the wrong thing (never in) lands only by the cap.
+  describe("paced by what loads at the tour", () => {
+    /** Flies the approach at 60 Hz; `inAt` (page ms) is when the ground
+     *  at the tour comes in. Returns when it landed (page ms). */
+    const landingAt = async (
+      inAt: number,
+      part: "all" | "ground" | "settled" | "stations",
+    ) => {
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      fakes.admits = part !== "stations";
+      fakes.settled = part !== "settled";
+      fakes.groundM = null;
+      await openAt(0, { approach: { durationMs: 1_000 } });
+      for (now = 0; now < 20_000; now += 1000 / 60) {
+        if (now >= inAt && part !== "ground") fakes.groundM = DRAWN_M;
+        frameAt(now);
+        if (now > 0 && open?.stats().flying === false) break;
+      }
+      expect(open?.stats().flying).toBe(false);
+      open?.dispose();
+      open = null;
+      vi.restoreAllMocks();
+      return now;
+    };
+
+    it("lands after the tour is in, well before the safety cap", async () => {
+      const capped = await landingAt(200, "ground");
+      for (const inAt of [200, 500]) {
+        const landed = await landingAt(inAt, "all");
+        expect(landed).toBeGreaterThan(inAt);
+        expect(landed).toBeLessThan(capped * 0.7);
+      }
+    });
+
+    it.each(["ground", "settled", "stations"] as const)(
+      "lands only by the safety cap without the %s",
+      async (part) => {
+        const landed = await landingAt(200, "all");
+        expect(await landingAt(200, part)).toBeGreaterThan(landed / 0.7);
+      },
+    );
   });
 
   // Why: the page unfolds its rail when the approach's bar goes after a

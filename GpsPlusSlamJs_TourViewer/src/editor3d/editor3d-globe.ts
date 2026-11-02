@@ -121,7 +121,10 @@ import {
   type GlobeHiddenSet,
   type GlobeObjectOnScreen,
 } from "./globe-editor-look.js";
-import { createMeteorApproach } from "./globe-approach-meteor.js";
+import {
+  createMeteorApproach,
+  tourArrivalProgress,
+} from "./globe-approach-meteor.js";
 import {
   ARRIVAL,
   walkDrawShare,
@@ -966,11 +969,16 @@ export async function openGlobeEditor(
         tour: { lat: centre.lat, lng: centre.lng },
         groundM: centreHeightM,
         knobs,
-        // Paced by the tour's own loading: its stations' first uploads.
-        progress: () => {
-          const stations = tourNow?.stations.length ?? 0;
-          return stations === 0 ? 1 : Math.min(1, admitted.size / stations);
-        },
+        // Paced by what loads at the tour: the relief's ground there and
+        // nothing of it loading, then its stations' first uploads.
+        progress: () =>
+          tourArrivalProgress({
+            stations: tourNow?.stations.length ?? 0,
+            admitted: admitted.size,
+            groundKnown:
+              ground.groundAt(centre.lat * DEG, centre.lng * DEG) !== null,
+            reliefSettled: reliefMount.reliefSettled(),
+          }),
         reliefGroundM: (p) => ground.groundAt(p.lat * DEG, p.lng * DEG),
         reducedMotion,
         ...(deps.approach.durationMs === undefined
