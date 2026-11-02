@@ -93,6 +93,25 @@ describe('diagnoseTourMarkdown', () => {
     ]);
   });
 
+  it('keeps a code box opened before a list or quote open through it, to its own closing fence', () => {
+    // Why: a box holding "- " or "> " lines (a pasted YAML list, a quoted
+    // mail) is one box. Ending it at the container reported its closing
+    // fence as a new box and marked the plain text after it as code.
+    for (const body of [
+      '```\n- item one\n- item two\n```\nPlain after',
+      '```\n- a\n\nb\n```\nPlain after',
+      '```\n> q\n\nb\n```\nPlain',
+    ]) {
+      const found = parts(body);
+      const code = found.filter(([kind]) => kind === 'code');
+      expect(found, body).toEqual(code);
+      expect(code.at(-1)?.[1].endsWith('```'), body).toBe(true);
+      expect(code.map(([, text]) => text).join('|'), body).not.toMatch(/Plain/);
+      const opened = code.filter(([, text]) => text.startsWith('```'));
+      expect(opened, body).toHaveLength(1);
+    }
+  });
+
   it('reports a table and tab columns as one part each', () => {
     expect(parts('| a | b |\n|---|---|\n| 1 | 2 |')).toEqual([
       ['table', '| a | b |\n|---|---|\n| 1 | 2 |'],

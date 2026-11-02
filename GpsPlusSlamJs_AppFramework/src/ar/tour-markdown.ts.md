@@ -90,8 +90,9 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   `[]`. A code box's fence state follows the whole body: a box with a
   blank line inside is reported paragraph by paragraph up to its closing
   fence (the same sign, at least as long), and one never closed runs to
-  the body's end; the text after the closing fence is not code. A box left
-  open inside a list item or a quote ends with its container.
+  the body's end; the text after the closing fence is not code. A box
+  opened inside a list item or a quote ends with its container; one opened
+  before it (a box holding "- " or "> " lines) stays open to its own fence.
 - `textHashOf(plain): Promise<string>` - `"sha256:"` plus the lowercase hex
   SHA-256 of `P`'s UTF-8 bytes, through `utils/sha256-hex.ts`. Rejects for
   a non-string, and when WebCrypto is unavailable. A lone surrogate is

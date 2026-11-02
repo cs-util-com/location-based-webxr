@@ -1963,14 +1963,17 @@ function convertChildren(
   return node.children.flatMap((child) => convertBlock(child, context));
 }
 
-/** The blocks of a container (a list item, a quote): a code box left open
- *  inside it ends with it, since the lines after it are not its own. */
+/** The blocks of a container (a list item, a quote): a code box opened
+ *  inside it ends with it, since the lines after it are not its own. A box
+ *  opened before the container (one holding "- " or "> " lines) stays open
+ *  through it, up to its own closing fence. */
 function convertContainer(
   node: BlockNode,
   context: ConvertContext
 ): TourMdBlock[] {
+  const entry = collector?.openFence ?? null;
   const blocks = convertChildren(node, context);
-  if (collector !== null) collector.openFence = null;
+  if (collector !== null && entry === null) collector.openFence = null;
   return blocks;
 }
 
