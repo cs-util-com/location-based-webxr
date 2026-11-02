@@ -218,6 +218,25 @@ describe('pickSaveFile', () => {
       kind: 'unavailable',
     });
   });
+
+  // Why: a documented change from the move into the framework. A picker
+  // that throws an AbortError at once, before it returns a promise, used to
+  // read as unavailable in the Tour Viewer's copy (and so offered a
+  // download); the synchronous throw now goes through the same classifier
+  // as a rejection, so a dismissal is a dismissal however it arrives.
+  it('reads a synchronous AbortError from the picker call as cancelled', async () => {
+    await expect(
+      pickSaveFile(
+        {
+          showSaveFilePicker: () => {
+            throw new DOMException('dismissed', 'AbortError');
+          },
+        },
+        'a.zip',
+        ZIP_FILE_TYPE
+      )
+    ).resolves.toEqual({ kind: 'cancelled' });
+  });
 });
 
 describe('releaseUnusedPick', () => {

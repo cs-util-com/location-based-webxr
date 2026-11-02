@@ -41,7 +41,9 @@ import {
 import {
   exportSessionAsZip,
   exportSessionHandleAsZip,
+  downloadBlob,
   downloadZip,
+  ZIP_FILE_TYPE,
   syncToExternalZip,
   type ZipExportResult,
 } from './zip-export';
@@ -484,6 +486,71 @@ describe('zip-export', () => {
         vi.unstubAllGlobals();
       }
     });
+  });
+
+  describe('downloadBlob with a nullish rejection', () => {
+    // Why: a documented change of the published `downloadBlob` (CHANGELOG
+    // "Changed"). It used to read `err.name` off the rejection, so a `null`
+    // or `undefined` one threw a TypeError out of the call; it now goes
+    // through `classifyPickerRejection` and a null-safe read, and falls
+    // back to the anchor download like any other non-dismissal. The
+    // characterisation file `download-blob.test.ts` stays frozen, so the
+    // change is pinned here.
+    function stageAnchor(win: object): string[] {
+      const clicked: string[] = [];
+      vi.stubGlobal('window', win);
+      vi.stubGlobal('document', {
+        createElement: () => {
+          const link = {
+            href: '',
+            download: '',
+            style: {},
+            click: () => clicked.push(link.download),
+          };
+          return link;
+        },
+        body: { appendChild: vi.fn(), removeChild: vi.fn() },
+      });
+      vi.stubGlobal('URL', {
+        createObjectURL: vi.fn(() => 'blob:x'),
+        revokeObjectURL: vi.fn(),
+      });
+      return clicked;
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    for (const value of [null, undefined]) {
+      it(`falls back to the anchor download when the dialog rejects with ${String(value)}`, async () => {
+        const clicked = stageAnchor({
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the nullish rejection is the case under test
+          showSaveFilePicker: vi.fn(() => Promise.reject(value)),
+        });
+        await expect(
+          downloadBlob(new Blob(['zip']), 'tour.zip', ZIP_FILE_TYPE)
+        ).resolves.toBe(true);
+        expect(clicked).toEqual(['tour.zip']);
+      });
+
+      // Opening the picked file for writing: `writeFileOrAbort` normalises a
+      // non-Error from `write()` or `close()` into an Error, but a rejection
+      // of `createWritable()` reaches `downloadBlob` as it is.
+      it(`falls back to the anchor download when opening the picked file rejects with ${String(value)}`, async () => {
+        const handle = {
+          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the nullish rejection is the case under test
+          createWritable: vi.fn(() => Promise.reject(value)),
+        };
+        const clicked = stageAnchor({
+          showSaveFilePicker: vi.fn(() => Promise.resolve(handle)),
+        });
+        await expect(
+          downloadBlob(new Blob(['zip']), 'tour.zip', ZIP_FILE_TYPE)
+        ).resolves.toBe(true);
+        expect(clicked).toEqual(['tour.zip']);
+      });
+    }
   });
 
   describe('syncToExternalZip', () => {
