@@ -234,9 +234,13 @@ export async function openGlobeEditor(
       // better on the default 24-bit depth buffer.
       // The surface compiles the relief's band: the relief draws the
       // globe's look, its pixels kept by the carrier share; the stencil
-      // lets the globe's surface fill every pixel the relief has not.
+      // lets the globe's surface fill every pixel the relief has not. The
+      // fill also stops the surface's discard by the carrier share: the
+      // relief mount below is a fill mount, and without it the ground had
+      // holes where the relief had no tile yet.
       band: true,
       stencil: true,
+      fill: true,
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {
@@ -295,8 +299,8 @@ export async function openGlobeEditor(
       );
     };
     startClock();
-    // The tour's objects and the relief's plain ground: the sun alone
-    // leaves their shaded sides black.
+    // The tour's objects and the relief: the sun alone leaves their shaded
+    // sides black.
     scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9));
 
     const ground = createEditorTerrain({

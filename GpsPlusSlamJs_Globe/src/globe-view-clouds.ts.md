@@ -29,7 +29,9 @@
       clouds on, the relief's depth while the ground sky shows
       (`weight > 0`), then the slab and the shell.
     - `setOn(on)`: the switch (off is the lab's `cloudVolume=0`: no slab,
-      no shell; the flat layer only weakens near the ground).
+      no shell; the flat layer only weakens near the ground). Off keeps
+      the render targets allocated: the switch saves frame time, not
+      memory.
     - `state()`: `{ on, flat, shellOn }` of the last step.
     - `dispose()`: frees each part once (one that throws leaves the others
       to run); everything then does nothing.

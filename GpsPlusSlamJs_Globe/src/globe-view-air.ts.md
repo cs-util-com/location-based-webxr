@@ -24,7 +24,9 @@
       camera's height (`framed` while the view has a frame target), then
       the clouds' step (they read the observer's height and ask
       `shareClouds(flat)` for the cloud shell's share; without clouds it
-      is asked at a flat share of 1), then the globe's sun at the eased
+      is asked at a flat share of 1, and the air sets the shell's height
+      to the clouds' `cloudShellKm` (3 km) itself, since the shell is made
+      at height 0, under the terrain, and only the heavy clouds set it), then the globe's sun at the eased
       exposure and the shell's thickness.
     - `afterScene()`: call from the view's `afterScene` seam. The space
       pass over the Earth and the sky, after the clouds' drawing.

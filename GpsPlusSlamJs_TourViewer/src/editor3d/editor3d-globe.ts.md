@@ -46,8 +46,10 @@ ground.
   its band step sets the carrier share
   (`globe.surfaceUniforms.uCarrierShare`) by the camera's altitude, the
   relief gated until its tiles are loaded, and with `fill: true` (a view
-  made with `band: true, stencil: true`) the globe's surface draws every
-  pixel the relief has not. The relief is drawn with the globe's own
+  made with `band: true, stencil: true, fill: true`: a fill mount needs
+  a view made with the fill, or the surface keeps its discard by the
+  carrier share and the ground has holes where the relief has no tile)
+  the globe's surface draws every pixel the relief has not. The relief is drawn with the globe's own
   imagery (`createGlobeImagery()`, an overlay of its own) and template
   (`globe.template`), as the lab's is. The carrier the page reports
   (`stats().globe.carrier`) and picks on is the one holding at least half

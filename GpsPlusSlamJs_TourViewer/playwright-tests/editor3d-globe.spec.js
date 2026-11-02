@@ -31,16 +31,13 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
-  // The whole-Earth imagery's levels asked for. At street level the
-  // globe's surface is hidden and not updated, so its finest levels are
-  // asked by the relief: it draws the globe's own imagery (it was a plain
-  // beige ground before).
-  /** @type {number[]} */
-  const marble = [];
-  page.on("request", (request) => {
-    const [, path] = request.url().split("/blue-marble-4326/");
-    if (path !== undefined) marble.push(Number(path.split("/")[0]));
-  });
+  // The relief draws the globe's own imagery (not the plain beige ground)
+  // is pinned by the unit test of the view's wiring, not here: with the
+  // stencil fill the globe's surface is updated every frame and asks the
+  // same imagery's fine levels itself, and the relief takes its first
+  // pixels only once its view is refined, so neither a count of the
+  // imagery's levels nor one taken after the hand-over tells the two
+  // carriers' asks apart.
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
@@ -82,9 +79,6 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   expect(stats.distanceM).toBeLessThan(200);
   // The stations are drawn, none hidden as too small this close.
   expect(stats.globe.hiddenStations).toEqual([]);
-  await expect
-    .poll(() => Math.max(-1, ...marble), { timeout: 60_000 })
-    .toBeGreaterThanOrEqual(4);
   // The staged uploads: every station admitted once, a few a frame.
   await expect
     .poll(async () => (await view3d(page))?.globe?.uploads?.pending)

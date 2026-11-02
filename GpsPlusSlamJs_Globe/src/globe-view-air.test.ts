@@ -19,6 +19,7 @@ import type { GlobeAtmosphere } from "./globe-atmosphere.js";
 import type { GlobeGroundSky } from "./globe-ground-sky.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
 import { mountGlobeViewAir } from "./globe-view-air.js";
+import { GLOBE_VIEW_CLOUDS } from "./globe-view-clouds.js";
 
 /** The frames the air hands its drawers (the drawers' own types). */
 type SpaceFrame = Parameters<GlobeAtmosphere["render"]>[1];
@@ -45,6 +46,12 @@ const fakeView = (altitudeM: number, framed = true) => {
         ellipsoid: { radius: RADII },
       },
       surfaceUniforms: { uSunEcef: { value: new THREE.Vector3(1, 0, 0) } },
+      cloudShell: {
+        heights: [] as number[],
+        setHeightM(heightM: number) {
+          this.heights.push(heightM);
+        },
+      },
     },
     ecefCamera: () => ({
       position: new THREE.Vector3(RADII.x + altitudeM, 0, 0),
@@ -94,6 +101,7 @@ const fakeDrawers = (hand = { weight: 1, exposure: 3.5 }) => {
     },
     haze: {
       patch(tiles: unknown) {
+        log.push("haze patch");
         patched.push(tiles);
       },
       sync() {
@@ -314,7 +322,7 @@ describe("mountGlobeViewAir", () => {
     air.afterScene();
     expect(fakes.log.slice(-2)).toEqual(["clouds 1", "space"]);
     air.haze({ group: new THREE.Group(), addEventListener: () => undefined });
-    expect(fakes.log.at(-1)).toBe("clouds patch");
+    expect(fakes.log.slice(-2)).toEqual(["clouds patch", "haze patch"]);
     expect(fakes.patched.length).toBe(1);
     air.setClouds(false);
     expect(fakes.log.at(-1)).toBe("clouds off");
@@ -325,15 +333,22 @@ describe("mountGlobeViewAir", () => {
 
   // Why: without the clouds the flat layer is whole, so the page's cloud
   // shell share is asked for a flat share of 1, as the editor did before.
-  it("gives the cloud shell its share at a whole flat layer without clouds", () => {
+  // The heavy clouds set the shell's height each frame; without them (a
+  // device whose ground sky is unsupported) the shell stayed at height 0,
+  // under the terrain, so the air sets the clouds' height itself.
+  it("gives the cloud shell its share and height at a whole flat layer without clouds", () => {
     const fakes = fakeDrawers();
-    const air = mountGlobeViewAir(fakeView(2), {
+    const view = fakeView(2);
+    const air = mountGlobeViewAir(view, {
       coarsePointer: false,
       drawers: () => fakes.drawers,
     });
     const flats: number[] = [];
     air.step({ shareClouds: (flat) => flats.push(flat) });
     expect(flats).toEqual([1]);
+    expect(view.globe.cloudShell.heights).toEqual([
+      GLOBE_VIEW_CLOUDS.cloudShellKm * 1000,
+    ]);
     expect(air.state().clouds).toBeNull();
     air.setClouds(false);
     air.step();

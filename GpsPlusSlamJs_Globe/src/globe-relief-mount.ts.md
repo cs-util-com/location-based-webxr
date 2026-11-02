@@ -50,7 +50,13 @@ flat)`; returns that share (the page's cloud shadow is scaled by it).
   run after the roles (the cloud shadow, the haze). The page's renderer
   needs a stencil buffer (`createGlobeView({ stencil: true })`), and the
   surface must be made with `band: true` (its tiles discard by
-  `uCarrierShare`).
+  `uCarrierShare`). A `fill` mount needs a view made with `fill: true`
+  too: without it the surface keeps that discard, so the ground has holes
+  where the relief has no tile yet and the globe is drawn for nothing.
+- A `step` whose altitude is not finite (NaN, an infinity) leaves the
+  band, the release and the uniform as they were and returns the current
+  share: the band throws on such an altitude, and a throw inside a page's
+  frame loop would stop it for good.
 - A drain keeps a carrier's coarsest tiles (depth 0 and 1) and any tile
   its last update used, so a carrier that comes back has its top level
   at once and a drain never unloads what is drawn.

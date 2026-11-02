@@ -361,6 +361,31 @@ describe("mountGlobeRelief", () => {
     expect(mount.release.settled()).toBe(true);
   });
 
+  // Why: a camera whose altitude is not a number (a degenerate pose in a
+  // flight) used to reach the band, which throws on it, and a page's frame
+  // loop stopped for good on the throw. Such a frame leaves the band and
+  // the release as they were and keeps the share.
+  it.each([Number.NaN, Infinity, -Infinity])(
+    "keeps the band and the release on an altitude of %s",
+    (altitudeM) => {
+      const tiles = [tile(0), tile(3), tile(5)];
+      const { mount, globe, reliefSet } = mounted(true, tiles);
+      mount.step(0, { altitudeM: 6_000_000, gate: false, releaseMs: 1000 });
+      const share = mount.share();
+      const target = mount.target();
+      expect(() =>
+        mount.step(1000, { altitudeM, gate: false, releaseMs: 1000 }),
+      ).not.toThrow();
+      expect(
+        mount.step(1000, { altitudeM, gate: false, releaseMs: 1000 }),
+      ).toBe(share);
+      expect(mount.target()).toBe(target);
+      expect(globe.surfaceUniforms.uCarrierShare.value).toBe(share);
+      // No drain on the bad frame: the release's clock did not run.
+      expect(reliefSet.lruCache.itemList).toHaveLength(3);
+    },
+  );
+
   // Why: the gate's "refined" is the relief's own loading and queues.
   it("reads the relief settled only with nothing loading or queued", () => {
     const { mount, reliefSet } = mounted(true);

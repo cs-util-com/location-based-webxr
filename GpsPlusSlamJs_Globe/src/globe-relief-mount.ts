@@ -96,7 +96,10 @@ export interface GlobeReliefMountOptions {
   /**
    * The stencil fill: the relief's materials write the mark and the
    * globe's draw only where none is, the relief's group drawn first. The
-   * page's renderer needs a stencil buffer. Read once.
+   * page's renderer needs a stencil buffer, and the globe's surface must
+   * be made with the fill too (`createGlobeView({ fill: true })`), or it
+   * keeps discarding by the carrier share and leaves holes where the
+   * relief has no tile yet. Read once.
    */
   readonly fill: boolean;
   /** The band's rare events (hold, go, the share's steps, the drains). */
@@ -107,7 +110,8 @@ export interface GlobeReliefMountOptions {
 
 /** One frame's band step; each field the band's default when left out. */
 interface GlobeReliefStepFrame {
-  /** The camera's altitude (m); a negative one counts as 0. */
+  /** The camera's altitude (m); a negative one counts as 0, one that is
+   *  not finite leaves the frame's step out (the band and release kept). */
   readonly altitudeM: number;
   readonly highM?: number;
   /** Kept under `highM` (at most `highM - 1`). */
@@ -162,11 +166,6 @@ const keepCoarsest = (tile: unknown) =>
   ((tile as { internal?: { depth?: number } } | null)?.internal?.depth ??
     Infinity) <= 1;
 
-/**
- * What a drain keeps of `tiles`: its coarsest tiles, and any tile its last
- * update used (with the stencil fill the globe is updated while it fills,
- * and draining what it draws would only reload it).
- */
 /** A tile set with what its typings leave out. */
 type CountedTiles = Omit<GlobeReliefTiles, "lruCache"> & {
   readonly frameCount: number;
@@ -191,6 +190,11 @@ function counted(tiles: GlobeReliefTiles, name: string): CountedTiles {
   return tiles as CountedTiles;
 }
 
+/**
+ * What a drain keeps of `tiles`: its coarsest tiles, and any tile its last
+ * update used (with the stencil fill the globe is updated while it fills,
+ * and draining what it draws would only reload it).
+ */
 const keepFor = (tiles: CountedTiles) => (tile: unknown) => {
   if (keepCoarsest(tile)) return true;
   const traversal = (
@@ -292,6 +296,10 @@ export function mountGlobeRelief(
     share: () => band.share(),
     target: () => band.target(),
     step(nowMs, frame) {
+      // A degenerate pose (an altitude that is not a number) must not reach
+      // the band, which throws on it and would stop the page's frame loop:
+      // the frame keeps the band, the release and the share as they were.
+      if (!Number.isFinite(frame.altitudeM)) return band.share();
       const altitudeM = Math.max(0, frame.altitudeM);
       const highM = frame.highM ?? GLOBE_RELIEF_BAND.highM;
       band.step(nowMs, {

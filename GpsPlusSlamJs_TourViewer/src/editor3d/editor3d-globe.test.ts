@@ -81,6 +81,7 @@ interface Fakes {
   viewOptions: null | {
     band?: boolean;
     stencil?: boolean;
+    fill?: boolean;
     reversedDepth?: boolean;
   };
   /** The options the air was mounted with. */
@@ -96,7 +97,6 @@ interface Fakes {
   reliefMount: null | {
     options: { globe: unknown; relief: unknown; fill: boolean };
     altitudesM: number[];
-    reliefUpdates: number;
     cloudShares: number[];
     /** The flat layer's shares the cloud shell was asked for. */
     cloudFlats: number[];
@@ -161,7 +161,6 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
       const mount: NonNullable<Fakes["reliefMount"]> = {
         options,
         altitudesM: [],
-        reliefUpdates: 0,
         cloudShares: [],
         cloudFlats: [],
         disposed: false,
@@ -174,7 +173,6 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         },
         draw: (frame: { updateRelief(): void }) => {
           if (fakes.reliefShare > 0) {
-            mount.reliefUpdates++;
             frame.updateRelief();
           }
         },
@@ -993,6 +991,10 @@ describe("openGlobeEditor's wiring", () => {
   it("hands the ground over through the globe's relief mount, with the fill", async () => {
     await openAt(0);
     expect(fakes.viewOptions?.stencil).toBe(true);
+    // A fill mount needs a view made with the fill: without it the globe's
+    // surface keeps discarding by the carrier share, leaving holes where
+    // the relief has no tile yet.
+    expect(fakes.viewOptions?.fill).toBe(true);
     const mount = fakes.reliefMount;
     if (mount === null) throw new Error("no relief mount");
     expect(mount.options.fill).toBe(true);
@@ -1009,9 +1011,6 @@ describe("openGlobeEditor's wiring", () => {
     fakes.reliefShare = 0;
     frameAt(32);
     expect(open?.stats().globe?.carrier).toBe("globe");
-    const updates = mount.reliefUpdates;
-    frameAt(48);
-    expect(mount.reliefUpdates).toBe(updates);
   });
 
   // Why: the same 25 km swap no longer exists, so a hold just above it
@@ -1029,8 +1028,8 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
-  // Why: the owner asked for the lab's heavy 3D clouds in the editor, on
-  // by default with a switch; the air carries them, and the View menu's
+  // Why: the editor draws the lab's heavy 3D clouds, on by default with
+  // a switch; the air carries them, and the View menu's
   // switch reaches them through the view.
   it("mounts the heavy clouds with the air and switches them", async () => {
     const view = await openAt(0);

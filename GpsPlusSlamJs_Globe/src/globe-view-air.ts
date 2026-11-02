@@ -44,7 +44,11 @@ import {
 } from "./globe-ground-sky.js";
 import { createGlobeHaze, type GlobeHaze } from "./globe-haze.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
-import type { CloudsFactory, GlobeViewClouds } from "./globe-view-clouds.js";
+import {
+  GLOBE_VIEW_CLOUDS,
+  type CloudsFactory,
+  type GlobeViewClouds,
+} from "./globe-view-clouds.js";
 
 /** What the air reads of the view (a `GlobeView` is one). */
 interface AirView {
@@ -61,6 +65,8 @@ interface AirView {
     readonly surfaceUniforms: {
       readonly uSunEcef: { readonly value: THREE.Vector3 };
     };
+    /** The cloud shell, its height set here when no heavy clouds do. */
+    readonly cloudShell: { setHeightM(heightM: number): void };
   };
   ecefCamera(): { readonly position: THREE.Vector3 };
   frameTarget(): unknown;
@@ -207,10 +213,13 @@ export function mountGlobeViewAir(
       const shareClouds = frame.shareClouds ?? (() => 0);
       // The clouds between the hand-over and the sun's ease (the volumes
       // update with the frame's previous sun, as in the lab); without
-      // them the flat layer is whole.
+      // them the flat layer is whole, on a shell at the clouds' height (the
+      // heavy clouds set it each frame; the shell is made at height 0,
+      // under the terrain).
       if (clouds) {
         clouds.step({ observerKm: air.observerKm(), shareClouds });
       } else {
+        view.globe.cloudShell.setHeightM(GLOBE_VIEW_CLOUDS.cloudShellKm * 1000);
         shareClouds(1);
       }
       air.finish(params);
