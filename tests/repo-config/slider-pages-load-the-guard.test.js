@@ -57,8 +57,9 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  * - The design prototypes in the Tour Viewer's inspiration gallery (root
  *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) are
  *   standalone drafts wired to nothing: their sliders (a landing draft's
- *   size, the 3D editor drafts' station radius) change only the draft's own
- *   labels and stations, and nothing outside the draft is touched.
+ *   size, the 3D editor drafts' station radius, the editor panel drafts'
+ *   radius and size) change only the draft's own labels and stations,
+ *   and nothing outside the draft is touched.
  */
 const EXEMPT = new Map([
   ['GpsPlusSlamJs_DesignSystem/index.html', 'undeployed specimen sheet over file://'],
@@ -76,6 +77,18 @@ const EXEMPT = new Map([
   ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/editor3d-3-storyboard/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-1-explorer/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-2-content-gallery/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/editor-panel-3-tabs-toolbar/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
   [
