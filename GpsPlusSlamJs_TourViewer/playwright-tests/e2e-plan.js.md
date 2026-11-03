@@ -78,6 +78,77 @@ at one worker (the baseline's total minus a `webgl` share of 31-36 min) to
 12-14 min, is of the same order as that noise, too. More runs would settle
 both.
 
+## Off the map and the older 3D view (inventory, 2026-11-03)
+
+The globe is the editor's 3D view; the 2D map and the older OrbitControls
+view (`?globe=0`) are to be removed. What each editor spec still opens, by
+what becomes of it (counts are `test(` titles; a title in a loop counts
+once):
+
+- **(a) shared with the globe editor: to be moved to it.**
+  - `editor.spec.js`, about 101 of its 117 titles: save, save a copy, in
+    place and a second tab (1599-2053), drafts (2117-2826), autosave and
+    undo across saves (2826-3783), "needs no GPS" (3783, 3850), details
+    (3886, 3955), the open dialog (310, 322, 958, 986, 1462, 3992), pin
+    edits (1052-1460), Done and the walk's move out (4039-4704), tours
+    without a file (4729-4959), link, sample and hosted saves
+    (5165-5688). They edit through the map's rail and card (`editTownHall`,
+    `editPin`); on the globe a pin's text is the inspector's title field.
+  - `editor-entry.spec.js` (4) and `blocks-tour.spec.js` (2): on the map
+    (`startOnMap`) only to keep the 3D view's tiles out.
+  - Pinned to `?globe=0` when the globe became the default:
+    `editor3d-character` (1), `editor3d-long-text` (3),
+    `editor3d-narration` (2), `editor3d-inspector` (6), `editor3d-tree`
+    (7), `editor3d-shell` (15; its pen test at 991 runs on the map and in
+    3D), `editor3d-edit` (9), `editor3d-model` (4, `openSample` then the
+    switch), `editor3d.spec.js` 186 and 251 (its failure tests at 279, 321
+    and 371 run on both views).
+- **(b) map-only until the globe editor has the panel:** `editor.spec.js`
+  567, 590, 638, 692, 816, 865, 922 (a walk's debug data on the map and its
+  panel; the globe draws no debug data yet, `editor3d-shell` 896).
+- **(c) dies with the map or the older view (deleted with them, not
+  before):** `editor.spec.js` 276 (the card beside its marker), 343 (the
+  rail's layout per viewport), 424 and 451 (the map's top bar and menus),
+  721 (the card against the debug panel), 1180 (a marker drag), 1332 (a
+  station and its code both reachable on the map); `editor3d-globe.spec.js`
+  302 (the OrbitControls view, nothing of the globe asked for);
+  `editor3d.spec.js` 43, 170 and 211 (the switch to and from the map, and
+  the map's quiet open of a tour with nothing placed), and the older-view
+  half of 279, 321 and 371.
+- **(d) a gap in the globe editor, listed, not built:** the rail's search
+  (`#filter`, `editor.spec.js` 1963: a group's count follows a delete while
+  the search hides it; the tree has no filter); the rail's list of every
+  code and note by kind, labels as text (245; the tree lists stations and
+  their items).
+
+**The cost of moving (a), measured on the sample tour in the software
+renderer:** a globe open takes 2.5-2.9 s to the 3D view and about 2 s more
+to its stations, against 0.2 s for the map; one tree click, an inspector
+rename and a Save download took 38-42 s on the globe (globe imagery
+refused) and about 60 s with it served. Moved one for one, `editor.spec.js`
+(the `dom` project, 3 workers) would go to the `webgl` project's single
+worker at about 40 s a test: on the order of an hour more per full run.
+
+**First batch, tried and held back (2026-11-03).** `editor3d-character`,
+`editor3d-long-text` and `editor3d-narration` were moved to the globe one
+for one (only the link changed, globe imagery refused). On the older view
+the six tests pass in 143 s; on the globe five failed in 533 s, each for
+a reason of its own, so they stay on `?globe=0` until each is understood:
+
+- character 180: the second `page.goto` (open again) ran into the 90 s
+  limit, which fits a leave-page prompt for unsaved work holding the
+  navigation.
+- long-text 89: the code-mark callout never offered its fix button
+  (`[data-lw="part-fix"]`) after the part was picked.
+- long-text 297: Ctrl+S in the writer gave no download within 90 s.
+- long-text 326: the 14 px gap between the preview and the inspector
+  did not settle within 5 s.
+- narration 189: `#shell-inspector` was not found for its width check.
+
+Whether these are test assumptions of the older view or gaps of the
+globe editor is open; Ctrl+S and the open-again prompt would be real
+gaps if they reproduce by hand.
+
 ## Examples
 
 ```js

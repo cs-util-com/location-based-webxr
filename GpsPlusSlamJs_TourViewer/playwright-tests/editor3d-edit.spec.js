@@ -233,6 +233,11 @@ async function saveAndRead(page) {
 test("drags a selected pin over the ground with the mouse: one step, kept above the ground, saved, undone and redone", async ({
   page,
 }) => {
+  // Measured locally at one worker (2026-11-03): 21-33 s, of which the
+  // File > Save download takes 10-15 s and the drag 5-6 s; CI ran into the
+  // 30 s default on all three attempts, at a different step each time.
+  // 120 s is about four times the slowest local run.
+  test.setTimeout(120_000);
   const station = await openWithPin(page);
   await selectPin(page, station);
   const before = pinOf(await manifest(page));
