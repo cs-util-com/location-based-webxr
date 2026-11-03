@@ -20,7 +20,9 @@ A tour with nothing positioned yet (a new one, or notes alone) opens too:
 over the creator's part of the world (`empty-tour-view.ts`: the latitude of
 the time zone's region, by its name, and the longitude of its standard
 offset), the whole Earth in view from
-the approach's start height (`startKm`), with no approach to fly (its
+the approach's start height (`meteorStartAltitudeM`: the link's
+`startKm`, else the globe lab's intro distance at the page's aspect), with
+no approach to fly (its
 `ended("landed")` is called at once, so the shell does not hold the tree
 folded). The first station is placed by right-clicking the ground. The
 tour frame stays at that default centre; the stations are drawn by their

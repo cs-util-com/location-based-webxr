@@ -49,19 +49,23 @@ ground ("New station here").
   zone spans about 15 degrees, so the view is only "your part of the
   world". The region's latitude is where most of its people live, not its
   middle; it only needs to put the creator's home inside the first view.
-- At the 50 degree lens and the 8 000 km start, a landscape screen shows
-  about 47 degrees of arc from the centre to its top and bottom edges; on
-  the offset alone (latitude 10 everywhere) Oslo and Auckland started just
-  off it. With the region they are in the picture.
 - The height is the caller's: the globe editor passes the approach's
-  start height (`startKm`), the whole Earth in its lens.
+  start height (`meteorStartAltitudeM`: the link's `startKm`, else the
+  globe lab's intro distance at the page's aspect, about 43 600 km on a
+  landscape screen), the whole Earth in its lens. From there the whole
+  visible half of the Earth is in the picture, so the region's latitude
+  decides where the creator's part of the world sits in it (near the
+  centre rather than at the rim), not whether it is shown. At the 8 000 km
+  start used before, a landscape screen showed about 47 degrees of arc
+  either way, and on the offset alone Oslo and Auckland started just off
+  it.
 
 ## Examples
 
 ```ts
 const zone = browserZoneHint();
 const centre = emptyTourCentre(zone.offsetMin, zone.timeZone);
-view.placeView(emptyTourView(centre, knobs.startKm));
+view.placeView(emptyTourView(centre, startAltitudeM / 1000));
 ```
 
 ## Tests
@@ -76,7 +80,10 @@ view.placeView(emptyTourView(centre, knobs.startKm));
   33 real zones checked against their cities' real places (ground truth
   independent of the table), the city lies inside the start height's cap
   with the standard or the summer offset, and inside a landscape picture
-  of any shape (aspect 1.2-2.4) with the standard one; the six named
+  of any shape (aspect 1.2-2.4) with the standard one, each at the
+  approach's start height for that aspect (`meteorStartAltitudeM`); the
+  picture check can fail (a city on the far side of the Earth is not in
+  it); the six named
   cities (Oslo, Edinburgh, Sydney, Auckland, Buenos Aires, Los Angeles) on
   a 1440x900 screen and a 390x844 phone; and the check failing for Oslo
   and Auckland on the offset alone.

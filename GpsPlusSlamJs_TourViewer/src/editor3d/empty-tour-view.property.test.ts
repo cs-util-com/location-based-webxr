@@ -11,13 +11,29 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { GLOBE_SWITCH } from "../editor/globe-switch.js";
+import { meteorStartAltitudeM } from "./globe-approach-meteor.js";
 import { GLOBE_EDITOR_LOOK } from "./globe-editor-look.js";
 import { emptyTourCentre, emptyTourView } from "./empty-tour-view.js";
 
 const EARTH_RADIUS_KM = 6_371;
 const DEG = Math.PI / 180;
-const START_KM = GLOBE_SWITCH.startKm.fallback;
+
+/** The height (km) the globe editor opens an empty tour at, on a screen of
+ *  `aspect` with no `startKm` in the link: the approach's start. */
+function startKm(aspect: number): number {
+  return (
+    meteorStartAltitudeM({
+      radiusM: EARTH_RADIUS_KM * 1000,
+      fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+      aspect,
+      startKm: null,
+    }) / 1000
+  );
+}
+
+/** The lowest of those over the shapes tested here (the widest screen
+ *  starts nearest), for the cap check. */
+const START_KM = Math.min(startKm(2.4), startKm(390 / 844));
 
 /**
  * Real zones with a city's place (rounded, from the zone's own city) and
@@ -194,7 +210,9 @@ describe("the empty tour's view (properties)", () => {
         fc.double({ min: 1.2, max: 2.4, noNaN: true }),
         ([zone, stdH, , lat, lng], aspect) => {
           const centre = emptyTourCentre(-stdH * 60, zone);
-          expect(onScreen(centre, { lat, lng }, START_KM, aspect)).toBe(true);
+          expect(onScreen(centre, { lat, lng }, startKm(aspect), aspect)).toBe(
+            true,
+          );
         },
       ),
     );
@@ -220,22 +238,29 @@ describe("the empty tour's view: representative cities", () => {
     "shows %s's city on a 1440x900 desktop screen and a 390x844 phone",
     (zone, stdH, _summerH, lat, lng) => {
       const centre = emptyTourCentre(-stdH * 60, zone);
-      expect(onScreen(centre, { lat, lng }, START_KM, 1440 / 900)).toBe(true);
-      expect(onScreen(centre, { lat, lng }, START_KM, 390 / 844)).toBe(true);
+      for (const aspect of [1440 / 900, 390 / 844]) {
+        expect(onScreen(centre, { lat, lng }, startKm(aspect), aspect)).toBe(
+          true,
+        );
+      }
     },
   );
 
   // Why: the picture check itself must be able to fail (a check that
-  // passes everything proves nothing): without the zone, Oslo and
-  // Auckland were off a landscape screen.
-  it("would have missed Oslo and Auckland on the offset alone", () => {
-    const oslo = emptyTourCentre(-60);
-    expect(onScreen(oslo, { lat: 59.91, lng: 10.75 }, START_KM, 1.6)).toBe(
-      false,
-    );
-    const auckland = emptyTourCentre(-720);
-    expect(
-      onScreen(auckland, { lat: -36.85, lng: 174.76 }, START_KM, 1.6),
-    ).toBe(false);
+  // passes everything proves nothing). From the approach's start the
+  // whole visible half of the Earth is in the picture, so the far side is
+  // what it must refuse: Auckland from Oslo's view, and Oslo from
+  // Auckland's, at a landscape and a portrait shape.
+  it("refuses a city on the far side of the Earth", () => {
+    const oslo = emptyTourCentre(-60, "Europe/Oslo");
+    const auckland = emptyTourCentre(-720, "Pacific/Auckland");
+    for (const aspect of [1.6, 390 / 844]) {
+      expect(
+        onScreen(oslo, { lat: -36.85, lng: 174.76 }, startKm(aspect), aspect),
+      ).toBe(false);
+      expect(
+        onScreen(auckland, { lat: 59.91, lng: 10.75 }, startKm(aspect), aspect),
+      ).toBe(false);
+    }
   });
 });

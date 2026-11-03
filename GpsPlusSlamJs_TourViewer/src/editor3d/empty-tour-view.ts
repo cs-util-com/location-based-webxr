@@ -29,8 +29,7 @@ export const EMPTY_TOUR_VIEW = Object.freeze({
  * A rough latitude (deg) per zone region, the first part of an IANA name:
  * where most of the region's people live, not its middle. A zone spans
  * about 15 degrees of longitude; this only needs to put the creator's home
- * inside the first view (the start height sees about 47 degrees of arc
- * either way on a landscape screen), not near its centre.
+ * inside the first view, not near its centre.
  */
 const REGION_LAT: Readonly<Record<string, number>> = Object.freeze({
   Europe: 50,

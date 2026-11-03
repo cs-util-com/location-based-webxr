@@ -1075,7 +1075,9 @@ export async function openGlobeEditor(
     if (tourAt === null) {
       // Nowhere to fly to: the whole Earth from the approach's start
       // height, and no approach to wait for.
-      view.placeView(emptyTourView(centre, knobs.startKm));
+      view.placeView(
+        emptyTourView(centre, (startCentreM - view.radius) / 1000),
+      );
       deps.approach?.ended?.("landed");
     } else if (deps.approach !== undefined) {
       const reducedMotion =
