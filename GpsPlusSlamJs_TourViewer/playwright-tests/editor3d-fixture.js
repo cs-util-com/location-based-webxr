@@ -121,7 +121,11 @@ export async function afterFrames(page, n) {
  * frame, so it is bound by frames, not time: measured 2026-11-03 on the
  * sample tour at street level, 150 to 172 frames at 1x to 6x CPU slowdown,
  * which took 57 s to 75 s at the software renderer's 2 to 3 frames a
- * second. This allows about 2.3 times the most measured.
+ * second; again with the street map's hold on (the relief keeping a
+ * mapped tile until its children have their map), 102 to 132 frames over
+ * eleven hand-overs of the globe, hold, gain and clouds specs: the hold
+ * adds none. This allows about 2.3 times the most measured, and three
+ * times the most with the hold.
  */
 const RELIEF_HANDOVER_FRAMES = 400;
 
@@ -185,6 +189,11 @@ export async function reliefCarries(page) {
     seen?.globe?.carrier,
     `the relief did not take over; frames ${String((seen?.frames ?? 0) - fromFrames)}, relief ${JSON.stringify(seen?.globe?.relief)}`,
   ).toBe("relief");
+  // The hand-over's frames, read from the run's log to re-measure
+  // `RELIEF_HANDOVER_FRAMES`.
+  console.log(
+    `relief hand-over: ${String((seen?.frames ?? 0) - fromFrames)} frames`,
+  );
 }
 
 /**
