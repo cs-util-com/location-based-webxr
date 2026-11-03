@@ -50,8 +50,6 @@ interface DetailsNoGps {
   /** Show what visitors without location meet while the box reads `on`
    *  (nothing for off); writes nothing. */
   preview: (on: boolean) => void;
-  /** The session's edit (`EditorSession.setNeedsNoGps`). */
-  apply: (on: boolean) => "changed" | "unchanged";
 }
 
 export interface DetailsDialogDeps {
@@ -62,8 +60,10 @@ export interface DetailsDialogDeps {
   showCovers: (selected: string | null) => void;
   /** The cover chosen in the picker now. */
   chosenCover: () => string | null;
-  /** The session's edit (`EditorSession.setDetails`). */
-  apply: (next: DetailsForm) => DetailsOutcome;
+  /** The session's edit (`EditorSession.setDetails`): the details and,
+   *  where the dialog shows it, the "needs no GPS" box as it reads - one
+   *  edit, one undo step. */
+  apply: (next: DetailsForm, needsNoGps?: boolean) => DetailsOutcome;
   /** After Apply closed the dialog: what came of it (the page refreshes,
    *  says it in a toast and lets autosave know). */
   onApplied: (kind: "changed" | "unchanged") => void;
@@ -99,26 +99,25 @@ export function wireDetailsDialog(deps: DetailsDialogDeps): DetailsDialog {
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (dom.backdrop.hidden) return;
-    const outcome = deps.apply({
+    const form: DetailsForm = {
       // Typed text in NFC (B2a review 6).
       name: inputText(dom.name.value),
       description: inputText(dom.description.value),
       cover: deps.chosenCover(),
       contact: inputText(dom.contact.value),
-    });
+    };
+    // A refusal writes neither: the session checks the form first.
+    const outcome =
+      deps.noGps === undefined
+        ? deps.apply(form)
+        : deps.apply(form, deps.noGps.input.checked);
     if (outcome.kind === "refused") {
       // Stays open with what was typed: nothing is lost to a refusal.
       sayError(outcome.reason);
       return;
     }
-    // After the details, so a refusal above writes neither.
-    const noGps = deps.noGps?.apply(deps.noGps.input.checked) ?? "unchanged";
     close();
-    deps.onApplied(
-      outcome.kind === "changed" || noGps === "changed"
-        ? "changed"
-        : "unchanged",
-    );
+    deps.onApplied(outcome.kind);
   });
   deps.noGps?.input.addEventListener("change", () => {
     deps.noGps?.preview(deps.noGps.input.checked);

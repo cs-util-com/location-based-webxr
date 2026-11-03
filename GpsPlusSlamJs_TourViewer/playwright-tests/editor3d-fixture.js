@@ -120,16 +120,22 @@ export async function afterFrames(page, n) {
  * view, the default: `openSampleIn3d`), for a spec that edits on the map
  * first or drives the view switch itself.
  * @param {import("@playwright/test").Page} page
+ * @param {string} [link] the page to open: the older view by default
  */
-export async function openSample(page) {
+export async function openSample(page, link = OLDER_VIEW) {
   await startOnMap(page.context());
-  await page.goto("/edit.html?globe=0");
+  await page.goto(link);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
   await page.locator("#sample-btn").click();
   await expect(page.locator("#rail .row-title")).toHaveCount(3);
 }
+
+/** The editor's link to the older 3D view (`?globe=0`), and its plain link
+ * (the globe), for the tests that hold both. */
+export const OLDER_VIEW = "/edit.html?globe=0";
+export const GLOBE_VIEW = "/edit.html";
 
 /**
  * The editor page with the sample tour open, as a creator gets it: in the

@@ -11,8 +11,13 @@ ground ("New station here").
 
 ## Public API
 
-- `EMPTY_TOUR_VIEW` - `lat` 30 (a fixed northern latitude, where most land
-  lies), `pitchDeg` -89 (straight down has no heading to keep).
+- `EMPTY_TOUR_VIEW` - `lat` 10 (fixed, low enough that the far south -
+  Sydney, Auckland, Buenos Aires - lies inside the start height's horizon
+  with the far north; at 30 N they lay past it), `pitchDeg` -89 (straight
+  down has no heading to keep). At the 50 degree lens and the 8 000 km
+  start, a landscape screen's top and bottom edges sit about 47 degrees of
+  arc from the centre, so Oslo (50) and Auckland (51) start just off screen
+  there, inside the horizon; no one latitude fits both ends on screen.
 - `emptyTourCentre(timezoneOffsetMin)` -> `{ lat, lng, altM: 0 }`: the
   longitude from the browser's time-zone offset
   (`new Date().getTimezoneOffset()`, minutes, positive WEST of Greenwich),

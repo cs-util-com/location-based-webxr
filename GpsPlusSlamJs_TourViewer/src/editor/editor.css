@@ -100,17 +100,18 @@ button:disabled {
 }
 
 /* Where the 3D view cannot open (view3d-failed-page.ts): over the map
-   and the rail, under the top bar, its toasts and dialogs. */
+   and the rail, between the top bar and the bottom bar, under the toasts
+   and dialogs. The bottom padding keeps the card clear of a toast (one
+   line, 18 px over the bar). In the shell's dark dress: editor-shell.css. */
 #view3d-failed {
   position: fixed;
-  inset: var(--top-h) 0 0;
+  inset: var(--top-h) 0 var(--s-bar-h);
   z-index: 860;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px 16px 64px;
+  padding: 16px 16px 72px;
   overflow-y: auto;
-  background: #e8e6df;
 }
 
 #view3d-failed[hidden] {
@@ -126,6 +127,34 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* A short screen (a phone held sideways): a wider, tighter card, its
+   actions in one row, so all of it fits above a toast. */
+@media (max-height: 480px) {
+  #view3d-failed {
+    padding: 8px 16px 64px;
+  }
+
+  #view3d-failed .modal {
+    width: min(760px, 100%);
+    max-height: none;
+    padding: 14px 20px;
+  }
+
+  #view3d-failed .modal h1 {
+    font-size: 20px;
+    margin-bottom: 2px;
+  }
+
+  #view3d-failed .modal :is(.lede, p) {
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+
+  #view3d-failed .failed-actions {
+    margin-top: 10px;
+  }
 }
 
 .view3d-canvas {

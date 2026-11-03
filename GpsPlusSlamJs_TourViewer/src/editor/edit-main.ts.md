@@ -717,11 +717,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   it, and closes it again. While it loads the item and the bottom bar's
   `#view-loading` say so and the map stays; once it shows, `#view3d` is unhidden and the card hides (it
   points at a map marker); back on the map the card shows again for the
-  same selection. A failure (its code, no WebGL, nothing placed, a lost
-  context, an error) lands on the map with a toast saying why; an import
-  that does not arrive is tagged `chunk` here, so only it speaks of the
-  connection. The failure's toast stays until closed, or until a later
-  open shows the view. Opening another tour
+  same selection. A failure (its code, no WebGL, a lost context, an
+  error) is said on a page of its own (`view3d-failed-page.ts`,
+  `#view3d-failed`) with the File actions, until a later open shows the
+  view; the map, the rail, the card and the debug panel under it stay
+  inert while it shows (the view's own `onShown(false)` keeps the map inert
+  for it). An import that does not arrive is tagged `chunk` here: the
+  browser keeps that failure for the page's life, so its page offers a
+  reload (after the unsaved-work guard) instead of trying again in place.
+  A tour with nothing placed is no failure (the older view alone refuses
+  it, with a passing toast). Opening another tour
   or closing this one closes the 3D view (`viewSwitch.close()`); the
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read

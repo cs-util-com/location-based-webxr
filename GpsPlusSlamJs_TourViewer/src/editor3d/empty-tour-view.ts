@@ -3,8 +3,10 @@
  * position yet (a new tour, or one of notes alone): the whole Earth,
  * looking straight down over the creator's own part of the world. The
  * longitude comes from the browser's time zone, the one hint a page has
- * without asking for the location; the latitude is a fixed northern one,
- * where most land lies. From there the creator flies down and places the
+ * without asking for the location; the latitude is a fixed one, 10
+ * degrees north: low enough that the far south (Sydney, Auckland, Buenos
+ * Aires) lies inside the start height's horizon as the far north (Oslo)
+ * does. From there the creator flies down and places the
  * first station on the ground.
  *
  * Pure: no globe, no three.
@@ -17,7 +19,7 @@ import type { GlobeViewPose } from "gps-plus-slam-globe/view";
 /** The empty tour's view: its latitude and how far from straight down it
  *  looks (deg; straight down has no heading to keep). */
 export const EMPTY_TOUR_VIEW = Object.freeze({
-  lat: 30,
+  lat: 10,
   pitchDeg: -89,
 });
 

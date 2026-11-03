@@ -8,6 +8,8 @@ import {
 
 import { viewCommand } from "./editor-menus.js";
 import {
+  GLOBE_VIEW,
+  OLDER_VIEW,
   answerHosts,
   openSample,
   openSampleIn3d,
@@ -30,6 +32,13 @@ import {
  */
 
 const LOADING = "Loading 3D view…";
+
+/** The view a test opens: the older one (`?globe=0`, until it goes) and
+ * the globe the plain link opens. */
+const BOTH_VIEWS = /** @type {const} */ ([
+  ["older view", OLDER_VIEW],
+  ["globe", GLOBE_VIEW],
+]);
 
 test("opens the sample tour in 3D after a loading state, and back to the map with the selection kept", async ({
   page,
@@ -266,39 +275,41 @@ test("a 3D view whose code cannot load is said on its page, the view closed", as
 // of WebGL (the page refuses one WebGL context); the second shows. (A chunk
 // that failed cannot stand in: the browser keeps a failed import's answer
 // for the page's life.)
-test("a later open that shows the 3D view takes the earlier failure's page away", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await answerHosts(page);
-  await openSample(page);
-  await page.evaluate(() => {
-    const real = HTMLCanvasElement.prototype.getContext;
-    let refused = false;
-    /** @type {any} */ (HTMLCanvasElement.prototype).getContext = function (
-      /** @type {string} */ kind,
-      /** @type {unknown[]} */ ...rest
-    ) {
-      if (!refused && kind.startsWith("webgl")) {
-        refused = true;
-        return null;
-      }
-      return real.call(this, kind, ...rest);
-    };
+for (const [view, link] of BOTH_VIEWS) {
+  test(`a later open that shows the 3D view takes the earlier failure's page away (${view})`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await answerHosts(page);
+    await openSample(page, link);
+    await page.evaluate(() => {
+      const real = HTMLCanvasElement.prototype.getContext;
+      let refused = false;
+      /** @type {any} */ (HTMLCanvasElement.prototype).getContext = function (
+        /** @type {string} */ kind,
+        /** @type {unknown[]} */ ...rest
+      ) {
+        if (!refused && kind.startsWith("webgl")) {
+          refused = true;
+          return null;
+        }
+        return real.call(this, kind, ...rest);
+      };
+    });
+    const button = page.locator("#view-switch");
+    const line = page.locator("#view3d-failed", {
+      hasText: "cannot draw the 3D view",
+    });
+    await viewCommand(page, "switch");
+    await expect(line).toBeVisible();
+    await expect(button).toHaveText("3D view");
+    await expect(page.locator("#view3d canvas")).toHaveCount(0);
+    await viewCommand(page, "switch");
+    await expect(button).toHaveText("2D map", { timeout: 60_000 });
+    await expect(line).toBeHidden();
+    await expect(page.locator("#view3d canvas")).toHaveCount(1);
   });
-  const button = page.locator("#view-switch");
-  const line = page.locator("#view3d-failed", {
-    hasText: "cannot draw the 3D view",
-  });
-  await viewCommand(page, "switch");
-  await expect(line).toBeVisible();
-  await expect(button).toHaveText("3D view");
-  await expect(page.locator("#view3d canvas")).toHaveCount(0);
-  await viewCommand(page, "switch");
-  await expect(button).toHaveText("2D map", { timeout: 60_000 });
-  await expect(line).toBeHidden();
-  await expect(page.locator("#view3d canvas")).toHaveCount(1);
-});
+}
 
 // Why: an error inside the 3D view's frame loop before its first frame
 // left the open waiting for a frame that never came - the button stuck on
@@ -306,46 +317,48 @@ test("a later open that shows the 3D view takes the earlier failure's page away"
 // canvas in the box (a second one on the next open). The open must end on
 // its page with the reason said and nothing of the view left behind. The
 // page's WebGL draw calls throw once, inside three's render.
-test("a 3D view whose first frame fails is said on its page, with nothing left", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await answerHosts(page);
-  await openSample(page);
-  await page.evaluate(() => {
-    let thrown = false;
-    for (const proto of [
-      WebGL2RenderingContext.prototype,
-      WebGLRenderingContext.prototype,
-    ]) {
-      for (const name of /** @type {const} */ ([
-        "drawElements",
-        "drawArrays",
-      ])) {
-        const real = /** @type {any} */ (proto)[name];
-        /** @type {any} */ (proto)[name] = function (
-          /** @type {unknown[]} */ ...args
-        ) {
-          if (!thrown) {
-            thrown = true;
-            throw new Error("a draw call failed (test)");
-          }
-          return real.apply(this, args);
-        };
+for (const [view, link] of BOTH_VIEWS) {
+  test(`a 3D view whose first frame fails is said on its page, with nothing left (${view})`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await answerHosts(page);
+    await openSample(page, link);
+    await page.evaluate(() => {
+      let thrown = false;
+      for (const proto of [
+        WebGL2RenderingContext.prototype,
+        WebGLRenderingContext.prototype,
+      ]) {
+        for (const name of /** @type {const} */ ([
+          "drawElements",
+          "drawArrays",
+        ])) {
+          const real = /** @type {any} */ (proto)[name];
+          /** @type {any} */ (proto)[name] = function (
+            /** @type {unknown[]} */ ...args
+          ) {
+            if (!thrown) {
+              thrown = true;
+              throw new Error("a draw call failed (test)");
+            }
+            return real.apply(this, args);
+          };
+        }
       }
-    }
+    });
+    const button = page.locator("#view-switch");
+    await viewCommand(page, "switch");
+    await expect(
+      page.locator("#view3d-failed", { hasText: "stopped on an error" }),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(button).toHaveText("3D view");
+    await expect(button).toBeEnabled();
+    await expect(page.locator("#view3d")).toBeHidden();
+    await expect(page.locator("#view3d canvas")).toHaveCount(0);
+    await expect(page.locator("#view3d-credits")).toBeEmpty();
   });
-  const button = page.locator("#view-switch");
-  await viewCommand(page, "switch");
-  await expect(
-    page.locator("#view3d-failed", { hasText: "stopped on an error" }),
-  ).toBeVisible({ timeout: 60_000 });
-  await expect(button).toHaveText("3D view");
-  await expect(button).toBeEnabled();
-  await expect(page.locator("#view3d")).toBeHidden();
-  await expect(page.locator("#view3d canvas")).toHaveCount(0);
-  await expect(page.locator("#view3d-credits")).toBeEmpty();
-});
+}
 
 // Why: each open makes a WebGL renderer, and a renderer's dispose() does
 // not give its context back; anything still holding the renderer (the
@@ -354,26 +367,28 @@ test("a 3D view whose first frame fails is said on its page, with nothing left",
 // browser's limit (16 in Chromium), which then drops the oldest context -
 // the map's markers or the next 3D view among them. Twenty switches must
 // never warn of too many contexts.
-test("switching to 3D and back twenty times keeps the browser's WebGL contexts free", async ({
-  page,
-}) => {
-  test.setTimeout(240_000);
-  /** @type {string[]} */
-  const warnings = [];
-  page.on("console", (message) => {
-    if (/too many active webgl contexts/i.test(message.text())) {
-      warnings.push(message.text());
+for (const [view, link] of BOTH_VIEWS) {
+  test(`switching to 3D and back twenty times keeps the browser's WebGL contexts free (${view})`, async ({
+    page,
+  }) => {
+    test.setTimeout(480_000);
+    /** @type {string[]} */
+    const warnings = [];
+    page.on("console", (message) => {
+      if (/too many active webgl contexts/i.test(message.text())) {
+        warnings.push(message.text());
+      }
+    });
+    await answerHosts(page);
+    await openSample(page, link);
+    const button = page.locator("#view-switch");
+    for (let i = 0; i < 20; i++) {
+      await viewCommand(page, "switch");
+      await expect(button).toHaveText("2D map", { timeout: 60_000 });
+      await viewCommand(page, "switch");
+      await expect(button).toHaveText("3D view");
     }
+    expect(warnings).toEqual([]);
+    await expect(page.locator("#view3d canvas")).toHaveCount(0);
   });
-  await answerHosts(page);
-  await openSample(page);
-  const button = page.locator("#view-switch");
-  for (let i = 0; i < 20; i++) {
-    await viewCommand(page, "switch");
-    await expect(button).toHaveText("2D map", { timeout: 60_000 });
-    await viewCommand(page, "switch");
-    await expect(button).toHaveText("3D view");
-  }
-  expect(warnings).toEqual([]);
-  await expect(page.locator("#view3d canvas")).toHaveCount(0);
-});
+}

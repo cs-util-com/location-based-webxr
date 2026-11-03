@@ -20,7 +20,10 @@ a pending change, saved by Save or autosave like any other edit.
   - `deps.showCovers(selected)` / `deps.chosenCover()` - the page's cover
     picker (radios with thumbnails, `edit-main.ts`), drawn on open and read
     on Apply; `null` is "no cover".
-  - `deps.apply(form)` - the session's edit; returns a `DetailsOutcome`.
+  - `deps.apply(form, needsNoGps?)` - the session's edit
+    (`setDetails`); with `noGps` given, the box as it reads goes with the
+    form, so one Apply is one edit and one undo step. Returns a
+    `DetailsOutcome`.
   - `deps.onApplied(kind)` - after Apply closed the dialog: `"changed"` or
     `"unchanged"` (the page refreshes, says it in a toast, tells autosave).
   - `deps.onClose()` - the dialog closed either way (the page gives focus
@@ -28,8 +31,7 @@ a pending change, saved by Save or autosave like any other edit.
   - `deps.noGps?` - `DetailsNoGps`, the tour's "needs no GPS" setting in
     the dialog (the 3D view has no rail): `input` (the box), `current()`
     (the session's setting), `preview(on)` (the warnings for `on`,
-    writing nothing), `apply(on)` (`setNeedsNoGps`, "changed" or
-    "unchanged").
+    writing nothing); Apply hands the box to `deps.apply`.
   - `open()`, `close()` (Cancel, Esc), `isOpen()`.
 - `DetailsForm` (`../tour-details-form.ts`) - `{ name, description, cover: string | null, contact }`;
   an empty text is "none". Shared with `editor-session.ts`.
@@ -62,7 +64,7 @@ const details = wireDetailsDialog({
   current: () => editor.details(),
   showCovers,
   chosenCover,
-  apply: (form) => editor.setDetails(form),
+  apply: (form, needsNoGps) => editor.setDetails(form, needsNoGps),
   onApplied: (kind) => toast(kind === "changed" ? "Changed" : "As it was"),
   onClose: () => tourName.focus(),
 });

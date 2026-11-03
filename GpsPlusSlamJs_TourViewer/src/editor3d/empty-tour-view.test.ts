@@ -17,6 +17,13 @@ import {
 } from "./empty-tour-view.js";
 
 describe("emptyTourCentre", () => {
+  // Why: the latitude sits low enough that a creator in the southern
+  // hemisphere (Sydney, Buenos Aires) still finds home on the first view;
+  // at 30 N it lay past the horizon.
+  it("centres at 10 degrees north", () => {
+    expect(EMPTY_TOUR_VIEW.lat).toBe(10);
+  });
+
   it("puts the centre over the time zone's own longitude", () => {
     // Central Europe in winter (UTC+1): getTimezoneOffset() is -60.
     expect(emptyTourCentre(-60)).toEqual({

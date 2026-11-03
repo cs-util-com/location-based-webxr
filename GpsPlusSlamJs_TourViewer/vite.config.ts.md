@@ -34,11 +34,11 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
 - `plugins`: `globeAssetsRoute(<GpsPlusSlamJs_Globe/assets>)`
   (`src/dev-server/globe-assets-route.ts`): the dev server (and so the e2e)
   answers `/globe-assets/*` from the Globe package's committed assets,
-  which the editor on the globe view (`?globe=1`, `src/editor3d/editor3d-globe.ts`)
+  which the editor on the globe view (the default, `src/editor3d/editor3d-globe.ts`)
   loads. This build does NOT copy them: the site build
   (`scripts/build-site.mjs`) ships one copy at the site root,
   `dist-site/globe-assets/` (about 12.6 MB), shared with the look-dev
-  labs, so the deployed `/tour/edit.html?globe=1` resolves the same
+  labs, so the deployed `/tour/edit.html` resolves the same
   absolute paths. No visitor page's bundle names them
   (`src/editor3d-lazy.test.ts`).
 

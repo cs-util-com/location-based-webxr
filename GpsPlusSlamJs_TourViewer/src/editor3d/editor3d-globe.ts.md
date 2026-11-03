@@ -288,7 +288,8 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   `editor3d-terrain.test.ts` (the ECEF placement).
 - `../editor3d-lazy.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
-- `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html?globe=1` and
+- `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html` (the globe
+  is the default; `globe=1` is an old link that still works) and
   finds the globe and a station through the page's test hooks; the sky
   (blue at noon, dark at midnight); a handle drag holding the camera and
   the frame still (the frame even with the camera taken 60 km away); a

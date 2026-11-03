@@ -39,8 +39,7 @@ export const VIEW_SWITCH_LABELS = Object.freeze({
 });
 
 const FAILURE_TEXT: Readonly<Record<View3dFailure, string>> = {
-  chunk:
-    "The 3D view could not be loaded. Check the connection, then try again.",
+  chunk: "The 3D view could not be loaded. Reload the page to load it again.",
   webgl:
     "This browser cannot draw the 3D view: it has no WebGL. Open the editor in a browser with WebGL turned on.",
   "context-lost":
@@ -176,8 +175,8 @@ export function createViewSwitch(deps: {
     const mine = ++attempt;
     let opened: View3dHandle;
     try {
-      // A view that stops, while it loads or once shown, lands on the map
-      // with the reason said; one already left says nothing.
+      // A view that stops, while it loads or once shown, ends on the
+      // failure's page with the reason said; one already left says nothing.
       const stopped = (reason: "context-lost" | "error") => {
         if (mine !== attempt) return;
         const loading = view === null && ui().view3dLoad === "loading";

@@ -1157,6 +1157,40 @@ describe("createEditorSession, the tour details (W2)", () => {
     ...over,
   });
 
+  // Why: Tour details applies its fields and its "needs no GPS" box with
+  // one click, so one Undo takes the whole Apply back; it used to make two
+  // steps, the first Undo leaving half of what was applied.
+  it("one Apply of the details and the needs-no-GPS setting is one undo step", async () => {
+    const { session, manifest } = await opened([pin("a")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.setDetails(form({ name: "Both" }), true)).toEqual({
+      kind: "changed",
+    });
+    expect(editor.details().name).toBe("Both");
+    expect(editor.needsNoGps()).toBe(true);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.details().name).toBe("");
+    expect(editor.needsNoGps()).toBe(false);
+    expect(editor.undo().kind).toBe("nothing");
+    // The setting alone, the details as they stand: still one step.
+    expect(editor.setDetails(editor.details(), true)).toEqual({
+      kind: "changed",
+    });
+    expect(editor.needsNoGps()).toBe(true);
+    // Neither changed: no step.
+    expect(editor.setDetails(editor.details(), true)).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.needsNoGps()).toBe(false);
+    expect(editor.undo().kind).toBe("nothing");
+    await session.close();
+  });
+
   it("writes the name, description, cover and contact into the saved tour, each a change until then", async () => {
     const { session, manifest } = await opened([pin("a"), photo("f")]);
     const editor = createEditorSession({

@@ -20,6 +20,11 @@ import { view3dFailureText } from "./view-switch.js";
 /** The page's words that do not depend on the failure. */
 export const VIEW3D_FAILED_PAGE = Object.freeze({
   title: "The 3D view cannot open",
+  /** The first button: the view tried again in place, or - for code that
+   *  did not load, which the browser keeps failing for the page's life -
+   *  the page reloaded. */
+  retry: "Try again",
+  reload: "Reload the page",
 });
 
 type ViewState = Pick<
@@ -44,7 +49,7 @@ export interface View3dFailedPageDom {
   root: { hidden: boolean | "until-found" };
   heading: { focus(): void };
   reason: { textContent: string | null };
-  retry: Clickable;
+  retry: Clickable & { textContent: string | null };
   open: Clickable;
   save: Clickable;
   saveCopy: Clickable;
@@ -54,6 +59,8 @@ export interface View3dFailedPageDom {
 /** What each button does (the page's own File actions). */
 export interface View3dFailedPageActions {
   retry(): void;
+  /** Reload the page (after the page's unsaved-work guard). */
+  reload(): void;
   open(): void;
   save(): void;
   saveCopy(): void;
@@ -85,7 +92,13 @@ export function wireView3dFailedPage(deps: {
 
   const render = (): void => {
     const reason = failedPageReason(store.getState().editorView);
-    if (reason !== null) dom.reason.textContent = view3dFailureText(reason);
+    if (reason !== null) {
+      dom.reason.textContent = view3dFailureText(reason);
+      dom.retry.textContent =
+        reason === "chunk"
+          ? VIEW3D_FAILED_PAGE.reload
+          : VIEW3D_FAILED_PAGE.retry;
+    }
     const show = reason !== null;
     if (show === shown) return;
     shown = show;
@@ -95,7 +108,9 @@ export function wireView3dFailedPage(deps: {
   };
 
   dom.retry.addEventListener("click", () => {
-    actions.retry();
+    if (failedPageReason(store.getState().editorView) === "chunk") {
+      actions.reload();
+    } else actions.retry();
   });
   dom.open.addEventListener("click", () => {
     actions.open();

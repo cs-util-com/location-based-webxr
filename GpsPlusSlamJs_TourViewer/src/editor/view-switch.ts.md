@@ -16,7 +16,8 @@ edits and the selection are the store's, so switching keeps them all.
   (`chunk`, `webgl`, `context-lost`, `empty`, `error`), in plain words;
   a failure's words never speak of the map (it no longer stands in for the
   3D view; `view3d-failed-page.ts` shows them on a page of its own), and
-  only `chunk` speaks of the connection.
+  only `chunk` says to reload the page (trying again in place gets the
+  browser's kept import failure back).
 - `createViewSwitch({ button, store, open, say, onShown?, status? })` -> `ViewSwitch`:
   - `button` - a `ViewSwitchButton` (the parts of a button it uses);
   - `status` - a `ViewSwitchStatus` (`textContent`, `hidden`), the bottom
@@ -55,7 +56,7 @@ edits and the selection are the store's, so switching keeps them all.
 - **A failure's reason** is the error's `reason` when it is one of the
   five (`chunk` is the page's tag for an import that did not arrive);
   anything else - an error without a reason, an unknown one - is `error`,
-  whose text does not blame the connection.
+  whose text does not ask for a reload.
 - **A view that stops** (`contextLost`, `failed`) while it loads ends the
   load on the map with its reason said, and the view that may still
   arrive for it is disposed; once shown, it leaves the view the same way.

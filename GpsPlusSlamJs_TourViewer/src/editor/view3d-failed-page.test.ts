@@ -81,7 +81,7 @@ function harness(start: View) {
       },
     },
     reason: { textContent: "" as string | null },
-    retry: button(),
+    retry: { ...button(), textContent: "Try again" as string | null },
     open: button(),
     save: button(),
     saveCopy: button(),
@@ -90,6 +90,7 @@ function harness(start: View) {
   const covered = [{ inert: false }, { inert: false }];
   const actions = {
     retry: vi.fn(),
+    reload: vi.fn(),
     open: vi.fn(),
     save: vi.fn(),
     saveCopy: vi.fn(),
@@ -153,6 +154,24 @@ describe("wireView3dFailedPage", () => {
       h.dom[name].click();
       expect(h.actions[name]).toHaveBeenCalledTimes(1);
     }
+  });
+
+  // Why: the browser keeps a failed import's answer for the page's life,
+  // so trying the view again in place fails the same way for good; only a
+  // reload fetches its code again (the unsaved-work guard and the draft
+  // are the page's, behind `reload`).
+  it("reloads the page for code that did not load, and tries again in place otherwise", () => {
+    const h = harness(failed("chunk"));
+    expect(h.dom.retry.textContent).toBe("Reload the page");
+    h.dom.retry.click();
+    expect(h.actions.reload).toHaveBeenCalledTimes(1);
+    expect(h.actions.retry).not.toHaveBeenCalled();
+    h.set(idle);
+    h.set(failed("error"));
+    expect(h.dom.retry.textContent).toBe("Try again");
+    h.dom.retry.click();
+    expect(h.actions.retry).toHaveBeenCalledTimes(1);
+    expect(h.actions.reload).toHaveBeenCalledTimes(1);
   });
 
   it("stops following the store once disposed", () => {

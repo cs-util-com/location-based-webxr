@@ -172,11 +172,6 @@ function wireNoGps(
     input,
     current: vi.fn(() => setting.on),
     preview: vi.fn((_on: boolean) => undefined),
-    apply: vi.fn((on: boolean): "changed" | "unchanged" => {
-      if (on === setting.on) return "unchanged";
-      setting.on = on;
-      return "changed";
-    }),
   };
   const dom = {
     backdrop: el(),
@@ -191,7 +186,14 @@ function wireNoGps(
     current: vi.fn(() => NOW),
     showCovers: vi.fn(),
     chosenCover: () => "f1",
-    apply: vi.fn((_next: DetailsForm) => outcome),
+    // The session's one edit of both (`setDetails`): the setting is a
+    // change of its own when the fields are not.
+    apply: vi.fn((_next: DetailsForm, on?: boolean): DetailsOutcome => {
+      if (outcome.kind === "refused" || on === undefined) return outcome;
+      const settingChanged = on !== setting.on;
+      setting.on = on;
+      return settingChanged ? { kind: "changed" } : outcome;
+    }),
     onApplied: vi.fn(),
     onClose: vi.fn(),
   };
@@ -222,15 +224,20 @@ describe("wireDetailsDialog's 'needs no GPS'", () => {
     h.noGps.input.checked = true;
     h.noGps.input.fire("change");
     expect(h.noGps.preview).toHaveBeenLastCalledWith(true);
-    expect(h.noGps.apply).not.toHaveBeenCalled();
+    expect(h.deps.apply).not.toHaveBeenCalled();
   });
 
-  it("Apply writes it after the details, and a change of it alone says changed", () => {
+  // One edit with the details (one undo step), not a second one after.
+  it("Apply hands it to the details' one edit, and a change of it alone says changed", () => {
     const h = wireNoGps({ kind: "unchanged" });
     h.dialog.open();
     h.noGps.input.checked = true;
     h.dom.form.fire("submit");
-    expect(h.noGps.apply).toHaveBeenCalledWith(true);
+    expect(h.deps.apply).toHaveBeenCalledTimes(1);
+    expect(h.deps.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ cover: "f1" }),
+      true,
+    );
     expect(h.setting.on).toBe(true);
     expect(h.dialog.isOpen()).toBe(false);
     expect(h.deps.onApplied).toHaveBeenCalledWith("changed");
@@ -248,14 +255,14 @@ describe("wireDetailsDialog's 'needs no GPS'", () => {
     refused.dialog.open();
     refused.noGps.input.checked = true;
     refused.dom.form.fire("submit");
-    expect(refused.noGps.apply).not.toHaveBeenCalled();
     expect(refused.setting.on).toBe(false);
+    expect(refused.dialog.isOpen()).toBe(true);
 
     const cancelled = wireNoGps();
     cancelled.dialog.open();
     cancelled.noGps.input.checked = true;
     cancelled.dom.cancel.fire("click");
-    expect(cancelled.noGps.apply).not.toHaveBeenCalled();
+    expect(cancelled.deps.apply).not.toHaveBeenCalled();
     // Opened again, it shows the setting as it stands, not the tick.
     cancelled.dialog.open();
     expect(cancelled.noGps.input.checked).toBe(false);

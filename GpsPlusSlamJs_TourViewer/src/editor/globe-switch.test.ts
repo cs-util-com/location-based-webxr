@@ -3,7 +3,7 @@
  * so the switch must be ON for every link that does not turn it off; the
  * one way back to the older 3D view and the map, `globe=0`, is temporary
  * until those views are removed, and an old `globe=1` link must keep
- * working. The tuning knobs the owner sets by hand in the link must
+ * working. The tuning knobs set by hand in the link must
  * never turn a typo into a broken view: a value that is not a number in
  * range falls back to the default instead of hiding everything (0 px) or
  * nothing (Infinity).

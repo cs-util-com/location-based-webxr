@@ -20,13 +20,22 @@ within reach, so no work is stranded.
   `{ dispose() }`:
   - `dom` - `View3dFailedPageDom` (structural): the root (`hidden`), the
     heading (`focus()`), the reason line (`textContent`) and the five
-    buttons: `retry`, `open`, `save`, `saveCopy`, `details`.
-  - `covered` - what the page covers (the map, the rail, the card): made
-    `inert` while it shows.
+    buttons: `retry` (its label written too), `open`, `save`,
+    `saveCopy`, `details`.
+  - `covered` - what the page covers (the map, the rail, the card, the
+    debug panel): made `inert` while it shows. The 3D view's own
+    hand-back (`onShown(false)` in `edit-main.ts`) runs after this
+    page's render when a shown view stops, so it keeps the map inert itself
+    while a failure stands.
   - `store` - `getState().editorView` and `subscribe`.
   - `actions` - one per button (the page passes `viewSwitch.show3d`,
     File's Open… with its unsaved-work guard, Save, Save a copy…, Tour
-    details…).
+    details…), plus `reload`: for `chunk` (code that did not load) the
+    first button reads "Reload the page" and runs it, since the browser
+    keeps a failed import's answer for the page's life and trying again in
+    place cannot succeed. The page's `reload` asks first when work is
+    unsaved, then holds back the browser's own leave prompt.
+  - `VIEW3D_FAILED_PAGE` - its title and the first button's two labels.
   - `dispose()` stops following the store.
 
 ## Invariants & assumptions

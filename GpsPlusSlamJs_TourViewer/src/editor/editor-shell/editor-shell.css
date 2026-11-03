@@ -1890,12 +1890,14 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
 }
 
 /* --- dialogs and toasts ----------------------------------------------------
- * The page's dialogs (open, Tour details, Share and publish), their fields
- * and the toasts wear the shell's dark dress in both views: the paper
- * tokens of `editor.css` are redefined inside them, and the few fields it
- * paints white get the dark field colour. */
+ * The page's dialogs (open, Tour details, Share and publish), their fields,
+ * the toasts and the page where the 3D view cannot open wear the shell's
+ * dark dress in both views: the paper tokens of `editor.css` are redefined
+ * inside them, and the few fields it paints white get the dark field
+ * colour. */
 .backdrop,
-#toasts {
+#toasts,
+#view3d-failed {
   --ink: var(--s-text);
   --ink-dim: var(--s-muted);
   --ink-faint: var(--s-dim);
@@ -1916,6 +1918,11 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
   color: var(--ink);
 }
 
+#view3d-failed {
+  background: var(--s-bg0);
+  color: var(--ink);
+}
+
 /* "No cover" on its grey tile: the muted grey reads only 4.0:1 there, so
  * a lighter one (5.2:1, AA for small text). */
 .backdrop .cover-thumb {
@@ -1929,6 +1936,7 @@ body[data-view="3d"] #toasts {
 }
 
 .backdrop :is(.btn, .drop, .cover-choice),
+#view3d-failed .btn,
 .backdrop .link-row input,
 .backdrop .details :is(input[type="text"], textarea),
 .backdrop .done select {
@@ -1937,7 +1945,8 @@ body[data-view="3d"] #toasts {
   color: var(--s-text);
 }
 
-.backdrop .btn:hover:not(:disabled) {
+.backdrop .btn:hover:not(:disabled),
+#view3d-failed .btn:hover:not(:disabled) {
   border-color: var(--s-muted);
   background-color: var(--s-bg3);
 }
@@ -1948,7 +1957,9 @@ body[data-view="3d"] #toasts {
 }
 
 .backdrop .btn.primary,
-.backdrop .btn.primary:hover:not(:disabled) {
+.backdrop .btn.primary:hover:not(:disabled),
+#view3d-failed .btn.primary,
+#view3d-failed .btn.primary:hover:not(:disabled) {
   border-color: transparent;
   background-color: var(--s-accent);
   color: #16120b;

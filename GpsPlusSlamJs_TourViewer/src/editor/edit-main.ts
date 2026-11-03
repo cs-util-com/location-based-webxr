@@ -161,7 +161,10 @@ import {
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
-import { wireView3dFailedPage } from "./view3d-failed-page.js";
+import {
+  failedPageReason,
+  wireView3dFailedPage,
+} from "./view3d-failed-page.js";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -1622,8 +1625,8 @@ const details = wireDetailsDialog({
     );
     return checked === null || checked.value === "" ? null : checked.value;
   },
-  apply: (next) =>
-    editor?.setDetails(next) ?? {
+  apply: (next, needsNoGps) =>
+    editor?.setDetails(next, needsNoGps) ?? {
       kind: "refused",
       reason: "No tour is open.",
     },
@@ -1642,7 +1645,6 @@ const details = wireDetailsDialog({
         editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck()),
       );
     },
-    apply: (on) => editor?.setNeedsNoGps(on).kind ?? "unchanged",
   },
   onClose: () => {
     releaseOutside?.();
@@ -1719,8 +1721,11 @@ function unsavedWork(): boolean {
 
 window.addEventListener("resize", placeCard);
 element("card").addEventListener(CARD_RESIZED, placeCard);
+/** Set once the page asked before leaving itself (a reload of the
+ *  cannot-open page): the browser's prompt would ask a second time. */
+let leavingOnPurpose = false;
 window.addEventListener("beforeunload", (event) => {
-  if (unsavedWork()) event.preventDefault();
+  if (!leavingOnPurpose && unsavedWork()) event.preventDefault();
 });
 document.addEventListener("keydown", (event) => {
   // Ctrl+S / Cmd+S saves the tour; the browser's "Save page as" never opens
@@ -2220,7 +2225,7 @@ async function openFile(
   debugPanel.hidden = false;
   startDebugLayer();
   // The 3D view is the default (its load is said in the bottom bar; a
-  // failure lands on the map with its reason said).
+  // failure is said on its own page, `view3d-failed-page.ts`).
   if (opensIn3d()) viewSwitch.show3d();
   return true;
 }
@@ -3976,8 +3981,10 @@ const viewSwitch = createViewSwitch({
     // (`editor-shell.css`), the paper map page otherwise.
     document.body.dataset["view"] = on ? "3d" : "2d";
     // Covered by the 3D view, the map's markers and controls leave the
-    // tab order and the accessibility tree.
-    mapBox.inert = on;
+    // tab order and the accessibility tree - and stay out while the
+    // failure's page covers it: a view that stops after it showed leaves
+    // through the store first, whose render shows that page.
+    mapBox.inert = on || failedPageReason(store.getState().editorView) !== null;
     if (on && shown3d !== null) {
       shell.show(shown3d, { approach: approachHolds });
     } else shell.hide();
@@ -4003,11 +4010,26 @@ wireView3dFailedPage({
     saveCopy: element("view3d-failed-save-copy"),
     details: element("view3d-failed-details"),
   },
-  covered: [mapBox, element("rail"), element("card")],
+  covered: [mapBox, element("rail"), element("card"), debugPanel],
   store,
   actions: {
     retry: () => {
       viewSwitch.show3d();
+    },
+    // The browser keeps a failed import's answer for the page's life:
+    // only a reload fetches the 3D view's code again. After the same guard
+    // as leaving, which then holds back the browser's own second prompt.
+    reload: () => {
+      if (
+        unsavedWork() &&
+        !window.confirm(
+          "Your changes are not saved yet. Reload the page anyway? Any change not yet in the editor's draft will be lost.",
+        )
+      ) {
+        return;
+      }
+      leavingOnPurpose = true;
+      window.location.reload();
     },
     open: openAnotherTour,
     save: () => {

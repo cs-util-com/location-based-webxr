@@ -200,8 +200,9 @@ afterHome? })`
 - `handReleased({ levelIds })` - no change of the document: the hand of
   `creatorCodes` lets go of a code an undo or a redo took the saved text
   of (`creator-codes.ts`'s listener dispatches it).
-- `settingsChanged({ needsNoGps, what })`, `detailsChanged({ details, what })`
-  - the details as checked by `checkDetailsForm`.
+- `settingsChanged({ needsNoGps, what })`, `detailsChanged({ details, needsNoGps?, what })`
+  - the details as checked by `checkDetailsForm`; `detailsChanged` takes
+    the setting too when Tour details applies both, so they are one step.
 - `undone()` / `redone()` - one step (none while a save is queued or runs,
   `canStep`); the document goes to the step's view
   MEASURED AGAINST THE WRITTEN FILE (`contentAt`): what the file holds as
