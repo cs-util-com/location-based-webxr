@@ -110,6 +110,17 @@ export const GLOBE_SWITCH = Object.freeze({
     min: 0.2,
     max: 1,
   }) satisfies GlobeSwitchKnob,
+  /**
+   * How the street map's gain darkens it (`OsmGainMode` in the Globe
+   * package): "flat" multiplies its colour, which keeps the map's
+   * contrasts (roads and names against the land); "compress" compresses
+   * its luma and lowers them. Flat unless the link says exactly
+   * "compress" (the A/B switch).
+   */
+  osmGainMode: Object.freeze({
+    param: "osmGainMode",
+    fallback: "flat",
+  }),
 });
 
 /** What the link asks of the editor on the globe. */
@@ -128,6 +139,8 @@ export interface GlobeSwitch {
   readonly dust: number;
   /** The street map's darkening gain, in (0, 1]. */
   readonly osmGain: number;
+  /** How the gain darkens: "flat" or "compress". */
+  readonly osmGainMode: "flat" | "compress";
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -168,5 +181,9 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     startKm: override(params, GLOBE_SWITCH.startKm),
     dust: Math.round(knob(params, GLOBE_SWITCH.dust)),
     osmGain: knob(params, GLOBE_SWITCH.osmGain),
+    osmGainMode:
+      params.get(GLOBE_SWITCH.osmGainMode.param) === "compress"
+        ? "compress"
+        : GLOBE_SWITCH.osmGainMode.fallback,
   };
 }

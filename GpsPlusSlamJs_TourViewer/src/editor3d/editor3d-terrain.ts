@@ -37,6 +37,7 @@ import {
   worldFromEcefAt,
   type GlobeOsmOverlay,
   type GlobeTerrain,
+  type OsmGainMode,
   type OsmGateLimits,
   type ReliefDeviceClass,
 } from "gps-plus-slam-globe/editor";
@@ -161,6 +162,9 @@ export function createEditorTerrain(input: {
   /** The map's darkening gain (the link's `osmGain`; its default where
    *  not given). */
   readonly osmGain?: number;
+  /** How the gain darkens (the link's `osmGainMode`; flat where not
+   *  given). */
+  readonly osmGainMode?: OsmGainMode;
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -198,6 +202,7 @@ export function createEditorTerrain(input: {
     limits: EDITOR_OSM_LIMITS,
     keep: EDITOR_OSM_KEEP[input.device],
     gain: input.osmGain ?? GLOBE_SWITCH.osmGain.fallback,
+    gainMode: input.osmGainMode ?? GLOBE_SWITCH.osmGainMode.fallback,
   });
   osm.attach(terrain);
   osm.setEnabled(true);

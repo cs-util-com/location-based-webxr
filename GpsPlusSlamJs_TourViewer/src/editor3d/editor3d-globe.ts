@@ -182,6 +182,7 @@ export async function openGlobeEditor(
     | "startKm"
     | "dust"
     | "osmGain"
+    | "osmGainMode"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -376,6 +377,7 @@ export async function openGlobeEditor(
       imagery: createGlobeImagery(),
       template: globe.template,
       osmGain: knobs.osmGain,
+      osmGainMode: knobs.osmGainMode,
     });
     undo.push(() => {
       ground.dispose();

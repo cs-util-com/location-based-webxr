@@ -115,6 +115,7 @@ interface Fakes {
     imagery?: unknown;
     template?: unknown;
     osmGain?: number;
+    osmGainMode?: string;
   };
   /** Whether the stations layer hands out its objects (a station is then
    *  admitted at its first upload); false: none ever is. */
@@ -1402,8 +1403,10 @@ describe("openGlobeEditor's wiring", () => {
     open = await openGlobeEditor(deps(), {
       ...readGlobeSwitch(""),
       osmGain: 0.45,
+      osmGainMode: "compress",
     });
     expect(fakes.terrainInput?.osmGain).toBe(0.45);
+    expect(fakes.terrainInput?.osmGainMode).toBe("compress");
   });
 
   // Why: the shell shows the street map's loading state; the view hands

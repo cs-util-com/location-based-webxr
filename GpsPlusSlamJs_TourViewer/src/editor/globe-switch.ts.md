@@ -42,6 +42,12 @@ the default.
     0.55 cuts the step by a fifth and keeps the paper at 186 of 255 (233
     at gain 1), still read as a light map; the choice stays a look one, for
     the phone A/B.
+- `osmGainMode` (`param`, `fallback` "flat", no range): how the gain
+  darkens the map. "flat" multiplies its colour, which keeps its
+  contrasts (roads and names against the land, as the tile server drew
+  them); `osmGainMode=compress` compresses its luma, the A/B that lowers
+  them (the measurement above was taken in that mode). Anything but
+  exactly "compress" reads as "flat".
 - `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
   range 500-65000 km: the start height as an explicit override. Without
   it (`null`) the meteor starts where the globe lab's intro zooms out to
@@ -49,7 +55,7 @@ the default.
   portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
   `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
-  `dust`, `osmGain`)
+  `dust`, `osmGain`, `osmGainMode`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions

@@ -23,6 +23,7 @@ describe("readGlobeSwitch", () => {
       startKm: null,
       dust: 1,
       osmGain: GLOBE_SWITCH.osmGain.fallback,
+      osmGainMode: "flat",
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
       false,
@@ -138,6 +139,18 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?globe=1&osmGain=1").osmGain).toBe(1);
     for (const bad of ["", "abc", "0", "0.1", "1.5", "-1", "Infinity"]) {
       expect(readGlobeSwitch(`?osmGain=${bad}`).osmGain).toBe(0.55);
+    }
+  });
+
+  // Why: the gain's mode is the street map's A/B switch: flat (the map's
+  // contrasts kept) unless the link asks for exactly "compress".
+  it("reads the street map's gain mode, flat unless the link says compress", () => {
+    expect(GLOBE_SWITCH.osmGainMode.fallback).toBe("flat");
+    expect(readGlobeSwitch("?globe=1&osmGainMode=compress").osmGainMode).toBe(
+      "compress",
+    );
+    for (const other of ["", "flat", "Compress", "x"]) {
+      expect(readGlobeSwitch(`?osmGainMode=${other}`).osmGainMode).toBe("flat");
     }
   });
 

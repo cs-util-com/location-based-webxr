@@ -24,14 +24,44 @@ import {
  * and the same view, once without the map, once at gain 1 (no
  * compression) and at each gain under test. It pins that the link's gain
  * reaches the drawn map (a lower gain draws it darker) and that the
- * default lowers the step against no compression. The map tile is the
- * street map's land colour, so the ratios carry over to the real map.
+ * default lowers the step against no compression. The map tile is drawn
+ * like the street map (`OSM_LIKE_TILE`): mostly its land colour, so the
+ * ratios carry over to the real map, with white roads and dark names. The
+ * gain's mode (`?osmGainMode=`) decides what becomes of those: the flat
+ * multiply (the editor's default) keeps the road's and the name's contrast
+ * against the land as the map has them at gain 1, the luma compression
+ * (the A/B) lowers both; the contrasts are read as luma ratios between
+ * the patch's percentiles (the names' at the 15th, inside the text band's
+ * core, the land's at the median, the roads' at the 90th). Measured
+ * 2026-11-03 (deciles of the patch): the 5th percentile sits in the dark
+ * edges' tail and the 97th in the tone mapping's clipped white, both
+ * blind to the gain. Land over the 10th and 20th percentiles: gain 1
+ * 6.5 and 5.4, flat 0.55 6.5 and 5.7, compress 0.55 6.0 and 4.5; road
+ * (90th) over land: 1.026, 1.072 (the road no longer clipped) and 1.037.
  *
  * Extra gains for a measurement: `OSM_GAIN_SWEEP=0.45,0.5,0.6,0.7`.
  */
 
-/** The street map's land colour (OpenStreetMap's standard style). */
-const LAND_TILE = encodeRgbPng(1, 1, [242, 239, 233]);
+/** OpenStreetMap's standard style: the land, a road, a name's text. */
+const LAND = [242, 239, 233];
+const ROAD = [255, 255, 255];
+const TEXT = [51, 51, 51];
+
+/**
+ * A 256 px tile like the street map's, in stripes of 64 px (about 13 m at
+ * the tour's zoom, wide enough to survive the texture's filtering): 36
+ * rows of land, 16 of road, 12 of text.
+ */
+const OSM_LIKE_TILE = (() => {
+  /** @type {number[]} */
+  const rgb = [];
+  for (let row = 0; row < 256; row++) {
+    const band = row % 64;
+    const colour = band < 36 ? LAND : band < 52 ? ROAD : TEXT;
+    for (let col = 0; col < 256; col++) rgb.push(...colour);
+  }
+  return encodeRgbPng(256, 256, rgb);
+})();
 
 /** The phone's width, as the hold test: the editor's phone budget. */
 const PHONE = { width: 390, height: 844 };
@@ -47,12 +77,14 @@ const GAINS = [
 ];
 
 /**
- * The median luma (Rec. 709, 0-255) of the canvas's middle fifth, read
- * from a screenshot (a software-drawn WebGL keeps no drawing buffer to
- * read back). The median ignores the stations' markers in the patch.
+ * The luma's (Rec. 709, 0-255) 15th percentile, median and 90th percentile
+ * over the canvas's middle fifth, read from a screenshot (a
+ * software-drawn WebGL keeps no drawing buffer to read back). The median
+ * ignores the stations' markers in the patch.
  * @param {import("@playwright/test").Page} page
+ * @returns {Promise<{ p15: number; p50: number; p90: number; deciles: number[] }>}
  */
-async function middleLuma(page) {
+async function middleLumas(page) {
   const box = await page.locator("#view3d canvas").boundingBox();
   if (box === null) throw new Error("no canvas");
   const png = await page.screenshot({
@@ -83,18 +115,28 @@ async function middleLuma(page) {
       );
     }
     lumas.sort((a, b) => a - b);
-    return lumas[Math.floor(lumas.length / 2)] ?? 0;
+    /** @param {number} q */
+    const at = (q) => lumas[Math.floor((lumas.length - 1) * q)] ?? 0;
+    return {
+      p15: at(0.15),
+      p50: at(0.5),
+      p90: at(0.9),
+      deciles: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1].map((q) =>
+        Math.round(at(q)),
+      ),
+    };
   }, png.toString("base64"));
 }
 
 /**
- * The middle's luma on a fresh page: with the map at `gain`, or bare (the
- * map's tiles refused, so none is drawn), after the relief carries the
- * ground and, with the map, every near tile has it.
+ * The middle's lumas on a fresh page: with the map at `gain` in `mode`,
+ * or bare (the map's tiles refused, so none is drawn), after the relief
+ * carries the ground and, with the map, every near tile has it.
  * @param {import("@playwright/test").Browser} browser
  * @param {number | "bare"} gain
+ * @param {"flat" | "compress"} [mode]
  */
-async function lumaWith(browser, gain) {
+async function lumasWith(browser, gain, mode = "flat") {
   const page = await browser.newPage({ viewport: PHONE });
   try {
     await answerHosts(page, { globeAssets: "serve" });
@@ -107,10 +149,12 @@ async function lumaWith(browser, gain) {
         : route.fulfill({
             status: 200,
             contentType: "image/png",
-            body: LAND_TILE,
+            body: OSM_LIKE_TILE,
           }),
     );
-    await page.goto(`/edit.html?globe=1&osmGain=${gain === "bare" ? 1 : gain}`);
+    await page.goto(
+      `/edit.html?globe=1&osmGain=${gain === "bare" ? 1 : gain}&osmGainMode=${mode}`,
+    );
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
     await page.locator("#sample-btn").click();
     await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -147,9 +191,9 @@ async function lumaWith(browser, gain) {
     }
     // The map's switch ramps and the move settles over a few frames.
     await afterFrames(page, 20);
-    const luma = await middleLuma(page);
+    const lumas = await middleLumas(page);
     expect(await rejections(page)).toEqual([]);
-    return luma;
+    return lumas;
   } finally {
     await page.close();
   }
@@ -160,17 +204,35 @@ test("the street map's gain lowers the brightness step at the fade's edge", asyn
 }, testInfo) => {
   // A fresh page per reading: each loads the relief (up to 400 frames,
   // `reliefCarries`) and the map.
-  test.setTimeout(420_000 * (GAINS.length + 1));
-  const bare = await lumaWith(browser, "bare");
+  test.setTimeout(420_000 * (GAINS.length + 2));
+  const round = (/** @type {number} */ x) => Math.round(x * 1000) / 1000;
+  /** @param {{ p15: number; p50: number; p90: number; deciles: number[] }} l */
+  const contrasts = (l) => ({
+    roadLand: round(l.p90 / Math.max(l.p50, 1)),
+    landText: round(l.p50 / Math.max(l.p15, 1)),
+    deciles: l.deciles,
+  });
+  const bare = (await lumasWith(browser, "bare")).p50;
   /** @type {Record<string, number>} */
   const ratios = {};
   /** @type {Record<string, number>} */
   const lumas = { bare };
+  /** @type {Record<string, { roadLand: number; landText: number; deciles: number[] }>} */
+  const contrast = {};
   for (const gain of GAINS) {
-    lumas[gain] = await lumaWith(browser, gain);
-    ratios[gain] = Math.round((lumas[gain] / bare) * 100) / 100;
+    const l = await lumasWith(browser, gain);
+    lumas[gain] = l.p50;
+    ratios[gain] = Math.round((l.p50 / bare) * 100) / 100;
+    contrast[gain] = contrasts(l);
   }
-  const reading = JSON.stringify({ lumas, ratios });
+  const compressed = await lumasWith(browser, 0.55, "compress");
+  contrast["0.55 compress"] = contrasts(compressed);
+  const reading = JSON.stringify({
+    lumas,
+    ratios,
+    contrast,
+    compressed: compressed.p50,
+  });
   testInfo.annotations.push({
     type: "osm gain readings",
     description: reading,
@@ -186,6 +248,17 @@ test("the street map's gain lowers the brightness step at the fade's edge", asyn
   expect(Math.abs((ratios[0.55] ?? 0) - 1)).toBeLessThan(
     Math.abs((ratios[1] ?? 0) - 1),
   );
+  // The flat multiply keeps the map's contrasts as at gain 1 (the road's
+  // even rises: at gain 1 the tone mapping clips it); the compression
+  // lowers both against the flat multiply.
+  const one = contrast[1] ?? { roadLand: 0, landText: 0 };
+  const flat = contrast[0.55] ?? { roadLand: 0, landText: 0 };
+  const squeezed = contrast["0.55 compress"] ?? { roadLand: 0, landText: 0 };
+  expect(one.landText).toBeGreaterThan(1.5);
+  expect(flat.roadLand).toBeGreaterThan(one.roadLand - 0.01);
+  expect(flat.landText / one.landText).toBeGreaterThan(0.9);
+  expect(squeezed.roadLand).toBeLessThan(flat.roadLand - 0.01);
+  expect(squeezed.landText).toBeLessThan(flat.landText * 0.93);
   // A lower gain is never brighter, across the gains measured.
   const sorted = [...GAINS].sort((a, b) => a - b);
   for (let i = 1; i < sorted.length; i++) {
