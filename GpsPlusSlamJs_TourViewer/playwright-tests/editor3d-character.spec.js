@@ -14,7 +14,13 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { encodeRgbPng } from "../../scripts/e2e/terrarium-png.mjs";
-import { SQUARE_GROUND_M, answerHosts, openZip } from "./editor3d-fixture.js";
+import {
+  GLOBE_VIEW,
+  SQUARE_GROUND_M,
+  answerHosts,
+  noApproach,
+  openZip,
+} from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 
 /**
@@ -28,6 +34,11 @@ import { save } from "./editor-menus.js";
  */
 
 test.describe.configure({ mode: "default" });
+
+// The walk runs on the globe, whose first frames on a software-WebGL
+// runner are slow: measured 2.2 min (CI=1, one worker, 2026-11-03), so
+// the budget is about twice that.
+const BUDGET_MS = 270_000;
 
 /** The geoid's N at the square (m): the file's heights are ellipsoidal. */
 const N_M = 45.68;
@@ -111,7 +122,8 @@ async function openAndSelect(page, zip) {
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await noApproach(page);
+  await page.goto(GLOBE_VIEW);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "wendel.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -174,7 +186,7 @@ test("a story character's view, advance and facing set in the station's inspecto
   page,
   context,
 }) => {
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openAndSelect(page, await characterTour());
   await expect(wendel(page)).toBeVisible();
   await expect(chip(page, "character-view:w1:speak")).toHaveAttribute(

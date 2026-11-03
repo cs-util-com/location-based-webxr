@@ -1,7 +1,12 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, openZip } from "./editor3d-fixture.js";
+import {
+  GLOBE_VIEW,
+  answerHosts,
+  noApproach,
+  openZip,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: a long text's narration is added in the
@@ -19,6 +24,12 @@ import { answerHosts, openZip } from "./editor3d-fixture.js";
  */
 
 test.describe.configure({ mode: "default" });
+
+// The walks run on the globe, whose first frames on a software-WebGL
+// runner are slow: measured 1.2 min (the import) and 2.0 min (the
+// sizes) with CI=1 and one worker on 2026-11-03, so the budget is about
+// twice the slower one.
+const BUDGET_MS = 240_000;
 
 const TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
 const PROTOTYPE = "/prototypes/longtext-editor-1-in-the-inspector/index.html";
@@ -92,7 +103,8 @@ async function openNarration(page) {
   const zip = Buffer.from(await (await fetch(TOUR)).arrayBuffer());
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await noApproach(page);
+  await page.goto(GLOBE_VIEW);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "long-text-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -110,7 +122,7 @@ async function openNarration(page) {
 test("a voice and its timing are imported, a word is edited, and lining the voice up again keeps the read-along", async ({
   page,
 }) => {
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openNarration(page);
   const head = page.locator('[data-lw="narration"] .sum');
   await expect(head).toHaveText("No voice yet");
@@ -188,7 +200,7 @@ test("the Narration section sits in place at 1440x900, 1280x720 and 1024x768, be
   page,
   context,
 }, testInfo) => {
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openNarration(page);
   const proto = await context.newPage();
   for (const size of SIZES) {

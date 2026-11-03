@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
-import { answerHosts, openZip } from "./editor3d-fixture.js";
+import {
+  GLOBE_VIEW,
+  answerHosts,
+  noApproach,
+  openZip,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: a long text is written in the 3D view's
@@ -23,6 +28,13 @@ import { answerHosts, openZip } from "./editor3d-fixture.js";
  */
 
 test.describe.configure({ mode: "default" });
+
+// The walks run on the globe, whose frames on a software-WebGL runner are
+// slow: measured 2.7 min (the writer), 1.5 min (the save) and 3.6 min
+// (the three sizes) with CI=1 and one worker on 2026-11-03, so the budget
+// is about twice the slowest.
+const BUDGET_MS = 420_000;
+const POLL_MS = 30_000;
 
 const TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
 const PROTOTYPE = "/prototypes/longtext-editor-1-in-the-inspector/index.html";
@@ -62,7 +74,8 @@ async function openEssay(page) {
   const zip = Buffer.from(await (await fetch(TOUR)).arrayBuffer());
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await noApproach(page);
+  await page.goto(GLOBE_VIEW);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "long-text-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -87,7 +100,7 @@ function sheet(page) {
 test("a long text is written in the inspector: one save per pause, the preview follows, the view is picked, and a part shown as typed is made plain", async ({
   page,
 }) => {
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openEssay(page);
   const area = page.getByTestId("long-text-writer");
   await expect(area).toHaveValue(
@@ -299,7 +312,7 @@ test("words typed just before Ctrl+S are in the saved tour", async ({
   // typing; a save inside that pause must commit it first (the save's
   // flush of the shell), or the file is saved without the last words, or
   // not at all ("Nothing to save").
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openEssay(page);
   const area = page.getByTestId("long-text-writer");
   await area.click();
@@ -325,27 +338,34 @@ test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768
   page,
   context,
 }, testInfo) => {
-  test.slow();
+  test.setTimeout(BUDGET_MS);
   await openEssay(page);
   const proto = await context.newPage();
   for (const size of SIZES) {
     await page.setViewportSize(size);
     // The inspector eases to its width, and the preview lays itself out
-    // from a resize observer once it has.
+    // from a resize observer once it has. Under the globe one bounding-box
+    // read can take longer than the default 5 s poll on a software-WebGL
+    // runner (measured: the read after the first resize timed out there),
+    // so both polls wait up to POLL_MS.
     await expect
       .poll(
         async () =>
           (await page.locator("#shell-inspector").boundingBox())?.width ?? 0,
+        { timeout: POLL_MS },
       )
       .toBe(size.width <= 1100 ? 340 : 360);
     await expect
-      .poll(async () => {
-        const d = await page.locator("#shell-inspector").boundingBox();
-        const p = await page.getByTestId("long-text-preview").boundingBox();
-        return d !== null && p !== null
-          ? Math.round(d.x - (p.x + p.width))
-          : -1;
-      })
+      .poll(
+        async () => {
+          const d = await page.locator("#shell-inspector").boundingBox();
+          const p = await page.getByTestId("long-text-preview").boundingBox();
+          return d !== null && p !== null
+            ? Math.round(d.x - (p.x + p.width))
+            : -1;
+        },
+        { timeout: POLL_MS },
+      )
       .toBe(14);
     await expectWriterLayout(page, size);
     const name = `${String(size.width)}x${String(size.height)}`;
