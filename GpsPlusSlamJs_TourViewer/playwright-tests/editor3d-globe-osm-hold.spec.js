@@ -30,14 +30,14 @@ import {
 /** The phone's width: the relief's phone cache budget (under 768 px). */
 const PHONE = { width: 390, height: 844 };
 
-/** How long the refusals run while the camera comes closer (ms): under the
- *  street map's give-up (3 failed retries, about 37 s of refusals). */
-const REFUSE_MS = 20_000;
+/** How many frames the refusals are sampled for after the first one: at
+ *  the software renderer's 2 to 3 frames a second about 15 to 20 s, under
+ *  the street map's give-up (3 failed retries, about 37 s of refusals). */
+const REFUSE_FRAMES = 40;
 
-/** How long the finer tiles may take to be asked for after the move (ms):
- *  they load a few a frame at the software renderer's 2 to 3 frames a
- *  second first. */
-const FIRST_REFUSAL_MS = 240_000;
+/** How many frames the finer tiles may take to be asked for after the
+ *  move: they load a few a frame first (measured: within the minute). */
+const FIRST_REFUSAL_FRAMES = 600;
 
 /** @param {any} osm */
 const lockErrorCount = (osm) =>
@@ -115,22 +115,27 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
     /** @type {any} */ (window).__tourEditor.view3dDistance(25),
   );
   // Sampled each frame until the first refusal (the finer relief tiles load
-  // a few a frame first), then for `REFUSE_MS` more.
-  const firstRefusalBy = Date.now() + FIRST_REFUSAL_MS;
+  // a few a frame first), then for `REFUSE_FRAMES` more: counted in
+  // frames, as the relief loads by frames, not by time.
+  /** @param {any} stats */
+  const framesOf = (stats) => /** @type {number} */ (stats?.frames ?? 0);
+  const movedAt = framesOf(await view3d(page));
   let refuseUntil = Number.POSITIVE_INFINITY;
   /** @type {any[]} */
   const bare = [];
   /** @type {any} */
-  let last = null;
-  while (Date.now() < Math.min(refuseUntil, firstRefusalBy)) {
+  let last;
+  for (;;) {
     const stats = await view3d(page);
     last = stats;
+    const frame = framesOf(stats);
+    if (frame >= Math.min(refuseUntil, movedAt + FIRST_REFUSAL_FRAMES)) break;
     const c = stats?.osm?.coverage;
     if (stats?.osm?.active && c && c.waiting - c.givenUp > 0) {
-      bare.push({ coverage: c, frames: stats.frames });
+      bare.push({ coverage: c, frames: frame });
     }
     if (refused > 0 && refuseUntil === Number.POSITIVE_INFINITY) {
-      refuseUntil = Date.now() + REFUSE_MS;
+      refuseUntil = frame + REFUSE_FRAMES;
     }
     await expect
       .poll(async () => (await view3d(page))?.frames)
