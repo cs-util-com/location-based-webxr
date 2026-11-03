@@ -297,7 +297,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expect(page.locator("#shell-inspector")).toBeHidden();
   await page.locator("#tree-fold").click();
   await expectTree(page, Math.min(272, 0.56 * 390), true);
-  await card(page, "The old gate").locator(".hero").click();
+  await card(page, "The old gate").locator(".pick").click();
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
   expect(phoneInspector.y).toBe(DOCK_TOP_PX);
@@ -353,13 +353,13 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   await page.screenshot({ path: test.info().outputPath("shell-1440x900.png") });
-  // The cards: 8 px in from the dock, 6 px apart, 62 px pictures.
+  // The cards: 8 px in from the dock, 6 px apart, each a one-line 28 px row.
   const tree = await box(page.locator("#shell-tree"));
-  const heroes = page.locator("#tree-body .hero");
-  const first = await box(heroes.nth(0));
-  const second = await box(heroes.nth(1));
+  const rows = page.locator("#tree-body .card > .head");
+  const first = await box(rows.nth(0));
+  const second = await box(rows.nth(1));
   expect(first.x - tree.x).toBe(9);
-  expect(first.height).toBe(62);
+  expect(first.height).toBe(28);
   expect(second.y - (first.y + first.height)).toBe(8);
 });
 
@@ -370,13 +370,13 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
   const gate = card(page, "The old gate");
-  const hero = gate.locator(".hero");
+  const pick = gate.locator(".pick");
   const settled = async () => {
     await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   };
 
   // One click: selected, unfolded (its items listed), flown to.
-  await hero.click();
+  await pick.click();
   await expect(gate).toHaveClass(/\bsel\b/);
   await expect(gate.locator(".kids")).toBeVisible();
   await expect(
@@ -394,7 +394,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
 
   // A double click on another card: selected once, not toggled back.
   const steps = card(page, "The town hall steps");
-  await steps.locator(".hero").dblclick();
+  await steps.locator(".pick").dblclick();
   await expect(steps).toHaveClass(/\bsel\b/);
   await expect(steps.locator(".kids")).toBeVisible();
   await expect(gate).not.toHaveClass(/\bsel\b/);
@@ -407,7 +407,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect
     .poll(() => page.evaluate(() => performance.now()))
     .toBeGreaterThan(clickedAt + 600);
-  await steps.locator(".hero").click();
+  await steps.locator(".pick").click();
   await expect(steps).not.toHaveClass(/\bsel\b/);
   await expect(steps.locator(".kids")).toHaveCount(0);
   await expect(page.locator("#shell-inspector")).toBeHidden();
@@ -831,7 +831,7 @@ test("a flight ends the orbit's coast: the camera stays where it lands", async (
   await page.mouse.down();
   for (let i = 1; i <= 6; i += 1) await page.mouse.move(cx + i * 40, cy);
   await page.mouse.up();
-  await card(page, "The old gate").locator(".hero").click();
+  await card(page, "The old gate").locator(".pick").click();
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // The coast decays frame by frame (the orbit's damping runs per
   // update), so the check counts drawn frames, not time.
@@ -853,7 +853,7 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
   await page.setViewportSize({ width: 390, height: 844 });
   await open3d(page);
   await page.locator("#tree-fold").click();
-  await card(page, "The old gate").locator(".hero").click();
+  await card(page, "The old gate").locator(".pick").click();
   await expect(page.locator("#shell-tree")).toHaveClass(/\bcollapsed\b/);
   await expect(page.locator("#tree-stations")).toHaveAttribute(
     "aria-expanded",
@@ -986,7 +986,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
 
   // A new pin: its toast dark, its name typed in the head, with the pen
   // and the dotted underline at rest.
-  await card(page, "The old gate").locator(".hero").click();
+  await card(page, "The old gate").locator(".pick").click();
   await page.locator('#shell-inspector [data-act="add-pin"]').click();
   const toast = page.locator(".toast", { hasText: "Added a pin" });
   await expect(toast).toBeVisible();

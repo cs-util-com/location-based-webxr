@@ -476,36 +476,28 @@ body[data-view="3d"] #view3d {
   box-shadow: 0 0 0 1px var(--s-accent);
 }
 
-.hero {
+/* A station's row: one 28 px line - its button (the number chip, then
+ * the name beside it, cut with an ellipsis), then the grip and the fold
+ * arrow beside it in the page's order, never inside it. */
+.card > .head {
   position: relative;
-  height: 62px;
-  background: #33363c center / cover no-repeat;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding-right: 5px;
   cursor: pointer;
   user-select: none;
 }
 
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgb(10 11 13 / 8%) 0%,
-    rgb(10 11 13 / 30%) 42%,
-    rgb(10 11 13 / 86%) 100%
-  );
-}
-
-/* The picture is one button over the whole hero (its number, name and
- * description inside it); the fold arrow sits over it, beside it in the
- * page's order, never inside it. */
-.hero .pick {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  padding: 0;
+.head .pick {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0 0 0 7px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -515,36 +507,40 @@ body[data-view="3d"] #view3d {
   cursor: pointer;
 }
 
-.hero .pick > * {
-  position: absolute;
-}
-
-.hero .pick:focus-visible {
+.head .pick:focus-visible {
   outline: 2px solid var(--s-accent);
   outline-offset: -2px;
 }
 
-.hero .n {
-  top: 6px;
-  left: 7px;
+.head .n {
+  flex: none;
   padding: 1px 5px;
   border-radius: 3px;
-  background: rgb(20 21 24 / 78%);
+  background: var(--s-bg3);
   color: #e6f0fa;
   font: 600 10px var(--s-mono);
+  white-space: nowrap;
 }
 
-.card.sel .hero .n {
+.card.sel .head .n {
   background: var(--s-accent);
   color: #1c1c1c;
 }
 
-.hero .tw {
-  position: absolute;
-  z-index: 2;
-  top: 4px;
-  right: 5px;
+.head .nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--s-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.head .tw {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -552,40 +548,28 @@ body[data-view="3d"] #view3d {
   padding: 0;
   border: 0;
   border-radius: 4px;
-  background: rgb(20 21 24 / 60%);
-  color: #e8eaee;
+  background: transparent;
+  color: var(--s-muted);
 }
 
-.hero .tw:hover {
-  background: rgb(60 63 70 / 90%);
+.head .tw:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
 }
 
-.hero .nm {
-  right: 9px;
-  bottom: 19px;
-  left: 9px;
+/* An unfolded station's picture, under its row: only when it has one. */
+.card > .pic {
+  height: 72px;
+  background: #33363c center / cover no-repeat;
+}
+
+.card > .ds {
+  padding: 5px 9px 0;
   overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
-  white-space: nowrap;
-}
-
-.hero .ds {
-  right: 9px;
-  bottom: 5px;
-  left: 9px;
-  overflow: hidden;
-  color: rgb(230 232 236 / 80%);
+  color: var(--s-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.hero.nodesc .nm {
-  bottom: 7px;
 }
 
 .kids {
@@ -1357,20 +1341,18 @@ button.thumb:focus-visible {
   color: var(--s-muted);
 }
 
-/* A card's grip: beside its fold arrow, the same height, 4 px apart. */
-.hero .grip {
-  position: absolute;
-  z-index: 2;
-  top: 4px;
-  right: 31px;
+/* A card's grip: in its row beside its fold arrow, the same height, 4 px
+ * apart (the row's gap). */
+.head .grip {
+  position: relative;
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 20px;
   border-radius: 4px;
-  background: rgb(20 21 24 / 60%);
-  color: #e8eaee;
+  color: var(--s-muted);
   cursor: grab;
   touch-action: none;
 }
@@ -1379,14 +1361,14 @@ button.thumb:focus-visible {
  * 24 x 24 px around the drawn 16 x 20 (WCAG's least target), reaching the
  * fold arrow's edge 4 px away but not over it. */
 @media (pointer: coarse) {
-  .hero .grip::after {
+  .head .grip::after {
     content: "";
     position: absolute;
     inset: -2px -4px;
   }
 }
 
-.hero .grip svg.i {
+.head .grip svg.i {
   width: 12px;
   height: 12px;
 }
@@ -1395,7 +1377,7 @@ button.thumb:focus-visible {
   opacity: 0.55;
 }
 
-.card.dragging .hero .grip {
+.card.dragging .head .grip {
   cursor: grabbing;
 }
 

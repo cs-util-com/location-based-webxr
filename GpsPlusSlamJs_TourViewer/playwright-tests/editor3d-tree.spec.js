@@ -441,9 +441,16 @@ test("a station copied with its photo is saved with a picture of its own, and op
   await expect(next.locator("#tree-body .card")).toHaveCount(2, {
     timeout: 60_000,
   });
-  for (const hero of await next.locator("#tree-body .hero").all()) {
+  // An unfolded station shows its picture under its row.
+  for (const each of await next.locator("#tree-body .card").all()) {
+    const fold = each.locator(".tw");
+    if ((await fold.getAttribute("aria-expanded")) !== "true") {
+      await fold.click();
+    }
+    const pic = each.locator(".pic");
+    await expect(pic).toBeVisible();
     await expect
-      .poll(() => hero.evaluate((el) => getComputedStyle(el).backgroundImage))
+      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage))
       .toMatch(/^url\(/);
   }
   // Nothing of the photos was lost on the way: a reader of the file
@@ -478,17 +485,17 @@ async function expectTreeControls(page, size) {
   expect(add.height, at).toBe(fold.height);
   expect(add.y, at).toBeGreaterThanOrEqual(head.y);
   expect(add.y + add.height, at).toBeLessThanOrEqual(head.y + head.height);
-  // A card's grip: in the hero, left of its fold arrow, clear of the
+  // A card's grip: in its row, left of its fold arrow, clear of the
   // number badge.
-  const hero = await box(page.locator("#tree-body .hero").first());
+  const row = await box(page.locator("#tree-body .card > .head").first());
   const grip = await box(page.locator("#tree-body .grip").first());
-  const tw = await box(page.locator("#tree-body .hero .tw").first());
-  const n = await box(page.locator("#tree-body .hero .n").first());
+  const tw = await box(page.locator("#tree-body .head .tw").first());
+  const n = await box(page.locator("#tree-body .head .n").first());
   expect(grip.x, at).toBeGreaterThanOrEqual(n.x + n.width);
   expect(tw.x - (grip.x + grip.width), at).toBe(4);
   expect(grip.y, at).toBe(tw.y);
   expect(grip.height, at).toBe(tw.height);
-  expect(grip.y + grip.height, at).toBeLessThanOrEqual(hero.y + hero.height);
+  expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
 }
 
 /**
@@ -661,6 +668,152 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     // Deselected: the bar has no actions to show.
     await page.keyboard.press("Escape");
     await expect(acts).toHaveCount(0);
+  }
+});
+
+/** A station name far longer than any dock is wide, with spaces to wrap at. */
+const LONG_NAME = `The long station name ${"that goes on past the edge of the list ".repeat(4).trim()}`;
+
+/**
+ * A tour of three stations for the rows: "A" with a photo, one with
+ * `LONG_NAME` and "The town hall steps", both without, as a zip.
+ * @param {import("@playwright/test").Page} page
+ */
+async function rowsTour(page) {
+  const { zip } = await photoTour(page);
+  const files = await entries(zip);
+  const manifest = JSON.parse(
+    new TextDecoder().decode(files.get("tour.json") ?? new Uint8Array()),
+  );
+  const [photo] = manifest.stations;
+  const plain = (/** @type {string} */ id, /** @type {string} */ title) => ({
+    ...photo,
+    id,
+    title,
+    geo: { ...photo.geo, lat: photo.geo.lat + 0.0003 },
+    blocks: [],
+  });
+  manifest.stations = [
+    { ...photo, id: "short", title: "A" },
+    plain("long", LONG_NAME),
+    plain("plain", "The town hall steps"),
+  ];
+  const writer = new ZipWriter(new Uint8ArrayWriter());
+  await writer.add(
+    "tour.json",
+    new TextReader(serializeTourManifest(manifest)),
+  );
+  await writer.add(
+    "content/shot.jpg",
+    new Uint8ArrayReader(files.get("content/shot.jpg") ?? new Uint8Array()),
+  );
+  return Buffer.from(await writer.close());
+}
+
+// Why: a station in the list was a 62 px picture card with its number
+// above its name, the name wrapping under the number - a strange minimum
+// height for a list a creator scans. A folded station is now ONE line:
+// its number chip, its name beside it (cut with an ellipsis, the full
+// name in the row's title), its grip and fold arrow; only an unfolded
+// station shows its picture - when it has one, no empty frame when not -
+// and its items. Checked for a one-letter, a medium and a very long name,
+// at a phone, a phone in landscape and a desktop.
+test("a folded station is one line, its number and name side by side; unfolded it shows its picture only when it has one", async ({
+  page,
+}) => {
+  test.slow();
+  await useWideFont(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The file input opens the tour (no picker in this browser).
+  await page.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+  });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(page, await rowsTour(page), "rows.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect(card(page, "short")).toBeVisible();
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 844, height: 390 },
+    { width: 390, height: 844 },
+  ]) {
+    const at = `at ${String(size.width)}x${String(size.height)}`;
+    const name = `${String(size.width)}x${String(size.height)}`;
+    await page.setViewportSize(size);
+    if (
+      await page
+        .locator("#shell-tree")
+        .evaluate((t) => t.classList.contains("collapsed"))
+    ) {
+      await page.locator("#tree-fold").click();
+    }
+    for (const id of ["short", "long", "plain"]) {
+      const each = card(page, id);
+      await expect(each.locator(".pic, .ds, .kids")).toHaveCount(0);
+      const row = await box(each.locator(".head"));
+      const n = await box(each.locator(".head .n"));
+      const nm = await box(each.locator(".head .nm"));
+      const grip = await box(each.locator(".head .grip"));
+      expect(row.height, `${id} ${at}`).toBeCloseTo(28, 0);
+      // Number and name on one line: their middles level, the name right
+      // of the chip and left of the grip, one line of text high.
+      expect(
+        Math.abs(n.y + n.height / 2 - (nm.y + nm.height / 2)),
+        `${id} ${at}`,
+      ).toBeLessThanOrEqual(2);
+      expect(nm.x, `${id} ${at}`).toBeGreaterThanOrEqual(n.x + n.width);
+      expect(nm.x + nm.width, `${id} ${at}`).toBeLessThanOrEqual(grip.x);
+      expect(nm.height, `${id} ${at}`).toBeLessThan(20);
+    }
+    // The long name is cut with an ellipsis, not wrapped; the row's
+    // button keeps the whole name.
+    const long = card(page, "long");
+    expect(
+      await long.locator(".nm").evaluate((el) => ({
+        cut: el.scrollWidth > el.clientWidth,
+        overflow: getComputedStyle(el).textOverflow,
+      })),
+      at,
+    ).toEqual({ cut: true, overflow: "ellipsis" });
+    await expect(long.locator(".pick")).toHaveAttribute("title", LONG_NAME);
+    await expect(long.locator(".pick")).toHaveAccessibleName(
+      new RegExp(`${LONG_NAME}$`),
+    );
+    await page.screenshot({
+      path: test.info().outputPath(`rows-folded-${name}.png`),
+    });
+
+    // Unfolded: the picture under the row of the station that has one,
+    // no picture for the one that has none; both list their items.
+    await card(page, "short").locator(".tw").click();
+    await card(page, "plain").locator(".tw").click();
+    const pic = card(page, "short").locator(".pic");
+    await expect(pic).toBeVisible();
+    await expect
+      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage))
+      .toMatch(/^url\(/);
+    const short = await box(card(page, "short").locator(".head"));
+    expect((await box(pic)).y, at).toBeGreaterThanOrEqual(
+      short.y + short.height,
+    );
+    await expect(card(page, "short").locator(".kids")).toBeVisible();
+    await expect(card(page, "plain").locator(".kids")).toBeVisible();
+    await expect(card(page, "plain").locator(".pic")).toHaveCount(0);
+    expect(
+      (await box(card(page, "plain").locator(".head"))).height,
+      at,
+    ).toBeCloseTo(28, 0);
+    await page.screenshot({
+      path: test.info().outputPath(`rows-unfolded-${name}.png`),
+    });
+    await card(page, "short").locator(".tw").click();
+    await card(page, "plain").locator(".tw").click();
+    await expect(page.locator("#tree-body .kids")).toHaveCount(0);
   }
 });
 

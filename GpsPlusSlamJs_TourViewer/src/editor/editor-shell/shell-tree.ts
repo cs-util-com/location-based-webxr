@@ -2,12 +2,12 @@
  * The 3D view's tree dock, drawn from its model (`tree-model.ts`): the
  * stations' story cards with their items, the codes and the layer chips.
  * Everything from the tour is set as text, never as markup. Every control
- * is a button (a card's picture, its fold arrow, an item's and a code's
+ * is a button (a card's row, its fold arrow, an item's and a code's
  * row, a header, a chip), none inside another, so the tree works from the
  * keyboard; a draw keeps the focus on the control that had it. The clicks
  * are the shell's (`editor-shell.ts`), read from the drawn elements' data:
  *
- * - `data-select` - a card's picture, an item's or a code's row: the
+ * - `data-select` - a card's row, an item's or a code's row: the
  *   page's selection id it selects;
  * - `data-unfold` - a card's fold button: the station's id;
  * - `data-section` - a section's header: the section it folds;
@@ -91,11 +91,10 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   box.classList.toggle("sel", card.selected);
   box.classList.toggle("ctx", card.context);
   box.dataset["station"] = card.id;
-  const hero = el("div", "hero");
-  hero.classList.toggle("nodesc", card.description === null);
-  if (card.imagePath !== null) pictures.show(hero, card.imagePath);
-  // The picture is a button over the whole hero; the fold arrow sits
+  // The station's one-line row: its button (the number chip, then the
+  // name beside it, cut with an ellipsis), the grip and the fold arrow
   // beside it, never inside it.
+  const head = el("div", "head");
   const pick = button("pick");
   pick.dataset["select"] = card.selection;
   pick.title = card.title;
@@ -110,9 +109,6 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
     el("span", "n", String(card.number)),
     el("span", "nm", card.title),
   );
-  if (card.description !== null) {
-    pick.append(el("span", "ds", card.description));
-  }
   // The grip a card is dragged by (`tree-drag.ts`): no button - the
   // inspector's Earlier and Later are the keyboard's way to reorder.
   const grip = el("span", "grip");
@@ -120,9 +116,20 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   grip.title = "Drag to change its place in the tour";
   grip.setAttribute("aria-hidden", "true");
   grip.append(shellIcon("grip"));
-  hero.append(pick, grip, fold);
-  box.append(hero);
+  head.append(pick, grip, fold);
+  box.append(head);
   if (card.open) {
+    // Unfolded: its picture (only when it has one), its description and
+    // its items below the row.
+    if (card.imagePath !== null) {
+      const pic = el("div", "pic");
+      pic.setAttribute("aria-hidden", "true");
+      pictures.show(pic, card.imagePath);
+      box.append(pic);
+    }
+    if (card.description !== null) {
+      box.append(el("div", "ds", card.description));
+    }
     const kids = el("div", "kids");
     for (const child of card.children) {
       const row = button("kid");

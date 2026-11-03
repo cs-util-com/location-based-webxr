@@ -872,7 +872,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     deps.stations.remove(selected);
     const picks = [
       ...tree.body.querySelectorAll<HTMLElement>(
-        ".card[data-station] > .hero > .pick",
+        ".card[data-station] > .head > .pick",
       ),
     ];
     const own = selected.startsWith(STATION_PREFIX)
