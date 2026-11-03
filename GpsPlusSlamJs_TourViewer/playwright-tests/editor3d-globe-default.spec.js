@@ -136,7 +136,7 @@ test.describe("an empty tour", () => {
   test("opens on the whole Earth over the creator's zone, and a right click on the ground places its first station", async ({
     page,
   }, testInfo) => {
-    test.setTimeout(420_000);
+    test.setTimeout(240_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await answerHosts(page, { globeAssets: "serve" });
     await keepRejections(page);
@@ -180,17 +180,18 @@ test.describe("an empty tour", () => {
     await page.locator("#view-clouds").click();
     await page.keyboard.press("Escape");
     // Down to about 1 km over the answered ground (at 515.5 m everywhere),
-    // looking down, and wait for the relief to carry the ground (its
-    // hand-over eases in by frames, and this software renderer draws few:
-    // measured about two minutes after the jump down).
+    // looking down, and wait for the answered ground to be sampled under
+    // the camera: the ground menu places on the sampled ground, not on
+    // whichever carrier draws it (the relief's hand-over eases in over
+    // minutes in this software renderer and is not what is tested here).
     await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dDistance(1_500),
     );
     await expect
-      .poll(async () => (await view3d(page))?.globe?.carrier, {
-        timeout: 210_000,
+      .poll(async () => (await view3d(page))?.globe?.groundUnderCameraM, {
+        timeout: 90_000,
       })
-      .toBe("relief");
+      .toBe(SQUARE_GROUND_M);
     await afterFrames(page, 10);
     const canvas = await page.locator("#view3d canvas").boundingBox();
     if (canvas === null) throw new Error("no canvas");
@@ -327,7 +328,10 @@ test.describe("where the 3D view cannot open", () => {
 test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back", async ({
   page,
 }) => {
-  test.setTimeout(360_000);
+  // Two full globe opens and a zip round trip: 4.7 min alone in the software
+  // renderer, past 6 min with three workers sharing it. The limit covers the
+  // shared case; every wait inside keeps its own bound.
+  test.setTimeout(480_000);
   await answerHosts(page, { globeAssets: "serve" });
   await noApproach(page);
   await withoutPickers(page);
