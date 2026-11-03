@@ -537,6 +537,24 @@ body[data-view="3d"] #view3d {
   white-space: nowrap;
 }
 
+/* Unfolded, a station is no longer one compact line: its whole name
+ * wraps (on a phone a folded name gets about 115 px), the row growing
+ * from its 28 px with it; folded rows stay one line. */
+.card.open > .head {
+  height: auto;
+  min-height: 28px;
+}
+
+.card.open > .head .pick {
+  padding-block: 5px;
+}
+
+.card.open .head .nm {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .head .tw {
   display: flex;
   flex: none;

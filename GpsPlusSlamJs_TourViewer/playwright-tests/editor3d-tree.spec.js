@@ -388,7 +388,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip, jpeg } = await photoTour(page);
   await openZip(page, zip, "one-photo.zip");
@@ -435,7 +435,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html");
+  await next.goto("/edit.html?globe=0");
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, readFileSync(saved), "one-photo.zip");
   await expect(next.locator("#tree-body .card")).toHaveCount(2, {
@@ -561,7 +561,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const zip = await threePinTour();
   await openZip(page, zip, "three-pins.zip");
@@ -598,7 +598,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html");
+  await next.goto("/edit.html?globe=0");
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, zip, "three-pins.zip");
   const offer = next.locator(".toast.draft-offer");
@@ -721,7 +721,9 @@ async function rowsTour(page) {
 test("a folded station is one line, its number and name side by side; unfolded it shows its picture only when it has one", async ({
   page,
 }) => {
-  test.slow();
+  // Three viewports, each folding and unfolding three rows on a
+  // software-drawn 3D view: past the 90 s of a slow test (measured 2026-11-03).
+  test.setTimeout(240_000);
   await useWideFont(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   // The file input opens the tour (no picker in this browser).
@@ -730,7 +732,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     delete window.showOpenFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, await rowsTour(page), "rows.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -759,7 +761,26 @@ test("a folded station is one line, its number and name side by side; unfolded i
       const n = await box(each.locator(".head .n"));
       const nm = await box(each.locator(".head .nm"));
       const grip = await box(each.locator(".head .grip"));
+      const arrow = await box(each.locator(".head .tw"));
+      const pick = await box(each.locator(".head .pick"));
       expect(row.height, `${id} ${at}`).toBeCloseTo(28, 0);
+      // The row's frame: the button fills the row's height and its width
+      // up to the grip (4 px gap), the fold arrow sits at the row's right
+      // edge less its 5 px padding, centred on the row's middle. Without
+      // these the pieces could all move together and still pass the
+      // relative checks below.
+      expect(pick.height, `${id} ${at}`).toBeCloseTo(28, 0);
+      expect(pick.x + pick.width, `${id} ${at}`).toBeLessThanOrEqual(
+        grip.x - 4 + 0.5,
+      );
+      expect(
+        Math.abs(row.x + row.width - (arrow.x + arrow.width) - 5),
+        `${id} ${at}`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(arrow.y + arrow.height / 2 - (row.y + row.height / 2)),
+        `${id} ${at}`,
+      ).toBeLessThanOrEqual(1);
       // Number and name on one line: their middles level, the name right
       // of the chip and left of the grip, one line of text high.
       expect(
@@ -807,7 +828,26 @@ test("a folded station is one line, its number and name side by side; unfolded i
     expect(
       (await box(card(page, "plain").locator(".head"))).height,
       at,
-    ).toBeCloseTo(28, 0);
+    ).toBeGreaterThanOrEqual(27.5);
+    // Unfolded, a station is no longer one compact line: its long name
+    // wraps (on a phone a folded name gets about 115 px), the arrow still
+    // on the row's middle; folded again it is one 28 px line.
+    await card(page, "long").locator(".tw").click();
+    const longHead = card(page, "long").locator(".head");
+    const longName = await box(longHead.locator(".nm"));
+    expect(longName.height, at).toBeGreaterThan(25);
+    const longRow = await box(longHead);
+    expect(longRow.height, at).toBeGreaterThan(28);
+    const longArrow = await box(longHead.locator(".tw"));
+    expect(
+      Math.abs(
+        longArrow.y + longArrow.height / 2 - (longRow.y + longRow.height / 2),
+      ),
+      at,
+    ).toBeLessThanOrEqual(1);
+    await card(page, "long").locator(".tw").click();
+    await expect(card(page, "long").locator(".kids")).toHaveCount(0);
+    expect((await box(longHead)).height, at).toBeCloseTo(28, 0);
     await page.screenshot({
       path: test.info().outputPath(`rows-unfolded-${name}.png`),
     });

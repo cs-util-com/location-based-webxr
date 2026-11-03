@@ -38,7 +38,7 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     to change its place in the tour"): the station `tree-drag.ts` drags.
     It sits left of the fold arrow, its height, 4 px apart.
 
-- Classes: `.card` (`.sel`, `.ctx`), `.head`, `.pic`, `.ds`, `.kid`,
+- Classes: `.card` (`.sel`, `.ctx`, `.open` while unfolded), `.head`, `.pic`, `.ds`, `.kid`,
   `.row`, `.chip` (`.on`), `.collapsed` on the dock.
 
 ## Invariants & assumptions
@@ -51,6 +51,15 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   flex layout, keeps the chip from shrinking and cuts the name with an
   ellipsis (`nowrap`, `min-width: 0`); the full name stays in the
   button's title and accessible name.
+- The row's frame: `.pick` fills the row's height (`align-self:
+stretch`) and its width up to the grip (`flex: 1 1 auto`, the row's
+  4 px gap), and the row centres the grip and the fold arrow
+  (`align-items: center`), the arrow 5 px (the row's padding) from the
+  row's right edge.
+- An unfolded card (`.card.open`) is no longer one compact line: its
+  name wraps (`overflow-wrap: anywhere`), the row growing from 28 px
+  with it (on a phone a folded name gets about 115 px); folded again it
+  is one 28 px line.
 - A card's picture is asked of `pictures` (`shell-pictures.ts`) only for
   an unfolded card, which reads it once the picture is in view; a folded
   card asks for none.
@@ -68,7 +77,8 @@ drawTree(dock, buildTree(input), view.foldedDocks.tree, pictures);
 `shell-tree.test.ts` (jsdom, from store states through `buildTree`): a
 folded card as one row of its number then its name, nothing else (no
 picture asked); an unfolded card's picture, description and items below
-its row, a station without a picture drawing none; every card, item and
+its row, a station without a picture drawing none, both marked
+`open` (no folded card is); every card, item and
 code a button, none inside another; the selection and the unfolded
 station shown; the focus kept on the pressed control across a redraw;
 the folded dock; each card's grip, outside its buttons.
@@ -80,5 +90,8 @@ model in `tree-model.test.ts` and `tree-model.property.test.ts`; the
 keyboard walk (Tab to a card, Enter selects, Space folds) and the rows'
 28 px height in `playwright-tests/editor3d-shell.spec.js`; the one-line
 layout for a one-letter, a medium and a very long name at 390x844,
-844x390 and 1440x900, and the unfolded picture, in
+844x390 and 1440x900 - each row pinned to its frame too (the fold arrow
+about 5 px from the row's right edge and centred on it, the selectable
+box 28 px high and clear of the grip) - the unfolded long name wrapping
+while the folded row stays 28 px, and the unfolded picture, in
 `playwright-tests/editor3d-tree.spec.js`.

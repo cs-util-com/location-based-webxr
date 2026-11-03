@@ -90,6 +90,8 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   const box = el("div", "card");
   box.classList.toggle("sel", card.selected);
   box.classList.toggle("ctx", card.context);
+  // Unfolded, the station is no longer one compact line: its name wraps.
+  box.classList.toggle("open", card.open);
   box.dataset["station"] = card.id;
   // The station's one-line row: its button (the number chip, then the
   // name beside it, cut with an ellipsis), the grip and the fold arrow

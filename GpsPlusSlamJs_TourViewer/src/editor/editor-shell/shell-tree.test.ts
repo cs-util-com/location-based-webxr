@@ -108,6 +108,7 @@ beforeEach(() => {
   shown.length = 0;
   store.dispatch(editorViewActions.selected({ id: null }));
   store.dispatch(editorViewActions.stationFolded({ id: "gate", open: false }));
+  store.dispatch(editorViewActions.stationFolded({ id: "steps", open: false }));
 });
 
 /** The tree drawn from the store as it stands. */
@@ -156,6 +157,8 @@ describe("drawTree", () => {
       ]);
     }
     expect(dock.body.querySelector(".pic, .ds, .kids")).toBeNull();
+    // Folded, no card is `open`: its name stays one line.
+    expect(dock.body.querySelector(".card.open")).toBeNull();
     expect(shown).toEqual([]);
   });
 
@@ -185,9 +188,9 @@ describe("drawTree", () => {
       "head",
       "kids",
     ]);
-    store.dispatch(
-      editorViewActions.stationFolded({ id: "steps", open: false }),
-    );
+    // Unfolded, the card says so (`open`): its name may wrap there.
+    expect(gate?.classList.contains("open")).toBe(true);
+    expect(steps?.classList.contains("open")).toBe(true);
   });
 
   it("makes every card, item and code a button, none inside another", () => {
