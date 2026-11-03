@@ -19,8 +19,10 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template? })` ->
-  `EditorTerrain`. `placement` `"ecef"` leaves the tiles' group in ECEF
+- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template?, osmGain? })` ->
+  `EditorTerrain`. `osmGain` is the map's darkening gain (the link's
+  `osmGain`, `../editor/globe-switch.ts`; its default 0.55 where not
+  given, as in the OrbitControls view). `placement` `"ecef"` leaves the tiles' group in ECEF
   for a parent that places it (the globe view's Earth-centred group,
   `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
   into it:
@@ -145,7 +147,7 @@ renderer.setAnimationLoop((now) => {
 ## Tests
 
 `editor3d-terrain.test.ts`: the gate's values and the overlay accepting
-them; the map kept on at any height over the ground (off only for an
+them; the map's gain given or the link's default; the map kept on at any height over the ground (off only for an
 unknown one); the map's keep by device class (64 on a phone and on a
 desktop); the device class at 768, 769 and NaN; the credits (Mapterhorn, its
 elevation data, OpenStreetMap); the map attached at once, enabled, under

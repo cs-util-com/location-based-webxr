@@ -21,7 +21,9 @@ describe("readGlobeSwitch", () => {
       meteorDeg: 20,
       meteorLandDeg: 50,
       landAglM: 150,
-      startKm: 8_000,
+      startKm: null,
+      dust: 1,
+      osmGain: GLOBE_SWITCH.osmGain.fallback,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });
@@ -95,7 +97,49 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?meteorDeg=5").meteorDeg).toBe(20);
     expect(readGlobeSwitch("?meteorDeg=10").meteorDeg).toBe(10);
     expect(readGlobeSwitch("?landAglM=5").landAglM).toBe(150);
-    expect(readGlobeSwitch("?startKm=10").startKm).toBe(8_000);
+    expect(readGlobeSwitch("?startKm=10").startKm).toBeNull();
+  });
+
+  // Why: without startKm the flight starts where the globe lab's intro
+  // zooms out to (derived from the view, so null here); the link's
+  // startKm stays an explicit override, and a value out of its range
+  // reads as no override rather than as some other fixed height.
+  it("reads startKm as an override, and none without a valid one", () => {
+    expect(readGlobeSwitch("?globe=1").startKm).toBeNull();
+    expect(readGlobeSwitch("?startKm=8000").startKm).toBe(8_000);
+    const { startKm } = GLOBE_SWITCH;
+    expect(readGlobeSwitch(`?startKm=${startKm.min}`).startKm).toBe(
+      startKm.min,
+    );
+    expect(readGlobeSwitch(`?startKm=${startKm.max}`).startKm).toBe(
+      startKm.max,
+    );
+    for (const bad of ["", "abc", "Infinity", "-1", "499", "65001"]) {
+      expect(readGlobeSwitch(`?startKm=${bad}`).startKm).toBeNull();
+    }
+  });
+
+  // Why: the speed streaks are on by default on the approach, as the
+  // globe lab's look; dust=0 is the A/B link that turns them off (and a
+  // frame-time comparison's other half).
+  it("reads the speed streaks on by default and off for dust=0", () => {
+    expect(readGlobeSwitch("?globe=1").dust).toBe(1);
+    expect(readGlobeSwitch("?globe=1&dust=0").dust).toBe(0);
+    for (const bad of ["abc", "2", "-1"]) {
+      expect(readGlobeSwitch(`?dust=${bad}`).dust).toBe(1);
+    }
+  });
+
+  // Why: the street map's darkening gain is a look choice tuned by eye;
+  // the link's osmGain is its A/B switch, and a value out of its range
+  // (one that would blank or brighten the map) reads as the default.
+  it("reads the street map's gain, about 0.55 by default", () => {
+    expect(GLOBE_SWITCH.osmGain.fallback).toBe(0.55);
+    expect(readGlobeSwitch("?globe=1&osmGain=0.45").osmGain).toBe(0.45);
+    expect(readGlobeSwitch("?globe=1&osmGain=1").osmGain).toBe(1);
+    for (const bad of ["", "abc", "0", "0.1", "1.5", "-1", "Infinity"]) {
+      expect(readGlobeSwitch(`?osmGain=${bad}`).osmGain).toBe(0.55);
+    }
   });
 
   // Why: the meteor never lands shallower than it enters ("shallow to
@@ -115,7 +159,8 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.meteorDeg,
       GLOBE_SWITCH.meteorLandDeg,
       GLOBE_SWITCH.landAglM,
-      GLOBE_SWITCH.startKm,
+      GLOBE_SWITCH.dust,
+      GLOBE_SWITCH.osmGain,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

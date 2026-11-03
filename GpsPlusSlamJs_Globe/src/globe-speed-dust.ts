@@ -21,8 +21,6 @@
 import { smoothstep } from "./globe-ease.js";
 
 export const GLOBE_SPEED_DUST = {
-  /** How many particles. */
-  count: 1_500,
   /** No dust at or below this speed, m/s. */
   loMps: 1_000,
   /** Full dust from this speed, m/s (measured: about 4,800 km/s at 44,000 km). */
@@ -250,10 +248,7 @@ function generator(seed: number): () => number {
  * deterministic for a seed. RangeError for a count that is not a positive
  * integer.
  */
-export function createSpeedField(
-  count: number = GLOBE_SPEED_DUST.count,
-  seed = 1,
-): Float32Array {
+export function createSpeedField(count: number, seed = 1): Float32Array {
   if (!(Number.isInteger(count) && count > 0)) {
     throw new RangeError(`the count must be a positive integer, got ${count}`);
   }
@@ -300,12 +295,31 @@ export interface Streaks {
   readonly alpha: Float32Array;
 }
 
+/** `out` when it holds `n` streaks (RangeError when too short), else
+ *  new arrays for them. */
+function streakArrays(n: number, out: Streaks | undefined): Streaks {
+  if (out === undefined) {
+    return {
+      heads: new Float32Array(n * 3),
+      tails: new Float32Array(n * 3),
+      alpha: new Float32Array(n),
+    };
+  }
+  const { heads, tails, alpha } = out;
+  if (heads.length < n * 3 || tails.length < n * 3 || alpha.length < n) {
+    throw new RangeError(`the output arrays must hold ${n} streaks`);
+  }
+  return out;
+}
+
 /**
  * The streaks of the field `seeds` at `offset`: each head the seed minus
  * the offset, wrapped; each tail the head plus the motion's direction times
  * the drift over the exposure (where the particle was: it streams past
  * against the motion); each alpha `opacity` faded at the box's rim and
- * right at the camera.
+ * right at the camera. Written into `out` when given (its first n entries;
+ * no allocation, the pass's per-frame path), else into new arrays.
+ * RangeError when `out` is too short for the field.
  */
 export function streaks(
   seeds: Float32Array,
@@ -314,11 +328,10 @@ export function streaks(
   rate: number,
   exposureS: number,
   opacity: number,
+  out?: Streaks,
 ): Streaks {
   const n = Math.floor(seeds.length / 3);
-  const heads = new Float32Array(n * 3);
-  const tails = new Float32Array(n * 3);
-  const alpha = new Float32Array(n);
+  const { heads, tails, alpha } = streakArrays(n, out);
   const length = Math.max(rate, 0) * Math.max(exposureS, 0);
   const { nearFade, rimFrom, rimTo } = GLOBE_SPEED_DUST;
   for (let i = 0; i < n; i++) {

@@ -10,6 +10,7 @@
  */
 export {
   createGlobeView,
+  globeViewFitM,
   type GlobeView,
   type GlobeViewPose,
   type GlobeViewSettings,
@@ -40,3 +41,13 @@ export {
   createFovReturn,
 } from "./globe-approach-camera.js";
 export { METEOR_PACE, PIN_FLIGHT, pinEnd } from "./pin-flight.js";
+// The zoom-out limit the controls hold and the intro's farthest distance:
+// a page starts its approach there, as the lab's intro does.
+export { globeZoomOutLimitM } from "./globe-zoom-limit.js";
+export { GLOBE_INTRO } from "./globe-intro.js";
+// The speed dust: streaks pouring past the camera at speed, the lab's look.
+export {
+  SPEED_DUST_LOOK,
+  createSpeedDustPass,
+  type SpeedDustPass,
+} from "./globe-speed-dust-pass.js";

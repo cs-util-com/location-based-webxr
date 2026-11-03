@@ -10,7 +10,7 @@ overrides:
 pnpmfileChecksum: sha256-QB/agqJsEaZdRVjrmsw7NmPinLhfZdj71hbw5fKsmgQ=
 
 patchedDependencies:
-  3d-tiles-renderer@0.5.3: 3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725
+  3d-tiles-renderer@0.5.3: 4e6284bccf2d2e7cee9352962a828976facc3b0221869508e20c52c247452ef4
 
 importers:
 
@@ -281,7 +281,7 @@ importers:
     dependencies:
       3d-tiles-renderer:
         specifier: 0.5.3
-        version: 0.5.3(patch_hash=3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725)(three@0.185.1)
+        version: 0.5.3(patch_hash=4e6284bccf2d2e7cee9352962a828976facc3b0221869508e20c52c247452ef4)(three@0.185.1)
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
@@ -5164,7 +5164,7 @@ packages:
 
 snapshots:
 
-  3d-tiles-renderer@0.5.3(patch_hash=3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725)(three@0.185.1):
+  3d-tiles-renderer@0.5.3(patch_hash=4e6284bccf2d2e7cee9352962a828976facc3b0221869508e20c52c247452ef4)(three@0.185.1):
     dependencies:
       '@mapbox/vector-tile': 2.0.5
       pbf: 4.0.2

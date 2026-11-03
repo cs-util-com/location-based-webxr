@@ -234,9 +234,32 @@ The view disposes the run once the arrival is over.
   verbs stop the flight where it is.
 - A flight to a station (a pick in the list) while flying retargets the
   flight (`retarget`) instead of jumping.
+- **The start**: where the globe lab's intro zooms out to
+  (`meteorStartAltitudeM`, the whole Earth in view), at the aspect the
+  first frame will have: the box's once laid out, else the window's (the
+  box is hidden while the flight is planned, so the view's own fit is not
+  known yet). The link's `startKm` overrides it.
+- **The controls zoom out as far as the lab's** (`controls.limit`:
+  `globeZoomOutLimitM` at `GLOBE_INTRO.maxKm` and twice the fit at the
+  aspect now), and never nearer than the approach's start, so a takeover
+  at the start is not pulled in.
+- **The speed streaks** (`createSpeedDustPass` from
+  `gps-plus-slam-globe/view`, in `SPEED_DUST_LOOK`, the globe lab's
+  look; off with the link's `dust=0`): stepped in the view's
+  `beforeScene` seam with the camera's ECEF pose and drawn there at
+  1 - `over` (the Earth covers them), then at `over` in `afterScene`
+  before the air, the lab's order. They follow the whole motion while the
+  flight places the camera, only the distance otherwise (turning the
+  globe does not streak sideways). Every placement that is not flown
+  (the flight's own start, `placeView` for a fit, a pose, an arrow step,
+  the street view; the zoom steps and `setDistance`) restarts their
+  speed, so a teleport never flashes them.
 - `stats().flying`, `stats().globe.approach` (the run's stats, or the
   last run's once it ended) and `stats().globe.marks` are the page's
-  checks.
+  checks; `stats().globe.dust` (the streaks' state), `centreM` (the
+  camera's distance from the Earth's centre), `fitM` (the view's fit),
+  `startCentreM` and `frameTimesMs` (the last 60 frame intervals) are
+  the start's and the streaks' checks.
 
 ## Invariants & assumptions
 
@@ -262,7 +285,15 @@ The view disposes the run once the arrival is over.
 `stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
 the camera's altitude, the frame target, the hidden stations and codes, the
 frame recentres, the surface's state and `uploads` (`pending`, `ran`,
-`worstFrameMs`, `admitted`).
+`worstFrameMs`, `admitted`). `mapLoad` is the street map's typed loading
+state (`OsmMapLoad`: tiles waiting, failed, given up, the request ceiling's
+wait in s), produced here for the shell to show. `relief` is what the
+hand-over to the relief waits for: its share and target, whether its view
+has settled (`settled`, the band's condition), the library's `loadProgress`
+and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
+`failed`), and its tile cache's bytes against the device budget
+(`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
+from a stalled one.
 
 ## Tests
 
@@ -289,6 +320,11 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   `editor3d-terrain.test.ts` (the ECEF placement).
 - `../editor3d-lazy.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
+- `playwright-tests/editor3d-globe-start.spec.js`: the approach's first
+  frames at least the fit from the Earth's centre, at the lab's intro
+  distance, on a phone held either way and a desktop; the streaks shown
+  mid-flight in the lab's look, off for `dust=0` (the speed still
+  measured), and their frame times against the same flight without them.
 - `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html` (the globe
   is the default; `globe=1` is an old link that still works) and
   finds the globe and a station through the page's test hooks; the sky

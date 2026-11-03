@@ -8,9 +8,11 @@ Design: the private repo's `GpsPlusSlamJs_Docs/docs/2026-09-26-0539-globe-intro-
 
 ## As a dependency of a Vite app
 
-The package exports one entry, `gps-plus-slam-globe/editor`
-(`src/globe-editor.ts`, the 3D editor's building blocks), as TypeScript
-SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
+The package exports two entries, `gps-plus-slam-globe/editor`
+(`src/globe-editor.ts`, the 3D editor's building blocks) and
+`gps-plus-slam-globe/view` (`src/globe-view-entry.ts`, the whole globe
+view: its camera controls, air, relief, approach flight and speed dust),
+plus two `./test-utils/*` helpers, all as TypeScript SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
 "workspace:*"` and imports from that name; Vite transpiles the source, and
 the consumer's `tsc` type-checks it under the consumer's own compiler
 options. The Tour Viewer is the first consumer; it holds what a consumer
@@ -68,14 +70,25 @@ the globe loads from, so every source carries its credit.
 ## The recorded patch (DEC-PRG-14)
 
 `patches/3d-tiles-renderer@0.5.3.patch` (at the workspace root, wired in
-`pnpm-workspace.yaml`'s `patchedDependencies`) changes one rule: a child
-tile that FAILED to load counts as not ready, so its parent stays drawn
-over that area instead of leaving a hole. The library's build is what the
-page runs, so the patch edits the bundled chunk (two places) and, for
-readers, the same line in `src/`. The globe lab's smoke proves it: with
-every level 2-3 tile answering 404, no probe is black (81 of 81 were
-without the patch). Upstream it stays to be reported; an upgrade must
-re-check whether the patch still applies.
+`pnpm-workspace.yaml`'s `patchedDependencies`) changes two rules of
+when a child tile may replace its drawn parent:
+
+- A child tile that FAILED to load counts as not ready, so its parent
+  stays drawn over that area instead of leaving a hole. The globe lab's
+  smoke proves it: with every level 2-3 tile answering 404, no probe is
+  black (81 of 81 were without the patch).
+- A child tile also waits for the renderer's optional
+  `isTileReady( tile )` (false: not ready yet). Only the child's own term
+  asks it, not the parent's hold, so a parent already drawn stays drawn.
+  The street map installs it (`mapReady` in `globe-osm-overlay.ts`): a
+  near tile at the map's coarsest zoom or finer waits for its map, so the
+  relief never swaps a mapped tile for bare finer ones. A traversal test
+  runs the bundled function itself (`globe-osm-map-ready.test.ts`).
+
+The library's build is what the page runs, so the patch edits the
+bundled chunk and, for readers, the same lines in `src/`. Upstream it
+stays to be reported; an upgrade must re-check whether the patch still
+applies.
 
 ## The 3D editor's building blocks (G1)
 

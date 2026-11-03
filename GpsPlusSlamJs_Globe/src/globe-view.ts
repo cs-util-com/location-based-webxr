@@ -41,6 +41,26 @@ const DEG = Math.PI / 180;
 /** The fit's margin around the globe (a tenth of its radius). */
 const FIT_MARGIN = 0.1;
 
+/**
+ * The distance from the Earth's centre (m) at which the whole globe fits a
+ * view of `fovYDeg` and `aspect` with the view's margin: what
+ * `fitDistance()` reads once the view has drawn a frame at that size. A
+ * page that must place the camera before the first frame (the canvas not
+ * laid out yet) computes it from the size it expects.
+ */
+export function globeViewFitM(options: {
+  readonly radiusM: number;
+  readonly fovYDeg: number;
+  readonly aspect: number;
+}): number {
+  return orbitDistanceToFit({
+    fovYRad: options.fovYDeg * DEG,
+    aspect: options.aspect,
+    margin: FIT_MARGIN,
+    radius: options.radiusM,
+  });
+}
+
 interface LatLng {
   readonly lat: number;
   readonly lng: number;
@@ -416,11 +436,10 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     camera.updateProjectionMatrix();
     // At the page's field of view, not the camera's: the fly-in varies
     // the camera's on the way.
-    distance = orbitDistanceToFit({
-      fovYRad: settings().fovY * DEG,
+    distance = globeViewFitM({
+      radiusM: radius,
+      fovYDeg: settings().fovY,
       aspect: camera.aspect,
-      margin: FIT_MARGIN,
-      radius,
     });
   };
 

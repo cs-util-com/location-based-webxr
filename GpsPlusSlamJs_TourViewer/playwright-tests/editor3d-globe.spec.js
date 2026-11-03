@@ -8,6 +8,7 @@ import {
   noApproach,
   openSampleIn3d,
   rejections,
+  reliefCarries,
   view3d,
 } from "./editor3d-fixture.js";
 
@@ -27,8 +28,10 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   page,
 }, testInfo) => {
   // The relief loads from its root tile down, every tile a synthetic image
-  // on a software-drawn WebGL, with the globe's sky and surface on top.
-  test.setTimeout(180_000);
+  // on a software-drawn WebGL, with the globe's sky and surface on top;
+  // the hand-over alone may take 400 frames (`reliefCarries`), 200 s at
+  // the software renderer's 2 frames a second.
+  test.setTimeout(420_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
@@ -66,12 +69,9 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
 
   // Street level: the relief carries the ground once its view is loaded
   // (the globe's surface fills in until then), the camera is an eye
-  // height over the square, not in orbit.
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.carrier, {
-      timeout: 60_000,
-    })
-    .toBe("relief");
+  // height over the square, not in orbit. The hand-over is bound by frames
+  // (the relief parses about a tile a frame), so its wait counts frames.
+  await reliefCarries(page);
   const stats = await view3d(page);
   expect(stats.globe).toBeDefined();
   expect(stats.globe.altitudeM).toBeGreaterThan(0);

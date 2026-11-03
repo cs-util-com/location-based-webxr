@@ -30,10 +30,29 @@ it. An old `globe=1` link keeps opening the globe.
   - `landAglM` - default 150, range 30-5000: the landing's height over
     the tour's ground (about 200 m from the tour at 50 degrees: the
     stations' pins and rings fill the view);
-  - `startKm` - default 8000, range 500-65000: the start height (the
-    whole hemisphere in view; 65000 starts with the whole Earth small).
+  - `dust` - default 1, range 0-1: the speed streaks on the approach (the
+    globe lab's speed dust in its look); `dust=0` is the A/B link that
+    turns them off;
+  - `osmGain` - default 0.55, range 0.2-1: the street map's darkening
+    gain (its luma compressed toward it, `patchOsmFade` in the Globe
+    package), so the map's bright tiles do not show the fade's edge as a
+    pale disc; the link's value is its A/B switch. Measured by
+    `playwright-tests/editor3d-globe-osm-gain.spec.js` (2026-11-03, the
+    map's land colour over the globe's imagery, the step at the fade's edge
+    as the ratio of the mapped ground's luma to the bare ground's, 69 of
+    255): gain 1 3.40, 0.7 3.00, 0.6 2.81, 0.55 2.71, 0.5 2.60, 0.45 2.48.
+    The ratio falls evenly with the gain, so no value is singled out by it:
+    0.55 cuts the step by a fifth and keeps the paper at 186 of 255 (233
+    at gain 1), still read as a light map; the choice stays a look one, for
+    the phone A/B.
+- `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
+  range 500-65000 km: the start height as an explicit override. Without
+  it (`null`) the meteor starts where the globe lab's intro zooms out to
+  at the page's aspect (about 43,600 km on a landscape screen, more on a
+  portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
-  `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm`)
+  `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
+  `dust`, `osmGain`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
@@ -42,7 +61,8 @@ it. An old `globe=1` link keeps opening the globe.
   `yes`, empty, no value: on), so an old `globe=1` link still opens
   the globe.
 - **A typo never breaks the view:** a knob that is empty, not a number,
-  not finite or outside its range reads as its default.
+  not finite or outside its range reads as its default (an override as
+  none).
 - **Light:** no import of the globe or of three, so the page reads it on
   its first load without pulling the 3D view's code.
 - The defaults are starting points for the owner's tuning: a 1 m sign at
@@ -63,5 +83,7 @@ if (globe.on) {
 
 `globe-switch.test.ts`: on with its defaults without the switch, off only
 for `globe=0`, every knob read, a landing never shallower than the
-entry, a bad or out-of-range knob read as its default, the bounds
-themselves accepted, the defaults inside their ranges.
+entry, a bad or out-of-range knob read as its default, `startKm` read
+as an override only, the streaks on by default and off for `dust=0`, the
+street map's gain at 0.55 by default and its range, the bounds themselves
+accepted, the defaults inside their ranges.
