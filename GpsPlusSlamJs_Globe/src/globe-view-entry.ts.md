@@ -38,6 +38,14 @@
     far out down to a place, and its frame loop's drive, for a page that
     lands on a place (the Tour Viewer's editor). A page sets the camera only
     through `placeCameraEcef`, never the view's whole pose each frame.
+  - The start of an approach: `globeViewFitM` (`globe-view.ts`, the fit
+    before the first frame), `globeZoomOutLimitM` (`globe-zoom-limit.ts`,
+    the farthest the controls let the camera be) and `GLOBE_INTRO`
+    (`globe-intro.ts`, its `maxKm`): the lab's zoom-out distance, where
+    the Tour Viewer's editor starts its meteor.
+  - The speed dust: `createSpeedDustPass` and `SPEED_DUST_LOOK`
+    (`globe-speed-dust-pass.ts`), the streaks the lab draws at speed, in
+    the lab's look.
   - The imagery's credits: `creditsFor(globe.activeSources())`
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full

@@ -17,7 +17,15 @@ editor.
 - `MeteorKnobs` - `meteorDeg` (entry angle below the tour's horizon, deg),
   `meteorLandDeg` (landing angle, held over the final stretch, deg),
   `landAglM` (landing height over the tour's ground, m), `startKm` (start
-  height over the ellipsoid, km). Read from the link by `globe-switch.ts`.
+  height over the ellipsoid, km, or null: the lab's zoom-out distance).
+  Read from the link by `globe-switch.ts`.
+- `meteorStartAltitudeM({ radiusM, fovYDeg, aspect, startKm })` - the
+  start height (m over the ellipsoid): `startKm` when the link names one,
+  else where the globe lab's intro zooms out to,
+  `globeZoomOutLimitM` at `GLOBE_INTRO.maxKm` (50,000 km from the centre)
+  and at least twice the fit (`globeViewFitM`) at that view: about
+  43,600 km on a 16:9 screen, about 60,600 km on a portrait phone. An
+  aspect that is not a positive number reads as 16:9.
 - `createMeteorApproach(deps): ApproachDriver` with
   - `ellipsoid` - the globe's ellipsoid;
   - `view` - the globe view's `camera`, `ecefCamera`, `placeCameraEcef` and
@@ -30,6 +38,10 @@ editor.
   - `progress()` - the tour's loading, 0 to 1 (clamped; NaN reads 0);
   - `reliefGroundM(place)` - the relief's finest ground there, or null;
   - `reducedMotion` - a cut to the end view, no flight;
+  - `aspect` - the view's aspect as the page expects it at the first frame
+    (the start is placed before the canvas is laid out);
+  - `resetSpeed` (optional) - restarts the speed streaks where the flight
+    places the camera (a teleport, not a speed);
   - `durationMs` (optional, the page's checks) - the flight runs on a
     clock scaled so it lasts that long at a full pace;
   - `now` (optional) - the page clock, default `performance.now`.
@@ -46,7 +58,7 @@ editor.
 ## Invariants & assumptions
 
 - **One continuous trajectory.** The camera is placed out on the meteor's
-  line (30 degrees south of the tour, at `startKm`) before the first
+  line (30 degrees south of the tour, at `meteorStartAltitudeM`) before the first
   frame; the flight enters at `meteorDeg` and steepens monotonically to
   `meteorLandDeg`, which it holds over the final stretch, and lands
   `landAglM` over the ground (so about `landAglM / sin(meteorLandDeg)` from
@@ -77,8 +89,9 @@ editor.
   rising as the camera falls.
 - The defaults (`globe-switch.ts`): 20 degrees in (the lab's default is
   30), 50 out (inside 45-60), 150 m over the ground (about 200 m from the
-  tour: its pins and rings fill the view), from 8000 km (the hemisphere
-  in view).
+  tour: its pins and rings fill the view), from the lab's zoom-out
+  distance (the whole Earth in view at every aspect; it was 8,000 km, where
+  the Earth filled the screen).
 
 ## Examples
 
@@ -89,7 +102,9 @@ const driver = createMeteorApproach({
   controls,
   tour: { lat: 48.137, lng: 11.575 },
   groundM: 519,
-  knobs: { meteorDeg: 20, meteorLandDeg: 50, landAglM: 150, startKm: 8000 },
+  knobs: { meteorDeg: 20, meteorLandDeg: 50, landAglM: 150, startKm: null },
+  aspect: innerWidth / innerHeight,
+  resetSpeed: () => dust.reset(),
   progress: () => admitted / stations,
   reliefGroundM: () => null,
   reducedMotion: false,
@@ -109,7 +124,15 @@ bounded turn rate, the speed from one frame to the next bounded over the
 whole flight (below 1.08), the first placement on the line, the pacing by
 loading and its cap, the arrival's parts, the flying phases, a tour below
 the ellipsoid, the checks' clock, the reduced-motion
-cut, the takeover, retargets kept continuous (one below the bend), and the bar.
+cut, the takeover, retargets kept continuous (one below the bend; the
+frame before a retarget is the plain flight, held to its 10 degrees a
+second), the bar, the start at the lab's zoom-out distance at four aspects
+(phone portrait and landscape, desktop, square: at least the fit and
+the intro's distance, the speed bound kept), the `startKm` override and
+the streaks' reset. `globe-approach-meteor.property.test.ts`: over
+aspects and fields of view, the derived start is never inside twice the
+fit nor nearer than the intro's distance, no nearer on a narrower view,
+an override is taken as it is, and a bad aspect reads as 16:9.
 `editor3d-globe.test.ts` wires the arrival with a stand-in that admits:
 the flight lands soon after the tour is in, well before the safety cap,
 and only by the cap without each part.

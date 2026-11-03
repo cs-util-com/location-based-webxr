@@ -31,7 +31,7 @@
     `nearestItemDistanceM`, `applyEyeControls` (`globe-eye-camera.ts`).
   - The OSM map: `createGlobeOsmOverlay`, `GLOBE_OSM`, `osmCredit`,
     `osmGateLimits`, the types `GlobeOsmOverlay`, `OsmCameraPose`,
-    `OsmOverlayTerrain`, `OsmGateLimits`
+    `OsmOverlayTerrain`, `OsmGateLimits`, `OsmMapLoad`
     (`globe-osm-overlay.ts`; pass the framework's `osm-tiles.ts`
     constants; it draws only where the relief reaches z15, so with the
     denser mesh).

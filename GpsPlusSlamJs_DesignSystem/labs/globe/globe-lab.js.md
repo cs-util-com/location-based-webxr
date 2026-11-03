@@ -826,7 +826,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   the globe's first look: its images in, and its sphere drawn.
   `dust` (0, the default; 1 on) draws the speed dust (round-3 plan
   2026-10-08-2345 D1, `/globe/globe-speed-dust.js`, drawn by
-  `globe-speed-dust-pass.js`): streaks pouring past the camera, faster and
+  `/globe/globe-speed-dust-pass.js`, the Globe package's pass that the Tour
+  Viewer's editor draws too): streaks pouring past the camera, faster and
   longer with its speed (log scale, 1 km/s to 5,000 km/s), gone when it
   stops and below 300 km, in ECEF axes so a frame recentre never spins
   them. Drawn before the Earth (which covers them) at 1 - `dustOver` and
