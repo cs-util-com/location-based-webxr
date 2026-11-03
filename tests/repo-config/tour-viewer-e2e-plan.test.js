@@ -94,7 +94,7 @@ describe('each spec is classified by what it opens', () => {
   });
 
   it('names the importers of an editor-only helper as editor or both', () => {
-    for (const helper of ['editor3d-fixture.js', 'editor-menus.js']) {
+    for (const helper of ['editor3d-fixture.js', 'editor-menus.js', 'editor-tours.js']) {
       expect(plan.pathArea(`GpsPlusSlamJs_TourViewer/playwright-tests/${helper}`)).toBe('editor');
       const importer = new RegExp(`from\\s+["']\\./${helper.replace('.', '\\.')}["']`);
       for (const name of specFiles) {

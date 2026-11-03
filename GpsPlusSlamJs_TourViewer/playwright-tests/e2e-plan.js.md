@@ -42,8 +42,7 @@ cannot reach.
 - **What `pathArea` calls editor-only:** `edit.html`, `src/editor/`,
   `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
   a new kit folder is `null` until classified), and the editor-only spec
-  helpers `editor3d-fixture.js` and
-  `editor-menus.js`. **Viewer-only:** `index.html` and `src/landing/`,
+  helpers `editor3d-fixture.js`, `editor-menus.js` and `editor-tours.js`. **Viewer-only:** `index.html` and `src/landing/`,
   except the modules the editor imports too (`film-math.ts`, `clamp01.ts`).
   Everything else in the package (the shared `src/*.ts`, the other pages,
   `package.json`, the other helpers) and every path outside it, except the
@@ -129,25 +128,45 @@ refused) and about 60 s with it served. Moved one for one, `editor.spec.js`
 (the `dom` project, 3 workers) would go to the `webgl` project's single
 worker at about 40 s a test: on the order of an hour more per full run.
 
-**First batch, tried and held back (2026-11-03).** `editor3d-character`,
-`editor3d-long-text` and `editor3d-narration` were moved to the globe one
-for one (only the link changed, globe imagery refused). On the older view
-the six tests pass in 143 s; on the globe five failed in 533 s, each for
-a reason of its own, so they stay on `?globe=0` until each is understood:
+**First batch, moved to the globe (2026-11-03).** `editor3d-character`,
+`editor3d-long-text` and `editor3d-narration` (six tests) run on the globe
+with `noApproach`. A first try without it failed five of the six (533 s
+against 143 s on the older view). Each failure was the harness, not the
+editor:
 
-- character 180: the second `page.goto` (open again) ran into the 90 s
-  limit, which fits a leave-page prompt for unsaved work holding the
-  navigation.
-- long-text 89: the code-mark callout never offered its fix button
-  (`[data-lw="part-fix"]`) after the part was picked.
-- long-text 297: Ctrl+S in the writer gave no download within 90 s.
-- long-text 326: the 14 px gap between the preview and the inspector
-  did not settle within 5 s.
-- narration 189: `#shell-inspector` was not found for its width check.
+- Without `noApproach`, every open first played the approach flight in the
+  software renderer, and the 90 s of `test.slow()` did not cover it: this
+  explains character 180, long-text 89 and 297, and narration 189.
+- With `noApproach` and a budget sized from the measured runs, all six
+  pass. Measured with CI=1 and one worker: character 2.2 min, long-text
+  2.7, 1.5 and 3.6 min, narration 1.2 and 2.0 min. Each spec's budget is
+  about twice its slowest test, and a comment states the measurement.
+- long-text 326 (the three sizes): one bounding-box read took longer
+  than the 5 s default poll under the globe's slow frames. Both of its
+  polls now wait 30 s; the gap they assert (14 px) is unchanged.
 
-Whether these are test assumptions of the older view or gaps of the
-globe editor is open; Ctrl+S and the open-again prompt would be real
-gaps if they reproduce by hand.
+**Second batch, the draft walks without a 3D view (2026-11-03).** A spike
+on six draft tests compared two ways to run them:
+
+- on the globe: 12.5 min, and two failed on the "Saving…" status under
+  slow frames;
+- with no 3D view: 33.1 s (2.4-4.1 s a test), all passing. WebGL is
+  refused and the open shows the cannot-open page.
+
+The draft walks only need the file round trip, so the second way was
+chosen: the 15 draft tests (from `editor.spec.js`) are now in
+`editor-files.spec.js` (the `dom` project). Each edit is one session
+call through the test hook, read back from the manifest, with no map rail
+or card. Their shared tour builders and file helpers are in
+`editor-tours.js`.
+
+**Still in class (a):** `editor.spec.js` has 104 titles, about 86 of them
+class (a). The autosave and undo walks are next, though some of them press
+the map's card or its delete control and cannot be expressed through the
+hook. Also still in (a): `editor-entry` (4), `blocks-tour` (2) and the
+`?globe=0` specs other than the first batch (`editor3d-inspector`,
+`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js` 186 and 251).
+Classes (b), (c) and (d) are unchanged.
 
 ## Examples
 
