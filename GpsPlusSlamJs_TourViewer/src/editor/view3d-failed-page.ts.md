@@ -16,14 +16,16 @@ within reach, so no work is stranded.
   store's `editorView` (`viewMode`, `view3dLoad`, `view3dFailure`), or
   `null`: only while the load has `failed` with a reason other than
   `empty`.
-- `wireView3dFailedPage({ dom, covered, store, actions })` ->
+- `wireView3dFailedPage({ dom, covered, store, actions, toasts })` ->
   `{ dispose() }`:
-  - `dom` - `View3dFailedPageDom` (structural): the root (`hidden`), the
+  - `dom` - `View3dFailedPageDom` (structural): the root (`hidden`,
+    `style.setProperty`), the
     heading (`focus()`), the reason line (`textContent`) and the five
     buttons: `retry` (its label written too), `open`, `save`,
     `saveCopy`, `details`.
   - `covered` - what the page covers (the map, the rail, the card, the
-    debug panel): made `inert` while it shows. The 3D view's own
+    card's "Show it" chip, the debug panel): made `inert` while it shows.
+    The 3D view's own
     hand-back (`onShown(false)` in `edit-main.ts`) runs after this
     page's render when a shown view stops, so it keeps the map inert itself
     while a failure stands.
@@ -35,8 +37,13 @@ within reach, so no work is stranded.
     keeps a failed import's answer for the page's life and trying again in
     place cannot succeed. The page's `reload` asks first when work is
     unsaved, then holds back the browser's own leave prompt.
+  - `toasts` - `ToastStack`: the toasts' stack's `height()` and a
+    `watch(changed)` returning a stop (the page passes a `ResizeObserver` on
+    `#toasts`). Its height is written on the root as `--toasts-h` (whole
+    px, 0 for an empty stack or a height that is not a positive number),
+    at once and on every change.
   - `VIEW3D_FAILED_PAGE` - its title and the first button's two labels.
-  - `dispose()` stops following the store.
+  - `dispose()` stops following the store and the toasts.
 
 ## Invariants & assumptions
 
@@ -53,15 +60,19 @@ within reach, so no work is stranded.
   while it shows, and the store changes on every edit).
 - In `edit.html` the page sits under the top bar (whose File and View
   menus stay usable), over the map, the rail and the card, and under the
-  dialogs and the toasts (`#view3d-failed` in `editor.css`).
+  dialogs and the toasts (`#view3d-failed` in `editor.css`). Its bottom
+  padding is `max(72px, --toasts-h + 26px)` (64 px on a short screen), so
+  the card stays clear of a stack of toasts however tall, and does not
+  jump for a single line.
 
 ## Examples
 
 ```ts
 wireView3dFailedPage({
   dom,
-  covered: [mapBox, rail, card],
+  covered: [mapBox, rail, card, offscreenChip, debugPanel],
   store,
+  toasts: { height: () => stack.offsetHeight, watch: observeSize(stack) },
   actions: { retry: () => viewSwitch.show3d(), open, save, saveCopy, details },
 });
 ```
@@ -71,11 +82,15 @@ wireView3dFailedPage({
 - `view3d-failed-page.test.ts` - when it shows (each failure, not
   `empty`, not idle, loading or shown), its reason, the heading's focus,
   shown at once for a load already failed, `covered` inert only while it
-  shows, each button's action, dispose; no failure's words speak of the
-  map.
+  shows, each button's action, the toasts' height kept on the page and
+  followed, dispose; no failure's words speak of the map.
 - `playwright-tests/editor3d-globe-default.spec.js` - with WebGL refused
   and with the view's code aborted: the page at 390x844, 844x390 and
-  1440x900, every button in the window, Save a copy… downloading the
-  tour, Try again, Tour details… and Open another tour….
+  1440x900, every button in the window and on top (bare, and under two
+  toasts, a line and a save error), Save a copy… downloading the
+  tour, Try again, Tour details… and Open another tour…; after lost
+  graphics, what it covers (the card's chip included) out of the Tab
+  order; for code that did not load, "Reload the page" asking once over
+  unsaved work.
 - `playwright-tests/editor3d.spec.js` - the older view's failures said on
   the page.

@@ -130,7 +130,11 @@ import {
   walkDrawShare,
   type ArrivalTiming,
 } from "./approach-arrival.js";
-import { emptyTourCentre, emptyTourView } from "./empty-tour-view.js";
+import {
+  browserZoneHint,
+  emptyTourCentre,
+  emptyTourView,
+} from "./empty-tour-view.js";
 import { createArrivalMarks } from "./globe-approach-marks.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
@@ -180,7 +184,8 @@ export async function openGlobeEditor(
   const tourAt = tourCentre(manifest?.stations ?? [], codeGeos);
   // A tour with nothing positioned yet (a new one) opens over the
   // creator's part of the world, its first station placed on the ground.
-  const centre = tourAt ?? emptyTourCentre(new Date().getTimezoneOffset());
+  const zone = browserZoneHint();
+  const centre = tourAt ?? emptyTourCentre(zone.offsetMin, zone.timeZone);
   const { egm96Geoid } =
     await import("gps-plus-slam-osm/elevation/egm96").catch(
       (error: unknown) => {

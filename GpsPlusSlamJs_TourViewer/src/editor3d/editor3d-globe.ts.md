@@ -17,8 +17,9 @@ eye mode. It opens at street level, `GLOBE_EDITOR_LOOK.backM` south of the
 tour's centre at eye height, looking at it.
 
 A tour with nothing positioned yet (a new one, or notes alone) opens too:
-over the creator's part of the world (`empty-tour-view.ts`: latitude 30,
-the longitude of the browser's time zone), the whole Earth in view from
+over the creator's part of the world (`empty-tour-view.ts`: the latitude of
+the time zone's region, by its name, and the longitude of its standard
+offset), the whole Earth in view from
 the approach's start height (`startKm`), with no approach to fly (its
 `ended("landed")` is called at once, so the shell does not hold the tree
 folded). The first station is placed by right-clicking the ground. The

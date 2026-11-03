@@ -46,7 +46,10 @@ interface Clickable {
 /** The page's elements (structural, so the unit tests run in node). */
 export interface View3dFailedPageDom {
   // As the DOM types it (`HTMLElement.hidden`); this module writes booleans.
-  root: { hidden: boolean | "until-found" };
+  root: {
+    hidden: boolean | "until-found";
+    style: { setProperty(name: string, value: string): void };
+  };
   heading: { focus(): void };
   reason: { textContent: string | null };
   retry: Clickable & { textContent: string | null };
@@ -67,16 +70,27 @@ export interface View3dFailedPageActions {
   details(): void;
 }
 
+/** The toasts' stack, which sits above the page (structural, as the DOM). */
+export interface ToastStack {
+  /** Its height now (px; 0 while it is empty). */
+  height(): number;
+  /** Call `changed` whenever its size changes; returns a stop. */
+  watch(changed: () => void): () => void;
+}
+
 export interface View3dFailedPage {
-  /** Stop following the store. */
+  /** Stop following the store and the toasts. */
   dispose(): void;
 }
 
 /**
  * Wire the page: it shows and hides with the store, its heading takes the
  * focus when it shows (so it is read out), and `covered` (the map, the
- * rail) leaves the tab order only while it shows - touched on a change of
- * showing alone, as the 3D view keeps the map inert itself while it shows.
+ * rail, the card and its "Show it" chip, the debug panel) leaves the tab
+ * order only while it shows - touched on a change of showing alone, as the
+ * 3D view keeps the map inert itself while it shows. The toasts' height is
+ * kept on the page as `--toasts-h` (px), which its CSS keeps the card
+ * clear of: a save's result must be seen, so the toasts stay above it.
  */
 export function wireView3dFailedPage(deps: {
   readonly dom: View3dFailedPageDom;
@@ -86,8 +100,9 @@ export function wireView3dFailedPage(deps: {
     subscribe(listener: () => void): () => void;
   };
   readonly actions: View3dFailedPageActions;
+  readonly toasts: ToastStack;
 }): View3dFailedPage {
-  const { dom, covered, store, actions } = deps;
+  const { dom, covered, store, actions, toasts } = deps;
   let shown = false;
 
   const render = (): void => {
@@ -125,8 +140,23 @@ export function wireView3dFailedPage(deps: {
     actions.details();
   });
 
+  const keepClear = (): void => {
+    const px = toasts.height();
+    dom.root.style.setProperty(
+      "--toasts-h",
+      `${String(Number.isFinite(px) && px > 0 ? Math.ceil(px) : 0)}px`,
+    );
+  };
+
   dom.root.hidden = true;
   const unsubscribe = store.subscribe(render);
+  const unwatch = toasts.watch(keepClear);
+  keepClear();
   render();
-  return { dispose: unsubscribe };
+  return {
+    dispose: () => {
+      unsubscribe();
+      unwatch();
+    },
+  };
 }

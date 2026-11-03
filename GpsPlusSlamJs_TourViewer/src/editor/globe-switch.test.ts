@@ -48,7 +48,7 @@ describe("readGlobeSwitch", () => {
   });
 
   // Why: a knob out of its range or not a number is a typo; the default
-  // keeps the view usable and the owner sees the knob had no effect.
+  // keeps the view usable, and the knob visibly has no effect.
   it("falls back to the default for a knob that is not a number in range", () => {
     const { hidePx, crowdPx } = GLOBE_SWITCH;
     for (const bad of ["", "abc", "NaN", "Infinity", "-1", "1e9"]) {

@@ -72,8 +72,16 @@ function harness(start: View) {
     view = next;
     for (const l of [...listeners]) l();
   };
+  const props = new Map<string, string>();
   const dom = {
-    root: { hidden: true },
+    root: {
+      hidden: true,
+      style: {
+        setProperty(name: string, value: string) {
+          props.set(name, value);
+        },
+      },
+    },
     heading: {
       focused: 0,
       focus() {
@@ -96,8 +104,23 @@ function harness(start: View) {
     saveCopy: vi.fn(),
     details: vi.fn(),
   };
-  const page = wireView3dFailedPage({ dom, covered, store, actions });
-  return { dom, covered, actions, set, page, listeners };
+  let stackPx = 0;
+  let resized: (() => void) | null = null;
+  const toasts = {
+    height: () => stackPx,
+    watch(changed: () => void) {
+      resized = changed;
+      return () => {
+        resized = null;
+      };
+    },
+  };
+  const resize = (px: number) => {
+    stackPx = px;
+    resized?.();
+  };
+  const page = wireView3dFailedPage({ dom, covered, store, actions, toasts });
+  return { dom, covered, actions, set, page, listeners, props, resize };
 }
 
 describe("wireView3dFailedPage", () => {
@@ -174,10 +197,24 @@ describe("wireView3dFailedPage", () => {
     expect(h.actions.reload).toHaveBeenCalledTimes(1);
   });
 
-  it("stops following the store once disposed", () => {
+  // Why: the toasts sit above the page (a save's result must be seen), so
+  // the page keeps its card clear of their stack, however tall it grows:
+  // two of them covered its buttons on a phone held sideways.
+  it("keeps the toasts' height on itself, following their stack", () => {
+    const h = harness(failed("webgl"));
+    expect(h.props.get("--toasts-h")).toBe("0px");
+    h.resize(96);
+    expect(h.props.get("--toasts-h")).toBe("96px");
+    h.resize(0);
+    expect(h.props.get("--toasts-h")).toBe("0px");
+  });
+
+  it("stops following the store and the toasts once disposed", () => {
     const h = harness(idle);
     h.page.dispose();
     expect(h.listeners.size).toBe(0);
+    h.resize(50);
+    expect(h.props.get("--toasts-h")).toBe("0px");
   });
 
   it("names itself plainly", () => {

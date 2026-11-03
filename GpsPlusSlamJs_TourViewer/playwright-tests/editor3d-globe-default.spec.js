@@ -207,7 +207,8 @@ test.describe("an empty tour", () => {
     const start = await view3d(page);
     expect(start.stations).toBe(0);
     expect(start.globe.altitudeM).toBeGreaterThan(1_000_000);
-    expect(start.globe.pose.lat).toBeCloseTo(10, 0);
+    // Asia's latitude, by the zone's name (empty-tour-view.ts).
+    expect(start.globe.pose.lat).toBeCloseTo(30, 0);
     expect(start.globe.pose.lng).toBeCloseTo(135, 0);
     expect(start.globe.pose.pitchDeg).toBeLessThan(-80);
     // The tree is not held folded for an approach that never flies.
@@ -276,7 +277,7 @@ test.describe("an empty tour", () => {
     const tour = await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.manifest(),
     );
-    expect(tour.stations[0].geo.lat).toBeCloseTo(10, 1);
+    expect(tour.stations[0].geo.lat).toBeCloseTo(30, 1);
     expect(tour.stations[0].geo.lon).toBeCloseTo(135, 1);
     expect(await rejections(page)).toEqual([]);
   });
@@ -341,6 +342,54 @@ test.describe("where the 3D view cannot open", () => {
         ),
       });
     }
+    // Why: toasts sit above the page (a save's result must be seen), so a
+    // stack of them - a line and a save error that stays until closed -
+    // must not cover its buttons either. The markup is `toast()`'s; the
+    // stack is exactly these two (the open's own line, still showing,
+    // taken away): three lines and the card do not fit 390 px of height,
+    // where the page scrolls to its buttons instead.
+    await page.evaluate(() => {
+      const stack = document.getElementById("toasts");
+      if (stack === null) throw new Error("no toasts");
+      stack.replaceChildren();
+      for (const [words, close] of [
+        ["Saved a copy as sample-tour-copy.zip", false],
+        [
+          "The tour could not be saved: the disk is full. Try another place.",
+          true,
+        ],
+      ]) {
+        const t = document.createElement("div");
+        t.className = "toast e2e-toast";
+        const span = document.createElement("span");
+        span.textContent = String(words);
+        t.append(span);
+        if (close) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "btn small";
+          b.textContent = "Close";
+          t.append(b);
+        }
+        stack.append(t);
+      }
+    });
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      await expectActionsUncovered(failed);
+      // The toasts themselves stay whole in the window.
+      for (const t of await page.locator(".e2e-toast").all()) {
+        await expect(t).toBeInViewport({ ratio: 1 });
+      }
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `cannot-open-toasts-${String(size.width)}x${String(size.height)}.png`,
+        ),
+      });
+    }
+    await page.evaluate(() => {
+      for (const t of document.querySelectorAll(".e2e-toast")) t.remove();
+    });
     // What it covers is out of the Tab order meanwhile.
     expect(await page.locator("#map").evaluate((m) => m.inert)).toBe(true);
     const download = page.waitForEvent("download");
@@ -392,7 +441,7 @@ test.describe("where the 3D view cannot open", () => {
     const failed = page.locator("#view3d-failed");
     await expect(failed).toBeVisible({ timeout: 60_000 });
     await expect(page.locator("#view3d-failed-title")).toBeFocused();
-    for (const id of ["map", "debug-panel", "rail", "card"]) {
+    for (const id of ["map", "debug-panel", "rail", "card", "offscreen-chip"]) {
       expect(await page.locator(`#${id}`).evaluate((e) => e.inert), id).toBe(
         true,
       );
@@ -403,7 +452,9 @@ test.describe("where the 3D view cannot open", () => {
       await page.keyboard.press("Tab");
       const under = await page.evaluate(() => {
         const at = document.activeElement;
-        const box = at?.closest("#map, #debug-panel, #rail, #card, #view3d");
+        const box = at?.closest(
+          "#map, #debug-panel, #rail, #card, #offscreen-chip, #view3d",
+        );
         return box ? `${box.id}: ${at?.outerHTML.slice(0, 60) ?? ""}` : null;
       });
       if (under !== null) reached.push(under);
@@ -438,6 +489,29 @@ test.describe("where the 3D view cannot open", () => {
     await expect(page.locator("#details-modal")).toBeHidden();
     await failed.getByRole("button", { name: "Open another tour…" }).click();
     await expect(page.locator("#open-modal")).toBeVisible();
+    await page.locator("#open-cancel").click();
+    await expect(page.locator("#open-modal")).toBeHidden();
+
+    // Why: a reload drops what is not yet in the draft. With an edit made,
+    // "Reload the page" asks once - its own question, the browser's leave
+    // prompt held back - and, accepted, the page loads again.
+    await failed.getByRole("button", { name: "Tour details…" }).click();
+    await page.locator("#details-name").fill("Renamed before the reload");
+    await page.locator("#details-apply").click();
+    await expect(page.locator("#details-modal")).toBeHidden();
+    await expect(page.locator("#save-status")).toContainText("not saved");
+    /** @type {string[]} */
+    const dialogs = [];
+    page.on("dialog", (dialog) => {
+      dialogs.push(`${dialog.type()}: ${dialog.message()}`);
+      void dialog.accept();
+    });
+    const loaded = page.waitForEvent("load");
+    await failed.locator("#view3d-failed-retry").click();
+    await loaded;
+    await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]).toMatch(/^confirm: Your changes are not saved yet/);
   });
 });
 

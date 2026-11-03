@@ -58,9 +58,10 @@ edits and the selection are the store's, so switching keeps them all.
   anything else - an error without a reason, an unknown one - is `error`,
   whose text does not ask for a reload.
 - **A view that stops** (`contextLost`, `failed`) while it loads ends the
-  load on the map with its reason said, and the view that may still
-  arrive for it is disposed; once shown, it leaves the view the same way.
-  A view already left says nothing.
+  load as failed with its reason (`view3dFailed`, which brings up the
+  cannot-open page, `view3d-failed-page.ts`) and says it, and the view
+  that may still arrive for it is disposed; once shown, it leaves the view
+  the same way. A view already left says nothing.
 - **Late answers are dropped:** each open has an attempt number; a view
   that arrives after the creator left the load (the button, `close`) is
   disposed at once and never shown. A lost context of a view no longer
@@ -89,14 +90,15 @@ const viewSwitch = createViewSwitch({
 
 `view-switch.test.ts`: the loading state, then the view, then the map
 again; each failure (a chunk, no WebGL, nothing placed, an unknown
-reason) landing on the map with its text said; a lost context falling
-back once and opening again; a context lost while loading landing on
-the map, said, its late view disposed; a shown view's error falling
-back, said; a late view dropped and disposed; a shown
+reason) ending the load as failed with its reason and its text said; a
+lost context ending the view once and opening again; a context lost
+while loading ending the load as failed, said, its late view disposed; a
+shown view's error ending it, said; a late view dropped and disposed; a shown
 view closed with the tour; `onShown` called with the store already in
 its mode on every way back; the status line shown only while loading;
 `show3d` opening as the click does and doing nothing when off, loading
 or shown; no second open while loading; the switch off without a tour. The page's use:
-`playwright-tests/editor3d.spec.js` (a tour opening in 3D, the map as
-the fallback, the load line); the menus at 390 px:
+`playwright-tests/editor3d.spec.js` (a tour opening in 3D, the load
+line) and `playwright-tests/editor3d-globe-default.spec.js` (the
+cannot-open page); the menus at 390 px:
 `playwright-tests/editor.spec.js`.

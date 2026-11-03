@@ -4010,8 +4010,24 @@ wireView3dFailedPage({
     saveCopy: element("view3d-failed-save-copy"),
     details: element("view3d-failed-details"),
   },
-  covered: [mapBox, element("rail"), element("card"), debugPanel],
+  covered: [
+    mapBox,
+    element("rail"),
+    element("card"),
+    element("offscreen-chip"),
+    debugPanel,
+  ],
   store,
+  toasts: {
+    height: () => toasts.offsetHeight,
+    watch: (changed) => {
+      const observer = new ResizeObserver(changed);
+      observer.observe(toasts);
+      return () => {
+        observer.disconnect();
+      };
+    },
+  },
   actions: {
     retry: () => {
       viewSwitch.show3d();
