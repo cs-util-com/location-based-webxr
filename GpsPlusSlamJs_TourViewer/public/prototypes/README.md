@@ -155,6 +155,13 @@ wired into its logic: every interaction is faked.
   two directions for the editor's bottom bar and a collapsible panel for
   problems, history, map loading and performance (one tabbed panel, or a
   drawer per status item); made 2026-11-03.
+- `globe-look-1-glitter-haze/` ... `globe-look-4-relief-deck/` - four
+  directions for the globe seen over open sea with the sun low (sun glitter,
+  haze, cumulus clouds): the sea and the air alone, raymarched clouds, lit
+  puff clusters, a relief cloud deck. Each has the same three views
+  (`?view=10km|3km|30km`), `?sun=`, a `?tier=low|high` switch, a frame-time
+  readout and `window.lookStats()`, and notes with its own self-check;
+  made 2026-11-03.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
