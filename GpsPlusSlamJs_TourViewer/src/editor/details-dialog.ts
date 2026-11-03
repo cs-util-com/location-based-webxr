@@ -41,7 +41,7 @@ export interface DetailsDialogDom {
 }
 
 /** The "needs no GPS" box in the dialog and the session's setting. */
-export interface DetailsNoGps {
+interface DetailsNoGps {
   input: Pick<HTMLInputElement, "checked"> & {
     addEventListener(type: "change", handler: () => void): void;
   };
