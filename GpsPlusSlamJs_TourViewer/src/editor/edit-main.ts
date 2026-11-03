@@ -161,6 +161,7 @@ import {
 } from "./added-debug-data.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
+import { wireView3dFailedPage } from "./view3d-failed-page.js";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -419,9 +420,9 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
 const debugSwitch = element<HTMLButtonElement>("view-debug");
-/** The View menu's Real time: the globe view's clock (`globe=1` only). */
+/** The View menu's Real time: the globe view's clock (the globe view only). */
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
-/** The View menu's Clouds: the globe view's heavy clouds (`globe=1` only). */
+/** The View menu's Clouds: the globe view's heavy clouds (the globe view only). */
 const cloudsSwitch = element<HTMLButtonElement>("view-clouds");
 const debugStatus = element("debug-status");
 /** "Add debug data…" and its file input (M2 step 5 of the debug-captures
@@ -465,6 +466,18 @@ const noGpsLines = createStatusLines(element("no-gps-warnings"), (line) => {
   p.textContent = line;
   return p;
 });
+/** The same setting's box in Tour details, for the 3D view (no rail
+ *  there), and its warnings' live region (never hidden, like the rail's). */
+const detailsNoGpsInput = element<HTMLInputElement>("details-no-gps");
+const detailsNoGpsLines = createStatusLines(
+  element("details-no-gps-warnings"),
+  (line) => {
+    const p = document.createElement("p");
+    p.className = "note-line warn";
+    p.textContent = line;
+    return p;
+  },
+);
 
 let session: TourSession | null = null;
 /** The written file, for the card's photos once a save replaced the bytes
@@ -1619,6 +1632,17 @@ const details = wireDetailsDialog({
     refresh();
     toast(kind === "changed" ? DETAILS_CHANGED : DETAILS_UNCHANGED);
     if (kind === "changed") autosave.changed();
+  },
+  // Written with the details by Apply: one change, one toast.
+  noGps: {
+    input: detailsNoGpsInput,
+    current: () => editor?.needsNoGps() ?? false,
+    preview: (on) => {
+      detailsNoGpsLines.show(
+        editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck()),
+      );
+    },
+    apply: (on) => editor?.setNeedsNoGps(on).kind ?? "unchanged",
   },
   onClose: () => {
     releaseOutside?.();
@@ -3284,7 +3308,8 @@ linkForm.addEventListener("submit", (event) => {
 cancelButton.addEventListener("click", () => {
   showModal(false);
 });
-element<HTMLButtonElement>("file-open").addEventListener("click", () => {
+/** File's Open…: the open dialog, after the unsaved-work guard. */
+function openAnotherTour(): void {
   // The same guard as leaving the page (`main.ts`'s rule for switching
   // tours, E2 plan review #12).
   if (
@@ -3296,7 +3321,11 @@ element<HTMLButtonElement>("file-open").addEventListener("click", () => {
     return;
   }
   showModal(true);
-});
+}
+element<HTMLButtonElement>("file-open").addEventListener(
+  "click",
+  openAnotherTour,
+);
 
 /** Said when Share and publish's save did not land: the dialog waits
  *  for it. */
@@ -3821,7 +3850,7 @@ const shell = createEditorShell({
     toast(text);
   },
 });
-/** The link switch to the 3D view on the whole globe (`globe=1`). */
+/** The link switch to the 3D view on the whole globe (on unless `globe=0`). */
 const globeSwitch = readGlobeSwitch(location.search);
 /** True from a 3D open with an approach until its bar goes: the shell
  *  keeps the tree folded meanwhile and unfolds it at the landing. */
@@ -3933,13 +3962,12 @@ const viewSwitch = createViewSwitch({
   },
   say: (text, reason) => {
     view3dFailureToast?.remove();
-    // A tour with nothing positioned is no failure: the map shows it, and
-    // a passing line says why.
-    view3dFailureToast = toast(
-      text,
-      undefined,
-      reason === "empty" ? UNDO_MS : null,
-    );
+    view3dFailureToast = null;
+    // A failure is said by its own page (`view3d-failed-page.ts`). A tour
+    // with nothing positioned - refused by the older view (`globe=0`)
+    // alone - is no failure: the map shows it, and a passing line says why.
+    if (reason !== "empty") return;
+    view3dFailureToast = toast(text, undefined, UNDO_MS);
     fileToasts.push(view3dFailureToast);
   },
   onShown: (on) => {
@@ -3963,6 +3991,34 @@ const viewSwitch = createViewSwitch({
 });
 // Nothing to show in 3D until a tour is open.
 viewSwitch.setEnabled(session !== null);
+// Where the 3D view cannot open, a page says so, with the File actions.
+wireView3dFailedPage({
+  dom: {
+    root: element("view3d-failed"),
+    heading: element("view3d-failed-title"),
+    reason: element("view3d-failed-reason"),
+    retry: element("view3d-failed-retry"),
+    open: element("view3d-failed-open"),
+    save: element("view3d-failed-save"),
+    saveCopy: element("view3d-failed-save-copy"),
+    details: element("view3d-failed-details"),
+  },
+  covered: [mapBox, element("rail"), element("card")],
+  store,
+  actions: {
+    retry: () => {
+      viewSwitch.show3d();
+    },
+    open: openAnotherTour,
+    save: () => {
+      void runSave(askSaveFile());
+    },
+    saveCopy: () => {
+      void saveCopy();
+    },
+    details: openDetails,
+  },
+});
 
 // Everything above is wired: the open dialog's controls answer from here
 // on (a keyboard press before the module ran would go nowhere - the e2e

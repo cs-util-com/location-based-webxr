@@ -244,6 +244,38 @@
 
     <div id="map" aria-label="Tour map"></div>
 
+    <!-- Where the 3D view cannot open (view3d-failed-page.ts): no WebGL,
+         its code not loaded, its graphics lost, an error. It says so and
+         keeps the File actions within reach; the 2D map no longer stands
+         in for the 3D view. -->
+    <section id="view3d-failed" aria-labelledby="view3d-failed-title" hidden>
+      <div class="modal failed">
+        <h1 id="view3d-failed-title" tabindex="-1">The 3D view cannot open</h1>
+        <p class="lede" id="view3d-failed-reason"></p>
+        <p>
+          Your tour is still open: you can save it, save a copy, change its
+          details, or open another tour.
+        </p>
+        <div class="failed-actions">
+          <button class="btn primary" id="view3d-failed-retry" type="button">
+            Try again
+          </button>
+          <button class="btn" id="view3d-failed-open" type="button">
+            Open another tour…
+          </button>
+          <button class="btn" id="view3d-failed-save" type="button">
+            Save
+          </button>
+          <button class="btn" id="view3d-failed-save-copy" type="button">
+            Save a copy…
+          </button>
+          <button class="btn" id="view3d-failed-details" type="button">
+            Tour details…
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
          shows, its code loaded only when the switch asks for it. The
          panels stay above it. -->
@@ -650,6 +682,24 @@
           An e-mail address or a web link. Visitors see it when the tour fails
           to open or show.
         </p>
+        <!-- The tour's "needs no GPS" setting, here for the 3D view, which
+             has no rail (details-dialog.ts `noGps`); written by Apply. -->
+        <label class="setting" for="details-no-gps">
+          <input id="details-no-gps" type="checkbox" />
+          <span class="setting-text">
+            <span class="setting-title">This tour needs no GPS</span>
+            <span class="setting-sub"
+              >Visitors are never asked for their location; the printed codes
+              place the tour.</span
+            >
+          </span>
+        </label>
+        <div
+          class="setting-warnings"
+          id="details-no-gps-warnings"
+          role="status"
+          aria-live="polite"
+        ></div>
         <div id="details-error" role="alert" hidden></div>
         <div class="modal-actions">
           <button class="btn" id="details-cancel" type="button">Cancel</button>

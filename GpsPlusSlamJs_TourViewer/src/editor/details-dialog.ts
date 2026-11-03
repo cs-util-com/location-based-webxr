@@ -7,6 +7,11 @@
  * edit (autosave applies). A refusal stays in the dialog, in the
  * session's words.
  *
+ * In the 3D view, which has no rail, the dialog also carries the tour's
+ * "needs no GPS" setting (`noGps`): shown as it stands, its warnings
+ * previewed while ticked, and written by Apply after the details - one
+ * Apply, one outcome.
+ *
  * @see details-dialog.ts.md
  */
 
@@ -35,6 +40,20 @@ export interface DetailsDialogDom {
   cancel: Listening;
 }
 
+/** The "needs no GPS" box in the dialog and the session's setting. */
+export interface DetailsNoGps {
+  input: Pick<HTMLInputElement, "checked"> & {
+    addEventListener(type: "change", handler: () => void): void;
+  };
+  /** The setting as the session holds it now. */
+  current: () => boolean;
+  /** Show what visitors without location meet while the box reads `on`
+   *  (nothing for off); writes nothing. */
+  preview: (on: boolean) => void;
+  /** The session's edit (`EditorSession.setNeedsNoGps`). */
+  apply: (on: boolean) => "changed" | "unchanged";
+}
+
 export interface DetailsDialogDeps {
   dom: DetailsDialogDom;
   /** The tour's details as they stand now (with the pending edits). */
@@ -50,6 +69,8 @@ export interface DetailsDialogDeps {
   onApplied: (kind: "changed" | "unchanged") => void;
   /** The dialog closed, either way: the page gives focus back. */
   onClose: () => void;
+  /** The tour's "needs no GPS" setting, where the page shows it here. */
+  noGps?: DetailsNoGps;
 }
 
 export interface DetailsDialog {
@@ -90,8 +111,17 @@ export function wireDetailsDialog(deps: DetailsDialogDeps): DetailsDialog {
       sayError(outcome.reason);
       return;
     }
+    // After the details, so a refusal above writes neither.
+    const noGps = deps.noGps?.apply(deps.noGps.input.checked) ?? "unchanged";
     close();
-    deps.onApplied(outcome.kind);
+    deps.onApplied(
+      outcome.kind === "changed" || noGps === "changed"
+        ? "changed"
+        : "unchanged",
+    );
+  });
+  deps.noGps?.input.addEventListener("change", () => {
+    deps.noGps?.preview(deps.noGps.input.checked);
   });
   dom.cancel.addEventListener("click", () => {
     close();
@@ -104,6 +134,10 @@ export function wireDetailsDialog(deps: DetailsDialogDeps): DetailsDialog {
       dom.description.value = now.description;
       dom.contact.value = now.contact;
       deps.showCovers(now.cover);
+      if (deps.noGps !== undefined) {
+        deps.noGps.input.checked = deps.noGps.current();
+        deps.noGps.preview(deps.noGps.input.checked);
+      }
       sayError("");
       dom.backdrop.hidden = false;
       dom.name.focus();

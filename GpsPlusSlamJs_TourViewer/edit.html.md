@@ -21,6 +21,11 @@ AR (tour editor plan 2026-10-17-1816, W1).
   the top bar and walks it left to right.
 - `#map` - the full-window map (`src/editor/editor-map.ts`); `inert`
   while the 3D view shows over it, so Tab never walks the hidden map.
+- `#view3d-failed` - the page where the 3D view cannot open
+  (`src/editor/view3d-failed-page.ts`): `#view3d-failed-title` (focused when
+  it shows), `#view3d-failed-reason`, and Try again, Open another tour…,
+  Save, Save a copy…, Tour details…. Under the top bar, over the map, the
+  rail and the card, under the dialogs and toasts.
 - `#view3d` - the 3D view's box over the map, hidden until the view
   shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), its first
   child the permanent accent line `#load-line` (`aria-hidden`, under the
@@ -118,7 +123,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   2026-10-17-1816): `#details-form` with `#details-name` (the format keeps
   80 characters), `#details-description` (2000), `#details-covers` (the
   cover radios `edit-main.ts` draws; `#details-covers-none` when the tour
-  has no photo to choose), `#details-contact` (320), `#details-error`
+  has no photo to choose), `#details-contact` (320), `#details-no-gps` (the tour's "needs no GPS",
+  for the 3D view, which has no rail) with `#details-no-gps-warnings` (a
+  polite live region, never hidden), `#details-error`
   (`role="alert"`), Cancel and Apply (`src/editor/details-dialog.ts`). Above the toasts (z-index). Each
   field's `maxlength` is TWICE the format's limit (160, 4000, 640): the
   attribute counts UTF-16 units, the format code points, and a character
@@ -169,7 +176,9 @@ markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports, the menus inside the window, the details
 dialog, the fine print, Share and publish and the walk's move),
 `playwright-tests/editor3d.spec.js` (a tour opening in the 3D view, the
-map as the fallback, the view and back),
+cannot-open page, the view and back),
+`playwright-tests/editor3d-globe-default.spec.js` (the globe by default,
+an empty tour, `#view3d-failed` and its File actions, `#details-no-gps`),
 `playwright-tests/editor3d-shell.spec.js` (the studio shell's layout at
 four viewports and every fold step, the menus by keyboard and touch, the
 unsaved mark, its tree clicks). The specs reach the menus through

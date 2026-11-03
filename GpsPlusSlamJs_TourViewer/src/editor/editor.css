@@ -99,6 +99,35 @@ button:disabled {
   display: none;
 }
 
+/* Where the 3D view cannot open (view3d-failed-page.ts): over the map
+   and the rail, under the top bar, its toasts and dialogs. */
+#view3d-failed {
+  position: fixed;
+  inset: var(--top-h) 0 0;
+  z-index: 860;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 16px 64px;
+  overflow-y: auto;
+  background: #e8e6df;
+}
+
+#view3d-failed[hidden] {
+  display: none;
+}
+
+#view3d-failed .modal {
+  margin: auto;
+}
+
+#view3d-failed .failed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
 .view3d-canvas {
   display: block;
   width: 100%;

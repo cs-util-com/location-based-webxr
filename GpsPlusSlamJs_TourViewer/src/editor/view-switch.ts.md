@@ -13,9 +13,10 @@ edits and the selection are the store's, so switching keeps them all.
   `loading` "Loading 3D view…", `shown` "2D map". In a menu the words
   always fit, so there is no short form.
 - `view3dFailureText(reason)` - what the page says for a `View3dFailure`
-  (`chunk`, `webgl`, `context-lost`, `empty`, `error`), in plain words,
-  each ending with the map showing the tour; only `chunk` speaks of the
-  connection.
+  (`chunk`, `webgl`, `context-lost`, `empty`, `error`), in plain words;
+  a failure's words never speak of the map (it no longer stands in for the
+  3D view; `view3d-failed-page.ts` shows them on a page of its own), and
+  only `chunk` speaks of the connection.
 - `createViewSwitch({ button, store, open, say, onShown?, status? })` -> `ViewSwitch`:
   - `button` - a `ViewSwitchButton` (the parts of a button it uses);
   - `status` - a `ViewSwitchStatus` (`textContent`, `hidden`), the bottom
@@ -30,9 +31,10 @@ edits and the selection are the store's, so switching keeps them all.
     its drawing through `events.failed()` (`View3dEvents`), while it loads
     or once shown. The page's `open`
     does the dynamic import, so this module never imports the 3D view;
-  - `say(text, reason)` - the page's toast, with the `View3dFailure`
-    it says (the page lets a tour with nothing positioned, `"empty"`,
-    pass with a timed line: no failure, the map shows that tour);
+  - `say(text, reason)` - told each failure with its `View3dFailure`
+    (the page says a failure on its own page and toasts only a tour with
+    nothing positioned, `"empty"`, refused by the older view alone: no
+    failure, the map shows that tour);
   - `onShown(on)` - the view shown (`true`) or left (`false`), called last,
     with the store already in the mode it announces (the page hides and
     shows its map-only parts there, reading the store).

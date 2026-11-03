@@ -25,6 +25,11 @@ a pending change, saved by Save or autosave like any other edit.
     `"unchanged"` (the page refreshes, says it in a toast, tells autosave).
   - `deps.onClose()` - the dialog closed either way (the page gives focus
     back to the name).
+  - `deps.noGps?` - `DetailsNoGps`, the tour's "needs no GPS" setting in
+    the dialog (the 3D view has no rail): `input` (the box), `current()`
+    (the session's setting), `preview(on)` (the warnings for `on`,
+    writing nothing), `apply(on)` (`setNeedsNoGps`, "changed" or
+    "unchanged").
   - `open()`, `close()` (Cancel, Esc), `isOpen()`.
 - `DetailsForm` (`../tour-details-form.ts`) - `{ name, description, cover: string | null, contact }`;
   an empty text is "none". Shared with `editor-session.ts`.
@@ -43,6 +48,11 @@ a pending change, saved by Save or autosave like any other edit.
 - Close is idempotent: `onClose` runs once per open.
 - A submit while closed does nothing (a stale Enter cannot apply).
 - The error line is cleared on every open and close.
+- "Needs no GPS" is part of the form: open shows the setting as it stands
+  and previews its warnings, a change of the box previews only, Apply
+  writes it after the details (a refusal writes neither) and reports
+  "changed" when either changed; Cancel writes nothing, and the next open
+  shows the setting again, not the abandoned tick.
 
 ## Examples
 
@@ -64,7 +74,10 @@ tourName.addEventListener("click", () => details.open());
 - `details-dialog.test.ts` - opens with the values, Apply hands the whole
   form and closes (changed and unchanged), a refusal stays open with the
   reason, the error clears on reopen, Cancel applies nothing, a submit
-  while closed does nothing.
+  while closed does nothing; "needs no GPS" shown on open, previewed on
+  change, written by Apply alone, never by Cancel or a refused Apply.
 - `playwright-tests/editor.spec.js` - the dialog in the page: the details
   saved into `tour.json` (minor 3), an emptied name removing the title, a
   refused contact, Esc and focus.
+- `playwright-tests/editor3d-globe-default.spec.js` - "needs no GPS" set
+  in the 3D view's dialog, saved, opened again and cleared.

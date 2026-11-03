@@ -24,7 +24,8 @@ import {
  * with its credits and the map asked for at the start view, the morph
  * flat looking down and upright tilted, and the map again with the
  * selection and the save status as they were. A 3D view whose code cannot
- * load lands back on the map with the reason said; and nothing asks for
+ * load is said on a page of its own (`#view3d-failed`), the tour still
+ * open behind it; and nothing asks for
  * the globe's whole-Earth imagery.
  */
 
@@ -171,20 +172,22 @@ test("a tour opens in the 3D view, and View leads to the 2D map", async ({
   await expect(page.locator(".mk-station")).toHaveCount(3);
 });
 
-// Why: the map is the fallback - a tour opened where the 3D view cannot
-// load is still edited, on the map, with the reason said.
-test("a tour whose 3D view cannot load opens on the 2D map, said", async ({
+// Why: a tour opened where the 3D view cannot load stays open (its File
+// actions on the page that says so); the map no longer stands in.
+test("a tour whose 3D view cannot load opens on a page that says so, the tour still open", async ({
   page,
 }) => {
   await answerHosts(page);
   await page.route("**/src/editor3d/editor3d-scene.ts*", (route) =>
     route.abort(),
   );
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(
-    page.locator(".toast", { hasText: "The 3D view could not be loaded" }),
+    page.locator("#view3d-failed", {
+      hasText: "The 3D view could not be loaded",
+    }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toHaveAttribute("data-view", "3d");
   await expect(page.locator("#view-switch")).toHaveText("3D view");
@@ -204,7 +207,7 @@ test("a tour with nothing positioned opens on the 2D map quietly: a passing line
     // @ts-expect-error - the e2e opens through the file input.
     delete window.showOpenFilePicker;
   });
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const writer = new ZipWriter(new Uint8ArrayWriter());
   await writer.add(
@@ -236,7 +239,7 @@ test("a tour with nothing positioned opens on the 2D map quietly: a passing line
   await expect(line).toHaveCount(0, { timeout: 20_000 });
 });
 
-test("a 3D view whose code cannot load lands back on the map, said", async ({
+test("a 3D view whose code cannot load is said on its page, the view closed", async ({
   page,
 }) => {
   await answerHosts(page);
@@ -247,7 +250,9 @@ test("a 3D view whose code cannot load lands back on the map, said", async ({
   const button = page.locator("#view-switch");
   await viewCommand(page, "switch");
   await expect(
-    page.locator(".toast", { hasText: "The 3D view could not be loaded" }),
+    page.locator("#view3d-failed", {
+      hasText: "The 3D view could not be loaded",
+    }),
   ).toBeVisible();
   await expect(button).toHaveText("3D view");
   await expect(button).toBeEnabled();
@@ -255,13 +260,13 @@ test("a 3D view whose code cannot load lands back on the map, said", async ({
   await expect(page.locator(".mk-station")).toHaveCount(3);
 });
 
-// Why: a failure's line stays until closed (the creator asked for
-// something that did not happen) - but once a later open shows the view
-// it says what is no longer so, and must go. The first open fails for want
+// Why: a failure's page stays until the view is tried again (the creator
+// asked for something that did not happen) - but once a later open shows
+// the view it says what is no longer so, and must go. The first open fails for want
 // of WebGL (the page refuses one WebGL context); the second shows. (A chunk
 // that failed cannot stand in: the browser keeps a failed import's answer
 // for the page's life.)
-test("a later open that shows the 3D view takes the earlier failure's line away", async ({
+test("a later open that shows the 3D view takes the earlier failure's page away", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -282,14 +287,16 @@ test("a later open that shows the 3D view takes the earlier failure's line away"
     };
   });
   const button = page.locator("#view-switch");
-  const line = page.locator(".toast", { hasText: "cannot draw the 3D view" });
+  const line = page.locator("#view3d-failed", {
+    hasText: "cannot draw the 3D view",
+  });
   await viewCommand(page, "switch");
   await expect(line).toBeVisible();
   await expect(button).toHaveText("3D view");
   await expect(page.locator("#view3d canvas")).toHaveCount(0);
   await viewCommand(page, "switch");
   await expect(button).toHaveText("2D map", { timeout: 60_000 });
-  await expect(line).toHaveCount(0);
+  await expect(line).toBeHidden();
   await expect(page.locator("#view3d canvas")).toHaveCount(1);
 });
 
@@ -297,9 +304,9 @@ test("a later open that shows the 3D view takes the earlier failure's line away"
 // left the open waiting for a frame that never came - the button stuck on
 // "Loading 3D view…" - and a failure after the renderer was made left its
 // canvas in the box (a second one on the next open). The open must end on
-// the map with the reason said and nothing of the view left behind. The
+// its page with the reason said and nothing of the view left behind. The
 // page's WebGL draw calls throw once, inside three's render.
-test("a 3D view whose first frame fails lands back on the map, said, with nothing left", async ({
+test("a 3D view whose first frame fails is said on its page, with nothing left", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -331,7 +338,7 @@ test("a 3D view whose first frame fails lands back on the map, said, with nothin
   const button = page.locator("#view-switch");
   await viewCommand(page, "switch");
   await expect(
-    page.locator(".toast", { hasText: "stopped on an error" }),
+    page.locator("#view3d-failed", { hasText: "stopped on an error" }),
   ).toBeVisible({ timeout: 60_000 });
   await expect(button).toHaveText("3D view");
   await expect(button).toBeEnabled();
