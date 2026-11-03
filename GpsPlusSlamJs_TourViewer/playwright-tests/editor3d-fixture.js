@@ -116,6 +116,78 @@ export async function afterFrames(page, n) {
 }
 
 /**
+ * The frames the relief may take to carry the ground on the globe. Its
+ * hand-over waits for every relief tile in view to be parsed, about one a
+ * frame, so it is bound by frames, not time: measured 2026-11-03 on the
+ * sample tour at street level, 150 to 172 frames at 1x to 6x CPU slowdown,
+ * which took 57 s to 75 s at the software renderer's 2 to 3 frames a
+ * second. This allows about 2.3 times the most measured.
+ */
+const RELIEF_HANDOVER_FRAMES = 400;
+
+/**
+ * How long the relief may make no progress (no frame drawn, no tile
+ * queued, downloaded, parsed or loaded) before the wait calls it stalled
+ * (ms).
+ */
+const RELIEF_STALL_MS = 60_000;
+
+/**
+ * Wait until the relief carries the ground on the globe view. Fails when
+ * the relief takes more than `RELIEF_HANDOVER_FRAMES` frames, or when it
+ * stalls for `RELIEF_STALL_MS`, naming its readout (`globe.relief`) - not
+ * after a fixed time, which a slow runner's frame rate alone overruns.
+ * The caller's test timeout must leave room for the frames at its runner's
+ * frame rate (400 frames at 2 a second is 200 s).
+ * @param {import("@playwright/test").Page} page
+ */
+export async function reliefCarries(page) {
+  /** @param {any} stats */
+  const signature = (stats) => {
+    const r = stats?.globe?.relief;
+    return JSON.stringify([
+      stats?.frames,
+      r?.loadProgress,
+      r?.queued,
+      r?.downloading,
+      r?.parsing,
+      r?.loaded,
+    ]);
+  };
+  const first = await view3d(page);
+  const fromFrames = first?.frames ?? 0;
+  let last = signature(first);
+  let lastChangeAt = Date.now();
+  /** @type {any} */
+  let seen = first;
+  await expect
+    .poll(
+      async () => {
+        const stats = await view3d(page);
+        seen = stats;
+        if (stats?.globe?.carrier === "relief") return "relief";
+        const now = Date.now();
+        const sig = signature(stats);
+        if (sig !== last) {
+          last = sig;
+          lastChangeAt = now;
+        }
+        if ((stats?.frames ?? 0) - fromFrames > RELIEF_HANDOVER_FRAMES) {
+          return "over its frames";
+        }
+        if (now - lastChangeAt > RELIEF_STALL_MS) return "stalled";
+        return "waiting";
+      },
+      { timeout: 20 * 60_000, intervals: [2_000] },
+    )
+    .not.toBe("waiting");
+  expect(
+    seen?.globe?.carrier,
+    `the relief did not take over; frames ${String((seen?.frames ?? 0) - fromFrames)}, relief ${JSON.stringify(seen?.globe?.relief)}`,
+  ).toBe("relief");
+}
+
+/**
  * The editor page with the sample tour open on the 2D map (not in the 3D
  * view, the default: `openSampleIn3d`), for a spec that edits on the map
  * first or drives the view switch itself.
