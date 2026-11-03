@@ -768,7 +768,7 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip, id } = await oneCodeTour();
   await openZip(page, zip, "one-code.zip");

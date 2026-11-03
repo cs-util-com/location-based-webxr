@@ -3,10 +3,10 @@
 ## Purpose
 
 The desktop editor's 3D view on the whole globe (full-globe editor plan
-2026-10-27-1850, GV1b), opened instead of the OrbitControls view
-(`editor3d-scene.ts`) when the page's link carries `globe=1`
-(`../editor/globe-switch.ts`, read in `../editor/edit-main.ts`). Without the
-switch nothing here loads.
+2026-10-27-1850, GV1b): the default 3D view. Only the temporary way back,
+`globe=0` in the page's link (`../editor/globe-switch.ts`, read in
+`../editor/edit-main.ts`), opens the OrbitControls view
+(`editor3d-scene.ts`) instead, and then nothing here loads.
 
 It mounts the globe package's view core (`createGlobeView` from
 `gps-plus-slam-globe/view`: sky, sun, surface, a world frame that follows
@@ -15,6 +15,15 @@ placed in ECEF) under the camera, the tour drawn in the globe's
 Earth-centred group (`globe-layer.ts`), and the globe's camera controls in
 eye mode. It opens at street level, `GLOBE_EDITOR_LOOK.backM` south of the
 tour's centre at eye height, looking at it.
+
+A tour with nothing positioned yet (a new one, or notes alone) opens too:
+over the creator's part of the world (`empty-tour-view.ts`: latitude 30,
+the longitude of the browser's time zone), the whole Earth in view from
+the approach's start height (`startKm`), with no approach to fly (its
+`ended("landed")` is called at once, so the shell does not hold the tree
+folded). The first station is placed by right-clicking the ground. The
+tour frame stays at that default centre; the stations are drawn by their
+true ECEF place, so one placed anywhere shows where it is.
 
 ## Public API
 
@@ -25,8 +34,8 @@ tour's centre at eye height, looking at it.
   - Resolves on the render loop's first tick with the same `Editor3dView`
     shape, so the shell, the view switch and the page's test hooks work
     unchanged.
-  - Rejects with a `viewFailure` (`editor3d-view-parts.ts`): `empty` for a
-    tour with nothing positioned, `chunk` when the geoid does not load,
+  - Rejects with a `viewFailure` (`editor3d-view-parts.ts`): `chunk`
+    when the geoid does not load,
     `context-lost` before the first frame, or the first frame's own error.
     Everything made so far is undone first.
 

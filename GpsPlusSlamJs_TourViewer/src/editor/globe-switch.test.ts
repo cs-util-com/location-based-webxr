@@ -1,8 +1,9 @@
 /**
- * Why these tests matter: the editor on the globe ships behind a link
- * switch until the owner has tried it, so the switch must be OFF for every
- * link that does not ask for it (the default editor's e2e opens without
- * it), and the two tuning knobs the owner sets by hand in the link must
+ * Why these tests matter: the editor on the globe is the default 3D view,
+ * so the switch must be ON for every link that does not turn it off; the
+ * one way back to the older 3D view and the map, `globe=0`, is temporary
+ * until those views are removed, and an old `globe=1` link must keep
+ * working. The tuning knobs the owner sets by hand in the link must
  * never turn a typo into a broken view: a value that is not a number in
  * range falls back to the default instead of hiding everything (0 px) or
  * nothing (Infinity).
@@ -12,9 +13,9 @@ import { describe, expect, it } from "vitest";
 import { GLOBE_SWITCH, readGlobeSwitch } from "./globe-switch.js";
 
 describe("readGlobeSwitch", () => {
-  it("is off with its defaults for a link without the switch", () => {
+  it("is on with its defaults for a link without the switch", () => {
     expect(readGlobeSwitch("")).toEqual({
-      on: false,
+      on: true,
       hidePx: GLOBE_SWITCH.hidePx.fallback,
       crowdPx: GLOBE_SWITCH.crowdPx.fallback,
       meteorDeg: 20,
@@ -22,16 +23,16 @@ describe("readGlobeSwitch", () => {
       landAglM: 150,
       startKm: 8_000,
     });
-    expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
-      false,
-    );
+    expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });
 
-  it("is on only for globe=1", () => {
-    expect(readGlobeSwitch("?globe=1").on).toBe(true);
-    expect(readGlobeSwitch("globe=1").on).toBe(true);
-    for (const value of ["0", "", "yes", "true", "2"]) {
-      expect(readGlobeSwitch(`?globe=${value}`).on).toBe(false);
+  // Why: `globe=0` is the temporary way back to the older 3D view; any
+  // other value, an old `globe=1` link among them, keeps the globe.
+  it("is off only for globe=0", () => {
+    expect(readGlobeSwitch("?globe=0").on).toBe(false);
+    expect(readGlobeSwitch("globe=0").on).toBe(false);
+    for (const value of ["1", "", "yes", "true", "2"]) {
+      expect(readGlobeSwitch(`?globe=${value}`).on).toBe(true);
     }
   });
 

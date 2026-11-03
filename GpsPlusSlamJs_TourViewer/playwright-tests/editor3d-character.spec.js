@@ -111,7 +111,7 @@ async function openAndSelect(page, zip) {
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "wendel.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

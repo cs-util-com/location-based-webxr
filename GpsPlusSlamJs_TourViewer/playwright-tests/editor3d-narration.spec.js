@@ -92,7 +92,7 @@ async function openNarration(page) {
   const zip = Buffer.from(await (await fetch(TOUR)).arrayBuffer());
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "long-text-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

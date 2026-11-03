@@ -123,7 +123,7 @@ export async function afterFrames(page, n) {
  */
 export async function openSample(page) {
   await startOnMap(page.context());
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
@@ -137,7 +137,7 @@ export async function openSample(page) {
  * @param {import("@playwright/test").Page} page
  */
 export async function openSampleIn3d(page) {
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

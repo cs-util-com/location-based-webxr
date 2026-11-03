@@ -1044,7 +1044,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // The open dialog, the editor's first screen.
   const openModal = page.locator("#open-modal .modal");

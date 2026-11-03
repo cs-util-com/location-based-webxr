@@ -12,13 +12,14 @@ import {
 } from "./editor3d-fixture.js";
 
 /**
- * Why these tests matter: the editor on the globe view opens only behind
- * its link switch (`globe=1`), and the OrbitControls view stays the default.
- * These open the sample tour both ways and check, through the page's test
+ * Why these tests matter: the editor on the globe view is the default
+ * (`globe=1` still names it), and the OrbitControls view opens only with
+ * the temporary way back, `globe=0`. These open the sample tour both ways
+ * and check, through the page's test
  * hook (a software-drawn WebGL shows little a screenshot could assert on),
- * that the switch gives the globe view - drawing, at street level, the
+ * that the globe view opens - drawing, at street level, the
  * relief carrying the ground, the three stations in its Earth-centred
- * group - and that without it nothing of the globe loads: no globe stats,
+ * group - and that with `globe=0` nothing of the globe loads: no globe stats,
  * no ask for its whole-Earth imagery.
  */
 
@@ -298,7 +299,7 @@ test("a street-map tile whose first request failed gets its map", async ({
   expect(await rejections(page)).toEqual([]);
 });
 
-test("opens the OrbitControls view without the switch, nothing of the globe asked for", async ({
+test("opens the OrbitControls view with ?globe=0, nothing of the globe asked for", async ({
   page,
 }) => {
   test.setTimeout(120_000);
