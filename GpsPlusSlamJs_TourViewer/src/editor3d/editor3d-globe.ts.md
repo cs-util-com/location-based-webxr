@@ -271,7 +271,9 @@ takeover; what still loads does not keep it (it reads no load counts).
 `stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
 the camera's altitude, the frame target, the hidden stations and codes, the
 frame recentres, the surface's state and `uploads` (`pending`, `ran`,
-`worstFrameMs`, `admitted`).
+`worstFrameMs`, `admitted`). `mapLoad` is the street map's typed loading
+state (`OsmMapLoad`: tiles waiting, failed, given up, the request ceiling's
+wait in s), produced here for the shell to show.
 
 ## Tests
 

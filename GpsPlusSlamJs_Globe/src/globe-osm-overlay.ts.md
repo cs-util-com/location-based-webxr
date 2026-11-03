@@ -164,6 +164,13 @@ failed, unprocessed }`: the relief tiles drawn in the last update
       has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.
+    - `mapLoad()` -> `OsmMapLoad` `{ waiting, failed, givenUp,
+ceilingWaitS }`: the street map's loading state for an interface to
+      show (the editor's shell): the near tiles without their map, the
+      failed and the given-up ones among them, and how long the request
+      ceiling holds the next request (s, rounded up to tenths; 0 when it
+      has room). Read from `coverage` and the ceiling, so it walks the
+      tiles too: a few times a second at most.
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
@@ -291,7 +298,7 @@ failed, unprocessed }`: the relief tiles drawn in the last update
   and a guard on its private methods, the diagnostics (a texture dropped
   only with its last lock, the switches off and the frames with an
   unknown height, the time the ceiling was full while on, the drawn tiles
-  near the camera sorted by their map, nothing read before attach or
+  near the camera sorted by their map, the map's load (waiting, failed, the ceiling's wait), nothing read before attach or
   readiness), the keep (a released texture kept and a re-lock served
   from it past the gate, the region released longest ago given back past
   the keep, a region loading or failed never kept, 0 keeping nothing and

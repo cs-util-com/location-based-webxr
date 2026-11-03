@@ -38,7 +38,7 @@ keys), and writes only through the page's `edits`.
   last frame's clip planes `near` and `far`, tilt, standing, the stations layer's counts (each code's drawn scale
   among them), `codePx` (each code's drawn side on the canvas in CSS px:
   its square's corners, `codeCorners`, projected by the last frame's
-  camera), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), and each
+  camera), the map's stats with its `coverage` (the drawn tiles near the camera by their map, for the page's checks), `mapLoad` (the map's typed loading state, `OsmMapLoad` of the Globe package, for the shell to show), and each
   station's drawn height and the drawn ground under it); `setTilt(deg)`
   (the page's checks: the orbit's tilt, its distance and heading kept);
   `setDistance(m)` (the orbit's distance within its limits, its tilt and

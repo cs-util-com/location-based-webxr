@@ -781,6 +781,22 @@ export interface OsmCoverage {
   readonly unprocessed: number;
 }
 
+/**
+ * The street map's loading state, small and typed for an interface to
+ * show (`mapLoad`): read from `coverage` and the request ceiling.
+ */
+export interface OsmMapLoad {
+  /** Tiles near the camera without their map yet. */
+  readonly waiting: number;
+  /** Of those, the ones whose last request failed. */
+  readonly failed: number;
+  /** Of those, the ones the map gave up waiting for. */
+  readonly givenUp: number;
+  /** How long until the request ceiling lets the next request go (s,
+   *  tenths; 0 when it is not full). */
+  readonly ceilingWaitS: number;
+}
+
 const NO_COVERAGE: OsmCoverage = Object.freeze({
   near: 0,
   withMap: 0,
@@ -982,6 +998,36 @@ export function createGlobeOsmOverlay({
       ? "coarse"
       : "waiting";
   };
+  /**
+   * The relief tiles drawn in the last update near the camera, by their
+   * map (all zero before `attach` or while the overlay is not ready).
+   * Walks every drawn tile: for checks and measurements, not each frame.
+   */
+  const coverage = (): OsmCoverage => {
+    const drawn = terrain?.tiles.visibleTiles;
+    const tileInfo = (
+      plugin as unknown as OverlayPluginInternals
+    ).overlayInfo.get(overlay)?.tileInfo;
+    if (!drawn || !tileInfo || !overlay.isReady) return NO_COVERAGE;
+    const reach = uniforms.uOsmFadeStart.value * uniforms.uOsmFadeM.value;
+    const n = { unprocessed: 0, far: 0, withMap: 0, coarse: 0, waiting: 0 };
+    let failed = 0;
+    for (const tile of drawn) {
+      const info = tileInfo.get(tile);
+      if (!info) continue;
+      const kind = kindOf(info, reach);
+      n[kind]++;
+      if (kind === "waiting" && info.failed) failed++;
+    }
+    return {
+      near: n.withMap + n.coarse + n.waiting,
+      withMap: n.withMap,
+      coarse: n.coarse,
+      waiting: n.waiting,
+      failed,
+      unprocessed: n.unprocessed,
+    };
+  };
   return {
     credit,
     /** The limits in force (the caller's over `GLOBE_OSM`). */
@@ -1048,34 +1094,20 @@ export function createGlobeOsmOverlay({
       // `reevaluateMs` away, after that frame.
       retryFailed(pose.nowMs);
     },
+    coverage,
     /**
-     * The relief tiles drawn in the last update near the camera, by their
-     * map (all zero before `attach` or while the overlay is not ready).
-     * Walks every drawn tile: for checks and measurements, not each frame.
+     * The map's loading state (`OsmMapLoad`): the near tiles waiting for
+     * their map, the failed and given-up ones among them, and the request
+     * ceiling's wait. Walks the tiles as `coverage` does: for an interface
+     * reading a few times a second, not for each frame.
      */
-    coverage(): OsmCoverage {
-      const drawn = terrain?.tiles.visibleTiles;
-      const tileInfo = (
-        plugin as unknown as OverlayPluginInternals
-      ).overlayInfo.get(overlay)?.tileInfo;
-      if (!drawn || !tileInfo || !overlay.isReady) return NO_COVERAGE;
-      const reach = uniforms.uOsmFadeStart.value * uniforms.uOsmFadeM.value;
-      const n = { unprocessed: 0, far: 0, withMap: 0, coarse: 0, waiting: 0 };
-      let failed = 0;
-      for (const tile of drawn) {
-        const info = tileInfo.get(tile);
-        if (!info) continue;
-        const kind = kindOf(info, reach);
-        n[kind]++;
-        if (kind === "waiting" && info.failed) failed++;
-      }
+    mapLoad(): OsmMapLoad {
+      const c = coverage();
       return {
-        near: n.withMap + n.coarse + n.waiting,
-        withMap: n.withMap,
-        coarse: n.coarse,
-        waiting: n.waiting,
-        failed,
-        unprocessed: n.unprocessed,
+        waiting: c.waiting,
+        failed: c.failed,
+        givenUp: 0,
+        ceilingWaitS: Math.ceil(ceiling.waitMs() / 100) / 10,
       };
     },
     stats() {

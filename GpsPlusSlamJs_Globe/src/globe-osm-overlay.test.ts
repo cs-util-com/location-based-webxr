@@ -1022,6 +1022,79 @@ describe("the map's diagnostics", () => {
     expect(osm.coverage()).toMatchObject({ near: 3, waiting: 3, failed: 2 });
   });
 
+  // Why: the editor shows the street map's loading state from one small
+  // typed reading, not from the diagnostics' dozen counters: how many tiles
+  // near the camera wait for their map, how many of them failed, how many
+  // the map gave up waiting for, and how long the request ceiling holds the
+  // next request (s). Before the overlay is ready it reads all zero.
+  it("reports the map's load: the near tiles waiting and failed, and the ceiling's wait in seconds", async () => {
+    const visible = new Set<object>();
+    const osm = createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      fadeM: 1000,
+    });
+    expect(osm.mapLoad()).toEqual({
+      waiting: 0,
+      failed: 0,
+      givenUp: 0,
+      ceilingWaitS: 0,
+    });
+    await (osm.overlay as unknown as { init(): Promise<unknown> }).init();
+    osm.attach(fakeTerrain(visible));
+    osm.setEnabled(true);
+    const lat = 48.137;
+    const lon = 11.575;
+    osm.update({
+      position: cameraAt(lat, lon, 100),
+      aboveGroundM: 100,
+      speedMps: 0,
+      nowMs: 0,
+    });
+    const projection = osm.overlay.projection as {
+      fromCartographicToNormalizedRange(r: number[]): number[];
+    };
+    const tileInfo = (
+      osm.plugin as unknown as {
+        overlayInfo: Map<object, { tileInfo: Map<object, unknown> }>;
+      }
+    ).overlayInfo.get(osm.overlay)!.tileInfo;
+    const add = (dLat: number, target: unknown, failed: boolean): void => {
+      const tile = {};
+      tileInfo.set(tile, {
+        range: projection.fromCartographicToNormalizedRange(
+          regionAround(lat + dLat, lon, 0.0002),
+        ),
+        target,
+        failed,
+        meshInfo: new Map([[1, 1]]),
+      });
+      visible.add(tile);
+    };
+    add(0, "texture", false);
+    add(0.0005, null, true);
+    add(0.001, null, false);
+    add(0.05, null, false); // about 5.6 km away: not counted
+    expect(osm.mapLoad()).toEqual({
+      waiting: 2,
+      failed: 1,
+      givenUp: 0,
+      ceilingWaitS: 0,
+    });
+    vi.spyOn(proto, "fetch").mockImplementation(() => Promise.resolve("ok"));
+    for (let i = 0; i < GLOBE_OSM.requestsPerMinute; i++) {
+      await osm.overlay.fetch(`u${i}`);
+    }
+    const { ceilingWaitS } = osm.mapLoad();
+    expect(ceilingWaitS).toBeGreaterThan(55);
+    expect(ceilingWaitS).toBeLessThanOrEqual(60);
+    // Tenths of a second: a reading, not a clock.
+    expect(Math.round(ceilingWaitS * 10)).toBe(ceilingWaitS * 10);
+    vi.restoreAllMocks();
+  });
+
   // Why: `coverage` sorts the drawn tiles by their distance from the
   // camera of the last update. The camera was taken only while the map was
   // on, so after a frame with the map off (an unknown height, a switch-off)

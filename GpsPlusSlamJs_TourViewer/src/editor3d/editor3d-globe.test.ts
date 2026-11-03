@@ -364,6 +364,12 @@ vi.mock("./editor3d-terrain.js", async () => {
             fakes.coverageCalls++;
             return { waiting: 0, failed: 0 };
           },
+          mapLoad: () => ({
+            waiting: 3,
+            failed: 1,
+            givenUp: 0,
+            ceilingWaitS: 12.5,
+          }),
         },
         dispose() {},
       };
@@ -1302,6 +1308,19 @@ describe("openGlobeEditor's wiring", () => {
     fakes.coverageCalls = 0;
     for (now = 0; now < 2_100; now += 1000 / 60) frameAt(now);
     expect(fakes.coverageCalls).toBe(0);
+  });
+
+  // Why: the shell shows the street map's loading state; the view hands
+  // the overlay's typed reading through its stats unchanged, so the shell
+  // reads one field instead of the diagnostics' counters.
+  it("hands the street map's load through its stats", async () => {
+    await openAt(0);
+    expect(open?.stats().mapLoad).toEqual({
+      waiting: 3,
+      failed: 1,
+      givenUp: 0,
+      ceilingWaitS: 12.5,
+    });
   });
 
   // Why: the page learns the recorded walk only once its captures are

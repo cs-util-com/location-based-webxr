@@ -1282,6 +1282,7 @@ export async function openGlobeEditor(
           ...layer.stats(),
           codePx: [],
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
+          mapLoad: ground.osm.mapLoad(),
           // The tour's centre at its drawn height (the frame's origin is
           // on the ellipsoid, under it).
           target: [0, centreHeightM, 0],

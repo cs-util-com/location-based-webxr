@@ -50,6 +50,7 @@ import {
   type ShellLayer,
 } from "../editor/editor-view.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
+import type { OsmMapLoad } from "gps-plus-slam-globe/editor";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -264,6 +265,9 @@ export interface Editor3dStats {
   readonly shown: readonly string[];
   readonly renders: number;
   readonly osm: Record<string, unknown>;
+  /** The street map's loading state (the overlay's `mapLoad`), for the
+   *  shell to show. */
+  readonly mapLoad: OsmMapLoad;
   /** The orbit's centre in the world (m). */
   readonly target: readonly [number, number, number];
   /** The camera in the world (m). */
@@ -840,6 +844,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
             );
           }),
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
+          mapLoad: ground.osm.mapLoad(),
           target: [controls.target.x, controls.target.y, controls.target.z],
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: camera.position.distanceTo(controls.target),
