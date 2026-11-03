@@ -16,19 +16,28 @@
  * - a pick mid-flight is a new leg from the camera as it is;
  * - the bar follows the height and only rises;
  * - the flight places the camera only, never the view's frame (the frame
- *   is no longer moved per frame).
+ *   is no longer moved per frame);
+ * - without a startKm it starts where the globe lab's intro zooms out to,
+ *   the whole Earth in view at every aspect (phone portrait and landscape,
+ *   desktop), still at the meteor's pace; it restarts the speed streaks
+ *   where it places the camera.
  * The flight's own maths is swept over places and knobs in the globe
  * package (`pin-flight-meteor-entry.test.ts`); here three places times three knob settings.
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { METEOR_PACE } from "gps-plus-slam-globe/view";
+import {
+  GLOBE_INTRO,
+  METEOR_PACE,
+  globeViewFitM,
+} from "gps-plus-slam-globe/view";
 import { WGS84_ELLIPSOID } from "gps-plus-slam-globe/test-utils/view-pose";
 
 import { readGlobeSwitch } from "../editor/globe-switch.js";
 import {
   createMeteorApproach,
   isFlyingPhase,
+  meteorStartAltitudeM,
   tourArrivalProgress,
   type MeteorKnobs,
 } from "./globe-approach-meteor.js";
@@ -46,6 +55,24 @@ const PLACES = [
   { name: "the date line", place: { lat: -16.8, lng: -179.98 } },
 ] as const;
 const DEFAULTS: MeteorKnobs = readGlobeSwitch("");
+/** The aspects the start is checked at: a phone in portrait and in
+ *  landscape, a desktop, a square. */
+const ASPECTS = [
+  { name: "phone portrait", aspect: 390 / 844 },
+  { name: "phone landscape", aspect: 844 / 390 },
+  { name: "desktop", aspect: 16 / 9 },
+  { name: "square", aspect: 1 },
+] as const;
+const DESKTOP = 16 / 9;
+const RADIUS_M = WGS84_ELLIPSOID.radius.x;
+/** The start height of `knobs` at `aspect` (km over the ellipsoid). */
+const startKmOf = (knobs: MeteorKnobs, aspect = DESKTOP) =>
+  meteorStartAltitudeM({
+    radiusM: RADIUS_M,
+    fovYDeg: 50,
+    aspect,
+    startKm: knobs.startKm,
+  }) / 1000;
 const SETTINGS: readonly MeteorKnobs[] = [
   DEFAULTS,
   { ...DEFAULTS, meteorLandDeg: 60 },
@@ -93,11 +120,13 @@ function approachOf(
     durationMs?: number;
     tour?: { lat: number; lng: number };
     groundM?: number;
+    aspect?: number;
   } = {},
 ) {
   const clock = { t: 0 };
   const view = standInView();
   let released = 0;
+  let speedResets = 0;
   const driver = createMeteorApproach({
     ellipsoid: WGS84_ELLIPSOID,
     view,
@@ -112,12 +141,22 @@ function approachOf(
     progress: options.progress ?? (() => 1),
     reliefGroundM: () => null,
     reducedMotion: options.reducedMotion ?? false,
+    aspect: options.aspect ?? DESKTOP,
+    resetSpeed: () => {
+      speedResets++;
+    },
     ...(options.durationMs === undefined
       ? {}
       : { durationMs: options.durationMs }),
     now: () => clock.t,
   });
-  return { clock, view, driver, released: () => released };
+  return {
+    clock,
+    view,
+    driver,
+    released: () => released,
+    speedResets: () => speedResets,
+  };
 }
 
 type Approach = ReturnType<typeof approachOf>;
@@ -219,14 +258,14 @@ const altitudeKm = (f: Frame) =>
 describe("the editor's meteor approach", () => {
   for (const { name, place } of PLACES)
     for (const knobs of SETTINGS) {
-      it(`lands close to ${name}, ${knobs.meteorDeg} to ${knobs.meteorLandDeg} degrees from ${knobs.startKm} km`, () => {
+      it(`lands close to ${name}, ${knobs.meteorDeg} to ${knobs.meteorLandDeg} degrees from ${knobs.startKm ?? "the zoom-out"} km`, () => {
         const a = approachOf(knobs, { tour: place });
         const { frames, landedAt } = fly(a);
         expect(landedAt).not.toBeNull();
         // Starts out there, on the meteor's line.
         const first = frames[0];
         if (!first) throw new Error("no frame");
-        expect(altitudeKm(first)).toBeGreaterThan(knobs.startKm * 0.9);
+        expect(altitudeKm(first)).toBeGreaterThan(startKmOf(knobs) * 0.9);
         expect(
           Math.abs(angleBelow(first.view, place) - knobs.meteorDeg),
         ).toBeLessThan(1);
@@ -257,7 +296,7 @@ describe("the editor's meteor approach", () => {
     const a = approachOf(DEFAULTS);
     const at = a.view.camera.position.clone();
     expect(WGS84_ELLIPSOID.getPositionElevation(at) / 1000).toBeGreaterThan(
-      DEFAULTS.startKm * 0.9,
+      startKmOf(DEFAULTS) * 0.9,
     );
     a.clock.t = 5_000;
     a.driver.start(5_000);
@@ -265,6 +304,45 @@ describe("the editor's meteor approach", () => {
     // The clock starts at the first frame: still at the start.
     expect(a.view.camera.position.distanceTo(at)).toBeLessThan(1);
     expect(a.released()).toBeGreaterThan(0);
+  });
+
+  for (const { name, aspect } of ASPECTS) {
+    it(`starts with the whole Earth in view on a ${name}, at the meteor's pace`, () => {
+      // Why: the approach began at 8,000 km, so close that the Earth
+      // filled the screen; it now starts where the globe lab's intro zooms
+      // out to (GLOBE_INTRO.maxKm from the centre, at least twice the fit),
+      // so the first frame shows the whole globe at every aspect, and the
+      // longer flight still keeps the meteor's speed bound. 25 km of slack:
+      // the start stands on the surface along its line, under the
+      // equatorial radius away from the equator.
+      const a = approachOf(DEFAULTS, { aspect });
+      const fitM = globeViewFitM({ radiusM: RADIUS_M, fovYDeg: 50, aspect });
+      const startCentreM = a.view.camera.position.length();
+      expect(startCentreM).toBeGreaterThanOrEqual(fitM);
+      expect(startCentreM).toBeGreaterThanOrEqual(
+        GLOBE_INTRO.maxKm * 1000 - 25_000,
+      );
+      expect(startCentreM).toBeGreaterThanOrEqual(2 * fitM - 25_000);
+      const { frames, landedAt } = fly(a);
+      expect(landedAt).not.toBeNull();
+      expect(frames[0]?.position.length() ?? 0).toBeGreaterThanOrEqual(fitM);
+      expect(worstSpeedRatio(frames)).toBeLessThan(SPEED_RATIO);
+    });
+  }
+
+  it("starts at the link's startKm when it names one", () => {
+    // Why: startKm stays an explicit override for tuning by eye.
+    const a = approachOf({ ...DEFAULTS, startKm: 8_000 });
+    const km =
+      WGS84_ELLIPSOID.getPositionElevation(a.view.camera.position) / 1000;
+    expect(Math.abs(km - 8_000)).toBeLessThan(50);
+  });
+
+  it("restarts the speed streaks where it places the camera", () => {
+    // Why: a placement is a teleport, not a speed; without the reset the
+    // dust would read the jump to the start as thousands of km/s.
+    const a = approachOf(DEFAULTS);
+    expect(a.speedResets()).toBeGreaterThan(0);
   });
 
   it("is paced by the tour's loading, and lands without it by the safety cap", () => {
@@ -443,7 +521,12 @@ describe("the editor's meteor approach", () => {
       expect(ratio).toBeGreaterThan(0.9);
       expect(ratio).toBeLessThan(1.1);
       expect(worstSpeedRatio(frames)).toBeLessThan(SPEED_RATIO);
-      for (const i of [k - 1, k, k + 1]) {
+      // The retarget's own frames turn gently; the frame before it is the
+      // plain flight, held to the flight's own bound (from the lab's
+      // zoom-out distance it measures up to 6.4 degrees a second 1-2 km
+      // up, the leg after the retarget at most 5.7).
+      expect(turnRate(frames, k - 1)).toBeLessThan(10);
+      for (const i of [k, k + 1]) {
         expect(turnRate(frames, i)).toBeLessThan(6);
       }
       expect(

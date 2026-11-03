@@ -20,7 +20,8 @@ describe("readGlobeSwitch", () => {
       meteorDeg: 20,
       meteorLandDeg: 50,
       landAglM: 150,
-      startKm: 8_000,
+      startKm: null,
+      dust: 1,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
       false,
@@ -94,7 +95,37 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?meteorDeg=5").meteorDeg).toBe(20);
     expect(readGlobeSwitch("?meteorDeg=10").meteorDeg).toBe(10);
     expect(readGlobeSwitch("?landAglM=5").landAglM).toBe(150);
-    expect(readGlobeSwitch("?startKm=10").startKm).toBe(8_000);
+    expect(readGlobeSwitch("?startKm=10").startKm).toBeNull();
+  });
+
+  // Why: without startKm the flight starts where the globe lab's intro
+  // zooms out to (derived from the view, so null here); the link's
+  // startKm stays an explicit override, and a value out of its range
+  // reads as no override rather than as some other fixed height.
+  it("reads startKm as an override, and none without a valid one", () => {
+    expect(readGlobeSwitch("?globe=1").startKm).toBeNull();
+    expect(readGlobeSwitch("?startKm=8000").startKm).toBe(8_000);
+    const { startKm } = GLOBE_SWITCH;
+    expect(readGlobeSwitch(`?startKm=${startKm.min}`).startKm).toBe(
+      startKm.min,
+    );
+    expect(readGlobeSwitch(`?startKm=${startKm.max}`).startKm).toBe(
+      startKm.max,
+    );
+    for (const bad of ["", "abc", "Infinity", "-1", "499", "65001"]) {
+      expect(readGlobeSwitch(`?startKm=${bad}`).startKm).toBeNull();
+    }
+  });
+
+  // Why: the speed streaks are on by default on the approach, as the
+  // globe lab's look; dust=0 is the A/B link that turns them off (and a
+  // frame-time comparison's other half).
+  it("reads the speed streaks on by default and off for dust=0", () => {
+    expect(readGlobeSwitch("?globe=1").dust).toBe(1);
+    expect(readGlobeSwitch("?globe=1&dust=0").dust).toBe(0);
+    for (const bad of ["abc", "2", "-1"]) {
+      expect(readGlobeSwitch(`?dust=${bad}`).dust).toBe(1);
+    }
   });
 
   // Why: the meteor never lands shallower than it enters ("shallow to
@@ -114,7 +145,7 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.meteorDeg,
       GLOBE_SWITCH.meteorLandDeg,
       GLOBE_SWITCH.landAglM,
-      GLOBE_SWITCH.startKm,
+      GLOBE_SWITCH.dust,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

@@ -60,6 +60,11 @@ interface Fakes {
     placeView(pose: Pose): void;
   };
   controls: null | { release: { mock: { calls: unknown[] } } };
+  /** The zoom-out limit the editor gave the controls (`limit`). */
+  zoomOutLimit: null | (() => number);
+  /** What the renderer drew after the scene, in order: the streaks (with
+   *  their weight) and the air. */
+  draws: string[];
   /** The relief's ground everywhere (drawn, m over the ellipsoid), as its
    *  sampled heights and `groundAt` read it; null: none loaded. */
   groundM: number | null;
@@ -122,6 +127,8 @@ const fakes = vi.hoisted((): Fakes => ({
   seams: null,
   view: null,
   controls: null,
+  zoomOutLimit: null,
+  draws: [],
   groundM: 500,
   grade: 0,
   groundEndsNorthM: null,
@@ -206,7 +213,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         step: (frame: Fakes["airSteps"][number] = {}) => {
           fakes.airSteps.push(frame);
         },
-        afterScene() {},
+        afterScene: () => {
+          fakes.draws.push("air");
+        },
         haze() {},
         setClouds: (on: boolean) => fakes.cloudsOn.push(on),
         state: () => null,
@@ -221,6 +230,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         lease: vi.fn(),
         busy: () => fakes.busy,
         followIntro: vi.fn(),
+        limit: vi.fn((limitM: () => number) => {
+          fakes.zoomOutLimit = limitM;
+        }),
         dispose: vi.fn(),
       };
       fakes.controls = controls;
@@ -269,6 +281,16 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         setPixelRatio() {},
         compile() {},
         initTexture() {},
+        getDrawingBufferSize: (size: THREE.Vector2) => size.set(800, 600),
+        getPixelRatio: () => 1,
+        // Only the streaks are drawn through it here (the view is faked).
+        render: (drawn: THREE.Scene) => {
+          const mesh = drawn.children[0] as THREE.Mesh<
+            THREE.BufferGeometry,
+            THREE.ShaderMaterial
+          >;
+          fakes.draws.push(`dust ${mesh.material.uniforms.uWeight?.value}`);
+        },
         forceContextLoss: () => fakes.log.push("force-context-loss"),
         setAnimationLoop: (loop: (() => void) | null) => {
           fakes.log.push(loop === null ? "loop-off" : "loop-on");
@@ -302,6 +324,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
           place({ position, quaternion });
         },
         fitDistance: () => 20_000_000,
+        radius: WGS84_ELLIPSOID.radius.x,
         setFrameTarget,
         placeView(pose: Pose) {
           const ecef = viewPoseEcef(WGS84_ELLIPSOID, pose);
@@ -546,6 +569,8 @@ beforeEach(() => {
   fakes.inputScene = null;
   fakes.coverageCalls = 0;
   fakes.viewOptions = null;
+  fakes.zoomOutLimit = null;
+  fakes.draws = [];
   fakes.terrainInput = null;
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
@@ -1071,6 +1096,73 @@ describe("openGlobeEditor's wiring", () => {
   // Why: the clouds and the air read the scene's depth as standard depth
   // (far at 1); reversed depth left them reading the near plane as the
   // farthest, and measured no better on the default depth buffer.
+  // Why: the approach now starts where the globe lab's intro zooms out to;
+  // controls without the lab's limit would pull a takeover there in to
+  // their own default at once, and would not let the creator zoom out to
+  // where the flight began.
+  it("lets the controls zoom out as far as the lab's, never nearer than the start", async () => {
+    const view = await openAt(0, { approach: {} });
+    const limitM = fakes.zoomOutLimit?.() ?? 0;
+    const globe = view.stats().globe as {
+      startCentreM: number;
+      centreM: number;
+    };
+    expect(limitM).toBeGreaterThanOrEqual(50_000_000);
+    expect(limitM).toBeGreaterThanOrEqual(globe.startCentreM);
+    expect(globe.centreM).toBeLessThanOrEqual(limitM);
+    expect(globe.centreM).toBeGreaterThan(49_000_000);
+  });
+
+  // Why: the streaks are drawn twice a frame, behind the Earth (before the
+  // scene) and a share over it, before the air: the globe lab's order,
+  // which keeps the air's haze over them. Off for dust=0, the speed still
+  // measured; a teleport (an arrow step) restarts their speed, so a jump
+  // never flashes them.
+  for (const { dust, label, shown, draws } of [
+    {
+      dust: 1,
+      label: "behind and over the Earth, before the air",
+      shown: true,
+      draws: ["dust 0.75", "dust 0.25", "air"],
+    },
+    { dust: 0, label: "nowhere for dust=0", shown: false, draws: ["air"] },
+  ]) {
+    it(`draws the speed streaks ${label}`, async () => {
+      let now = 1_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      tourAt(0);
+      open = await openGlobeEditor(deps(), { ...readGlobeSwitch(""), dust });
+      const seams = fakes.seams;
+      if (seams === null) throw new Error("no seams");
+      const dive = (altitudeKm: number) => {
+        fakes.view?.placeView({
+          lat: MUNICH.lat,
+          lng: MUNICH.lon,
+          altitudeKm,
+          headingDeg: 0,
+          pitchDeg: -89,
+        });
+        seams.beforeScene?.();
+      };
+      dive(20_000);
+      now += 16;
+      dive(19_000);
+      seams.afterScene?.();
+      const state = open.stats().globe as {
+        dust: { shown: boolean; speedMps: number };
+      };
+      expect(state.dust.speedMps).toBeGreaterThan(1e6);
+      expect(state.dust.shown).toBe(shown);
+      expect(fakes.draws).toEqual(draws);
+      open.northUp();
+      now += 16;
+      seams.beforeScene?.();
+      expect(
+        (open.stats().globe as { dust: { speedMps: number } }).dust.speedMps,
+      ).toBe(0);
+    });
+  }
+
   it("draws with standard depth", async () => {
     await openAt(0);
     expect(fakes.viewOptions?.reversedDepth).not.toBe(true);

@@ -17,6 +17,9 @@ export interface GlobeSwitchKnob {
   readonly max: number;
 }
 
+/** A knob without a default: absent, the page derives the value. */
+export type GlobeSwitchOverride = Omit<GlobeSwitchKnob, "fallback">;
+
 /** The switch's parameter and its knobs. */
 export const GLOBE_SWITCH = Object.freeze({
   /** `globe=1` turns the editor on the globe on; anything else is off. */
@@ -74,14 +77,25 @@ export const GLOBE_SWITCH = Object.freeze({
     max: 5_000,
   }) satisfies GlobeSwitchKnob,
   /**
-   * The flight's start height (km): the whole Earth in view at the
-   * editor's lens, as the approach always began.
+   * The flight's start height (km over the ellipsoid), an override only:
+   * without it the flight starts where the globe lab's intro zooms out
+   * to, at the editor's lens and the page's aspect (about 43,600 km on a
+   * landscape screen; `globe-approach-meteor.ts`).
    */
   startKm: Object.freeze({
     param: "startKm",
-    fallback: 8_000,
     min: 500,
     max: 65_000,
+  }) satisfies GlobeSwitchOverride,
+  /**
+   * The speed streaks on the approach (the globe lab's speed dust, in its
+   * look): 1 on, 0 off (the A/B link).
+   */
+  dust: Object.freeze({
+    param: "dust",
+    fallback: 1,
+    min: 0,
+    max: 1,
   }) satisfies GlobeSwitchKnob,
 });
 
@@ -91,20 +105,31 @@ export interface GlobeSwitch {
   readonly hidePx: number;
   readonly crowdPx: number;
   /** The approach's meteor: its start and landing angles (deg), its
-   *  landing height over the tour's ground (m), its start height (km). */
+   *  landing height over the tour's ground (m), its start height (km;
+   *  null: the lab's zoom-out distance). */
   readonly meteorDeg: number;
   readonly meteorLandDeg: number;
   readonly landAglM: number;
-  readonly startKm: number;
+  readonly startKm: number | null;
+  /** The speed streaks: 1 on, 0 off. */
+  readonly dust: number;
 }
 
-function knob(params: URLSearchParams, k: GlobeSwitchKnob): number {
+/** The knob's value in the link, or null when absent or not in range. */
+function override(
+  params: URLSearchParams,
+  k: GlobeSwitchOverride,
+): number | null {
   const text = params.get(k.param);
-  if (text === null || text.trim() === "") return k.fallback;
+  if (text === null || text.trim() === "") return null;
   const value = Number(text);
   return Number.isFinite(value) && value >= k.min && value <= k.max
     ? value
-    : k.fallback;
+    : null;
+}
+
+function knob(params: URLSearchParams, k: GlobeSwitchKnob): number {
+  return override(params, k) ?? k.fallback;
 }
 
 /**
@@ -125,6 +150,7 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
       knob(params, GLOBE_SWITCH.meteorLandDeg),
     ),
     landAglM: knob(params, GLOBE_SWITCH.landAglM),
-    startKm: knob(params, GLOBE_SWITCH.startKm),
+    startKm: override(params, GLOBE_SWITCH.startKm),
+    dust: Math.round(knob(params, GLOBE_SWITCH.dust)),
   };
 }

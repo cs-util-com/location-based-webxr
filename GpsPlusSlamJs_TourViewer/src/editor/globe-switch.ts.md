@@ -27,10 +27,17 @@ the default.
   - `landAglM` - default 150, range 30-5000: the landing's height over
     the tour's ground (about 200 m from the tour at 50 degrees: the
     stations' pins and rings fill the view);
-  - `startKm` - default 8000, range 500-65000: the start height (the
-    whole hemisphere in view; 65000 starts with the whole Earth small).
+  - `dust` - default 1, range 0-1: the speed streaks on the approach (the
+    globe lab's speed dust in its look); `dust=0` is the A/B link that
+    turns them off.
+- `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
+  range 500-65000 km: the start height as an explicit override. Without
+  it (`null`) the meteor starts where the globe lab's intro zooms out to
+  at the page's aspect (about 43,600 km on a landscape screen, more on a
+  portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
-  `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm`)
+  `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
+  `dust`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
@@ -38,7 +45,8 @@ the default.
 - **Off unless asked:** only `globe=1` turns it on (`0`, `true`, `yes`,
   empty: off), so no existing link changes what it opens.
 - **A typo never breaks the view:** a knob that is empty, not a number,
-  not finite or outside its range reads as its default.
+  not finite or outside its range reads as its default (an override as
+  none).
 - **Light:** no import of the globe or of three, so the page reads it on
   its first load without pulling the 3D view's code.
 - The defaults are starting points for the owner's tuning: a 1 m sign at
@@ -59,5 +67,6 @@ if (globe.on) {
 
 `globe-switch.test.ts`: off with its defaults without the switch, on only
 for `globe=1`, every knob read, a landing never shallower than the
-entry, a bad or out-of-range knob read as its default, the bounds
+entry, a bad or out-of-range knob read as its default, `startKm` read
+as an override only, the streaks on by default and off for `dust=0`, the bounds
 themselves accepted, the defaults inside their ranges.

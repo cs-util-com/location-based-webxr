@@ -57,6 +57,13 @@
  * (`setClouds`). The cloud shell's share is the relief mount's, as in the
  * lab. Not yet here: a layer chip for the buildings.
  *
+ * The approach starts where the globe lab's intro zooms out to (the whole
+ * Earth in view at the page's aspect), and the controls zoom out as far as
+ * the lab's. At speed the globe lab's speed streaks pour past the camera
+ * (`createSpeedDustPass` in its look; `dust=0` turns them off): drawn
+ * behind the Earth and, a quarter of them, over it before the air,
+ * restarted wherever the camera is placed rather than flown.
+ *
  * @see editor3d-globe.ts.md
  */
 import * as THREE from "three";
@@ -68,11 +75,15 @@ import {
   createGlobeCameraControls,
   createGlobeImagery,
   createGlobeView,
+  createSpeedDustPass,
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
+  GLOBE_INTRO,
   globeViewClouds,
+  globeZoomOutLimitM,
   mountGlobeRelief,
   mountGlobeViewAir,
+  SPEED_DUST_LOOK,
   type GlobeView,
   type GlobeViewAir,
 } from "gps-plus-slam-globe/view";
@@ -123,6 +134,7 @@ import {
 } from "./globe-editor-look.js";
 import {
   createMeteorApproach,
+  meteorStartAltitudeM,
   tourArrivalProgress,
 } from "./globe-approach-meteor.js";
 import {
@@ -168,6 +180,7 @@ export async function openGlobeEditor(
     | "meteorLandDeg"
     | "landAglM"
     | "startKm"
+    | "dust"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -242,6 +255,15 @@ export async function openGlobeEditor(
     let arrivalTiming: ArrivalTiming = ARRIVAL;
     /** How often the view's frame moved (its first placement included). */
     let frameChanges = 0;
+    /** Whether the approach's flight placed the camera this frame: the
+     *  streaks then follow the whole motion, else only the distance (the
+     *  lab's default, so turning the globe does not streak sideways). */
+    let flightDrives = false;
+    // The speed streaks (the globe lab's speed dust, in its look).
+    const dust = createSpeedDustPass();
+    undo.push(() => {
+      dust.dispose();
+    });
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -269,7 +291,8 @@ export async function openGlobeEditor(
           // only: the frame follows below); the controls take it from where
           // it is once it lands or is taken. Its clock starts at the first
           // drawn frame (this one, the first time).
-          if (approach?.drive(performance.now()) === true) {
+          flightDrives = approach?.drive(performance.now()) === true;
+          if (flightDrives) {
             controls.followIntro();
           } else {
             controls.update();
@@ -282,7 +305,29 @@ export async function openGlobeEditor(
         afterSky: () => {
           air?.afterSky();
         },
+        // The streaks where the camera now is: behind the Earth (which
+        // covers them), then a share over it, before the air (the lab's
+        // order).
+        beforeScene: () => {
+          const pose = view.ecefCamera();
+          dust.update({
+            nowMs: performance.now(),
+            position: pose.position,
+            quaternion: pose.quaternion,
+            altitudeM: ellipsoid.getPositionElevation(pose.position),
+            fovDeg: camera.fov,
+            aspect: camera.aspect,
+            renderer,
+            on: knobs.dust === 1,
+            exposureMs: SPEED_DUST_LOOK.exposureMs,
+            widthPx: SPEED_DUST_LOOK.widthPx,
+            radialOnly: !flightDrives,
+            look: { count: SPEED_DUST_LOOK.count, gain: SPEED_DUST_LOOK.gain },
+          });
+          dust.render(renderer, 1 - SPEED_DUST_LOOK.over);
+        },
         afterScene: () => {
+          dust.render(renderer, SPEED_DUST_LOOK.over);
           air?.afterScene();
         },
         // An edit's gesture holds the frame still too: its world points
@@ -566,6 +611,35 @@ export async function openGlobeEditor(
     undo.push(() => {
       controls.dispose();
     });
+    /** The aspect the first frame will have: the box's, once laid out,
+     *  else the window's (the box is hidden until the view opens). */
+    const expectedAspect =
+      deps.container.clientWidth > 0 && deps.container.clientHeight > 0
+        ? deps.container.clientWidth / deps.container.clientHeight
+        : window.innerWidth / Math.max(1, window.innerHeight);
+    /** Where the approach starts, from the Earth's centre (m). */
+    const startCentreM =
+      meteorStartAltitudeM({
+        radiusM: view.radius,
+        fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+        aspect: expectedAspect,
+        startKm: knobs.startKm,
+      }) + view.radius;
+    // As far out as the globe lab's controls (its intro's distance, at
+    // least twice the fit at the aspect now), and never nearer than the
+    // approach's start: a takeover there is not pulled in.
+    controls.limit(() =>
+      Math.max(
+        startCentreM,
+        globeZoomOutLimitM({
+          maxM: GLOBE_INTRO.maxKm * 1000,
+          radiusM: view.radius,
+          fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+          aspect: camera.aspect,
+          fitM: view.fitDistance(),
+        }),
+      ),
+    );
 
     let relief = true;
     let hidden: GlobeHiddenSet = { stations: new Set(), codes: new Set() };
@@ -840,6 +914,7 @@ export async function openGlobeEditor(
         return;
       controls.release();
       view.placeView(goal);
+      dust.reset();
       controls.followIntro();
     };
     const placePose = (change: { headingDeg?: number; pitchDeg?: number }) => {
@@ -847,6 +922,7 @@ export async function openGlobeEditor(
       const pose = poseNow();
       controls.release();
       view.placeView({ ...pose, ...change });
+      dust.reset();
       controls.followIntro();
     };
     /** Fit the selection (null: the whole tour) into the view. */
@@ -926,6 +1002,7 @@ export async function openGlobeEditor(
         const aboveM = Math.max(0, pose.altitudeKm * 1000 - (groundM ?? 0));
         controls.release();
         view.placeView(steppedView(pose, code, aboveM));
+        dust.reset();
         controls.followIntro();
       },
       zoomTowards(pointer) {
@@ -942,6 +1019,7 @@ export async function openGlobeEditor(
           keepOverGround(at.sub(camera.position).multiplyScalar(ZOOM_SHARE)),
         );
         camera.updateMatrixWorld();
+        dust.reset();
       },
     });
     undo.push(() => {
@@ -981,6 +1059,10 @@ export async function openGlobeEditor(
           }),
         reliefGroundM: (p) => ground.groundAt(p.lat * DEG, p.lng * DEG),
         reducedMotion,
+        aspect: expectedAspect,
+        resetSpeed: () => {
+          dust.reset();
+        },
         ...(deps.approach.durationMs === undefined
           ? {}
           : { durationMs: deps.approach.durationMs }),
@@ -1001,6 +1083,7 @@ export async function openGlobeEditor(
       });
     } else {
       view.placeView(street);
+      dust.reset();
     }
     controls.followIntro();
     /** An input in the 3D view takes the camera where it is. */
@@ -1075,6 +1158,7 @@ export async function openGlobeEditor(
         );
         camera.position.copy(tourTarget()).addScaledVector(forward, -m);
         camera.updateMatrixWorld();
+        dust.reset();
       },
       flyTo(selection) {
         const place = placeOf(selection);
@@ -1109,6 +1193,7 @@ export async function openGlobeEditor(
         );
         camera.position.add(keepOverGround(move));
         camera.updateMatrixWorld();
+        dust.reset();
       },
       northUp() {
         placePose({ headingDeg: 0 });
@@ -1237,6 +1322,14 @@ export async function openGlobeEditor(
             air: air?.state() ?? null,
             approach: approach?.stats() ?? approachEnded,
             marks: marks.stats(),
+            // The speed streaks as last stepped, and the camera's distance
+            // from the Earth's centre against the fit (the start's check).
+            dust: dust.state(),
+            centreM: view.ecefCamera().position.length(),
+            fitM: view.fitDistance(),
+            startCentreM,
+            // The last 60 frame intervals (ms), for a frame-time check.
+            frameTimesMs: [...frameTimes],
           },
         };
       },

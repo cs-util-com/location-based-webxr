@@ -40,6 +40,7 @@ export const SPECS = {
   "editor3d-character.spec.js": { project: "webgl", area: "editor" },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-approach.spec.js": { project: "webgl", area: "editor" },
+  "editor3d-globe-start.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe.spec.js": { project: "webgl", area: "editor" },
   "editor3d-inspector.spec.js": { project: "webgl", area: "editor" },
   "editor3d-long-text.spec.js": { project: "webgl", area: "editor" },
