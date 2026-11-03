@@ -145,6 +145,16 @@ wired into its logic: every interaction is faked.
   2026-10-29. Each cuts the AI's four-pose picture in the browser (alpha, or a
   flood fill from the border on white), offers a steady body when the
   talking frames jitter, and draws its own sample pictures, good and broken.
+- `editor-panel-1-explorer/` ... `editor-panel-4-place-in-world/` - four
+  directions for the editor's station list, its context-sensitive right
+  panel and adding every content type (a file explorer, a content gallery,
+  tabs with a toolbar, placing in the view), each on the same sample tour
+  with story folders listed before free items and a light Markdown
+  description; made 2026-11-03.
+- `editor-bottom-panel-1-tabs/`, `editor-bottom-panel-2-status-drawer/` -
+  two directions for the editor's bottom bar and a collapsible panel for
+  problems, history, map loading and performance (one tabbed panel, or a
+  drawer per status item); made 2026-11-03.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory

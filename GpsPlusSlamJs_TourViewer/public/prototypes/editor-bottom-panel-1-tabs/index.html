@@ -1,0 +1,3275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Bottom Panel Tabs</title>
+    <!--
+  Throwaway prototype: the tour editor's bottom bar and a collapsible bottom
+  panel in the manner of a code editor's panel (tabs, drag the top edge,
+  double-click to maximise, Escape to close). The bottom bar keeps the map
+  credits and the selection's actions; labelled toggles on its right open the
+  panel on a tab: Problems, History, Map loading, Performance. The side panels
+  are simple mock-ups. Original code, no libraries, no network; all data is
+  hard-coded sample data and nothing is saved (only the panel height and tab
+  are remembered in this browser).
+-->
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --bg3: #2f3136;
+        --bg4: #383a40;
+        --line: #313338;
+        --line2: #3c3f46;
+        --text: #d9dbe0;
+        --muted: #8a8f99;
+        --dim: #646973;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --danger: #d97d79;
+        --warn: #e9b86b;
+        --info: #8fa6c0;
+        --ok: #7fb77a;
+        --focus: #5b9cf0;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace,
+          Menlo, monospace;
+        --lw: 248px;
+        --rw: 272px;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 40px 3px minmax(0, 1fr) 24px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      button:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 1px solid var(--focus);
+        outline-offset: -1px;
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+
+      /* top bar */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+        position: relative;
+        z-index: 20;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .unsaved {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--accentText);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .unsaved::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .unsaved[hidden] {
+        display: none;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.on {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      .spacer {
+        flex: 1;
+        min-width: 0;
+      }
+      #bStations {
+        display: none;
+      }
+      .menu {
+        position: absolute;
+        top: 34px;
+        min-width: 230px;
+        background: #232528;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+        padding: 4px;
+        display: none;
+        z-index: 40;
+      }
+      .menu.show {
+        display: block;
+      }
+      .menu button {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border: 0;
+        background: transparent;
+        border-radius: 3px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .menu button:hover {
+        background: var(--bg3);
+      }
+      .menu button kbd {
+        margin-left: auto;
+      }
+      .menu hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 4px 0;
+      }
+      #loadLine {
+        background: var(--accent);
+      }
+
+      /* main area: side panels run from the loading line to the bottom bar; the
+   bottom panel sits in the middle column under the 3D view */
+      #main {
+        display: grid;
+        min-height: 0;
+        min-width: 0;
+        position: relative;
+        grid-template-columns: var(--lw) minmax(0, 1fr) 0;
+        grid-template-rows: minmax(0, 1fr) auto;
+        grid-template-areas: "left view right" "left panel right";
+      }
+      #main.hasSel {
+        grid-template-columns: var(--lw) minmax(0, 1fr) var(--rw);
+      }
+      #main.span {
+        grid-template-areas: "left view right" "panel panel panel";
+      }
+      #left {
+        grid-area: left;
+      }
+      #right {
+        grid-area: right;
+      }
+      #view {
+        grid-area: view;
+      }
+      #bp {
+        grid-area: panel;
+      }
+
+      .side {
+        background: var(--bg2);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+      }
+      #right {
+        border-right: 0;
+        border-left: 1px solid var(--line);
+      }
+      #main:not(.hasSel) #right {
+        display: none;
+      }
+      .shead {
+        height: 30px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 6px 0 10px;
+        border-bottom: 1px solid var(--line);
+        font-weight: 600;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .shead .sp {
+        flex: 1;
+      }
+      .ib {
+        width: 24px;
+        height: 24px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .sbody {
+        flex: 1;
+        overflow: auto;
+        min-height: 0;
+        padding: 4px 0;
+      }
+
+      /* station tree (simple mock) */
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        cursor: pointer;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .row:hover {
+        background: var(--bg3);
+      }
+      .row.sel {
+        background: var(--accentBg);
+      }
+      .row.sel::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .row .chev {
+        width: 14px;
+        height: 14px;
+        color: var(--dim);
+        transition: transform 0.12s;
+      }
+      .row.open .chev {
+        transform: rotate(90deg);
+      }
+      .row .chev.none {
+        visibility: hidden;
+      }
+      .row .num {
+        font: 10px var(--mono);
+        background: #3d5a78;
+        color: #e6f0fa;
+        border-radius: 2px;
+        padding: 0 4px;
+        flex: none;
+      }
+      .row.sel .num {
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      .row .tic {
+        color: var(--muted);
+      }
+      .row .pdot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .pdot.error {
+        background: var(--danger);
+      }
+      .pdot.warning {
+        background: var(--warn);
+      }
+      .pdot.info {
+        background: var(--info);
+      }
+      .d1 {
+        padding-left: 24px;
+      }
+      .d2 {
+        padding-left: 42px;
+      }
+      .row.empty {
+        color: var(--dim);
+        font-style: italic;
+        cursor: default;
+      }
+      .row.empty:hover {
+        background: transparent;
+      }
+
+      /* inspector (simple mock) */
+      .ihead {
+        min-height: 38px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 6px 6px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .ihead .ttl {
+        font-weight: 600;
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+        border-bottom: 1px dotted var(--dim);
+      }
+      .ihead .kind {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .ihead .sp {
+        flex: 1;
+      }
+      .isec {
+        padding: 8px 10px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .isec h4 {
+        margin: 0 0 6px;
+        font-size: 10.5px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 78px minmax(0, 1fr);
+        gap: 4px 8px;
+        align-items: center;
+      }
+      .kv span:nth-child(odd) {
+        color: var(--muted);
+      }
+      .kv span:nth-child(even) {
+        background: var(--bg1);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 2px 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .iprob {
+        display: flex;
+        gap: 7px;
+        align-items: flex-start;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: var(--bg1);
+        border: 1px solid var(--line);
+        margin-bottom: 6px;
+      }
+      .iprob .txt {
+        flex: 1;
+        min-width: 0;
+      }
+      .iprob .svg-err {
+        color: var(--danger);
+      }
+      .iprob .svg-warn {
+        color: var(--warn);
+      }
+      .iprob .svg-info {
+        color: var(--info);
+      }
+      .mutedp {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      /* the 3D view (faked) */
+      #view {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #232427;
+      }
+      #view canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        cursor: grab;
+        touch-action: none;
+      }
+      #view canvas.drag {
+        cursor: grabbing;
+      }
+      #mapCtl {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        display: flex;
+        gap: 6px;
+        z-index: 4;
+      }
+      .pill {
+        display: flex;
+        background: rgba(31, 32, 35, 0.92);
+        border: 1px solid var(--line2);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .pill button {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+      }
+      .pill button:hover {
+        background: var(--bg3);
+      }
+      .pill button + button {
+        border-left: 1px solid var(--line2);
+      }
+      #toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        padding: 5px 12px;
+        border-radius: 4px;
+        background: rgba(30, 31, 34, 0.95);
+        border: 1px solid var(--line2);
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.15s;
+        pointer-events: none;
+        z-index: 6;
+        max-width: calc(100% - 24px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+
+      /* notes box */
+      #notes {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: min(380px, calc(100% - 20px));
+        max-height: calc(100% - 60px);
+        overflow: auto;
+        background: rgba(31, 32, 35, 0.96);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        z-index: 5;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      #notes summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        font-weight: 600;
+        color: var(--accentText);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes summary::after {
+        content: "show";
+        margin-left: auto;
+        font-weight: 400;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      #notes[open] summary::after {
+        content: "hide";
+      }
+      #notes:not([open]) {
+        width: auto;
+      }
+      #notes .nb {
+        padding: 0 12px 10px;
+        color: var(--muted);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+      #notes .nb p {
+        margin: 0 0 6px;
+      }
+      #notes .nb ul {
+        margin: 0 0 6px;
+        padding-left: 16px;
+      }
+      #notes .nb b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* bottom panel */
+      #bp {
+        container-type: inline-size;
+        position: relative;
+        display: none;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+        background: var(--bg1);
+        border-top: 1px solid var(--line2);
+      }
+      #bp.open {
+        display: flex;
+      }
+      #grip {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -4px;
+        height: 8px;
+        cursor: ns-resize;
+        z-index: 3;
+        touch-action: none;
+      }
+      #grip::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 3px;
+        height: 2px;
+        background: transparent;
+        transition: background 0.1s 0.15s;
+      }
+      #grip:hover::after,
+      #grip.drag::after {
+        background: var(--accent);
+      }
+      #bpHead {
+        height: 30px;
+        flex: none;
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        padding: 0 4px 0 0;
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      #tabs {
+        display: flex;
+        align-items: stretch;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      #tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 11px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        position: relative;
+      }
+      .tab:hover {
+        color: var(--text);
+      }
+      .tab[aria-selected="true"] {
+        color: var(--text);
+      }
+      .tab[aria-selected="true"]::after {
+        content: "";
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: -1px;
+        height: 2px;
+        background: var(--accent);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 15px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: var(--bg4);
+        color: var(--text);
+        font: 10px/1 var(--mono);
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .badge.error {
+        background: rgba(217, 125, 121, 0.22);
+        color: #f0b0ad;
+      }
+      .badge.warning {
+        background: rgba(233, 184, 107, 0.2);
+        color: #f1cf96;
+      }
+      .badge.busy {
+        background: transparent;
+        color: var(--muted);
+        padding: 0 2px;
+      }
+      .badge:empty {
+        display: none;
+      }
+      .spin {
+        width: 9px;
+        height: 9px;
+        border: 1.5px solid var(--dim);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+        margin-right: 4px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #bpTools {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        min-width: 0;
+        padding-left: 8px;
+      }
+      #bpTools .tools {
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 21px;
+        padding: 0 7px;
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        background: transparent;
+        cursor: pointer;
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .chip:hover {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .chip[aria-pressed="true"] {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .chip[aria-pressed="false"] {
+        opacity: 0.55;
+      }
+      .chip svg {
+        width: 13px;
+        height: 13px;
+      }
+      .sep {
+        width: 1px;
+        height: 16px;
+        background: var(--line2);
+        margin: 0 2px;
+        flex: none;
+      }
+      #bpBody {
+        flex: 1;
+        overflow: auto;
+        min-height: 0;
+      }
+      .pane {
+        display: none;
+      }
+      .pane.show {
+        display: block;
+      }
+
+      /* problems */
+      .pgrp > .ghead {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 10px;
+        cursor: pointer;
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .pgrp > .ghead:hover {
+        background: var(--bg2);
+      }
+      .pgrp > .ghead .chev {
+        width: 14px;
+        height: 14px;
+        color: var(--dim);
+        transform: rotate(90deg);
+        transition: transform 0.12s;
+      }
+      .pgrp.fold > .ghead .chev {
+        transform: none;
+      }
+      .pgrp.fold .prow {
+        display: none;
+      }
+      .ghead .num {
+        font: 10px var(--mono);
+        background: #3d5a78;
+        color: #e6f0fa;
+        border-radius: 2px;
+        padding: 0 4px;
+      }
+      .ghead .cnt {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .prow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+        padding: 2px 10px 2px 32px;
+        cursor: pointer;
+      }
+      .prow:hover {
+        background: var(--bg2);
+      }
+      .prow.sel {
+        background: var(--accentBg);
+      }
+      .prow .what {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prow .what em {
+        font-style: normal;
+        color: var(--muted);
+      }
+      .prow .fix {
+        visibility: hidden;
+      }
+      .prow:hover .fix,
+      .prow.sel .fix,
+      .prow:focus-within .fix {
+        visibility: visible;
+      }
+      .svg-err {
+        color: var(--danger);
+      }
+      .svg-warn {
+        color: var(--warn);
+      }
+      .svg-info {
+        color: var(--info);
+      }
+      .empty-state {
+        padding: 18px 14px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .empty-state svg {
+        color: var(--ok);
+      }
+      .lnk {
+        border: 0;
+        background: transparent;
+        color: var(--accentText);
+        cursor: pointer;
+        padding: 0 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        border-radius: 3px;
+      }
+      .lnk:hover {
+        background: var(--bg3);
+      }
+
+      /* history */
+      .hrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 10px 0 12px;
+        cursor: pointer;
+        position: relative;
+        white-space: nowrap;
+      }
+      .hrow:hover {
+        background: var(--bg2);
+      }
+      .hrow .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: 1.5px solid var(--dim);
+        flex: none;
+        background: var(--bg1);
+        position: relative;
+        z-index: 1;
+      }
+      .hrow::before {
+        content: "";
+        position: absolute;
+        left: 16px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: var(--line2);
+      }
+      .hrow:first-child::before {
+        top: 12px;
+      }
+      .hrow:last-child::before {
+        bottom: 12px;
+      }
+      .hrow.done .dot {
+        background: var(--muted);
+        border-color: var(--muted);
+      }
+      .hrow.cur .dot {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accentBg);
+      }
+      .hrow.cur {
+        background: var(--accentBg);
+      }
+      .hrow.undone {
+        color: var(--dim);
+      }
+      .hrow .lbl {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hrow .tm {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .tagm {
+        font-size: 10px;
+        padding: 0 5px;
+        border-radius: 3px;
+        border: 1px solid var(--line2);
+        color: var(--muted);
+      }
+      .tagm.now {
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      .tagm.saved {
+        color: var(--ok);
+        border-color: rgba(127, 183, 122, 0.45);
+      }
+      .hnote {
+        padding: 6px 12px 8px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* map loading */
+      .sumrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        align-items: center;
+      }
+      .sumrow .st {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .sumrow .st b {
+        font: 12px var(--mono);
+        color: var(--text);
+        font-weight: 500;
+      }
+      .sumrow .st span {
+        color: var(--muted);
+      }
+      .rl {
+        margin: 8px 12px 4px;
+        padding: 7px 10px;
+        border: 1px solid rgba(233, 184, 107, 0.35);
+        background: rgba(233, 184, 107, 0.08);
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .rl .t {
+        flex: 1;
+        min-width: 180px;
+      }
+      .rl .t b {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      .rl .bar {
+        flex: 1 1 120px;
+        height: 4px;
+        background: var(--bg3);
+        border-radius: 2px;
+        overflow: hidden;
+        min-width: 80px;
+      }
+      .rl .bar i {
+        display: block;
+        height: 100%;
+        background: var(--warn);
+      }
+      .rl .cd {
+        font: 12px var(--mono);
+        color: var(--warn);
+      }
+      table.tiles {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
+      }
+      table.tiles th {
+        text-align: left;
+        font-weight: 500;
+        color: var(--dim);
+        padding: 4px 12px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: var(--bg1);
+        white-space: nowrap;
+      }
+      table.tiles td {
+        padding: 3px 12px;
+        border-bottom: 1px solid #26282c;
+        white-space: nowrap;
+      }
+      table.tiles td.k {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      table.tiles td.ms {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--dim);
+        text-align: right;
+      }
+      .stt {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .stt.failed {
+        color: var(--danger);
+      }
+      .stt.loaded {
+        color: var(--muted);
+      }
+      .stt.waiting {
+        color: var(--text);
+      }
+      .stt.loading {
+        color: var(--accentText);
+      }
+      .stt i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      /* performance */
+      #pane-perf.show {
+        height: 100%;
+      }
+      .perf {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 260px;
+        grid-template-rows: minmax(0, 1fr);
+        gap: 0;
+        height: 100%;
+        min-height: 150px;
+      }
+      .perf > * {
+        min-height: 0;
+        overflow: auto;
+      }
+      .perf .chart {
+        padding: 8px 12px;
+        border-right: 1px solid var(--line);
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .perf .chart .cap {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 11px;
+        margin-bottom: 4px;
+        gap: 8px;
+      }
+      .perf .chart .cap b {
+        color: var(--text);
+        font: 12px var(--mono);
+      }
+      #spark {
+        width: 100%;
+        flex: 1;
+        height: 0;
+        min-height: 60px;
+        display: block;
+      }
+      .perf .nums {
+        padding: 8px 12px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 3px 12px;
+        align-content: start;
+        font-size: 11.5px;
+      }
+      .perf .nums span:nth-of-type(odd) {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .perf .nums span:nth-of-type(even) {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        text-align: right;
+        white-space: nowrap;
+      }
+      .perf .nums h5 {
+        grid-column: 1 / -1;
+        margin: 6px 0 2px;
+        font-size: 10.5px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--dim);
+        font-weight: 600;
+      }
+      .perf .nums h5:first-child {
+        margin-top: 0;
+      }
+
+      /* bottom bar */
+      #sb {
+        display: flex;
+        align-items: center;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+        position: relative;
+        z-index: 20;
+      }
+      #credits {
+        padding: 0 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--dim);
+        flex: 0 1 auto;
+        min-width: 0;
+        font-size: 10.5px;
+      }
+      #credits a {
+        color: inherit;
+      }
+      #credits .short {
+        display: none;
+      }
+      #acts {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 4px;
+        border-left: 1px solid var(--line);
+        height: 100%;
+        flex: none;
+      }
+      #acts:empty {
+        display: none;
+      }
+      .sact {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .sact svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentText);
+      }
+      .sact:hover {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      #sb .grow {
+        flex: 1;
+        min-width: 0;
+      }
+      #toggles {
+        display: flex;
+        align-items: stretch;
+        height: 100%;
+        flex: none;
+      }
+      .tog {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 9px;
+        height: 100%;
+        border: 0;
+        border-left: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 11px;
+        position: relative;
+      }
+      .tog:hover {
+        background: var(--bg2);
+        color: var(--text);
+      }
+      .tog svg {
+        width: 14px;
+        height: 14px;
+      }
+      .tog[aria-pressed="true"] {
+        color: var(--accentText);
+        background: var(--bg2);
+      }
+      .tog[aria-pressed="true"]::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -1px;
+        height: 2px;
+        background: var(--accent);
+      }
+      .tog .badge {
+        height: 14px;
+      }
+
+      /* compact desktop (and phone landscape) */
+      @media (max-width: 1100px) {
+        :root {
+          --lw: 210px;
+          --rw: 236px;
+        }
+        .sact .lbl {
+          display: none;
+        }
+        #credits .long {
+          display: none;
+        }
+        #credits .short {
+          display: inline;
+        }
+        .tbtn .lbl,
+        .tbtn kbd {
+          display: none;
+        }
+        .perf {
+          grid-template-columns: minmax(0, 1fr) 210px;
+        }
+      }
+      /* phone: the side panels become sheets over the view */
+      @media (max-width: 700px) {
+        #main,
+        #main.hasSel {
+          grid-template-columns: 0 minmax(0, 1fr) 0;
+        }
+        .side {
+          position: fixed;
+          top: 43px;
+          bottom: 24px;
+          z-index: 30;
+          box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
+        }
+        #left {
+          left: 0;
+          width: min(300px, 86vw);
+          transform: translateX(-102%);
+          transition: transform 0.18s;
+        }
+        #left.open {
+          transform: none;
+        }
+        #right {
+          right: 0;
+          width: min(310px, 88vw);
+          bottom: calc(24px + var(--bpH, 0px));
+        }
+        #bStations {
+          display: inline-flex;
+        }
+        .brand b {
+          display: none;
+        }
+        .tog .tl {
+          display: none;
+        }
+        .tog {
+          padding: 0 8px;
+          gap: 4px;
+        }
+        #notes summary::after {
+          content: "";
+        }
+        .perf {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: 120px auto;
+          height: auto;
+        }
+        .perf .chart {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          min-height: 110px;
+        }
+        .tab .tl {
+          display: none;
+        }
+        .tab {
+          padding: 0 9px;
+        }
+        #bSpan {
+          display: none;
+        }
+        .chip .cl {
+          display: none;
+        }
+      }
+      /* the panel header folds its labels when the panel itself is narrow */
+      @container (max-width: 760px) {
+        .tab .tl {
+          display: none;
+        }
+        .tab {
+          padding: 0 9px;
+        }
+      }
+      @container (max-width: 540px) {
+        .chip .cl,
+        #bSpan {
+          display: none;
+        }
+      }
+      @container (max-width: 420px) {
+        .chip {
+          padding: 0 4px;
+          gap: 3px;
+        }
+        #bpTools,
+        #bpTools .tools {
+          gap: 2px;
+        }
+        #bpTools {
+          padding-left: 4px;
+        }
+        .tab {
+          padding: 0 7px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="tb">
+      <div class="brand">
+        <svg class="i" viewBox="0 0 16 16" style="color: var(--accent)">
+          <path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z" />
+          <path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4" /></svg
+        ><b>Tour Editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="tbtn" id="bStations" title="Show the stations">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M3 4h10M3 8h10M3 12h10" />
+        </svg>
+      </button>
+      <button class="tbtn" id="bFile" aria-haspopup="menu">
+        <span>File</span>
+      </button>
+      <button class="tbtn" id="bViewMenu" aria-haspopup="menu">
+        <span>View</span>
+      </button>
+      <span class="unsaved" id="unsaved">Not saved</span>
+      <div class="spacer"></div>
+      <button class="tbtn" id="bUndo" title="Undo (Ctrl+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M5.5 3.5 2.5 6.5l3 3" />
+          <path d="M2.8 6.5H10a3.5 3.5 0 0 1 0 7H7" /></svg
+        ><span class="lbl">Undo</span>
+      </button>
+      <button class="tbtn" id="bRedo" title="Redo (Ctrl+Shift+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="m10.5 3.5 3 3-3 3" />
+          <path d="M13.2 6.5H6a3.5 3.5 0 0 0 0 7h3" /></svg
+        ><span class="lbl">Redo</span>
+      </button>
+      <div class="menu" id="menuFile" role="menu">
+        <button data-cmd="save" role="menuitem">
+          Save to tour.zip <kbd>Ctrl+S</kbd>
+        </button>
+        <button data-cmd="noop" role="menuitem">Export...</button>
+      </div>
+      <div class="menu" id="menuView" role="menu">
+        <button data-cmd="tab:problems" role="menuitem">
+          Problems <kbd>Ctrl+Shift+M</kbd>
+        </button>
+        <button data-cmd="tab:history" role="menuitem">History</button>
+        <button data-cmd="tab:tiles" role="menuitem">Map loading</button>
+        <button data-cmd="tab:perf" role="menuitem">Performance</button>
+        <hr />
+        <button data-cmd="toggle" role="menuitem">
+          Show or hide the panel <kbd>Ctrl+J</kbd>
+        </button>
+        <button data-cmd="span" role="menuitem" id="mSpan">
+          Panel spans under the side panels
+        </button>
+      </div>
+    </header>
+    <div id="loadLine" title="Map loaded"></div>
+
+    <main id="main">
+      <aside class="side" id="left" aria-label="Stations">
+        <div class="shead">
+          <span>Stations</span><span class="sp"></span>
+          <button
+            class="ib"
+            title="Add a station (mock-up)"
+            data-toast="Adding stations is not part of this prototype"
+          >
+            <svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+          </button>
+        </div>
+        <div class="sbody" id="tree"></div>
+      </aside>
+
+      <section id="view" aria-label="3D view">
+        <canvas id="cv" aria-label="3D map view (faked)"></canvas>
+        <details id="notes" open>
+          <summary>Notes: VS Code-like tabs</summary>
+          <div class="nb">
+            <p>
+              <b>Idea.</b> The bottom bar keeps only what you act on: the map
+              credits, the selection's actions, and four labelled toggles that
+              open a tabbed panel, as in a code editor. Each toggle carries a
+              count only when there is something to look at.
+            </p>
+            <ul>
+              <li>
+                <b>Removed from the bar:</b> "Saved to tour.zip" (the top bar's
+                "Not saved" says it; saving now shows a toast and a "saved" mark
+                in History), the tilt readout (now in Performance, under View),
+                the hint text, and the Debug toggle (its three numbers became
+                the History and Performance tabs).
+              </li>
+              <li>
+                <b>The panel pushes the 3D view up but not the side panels.</b>
+                Problems and History point at stations and items; clicking a row
+                selects the thing in the list and the inspector, so both must
+                stay fully visible next to the panel. The map controls live in
+                the view and move up with it. View &gt; "Panel spans under the
+                side panels" lets you compare the other choice.
+              </li>
+              <li>
+                <b>Close:</b> the same toggle, the x, or Escape.
+                <b>Resize:</b> drag the top edge (drag it nearly flat to close).
+                <b>Maximise:</b> double-click the tab strip or the edge. Ctrl+J
+                shows or hides it.
+              </li>
+              <li>
+                On a phone the side panels become sheets, so the panel is always
+                full width there; the toggles keep their icon and badge.
+              </li>
+            </ul>
+            <p>
+              Try: open Problems, click a row, use its fix; open History and
+              jump back past "Changed the circle of The old gate"; drag the map
+              to queue tiles.
+            </p>
+          </div>
+        </details>
+        <div id="mapCtl">
+          <div class="pill">
+            <button title="Turn north up" data-toast="North up">
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path d="M12 3 15 12H9z" fill="#e5483f" />
+                <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+              </svg>
+            </button>
+          </div>
+          <div class="pill">
+            <button id="zin" title="Zoom in">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg></button
+            ><button id="zout" title="Zoom out">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              >
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="toast" role="status" aria-live="polite"></div>
+      </section>
+
+      <section id="bp" aria-label="Panel">
+        <div
+          id="grip"
+          title="Drag to resize, double-click to maximise"
+          role="separator"
+          aria-orientation="horizontal"
+          tabindex="0"
+        ></div>
+        <div id="bpHead">
+          <div id="tabs" role="tablist"></div>
+          <div id="bpTools">
+            <div class="tools" id="tabTools"></div>
+            <span class="sep"></span>
+            <button class="ib" id="bSpan" title="Span under the side panels">
+              <svg class="i" viewBox="0 0 16 16">
+                <rect x="1.8" y="2.5" width="12.4" height="11" rx="1" />
+                <path d="M1.8 9.5h12.4M5 2.5v7M11 2.5v7" />
+              </svg>
+            </button>
+            <button
+              class="ib"
+              id="bMax"
+              title="Maximise the panel (double-click the tab strip)"
+            >
+              <svg class="i" viewBox="0 0 16 16">
+                <path d="M4 10l4-4 4 4" />
+              </svg>
+            </button>
+            <button class="ib" id="bClose" title="Close the panel (Escape)">
+              <svg class="i" viewBox="0 0 16 16">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="bpBody">
+          <div class="pane" id="pane-problems" role="tabpanel"></div>
+          <div class="pane" id="pane-history" role="tabpanel"></div>
+          <div class="pane" id="pane-tiles" role="tabpanel"></div>
+          <div class="pane" id="pane-perf" role="tabpanel"></div>
+        </div>
+      </section>
+
+      <aside class="side" id="right" aria-label="Inspector">
+        <div class="ihead" id="ihead"></div>
+        <div class="sbody" id="ibody"></div>
+      </aside>
+    </main>
+
+    <footer id="sb">
+      <div id="credits">
+        <span class="long">Map data &copy; OpenStreetMap contributors</span
+        ><span class="short">&copy; OSM</span>
+      </div>
+      <div id="acts"></div>
+      <div class="grow"></div>
+      <div id="toggles"></div>
+    </footer>
+
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const svg = (p, cls = "") =>
+        `<svg class="i ${cls}" viewBox="0 0 16 16" aria-hidden="true">${p}</svg>`;
+      const P = {
+        problems:
+          '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
+        history: '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>',
+        tiles:
+          '<path d="M1.8 4.2 5.8 2.6l4.4 1.6 4-1.6v9.2l-4 1.6-4.4-1.6-4 1.6z"/><path d="M5.8 2.6v9.2M10.2 4.2v9.2"/>',
+        perf: '<path d="M1.5 8.6h2.8l1.6-4.2 2.5 8 1.8-5.4 1.1 1.6h3.2"/>',
+        dup: '<rect x="5.2" y="5.2" width="8.3" height="8.3" rx="1.2"/><path d="M2.8 10.6V3.4c0-.3.3-.6.6-.6h7.2"/>',
+        copy: '<circle cx="8" cy="6.8" r="1.9"/><path d="M8 14.2s-4.6-4.3-4.6-7.4a4.6 4.6 0 0 1 9.2 0c0 3.1-4.6 7.4-4.6 7.4z"/>',
+        align:
+          '<circle cx="8" cy="8" r="5.2"/><circle cx="8" cy="8" r="1.4"/><path d="M8 .9v2.6M8 12.5v2.6M.9 8h2.6M12.5 8h2.6"/>',
+        chev: '<path d="M6 3.8 10.2 8 6 12.2"/>',
+        err: '<circle cx="8" cy="8" r="6"/><path d="m5.8 5.8 4.4 4.4M10.2 5.8l-4.4 4.4"/>',
+        warn: '<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
+        info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.2v4M8 4.9v.1"/>',
+        ok: '<circle cx="8" cy="8" r="6"/><path d="m5.3 8.2 1.9 1.9 3.6-3.8"/>',
+        folder:
+          '<path d="M2 4.6c0-.6.4-1 1-1h3.1l1.5 1.6H13c.6 0 1 .4 1 1v5.9c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z"/>',
+        short:
+          '<path d="M8 14s-4-4-4-7a4 4 0 0 1 8 0c0 3-4 7-4 7z"/><path d="M6.6 6.6h2.8"/>',
+        long: '<path d="M3 3.5h10M3 6.5h10M3 9.5h10M3 12.5h6"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="m2.5 11 3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.6" cy="6" r="1"/>',
+        audio:
+          '<path d="M3 6.3h2.2L8.5 3.6v8.8L5.2 9.7H3z"/><path d="M10.8 5.6a3.4 3.4 0 0 1 0 4.8M12.6 4a5.6 5.6 0 0 1 0 8"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8 8 7.8l5.5-3M8 7.8v6.4"/>',
+        choice:
+          '<path d="M8 13V8M8 8 4 3.5M8 8l4-4.5"/><path d="M2.7 5.2V3h2.2M13.3 5.2V3h-2.2"/>',
+        quiz: '<circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4M8 11.3v.1"/>',
+        station:
+          '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6"/>',
+        retry:
+          '<path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13.2 2.6v2.8h-2.8"/>',
+        slow: '<path d="M8 3v5l3 2"/><circle cx="8" cy="8" r="6"/>',
+      };
+      const TYPE_LABEL = {
+        short: "Short text",
+        long: "Long text",
+        picture: "Picture",
+        audio: "Audio zone",
+        model: "3D model",
+        story: "Story",
+        choice: "Choice",
+        quiz: "Quiz",
+        station: "Station",
+      };
+
+      // ---------- sample tour ----------
+      const tour = [
+        {
+          id: "s1",
+          name: "The Column",
+          x: -130,
+          y: 40,
+          pos: true,
+          radius: 25,
+          stories: [
+            {
+              id: "st1",
+              name: "The Column's tale",
+              entries: [
+                { id: "e1", type: "long", name: "Why a column here?" },
+                {
+                  id: "e2",
+                  type: "picture",
+                  name: "The square in 1702",
+                  img: true,
+                },
+                { id: "e3", type: "choice", name: "Look north or south?" },
+                {
+                  id: "e4",
+                  type: "quiz",
+                  name: "How tall is it?",
+                  answer: false,
+                },
+              ],
+            },
+          ],
+          items: [
+            { id: "i1", type: "short", name: "Look up!", dist: 8, ang: 0.6 },
+            {
+              id: "i2",
+              type: "picture",
+              name: "Carvings",
+              img: true,
+              dist: 12,
+              ang: 2.4,
+            },
+          ],
+        },
+        {
+          id: "s2",
+          name: "The old gate",
+          x: -30,
+          y: -70,
+          pos: true,
+          radius: 30,
+          stories: [],
+          items: [
+            {
+              id: "i3",
+              type: "picture",
+              name: "The gate in 1890",
+              img: false,
+              dist: 10,
+              ang: 1.1,
+            },
+            {
+              id: "i4",
+              type: "short",
+              name: "Toll was paid here",
+              dist: 6,
+              ang: 3.6,
+            },
+            {
+              id: "i5",
+              type: "model",
+              name: "The gate as it stood",
+              dist: 42,
+              ang: 5.2,
+            },
+          ],
+        },
+        {
+          id: "s3",
+          name: "Market fountain of the four rivers and the old fish market",
+          x: 70,
+          y: 30,
+          pos: true,
+          radius: 20,
+          stories: [
+            {
+              id: "st2",
+              name: "Water for the town",
+              entries: [
+                { id: "e5", type: "long", name: "Where the water came from" },
+                { id: "e6", type: "picture", name: "Washing day", img: true },
+                { id: "e7", type: "audio", name: "Market voices" },
+                {
+                  id: "e8",
+                  type: "quiz",
+                  name: "Which river is missing?",
+                  answer: true,
+                },
+                { id: "e9", type: "long", name: "The fountain today" },
+              ],
+            },
+          ],
+          items: [],
+        },
+        {
+          id: "s4",
+          name: "The bridge",
+          x: 0,
+          y: 0,
+          pos: false,
+          radius: 20,
+          stories: [],
+          items: [],
+        },
+        {
+          id: "s5",
+          name: "The tower",
+          x: 160,
+          y: -50,
+          pos: true,
+          radius: 35,
+          stories: [],
+          items: [
+            {
+              id: "i6",
+              type: "long",
+              name: "Watchmen of the tower",
+              dist: 9,
+              ang: 4.0,
+            },
+            { id: "i7", type: "audio", name: "Bells at noon", dist: 0, ang: 0 },
+          ],
+        },
+      ];
+      const stationOf = (sid) => tour.find((s) => s.id === sid);
+      function findThing(ref) {
+        if (!ref) return null;
+        const st = stationOf(ref.sid);
+        if (!st) return null;
+        if (ref.kind === "station") return { st, obj: st, kind: "station" };
+        if (ref.kind === "item") {
+          const it = st.items.find((i) => i.id === ref.id);
+          return it ? { st, obj: it, kind: "item" } : null;
+        }
+        if (ref.kind === "story") {
+          const s = st.stories.find((x) => x.id === ref.id);
+          return s ? { st, obj: s, kind: "story" } : null;
+        }
+        if (ref.kind === "entry") {
+          for (const s of st.stories) {
+            const e = s.entries.find((x) => x.id === ref.id);
+            if (e) return { st, obj: e, kind: "entry", story: s };
+          }
+        }
+        return null;
+      }
+      const sameRef = (a, b) =>
+        !!a &&
+        !!b &&
+        a.kind === b.kind &&
+        a.sid === b.sid &&
+        (a.id || "") === (b.id || "");
+
+      // ---------- state ----------
+      const ui = {
+        sel: null,
+        expanded: new Set(["s1", "s2", "st1"]),
+        panel: {
+          open: false,
+          tab: "problems",
+          h: 220,
+          max: false,
+          span: false,
+        },
+        filt: { error: true, warning: true, info: true },
+        folded: new Set(),
+        view: { panX: 0, panY: 0, zoom: 1, tilt: 43, heading: 12 },
+      };
+      try {
+        const s = JSON.parse(localStorage.getItem("bp1-panel") || "null");
+        if (s && typeof s.h === "number") {
+          ui.panel.h = s.h;
+          if (["problems", "history", "tiles", "perf"].includes(s.tab))
+            ui.panel.tab = s.tab;
+        }
+      } catch (e) {
+        /* storage unavailable: defaults */
+      }
+      function remember() {
+        try {
+          localStorage.setItem(
+            "bp1-panel",
+            JSON.stringify({ h: ui.panel.h, tab: ui.panel.tab }),
+          );
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      // ---------- history (undo stack; index 0 = the opened file) ----------
+      const noop = () => {};
+      const now = Date.now();
+      const hist = [
+        { label: "Opened tour.zip", t: now - 41 * 60e3 },
+        {
+          label: 'Added the station "The bridge"',
+          t: now - 33 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+        {
+          label: 'Moved "The Column" 6 m north',
+          t: now - 30 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+        {
+          label: 'Renamed station 5 to "The tower"',
+          t: now - 26 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+        {
+          label: 'Added the audio zone "Bells at noon"',
+          t: now - 21 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+        {
+          label: 'Changed the circle of "The old gate" to 30 m',
+          t: now - 12 * 60e3,
+          apply: () => {
+            stationOf("s2").radius = 30;
+          },
+          revert: () => {
+            stationOf("s2").radius = 45;
+          },
+        },
+        {
+          label: 'Added the 3D model "The gate as it stood"',
+          t: now - 7 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+        {
+          label: 'Edited the description of "Look up!"',
+          t: now - 2 * 60e3,
+          apply: noop,
+          revert: noop,
+        },
+      ];
+      let cur = hist.length - 1;
+      let saved = 4;
+      function doAction(label, apply, revert) {
+        apply();
+        hist.splice(cur + 1);
+        hist.push({ label, t: Date.now(), apply, revert });
+        cur = hist.length - 1;
+        if (saved > cur) saved = -1;
+        renderAll();
+      }
+      function jumpTo(k) {
+        if (k < 0 || k >= hist.length || k === cur) return;
+        while (cur > k) {
+          hist[cur].revert();
+          cur--;
+        }
+        while (cur < k) {
+          cur++;
+          hist[cur].apply();
+        }
+        if (ui.sel && !findThing(ui.sel)) ui.sel = null;
+        renderAll();
+      }
+      const undo = () => {
+        if (cur > 0) {
+          jumpTo(cur - 1);
+          toast("Undid: " + hist[cur + 1].label);
+        }
+      };
+      const redo = () => {
+        if (cur < hist.length - 1) {
+          jumpTo(cur + 1);
+          toast("Redid: " + hist[cur].label);
+        }
+      };
+      function ago(t) {
+        const m = Math.round((Date.now() - t) / 60e3);
+        return m < 1 ? "just now" : m + " min ago";
+      }
+
+      // ---------- problems (tour checks, computed from the data) ----------
+      function problems() {
+        const out = [];
+        for (const st of tour) {
+          const sref = { kind: "station", sid: st.id };
+          if (!st.pos)
+            out.push({
+              sev: "error",
+              st,
+              ref: sref,
+              what: "No position on the map yet",
+              who: "Station",
+              fix: {
+                label: "Place at view centre",
+                run: () =>
+                  doAction(
+                    `Placed "${st.name}" on the map`,
+                    () => {
+                      st.pos = true;
+                    },
+                    () => {
+                      st.pos = false;
+                    },
+                  ),
+              },
+            });
+          if (st.pos && !st.items.length && !st.stories.length)
+            out.push({
+              sev: "info",
+              st,
+              ref: sref,
+              what: "Has no content yet",
+              who: "Station",
+            });
+          for (const it of st.items) {
+            const ref = { kind: "item", sid: st.id, id: it.id };
+            if (it.dist > st.radius)
+              out.push({
+                sev: "warning",
+                st,
+                ref,
+                who: it.name,
+                what: `Outside its station's circle (${it.dist} m from the centre, circle ${st.radius} m)`,
+                fix: {
+                  label: "Move inside",
+                  run: () => {
+                    const old = it.dist;
+                    doAction(
+                      `Moved "${it.name}" inside its station's circle`,
+                      () => {
+                        it.dist = st.radius - 4;
+                      },
+                      () => {
+                        it.dist = old;
+                      },
+                    );
+                  },
+                },
+              });
+            if (it.type === "picture" && !it.img)
+              out.push({
+                sev: "warning",
+                st,
+                ref,
+                who: it.name,
+                what: "No picture chosen",
+                fix: {
+                  label: "Choose picture...",
+                  run: () =>
+                    doAction(
+                      `Chose a picture for "${it.name}"`,
+                      () => {
+                        it.img = true;
+                      },
+                      () => {
+                        it.img = false;
+                      },
+                    ),
+                },
+              });
+          }
+          for (const s of st.stories)
+            for (const e of s.entries) {
+              const ref = { kind: "entry", sid: st.id, id: e.id };
+              if (e.type === "quiz" && !e.answer)
+                out.push({
+                  sev: "warning",
+                  st,
+                  ref,
+                  who: `${s.name} / ${e.name}`,
+                  what: "Quiz has no correct answer marked",
+                  fix: {
+                    label: "Mark answer B",
+                    run: () =>
+                      doAction(
+                        `Marked the answer of "${e.name}"`,
+                        () => {
+                          e.answer = true;
+                        },
+                        () => {
+                          e.answer = false;
+                        },
+                      ),
+                  },
+                });
+            }
+        }
+        return out;
+      }
+      const SEV_ICON = {
+        error: svg(P.err, "svg-err"),
+        warning: svg(P.warn, "svg-warn"),
+        info: svg(P.info, "svg-info"),
+      };
+      function probsFor(ref) {
+        return problems().filter((p) => sameRef(p.ref, ref));
+      }
+      function worstSev(list) {
+        return list.some((p) => p.sev === "error")
+          ? "error"
+          : list.some((p) => p.sev === "warning")
+            ? "warning"
+            : list.length
+              ? "info"
+              : "";
+      }
+
+      // ---------- map tiles (simulated loader) ----------
+      const tiles = { loaded: 138, list: [], rl: 0, rlTotal: 0, nextId: 0 };
+      function tileKey() {
+        const x = 68640 + Math.floor(Math.random() * 12),
+          y = 44518 + Math.floor(Math.random() * 9);
+        return `17/${x}/${y}`;
+      }
+      function queueTiles(n, src = "Street map") {
+        for (let i = 0; i < n; i++)
+          tiles.list.unshift({
+            id: tiles.nextId++,
+            key: tileKey(),
+            src: Math.random() < 0.25 ? "Buildings" : src,
+            st: "waiting",
+            ms: 0,
+          });
+        tiles.list.length = Math.min(tiles.list.length, 60);
+      }
+      queueTiles(4);
+      tiles.list.push({
+        id: tiles.nextId++,
+        key: "17/68644/44521",
+        src: "Street map",
+        st: "failed",
+        ms: 1204,
+        err: "Server error 503",
+      });
+      for (let i = 0; i < 6; i++)
+        tiles.list.push({
+          id: tiles.nextId++,
+          key: tileKey(),
+          src: "Street map",
+          st: "loaded",
+          ms: 90 + Math.round(Math.random() * 180),
+        });
+      function startRateLimit(sec) {
+        tiles.rl = sec;
+        tiles.rlTotal = sec;
+      }
+      startRateLimit(18);
+      const tcount = (s) => tiles.list.filter((t) => t.st === s).length;
+      let tick = 0;
+      setInterval(() => {
+        tick++;
+        if (tiles.rl > 0) {
+          if (tick % 3 === 0) tiles.rl = Math.max(0, tiles.rl - 1);
+        } else {
+          for (const t of tiles.list)
+            if (t.st === "loading") {
+              t.ms += 300;
+              if (t.ms > 200 + (t.id % 5) * 90) {
+                t.st = "loaded";
+                tiles.loaded++;
+              }
+            }
+          const busy = tcount("loading");
+          const w = tiles.list.filter((t) => t.st === "waiting").reverse();
+          for (let i = 0; i < Math.min(2 - busy, w.length); i++)
+            w[i].st = "loading";
+        }
+        renderToggles();
+        if (ui.panel.open && ui.panel.tab === "tiles") renderTiles();
+      }, 333);
+
+      // ---------- frame times ----------
+      const frames = [];
+      let lastT = performance.now();
+      let slowAdd = 0;
+      let frameNo = 0;
+      function drawCalls() {
+        return (
+          38 +
+          tour.reduce(
+            (n, s) =>
+              n +
+              (s.pos ? 4 : 0) +
+              s.items.length * 3 +
+              s.stories.reduce((m, x) => m + x.entries.length, 0),
+            0,
+          )
+        );
+      }
+
+      // ---------- rendering: tree (mock) ----------
+      function row(cls, html, ref, onToggle) {
+        const r = document.createElement("div");
+        r.className = "row " + cls + (sameRef(ref, ui.sel) ? " sel" : "");
+        r.innerHTML = html;
+        r.tabIndex = 0;
+        r.addEventListener("click", (ev) => {
+          if (ev.target.closest(".chev") && onToggle) {
+            onToggle();
+            return;
+          }
+          select(ref);
+        });
+        r.addEventListener("dblclick", () => onToggle && onToggle());
+        return r;
+      }
+      function renderTree() {
+        const t = $("#tree");
+        t.innerHTML = "";
+        for (const [i, st] of tour.entries()) {
+          const open = ui.expanded.has(st.id);
+          const has = st.items.length + st.stories.length > 0;
+          const ws = worstSev(problems().filter((p) => p.st === st));
+          const toggle = () => {
+            open ? ui.expanded.delete(st.id) : ui.expanded.add(st.id);
+            renderTree();
+          };
+          t.append(
+            row(
+              open ? "open" : "",
+              `${svg(P.chev, "chev" + (has ? "" : " none"))}<span class="num">${i + 1}</span><span class="nm" title="${esc(st.name)}">${esc(st.name)}</span>${ws ? `<span class="pdot ${ws}" title="Has problems"></span>` : ""}`,
+              { kind: "station", sid: st.id },
+              has ? toggle : null,
+            ),
+          );
+          if (!open) continue;
+          for (const s of st.stories) {
+            const so = ui.expanded.has(s.id);
+            const tg = () => {
+              so ? ui.expanded.delete(s.id) : ui.expanded.add(s.id);
+              renderTree();
+            };
+            const sw = worstSev(
+              problems().filter(
+                (p) =>
+                  p.ref.kind === "entry" &&
+                  s.entries.some((e) => e.id === p.ref.id),
+              ),
+            );
+            t.append(
+              row(
+                "d1 " + (so ? "open" : ""),
+                `${svg(P.chev, "chev")}${svg(P.folder, "tic")}<span class="nm">${esc(s.name)}</span><span class="tagm">${s.entries.length}</span>${sw ? `<span class="pdot ${sw}"></span>` : ""}`,
+                { kind: "story", sid: st.id, id: s.id },
+                tg,
+              ),
+            );
+            if (so)
+              for (const [k, e] of s.entries.entries()) {
+                const ew = worstSev(
+                  probsFor({ kind: "entry", sid: st.id, id: e.id }),
+                );
+                t.append(
+                  row(
+                    "d2",
+                    `<span class="tagm">${k + 1}</span>${svg(P[e.type], "tic")}<span class="nm">${esc(e.name)}</span>${ew ? `<span class="pdot ${ew}"></span>` : ""}`,
+                    { kind: "entry", sid: st.id, id: e.id },
+                  ),
+                );
+              }
+          }
+          for (const it of st.items) {
+            const iw = worstSev(
+              probsFor({ kind: "item", sid: st.id, id: it.id }),
+            );
+            t.append(
+              row(
+                "d1",
+                `${svg(P.chev, "chev none")}${svg(P[it.type], "tic")}<span class="nm">${esc(it.name)}</span>${iw ? `<span class="pdot ${iw}"></span>` : ""}`,
+                { kind: "item", sid: st.id, id: it.id },
+              ),
+            );
+          }
+        }
+      }
+
+      // ---------- rendering: inspector (mock) ----------
+      function renderInsp() {
+        const f = findThing(ui.sel);
+        $("#main").classList.toggle("hasSel", !!f);
+        if (!f) return;
+        const kindLabel =
+          f.kind === "station"
+            ? "Station"
+            : f.kind === "story"
+              ? "Story"
+              : TYPE_LABEL[f.obj.type];
+        $("#ihead").innerHTML =
+          `${svg(P[f.kind === "station" ? "station" : f.kind === "story" ? "folder" : f.obj.type])}<span class="ttl" title="Click to rename">${esc(f.obj.name)}</span><span class="kind">${kindLabel}</span><span class="sp"></span><button class="ib" id="bDesel" title="Close (deselect)">${svg('<path d="M4 4l8 8M12 4l-8 8"/>')}</button>`;
+        $("#bDesel").onclick = () => select(null);
+        const body = $("#ibody");
+        body.innerHTML = "";
+        const pl = probsFor(ui.sel);
+        if (pl.length) {
+          const sec = document.createElement("div");
+          sec.className = "isec";
+          sec.innerHTML = `<h4>Problems</h4>`;
+          for (const p of pl) {
+            const d = document.createElement("div");
+            d.className = "iprob";
+            d.innerHTML = `${SEV_ICON[p.sev]}<span class="txt">${esc(p.what)}</span>`;
+            if (p.fix) {
+              const b = document.createElement("button");
+              b.className = "lnk";
+              b.textContent = p.fix.label;
+              b.onclick = () => {
+                p.fix.run();
+                toast("Fixed: " + p.what.split(" (")[0]);
+              };
+              d.append(b);
+            }
+            sec.append(d);
+          }
+          body.append(sec);
+        }
+        const sec = document.createElement("div");
+        sec.className = "isec";
+        if (f.kind === "station")
+          sec.innerHTML = `<h4>Place</h4><div class="kv"><span>Position</span><span>${f.obj.pos ? "48.13721, 11.57540" : "Not placed yet"}</span><span>Circle</span><span>${f.obj.radius} m</span><span>Contents</span><span>${f.obj.stories.length} stories, ${f.obj.items.length} items</span></div>`;
+        else if (f.kind === "item")
+          sec.innerHTML = `<h4>Position</h4><div class="kv"><span>From centre</span><span>${f.obj.dist} m</span><span>Height</span><span>0.0 m</span><span>Heading</span><span>${Math.round(f.obj.ang * 57.3)} deg</span></div>`;
+        else if (f.kind === "story")
+          sec.innerHTML = `<h4>Story</h4><div class="kv"><span>Entries</span><span>${f.obj.entries.length}</span><span>Plays</span><span>One after another</span></div>`;
+        else
+          sec.innerHTML = `<h4>Entry</h4><div class="kv"><span>In story</span><span>${esc(f.story.name)}</span><span>Type</span><span>${TYPE_LABEL[f.obj.type]}</span></div>`;
+        body.append(sec);
+        const note = document.createElement("div");
+        note.className = "isec";
+        note.innerHTML =
+          '<p class="mutedp">The side panels are simple mock-ups on this page; the bottom bar and the panel are the subject.</p>';
+        body.append(note);
+      }
+
+      // ---------- selection ----------
+      function select(ref, { from } = {}) {
+        ui.sel = ref && findThing(ref) ? ref : null;
+        if (ui.sel) {
+          ui.expanded.add(ui.sel.sid);
+          const f = findThing(ui.sel);
+          if (f.kind === "entry") ui.expanded.add(f.story.id);
+        }
+        if (window.matchMedia("(max-width: 700px)").matches && from !== "tree")
+          $("#left").classList.remove("open");
+        renderAll();
+      }
+
+      // ---------- bottom bar ----------
+      function sact(label, ic, fn, title) {
+        const b = document.createElement("button");
+        b.className = "sact";
+        b.title = title || label;
+        b.innerHTML = svg(P[ic]) + `<span class="lbl">${esc(label)}</span>`;
+        b.onclick = fn;
+        return b;
+      }
+      function renderActs() {
+        const a = $("#acts");
+        a.innerHTML = "";
+        const f = findThing(ui.sel);
+        if (!f) return;
+        if (f.kind === "item") {
+          a.append(
+            sact(
+              "Duplicate",
+              "dup",
+              () => {
+                const it = f.obj;
+                const copy = {
+                  ...it,
+                  id: it.id + "c" + hist.length,
+                  name: it.name + " (copy)",
+                  ang: it.ang + 0.5,
+                };
+                doAction(
+                  `Duplicated "${it.name}"`,
+                  () => f.st.items.push(copy),
+                  () => {
+                    f.st.items = f.st.items.filter((x) => x !== copy);
+                  },
+                );
+                select({ kind: "item", sid: f.st.id, id: copy.id });
+                toast('Duplicated "' + it.name + '"');
+              },
+              "Duplicate (Ctrl+D)",
+            ),
+          );
+          a.append(
+            sact(
+              "Copy position",
+              "copy",
+              () => toast("Position copied"),
+              "Copy the position to paste it onto another item",
+            ),
+          );
+          a.append(
+            sact(
+              "Align to station",
+              "align",
+              () => {
+                const it = f.obj;
+                const old = it.ang;
+                doAction(
+                  `Aligned "${it.name}" to its station`,
+                  () => {
+                    it.ang = 0;
+                  },
+                  () => {
+                    it.ang = old;
+                  },
+                );
+                toast("Faces the station centre now");
+              },
+              "Turn the item to face its station centre",
+            ),
+          );
+        } else if (f.kind === "station") {
+          a.append(
+            sact("Copy position", "copy", () => toast("Position copied")),
+          );
+        } else {
+          a.append(
+            sact("Duplicate", "dup", () =>
+              toast("Duplicating stories is not part of this prototype"),
+            ),
+          );
+        }
+      }
+      const TABS = [
+        {
+          id: "problems",
+          label: "Problems",
+          ic: "problems",
+          key: "Ctrl+Shift+M",
+        },
+        { id: "history", label: "History", ic: "history" },
+        { id: "tiles", label: "Map loading", ic: "tiles" },
+        { id: "perf", label: "Performance", ic: "perf" },
+      ];
+      function badgeFor(id) {
+        if (id === "problems") {
+          const p = problems();
+          const e = p.filter((x) => x.sev === "error").length,
+            w = p.filter((x) => x.sev === "warning").length;
+          return {
+            html: p.length ? String(p.length) : "",
+            cls: e ? "error" : w ? "warning" : "",
+            title: p.length
+              ? `${e} errors, ${w} warnings, ${p.length - e - w} notes`
+              : "No problems",
+          };
+        }
+        if (id === "history") {
+          const redoN = hist.length - 1 - cur;
+          return {
+            html: redoN ? `${cur}/${hist.length - 1}` : "",
+            cls: "",
+            title: redoN ? `${redoN} steps can be redone` : `${cur} steps`,
+          };
+        }
+        if (id === "tiles") {
+          if (tiles.rl > 0)
+            return {
+              html: `0:${String(tiles.rl).padStart(2, "0")}`,
+              cls: "warning",
+              title: "The map server asked to slow down",
+            };
+          const f = tcount("failed"),
+            w = tcount("waiting") + tcount("loading");
+          if (f)
+            return {
+              html: String(f),
+              cls: "error",
+              title: `${f} tiles failed`,
+            };
+          if (w)
+            return {
+              html: `<span class="spin"></span>${w}`,
+              cls: "busy",
+              title: `${w} tiles waiting`,
+            };
+          return { html: "", cls: "", title: "All tiles loaded" };
+        }
+        if (id === "perf") {
+          const slow = recentSlow();
+          return {
+            html: slow ? String(slow) : "",
+            cls: slow ? "warning" : "",
+            title: slow
+              ? `${slow} slow frames (over 50 ms) in the last 5 s`
+              : "Frame times are fine",
+          };
+        }
+        return { html: "", cls: "", title: "" };
+      }
+      function renderToggles() {
+        const box = $("#toggles");
+        if (!box.children.length) {
+          for (const t of TABS) {
+            const b = document.createElement("button");
+            b.className = "tog";
+            b.dataset.tab = t.id;
+            b.setAttribute("aria-controls", "bp");
+            b.innerHTML =
+              svg(P[t.ic]) +
+              `<span class="tl">${t.label}</span><span class="badge"></span>`;
+            b.onclick = () => toggleTab(t.id);
+            box.append(b);
+          }
+          for (const t of TABS) {
+            const b = document.createElement("button");
+            b.className = "tab";
+            b.dataset.tab = t.id;
+            b.setAttribute("role", "tab");
+            b.innerHTML =
+              svg(P[t.ic]) +
+              `<span class="tl">${t.label}</span><span class="badge"></span>`;
+            b.title = t.label;
+            b.onclick = () => openPanel(t.id);
+            $("#tabs").append(b);
+          }
+        }
+        for (const b of document.querySelectorAll(".tog, .tab")) {
+          const t = TABS.find((x) => x.id === b.dataset.tab);
+          const bd = badgeFor(t.id);
+          const el = $(".badge", b);
+          if (el.innerHTML !== bd.html) el.innerHTML = bd.html;
+          el.className = "badge " + bd.cls;
+          const pressed = ui.panel.open && ui.panel.tab === t.id;
+          if (b.classList.contains("tog")) {
+            b.setAttribute("aria-pressed", String(pressed));
+            b.title = `${t.label}${bd.title ? ": " + bd.title : ""} - ${pressed ? "click to close" : "click to open"}${t.key ? " (" + t.key + ")" : ""}`;
+          } else b.setAttribute("aria-selected", String(ui.panel.tab === t.id));
+        }
+      }
+
+      // ---------- panel ----------
+      function mainH() {
+        return $("#main").clientHeight;
+      }
+      function clampH(h) {
+        return Math.max(90, Math.min(h, mainH() - 60));
+      }
+      function layoutPanel() {
+        const bp = $("#bp");
+        bp.classList.toggle("open", ui.panel.open);
+        if (!ui.panel.open) $("#main").style.setProperty("--bpH", "0px");
+        $("#main").classList.toggle("span", ui.panel.span);
+        if (!ui.panel.open) return;
+        bp.style.height = (ui.panel.max ? mainH() : clampH(ui.panel.h)) + "px";
+        $("#main").style.setProperty("--bpH", bp.style.height);
+        $("#bMax").innerHTML = svg(
+          ui.panel.max
+            ? '<path d="M4 6l4 4 4-4"/>'
+            : '<path d="M4 10l4-4 4 4"/>',
+        );
+        $("#bMax").title = ui.panel.max
+          ? "Restore the panel size (double-click the tab strip)"
+          : "Maximise the panel (double-click the tab strip)";
+        $("#bSpan").classList.toggle("on", ui.panel.span);
+        $("#bSpan").style.color = ui.panel.span ? "var(--accentText)" : "";
+        $("#mSpan").textContent = ui.panel.span
+          ? "Panel stays between the side panels"
+          : "Panel spans under the side panels";
+      }
+      function openPanel(tab) {
+        ui.panel.open = true;
+        ui.panel.tab = tab;
+        remember();
+        renderPanel();
+      }
+      function closePanel() {
+        const t = ui.panel.tab;
+        ui.panel.open = false;
+        ui.panel.max = false;
+        renderPanel();
+        const b = $(`.tog[data-tab="${t}"]`);
+        if (
+          b &&
+          document.activeElement &&
+          $("#bp").contains(document.activeElement)
+        )
+          b.focus();
+      }
+      function toggleTab(tab) {
+        if (ui.panel.open && ui.panel.tab === tab) closePanel();
+        else openPanel(tab);
+      }
+      function renderPanel() {
+        layoutPanel();
+        renderToggles();
+        for (const t of TABS)
+          $("#pane-" + t.id).classList.toggle("show", t.id === ui.panel.tab);
+        renderTools();
+        if (!ui.panel.open) return;
+        if (ui.panel.tab === "problems") renderProblems();
+        if (ui.panel.tab === "history") renderHistory();
+        if (ui.panel.tab === "tiles") renderTiles();
+        if (ui.panel.tab === "perf") renderPerf(true);
+      }
+      function renderTools() {
+        const box = $("#tabTools");
+        box.innerHTML = "";
+        if (ui.panel.tab === "problems") {
+          const p = problems();
+          for (const [sev, lab] of [
+            ["error", "Errors"],
+            ["warning", "Warnings"],
+            ["info", "Notes"],
+          ]) {
+            const n = p.filter((x) => x.sev === sev).length;
+            const b = document.createElement("button");
+            b.className = "chip";
+            b.setAttribute("aria-pressed", String(ui.filt[sev]));
+            b.title = (ui.filt[sev] ? "Hide " : "Show ") + lab.toLowerCase();
+            b.innerHTML = SEV_ICON[sev] + `<span class="cl">${lab}</span> ${n}`;
+            b.onclick = () => {
+              ui.filt[sev] = !ui.filt[sev];
+              renderPanel();
+            };
+            box.append(b);
+          }
+        } else if (ui.panel.tab === "history") {
+          const u = document.createElement("button");
+          u.className = "chip";
+          u.textContent = "Undo";
+          u.disabled = cur === 0;
+          u.onclick = undo;
+          const r = document.createElement("button");
+          r.className = "chip";
+          r.textContent = "Redo";
+          r.disabled = cur === hist.length - 1;
+          r.onclick = redo;
+          box.append(u, r);
+        } else if (ui.panel.tab === "tiles") {
+          const r = document.createElement("button");
+          r.className = "chip";
+          r.innerHTML = svg(P.retry) + '<span class="cl">Retry failed</span>';
+          r.title = "Retry failed tiles";
+          r.onclick = () => {
+            let n = 0;
+            for (const t of tiles.list)
+              if (t.st === "failed") {
+                t.st = "waiting";
+                t.err = "";
+                t.ms = 0;
+                n++;
+              }
+            toast(
+              n ? `Retrying ${n} tile${n > 1 ? "s" : ""}` : "Nothing to retry",
+            );
+            renderTiles();
+            renderToggles();
+          };
+          const s = document.createElement("button");
+          s.className = "chip";
+          s.innerHTML =
+            svg(P.slow) + '<span class="cl">Simulate a slow-down</span>';
+          s.title =
+            'For this prototype: pretend the server answered "too many requests"';
+          s.onclick = () => {
+            startRateLimit(20);
+            renderTiles();
+            renderToggles();
+          };
+          box.append(r, s);
+        } else if (ui.panel.tab === "perf") {
+          const s = document.createElement("button");
+          s.className = "chip";
+          s.innerHTML =
+            svg(P.slow) + '<span class="cl">Add a slow frame</span>';
+          s.title = "For this prototype: block one frame for 80 ms";
+          s.onclick = () => {
+            slowAdd = 80;
+          };
+          box.append(s);
+        }
+      }
+      function renderProblems() {
+        const pane = $("#pane-problems");
+        const all = problems();
+        const p = all.filter((x) => ui.filt[x.sev]);
+        pane.innerHTML = "";
+        if (!all.length) {
+          pane.innerHTML = `<div class="empty-state">${svg(P.ok)}No problems found in this tour.</div>`;
+          return;
+        }
+        if (!p.length) {
+          pane.innerHTML = `<div class="empty-state" style="color:var(--dim)">${all.length} hidden by the filters above.</div>`;
+          return;
+        }
+        for (const [i, st] of tour.entries()) {
+          const list = p.filter((x) => x.st === st);
+          if (!list.length) continue;
+          const g = document.createElement("div");
+          g.className = "pgrp" + (ui.folded.has(st.id) ? " fold" : "");
+          const h = document.createElement("div");
+          h.className = "ghead";
+          h.tabIndex = 0;
+          h.innerHTML = `${svg(P.chev, "chev")}<span class="num">${i + 1}</span><span>${esc(st.name.length > 40 ? st.name.slice(0, 38) + "..." : st.name)}</span><span class="cnt">${list.length}</span>`;
+          h.onclick = () => {
+            ui.folded.has(st.id)
+              ? ui.folded.delete(st.id)
+              : ui.folded.add(st.id);
+            renderProblems();
+          };
+          g.append(h);
+          for (const x of list) {
+            const r = document.createElement("div");
+            r.className = "prow" + (sameRef(x.ref, ui.sel) ? " sel" : "");
+            r.tabIndex = 0;
+            r.innerHTML = `${SEV_ICON[x.sev]}<span class="what">${esc(x.what)} <em>- ${esc(x.who)}</em></span>`;
+            r.title = "Click to select " + x.who;
+            r.onclick = (ev) => {
+              if (ev.target.closest(".fix")) return;
+              select(x.ref);
+            };
+            r.onkeydown = (ev) => {
+              if (ev.key === "Enter") select(x.ref);
+            };
+            if (x.fix) {
+              const b = document.createElement("button");
+              b.className = "lnk fix";
+              b.textContent = x.fix.label;
+              b.onclick = () => {
+                select(x.ref);
+                x.fix.run();
+                toast("Fixed: " + x.what.split(" (")[0]);
+              };
+              r.append(b);
+            }
+            g.append(r);
+          }
+          pane.append(g);
+        }
+      }
+      function renderHistory() {
+        const pane = $("#pane-history");
+        pane.innerHTML = "";
+        const wrap = document.createElement("div");
+        for (let k = hist.length - 1; k >= 0; k--) {
+          const h = hist[k];
+          const r = document.createElement("div");
+          r.className =
+            "hrow " + (k === cur ? "cur" : k < cur ? "done" : "undone");
+          r.tabIndex = 0;
+          r.innerHTML = `<span class="dot"></span><span class="lbl">${esc(h.label)}</span>${k === saved ? '<span class="tagm saved">saved</span>' : ""}${k === cur ? '<span class="tagm now">now</span>' : ""}<span class="tm">${ago(h.t)}</span>`;
+          r.title =
+            k === cur
+              ? "This is the current state"
+              : k < cur
+                ? "Click to go back to this step (undo " + (cur - k) + ")"
+                : "Click to redo up to this step";
+          r.onclick = () => jumpTo(k);
+          r.onkeydown = (ev) => {
+            if (ev.key === "Enter") jumpTo(k);
+          };
+          wrap.append(r);
+        }
+        pane.append(wrap);
+        const n = document.createElement("div");
+        n.className = "hnote";
+        n.textContent =
+          cur < hist.length - 1
+            ? "Greyed steps are undone; click one to redo up to it. A new change drops them."
+            : "Newest on top. Click a step to go back to it.";
+        pane.append(n);
+      }
+      let tilesBuilt = false;
+      function renderTiles() {
+        const pane = $("#pane-tiles");
+        const w = tcount("waiting"),
+          l = tcount("loading"),
+          f = tcount("failed");
+        const rlHtml =
+          tiles.rl > 0
+            ? `<div class="rl">${svg(P.slow, "svg-warn")}<span class="t"><b>The map server asked us to slow down.</b> Waiting tiles load again when the pause ends.</span><span class="bar"><i style="width:${(100 * (1 - tiles.rl / tiles.rlTotal)).toFixed(1)}%"></i></span><span class="cd">0:${String(tiles.rl).padStart(2, "0")}</span></div>`
+            : "";
+        const rows = tiles.list
+          .slice(0, 40)
+          .map(
+            (t) =>
+              `<tr><td><span class="stt ${t.st}"><i></i>${t.st === "failed" ? "Failed" : t.st === "loading" ? "Loading" : t.st === "waiting" ? "Waiting" : "Loaded"}</span></td><td class="k">${t.key}</td><td>${t.src}</td><td>${t.err ? `<span class="svg-err">${esc(t.err)}</span>` : ""}</td><td class="ms">${t.st === "loaded" || t.st === "failed" ? t.ms + " ms" : ""}</td></tr>`,
+          )
+          .join("");
+        const html = `<div class="sumrow"><span class="st"><b>${tiles.loaded}</b><span>loaded</span></span><span class="st"><b>${l}</b><span>loading</span></span><span class="st"><b>${w}</b><span>waiting</span></span><span class="st" style="${f ? "color:var(--danger)" : ""}"><b style="${f ? "color:var(--danger)" : ""}">${f}</b><span>failed</span></span><span class="st"><span>Source: street map tiles and 3D buildings, zoom 17</span></span></div>${rlHtml}<table class="tiles"><thead><tr><th>Status</th><th>Tile</th><th>Layer</th><th>Note</th><th style="text-align:right">Time</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const sc = $("#bpBody").scrollTop;
+        pane.innerHTML = html;
+        $("#bpBody").scrollTop = sc;
+      }
+      function recentSlow() {
+        let n = 0,
+          sum = 0;
+        for (let i = frames.length - 1; i >= 0 && sum < 5000; i--) {
+          sum += frames[i];
+          if (frames[i] > 50) n++;
+        }
+        return n;
+      }
+      function renderPerf(build) {
+        const pane = $("#pane-perf");
+        if (build || !$("#spark")) {
+          pane.innerHTML = `<div class="perf"><div class="chart"><div class="cap"><span>Frame time, last 4 s</span><span>now <b id="pNow">-</b></span></div><canvas id="spark"></canvas></div><div class="nums" id="pNums"></div></div>`;
+        }
+        const win = frames.slice(-240);
+        const avg = win.length
+          ? win.reduce((a, b) => a + b, 0) / win.length
+          : 0;
+        const worst = win.length ? Math.max(...win) : 0;
+        $("#pNow").textContent =
+          (frames[frames.length - 1] || 0).toFixed(1) + " ms";
+        const v = ui.view;
+        const dc = drawCalls();
+        $("#pNums").innerHTML =
+          `<h5>Frames</h5><span>Average</span><span>${avg.toFixed(1)} ms</span><span>Worst</span><span style="${worst > 50 ? "color:var(--warn)" : ""}">${worst.toFixed(1)} ms</span><span>Slow (over 50 ms)</span><span>${recentSlow()} in 5 s</span>
+    <h5>Scene</h5><span>Draw calls</span><span>${dc}</span><span>Triangles</span><span>${(dc * 1430).toLocaleString("en")}</span>
+    <h5>View</h5><span>Tilt / heading</span><span>${v.tilt} / ${v.heading} deg</span><span>Zoom</span><span>${(16.4 + Math.log2(v.zoom)).toFixed(1)}</span>`;
+        const c = $("#spark");
+        const r = c.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        const dpr = devicePixelRatio || 1;
+        if (
+          c.width !== Math.round(r.width * dpr) ||
+          c.height !== Math.round(r.height * dpr)
+        ) {
+          c.width = Math.round(r.width * dpr);
+          c.height = Math.round(r.height * dpr);
+        }
+        const g = c.getContext("2d");
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g.clearRect(0, 0, r.width, r.height);
+        const top = 66;
+        const yOf = (ms) =>
+          r.height - 2 - (Math.min(ms, top) / top) * (r.height - 6);
+        g.font =
+          "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+        g.fillStyle = "#646973";
+        for (const [ms, lab] of [
+          [16.7, "60 fps"],
+          [33.3, "30 fps"],
+          [50, "50 ms"],
+        ]) {
+          g.strokeStyle = ms === 50 ? "rgba(233,184,107,.35)" : "#313338";
+          g.setLineDash([3, 3]);
+          g.beginPath();
+          g.moveTo(0, yOf(ms));
+          g.lineTo(r.width, yOf(ms));
+          g.stroke();
+          g.fillText(lab, 4, yOf(ms) - 3);
+        }
+        g.setLineDash([]);
+        const n = 240;
+        const step = r.width / (n - 1);
+        const s = frames.slice(-n);
+        g.beginPath();
+        s.forEach((ms, i) => {
+          const x = r.width - (s.length - 1 - i) * step;
+          const y = yOf(ms);
+          i ? g.lineTo(x, y) : g.moveTo(x, y);
+        });
+        g.strokeStyle = "#e9a23b";
+        g.lineWidth = 1.3;
+        g.stroke();
+        s.forEach((ms, i) => {
+          if (ms > 50) {
+            const x = r.width - (s.length - 1 - i) * step;
+            g.fillStyle = "#e9b86b";
+            g.beginPath();
+            g.arc(x, yOf(ms), 2.5, 0, 7);
+            g.fill();
+          }
+        });
+      }
+
+      // ---------- the faked 3D view ----------
+      const cv = $("#cv");
+      const ctx = cv.getContext("2d");
+      function project(x, y) {
+        const r = cv.getBoundingClientRect();
+        const v = ui.view;
+        const s = 1.5 * v.zoom * Math.min(1, r.width / 700 + 0.3);
+        return {
+          x: r.width / 2 + (x - v.panX) * s,
+          y: r.height * 0.58 + (y - v.panY) * s * 0.62 * -1,
+          s,
+        };
+      }
+      function drawView() {
+        const r = cv.getBoundingClientRect();
+        const dpr = devicePixelRatio || 1;
+        if (
+          cv.width !== Math.round(r.width * dpr) ||
+          cv.height !== Math.round(r.height * dpr)
+        ) {
+          cv.width = Math.round(r.width * dpr);
+          cv.height = Math.round(r.height * dpr);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const gr = ctx.createLinearGradient(0, 0, 0, r.height);
+        gr.addColorStop(0, "#2a3038");
+        gr.addColorStop(0.22, "#262a30");
+        gr.addColorStop(1, "#1f2124");
+        ctx.fillStyle = gr;
+        ctx.fillRect(0, 0, r.width, r.height);
+        ctx.strokeStyle = "rgba(255,255,255,.04)";
+        ctx.lineWidth = 1;
+        for (let gx = -400; gx <= 400; gx += 40) {
+          const a = project(gx, -300),
+            b = project(gx, 300);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+        for (let gy = -300; gy <= 300; gy += 40) {
+          const a = project(-400, gy),
+            b = project(400, gy);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "#3a3d43";
+        ctx.lineWidth = 7;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        [
+          [-260, 60],
+          [-130, 40],
+          [-30, -70],
+          [70, 30],
+          [160, -50],
+          [300, -40],
+        ].forEach(([x, y], i) => {
+          const p = project(x, y);
+          i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+        });
+        ctx.stroke();
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        const a = project(70, -250),
+          b = project(70, 250);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        const selF = findThing(ui.sel);
+        tour.forEach((st, i) => {
+          if (!st.pos) return;
+          const p = project(st.x, st.y);
+          const isSel = selF && selF.st === st;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.scale(1, 0.62);
+          ctx.beginPath();
+          ctx.arc(0, 0, st.radius * p.s, 0, 7);
+          ctx.fillStyle = isSel
+            ? "rgba(233,162,59,.08)"
+            : "rgba(91,140,200,.06)";
+          ctx.fill();
+          ctx.strokeStyle = isSel
+            ? "rgba(233,162,59,.7)"
+            : "rgba(120,160,210,.35)";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+          ctx.restore();
+          for (const it of st.items) {
+            const q = project(
+              st.x + Math.cos(it.ang) * it.dist,
+              st.y + Math.sin(it.ang) * it.dist,
+            );
+            const itSel = selF && selF.kind === "item" && selF.obj === it;
+            ctx.beginPath();
+            ctx.arc(q.x, q.y, itSel ? 4.5 : 3, 0, 7);
+            ctx.fillStyle =
+              it.dist > st.radius ? "#e9b86b" : itSel ? "#e9a23b" : "#aab3bf";
+            ctx.fill();
+          }
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 5, 0, 7);
+          ctx.fillStyle = isSel ? "#e9a23b" : "#5b8cc8";
+          ctx.fill();
+          const lab =
+            i +
+            1 +
+            "  " +
+            (st.name.length > 22 ? st.name.slice(0, 21) + "..." : st.name);
+          ctx.font = "11px Segoe UI, system-ui, sans-serif";
+          const w = ctx.measureText(lab).width + 12;
+          ctx.fillStyle = "rgba(28,29,32,.88)";
+          ctx.strokeStyle = isSel ? "#e9a23b" : "rgba(255,255,255,.1)";
+          ctx.beginPath();
+          ctx.roundRect(p.x - w / 2, p.y - 30, w, 18, 3);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#e6e8ec";
+          ctx.fillText(lab, p.x - w / 2 + 6, p.y - 17);
+        });
+      }
+      function loop(t) {
+        let dt = t - lastT;
+        lastT = t;
+        if (slowAdd) {
+          const e = performance.now() + slowAdd;
+          while (performance.now() < e) {
+            /* block on purpose */
+          }
+          // the next frame measures the blocked time itself
+          slowAdd = 0;
+          frameNo = Math.max(frameNo, 20);
+        }
+        // the first frames are page start-up, not the editor at work
+        if (++frameNo > 20) frames.push(Math.min(dt, 200));
+        if (frames.length > 900) frames.splice(0, frames.length - 900);
+        drawView();
+        if (ui.panel.open && ui.panel.tab === "perf" && (t | 0) % 4 < 2)
+          renderPerf(false);
+        requestAnimationFrame(loop);
+      }
+      let dragV = null;
+      cv.addEventListener("pointerdown", (e) => {
+        dragV = {
+          x: e.clientX,
+          y: e.clientY,
+          px: ui.view.panX,
+          py: ui.view.panY,
+          moved: false,
+        };
+        cv.setPointerCapture(e.pointerId);
+        cv.classList.add("drag");
+      });
+      cv.addEventListener("pointermove", (e) => {
+        if (!dragV) return;
+        const dx = e.clientX - dragV.x,
+          dy = e.clientY - dragV.y;
+        if (Math.abs(dx) + Math.abs(dy) > 4) dragV.moved = true;
+        const s = project(0, 0).s;
+        ui.view.panX = dragV.px - dx / s;
+        ui.view.panY = dragV.py + dy / (s * 0.62);
+      });
+      cv.addEventListener("pointerup", (e) => {
+        cv.classList.remove("drag");
+        if (!dragV) return;
+        if (dragV.moved) {
+          queueTiles(5 + Math.floor(Math.random() * 4));
+          if (Math.random() < 0.3) {
+            const w = tiles.list.find((t) => t.st === "waiting");
+            if (w) {
+              w.st = "failed";
+              w.err = "Timed out";
+              w.ms = 8000;
+            }
+          }
+          renderToggles();
+        } else {
+          const r = cv.getBoundingClientRect();
+          let best = null,
+            bd = 24;
+          for (const st of tour) {
+            if (!st.pos) continue;
+            const p = project(st.x, st.y);
+            const d = Math.hypot(
+              p.x - (e.clientX - r.left),
+              p.y - (e.clientY - r.top),
+            );
+            if (d < bd) {
+              bd = d;
+              best = st;
+            }
+          }
+          select(best ? { kind: "station", sid: best.id } : null);
+        }
+        dragV = null;
+      });
+      $("#zin").onclick = () => {
+        ui.view.zoom = Math.min(4, ui.view.zoom * 1.25);
+        queueTiles(6);
+        renderToggles();
+      };
+      $("#zout").onclick = () => {
+        ui.view.zoom = Math.max(0.4, ui.view.zoom / 1.25);
+        queueTiles(3);
+        renderToggles();
+      };
+
+      // ---------- grip: drag to resize, double-click to maximise ----------
+      let dragP = null;
+      const grip = $("#grip");
+      grip.addEventListener("pointerdown", (e) => {
+        dragP = { y: e.clientY, h: $("#bp").getBoundingClientRect().height };
+        grip.setPointerCapture(e.pointerId);
+        grip.classList.add("drag");
+        e.preventDefault();
+      });
+      grip.addEventListener("pointermove", (e) => {
+        if (!dragP) return;
+        const h = dragP.h + (dragP.y - e.clientY);
+        ui.panel.max = false;
+        $("#bp").style.height = Math.max(30, Math.min(h, mainH())) + "px";
+        dragP.cur = h;
+      });
+      grip.addEventListener("pointerup", () => {
+        grip.classList.remove("drag");
+        if (!dragP) return;
+        const h = dragP.cur;
+        dragP = null;
+        if (h == null) return;
+        if (h < 70) {
+          closePanel();
+          return;
+        }
+        if (h > mainH() - 30) {
+          ui.panel.max = true;
+        } else ui.panel.h = clampH(h);
+        remember();
+        layoutPanel();
+      });
+      grip.addEventListener("dblclick", () => {
+        ui.panel.max = !ui.panel.max;
+        layoutPanel();
+      });
+      grip.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          ui.panel.h = clampH(ui.panel.h + (e.key === "ArrowUp" ? 20 : -20));
+          ui.panel.max = false;
+          remember();
+          layoutPanel();
+          e.preventDefault();
+        }
+      });
+      $("#bpHead").addEventListener("dblclick", (e) => {
+        if (e.target.closest("button")) return;
+        ui.panel.max = !ui.panel.max;
+        layoutPanel();
+      });
+      $("#bMax").onclick = () => {
+        ui.panel.max = !ui.panel.max;
+        layoutPanel();
+      };
+      $("#bClose").onclick = closePanel;
+      $("#bSpan").onclick = () => {
+        ui.panel.span = !ui.panel.span;
+        layoutPanel();
+      };
+
+      // ---------- top bar ----------
+      function closeMenus() {
+        for (const m of document.querySelectorAll(".menu"))
+          m.classList.remove("show");
+      }
+      function openMenu(btn, m) {
+        const show = !m.classList.contains("show");
+        closeMenus();
+        if (!show) return;
+        m.style.left = btn.offsetLeft + "px";
+        m.classList.add("show");
+      }
+      $("#bFile").onclick = (e) => {
+        e.stopPropagation();
+        openMenu($("#bFile"), $("#menuFile"));
+      };
+      $("#bViewMenu").onclick = (e) => {
+        e.stopPropagation();
+        openMenu($("#bViewMenu"), $("#menuView"));
+      };
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".menu")) closeMenus();
+      });
+      for (const b of document.querySelectorAll(".menu button"))
+        b.addEventListener("click", () => {
+          closeMenus();
+          runCmd(b.dataset.cmd);
+        });
+      function save() {
+        saved = cur;
+        renderAll();
+        toast("Saved to tour.zip");
+      }
+      function runCmd(c) {
+        if (c === "save") save();
+        else if (c && c.startsWith("tab:")) openPanel(c.slice(4));
+        else if (c === "toggle")
+          ui.panel.open ? closePanel() : openPanel(ui.panel.tab);
+        else if (c === "span") {
+          ui.panel.span = !ui.panel.span;
+          layoutPanel();
+        } else toast("Not part of this prototype");
+      }
+      $("#bUndo").onclick = undo;
+      $("#bRedo").onclick = redo;
+      $("#bStations").onclick = () => $("#left").classList.toggle("open");
+      for (const b of document.querySelectorAll("[data-toast]"))
+        b.addEventListener("click", () => toast(b.dataset.toast));
+
+      let toastT = 0;
+      function toast(msg) {
+        const t = $("#toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastT);
+        toastT = setTimeout(() => t.classList.remove("show"), 2200);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        const typing =
+          e.target.closest &&
+          e.target.closest('input, textarea, [contenteditable="true"]');
+        const k = e.key.toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && k === "j") {
+          e.preventDefault();
+          runCmd("toggle");
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "m") {
+          e.preventDefault();
+          toggleTab("problems");
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && k === "s") {
+          e.preventDefault();
+          save();
+          return;
+        }
+        if (typing) return;
+        if ((e.ctrlKey || e.metaKey) && k === "z") {
+          e.preventDefault();
+          e.shiftKey ? redo() : undo();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && k === "y") {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (e.key === "Escape") {
+          if (document.querySelector(".menu.show")) {
+            closeMenus();
+            return;
+          }
+          if (ui.panel.open) {
+            closePanel();
+            return;
+          }
+          if ($("#left").classList.contains("open")) {
+            $("#left").classList.remove("open");
+            return;
+          }
+          if (ui.sel) select(null);
+        }
+      });
+
+      function renderAll() {
+        $("#unsaved").hidden = cur === saved;
+        $("#bUndo").disabled = cur === 0;
+        $("#bRedo").disabled = cur === hist.length - 1;
+        renderTree();
+        renderInsp();
+        renderActs();
+        renderPanel();
+      }
+      new ResizeObserver(() => layoutPanel()).observe($("#main"));
+      if (innerWidth <= 900 || innerHeight < 640) $("#notes").open = false;
+      // a short window starts with a lower panel; dragging can still make it taller
+      ui.panel.h = Math.min(ui.panel.h, Math.max(120, Math.round(mainH() * 0.5)));
+      // Demonstration start: the panel opens on Problems once, so the page shows what it is about.
+      if (!/closed/.test(location.hash)) ui.panel.open = true;
+      if (/tab=(\w+)/.test(location.hash)) {
+        const m = location.hash.match(/tab=(\w+)/)[1];
+        if (TABS.some((t) => t.id === m)) ui.panel.tab = m;
+      }
+      renderAll();
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

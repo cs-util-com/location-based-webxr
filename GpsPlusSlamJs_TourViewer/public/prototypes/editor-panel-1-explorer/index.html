@@ -1,0 +1,4240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Panels: File Explorer</title>
+    <!--
+  Throwaway prototype: the tour editor's station list and context panel,
+  direction "the file explorer". The left list behaves like a code editor's
+  file tree (stations on top, story folders before free items, type icons,
+  drag handles, inline add with a name ready to type) plus a keyboard-first
+  "Add..." command palette. The right panel is a lean property sheet with
+  collapsible sections; destructive actions sit at its very bottom behind a
+  separator. Original code, no libraries, all data is hard-coded sample data,
+  nothing is saved. Icons are simple original SVG paths.
+-->
+    <style>
+      :root {
+        --bg0: #1c1e22;
+        --bg1: #212327;
+        --panel: #24272c;
+        --bg3: #2c2f35;
+        --bg4: #363a41;
+        --line: #33363c;
+        --line2: #3e424a;
+        --text: #e6e6e6;
+        --muted: #9aa0a6;
+        --dim: #6c727b;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --danger: #d97d79;
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --mono:
+          "Cascadia Mono", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+        --treeW: 272px;
+        --inspW: 304px;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 40px 3px minmax(0, 1fr) 24px;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      [hidden] {
+        display: none !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+
+      /* top bar */
+      #top {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        margin-right: 4px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mbtn {
+        height: 26px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .mbtn:hover,
+      .mbtn.open {
+        background: var(--bg3);
+      }
+      .unsaved {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--accentText);
+        font-size: 11px;
+        white-space: nowrap;
+        padding: 0 6px;
+      }
+      @media (max-width: 700px) {
+        .unsaved {
+          font-size: 0;
+          gap: 0;
+        }
+      }
+      .unsaved::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .sp {
+        flex: 1;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg3);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tbtn:hover {
+        border-color: #5a5f69;
+      }
+      .tbtn.acc {
+        border-color: var(--accentLine);
+        background: var(--accentBg);
+        color: var(--accentText);
+      }
+      #loadbar {
+        background: var(--accent);
+      }
+      #menuPop {
+        position: fixed;
+        z-index: 40;
+        min-width: 190px;
+        padding: 4px;
+        background: #2a2d32;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+      }
+      .mi {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        height: 28px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+      }
+      .mi:hover,
+      .mi.hi {
+        background: var(--bg4);
+      }
+      .mi kbd,
+      .mi .hint {
+        margin-left: auto;
+        color: var(--dim);
+        font-size: 11px;
+        padding-left: 14px;
+      }
+      .mi svg {
+        color: var(--accentText);
+      }
+      .msep {
+        height: 1px;
+        background: var(--line2);
+        margin: 4px 2px;
+      }
+      .mhead {
+        padding: 5px 9px 3px;
+        font-size: 10.5px;
+        color: var(--dim);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      /* main row */
+      #main {
+        display: flex;
+        min-height: 0;
+        min-width: 0;
+        position: relative;
+      }
+      .panel {
+        background: var(--panel);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: none;
+      }
+      #tree {
+        width: var(--treeW);
+        border-right: 1px solid var(--line);
+      }
+      #insp {
+        width: var(--inspW);
+        border-left: 1px solid var(--line);
+      }
+      .phead {
+        flex: none;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 6px 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .phead .ttl {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .phead .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+        margin-left: 4px;
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .ib.acc {
+        color: var(--accentText);
+      }
+      .pbody {
+        overflow: auto;
+        min-height: 0;
+        flex: 1;
+      }
+      .pbody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .pbody::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--panel);
+        border-radius: 6px;
+      }
+      #map {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+        overflow: hidden;
+        background: #1a1d22;
+      }
+      #map canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* tree */
+      #rows {
+        padding: 4px 0 40px;
+        outline: none;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 26px;
+        padding-left: calc(var(--d) * 16px + 2px);
+        padding-right: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .row:hover {
+        background: rgba(255, 255, 255, 0.035);
+      }
+      .row.ctx {
+        background: rgba(233, 162, 59, 0.05);
+      }
+      .row.sel {
+        background: var(--accentBg);
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+      #rows:focus-within .row.sel {
+        background: rgba(233, 162, 59, 0.22);
+      }
+      .row.st {
+        height: 28px;
+        font-weight: 600;
+      }
+      .row .grip {
+        width: 10px;
+        height: 14px;
+        flex: none;
+        cursor: grab;
+        opacity: 0;
+        background-image: radial-gradient(
+          circle,
+          #8b919a 1px,
+          transparent 1.3px
+        );
+        background-size: 4px 4px;
+        background-position: 1px 0;
+      }
+      .row:hover .grip,
+      .row.sel .grip {
+        opacity: 0.9;
+      }
+      .tw {
+        width: 16px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        border: 0;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+      }
+      .tw svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg {
+        transform: rotate(90deg);
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .badge {
+        font: 600 10px var(--mono);
+        min-width: 18px;
+        height: 16px;
+        line-height: 16px;
+        text-align: center;
+        border-radius: 3px;
+        background: #3d5a78;
+        color: #e6f0fa;
+        flex: none;
+        padding: 0 3px;
+      }
+      .row.sel .badge {
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .row .ti {
+        color: var(--muted);
+      }
+      .row .ti.story {
+        color: var(--accentText);
+      }
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row:not(.st) .nm {
+        font-weight: 400;
+      }
+      .meta {
+        font: 10px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .lockg {
+        color: var(--dim);
+      }
+      .lockg svg {
+        width: 12px;
+        height: 12px;
+      }
+      .hov {
+        width: 22px;
+        height: 22px;
+        opacity: 0;
+        color: var(--accentText);
+      }
+      .row:hover .hov,
+      .row.sel .hov,
+      .hov:focus-visible,
+      .hov.open {
+        opacity: 1;
+      }
+      .rin {
+        flex: 1;
+        min-width: 0;
+        height: 22px;
+        background: var(--bg0);
+        border: 1px solid var(--focus);
+        border-radius: 3px;
+        padding: 0 5px;
+        outline: none;
+        font-weight: 400;
+      }
+      .picrow {
+        margin: 2px 8px 4px calc(var(--d) * 16px + 30px);
+        height: 54px;
+        border-radius: 5px;
+        background: #33363c center / cover no-repeat;
+        border: 1px solid var(--line2);
+        cursor: pointer;
+      }
+      .picrow:hover {
+        border-color: #5a5f69;
+      }
+      .emptyrow {
+        margin: 2px 8px 6px calc(var(--d) * 16px + 30px);
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      .emptyrow button {
+        border: 0;
+        background: transparent;
+        color: var(--accentText);
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline dotted;
+      }
+      .row.dropb::before,
+      .row.dropa::after {
+        content: "";
+        position: absolute;
+        left: calc(var(--d) * 16px + 2px);
+        right: 6px;
+        height: 2px;
+        background: var(--accent);
+        border-radius: 1px;
+        pointer-events: none;
+      }
+      .row.dropb::before {
+        top: -1px;
+      }
+      .row.dropa::after {
+        bottom: -1px;
+      }
+      .row.dragging {
+        opacity: 0.4;
+      }
+      .treefoot {
+        padding: 8px 12px 10px;
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.5;
+        border-top: 1px solid var(--line);
+        flex: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 8px;
+      }
+      .treefoot > span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .gripdemo {
+        display: inline-block;
+        vertical-align: -2px;
+        width: 8px;
+        height: 12px;
+        background-image: radial-gradient(
+          circle,
+          #8b919a 1px,
+          transparent 1.3px
+        );
+        background-size: 4px 4px;
+      }
+      @media (max-height: 560px) {
+        .treefoot {
+          display: none;
+        }
+      }
+      .treefoot kbd {
+        padding: 0 4px;
+        border: 1px solid var(--line2);
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        background: var(--bg3);
+        color: var(--muted);
+      }
+
+      /* type menu (inline add) */
+      #typeMenu .mi .hint {
+        max-width: 190px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* inspector */
+      #insp .phead {
+        padding-left: 8px;
+        gap: 6px;
+        height: 40px;
+      }
+      .hic {
+        display: inline-flex;
+        width: 22px;
+        justify-content: center;
+        color: var(--accentText);
+        flex: none;
+      }
+      .namewrap {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .ttlin {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: #f0f1f3;
+        font:
+          600 13.5px "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 0 24px 0 5px;
+        outline: none;
+        text-overflow: ellipsis;
+        text-decoration: underline dotted rgba(233, 162, 59, 0.55);
+        text-underline-offset: 4px;
+      }
+      .ttlin:hover {
+        border-color: var(--line2);
+      }
+      .ttlin:focus {
+        border-color: var(--focus);
+        background: var(--bg0);
+        text-decoration: none;
+      }
+      .namewrap .pen {
+        position: absolute;
+        right: 5px;
+        color: var(--dim);
+        pointer-events: none;
+      }
+      .namewrap .pen svg {
+        width: 13px;
+        height: 13px;
+      }
+      .namewrap:hover .pen {
+        color: var(--accentText);
+      }
+      .ncap {
+        position: absolute;
+        right: 26px;
+        font: 10px var(--mono);
+        color: var(--dim);
+        pointer-events: none;
+      }
+      .crumb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px 4px;
+        color: var(--dim);
+        font-size: 11px;
+        min-width: 0;
+      }
+      .crumb button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--muted);
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 150px;
+      }
+      .crumb button:hover {
+        color: var(--text);
+        text-decoration: underline;
+      }
+      .crumb .sep {
+        color: var(--dim);
+      }
+      .lead {
+        padding: 4px 12px 10px;
+      }
+      .disc {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        height: 30px;
+        padding: 0 10px;
+        border: 0;
+        border-top: 1px solid var(--line);
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        text-align: left;
+      }
+      .disc:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .disc .lab {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .disc .sum {
+        margin-left: auto;
+        font: 10.5px var(--mono);
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 170px;
+      }
+      .disc svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .disc.open svg {
+        transform: rotate(90deg);
+      }
+      .sec {
+        padding: 2px 12px 12px;
+      }
+      .f {
+        display: grid;
+        grid-template-columns: 78px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        margin: 4px 0;
+      }
+      .f > label,
+      .f > .lbl {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .f.top {
+        align-items: start;
+      }
+      .f.top > .lbl {
+        padding-top: 5px;
+      }
+      .flab {
+        color: var(--muted);
+        margin: 6px 0 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .flab .sp {
+        flex: 1;
+      }
+      .num {
+        display: flex;
+        align-items: center;
+        height: 24px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        min-width: 0;
+      }
+      .num:focus-within {
+        border-color: var(--focus);
+      }
+      .num input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        padding: 0 4px;
+        font: 11px var(--mono);
+        outline: none;
+      }
+      .num .unit {
+        color: var(--dim);
+        font: 10.5px var(--mono);
+        padding-right: 6px;
+      }
+      .num.ro {
+        background: transparent;
+        border-color: var(--line);
+      }
+      .num.ro input {
+        color: var(--muted);
+      }
+      .ax {
+        font: 600 10px var(--mono);
+        padding: 0 5px;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        border-right: 1px solid var(--line2);
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .ax.u {
+        color: var(--ax-u);
+      }
+      .vec {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .tfield {
+        height: 24px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        padding: 0 7px;
+        width: 100%;
+        outline: none;
+        min-width: 0;
+      }
+      .tfield:focus {
+        border-color: var(--focus);
+      }
+      select.tfield {
+        padding: 0 4px;
+      }
+      .range {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .range input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--accent);
+      }
+      .range .num {
+        width: 74px;
+        flex: none;
+      }
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .seg button {
+        flex: 1 1 auto;
+        height: 24px;
+        padding: 0 8px;
+        border: 0;
+        border-right: 1px solid var(--line2);
+        background: var(--bg1);
+        cursor: pointer;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .seg button:last-child {
+        border-right: 0;
+      }
+      .seg button.on {
+        background: var(--accentBg);
+        color: var(--accentText);
+        box-shadow: inset 0 -2px 0 var(--accent);
+      }
+      .note {
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 4px 0 2px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg3);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn:hover:not(:disabled) {
+        border-color: #5a5f69;
+        background: var(--bg4);
+      }
+      .btn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .btn svg {
+        color: var(--accentText);
+        width: 14px;
+        height: 14px;
+      }
+      .btnrow {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 6px 0 2px;
+      }
+      .act {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        height: 28px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+      .act:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .act svg {
+        color: var(--accentText);
+      }
+      .act .note {
+        margin: 0 0 0 auto;
+      }
+      .act:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .act:disabled svg {
+        color: var(--dim);
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        min-height: 26px;
+      }
+      .toggle input {
+        accent-color: var(--accent);
+        margin: 0;
+      }
+      .kids {
+        margin: 2px 0 6px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+      }
+      .kid {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 26px;
+        padding: 0 8px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .kid:last-child {
+        border-bottom: 0;
+      }
+      .kid:hover {
+        background: var(--bg3);
+      }
+      .kid .k {
+        font: 10px var(--mono);
+        color: var(--dim);
+        width: 14px;
+        text-align: right;
+        flex: none;
+      }
+      .kid svg {
+        color: var(--muted);
+      }
+      .kid .nm {
+        color: var(--text);
+      }
+      /* danger zone */
+      .danger {
+        margin-top: 10px;
+        border-top: 1px solid var(--line);
+        padding: 10px 12px 18px;
+      }
+      .danger .dl {
+        font-size: 10.5px;
+        color: var(--dim);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .dbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(217, 125, 121, 0.45);
+        border-radius: 4px;
+        background: transparent;
+        color: #f0a8a5;
+        cursor: pointer;
+      }
+      .dbtn:hover {
+        background: rgba(217, 125, 121, 0.12);
+      }
+      .dbtn svg {
+        color: var(--danger);
+        width: 14px;
+        height: 14px;
+      }
+
+      /* picture slots */
+      .pslot {
+        position: relative;
+        height: 112px;
+        border-radius: 6px;
+        border: 1px dashed #555a63;
+        background: repeating-linear-gradient(
+          135deg,
+          #262a30 0 8px,
+          #23262b 8px 16px
+        );
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        color: var(--muted);
+        text-align: center;
+        padding: 8px;
+      }
+      .pslot svg.big {
+        width: 30px;
+        height: 30px;
+        color: #6f7680;
+        stroke-width: 1.1;
+      }
+      .pslot.full {
+        border-style: solid;
+        border-color: var(--line2);
+        background-size: cover;
+        background-position: center;
+        justify-content: flex-end;
+        align-items: stretch;
+        padding: 0;
+        overflow: hidden;
+      }
+      .pslot.full .pbar {
+        display: flex;
+        gap: 4px;
+        padding: 6px;
+        background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.6));
+        justify-content: flex-end;
+      }
+      .pslot.full .pbar .btn {
+        height: 22px;
+        background: rgba(28, 30, 34, 0.88);
+      }
+      .pslot.sm {
+        height: 70px;
+      }
+      .thumbs {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .thumb {
+        width: 52px;
+        height: 32px;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background-size: cover;
+        background-position: center;
+        cursor: pointer;
+        padding: 0;
+      }
+      .thumb:hover {
+        border-color: var(--accent);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 11px;
+        border: 1px solid var(--line2);
+        background: var(--bg1);
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .chip.on {
+        border-color: var(--accentLine);
+        color: var(--accentText);
+        background: var(--accentBg);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      /* markdown light editor */
+      .md {
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg1);
+      }
+      .md:focus-within {
+        border-color: var(--focus);
+      }
+      .mdbar {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 2px 3px;
+        border-bottom: 1px solid var(--line);
+      }
+      .mdbar button {
+        height: 22px;
+        min-width: 24px;
+        padding: 0 5px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .mdbar button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .mdbar button svg {
+        width: 14px;
+        height: 14px;
+      }
+      .mdbar .cnt {
+        margin-left: auto;
+        font: 10px var(--mono);
+        color: var(--dim);
+        padding-right: 4px;
+      }
+      .mdbar .cnt.near {
+        color: #e9b86b;
+      }
+      .mdbar .cnt.over {
+        color: #f08a85;
+      }
+      .md textarea {
+        display: block;
+        width: 100%;
+        min-height: 54px;
+        resize: vertical;
+        border: 0;
+        background: transparent;
+        padding: 6px 8px;
+        outline: none;
+        line-height: 1.45;
+        font-size: 12px;
+      }
+      .md.tall textarea {
+        min-height: 150px;
+      }
+      .mdprev {
+        padding: 5px 8px 6px;
+        border-top: 1px dashed var(--line);
+        color: #c9ccd1;
+        font-size: 11.5px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .mdprev:empty {
+        display: none;
+      }
+      .mdprev p {
+        margin: 0 0 4px;
+      }
+      .mdprev ul,
+      .mdprev ol {
+        margin: 0 0 4px;
+        padding-left: 18px;
+      }
+      .mdprev a {
+        color: #8ab4f8;
+      }
+      .mdprev em {
+        color: #f3c47e;
+      }
+      .mdprev .lbl {
+        font-size: 9.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+        display: block;
+        margin-bottom: 2px;
+      }
+      .overmsg {
+        color: #f08a85;
+        font-size: 11px;
+        padding: 0 8px 6px;
+      }
+
+      /* bottom bar */
+      #bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 6px 0 10px;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        min-width: 0;
+        font-size: 11px;
+      }
+      #bar .credits {
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      #bar .ctxlab {
+        color: var(--dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 240px;
+      }
+      .bbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .bbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .bbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .bbtn svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* map overlays */
+      #mapCtl {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 6px;
+        z-index: 3;
+      }
+      .mc {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 1px solid var(--line2);
+        background: rgba(36, 39, 44, 0.94);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        color: var(--text);
+        padding: 0;
+      }
+      .mc:hover {
+        border-color: #5a5f69;
+      }
+      .mc.compass svg {
+        color: var(--accent);
+        transition: transform 0.3s;
+      }
+      #notes {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        z-index: 3;
+        width: min(340px, calc(100% - 24px));
+        background: rgba(36, 39, 44, 0.96);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+      }
+      #notes summary {
+        cursor: pointer;
+        padding: 7px 10px;
+        font-weight: 600;
+        color: var(--accentText);
+        list-style: none;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes summary .s2 {
+        color: var(--dim);
+        font-weight: 400;
+        margin-left: auto;
+        font-size: 11px;
+      }
+      #notes .nb {
+        padding: 0 12px 10px;
+        color: #c9ccd1;
+        line-height: 1.5;
+        max-height: 52vh;
+        overflow: auto;
+      }
+      #notes .nb p {
+        margin: 0 0 6px;
+      }
+      #notes .nb ul {
+        margin: 0 0 4px;
+        padding-left: 16px;
+      }
+      #notes .nb li {
+        margin: 2px 0;
+      }
+      #notes .nb b {
+        color: var(--text);
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 36px;
+        transform: translateX(-50%);
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px 6px 12px;
+        border-radius: 5px;
+        background: #2d3036;
+        border: 1px solid var(--line2);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+        max-width: calc(100vw - 32px);
+      }
+      #toast.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #toast .tx {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #toast button {
+        border: 0;
+        background: transparent;
+        color: var(--accentText);
+        cursor: pointer;
+        font-weight: 600;
+        padding: 2px 4px;
+      }
+
+      /* palette */
+      #palBack,
+      #dlgBack {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        background: rgba(10, 11, 13, 0.45);
+      }
+      #pal {
+        position: fixed;
+        z-index: 46;
+        left: 50%;
+        top: 52px;
+        transform: translateX(-50%);
+        width: min(540px, calc(100vw - 24px));
+        background: #2a2d32;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+      #pal .pin {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--line2);
+      }
+      #pal .pin svg {
+        color: var(--muted);
+      }
+      #pal input {
+        flex: 1;
+        min-width: 0;
+        height: 38px;
+        border: 0;
+        background: transparent;
+        outline: none;
+        font-size: 13px;
+      }
+      #pal .pfil {
+        display: flex;
+        gap: 4px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      #pal .pfil .chip {
+        height: 20px;
+        font-size: 11px;
+      }
+      #palList {
+        max-height: min(360px, 55vh);
+        overflow: auto;
+        padding: 4px;
+      }
+      .pr {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        height: 30px;
+        padding: 0 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        min-width: 0;
+      }
+      .pr.hi {
+        background: var(--bg4);
+      }
+      .pr svg {
+        color: var(--accentText);
+      }
+      .pr .pl {
+        white-space: nowrap;
+      }
+      .pr .pt {
+        margin-left: auto;
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+        padding-left: 10px;
+      }
+      .pr mark {
+        background: transparent;
+        color: var(--accentText);
+        font-weight: 600;
+      }
+      #pal .pfoot {
+        padding: 6px 10px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+      }
+      #pal .pempty {
+        padding: 14px 10px;
+        color: var(--dim);
+      }
+
+      /* confirm dialog */
+      #dlg {
+        position: fixed;
+        z-index: 46;
+        left: 50%;
+        top: 30%;
+        transform: translate(-50%, -30%);
+        width: min(380px, calc(100vw - 24px));
+        background: #2a2d32;
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+        padding: 14px 16px 12px;
+      }
+      #dlg h3 {
+        margin: 0 0 6px;
+        font-size: 13.5px;
+      }
+      #dlg p {
+        margin: 0 0 12px;
+        color: #c9ccd1;
+        line-height: 1.5;
+      }
+      #dlg .row2 {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      #dlg .dbtn {
+        background: rgba(217, 125, 121, 0.16);
+      }
+
+      /* phone sizes: the panels become bottom sheets */
+      #listBtn,
+      #inspBack {
+        display: none;
+      }
+      @media (max-width: 1100px) {
+        :root {
+          --treeW: 244px;
+          --inspW: 282px;
+        }
+        .brand .doc {
+          max-width: 140px;
+        }
+      }
+      @media (max-width: 900px) {
+        :root {
+          --treeW: 226px;
+          --inspW: 268px;
+        }
+        .hideM {
+          display: none !important;
+        }
+        #bar .ctxlab {
+          display: none;
+        }
+      }
+      @media (max-width: 700px) {
+        .hideS {
+          display: none !important;
+        }
+        #listBtn {
+          display: inline-flex;
+        }
+        #tree,
+        #insp {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: auto;
+          max-height: 62%;
+          height: 62%;
+          border: 0;
+          border-top: 1px solid var(--line2);
+          border-radius: 10px 10px 0 0;
+          box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.45);
+          z-index: 6;
+        }
+        #insp {
+          z-index: 7;
+          height: 66%;
+          max-height: 66%;
+        }
+        body:not(.treeOpen) #tree {
+          display: none;
+        }
+        body.hasSel #tree {
+          display: none;
+        }
+        /* while a new or renamed row is being named, the list stays in front */
+        body.naming #tree {
+          display: flex;
+        }
+        body.naming #insp {
+          display: none;
+        }
+        #inspBack {
+          display: inline-flex;
+        }
+        .phead {
+          position: relative;
+        }
+        .phead::before {
+          content: "";
+          position: absolute;
+          left: 50%;
+          top: 4px;
+          width: 34px;
+          height: 3px;
+          border-radius: 2px;
+          background: #4a4f57;
+          transform: translateX(-50%);
+        }
+        #mapCtl {
+          bottom: auto;
+          top: 12px;
+        }
+        #notes {
+          width: calc(100% - 144px);
+        }
+        .row {
+          height: 32px;
+        }
+        .row.st {
+          height: 34px;
+        }
+        .hov {
+          opacity: 1;
+        }
+        .row .grip {
+          opacity: 0.6;
+        }
+        .treefoot {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="treeOpen">
+    <header id="top">
+      <div class="brand">
+        <b class="hideS">Tour editor</b><span class="doc">Old Town Walk</span>
+      </div>
+      <button class="mbtn" data-menu="file">File</button>
+      <button class="mbtn hideS" data-menu="edit">Edit</button>
+      <button class="mbtn" data-menu="view">View</button>
+      <button class="mbtn" data-menu="add">Add</button>
+      <span id="unsaved" class="unsaved" hidden>Not saved</span>
+      <span class="sp"></span>
+      <button class="tbtn" id="listBtn" title="Show the station list">
+        <svg class="i" viewBox="0 0 16 16">
+          <path
+            d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.4M2.5 8h.4M2.5 12h.4"
+          /></svg
+        >List
+      </button>
+      <button class="tbtn acc" id="addBtn" title="Add anything (Ctrl+K)">
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg
+        ><span>Add...</span><kbd class="hideM">Ctrl K</kbd>
+      </button>
+    </header>
+    <div id="loadbar"></div>
+
+    <div id="main">
+      <aside id="tree" class="panel" aria-label="Stations">
+        <div class="phead">
+          <span class="ttl">Stations</span
+          ><span class="count" id="stCount"></span>
+          <span class="sp"></span>
+          <button class="ib" id="collapseAll" title="Collapse all">
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M4.5 6.5L8 3l3.5 3.5M4.5 13L8 9.5l3.5 3.5" />
+            </svg>
+          </button>
+          <button class="ib acc" id="newStation" title="New station">
+            <svg class="i" viewBox="0 0 16 16">
+              <circle cx="7" cy="8" r="4.6" />
+              <path d="M7 5.8v4.4M4.8 8h4.4M12.5 11v4M10.5 13h4" />
+            </svg>
+          </button>
+        </div>
+        <div class="pbody">
+          <div
+            id="rows"
+            role="tree"
+            tabindex="0"
+            aria-label="Tour contents"
+          ></div>
+        </div>
+        <div class="treefoot">
+          <span><kbd>Ctrl K</kbd> add anything</span>
+          <span><kbd>+</kbd> add to the row</span>
+          <span><kbd>F2</kbd> rename</span>
+          <span><kbd>Del</kbd> delete</span>
+          <span><kbd>Alt &uarr;&darr;</kbd> move</span>
+          <span><span class="gripdemo"></span> drag to reorder</span>
+        </div>
+      </aside>
+
+      <section id="map" aria-label="Map">
+        <canvas id="cv"></canvas>
+        <details id="notes" open>
+          <summary>
+            <svg class="i" viewBox="0 0 16 16">
+              <circle cx="8" cy="8" r="6.2" />
+              <path d="M8 7.2v4M8 4.8v.1" /></svg
+            ><span><span class="hideS">Prototype notes: </span>the file explorer</span><span
+              class="s2 hideS"
+              >fold</span
+            >
+          </summary>
+          <div class="nb">
+            <p>
+              <b>Idea.</b> The list is a file tree: stations are top-level rows,
+              story folders come first inside a station, free items below them.
+              Adding happens where you look: the <b>+</b> on a station or story
+              row opens a type menu and the new row appears in place, its name
+              ready to type. <b>Ctrl+K</b> ("Add...") does the same from the
+              keyboard, with type filtering. The right panel is a lean property
+              sheet that shows only what the selected row owns.
+            </p>
+            <ul>
+              <li>
+                <b>Radius</b> sits in "Place", next to the position and the
+                lock: it is the arrival zone drawn around the station's dot, so
+                it is about <i>where</i>, not about <i>what</i> (name, text,
+                picture).
+              </li>
+              <li>
+                <b>Adding</b> lives only in the tree (+ on a row) and the
+                palette. The panel's "Add content..." is a shortcut into the
+                same menu, never a second flow.
+              </li>
+              <li>
+                <b>Destroying</b> is always the last thing in the panel, under a
+                separator, in red. Deleting a station or a story asks once with
+                the count and can be undone.
+              </li>
+              <li>
+                <b>Station vs item actions</b>: a station has Earlier/Later and
+                Lock; "Put on the ground", "Align to station" and "Move to
+                station" exist only on items.
+              </li>
+            </ul>
+          </div>
+        </details>
+        <div id="mapCtl">
+          <button class="mc compass" id="compass" title="North up">
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M8 2l2.4 6H5.6z" fill="currentColor" />
+              <path d="M8 14l-2.4-6h4.8z" />
+            </svg>
+          </button>
+          <button class="mc" id="zoomOut" title="Zoom out">
+            <svg class="i" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
+          </button>
+          <button class="mc" id="zoomIn" title="Zoom in">
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <aside id="insp" class="panel" aria-label="Properties" hidden></aside>
+    </div>
+
+    <footer id="bar">
+      <span class="credits">Map: sample tiles, made-up data</span>
+      <span class="sp"></span>
+      <span class="ctxlab" id="ctxLab"></span>
+      <button class="bbtn" id="dupBtn" disabled title="Duplicate (Ctrl+D)">
+        <svg class="i" viewBox="0 0 16 16">
+          <rect x="5.5" y="5.5" width="8" height="8" rx="1" />
+          <path
+            d="M10.5 5.5V3.2a.7.7 0 0 0-.7-.7H3.2a.7.7 0 0 0-.7.7v6.6c0 .4.3.7.7.7h2.3"
+          /></svg
+        >Duplicate
+      </button>
+      <button class="bbtn" id="copyPosBtn" disabled title="Copy position">
+        <svg class="i" viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="3.6" />
+          <path d="M8 1.5v2.9M8 11.6v2.9M1.5 8h2.9M11.6 8h2.9" /></svg
+        >Copy position
+      </button>
+    </footer>
+
+    <div id="menuPop" hidden role="menu"></div>
+    <div id="typeMenu" hidden></div>
+    <div id="palBack" hidden></div>
+    <div id="pal" hidden role="dialog" aria-label="Add">
+      <div class="pin">
+        <svg class="i" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" /></svg
+        ><input
+          id="palIn"
+          placeholder='Add... type a kind and a place, e.g. "picture gate"'
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+      <div class="pfil" id="palFil"></div>
+      <div id="palList" role="listbox"></div>
+      <div class="pfoot">
+        &uarr;&darr; choose &nbsp; Enter add &nbsp; Esc close &nbsp; the place
+        defaults to what is selected
+      </div>
+    </div>
+    <div id="dlgBack" hidden></div>
+    <div id="dlg" hidden role="alertdialog" aria-modal="true"></div>
+    <div id="toast">
+      <span class="tx"></span><button id="toastUndo" hidden>Undo</button>
+    </div>
+
+    <script>
+      "use strict";
+      /* ---------- icons ---------- */
+      const P = {
+        chev: '<path d="M6 3.5l4.5 4.5L6 12.5"/>',
+        plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+        short:
+          '<rect x="2.5" y="2.5" width="11" height="5.5" rx="1"/><path d="M8 8v6M5 5.2h6"/>',
+        long: '<path d="M3 3.5h10M3 6.5h10M3 9.5h10M3 12.5h6"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+        video:
+          '<rect x="2" y="3.5" width="9" height="9" rx="1"/><path d="M11 7l3-2v6l-3-2"/>',
+        audio:
+          '<path d="M2.5 6h2.6L8.5 3v10L5.1 10H2.5z"/><path d="M10.8 5.6a3 3 0 0 1 0 4.8M12.4 3.8a5.5 5.5 0 0 1 0 8.4"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+        character:
+          '<circle cx="8" cy="4.6" r="2.3"/><path d="M3.8 14c0-2.9 1.9-5.2 4.2-5.2s4.2 2.3 4.2 5.2"/>',
+        story: '<path d="M1.8 4h4.1l1.4 1.6h6.9v7.4H1.8z"/>',
+        storyOpen:
+          '<path d="M1.8 13V4h4.1l1.4 1.6h5.6v1.7"/><path d="M1.8 13l1.7-5.7h11.2L13 13z"/>',
+        choice:
+          '<path d="M8 14V8.6L4 3.6M8 8.6l4-5M3 6.2V3.2h3M13 6.2V3.2h-3"/>',
+        quiz: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
+        pen: '<path d="M10.6 2.9l2.5 2.5-7.6 7.6-3.1.6.6-3.1z"/><path d="M9.2 4.3l2.5 2.5"/>',
+        trash:
+          '<path d="M3 4.2h10M6.2 4.2V2.6h3.6v1.6M4.5 4.2l.7 9.3h5.6l.7-9.3"/>',
+        lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>',
+        unlock:
+          '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.9-.7"/>',
+        earlier: '<path d="M8 13.5V3M4.5 6.5L8 3l3.5 3.5"/>',
+        later: '<path d="M8 2.5V13M4.5 9.5L8 13l3.5-3.5"/>',
+        ground:
+          '<path d="M1.5 13h13"/><path d="M8 2.5v7M5.5 7.2L8 9.7l2.5-2.5"/>',
+        align:
+          '<circle cx="8" cy="9.5" r="4.5"/><path d="M8 1.5v8"/><path d="M6 3.5l2-2 2 2"/>',
+        move: '<path d="M2.5 8h10M9.5 4.5L13 8l-3.5 3.5"/>',
+        close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        back: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
+        upload: '<path d="M8 10.5V3M5 6l3-3 3 3M2.5 10.5V13h11v-2.5"/>',
+        link: '<path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.6.6"/><path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.6-.6"/>',
+        ul: '<path d="M6 4h8M6 8h8M6 12h8"/><circle cx="3" cy="4" r=".6"/><circle cx="3" cy="8" r=".6"/><circle cx="3" cy="12" r=".6"/>',
+        ol: '<path d="M6.5 4h7.5M6.5 8h7.5M6.5 12h7.5M2.5 3l1-.6V5.5M2.4 7.6a.9.9 0 1 1 1.4.9L2.4 10h1.7"/>',
+        mic: '<rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.8 7.5a4.2 4.2 0 0 0 8.4 0M8 11.7V14"/>',
+        station:
+          '<circle cx="8" cy="8" r="5.6"/><circle cx="8" cy="8" r="1.6"/>',
+        play: '<path d="M5 3.5l7 4.5-7 4.5z"/>',
+        note: '<path d="M3 2.5h10v8l-3 3H3z"/><path d="M10 13.5v-3h3"/>',
+        search: '<circle cx="7" cy="7" r="4.5"/><path d="M10.3 10.3l3.2 3.2"/>',
+      };
+      const ic = (n, cls) =>
+        `<svg class="i${cls ? " " + cls : ""}" viewBox="0 0 16 16" aria-hidden="true">${P[n] || ""}</svg>`;
+      const esc = (s) =>
+        String(s == null ? "" : s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const $ = (s) => document.querySelector(s);
+
+      /* ---------- content types ---------- */
+      const TYPES = {
+        short: {
+          label: "Short text",
+          hint: "A pin with a caption",
+          def: "New short text",
+          alias: "pin caption label sign text",
+          cap: 160,
+          nameCap: 40,
+        },
+        long: {
+          label: "Long text",
+          hint: "Title and body, can be narrated",
+          def: "New long text",
+          alias: "text article body narrated read",
+          cap: 0,
+        },
+        picture: {
+          label: "Picture",
+          hint: "Photo or image in the world",
+          def: "New picture",
+          alias: "photo image then now framed",
+          cap: 280,
+        },
+        video: {
+          label: "Video",
+          hint: "A screen, porthole or window",
+          def: "New video",
+          alias: "film screen clip movie",
+          cap: 280,
+        },
+        audio: {
+          label: "Audio",
+          hint: "Ambient zone or narration",
+          def: "New audio",
+          alias: "sound zone ambient narration music",
+          cap: 280,
+        },
+        model: {
+          label: "3D model",
+          hint: "Full size, ghost or toy size",
+          def: "New 3D model",
+          alias: "3d object mesh building",
+          cap: 280,
+        },
+        character: {
+          label: "Character",
+          hint: "A guide figure that speaks",
+          def: "New character",
+          alias: "guide figure person avatar speaker",
+          cap: 280,
+        },
+        choice: {
+          label: "Choice",
+          hint: "The visitor picks what comes next",
+          def: "New choice",
+          alias: "branch pick decision",
+          cap: 280,
+          storyOnly: true,
+        },
+        quiz: {
+          label: "Quiz",
+          hint: "A question with answers",
+          def: "New question",
+          alias: "question test answer",
+          cap: 280,
+          storyOnly: true,
+        },
+        story: {
+          label: "Story",
+          hint: "A folder of entries that play in order",
+          def: "New story",
+          alias: "folder sequence chapter",
+          folder: true,
+        },
+      };
+      const STATION_TYPES = [
+        "short",
+        "long",
+        "picture",
+        "video",
+        "audio",
+        "model",
+        "character",
+        "|",
+        "story",
+      ];
+      const STORY_TYPES = [
+        "short",
+        "long",
+        "picture",
+        "video",
+        "audio",
+        "model",
+        "character",
+        "|",
+        "choice",
+        "quiz",
+      ];
+
+      /* ---------- sample data ---------- */
+      let uid = 1;
+      const nid = (p) => p + uid++;
+      const PICS = [
+        "linear-gradient(175deg,#7f9fc0 0%,#c8d3dc 46%,#9b8a72 47%,#6d5d49 100%)",
+        "linear-gradient(170deg,#4f6a8a 0%,#9db0c2 40%,#7a6a5a 41%,#3f3a34 100%)",
+        "radial-gradient(circle at 70% 30%,#f2d59a 0 14%,transparent 15%),linear-gradient(180deg,#e69b58 0%,#a6656b 50%,#3c3446 51%,#2a2630 100%)",
+        "linear-gradient(160deg,#5b7f61 0%,#a7bf96 45%,#6c7d5a 46%,#394233 100%)",
+        "linear-gradient(185deg,#8d99a8 0%,#d8dde3 30%,#97806b 31%,#b49b82 60%,#5a4b3e 100%)",
+      ];
+      function mk(type, name, extra) {
+        const it = {
+          id: nid("i"),
+          type,
+          name,
+          desc: "",
+          pos: {
+            e: +(Math.random() * 6 - 3).toFixed(1),
+            n: +(Math.random() * 6 - 3).toFixed(1),
+            h: 0,
+            hd: Math.round(Math.random() * 360),
+          },
+          size: 1,
+        };
+        if (type === "picture")
+          Object.assign(it, {
+            view: "Plane in the world",
+            pic: null,
+            then: null,
+          });
+        if (type === "video") Object.assign(it, { view: "Screen", file: null });
+        if (type === "audio")
+          Object.assign(it, { kind: "Ambient zone", zone: 12, file: null });
+        if (type === "model")
+          Object.assign(it, {
+            view: "Full size",
+            file: null,
+            notes: [],
+            sections: 0,
+          });
+        if (type === "character")
+          Object.assign(it, { poses: ["Wave"], file: null });
+        if (type === "long") Object.assign(it, { body: "", voice: null });
+        if (type === "choice")
+          Object.assign(it, { options: ["Go left", "Go right"] });
+        if (type === "quiz")
+          Object.assign(it, {
+            answers: ["Answer one", "Answer two"],
+            correct: 0,
+          });
+        return Object.assign(it, extra || {});
+      }
+      function story(name, entries, extra) {
+        return Object.assign(
+          {
+            id: nid("f"),
+            name,
+            desc: "",
+            open: true,
+            starts: "On arrival",
+            entries,
+          },
+          extra || {},
+        );
+      }
+      let stations = [
+        {
+          id: nid("s"),
+          name: "The Column",
+          desc: "The marble column in the middle of the **main square**, put up in 1638.",
+          pic: PICS[0],
+          radius: 25,
+          locked: true,
+          open: true,
+          mx: 0.3,
+          my: 0.62,
+          stories: [
+            story(
+              "The Column's tale",
+              [
+                mk("long", "Why a column here?", {
+                  body: "## Why a column here?\n\nAfter the **war** the town wanted a sign of peace. The column was carved in _three_ parts.\n\n- the base\n- the shaft\n- the figure on top",
+                }),
+                mk("picture", "The square in 1890", {
+                  view: "Then and now",
+                  pic: PICS[4],
+                  then: PICS[1],
+                  desc: "The same view, _before_ the tram.",
+                }),
+                mk("choice", "Where do we go next?", {
+                  options: [
+                    "Follow the old tram line",
+                    "Climb the steps to the church",
+                  ],
+                }),
+                mk("quiz", "How tall is the column?", {
+                  answers: [
+                    "About 11 metres",
+                    "About 30 metres",
+                    "About 4 metres",
+                  ],
+                  correct: 0,
+                }),
+              ],
+              { desc: "Four steps that tell how the column came to be." },
+            ),
+          ],
+          items: [
+            mk("short", "Look up!", {
+              desc: "The figure on top is **gilded**.",
+            }),
+            mk("audio", "Square ambience", {
+              kind: "Ambient zone",
+              zone: 18,
+              file: "square-morning.mp3",
+            }),
+          ],
+        },
+        {
+          id: nid("s"),
+          name: "The old gate of the northern town wall, rebuilt after the great fire",
+          desc: "",
+          pic: PICS[1],
+          radius: 15,
+          locked: false,
+          open: true,
+          mx: 0.47,
+          my: 0.38,
+          stories: [],
+          items: [
+            mk("picture", "Gate in winter", { pic: PICS[1] }),
+            mk("short", "Mind the step", {
+              desc: "Uneven stones under the arch.",
+            }),
+            mk("model", "The gate as it stood in 1700", {
+              file: "gate-1700.glb",
+              notes: ["Guard room", "Toll window"],
+              sections: 1,
+            }),
+          ],
+        },
+        {
+          id: nid("s"),
+          name: "Market fountain",
+          desc: "Built for the cattle market.",
+          pic: null,
+          radius: 20,
+          locked: false,
+          open: false,
+          mx: 0.62,
+          my: 0.55,
+          stories: [
+            story(
+              "Fountain legends",
+              [
+                mk("character", "The water carrier", {
+                  poses: ["Wave", "Talk"],
+                  file: "carrier.glb",
+                }),
+                mk("long", "The drowned ring", {
+                  body: "A merchant lost a ring in the basin...",
+                }),
+                mk("video", "Fountain at night", {
+                  view: "Porthole",
+                  file: "night.mp4",
+                }),
+              ],
+              { open: false },
+            ),
+          ],
+          items: [],
+        },
+        {
+          id: nid("s"),
+          name: "The bridge",
+          desc: "",
+          pic: null,
+          radius: 30,
+          locked: false,
+          open: false,
+          mx: 0.74,
+          my: 0.3,
+          stories: [],
+          items: [],
+        },
+        {
+          id: nid("s"),
+          name: "The tower",
+          desc: "",
+          pic: PICS[2],
+          radius: 20,
+          locked: false,
+          open: false,
+          mx: 0.86,
+          my: 0.66,
+          stories: [],
+          items: [
+            mk("long", "A short history of the tower", {
+              body: "The tower is **older than the town**.",
+              voice: { file: "tower-narration.m4a", len: "1:42" },
+            }),
+            mk("audio", "Bells", {
+              kind: "Ambient zone",
+              zone: 30,
+              file: "bells.mp3",
+            }),
+          ],
+        },
+      ];
+
+      /* ---------- state ---------- */
+      let sel = null; // {k:'station'|'story'|'item', sid, fid?, iid?}
+      let editing = null; // {id, isNew}
+      let dirty = false;
+      const undoStack = [];
+      const openSec = {
+        about: true,
+        place: true,
+        contents: true,
+        story: true,
+        entries: true,
+        body: true,
+        look: true,
+        pos: false,
+        belongs: false,
+        narr: true,
+        notes: true,
+      };
+
+      const S = (id) => stations.find((s) => s.id === id);
+      function findStory(sid, fid) {
+        const s = S(sid);
+        return s && s.stories.find((f) => f.id === fid);
+      }
+      function findItem(sel) {
+        const s = S(sel.sid);
+        if (!s) return null;
+        const list = sel.fid
+          ? (findStory(sel.sid, sel.fid) || {}).entries
+          : s.items;
+        return list ? list.find((i) => i.id === sel.iid) : null;
+      }
+      function listOf(sid, fid) {
+        const s = S(sid);
+        return fid ? findStory(sid, fid).entries : s.items;
+      }
+      function selObj() {
+        if (!sel) return null;
+        if (sel.k === "station") return S(sel.sid);
+        if (sel.k === "story") return findStory(sel.sid, sel.fid);
+        return findItem(sel);
+      }
+      function keyOf(x) {
+        return x.k === "station" ? x.sid : x.k === "story" ? x.fid : x.iid;
+      }
+      function countItems(s) {
+        return (
+          s.items.length + s.stories.reduce((a, f) => a + f.entries.length, 0)
+        );
+      }
+      function markDirty() {
+        dirty = true;
+        $("#unsaved").hidden = false;
+      }
+      function snapshot() {
+        undoStack.push(JSON.stringify({ stations, sel }));
+        if (undoStack.length > 40) undoStack.shift();
+      }
+      function undo() {
+        const x = undoStack.pop();
+        if (!x) {
+          toast("Nothing to undo");
+          return;
+        }
+        const o = JSON.parse(x);
+        stations = o.stations;
+        sel = o.sel;
+        editing = null;
+        markDirty();
+        renderAll();
+        toast("Undone");
+      }
+
+      /* ---------- tree ---------- */
+      function rowHtml(o) {
+        const cls = [
+          "row",
+          o.st ? "st" : "",
+          o.selected ? "sel" : "",
+          o.ctx ? "ctx" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const name = o.editing
+          ? `<input class="rin" data-rin="${o.key}" value="${esc(o.name)}" placeholder="${esc(o.placeholder || "")}" maxlength="${o.max || 80}">`
+          : `<span class="nm" title="${esc(o.name)}">${esc(o.name || o.placeholder)}</span>`;
+        return `<div class="${cls}" role="treeitem" tabindex="-1" style="--d:${o.d}" data-key="${o.key}" data-k="${o.k}" data-sid="${o.sid}"${o.fid ? ` data-fid="${o.fid}"` : ""}${o.iid ? ` data-iid="${o.iid}"` : ""}${o.list ? ` data-list="${o.list}" data-idx="${o.idx}"` : ""}${o.exp != null ? ` aria-expanded="${o.exp}"` : ""} aria-selected="${!!o.selected}">
+    ${o.list ? `<span class="grip" draggable="true" title="Drag to reorder"></span>` : '<span style="width:10px;flex:none"></span>'}
+    <button class="tw${o.exp == null ? " none" : o.exp ? " open" : ""}" data-act="toggle" tabindex="-1" aria-label="Expand">${ic("chev")}</button>
+    ${o.badge != null ? `<span class="badge">${o.badge}</span>` : ic(o.icon, "ti" + (o.k === "story" ? " story" : ""))}
+    ${name}
+    ${o.lock ? `<span class="lockg" title="Position locked">${ic("lock")}</span>` : ""}
+    ${o.meta != null ? `<span class="meta">${o.meta}</span>` : ""}
+    ${o.add ? `<button class="ib hov" data-act="add" tabindex="-1" title="${esc(o.add)}" aria-label="${esc(o.add)}">${ic("plus")}</button>` : ""}
+  </div>`;
+      }
+      function renderTree() {
+        const sk = sel ? keyOf(sel) : null;
+        let h = "";
+        stations.forEach((s, si) => {
+          const isSel = sel && sel.k === "station" && sel.sid === s.id;
+          const isCtx = sel && !isSel && sel.sid === s.id;
+          h += rowHtml({
+            st: true,
+            d: 0,
+            key: s.id,
+            k: "station",
+            sid: s.id,
+            badge: si + 1,
+            name: s.name,
+            placeholder: "New station",
+            exp: s.open,
+            selected: isSel,
+            ctx: isCtx,
+            lock: s.locked,
+            meta: s.open ? null : countItems(s) || null,
+            add: "Add to this station",
+            list: "stations",
+            idx: si,
+            editing: editing && editing.id === s.id,
+          });
+          if (!s.open) return;
+          if (s.pic)
+            h += `<div class="picrow" style="--d:1;background-image:${s.pic}" data-pic="${s.id}" title="Station picture"></div>`;
+          s.stories.forEach((f, fi) => {
+            h += rowHtml({
+              d: 1,
+              key: f.id,
+              k: "story",
+              sid: s.id,
+              fid: f.id,
+              icon: f.open ? "storyOpen" : "story",
+              name: f.name,
+              placeholder: TYPES.story.def,
+              exp: f.open,
+              selected: sk === f.id,
+              ctx: sel && sel.fid === f.id && sk !== f.id,
+              meta: f.entries.length,
+              add: "Add an entry to this story",
+              list: "stories:" + s.id,
+              idx: fi,
+              editing: editing && editing.id === f.id,
+            });
+            if (f.open)
+              f.entries.forEach((it, ii) => {
+                h += rowHtml({
+                  d: 2,
+                  key: it.id,
+                  k: "item",
+                  sid: s.id,
+                  fid: f.id,
+                  iid: it.id,
+                  icon: it.type,
+                  name: it.name,
+                  placeholder: TYPES[it.type].def,
+                  meta: ii + 1,
+                  selected: sk === it.id,
+                  list: "entries:" + s.id + ":" + f.id,
+                  idx: ii,
+                  editing: editing && editing.id === it.id,
+                  max: TYPES[it.type].nameCap,
+                });
+              });
+            if (f.open && !f.entries.length)
+              h += `<div class="emptyrow" style="--d:2">No entries yet. <button data-empty="${s.id}:${f.id}">Add the first entry</button></div>`;
+          });
+          s.items.forEach((it, ii) => {
+            h += rowHtml({
+              d: 1,
+              key: it.id,
+              k: "item",
+              sid: s.id,
+              iid: it.id,
+              icon: it.type,
+              name: it.name,
+              placeholder: TYPES[it.type].def,
+              selected: sk === it.id,
+              list: "items:" + s.id,
+              idx: ii,
+              editing: editing && editing.id === it.id,
+              max: TYPES[it.type].nameCap,
+            });
+          });
+          if (!s.stories.length && !s.items.length)
+            h += `<div class="emptyrow" style="--d:1">Nothing here yet. <button data-empty="${s.id}">Add content</button> or press Ctrl+K.</div>`;
+        });
+        const rows = $("#rows");
+        const hadFocus = rows.contains(document.activeElement) && !editing;
+        rows.innerHTML = h;
+        $("#stCount").textContent = stations.length;
+        if (editing) {
+          const inp = rows.querySelector(`[data-rin="${editing.id}"]`);
+          if (inp) {
+            inp.focus();
+            inp.select();
+            inp.scrollIntoView({ block: "nearest" });
+          }
+        } else if (sel) {
+          const r = rows.querySelector(`.row[data-key="${sk}"]`);
+          if (r) {
+            r.scrollIntoView({ block: "nearest" });
+            if (hadFocus) r.focus({ preventScroll: true });
+          }
+        }
+      }
+      function selFromRow(r) {
+        const k = r.dataset.k;
+        if (k === "station") return { k, sid: r.dataset.sid };
+        if (k === "story") return { k, sid: r.dataset.sid, fid: r.dataset.fid };
+        return {
+          k: "item",
+          sid: r.dataset.sid,
+          fid: r.dataset.fid || null,
+          iid: r.dataset.iid,
+        };
+      }
+      function select(x) {
+        sel = x;
+        editing = null;
+        if (x) {
+          const s = S(x.sid);
+          if (s) s.open = true;
+          if (x.fid) {
+            const f = findStory(x.sid, x.fid);
+            if (f && x.k === "item") f.open = true;
+          }
+        }
+        renderAll();
+      }
+      function toggleRow(r) {
+        const s = S(r.dataset.sid);
+        if (r.dataset.k === "station") s.open = !s.open;
+        else if (r.dataset.k === "story") {
+          const f = findStory(r.dataset.sid, r.dataset.fid);
+          f.open = !f.open;
+        }
+        renderTree();
+      }
+
+      $("#rows").addEventListener("click", (e) => {
+        if (e.target.closest(".rin")) return;
+        const emp = e.target.closest("[data-empty]");
+        if (emp) {
+          const [sid, fid] = emp.dataset.empty.split(":");
+          openTypeMenu(emp, sid, fid || null);
+          return;
+        }
+        const pic = e.target.closest("[data-pic]");
+        if (pic) {
+          openSec.about = true;
+          select({ k: "station", sid: pic.dataset.pic });
+          return;
+        }
+        const r = e.target.closest(".row");
+        if (!r) return;
+        const act = e.target.closest("[data-act]");
+        if (act && act.dataset.act === "toggle") {
+          toggleRow(r);
+          return;
+        }
+        if (act && act.dataset.act === "add") {
+          openTypeMenu(
+            act,
+            r.dataset.sid,
+            r.dataset.k === "station" ? null : r.dataset.fid,
+          );
+          return;
+        }
+        const x = selFromRow(r);
+        if (sel && keyOf(sel) === keyOf(x) && r.dataset.k !== "item") {
+          toggleRow(r);
+          return;
+        }
+        select(x);
+        r.focus({ preventScroll: true });
+        if (window.matchMedia("(max-width:700px)").matches)
+          document.body.classList.remove("treeOpen");
+      });
+      $("#rows").addEventListener("dblclick", (e) => {
+        const r = e.target.closest(".row");
+        if (!r || e.target.closest("[data-act]")) return;
+        startRename(selFromRow(r));
+      });
+
+      /* inline rename / name a new row */
+      function startRename(x) {
+        sel = x;
+        editing = { id: keyOf(x), isNew: false };
+        renderAll();
+      }
+      function commitRename(inp, cancel) {
+        if (!editing) return;
+        const id = editing.id,
+          isNew = editing.isNew;
+        editing = null;
+        const o = selObj();
+        if (o && keyOf(sel) === id) {
+          if (cancel && isNew) {
+            removeSel(true);
+            return;
+          }
+          if (!cancel) {
+            const v = inp.value.trim();
+            const def =
+              sel.k === "station"
+                ? "New station"
+                : sel.k === "story"
+                  ? TYPES.story.def
+                  : TYPES[o.type].def;
+            if (v !== o.name) {
+              o.name = v || o.name || def;
+              markDirty();
+            }
+            if (!o.name) o.name = def;
+          }
+        }
+        renderAll();
+        const r = $(`#rows .row[data-key="${id}"]`);
+        if (r) r.focus({ preventScroll: true });
+      }
+      $("#rows").addEventListener("keydown", (e) => {
+        const inp = e.target.closest(".rin");
+        if (inp) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commitRename(inp, false);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            commitRename(inp, true);
+          }
+          e.stopPropagation();
+          return;
+        }
+        treeKeys(e);
+      });
+      $("#rows").addEventListener("focusout", (e) => {
+        const inp = e.target.closest && e.target.closest(".rin");
+        if (inp && editing)
+          setTimeout(() => {
+            if (editing && document.activeElement !== inp)
+              commitRename(inp, false);
+          }, 0);
+      });
+      $("#rows").addEventListener("focus", (e) => {
+        if (e.target.id === "rows") {
+          const r = $("#rows .row.sel") || $("#rows .row");
+          if (r) {
+            if (!sel) select(selFromRow(r));
+            else r.focus();
+          }
+        }
+      });
+
+      function treeKeys(e) {
+        const rows = [...document.querySelectorAll("#rows .row")];
+        const cur = $("#rows .row.sel");
+        const i = cur ? rows.indexOf(cur) : -1;
+        const go = (r) => {
+          if (r) {
+            select(selFromRow(r));
+            const n = $(`#rows .row[data-key="${r.dataset.key}"]`);
+            if (n) n.focus();
+          }
+        };
+        if (e.key === "ArrowDown" && !e.altKey) {
+          e.preventDefault();
+          go(rows[i + 1] || rows[0]);
+        } else if (e.key === "ArrowUp" && !e.altKey) {
+          e.preventDefault();
+          go(rows[i - 1] || rows[rows.length - 1]);
+        } else if (e.key === "ArrowRight" && cur) {
+          e.preventDefault();
+          if (cur.getAttribute("aria-expanded") === "false") toggleRow(cur);
+          else go(rows[i + 1]);
+          const n = $("#rows .row.sel");
+          if (n) n.focus();
+        } else if (e.key === "ArrowLeft" && cur) {
+          e.preventDefault();
+          if (cur.getAttribute("aria-expanded") === "true") {
+            toggleRow(cur);
+            const n = $("#rows .row.sel");
+            if (n) n.focus();
+          } else if (sel.k === "item" && sel.fid)
+            go($(`#rows .row[data-key="${sel.fid}"]`));
+          else if (sel.k !== "station")
+            go($(`#rows .row[data-key="${sel.sid}"]`));
+        } else if (
+          e.altKey &&
+          (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+          sel
+        ) {
+          e.preventDefault();
+          moveSel(e.key === "ArrowUp" ? -1 : 1);
+        } else if (e.key === "F2" && sel) {
+          e.preventDefault();
+          startRename(sel);
+        } else if ((e.key === "Delete" || e.key === "Backspace") && sel) {
+          e.preventDefault();
+          askDelete();
+        } else if ((e.key === "+" || e.key === "a") && sel && cur) {
+          e.preventDefault();
+          const btn = cur.querySelector("[data-act=add]");
+          if (sel.k === "item") openTypeMenu(cur, sel.sid, sel.fid);
+          else
+            openTypeMenu(
+              btn || cur,
+              sel.sid,
+              sel.k === "story" ? sel.fid : null,
+            );
+        } else if (e.key === "Enter" && sel) {
+          e.preventDefault();
+          const t = $("#insp .ttlin");
+          if (t) t.focus();
+        }
+      }
+
+      /* move with keyboard: within the same list only (folders stay before free items) */
+      function moveSel(d) {
+        if (!sel) return;
+        let list,
+          id = keyOf(sel);
+        if (sel.k === "station") list = stations;
+        else if (sel.k === "story") list = S(sel.sid).stories;
+        else list = listOf(sel.sid, sel.fid);
+        const i = list.findIndex((x) => x.id === id),
+          j = i + d;
+        if (j < 0 || j >= list.length) {
+          toast(
+            sel.k === "station"
+              ? d < 0
+                ? "Already the first station"
+                : "Already the last station"
+              : "Already at the " + (d < 0 ? "top" : "end"),
+          );
+          return;
+        }
+        snapshot();
+        [list[i], list[j]] = [list[j], list[i]];
+        markDirty();
+        renderAll();
+        const r = $(`#rows .row[data-key="${id}"]`);
+        if (r) r.focus();
+      }
+
+      /* drag and drop within one list */
+      let drag = null;
+      $("#rows").addEventListener("dragstart", (e) => {
+        const g = e.target.closest && e.target.closest(".grip");
+        if (!g) return;
+        const r = g.closest(".row");
+        drag = {
+          list: r.dataset.list,
+          idx: +r.dataset.idx,
+          key: r.dataset.key,
+        };
+        e.dataTransfer.effectAllowed = "move";
+        try {
+          e.dataTransfer.setData("text/plain", r.dataset.key);
+          e.dataTransfer.setDragImage(r, 20, 12);
+        } catch (_) {}
+        requestAnimationFrame(() => r.classList.add("dragging"));
+      });
+      function clearDrop() {
+        document
+          .querySelectorAll(".dropb,.dropa")
+          .forEach((x) => x.classList.remove("dropb", "dropa"));
+      }
+      $("#rows").addEventListener("dragover", (e) => {
+        if (!drag) return;
+        const r = e.target.closest(".row");
+        clearDrop();
+        if (!r || r.dataset.list !== drag.list) {
+          e.dataTransfer.dropEffect = "none";
+          return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const b = r.getBoundingClientRect();
+        r.classList.add(e.clientY < b.top + b.height / 2 ? "dropb" : "dropa");
+      });
+      $("#rows").addEventListener("drop", (e) => {
+        if (!drag) return;
+        const r = e.target.closest(".row");
+        if (r && r.dataset.list === drag.list) {
+          e.preventDefault();
+          const b = r.getBoundingClientRect();
+          let to = +r.dataset.idx + (e.clientY < b.top + b.height / 2 ? 0 : 1);
+          const parts = drag.list.split(":");
+          const list =
+            parts[0] === "stations"
+              ? stations
+              : parts[0] === "stories"
+                ? S(parts[1]).stories
+                : parts[0] === "items"
+                  ? S(parts[1]).items
+                  : findStory(parts[1], parts[2]).entries;
+          if (to > drag.idx) to--;
+          if (to !== drag.idx) {
+            snapshot();
+            const [m] = list.splice(drag.idx, 1);
+            list.splice(to, 0, m);
+            markDirty();
+            toast(`Moved "${m.name}"`);
+          }
+        }
+        drag = null;
+        clearDrop();
+        renderAll();
+      });
+      $("#rows").addEventListener("dragend", () => {
+        drag = null;
+        clearDrop();
+        document
+          .querySelectorAll(".dragging")
+          .forEach((x) => x.classList.remove("dragging"));
+      });
+
+      /* ---------- adding ---------- */
+      function addContent(sid, fid, type) {
+        const s = S(sid);
+        if (!s) return;
+        snapshot();
+        s.open = true;
+        let x;
+        if (type === "story") {
+          const f = story("", [], { open: true });
+          s.stories.push(f);
+          x = { k: "story", sid, fid: f.id };
+        } else {
+          const it = mk(type, "");
+          if (fid) {
+            const f = findStory(sid, fid);
+            f.open = true;
+            f.entries.push(it);
+          } else s.items.push(it);
+          x = { k: "item", sid, fid: fid || null, iid: it.id };
+        }
+        sel = x;
+        editing = { id: keyOf(x), isNew: true };
+        markDirty();
+        renderAll();
+      }
+      function addStation() {
+        snapshot();
+        const n = stations.length;
+        const s = {
+          id: nid("s"),
+          name: "",
+          desc: "",
+          pic: null,
+          radius: 20,
+          locked: false,
+          open: true,
+          mx: 0.2 + ((n * 0.17) % 0.65),
+          my: 0.25 + ((n * 0.29) % 0.5),
+          stories: [],
+          items: [],
+        };
+        stations.push(s);
+        sel = { k: "station", sid: s.id };
+        editing = { id: s.id, isNew: true };
+        markDirty();
+        renderAll();
+      }
+      let typeMenuCtx = null;
+      function openTypeMenu(anchor, sid, fid) {
+        closeMenus();
+        const m = $("#typeMenu");
+        const s = S(sid),
+          f = fid ? findStory(sid, fid) : null;
+        const keys = f ? STORY_TYPES : STATION_TYPES;
+        const where = f
+          ? `to the story "${f.name}"`
+          : `to ${stations.indexOf(s) + 1} ${s.name}`;
+        m.innerHTML =
+          `<div class="mhead" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(where)}">Add ${esc(where)}</div>` +
+          keys
+            .map((k) =>
+              k === "|"
+                ? '<div class="msep"></div>'
+                : `<button class="mi" data-type="${k}" role="menuitem">${ic(k)}<span>${TYPES[k].label}</span><span class="hint">${TYPES[k].hint}</span></button>`,
+            )
+            .join("");
+        m.id = "typeMenu";
+        m.style.cssText =
+          "position:fixed;z-index:40;min-width:250px;padding:4px;background:#2a2d32;border:1px solid var(--line2);border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.5)";
+        m.hidden = false;
+        typeMenuCtx = { sid, fid, anchor };
+        placePop(m, anchor.getBoundingClientRect());
+        if (anchor.classList) anchor.classList.add("open");
+        const first = m.querySelector(".mi");
+        first.classList.add("hi");
+        first.focus();
+      }
+      function placePop(m, r) {
+        const w = m.offsetWidth,
+          h = m.offsetHeight;
+        let x = Math.min(r.right - 20, innerWidth - w - 8);
+        x = Math.max(8, x);
+        let y = r.bottom + 2;
+        if (y + h > innerHeight - 8) y = Math.max(8, r.top - h - 2);
+        m.style.left = x + "px";
+        m.style.top = y + "px";
+      }
+      $("#typeMenu").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-type]");
+        if (!b) return;
+        const c = typeMenuCtx;
+        closeMenus();
+        addContent(c.sid, c.fid, b.dataset.type);
+      });
+      $("#typeMenu").addEventListener("keydown", (e) =>
+        menuKeys(e, $("#typeMenu")),
+      );
+      function menuKeys(e, m) {
+        const items = [...m.querySelectorAll(".mi")];
+        let i = items.indexOf(document.activeElement);
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          i =
+            (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
+            items.length;
+          items.forEach((x) => x.classList.remove("hi"));
+          items[i].classList.add("hi");
+          items[i].focus();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          const a = typeMenuCtx && typeMenuCtx.anchor;
+          closeMenus();
+          const r = a && a.closest && a.closest(".row");
+          if (r) r.focus();
+        } else if (e.key.length === 1 && /[a-z0-9]/i.test(e.key)) {
+          const hit =
+            items.find(
+              (x, j) =>
+                j > i &&
+                x.textContent
+                  .trim()
+                  .toLowerCase()
+                  .startsWith(e.key.toLowerCase()),
+            ) ||
+            items.find((x) =>
+              x.textContent
+                .trim()
+                .toLowerCase()
+                .startsWith(e.key.toLowerCase()),
+            );
+          if (hit) {
+            items.forEach((x) => x.classList.remove("hi"));
+            hit.classList.add("hi");
+            hit.focus();
+          }
+        }
+      }
+      function closeMenus() {
+        $("#typeMenu").hidden = true;
+        $("#menuPop").hidden = true;
+        document
+          .querySelectorAll(".hov.open,.mbtn.open")
+          .forEach((x) => x.classList.remove("open"));
+      }
+      document.addEventListener("mousedown", (e) => {
+        if (
+          !e.target.closest(
+            "#typeMenu,#menuPop,[data-act=add],[data-menu],[data-empty],[data-addmenu]",
+          )
+        )
+          closeMenus();
+      });
+
+      /* ---------- command palette ---------- */
+      let palRes = [],
+        palHi = 0,
+        palFilter = null;
+      function defaultTarget() {
+        if (!sel)
+          return stations[0] ? { sid: stations[0].id, fid: null } : null;
+        if (sel.k === "story") return { sid: sel.sid, fid: sel.fid };
+        if (sel.k === "item" && sel.fid) return { sid: sel.sid, fid: sel.fid };
+        return { sid: sel.sid, fid: null };
+      }
+      function openPalette(pre) {
+        closeMenus();
+        $("#pal").hidden = false;
+        $("#palBack").hidden = false;
+        palFilter = null;
+        const inp = $("#palIn");
+        inp.value = pre || "";
+        inp.focus();
+        renderPalFilters();
+        runPalette();
+      }
+      function closePalette() {
+        $("#pal").hidden = true;
+        $("#palBack").hidden = true;
+      }
+      function renderPalFilters() {
+        $("#palFil").innerHTML =
+          [
+            "short",
+            "long",
+            "picture",
+            "video",
+            "audio",
+            "model",
+            "character",
+            "story",
+            "choice",
+            "quiz",
+          ]
+            .map(
+              (k) =>
+                `<button class="chip${palFilter === k ? " on" : ""}" data-pf="${k}">${ic(k)}${TYPES[k].label}</button>`,
+            )
+            .join("") +
+          `<button class="chip${palFilter === "station" ? " on" : ""}" data-pf="station">${ic("station")}Station</button>`;
+      }
+      function targetLabel(t) {
+        const s = S(t.sid),
+          f = t.fid ? findStory(t.sid, t.fid) : null;
+        return f
+          ? `in story "${f.name}"`
+          : `in ${stations.indexOf(s) + 1} ${s.name}`;
+      }
+      function runPalette() {
+        const q = $("#palIn").value.trim().toLowerCase();
+        const words = q.split(/\s+/).filter(Boolean);
+        const dt = defaultTarget();
+        const targets = [];
+        stations.forEach((s) => {
+          targets.push({ sid: s.id, fid: null });
+          s.stories.forEach((f) => targets.push({ sid: s.id, fid: f.id }));
+        });
+        const cands = [];
+        targets.forEach((t) => {
+          const isDef = dt && t.sid === dt.sid && t.fid === dt.fid;
+          const keys = t.fid ? STORY_TYPES : STATION_TYPES;
+          const tl = targetLabel(t).toLowerCase();
+          keys.forEach((k) => {
+            if (k === "|") return;
+            cands.push({
+              type: k,
+              t,
+              isDef,
+              typeText: (TYPES[k].label + " " + TYPES[k].alias).toLowerCase(),
+              tl,
+            });
+          });
+        });
+        cands.push({
+          type: "station",
+          t: null,
+          isDef: true,
+          typeText: "station new place stop",
+          tl: "at the end of the tour",
+        });
+        const typeHit = (c, w) =>
+          c.typeText.split(/\s+/).some((x) => x.startsWith(w));
+        palRes = cands
+          .filter((c) => {
+            if (palFilter && c.type !== palFilter) return false;
+            if (!words.length) return c.isDef;
+            return words.every((w) => typeHit(c, w) || c.tl.includes(w));
+          })
+          .map((c) => {
+            let score = (c.isDef ? 10 : 0) + (c.type === "station" ? -1 : 0);
+            words.forEach((w) => {
+              if (typeHit(c, w)) score += 3;
+              if (
+                (c.type === "station"
+                  ? "station"
+                  : TYPES[c.type].label.toLowerCase()
+                ).startsWith(w)
+              )
+                score += 3;
+            });
+            return Object.assign(c, { score });
+          })
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 40);
+        palHi = 0;
+        const hl = (txt) => {
+          let out = esc(txt);
+          words.forEach((w) => {
+            if (w.length > 1)
+              out = out.replace(
+                new RegExp(
+                  "(" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")",
+                  "ig",
+                ),
+                "<mark>$1</mark>",
+              );
+          });
+          return out;
+        };
+        $("#palList").innerHTML = palRes.length
+          ? palRes
+              .map((c, i) => {
+                const lab =
+                  c.type === "station" ? "New station" : TYPES[c.type].label;
+                const t = c.t ? targetLabel(c.t) : "at the end of the tour";
+                return `<div class="pr${i === 0 ? " hi" : ""}" role="option" data-pi="${i}">${ic(c.type === "station" ? "station" : c.type)}<span class="pl">${hl(lab)}</span><span class="pt">${hl(t)}</span></div>`;
+              })
+              .join("")
+          : `<div class="pempty">Nothing matches. Try a kind (picture, audio, story...) and a station's name.</div>`;
+      }
+      function palPick(i) {
+        const c = palRes[i];
+        if (!c) return;
+        closePalette();
+        if (c.type === "station") addStation();
+        else addContent(c.t.sid, c.t.fid, c.type);
+      }
+      $("#palIn").addEventListener("input", runPalette);
+      $("#palIn").addEventListener("keydown", (e) => {
+        const items = [...document.querySelectorAll("#palList .pr")];
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (!items.length) return;
+          palHi =
+            (palHi + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
+            items.length;
+          items.forEach((x, j) => x.classList.toggle("hi", j === palHi));
+          items[palHi].scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          palPick(palHi);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closePalette();
+        }
+      });
+      $("#palList").addEventListener("click", (e) => {
+        const r = e.target.closest("[data-pi]");
+        if (r) palPick(+r.dataset.pi);
+      });
+      $("#palList").addEventListener("mousemove", (e) => {
+        const r = e.target.closest("[data-pi]");
+        if (!r) return;
+        palHi = +r.dataset.pi;
+        document
+          .querySelectorAll("#palList .pr")
+          .forEach((x, j) => x.classList.toggle("hi", j === palHi));
+      });
+      $("#palFil").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-pf]");
+        if (!b) return;
+        palFilter = palFilter === b.dataset.pf ? null : b.dataset.pf;
+        renderPalFilters();
+        runPalette();
+        $("#palIn").focus();
+      });
+      $("#palBack").addEventListener("click", closePalette);
+      $("#addBtn").addEventListener("click", () => openPalette());
+
+      /* ---------- markdown light editor ---------- */
+      function visibleText(md) {
+        return String(md || "")
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+          .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+          .replace(/^\s*([-*+]|\d+\.)\s+/gm, "")
+          .replace(/(\*\*|__)(.*?)\1/g, "$2")
+          .replace(/(\*|_)(.*?)\1/g, "$2")
+          .replace(/`/g, "")
+          .replace(/\n+/g, " ")
+          .trim();
+      }
+      function inlineMd(t) {
+        return esc(t)
+          .replace(
+            /\[([^\]]+)\]\(([^)\s]+)\)/g,
+            (m, a, u) => `<a href="#" title="${u}">${a}</a>`,
+          )
+          .replace(/(\*\*|__)(.+?)\1/g, "<strong>$2</strong>")
+          .replace(/(^|[^*_])(\*|_)([^*_]+?)\2/g, "$1<em>$3</em>");
+      }
+      function renderMd(md) {
+        const lines = String(md || "").split("\n");
+        let out = "",
+          list = null,
+          para = [];
+        const flush = () => {
+          if (para.length) {
+            out += `<p>${inlineMd(para.join(" "))}</p>`;
+            para = [];
+          }
+        };
+        const endList = () => {
+          if (list) {
+            out += `</${list}>`;
+            list = null;
+          }
+        };
+        lines.forEach((l) => {
+          let m;
+          if ((m = l.match(/^\s*[-*+]\s+(.*)/))) {
+            flush();
+            if (list !== "ul") {
+              endList();
+              out += "<ul>";
+              list = "ul";
+            }
+            out += `<li>${inlineMd(m[1])}</li>`;
+          } else if ((m = l.match(/^\s*\d+\.\s+(.*)/))) {
+            flush();
+            if (list !== "ol") {
+              endList();
+              out += "<ol>";
+              list = "ol";
+            }
+            out += `<li>${inlineMd(m[1])}</li>`;
+          } else if ((m = l.match(/^\s*#{1,6}\s+(.*)/))) {
+            flush();
+            endList();
+            out += `<p><strong>${inlineMd(m[1])}</strong></p>`;
+          } else if (!l.trim()) {
+            flush();
+            endList();
+          } else {
+            endList();
+            para.push(l);
+          }
+        });
+        flush();
+        endList();
+        return out;
+      }
+      function mdEditor(field, value, cap, opts) {
+        opts = opts || {};
+        const n = visibleText(value).length;
+        const cnt = cap
+          ? `${n} / ${cap}`
+          : `${visibleText(value).split(/\s+/).filter(Boolean).length} words`;
+        const cls =
+          cap && n > cap ? " over" : cap && n > cap * 0.85 ? " near" : "";
+        return `<div class="md${opts.tall ? " tall" : ""}" data-mdwrap="${field}">
+    <div class="mdbar">
+      <button data-md="b" title="Bold (Ctrl+B)" tabindex="-1"><b>B</b></button>
+      <button data-md="i" title="Italic (Ctrl+I)" tabindex="-1"><i>I</i></button>
+      <button data-md="link" title="Link (Ctrl+K inside the text)" tabindex="-1">${ic("link")}</button>
+      <button data-md="ul" title="Bulleted list" tabindex="-1">${ic("ul")}</button>
+      <button data-md="ol" title="Numbered list" tabindex="-1">${ic("ol")}</button>
+      <span class="cnt${cls}" data-cnt="${field}" data-cap="${cap || 0}" title="${cap ? "Counted on the visible text, without the marks" : ""}">${cnt}</span>
+    </div>
+    <textarea data-f="${field}" placeholder="${esc(opts.placeholder || "Write a few words. **bold**, _italic_, [link](https://...) and lists work.")}" rows="${opts.tall ? 8 : 3}">${esc(value)}</textarea>
+    <div class="mdprev" data-prev="${field}">${value ? '<span class="lbl">Visitors see</span>' + renderMd(value) : ""}</div>
+    <div class="overmsg" data-over="${field}" ${cap && n > cap ? "" : "hidden"}>Too long for this place: visitors see the first ${cap} characters.</div>
+  </div>`;
+      }
+      function mdApply(ta, kind) {
+        const s = ta.selectionStart,
+          e = ta.selectionEnd,
+          v = ta.value,
+          t = v.slice(s, e);
+        ta.focus();
+        ta.setSelectionRange(s, e);
+        let rep, cs, ce;
+        if (kind === "b" || kind === "i") {
+          const m = kind === "b" ? "**" : "_";
+          const w = t || (kind === "b" ? "bold" : "italic");
+          rep = m + w + m;
+          cs = s + m.length;
+          ce = cs + w.length;
+        } else if (kind === "link") {
+          const w = t || "link text";
+          rep = `[${w}](https://)`;
+          cs = s + w.length + 3;
+          ce = cs + 8;
+        } else {
+          const ls = v.lastIndexOf("\n", s - 1) + 1;
+          ta.setSelectionRange(ls, e);
+          const block = v.slice(ls, e) || "";
+          let k = 0;
+          rep = block
+            .split("\n")
+            .map(
+              (l) =>
+                (kind === "ul" ? "- " : ++k + ". ") +
+                l.replace(/^\s*([-*+]|\d+\.)\s+/, ""),
+            )
+            .join("\n");
+          cs = ls + rep.length;
+          ce = cs;
+        }
+        if (!document.execCommand("insertText", false, rep)) {
+          ta.setRangeText(rep);
+        }
+        ta.setSelectionRange(cs, ce);
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      /* ---------- inspector ---------- */
+      function disc(id, label, sum, body) {
+        const open = !!openSec[id];
+        return `<button class="disc${open ? " open" : ""}" data-sec="${id}" aria-expanded="${open}">${ic("chev")}<span class="lab">${label}</span>${sum ? `<span class="sum">${esc(sum)}</span>` : ""}</button>${open ? `<div class="sec">${body}</div>` : ""}`;
+      }
+      function seg(field, opts, cur) {
+        return `<div class="seg" role="radiogroup">${opts.map((o) => `<button role="radio" aria-checked="${o === cur}" class="${o === cur ? "on" : ""}" data-seg="${field}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+      }
+      function numF(label, field, v, unit, ax) {
+        return `<div class="f"><label>${label}</label><div class="num">${ax ? `<span class="ax ${ax}">${ax.toUpperCase()}</span>` : ""}<input data-n="${field}" value="${v}" inputmode="decimal"><span class="unit">${unit || ""}</span></div></div>`;
+      }
+      function picSlot(field, pic, emptyTitle, emptyNote, small) {
+        if (pic)
+          return `<div class="pslot full${small ? " sm" : ""}" style="background-image:${pic}"><div class="pbar"><button class="btn" data-pick="${field}">${ic("picture")}Replace</button><button class="btn" data-clearpic="${field}">${ic("close")}Remove</button></div></div>`;
+        return `<div class="pslot${small ? " sm" : ""}">${small ? "" : ic("picture", "big")}<div>${esc(emptyTitle)}</div>${emptyNote && !small ? `<div class="note" style="margin:0">${esc(emptyNote)}</div>` : ""}
+    <div class="btnrow" style="margin:0;justify-content:center"><button class="btn" data-pick="${field}">${ic("picture")}Choose from tour files</button><button class="btn" data-upload="${field}">${ic("upload")}Upload...</button></div></div>`;
+      }
+      function head(icon, name, cap, placeholder) {
+        return `<div class="phead">
+    <button class="ib" id="inspBack" title="Back to the list" data-x="back">${ic("back")}</button>
+    <span class="hic">${icon}</span>
+    <div class="namewrap" title="Click to rename"><input class="ttlin" data-f="name" value="${esc(name)}" placeholder="${esc(placeholder)}" ${cap ? `maxlength="${cap}"` : ""} aria-label="Name"><span class="pen">${ic("pen")}</span>${cap ? `<span class="ncap" data-ncap>${name.length}/${cap}</span>` : ""}</div>
+    <button class="ib" data-x="close" title="Close (Esc)">${ic("close")}</button>
+  </div>`;
+      }
+      function crumb(parts) {
+        return `<div class="crumb">${parts.map((p) => (p.sel ? `<button data-goto='${JSON.stringify(p.sel)}' title="${esc(p.t)}">${esc(p.t)}</button>` : `<span>${esc(p.t)}</span>`)).join('<span class="sep">/</span>')}</div>`;
+      }
+      function latlon(s) {
+        return {
+          lat: (48.1351 + (0.5 - s.my) * 0.006).toFixed(5),
+          lon: (11.582 + (s.mx - 0.5) * 0.01).toFixed(5),
+        };
+      }
+
+      function renderInsp() {
+        const el = $("#insp");
+        const o = selObj();
+        document.body.classList.toggle("hasSel", !!o);
+        $("#dupBtn").disabled = $("#copyPosBtn").disabled = !o;
+        $("#copyPosBtn").disabled = !o || sel.k === "story";
+        $("#ctxLab").textContent = o
+          ? (sel.k === "station"
+              ? "Station"
+              : sel.k === "story"
+                ? "Story"
+                : TYPES[o.type].label) +
+            ": " +
+            (o.name || "")
+          : "";
+        if (!o) {
+          el.hidden = true;
+          el.innerHTML = "";
+          return;
+        }
+        el.hidden = false;
+        const s = S(sel.sid),
+          si = stations.indexOf(s);
+        let h = "";
+        if (sel.k === "station") {
+          const nItems = countItems(s);
+          const ll = latlon(s);
+          h += head(
+            `<span class="badge" style="background:var(--accent);color:#1c1c1c">${si + 1}</span>`,
+            s.name,
+            0,
+            "Station name",
+          );
+          h += crumb([
+            { t: `Station ${si + 1} of ${stations.length}` },
+            {
+              t: `${s.stories.length ? s.stories.length + (s.stories.length > 1 ? " stories, " : " story, ") : ""}${s.items.length} free item${s.items.length === 1 ? "" : "s"}`,
+            },
+          ]);
+          h += '<div class="pbody">';
+          h += disc(
+            "about",
+            "About",
+            s.pic ? "with picture" : "no picture",
+            `<div class="flab">Description</div>${mdEditor("desc", s.desc, 300)}
+       <div class="flab">Station picture <span class="sp"></span><span class="note" style="margin:0">shown on the station's card</span></div>
+       ${picSlot("pic", s.pic, "No station picture yet", "Visitors see it on the station card and in the list.")}`,
+          );
+          h += disc(
+            "place",
+            "Place",
+            `${s.radius} m${s.locked ? ", locked" : ""}`,
+            `<div class="f"><label>Position</label><div class="vec"><div class="num ro"><input readonly value="${ll.lat}"></div><div class="num ro"><input readonly value="${ll.lon}"></div></div></div>
+       <div class="f"><label title="Visitors count as arrived inside this distance">Arrival radius</label><div class="range"><input type="range" min="5" max="100" step="1" value="${s.radius}" data-r="radius" aria-label="Arrival radius"><div class="num"><input data-n="radius" value="${s.radius}"><span class="unit">m</span></div></div></div>
+       <p class="note">The ring around the station on the map. Drag the dot on the map to move the station.</p>
+       <label class="toggle"><input type="checkbox" data-c="locked" ${s.locked ? "checked" : ""}>${ic(s.locked ? "lock" : "unlock")}Lock the position, so it cannot be dragged by accident</label>
+       <div class="f"><span class="lbl">Order</span><div class="btnrow" style="margin:0"><button class="btn" data-x="earlier" ${si === 0 ? "disabled" : ""}>${ic("earlier")}Earlier</button><button class="btn" data-x="later" ${si === stations.length - 1 ? "disabled" : ""}>${ic("later")}Later</button></div></div>`,
+          );
+          h += disc(
+            "contents",
+            "Contents",
+            `${nItems} item${nItems === 1 ? "" : "s"}`,
+            (s.stories.length || s.items.length
+              ? `<div class="kids">${s.stories.map((f) => `<div class="kid" data-goto='${JSON.stringify({ k: "story", sid: s.id, fid: f.id })}'>${ic("story")}<span class="nm">${esc(f.name)}</span><span class="meta">${f.entries.length}</span></div>`).join("")}${s.items.map((it) => `<div class="kid" data-goto='${JSON.stringify({ k: "item", sid: s.id, fid: null, iid: it.id })}'>${ic(it.type)}<span class="nm">${esc(it.name)}</span></div>`).join("")}</div>`
+              : '<p class="note">Nothing at this station yet.</p>') +
+              `<div class="btnrow"><button class="btn" data-addmenu="station">${ic("plus")}Add content...</button></div><p class="note">The same menu as the + on the station's row in the list. Or press Ctrl+K.</p>`,
+          );
+          h += `<div class="danger"><div class="dl">Remove</div><button class="dbtn" data-x="delete">${ic("trash")}Delete station${nItems ? ` and its ${nItems} item${nItems === 1 ? "" : "s"}` : ""}...</button></div>`;
+          h += "</div>";
+        } else if (sel.k === "story") {
+          const f = findStory(sel.sid, sel.fid);
+          h += head(ic("storyOpen"), f.name, 0, "Story name");
+          h += crumb([
+            { t: `${si + 1} ${s.name}`, sel: { k: "station", sid: s.id } },
+            { t: "Story" },
+          ]);
+          h +=
+            '<div class="pbody"><div class="lead">' +
+            mdEditor("desc", f.desc, 200, {
+              placeholder: "One line shown before the first entry.",
+            }) +
+            "</div>";
+          h += disc(
+            "entries",
+            "Entries",
+            `${f.entries.length}, played in order`,
+            (f.entries.length
+              ? `<div class="kids">${f.entries.map((it, i) => `<div class="kid" data-goto='${JSON.stringify({ k: "item", sid: s.id, fid: f.id, iid: it.id })}'><span class="k">${i + 1}</span>${ic(it.type)}<span class="nm">${esc(it.name)}</span></div>`).join("")}</div>`
+              : '<p class="note">No entries yet.</p>') +
+              `<div class="btnrow"><button class="btn" data-addmenu="story">${ic("plus")}Add entry...</button></div><p class="note">Drag the handles in the list to change the order.</p>`,
+          );
+          h += disc(
+            "story",
+            "Playing",
+            f.starts,
+            `<div class="f"><span class="lbl">Starts</span>${seg("starts", ["On arrival", "When tapped"], f.starts)}</div>
+       <div class="btnrow"><button class="btn" data-x="preview">${ic("play")}Play from the start</button><button class="btn" data-x="ungroup">${ic("move")}Ungroup into free items</button></div>`,
+          );
+          h += `<div class="danger"><div class="dl">Remove</div><button class="dbtn" data-x="delete">${ic("trash")}Delete story${f.entries.length ? ` and its ${f.entries.length} entr${f.entries.length === 1 ? "y" : "ies"}` : ""}...</button></div></div>`;
+        } else {
+          const it = findItem(sel),
+            T = TYPES[it.type];
+          const f = sel.fid ? findStory(sel.sid, sel.fid) : null;
+          h += head(ic(it.type), it.name, T.nameCap || 0, T.def);
+          const cr = [
+            { t: `${si + 1} ${s.name}`, sel: { k: "station", sid: s.id } },
+          ];
+          if (f)
+            cr.push(
+              { t: f.name, sel: { k: "story", sid: s.id, fid: f.id } },
+              { t: `${T.label}, entry ${f.entries.indexOf(it) + 1}` },
+            );
+          else cr.push({ t: T.label });
+          h += crumb(cr);
+          h += '<div class="pbody">';
+          if (it.type === "long") {
+            h += `<div class="lead">${mdEditor("body", it.body, 0, { tall: true, placeholder: "Write the text. ## for a heading, **bold**, _italic_, - lists." })}</div>`;
+            h += disc(
+              "narr",
+              "Narration",
+              it.voice ? it.voice.len : "none",
+              it.voice
+                ? `<div class="f"><span class="lbl">Voice</span><div class="inline" style="display:flex;gap:6px;align-items:center;min-width:0">${ic("mic")}<span class="nm" style="overflow:hidden;text-overflow:ellipsis">${esc(it.voice.file)}</span><span class="meta">${it.voice.len}</span></div></div>
+          <div class="btnrow"><button class="btn" data-x="playvoice">${ic("play")}Listen</button><button class="btn" data-x="voice">${ic("upload")}Replace...</button><button class="btn" data-x="novoice">${ic("close")}Remove</button></div>`
+                : `<p class="note">Import a voice recording to have this text read aloud. Importing never changes your text.</p><div class="btnrow"><button class="btn" data-x="voice">${ic("mic")}Import a voice recording...</button></div>`,
+            );
+          } else {
+            h += `<div class="lead">${mdEditor("desc", it.desc, T.cap, { placeholder: it.type === "short" ? "A short description under the caption." : "A short description, shown when the visitor taps it." })}</div>`;
+            h += disc("look", T.label, typeSum(it), typeBody(it));
+          }
+          h += disc(
+            "pos",
+            "Position",
+            `E ${it.pos.e}  N ${it.pos.n}  H ${it.pos.h}`,
+            `<div class="vec">
+         <div class="num"><span class="ax e">E</span><input data-p="e" value="${it.pos.e}"><span class="unit">m</span></div>
+         <div class="num"><span class="ax n">N</span><input data-p="n" value="${it.pos.n}"><span class="unit">m</span></div>
+         <div class="num"><span class="ax u">H</span><input data-p="h" value="${it.pos.h}"><span class="unit">m</span></div>
+         <div class="num"><span class="ax" style="color:var(--muted)">&deg;</span><input data-p="hd" value="${it.pos.hd}"><span class="unit">heading</span></div>
+       </div>
+       <div class="f" style="margin-top:6px"><label>Size</label><div class="range"><input type="range" min="0.1" max="5" step="0.1" value="${it.size}" data-r="size" aria-label="Size"><div class="num"><input data-n="size" value="${it.size}"><span class="unit">x</span></div></div></div>
+       <button class="act" data-x="ground">${ic("ground")}Put on the ground<span class="note">height 0</span></button>
+       <button class="act" data-x="align">${ic("align")}Align to the station<span class="note">face its centre</span></button>`,
+          );
+          h += disc(
+            "belongs",
+            "Station",
+            `${si + 1} ${s.name}`,
+            `<div class="f"><label>Move to</label><select class="tfield" data-x="moveto">${stations.map((x, i) => `<option value="${x.id}" ${x.id === s.id ? "selected" : ""}>${i + 1} ${esc(x.name)}</option>`).join("")}</select></div>
+       <p class="note">${f ? "Moving takes it out of the story; it becomes a free item there." : "It keeps its offset from the station."}</p>`,
+          );
+          h += `<div class="danger"><div class="dl">Remove</div><button class="dbtn" data-x="delete">${ic("trash")}Delete ${esc(it.type === "model" ? T.label : T.label.toLowerCase())}</button></div></div>`;
+        }
+        el.innerHTML = h;
+      }
+      function typeSum(it) {
+        if (it.type === "picture") return it.view;
+        if (it.type === "video") return it.view;
+        if (it.type === "audio") return it.kind;
+        if (it.type === "model") return it.view;
+        if (it.type === "character")
+          return it.poses.length + " pose" + (it.poses.length === 1 ? "" : "s");
+        if (it.type === "choice") return it.options.length + " options";
+        if (it.type === "quiz") return it.answers.length + " answers";
+        return "";
+      }
+      function fileRow(field, file, label, accept) {
+        return file
+          ? `<div class="f"><span class="lbl">${label}</span><div style="display:flex;gap:6px;align-items:center;min-width:0"><span class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file)}</span><button class="ib" data-file="${field}" data-accept="${accept}" title="Replace">${ic("upload")}</button></div></div>`
+          : `<div class="pslot sm"><div>No ${label.toLowerCase()} yet</div><div class="btnrow" style="margin:0;justify-content:center"><button class="btn" data-file="${field}" data-accept="${accept}">${ic("upload")}Choose a file...</button></div></div>`;
+      }
+      function typeBody(it) {
+        if (it.type === "short")
+          return `<p class="note">The caption is the name at the top (up to 40 characters). Visitors see a pin with the caption; the description opens when tapped.</p>`;
+        if (it.type === "picture")
+          return (
+            picSlot(
+              "ipic",
+              it.pic,
+              "No picture yet",
+              "A photo or image from the tour files.",
+            ) +
+            `<div class="flab">Shown as</div>${seg("view", ["Plane in the world", "Framed", "Then and now"], it.view)}` +
+            (it.view === "Then and now"
+              ? `<div class="flab">"Then" picture</div>${picSlot("then", it.then, 'No "then" picture yet', "", true)}<p class="note">Visitors slide between the old picture and the live view.</p>`
+              : "")
+          );
+        if (it.type === "video")
+          return (
+            fileRow("file", it.file, "Video", "video/*") +
+            `<div class="flab">Shown as</div>${seg("view", ["Screen", "Porthole", "Window", "Cutout"], it.view)}`
+          );
+        if (it.type === "audio")
+          return (
+            fileRow("file", it.file, "Sound", "audio/*") +
+            `<div class="flab">Plays as</div>${seg("kind", ["Ambient zone", "Narration"], it.kind)}` +
+            (it.kind === "Ambient zone"
+              ? `<div class="f"><label>Zone radius</label><div class="range"><input type="range" min="2" max="60" value="${it.zone}" data-r="zone" aria-label="Zone radius"><div class="num"><input data-n="zone" value="${it.zone}"><span class="unit">m</span></div></div></div>`
+              : '<p class="note">Plays once when the visitor reaches it.</p>')
+          );
+        if (it.type === "model")
+          return (
+            fileRow("file", it.file, "Model", ".glb,.gltf") +
+            `<div class="flab">Shown as</div>${seg("view", ["Full size", "Ghost", "Toy size"], it.view)}
+    <div class="flab">Notes on the model <span class="sp"></span><button class="btn" data-x="addnote" style="height:22px">${ic("plus")}Note</button></div>
+    ${it.notes.length ? `<div class="kids">${it.notes.map((n, i) => `<div class="kid">${ic("note")}<span class="nm">${esc(n)}</span><button class="ib" data-delnote="${i}" title="Remove note" style="width:20px;height:20px">${ic("close")}</button></div>`).join("")}</div>` : '<p class="note">Hotspots with a note, placed on the model.</p>'}
+    <div class="f"><span class="lbl">Cutaways</span><div style="display:flex;gap:6px;align-items:center"><span class="meta">${it.sections} section${it.sections === 1 ? "" : "s"}</span><button class="btn" data-x="addsection" style="height:22px">${ic("plus")}Section</button></div></div>`
+          );
+        if (it.type === "character")
+          return (
+            fileRow("file", it.file, "Figure", ".glb,.gltf") +
+            `<div class="flab">Poses</div><div class="chips">${["Wave", "Point", "Talk", "Bow", "Walk"].map((p) => `<button class="chip${it.poses.includes(p) ? " on" : ""}" data-pose="${p}">${p}</button>`).join("")}</div><p class="note">What the figure says goes in the description above, or in a long text after it in a story.</p>`
+          );
+        if (it.type === "choice")
+          return `<div class="flab">Options</div>${it.options.map((o, i) => `<div class="f" style="grid-template-columns:18px minmax(0,1fr) 22px"><span class="meta">${i + 1}</span><input class="tfield" data-opt="${i}" value="${esc(o)}"><button class="ib" data-delopt="${i}" title="Remove option" style="width:22px;height:22px">${ic("close")}</button></div>`).join("")}<div class="btnrow"><button class="btn" data-x="addopt">${ic("plus")}Option</button></div>`;
+        if (it.type === "quiz")
+          return `<div class="flab">Answers <span class="sp"></span><span class="note" style="margin:0">pick the right one</span></div>${it.answers.map((o, i) => `<div class="f" style="grid-template-columns:18px minmax(0,1fr) 22px"><input type="radio" name="qc" data-correct="${i}" ${it.correct === i ? "checked" : ""} style="accent-color:var(--accent);margin:0" aria-label="Right answer"><input class="tfield" data-ans="${i}" value="${esc(o)}"><button class="ib" data-delans="${i}" title="Remove answer" style="width:22px;height:22px">${ic("close")}</button></div>`).join("")}<div class="btnrow"><button class="btn" data-x="addans">${ic("plus")}Answer</button></div>`;
+        return "";
+      }
+
+      /* inspector events */
+      const insp = $("#insp");
+      insp.addEventListener("click", (e) => {
+        const o = selObj();
+        if (!o) return;
+        const t = e.target;
+        const d = t.closest("[data-sec]");
+        if (d) {
+          openSec[d.dataset.sec] = !openSec[d.dataset.sec];
+          renderInsp();
+          return;
+        }
+        const g = t.closest("[data-goto]");
+        if (g) {
+          select(JSON.parse(g.dataset.goto));
+          return;
+        }
+        const md = t.closest("[data-md]");
+        if (md) {
+          const ta = md.closest(".md").querySelector("textarea");
+          mdApply(ta, md.dataset.md);
+          return;
+        }
+        const sg = t.closest("[data-seg]");
+        if (sg) {
+          snapshot();
+          o[sg.dataset.seg] = sg.dataset.v;
+          markDirty();
+          renderInsp();
+          return;
+        }
+        const am = t.closest("[data-addmenu]");
+        if (am) {
+          openTypeMenu(
+            am,
+            sel.sid,
+            am.dataset.addmenu === "story" ? sel.fid : null,
+          );
+          return;
+        }
+        const pk = t.closest("[data-pick]");
+        if (pk) {
+          openPicPicker(pk, pk.dataset.pick);
+          return;
+        }
+        const cp = t.closest("[data-clearpic]");
+        if (cp) {
+          snapshot();
+          o[cp.dataset.clearpic === "ipic" ? "pic" : cp.dataset.clearpic] =
+            null;
+          markDirty();
+          renderAll();
+          return;
+        }
+        const up = t.closest("[data-upload]");
+        if (up) {
+          fakeUpload("image/*", (url) => {
+            o[up.dataset.upload === "ipic" ? "pic" : up.dataset.upload] =
+              `url("${url}")`;
+            markDirty();
+            renderAll();
+          });
+          return;
+        }
+        const fl = t.closest("[data-file]");
+        if (fl) {
+          fakeUpload(fl.dataset.accept, (url, name) => {
+            o.file = name;
+            markDirty();
+            renderAll();
+            toast(`Added "${name}"`);
+          });
+          return;
+        }
+        const pose = t.closest("[data-pose]");
+        if (pose) {
+          const p = pose.dataset.pose;
+          o.poses = o.poses.includes(p)
+            ? o.poses.filter((x) => x !== p)
+            : o.poses.concat(p);
+          markDirty();
+          renderInsp();
+          return;
+        }
+        const dn = t.closest("[data-delnote]");
+        if (dn) {
+          o.notes.splice(+dn.dataset.delnote, 1);
+          markDirty();
+          renderInsp();
+          return;
+        }
+        const dopt = t.closest("[data-delopt]");
+        if (dopt) {
+          o.options.splice(+dopt.dataset.delopt, 1);
+          markDirty();
+          renderInsp();
+          return;
+        }
+        const dans = t.closest("[data-delans]");
+        if (dans) {
+          o.answers.splice(+dans.dataset.delans, 1);
+          if (o.correct >= o.answers.length) o.correct = 0;
+          markDirty();
+          renderInsp();
+          return;
+        }
+        const x = t.closest("[data-x]");
+        if (!x || x.tagName === "SELECT") return;
+        const a = x.dataset.x;
+        if (a === "close" || a === "back") {
+          select(null);
+          if (a === "back") document.body.classList.add("treeOpen");
+        } else if (a === "delete") askDelete();
+        else if (a === "earlier" || a === "later")
+          moveSel(a === "earlier" ? -1 : 1);
+        else if (a === "ground") {
+          snapshot();
+          o.pos.h = 0;
+          markDirty();
+          renderInsp();
+          toast(`"${o.name}" put on the ground`);
+        } else if (a === "align") {
+          snapshot();
+          o.pos.hd = Math.round(
+            ((Math.atan2(-o.pos.e, -o.pos.n) * 180) / Math.PI + 360) % 360,
+          );
+          markDirty();
+          renderInsp();
+          toast(`"${o.name}" now faces the station`);
+        } else if (a === "voice") {
+          fakeUpload("audio/*", (u, name) => {
+            o.voice = { file: name, len: "0:58" };
+            markDirty();
+            renderInsp();
+            toast("Voice recording added");
+          });
+        } else if (a === "novoice") {
+          snapshot();
+          o.voice = null;
+          markDirty();
+          renderInsp();
+          toast("Narration removed", true);
+        } else if (a === "playvoice") toast("Playing the narration (faked)");
+        else if (a === "preview")
+          toast("Playing the story from its first entry (faked)");
+        else if (a === "ungroup") ungroup();
+        else if (a === "addnote") {
+          o.notes.push("New note " + (o.notes.length + 1));
+          markDirty();
+          renderInsp();
+        } else if (a === "addsection") {
+          o.sections++;
+          markDirty();
+          renderInsp();
+        } else if (a === "addopt") {
+          o.options.push("Option " + (o.options.length + 1));
+          markDirty();
+          renderInsp();
+        } else if (a === "addans") {
+          o.answers.push("Answer " + (o.answers.length + 1));
+          markDirty();
+          renderInsp();
+        }
+      });
+      insp.addEventListener("input", (e) => {
+        const o = selObj();
+        if (!o) return;
+        const t = e.target;
+        if (t.dataset.f === "name") {
+          o.name = t.value;
+          markDirty();
+          renderTree();
+          drawMap();
+          const c = insp.querySelector("[data-ncap]");
+          if (c) c.textContent = t.value.length + "/" + t.maxLength;
+          $("#ctxLab").textContent = $("#ctxLab").textContent.replace(
+            /:.*$/,
+            ": " + t.value,
+          );
+        } else if (t.dataset.f) {
+          o[t.dataset.f] = t.value;
+          markDirty();
+          const cnt = insp.querySelector(`[data-cnt="${t.dataset.f}"]`),
+            cap = +cnt.dataset.cap,
+            n = visibleText(t.value).length;
+          cnt.textContent = cap
+            ? `${n} / ${cap}`
+            : `${visibleText(t.value).split(/\s+/).filter(Boolean).length} words`;
+          cnt.className =
+            "cnt" +
+            (cap && n > cap ? " over" : cap && n > cap * 0.85 ? " near" : "");
+          const ov = insp.querySelector(`[data-over="${t.dataset.f}"]`);
+          ov.hidden = !(cap && n > cap);
+          insp.querySelector(`[data-prev="${t.dataset.f}"]`).innerHTML = t.value
+            ? '<span class="lbl">Visitors see</span>' + renderMd(t.value)
+            : "";
+        } else if (t.dataset.r || t.dataset.n) {
+          const k = t.dataset.r || t.dataset.n,
+            v = parseFloat(t.value);
+          if (!isFinite(v)) return;
+          o[k] = v;
+          markDirty();
+          insp
+            .querySelectorAll(`[data-r="${k}"],[data-n="${k}"]`)
+            .forEach((x) => {
+              if (x !== t) x.value = v;
+            });
+          const sum =
+            t.closest(".sec") &&
+            t.closest(".sec").previousElementSibling.querySelector(".sum");
+          if (k === "radius" && sum)
+            sum.textContent = `${v} m${o.locked ? ", locked" : ""}`;
+          drawMap();
+        } else if (t.dataset.p) {
+          const v = parseFloat(t.value);
+          if (isFinite(v)) {
+            o.pos[t.dataset.p] = v;
+            markDirty();
+          }
+        } else if (t.dataset.opt) {
+          o.options[+t.dataset.opt] = t.value;
+          markDirty();
+        } else if (t.dataset.ans) {
+          o.answers[+t.dataset.ans] = t.value;
+          markDirty();
+        }
+      });
+      insp.addEventListener("change", (e) => {
+        const o = selObj();
+        if (!o) return;
+        const t = e.target;
+        if (t.dataset.c === "locked") {
+          o.locked = t.checked;
+          markDirty();
+          renderAll();
+          toast(t.checked ? "Position locked" : "Position unlocked");
+        } else if (t.dataset.correct) {
+          o.correct = +t.dataset.correct;
+          markDirty();
+        } else if (t.dataset.x === "moveto") moveToStation(t.value);
+        else if (t.dataset.f === "name" && !o.name.trim()) {
+          o.name =
+            sel.k === "station"
+              ? "New station"
+              : sel.k === "story"
+                ? TYPES.story.def
+                : TYPES[o.type].def;
+          renderAll();
+        }
+      });
+      insp.addEventListener("keydown", (e) => {
+        if (e.target.dataset.f === "name" && e.key === "Enter") {
+          e.preventDefault();
+          e.target.blur();
+          const r = $(`#rows .row[data-key="${keyOf(sel)}"]`);
+          if (r) r.focus();
+        }
+        if (
+          e.target.tagName === "TEXTAREA" &&
+          (e.ctrlKey || e.metaKey) &&
+          ["b", "i", "k"].includes(e.key.toLowerCase())
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          mdApply(e.target, { b: "b", i: "i", k: "link" }[e.key.toLowerCase()]);
+        }
+      });
+
+      function fakeUpload(accept, done) {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = accept;
+        inp.onchange = () => {
+          const f = inp.files && inp.files[0];
+          if (f) {
+            snapshot();
+            done(URL.createObjectURL(f), f.name);
+          }
+        };
+        inp.click();
+      }
+      function openPicPicker(anchor, field) {
+        closeMenus();
+        const m = $("#menuPop");
+        m.innerHTML = `<div class="mhead">Tour files</div><div class="thumbs" style="padding:2px 6px 6px;max-width:250px">${PICS.map((p, i) => `<button class="thumb" data-pp="${i}" style="background-image:${p}" title="Picture ${i + 1}"></button>`).join("")}</div>`;
+        m.hidden = false;
+        placePop(m, anchor.getBoundingClientRect());
+        m.onclick = (e) => {
+          const b = e.target.closest("[data-pp]");
+          if (!b) return;
+          const o = selObj();
+          snapshot();
+          o[field === "ipic" ? "pic" : field] = PICS[+b.dataset.pp];
+          markDirty();
+          closeMenus();
+          renderAll();
+          toast("Picture chosen");
+        };
+      }
+
+      /* ---------- structural actions ---------- */
+      function moveToStation(sid) {
+        if (sid === sel.sid) return;
+        snapshot();
+        const it = findItem(sel),
+          list = listOf(sel.sid, sel.fid);
+        list.splice(list.indexOf(it), 1);
+        const t = S(sid);
+        t.items.push(it);
+        t.open = true;
+        sel = { k: "item", sid, fid: null, iid: it.id };
+        markDirty();
+        renderAll();
+        toast(`Moved to ${stations.indexOf(t) + 1} ${t.name}`, true);
+      }
+      function ungroup() {
+        const s = S(sel.sid),
+          f = findStory(sel.sid, sel.fid);
+        snapshot();
+        s.items.unshift(...f.entries.filter((it) => !TYPES[it.type].storyOnly));
+        const dropped = f.entries.filter(
+          (it) => TYPES[it.type].storyOnly,
+        ).length;
+        s.stories.splice(s.stories.indexOf(f), 1);
+        sel = { k: "station", sid: s.id };
+        markDirty();
+        renderAll();
+        toast(
+          `Story ungrouped${dropped ? `; ${dropped} choice/quiz entr${dropped === 1 ? "y" : "ies"} removed` : ""}`,
+          true,
+        );
+      }
+      function removeSel(silent) {
+        const o = selObj();
+        if (!o) return;
+        const s = S(sel.sid);
+        if (!silent) snapshot();
+        if (sel.k === "station") stations.splice(stations.indexOf(s), 1);
+        else if (sel.k === "story") s.stories.splice(s.stories.indexOf(o), 1);
+        else {
+          const l = listOf(sel.sid, sel.fid);
+          l.splice(l.indexOf(o), 1);
+        }
+        const name = o.name;
+        const back =
+          sel.k === "station"
+            ? null
+            : sel.k === "item" && sel.fid
+              ? { k: "story", sid: sel.sid, fid: sel.fid }
+              : { k: "station", sid: sel.sid };
+        sel = back;
+        editing = null;
+        if (silent) {
+          undoStack.pop();
+          renderAll();
+          return;
+        }
+        markDirty();
+        renderAll();
+        toast(`Deleted "${name}"`, true);
+      }
+      function askDelete() {
+        const o = selObj();
+        if (!o) return;
+        if (sel.k === "item") {
+          removeSel();
+          return;
+        } // single items: no question, Undo in the toast
+        const s = S(sel.sid);
+        let title, body;
+        if (sel.k === "station") {
+          const n = countItems(s);
+          title = `Delete station "${s.name}"?`;
+          body = n
+            ? `Its ${n} item${n === 1 ? " goes" : "s go"} with it: ${[
+                ...s.stories.map(
+                  (f) =>
+                    `the story "${f.name}" (${f.entries.length} entr${f.entries.length === 1 ? "y" : "ies"})`,
+                ),
+                ...(s.items.length
+                  ? [
+                      `${s.items.length} free item${s.items.length === 1 ? "" : "s"}`,
+                    ]
+                  : []),
+              ].join(" and ")}. You can undo this.`
+            : "It has no content. You can undo this.";
+        } else {
+          const n = o.entries.length;
+          title = `Delete the story "${o.name}"?`;
+          body = n
+            ? `Its ${n} entr${n === 1 ? "y goes" : "ies go"} with it. You can undo this.`
+            : "It has no entries. You can undo this.";
+        }
+        const dlg = $("#dlg");
+        dlg.innerHTML = `<h3>${esc(title)}</h3><p>${esc(body)}</p><div class="row2"><button class="btn" data-d="no">Cancel</button><button class="dbtn" data-d="yes">${ic("trash")}Delete</button></div>`;
+        dlg.hidden = false;
+        $("#dlgBack").hidden = false;
+        dlg.querySelector("[data-d=no]").focus();
+        dlg.onclick = (e) => {
+          const b = e.target.closest("[data-d]");
+          if (!b) return;
+          closeDlg();
+          if (b.dataset.d === "yes") removeSel();
+        };
+        dlg.onkeydown = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            closeDlg();
+          }
+        };
+      }
+      function closeDlg() {
+        $("#dlg").hidden = true;
+        $("#dlgBack").hidden = true;
+      }
+      $("#dlgBack").addEventListener("click", closeDlg);
+      function cloneWithIds(o) {
+        const c = JSON.parse(JSON.stringify(o));
+        const re = (x) => {
+          if (x.id) x.id = nid(x.id[0]);
+          (x.entries || []).forEach(re);
+          (x.items || []).forEach(re);
+          (x.stories || []).forEach(re);
+        };
+        re(c);
+        return c;
+      }
+      function duplicate() {
+        const o = selObj();
+        if (!o) return;
+        snapshot();
+        const c = cloneWithIds(o);
+        c.name = o.name + " copy";
+        const s = S(sel.sid);
+        if (sel.k === "station") {
+          c.mx = Math.min(0.95, o.mx + 0.05);
+          c.my = Math.min(0.9, o.my + 0.06);
+          stations.splice(stations.indexOf(o) + 1, 0, c);
+          sel = { k: "station", sid: c.id };
+        } else if (sel.k === "story") {
+          s.stories.splice(s.stories.indexOf(o) + 1, 0, c);
+          sel = { k: "story", sid: s.id, fid: c.id };
+        } else {
+          const l = listOf(sel.sid, sel.fid);
+          l.splice(l.indexOf(o) + 1, 0, c);
+          sel = Object.assign({}, sel, { iid: c.id });
+        }
+        markDirty();
+        renderAll();
+        toast(`Duplicated "${o.name}"`, true);
+      }
+      function copyPos() {
+        const o = selObj();
+        if (!o || sel.k === "story") return;
+        let txt;
+        if (sel.k === "station") {
+          const l = latlon(o);
+          txt = `${l.lat}, ${l.lon}`;
+        } else
+          txt = `E ${o.pos.e} m, N ${o.pos.n} m, H ${o.pos.h} m, heading ${o.pos.hd}`;
+        try {
+          navigator.clipboard &&
+            navigator.clipboard.writeText(txt).catch(() => {});
+        } catch (_) {}
+        toast("Position copied: " + txt);
+      }
+      $("#dupBtn").addEventListener("click", duplicate);
+      $("#copyPosBtn").addEventListener("click", copyPos);
+      $("#newStation").addEventListener("click", addStation);
+      $("#collapseAll").addEventListener("click", () => {
+        stations.forEach((s) => {
+          s.open = false;
+          s.stories.forEach((f) => (f.open = false));
+        });
+        if (sel && sel.k !== "station") sel = { k: "station", sid: sel.sid };
+        renderAll();
+      });
+      $("#listBtn").addEventListener("click", () => {
+        if (sel) select(null);
+        document.body.classList.add("treeOpen");
+      });
+
+      /* ---------- toast ---------- */
+      let toastT = 0;
+      function toast(msg, withUndo) {
+        const t = $("#toast");
+        t.querySelector(".tx").textContent = msg;
+        $("#toastUndo").hidden = !withUndo;
+        t.classList.add("show");
+        clearTimeout(toastT);
+        toastT = setTimeout(
+          () => t.classList.remove("show"),
+          withUndo ? 6000 : 2600,
+        );
+      }
+      $("#toastUndo").addEventListener("click", () => {
+        $("#toast").classList.remove("show");
+        undo();
+      });
+
+      /* ---------- menus ---------- */
+      const MENUS = {
+        file: [
+          ["Save", "Ctrl S", "save"],
+          ["Export tour file...", "", "export"],
+          "|",
+          ["Tour details...", "", "details"],
+        ],
+        edit: [
+          ["Undo", "Ctrl Z", "undo"],
+          "|",
+          ["Duplicate", "Ctrl D", "dup"],
+          ["Copy position", "", "copypos"],
+          ["Rename", "F2", "rename"],
+          ["Delete", "Del", "del"],
+        ],
+        view: [
+          ["Prototype notes", "", "notes"],
+          ["Collapse all stations", "", "collapse"],
+          ["Frame the selection", "F", "frame"],
+        ],
+        add: null,
+      };
+      document.querySelectorAll("[data-menu]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const k = b.dataset.menu,
+            m = $("#menuPop");
+          const wasOpen = b.classList.contains("open");
+          closeMenus();
+          if (wasOpen) return;
+          if (k === "add") {
+            const t = defaultTarget();
+            if (!t) {
+              addStation();
+              return;
+            }
+            const keys = t.fid ? STORY_TYPES : STATION_TYPES;
+            m.innerHTML =
+              `<div class="mhead">${esc(targetLabel(t).replace(/^in /, "Into "))}</div>` +
+              keys
+                .map((x) =>
+                  x === "|"
+                    ? '<div class="msep"></div>'
+                    : `<button class="mi" data-addt="${x}">${ic(x)}${TYPES[x].label}</button>`,
+                )
+                .join("") +
+              `<div class="msep"></div><button class="mi" data-cmd="station">${ic("station")}New station</button><button class="mi" data-cmd="palette">${ic("search")}Add anywhere...<kbd>Ctrl K</kbd></button>`;
+          } else {
+            m.innerHTML = MENUS[k]
+              .map((x) =>
+                x === "|"
+                  ? '<div class="msep"></div>'
+                  : `<button class="mi" data-cmd="${x[2]}">${x[0]}${x[1] ? `<kbd>${x[1]}</kbd>` : ""}</button>`,
+              )
+              .join("");
+          }
+          m.hidden = false;
+          b.classList.add("open");
+          const r = b.getBoundingClientRect();
+          m.style.left =
+            Math.max(4, Math.min(r.left, innerWidth - m.offsetWidth - 4)) +
+            "px";
+          m.style.top = r.bottom + 2 + "px";
+          m.onclick = (e) => {
+            const at = e.target.closest("[data-addt]");
+            if (at) {
+              const t = defaultTarget();
+              closeMenus();
+              addContent(t.sid, t.fid, at.dataset.addt);
+              return;
+            }
+            const c = e.target.closest("[data-cmd]");
+            if (!c) return;
+            closeMenus();
+            command(c.dataset.cmd);
+          };
+        }),
+      );
+      function command(c) {
+        if (c === "save") {
+          dirty = false;
+          $("#unsaved").hidden = true;
+          toast("Saved (faked)");
+        } else if (c === "export")
+          toast("Export is not part of this prototype");
+        else if (c === "details")
+          toast("Tour details are not part of this prototype");
+        else if (c === "undo") undo();
+        else if (c === "dup") duplicate();
+        else if (c === "copypos") copyPos();
+        else if (c === "rename") {
+          if (sel) startRename(sel);
+        } else if (c === "del") askDelete();
+        else if (c === "notes") {
+          $("#notes").open = !$("#notes").open;
+        } else if (c === "collapse") $("#collapseAll").click();
+        else if (c === "frame") toast("Framed the selection (faked)");
+        else if (c === "station") addStation();
+        else if (c === "palette") openPalette();
+      }
+
+      /* ---------- global keys ---------- */
+      document.addEventListener("keydown", (e) => {
+        const inField = /INPUT|TEXTAREA|SELECT/.test(
+          document.activeElement.tagName,
+        );
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === "k" &&
+          !(document.activeElement.tagName === "TEXTAREA")
+        ) {
+          e.preventDefault();
+          openPalette();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          command("save");
+          return;
+        }
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === "z" &&
+          !inField
+        ) {
+          e.preventDefault();
+          undo();
+          return;
+        }
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === "d" &&
+          !inField
+        ) {
+          e.preventDefault();
+          duplicate();
+          return;
+        }
+        if (e.key === "Escape") {
+          if (!$("#pal").hidden) {
+            closePalette();
+            return;
+          }
+          if (!$("#typeMenu").hidden || !$("#menuPop").hidden) {
+            closeMenus();
+            return;
+          }
+          if (!inField && sel && !editing) select(null);
+        }
+        if (e.key === "/" && !inField) {
+          e.preventDefault();
+          openPalette();
+        }
+      });
+
+      /* ---------- map (fake) ---------- */
+      const cv = $("#cv"),
+        cx = cv.getContext("2d");
+      let zoom = 1,
+        rot = 0;
+      /* on a phone a bottom sheet covers the lower map: fit the stations into what is left */
+      function coveredBottom() {
+        if (!matchMedia("(max-width:700px)").matches) return 0;
+        const m = $("#map").getBoundingClientRect();
+        let top = m.bottom;
+        ["#tree", "#insp"].forEach((q) => {
+          const r = $(q).getBoundingClientRect();
+          if (r.height > 0) top = Math.min(top, r.top);
+        });
+        return Math.max(0, m.bottom - top);
+      }
+      function mapXY(s, w, h) {
+        h = Math.max(120, h - coveredBottom());
+        const c = { x: w / 2, y: h / 2 + 18 };
+        let x = (s.mx - 0.5) * w * 0.8 * zoom,
+          y = (s.my - 0.5) * h * 0.8 * zoom;
+        const a = (rot * Math.PI) / 180;
+        return {
+          x: c.x + x * Math.cos(a) - y * Math.sin(a),
+          y: c.y + x * Math.sin(a) + y * Math.cos(a),
+        };
+      }
+      function drawMap() {
+        const r = cv.getBoundingClientRect(),
+          dpr = Math.min(2, devicePixelRatio || 1);
+        const w = Math.max(1, r.width),
+          h = Math.max(1, r.height);
+        if (
+          cv.width !== Math.round(w * dpr) ||
+          cv.height !== Math.round(h * dpr)
+        ) {
+          cv.width = Math.round(w * dpr);
+          cv.height = Math.round(h * dpr);
+        }
+        cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const g = cx.createRadialGradient(
+          w * 0.55,
+          h * 0.45,
+          20,
+          w * 0.5,
+          h * 0.5,
+          Math.max(w, h) * 0.8,
+        );
+        g.addColorStop(0, "#2b3038");
+        g.addColorStop(1, "#15171b");
+        cx.fillStyle = g;
+        cx.fillRect(0, 0, w, h);
+        cx.save();
+        cx.translate(w / 2, h / 2);
+        cx.rotate((rot * Math.PI) / 180);
+        cx.scale(zoom, zoom);
+        cx.translate(-w / 2, -h / 2);
+        cx.strokeStyle = "rgba(255,255,255,.045)";
+        cx.lineWidth = 7;
+        for (let i = -3; i < 9; i++) {
+          cx.beginPath();
+          cx.moveTo(i * 150 - 100, -50);
+          cx.lineTo(i * 150 + 200, h + 50);
+          cx.stroke();
+        }
+        for (let j = -2; j < 8; j++) {
+          cx.beginPath();
+          cx.moveTo(-50, j * 130 + 40);
+          cx.lineTo(w + 50, j * 130 - 30);
+          cx.stroke();
+        }
+        cx.strokeStyle = "rgba(80,130,180,.18)";
+        cx.lineWidth = 26;
+        cx.beginPath();
+        cx.moveTo(w * 0.66, -20);
+        cx.bezierCurveTo(w * 0.72, h * 0.3, w * 0.8, h * 0.5, w * 0.78, h + 20);
+        cx.stroke();
+        cx.restore();
+        const pts = stations.map((s) => mapXY(s, w, h));
+        cx.strokeStyle = "rgba(233,162,59,.35)";
+        cx.setLineDash([5, 5]);
+        cx.lineWidth = 2;
+        cx.beginPath();
+        pts.forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
+        cx.stroke();
+        cx.setLineDash([]);
+        stations.forEach((s, i) => {
+          const p = pts[i],
+            isSel = sel && sel.sid === s.id;
+          if (isSel) {
+            const rr = s.radius * 1.4 * zoom;
+            cx.fillStyle = "rgba(233,162,59,.10)";
+            cx.strokeStyle = "rgba(233,162,59,.7)";
+            cx.lineWidth = 1.5;
+            cx.beginPath();
+            cx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+            cx.fill();
+            cx.stroke();
+            [...s.items, ...s.stories.flatMap((f) => f.entries)].forEach(
+              (it) => {
+                const q = {
+                    x: p.x + it.pos.e * 7 * zoom,
+                    y: p.y - it.pos.n * 7 * zoom,
+                  },
+                  on = sel.iid === it.id;
+                cx.fillStyle = on ? "#e9a23b" : "#cfd3d9";
+                cx.beginPath();
+                cx.arc(q.x, q.y, on ? 4.5 : 3, 0, Math.PI * 2);
+                cx.fill();
+              },
+            );
+          }
+          cx.fillStyle = isSel ? "#e9a23b" : "#3d5a78";
+          cx.strokeStyle = "#e6f0fa";
+          cx.lineWidth = 1.5;
+          cx.beginPath();
+          cx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+          cx.fill();
+          cx.stroke();
+          cx.fillStyle = isSel ? "#1c1c1c" : "#fff";
+          cx.font = "600 10px Segoe UI, system-ui, sans-serif";
+          cx.textAlign = "center";
+          cx.textBaseline = "middle";
+          cx.fillText(String(i + 1), p.x, p.y + 0.5);
+          const nm = s.name.length > 26 ? s.name.slice(0, 25) + "..." : s.name;
+          cx.font = "11px Segoe UI, system-ui, sans-serif";
+          cx.textAlign = "left";
+          const tw = cx.measureText(nm).width;
+          cx.fillStyle = "rgba(28,30,34,.85)";
+          cx.fillRect(p.x + 14, p.y - 9, tw + 10, 18);
+          cx.fillStyle = isSel ? "#f3c47e" : "#e6e6e6";
+          cx.fillText(nm, p.x + 19, p.y + 0.5);
+        });
+      }
+      cv.addEventListener("click", (e) => {
+        const r = cv.getBoundingClientRect(),
+          x = e.clientX - r.left,
+          y = e.clientY - r.top;
+        let best = null,
+          bd = 18;
+        stations.forEach((s) => {
+          const p = mapXY(s, r.width, r.height);
+          const d = Math.hypot(p.x - x, p.y - y);
+          if (d < bd) {
+            bd = d;
+            best = s;
+          }
+        });
+        if (best) select({ k: "station", sid: best.id });
+        else if (sel) select(null);
+      });
+      $("#zoomIn").addEventListener("click", () => {
+        zoom = Math.min(2.5, zoom * 1.2);
+        drawMap();
+      });
+      $("#zoomOut").addEventListener("click", () => {
+        zoom = Math.max(0.5, zoom / 1.2);
+        drawMap();
+      });
+      $("#compass").addEventListener("click", () => {
+        rot = rot ? 0 : -18;
+        $("#compass svg").style.transform = `rotate(${rot}deg)`;
+        drawMap();
+      });
+      new ResizeObserver(drawMap).observe($("#map"));
+
+      function renderAll() {
+        document.body.classList.toggle("naming", !!editing);
+        renderTree();
+        renderInsp();
+        drawMap();
+      }
+
+      /* start: phones get the notes folded */
+      if (matchMedia("(max-width:700px)").matches || innerHeight < 500)
+        $("#notes").open = false;
+      const h0 = new URLSearchParams(location.hash.slice(1));
+      if (h0.get("sel") === "story")
+        sel = {
+          k: "story",
+          sid: stations[0].id,
+          fid: stations[0].stories[0].id,
+        };
+      else if (h0.get("sel") === "item")
+        sel = {
+          k: "item",
+          sid: stations[1].id,
+          fid: null,
+          iid: stations[1].items[2].id,
+        };
+      else if (h0.get("sel") === "station")
+        sel = { k: "station", sid: stations[0].id };
+      renderAll();
+    </script>
+  </body>
+</html>
