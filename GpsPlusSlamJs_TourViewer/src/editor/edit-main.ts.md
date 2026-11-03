@@ -48,9 +48,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the view switch opens `openGlobeEditor` (`editor3d-globe.ts`, its own
   lazy chunk, with the switch's `globeHidePx` and `globeCrowdPx`);
   without it the OrbitControls view (`openEditor3d`) as before.
-  The switch also marks `#view3d` with `data-globe`, which reserves the
-  band for the approach's loading bar under the top bar
-  (`editor-shell.css`); the default view's docks start right under it.
 - **The 3D view is the default:** an open that shows a tour ends with
   `viewSwitch.show3d()`; a 3D view that fails lands on the map, said in
   a line kept until closed. A tour with nothing positioned is no failure:

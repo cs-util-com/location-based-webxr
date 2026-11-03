@@ -38,8 +38,7 @@
    * approach fills it while the tour loads), and the docks hanging
    * directly from it: no gap. */
   --s-load-h: 3px;
-  --s-dock-gap: 0px;
-  --s-dock-top: calc(var(--s-load-h) + var(--s-dock-gap));
+  --s-dock-top: var(--s-load-h);
   /* The inspector's width, which the map controls keep clear of. */
   --s-insp-w: 290px;
   /* The narrowest the brand (the tour's name and its pen) gets
@@ -942,6 +941,7 @@ body[data-view="3d"] #view3d {
 
 .ttlin:not([readonly]):focus {
   background-color: var(--s-bg2);
+  background-image: none;
   text-decoration: none;
 }
 
@@ -1270,6 +1270,12 @@ button.thumb:focus-visible {
   padding: 0 4px;
 }
 
+/* The bar keeps its parts on one line; the panel it opens wraps its
+ * lines as any text does. */
+#view3d-credits .view3d-credits-panel {
+  white-space: normal;
+}
+
 #shell-bar > #view3d-credits:empty {
   display: none;
 }
@@ -1558,7 +1564,7 @@ button.thumb:focus-visible {
   /* Folded, the tree's head ends where the inspector begins: on a phone
    * the two would overlap, and the inspector would cover the fold arrow. */
   #shell-tree.collapsed {
-    width: min(272px, 56vw, 100vw - min(290px, 60vw));
+    width: min(272px, 56vw, 100vw - var(--s-insp-w));
   }
 
   :root {
@@ -1828,10 +1834,6 @@ button.thumb:focus-visible {
   pointer-events: none;
 }
 
-.approach[hidden] {
-  display: none;
-}
-
 .approach-track {
   align-self: stretch;
   height: var(--s-load-h);
@@ -1894,6 +1896,18 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
 .backdrop {
   background: rgb(12 13 15 / 60%);
   color: var(--ink);
+}
+
+/* "No cover" on its grey tile: the muted grey reads only 4.0:1 there, so
+ * a lighter one (5.2:1, AA for small text). */
+.backdrop .cover-thumb {
+  color: #a0a5ae;
+}
+
+/* In the 3D view the toasts stand over the map controls row (14 px over
+ * the bottom bar, 38 px high), 12 px clear of it, never covering it. */
+body[data-view="3d"] #toasts {
+  bottom: calc(var(--s-bar-h) + 64px);
 }
 
 .backdrop :is(.btn, .drop, .cover-choice),

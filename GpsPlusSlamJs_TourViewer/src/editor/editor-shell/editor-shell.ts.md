@@ -193,7 +193,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   both running down to the bottom bar; the compass and the zoom buttons in
   one row at the view's foot, directly left of the inspector while it
   shows and at the right edge otherwise; the scene's credits small at the
-  bottom bar's left (their panel opens upward), then the save status, cut
+  bottom bar's left (their panel opens upward and wraps its lines, though
+  the bar keeps its own parts on one line); the toasts 12 px above the map
+  controls' row, never over it; then the save status, cut
   short with
   an ellipsis (its words stay its text and its title). Every top-bar
   control keeps its words at every width; the tour's name keeps a floor

@@ -833,11 +833,22 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   );
   await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
   await expect(kayLabels.nth(1)).toHaveText("View");
-  const nameBox = await kayLabels.nth(0).boundingBox();
-  const viewBox = await kayLabels.nth(1).boundingBox();
-  expect(viewBox?.y ?? 0).toBeGreaterThanOrEqual(
-    (nameBox?.y ?? 0) + (nameBox?.height ?? 0) - 0.5,
-  );
+  // Both boxes read in one go: a redraw between two separate reads left
+  // the second label detached (no box) now and then.
+  const labels = await inspector
+    .locator('.character[data-block="sir-kay"]')
+    .evaluate((el) => {
+      const [name, view] = [...el.querySelectorAll(":scope > .flabel")].map(
+        (l) => l.getBoundingClientRect(),
+      );
+      return {
+        nameHeight: name?.height ?? 0,
+        nameBottom: (name?.y ?? 0) + (name?.height ?? 0),
+        viewTop: view?.y ?? Number.NaN,
+      };
+    });
+  expect(labels.nameHeight).toBeGreaterThan(0);
+  expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
   // An untitled picture is named by its kind in the tree.
   const card = page.locator('#tree-body .card[data-station="gate"]');
   await expect(card.locator('[data-select="gate-knight"]')).toContainText(

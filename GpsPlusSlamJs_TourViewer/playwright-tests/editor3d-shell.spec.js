@@ -66,6 +66,23 @@ const BG2 = "rgb(38, 40, 44)";
 const TEXT = "rgb(217, 219, 224)";
 
 /**
+ * The WCAG contrast ratio of two computed colours ("rgb(r, g, b)").
+ * @param {string} fg
+ * @param {string} bg
+ */
+function contrast(fg, bg) {
+  const luminance = (/** @type {string} */ css) => {
+    const [r = 0, g = 0, b = 0] = (css.match(/[\d.]+/g) ?? []).map((v) => {
+      const c = Number(v) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
+/**
  * @param {{x: number, y: number, width: number, height: number}} a
  * @param {{x: number, y: number, width: number, height: number}} b
  */
@@ -182,6 +199,24 @@ async function expectFrame(page, size) {
       `the map controls over ${id} ${at}`,
     ).toBe(false);
   }
+  // A toast (a long one, as wide as a toast gets) stands clear of the map
+  // controls: centred over the bottom bar it once covered them on a
+  // phone. One is put in the toasts' box for the measure and taken out.
+  const toastBox = await page.evaluate(() => {
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.textContent =
+      "Opened a tour with a long name: 12 codes, 4 notes, 30 stations";
+    document.getElementById("toasts")?.append(t);
+    const r = t.getBoundingClientRect();
+    t.remove();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  });
+  expect(toastBox.height, at).toBeGreaterThan(0);
+  expect(
+    overlaps(toastBox, controls),
+    `a toast over the map controls ${at}`,
+  ).toBe(false);
   // The map's credits: small, at the bottom bar's left, inside it, and
   // nothing over them (they are attribution: always seen, always one
   // click away).
@@ -323,6 +358,13 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
   await page.screenshot({ path: test.info().outputPath("shell-844x390.png") });
+  // With the inspector open instead (the map controls then left of it),
+  // then folded again.
+  await page.locator('#inspector-head [data-act="fold"]').click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await expectFrame(page, landscape);
+  await page.locator('#inspector-head [data-act="fold"]').click();
+  await expect(page.locator("#inspector-body")).toBeHidden();
 
   // A tablet in portrait: the labels go, the docks shrink to 56 % and
   // 60 % of the width where that is less, and unfolding the inspector
@@ -577,6 +619,76 @@ test("the File, Edit and View menus work from the keyboard and by touch", async 
   await page.keyboard.press("t");
   await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "false");
 });
+
+for (const [width, height] of [
+  [390, 844],
+  [1440, 900],
+]) {
+  test(`the credits panel opens above the bottom bar, inside the window, its lines wrapped at ${String(width)}x${String(height)}`, async ({
+    page,
+  }) => {
+    // Why: the bottom bar keeps its parts on one line (no wrap), and the
+    // credits' panel opens out of the bar, so it inherited that: its
+    // sources ran off as one long line each, cut or scrolled sideways. A
+    // panel that is merely shown passes that; its box, its overflow and
+    // its line count do not.
+    test.setTimeout(150_000);
+    await page.setViewportSize({ width, height });
+    await open3d(page);
+    await page.locator("#view3d-credits .view3d-credits-button").click();
+    const panel = page.locator("#view3d-credits .view3d-credits-panel");
+    await expect(panel).toBeVisible();
+    const at = `at ${String(width)}x${String(height)}`;
+    const p = await box(panel);
+    const bar = await box(page.locator("#shell-bar"));
+    expect(p.y + p.height, at).toBeLessThanOrEqual(bar.y);
+    expect(p.x, at).toBeGreaterThanOrEqual(0);
+    expect(p.y, at).toBeGreaterThanOrEqual(0);
+    expect(p.x + p.width, at).toBeLessThanOrEqual(width);
+    const shape = await panel.evaluate((el) => {
+      // Each text block's lines: its height over its line height; and
+      // how wide its words would run on one line (measured nowrap).
+      const blocks = [...el.querySelectorAll("li, p")].map((b) => {
+        const style = getComputedStyle(b);
+        const lines = Math.round(
+          b.getBoundingClientRect().height /
+            Number.parseFloat(style.lineHeight),
+        );
+        const probe = /** @type {HTMLElement} */ (b.cloneNode(true));
+        probe.style.cssText =
+          "position:absolute;visibility:hidden;white-space:nowrap;width:auto";
+        el.append(probe);
+        const oneLine = probe.getBoundingClientRect().width;
+        probe.remove();
+        return { lines, oneLine, room: b.getBoundingClientRect().width };
+      });
+      return {
+        whiteSpace: getComputedStyle(el).whiteSpace,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        blocks,
+      };
+    });
+    expect(shape.whiteSpace, at).toBe("normal");
+    expect(shape.scrollWidth, at).toBeLessThanOrEqual(shape.clientWidth);
+    // The full text takes more than one line, and every block too long
+    // for the panel wraps onto as many lines as its words need.
+    expect(
+      shape.blocks.reduce((n, b) => n + b.lines, 0),
+      JSON.stringify(shape.blocks),
+    ).toBeGreaterThan(1);
+    for (const b of shape.blocks) {
+      if (b.oneLine > b.room + 1) {
+        expect(b.lines, JSON.stringify(b)).toBeGreaterThan(1);
+      }
+    }
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`credits-${String(width)}x${String(height)}.png`),
+    });
+  });
+}
 
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true });
@@ -921,8 +1033,8 @@ for (const view of ["3d", "2d"]) {
 test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
   page,
 }) => {
-  // Why: File > Tour details opened white over the dark editor (the
-  // owner's r1019 test), as did the open and the share dialogs: they took
+  // Why: File > Tour details opened white over the dark editor (seen in
+  // a field test), as did the open and the share dialogs: they took
   // the 2D map's paper tokens. A colour read on each dialog, a field in
   // it, its buttons and a toast is what tells a dark dress from a white
   // one; a presence check passes either. And an item's name in the
@@ -971,6 +1083,17 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
     "background-color",
     ACCENT,
   );
+  // The "No cover" words on their grey tile read at AA (4.5:1, small
+  // text): they were about 4.0:1.
+  const noCover = page.locator(".cover-thumb", { hasText: "No cover" });
+  const noCoverColours = await noCover.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { fg: c.color, bg: c.backgroundColor };
+  });
+  expect(
+    contrast(noCoverColours.fg, noCoverColours.bg),
+    JSON.stringify(noCoverColours),
+  ).toBeGreaterThanOrEqual(4.5);
   await page.screenshot({ path: test.info().outputPath("details-dark.png") });
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
@@ -1011,4 +1134,11 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   expect(rest.pen).toMatch(/^url\("data:image\/svg\+xml/);
   // The pen sits in the field's right padding, clear of the text.
   expect(rest.padRight).toBeGreaterThanOrEqual(18);
+  // Typing in it, only the field's own frame shows: no pen, no underline.
+  await name.focus();
+  const typing = await name.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { line: c.textDecorationLine, pen: c.backgroundImage };
+  });
+  expect(typing).toEqual({ line: "none", pen: "none" });
 });

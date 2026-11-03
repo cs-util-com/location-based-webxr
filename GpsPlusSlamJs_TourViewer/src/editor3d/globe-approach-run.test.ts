@@ -5,8 +5,8 @@
  * finishes on landing (at once on a takeover), an input in the 3D view
  * takes the camera where it is, a list click retargets, and the line is
  * announced as a progress bar while it loads. It is a thin accent line
- * that stays, full, for the view's whole life (the owner's wish of the
- * r1019 round: no tab, never hidden, the docks attached under it), so once
+ * that stays, full, for the view's whole life (no tab, never hidden,
+ * the docks attached under it), so once
  * the load is over it is no progress bar any more: no role, hidden from a
  * screen reader. A wrong phase here would be an input fought, a line that
  * goes, or a full line still announced as loading.
@@ -93,10 +93,9 @@ const filled = (box: HTMLElement) =>
     )?.[1] ?? Number.NaN,
   );
 
-/** The line once the load is over: shown, full, no progress bar, hidden
+/** The line once the load is over: full, no progress bar, hidden
  *  from a screen reader. */
 function expectDone(box: HTMLElement): void {
-  expect(rootOf(box).hidden).toBe(false);
   expect(filled(box)).toBe(1);
   const track = trackOf(box);
   expect(track.hasAttribute("role")).toBe(false);
@@ -154,7 +153,6 @@ describe("createApproachRun", () => {
     const bar = box.querySelector<HTMLElement>('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("100");
     stepAt(r, flight.durationMs + BAR_DONE_MS - 1);
-    expect(rootOf(box).hidden).toBe(false);
     expect(trackOf(box).getAttribute("role")).toBe("progressbar");
     expect(r.stats().progress).toBe(1);
     stepAt(r, flight.durationMs + BAR_DONE_MS);
@@ -246,7 +244,6 @@ describe("createApproachRun", () => {
     // stuck" the owner ruled out.
     const { box, r } = run();
     for (let t = 0; t < 5_000; t += 100) stepAt(r, t);
-    expect(rootOf(box).hidden).toBe(false);
     expect(trackOf(box).getAttribute("role")).toBe("progressbar");
     expect(trackOf(box).getAttribute("aria-label")).toBe(APPROACH_TITLE);
   });

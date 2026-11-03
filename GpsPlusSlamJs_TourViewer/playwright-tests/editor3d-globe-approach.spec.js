@@ -134,7 +134,7 @@ for (const [width, height] of [
   test(`the line is glued under the menu bar, thin, in the accent colour, the docks hanging directly from it down to the bottom bar at ${width}x${height}`, async ({
     page,
   }) => {
-    // Why: the owner asked (r1019 round) for the loading bar to become a
+    // Why: the loading bar became a
     // thin accent line that fills and stays, with no tab, and both docks
     // attached directly under it - the earlier tab and the 8 px gap read
     // as a hole between the menu bar and the panels. Positions, gaps and
