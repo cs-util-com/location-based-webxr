@@ -526,6 +526,17 @@ describe("the editor's meteor approach", () => {
       // zoom-out distance it measures up to 6.4 degrees a second 1-2 km
       // up, the leg after the retarget at most 5.7).
       expect(turnRate(frames, k - 1)).toBeLessThan(10);
+      // And continuous: the turn rate steps at the retarget by at most
+      // 2 degrees a second (measured 0.01 at 3 and 9 s, 1.65 at 5 km and
+      // 1.62 at 1 km up, where the plain flight still turns about 6), then
+      // changes smoothly; a retarget that snapped the view would step by
+      // its whole turn in one frame (60 times the angle, per second).
+      expect(
+        Math.abs(turnRate(frames, k) - turnRate(frames, k - 1)),
+      ).toBeLessThan(2);
+      expect(
+        Math.abs(turnRate(frames, k + 1) - turnRate(frames, k)),
+      ).toBeLessThan(0.5);
       for (const i of [k, k + 1]) {
         expect(turnRate(frames, i)).toBeLessThan(6);
       }

@@ -65,6 +65,8 @@ interface Fakes {
   /** What the renderer drew after the scene, in order: the streaks (with
    *  their weight) and the air. */
   draws: string[];
+  /** The streaks' mesh as last drawn (the pass's own). */
+  dustMesh: THREE.Mesh | null;
   /** The relief's ground everywhere (drawn, m over the ellipsoid), as its
    *  sampled heights and `groundAt` read it; null: none loaded. */
   groundM: number | null;
@@ -129,6 +131,7 @@ const fakes = vi.hoisted((): Fakes => ({
   controls: null,
   zoomOutLimit: null,
   draws: [],
+  dustMesh: null,
   groundM: 500,
   grade: 0,
   groundEndsNorthM: null,
@@ -289,6 +292,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
             THREE.BufferGeometry,
             THREE.ShaderMaterial
           >;
+          fakes.dustMesh = mesh;
           fakes.draws.push(`dust ${mesh.material.uniforms.uWeight?.value}`);
         },
         forceContextLoss: () => fakes.log.push("force-context-loss"),
@@ -577,6 +581,7 @@ beforeEach(() => {
   fakes.viewOptions = null;
   fakes.zoomOutLimit = null;
   fakes.draws = [];
+  fakes.dustMesh = null;
   fakes.terrainInput = null;
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
@@ -1099,9 +1104,6 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.reliefMount?.cloudFlats.at(-1)).toBe(0.3);
   });
 
-  // Why: the clouds and the air read the scene's depth as standard depth
-  // (far at 1); reversed depth left them reading the near plane as the
-  // farthest, and measured no better on the default depth buffer.
   // Why: the approach now starts where the globe lab's intro zooms out to;
   // controls without the lab's limit would pull a takeover there in to
   // their own default at once, and would not let the creator zoom out to
@@ -1169,9 +1171,48 @@ describe("openGlobeEditor's wiring", () => {
     });
   }
 
+  // Why: the clouds and the air read the scene's depth as standard depth
+  // (far at 1); reversed depth left them reading the near plane as the
+  // farthest, and measured no better on the default depth buffer.
   it("draws with standard depth", async () => {
     await openAt(0);
     expect(fakes.viewOptions?.reversedDepth).not.toBe(true);
+  });
+
+  // Why: the streaks' pass holds a geometry and a material on the GPU; the
+  // editor's dispose (its undo list) must free them, or every globe opened
+  // and closed leaks them.
+  it("frees the speed streaks' geometry and material with the view", async () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    tourAt(0);
+    const view = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      dust: 1,
+    });
+    const seams = fakes.seams;
+    if (seams === null) throw new Error("no seams");
+    for (const altitudeKm of [20_000, 19_000]) {
+      fakes.view?.placeView({
+        lat: MUNICH.lat,
+        lng: MUNICH.lon,
+        altitudeKm,
+        headingDeg: 0,
+        pitchDeg: -89,
+      });
+      seams.beforeScene?.();
+      now += 16;
+    }
+    const mesh = fakes.dustMesh;
+    if (mesh === null) throw new Error("the streaks never drew");
+    const freed: string[] = [];
+    mesh.geometry.addEventListener("dispose", () => freed.push("geometry"));
+    (mesh.material as THREE.Material).addEventListener("dispose", () =>
+      freed.push("material"),
+    );
+    view.dispose();
+    open = null;
+    expect(freed.sort()).toEqual(["geometry", "material"]);
   });
 
   it("takes the relief mount down with the view", async () => {

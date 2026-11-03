@@ -17,8 +17,9 @@ altitudeM, fovDeg, aspect, renderer, on, exposureMs, widthPx,
 radialOnly?, look? }`, each frame, with the camera's ECEF pose.
       `radialOnly` passes to the model's `stepVelocity` (only the distance
       to the Earth makes streaks). `look` holds the knobs, each the default
-      when absent: `count` (default `SPEED_DUST_LOOK.count`), `gain` (on
-      the opacity), `farShare` (0..1), `color` (an index into
+      when absent: `count` (default `SPEED_DUST_LOOK.count`, also for a count
+      that is not finite), `gain` (on the opacity, default
+      `SPEED_DUST_LOOK.gain`), `farShare` (0..1), `color` (an index into
       `SPEED_DUST_COLORS`), `loMps`, `hiMps`, `driftMin`, `driftMax`. Steps
       the velocity (a jump of the altitude in a frame resets it), the speed
       share, the opacity (nothing when off, stopped or below 300 km), the
@@ -54,11 +55,15 @@ driftMax, speedMps, share, opacity, drift, direction, shown }`, the
   - The field lives in ECEF axes: a page that rotates its world frame
     mid-flight would otherwise spin the field around the camera.
   - Defensive: a range that is not a positive rising pair falls back to
-    the model's default instead of throwing every frame; a negative gain
-    reads as 1, a far share outside 0..1 as the default, an unknown colour
+    the model's default instead of throwing every frame; a gain that is
+    negative or not finite reads as the look's (2), a count that is not
+    finite as the look's (2,500), a far share outside 0..1 as the default, an unknown colour
     as 0; the count is clamped to 1..`maxCount`.
   - Performance: one draw call of up to `maxCount` instances, the
     attributes uploaded only over the drawn prefix and only when shown.
+    The model writes each frame's streaks straight into the attribute
+    arrays (`streaks(..., out)`): no typed array is made per frame (a
+    unit test counts them and times 120 frames at 2,500 in Node).
 - Examples:
   ```ts
   const dust = createSpeedDustPass();
@@ -82,5 +87,7 @@ driftMax, speedMps, share, opacity, drift, direction, shown }`, the
 - Tests: `globe-speed-dust-pass.test.ts` (shown at speed and height,
   nothing stopped, low or off, reset, the draw weights, width and viewport,
   the dust camera's pose, the knob fallbacks, the count prefix, the
-  sample, dispose); the lab's `globe-dust.smoke.spec.mjs` in a browser; the
+  sample, the shared look's gain and count as fallbacks, no typed array
+  made per frame and a generous Node time budget at 2,500, dispose freeing
+  the geometry and the material); the lab's `globe-dust.smoke.spec.mjs` in a browser; the
   Tour Viewer's `editor3d-globe-start.spec.js` on the editor's approach.

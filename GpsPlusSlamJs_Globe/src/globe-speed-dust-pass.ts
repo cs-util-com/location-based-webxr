@@ -102,7 +102,8 @@ export const SPEED_DUST_COLORS: readonly (readonly [number, number, number])[] =
 /** The look's knobs, each the default when absent (the lab's panel, D1b). */
 interface SpeedDustKnobs {
   readonly count?: number;
-  /** On the opacity (default 1; a negative value reads as 1). */
+  /** On the opacity (default `SPEED_DUST_LOOK.gain`, as is a value that
+   *  is negative or not finite). */
   readonly gain?: number;
   /** The model's far-out share, 0..1. */
   readonly farShare?: number;
@@ -239,11 +240,17 @@ function resolveLook(look: SpeedDustKnobs, maxCount: number): ResolvedLook {
     GLOBE_SPEED_DUST.driftMin,
     GLOBE_SPEED_DUST.driftMax,
   );
-  const wanted = look.count ?? SPEED_DUST_LOOK.count;
+  const wanted =
+    look.count !== undefined && Number.isFinite(look.count)
+      ? look.count
+      : SPEED_DUST_LOOK.count;
   const farShare = look.farShare;
   return {
     count: Math.round(Math.min(Math.max(wanted, 1), maxCount)),
-    gain: look.gain !== undefined && look.gain >= 0 ? look.gain : 1,
+    gain:
+      look.gain !== undefined && look.gain >= 0 && Number.isFinite(look.gain)
+        ? look.gain
+        : SPEED_DUST_LOOK.gain,
     farShare:
       farShare !== undefined && farShare >= 0 && farShare <= 1
         ? farShare
@@ -294,18 +301,15 @@ export function createSpeedDustPass(
     new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 0, 1, 0, 1, 1, 0], 3),
   );
   geometry.setIndex([0, 1, 2, 2, 1, 3]);
-  const heads = new THREE.InstancedBufferAttribute(
-    new Float32Array(maxCount * 3),
-    3,
-  );
-  const tails = new THREE.InstancedBufferAttribute(
-    new Float32Array(maxCount * 3),
-    3,
-  );
-  const alphas = new THREE.InstancedBufferAttribute(
-    new Float32Array(maxCount),
-    1,
-  );
+  // The model writes each frame's streaks straight into these arrays.
+  const into = {
+    heads: new Float32Array(maxCount * 3),
+    tails: new Float32Array(maxCount * 3),
+    alpha: new Float32Array(maxCount),
+  };
+  const heads = new THREE.InstancedBufferAttribute(into.heads, 3);
+  const tails = new THREE.InstancedBufferAttribute(into.tails, 3);
+  const alphas = new THREE.InstancedBufferAttribute(into.alpha, 1);
   geometry.setAttribute("aHead", heads);
   geometry.setAttribute("aTail", tails);
   geometry.setAttribute("aAlpha", alphas);
@@ -315,7 +319,7 @@ export function createSpeedDustPass(
     uWidthPx: { value: 1.5 },
     uViewport: { value: new THREE.Vector2(1, 1) },
     uWeight: { value: 1 },
-    uGain: { value: 1 },
+    uGain: { value: SPEED_DUST_LOOK.gain as number },
     uColor: { value: new THREE.Vector3(r0, g0, b0) },
   };
   const material = new THREE.ShaderMaterial({
@@ -338,7 +342,7 @@ export function createSpeedDustPass(
   let lastMs: number | null = null;
   let report: SpeedDustState = {
     count,
-    gain: 1,
+    gain: SPEED_DUST_LOOK.gain,
     farShare: GLOBE_SPEED_DUST.farShare,
     color: 0,
     loMps: GLOBE_SPEED_DUST.loMps,
@@ -407,10 +411,7 @@ export function createSpeedDustPass(
       if (!report.shown) return;
       // At least a frame's worth of motion: continuous at 5-10 Hz.
       const exposureS = Math.max(exposureMs, dtS * 1000) / 1000;
-      const s = streaks(seeds, offset, dir, rate, exposureS, opacity);
-      heads.array.set(s.heads);
-      tails.array.set(s.tails);
-      alphas.array.set(s.alpha);
+      streaks(seeds, offset, dir, rate, exposureS, opacity, into);
       heads.addUpdateRange(0, count * 3);
       tails.addUpdateRange(0, count * 3);
       alphas.addUpdateRange(0, count);

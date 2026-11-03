@@ -74,6 +74,11 @@ const ALLOWLIST = new Map([
     'Ratio WITH an absolute floor — max(4 * smallMs, 5) — so it degrades to a plain 5 ms ceiling exactly when the ratio would misfire. The model for option 3.',
   ],
 
+  [
+    'GpsPlusSlamJs_Globe/src/globe-speed-dust-pass.test.ts',
+    'Absolute budget with ~40x headroom: 2,500 streaks step in 0.14-0.20 ms a frame (mean of 120) against 8 ms. A milestone review asked for a cost check of the per-frame path; its main assertion (no typed array made per frame) has no clock.',
+  ],
+
   // --- Measured and reported, not asserted on the clock ---
   [
     'GpsPlusSlamJs_TourViewer/src/finish-rebuild-cost.sweep.test.ts',

@@ -15,7 +15,7 @@ asked for a screen-space effect tied to the speed in metres per second.
 
 ## Public API
 
-- `GLOBE_SPEED_DUST`: `count` 1,500; `loMps` 1 km/s and `hiMps` 5,000 km/s
+- `GLOBE_SPEED_DUST`: `loMps` 1 km/s and `hiMps` 5,000 km/s
   (the speed range, measured on a flight: about 4,800 km/s at 44,000 km,
   1.5 km/s at the landing); `driftMin` 0.2 and `driftMax` 6 box units per
   second; `tauMs` 200; `fullM` 2,000 km and `goneM` 300 km; `farFromM` 8,000 km,
@@ -47,15 +47,21 @@ asked for a screen-space effect tied to the speed in metres per second.
 - `speedDustOpacity(share, altitudeM, { farShare }?)`: faded in over the lowest
   `fadeInShare` of the range (a stopped camera draws nothing) and by the
   altitude (full from `fullM`, gone by `goneM`, smoothstep in its log).
-- `createSpeedField(count?, seed?)`: seeds spread through the box
-  [-1, 1)^3, deterministic. RangeError for a bad count.
+- `createSpeedField(count, seed?)`: seeds spread through the box
+  [-1, 1)^3, deterministic. RangeError for a bad count. The count has no
+  default here: how many streaks are drawn is the pass's shared look
+  (`SPEED_DUST_LOOK.count`, 2,500), its one home.
 - `advanceField(offset, dir, rate, dtS)`: the field's offset after a step
   of drift along `dir` (the camera's motion, a unit ECEF vector), wrapped;
   one step never moves more than `maxStepShare` of the box.
-- `streaks(seeds, offset, dir, rate, exposureS, opacity)`: heads (the seed
+- `streaks(seeds, offset, dir, rate, exposureS, opacity, out?)`: heads (the seed
   minus the offset, wrapped), tails (the head plus the motion times the
   drift over the exposure: where the particle was) and an alpha per
-  particle, faded at the box's rim and right at the camera.
+  particle, faded at the box's rim and right at the camera. With `out`
+  (`{ heads, tails, alpha }`) they are written into its first entries and
+  `out` is returned, nothing allocated (the pass's per-frame path:
+  three fresh arrays were about 70 KB a frame at 2,500); RangeError when
+  `out` is too short for the field.
 
 ## Invariants (each tested, `globe-speed-dust.test.ts`)
 

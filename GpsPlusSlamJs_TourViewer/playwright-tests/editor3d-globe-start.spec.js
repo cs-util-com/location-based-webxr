@@ -17,9 +17,16 @@ import {
  * frames' distance from the Earth's centre against the view's own fit on a
  * phone held either way and on a desktop. The globe lab's speed streaks
  * pour past the camera on the way down; they must show mid-flight, and
- * cost no frame time worth seeing against the same flight without them
- * (`dust=0`, the A/B link).
+ * cost no typical frame time against the same flight without them
+ * (`dust=0`, the A/B link), both sampled at the same height of the
+ * flight. This cannot test the phone's rule of no frame over 50 ms: a
+ * headless browser draws the view in software, every frame over 50 ms
+ * with or without the streaks; that rule is checked on a phone.
  */
+
+/** Both runs' frames are taken from this height down (m): high and fast,
+ *  where the streaks show. */
+const SAMPLE_BELOW_M = 30_000_000;
 
 /** The globe lab's intro distance from the Earth's centre (m). */
 const INTRO_CENTRE_M = 50_000_000;
@@ -99,9 +106,14 @@ for (const { name, width, height } of VIEWPORTS) {
     await afterFrames(page, 2);
     const globe = await globeOf(page);
     expect(globe.approach?.flying).toBe(true);
-    // The view's fit at the size it drew (fitted on its first frame).
+    // The view's fit at the size it drew (fitted on its first frame). The
+    // start's rule is at least twice that fit (the lab's zoom-out limit):
+    // the start was estimated from the page's box before the view drew,
+    // so a wrong aspect estimate falls short of it here. The first frames
+    // came down less than 1 % of a 600 s flight.
     expect(globe.fitM).toBeGreaterThan(0);
-    expect(globe.centreM).toBeGreaterThanOrEqual(globe.fitM);
+    expect(globe.startCentreM).toBeGreaterThanOrEqual(2 * globe.fitM - 1);
+    expect(globe.centreM).toBeGreaterThanOrEqual(2 * globe.fitM * 0.99);
     // Where the globe lab's intro zooms out to, less what the long flight
     // came down in its first frames and the surface's flattening.
     expect(globe.centreM).toBeGreaterThan(INTRO_CENTRE_M * 0.97);
@@ -130,7 +142,9 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
 
   /**
    * The approach with or without the streaks: whether they showed while
-   * it flew, and 40 frames' times mid-flight.
+   * it flew, and the times of the 40 frames after it came below
+   * `SAMPLE_BELOW_M` (the same moment of the flight in both runs: the
+   * flight is paced by its clock, not by the frames).
    * @param {string} extra
    */
   const run = async (extra) => {
@@ -141,15 +155,23 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
         async () => {
           const globe = await globeOf(page);
           shown ||= globe?.dust?.shown === true;
-          return shown || extra !== "";
+          return (globe?.altitudeM ?? Infinity) < SAMPLE_BELOW_M;
         },
-        { timeout: 60_000 },
+        { timeout: 90_000 },
       )
       .toBe(true);
+    const below = await globeOf(page);
     await afterFrames(page, 40);
     const globe = await globeOf(page);
     expect(globe.approach?.flying).toBe(true);
-    return { shown, dust: globe.dust, times: summary(globe.frameTimesMs) };
+    shown ||= globe.dust?.shown === true;
+    return {
+      shown,
+      dust: globe.dust,
+      fromKm: Math.round(below.altitudeM / 1000),
+      toKm: Math.round(globe.altitudeM / 1000),
+      times: summary(globe.frameTimesMs.slice(-40)),
+    };
   };
 
   // With the streaks first: a cold page, so any doubt is against them.
@@ -157,7 +179,10 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
   const off = await run("&dust=0");
   test.info().annotations.push({
     type: "frame times",
-    description: JSON.stringify({ on: on.times, off: off.times }),
+    description: JSON.stringify({
+      on: { km: [on.fromKm, on.toKm], ...on.times },
+      off: { km: [off.fromKm, off.toKm], ...off.times },
+    }),
   });
   // Mid-flight, high and fast: the streaks show, in the lab's look.
   expect(on.shown).toBe(true);
@@ -166,13 +191,10 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
   expect(off.dust.shown).toBe(false);
   // Off still measures the speed: the same flight, nothing drawn.
   expect(off.dust.speedMps).toBeGreaterThan(0);
-  // The streaks add no frames over 50 ms worth seeing, and no time on a
-  // typical frame, against the same flight without them. A software-drawn
-  // view in a headless browser draws every frame over 50 ms with or
-  // without them, so the count is compared as a share, never absolutely.
-  expect(on.times.over50 / on.times.n).toBeLessThanOrEqual(
-    off.times.over50 / off.times.n + 0.1,
-  );
+  // The streaks add no time on a typical frame against the same flight
+  // without them, at the same height. The count of frames over 50 ms is
+  // only annotated: headless, every frame is over 50 ms either way, so a
+  // comparison of it would pass whatever the streaks cost.
   expect(on.times.median).toBeLessThanOrEqual(off.times.median * 1.25 + 5);
   expect(await rejections(page)).toEqual([]);
 });

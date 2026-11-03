@@ -246,7 +246,7 @@ describe("createSpeedDustPass", () => {
       GLOBE_SPEED_DUST.driftMin,
       GLOBE_SPEED_DUST.driftMax,
     ]);
-    expect(s.gain).toBe(1);
+    expect(s.gain).toBe(SPEED_DUST_LOOK.gain);
     expect(s.farShare).toBe(GLOBE_SPEED_DUST.farShare);
     expect(s.color).toBe(0);
     expect(s.count).toBe(SPEED_DUST_MAX_COUNT);
@@ -301,9 +301,92 @@ describe("createSpeedDustPass", () => {
     expect(SPEED_DUST_LOOK.gain).toBeGreaterThan(0);
   });
 
-  it("disposes without throwing, twice", () => {
+  // Why: with no gain given the pass must draw the shared look's gain (the
+  // one look both pages draw), not a flat 1; a count that is not a number
+  // (a pasted link) must fall back to the look's count, never reach the
+  // geometry as an instance count of NaN.
+  it("takes the shared look's gain and count when the knobs are absent or not numbers", () => {
+    const { renderer } = fakeRenderer();
+    const plain = createSpeedDustPass();
+    dive(plain, renderer, { extra: { look: {} } });
+    expect(plain.state().gain).toBe(SPEED_DUST_LOOK.gain);
+    expect(plain.state().count).toBe(SPEED_DUST_LOOK.count);
+    for (const count of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const odd = createSpeedDustPass();
+      dive(odd, renderer, { extra: { look: { count, gain: Number.NaN } } });
+      expect(odd.state().count).toBe(SPEED_DUST_LOOK.count);
+      expect(odd.state().gain).toBe(SPEED_DUST_LOOK.gain);
+    }
+  });
+
+  // Why: the pass runs every frame at 2,500 streaks on a phone. It must
+  // write the streaks into its own attribute arrays (no typed array made
+  // per frame: garbage at that rate shows as collector pauses) and step in
+  // well under a frame. The budget is generous (Node, a loaded machine):
+  // measured 0.14-0.20 ms a frame (2026-11-03) against 8 ms, 40x and more;
+  // it catches an order-of-magnitude slip, not a phone's frame time.
+  it("steps 2,500 streaks without making a typed array, in well under a frame", () => {
+    const { renderer } = fakeRenderer();
+    const pass = createSpeedDustPass();
+    dive(pass, renderer, { frames: 5 });
+    const Real = Float32Array;
+    let made = 0;
+    const Counting = new Proxy(Real, {
+      construct(target, args: unknown[]) {
+        made++;
+        return Reflect.construct(target, args) as object;
+      },
+    });
+    const frames = 120;
+    /** Steps the frames with the counting constructor in place (ms). */
+    const stepFrames = (): number => {
+      globalThis.Float32Array = Counting;
+      try {
+        const t0 = performance.now();
+        for (let i = 5; i < 5 + frames; i++) {
+          const t = i * (1000 / 60);
+          pass.update({
+            ...frameAt(t, 20_000_000 - 3_000_000 * (t / 1000)),
+            renderer,
+          });
+        }
+        return performance.now() - t0;
+      } finally {
+        globalThis.Float32Array = Real;
+      }
+    };
+    const elapsedMs = stepFrames();
+    expect(pass.state().shown).toBe(true);
+    expect(pass.state().count).toBe(2500);
+    expect(made).toBe(0);
+    expect(elapsedMs / frames).toBeLessThan(8);
+  });
+
+  // Why: an empty dispose would pass "does not throw"; the pass must free
+  // its geometry and its material (each fires its dispose event once).
+  it("frees its geometry and material on dispose, safe twice", () => {
+    const scenes: THREE.Scene[] = [];
+    const fake = fakeRenderer();
+    const renderer = {
+      ...fake.renderer,
+      render(scene: THREE.Scene, camera: THREE.Camera) {
+        scenes.push(scene);
+        fake.renderer.render(scene, camera);
+      },
+    };
     const pass = createSpeedDustPass(10);
+    dive(pass, renderer);
+    pass.render(renderer, 1);
+    const mesh = scenes[0]?.children[0] as THREE.Mesh;
+    let geometries = 0;
+    let materials = 0;
+    mesh.geometry.addEventListener("dispose", () => geometries++);
+    (mesh.material as THREE.Material).addEventListener(
+      "dispose",
+      () => materials++,
+    );
     pass.dispose();
+    expect([geometries, materials]).toEqual([1, 1]);
     expect(() => {
       pass.dispose();
     }).not.toThrow();
