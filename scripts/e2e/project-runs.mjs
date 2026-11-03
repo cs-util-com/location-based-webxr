@@ -198,3 +198,41 @@ export function projectReportName(file, project) {
     ? `${file.slice(0, -'.json'.length)}.${project}.json`
     : `${file}.${project}.json`;
 }
+
+/**
+ * The projects a developer named with `--project <name>` (or
+ * `--project=<name>`), in the plan's order, and the forwarded arguments
+ * without them: the runner names each project's run itself, and Playwright
+ * runs every project named, so a forwarded one would run in every pass.
+ * No project named: every one.
+ *
+ * @param {readonly string[]} forwarded - args after the canonical command
+ * @param {readonly string[]} known - the plan's projects, in run order
+ * @returns {{ projects: string[], rest: string[] }}
+ * @throws {RangeError} on a name the plan does not have, or a bare `--project`
+ */
+export function namedProjects(forwarded, known) {
+  /** @type {Set<string>} */
+  const named = new Set();
+  /** @type {string[]} */
+  const rest = [];
+  for (let i = 0; i < forwarded.length; i += 1) {
+    const arg = forwarded[i];
+    let name = null;
+    if (arg === '--project') {
+      name = forwarded[i + 1] ?? '';
+      i += 1;
+    } else if (arg.startsWith('--project=')) {
+      name = arg.slice('--project='.length);
+    }
+    if (name === null) {
+      rest.push(arg);
+      continue;
+    }
+    if (!known.includes(name)) {
+      throw new RangeError(`--project "${name}" is not one of ${known.join(', ')}`);
+    }
+    named.add(name);
+  }
+  return { projects: named.size === 0 ? [...known] : known.filter((p) => named.has(p)), rest };
+}
