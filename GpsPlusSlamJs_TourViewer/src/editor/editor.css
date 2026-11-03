@@ -108,16 +108,13 @@ button:disabled {
 }
 
 /* The 3D view's credits (`editor3d-credits.ts`): one small button at the
- * bottom left; its overlay opens above it with every source in full. */
+ * bottom bar's left (`#shell-bar`, `editor-shell.css` places it); its
+ * overlay opens above it with every source in full. */
 .view3d-credits {
-  position: absolute;
-  bottom: 6px;
-  left: 8px;
-  z-index: 5;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: calc(100% - 78px);
   margin: 0;
   color: rgba(230, 232, 236, 0.85);
   font-size: 11px;

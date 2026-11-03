@@ -197,9 +197,13 @@ the page's check): the old approach set it from the camera's pose every
 frame; the frame is no longer moved per frame. The meteor's knobs come from the link
 (`globe-switch.ts`); its pacing reads what loads at the tour
 (`tourArrivalProgress`: the relief's ground there known, the relief
-settled, then the admitted share of the stations), and the relief's finest ground revises its landing. The box ("Loading tour" over the bar) hangs in
-the view's box (`deps.approach.ended` is called when it goes, with `"landed"` or `"taken"`) and goes a beat after the landing, at once after a
-takeover; what still loads does not keep it (it reads no load counts).
+settled, then the admitted share of the stations), and the relief's finest ground revises its landing. The run's
+accent line (a progress bar named "Loading tour") hangs in the view's box
+over the page's permanent `#load-line`; its load ends
+(`deps.approach.ended` is called, with `"landed"` or `"taken"`) a beat
+after the landing, at once after a takeover, and the line stays full;
+what still loads does not keep the load going (it reads no load counts).
+The view disposes the run once the arrival is over.
 
 - While it flies the stations are held back (added to what `setHidden`
   gets); on arrival they pop in one after another (`layer.setGrowth`)

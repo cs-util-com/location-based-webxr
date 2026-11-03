@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Why these tests matter: the owner replaced the 3D view's credits line (a
- * row of short names over the canvas) with one "Credits" button at the
- * bottom left. What the sources ask for must still be one click away and
+ * row of short names over the canvas) with one "Credits" button (now at
+ * the bottom bar's left). What the sources ask for must still be one click away and
  * in full: every source with its link, GIBS's acknowledgement word for
  * word, Copernicus's whole notice. The panel is a disclosure (a button
  * with aria-expanded and aria-controls, no dialog role, since nothing

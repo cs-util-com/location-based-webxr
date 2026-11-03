@@ -12,15 +12,16 @@ import {
 
 /**
  * Why these tests matter: a tour opened in the globe view flies in from
- * high above, a full-width bar glued under the menu bar following the
- * camera's fall, "Loading tour" on a tab hanging from its middle. The owner's rules for it:
- * the creator's own input in the 3D view takes the camera at once, where
- * it is; the list and the panel stay usable while it flies (a pick in the
- * list sends the flight there, typing leaves it alone); the box goes a
- * beat after the landing, whatever still loads (he dropped the detail
- * line that used to stay for it); a restored
- * draft goes straight to the tour. A swallowed input or a bar sitting
- * over the docks is exactly what these pin.
+ * high above, a thin full-width accent line glued under the menu bar
+ * filling with the camera's fall (a progress bar named "Loading tour"),
+ * then staying, full, for the view's whole life, the docks hanging
+ * directly from it. The owner's rules for it: the creator's own input in
+ * the 3D view takes the camera at once, where it is; the list and the
+ * panel stay usable while it flies (a pick in the list sends the flight
+ * there, typing leaves it alone); the load ends a beat after the landing,
+ * whatever still loads; a restored draft goes straight to the tour. A
+ * swallowed input, a line that goes, a gap over the docks or a full line
+ * still announced as loading is exactly what these pin.
  */
 
 /**
@@ -83,12 +84,45 @@ function overlaps(a, b) {
   );
 }
 
-/** The top bar's height, the loading bar's, its tab's, and the gap from
- *  the tab down to the docks (`editor-shell.css`). */
+/** The top bar's height and the accent line's under it, the accent
+ *  colour, and the bottom bar's height (`editor-shell.css`). */
 const TOP_PX = 40;
-const BAR_PX = 5;
-const TAB_PX = 22;
-const DOCK_GAP_PX = 8;
+const LINE_PX = 3;
+const ACCENT = "rgb(233, 162, 59)";
+const BOTTOM_PX = 24;
+
+/**
+ * The load is over: no progress bar in the view, the permanent line under
+ * the top bar, and the run's own line, while the view still keeps it,
+ * full and hidden from a screen reader.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ timeout?: number }} [options]
+ */
+async function expectLoadOver(page, options = {}) {
+  await expect(page.locator('#view3d [role="progressbar"]')).toHaveCount(
+    0,
+    options,
+  );
+  await expect(page.locator("#load-line")).toBeVisible();
+  // Read in one go in the page: the view disposes the run once the
+  // arrival is over, so the run may go between two separate checks.
+  const run = await page.evaluate(() => {
+    const root = document.querySelector("#view3d .approach");
+    if (root === null) return "gone";
+    const track = root.querySelector(".approach-track");
+    const fill = root.querySelector(".approach-fill");
+    if (track === null || fill === null) return "broken";
+    const full =
+      Math.abs(
+        fill.getBoundingClientRect().width -
+          track.getBoundingClientRect().width,
+      ) < 1;
+    return root.getAttribute("aria-hidden") === "true" && full
+      ? "full"
+      : "loading";
+  });
+  expect(["gone", "full"]).toContain(run);
+}
 
 for (const [width, height] of [
   [1440, 900],
@@ -97,17 +131,18 @@ for (const [width, height] of [
   [844, 390],
   [390, 844],
 ]) {
-  test(`the bar is glued under the menu bar, its tab hanging in the middle, the docks under both at ${width}x${height}`, async ({
+  test(`the line is glued under the menu bar, thin, in the accent colour, the docks hanging directly from it down to the bottom bar at ${width}x${height}`, async ({
     page,
   }) => {
-    // Why: the owner asked for a full-width bar glued under the menu bar,
-    // thick enough to see, "Loading tour" as a rounded tab hanging from
-    // its middle like a bulge, and the rail and the inspector lowered
-    // under both with a gap. Positions and gaps are what make that read;
-    // a presence check passes a bar floating in the view, a tab off
-    // centre, or a dock under the tab. The phone sizes (landscape and
-    // portrait) hold the bar and the tab as at a desktop; there one dock
-    // shows at a time (`dock-rule.ts`), so only the shown dock is checked.
+    // Why: the owner asked (r1019 round) for the loading bar to become a
+    // thin accent line that fills and stays, with no tab, and both docks
+    // attached directly under it - the earlier tab and the 8 px gap read
+    // as a hole between the menu bar and the panels. Positions, gaps and
+    // the colour are what make that read; a presence check passes a line
+    // floating in the view, a gap over a dock, or a dock stopping short of
+    // the bottom bar. The phone sizes (landscape and portrait) hold the
+    // line as at a desktop; there one dock shows at a time
+    // (`dock-rule.ts`), so only the shown dock is checked.
     test.setTimeout(180_000);
     await page.setViewportSize({ width, height });
     await answerHosts(page, { globeAssets: "serve" });
@@ -116,28 +151,21 @@ for (const [width, height] of [
     const approach = page.locator("#view3d .approach");
     await expect(approach).toBeVisible();
     const bar = await box(approach.locator(".approach-track"));
-    const tab = await box(approach.locator(".approach-title"));
-    await expect(approach.locator(".approach-title")).toHaveText(
-      "Loading tour",
+    // The line: the window's full width, right under the menu bar, 3 px,
+    // filling in the accent colour; no tab under it.
+    expect(bar).toEqual({ x: 0, y: TOP_PX, width, height: LINE_PX });
+    await expect(approach.locator(".approach-fill")).toHaveCSS(
+      "background-color",
+      ACCENT,
     );
-    // The bar: the window's full width, right under the menu bar.
-    expect(bar).toEqual({ x: 0, y: TOP_PX, width, height: BAR_PX });
-    // The tab: hanging from the bar's bottom, centred, rounded below only.
-    expect(tab.y).toBeCloseTo(TOP_PX + BAR_PX, 0);
-    expect(tab.height).toBeCloseTo(TAB_PX, 0);
-    expect(Math.abs(tab.x + tab.width / 2 - width / 2)).toBeLessThanOrEqual(1);
-    expect(tab.width).toBeGreaterThan(80);
-    expect(tab.width).toBeLessThan(200);
-    const corners = await approach.locator(".approach-title").evaluate((el) => {
-      const c = getComputedStyle(el);
-      return [c.borderTopLeftRadius, c.borderBottomLeftRadius];
-    });
-    expect(corners[0]).toBe("0px");
-    expect(parseFloat(corners[1] ?? "0")).toBeGreaterThan(6);
+    await expect(page.locator("#view3d .approach-title")).toHaveCount(0);
+    // The permanent line it covers while it loads: the same place.
+    expect(await box(page.locator("#load-line"))).toEqual(bar);
     // The docks: open the tree, then pick a station (the inspector
-    // shows); each shown dock flush with its side, the gap under the tab.
-    // Below 820 px a dock takes at most about half the width
-    // (`editor-shell.css`, narrow windows).
+    // shows); each shown dock flush with its side, hanging from the line
+    // with no gap and running down to the bottom bar. Below 820 px a dock
+    // takes at most about half the width (`editor-shell.css`, narrow
+    // windows).
     if (!(await page.locator("#tree-body").isVisible())) {
       await page.locator("#tree-fold").click();
     }
@@ -158,7 +186,6 @@ for (const [width, height] of [
         widthPx: narrow ? Math.min(290, width * 0.6) : 290,
       },
     ];
-    const dockTop = TOP_PX + BAR_PX + TAB_PX + DOCK_GAP_PX;
     let shown = 0;
     for (const dock of docks) {
       if (!(await page.locator(dock.body).isVisible())) continue;
@@ -166,11 +193,17 @@ for (const [width, height] of [
       const d = await box(page.locator(dock.id));
       if (dock.left) expect(d.x, dock.id).toBe(0);
       else expect(d.x + d.width, dock.id).toBeCloseTo(width, 0);
-      expect(d.y, dock.id).toBeCloseTo(dockTop, 0);
-      expect(d.y - (tab.y + tab.height), dock.id).toBeCloseTo(DOCK_GAP_PX, 0);
+      // No gap: the dock's top is the line's bottom.
+      expect(d.y, dock.id).toBe(bar.y + bar.height);
+      expect(d.y + d.height, dock.id).toBeCloseTo(height - BOTTOM_PX, 0);
       expect(d.width, dock.id).toBeCloseTo(dock.widthPx, 0);
       expect(overlaps(d, bar), dock.id).toBe(false);
-      expect(overlaps(d, tab), dock.id).toBe(false);
+      // Square corners where it meets the line.
+      const corners = await page.locator(dock.id).evaluate((el) => {
+        const c = getComputedStyle(el);
+        return [c.borderTopLeftRadius, c.borderTopRightRadius];
+      });
+      expect(corners, dock.id).toEqual(["0px", "0px"]);
     }
     // Both from 900 px up (the dock rule's side by side), else one.
     expect(shown).toBe(width >= 900 ? 2 : 1);
@@ -182,10 +215,11 @@ for (const [width, height] of [
   });
 }
 
-test("the bar is a progressbar with a value, under the box's title", async ({
+test("the line is a progressbar with a value and a name while it loads", async ({
   page,
 }) => {
-  // Why: a screen reader user hears that the tour is loading and how far.
+  // Why: a screen reader user hears that the tour is loading and how far;
+  // the "Loading tour" words, no longer shown on a tab, are its name.
   test.setTimeout(180_000);
   await answerHosts(page, { globeAssets: "serve" });
   await approachLasting(page, 600_000);
@@ -195,6 +229,7 @@ test("the bar is a progressbar with a value, under the box's title", async ({
   await expect(track).toHaveAttribute("aria-valuemin", "0");
   await expect(track).toHaveAttribute("aria-valuemax", "100");
   await expect(track).toHaveAttribute("aria-valuenow", /^\d+$/);
+  await expect(track).toHaveAttribute("aria-label", "Loading tour");
   // The box speaks through its bar alone: the detail line (a live region)
   // is gone. Scoped to the box: the shell's own messages (#shell-said) are
   // another live region in the view.
@@ -203,9 +238,7 @@ test("the bar is a progressbar with a value, under the box's title", async ({
   await expect(approachBox.locator('[role="status"], [aria-live]')).toHaveCount(
     0,
   );
-  await expect(page.locator("#view3d .approach-title")).toHaveText(
-    "Loading tour",
-  );
+  await expect(page.locator("#view3d .approach-title")).toHaveCount(0);
   const stats = await approachOf(page);
   expect(stats).toMatchObject({ flying: true, durationMs: 600_000 });
 });
@@ -253,11 +286,12 @@ test("a drag in the 3D view takes the camera where it is; typing in the panel an
   expect((await view3d(page)).globe.altitudeM).toBeGreaterThan(
     taken.globe.altitudeM * 0.5,
   );
-  await expect(page.locator("#view3d .approach")).toBeHidden();
+  // Taken, the load is over at once: the line full, no longer announced.
+  await expectLoadOver(page);
   expect(await rejections(page)).toEqual([]);
 });
 
-test("the box goes after the bar's done-hold while tiles are still held", async ({
+test("the load ends after the line's done-hold while tiles are still held", async ({
   page,
 }) => {
   // Why: the box used to stay after the landing for as long as the relief
@@ -292,14 +326,12 @@ test("the box goes after the bar's done-hold while tiles are still held", async 
         timeout: 60_000,
       })
       .toBe("landed");
-    // Then the box goes within a beat of it (BAR_DONE_MS, 300 ms, plus
+    // Then the load ends within a beat of it (BAR_DONE_MS, 300 ms, plus
     // frames under a loaded machine), not when the held tiles finally load:
-    // the wait starts at the landing, so a box kept by what loads fails
-    // here rather than passing under a long timeout.
-    await expect(page.locator("#view3d .approach")).toBeHidden({
-      timeout: 5_000,
-    });
-    // Still held: the box went while the relief was loading.
+    // the wait starts at the landing, so a load kept going by what loads
+    // fails here rather than passing under a long timeout.
+    await expectLoadOver(page, { timeout: 5_000 });
+    // Still held: the load ended while the relief was loading.
     expect(held.length).toBeGreaterThan(0);
     expect(holding).toBe(true);
     const run = await approachOf(page);

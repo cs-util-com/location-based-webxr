@@ -22,10 +22,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#map` - the full-window map (`src/editor/editor-map.ts`); `inert`
   while the 3D view shows over it, so Tab never walks the hidden map.
 - `#view3d` - the 3D view's box over the map, hidden until the view
-  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
-  credits line `#view3d-credits` (Mapterhorn, its elevation data,
-  OpenStreetMap) as its last child, so its links come after the docks in
-  the Tab order (the docks' z-index keeps them painted over it). Inside it the studio shell's parts
+  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), its first
+  child the permanent accent line `#load-line` (`aria-hidden`, under the
+  top bar; the globe view's approach covers it with its own loading line
+  while the tour loads). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
   `#shell-tree` (`#tree-stations`, `#tree-add` - the "+" that adds a
   station at the centre of the view -, `#tree-fold`, `#tree-body`), the
@@ -37,7 +37,11 @@ AR (tour editor plan 2026-10-17-1816, W1).
   has `tabindex="-1"`: the ground menu gives the focus back to it, and the
   view's window keys work from there.
 - `#shell-bar` - the bottom bar, shown with the top bar in both views:
-  first the save status `#save-status` (a live region; its words also in
+  first the 3D view's credits `#view3d-credits` (Mapterhorn, its
+  elevation data, OpenStreetMap; one small "Credits" button whose panel
+  opens upward, `src/editor3d/editor3d-credits.ts`; empty and hidden on
+  the map), after the docks in the Tab order and never covered by them;
+  then the save status `#save-status` (a live region; its words also in
   its `title`) and the 3D view's load line `#view-loading` ("Loading 3D
   view…", hidden otherwise, `src/editor/view-switch.ts`); then the 3D
   view's `#shell-view`, the selection's power actions `#shell-acts`

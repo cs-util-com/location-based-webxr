@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import {
   fileCommand,
   fileItem,
+  publish,
   save,
   viewCommand,
   viewItem,
@@ -21,9 +22,12 @@ import { useWideFont } from "./wide-font.js";
 
 /**
  * Why these tests matter: the 3D view's studio shell is a layout over the
- * scene - a 40 px top bar, a 24 px bottom bar, the tree dock flush left,
- * the inspector flush right, the map controls at the bottom right clear
- * of the inspector - and a presence check passes a broken one. These pin
+ * scene - a 40 px top bar, a 3 px accent line right under it, a 24 px
+ * bottom bar holding the map's credits at its left, the tree dock flush
+ * left and the inspector flush right, both hanging from the line and
+ * running down to the bottom bar, the map controls in one row directly
+ * left of the inspector (at the right edge without one) - and a presence
+ * check passes a broken one. These pin
  * positions, sizes and gaps at a phone, a phone in landscape, a tablet in
  * portrait and a desktop, the narrow-window rule (below 900 px one dock
  * at a time), every top-bar control inside the window, in words, and
@@ -43,16 +47,36 @@ import { useWideFont } from "./wide-font.js";
 test.describe.configure({ mode: "default" });
 
 /** A dock folded to its head: the 36 px head and the dock's 1 px top
- *  and bottom edges (the docks float under a gap below the top bar, so
- *  they have a top edge of their own). */
+ *  and bottom edges. */
 const FOLDED_PX = 38;
 
-/** Where the docks begin (px from the window's top) in the default 3D
- *  view: the 40 px top bar and an 8 px gap. Only the globe view reserves
- *  the band for its loading bar and tab under the top bar
- *  (`editor3d-globe-approach.spec.js`); this view never shows the bar,
- *  and on a landscape phone the band would cost each dock a fifth. */
-const DOCK_TOP_PX = 40 + 8;
+/** The accent line under the top bar (px), and its colour (`--s-accent`). */
+const LINE_PX = 3;
+const ACCENT = "rgb(233, 162, 59)";
+
+/** Where the docks begin (px from the window's top): directly under the
+ *  40 px top bar and the accent line, no gap - in this view as in the
+ *  globe view (`editor3d-globe-approach.spec.js`), so both lay out alike. */
+const DOCK_TOP_PX = 40 + LINE_PX;
+
+/** The dialogs' and toasts' dark dress: the shell's `--s-bg1`, `--s-bg2`
+ *  and `--s-text`. */
+const BG1 = "rgb(31, 32, 35)";
+const BG2 = "rgb(38, 40, 44)";
+const TEXT = "rgb(217, 219, 224)";
+
+/**
+ * @param {{x: number, y: number, width: number, height: number}} a
+ * @param {{x: number, y: number, width: number, height: number}} b
+ */
+function overlaps(a, b) {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
+}
 
 /** @param {import("@playwright/test").Page} page */
 async function open3d(page) {
@@ -103,27 +127,81 @@ async function expectFrame(page, size) {
     width: size.width,
     height: size.height - 64,
   });
-  // The map controls: 12 px from the right, 14 px over the bottom bar,
-  // the compass 38 px square, the zoom pill 8 px under it.
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  // The accent line: the view's full width, 3 px, right under the top bar,
+  // in the accent colour (full: the view shows no load of its own).
+  const line = page.locator("#load-line");
+  expect(await box(line), at).toEqual({
+    x: 0,
+    y: 40,
+    width: size.width,
+    height: LINE_PX,
+  });
+  await expect(line).toHaveCSS("background-color", ACCENT);
+  // Every open dock hangs from the line, no gap, and runs down to the
+  // bottom bar; a folded one is its head, hanging from the line too.
+  for (const [id, body] of [
+    ["#shell-tree", "#tree-body"],
+    ["#shell-inspector", "#inspector-body"],
+  ]) {
+    if (!(await page.locator(id).isVisible())) continue;
+    const dock = await box(page.locator(id));
+    expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX);
+    if (await page.locator(body).isVisible()) {
+      expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
+        size.height - 24,
+        0,
+      );
+    } else {
+      expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
+    }
+  }
+  // The map controls: one row 14 px over the bottom bar, the compass
+  // left of + and -, 38 px buttons, the zoom pill 8 px right of the
+  // compass, its right edge 12 px left of an open inspector, else 12 px
+  // from the window's right.
   const compass = await box(page.locator("#compass"));
   const zoomIn = await box(page.locator("#zoom-in"));
   const zoomOut = await box(page.locator("#zoom-out"));
-  const at = `at ${String(size.width)} px`;
-  expect(compass.x + compass.width, at).toBe(size.width - 12);
-  expect(zoomIn.x + zoomIn.width, at).toBe(size.width - 12);
   expect([compass.width, compass.height]).toEqual([38, 38]);
-  expect(zoomIn.y - (compass.y + compass.height)).toBe(8);
+  expect([zoomIn.y, zoomOut.y], at).toEqual([compass.y, compass.y]);
+  expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
   // The second button's 1 px divider is inside its 38 px.
-  expect(zoomOut.y).toBe(zoomIn.y + 38);
-  expect(size.height - 24 - (zoomOut.y + zoomOut.height)).toBe(14);
-  // Clear of the inspector, open or folded, wherever it shows.
-  const inspector = page.locator("#shell-inspector");
-  if (await inspector.isVisible()) {
-    const dock = await box(inspector);
-    expect(compass.y, `the compass under the inspector ${at}`).toBeGreaterThan(
-      dock.y + dock.height,
-    );
+  expect(zoomOut.x, at).toBe(zoomIn.x + 38);
+  expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
+  const inspectorOpen = await page.locator("#inspector-body").isVisible();
+  const rightEdge = inspectorOpen
+    ? (await box(page.locator("#shell-inspector"))).x - 12
+    : size.width - 12;
+  expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
+  const controls = await box(page.locator("#map-controls"));
+  for (const id of ["#shell-tree", "#shell-inspector"]) {
+    if (!(await page.locator(id).isVisible())) continue;
+    expect(
+      overlaps(controls, await box(page.locator(id))),
+      `the map controls over ${id} ${at}`,
+    ).toBe(false);
   }
+  // The map's credits: small, at the bottom bar's left, inside it, and
+  // nothing over them (they are attribution: always seen, always one
+  // click away).
+  const credits = page.locator("#view3d-credits .view3d-credits-button");
+  const c = await box(credits);
+  expect(c.x, at).toBeGreaterThanOrEqual(0);
+  expect(c.x, at).toBeLessThan(12);
+  expect(c.y, at).toBeGreaterThanOrEqual(bar.y);
+  expect(c.y + c.height, at).toBeLessThanOrEqual(bar.y + bar.height);
+  expect(
+    await credits.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        r.x + r.width / 2,
+        r.y + r.height / 2,
+      );
+      return hit === el || el.contains(hit);
+    }),
+    `the credits uncovered ${at}`,
+  ).toBe(true);
   // Every top-bar control shown sits inside the bar, left to right, none
   // over the next, and says its words (an icon alone says nothing).
   // Read in one go (as Playwright's isVisible does: a box, not hidden):
@@ -172,8 +250,8 @@ async function expectFrame(page, size) {
 }
 
 /**
- * The tree's dock: flush left under the top bar, `width` wide, open (its
- * cards shown) or folded to its head.
+ * The tree's dock: flush left under the accent line, `width` wide, open
+ * (its cards shown, down to the bottom bar) or folded to its head.
  * @param {import("@playwright/test").Page} page
  * @param {number} width
  * @param {boolean} open
@@ -185,7 +263,8 @@ async function expectTree(page, width, open) {
   expect(tree.width).toBeCloseTo(width, 0);
   if (open) {
     await expect(page.locator("#tree-body")).toBeVisible();
-    expect(tree.height).toBeGreaterThan(36);
+    const view = page.viewportSize();
+    expect(tree.y + tree.height).toBeCloseTo((view?.height ?? 0) - 24, 0);
   } else {
     await expect(page.locator("#tree-body")).toBeHidden();
     expect(tree.height).toBeCloseTo(FOLDED_PX, 0);
@@ -222,7 +301,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
   expect(phoneInspector.y).toBe(DOCK_TOP_PX);
+  expect(phoneInspector.y + phoneInspector.height).toBeCloseTo(844 - 24, 0);
   expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
+  // The one dock a phone shows, with the map controls left of it.
+  await expectFrame(page, phone);
+  await page.screenshot({ path: test.info().outputPath("shell-390x844.png") });
   await expectTree(page, phoneHead, false);
   const phoneFold = await box(page.locator("#tree-fold"));
   expect(phoneFold.x + phoneFold.width).toBeLessThanOrEqual(phoneInspector.x);
@@ -238,6 +321,8 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(folded.height).toBeCloseTo(FOLDED_PX, 0);
   expect(folded.x + folded.width).toBeCloseTo(844, 0);
   await expect(page.locator("#inspector-body")).toBeHidden();
+  await expectFrame(page, landscape);
+  await page.screenshot({ path: test.info().outputPath("shell-844x390.png") });
 
   // A tablet in portrait: the labels go, the docks shrink to 56 % and
   // 60 % of the width where that is less, and unfolding the inspector
@@ -263,9 +348,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
     x: 1440 - 290,
     y: DOCK_TOP_PX,
     width: 290,
+    height: 900 - 24 - DOCK_TOP_PX,
   });
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
+  await page.screenshot({ path: test.info().outputPath("shell-1440x900.png") });
   // The cards: 8 px in from the dock, 6 px apart, 62 px pictures.
   const tree = await box(page.locator("#shell-tree"));
   const heroes = page.locator("#tree-body .hero");
@@ -830,3 +917,98 @@ for (const view of ["3d", "2d"]) {
     await expect(page.locator("#details-modal")).toBeVisible();
   });
 }
+
+test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
+  page,
+}) => {
+  // Why: File > Tour details opened white over the dark editor (the
+  // owner's r1019 test), as did the open and the share dialogs: they took
+  // the 2D map's paper tokens. A colour read on each dialog, a field in
+  // it, its buttons and a toast is what tells a dark dress from a white
+  // one; a presence check passes either. And an item's name in the
+  // inspector's head is typed in place, but showed its box only on hover:
+  // at rest it must say it can be edited (a pen and a dotted underline,
+  // like the tour's name).
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  // The open dialog, the editor's first screen.
+  const openModal = page.locator("#open-modal .modal");
+  await expect(openModal).toBeVisible();
+  await expect(openModal).toHaveCSS("background-color", BG1);
+  await expect(openModal).toHaveCSS("color", TEXT);
+  await expect(page.locator("#link-input")).toHaveCSS("background-color", BG2);
+  await expect(page.locator("#link-input")).toHaveCSS("color", TEXT);
+  await expect(page.locator("#drop")).toHaveCSS("background-color", BG2);
+  await expect(page.locator("#sample-btn")).toHaveCSS("color", TEXT);
+  await openSampleIn3d(page);
+
+  // Tour details, from the tour's name in the top bar.
+  await page.locator("#tour-name").click();
+  const details = page.locator("#details-modal .modal");
+  await expect(details).toBeVisible();
+  await expect(details).toHaveCSS("background-color", BG1);
+  for (const field of ["#details-name", "#details-description"]) {
+    await expect(page.locator(field)).toHaveCSS("background-color", BG2);
+    await expect(page.locator(field)).toHaveCSS("color", TEXT);
+  }
+  // A cover choice is a dark field; the chosen one wears the accent's
+  // soft wash instead (the first is chosen when the tour has a cover).
+  await expect(
+    page.locator(".cover-choice:not(:has(input:checked))").first(),
+  ).toHaveCSS("background-color", BG2);
+  await expect(page.locator(".cover-choice:has(input:checked)")).toHaveCSS(
+    "background-color",
+    "rgba(233, 162, 59, 0.14)",
+  );
+  await expect(page.locator("#details-cancel")).toHaveCSS(
+    "background-color",
+    BG2,
+  );
+  await expect(page.locator("#details-apply")).toHaveCSS(
+    "background-color",
+    ACCENT,
+  );
+  await page.screenshot({ path: test.info().outputPath("details-dark.png") });
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
+
+  // Share and publish.
+  await publish(page);
+  const done = page.locator("#done-modal .modal");
+  await expect(done).toBeVisible();
+  await expect(done).toHaveCSS("background-color", BG1);
+  await expect(page.locator("#done-host")).toHaveCSS("background-color", BG2);
+  await page.locator("#done-close").click();
+  await expect(done).toBeHidden();
+
+  // A new pin: its toast dark, its name typed in the head, with the pen
+  // and the dotted underline at rest.
+  await card(page, "The old gate").locator(".hero").click();
+  await page.locator('#shell-inspector [data-act="add-pin"]').click();
+  const toast = page.locator(".toast", { hasText: "Added a pin" });
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveCSS("background-color", BG1);
+  await expect(toast).toHaveCSS("color", TEXT);
+  const name = page.locator("#shell-inspector .ttlin");
+  await expect(name).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("pin-toast.png") });
+  await name.evaluate((el) => /** @type {HTMLElement} */ (el).blur());
+  await page.mouse.move(700, 450);
+  const rest = await name.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return {
+      line: c.textDecorationLine,
+      style: c.textDecorationStyle,
+      pen: c.backgroundImage,
+      padRight: Number.parseFloat(c.paddingRight),
+    };
+  });
+  expect(rest.line).toBe("underline");
+  expect(rest.style).toBe("dotted");
+  expect(rest.pen).toMatch(/^url\("data:image\/svg\+xml/);
+  // The pen sits in the field's right padding, clear of the text.
+  expect(rest.padRight).toBeGreaterThanOrEqual(18);
+});

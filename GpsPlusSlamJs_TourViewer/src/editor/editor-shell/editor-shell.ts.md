@@ -167,24 +167,34 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - **The ground menu** returns the focus to the view's box (`#view3d`,
   `tabindex="-1"`), where the window's view keys keep working; hiding the
   view closes it.
-- **The approach's bar** (`.approach`, `globe-approach-run.ts`): a
-  full-width 5 px bar (`--s-load-h`) glued under the menu bar, "Loading
-  tour" on a 22 px tab (`--s-load-tab-h`) hanging from its middle,
-  rounded below only. In the globe view (`#view3d[data-globe]`, set by the
-  page) the docks sit `--s-dock-top` (bar, tab and an 8 px gap) under the
-  view's top for the view's whole life, so they never move when the bar
-  goes; the default 3D view never shows the bar, and its docks sit the
-  8 px gap under the top bar. It takes no pointer, and under reduced motion it goes without
-  a fade.
+- **The accent line** (`#load-line` in `edit.html`, and the approach's
+  own `.approach`, `globe-approach-run.ts`): a full-width 3 px line
+  (`--s-load-h`) in the accent colour glued under the menu bar, never
+  hidden and with no tab. In the globe view the approach's line covers it
+  while the tour loads (a dark track filling with the camera's fall, a
+  progress bar named "Loading tour") and stays full after; the default 3D
+  view shows the same full line. Both docks hang directly from it
+  (`--s-dock-top`, no gap), square-cornered at the top, for the view's
+  whole life. It takes no pointer.
+- **Dialogs and toasts** wear the shell's dark dress in both views
+  (`editor-shell.css`, "Dialogs and toasts"): the paper tokens of
+  `editor.css` are redefined on `.backdrop` and `#toasts`, and the few
+  hardcoded white fields (buttons, the drop zone, inputs, the cover
+  choices, the done dialog's host list) get the dark field colour.
+- **An editable name says so at rest**: the inspector head's `.ttlin`
+  (not read-only) shows a dotted underline and a pen at its right; while
+  typing only the field's frame shows.
 - **Text, never markup:** names and lines from the tour are set as text
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
   `body[data-view="3d"]`, the menus' dress in both views): a 40 px top bar
   and a 24 px bottom bar with the view between them; the tree 272 px and
-  the inspector 290 px wide, flush with the window's edges, the inspector
-  ending 150 px above the view's foot so the compass and the zoom buttons
-  at the bottom right stay clear of it at every width; the scene's credits
-  at the bottom left. The save status leads the bottom bar, cut short with
+  the inspector 290 px wide (`--s-insp-w`), flush with the window's edges,
+  both running down to the bottom bar; the compass and the zoom buttons in
+  one row at the view's foot, directly left of the inspector while it
+  shows and at the right edge otherwise; the scene's credits small at the
+  bottom bar's left (their panel opens upward), then the save status, cut
+  short with
   an ellipsis (its words stay its text and its title). Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
   (`--s-name-min`, lowered step by step), and the bar folds in steps

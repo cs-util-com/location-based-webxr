@@ -236,20 +236,19 @@ async function expectWriterLayout(page, size) {
     area.y,
     area.width,
   ]);
-  // The inspector takes its full allowed height (all but the 150 px over
-  // the map controls) and the writer fills it: nothing in the inspector's
-  // body is left over under its last part (the item's actions and
-  // Position). In a window too short for that, the writer section keeps
-  // its least height (280 px) and the body scrolls to the rest. The docks
-  // start a gap under the top bar (`--s-dock-top` in `editor-shell.css`,
-  // larger on the globe view), and that gap comes off the allowed height
-  // too, so it is read from the page rather than assumed.
+  // The inspector takes its full height (from the accent line under the
+  // top bar down to the bottom bar) and the writer fills it: nothing in
+  // the inspector's body is left over under its last part (the item's
+  // actions and Position). In a window too short for that, the writer
+  // section keeps its least height (280 px) and the body scrolls to the
+  // rest. The docks hang from the line (`--s-dock-top` in
+  // `editor-shell.css`), which comes off the height, so it is read from
+  // the page rather than assumed.
   const allowed = await page
     .locator("#shell-inspector")
     .evaluate(
       (e) =>
         (e.parentElement?.clientHeight ?? 0) -
-        150 -
         (Number.parseFloat(getComputedStyle(e).top) || 0),
     );
   expect(Math.abs(dock.height - allowed), at).toBeLessThanOrEqual(1);
