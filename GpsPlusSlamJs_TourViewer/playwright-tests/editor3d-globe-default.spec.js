@@ -22,6 +22,7 @@ import {
   answerHosts,
   keepRejections,
   noApproach,
+  noClouds,
   openZip,
   rejections,
   view3d,
@@ -524,6 +525,10 @@ test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back"
   test.setTimeout(240_000);
   await answerHosts(page, { globeAssets: "serve" });
   await noApproach(page);
+  // The heavy clouds off (`noClouds`): with them each click here waits on
+  // frames of about 0.7 s, which ran the test past its budget on CI. The
+  // setting has nothing to do with clouds.
+  await noClouds(page);
   await withoutPickers(page);
   await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
@@ -531,6 +536,11 @@ test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back"
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on, {
+      timeout: 60_000,
+    })
+    .toBe(false);
   await fileCommand(page, "details");
   const setting = page.locator("#details-no-gps");
   await expect(setting).not.toBeChecked();

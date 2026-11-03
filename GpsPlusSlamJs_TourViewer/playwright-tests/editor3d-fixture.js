@@ -250,3 +250,18 @@ export async function noApproach(page) {
     /** @type {any} */ (window).__tourEditorApproach = { off: true };
   });
 }
+
+/**
+ * Start with View > Clouds unticked, so every globe open draws without the
+ * heavy clouds from its first frame. Measured in this software renderer
+ * (2026-11-03): with them the globe draws about 1.4 frames a second and one
+ * click takes 9-10 s (a CI runner, slower still, ran clicks past their
+ * tests' budgets); without them about 6 frames a second and 1.8 s. For a
+ * spec that is not about the clouds. Call it before the page loads.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function noClouds(page) {
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).__tourEditorClouds = { off: true };
+  });
+}

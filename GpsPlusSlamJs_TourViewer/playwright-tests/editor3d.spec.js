@@ -11,6 +11,8 @@ import {
   GLOBE_VIEW,
   OLDER_VIEW,
   answerHosts,
+  noApproach,
+  noClouds,
   openSample,
   openSampleIn3d,
   view3d,
@@ -380,6 +382,14 @@ for (const [view, link] of BOTH_VIEWS) {
       }
     });
     await answerHosts(page);
+    // Twenty opens straight at the tour, the globe's heavy clouds off
+    // (`noClouds`): with them each menu click waits on frames of about
+    // 0.7 s here, which ran past the budget on a slower CI runner. The
+    // contexts are the renderer's, made and given back per open whatever
+    // the view draws; twenty stays, since fewer than Chromium's 16 could
+    // not show a leak.
+    await noApproach(page);
+    await noClouds(page);
     await openSample(page, link);
     const button = page.locator("#view-switch");
     for (let i = 0; i < 20; i++) {

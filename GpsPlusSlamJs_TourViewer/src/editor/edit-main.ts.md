@@ -198,7 +198,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - View's "Clouds" (`#view-clouds`, a checkbox item, shown only in the
   globe view, hidden with `globe=0`): the globe view's heavy 3D clouds, ticked
   by default, unticked only the flat cloud layer
-  (`Editor3dView.setClouds`). View state only, as Real time.
+  (`Editor3dView.setClouds`). View state only, as Real time. In the
+  dev server only, `window.__tourEditorClouds = { off: true }` (an init
+  script) starts it unticked, for the specs: in the software renderer the
+  heavy clouds hold the globe near 1.4 frames a second against about 6
+  without, and every click waits on those frames.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
     window's lower right corner, and whichever lay on top covered the

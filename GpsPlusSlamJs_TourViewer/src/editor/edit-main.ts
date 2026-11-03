@@ -3882,6 +3882,15 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
 // Only the globe view has a sky of its own to set the clock of.
 realTimeSwitch.hidden = !globeSwitch.on;
 cloudsSwitch.hidden = !globeSwitch.on;
+// In the dev server an e2e may set `window.__tourEditorClouds` (an init
+// script) to `{ off: true }`: Clouds starts unticked, as if a creator had
+// unticked it, so every open applies it from its first frame. Inert in a
+// production build.
+if (import.meta.env.DEV && !import.meta.env.VITEST) {
+  const knob = (window as { __tourEditorClouds?: { off?: boolean } })
+    .__tourEditorClouds;
+  if (knob?.off === true) setChecked(cloudsSwitch, false);
+}
 // View state only - no edit, nothing pending; kept for the next open.
 realTimeSwitch.addEventListener("click", () => {
   const on = !isChecked(realTimeSwitch);
