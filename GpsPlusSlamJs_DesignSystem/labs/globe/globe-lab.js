@@ -136,9 +136,10 @@ import { createGlobeSceneDepth } from "/globe/globe-scene-depth.js";
 import { createGlobeCity } from "/globe/globe-city.js";
 import { createGlobeCityStep } from "/globe/globe-city-step.js";
 import {
+  SPEED_DUST_LOOK,
   SPEED_DUST_MAX_COUNT,
   createSpeedDustPass,
-} from "./globe-speed-dust-pass.js";
+} from "/globe/globe-speed-dust-pass.js";
 import { GLOBE_SPEED_DUST } from "/globe/globe-speed-dust.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import { GLOBE_SKY_HAND_OVER } from "/globe/globe-sky-hand-over.js";
@@ -663,25 +664,30 @@ const PARAMS = {
   // weight over the Earth (0 behind it only), `dustExposureMs` the streaks'
   // exposure (at least a frame), `dustWidthPx` their width.
   dust: { fallback: 0, min: 0, max: 1 },
-  dustOver: { fallback: 0.25, min: 0, max: 1 },
+  dustOver: { fallback: SPEED_DUST_LOOK.over, min: 0, max: 1 },
   // 60 ms, 2,500 streaks and gain 2: the owner's pick of four A/B looks
-  // (DEC-R3-17, 2026-10-09, look C).
-  dustExposureMs: { fallback: 60, min: 16, max: 100 },
-  dustWidthPx: { fallback: 1.5, min: 0.5, max: 4 },
+  // (DEC-R3-17, 2026-10-09, look C; `SPEED_DUST_LOOK`, which the Tour
+  // Viewer's editor draws too).
+  dustExposureMs: { fallback: SPEED_DUST_LOOK.exposureMs, min: 16, max: 100 },
+  dustWidthPx: { fallback: SPEED_DUST_LOOK.widthPx, min: 0.5, max: 4 },
   // The streaks' knobs in the panel (D1b, DEC-R3-11; the owner tunes them):
   // how many, how bright, their tint (0 bluish white, 1 white, 2 warm), the
   // speed range they answer (km/s: nothing at the low end, all at the high
   // end; measured on a flight: about 1.5 km/s at the landing, 4,800 km/s
   // at 44,000 km) and how fast they pour (box units a second, at the low
   // and the high end of the range).
-  dustCount: { fallback: 2500, min: 100, max: SPEED_DUST_MAX_COUNT },
+  dustCount: {
+    fallback: SPEED_DUST_LOOK.count,
+    min: 100,
+    max: SPEED_DUST_MAX_COUNT,
+  },
   // Which motion makes streaks (round-4 plan DEC-R4-4, §6 item 6): 1 (the
   // default) the distance only while the user's controls move the camera
   // (turning the globe streaked sideways for seconds) and the whole motion
   // in a flight (it flies along its line, the focus at the screen's
   // centre); 2 the distance only everywhere; 0 the whole motion always.
   dustMotion: { fallback: 1, min: 0, max: 2 },
-  dustGain: { fallback: 2, min: 0, max: 4 },
+  dustGain: { fallback: SPEED_DUST_LOOK.gain, min: 0, max: 4 },
   // The streaks' share far out, where the whole Earth is in view (round-5
   // plan: the owner found them a bit strong at the start; 1 the r823 look).
   dustFar: { fallback: GLOBE_SPEED_DUST.farShare, min: 0, max: 1 },

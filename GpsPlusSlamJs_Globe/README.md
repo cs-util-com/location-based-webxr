@@ -8,9 +8,11 @@ Design: the private repo's `GpsPlusSlamJs_Docs/docs/2026-09-26-0539-globe-intro-
 
 ## As a dependency of a Vite app
 
-The package exports one entry, `gps-plus-slam-globe/editor`
-(`src/globe-editor.ts`, the 3D editor's building blocks), as TypeScript
-SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
+The package exports two entries, `gps-plus-slam-globe/editor`
+(`src/globe-editor.ts`, the 3D editor's building blocks) and
+`gps-plus-slam-globe/view` (`src/globe-view-entry.ts`, the whole globe
+view: its camera controls, air, relief, approach flight and speed dust),
+plus two `./test-utils/*` helpers, all as TypeScript SOURCE: there is no build. A consumer adds `"gps-plus-slam-globe":
 "workspace:*"` and imports from that name; Vite transpiles the source, and
 the consumer's `tsc` type-checks it under the consumer's own compiler
 options. The Tour Viewer is the first consumer; it holds what a consumer

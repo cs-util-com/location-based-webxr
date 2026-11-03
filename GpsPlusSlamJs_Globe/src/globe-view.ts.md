@@ -11,6 +11,10 @@
   drawing buffer's fit, and the frame in the lab's order. What a page draws
   or drives around that frame comes in through seams.
 - Public API:
+  - `globeViewFitM({ radiusM, fovYDeg, aspect })`: the distance from the
+    Earth's centre (m) at which the globe fits that view with the view's
+    margin, the very value `fitDistance()` reads after a frame at that
+    size; for a page that places the camera before its canvas is laid out.
   - `createGlobeView(options)`: `canvas`; `fovYDeg` (the camera's field of
     view at creation); `settings()` (read every frame: `fovY`, `worldFrame`,
     `sky`, `space`, `holeColor`, `cloudDrift`, `cloudDriftFarKm`,

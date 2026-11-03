@@ -71,6 +71,7 @@ asked for a screen-space effect tied to the speed in metres per second.
 
 ## How it is used
 
-The lab draws the streaks as instanced quads in a pass of their own, with a
+The pass `globe-speed-dust-pass.ts` (the lab's and the Tour Viewer's
+editor's) draws the streaks as instanced quads in a pass of their own, with a
 camera that has the view's ECEF orientation (so a frame move never spins
 the field), behind the Earth, and at `dustOver` weight over it.
