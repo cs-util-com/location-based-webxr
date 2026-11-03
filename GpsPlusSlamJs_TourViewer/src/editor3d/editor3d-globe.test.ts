@@ -111,7 +111,11 @@ interface Fakes {
     disposed: boolean;
   };
   /** What the relief was made with. */
-  terrainInput: null | { imagery?: unknown; template?: unknown };
+  terrainInput: null | {
+    imagery?: unknown;
+    template?: unknown;
+    osmGain?: number;
+  };
   /** Whether the stations layer hands out its objects (a station is then
    *  admitted at its first upload); false: none ever is. */
   admits: boolean;
@@ -353,7 +357,19 @@ vi.mock("./editor3d-terrain.js", async () => {
       fakes.terrainInput = input;
       return {
         terrain: {
-          tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
+          tiles: {
+            group: new THREE.Group(),
+            ellipsoid: WGS84_ELLIPSOID,
+            loadProgress: 0.75,
+            stats: {
+              queued: 4,
+              downloading: 2,
+              parsing: 1,
+              loaded: 40,
+              failed: 0,
+            },
+            lruCache: { cachedBytes: 5_000_000, maxBytesSize: 64_000_000 },
+          },
           plugin: {
             sampleCartographicElevation: (latRad: number) =>
               fakes.groundAt(latRad),
@@ -1349,6 +1365,45 @@ describe("openGlobeEditor's wiring", () => {
     fakes.coverageCalls = 0;
     for (now = 0; now < 2_100; now += 1000 / 60) frameAt(now);
     expect(fakes.coverageCalls).toBe(0);
+  });
+
+  // Why: a check that waits for the relief to carry the ground must be
+  // able to tell a relief still loading (slowly, on a software-drawn
+  // runner) from one that stalled, and see what the hand-over waits for:
+  // the band's share and target, whether the relief's view is settled,
+  // its load progress and its tiles queued, downloading and parsing (a
+  // relief tile parses until its street map's texture is in); and its
+  // cache against the device's budget, which a check at a phone's width
+  // holds it to.
+  it("reports what the relief's hand-over waits for", async () => {
+    await openAt(0);
+    fakes.settled = false;
+    fakes.reliefShare = 0;
+    const relief = (open?.stats().globe as { relief: unknown }).relief;
+    expect(relief).toEqual({
+      share: 0,
+      target: 0,
+      settled: false,
+      loadProgress: 0.75,
+      queued: 4,
+      downloading: 2,
+      parsing: 1,
+      loaded: 40,
+      failed: 0,
+      cacheBytes: 5_000_000,
+      cacheMaxBytes: 64_000_000,
+    });
+  });
+
+  // Why: the link's osmGain is the A/B switch of the street map's
+  // darkening; the view must hand it to the relief's map as it is.
+  it("hands the link's street-map gain to the relief's map", async () => {
+    tourAt(0);
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      osmGain: 0.45,
+    });
+    expect(fakes.terrainInput?.osmGain).toBe(0.45);
   });
 
   // Why: the shell shows the street map's loading state; the view hands

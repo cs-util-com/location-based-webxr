@@ -181,6 +181,7 @@ export async function openGlobeEditor(
     | "landAglM"
     | "startKm"
     | "dust"
+    | "osmGain"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -374,6 +375,7 @@ export async function openGlobeEditor(
       // the ground keeps its colour where the relief takes over.
       imagery: createGlobeImagery(),
       template: globe.template,
+      osmGain: knobs.osmGain,
     });
     undo.push(() => {
       ground.dispose();
@@ -811,6 +813,36 @@ export async function openGlobeEditor(
         approach = null;
       }
       return notYet;
+    }
+
+    /** The relief's hand-over state for the stats. */
+    function reliefLoad() {
+      const tiles = ground.terrain.tiles;
+      // The library's counters (untyped in 0.5.3).
+      const { queued, downloading, parsing, loaded, failed } = (
+        tiles as unknown as {
+          stats: Record<
+            "queued" | "downloading" | "parsing" | "loaded" | "failed",
+            number
+          >;
+        }
+      ).stats;
+      return {
+        share: reliefMount.share(),
+        target: reliefMount.target(),
+        settled: reliefMount.reliefSettled(),
+        loadProgress: tiles.loadProgress,
+        queued,
+        downloading,
+        parsing,
+        loaded,
+        failed,
+        // The relief's tile cache against its device budget (bytes); the
+        // library's types leave its `cachedBytes` out.
+        cacheBytes: (tiles.lruCache as unknown as { cachedBytes: number })
+          .cachedBytes,
+        cacheMaxBytes: tiles.lruCache.maxBytesSize,
+      };
     }
 
     function updateLayers(now: number): void {
@@ -1301,6 +1333,10 @@ export async function openGlobeEditor(
           })),
           globe: {
             carrier: relief ? "relief" : "globe",
+            // What the hand-over waits for: the band's share and target,
+            // the relief's view settled, and its tiles still loading (a
+            // tile parses until its street map's texture is in).
+            relief: reliefLoad(),
             altitudeM: pose.altitudeKm * 1000,
             // Where the camera is and looks, and the sampled ground under
             // it: what a pinch's direction and size are measured by.

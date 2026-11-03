@@ -97,6 +97,19 @@ export const GLOBE_SWITCH = Object.freeze({
     min: 0,
     max: 1,
   }) satisfies GlobeSwitchKnob,
+  /**
+   * The street map's darkening gain (its luma compressed toward this,
+   * `patchOsmFade` in the Globe package): the map's tiles are far brighter
+   * than the relief's imagery, and at 1 the fade's edge shows as a pale
+   * disc. 0.55 by eye; the link's value is its A/B switch. From 0.2 (a
+   * darker map loses its roads) to 1 (as the tile server made it).
+   */
+  osmGain: Object.freeze({
+    param: "osmGain",
+    fallback: 0.55,
+    min: 0.2,
+    max: 1,
+  }) satisfies GlobeSwitchKnob,
 });
 
 /** What the link asks of the editor on the globe. */
@@ -113,6 +126,8 @@ export interface GlobeSwitch {
   readonly startKm: number | null;
   /** The speed streaks: 1 on, 0 off. */
   readonly dust: number;
+  /** The street map's darkening gain, in (0, 1]. */
+  readonly osmGain: number;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -152,5 +167,6 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     landAglM: knob(params, GLOBE_SWITCH.landAglM),
     startKm: override(params, GLOBE_SWITCH.startKm),
     dust: Math.round(knob(params, GLOBE_SWITCH.dust)),
+    osmGain: knob(params, GLOBE_SWITCH.osmGain),
   };
 }

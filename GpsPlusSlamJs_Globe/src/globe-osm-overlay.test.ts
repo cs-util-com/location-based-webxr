@@ -384,6 +384,7 @@ describe("patchOsmFade", () => {
       uOsmFadeM: { value: 300 },
       uOsmOn: { value: 1 },
       uOsmFadeStart: { value: 0.7 },
+      uOsmGain: { value: 0.55 },
     };
     expect(patchOsmFade(shader, uniforms)).toBe(true);
     expect(shader.fragmentShader).toContain("uniform float uOsmFadeM;");
@@ -394,6 +395,42 @@ describe("patchOsmFade", () => {
     expect(shader.uniforms.uOsmFadeM).toBe(uniforms.uOsmFadeM);
   });
 
+  // Why: the street map's tiles are far brighter than the relief's
+  // imagery, so the fade's edge showed as a pale disc. The gain darkens the
+  // map before it is blended: it compresses the map's luma toward the gain
+  // (a white road ends at the gain, a dark one stays nearly as it is), not
+  // a flat multiply that would turn its dark lines black as well. Read from
+  // the shader the library compiles: the gain is a uniform, applied to the
+  // tile's colour before the blend weighs it.
+  it("darkens the map by its gain before the blend, compressing its luma", () => {
+    const chunk = readFileSync(
+      join(LIBRARY, "overlays/wrapOverlaysMaterial.js"),
+      "utf8",
+    );
+    const shader = {
+      uniforms: {} as Record<string, unknown>,
+      fragmentShader: `#include <common>\nvoid main() {\n${chunk}\n}`,
+    };
+    const uniforms = {
+      uOsmFadeM: { value: 300 },
+      uOsmOn: { value: 1 },
+      uOsmFadeStart: { value: 0.7 },
+      uOsmGain: { value: 0.55 },
+    };
+    expect(patchOsmFade(shader, uniforms)).toBe(true);
+    const glsl = shader.fragmentShader;
+    expect(glsl).toContain("uniform float uOsmGain;");
+    expect(shader.uniforms.uOsmGain).toBe(uniforms.uOsmGain);
+    // Luma by its Rec. 709 weights, compressed toward the gain:
+    // L' = L g / (g + (1 - g) L), the colour scaled by L' / L.
+    expect(glsl).toContain("vec3( 0.2126, 0.7152, 0.0722 )");
+    expect(glsl).toContain("g / ( g + ( 1.0 - g ) * l )");
+    const gained = glsl.indexOf("tint.rgb = osmGain( tint.rgb, uOsmGain );");
+    const blended = glsl.indexOf("tint.rgba *= layerInfo[ i ].opacity");
+    expect(gained).toBeGreaterThan(-1);
+    expect(blended).toBeGreaterThan(gained);
+  });
+
   it("reports a shader without the blend line, untouched", () => {
     const shader = { uniforms: {}, fragmentShader: "void main() {}" };
     expect(
@@ -401,6 +438,7 @@ describe("patchOsmFade", () => {
         uOsmFadeM: { value: 1 },
         uOsmOn: { value: 1 },
         uOsmFadeStart: { value: 0.7 },
+        uOsmGain: { value: 1 },
       }),
     ).toBe(false);
     expect(shader.fragmentShader).toBe("void main() {}");
@@ -585,12 +623,19 @@ describe("GatedOsmOverlay", () => {
     vi.useFakeTimers();
     const added: unknown[] = [];
     const removed: unknown[] = [];
-    const signal = {
-      aborted: false,
-      addEventListener: (_type: string, fn: unknown, opts: unknown) =>
-        added.push([fn, opts]),
-      removeEventListener: (_type: string, fn: unknown) => removed.push(fn),
-    } as unknown as AbortSignal;
+    // A real signal (the request's time limit joins it), its listeners
+    // counted.
+    const { signal } = new AbortController();
+    const addListener = signal.addEventListener.bind(signal);
+    const removeListener = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((type: string, fn: never, opts: never) => {
+      added.push([fn, opts]);
+      addListener(type, fn, opts);
+    }) as typeof signal.addEventListener;
+    signal.removeEventListener = ((type: string, fn: never) => {
+      removed.push(fn);
+      removeListener(type, fn);
+    }) as typeof signal.removeEventListener;
     const waiting = overlay.fetch("c", { signal });
     t = 60_000;
     await vi.advanceTimersByTimeAsync(60_000);
@@ -710,6 +755,29 @@ describe("reevaluateGatedTiles", () => {
     );
     expect(src).toContain("_updateLayers( tile ) {");
     expect(src).toMatch(/overlayInfo\s*\.get\( overlay \)\s*\.tileInfo/);
+  });
+});
+
+describe("createGlobeOsmOverlay's gain", () => {
+  // Why: the gain is the caller's look choice (the editor's link sets
+  // it); left out, the map is drawn as the tile server made it, and a
+  // gain that would brighten or blank it is refused rather than drawn.
+  it("takes the caller's gain into the shader's uniform, 1 by default, (0, 1] only", () => {
+    const make = (gain?: number) =>
+      createGlobeOsmOverlay({
+        url: TEMPLATE,
+        attribution: ATTRIBUTION,
+        maxZoom: 19,
+        renderer: {} as THREE.WebGLRenderer,
+        ...(gain === undefined ? {} : { gain }),
+      });
+    expect(GLOBE_OSM.gain).toBe(1);
+    expect(make().uniforms.uOsmGain.value).toBe(1);
+    expect(make(0.55).uniforms.uOsmGain.value).toBe(0.55);
+    expect(make(1).uniforms.uOsmGain.value).toBe(1);
+    for (const bad of [0, -0.5, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => make(bad)).toThrow(RangeError);
+    }
   });
 });
 
@@ -966,6 +1034,7 @@ describe("the map's diagnostics", () => {
       coarse: 1,
       waiting: 1,
       failed: 0,
+      givenUp: 0,
       unprocessed: 1,
     });
   });
@@ -1161,6 +1230,7 @@ describe("the map's diagnostics", () => {
       coarse: 0,
       waiting: 0,
       failed: 0,
+      givenUp: 0,
       unprocessed: 0,
     };
     expect(osm.coverage()).toEqual(none);

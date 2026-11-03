@@ -29,7 +29,19 @@ the default.
     stations' pins and rings fill the view);
   - `dust` - default 1, range 0-1: the speed streaks on the approach (the
     globe lab's speed dust in its look); `dust=0` is the A/B link that
-    turns them off.
+    turns them off;
+  - `osmGain` - default 0.55, range 0.2-1: the street map's darkening
+    gain (its luma compressed toward it, `patchOsmFade` in the Globe
+    package), so the map's bright tiles do not show the fade's edge as a
+    pale disc; the link's value is its A/B switch. Measured by
+    `playwright-tests/editor3d-globe-osm-gain.spec.js` (2026-11-03, the
+    map's land colour over the globe's imagery, the step at the fade's edge
+    as the ratio of the mapped ground's luma to the bare ground's, 69 of
+    255): gain 1 3.40, 0.7 3.00, 0.6 2.81, 0.55 2.71, 0.5 2.60, 0.45 2.48.
+    The ratio falls evenly with the gain, so no value is singled out by it:
+    0.55 cuts the step by a fifth and keeps the paper at 186 of 255 (233
+    at gain 1), still read as a light map; the choice stays a look one, for
+    the phone A/B.
 - `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
   range 500-65000 km: the start height as an explicit override. Without
   it (`null`) the meteor starts where the globe lab's intro zooms out to
@@ -37,7 +49,7 @@ the default.
   portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
   `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
-  `dust`)
+  `dust`, `osmGain`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
@@ -68,5 +80,5 @@ if (globe.on) {
 `globe-switch.test.ts`: off with its defaults without the switch, on only
 for `globe=1`, every knob read, a landing never shallower than the
 entry, a bad or out-of-range knob read as its default, `startKm` read
-as an override only, the streaks on by default and off for `dust=0`, the bounds
-themselves accepted, the defaults inside their ranges.
+as an override only, the streaks on by default and off for `dust=0`, the street
+map's gain at 0.55 by default and its range, the bounds themselves accepted, the defaults inside their ranges.

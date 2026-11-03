@@ -50,6 +50,8 @@ import {
   MAPTERHORN_URL_TEMPLATE,
 } from "gps-plus-slam-osm/elevation/terrarium";
 
+import { GLOBE_SWITCH } from "../editor/globe-switch.js";
+
 /** The relief's mesh level near the camera: about 6.5 m between vertices,
  *  fine enough for the map's z15 and finer. */
 export const EDITOR_MESH_LEVEL = 17;
@@ -156,6 +158,9 @@ export function createEditorTerrain(input: {
    */
   readonly imagery?: ReliefLook["imagery"];
   readonly template?: ReliefLook["template"];
+  /** The map's darkening gain (the link's `osmGain`; its default where
+   *  not given). */
+  readonly osmGain?: number;
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -192,6 +197,7 @@ export function createEditorTerrain(input: {
     fadeM: EDITOR_OSM_FADE_M,
     limits: EDITOR_OSM_LIMITS,
     keep: EDITOR_OSM_KEEP[input.device],
+    gain: input.osmGain ?? GLOBE_SWITCH.osmGain.fallback,
   });
   osm.attach(terrain);
   osm.setEnabled(true);

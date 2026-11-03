@@ -1,5 +1,5 @@
 diff --git a/build/renderer-_7gAivIK.js b/build/renderer-_7gAivIK.js
-index 4c3e9d0896954ee4260572878ca88f32578ce970..7980e0d0f06905ffd2312614b02aaa0a6aeedd43 100644
+index 4c3e9d0896954ee4260572878ca88f32578ce970..a57d1031ff934dbf0e3d8fa1a1f134b9f8d5d489 100644
 --- a/build/renderer-_7gAivIK.js
 +++ b/build/renderer-_7gAivIK.js
 @@ -325,7 +325,7 @@ function k(e, t) {
@@ -20,8 +20,17 @@ index 4c3e9d0896954ee4260572878ca88f32578ce970..7980e0d0f06905ffd2312614b02aaa0a
  				e && n || t.traversal.allChildrenLoaded || (i = !1);
  			}
  		}
+@@ -385,7 +385,7 @@ function N(e, t) {
+ 	let r = n.length > 0;
+ 	for (let e = 0, i = n.length; e < i; e++) {
+ 		let i = n[e];
+-		N(i, t), x(i, t.frameCount) && !(i.traversal.active && A(i)) && !i.traversal.allChildrenReady && (r = !1);
++		N(i, t), x(i, t.frameCount) && !(i.traversal.active && A(i) && t.isTileReady?.(i) !== !1) && !i.traversal.allChildrenReady && (r = !1);
+ 	}
+ 	e.traversal.allChildrenReady = r, e.refine === "REPLACE" && !r && e.traversal.wasSetActive && A(e) && (e.traversal.active = !0, k(e, t));
+ }
 diff --git a/src/core/renderer/tiles/traverseFunctions.js b/src/core/renderer/tiles/traverseFunctions.js
-index 7e19e81ab4fd009eeca0aa26c1d500a2296030aa..98f8b6a9865ce3bbc74b6cc250147f96678b0bdb 100644
+index 7e19e81ab4fd009eeca0aa26c1d500a2296030aa..547668701b3b399f16d8ba6b9cd89d5606e8dc3b 100644
 --- a/src/core/renderer/tiles/traverseFunctions.js
 +++ b/src/core/renderer/tiles/traverseFunctions.js
 @@ -242,7 +242,7 @@ function kickActiveChildren( tile, renderer ) {
@@ -33,3 +42,13 @@ index 7e19e81ab4fd009eeca0aa26c1d500a2296030aa..98f8b6a9865ce3bbc74b6cc250147f96
  
  }
  
+@@ -462,7 +462,8 @@ function markVisibleTiles( tile, renderer ) {
+ 
+ 		if ( isUsedThisFrame( c, renderer.frameCount ) ) {
+ 
+-			const childIsReady = c.traversal.active && isChildReady( c );
++			// A child also waits for what the renderer's optional isTileReady( tile ) asks of it (false: not ready).
++			const childIsReady = c.traversal.active && isChildReady( c ) && renderer.isTileReady?.( c ) !== false;
+ 			if ( ! childIsReady && ! c.traversal.allChildrenReady ) {
+ 
+ 				allChildrenReady = false;

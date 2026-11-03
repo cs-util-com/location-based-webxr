@@ -273,7 +273,13 @@ the camera's altitude, the frame target, the hidden stations and codes, the
 frame recentres, the surface's state and `uploads` (`pending`, `ran`,
 `worstFrameMs`, `admitted`). `mapLoad` is the street map's typed loading
 state (`OsmMapLoad`: tiles waiting, failed, given up, the request ceiling's
-wait in s), produced here for the shell to show.
+wait in s), produced here for the shell to show. `relief` is what the
+hand-over to the relief waits for: its share and target, whether its view
+has settled (`settled`, the band's condition), the library's `loadProgress`
+and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
+`failed`), and its tile cache's bytes against the device budget
+(`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
+from a stalled one.
 
 ## Tests
 
