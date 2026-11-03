@@ -100,7 +100,7 @@ export const SPEED_DUST_COLORS: readonly (readonly [number, number, number])[] =
   ]);
 
 /** The look's knobs, each the default when absent (the lab's panel, D1b). */
-export interface SpeedDustKnobs {
+interface SpeedDustKnobs {
   readonly count?: number;
   /** On the opacity (default 1; a negative value reads as 1). */
   readonly gain?: number;
@@ -115,7 +115,7 @@ export interface SpeedDustKnobs {
 }
 
 /** What the pass needs of the renderer. */
-export type SpeedDustRenderer = Pick<
+type SpeedDustRenderer = Pick<
   THREE.WebGLRenderer,
   "getDrawingBufferSize" | "getPixelRatio" | "render"
 >;
@@ -143,7 +143,7 @@ export interface SpeedDustFrame {
 }
 
 /** The pass's state after its last `update` (the knobs as applied). */
-export interface SpeedDustState {
+interface SpeedDustState {
   readonly count: number;
   readonly gain: number;
   readonly farShare: number;
@@ -161,7 +161,7 @@ export interface SpeedDustState {
 }
 
 /** The first visible streaks, projected (`sample`). */
-export interface SpeedDustSample {
+interface SpeedDustSample {
   /** Heads and tails as normalised screen points, 0 at the top-left. */
   readonly streaks: readonly {
     readonly head: readonly [number, number];
