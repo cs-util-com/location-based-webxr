@@ -13,8 +13,10 @@
  *   screen door, one pixel in four, so a station inside a block stays
  *   visible and can be picked (picking never hits the city: the editor
  *   picks the stations and the sampled ground, not the scene);
- * - shown or hidden by the view (`setShown`): hidden, nothing loads and
- *   nothing is drawn.
+ * - shown or hidden by the view (`setShown`): hiding stops a load that
+ *   runs (the worker is told, nothing it still sends is built), and while
+ *   hidden nothing loads and nothing is drawn; shown again, the place is
+ *   loaded again.
  *
  * A city that throws (its worker cannot be made) is held off for the
  * view's life with its message in the stats: a frame must never stop on
@@ -53,7 +55,7 @@ interface EditorCitySelection {
 export interface EditorCityOptions {
   readonly city: Pick<
     GlobeCity,
-    "root" | "load" | "setFade" | "state" | "dispose"
+    "root" | "load" | "abort" | "setFade" | "state" | "dispose"
   >;
   /** The tour's centre (degrees). */
   readonly place: { readonly lat: number; readonly lng: number };
@@ -111,7 +113,8 @@ export interface EditorCity {
   }): void;
   /** At the approach's start: the city's data loads during the flight. */
   warmUp(): void;
-  /** Shown (the default) or hidden: hidden, nothing loads or draws. */
+  /** Shown (the default) or hidden: hiding stops a running load; while
+   *  hidden, nothing loads or draws. */
   setShown(on: boolean): void;
   /** What stands on the ground for the clouds' depth: the city's root
    *  while it is drawn, else none. */
@@ -122,7 +125,6 @@ export interface EditorCity {
 
 /** The see-through's uniforms, one set for every patched material. */
 interface SeeThroughUniforms {
-  readonly uSeeOn: { value: number };
   readonly uSeeCentre: { value: THREE.Vector3 };
   readonly uSeeUp: { value: THREE.Vector3 };
   readonly uSeeRadius: { value: number };
@@ -131,6 +133,14 @@ interface SeeThroughUniforms {
 /** Where a material keeps the see-through's uniforms, and its mark. */
 const SEE_THROUGH_KEY = "editorSeeThrough";
 const SEE_THROUGH_WRAPPED = "editorSeeThroughWrapped";
+/**
+ * The define that compiles the see-through in. Without it a material runs
+ * a shader with no discard (one would keep the GPU from its early depth
+ * test for every building); three.js keys its programs on the defines, so
+ * an edge switches between two programs it keeps, never a compile a
+ * frame.
+ */
+const SEE_THROUGH_DEFINE = "EDITOR_SEE_THROUGH";
 
 const VERTEX_HEAD = "#include <common>";
 const VERTEX_ANCHOR = "#include <project_vertex>";
@@ -140,8 +150,9 @@ const FRAGMENT_ANCHOR = "#include <clipping_planes_fragment>";
 /**
  * A material's shader with the see-through: the world position carried
  * to the fragment, which is discarded three pixels in four inside the
- * cylinder about `uSeeUp` through `uSeeCentre`. False when a shader lacks
- * an anchor (left unchanged).
+ * cylinder about `uSeeUp` through `uSeeCentre`; all of it only where the
+ * material defines `EDITOR_SEE_THROUGH`. False when a shader lacks an
+ * anchor (left unchanged).
  */
 export function patchSeeThrough(
   shader: { vertexShader: string; fragmentShader: string; uniforms: object },
@@ -158,35 +169,46 @@ export function patchSeeThrough(
   }
   Object.assign(shader.uniforms, uniforms);
   shader.vertexShader = vs
-    .replace(VERTEX_HEAD, `${VERTEX_HEAD}\nvarying vec3 vSeeWorld;`)
+    .replace(
+      VERTEX_HEAD,
+      `${VERTEX_HEAD}
+#ifdef ${SEE_THROUGH_DEFINE}
+varying vec3 vSeeWorld;
+#endif`,
+    )
     .replace(
       VERTEX_ANCHOR,
       `${VERTEX_ANCHOR}
+#ifdef ${SEE_THROUGH_DEFINE}
 vec4 seeAt = vec4(transformed, 1.0);
 #ifdef USE_INSTANCING
 seeAt = instanceMatrix * seeAt;
 #endif
-vSeeWorld = (modelMatrix * seeAt).xyz;`,
+vSeeWorld = (modelMatrix * seeAt).xyz;
+#endif`,
     );
   shader.fragmentShader = fs
     .replace(
       FRAGMENT_HEAD,
       `${FRAGMENT_HEAD}
+#ifdef ${SEE_THROUGH_DEFINE}
 varying vec3 vSeeWorld;
-uniform float uSeeOn;
 uniform vec3 uSeeCentre;
 uniform vec3 uSeeUp;
-uniform float uSeeRadius;`,
+uniform float uSeeRadius;
+#endif`,
     )
     .replace(
       FRAGMENT_ANCHOR,
       `${FRAGMENT_ANCHOR}
-if (uSeeOn > 0.5) {
+#ifdef ${SEE_THROUGH_DEFINE}
+{
   vec3 seeD = vSeeWorld - uSeeCentre;
   vec3 seeFlat = seeD - dot(seeD, uSeeUp) * uSeeUp;
   vec2 seeCell = mod(floor(gl_FragCoord.xy), 2.0);
   if (length(seeFlat) < uSeeRadius && seeCell.x + seeCell.y > 0.5) discard;
-}`,
+}
+#endif`,
     );
   return true;
 }
@@ -240,7 +262,6 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
   const { city, place, zoom } = options;
   const cityStep = options.step ?? createGlobeCityStep({ city });
   const uniforms: SeeThroughUniforms = {
-    uSeeOn: { value: 0 },
     uSeeCentre: { value: new THREE.Vector3() },
     uSeeUp: { value: new THREE.Vector3(0, 1, 0) },
     uSeeRadius: { value: 0 },
@@ -248,6 +269,8 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
   /** The materials patched (each once; the trees' are shared). */
   const patched = new WeakSet<THREE.Material>();
   let patchedCount = 0;
+  /** Whether the see-through is on (a selection, the city shown). */
+  let seeOn = false;
   let shown = true;
   /** Why the city is held off (its worker could not be made). */
   let broken: string | null = null;
@@ -277,19 +300,29 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
     material.needsUpdate = true;
   };
 
+  /** The define set to `seeOn`; a change recompiles (once per edge). */
+  const defineSeeThrough = (material: THREE.Material) => {
+    const defines = (material.defines ??= {}) as Record<string, unknown>;
+    if (SEE_THROUGH_DEFINE in defines === seeOn) return;
+    if (seeOn) defines[SEE_THROUGH_DEFINE] = "";
+    else delete defines[SEE_THROUGH_DEFINE];
+    material.needsUpdate = true;
+  };
+
+  /** Every building and tree material patched, its define at `seeOn`. */
   const patchObjects = () => {
     for (const object of city.root.children) {
       if (object.userData.cityLayer === "roads") continue;
-      for (const material of materialsOf(object)) patchMaterial(material);
+      for (const material of materialsOf(object)) {
+        patchMaterial(material);
+        defineSeeThrough(material);
+      }
     }
   };
 
   const aim = (selection: EditorCitySelection | null) => {
-    if (selection === null) {
-      uniforms.uSeeOn.value = 0;
-      return;
-    }
-    uniforms.uSeeOn.value = 1;
+    seeOn = selection !== null;
+    if (selection === null) return;
     uniforms.uSeeCentre.value.copy(selection.at);
     uniforms.uSeeUp.value.copy(selection.up).normalize();
     uniforms.uSeeRadius.value = selection.radiusM + EDITOR_CITY.seeThroughM;
@@ -309,7 +342,8 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
   return {
     step({ altitudeM, selection }) {
       if (!shown || broken !== null) {
-        uniforms.uSeeOn.value = 0;
+        seeOn = false;
+        patchObjects();
         return;
       }
       // A camera not placed yet has no altitude: the frame is skipped
@@ -325,8 +359,8 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
           law: EDITOR_CITY.law,
         });
       });
-      patchObjects();
       aim(selection);
+      patchObjects();
     },
     warmUp() {
       if (!shown) return;
@@ -337,8 +371,10 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
     setShown(on) {
       shown = on;
       if (!on) {
+        guarded(() => city.abort());
         city.setFade(0);
-        uniforms.uSeeOn.value = 0;
+        seeOn = false;
+        patchObjects();
       }
     },
     extra: () => (shown && city.root.visible ? [city.root] : []),
@@ -368,14 +404,13 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
             : groundM - reliefGroundM,
         load: loadStats(s.load),
         seeThrough: {
-          on: uniforms.uSeeOn.value > 0.5,
+          on: seeOn,
           radiusM: uniforms.uSeeRadius.value,
           materials: patchedCount,
         },
       };
     },
     dispose() {
-      uniforms.uSeeOn.value = 0;
       city.dispose();
     },
   };
