@@ -171,6 +171,15 @@ wired into its logic: every interaction is faked.
   offers it, and a Measure button that renders each frame 1 to 8 times to
   get the real cost of one frame on a display-capped screen; made
   2026-11-04.
+- `globe-look-7-raymarch-lod/`, `globe-look-8-raymarch-living/`,
+  `globe-look-9-raymarch-sharp/` - the third round, all from the raymarched
+  clouds of round 2: a cloud resolution that follows the camera's distance
+  without a visible switch (`?lod=0|1`), a region-sized cloud field that
+  does not repeat and clouds that slowly change shape (`?field=tiled|random`,
+  `?evolve=0|1`, `?timescale=`), and full-resolution clouds rebuilt over
+  four frames with the camera's motion (`?method=base|new`). Each also has
+  denser clouds and a far sea that keeps its long waves in the cheap tier;
+  made 2026-11-04.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
