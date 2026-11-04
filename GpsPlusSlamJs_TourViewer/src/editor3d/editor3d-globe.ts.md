@@ -120,7 +120,26 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   The air steps them with the relief mount's cloud-shell share
   (`shareClouds(true, flat)`), draws them after the Earth and patches
   their shadow onto the relief; `setClouds(on)` is the View menu's
-  switch. The cloud shell sits at 3 km, the lab's height.
+  switch. The cloud shell sits at 3 km, the lab's height. The clouds'
+  `extra` depth carries the buildings' root, so a cloud behind a
+  building is hidden as one behind the relief is.
+- **The OSM buildings** (`editor3d-globe-city.ts` over the Globe
+  package's `createGlobeCity`, its worker `globe-city-worker.ts` made as
+  a module worker from `new URL("./globe-city-worker.ts", import.meta.url)`):
+  under the Earth-centred group at the tour's centre, on the relief's own
+  height source (`ground.heights`: Mapterhorn at zoom 12), so the city's
+  ground and the drawn relief agree by construction
+  (`stats().city.parityM`). The approach's start warms them up (a fresh
+  load during the fall, `warmCity`); each frame (`stepCity`, after the
+  uploads) loads them once below 30 km and fades them in by altitude, and
+  the selection's place, its up and its radius turn the buildings and
+  trees around it see-through. `setBuildings(on)` shows or hides them (no
+  chip yet). None is made with the link's `buildings=0`, in a browser
+  without workers, or when making it throws (`openCity`): the view opens
+  without buildings, never not at all. Picking never meets them: the
+  stations are picked by the layer and the ground on the sampled relief
+  (`groundPointOfRay`, `controls.pickFrom` the relief's tiles), and
+  nothing raycasts the city.
 - **The interface over the clouds' shadow** (`globe-interface-pass.ts`):
   the shell's ground shadow is a full-screen quad composited after the
   scene, its rays ending at the relief's depth (the scene depth holds the
@@ -328,6 +347,10 @@ link's `shadow` and `windMps`, the canvas probes (`probes`: pixels of a
 billboard, a ring and a model), the
 shell's frames drawn, share and weights (`shell`) and
 how many objects the interface pass lifted (`interfaceLifted`).
+`city` (top level, beside `globe`) is the buildings' (`EditorCityStats`:
+the worker's phase, tiles, buildings, objects, geometry bytes, fade, the
+height parity against the relief at the tour's centre, the load and the
+see-through), null without buildings.
 
 ## Tests
 

@@ -55,7 +55,16 @@
  * slab near the ground, the spherical volume from orbit down, the high
  * layer), on by default; the View menu's Clouds turns them off
  * (`setClouds`). The cloud shell's share is the relief mount's, as in the
- * lab. Not yet here: a layer chip for the buildings.
+ * lab.
+ *
+ * The OSM buildings (with their trees and roads) stand at the tour's
+ * centre (`editor3d-globe-city.ts` over the Globe package's city, its
+ * worker `globe-city-worker.ts`), on the relief's own height source; they
+ * load once the camera is below 30 km, warm up from the approach's start,
+ * draw see-through around the selection and stand in the clouds' depth.
+ * The view's `setBuildings` shows or hides them (no chip yet);
+ * `buildings=0` makes no city at all. Picking never meets them: the
+ * stations are picked by the layer and the ground on the sampled relief.
  *
  * The approach starts where the globe lab's intro zooms out to (the whole
  * Earth in view at the page's aspect), and the controls zoom out as far as
@@ -73,6 +82,7 @@ import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import {
   createGlobeCameraControls,
+  createGlobeCity,
   createGlobeImagery,
   createGlobeView,
   createSpeedDustPass,
@@ -118,6 +128,7 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
+import { mountEditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
 import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
@@ -278,6 +289,20 @@ function cloudProbes(
   };
 }
 
+/**
+ * The buildings' city, or null: with the link's `buildings=0`, in a
+ * browser without workers, or when making it throws (the view opens
+ * without buildings rather than not at all).
+ */
+function openCity<T>(on: boolean, make: () => T): T | null {
+  if (!on || typeof Worker === "undefined") return null;
+  try {
+    return make();
+  } catch {
+    return null;
+  }
+}
+
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
@@ -294,6 +319,7 @@ export async function openGlobeEditor(
     | "osmGainMode"
     | "cloudShadow"
     | "cloudWind"
+    | "buildings"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -542,9 +568,36 @@ export async function openGlobeEditor(
       reliefMount.dispose();
     });
     const { ellipsoid } = ground.terrain.tiles;
+    // The buildings at the tour's centre, on the relief's height source;
+    // none with `buildings=0` or without module workers.
+    const editorCity = openCity(knobs.buildings === 1, () =>
+      mountEditorCity({
+        city: createGlobeCity({
+          parent: globe.group,
+          ellipsoid,
+          heightsUrl: ground.heights.url,
+          // The library's own parameter types are narrower than the city's
+          // seam (it hands the worker's reply through as it came).
+          loadCityThree: () => import("gps-plus-slam-osm/three") as never,
+          createWorker: () =>
+            new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
+              type: "module",
+            }),
+        }),
+        place: { lat: centre.lat, lng: centre.lng },
+        zoom: ground.heights.globalZoom,
+      }),
+    );
+    undo.push(() => {
+      editorCity?.dispose();
+    });
     const mountedAir = mountGlobeViewAir(view, {
       coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
-      clouds: globeViewClouds(view, { shadow: knobs.cloudShadow }),
+      clouds: globeViewClouds(view, {
+        shadow: knobs.cloudShadow,
+        // The buildings hide the clouds behind them, as the relief does.
+        extra: () => editorCity?.extra() ?? [],
+      }),
     });
     air = mountedAir;
     undo.push(() => {
@@ -1066,6 +1119,7 @@ export async function openGlobeEditor(
       });
       // After the layer's update: a station's billboard is made there.
       uploads.step();
+      stepCity(altitudeM, ui.selected);
 
       // The near plane keeps clear of the drawn stations.
       eyeSpheres.length = 0;
@@ -1077,6 +1131,33 @@ export async function openGlobeEditor(
       }
       editing.update();
       frames++;
+    }
+
+    // The buildings' frame: their load and fade by the camera's altitude,
+    // and the see-through around the selection (world space).
+    const seeAt = new THREE.Vector3();
+    const seeUp = new THREE.Vector3();
+    /** The buildings' data loads during the approach's fall, so they
+     *  stand on landing. */
+    function warmCity(): void {
+      editorCity?.warmUp();
+    }
+    function stepCity(altitudeM: number, selected: string | null): void {
+      if (editorCity === null) return;
+      const place = selected === null ? null : placeOf(selected);
+      editorCity.step({
+        altitudeM,
+        selection:
+          place === null
+            ? null
+            : {
+                at: worldOf(place.at, seeAt),
+                up: seeUp
+                  .set(0, 1, 0)
+                  .transformDirection(tourFrame.matrixWorld),
+                radiusM: place.radiusM,
+              },
+      });
     }
 
     const aimAt = (at: THREE.Vector3, radiusM: number) => {
@@ -1151,6 +1232,11 @@ export async function openGlobeEditor(
     undo.push(() => {
       interfacePass = null;
     });
+    /** The buildings' part of the stats, their parity measured against
+     *  the relief at the tour's centre. */
+    const cityStats = () =>
+      editorCity?.stats(ground.groundAt(centre.lat * DEG, centre.lng * DEG)) ??
+      null;
     /** The clouds' part of the stats (see the comment there). */
     const cloudStats = () => ({
       driftRate: view.state().cloudDriftRate,
@@ -1256,6 +1342,7 @@ export async function openGlobeEditor(
         true;
       // The frame at the tour, once: the flight moves the camera only.
       view.setFrameTarget({ lat: centre.lat, lng: centre.lng });
+      warmCity();
       const driver = createMeteorApproach({
         ellipsoid,
         view,
@@ -1417,6 +1504,9 @@ export async function openGlobeEditor(
       setClouds(on) {
         air?.setClouds(on);
       },
+      setBuildings(on) {
+        editorCity?.setShown(on);
+      },
       setRealTime(on) {
         if (on === realTime) return;
         realTime = on;
@@ -1563,6 +1653,10 @@ export async function openGlobeEditor(
               scene: lastSceneCalls,
             },
           },
+          // The buildings: tiles, buildings, the worker's state, their
+          // geometry's size and the height parity with the relief at the
+          // tour's centre.
+          city: cityStats(),
         };
       },
     };

@@ -62,6 +62,11 @@ it. An old `globe=1` link keeps opening the globe.
   (0.6 degrees seen from 150 m up, 9.0e-5 deg/s of longitude, measured by
   `playwright-tests/editor3d-globe-clouds.spec.js`, 2026-11-03); 40 moves
   it 120 m. `cloudWind=10` (the old look) / `80` are the A/B links.
+- `buildings` - default 1, range 0-1: the OSM buildings (with their trees
+  and roads) at the tour (`../editor3d/editor3d-globe-city.ts`).
+  `buildings=0` is a developer's link: no city worker is made and nothing
+  is asked of Overpass (`stats().city` reads null), the other half of a
+  frame-time comparison.
 - `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
   range 500-65000 km: the start height as an explicit override. Without
   it (`null`) the meteor starts where the globe lab's intro zooms out to
@@ -69,7 +74,7 @@ it. An old `globe=1` link keeps opening the globe.
   portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
   `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
-  `dust`, `osmGain`, `osmGainMode`, `cloudShadow`, `cloudWind`)
+  `dust`, `osmGain`, `osmGainMode`, `cloudShadow`, `cloudWind`, `buildings`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
@@ -101,6 +106,7 @@ if (globe.on) {
 `globe-switch.test.ts`: on with its defaults without the switch, off only
 for `globe=0`, every knob read, a landing never shallower than the
 entry, a bad or out-of-range knob read as its default, `startKm` read
-as an override only, the streaks on by default and off for `dust=0`, the
+as an override only, the streaks on by default and off for `dust=0`, the buildings on by
+default and off for `buildings=0`, the
 street map's gain at 0.55 by default and its range, the bounds themselves
 accepted, the defaults inside their ranges.

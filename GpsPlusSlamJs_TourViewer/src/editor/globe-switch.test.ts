@@ -27,6 +27,7 @@ describe("readGlobeSwitch", () => {
       osmGainMode: "flat",
       cloudShadow: GLOBE_SWITCH.cloudShadow.fallback,
       cloudWind: GLOBE_SWITCH.cloudWind.fallback,
+      buildings: 1,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });
@@ -133,6 +134,17 @@ describe("readGlobeSwitch", () => {
     }
   });
 
+  // Why: the buildings are on by default; buildings=0 is the developer's
+  // link without them (no city worker, no Overpass traffic), a typo keeps
+  // them.
+  it("reads the buildings on by default and off for buildings=0", () => {
+    expect(readGlobeSwitch("").buildings).toBe(1);
+    expect(readGlobeSwitch("?buildings=0").buildings).toBe(0);
+    for (const bad of ["abc", "2", "-1", ""]) {
+      expect(readGlobeSwitch(`?buildings=${bad}`).buildings).toBe(1);
+    }
+  });
+
   // Why: the street map's darkening gain is a look choice tuned by eye;
   // the link's osmGain is its A/B switch, and a value out of its range
   // (one that would blank or brighten the map) reads as the default.
@@ -200,6 +212,7 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.osmGain,
       GLOBE_SWITCH.cloudShadow,
       GLOBE_SWITCH.cloudWind,
+      GLOBE_SWITCH.buildings,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

@@ -149,6 +149,17 @@ export const GLOBE_SWITCH = Object.freeze({
     min: 0,
     max: 1_000,
   }) satisfies GlobeSwitchKnob,
+  /**
+   * The OSM buildings (and trees and roads) at the tour: 1 on, 0 off (a
+   * developer's knob: no city worker is made, nothing is asked of
+   * Overpass, and a frame-time comparison's other half).
+   */
+  buildings: Object.freeze({
+    param: "buildings",
+    fallback: 1,
+    min: 0,
+    max: 1,
+  }) satisfies GlobeSwitchKnob,
 });
 
 /** What the link asks of the editor on the globe. */
@@ -173,6 +184,8 @@ export interface GlobeSwitch {
   readonly cloudShadow: number;
   /** The clouds' wind floor (m/s at the equator). */
   readonly cloudWind: number;
+  /** The OSM buildings at the tour: 1 on, 0 off. */
+  readonly buildings: number;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -219,5 +232,6 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
         : GLOBE_SWITCH.osmGainMode.fallback,
     cloudShadow: knob(params, GLOBE_SWITCH.cloudShadow),
     cloudWind: knob(params, GLOBE_SWITCH.cloudWind),
+    buildings: Math.round(knob(params, GLOBE_SWITCH.buildings)),
   };
 }

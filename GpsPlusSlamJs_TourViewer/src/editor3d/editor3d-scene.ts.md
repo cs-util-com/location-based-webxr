@@ -62,6 +62,10 @@ keys), and writes only through the page's `edits`.
     this view has no sky of its own and leaves it out;
   - `setClouds?(on)` - optional: the globe view's heavy clouds on (true,
     their default) or off; this view has no clouds and leaves it out;
+  - `setBuildings?(on)` - optional: the globe view's OSM buildings shown
+    (true, their default) or hidden (nothing more loaded, nothing drawn);
+    this view has none and leaves it out. `Editor3dStats.city` is their
+    stats (`editor3d-globe-city.ts`), null without them;
   - `setLayers(hidden)` - the station names and the codes off or on (the
     other layers have nothing drawn yet);
   - `pointOf(selection)` - where it stands in the world (the page's

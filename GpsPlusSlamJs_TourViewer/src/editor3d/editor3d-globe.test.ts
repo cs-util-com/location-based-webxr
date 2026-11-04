@@ -100,6 +100,15 @@ interface Fakes {
   airSteps: { shareClouds?: (flat: number) => number }[];
   /** What the air's cloud switch was told. */
   cloudsOn: boolean[];
+  /** The options the clouds were made with (their `extra` depth). */
+  cloudsOptions: null | { extra?: () => readonly THREE.Object3D[] };
+  /** The options each city was made with, and the loads it was asked. */
+  cityOptions: {
+    parent: unknown;
+    heightsUrl?: string;
+    createWorker(): unknown;
+  }[];
+  cityLoads: { target: unknown; zoom: number; fresh: boolean }[];
   /** The share of the ground the relief mount reports (1: the relief
    *  carries all of it, 0: the globe's surface). */
   reliefShare: number;
@@ -161,6 +170,9 @@ const fakes = vi.hoisted((): Fakes => ({
   airOptions: null,
   airSteps: [],
   cloudsOn: [],
+  cloudsOptions: null,
+  cityOptions: [],
+  cityLoads: [],
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -176,7 +188,32 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
     ...(await importOriginal<object>()),
     creditsFor: () => [],
     // The air's clouds factory: the air is faked, so it is only passed on.
-    globeViewClouds: () => () => null,
+    globeViewClouds: (_view: unknown, options: Fakes["cloudsOptions"]) => {
+      fakes.cloudsOptions = options;
+      return () => null;
+    },
+    // The city: its options and loads recorded, its root a group.
+    createGlobeCity: (options: Fakes["cityOptions"][number]) => {
+      fakes.cityOptions.push(options);
+      const root = new THREE.Group();
+      let fade = 0;
+      return {
+        root,
+        load: (target: unknown, load: { zoom: number; fresh?: boolean }) => {
+          fakes.cityLoads.push({
+            target,
+            zoom: load.zoom,
+            fresh: load.fresh === true,
+          });
+          return { progress: () => 0, done: false };
+        },
+        setFade: (value: number) => {
+          fade = value;
+        },
+        state: () => ({ phase: "loading", fade, shown: 0, load: null }),
+        dispose() {},
+      };
+    },
     createGlobeImagery: () => fakes.imagery,
     mountGlobeRelief: (options: {
       globe: unknown;
@@ -397,6 +434,10 @@ vi.mock("./editor3d-terrain.js", async () => {
         groundAt: (latRad: number) => fakes.groundAt(latRad),
         update() {},
         credits: [],
+        heights: {
+          url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+          globalZoom: 12,
+        },
         osm: {
           stats: () => ({}),
           coverage: () => {
@@ -625,6 +666,9 @@ beforeEach(() => {
   fakes.airOptions = null;
   fakes.airSteps = [];
   fakes.cloudsOn = [];
+  fakes.cloudsOptions = null;
+  fakes.cityOptions = [];
+  fakes.cityLoads = [];
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1124,6 +1168,71 @@ describe("openGlobeEditor's wiring", () => {
     view.setClouds?.(false);
     view.setClouds?.(true);
     expect(fakes.cloudsOn).toEqual([false, true]);
+  });
+
+  /** The test page's own Worker (none), put back after a test stubs one. */
+  const noWorker = (globalThis as { Worker?: unknown }).Worker;
+
+  // Why: the buildings are opt-out for a developer (`buildings=0`): no
+  // city is made, so nothing is asked of Overpass, and the stats say so.
+  it("makes no buildings with buildings=0", async () => {
+    vi.stubGlobal("Worker", class {});
+    tourAt(0);
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch("?buildings=0"),
+    });
+    expect(fakes.cityOptions).toEqual([]);
+    expect(open.stats().city).toBeNull();
+    expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
+    vi.stubGlobal("Worker", noWorker);
+  });
+
+  // Why: the buildings stand on the relief's own height source (parity
+  // with the drawn ground), under the Earth-centred group; they load at
+  // the tour's centre on the relief's zoom once low enough, warm up from
+  // the approach's start, stand in the clouds' depth, and the view's
+  // toggle hides them.
+  it("mounts the buildings at the tour on the relief's heights, with a toggle", async () => {
+    const made: unknown[][] = [];
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor(...args: unknown[]) {
+          made.push(args);
+        }
+      },
+    );
+    const view = await openAt(0, { approach: { durationMs: 1_000 } });
+    expect(fakes.cityOptions).toEqual([
+      expect.objectContaining({
+        parent: fakes.view?.globe.group,
+        heightsUrl: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+      }),
+    ]);
+    for (const options of fakes.cityOptions) options.createWorker();
+    expect(made).toEqual([
+      [
+        expect.objectContaining({
+          href: expect.stringMatching(/\/globe-city-worker\.ts/),
+        }),
+        { type: "module" },
+      ],
+    ]);
+    // The approach's start warms the city up at the tour's centre.
+    expect(fakes.cityLoads[0]).toMatchObject({ zoom: 12, fresh: true });
+    // Taken from the flight near the tour: the frame loads it there.
+    view.setDistance(200);
+    frameAt(16);
+    expect(fakes.cityLoads.at(-1)).toMatchObject({ zoom: 12, fresh: false });
+    expect(view.stats().city).toMatchObject({
+      shown: true,
+      worker: "loading",
+      reliefGroundM: DRAWN_M,
+    });
+    view.setBuildings?.(false);
+    expect(view.stats().city?.shown).toBe(false);
+    expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
+    vi.stubGlobal("Worker", noWorker);
   });
 
   // Why: the cloud shell takes the clouds as the relief takes the ground,

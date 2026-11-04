@@ -22,12 +22,20 @@ export const SQUARE_GROUND_M = 515.5;
  * Terrarium tiles, as Mapterhorn serves them) and the map's with a plain
  * tile; refuse the globe's whole-Earth imagery, counting any ask (or,
  * with `globeAssets: "serve"`, let the dev server answer it, still
- * counted: the editor on the globe view draws it).
+ * counted: the editor on the globe view draws it). The globe view's
+ * buildings are answered too, on the CONTEXT so their worker's requests
+ * are (`answerCityData`): Overpass with `overpass` (an Overpass JSON
+ * object, every tile the same; no buildings by default), the heights
+ * with the same flat ground. Nothing leaves the machine.
  * @param {import("@playwright/test").Page} page
- * @param {{ globeAssets?: "refuse" | "serve" }} [options]
+ * @param {{ globeAssets?: "refuse" | "serve", overpass?: object }} [options]
  */
-export async function answerHosts(page, { globeAssets = "refuse" } = {}) {
+export async function answerHosts(
+  page,
+  { globeAssets = "refuse", overpass = NO_BUILDINGS } = {},
+) {
   const flat = terrariumPng(512, 512, () => SQUARE_GROUND_M);
+  await answerCityData(page, flat, overpass);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
     if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {
       return route.abort();
@@ -48,6 +56,67 @@ export async function answerHosts(page, { globeAssets = "refuse" } = {}) {
   });
   return imagery;
 }
+
+/** An Overpass answer with nothing in it. */
+const NO_BUILDINGS = Object.freeze({ version: 0.6, elements: [] });
+
+/** The Overpass hosts the Osm library's pool asks. */
+const isOverpassHost = (/** @type {URL} */ url) =>
+  /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
+    url.hostname,
+  ) ||
+  (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/"));
+
+/**
+ * The buildings' data for the city worker, routed on the page's context
+ * (a dedicated worker's requests do not pass the page's own routes):
+ * Overpass with `overpass`, Mapterhorn's heights with `flat`, and a
+ * CORS preflight answered (the worker's requests are cross-origin, so the
+ * browser checks the headers on a fulfilled response too). The requests
+ * answered are counted in `cityRequests`.
+ * @param {import("@playwright/test").Page} page
+ * @param {Buffer} flat
+ * @param {object} overpass
+ */
+async function answerCityData(page, flat, overpass) {
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST",
+    "Access-Control-Allow-Headers": "*",
+  };
+  const body = JSON.stringify(overpass);
+  await page.context().route(
+    (url) => isOverpassHost(url) || url.hostname === "tiles.mapterhorn.com",
+    (route) => {
+      const request = route.request();
+      if (request.method() === "OPTIONS") {
+        return route.fulfill({ status: 204, headers: cors });
+      }
+      const url = new URL(request.url());
+      if (isOverpassHost(url)) {
+        cityRequests.overpass += 1;
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, "Content-Type": "application/json" },
+          body,
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        headers: { ...cors, "Content-Type": "image/png" },
+        body: flat,
+      });
+    },
+  );
+}
+
+/**
+ * The city worker's Overpass requests answered so far (this test
+ * process). Height tiles are not counted: the page's own Mapterhorn
+ * route answers the worker's requests too, so a count could not tell
+ * them from the relief's; the specs' height-parity check covers them.
+ */
+export const cityRequests = { overpass: 0 };
 
 /**
  * Keep every promise the page leaves rejected, from before its first
