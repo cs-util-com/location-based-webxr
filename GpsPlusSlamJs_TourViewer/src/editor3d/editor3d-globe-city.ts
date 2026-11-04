@@ -43,7 +43,7 @@ export const EDITOR_CITY = Object.freeze({
 });
 
 /** The selection the city turns see-through around (world space). */
-export interface EditorCitySelection {
+interface EditorCitySelection {
   readonly at: THREE.Vector3;
   /** The ground's up there (unit). */
   readonly up: THREE.Vector3;
