@@ -210,6 +210,27 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
     return { plan: osm.cityDataPlan(target, { heights }), zoom: heights.zoom };
   };
 
+  /**
+   * The store, the heights' fetch and the plan for load `id`; null when it
+   * was stopped meanwhile. One caching fetch serves the probe and the
+   * load: the probe's tiles are the load's cache hits.
+   */
+  const prepare = async (
+    id: unknown,
+    target: { lat: number; lng: number },
+    heights: CityHeightsSpec,
+    deep: CityHeightsSpec | null,
+  ) => {
+    store ??= deps.openStore();
+    const opened = (await store) as never;
+    if (current?.id !== id) return null; // superseded while the store opened
+    const heightFetch = osm.createCachingTileFetch({
+      store: opened,
+    }) as typeof fetch;
+    const planned = await planOn(id, target, heights, deep, heightFetch);
+    return planned === null ? null : { opened, heightFetch, ...planned };
+  };
+
   const start = async (
     id: unknown,
     target: { lat: number; lng: number },
@@ -217,16 +238,9 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
     deep: CityHeightsSpec | null,
     firstRings: number,
   ) => {
-    store ??= deps.openStore();
-    const opened = (await store) as never;
-    if (current?.id !== id) return; // superseded while the store opened
-    // One caching fetch for the probe and the load: the probe's tiles are
-    // the load's cache hits.
-    const heightFetch = osm.createCachingTileFetch({
-      store: opened,
-    }) as typeof fetch;
-    const planned = await planOn(id, target, heights, deep, heightFetch);
+    const planned = await prepare(id, target, heights, deep);
     if (planned === null) return;
+    const { opened, heightFetch } = planned;
     let built = false;
     const load = osm.loadCityData(planned.plan as never, {
       source: osm.createCityTileSource(opened, { userAgent }) as never,

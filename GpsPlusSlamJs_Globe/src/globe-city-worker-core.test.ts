@@ -64,7 +64,7 @@ function fakes() {
     },
   };
   const heightFetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
+    const url = input instanceof Request ? input.url : input.toString();
     asked.push({ url, signal: init?.signal });
     return Promise.resolve(net.answer(url));
   };
