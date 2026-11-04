@@ -12,10 +12,16 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { outsideItems, problemCounts, tourProblems } from "./tour-problems.js";
 
 const AT = "2026-11-04T00:00:00.000Z";
+
+// The fix's geodesy is licence-gated: building a store activates the
+// licence, as the page's own store does at boot.
+createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 function pin(id: string, north: number, east: number, caption = id, up = 1.5) {
   return {
@@ -58,7 +64,7 @@ describe("tourProblems", () => {
     const groups = tourProblems([
       station("a", [pin("in", 3, 4), pin("far", 30, 40, "Far pin")], "Square"),
     ]);
-    expect(groups).toEqual([
+    expect(groups).toMatchObject([
       {
         stationId: "a",
         number: 1,
@@ -73,6 +79,44 @@ describe("tourProblems", () => {
         ],
       },
     ]);
+  });
+
+  // Why: the Problems row of an item outside its circle offers "Move
+  // inside", as the chosen layout does. The edit must bring the item back
+  // inside the circle along the line it stands on (the creator's
+  // direction kept), at its height and heading, as one ordinary pose edit
+  // the page writes and can undo.
+  it("offers to move an outside item inside, along its line, height kept", () => {
+    const far = pin("far", 30, 40, "Far pin", 2.5);
+    const [group] = tourProblems([station("a", [far], "Square")]);
+    const fix = group?.problems[0]?.fix;
+    expect(fix?.label).toBe("Move inside");
+    expect(fix?.done).toBe('Moved "Far pin" inside its station\'s circle');
+    const edit = fix!.edit();
+    expect(edit.kind).toBe("item-pose");
+    expect(edit.id).toBe("far");
+    const geo = edit.geo;
+    const northM = (geo.lat - 48.1) * 111_320;
+    const eastM = (geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);
+    const distanceM = Math.hypot(northM, eastM);
+    expect(distanceM).toBeLessThan(25);
+    expect(distanceM).toBeGreaterThan(19);
+    // Along its line: 30 north to 40 east.
+    expect(Math.atan2(eastM, northM)).toBeCloseTo(Math.atan2(40, 30), 2);
+    expect(geo.alt).toBeCloseTo(560 + 2.5, 6);
+    // A station's own note has nothing to fix in one click.
+    const [empty] = tourProblems([station("b", [])]);
+    expect(empty?.problems[0]?.fix).toBeUndefined();
+  });
+
+  it("moves an outside item of a small circle halfway in", () => {
+    const [group] = tourProblems([
+      station("a", [pin("far", 6, 8, "Far pin")], "Square", 4),
+    ]);
+    const geo = group!.problems[0]!.fix!.edit().geo;
+    const northM = (geo.lat - 48.1) * 111_320;
+    const eastM = (geo.lon - 11.5) * 111_320 * Math.cos((48.1 * Math.PI) / 180);
+    expect(Math.hypot(northM, eastM)).toBeCloseTo(2, 1);
   });
 
   it("counts an item on the circle itself as inside", () => {

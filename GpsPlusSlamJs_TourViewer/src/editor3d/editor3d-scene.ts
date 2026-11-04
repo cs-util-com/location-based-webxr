@@ -50,7 +50,11 @@ import {
   type ShellLayer,
 } from "../editor/editor-view.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
-import type { OsmMapLoad } from "gps-plus-slam-globe/editor";
+import type {
+  OsmMapLoad,
+  OsmMapTile,
+  OsmRetryOutcome,
+} from "gps-plus-slam-globe/editor";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -90,7 +94,11 @@ import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountCredits } from "./editor3d-credits.js";
-import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
+import {
+  createViewRenderer,
+  drawnCounts,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -184,6 +192,12 @@ export interface Editor3dView {
   setClouds?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
+  /** The street map's near tiles, failed first (the Map loading tab). */
+  mapTiles(limit: number): readonly OsmMapTile[];
+  /** Ask for the street map's failed tiles again now: how many. */
+  retryMap(): number;
+  /** What became of the last retry's tiles (null before it ran). */
+  lastMapRetry(): OsmRetryOutcome | null;
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
@@ -361,10 +375,17 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     canvas.className = "view3d-canvas";
     deps.container.prepend(canvas);
     // The box is hidden until the first frame is drawn (the map stays in
-    // view while the view loads): the window's size until it shows.
+    // view while the view loads): the window's size until it shows. Once
+    // shown, the height is the canvas's: the bottom panel shortens it
+    // (pushes the view up), to nothing when maximised.
     const size = () => ({
       w: Math.max(1, deps.container.clientWidth || window.innerWidth),
-      h: Math.max(1, deps.container.clientHeight || window.innerHeight),
+      h: Math.max(
+        1,
+        deps.container.clientHeight > 0
+          ? canvas.clientHeight
+          : window.innerHeight,
+      ),
     });
     renderer.setSize(size().w, size().h, false);
 
@@ -461,6 +482,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       });
     });
     resize.observe(deps.container);
+    resize.observe(canvas);
     undo.push(() => resize.disconnect());
 
     let firstFrame: () => void = () => undefined;
@@ -774,8 +796,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           tiltDeg: cam.tiltDeg(),
           headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
           top,
-          drawCalls: renderer.info.render.calls,
-          triangles: renderer.info.render.triangles,
+          ...drawnCounts(renderer),
           frameMs: frameClock.meanMs(),
           worstFrameMs: frameClock.worstMs(),
           slowFrames: frameClock.slowFrames(),
@@ -784,6 +805,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           mapLoad: ground.osm.mapLoad(),
         };
       },
+      mapTiles: (limit) => ground.osm.mapTiles(limit),
+      retryMap: () => ground.osm.retryNow(),
+      lastMapRetry: () => ground.osm.lastRetry(),
       setLayers(hidden) {
         layer.setShown({
           names: !hidden.includes("names"),

@@ -60,11 +60,17 @@ afterEach(() => {
 
 describe("mountCredits", () => {
   it("shows only a Credits button, the overlay closed", () => {
-    // Why: the owner's verdict - the line of names over the view goes;
-    // one button stays.
+    // Why: the chosen layout - the line of names over the view goes; one
+    // button stays, naming the map's source, long or short by the width.
     const { box, button, panel } = mount({ note: NOTE });
     expect(button.type).toBe("button");
-    expect(button.textContent).toBe("Credits");
+    expect(button.querySelector(".long")?.textContent).toBe(
+      "Map data © OpenStreetMap contributors",
+    );
+    expect(button.querySelector(".short")?.textContent).toBe("© OSM");
+    expect(button.getAttribute("aria-label")).toBe(
+      "Credits: Map data © OpenStreetMap contributors",
+    );
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(button.getAttribute("aria-controls")).toBe(panel.id);
     expect(panel.id).not.toBe("");
@@ -196,6 +202,18 @@ describe("mountCredits", () => {
     button.click();
     button.click();
     expect(panel.hidden).toBe(true);
+  });
+
+  it("says Credits on the button where the map has no credit", () => {
+    const box = document.createElement("div");
+    document.body.append(box);
+    mountCredits(
+      box,
+      CREDITS.filter((c) => c.short !== "OpenStreetMap"),
+    );
+    const button = box.querySelector("button");
+    expect(button?.textContent).toBe("Credits");
+    expect(button?.hasAttribute("aria-label")).toBe(false);
   });
 
   it("can show the OSM credit beside the button, off unless asked", () => {

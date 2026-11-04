@@ -440,6 +440,9 @@ async function expectPanel(page, size, heightPx) {
   const panel = await box(page.locator("#shell-panel"));
   expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
   expect(panel.height, at).toBeCloseTo(heightPx, 0);
+  // It pushes the view up: the view's canvas ends at its top.
+  const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
+  expect(canvas.y + canvas.height, at).toBeCloseTo(panel.y, 0);
   const head = await box(page.locator("#shell-panel .bp-head"));
   expect(head.height, at).toBe(30);
   expect(head.y, at).toBeCloseTo(panel.y + 1, 0);
@@ -703,13 +706,93 @@ test("the top bar holds every control in its most crowded state, at every step i
     const size = { width, height: width < 721 ? 844 : 800 };
     await page.setViewportSize(size);
     await expectFrame(page, size);
-    // The status line stays inside the bottom bar, cut short if it must.
-    const line = await box(status);
-    expect(
-      line.x + line.width,
-      `the status at ${String(width)} px`,
-    ).toBeLessThanOrEqual(width);
+    // The status line is said, not shown: it stays visually hidden (a
+    // pixel, clipped) and keeps its live role at every width.
+    const at = `the status at ${String(width)} px`;
+    await expect(status, at).toHaveAttribute("role", "status");
+    const hidden = await status.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        small: r.width <= 1 && r.height <= 1,
+        clipped: style.clipPath !== "none" || style.clip !== "auto",
+      };
+    });
+    expect(hidden, at).toEqual({ small: true, clipped: true });
   }
+});
+
+// Why: a fresh page opens the panel at half the view at most (at least
+// 120 px, at most its usual height), as the chosen layout does, so a phone
+// in landscape starts at half the view; the resize in the test above keeps
+// the height the panel already had. Each size is its own fresh page with
+// nothing selected: the screenshots are the side-by-side check against
+// the chosen prototype.
+test("the bottom panel opens at its start height on a fresh page, at a phone, a phone in landscape and a desktop", async ({
+  browser,
+}) => {
+  test.setTimeout(300_000);
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1440, height: 900 },
+  ]) {
+    const context = await browser.newContext({ viewport: size });
+    const page = await context.newPage();
+    await open3d(page);
+    await page.locator('#shell-toggles [data-tab="problems"]').click();
+    await expect(page.locator("#shell-panel")).toBeVisible();
+    const main = await page
+      .locator("#view3d")
+      .evaluate((el) => el.clientHeight);
+    const start = Math.max(
+      90,
+      Math.min(Math.min(220, Math.max(120, main * 0.5)), main),
+    );
+    await expectPanel(page, size, start);
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(
+          `panel-fresh-${String(size.width)}x${String(size.height)}.png`,
+        ),
+    });
+    await context.close();
+  }
+});
+
+// Why: a problem's row redraws the panel as it selects (the selection is
+// marked); the focus once fell to the page, where Escape no longer closed
+// the panel and the keyboard user lost their place.
+test("the bottom panel keeps the keyboard focus through a choice, and Escape closes it", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  const toggle = page.locator('#shell-toggles [data-tab="problems"]');
+  await toggle.click();
+  const rows = page.locator("#shell-panel .prow");
+  await expect(rows.first()).toBeVisible();
+  await rows.first().focus();
+  const chosen = await rows.first().getAttribute("data-select");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator(`#shell-panel .prow[data-select="${chosen ?? ""}"]`),
+  ).toHaveClass(/\bsel\b/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const at = document.activeElement;
+        return at instanceof HTMLElement && at.closest("#shell-panel") !== null
+          ? (at.dataset["select"] ?? at.className)
+          : "outside";
+      }),
+    )
+    .toBe(chosen);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#shell-panel")).toBeHidden();
+  await expect(toggle).toBeFocused();
 });
 
 test("the File, Edit and View menus work from the keyboard and by touch", async ({

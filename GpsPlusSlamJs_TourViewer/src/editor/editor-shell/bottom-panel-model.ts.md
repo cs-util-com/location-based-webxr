@@ -35,13 +35,21 @@ chart's feed. `bottom-panel.ts` draws them.
 - `PanelState` - `{ open, tab, max }`; `toggled(state, tab?)` - a toggle
   (or Ctrl+J without a tab): a closed panel opens on it, an open one
   switches to it, its own tab closes it; a close ends the maximum.
-- `HistoryRow` - `{ what, state: current | done | undone, steps, saved }`;
+- `HistoryRow` - `{ what, state: current | done | undone, steps, saved,
+step }`;
   `historyRows({ past, future, position, savedAt })` - newest first: the
   undone steps (the next redo, `future.at(-1)`, nearest the current row),
   the current view, the steps before it, then "Opened the tour" (or
   "Earlier steps" once the history's bound dropped older ones). `steps` is
   what a click takes: negative undoes, positive redoes, 0 is the current
-  row. `saved` marks the view the file written in place holds.
+  row. `saved` marks the view the file written in place holds. `step` is
+  the history's own step object (the panel reads its time by it), null
+  for the base row.
+- `minutesAgo(ms)` - a row's age: "just now" under a minute (and for a
+  negative or non-finite age, a clock that stepped back), else "N min
+  ago" in whole minutes.
+- `PanelState.max` - maximised: the panel takes the view's whole height
+  (the view above it, pushed up, keeps none).
 - `withNewFrames(kept, recent, frameCount, seenCount, cap = 240)` - the
   chart's frames: only the intervals timed since the last look, taken
   from the view's latest `recent` ones, the last `cap` kept.
@@ -75,5 +83,6 @@ historyRows({
 
 `bottom-panel-model.test.ts`: each badge's presence and tone, the
 countdown, the clamp, start and drag outcomes, the kept values read
-defensively, the toggles, the History rows (with the saved mark and the
-dropped-steps base) and their property, and the chart's feed.
+defensively, the toggles, the History rows (with the saved mark, the
+dropped-steps base and each row's own step) and their property,
+`minutesAgo`, and the chart's feed.

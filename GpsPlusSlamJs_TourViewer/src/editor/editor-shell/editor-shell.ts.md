@@ -202,9 +202,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   controls' row, never over it; the save status said to a screen reader
   only (`.said`), the bar's other parts after the credits: the
   selection's actions, then the panel's toggles flush at the right edge.
-  The bottom panel lies over the view at its foot, between the open docks
-  (or under both, spanned), its height in `--s-panel-h` on the page, which
-  the map controls and the toasts stand above; at 700 px or less it takes
+  The bottom panel sits at the view's foot and pushes the view up (the
+  view's canvas ends at its top), between the open docks (or under both,
+  spanned), its height in `--s-panel-h` on the page, which the map
+  controls and the toasts stand above; at 700 px or less it takes
   the width, the inspector ending at its top. Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
   (`--s-name-min`, lowered step by step), and the bar folds in steps
@@ -352,8 +353,12 @@ waiting is called off by a selection change (later ground writes
 nothing), and writes once the ground arrives when the selection stays;
 the readout's tick builds no tour with nothing selected; the bottom
 panel lists the open tour's problems, a row selecting and flying to its
-item, Ctrl+J opening it, the tick feeding the Performance tab, and the
-help's line following the selection.
+item, its fix link writing the edit and saying so, Ctrl+J opening it,
+the view's map tiles listed and Retry reaching the view, the tick
+feeding the Performance tab, and the help's line following the
+selection. The panel's history times come from a subscription the shell
+keeps for the page's life (each step stamped when first seen, so steps
+made on the 2D map are timed too).
 
 The lock's click in the page: `editor3d-edit.spec.js`.
 

@@ -269,7 +269,13 @@ The view disposes the run once the arrival is over.
 - The page's box is hidden until the open resolves; the view's fit needs a
   laid-out canvas (a zero-size canvas would make its aspect NaN and throw).
   So the loop skips drawing while the canvas has no size and resolves the
-  open on that first tick.
+  open on that first tick. The view's height (`viewportPx`) and the
+  first frame's aspect are the canvas's, not the box's: the bottom panel
+  shortens the canvas (it pushes the view up; maximised, none is left and
+  the loop skips drawing). A ResizeObserver follows the box and the
+  canvas. The readout's draw calls and triangles come through
+  `drawnCounts`; `mapTiles`, `retryMap` and `lastMapRetry` hand the
+  overlay's tiles and retry to the bottom panel.
 - A frame that throws after the open stops the loop and tells the page
   (`events.failed`); a lost context after the open tells it too.
 - `dispose` frees in reverse order: the loop stops first, and the

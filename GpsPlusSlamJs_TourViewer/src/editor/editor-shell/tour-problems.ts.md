@@ -11,9 +11,14 @@ its station's circle" that the inspector's count reads too.
 
 - `ProblemSeverity` - `"error" | "warning" | "note"`.
 - `TourProblem` (module-private, the shape of `problems`) -
-  `{ severity, what, who, select }`: what is wrong, the item's or
-  station's title, and the selection a click on its row makes
-  (`station:<id>` or an item's id).
+  `{ severity, what, who, select, fix? }`: what is wrong, the item's or
+  station's title, the selection a click on its row makes
+  (`station:<id>` or an item's id), and the one-click mend where there
+  is one.
+- `ProblemFix` - `{ label, edit, done }`: the row's link, `edit()` the
+  `item-pose` edit the page writes (one undo step; made on the click, never
+  on a draw, since it needs the core licence), and what the page says
+  once written.
 - `ProblemGroup` - `{ stationId, number, title, problems }`, `number`
   1-based, `title` as `stationTitle` gives it.
 - `outsideItems(station)` -> the station's items (`worldBlocks`) whose
@@ -22,12 +27,20 @@ its station's circle" that the inspector's count reads too.
   is inside, the height never counts.
 - `tourProblems(stations)` -> one group per station that has a problem:
   - warning: "Outside its station's circle (N m from the centre, circle
-    R m)" for each item of `outsideItems`, who = `objectTitle(item)`;
+    R m)" for each item of `outsideItems`, who = `objectTitle(item)`,
+    with the fix "Move inside": the item moved along the line it stands
+    on to 4 m inside the circle (halfway to the centre for a circle of
+    8 m or less), its height and heading kept;
   - note: "Has no content yet" for a station with no blocks.
 - `problemCounts(groups)` -> `{ error, warning, note }`.
 
 ## Invariants & assumptions
 
+- **Kinds the data cannot have:** a quiz with no correct answer, a
+  picture with none chosen and a station with no position on the map are
+  refused by the tour's parser and types (a quiz needs its answer,
+  `TourPictureBlock.image` and `TourStation.geo` are required), so no rule
+  looks for them.
 - No rule yields an error yet; the severity exists so the panel's badge,
   filters and order need no change when one does.
 - A station without a problem gets no group, so an empty list means the
@@ -47,6 +60,7 @@ const counts = problemCounts(groups); // { error: 0, warning: 1, note: 0 }
 
 `tour-problems.test.ts`: nothing for a tour without a problem, the
 outside warning with its distances, the circle's edge counting as inside,
-the empty station's note named by its number, the counts, and a property:
+the empty station's note named by its number, the "Move inside" fix
+(along its line, height kept; halfway in on a small circle), the counts, and a property:
 `outsideItems` is the ground distance against the circle whatever the
 height. The inspector's "outside" count is `inspector-model.test.ts`'s.

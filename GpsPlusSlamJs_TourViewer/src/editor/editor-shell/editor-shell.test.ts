@@ -107,6 +107,16 @@ function fakeView() {
     turn: vi.fn(() => true),
     groundAt: () => ground.m,
     origin: () => ({ lat: 48.1371, lng: 11.5754 }),
+    mapTiles: vi.fn(() => [
+      {
+        key: "15/17000/11000",
+        status: "failed" as const,
+        note: "Request failed",
+        ms: null,
+      },
+    ]),
+    retryMap: vi.fn(() => 1),
+    lastMapRetry: vi.fn(() => null),
   };
 }
 
@@ -1018,7 +1028,7 @@ describe("the bottom panel", () => {
   // flying to it, the view's tick feeding the numbers, and the page's key
   // handler handing it its keys.
   it("lists the open tour's problems, selects and flies to one, and takes Ctrl+J", () => {
-    const { store, shell, view } = setUp();
+    const { store, shell, view, edits, deps } = setUp();
     const far = station("c", 0.0008);
     store.dispatch(
       tourDocumentActions.opened({
@@ -1055,6 +1065,34 @@ describe("the bottom panel", () => {
     document.querySelector<HTMLButtonElement>("#shell-panel .prow")?.click();
     expect(store.getState().editorView.selected).toBe("far");
     expect(view.flyTo).toHaveBeenCalledWith("far");
+    // The row's fix link writes its edit as one step and says so.
+    document
+      .querySelector<HTMLButtonElement>("#shell-panel .prow .fix")
+      ?.click();
+    expect(edits.scene).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "item-pose", id: "far" }),
+    );
+    expect(deps.say).toHaveBeenCalledWith(
+      expect.stringMatching(/^Moved ".+" inside its station's circle$/),
+    );
+    shell.hide();
+  });
+
+  // Why: the Map loading tab reads the shown view's tiles and asks it to
+  // retry; without the wiring the table stays empty and Retry does nothing.
+  it("lists the view's map tiles and asks it to retry", () => {
+    const { shell, view } = setUp();
+    document
+      .querySelector<HTMLButtonElement>('#shell-toggles [data-tab="tiles"]')
+      ?.click();
+    vi.advanceTimersByTime(400);
+    expect(
+      document.querySelector("#shell-panel table.tiles td.k")?.textContent,
+    ).toBe("15/17000/11000");
+    document
+      .querySelector<HTMLButtonElement>('#shell-panel [data-retry="map"]')
+      ?.click();
+    expect(view.retryMap).toHaveBeenCalledTimes(1);
     shell.hide();
     expect(document.getElementById("shell-panel")?.hidden).toBe(true);
   });

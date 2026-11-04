@@ -21,13 +21,17 @@ a note under the list (the globe view passes GIBS's acknowledgement).
   - `osmBeside` - also show the map's credit (the one whose short name is
     "OpenStreetMap", its full text "© OpenStreetMap contributors") as a
     link beside the button. Defaults to the module's `OSM_BESIDE_BUTTON`,
-    which is `false`: the owner chose the button alone.
+    which is `false`: the button itself names the map's source.
   - `unmount()` - removes the listeners and empties the box.
 
 ## DOM
 
-- `button.view3d-credits-button[type=button][aria-expanded][aria-controls]`,
-  "Credits": a disclosure (no `aria-haspopup`, no dialog role, since
+- `button.view3d-credits-button[type=button][aria-expanded][aria-controls]`:
+  where the credits hold the map's (short name "OpenStreetMap"), its words
+  are `span.long` "Map data © OpenStreetMap contributors" and `span.short`
+  "© OSM" (`editor.css` shows the short one at 700 px or less), its
+  `aria-label` "Credits: Map data ..." and its title "All credits";
+  otherwise "Credits". A disclosure (no `aria-haspopup`, no dialog role, since
   nothing traps focus in the panel);
 - `a.view3d-credits-beside`, only with `osmBeside`;
 - `div.view3d-credits-panel[aria-label=Credits][hidden]`
@@ -63,7 +67,8 @@ undo.push(
 - `editor3d-credits.test.ts` (jsdom) - the button alone, the overlay's
   links and note, text never markup, Esc with focus back from the box and from the page itself, kept where it is from outside the box, Esc left alone
   while closed and stopped while open, outside and inside pointer downs,
-  the toggle, the OSM option, unmount.
+  the toggle, the button naming the map's source (long, short and its
+  label) or "Credits" without it, the OSM option, unmount.
 - `editor3d-globe.test.ts` - the globe view mounts it with GIBS's
   acknowledgement and empties it on dispose.
 - `playwright-tests/editor3d.spec.js` - opening it in the page, Esc and

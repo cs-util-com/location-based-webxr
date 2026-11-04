@@ -185,7 +185,8 @@ export function readSaved(raw: string | null): {
 export interface PanelState {
   readonly open: boolean;
   readonly tab: PanelTab;
-  /** Maximised: the panel takes the view less its top margin. */
+  /** Maximised: the panel takes the view's whole height (the 3D view
+   *  above it, pushed up, keeps none, nor its map controls). */
   readonly max: boolean;
 }
 
@@ -210,6 +211,9 @@ export interface HistoryRow {
   readonly steps: number;
   /** The file written in place holds this view. */
   readonly saved: boolean;
+  /** The step the row stands for (the panel reads its time by it); null
+   *  for the view the history starts from. */
+  readonly step: object | null;
 }
 
 /**
@@ -227,23 +231,43 @@ export function historyRows(doc: {
 }): HistoryRow[] {
   const rows: HistoryRow[] = [];
   const base = doc.position - doc.past.length;
-  const row = (what: string, steps: number): HistoryRow => ({
+  const row = (
+    what: string,
+    steps: number,
+    step: object | null,
+  ): HistoryRow => ({
     what,
     state: steps > 0 ? "undone" : steps === 0 ? "current" : "done",
     steps,
     saved: doc.savedAt === doc.position + steps,
+    step,
   });
   for (const [j, step] of doc.future.entries()) {
-    rows.push(row(step.what, doc.future.length - j));
+    rows.push(row(step.what, doc.future.length - j, step));
   }
   for (let i = doc.past.length - 1; i >= 0; i -= 1) {
-    rows.push(row(doc.past[i]?.what ?? "", i + 1 - doc.past.length));
+    const step = doc.past[i];
+    rows.push(row(step?.what ?? "", i + 1 - doc.past.length, step ?? null));
   }
   rows.push(
     // 0 - n, not -n: no -0 before any edit.
-    row(base === 0 ? "Opened the tour" : "Earlier steps", 0 - doc.past.length),
+    row(
+      base === 0 ? "Opened the tour" : "Earlier steps",
+      0 - doc.past.length,
+      null,
+    ),
   );
   return rows;
+}
+
+/** How long ago something was, as a History row says it (`ms` since
+ *  then): "just now" under a minute (and for a clock that stepped back),
+ *  then whole minutes. */
+export function minutesAgo(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  return Number.isFinite(minutes) && minutes >= 1
+    ? `${String(minutes)} min ago`
+    : "just now";
 }
 
 /** The Performance chart's frames: `kept` (oldest first) with the

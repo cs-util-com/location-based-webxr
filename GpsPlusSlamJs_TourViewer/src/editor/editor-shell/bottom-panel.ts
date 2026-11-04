@@ -7,12 +7,17 @@
  * grip's drag and the keys (Ctrl+J, Ctrl+Shift+M, Escape inside it).
  *
  * It sits between the docks (or spans under them), and tells the page its
- * height in `--s-panel-h` on the view's box, which the map controls and,
- * on a narrow window, the docks keep clear of. Its height and last tab are
- * kept in the browser (`localStorage`, when it allows).
+ * height in `--s-panel-h` on the page's body: the 3D view's canvas ends at
+ * its top (the panel pushes the view up, the docks keep their height), and
+ * the map controls, the toasts and, on a narrow window, the docks keep
+ * clear of it. Its height and last tab are kept in the browser
+ * (`localStorage`, when it allows). A redraw keeps the keyboard focus on
+ * the control that had it (found again by its data attribute).
  *
  * @see bottom-panel.ts.md
  */
+import type { OsmMapTile, OsmRetryOutcome } from "gps-plus-slam-globe/editor";
+
 import type { Editor3dReadout } from "../../editor3d/editor3d-scene.js";
 import {
   PANEL_HEIGHT,
@@ -22,6 +27,7 @@ import {
   dragged,
   historyBadge,
   historyRows,
+  minutesAgo,
   perfBadge,
   problemsBadge,
   readSaved,
@@ -36,6 +42,7 @@ import {
 } from "./bottom-panel-model.js";
 import {
   problemCounts,
+  type ProblemFix,
   type ProblemGroup,
   type ProblemSeverity,
 } from "./tour-problems.js";
@@ -63,6 +70,7 @@ const ICON = {
   down: '<path d="M4 6l4 4 4-4"/>',
   close: '<path d="M4 4l8 8M12 4l-8 8"/>',
   slow: '<circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2 1.2"/>',
+  retry: '<path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.8"/><path d="M13.2 2.6v3h-3"/>',
 } as const;
 
 type PanelIcon = keyof typeof ICON;
@@ -115,16 +123,67 @@ interface PanelHistory {
   readonly savedAt: number | "elsewhere" | null;
 }
 
+/** The street map's tiles and its retry, as the Map loading tab reads
+ *  them from the shown view (nothing without one). */
+export interface PanelMap {
+  /** The near tiles, failed first (the overlay's `mapTiles`). */
+  tiles(limit: number): readonly OsmMapTile[];
+  /** Ask for the failed tiles again now: how many it asks for. */
+  retry(): number;
+  /** What became of the last retry's tiles (null before it ran). */
+  lastRetry(): OsmRetryOutcome | null;
+}
+
+/** The data attributes a focused control is found again by after a
+ *  redraw, in the order they are looked for. */
+const FOCUS_KEYS = [
+  "fix",
+  "select",
+  "fold",
+  "row",
+  "filter",
+  "step",
+  "retry",
+] as const;
+
+/** The tiles the table lists at most, and the ones it reads to count. */
+const TILE_ROWS = 40;
+const TILE_COUNT = 400;
+
+/** How long a retry is watched before it is said to be still loading
+ *  (ms). */
+const RETRY_WATCH_MS = 30_000;
+
+const TILE_STATUS: Readonly<Record<OsmMapTile["status"], string>> = {
+  failed: "Failed",
+  loading: "Loading",
+  waiting: "Waiting",
+  loaded: "Loaded",
+};
+
+const plural = (n: number, one: string) =>
+  `${String(n)} ${n === 1 ? one : `${one}s`}`;
+
 export interface BottomPanelDeps {
   /** The panel (`#shell-panel`) and the bar's toggles
    *  (`#shell-toggles`). */
   readonly panel: HTMLElement;
   readonly toggles: HTMLElement;
-  /** The view's box: its height bounds the panel's, and it carries
-   *  `--s-panel-h`. */
+  /** The view's box (`#view3d`): its height bounds the panel's. The
+   *  panel's height goes in `--s-panel-h` on the page's body. */
   readonly box: HTMLElement;
   /** A problem's row clicked: select its object (and fly to it). */
   readonly choose: (selection: string) => void;
+  /** A problem's fix link clicked: its object selected, the fix written
+   *  (one undo step) and said. */
+  readonly fix: (selection: string, fix: ProblemFix) => void;
+  /** The street map's tiles and retry (the Map loading tab). */
+  readonly map: PanelMap;
+  /** When a step of the edit history was made (ms, `now`'s clock), or
+   *  undefined when it is not known. */
+  readonly stepTime: (step: object) => number | undefined;
+  /** The clock (ms): `Date.now` by default. */
+  readonly now?: () => number;
   /** One step of the edit history (a History row takes several). */
   readonly step: (which: "undo" | "redo") => void;
   /** Where the panel's height and tab are kept; null where the browser
@@ -151,6 +210,7 @@ export interface BottomPanel {
  *  own. */
 export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   const { panel, toggles, box } = deps;
+  const clock = deps.now ?? Date.now;
   const saved = (() => {
     try {
       return readSaved(deps.storage?.getItem(PANEL_STORAGE_KEY) ?? null);
@@ -175,6 +235,13 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   let seenFrames = 0;
   /** The request ceiling's wait as it began (s): the banner's bar. */
   let waitTotalS = 0;
+  /** A retry under way (how many tiles it asked for, since when), and what
+   *  the last one came to (the tools' status line). */
+  let retryRun: { readonly asked: number; readonly since: number } | null =
+    null;
+  let retryNote = "";
+  /** The History rows' time labels and the steps they time. */
+  let timeLabels: { readonly node: HTMLElement; readonly at: number }[] = [];
   const folded = new Set<string>();
   const shown: Record<ProblemSeverity, boolean> = {
     error: true,
@@ -327,6 +394,12 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       : clampHeight(heightPx ?? PANEL_HEIGHT.default, main);
     panel.style.height = `${String(h)}px`;
     document.body.style.setProperty("--s-panel-h", `${String(h)}px`);
+    grip.setAttribute("aria-valuemin", String(PANEL_HEIGHT.min));
+    grip.setAttribute(
+      "aria-valuemax",
+      String(Math.max(PANEL_HEIGHT.min, main)),
+    );
+    grip.setAttribute("aria-valuenow", String(Math.round(h)));
     maxButton.replaceChildren(icon(ui.max ? "down" : "up"));
     const maxTitle = ui.max ? "Restore the panel's size" : "Maximise the panel";
     maxButton.title = maxTitle;
@@ -364,6 +437,69 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       redo.dataset["step"] = "redo";
       redo.disabled = history.future.length === 0;
       tabTools.append(undo, redo);
+    } else if (ui.tab === "tiles") {
+      const retry = chip(
+        retryRun === null ? "Retry failed" : "Retrying...",
+        "Retry failed tiles",
+      );
+      retry.dataset["retry"] = "map";
+      retry.disabled = retryRun !== null;
+      retry.setAttribute("aria-busy", String(retryRun !== null));
+      retry.prepend(icon("retry"));
+      const note = el("span", "retry-note", retryNote);
+      note.setAttribute("role", "status");
+      tabTools.append(retry, note);
+    }
+  };
+
+  /** The retry's state said: under way, or what it came to. */
+  const sayRetry = (text: string) => {
+    retryNote = text;
+    if (ui.open && ui.tab === "tiles") keepingFocus(drawTools);
+  };
+
+  const startRetry = () => {
+    let asked: number;
+    try {
+      asked = deps.map.retry();
+    } catch (error) {
+      retryRun = null;
+      sayRetry(
+        `Could not retry: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    if (asked <= 0) {
+      retryRun = null;
+      sayRetry("Nothing to retry");
+      return;
+    }
+    retryRun = { asked, since: clock() };
+    sayRetry(`Retrying ${plural(asked, "tile")}...`);
+  };
+
+  /** A retry under way, looked at on the readout's tick: its tiles all
+   *  loaded or failed again, or still loading after `RETRY_WATCH_MS`. */
+  const watchRetry = () => {
+    if (retryRun === null) return;
+    const outcome = deps.map.lastRetry();
+    if (outcome !== null && outcome.tiles > 0) {
+      const pending = outcome.tiles - outcome.loaded - outcome.failed;
+      if (pending <= 0) {
+        retryRun = null;
+        sayRetry(
+          outcome.failed === 0
+            ? `${plural(outcome.loaded, "tile")} loaded`
+            : outcome.loaded === 0
+              ? `${plural(outcome.failed, "tile")} failed again`
+              : `${String(outcome.loaded)} loaded, ${String(outcome.failed)} failed again`,
+        );
+        return;
+      }
+    }
+    if (clock() - retryRun.since > RETRY_WATCH_MS) {
+      retryRun = null;
+      sayRetry("Still loading - the map keeps asking for them");
     }
   };
 
@@ -400,16 +536,25 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       );
       wrap.append(groupHead);
       for (const problem of list) {
+        // A focusable row (Enter or Space selects) holding its fix link: a
+        // button inside a button is not allowed.
         const row = el(
-          "button",
+          "div",
           `prow${problem.select === selected ? " sel" : ""}`,
         );
-        row.type = "button";
+        row.tabIndex = 0;
         row.dataset["select"] = problem.select;
         row.title = `Select ${problem.who}`;
         const what = el("span", "what", `${problem.what} `);
         what.append(el("em", "", `- ${problem.who}`));
         row.append(icon(problem.severity, `sev-${problem.severity}`), what);
+        if (problem.fix !== undefined) {
+          const fix = el("button", "lnk fix", problem.fix.label);
+          fix.type = "button";
+          fix.dataset["fix"] = problem.select;
+          fix.title = `${problem.fix.label}: ${problem.who}`;
+          row.append(fix);
+        }
         wrap.append(row);
       }
       nodes.push(wrap);
@@ -427,12 +572,13 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     pane.replaceChildren(...nodes);
   };
 
-  const historyRowNode = (row: HistoryRow) => {
+  const historyRowNode = (row: HistoryRow, index: number) => {
     const node = el(
       "button",
       `hrow ${row.state === "current" ? "cur" : row.state}`,
     );
     node.type = "button";
+    node.dataset["row"] = String(index);
     node.dataset["steps"] = String(row.steps);
     node.title =
       row.steps === 0
@@ -443,7 +589,22 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     node.append(el("span", "dot"), el("span", "lbl", row.what));
     if (row.saved) node.append(el("span", "tagm saved", "saved"));
     if (row.steps === 0) node.append(el("span", "tagm now", "now"));
+    const at = row.step === null ? undefined : deps.stepTime(row.step);
+    if (at !== undefined) {
+      const time = el("span", "tm", minutesAgo(clock() - at));
+      node.append(time);
+      timeLabels.push({ node: time, at });
+    }
     return node;
+  };
+
+  /** The History rows' times, kept current on the readout's tick. */
+  const drawTimes = () => {
+    const t = clock();
+    for (const { node, at } of timeLabels) {
+      const text = minutesAgo(t - at);
+      if (node.textContent !== text) node.textContent = text;
+    }
   };
 
   const drawHistory = () => {
@@ -451,6 +612,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (pane === undefined) return;
     const rows = historyRows(history);
     const list = el("div", "hlist");
+    timeLabels = [];
     list.append(...rows.map(historyRowNode));
     const note = el(
       "div",
@@ -468,24 +630,60 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     return cell;
   };
 
+  /** The Map loading pane's lasting parts: the rate-limit banner stays
+   *  one live element, its words set once, its bar and countdown updated. */
+  let tilesBuilt: {
+    readonly sum: HTMLElement;
+    readonly banner: HTMLElement;
+    readonly fill: HTMLElement;
+    readonly cd: HTMLElement;
+    readonly list: HTMLElement;
+  } | null = null;
+
+  const tileTable = (rows: readonly OsmMapTile[]) => {
+    const table = el("table", "tiles");
+    const headRow = el("tr");
+    for (const [label, cls] of [
+      ["Status", ""],
+      ["Tile", ""],
+      ["Layer", ""],
+      ["Note", ""],
+      ["Time", "ms"],
+    ] as const) {
+      const th = el("th", cls, label);
+      th.scope = "col";
+      headRow.append(th);
+    }
+    table.append(el("thead"), el("tbody"));
+    table.tHead?.append(headRow);
+    for (const tile of rows.slice(0, TILE_ROWS)) {
+      const tr = el("tr");
+      const status = el("span", `stt ${tile.status}`);
+      status.append(el("i"), TILE_STATUS[tile.status]);
+      const statusCell = el("td");
+      statusCell.append(status);
+      tr.append(
+        statusCell,
+        el("td", "k", tile.key),
+        el("td", "", "Street map"),
+        el("td", tile.status === "failed" ? "sev-error" : "", tile.note),
+        el("td", "ms", tile.ms === null ? "" : `${String(tile.ms)} ms`),
+      );
+      table.tBodies[0]?.append(tr);
+    }
+    return table;
+  };
+
   const drawTiles = () => {
     const pane = panes.get("tiles");
     if (pane === undefined) return;
     const load = readout?.mapLoad ?? null;
     if (load === null) {
+      tilesBuilt = null;
       pane.replaceChildren(el("div", "empty-state", "No street map here."));
       return;
     }
-    const sum = el("div", "sumrow");
-    sum.append(
-      sumCell(load.waiting - load.failed, "loading"),
-      sumCell(load.failed, "failed", load.failed > 0 ? "bad" : ""),
-      sumCell(load.givenUp, "given up"),
-      el("span", "st src", "Street map tiles near the camera"),
-    );
-    const nodes: HTMLElement[] = [sum];
-    if (load.ceilingWaitS > 0) {
-      waitTotalS = Math.max(waitTotalS, load.ceilingWaitS);
+    if (tilesBuilt === null) {
       const banner = el("div", "rl");
       banner.setAttribute("role", "status");
       const words = el("span", "t");
@@ -495,24 +693,53 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       );
       const bar = el("span", "bar");
       const fill = el("i");
-      fill.style.width = `${(100 * (1 - load.ceilingWaitS / waitTotalS)).toFixed(1)}%`;
       bar.append(fill);
-      banner.append(
-        icon("slow", "sev-warning"),
-        words,
-        bar,
-        el("span", "cd", countdown(load.ceilingWaitS)),
-      );
-      nodes.push(banner);
+      const cd = el("span", "cd");
+      banner.append(icon("slow", "sev-warning"), words, bar, cd);
+      tilesBuilt = {
+        sum: el("div", "sumrow"),
+        banner,
+        fill,
+        cd,
+        list: el("div", "tlist"),
+      };
+      pane.replaceChildren(tilesBuilt.sum, banner, tilesBuilt.list);
+    }
+    const built = tilesBuilt;
+    const rows = deps.map.tiles(TILE_COUNT);
+    const count = (status: OsmMapTile["status"]) =>
+      rows.filter((r) => r.status === status).length;
+    const zooms = rows.map((r) => Number(r.key.split("/")[0]));
+    const finest = zooms.length === 0 ? null : Math.max(...zooms);
+    built.sum.replaceChildren(
+      sumCell(count("loaded"), "loaded"),
+      sumCell(count("loading"), "loading"),
+      sumCell(count("waiting"), "waiting"),
+      sumCell(load.failed, "failed", load.failed > 0 ? "bad" : ""),
+      sumCell(load.givenUp, "given up"),
+      el(
+        "span",
+        "st src",
+        `Source: street map tiles${finest === null ? "" : `, zoom ${String(finest)}`}`,
+      ),
+    );
+    built.banner.hidden = !(load.ceilingWaitS > 0);
+    if (load.ceilingWaitS > 0) {
+      waitTotalS = Math.max(waitTotalS, load.ceilingWaitS);
+      built.fill.style.width = `${(100 * (1 - load.ceilingWaitS / waitTotalS)).toFixed(1)}%`;
+      const text = countdown(load.ceilingWaitS);
+      if (built.cd.textContent !== text) built.cd.textContent = text;
     } else {
       waitTotalS = 0;
     }
+    const nodes: HTMLElement[] = [];
     if (load.waiting === 0) {
       const done = el("div", "empty-state");
       done.append(icon("ok"), "The street map near the camera has loaded.");
       nodes.push(done);
     }
-    pane.replaceChildren(...nodes);
+    if (rows.length > 0) nodes.push(tileTable(rows));
+    built.list.replaceChildren(...nodes);
   };
 
   let perfBuilt: {
@@ -655,20 +882,59 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     else drawPerf();
   };
 
+  /**
+   * Runs `redraw` keeping the keyboard focus inside the open panel: a
+   * control the redraw replaced is found again by its data attribute
+   * (`FOCUS_KEYS`), else the focus goes to the shown tab, never to the
+   * page's body (where Escape and the panel's keys would no longer reach
+   * the panel).
+   */
+  const keepingFocus = (redraw: () => void) => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !panel.contains(active)) {
+      redraw();
+      return;
+    }
+    const key = FOCUS_KEYS.find((k) => active.dataset[k] !== undefined);
+    const value = key === undefined ? undefined : active.dataset[key];
+    redraw();
+    if (!ui.open || (active.isConnected && document.activeElement === active)) {
+      return;
+    }
+    const match =
+      key === undefined || value === undefined
+        ? null
+        : ([...panel.querySelectorAll<HTMLElement>(`[data-${key}]`)].find(
+            (node) => node.dataset[key] === value,
+          ) ?? null);
+    if (
+      match !== null &&
+      !(match instanceof HTMLButtonElement && match.disabled)
+    ) {
+      match.focus();
+    }
+    if (!panel.contains(document.activeElement)) {
+      tabButtons.get(ui.tab)?.focus();
+    }
+  };
+
   const draw = () => {
-    layout();
-    drawBadges();
-    drawTools();
-    drawPane();
+    keepingFocus(() => {
+      layout();
+      drawBadges();
+      drawTools();
+      drawPane();
+    });
   };
 
   const setState = (next: PanelState) => {
     const wasOpen = ui.open;
+    const hadFocus = panel.contains(document.activeElement);
     ui = next;
     remember();
     draw();
     // A close from inside the panel gives the focus to its toggle.
-    if (wasOpen && !ui.open && panel.contains(document.activeElement)) {
+    if (wasOpen && !ui.open && hadFocus) {
       toggleButtons.get(ui.tab)?.focus();
     }
   };
@@ -722,6 +988,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       draw();
       return;
     }
+    if (target?.dataset["retry"] !== undefined) {
+      startRetry();
+      return;
+    }
     const which = target?.dataset["step"];
     if (which === "undo" || which === "redo") deps.step(which);
   });
@@ -731,7 +1001,15 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (fold !== undefined) {
       if (folded.has(fold)) folded.delete(fold);
       else folded.add(fold);
-      drawProblems();
+      keepingFocus(drawProblems);
+      return;
+    }
+    const fixOf = target.closest<HTMLElement>("[data-fix]")?.dataset["fix"];
+    if (fixOf !== undefined) {
+      const problem = groups
+        .flatMap((g) => g.problems)
+        .find((p) => p.select === fixOf && p.fix !== undefined);
+      if (problem?.fix !== undefined) deps.fix(fixOf, problem.fix);
       return;
     }
     const select =
@@ -746,6 +1024,17 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     if (!Number.isInteger(steps) || steps === 0) return;
     const which = steps < 0 ? "undo" : "redo";
     for (let i = 0; i < Math.abs(steps); i += 1) deps.step(which);
+  });
+  // A problem's row is a focusable row, not a button: Enter or Space on
+  // it selects as its click does.
+  body.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target as HTMLElement;
+    if (!row.classList.contains("prow")) return;
+    const select = row.dataset["select"];
+    if (select === undefined) return;
+    event.preventDefault();
+    deps.choose(select);
   });
 
   // --- the grip ------------------------------------------------------------
@@ -805,16 +1094,20 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       selected = nowSelected;
       drawBadges();
       if (ui.open && ui.tab === "problems") {
-        drawTools();
-        drawProblems();
+        keepingFocus(() => {
+          drawTools();
+          drawProblems();
+        });
       }
     },
     history(next) {
       history = next;
       drawBadges();
       if (ui.open && ui.tab === "history") {
-        drawTools();
-        drawHistory();
+        keepingFocus(() => {
+          drawTools();
+          drawHistory();
+        });
       }
     },
     tick(next) {
@@ -827,9 +1120,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       );
       seenFrames = next.frameCount;
       drawBadges();
+      watchRetry();
       if (!ui.open) return;
-      if (ui.tab === "tiles") drawTiles();
+      if (ui.tab === "tiles") keepingFocus(drawTiles);
       else if (ui.tab === "perf") drawPerf();
+      else if (ui.tab === "history") drawTimes();
     },
     key(event) {
       const ctrl = event.ctrlKey || event.metaKey;

@@ -1356,7 +1356,13 @@ button.thumb:focus-visible {
 /* At the view's foot between the open docks (each runs down to the bottom
  * bar beside it), or under both with its span button, the docks then
  * ending at its top. Its height is `--s-panel-h` on the page, which the
- * map controls and the toasts keep clear of. It lies over the view. */
+ * map controls and the toasts keep clear of. It pushes the view up: the
+ * view's canvas ends at its top (the view reads its size from the canvas),
+ * while the docks keep their height. */
+body[data-view="3d"] #view3d .view3d-canvas {
+  height: calc(100% - var(--s-panel-h, 0px));
+}
+
 #shell-panel {
   position: absolute;
   right: 0;
@@ -1617,7 +1623,8 @@ button.thumb:focus-visible {
   color: var(--s-info);
 }
 
-/* The rows are buttons: a row's look, a button's keys. */
+/* The group heads and History rows are buttons (a row's look, a button's
+ * keys); a problem's row is a focusable row holding its fix link. */
 #shell-panel :is(.ghead, .prow, .hrow) {
   width: 100%;
   border: 0;
@@ -1687,6 +1694,36 @@ button.thumb:focus-visible {
 
 #shell-panel .prow.sel {
   background: var(--s-accent-bg);
+}
+
+#shell-panel .prow:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
+}
+
+/* A row's link (a problem's fix): shown on hover, on the selected row and
+ * while the row or the link has the focus. */
+#shell-panel .lnk {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--s-accent-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#shell-panel .lnk:hover {
+  text-decoration: underline;
+}
+
+#shell-panel .prow .fix {
+  visibility: hidden;
+}
+
+#shell-panel .prow:is(:hover, .sel, :focus-within) .fix {
+  visibility: visible;
 }
 
 .prow svg.i {
@@ -1805,6 +1842,13 @@ button.thumb:focus-visible {
   color: var(--s-ok);
 }
 
+.hrow .tm {
+  flex: none;
+  color: var(--s-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 #shell-panel .hnote {
   padding: 6px 12px 8px;
   color: var(--s-dim);
@@ -1853,6 +1897,10 @@ button.thumb:focus-visible {
   background: rgb(233 184 107 / 8%);
 }
 
+#shell-panel .rl[hidden] {
+  display: none;
+}
+
 .rl svg.i {
   width: 14px;
   height: 14px;
@@ -1886,6 +1934,75 @@ button.thumb:focus-visible {
 .rl .cd {
   color: var(--s-warn);
   font: 12px var(--s-mono);
+}
+
+/* The near tiles: one row each, failed first; the head stays in view. */
+#shell-panel table.tiles {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#shell-panel table.tiles th {
+  position: sticky;
+  top: 0;
+  padding: 4px 12px;
+  background: var(--s-bg1);
+  color: var(--s-dim);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+#shell-panel table.tiles td {
+  padding: 3px 12px;
+  white-space: nowrap;
+}
+
+#shell-panel table.tiles :is(td.k, td.ms) {
+  font-family: var(--s-mono);
+}
+
+#shell-panel table.tiles .ms {
+  text-align: right;
+}
+
+#shell-panel .stt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#shell-panel .stt i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+#shell-panel .stt.failed {
+  color: var(--s-danger);
+}
+
+#shell-panel .stt.loaded {
+  color: var(--s-muted);
+}
+
+#shell-panel .stt.waiting {
+  color: var(--s-text);
+}
+
+#shell-panel .stt.loading {
+  color: var(--s-accent-text);
+}
+
+/* Retry's status line, beside its chip. */
+#shell-panel .retry-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--s-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #shell-pane-perf:not([hidden]) {

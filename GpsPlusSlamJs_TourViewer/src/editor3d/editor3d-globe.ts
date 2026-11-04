@@ -119,7 +119,11 @@ import {
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountCredits } from "./editor3d-credits.js";
-import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
+import {
+  createViewRenderer,
+  drawnCounts,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
@@ -251,7 +255,13 @@ export async function openGlobeEditor(
       canvas.remove();
     });
 
-    let viewportPx = Math.max(1, deps.container.clientHeight);
+    // The canvas, not the box: the bottom panel shortens it (pushes the
+    // view up); the box is the height before the view shows.
+    const canvasHeight = () =>
+      canvas.clientHeight > 0
+        ? canvas.clientHeight
+        : deps.container.clientHeight;
+    let viewportPx = Math.max(1, canvasHeight());
     // The air (the blue sky, the haze over the relief), mounted once the
     // view and its relief exist; the view's sky alone is black at noon.
     let air: GlobeViewAir | null = null;
@@ -552,7 +562,7 @@ export async function openGlobeEditor(
     };
 
     const resize = new ResizeObserver(() => {
-      viewportPx = Math.max(1, deps.container.clientHeight);
+      viewportPx = Math.max(1, canvasHeight());
       marks.resize(canvas.clientWidth, canvas.clientHeight);
       layer.group.traverse((o) => {
         if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
@@ -561,6 +571,7 @@ export async function openGlobeEditor(
       });
     });
     resize.observe(deps.container);
+    resize.observe(canvas);
     undo.push(() => {
       resize.disconnect();
     });
@@ -620,11 +631,12 @@ export async function openGlobeEditor(
     undo.push(() => {
       controls.dispose();
     });
-    /** The aspect the first frame will have: the box's, once laid out,
-     *  else the window's (the box is hidden until the view opens). */
+    /** The aspect the first frame will have: the canvas's (the box less
+     *  the bottom panel), once laid out, else the window's (the box is
+     *  hidden until the view opens). */
     const expectedAspect =
-      deps.container.clientWidth > 0 && deps.container.clientHeight > 0
-        ? deps.container.clientWidth / deps.container.clientHeight
+      canvas.clientWidth > 0 && canvas.clientHeight > 0
+        ? canvas.clientWidth / canvas.clientHeight
         : window.innerWidth / Math.max(1, window.innerHeight);
     /** Where the approach starts, from the Earth's centre (m). */
     const startCentreM =
@@ -1253,8 +1265,7 @@ export async function openGlobeEditor(
           tiltDeg: 90 + pose.pitchDeg,
           headingDeg: pose.headingDeg,
           top,
-          drawCalls: renderer.info.render.calls,
-          triangles: renderer.info.render.triangles,
+          ...drawnCounts(renderer),
           frameMs: frameClock.meanMs(),
           worstFrameMs: frameClock.worstMs(),
           slowFrames: frameClock.slowFrames(),
@@ -1263,6 +1274,9 @@ export async function openGlobeEditor(
           mapLoad: ground.osm.mapLoad(),
         };
       },
+      mapTiles: (limit) => ground.osm.mapTiles(limit),
+      retryMap: () => ground.osm.retryNow(),
+      lastMapRetry: () => ground.osm.lastRetry(),
       setLayers(hiddenLayers) {
         layer.setShown({
           names: !hiddenLayers.includes("names"),

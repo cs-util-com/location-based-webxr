@@ -199,6 +199,26 @@ button:disabled {
   cursor: pointer;
 }
 
+/* The button names the map's source: in full, or "© OSM" on a narrow
+ * window (`editor3d-credits.ts`). */
+.view3d-credits-button {
+  white-space: nowrap;
+}
+
+.view3d-credits-button .short {
+  display: none;
+}
+
+@media (width <= 700px) {
+  .view3d-credits-button .long {
+    display: none;
+  }
+
+  .view3d-credits-button .short {
+    display: inline;
+  }
+}
+
 .view3d-credits-button:focus-visible {
   outline: 2px solid currentcolor;
   outline-offset: 1px;

@@ -136,6 +136,9 @@ type ShellView = Pick<
   | "turn"
   | "groundAt"
   | "origin"
+  | "mapTiles"
+  | "retryMap"
+  | "lastMapRetry"
 >;
 
 /** The page's station commands the tree and the bars give: each one undo
@@ -388,6 +391,19 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
 
   let view: ShellView | null = null;
+  // When each history step was made: stamped on first sight by a
+  // subscription as long-lived as the page, so the steps made while the 2D
+  // map shows are timed too (the base the history opens from is not).
+  const stepTimes = new WeakMap<object, number>();
+  const stampSteps = () => {
+    const doc = store.getState().tourDocument;
+    const at = Date.now();
+    for (const step of [...doc.past, ...doc.future]) {
+      if (!stepTimes.has(step)) stepTimes.set(step, at);
+    }
+  };
+  stampSteps();
+  store.subscribe(stampSteps);
   const panel = createBottomPanel({
     panel: byId("shell-panel"),
     toggles: byId("shell-toggles"),
@@ -396,6 +412,24 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.select(selection);
       view?.flyTo(selection);
     },
+    fix: (selection, fix) => {
+      deps.select(selection);
+      try {
+        deps.edits.scene(fix.edit());
+      } catch (error) {
+        deps.say(
+          `Could not mend it: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return;
+      }
+      deps.say(fix.done);
+    },
+    map: {
+      tiles: (limit) => view?.mapTiles(limit) ?? [],
+      retry: () => view?.retryMap() ?? 0,
+      lastRetry: () => view?.lastMapRetry() ?? null,
+    },
+    stepTime: (step) => stepTimes.get(step),
     step: (which) => {
       deps.step(which);
     },

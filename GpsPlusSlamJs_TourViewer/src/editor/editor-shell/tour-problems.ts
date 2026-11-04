@@ -3,15 +3,18 @@
  * Problems tab and the badge on its toggle): grouped by station, in the
  * tour's order, the worst first within a station. An item outside its
  * station's circle is a warning (a visitor at the station never finds
- * it); a station with nothing in it is a note.
+ * it); a station with nothing in it is a note. A problem one click can
+ * mend carries its fix: an outside item is moved inside, along its line.
  *
  * @see tour-problems.ts.md
  */
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { objectTitle } from "../../object-describe.js";
 import { stationTitle } from "../../station-run.js";
 import { worldBlocks, type WorldBlock } from "../../tour-document.js";
+import type { GestureEdit } from "../../editor3d/gesture.js";
 import { STATION_PREFIX } from "../editor-model.js";
 
 export type ProblemSeverity = "error" | "warning" | "note";
@@ -25,6 +28,17 @@ interface TourProblem {
   /** The selection a click on the row makes (`station:<id>` or an
    *  item's id). */
   readonly select: string;
+  /** The one-click mend, where there is one. */
+  readonly fix?: ProblemFix;
+}
+
+/** A one-click mend: the row's link, the edit the page writes (one undo
+ *  step; made on the click, not on each draw) and what it says once
+ *  written. */
+export interface ProblemFix {
+  readonly label: string;
+  readonly edit: () => Extract<GestureEdit, { kind: "item-pose" }>;
+  readonly done: string;
 }
 
 /** A station's problems, with its place in the tour (1-based). */
@@ -58,6 +72,28 @@ export function outsideItems(
   );
 }
 
+/** How far in (m) "Move inside" leaves an item from the circle's edge;
+ *  a circle of twice this or less takes it halfway to the centre. */
+const INSIDE_BY_M = 4;
+
+/** The pose edit that moves `item` (outside) inside `station`'s circle
+ *  along the line it stands on, its height and heading kept. */
+function moveInside(
+  station: TourStation,
+  item: WorldBlock,
+): Extract<GestureEdit, { kind: "item-pose" }> {
+  const r = station.foundRadiusM;
+  const to = r > 2 * INSIDE_BY_M ? r - INSIDE_BY_M : r / 2;
+  const scale = to / groundDistanceM(item);
+  const [north, up, east] = item.pose.position;
+  const position: [number, number, number] = [north * scale, up, east * scale];
+  return {
+    kind: "item-pose",
+    id: item.id,
+    geo: itemGeoPose({ ...item.pose, position }, station.geo),
+  };
+}
+
 /** The tour's problems, one group per station that has any. */
 export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
   const groups: ProblemGroup[] = [];
@@ -72,6 +108,11 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
       )} m)`,
       who: objectTitle(item),
       select: item.id,
+      fix: {
+        label: "Move inside",
+        edit: () => moveInside(station, item),
+        done: `Moved "${objectTitle(item)}" inside its station's circle`,
+      },
     }));
     if (station.blocks.length === 0) {
       problems.push({

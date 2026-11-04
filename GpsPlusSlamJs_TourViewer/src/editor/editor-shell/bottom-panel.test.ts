@@ -7,11 +7,12 @@
  * mislead silently. These run the real panel on its own markup, with the
  * page's commands as spies; its rules are `bottom-panel-model.test.ts`'s.
  */
+import type { OsmMapTile, OsmRetryOutcome } from "gps-plus-slam-globe/editor";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Editor3dReadout } from "../../editor3d/editor3d-scene.js";
 import { PANEL_STORAGE_KEY, createBottomPanel } from "./bottom-panel.js";
-import type { ProblemGroup } from "./tour-problems.js";
+import type { ProblemFix, ProblemGroup } from "./tour-problems.js";
 
 const GROUPS: ProblemGroup[] = [
   {
@@ -70,6 +71,19 @@ function memoryStorage(initial: Record<string, string> = {}) {
   };
 }
 
+/** The street map as the panel reads it, set by each test. */
+function fakeMap() {
+  const map = {
+    rows: [] as OsmMapTile[],
+    asked: 0,
+    outcome: null as OsmRetryOutcome | null,
+    tiles: vi.fn((limit: number) => map.rows.slice(0, limit)),
+    retry: vi.fn(() => map.asked),
+    lastRetry: vi.fn(() => map.outcome),
+  };
+  return map;
+}
+
 function setUp(storage: ReturnType<typeof memoryStorage> | null = null) {
   document.body.innerHTML = `
     <div id="view3d">
@@ -81,18 +95,32 @@ function setUp(storage: ReturnType<typeof memoryStorage> | null = null) {
   box.getBoundingClientRect = () =>
     ({ top: 0, bottom: 800, left: 0, right: 1000, height: 800 }) as DOMRect;
   const choose = vi.fn();
+  const fix = vi.fn();
   const step = vi.fn();
+  const map = fakeMap();
+  const clock = { now: 1_000_000 };
+  const stepTimes = new Map<object, number>();
   const panel = createBottomPanel({
     panel: document.getElementById("shell-panel") as HTMLElement,
     toggles: document.getElementById("shell-toggles") as HTMLElement,
     box,
     choose,
+    fix,
+    map,
+    stepTime: (s) => stepTimes.get(s),
+    now: () => clock.now,
     step,
     storage,
   });
   const el = document.getElementById("shell-panel") as HTMLElement;
-  return { panel, el, choose, step };
+  return { panel, el, choose, fix, step, map, clock, stepTimes };
 }
+
+const tile = (
+  key: string,
+  status: OsmMapTile["status"],
+  ms: number | null = null,
+): OsmMapTile => ({ key, status, note: `${status} note`, ms });
 
 const toggle = (tab: string) =>
   document.querySelector<HTMLButtonElement>(`.tog[data-tab="${tab}"]`) ??
@@ -151,6 +179,20 @@ describe("the toggles", () => {
     toggle("problems").click();
     expect(el.style.height).toBe("220px");
     expect(document.body.style.getPropertyValue("--s-panel-h")).toBe("220px");
+  });
+
+  // Why: the grip is a separator a keyboard moves; a screen reader says
+  // where it is only from its values, which must follow every height.
+  it("give the grip its height as a separator's values", () => {
+    const { el } = setUp();
+    toggle("problems").click();
+    const grip = el.querySelector(".bp-grip") as HTMLElement;
+    expect(grip.getAttribute("role")).toBe("separator");
+    expect(grip.getAttribute("aria-valuenow")).toBe("220");
+    expect(grip.getAttribute("aria-valuemin")).toBe("90");
+    expect(grip.getAttribute("aria-valuemax")).toBe("800");
+    el.querySelector<HTMLButtonElement>(".bp-max")?.click();
+    expect(grip.getAttribute("aria-valuenow")).toBe("800");
   });
 });
 
@@ -214,6 +256,82 @@ describe("the Problems tab", () => {
     expect(choose).toHaveBeenCalledWith("station:b");
     const heads = [...el.querySelectorAll(".ghead")].map((h) => h.textContent);
     expect(heads).toEqual(["1Square1", "2Station 21"]);
+  });
+
+  // Why: the chosen layout mends an outside item in one click from its
+  // row; the link must hand the page that problem's own fix, and must not
+  // also select through the row it sits in.
+  it("offers a problem's fix as a link in its row", () => {
+    const { panel, el, choose, fix } = setUp();
+    const mend: ProblemFix = {
+      label: "Move inside",
+      edit: () => ({
+        kind: "item-pose",
+        id: "far",
+        geo: { lat: 1, lon: 2, alt: 3, heading: 0 } as never,
+      }),
+      done: "Moved",
+    };
+    const [first, second] = GROUPS;
+    panel.problems(
+      [
+        {
+          ...first!,
+          problems: [{ ...first!.problems[0]!, fix: mend }],
+        },
+        second!,
+      ],
+      null,
+    );
+    toggle("problems").click();
+    const links = [...el.querySelectorAll<HTMLButtonElement>(".prow .fix")];
+    expect(links.map((l) => l.textContent)).toEqual(["Move inside"]);
+    links[0]?.click();
+    expect(fix).toHaveBeenCalledWith("far", mend);
+    expect(choose).not.toHaveBeenCalled();
+  });
+
+  // Why: a problem's row is no longer a button (it holds its fix link), so
+  // the keyboard reaches it by its tab stop and selects with Enter.
+  it("selects a problem's row with Enter", () => {
+    const { panel, el, choose } = setUp();
+    panel.problems(GROUPS, null);
+    toggle("problems").click();
+    const row = el.querySelector<HTMLElement>('.prow[data-select="far"]');
+    expect(row?.tabIndex).toBe(0);
+    row?.dispatchEvent(key({ key: "Enter" }));
+    expect(choose).toHaveBeenCalledWith("far");
+  });
+
+  // Why: choosing a row selects its object, the page redraws the problems
+  // at once (from inside the choice) and the rows are rebuilt; the focus
+  // was lost to the page's body, where the keyboard user could go no
+  // further and Escape no longer closed the panel.
+  it("keeps the focus on the chosen row when the problems redraw inside the choice", () => {
+    const { panel, el, choose } = setUp();
+    panel.problems(GROUPS, null);
+    toggle("problems").click();
+    choose.mockImplementation((select: string) => {
+      panel.problems(GROUPS, select);
+    });
+    const row = el.querySelector<HTMLElement>('.prow[data-select="far"]');
+    row?.focus();
+    row?.dispatchEvent(key({ key: "Enter" }));
+    const now = el.querySelector<HTMLElement>('.prow[data-select="far"]');
+    expect(now).not.toBe(row);
+    expect(now?.classList.contains("sel")).toBe(true);
+    expect(document.activeElement).toBe(now);
+  });
+
+  it("keeps the focus inside when its control is gone after a redraw", () => {
+    const { panel, el } = setUp();
+    panel.problems(GROUPS, null);
+    toggle("problems").click();
+    el.querySelector<HTMLElement>('.prow[data-select="station:b"]')?.focus();
+    panel.problems([GROUPS[0]!], null);
+    expect(document.activeElement).toBe(
+      el.querySelector(".tab[data-tab='problems']"),
+    );
   });
 
   it("hides a severity by its chip, and says how many the filters hide", () => {
@@ -286,6 +404,47 @@ describe("the History tab", () => {
     expect(step).not.toHaveBeenCalled();
   });
 
+  // Why: the chosen layout tells how long ago each step was made, and the
+  // label must keep up while the panel stays open (no new step to redraw
+  // it); the view it starts from has no known time.
+  it("says how long ago each step was made, kept current", () => {
+    const { panel, el, clock, stepTimes } = setUp();
+    const past = steps("Moved A", "Named B");
+    stepTimes.set(past[0]!, clock.now - 5 * 60_000);
+    stepTimes.set(past[1]!, clock.now - 10_000);
+    panel.history({ past, future: [], position: 2, savedAt: null });
+    toggle("history").click();
+    const times = () =>
+      [...el.querySelectorAll(".hrow")].map(
+        (r) => r.querySelector(".tm")?.textContent ?? null,
+      );
+    expect(times()).toEqual(["just now", "5 min ago", null]);
+    clock.now += 2 * 60_000;
+    panel.tick(readoutOf({ frameCount: 9 }));
+    expect(times()).toEqual(["2 min ago", "7 min ago", null]);
+  });
+
+  it("keeps the focus on the step taken when the history redraws", () => {
+    const { panel, el, step } = setUp();
+    const doc = {
+      past: steps("Moved A", "Named B"),
+      future: [],
+      position: 2,
+      savedAt: null,
+    };
+    panel.history(doc);
+    toggle("history").click();
+    step.mockImplementation(() => {
+      panel.history({ ...doc, position: 1 });
+    });
+    const row = el.querySelectorAll<HTMLElement>(".hrow")[1];
+    row?.focus();
+    row?.click();
+    const now = el.querySelectorAll<HTMLElement>(".hrow")[1];
+    expect(now).not.toBe(row);
+    expect(document.activeElement).toBe(now);
+  });
+
   it("offers Undo and Redo only when there is a step to take", () => {
     const { panel, el, step } = setUp();
     toggle("history").click();
@@ -325,10 +484,138 @@ describe("the Map loading tab", () => {
     );
     panel.tick(readoutOf());
     expect(badgeText("tiles")).toBe("");
-    expect(el.querySelector(".rl")).toBeNull();
+    expect(el.querySelector<HTMLElement>(".rl")?.hidden).toBe(true);
     expect(
       el.querySelector("#shell-pane-tiles .empty-state")?.textContent,
     ).toBe("The street map near the camera has loaded.");
+  });
+
+  // Why: the wait banner is a live status; rebuilt on every readout (five
+  // a second) a screen reader would say it again and again. One element
+  // stays, its countdown changed in place.
+  it("keeps one live wait banner, its countdown updated in place", () => {
+    const { panel, el } = setUp();
+    const load = { waiting: 4, failed: 0, givenUp: 0, ceilingWaitS: 9.5 };
+    panel.tick(readoutOf({ mapLoad: load }));
+    toggle("tiles").click();
+    const banner = el.querySelector(".rl");
+    expect(banner?.getAttribute("role")).toBe("status");
+    panel.tick(readoutOf({ mapLoad: { ...load, ceilingWaitS: 3.2 } }));
+    expect(el.querySelectorAll(".rl")).toHaveLength(1);
+    expect(el.querySelector(".rl")).toBe(banner);
+    expect(banner?.querySelector(".cd")?.textContent).toBe("0:04");
+    expect(banner?.querySelector<HTMLElement>(".bar i")?.style.width).toBe(
+      "66.3%",
+    );
+  });
+
+  // Why: the chosen layout lists each near tile with its status, failed
+  // first, as the overlay reports them, and counts them by status.
+  it("lists the near tiles with their status, counted by status", () => {
+    const { panel, el, map } = setUp();
+    map.rows = [
+      tile("15/17000/11000", "failed"),
+      tile("15/17001/11000", "loading"),
+      tile("14/8500/5500", "loaded", 120),
+    ];
+    panel.tick(
+      readoutOf({
+        mapLoad: { waiting: 2, failed: 1, givenUp: 0, ceilingWaitS: 0 },
+      }),
+    );
+    toggle("tiles").click();
+    const rows = [...el.querySelectorAll("table.tiles tbody tr")].map((r) =>
+      [...r.querySelectorAll("td")].map((c) => c.textContent),
+    );
+    expect(rows).toEqual([
+      ["Failed", "15/17000/11000", "Street map", "failed note", ""],
+      ["Loading", "15/17001/11000", "Street map", "loading note", ""],
+      ["Loaded", "14/8500/5500", "Street map", "loaded note", "120 ms"],
+    ]);
+    expect(el.querySelector(".stt.failed")).not.toBeNull();
+    const sum = el.querySelector(".sumrow")?.textContent ?? "";
+    expect(sum).toContain("1loaded");
+    expect(sum).toContain("1loading");
+    expect(sum).toContain("1failed");
+    expect(sum).toContain("Source: street map tiles, zoom 15");
+  });
+
+  // Why: Retry asks the overlay at once; the chip must show it is under
+  // way and then the durable end, loaded or failed again, never stay busy.
+  it("retries the failed tiles, busy until they all loaded", () => {
+    const { panel, el, map } = setUp();
+    map.asked = 2;
+    toggle("tiles").click();
+    const chipNow = () =>
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]');
+    const note = () => el.querySelector(".retry-note");
+    chipNow()?.focus();
+    chipNow()?.click();
+    expect(map.retry).toHaveBeenCalledTimes(1);
+    expect(chipNow()?.disabled).toBe(true);
+    expect(chipNow()?.getAttribute("aria-busy")).toBe("true");
+    expect(note()?.textContent).toBe("Retrying 2 tiles...");
+    expect(note()?.getAttribute("role")).toBe("status");
+    // Focus stays inside though the busy chip is disabled.
+    expect(el.contains(document.activeElement)).toBe(true);
+    map.outcome = { tiles: 2, loaded: 1, failed: 0 };
+    panel.tick(readoutOf({ frameCount: 9 }));
+    expect(chipNow()?.disabled).toBe(true);
+    map.outcome = { tiles: 2, loaded: 2, failed: 0 };
+    panel.tick(readoutOf({ frameCount: 10 }));
+    expect(chipNow()?.disabled).toBe(false);
+    expect(chipNow()?.getAttribute("aria-busy")).toBe("false");
+    expect(note()?.textContent).toBe("2 tiles loaded");
+  });
+
+  it("says when the retried tiles failed again", () => {
+    const { panel, el, map } = setUp();
+    map.asked = 1;
+    toggle("tiles").click();
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    map.outcome = { tiles: 1, loaded: 0, failed: 1 };
+    panel.tick(readoutOf({ frameCount: 9 }));
+    expect(el.querySelector(".retry-note")?.textContent).toBe(
+      "1 tile failed again",
+    );
+    expect(
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
+    ).toBe(false);
+  });
+
+  it("says when there is nothing to retry, and when it cannot", () => {
+    const { el, map } = setUp();
+    toggle("tiles").click();
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    expect(el.querySelector(".retry-note")?.textContent).toBe(
+      "Nothing to retry",
+    );
+    map.retry.mockImplementation(() => {
+      throw new Error("no map");
+    });
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    expect(el.querySelector(".retry-note")?.textContent).toBe(
+      "Could not retry: no map",
+    );
+    expect(
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
+    ).toBe(false);
+  });
+
+  it("stops watching a retry that is still loading after half a minute", () => {
+    const { panel, el, map, clock } = setUp();
+    map.asked = 3;
+    toggle("tiles").click();
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    map.outcome = { tiles: 3, loaded: 1, failed: 0 };
+    clock.now += 31_000;
+    panel.tick(readoutOf({ frameCount: 9 }));
+    expect(el.querySelector(".retry-note")?.textContent).toBe(
+      "Still loading - the map keeps asking for them",
+    );
+    expect(
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
+    ).toBe(false);
   });
 });
 

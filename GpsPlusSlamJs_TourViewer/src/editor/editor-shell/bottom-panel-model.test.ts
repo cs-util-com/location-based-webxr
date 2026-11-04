@@ -14,6 +14,7 @@ import {
   clampHeight,
   countdown,
   dragged,
+  minutesAgo,
   historyBadge,
   historyRows,
   perfBadge,
@@ -194,8 +195,25 @@ describe("historyRows", () => {
         state: "current",
         steps: 0,
         saved: false,
+        step: null,
       },
     ]);
+  });
+
+  // Why: the History rows show how long ago each step was made, and the
+  // panel reads that time by the step itself; a row pointing at the wrong
+  // step would show another edit's time.
+  it("carries each row's own step, none for the view it starts from", () => {
+    const past = [step("Moved A"), step("Named B")];
+    const future = [step("Added C")];
+    const rows = historyRows({ past, future, position: 2, savedAt: null });
+    expect(rows.map((r) => r.step)).toEqual([
+      future[0],
+      past[1],
+      past[0],
+      null,
+    ]);
+    expect(rows[1]?.step).toBe(past[1]);
   });
 
   it("names the oldest kept view when older steps were dropped", () => {
@@ -247,5 +265,19 @@ describe("withNewFrames", () => {
     expect(withNewFrames([1], [3, 4], 10, 10)).toEqual([1]);
     expect(withNewFrames([], [3, 4], 100, 0)).toEqual([3, 4]);
     expect(withNewFrames([1, 2, 3], [4, 5], 2, 0, 3)).toEqual([3, 4, 5]);
+  });
+});
+
+describe("minutesAgo", () => {
+  // Why: the History rows say how long ago a step was made, as the chosen
+  // layout does: under a minute is "just now", then whole minutes, never a
+  // negative age from a clock that stepped back.
+  it("says just now under a minute, then whole minutes", () => {
+    expect(minutesAgo(0)).toBe("just now");
+    expect(minutesAgo(59_999)).toBe("just now");
+    expect(minutesAgo(60_000)).toBe("1 min ago");
+    expect(minutesAgo(5 * 60_000 + 59_000)).toBe("5 min ago");
+    expect(minutesAgo(-5_000)).toBe("just now");
+    expect(minutesAgo(Number.NaN)).toBe("just now");
   });
 });
