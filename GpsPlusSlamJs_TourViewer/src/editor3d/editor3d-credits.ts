@@ -1,6 +1,6 @@
 /**
- * The 3D view's credits: one "Credits" button at the bottom left of the
- * view, a disclosure that shows a panel listing every source in full with
+ * The 3D view's credits: one "Credits" button at the bottom bar's left
+ * (the page places the box), a disclosure that shows a panel listing every source in full with
  * its link, and a note under the list (the globe view's: GIBS's
  * acknowledgement). Esc anywhere while it is open (heard on the document)
  * and a pointer down outside close it; Esc gives focus back to the button

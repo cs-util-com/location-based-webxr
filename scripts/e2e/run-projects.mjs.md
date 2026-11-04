@@ -12,7 +12,10 @@
   `selectSpecs` (see
   [`e2e-plan.js`](../../GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js.md)).
   Forwarded arguments (a developer's filter, the gate's `--reporter=list,json`)
-  go to every project's run; a developer's filter also adds
+  go to every project's run, except `--project <name>`: it picks which
+  projects run (each at its own worker count, as in a full run) and is not
+  forwarded, since each run names its project (`namedProjects`); a
+  developer's filter also adds
   `--pass-with-no-tests` (it may match only the other project's specs),
   nothing else does. Exit code: the first non-zero one, else 1 when a report
   was unreadable, else 0; 2 on a malformed command line.

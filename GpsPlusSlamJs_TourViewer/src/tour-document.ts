@@ -3153,19 +3153,33 @@ const tourDocumentSlice = createSlice({
         action.payload.what,
       );
     },
-    /** The details replaced, as checked (`checkDetailsForm`); nothing
-     *  before an open, as for the setting. */
+    /** The details replaced, as checked (`checkDetailsForm`), and with
+     *  them the "needs no GPS" setting where it is given (Tour details
+     *  applies both: one step); nothing before an open, as for the
+     *  setting. */
     detailsChanged(
       state,
-      action: PayloadAction<{ details: TourDetailFields; what: string }>,
+      action: PayloadAction<{
+        details: TourDetailFields;
+        needsNoGps?: boolean;
+        what: string;
+      }>,
     ) {
       const before = plain(state);
       if (before.written === null) return before;
+      const { needsNoGps } = action.payload;
+      const setting =
+        needsNoGps !== undefined && needsNoGps !== before.needsNoGps;
       return edited(
         before,
         {
           details: action.payload.details,
-          touched: { ...before.touched, details: true },
+          ...(setting ? { needsNoGps } : {}),
+          touched: {
+            ...before.touched,
+            details: true,
+            ...(setting ? { needsNoGps: true } : {}),
+          },
           detailsRecorded: true,
         },
         action.payload.what,

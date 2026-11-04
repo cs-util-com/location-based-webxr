@@ -2,12 +2,15 @@
 
 ## Purpose
 
-The link switch that opens the desktop editor's 3D view on the full globe
-(`edit.html?globe=1`), and the knobs tuned by eye: the globe's
+The link switch for the desktop editor's 3D view on the full globe, its
+default, and the knobs tuned by eye: the globe's
 visibility rule (`../editor3d/globe-visibility.ts`) and the approach's
-meteor (`../editor3d/globe-approach-meteor.ts`). Without the
-switch the editor's own 3D view (OrbitControls over a local ground) stays
-the default.
+meteor (`../editor3d/globe-approach-meteor.ts`). `edit.html?globe=0`
+opens the older 3D view (OrbitControls over a local ground) instead.
+
+**Temporary:** `globe=0` exists only until the older 3D view and the 2D
+map are removed from the editor; the e2e specs of those views open with
+it. An old `globe=1` link keeps opening the globe.
 
 ## Public API
 
@@ -71,8 +74,9 @@ the default.
 
 ## Invariants & assumptions
 
-- **Off unless asked:** only `globe=1` turns it on (`0`, `true`, `yes`,
-  empty: off), so no existing link changes what it opens.
+- **On unless turned off:** only `globe=0` turns it off (`1`, `true`,
+  `yes`, empty, no value: on), so an old `globe=1` link still opens
+  the globe.
 - **A typo never breaks the view:** a knob that is empty, not a number,
   not finite or outside its range reads as its default (an override as
   none).
@@ -94,8 +98,9 @@ if (globe.on) {
 
 ## Tests
 
-`globe-switch.test.ts`: off with its defaults without the switch, on only
-for `globe=1`, every knob read, a landing never shallower than the
+`globe-switch.test.ts`: on with its defaults without the switch, off only
+for `globe=0`, every knob read, a landing never shallower than the
 entry, a bad or out-of-range knob read as its default, `startKm` read
-as an override only, the streaks on by default and off for `dust=0`, the street
-map's gain at 0.55 by default and its range, the bounds themselves accepted, the defaults inside their ranges.
+as an override only, the streaks on by default and off for `dust=0`, the
+street map's gain at 0.55 by default and its range, the bounds themselves
+accepted, the defaults inside their ranges.

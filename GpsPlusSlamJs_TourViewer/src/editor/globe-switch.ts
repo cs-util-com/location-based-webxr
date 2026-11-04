@@ -1,8 +1,10 @@
 /**
  * The link switch for the editor on the globe, and the knobs tuned by
  * eye: what hides on screen, and the approach's meteor (named as
- * in the globe lab). `edit.html?globe=1` opens the 3D view on the full
- * globe; without it the editor's own 3D view stays the default.
+ * in the globe lab). The 3D view opens on the full globe by default;
+ * `edit.html?globe=0` opens the older 3D view instead, a temporary way
+ * back kept until that view and the 2D map are removed. An old
+ * `globe=1` link keeps opening the globe.
  *
  * Pure and free of the globe's code: the page reads it on its first load.
  *
@@ -22,7 +24,8 @@ export type GlobeSwitchOverride = Omit<GlobeSwitchKnob, "fallback">;
 
 /** The switch's parameter and its knobs. */
 export const GLOBE_SWITCH = Object.freeze({
-  /** `globe=1` turns the editor on the globe on; anything else is off. */
+  /** `globe=0` turns the editor on the globe off (temporary); anything
+   *  else, no value among them, keeps it on. */
   param: "globe",
   /** An object hides below this size on screen (CSS px). */
   hidePx: Object.freeze({
@@ -198,7 +201,7 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
   const params = new URLSearchParams(search);
   const meteorDeg = knob(params, GLOBE_SWITCH.meteorDeg);
   return {
-    on: params.get(GLOBE_SWITCH.param) === "1",
+    on: params.get(GLOBE_SWITCH.param) !== "0",
     hidePx: knob(params, GLOBE_SWITCH.hidePx),
     crowdPx: knob(params, GLOBE_SWITCH.crowdPx),
     meteorDeg,

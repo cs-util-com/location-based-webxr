@@ -13,6 +13,7 @@ import {
   domWorkers,
   mayNarrow,
   mergeReports,
+  namedProjects,
   narrowedStageRun,
   projectArgs,
   projectReportName,
@@ -219,5 +220,39 @@ describe('projectReportName', () => {
     expect(projectReportName('results.json', 'dom')).toBe('results.dom.json');
     expect(projectReportName('C:\\t\\report.json', 'webgl')).toBe('C:\\t\\report.webgl.json');
     expect(projectReportName('report', 'dom')).toBe('report.dom.json');
+  });
+});
+
+// Why these tests matter: the runner adds `--project <name>` to each
+// project's run itself. A developer's own `--project webgl` was forwarded
+// as well, and Playwright runs every project named, so the first (DOM)
+// pass ran the WebGL specs at the DOM worker count - several software
+// renderers at once - and then the WebGL pass ran them all again.
+describe('namedProjects', () => {
+  it('runs every project when none is named, the arguments untouched', () => {
+    expect(namedProjects(['a.spec.js', '--retries', '0'], ['dom', 'webgl'])).toEqual({
+      projects: ['dom', 'webgl'],
+      rest: ['a.spec.js', '--retries', '0'],
+    });
+  });
+
+  it('takes a named project out of the arguments, in either spelling', () => {
+    expect(namedProjects(['a.spec.js', '--project', 'webgl', '--retries', '0'], ['dom', 'webgl'])).toEqual({
+      projects: ['webgl'],
+      rest: ['a.spec.js', '--retries', '0'],
+    });
+    expect(namedProjects(['--project=dom'], ['dom', 'webgl'])).toEqual({ projects: ['dom'], rest: [] });
+  });
+
+  it("keeps the plan's order for several named projects", () => {
+    expect(namedProjects(['--project', 'webgl', '--project', 'dom'], ['dom', 'webgl']).projects).toEqual([
+      'dom',
+      'webgl',
+    ]);
+  });
+
+  it('refuses a project the plan does not have, and a flag without a name', () => {
+    expect(() => namedProjects(['--project', 'chromium'], ['dom', 'webgl'])).toThrow(RangeError);
+    expect(() => namedProjects(['--project'], ['dom', 'webgl'])).toThrow(RangeError);
   });
 });

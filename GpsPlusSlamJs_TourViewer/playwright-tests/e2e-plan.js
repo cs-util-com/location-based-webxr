@@ -36,11 +36,13 @@ export const SPECS = {
   "creator-indoor.spec.js": { project: "dom", area: "viewer" },
   "creator-stations.spec.js": { project: "dom", area: "viewer" },
   "editor-entry.spec.js": { project: "dom", area: "editor" },
+  "editor-files.spec.js": { project: "dom", area: "editor" },
   "editor.spec.js": { project: "dom", area: "editor" },
   "editor3d-character.spec.js": { project: "webgl", area: "editor" },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-approach.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-clouds.spec.js": { project: "webgl", area: "editor" },
+  "editor3d-globe-default.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-osm-gain.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-osm-hold.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-start.spec.js": { project: "webgl", area: "editor" },
@@ -125,6 +127,7 @@ const SHARED_IN_VIEWER_FOLDERS = new Set([
 const AREA_HELPERS = {
   [`${PKG}playwright-tests/editor3d-fixture.js`]: "editor",
   [`${PKG}playwright-tests/editor-menus.js`]: "editor",
+  [`${PKG}playwright-tests/editor-tours.js`]: "editor",
 };
 
 /**

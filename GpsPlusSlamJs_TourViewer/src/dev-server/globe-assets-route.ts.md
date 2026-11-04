@@ -5,7 +5,8 @@
 The Tour Viewer's dev server route `/globe-assets/` (the e2e runs on the
 same server): it serves the Globe package's committed `assets/` folder,
 which the globe's surface asks for by these absolute paths. Only the editor
-on the globe view (`../editor3d/editor3d-globe.ts`, behind `globe=1`) loads
+on the globe view (`../editor3d/editor3d-globe.ts`, the default 3D view;
+`globe=0` opens the older one, which does not) loads
 them. The Vite build does not copy them: the site build
 (`scripts/build-site.mjs`, `scripts/globe-assets-deploy.mjs`) ships ONE copy
 at the site root, `dist-site/globe-assets/`, which the deployed editor and

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The 3D view's card pictures: a station card's picture (and the
+The 3D view's card pictures: an unfolded station card's picture (and the
 inspector's thumbnail) is read from the tour only once it scrolls into
 view, checked as the card's photo is, and kept as one object URL per
 picture until the shell lets them all go.
@@ -36,7 +36,7 @@ picture until the shell lets them all go.
 
 ```ts
 const pictures = createShellPictures({ load: readContent });
-pictures.show(hero, "content/knight.jpg");
+pictures.show(pic, "content/knight.jpg");
 // on hide
 pictures.clear();
 ```
