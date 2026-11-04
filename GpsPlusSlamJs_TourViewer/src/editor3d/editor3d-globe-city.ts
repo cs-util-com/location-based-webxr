@@ -302,7 +302,7 @@ export function mountEditorCity(options: EditorCityOptions): EditorCity {
 
   /** The define set to `seeOn`; a change recompiles (once per edge). */
   const defineSeeThrough = (material: THREE.Material) => {
-    const defines = (material.defines ??= {}) as Record<string, unknown>;
+    const defines = (material.defines ??= {});
     if (SEE_THROUGH_DEFINE in defines === seeOn) return;
     if (seeOn) defines[SEE_THROUGH_DEFINE] = "";
     else delete defines[SEE_THROUGH_DEFINE];

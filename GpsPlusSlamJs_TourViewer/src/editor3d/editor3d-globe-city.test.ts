@@ -175,13 +175,14 @@ describe("mountEditorCity", () => {
           posted.push(message),
         terminate() {},
       }),
-      loadCityThree: async () => ({
-        cityObjects: (city: unknown) => {
-          built.push(city);
-          return [];
-        },
-        disposeCityObjects() {},
-      }),
+      loadCityThree: () =>
+        Promise.resolve({
+          cityObjects: (city: unknown) => {
+            built.push(city);
+            return [];
+          },
+          disposeCityObjects() {},
+        }),
     });
     const city = mountEditorCity({ city: globeCity, place: BERN, zoom: 12 });
     city.step({ altitudeM: 500, selection: null });
