@@ -103,7 +103,7 @@ export function newPin(input: NewItemInput): TourPin {
 }
 
 /** The body a new long text starts with: the format requires one. */
-export const NEW_LONG_TEXT_BODY = "Write the text here.";
+const NEW_LONG_TEXT_BODY = "Write the text here.";
 
 /**
  * A new long text of `station`, as `newPin` makes a pin: a reading sign
