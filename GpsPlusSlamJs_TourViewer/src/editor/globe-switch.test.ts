@@ -1,8 +1,9 @@
 /**
- * Why these tests matter: the editor on the globe ships behind a link
- * switch until the owner has tried it, so the switch must be OFF for every
- * link that does not ask for it (the default editor's e2e opens without
- * it), and the two tuning knobs the owner sets by hand in the link must
+ * Why these tests matter: the editor on the globe is the default 3D view,
+ * so the switch must be ON for every link that does not turn it off; the
+ * one way back to the older 3D view and the map, `globe=0`, is temporary
+ * until those views are removed, and an old `globe=1` link must keep
+ * working. The tuning knobs set by hand in the link must
  * never turn a typo into a broken view: a value that is not a number in
  * range falls back to the default instead of hiding everything (0 px) or
  * nothing (Infinity).
@@ -12,26 +13,28 @@ import { describe, expect, it } from "vitest";
 import { GLOBE_SWITCH, readGlobeSwitch } from "./globe-switch.js";
 
 describe("readGlobeSwitch", () => {
-  it("is off with its defaults for a link without the switch", () => {
+  it("is on with its defaults for a link without the switch", () => {
     expect(readGlobeSwitch("")).toEqual({
-      on: false,
+      on: true,
       hidePx: GLOBE_SWITCH.hidePx.fallback,
       crowdPx: GLOBE_SWITCH.crowdPx.fallback,
       meteorDeg: 20,
       meteorLandDeg: 50,
       landAglM: 150,
-      startKm: 8_000,
+      startKm: null,
+      dust: 1,
+      osmGain: GLOBE_SWITCH.osmGain.fallback,
     });
-    expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
-      false,
-    );
+    expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });
 
-  it("is on only for globe=1", () => {
-    expect(readGlobeSwitch("?globe=1").on).toBe(true);
-    expect(readGlobeSwitch("globe=1").on).toBe(true);
-    for (const value of ["0", "", "yes", "true", "2"]) {
-      expect(readGlobeSwitch(`?globe=${value}`).on).toBe(false);
+  // Why: `globe=0` is the temporary way back to the older 3D view; any
+  // other value, an old `globe=1` link among them, keeps the globe.
+  it("is off only for globe=0", () => {
+    expect(readGlobeSwitch("?globe=0").on).toBe(false);
+    expect(readGlobeSwitch("globe=0").on).toBe(false);
+    for (const value of ["1", "", "yes", "true", "2"]) {
+      expect(readGlobeSwitch(`?globe=${value}`).on).toBe(true);
     }
   });
 
@@ -47,7 +50,7 @@ describe("readGlobeSwitch", () => {
   });
 
   // Why: a knob out of its range or not a number is a typo; the default
-  // keeps the view usable and the owner sees the knob had no effect.
+  // keeps the view usable, and the knob visibly has no effect.
   it("falls back to the default for a knob that is not a number in range", () => {
     const { hidePx, crowdPx } = GLOBE_SWITCH;
     for (const bad of ["", "abc", "NaN", "Infinity", "-1", "1e9"]) {
@@ -94,7 +97,49 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?meteorDeg=5").meteorDeg).toBe(20);
     expect(readGlobeSwitch("?meteorDeg=10").meteorDeg).toBe(10);
     expect(readGlobeSwitch("?landAglM=5").landAglM).toBe(150);
-    expect(readGlobeSwitch("?startKm=10").startKm).toBe(8_000);
+    expect(readGlobeSwitch("?startKm=10").startKm).toBeNull();
+  });
+
+  // Why: without startKm the flight starts where the globe lab's intro
+  // zooms out to (derived from the view, so null here); the link's
+  // startKm stays an explicit override, and a value out of its range
+  // reads as no override rather than as some other fixed height.
+  it("reads startKm as an override, and none without a valid one", () => {
+    expect(readGlobeSwitch("?globe=1").startKm).toBeNull();
+    expect(readGlobeSwitch("?startKm=8000").startKm).toBe(8_000);
+    const { startKm } = GLOBE_SWITCH;
+    expect(readGlobeSwitch(`?startKm=${startKm.min}`).startKm).toBe(
+      startKm.min,
+    );
+    expect(readGlobeSwitch(`?startKm=${startKm.max}`).startKm).toBe(
+      startKm.max,
+    );
+    for (const bad of ["", "abc", "Infinity", "-1", "499", "65001"]) {
+      expect(readGlobeSwitch(`?startKm=${bad}`).startKm).toBeNull();
+    }
+  });
+
+  // Why: the speed streaks are on by default on the approach, as the
+  // globe lab's look; dust=0 is the A/B link that turns them off (and a
+  // frame-time comparison's other half).
+  it("reads the speed streaks on by default and off for dust=0", () => {
+    expect(readGlobeSwitch("?globe=1").dust).toBe(1);
+    expect(readGlobeSwitch("?globe=1&dust=0").dust).toBe(0);
+    for (const bad of ["abc", "2", "-1"]) {
+      expect(readGlobeSwitch(`?dust=${bad}`).dust).toBe(1);
+    }
+  });
+
+  // Why: the street map's darkening gain is a look choice tuned by eye;
+  // the link's osmGain is its A/B switch, and a value out of its range
+  // (one that would blank or brighten the map) reads as the default.
+  it("reads the street map's gain, about 0.55 by default", () => {
+    expect(GLOBE_SWITCH.osmGain.fallback).toBe(0.55);
+    expect(readGlobeSwitch("?globe=1&osmGain=0.45").osmGain).toBe(0.45);
+    expect(readGlobeSwitch("?globe=1&osmGain=1").osmGain).toBe(1);
+    for (const bad of ["", "abc", "0", "0.1", "1.5", "-1", "Infinity"]) {
+      expect(readGlobeSwitch(`?osmGain=${bad}`).osmGain).toBe(0.55);
+    }
   });
 
   // Why: the meteor never lands shallower than it enters ("shallow to
@@ -114,7 +159,8 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.meteorDeg,
       GLOBE_SWITCH.meteorLandDeg,
       GLOBE_SWITCH.landAglM,
-      GLOBE_SWITCH.startKm,
+      GLOBE_SWITCH.dust,
+      GLOBE_SWITCH.osmGain,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

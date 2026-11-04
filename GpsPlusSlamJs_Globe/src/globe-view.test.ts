@@ -26,6 +26,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import {
   createGlobeView,
+  globeViewFitM,
   viewPoseEcef,
   type GlobeViewSeams,
   type GlobeViewSettings,
@@ -219,6 +220,17 @@ describe("createGlobeView: the frame", () => {
     // A portrait canvas fits the globe to its narrower width: the fit
     // distance grows.
     expect(view.fitDistance()).toBeGreaterThan(fitWide);
+    // Why: a page that places the camera before the first frame (the
+    // editor's approach, its canvas not laid out yet) computes the fit
+    // with globeViewFitM; it must be the very distance the view fits to.
+    expect(fitWide).toBeCloseTo(
+      globeViewFitM({ radiusM: view.radius, fovYDeg: 50, aspect: 2 }),
+      3,
+    );
+    expect(view.fitDistance()).toBeCloseTo(
+      globeViewFitM({ radiusM: view.radius, fovYDeg: 50, aspect: 0.5 }),
+      3,
+    );
     view.refit();
     view.frame();
     expect(log.filter((l) => l.startsWith("size"))).toEqual([

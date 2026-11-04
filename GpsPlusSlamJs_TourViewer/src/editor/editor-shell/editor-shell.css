@@ -34,13 +34,13 @@
     "Segoe UI", system-ui, -apple-system, "Helvetica Neue", arial, sans-serif;
   --s-top-h: 40px;
   --s-bar-h: 24px;
-  /* The globe view's loading bar under the top bar, its tab, and the gap
-   * from the view's top (or the tab) to the docks. The default 3D view
-   * never shows the bar: its docks begin a gap under the top bar. */
-  --s-load-h: 5px;
-  --s-load-tab-h: 22px;
-  --s-dock-gap: 8px;
-  --s-dock-top: var(--s-dock-gap);
+  /* The accent line under the top bar (every 3D view; the globe view's
+   * approach fills it while the tour loads), and the docks hanging
+   * directly from it: no gap. */
+  --s-load-h: 3px;
+  --s-dock-top: var(--s-load-h);
+  /* The inspector's width, which the map controls keep clear of. */
+  --s-insp-w: 290px;
   /* The narrowest the brand (the tour's name and its pen) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
@@ -340,13 +340,6 @@ body:not([data-view="3d"]) .unsaved-mark {
 }
 
 /* --- the viewport and its docks ------------------------------------------ */
-/* The globe view (`data-globe`, set by the page) keeps the band for its
- * loading bar and tab for its whole life, so the docks never move when
- * the bar goes. */
-#view3d[data-globe] {
-  --s-dock-top: calc(var(--s-load-h) + var(--s-load-tab-h) + var(--s-dock-gap));
-}
-
 body[data-view="3d"] #view3d {
   inset: var(--s-top-h) 0 var(--s-bar-h);
   overflow: hidden;
@@ -361,28 +354,48 @@ body[data-view="3d"] #view3d {
   z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: calc(100% - 10px - var(--s-dock-top));
+  max-height: calc(100% - var(--s-dock-top));
   border: 1px solid var(--s-line);
   background: rgb(31 32 35 / 97%);
   box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
 }
 
+/* Open, a dock runs from the accent line down to the bottom bar; folded,
+ * it is its head alone (38 px), square where it meets the line. */
+.dock:not(.collapsed) {
+  bottom: 0;
+  border-bottom: 0;
+}
+
 #shell-tree {
   left: 0;
   width: 272px;
-  max-height: calc(100% - 150px - var(--s-dock-top));
   border-left: 0;
-  border-radius: 0 8px 8px 0;
 }
 
-/* Its foot stays above the map controls at the bottom right (they take
- * the lowest 136 px: 14 + 38 + 8 + 76), as the tree's above the credits. */
 #shell-inspector {
   right: 0;
-  width: 290px;
-  max-height: calc(100% - 150px - var(--s-dock-top));
+  width: var(--s-insp-w);
   border-right: 0;
-  border-radius: 8px 0 0 8px;
+}
+
+#shell-tree.collapsed {
+  border-radius: 0 0 8px;
+}
+
+#shell-inspector.collapsed {
+  border-radius: 0 0 0 8px;
+}
+
+/* The accent line under the top bar (`edit.html`): always full, never
+ * hidden; the globe view's approach covers it while the tour loads. */
+.load-line {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 6;
+  height: var(--s-load-h);
+  background: var(--s-accent);
+  pointer-events: none;
 }
 
 .dhead {
@@ -462,36 +475,28 @@ body[data-view="3d"] #view3d {
   box-shadow: 0 0 0 1px var(--s-accent);
 }
 
-.hero {
+/* A station's row: one 28 px line - its button (the number chip, then
+ * the name beside it, cut with an ellipsis), then the grip and the fold
+ * arrow beside it in the page's order, never inside it. */
+.card > .head {
   position: relative;
-  height: 62px;
-  background: #33363c center / cover no-repeat;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding-right: 5px;
   cursor: pointer;
   user-select: none;
 }
 
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgb(10 11 13 / 8%) 0%,
-    rgb(10 11 13 / 30%) 42%,
-    rgb(10 11 13 / 86%) 100%
-  );
-}
-
-/* The picture is one button over the whole hero (its number, name and
- * description inside it); the fold arrow sits over it, beside it in the
- * page's order, never inside it. */
-.hero .pick {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  padding: 0;
+.head .pick {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0 0 0 7px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -501,36 +506,58 @@ body[data-view="3d"] #view3d {
   cursor: pointer;
 }
 
-.hero .pick > * {
-  position: absolute;
-}
-
-.hero .pick:focus-visible {
+.head .pick:focus-visible {
   outline: 2px solid var(--s-accent);
   outline-offset: -2px;
 }
 
-.hero .n {
-  top: 6px;
-  left: 7px;
+.head .n {
+  flex: none;
   padding: 1px 5px;
   border-radius: 3px;
-  background: rgb(20 21 24 / 78%);
+  background: var(--s-bg3);
   color: #e6f0fa;
   font: 600 10px var(--s-mono);
+  white-space: nowrap;
 }
 
-.card.sel .hero .n {
+.card.sel .head .n {
   background: var(--s-accent);
   color: #1c1c1c;
 }
 
-.hero .tw {
-  position: absolute;
-  z-index: 2;
-  top: 4px;
-  right: 5px;
+.head .nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--s-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Unfolded, a station is no longer one compact line: its whole name
+ * wraps (on a phone a folded name gets about 115 px), the row growing
+ * from its 28 px with it; folded rows stay one line. */
+.card.open > .head {
+  height: auto;
+  min-height: 28px;
+}
+
+.card.open > .head .pick {
+  padding-block: 5px;
+}
+
+.card.open .head .nm {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.head .tw {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -538,40 +565,28 @@ body[data-view="3d"] #view3d {
   padding: 0;
   border: 0;
   border-radius: 4px;
-  background: rgb(20 21 24 / 60%);
-  color: #e8eaee;
+  background: transparent;
+  color: var(--s-muted);
 }
 
-.hero .tw:hover {
-  background: rgb(60 63 70 / 90%);
+.head .tw:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
 }
 
-.hero .nm {
-  right: 9px;
-  bottom: 19px;
-  left: 9px;
+/* An unfolded station's picture, under its row: only when it has one. */
+.card > .pic {
+  height: 72px;
+  background: #33363c center / cover no-repeat;
+}
+
+.card > .ds {
+  padding: 5px 9px 0;
   overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 70%);
-  white-space: nowrap;
-}
-
-.hero .ds {
-  right: 9px;
-  bottom: 5px;
-  left: 9px;
-  overflow: hidden;
-  color: rgb(230 232 236 / 80%);
+  color: var(--s-muted);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.hero.nodesc .nm {
-  bottom: 7px;
 }
 
 .kids {
@@ -932,6 +947,22 @@ body[data-view="3d"] #view3d {
   background: var(--s-bg2);
 }
 
+/* An editable name says so at rest: a dotted underline and a pen at its
+ * right; typing in it, only the field's own frame shows. */
+.ttlin:not([readonly]) {
+  padding-right: 22px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8f99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'/%3E%3C/svg%3E")
+    right 6px center / 12px 12px no-repeat;
+  text-decoration: underline dotted var(--s-muted);
+  text-underline-offset: 3px;
+}
+
+.ttlin:not([readonly]):focus {
+  background-color: var(--s-bg2);
+  background-image: none;
+  text-decoration: none;
+}
+
 .tfield {
   width: 100%;
   min-width: 0;
@@ -1089,22 +1120,26 @@ button.thumb:focus-visible {
 }
 
 /* --- the map controls: white pills, 38 px buttons ------------------------- */
-/* At the bottom right, under the inspector's foot at every width; the
- * credits take the bottom left. */
+/* One row at the view's foot: at the right edge, or directly left of the
+ * inspector while it shows (the docks run down to the bottom bar). */
 #map-controls {
   position: absolute;
   right: 12px;
   bottom: 14px;
   z-index: 4;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
   gap: 8px;
 }
 
+#shell-inspector:not([hidden], .collapsed) ~ #map-controls {
+  right: calc(var(--s-insp-w) + 12px);
+}
+
 .pill {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   border-radius: 8px;
   background: #fff;
@@ -1130,7 +1165,7 @@ button.thumb:focus-visible {
 }
 
 .pill button + button {
-  border-top: 1px solid #e4e7eb;
+  border-left: 1px solid #e4e7eb;
 }
 
 /* --- the help popover ---------------------------------------------------- */
@@ -1245,6 +1280,31 @@ button.thumb:focus-visible {
   white-space: nowrap;
 }
 
+/* The 3D view's credits, small at the bar's left: their panel opens
+ * upward out of the bar, so nothing here clips it; empty on the map. */
+#shell-bar > #view3d-credits {
+  flex: none;
+  overflow: visible;
+  padding: 0 4px;
+}
+
+/* The bar keeps its parts on one line; the panel it opens wraps its
+ * lines as any text does. */
+#view3d-credits .view3d-credits-panel {
+  white-space: normal;
+}
+
+#shell-bar > #view3d-credits:empty {
+  display: none;
+}
+
+#view3d-credits .view3d-credits-button,
+#view3d-credits .view3d-credits-beside {
+  padding: 1px 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
 #shell-view {
   color: var(--s-text);
   font-weight: 500;
@@ -1305,20 +1365,18 @@ button.thumb:focus-visible {
   color: var(--s-muted);
 }
 
-/* A card's grip: beside its fold arrow, the same height, 4 px apart. */
-.hero .grip {
-  position: absolute;
-  z-index: 2;
-  top: 4px;
-  right: 31px;
+/* A card's grip: in its row beside its fold arrow, the same height, 4 px
+ * apart (the row's gap). */
+.head .grip {
+  position: relative;
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 20px;
   border-radius: 4px;
-  background: rgb(20 21 24 / 60%);
-  color: #e8eaee;
+  color: var(--s-muted);
   cursor: grab;
   touch-action: none;
 }
@@ -1327,14 +1385,14 @@ button.thumb:focus-visible {
  * 24 x 24 px around the drawn 16 x 20 (WCAG's least target), reaching the
  * fold arrow's edge 4 px away but not over it. */
 @media (pointer: coarse) {
-  .hero .grip::after {
+  .head .grip::after {
     content: "";
     position: absolute;
     inset: -2px -4px;
   }
 }
 
-.hero .grip svg.i {
+.head .grip svg.i {
   width: 12px;
   height: 12px;
 }
@@ -1343,7 +1401,7 @@ button.thumb:focus-visible {
   opacity: 0.55;
 }
 
-.card.dragging .hero .grip {
+.card.dragging .head .grip {
   cursor: grabbing;
 }
 
@@ -1524,11 +1582,11 @@ button.thumb:focus-visible {
   /* Folded, the tree's head ends where the inspector begins: on a phone
    * the two would overlap, and the inspector would cover the fold arrow. */
   #shell-tree.collapsed {
-    width: min(272px, 56vw, 100vw - min(290px, 60vw));
+    width: min(272px, 56vw, 100vw - var(--s-insp-w));
   }
 
-  #shell-inspector {
-    width: min(290px, 60vw);
+  :root {
+    --s-insp-w: min(290px, 60vw);
   }
 
   #shell-hint,
@@ -1781,23 +1839,17 @@ button.thumb:focus-visible {
 }
 
 /* --- the globe view's approach on opening a tour ---------------------------
- * A full-width bar glued under the top bar, following the camera's fall
- * (`globe-approach-run.ts`), and a rounded "Loading tour" tab hanging from
- * its middle like a bulge. The docks start under the tab (`--s-dock-top`),
- * so the two never meet; it takes no pointer, and it goes a beat after the
- * landing. */
+ * The accent line's loading state (`globe-approach-run.ts`): over the
+ * permanent `.load-line`, a dark track filling in the accent colour with
+ * the camera's fall, then full for good. No words: "Loading tour" is the
+ * progress bar's name. The docks hang from it; it takes no pointer. */
 .approach {
   position: absolute;
   inset: 0 0 auto;
   z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: center;
   pointer-events: none;
-}
-
-.approach[hidden] {
-  display: none;
 }
 
 .approach-track {
@@ -1814,24 +1866,9 @@ button.thumb:focus-visible {
   transform-origin: left;
 }
 
-/* The tab: the bar's own colour, so it reads as part of it. */
-.approach-title {
-  box-sizing: border-box;
-  max-width: calc(100% - 24px);
-  height: var(--s-load-tab-h);
-  padding: 0 16px;
-  overflow: hidden;
-  border-radius: 0 0 11px 11px;
-  background: var(--s-bg3);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 30%);
-  color: var(--s-text);
-  font: 600 12px/22px var(--s-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The tree unfolds at the approach's landing: it opens downwards from its
- * folded tab (38 px). Reduced motion unfolds it at once. */
+/* The tree unfolds at the approach's landing: from the accent line it
+ * opens downwards from its folded head (38 px) to the bottom bar. Reduced
+ * motion unfolds it at once. */
 @keyframes dock-unfold {
   from {
     clip-path: inset(0 0 calc(100% - 38px) 0);
@@ -1850,4 +1887,108 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
   body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
     animation: none;
   }
+}
+
+/* --- dialogs and toasts ----------------------------------------------------
+ * The page's dialogs (open, Tour details, Share and publish), their fields,
+ * the toasts and the page where the 3D view cannot open wear the shell's
+ * dark dress in both views: the paper tokens of `editor.css` are redefined
+ * inside them, and the few fields it paints white get the dark field
+ * colour. */
+.backdrop,
+#toasts,
+#view3d-failed {
+  --ink: var(--s-text);
+  --ink-dim: var(--s-muted);
+  --ink-faint: var(--s-dim);
+  --panel: rgb(31 32 35 / 97%);
+  --panel-solid: var(--s-bg1);
+  --panel-lo: var(--s-bg3);
+  --hairline: var(--s-line2);
+  --accent-ink: var(--s-accent-text);
+  --accent-soft: var(--s-accent-bg);
+  --danger: var(--s-danger);
+  --shadow-big: 0 2px 4px rgb(0 0 0 / 30%), 0 18px 60px rgb(0 0 0 / 50%);
+
+  color-scheme: dark;
+}
+
+.backdrop {
+  background: rgb(12 13 15 / 60%);
+  color: var(--ink);
+}
+
+#view3d-failed {
+  background: var(--s-bg0);
+  color: var(--ink);
+}
+
+/* "No cover" on its grey tile: the muted grey reads only 4.0:1 there, so
+ * a lighter one (5.2:1, AA for small text). */
+.backdrop .cover-thumb {
+  color: #a0a5ae;
+}
+
+/* In the 3D view the toasts stand over the map controls row (14 px over
+ * the bottom bar, 38 px high), 12 px clear of it, never covering it. */
+body[data-view="3d"] #toasts {
+  bottom: calc(var(--s-bar-h) + 64px);
+}
+
+.backdrop :is(.btn, .drop, .cover-choice),
+#view3d-failed .btn,
+.backdrop .link-row input,
+.backdrop .details :is(input[type="text"], textarea),
+.backdrop .done select {
+  border-color: var(--s-line2);
+  background-color: var(--s-bg2);
+  color: var(--s-text);
+}
+
+.backdrop .btn:hover:not(:disabled),
+#view3d-failed .btn:hover:not(:disabled) {
+  border-color: var(--s-muted);
+  background-color: var(--s-bg3);
+}
+
+.backdrop .btn.ghost {
+  border-color: transparent;
+  background-color: transparent;
+}
+
+.backdrop .btn.primary,
+.backdrop .btn.primary:hover:not(:disabled),
+#view3d-failed .btn.primary,
+#view3d-failed .btn.primary:hover:not(:disabled) {
+  border-color: transparent;
+  background-color: var(--s-accent);
+  color: #16120b;
+}
+
+.backdrop .drop {
+  border-color: var(--s-line2);
+}
+
+.backdrop .drop.over {
+  border-color: var(--s-accent);
+  background-color: var(--s-accent-bg);
+}
+
+.backdrop .cover-choice:has(input:checked) {
+  border-color: var(--s-accent);
+  background-color: var(--s-accent-bg);
+}
+
+.backdrop a {
+  color: var(--s-accent-text);
+}
+
+.toast {
+  border: 1px solid var(--s-line2);
+  background: var(--s-bg1);
+  color: var(--s-text);
+}
+
+.backdrop .btn.danger {
+  color: var(--s-danger);
 }

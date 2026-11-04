@@ -183,6 +183,38 @@ describe("the field", () => {
     expect(out.alpha[2]).toBe(0);
   });
 
+  // Why: the pass calls this every frame for 2,500 streaks; three fresh
+  // arrays a frame were about 70 KB of garbage a frame. With `out` the
+  // streaks are written into the caller's arrays (the same numbers), and
+  // arrays too short for the field are refused rather than half-written.
+  it("writes into the caller's arrays when given them, the same streaks", () => {
+    const seeds = createSpeedField(40, 2);
+    const fresh = streaks(seeds, [0.1, 0, 0], [0, 1, 0], 2, 0.06, 0.8);
+    const out = {
+      heads: new Float32Array(60 * 3),
+      tails: new Float32Array(60 * 3),
+      alpha: new Float32Array(60),
+    };
+    const into = streaks(seeds, [0.1, 0, 0], [0, 1, 0], 2, 0.06, 0.8, out);
+    expect(into.heads).toBe(out.heads);
+    expect(into.tails).toBe(out.tails);
+    expect(into.alpha).toBe(out.alpha);
+    expect([...out.heads.subarray(0, 120)]).toEqual([...fresh.heads]);
+    expect([...out.tails.subarray(0, 120)]).toEqual([...fresh.tails]);
+    expect([...out.alpha.subarray(0, 40)]).toEqual([...fresh.alpha]);
+    const short = { ...out, alpha: new Float32Array(39) };
+    expect(() =>
+      streaks(seeds, [0, 0, 0], [0, 1, 0], 2, 0.06, 1, short),
+    ).toThrow(RangeError);
+  });
+
+  // Why: "how many streaks" has one home, the pass's shared look
+  // (`SPEED_DUST_LOOK.count`); a second, stale count here (1,500 against
+  // the 2,500 drawn) misled every reader of the model.
+  it("leaves the count to the caller, with no second default", () => {
+    expect("count" in GLOBE_SPEED_DUST).toBe(false);
+  });
+
   it("rejects a count that is not a positive integer", () => {
     expect(() => createSpeedField(0)).toThrow(RangeError);
     expect(() => createSpeedField(2.5)).toThrow(RangeError);

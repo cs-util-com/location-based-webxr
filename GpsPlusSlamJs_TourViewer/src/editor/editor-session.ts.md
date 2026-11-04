@@ -81,7 +81,7 @@ imperative resources only - that handle and the pictures' side table
     writer puts at minor 2) or leaves the field out (false is never
     written). The phone's Finish keeps the flag the same way: the rebuild
     spreads the opened manifest (`finish-rebuild.ts`).
-  - `details()` / `setDetails(form)` / `coverChoices()` (W2 of the tour
+  - `details()` / `setDetails(form, needsNoGps?)` / `coverChoices()` (W2 of the tour
     editor plan 2026-10-17-1816) - the tour's name, description, cover and
     contact as a `DetailsForm` (`../tour-details-form.ts`), with the edits;
     their edit, all at once: checked by `checkDetailsForm` through the

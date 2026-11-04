@@ -3,10 +3,10 @@
 ## Purpose
 
 The desktop editor's 3D view on the whole globe (full-globe editor plan
-2026-10-27-1850, GV1b), opened instead of the OrbitControls view
-(`editor3d-scene.ts`) when the page's link carries `globe=1`
-(`../editor/globe-switch.ts`, read in `../editor/edit-main.ts`). Without the
-switch nothing here loads.
+2026-10-27-1850, GV1b): the default 3D view. Only the temporary way back,
+`globe=0` in the page's link (`../editor/globe-switch.ts`, read in
+`../editor/edit-main.ts`), opens the OrbitControls view
+(`editor3d-scene.ts`) instead, and then nothing here loads.
 
 It mounts the globe package's view core (`createGlobeView` from
 `gps-plus-slam-globe/view`: sky, sun, surface, a world frame that follows
@@ -15,6 +15,18 @@ placed in ECEF) under the camera, the tour drawn in the globe's
 Earth-centred group (`globe-layer.ts`), and the globe's camera controls in
 eye mode. It opens at street level, `GLOBE_EDITOR_LOOK.backM` south of the
 tour's centre at eye height, looking at it.
+
+A tour with nothing positioned yet (a new one, or notes alone) opens too:
+over the creator's part of the world (`empty-tour-view.ts`: the latitude of
+the time zone's region, by its name, and the longitude of its standard
+offset), the whole Earth in view from
+the approach's start height (`meteorStartAltitudeM`: the link's
+`startKm`, else the globe lab's intro distance at the page's aspect), with
+no approach to fly (its
+`ended("landed")` is called at once, so the shell does not hold the tree
+folded). The first station is placed by right-clicking the ground. The
+tour frame stays at that default centre; the stations are drawn by their
+true ECEF place, so one placed anywhere shows where it is.
 
 ## Public API
 
@@ -25,8 +37,8 @@ tour's centre at eye height, looking at it.
   - Resolves on the render loop's first tick with the same `Editor3dView`
     shape, so the shell, the view switch and the page's test hooks work
     unchanged.
-  - Rejects with a `viewFailure` (`editor3d-view-parts.ts`): `empty` for a
-    tour with nothing positioned, `chunk` when the geoid does not load,
+  - Rejects with a `viewFailure` (`editor3d-view-parts.ts`): `chunk`
+    when the geoid does not load,
     `context-lost` before the first frame, or the first frame's own error.
     Everything made so far is undone first.
 
@@ -197,9 +209,13 @@ the page's check): the old approach set it from the camera's pose every
 frame; the frame is no longer moved per frame. The meteor's knobs come from the link
 (`globe-switch.ts`); its pacing reads what loads at the tour
 (`tourArrivalProgress`: the relief's ground there known, the relief
-settled, then the admitted share of the stations), and the relief's finest ground revises its landing. The box ("Loading tour" over the bar) hangs in
-the view's box (`deps.approach.ended` is called when it goes, with `"landed"` or `"taken"`) and goes a beat after the landing, at once after a
-takeover; what still loads does not keep it (it reads no load counts).
+settled, then the admitted share of the stations), and the relief's finest ground revises its landing. The run's
+accent line (a progress bar named "Loading tour") hangs in the view's box
+over the page's permanent `#load-line`; its load ends
+(`deps.approach.ended` is called, with `"landed"` or `"taken"`) a beat
+after the landing, at once after a takeover, and the line stays full;
+what still loads does not keep the load going (it reads no load counts).
+The view disposes the run once the arrival is over.
 
 - While it flies the stations are held back (added to what `setHidden`
   gets); on arrival they pop in one after another (`layer.setGrowth`)
@@ -220,9 +236,32 @@ takeover; what still loads does not keep it (it reads no load counts).
   verbs stop the flight where it is.
 - A flight to a station (a pick in the list) while flying retargets the
   flight (`retarget`) instead of jumping.
+- **The start**: where the globe lab's intro zooms out to
+  (`meteorStartAltitudeM`, the whole Earth in view), at the aspect the
+  first frame will have: the box's once laid out, else the window's (the
+  box is hidden while the flight is planned, so the view's own fit is not
+  known yet). The link's `startKm` overrides it.
+- **The controls zoom out as far as the lab's** (`controls.limit`:
+  `globeZoomOutLimitM` at `GLOBE_INTRO.maxKm` and twice the fit at the
+  aspect now), and never nearer than the approach's start, so a takeover
+  at the start is not pulled in.
+- **The speed streaks** (`createSpeedDustPass` from
+  `gps-plus-slam-globe/view`, in `SPEED_DUST_LOOK`, the globe lab's
+  look; off with the link's `dust=0`): stepped in the view's
+  `beforeScene` seam with the camera's ECEF pose and drawn there at
+  1 - `over` (the Earth covers them), then at `over` in `afterScene`
+  before the air, the lab's order. They follow the whole motion while the
+  flight places the camera, only the distance otherwise (turning the
+  globe does not streak sideways). Every placement that is not flown
+  (the flight's own start, `placeView` for a fit, a pose, an arrow step,
+  the street view; the zoom steps and `setDistance`) restarts their
+  speed, so a teleport never flashes them.
 - `stats().flying`, `stats().globe.approach` (the run's stats, or the
   last run's once it ended) and `stats().globe.marks` are the page's
-  checks.
+  checks; `stats().globe.dust` (the streaks' state), `centreM` (the
+  camera's distance from the Earth's centre), `fitM` (the view's fit),
+  `startCentreM` and `frameTimesMs` (the last 60 frame intervals) are
+  the start's and the streaks' checks.
 
 ## Invariants & assumptions
 
@@ -248,7 +287,15 @@ takeover; what still loads does not keep it (it reads no load counts).
 `stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
 the camera's altitude, the frame target, the hidden stations and codes, the
 frame recentres, the surface's state and `uploads` (`pending`, `ran`,
-`worstFrameMs`, `admitted`).
+`worstFrameMs`, `admitted`). `mapLoad` is the street map's typed loading
+state (`OsmMapLoad`: tiles waiting, failed, given up, the request ceiling's
+wait in s), produced here for the shell to show. `relief` is what the
+hand-over to the relief waits for: its share and target, whether its view
+has settled (`settled`, the band's condition), the library's `loadProgress`
+and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
+`failed`), and its tile cache's bytes against the device budget
+(`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
+from a stalled one.
 
 ## Tests
 
@@ -275,7 +322,13 @@ frame recentres, the surface's state and `uploads` (`pending`, `ran`,
   `editor3d-terrain.test.ts` (the ECEF placement).
 - `../editor3d-lazy.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
-- `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html?globe=1` and
+- `playwright-tests/editor3d-globe-start.spec.js`: the approach's first
+  frames at least the fit from the Earth's centre, at the lab's intro
+  distance, on a phone held either way and a desktop; the streaks shown
+  mid-flight in the lab's look, off for `dust=0` (the speed still
+  measured), and their frame times against the same flight without them.
+- `playwright-tests/editor3d-globe.spec.js`: opens `/edit.html` (the globe
+  is the default; `globe=1` is an old link that still works) and
   finds the globe and a station through the page's test hooks; the sky
   (blue at noon, dark at midnight); a handle drag holding the camera and
   the frame still (the frame even with the camera taken 60 km away); a

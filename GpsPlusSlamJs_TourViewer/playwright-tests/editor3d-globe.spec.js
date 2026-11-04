@@ -8,17 +8,19 @@ import {
   noApproach,
   openSampleIn3d,
   rejections,
+  reliefCarries,
   view3d,
 } from "./editor3d-fixture.js";
 
 /**
- * Why these tests matter: the editor on the globe view opens only behind
- * its link switch (`globe=1`), and the OrbitControls view stays the default.
- * These open the sample tour both ways and check, through the page's test
+ * Why these tests matter: the editor on the globe view is the default
+ * (`globe=1` still names it), and the OrbitControls view opens only with
+ * the temporary way back, `globe=0`. These open the sample tour both ways
+ * and check, through the page's test
  * hook (a software-drawn WebGL shows little a screenshot could assert on),
- * that the switch gives the globe view - drawing, at street level, the
+ * that the globe view opens - drawing, at street level, the
  * relief carrying the ground, the three stations in its Earth-centred
- * group - and that without it nothing of the globe loads: no globe stats,
+ * group - and that with `globe=0` nothing of the globe loads: no globe stats,
  * no ask for its whole-Earth imagery.
  */
 
@@ -26,8 +28,10 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   page,
 }, testInfo) => {
   // The relief loads from its root tile down, every tile a synthetic image
-  // on a software-drawn WebGL, with the globe's sky and surface on top.
-  test.setTimeout(180_000);
+  // on a software-drawn WebGL, with the globe's sky and surface on top;
+  // the hand-over alone may take 400 frames (`reliefCarries`), 200 s at
+  // the software renderer's 2 frames a second.
+  test.setTimeout(420_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
@@ -65,12 +69,9 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
 
   // Street level: the relief carries the ground once its view is loaded
   // (the globe's surface fills in until then), the camera is an eye
-  // height over the square, not in orbit.
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.carrier, {
-      timeout: 60_000,
-    })
-    .toBe("relief");
+  // height over the square, not in orbit. The hand-over is bound by frames
+  // (the relief parses about a tile a frame), so its wait counts frames.
+  await reliefCarries(page);
   const stats = await view3d(page);
   expect(stats.globe).toBeDefined();
   expect(stats.globe.altitudeM).toBeGreaterThan(0);
@@ -298,7 +299,7 @@ test("a street-map tile whose first request failed gets its map", async ({
   expect(await rejections(page)).toEqual([]);
 });
 
-test("opens the OrbitControls view without the switch, nothing of the globe asked for", async ({
+test("opens the OrbitControls view with ?globe=0, nothing of the globe asked for", async ({
   page,
 }) => {
   test.setTimeout(120_000);

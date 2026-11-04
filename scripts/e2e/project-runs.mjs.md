@@ -26,6 +26,13 @@
     `passWithNoTests` (the runner passes it for a developer's filter only),
     then one filter per spec. So the runner's own spec list, and a full run,
     fail when they match no test instead of passing with 0.
+  - `namedProjects(forwarded, known)`: `{ projects, rest }`, the projects a
+    developer named with `--project <name>` or `--project=<name>` (in the
+    plan's order; all when none is named) and the other arguments. The
+    runner names each pass's project itself; forwarded too, Playwright ran
+    every named project in every pass (a `--project webgl` run ran the WebGL
+    specs at the DOM worker count, then again). Throws `RangeError` on a
+    name the plan lacks or a bare `--project`.
   - `readReport(file, expected, io)`: `{ report, warning, failed }`, never
     throws. Missing: a warning when `expected`, else nothing. Unparsable or
     without `stats`: a warning and `failed`.

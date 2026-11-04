@@ -43,18 +43,25 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the bottom bar (`#shell-bar`, shown with the top bar in both views).
   Checkbox items keep their state in `aria-checked` (`isChecked`,
   `setChecked`).
-- **The 3D view on the whole globe is behind a link switch:** with
-  `globe=1` in the page's address (`readGlobeSwitch`, `globe-switch.ts`)
-  the view switch opens `openGlobeEditor` (`editor3d-globe.ts`, its own
-  lazy chunk, with the switch's `globeHidePx` and `globeCrowdPx`);
-  without it the OrbitControls view (`openEditor3d`) as before.
-  The switch also marks `#view3d` with `data-globe`, which reserves the
-  band for the approach's loading bar under the top bar
-  (`editor-shell.css`); the default view's docks start right under it.
+- **The 3D view on the whole globe is the default:** the view switch
+  opens `openGlobeEditor` (`editor3d-globe.ts`, its own lazy chunk, with
+  the switch's `globeHidePx` and `globeCrowdPx`); `globe=1` still names
+  it. **Temporary:** `globe=0` in the page's address (`readGlobeSwitch`,
+  `globe-switch.ts`) opens the older OrbitControls view (`openEditor3d`)
+  instead, kept only until the 2D map and that view are removed.
 - **The 3D view is the default:** an open that shows a tour ends with
-  `viewSwitch.show3d()`; a 3D view that fails lands on the map, said in
-  a line kept until closed. A tour with nothing positioned is no failure:
-  it opens on the map with a passing line (`say`'s reason `"empty"`).
+  `viewSwitch.show3d()`. A tour with nothing positioned opens on the
+  globe too (`editor3d-globe.ts`, `empty-tour-view.ts`); only the older
+  view refuses one, which then opens on the map with a passing line
+  (`say`'s reason `"empty"`).
+- **Where the 3D view cannot open** (no WebGL, its code not loaded, its
+  graphics lost, an error) `#view3d-failed` says so
+  (`view3d-failed-page.ts`, driven by the store): the reason in plain
+  words and the File actions - Try again (`viewSwitch.show3d()`), Open
+  another tour… (`openAnotherTour`, File's Open… with its unsaved-work
+  guard), Save, Save a copy…, Tour details…. It covers the map, the rail
+  and the card (inert while it shows); no toast says the failure. The 2D
+  map no longer stands in for the 3D view.
   In the dev server only, `window.__tourEditorStartOnMap` (an init
   script) keeps the open on the map, for the specs that edit there
   (`opensIn3d()`; stripped from a production build like the other dev
@@ -183,15 +190,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   map (`editor-shell.css`: the 3D view does not draw them yet), starts
   ticked and shows or hides them there: view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
-- View's "Real time" (`#view-realtime`, a checkbox item, shown only with
-  the globe link switch `globe=1`): the globe view's clock, unticked by
+- View's "Real time" (`#view-realtime`, a checkbox item, shown only in
+  the globe view, hidden with `globe=0`): the globe view's clock, unticked by
   default (the sky held in daylight over the tour), ticked the real time
   now (`Editor3dView.setRealTime`). View state only; a view opened again
   takes the item's state.
-- View's "Clouds" (`#view-clouds`, a checkbox item, shown only with the
-  globe link switch `globe=1`): the globe view's heavy 3D clouds, ticked
+- View's "Clouds" (`#view-clouds`, a checkbox item, shown only in the
+  globe view, hidden with `globe=0`): the globe view's heavy 3D clouds, ticked
   by default, unticked only the flat cloud layer
-  (`Editor3dView.setClouds`). View state only, as Real time.
+  (`Editor3dView.setClouds`). View state only, as Real time. In the
+  dev server only, `window.__tourEditorClouds = { off: true }` (an init
+  script) starts it unticked, for the specs: in the software renderer the
+  heavy clouds hold the globe near 1.4 frames a second against about 6
+  without, and every click waits on those frames.
   - The note card keeps clear of the panel (`debugPanelBox()`, passed to
     `card.place` as the box to avoid, r901 review #4): both share the
     window's lower right corner, and whichever lay on top covered the
@@ -453,6 +464,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   and the region is never `hidden` (an empty one is zero-height), so a
   screen reader announces the first lines and never the same ones again
   (M1b-2 milestone review #5).
+- **"Needs no GPS" in Tour details**, for the 3D view (it has no rail):
+  `#details-no-gps` and its warnings' region `#details-no-gps-warnings`
+  (`details-dialog.ts`'s `noGps`, lines drawn by a second
+  `status-lines.ts` set). The box opens as the session holds it, the
+  warnings preview while ticked, and Apply writes it with the details
+  (`setNeedsNoGps`): one change, one toast, autosave told. The rail's box
+  stays for the map.
+- **Not yet in the 3D view** (pending, for the removal of the 2D map):
+  the debug data layer (the walk's readout and its file, `#debug-panel`;
+  it goes into the coming bottom panel), and editing a pin's multi-line
+  text on the map card (it becomes the station's Markdown description).
+  The rail's search has no counterpart: the 3D view's tree has no filter
+  yet.
 - **Tour details (W2 of the tour editor plan 2026-10-17-1816).** The
   tour's name in the top bar (`#tour-name`, a button) opens the details
   dialog (`details-dialog.ts`, `#details-modal`): name, description, cover
@@ -697,11 +721,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   it, and closes it again. While it loads the item and the bottom bar's
   `#view-loading` say so and the map stays; once it shows, `#view3d` is unhidden and the card hides (it
   points at a map marker); back on the map the card shows again for the
-  same selection. A failure (its code, no WebGL, nothing placed, a lost
-  context, an error) lands on the map with a toast saying why; an import
-  that does not arrive is tagged `chunk` here, so only it speaks of the
-  connection. The failure's toast stays until closed, or until a later
-  open shows the view. Opening another tour
+  same selection. A failure (its code, no WebGL, a lost context, an
+  error) is said on a page of its own (`view3d-failed-page.ts`,
+  `#view3d-failed`) with the File actions, until a later open shows the
+  view; the map, the rail, the card and the debug panel under it stay
+  inert while it shows (the view's own `onShown(false)` keeps the map inert
+  for it). An import that does not arrive is tagged `chunk` here: the
+  browser keeps that failure for the page's life, so its page offers a
+  reload (after the unsaved-work guard) instead of trying again in place.
+  A tour with nothing placed is no failure (the older view alone refuses
+  it, with a passing toast). Opening another tour
   or closing this one closes the 3D view (`viewSwitch.close()`); the
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read
@@ -798,6 +827,10 @@ The dev hook adds `view3dModelParts()` and
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by
+`playwright-tests/editor3d-globe-default.spec.js` (the plain link opening
+the globe, an empty tour on the globe and its first station, the
+cannot-open page for no WebGL and a failed load with its File actions,
+"needs no GPS" through Tour details, save and open),
 `playwright-tests/editor.spec.js` (the details dialog, the fine print,
 the undo keys, a delete's Undo after its autosave - written again at once,
 since that undo crosses the in-place save - an undo across an in-place save

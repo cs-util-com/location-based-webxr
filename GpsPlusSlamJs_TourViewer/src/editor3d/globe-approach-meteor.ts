@@ -5,8 +5,10 @@
  * high above down to close to the tour, on the editor's camera. It is the
  * `ApproachDriver` the approach's run (`globe-approach-run.ts`) drives.
  *
- * - One continuous trajectory: out on the meteor's line from the south at
- *   `startKm`, entering `meteorDeg` below the tour's horizon and landing
+ * - One continuous trajectory: out on the meteor's line from the south
+ *   where the globe lab's intro zooms out to (`meteorStartAltitudeM`: the
+ *   whole Earth in view at the page's aspect; `startKm` overrides it),
+ *   entering `meteorDeg` below the tour's horizon and landing
  *   at `meteorLandDeg`, `landAglM` over the tour's ground. The landing and
  *   its settle are the flight's own; the editor adds none.
  * - Paced by what loads at the tour (`progress`, 0 to 1,
@@ -27,11 +29,14 @@
  */
 import * as THREE from "three";
 import {
+  GLOBE_INTRO,
   METEOR_PACE,
   createApproachDrive,
   createFovReturn,
   createGlobeApproach,
   createGlobeLandingFlight,
+  globeViewFitM,
+  globeZoomOutLimitM,
   pinEnd,
   type GlobeView,
 } from "gps-plus-slam-globe/view";
@@ -48,8 +53,44 @@ export interface MeteorKnobs {
   readonly meteorLandDeg: number;
   /** The landing's height over the tour's ground (m). */
   readonly landAglM: number;
-  /** The start height (km over the ellipsoid). */
-  readonly startKm: number;
+  /** The start height (km over the ellipsoid), or null: the lab's
+   *  zoom-out distance (`meteorStartAltitudeM`). */
+  readonly startKm: number | null;
+}
+
+/** The aspect read for one that is not a positive number (a landscape
+ *  screen): the page estimates it before its box is laid out. */
+const FALLBACK_ASPECT = 16 / 9;
+
+/**
+ * The approach's start height (m over the ellipsoid of equatorial radius
+ * `radiusM`): `startKm` when the link names one, else where the globe
+ * lab's intro zooms out to at a view of `fovYDeg` and `aspect`: the
+ * intro's farthest distance (`GLOBE_INTRO.maxKm` from the centre), and
+ * never under twice the distance at which the whole globe fits
+ * (`globeZoomOutLimitM`, the limit the controls hold). A narrow view (a
+ * portrait phone) starts farther, so the Earth fits its width.
+ */
+export function meteorStartAltitudeM(options: {
+  readonly radiusM: number;
+  readonly fovYDeg: number;
+  readonly aspect: number;
+  readonly startKm: number | null;
+}): number {
+  if (options.startKm !== null) return options.startKm * 1000;
+  const aspect =
+    Number.isFinite(options.aspect) && options.aspect > 0
+      ? options.aspect
+      : FALLBACK_ASPECT;
+  const { radiusM, fovYDeg } = options;
+  const centreM = globeZoomOutLimitM({
+    maxM: GLOBE_INTRO.maxKm * 1000,
+    radiusM,
+    fovYDeg,
+    aspect,
+    fitM: globeViewFitM({ radiusM, fovYDeg, aspect }),
+  });
+  return centreM - radiusM;
 }
 
 /** A place, degrees. */
@@ -125,10 +166,21 @@ export function createMeteorApproach(deps: {
   readonly progress: () => number;
   readonly reliefGroundM: (place: Place) => number | null;
   readonly reducedMotion: boolean;
+  /** The view's aspect, as the page expects it at the first frame. */
+  readonly aspect: number;
+  /** Restarts the speed streaks where the flight places the camera. */
+  readonly resetSpeed?: () => void;
   readonly durationMs?: number;
   readonly now?: () => number;
 }): ApproachDriver {
   const { ellipsoid, view, knobs, tour } = deps;
+  /** The start height (m over the ellipsoid). */
+  const startM = meteorStartAltitudeM({
+    radiusM: ellipsoid.radius.x,
+    fovYDeg: view.camera.fov,
+    aspect: deps.aspect,
+    startKm: knobs.startKm,
+  });
   const pageNow = deps.now ?? (() => performance.now());
   const groundM = groundOf(deps.groundM);
   /** When the first frame was drawn (page ms), null before. */
@@ -148,7 +200,7 @@ export function createMeteorApproach(deps: {
     // fit and zoom-out are only read by the intro's spin and fly-in.
     sunEcef: () => new THREE.Vector3(1, 0, 0),
     fitDistance: () => view.fitDistance(),
-    zoomOutM: () => knobs.startKm * 1000,
+    zoomOutM: () => startM,
     now: clock,
   });
   approach.restart(0, {
@@ -156,7 +208,7 @@ export function createMeteorApproach(deps: {
     spinMs: 0,
     turnMs: 0,
     intro: "distance",
-    maxKm: knobs.startKm,
+    maxKm: startM / 1000,
     turnCap: 0,
     fovY,
     pitchLow: 0,
@@ -174,7 +226,7 @@ export function createMeteorApproach(deps: {
     controls: deps.controls,
     ecefCamera: () => view.ecefCamera(),
     placeCameraEcef,
-    resetSpeed: () => undefined,
+    resetSpeed: () => deps.resetSpeed?.(),
     groundOf: () => ({
       groundM,
       source: "tour",
@@ -199,7 +251,7 @@ export function createMeteorApproach(deps: {
     ellipsoid.getCartographicToPosition(
       fromLatDeg * DEG,
       tour.lng * DEG,
-      knobs.startKm * 1000,
+      startM,
       new THREE.Vector3(),
     ),
     new THREE.Quaternion(),
@@ -217,7 +269,7 @@ export function createMeteorApproach(deps: {
       landKm: knobs.landAglM / 1000,
       diveMs: 0,
     },
-    { fromAltitudeM: knobs.startKm * 1000 },
+    { fromAltitudeM: startM },
   );
   /** The path's own length at a full pace (ms). */
   const naturalMs = approach.pinFlight?.flight?.path.durationMs ?? 0;
@@ -228,7 +280,7 @@ export function createMeteorApproach(deps: {
    *  camera: the flight places it no more. */
   let cut = false;
   const endAglM = knobs.landAglM;
-  const topAglM = Math.max(knobs.startKm * 1000 - groundM, endAglM * 1.0001);
+  const topAglM = Math.max(startM - groundM, endAglM * 1.0001);
 
   return {
     durationMs: deps.reducedMotion ? 0 : (deps.durationMs ?? naturalMs),

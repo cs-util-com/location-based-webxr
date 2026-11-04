@@ -9,7 +9,8 @@
  * starts up, WebGL may be missing or lost - so the item shows each state
  * (the CLAUDE.md async-UI rule): "Loading 3D view…" and disabled while it
  * loads, "2D map" while it shows, and back to "3D view" with the reason
- * said when it fails or its context is lost. The menu closes on the click
+ * said when it fails or its context is lost (on a page of its own,
+ * `view3d-failed-page.ts`; the words are `view3dFailureText`'s). The menu closes on the click
  * and an automatic open has no click at all, so the load is also said in
  * a status line (`status`) until it ends. The state lives in
  * `editorView` (`viewMode`, `view3dLoad`, `view3dFailure`); this module
@@ -38,16 +39,14 @@ export const VIEW_SWITCH_LABELS = Object.freeze({
 });
 
 const FAILURE_TEXT: Readonly<Record<View3dFailure, string>> = {
-  chunk:
-    "The 3D view could not be loaded. Check the connection, then try the 3D view again. The map shows the tour.",
+  chunk: "The 3D view could not be loaded. Reload the page to load it again.",
   webgl:
-    "This browser cannot draw the 3D view: it has no WebGL. The map shows the tour.",
+    "This browser cannot draw the 3D view: it has no WebGL. Open the editor in a browser with WebGL turned on.",
   "context-lost":
-    "The 3D view stopped: the browser reset its graphics. The map shows the tour; try the 3D view again.",
+    "The 3D view stopped: the browser reset its graphics. Try again.",
   empty:
     "This tour has nothing with a position to show in 3D yet. The map shows the tour.",
-  error:
-    "The 3D view stopped on an error. The map shows the tour; try the 3D view again.",
+  error: "The 3D view stopped on an error. Try again.",
 };
 
 /** What the page says when the 3D view fails for `reason`. */
@@ -176,8 +175,8 @@ export function createViewSwitch(deps: {
     const mine = ++attempt;
     let opened: View3dHandle;
     try {
-      // A view that stops, while it loads or once shown, lands on the map
-      // with the reason said; one already left says nothing.
+      // A view that stops, while it loads or once shown, ends on the
+      // failure's page with the reason said; one already left says nothing.
       const stopped = (reason: "context-lost" | "error") => {
         if (mine !== attempt) return;
         const loading = view === null && ui().view3dLoad === "loading";

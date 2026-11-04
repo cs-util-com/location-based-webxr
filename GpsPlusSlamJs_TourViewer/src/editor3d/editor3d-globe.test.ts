@@ -60,6 +60,13 @@ interface Fakes {
     placeView(pose: Pose): void;
   };
   controls: null | { release: { mock: { calls: unknown[] } } };
+  /** The zoom-out limit the editor gave the controls (`limit`). */
+  zoomOutLimit: null | (() => number);
+  /** What the renderer drew after the scene, in order: the streaks (with
+   *  their weight) and the air. */
+  draws: string[];
+  /** The streaks' mesh as last drawn (the pass's own). */
+  dustMesh: THREE.Mesh | null;
   /** The relief's ground everywhere (drawn, m over the ellipsoid), as its
    *  sampled heights and `groundAt` read it; null: none loaded. */
   groundM: number | null;
@@ -104,7 +111,11 @@ interface Fakes {
     disposed: boolean;
   };
   /** What the relief was made with. */
-  terrainInput: null | { imagery?: unknown; template?: unknown };
+  terrainInput: null | {
+    imagery?: unknown;
+    template?: unknown;
+    osmGain?: number;
+  };
   /** Whether the stations layer hands out its objects (a station is then
    *  admitted at its first upload); false: none ever is. */
   admits: boolean;
@@ -122,6 +133,9 @@ const fakes = vi.hoisted((): Fakes => ({
   seams: null,
   view: null,
   controls: null,
+  zoomOutLimit: null,
+  draws: [],
+  dustMesh: null,
   groundM: 500,
   grade: 0,
   groundEndsNorthM: null,
@@ -206,7 +220,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         step: (frame: Fakes["airSteps"][number] = {}) => {
           fakes.airSteps.push(frame);
         },
-        afterScene() {},
+        afterScene: () => {
+          fakes.draws.push("air");
+        },
         haze() {},
         setClouds: (on: boolean) => fakes.cloudsOn.push(on),
         state: () => null,
@@ -221,6 +237,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         lease: vi.fn(),
         busy: () => fakes.busy,
         followIntro: vi.fn(),
+        limit: vi.fn((limitM: () => number) => {
+          fakes.zoomOutLimit = limitM;
+        }),
         dispose: vi.fn(),
       };
       fakes.controls = controls;
@@ -269,6 +288,17 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         setPixelRatio() {},
         compile() {},
         initTexture() {},
+        getDrawingBufferSize: (size: THREE.Vector2) => size.set(800, 600),
+        getPixelRatio: () => 1,
+        // Only the streaks are drawn through it here (the view is faked).
+        render: (drawn: THREE.Scene) => {
+          const mesh = drawn.children[0] as THREE.Mesh<
+            THREE.BufferGeometry,
+            THREE.ShaderMaterial
+          >;
+          fakes.dustMesh = mesh;
+          fakes.draws.push(`dust ${mesh.material.uniforms.uWeight?.value}`);
+        },
         forceContextLoss: () => fakes.log.push("force-context-loss"),
         setAnimationLoop: (loop: (() => void) | null) => {
           fakes.log.push(loop === null ? "loop-off" : "loop-on");
@@ -302,6 +332,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
           place({ position, quaternion });
         },
         fitDistance: () => 20_000_000,
+        radius: WGS84_ELLIPSOID.radius.x,
         setFrameTarget,
         placeView(pose: Pose) {
           const ecef = viewPoseEcef(WGS84_ELLIPSOID, pose);
@@ -326,7 +357,19 @@ vi.mock("./editor3d-terrain.js", async () => {
       fakes.terrainInput = input;
       return {
         terrain: {
-          tiles: { group: new THREE.Group(), ellipsoid: WGS84_ELLIPSOID },
+          tiles: {
+            group: new THREE.Group(),
+            ellipsoid: WGS84_ELLIPSOID,
+            loadProgress: 0.75,
+            stats: {
+              queued: 4,
+              downloading: 2,
+              parsing: 1,
+              loaded: 40,
+              failed: 0,
+            },
+            lruCache: { cachedBytes: 5_000_000, maxBytesSize: 64_000_000 },
+          },
           plugin: {
             sampleCartographicElevation: (latRad: number) =>
               fakes.groundAt(latRad),
@@ -341,6 +384,12 @@ vi.mock("./editor3d-terrain.js", async () => {
             fakes.coverageCalls++;
             return { waiting: 0, failed: 0 };
           },
+          mapLoad: () => ({
+            waiting: 3,
+            failed: 1,
+            givenUp: 0,
+            ceilingWaitS: 12.5,
+          }),
         },
         dispose() {},
       };
@@ -546,6 +595,9 @@ beforeEach(() => {
   fakes.inputScene = null;
   fakes.coverageCalls = 0;
   fakes.viewOptions = null;
+  fakes.zoomOutLimit = null;
+  fakes.draws = [];
+  fakes.dustMesh = null;
   fakes.terrainInput = null;
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
@@ -1068,12 +1120,115 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.reliefMount?.cloudFlats.at(-1)).toBe(0.3);
   });
 
+  // Why: the approach now starts where the globe lab's intro zooms out to;
+  // controls without the lab's limit would pull a takeover there in to
+  // their own default at once, and would not let the creator zoom out to
+  // where the flight began.
+  it("lets the controls zoom out as far as the lab's, never nearer than the start", async () => {
+    const view = await openAt(0, { approach: {} });
+    const limitM = fakes.zoomOutLimit?.() ?? 0;
+    const globe = view.stats().globe as {
+      startCentreM: number;
+      centreM: number;
+    };
+    expect(limitM).toBeGreaterThanOrEqual(50_000_000);
+    expect(limitM).toBeGreaterThanOrEqual(globe.startCentreM);
+    expect(globe.centreM).toBeLessThanOrEqual(limitM);
+    expect(globe.centreM).toBeGreaterThan(49_000_000);
+  });
+
+  // Why: the streaks are drawn twice a frame, behind the Earth (before the
+  // scene) and a share over it, before the air: the globe lab's order,
+  // which keeps the air's haze over them. Off for dust=0, the speed still
+  // measured; a teleport (an arrow step) restarts their speed, so a jump
+  // never flashes them.
+  for (const { dust, label, shown, draws } of [
+    {
+      dust: 1,
+      label: "behind and over the Earth, before the air",
+      shown: true,
+      draws: ["dust 0.75", "dust 0.25", "air"],
+    },
+    { dust: 0, label: "nowhere for dust=0", shown: false, draws: ["air"] },
+  ]) {
+    it(`draws the speed streaks ${label}`, async () => {
+      let now = 1_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      tourAt(0);
+      open = await openGlobeEditor(deps(), { ...readGlobeSwitch(""), dust });
+      const seams = fakes.seams;
+      if (seams === null) throw new Error("no seams");
+      const dive = (altitudeKm: number) => {
+        fakes.view?.placeView({
+          lat: MUNICH.lat,
+          lng: MUNICH.lon,
+          altitudeKm,
+          headingDeg: 0,
+          pitchDeg: -89,
+        });
+        seams.beforeScene?.();
+      };
+      dive(20_000);
+      now += 16;
+      dive(19_000);
+      seams.afterScene?.();
+      const state = open.stats().globe as {
+        dust: { shown: boolean; speedMps: number };
+      };
+      expect(state.dust.speedMps).toBeGreaterThan(1e6);
+      expect(state.dust.shown).toBe(shown);
+      expect(fakes.draws).toEqual(draws);
+      open.northUp();
+      now += 16;
+      seams.beforeScene?.();
+      expect(
+        (open.stats().globe as { dust: { speedMps: number } }).dust.speedMps,
+      ).toBe(0);
+    });
+  }
+
   // Why: the clouds and the air read the scene's depth as standard depth
   // (far at 1); reversed depth left them reading the near plane as the
   // farthest, and measured no better on the default depth buffer.
   it("draws with standard depth", async () => {
     await openAt(0);
     expect(fakes.viewOptions?.reversedDepth).not.toBe(true);
+  });
+
+  // Why: the streaks' pass holds a geometry and a material on the GPU; the
+  // editor's dispose (its undo list) must free them, or every globe opened
+  // and closed leaks them.
+  it("frees the speed streaks' geometry and material with the view", async () => {
+    let now = 1_000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    tourAt(0);
+    const view = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      dust: 1,
+    });
+    const seams = fakes.seams;
+    if (seams === null) throw new Error("no seams");
+    for (const altitudeKm of [20_000, 19_000]) {
+      fakes.view?.placeView({
+        lat: MUNICH.lat,
+        lng: MUNICH.lon,
+        altitudeKm,
+        headingDeg: 0,
+        pitchDeg: -89,
+      });
+      seams.beforeScene?.();
+      now += 16;
+    }
+    const mesh = fakes.dustMesh;
+    if (mesh === null) throw new Error("the streaks never drew");
+    const freed: string[] = [];
+    mesh.geometry.addEventListener("dispose", () => freed.push("geometry"));
+    (mesh.material as THREE.Material).addEventListener("dispose", () =>
+      freed.push("material"),
+    );
+    view.dispose();
+    open = null;
+    expect(freed.sort()).toEqual(["geometry", "material"]);
   });
 
   it("takes the relief mount down with the view", async () => {
@@ -1210,6 +1365,58 @@ describe("openGlobeEditor's wiring", () => {
     fakes.coverageCalls = 0;
     for (now = 0; now < 2_100; now += 1000 / 60) frameAt(now);
     expect(fakes.coverageCalls).toBe(0);
+  });
+
+  // Why: a check that waits for the relief to carry the ground must be
+  // able to tell a relief still loading (slowly, on a software-drawn
+  // runner) from one that stalled, and see what the hand-over waits for:
+  // the band's share and target, whether the relief's view is settled,
+  // its load progress and its tiles queued, downloading and parsing (a
+  // relief tile parses until its street map's texture is in); and its
+  // cache against the device's budget, which a check at a phone's width
+  // holds it to.
+  it("reports what the relief's hand-over waits for", async () => {
+    await openAt(0);
+    fakes.settled = false;
+    fakes.reliefShare = 0;
+    const relief = (open?.stats().globe as { relief: unknown }).relief;
+    expect(relief).toEqual({
+      share: 0,
+      target: 0,
+      settled: false,
+      loadProgress: 0.75,
+      queued: 4,
+      downloading: 2,
+      parsing: 1,
+      loaded: 40,
+      failed: 0,
+      cacheBytes: 5_000_000,
+      cacheMaxBytes: 64_000_000,
+    });
+  });
+
+  // Why: the link's osmGain is the A/B switch of the street map's
+  // darkening; the view must hand it to the relief's map as it is.
+  it("hands the link's street-map gain to the relief's map", async () => {
+    tourAt(0);
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      osmGain: 0.45,
+    });
+    expect(fakes.terrainInput?.osmGain).toBe(0.45);
+  });
+
+  // Why: the shell shows the street map's loading state; the view hands
+  // the overlay's typed reading through its stats unchanged, so the shell
+  // reads one field instead of the diagnostics' counters.
+  it("hands the street map's load through its stats", async () => {
+    await openAt(0);
+    expect(open?.stats().mapLoad).toEqual({
+      waiting: 3,
+      failed: 1,
+      givenUp: 0,
+      ceilingWaitS: 12.5,
+    });
   });
 
   // Why: the page learns the recorded walk only once its captures are

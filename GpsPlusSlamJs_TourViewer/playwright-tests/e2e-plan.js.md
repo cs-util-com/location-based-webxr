@@ -42,8 +42,7 @@ cannot reach.
 - **What `pathArea` calls editor-only:** `edit.html`, `src/editor/`,
   `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
   a new kit folder is `null` until classified), and the editor-only spec
-  helpers `editor3d-fixture.js` and
-  `editor-menus.js`. **Viewer-only:** `index.html` and `src/landing/`,
+  helpers `editor3d-fixture.js`, `editor-menus.js` and `editor-tours.js`. **Viewer-only:** `index.html` and `src/landing/`,
   except the modules the editor imports too (`film-math.ts`, `clamp01.ts`).
   Everything else in the package (the shared `src/*.ts`, the other pages,
   `package.json`, the other helpers) and every path outside it, except the
@@ -77,6 +76,97 @@ and had no flaky test. The split's own gain, the DOM specs from about 18 min
 at one worker (the baseline's total minus a `webgl` share of 31-36 min) to
 12-14 min, is of the same order as that noise, too. More runs would settle
 both.
+
+## Off the map and the older 3D view (inventory, 2026-11-03)
+
+The globe is the editor's 3D view; the 2D map and the older OrbitControls
+view (`?globe=0`) are to be removed. What each editor spec still opens, by
+what becomes of it (counts are `test(` titles; a title in a loop counts
+once):
+
+- **(a) shared with the globe editor: to be moved to it.**
+  - `editor.spec.js`, about 101 of its 117 titles: save, save a copy, in
+    place and a second tab (1599-2053), drafts (2117-2826), autosave and
+    undo across saves (2826-3783), "needs no GPS" (3783, 3850), details
+    (3886, 3955), the open dialog (310, 322, 958, 986, 1462, 3992), pin
+    edits (1052-1460), Done and the walk's move out (4039-4704), tours
+    without a file (4729-4959), link, sample and hosted saves
+    (5165-5688). They edit through the map's rail and card (`editTownHall`,
+    `editPin`); on the globe a pin's text is the inspector's title field.
+  - `editor-entry.spec.js` (4) and `blocks-tour.spec.js` (2): on the map
+    (`startOnMap`) only to keep the 3D view's tiles out.
+  - Pinned to `?globe=0` when the globe became the default:
+    `editor3d-character` (1), `editor3d-long-text` (3),
+    `editor3d-narration` (2), `editor3d-inspector` (6), `editor3d-tree`
+    (7), `editor3d-shell` (15; its pen test at 991 runs on the map and in
+    3D), `editor3d-edit` (9), `editor3d-model` (4, `openSample` then the
+    switch), `editor3d.spec.js` 186 and 251 (its failure tests at 279, 321
+    and 371 run on both views).
+- **(b) map-only until the globe editor has the panel:** `editor.spec.js`
+  567, 590, 638, 692, 816, 865, 922 (a walk's debug data on the map and its
+  panel; the globe draws no debug data yet, `editor3d-shell` 896).
+- **(c) dies with the map or the older view (deleted with them, not
+  before):** `editor.spec.js` 276 (the card beside its marker), 343 (the
+  rail's layout per viewport), 424 and 451 (the map's top bar and menus),
+  721 (the card against the debug panel), 1180 (a marker drag), 1332 (a
+  station and its code both reachable on the map); `editor3d-globe.spec.js`
+  302 (the OrbitControls view, nothing of the globe asked for);
+  `editor3d.spec.js` 43, 170 and 211 (the switch to and from the map, and
+  the map's quiet open of a tour with nothing placed), and the older-view
+  half of 279, 321 and 371.
+- **(d) a gap in the globe editor, listed, not built:** the rail's search
+  (`#filter`, `editor.spec.js` 1963: a group's count follows a delete while
+  the search hides it; the tree has no filter); the rail's list of every
+  code and note by kind, labels as text (245; the tree lists stations and
+  their items).
+
+**The cost of moving (a), measured on the sample tour in the software
+renderer:** a globe open takes 2.5-2.9 s to the 3D view and about 2 s more
+to its stations, against 0.2 s for the map; one tree click, an inspector
+rename and a Save download took 38-42 s on the globe (globe imagery
+refused) and about 60 s with it served. Moved one for one, `editor.spec.js`
+(the `dom` project, 3 workers) would go to the `webgl` project's single
+worker at about 40 s a test: on the order of an hour more per full run.
+
+**First batch, moved to the globe (2026-11-03).** `editor3d-character`,
+`editor3d-long-text` and `editor3d-narration` (six tests) run on the globe
+with `noApproach`. A first try without it failed five of the six (533 s
+against 143 s on the older view). Each failure was the harness, not the
+editor:
+
+- Without `noApproach`, every open first played the approach flight in the
+  software renderer, and the 90 s of `test.slow()` did not cover it: this
+  explains character 180, long-text 89 and 297, and narration 189.
+- With `noApproach` and a budget sized from the measured runs, all six
+  pass. Measured with CI=1 and one worker: character 2.2 min, long-text
+  2.7, 1.5 and 3.6 min, narration 1.2 and 2.0 min. Each spec's budget is
+  about twice its slowest test, and a comment states the measurement.
+- long-text 326 (the three sizes): one bounding-box read took longer
+  than the 5 s default poll under the globe's slow frames. Both of its
+  polls now wait 30 s; the gap they assert (14 px) is unchanged.
+
+**Second batch, the draft walks without a 3D view (2026-11-03).** A spike
+on six draft tests compared two ways to run them:
+
+- on the globe: 12.5 min, and two failed on the "Saving…" status under
+  slow frames;
+- with no 3D view: 33.1 s (2.4-4.1 s a test), all passing. WebGL is
+  refused and the open shows the cannot-open page.
+
+The draft walks only need the file round trip, so the second way was
+chosen: the 15 draft tests (from `editor.spec.js`) are now in
+`editor-files.spec.js` (the `dom` project). Each edit is one session
+call through the test hook, read back from the manifest, with no map rail
+or card. Their shared tour builders and file helpers are in
+`editor-tours.js`.
+
+**Still in class (a):** `editor.spec.js` has 104 titles, about 86 of them
+class (a). The autosave and undo walks are next, though some of them press
+the map's card or its delete control and cannot be expressed through the
+hook. Also still in (a): `editor-entry` (4), `blocks-tour` (2) and the
+`?globe=0` specs other than the first batch (`editor3d-inspector`,
+`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js` 186 and 251).
+Classes (b), (c) and (d) are unchanged.
 
 ## Examples
 

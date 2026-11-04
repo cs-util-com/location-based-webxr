@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { osmGateLimits, worldFromEcefAt } from "gps-plus-slam-globe/editor";
 import { OSM_TILE_MAX_ZOOM } from "gps-plus-slam-app-framework/utils/osm-tiles";
 
+import { GLOBE_SWITCH } from "../editor/globe-switch.js";
+
 import {
   DESKTOP_MIN_WIDTH_PX,
   EDITOR_MESH_LEVEL,
@@ -92,6 +94,25 @@ describe("createEditorTerrain", () => {
       centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
     });
+
+  // Why: the map's darkening gain reaches the shader: the link's value
+  // when the page passes one, the link's default otherwise (the
+  // OrbitControls view passes none).
+  it("darkens the map by the gain given, the link's default otherwise", () => {
+    const plain = make();
+    expect(plain.osm.uniforms.uOsmGain.value).toBe(
+      GLOBE_SWITCH.osmGain.fallback,
+    );
+    plain.dispose();
+    const tuned = createEditorTerrain({
+      renderer: {} as THREE.WebGLRenderer,
+      centre: { lat: 48.137393, lng: 11.575493 },
+      device: "desktop",
+      osmGain: 0.45,
+    });
+    expect(tuned.osm.uniforms.uOsmGain.value).toBe(0.45);
+    tuned.dispose();
+  });
 
   // Why: the heights' sources and the map are owed a visible credit each;
   // the page shows exactly this list.
