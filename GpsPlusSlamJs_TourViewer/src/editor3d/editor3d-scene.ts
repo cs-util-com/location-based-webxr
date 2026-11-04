@@ -184,8 +184,8 @@ export interface Editor3dView {
    *  Absent: the view has no clouds of its own. */
   setClouds?(on: boolean): void;
   /** The globe view's OSM buildings (with their trees and roads) shown
-   *  (true, their default) or hidden: hidden, nothing more is loaded for
-   *  them and they are not drawn. Absent: the view has no buildings (or
+   *  (true, their default) or hidden: hiding stops a load that runs, and
+   *  while hidden nothing more is loaded for them and they are not drawn. Absent: the view has no buildings (or
    *  the link turned them off, `buildings=0`, where this does nothing). */
   setBuildings?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */

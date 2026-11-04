@@ -56,6 +56,17 @@
     for a target that is not finite or a zoom that is not an integer 1-15.
     A worker that errors is terminated, its load settles `unavailable`
     and ends, and the next call makes a new one;
+  - `abort()`: stops the current load wherever it is (its first pass, or
+    its outer rings and retries after the first pass settled): the worker
+    is told, the load's outcome reads `aborted`, nothing the worker still
+    sends is built (a reply already posted, or one met while the three.js
+    entry loads, is dropped), and the place is loaded again when next
+    asked for. A city already drawn stays; a load that was still running
+    leaves the phase `idle`. Nothing before a load or after one ended. A
+    view that hides its city calls it (the globe editor's toggle). The
+    handle's own `abort()` does the same for a load that has not settled
+    (a flight stops pacing on it); once settled, the outer rings are the
+    city's to stop;
   - `setFade(0..1)`: 0 hides the city, 1 draws it whole, between a
     dithered share (`alphaHash`, R17: a transparent fade would reorder the
     city against the relief and the clouds), times the city's own fade-in

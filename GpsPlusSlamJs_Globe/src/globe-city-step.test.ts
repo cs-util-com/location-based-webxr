@@ -135,6 +135,39 @@ describe("createGlobeCityStep: loading", () => {
       ["load", "47.3769,8.5417", { zoom: 11 }],
     ]);
   });
+
+  // Why: a view that hid its city aborts the load; shown again, the step
+  // must ask for the place again (the aborted load is not reused), and the
+  // abort is not a failed try.
+  it("asks for an aborted place again once it is wanted, without counting a try", () => {
+    const { fake, step, at } = setup();
+    step.step(frame());
+    const aborted = {
+      outcome: "aborted",
+      ended: false,
+      stages: [],
+      counts: fake.handle.stats().counts,
+      progress: 0,
+    };
+    fake.set({ phase: "idle", target: BERN, load: aborted });
+    step.step(frame({ altitudeM: 40_000 })); // not wanted up here
+    expect(fake.loads()).toHaveLength(1);
+    step.step(frame());
+    expect(fake.loads()).toHaveLength(2);
+    // An aborted load of another place (a flight's warm-up) asks nothing.
+    fake.set({ phase: "idle", target: ZURICH, load: aborted });
+    step.step(frame());
+    expect(fake.loads()).toHaveLength(2);
+    // The abort spent no try: three failed builds still get their retries.
+    fake.set({ phase: "failed", target: BERN, load: null });
+    for (let i = 1; i <= 4; i += 1) {
+      at(i * (GLOBE_CITY_RETRY.afterMs + 1));
+      step.step(frame());
+      at(i * (GLOBE_CITY_RETRY.afterMs + 1) + GLOBE_CITY_RETRY.afterMs + 1);
+      step.step(frame());
+    }
+    expect(fake.loads()).toHaveLength(2 + GLOBE_CITY_RETRY.times - 1);
+  });
 });
 
 describe("createGlobeCityStep: the retry of a failed build", () => {

@@ -109,6 +109,8 @@ interface Fakes {
     createWorker(): unknown;
   }[];
   cityLoads: { target: unknown; zoom: number; fresh: boolean }[];
+  /** How often a city was told to stop its load. */
+  cityAborts: number;
   /** The share of the ground the relief mount reports (1: the relief
    *  carries all of it, 0: the globe's surface). */
   reliefShare: number;
@@ -173,6 +175,7 @@ const fakes = vi.hoisted((): Fakes => ({
   cloudsOptions: null,
   cityOptions: [],
   cityLoads: [],
+  cityAborts: 0,
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -211,6 +214,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
           fade = value;
         },
         state: () => ({ phase: "loading", fade, shown: 0, load: null }),
+        abort() {
+          fakes.cityAborts += 1;
+        },
         dispose() {},
       };
     },
@@ -669,6 +675,7 @@ beforeEach(() => {
   fakes.cloudsOptions = null;
   fakes.cityOptions = [];
   fakes.cityLoads = [];
+  fakes.cityAborts = 0;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1230,6 +1237,7 @@ describe("openGlobeEditor's wiring", () => {
       reliefGroundM: DRAWN_M,
     });
     view.setBuildings?.(false);
+    expect(fakes.cityAborts).toBe(1); // the running load is stopped
     expect(view.stats().city?.shown).toBe(false);
     expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
     vi.stubGlobal("Worker", noWorker);
