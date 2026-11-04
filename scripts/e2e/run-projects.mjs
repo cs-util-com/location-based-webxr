@@ -33,6 +33,7 @@ import {
   domWorkers,
   mayNarrow,
   mergeReports,
+  namedProjects,
   projectArgs,
   projectReportName,
   readReport,
@@ -79,7 +80,9 @@ if (mayNarrow(process.env, forwarded)) {
   }
 }
 
-const base = ['test', '--config', configFile, ...forwarded];
+// A developer's `--project` picks the passes; each pass names its own.
+const named = namedProjects(forwarded, plan.PROJECTS);
+const base = ['test', '--config', configFile, ...named.rest];
 const resultsDir = path.resolve(cwd, plan.RESULTS_DIR);
 /**
  * The JSON reports to merge after the runs: the config's own reporter (CI
@@ -117,6 +120,7 @@ let exitCode = 0;
  */
 const reports = new Map(reportTargets.map((t) => [t.file, []]));
 for (const [index, project] of plan.PROJECTS.entries()) {
+  if (!named.projects.includes(project)) continue;
   const specs = selected?.filter((name) => plan.specsOf(project).includes(name));
   if (specs && specs.length === 0) {
     console.log(`

@@ -1,12 +1,12 @@
 /**
  * The desktop editor's 3D view on the whole globe (the full-globe editor
- * plan 2026-10-27-1850, GV1b), behind its link switch (`globe=1`,
+ * plan 2026-10-27-1850, GV1b), the default 3D view (off only with `globe=0`,
  * `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
  * the sun, the surface, the world frame that follows the camera) with the
  * editor's relief and map under the camera, the tour drawn in the globe's
  * Earth-centred group (`globe-layer.ts`), the camera in the globe's eye
- * mode, opening at street level south of the tour. Without the switch the
- * OrbitControls view (`editor3d-scene.ts`) opens as before.
+ * mode, opening at street level south of the tour. With `globe=0` the
+ * OrbitControls view (`editor3d-scene.ts`) opens instead (temporary).
  *
  * The tour hangs in the Earth-centred group through one group of its own
  * whose matrix is the tour's frame (x east, y up, z south at the tour's
@@ -142,6 +142,11 @@ import {
   walkDrawShare,
   type ArrivalTiming,
 } from "./approach-arrival.js";
+import {
+  browserZoneHint,
+  emptyTourCentre,
+  emptyTourView,
+} from "./empty-tour-view.js";
 import { createArrivalMarks } from "./globe-approach-marks.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
@@ -190,10 +195,11 @@ export async function openGlobeEditor(
   const codeGeos = [...levels.values()].flatMap((l) =>
     l.qr.geo === undefined ? [] : [l.qr.geo],
   );
-  const centre = tourCentre(manifest?.stations ?? [], codeGeos);
-  if (centre === null) {
-    throw viewFailure("empty", "the tour has nothing with a position");
-  }
+  const tourAt = tourCentre(manifest?.stations ?? [], codeGeos);
+  // A tour with nothing positioned yet (a new one) opens over the
+  // creator's part of the world, its first station placed on the ground.
+  const zone = browserZoneHint();
+  const centre = tourAt ?? emptyTourCentre(zone.offsetMin, zone.timeZone);
   const { egm96Geoid } =
     await import("gps-plus-slam-osm/elevation/egm96").catch(
       (error: unknown) => {
@@ -1066,7 +1072,14 @@ export async function openGlobeEditor(
     );
     // Opening a tour (not a restored draft, not a switch back from the
     // map): the approach from high above, its bar over the view.
-    if (deps.approach !== undefined) {
+    if (tourAt === null) {
+      // Nowhere to fly to: the whole Earth from the approach's start
+      // height, and no approach to wait for.
+      view.placeView(
+        emptyTourView(centre, (startCentreM - view.radius) / 1000),
+      );
+      deps.approach?.ended?.("landed");
+    } else if (deps.approach !== undefined) {
       const reducedMotion =
         window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
         true;

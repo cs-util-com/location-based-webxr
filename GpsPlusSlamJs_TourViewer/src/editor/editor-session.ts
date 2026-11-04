@@ -424,7 +424,7 @@ export interface EditorSession {
    *  differs from the saved file is one pending change, an emptied field
    *  removes the detail. Refused in plain words, changing nothing, for
    *  what the format would drop. */
-  setDetails(next: DetailsForm): DetailsOutcome;
+  setDetails(next: DetailsForm, needsNoGps?: boolean): DetailsOutcome;
   /** The images the tour may show as its cover: its placed photos and
    *  image assets, as they stand with the edits. */
   coverChoices(): CoverChoice[];
@@ -1051,15 +1051,31 @@ export function createEditorSession(input: {
         contact: shown.contact ?? "",
       };
     },
-    setDetails(next) {
+    setDetails(next, needsNoGps) {
       const state = mine();
       if (state === null) return notInTour;
       const change = detailsChange(state, next);
-      if (change.kind !== "changed") return change;
+      if (change.kind === "refused") return change;
+      const setting =
+        needsNoGps !== undefined && needsNoGps !== state.needsNoGps
+          ? { needsNoGps }
+          : {};
+      if (change.kind === "changed") {
+        // The details and the setting as one step: one Apply, one undo.
+        store.dispatch(
+          tourDocumentActions.detailsChanged({
+            details: change.details,
+            ...setting,
+            what: "the tour details",
+          }),
+        );
+        return { kind: "changed" };
+      }
+      if (setting.needsNoGps === undefined) return change;
       store.dispatch(
-        tourDocumentActions.detailsChanged({
-          details: change.details,
-          what: "the tour details",
+        tourDocumentActions.settingsChanged({
+          needsNoGps: setting.needsNoGps,
+          what: 'the "needs no GPS" setting',
         }),
       );
       return { kind: "changed" };

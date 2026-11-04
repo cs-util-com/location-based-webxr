@@ -192,10 +192,11 @@ export async function reliefCarries(page) {
  * view, the default: `openSampleIn3d`), for a spec that edits on the map
  * first or drives the view switch itself.
  * @param {import("@playwright/test").Page} page
+ * @param {string} [link] the page to open: the older view by default
  */
-export async function openSample(page) {
+export async function openSample(page, link = OLDER_VIEW) {
   await startOnMap(page.context());
-  await page.goto("/edit.html");
+  await page.goto(link);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
@@ -203,13 +204,18 @@ export async function openSample(page) {
   await expect(page.locator("#rail .row-title")).toHaveCount(3);
 }
 
+/** The editor's link to the older 3D view (`?globe=0`), and its plain link
+ * (the globe), for the tests that hold both. */
+export const OLDER_VIEW = "/edit.html?globe=0";
+export const GLOBE_VIEW = "/edit.html";
+
 /**
  * The editor page with the sample tour open, as a creator gets it: in the
  * 3D view, its three stations placed.
  * @param {import("@playwright/test").Page} page
  */
 export async function openSampleIn3d(page) {
-  await page.goto("/edit.html");
+  await page.goto("/edit.html?globe=0");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -242,5 +248,20 @@ export async function openZip(page, zip, name) {
 export async function noApproach(page) {
   await page.addInitScript(() => {
     /** @type {any} */ (window).__tourEditorApproach = { off: true };
+  });
+}
+
+/**
+ * Start with View > Clouds unticked, so every globe open draws without the
+ * heavy clouds from its first frame. Measured in this software renderer
+ * (2026-11-03): with them the globe draws about 1.4 frames a second and one
+ * click takes 9-10 s (a CI runner, slower still, ran clicks past their
+ * tests' budgets); without them about 6 frames a second and 1.8 s. For a
+ * spec that is not about the clouds. Call it before the page loads.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function noClouds(page) {
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).__tourEditorClouds = { off: true };
   });
 }

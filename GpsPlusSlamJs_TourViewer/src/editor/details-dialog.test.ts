@@ -157,3 +157,114 @@ describe("wireDetailsDialog", () => {
     expect(h.deps.apply).not.toHaveBeenCalled();
   });
 });
+
+/** The dialog with its "needs no GPS" setting (the 3D view's only place
+ *  for it). */
+function wireNoGps(
+  outcome: DetailsOutcome = { kind: "unchanged" },
+  setting: { on: boolean } = { on: false },
+) {
+  const input = {
+    checked: false,
+    ...el(),
+  };
+  const noGps = {
+    input,
+    current: vi.fn(() => setting.on),
+    preview: vi.fn((_on: boolean) => undefined),
+  };
+  const dom = {
+    backdrop: el(),
+    form: el(),
+    name: el(),
+    description: el(),
+    contact: el(),
+    error: el(),
+    cancel: el(),
+  };
+  const deps = {
+    current: vi.fn(() => NOW),
+    showCovers: vi.fn(),
+    chosenCover: () => "f1",
+    // The session's one edit of both (`setDetails`): the setting is a
+    // change of its own when the fields are not.
+    apply: vi.fn((_next: DetailsForm, on?: boolean): DetailsOutcome => {
+      if (outcome.kind === "refused" || on === undefined) return outcome;
+      const settingChanged = on !== setting.on;
+      setting.on = on;
+      return settingChanged ? { kind: "changed" } : outcome;
+    }),
+    onApplied: vi.fn(),
+    onClose: vi.fn(),
+  };
+  const dialog = wireDetailsDialog({
+    dom: dom as unknown as DetailsDialogDom,
+    ...deps,
+    noGps,
+  });
+  return { dom, deps, dialog, noGps, setting };
+}
+
+// Why: the 3D view has no rail, so "This tour needs no GPS" lives in Tour
+// details there. It is part of the form: shown as it stands, its warnings
+// previewed while it is ticked, written only by Apply (one change with the
+// others), and never by Cancel or a refused Apply.
+describe("wireDetailsDialog's 'needs no GPS'", () => {
+  it("opens with the setting as it stands and its warnings previewed", () => {
+    const h = wireNoGps(undefined, { on: true });
+    h.dialog.open();
+    expect(h.noGps.input.checked).toBe(true);
+    expect(h.noGps.preview).toHaveBeenLastCalledWith(true);
+  });
+
+  it("previews the warnings as the box changes, writing nothing", () => {
+    const h = wireNoGps();
+    h.dialog.open();
+    expect(h.noGps.preview).toHaveBeenLastCalledWith(false);
+    h.noGps.input.checked = true;
+    h.noGps.input.fire("change");
+    expect(h.noGps.preview).toHaveBeenLastCalledWith(true);
+    expect(h.deps.apply).not.toHaveBeenCalled();
+  });
+
+  // One edit with the details (one undo step), not a second one after.
+  it("Apply hands it to the details' one edit, and a change of it alone says changed", () => {
+    const h = wireNoGps({ kind: "unchanged" });
+    h.dialog.open();
+    h.noGps.input.checked = true;
+    h.dom.form.fire("submit");
+    expect(h.deps.apply).toHaveBeenCalledTimes(1);
+    expect(h.deps.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ cover: "f1" }),
+      true,
+    );
+    expect(h.setting.on).toBe(true);
+    expect(h.dialog.isOpen()).toBe(false);
+    expect(h.deps.onApplied).toHaveBeenCalledWith("changed");
+  });
+
+  it("an Apply that changes neither says unchanged", () => {
+    const h = wireNoGps({ kind: "unchanged" });
+    h.dialog.open();
+    h.dom.form.fire("submit");
+    expect(h.deps.onApplied).toHaveBeenCalledWith("unchanged");
+  });
+
+  it("a refused Apply or Cancel leaves it as it was", () => {
+    const refused = wireNoGps({ kind: "refused", reason: "No." });
+    refused.dialog.open();
+    refused.noGps.input.checked = true;
+    refused.dom.form.fire("submit");
+    expect(refused.setting.on).toBe(false);
+    expect(refused.dialog.isOpen()).toBe(true);
+
+    const cancelled = wireNoGps();
+    cancelled.dialog.open();
+    cancelled.noGps.input.checked = true;
+    cancelled.dom.cancel.fire("click");
+    expect(cancelled.deps.apply).not.toHaveBeenCalled();
+    // Opened again, it shows the setting as it stands, not the tick.
+    cancelled.dialog.open();
+    expect(cancelled.noGps.input.checked).toBe(false);
+  });
+});

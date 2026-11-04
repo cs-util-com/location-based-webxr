@@ -1,21 +1,24 @@
 /**
  * One approach on opening a tour in the globe editor: the flight (an
  * `ApproachDriver`, the globe's own meteor flight in the page:
- * `globe-approach-meteor.ts`), the bar under the top bar with its
- * "Loading tour" tab hanging from its middle (the box), and the arrival's
- * pop-in and walk (`approach-arrival.ts`), driven by the view's frame
- * loop. No WebGL: the view lets it drive the camera each frame and asks it
- * for each station's growth, and tells it the camera's altitude.
+ * `globe-approach-meteor.ts`), the thin accent line under the top bar
+ * that fills with the camera's fall (the box), and the arrival's pop-in
+ * and walk (`approach-arrival.ts`), driven by the view's frame loop. No
+ * WebGL: the view lets it drive the camera each frame and asks it for each
+ * station's growth, and tells it the camera's altitude.
  *
  * - Flying: `drive` has the flight place the camera (its first call
- *   starts the flight), the bar follows the camera's height, the stations
- *   are held back (`holdsStations`).
+ *   starts the flight), the line follows the camera's height, a progress
+ *   bar named "Loading tour", and the stations are held back
+ *   (`holdsStations`).
  * - The camera lands, or the creator takes it (`takeOver`: an input in
  *   the 3D view, the camera kept where it is): the stations pop in from
- *   then, then the walk draws itself. A landed bar stays full for
- *   `BAR_DONE_MS` so its finish is seen, then the box goes; after a
- *   takeover it goes at once. What still loads does not keep it: the box
- *   says only "Loading tour" (the detail line under it is gone).
+ *   then, then the walk draws itself. The line shows full; a landed load
+ *   ends `BAR_DONE_MS` later (so its finish is seen as a load), a taken
+ *   one at once. The line never goes: once the load is over it stays,
+ *   full, as the view's accent line (the docks hang under it), and is no
+ *   progress bar any more (no role, hidden from a screen reader). What
+ *   still loads does not keep the load going.
  * - `retarget` (a station picked in the list mid-flight) sends the flight
  *   to it from where the camera is; after the flight it does nothing.
  *
@@ -31,12 +34,12 @@ import {
   type StationPop,
 } from "./approach-arrival.js";
 
-/** The tab's words, and the bar's accessible name. */
+/** The line's accessible name while it loads. */
 export const APPROACH_TITLE = "Loading tour";
 
-/** How long a landed bar stays full before it goes (ms): long enough to
- *  be seen to finish (a few frames would be missed), short enough not to
- *  read as a second wait. */
+/** How long a landed line stays a full progress bar before the load ends
+ *  (ms): long enough to be seen to finish (a few frames would be missed),
+ *  short enough not to read as a second wait. */
 export const BAR_DONE_MS = 300;
 
 type ApproachPhase = "flying" | "arrived";
@@ -51,7 +54,8 @@ interface ApproachRunStats {
   /** How the flight ended: landed, taken by the creator, or null while
    *  flying. */
   readonly ended: ApproachEnd | null;
-  /** The bar's value (0 to 1), null once the bar is gone. */
+  /** The line's value (0 to 1), null once the load is over (the line
+   *  then stays, full). */
   readonly progress: number | null;
   /** How many times the flight was sent to a station. */
   readonly retargets: number;
@@ -109,19 +113,19 @@ export interface ApproachRun {
   /** The share of the walk drawn at `nowMs` for `stations` stations (1
    *  once the arrival is over, 0 before it). */
   walk(nowMs: number, stations: number): number;
-  /** Whether nothing is left to animate or show: the arrival is over and
-   *  the box is gone. */
+  /** Whether nothing is left to animate: the arrival is over and the
+   *  load has ended (the full line stays until `dispose`). */
   finished(nowMs: number, stations: number): boolean;
   stats(): ApproachRunStats;
   dispose(): void;
 }
 
 /**
- * The approach flown by `driver` (started by the first `drive`), its
- * title and bar in `box` (the 3D view's box). `reducedMotion` takes the
- * short arrival. `onDone` is called once, when the bar goes (a beat after a
- * landing, at once after a takeover), with how the flight ended; never
- * when disposed before.
+ * The approach flown by `driver` (started by the first `drive`), its line
+ * in `box` (the 3D view's box). `reducedMotion` takes the short arrival.
+ * `onDone` is called once, when the load ends (a beat after a landing, at
+ * once after a takeover), with how the flight ended; never when disposed
+ * before.
  */
 export function createApproachRun(deps: {
   readonly box: HTMLElement;
@@ -139,15 +143,11 @@ export function createApproachRun(deps: {
   let arrivedAt = Number.NaN;
   let progress = 0;
   let retargets = 0;
+  /** Whether the load is over: the line full, no progress bar any more. */
+  let done = false;
 
   const root = document.createElement("div");
   root.className = "approach";
-  // The progress bar carries the same words as its label, so the title
-  // is not read twice.
-  const title = document.createElement("div");
-  title.className = "approach-title";
-  title.setAttribute("aria-hidden", "true");
-  title.textContent = APPROACH_TITLE;
   const track = document.createElement("div");
   track.className = "approach-track";
   track.setAttribute("role", "progressbar");
@@ -158,8 +158,7 @@ export function createApproachRun(deps: {
   const fill = document.createElement("div");
   fill.className = "approach-fill";
   track.append(fill);
-  // The bar first, its tab hanging under it.
-  root.append(track, title);
+  root.append(track);
   box.append(root);
 
   const showProgress = (k: number) => {
@@ -174,14 +173,30 @@ export function createApproachRun(deps: {
     phase = "arrived";
     ended = how;
     arrivedAt = nowMs;
-    if (how === "landed") showProgress(1);
+    // Landed or taken, the approach is over: the line shows full.
+    showProgress(1);
   };
 
-  /** The box goes: at once after a takeover, a beat after a landing (the
-   *  bar finishes when the camera lands). */
-  const barDone = (nowMs: number) =>
+  /** The load ends: at once after a takeover, a beat after a landing (the
+   *  line finishes when the camera lands). */
+  const loadOver = (nowMs: number) =>
     phase === "arrived" &&
     (ended === "taken" || nowMs - arrivedAt >= BAR_DONE_MS);
+
+  /** The line stays, full, but is no progress bar any more. */
+  const endLoad = () => {
+    done = true;
+    for (const name of [
+      "role",
+      "aria-label",
+      "aria-valuemin",
+      "aria-valuemax",
+      "aria-valuenow",
+    ]) {
+      track.removeAttribute(name);
+    }
+    root.setAttribute("aria-hidden", "true");
+  };
 
   return {
     timing,
@@ -199,8 +214,8 @@ export function createApproachRun(deps: {
         if (landedNow) arrive(nowMs, "landed");
         else showProgress(driver.bar(altitudeKm));
       }
-      if (root.hidden !== true && barDone(nowMs)) {
-        root.hidden = true;
+      if (!done && loadOver(nowMs)) {
+        endLoad();
         if (ended !== null) deps.onDone?.(ended);
       }
     },
@@ -229,7 +244,7 @@ export function createApproachRun(deps: {
       return (
         phase === "arrived" &&
         arrivalDone(nowMs - arrivedAt, stations, timing) &&
-        root.hidden === true
+        done
       );
     },
     stats() {
@@ -237,7 +252,7 @@ export function createApproachRun(deps: {
         phase,
         flying: phase === "flying",
         ended,
-        progress: root.hidden === true ? null : progress,
+        progress: done ? null : progress,
         retargets,
         durationMs: driver.durationMs,
       };

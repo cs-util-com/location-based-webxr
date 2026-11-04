@@ -21,11 +21,16 @@ AR (tour editor plan 2026-10-17-1816, W1).
   the top bar and walks it left to right.
 - `#map` - the full-window map (`src/editor/editor-map.ts`); `inert`
   while the 3D view shows over it, so Tab never walks the hidden map.
+- `#view3d-failed` - the page where the 3D view cannot open
+  (`src/editor/view3d-failed-page.ts`): `#view3d-failed-title` (focused when
+  it shows), `#view3d-failed-reason`, and Try again, Open another tour…,
+  Save, Save a copy…, Tour details…. Under the top bar, over the map, the
+  rail and the card, under the dialogs and toasts.
 - `#view3d` - the 3D view's box over the map, hidden until the view
-  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), with its
-  credits line `#view3d-credits` (Mapterhorn, its elevation data,
-  OpenStreetMap) as its last child, so its links come after the docks in
-  the Tab order (the docks' z-index keeps them painted over it). Inside it the studio shell's parts
+  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), its first
+  child the permanent accent line `#load-line` (`aria-hidden`, under the
+  top bar; the globe view's approach covers it with its own loading line
+  while the tour loads). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
   `#shell-tree` (`#tree-stations`, `#tree-add` - the "+" that adds a
   station at the centre of the view -, `#tree-fold`, `#tree-body`), the
@@ -37,7 +42,11 @@ AR (tour editor plan 2026-10-17-1816, W1).
   has `tabindex="-1"`: the ground menu gives the focus back to it, and the
   view's window keys work from there.
 - `#shell-bar` - the bottom bar, shown with the top bar in both views:
-  first the save status `#save-status` (a live region; its words also in
+  first the 3D view's credits `#view3d-credits` (Mapterhorn, its
+  elevation data, OpenStreetMap; one small "Credits" button whose panel
+  opens upward, `src/editor3d/editor3d-credits.ts`; empty and hidden on
+  the map), after the docks in the Tab order and never covered by them;
+  then the save status `#save-status` (a live region; its words also in
   its `title`) and the 3D view's load line `#view-loading` ("Loading 3D
   view…", hidden otherwise, `src/editor/view-switch.ts`); then the 3D
   view's `#shell-view`, the selection's power actions `#shell-acts`
@@ -114,7 +123,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   2026-10-17-1816): `#details-form` with `#details-name` (the format keeps
   80 characters), `#details-description` (2000), `#details-covers` (the
   cover radios `edit-main.ts` draws; `#details-covers-none` when the tour
-  has no photo to choose), `#details-contact` (320), `#details-error`
+  has no photo to choose), `#details-contact` (320), `#details-no-gps` (the tour's "needs no GPS",
+  for the 3D view, which has no rail) with `#details-no-gps-warnings` (a
+  polite live region, never hidden), `#details-error`
   (`role="alert"`), Cancel and Apply (`src/editor/details-dialog.ts`). Above the toasts (z-index). Each
   field's `maxlength` is TWICE the format's limit (160, 4000, 640): the
   attribute counts UTF-16 units, the format code points, and a character
@@ -165,7 +176,9 @@ markers, the card beside its marker, a capped photo, a refused non-tour,
 the layout at three viewports, the menus inside the window, the details
 dialog, the fine print, Share and publish and the walk's move),
 `playwright-tests/editor3d.spec.js` (a tour opening in the 3D view, the
-map as the fallback, the view and back),
+cannot-open page, the view and back),
+`playwright-tests/editor3d-globe-default.spec.js` (the globe by default,
+an empty tour, `#view3d-failed` and its File actions, `#details-no-gps`),
 `playwright-tests/editor3d-shell.spec.js` (the studio shell's layout at
 four viewports and every fold step, the menus by keyboard and touch, the
 unsaved mark, its tree clicks). The specs reach the menus through

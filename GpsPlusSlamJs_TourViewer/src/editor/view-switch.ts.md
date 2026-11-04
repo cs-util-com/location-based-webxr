@@ -13,9 +13,11 @@ edits and the selection are the store's, so switching keeps them all.
   `loading` "Loading 3D view…", `shown` "2D map". In a menu the words
   always fit, so there is no short form.
 - `view3dFailureText(reason)` - what the page says for a `View3dFailure`
-  (`chunk`, `webgl`, `context-lost`, `empty`, `error`), in plain words,
-  each ending with the map showing the tour; only `chunk` speaks of the
-  connection.
+  (`chunk`, `webgl`, `context-lost`, `empty`, `error`), in plain words;
+  a failure's words never speak of the map (it no longer stands in for the
+  3D view; `view3d-failed-page.ts` shows them on a page of its own), and
+  only `chunk` says to reload the page (trying again in place gets the
+  browser's kept import failure back).
 - `createViewSwitch({ button, store, open, say, onShown?, status? })` -> `ViewSwitch`:
   - `button` - a `ViewSwitchButton` (the parts of a button it uses);
   - `status` - a `ViewSwitchStatus` (`textContent`, `hidden`), the bottom
@@ -30,9 +32,10 @@ edits and the selection are the store's, so switching keeps them all.
     its drawing through `events.failed()` (`View3dEvents`), while it loads
     or once shown. The page's `open`
     does the dynamic import, so this module never imports the 3D view;
-  - `say(text, reason)` - the page's toast, with the `View3dFailure`
-    it says (the page lets a tour with nothing positioned, `"empty"`,
-    pass with a timed line: no failure, the map shows that tour);
+  - `say(text, reason)` - told each failure with its `View3dFailure`
+    (the page says a failure on its own page and toasts only a tour with
+    nothing positioned, `"empty"`, refused by the older view alone: no
+    failure, the map shows that tour);
   - `onShown(on)` - the view shown (`true`) or left (`false`), called last,
     with the store already in the mode it announces (the page hides and
     shows its map-only parts there, reading the store).
@@ -53,11 +56,12 @@ edits and the selection are the store's, so switching keeps them all.
 - **A failure's reason** is the error's `reason` when it is one of the
   five (`chunk` is the page's tag for an import that did not arrive);
   anything else - an error without a reason, an unknown one - is `error`,
-  whose text does not blame the connection.
+  whose text does not ask for a reload.
 - **A view that stops** (`contextLost`, `failed`) while it loads ends the
-  load on the map with its reason said, and the view that may still
-  arrive for it is disposed; once shown, it leaves the view the same way.
-  A view already left says nothing.
+  load as failed with its reason (`view3dFailed`, which brings up the
+  cannot-open page, `view3d-failed-page.ts`) and says it, and the view
+  that may still arrive for it is disposed; once shown, it leaves the view
+  the same way. A view already left says nothing.
 - **Late answers are dropped:** each open has an attempt number; a view
   that arrives after the creator left the load (the button, `close`) is
   disposed at once and never shown. A lost context of a view no longer
@@ -86,14 +90,15 @@ const viewSwitch = createViewSwitch({
 
 `view-switch.test.ts`: the loading state, then the view, then the map
 again; each failure (a chunk, no WebGL, nothing placed, an unknown
-reason) landing on the map with its text said; a lost context falling
-back once and opening again; a context lost while loading landing on
-the map, said, its late view disposed; a shown view's error falling
-back, said; a late view dropped and disposed; a shown
+reason) ending the load as failed with its reason and its text said; a
+lost context ending the view once and opening again; a context lost
+while loading ending the load as failed, said, its late view disposed; a
+shown view's error ending it, said; a late view dropped and disposed; a shown
 view closed with the tour; `onShown` called with the store already in
 its mode on every way back; the status line shown only while loading;
 `show3d` opening as the click does and doing nothing when off, loading
 or shown; no second open while loading; the switch off without a tour. The page's use:
-`playwright-tests/editor3d.spec.js` (a tour opening in 3D, the map as
-the fallback, the load line); the menus at 390 px:
+`playwright-tests/editor3d.spec.js` (a tour opening in 3D, the load
+line) and `playwright-tests/editor3d-globe-default.spec.js` (the
+cannot-open page); the menus at 390 px:
 `playwright-tests/editor.spec.js`.

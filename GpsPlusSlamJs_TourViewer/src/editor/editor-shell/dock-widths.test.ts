@@ -20,8 +20,21 @@ describe("the docks' widths", () => {
       new URL("./editor-shell.css", import.meta.url),
       "utf8",
     );
-    const width = (id: string) =>
-      new RegExp(String.raw`#${id} [{][^}]*?\bwidth: (\d+)px;`).exec(css)?.[1];
+    // A width is given in px, or as a token of `:root` (the inspector's,
+    // `--s-insp-w`, which the map controls also keep clear of).
+    const width = (id: string) => {
+      const given = new RegExp(
+        String.raw`#${id} [{][^}]*?\bwidth: (\d+px|var\(--[\w-]+\));`,
+      ).exec(css)?.[1];
+      const token = /^var\((--[\w-]+)\)$/.exec(given ?? "")?.[1];
+      const px =
+        token === undefined
+          ? given
+          : new RegExp(String.raw`:root [{][^}]*?${token}: (\d+px);`).exec(
+              css,
+            )?.[1];
+      return px?.replace(/px$/, "");
+    };
     expect(width("shell-tree")).toBe(String(TREE_DOCK_PX));
     expect(width("shell-inspector")).toBe(String(INSPECTOR_DOCK_PX));
   });

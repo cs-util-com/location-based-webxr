@@ -108,6 +108,7 @@ beforeEach(() => {
   shown.length = 0;
   store.dispatch(editorViewActions.selected({ id: null }));
   store.dispatch(editorViewActions.stationFolded({ id: "gate", open: false }));
+  store.dispatch(editorViewActions.stationFolded({ id: "steps", open: false }));
 });
 
 /** The tree drawn from the store as it stands. */
@@ -129,7 +130,11 @@ function draw() {
 }
 
 describe("drawTree", () => {
-  it("draws a card per station, its number, name and description", () => {
+  // Why: a folded station is one line in the list - its number, then
+  // its name beside it - so a tour's stations fit the dock at a glance;
+  // its picture, description and items belong to the unfolded station
+  // only (a folded card asks for no picture at all).
+  it("draws a folded station as one row: its number, then its name, nothing else", () => {
     draw();
     const cards = [...dock.body.querySelectorAll(".card")];
     expect(cards.map((c) => c.querySelector(".nm")?.textContent)).toEqual([
@@ -141,8 +146,51 @@ describe("drawTree", () => {
       "2",
     ]);
     expect(dock.stationsHead.textContent).toContain("Stations");
-    // The gate's card picture is its first photo.
+    for (const card of cards) {
+      // The row is the card's only child; the number and the name are
+      // siblings in its button, in that order.
+      expect([...card.children].map((c) => c.className)).toEqual(["head"]);
+      const pick = card.querySelector(".head > .pick");
+      expect([...(pick?.children ?? [])].map((c) => c.className)).toEqual([
+        "n",
+        "nm",
+      ]);
+    }
+    expect(dock.body.querySelector(".pic, .ds, .kids")).toBeNull();
+    // Folded, no card is `open`: its name stays one line.
+    expect(dock.body.querySelector(".card.open")).toBeNull();
+    expect(shown).toEqual([]);
+  });
+
+  // Why: unfolded, a station shows its picture under its row - only when
+  // it has one, never an empty placeholder - then its description and
+  // its items.
+  it("shows an unfolded station's picture, description and items below its row", () => {
+    store.dispatch(editorViewActions.stationFolded({ id: "gate", open: true }));
+    store.dispatch(
+      editorViewActions.stationFolded({ id: "steps", open: true }),
+    );
+    draw();
+    const gate = dock.body.querySelector('.card[data-station="gate"]');
+    expect([...(gate?.children ?? [])].map((c) => c.className)).toEqual([
+      "head",
+      "pic",
+      "ds",
+      "kids",
+    ]);
+    expect(gate?.querySelector(".ds")?.textContent).toBe(
+      "Where the wall stood",
+    );
+    // The gate's picture is its first photo, asked for its unfolded card.
     expect(shown).toEqual(["content/photo-1.jpg"]);
+    const steps = dock.body.querySelector('.card[data-station="steps"]');
+    expect([...(steps?.children ?? [])].map((c) => c.className)).toEqual([
+      "head",
+      "kids",
+    ]);
+    // Unfolded, the card says so (`open`): its name may wrap there.
+    expect(gate?.classList.contains("open")).toBe(true);
+    expect(steps?.classList.contains("open")).toBe(true);
   });
 
   it("makes every card, item and code a button, none inside another", () => {

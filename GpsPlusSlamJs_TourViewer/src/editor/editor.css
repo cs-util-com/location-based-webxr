@@ -99,6 +99,67 @@ button:disabled {
   display: none;
 }
 
+/* Where the 3D view cannot open (view3d-failed-page.ts): over the map
+   and the rail, between the top bar and the bottom bar, under the toasts
+   and dialogs. The bottom padding keeps the card clear of the toasts'
+   stack (18 px over the bar, its height in --toasts-h, which
+   view3d-failed-page.ts keeps), and never less than one toast's room, so
+   the card does not jump for one line. In the shell's dark dress:
+   editor-shell.css. */
+#view3d-failed {
+  position: fixed;
+  inset: var(--top-h) 0 var(--s-bar-h);
+  z-index: 860;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 16px max(72px, calc(var(--toasts-h, 0px) + 26px));
+  overflow-y: auto;
+}
+
+#view3d-failed[hidden] {
+  display: none;
+}
+
+#view3d-failed .modal {
+  margin: auto;
+}
+
+#view3d-failed .failed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* A short screen (a phone held sideways): a wider, tighter card, its
+   actions in one row, so all of it fits above a toast. */
+@media (max-height: 480px) {
+  #view3d-failed {
+    padding: 8px 16px max(64px, calc(var(--toasts-h, 0px) + 26px));
+  }
+
+  #view3d-failed .modal {
+    width: min(760px, 100%);
+    max-height: none;
+    padding: 14px 20px;
+  }
+
+  #view3d-failed .modal h1 {
+    font-size: 20px;
+    margin-bottom: 2px;
+  }
+
+  #view3d-failed .modal :is(.lede, p) {
+    margin: 0 0 4px;
+    font-size: 14px;
+  }
+
+  #view3d-failed .failed-actions {
+    margin-top: 10px;
+  }
+}
+
 .view3d-canvas {
   display: block;
   width: 100%;
@@ -108,16 +169,13 @@ button:disabled {
 }
 
 /* The 3D view's credits (`editor3d-credits.ts`): one small button at the
- * bottom left; its overlay opens above it with every source in full. */
+ * bottom bar's left (`#shell-bar`, `editor-shell.css` places it); its
+ * overlay opens above it with every source in full. */
 .view3d-credits {
-  position: absolute;
-  bottom: 6px;
-  left: 8px;
-  z-index: 5;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: calc(100% - 78px);
   margin: 0;
   color: rgba(230, 232, 236, 0.85);
   font-size: 11px;

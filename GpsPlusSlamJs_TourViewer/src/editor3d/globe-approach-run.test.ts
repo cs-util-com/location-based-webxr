@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /**
  * Why these tests matter: the run is where the owner's rules for the
- * approach meet the frame loop - the bar finishes on landing and the box
- * goes a beat later, an input in the 3D view takes the camera where it is
- * (the box goes at once), a list click retargets, and the bar is announced
- * as a progress bar. The box carries only its title and the bar: the owner
- * dropped the detail line under it, which said "Loading textures" for the
- * whole flight and after it without telling him anything. A wrong phase
- * here would be an input fought or a box that never leaves.
+ * approach meet the frame loop - the line fills with the camera's fall and
+ * finishes on landing (at once on a takeover), an input in the 3D view
+ * takes the camera where it is, a list click retargets, and the line is
+ * announced as a progress bar while it loads. It is a thin accent line
+ * that stays, full, for the view's whole life (no tab, never hidden,
+ * the docks attached under it), so once
+ * the load is over it is no progress bar any more: no role, hidden from a
+ * screen reader. A wrong phase here would be an input fought, a line that
+ * goes, or a full line still announced as loading.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -81,34 +83,58 @@ function stepAt(
 const rootOf = (box: HTMLElement) =>
   box.querySelector<HTMLElement>(".approach")!;
 
+/** The line's track, and the share its fill shows (its scale on x). */
+const trackOf = (box: HTMLElement) =>
+  box.querySelector<HTMLElement>(".approach-track")!;
+const filled = (box: HTMLElement) =>
+  Number(
+    /scaleX\(([\d.]+)\)/.exec(
+      box.querySelector<HTMLElement>(".approach-fill")!.style.transform,
+    )?.[1] ?? Number.NaN,
+  );
+
+/** The line once the load is over: full, no progress bar, hidden
+ *  from a screen reader. */
+function expectDone(box: HTMLElement): void {
+  expect(filled(box)).toBe(1);
+  const track = trackOf(box);
+  expect(track.hasAttribute("role")).toBe(false);
+  expect(track.hasAttribute("aria-valuenow")).toBe(false);
+  expect(track.hasAttribute("aria-label")).toBe(false);
+  expect(rootOf(box).getAttribute("aria-hidden")).toBe("true");
+  expect(box.querySelector('[role="progressbar"]')).toBeNull();
+}
+
 afterEach(() => {
   document.body.replaceChildren();
 });
 
 describe("createApproachRun", () => {
-  it("shows the title over a progress bar with a value, and nothing else", () => {
+  it("shows only the line, a progress bar named by the words it used to show", () => {
     // Why: the owner's accessibility rule - a progressbar role with a
-    // value and a name; and his verdict on the detail line: gone, only
-    // "Loading tour" and the bar stay.
+    // value and a name - and his wish for a thin line with no tab: the
+    // "Loading tour" words stay as the bar's name only; no detail line,
+    // no tab, nothing else in the box.
     const { box, flight, r } = run();
     stepAt(r, 0, flight);
     const bar = box.querySelector('[role="progressbar"]');
+    expect(bar).toBe(trackOf(box));
     expect(bar?.getAttribute("aria-valuenow")).toBe("0");
-    expect(bar?.getAttribute("aria-label")).toBe("Loading tour");
-    const title = box.querySelector<HTMLElement>(".approach-title");
-    expect(title?.textContent).toBe(APPROACH_TITLE);
-    expect(title?.hidden).toBe(false);
+    expect(bar?.getAttribute("aria-label")).toBe(APPROACH_TITLE);
+    expect(APPROACH_TITLE).toBe("Loading tour");
+    expect(box.querySelector(".approach-title")).toBeNull();
     expect(box.querySelector(".approach-line")).toBeNull();
     expect(box.querySelector('[role="status"]')).toBeNull();
-    expect(rootOf(box).children).toHaveLength(2);
+    expect(rootOf(box).children).toHaveLength(1);
+    expect(rootOf(box).hasAttribute("aria-hidden")).toBe(false);
     expect(r.stats()).not.toHaveProperty("line");
   });
 
-  it("moves the bar with the camera, finishes it on landing, and goes after its hold", () => {
-    // Why: the bar is driven by the camera's height, never by a timer of
-    // its own, and reaches its end exactly when the camera lands; it
-    // stays full for a beat so its finish is seen, then the whole box
-    // goes (it used to wait for the line, which is gone).
+  it("moves the line with the camera, finishes it on landing, and ends the load after its hold, the line kept full", () => {
+    // Why: the line is driven by the camera's height, never by a timer of
+    // its own, and reaches its end exactly when the camera lands; a beat
+    // later the load is over - the line stays, full, but is no progress
+    // bar any more.
     const { box, flight, r } = run();
     stepAt(r, flight.durationMs / 2, flight);
     const mid = r.stats().progress ?? -1;
@@ -127,30 +153,30 @@ describe("createApproachRun", () => {
     const bar = box.querySelector<HTMLElement>('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("100");
     stepAt(r, flight.durationMs + BAR_DONE_MS - 1);
-    expect(rootOf(box).hidden).toBe(false);
+    expect(trackOf(box).getAttribute("role")).toBe("progressbar");
     expect(r.stats().progress).toBe(1);
     stepAt(r, flight.durationMs + BAR_DONE_MS);
-    expect(rootOf(box).hidden).toBe(true);
+    expectDone(box);
     expect(r.stats().progress).toBeNull();
   });
 
-  it("goes after the bar's hold however long the ground still loads, and stays gone", () => {
-    // Why: the box's end used to follow the line, which waited for the
-    // last tile; with the line gone nothing may keep the box over the
-    // view after the landing, and the run takes no load counts at all.
+  it("ends the load after the hold however long the ground still loads, and the line never goes", () => {
+    // Why: nothing that still loads may keep the line announced as
+    // loading after the landing (the run takes no load counts at all),
+    // and the line itself is permanent: the docks hang directly under it.
     const { box, flight, r } = run();
     const land = flight.durationMs;
     for (let t = land; t <= land + BAR_DONE_MS; t += 16) stepAt(r, t);
     stepAt(r, land + BAR_DONE_MS);
-    expect(rootOf(box).hidden).toBe(true);
+    expectDone(box);
     stepAt(r, land + 60_000);
-    expect(rootOf(box).hidden).toBe(true);
+    expectDone(box);
     expect(r.step.length).toBe(2);
   });
 
-  it("is finished once the arrival is over and the box is gone, not before", () => {
-    // Why: the view frees the run on `finished`; ending it with the box
-    // still up would leave a full bar over the view for good.
+  it("is finished once the arrival is over and the load has ended, not before", () => {
+    // Why: the view frees the run on `finished`; ending it while the line
+    // still loads would leave a progress bar announced for good.
     const { flight, r } = run();
     const land = flight.durationMs;
     stepAt(r, land);
@@ -161,10 +187,11 @@ describe("createApproachRun", () => {
     expect(r.finished(land + 60_000, 3)).toBe(true);
   });
 
-  it("lets the creator take the camera where it is, the box gone at once", () => {
+  it("lets the creator take the camera where it is, the line full and the load over at once", () => {
     // Why: an input in the 3D view takes over at once; the run must stop
-    // giving poses, or the controls and the flight would fight. A taken
-    // bar did not finish, so it does not stay to be seen finishing.
+    // giving poses, or the controls and the flight would fight. The
+    // approach is over then, so the line shows full at once (it stays,
+    // like every finished line) and no hold keeps it announced.
     const { box, flight, r } = run();
     stepAt(r, 3_000);
     r.takeOver(3_000);
@@ -173,7 +200,7 @@ describe("createApproachRun", () => {
     expect(r.stats().ended).toBe("taken");
     expect(r.holdsStations()).toBe(false);
     stepAt(r, 3_016);
-    expect(rootOf(box).hidden).toBe(true);
+    expectDone(box);
     // The stations pop in from the takeover.
     expect(r.pop(0, 3_000)?.scale).toBe(0);
     expect(r.pop(0, 3_000 + 5_000)?.scale).toBe(1);
@@ -212,30 +239,28 @@ describe("createApproachRun", () => {
     expect(run(true).r.stats().durationMs).toBe(0);
   });
 
-  it("does not hide the box while flying", () => {
-    // Why: a box that goes mid-flight is the "looks stuck" the owner
-    // ruled out; the title says what happens while the bar moves.
+  it("stays a named progress bar while flying", () => {
+    // Why: a line that stops saying it loads mid-flight is the "looks
+    // stuck" the owner ruled out.
     const { box, r } = run();
     for (let t = 0; t < 5_000; t += 100) stepAt(r, t);
-    expect(rootOf(box).hidden).toBe(false);
-    expect(box.querySelector(".approach-title")?.textContent).toBe(
-      APPROACH_TITLE,
-    );
+    expect(trackOf(box).getAttribute("role")).toBe("progressbar");
+    expect(trackOf(box).getAttribute("aria-label")).toBe(APPROACH_TITLE);
   });
 
-  it("under reduced motion lands on its first frame and goes after the same hold", () => {
+  it("under reduced motion lands on its first frame and ends the load after the same hold", () => {
     // Why: reduced motion cuts to the end view (no flight) and shortens
     // the pop-in; the hold is no motion, so the finish is still seen.
     const { box, flight, r } = run(true);
     expect(flight.durationMs).toBe(0);
     r.step(0, 0);
     expect(r.stats().ended).toBe("landed");
-    expect(rootOf(box).hidden).toBe(false);
+    expect(trackOf(box).getAttribute("role")).toBe("progressbar");
     stepAt(r, flight.durationMs + BAR_DONE_MS);
-    expect(rootOf(box).hidden).toBe(true);
+    expectDone(box);
   });
 
-  /** A run that reports to `done` when its box goes. */
+  /** A run that reports to `done` when its load ends. */
   const reporting = (done: () => void) => {
     const box = document.createElement("div");
     document.body.append(box);
@@ -282,7 +307,7 @@ describe("createApproachRun", () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  it("does not call onDone when disposed before the box goes", () => {
+  it("does not call onDone when disposed before the load ends", () => {
     // Why: a view closed mid-flight never landed; the editor gives the
     // rail back on its own close.
     const box = document.createElement("div");

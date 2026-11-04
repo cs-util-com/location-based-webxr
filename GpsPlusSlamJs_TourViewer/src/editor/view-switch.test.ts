@@ -361,7 +361,7 @@ describe("createViewSwitch", () => {
 });
 
 describe("view3dFailureText", () => {
-  it("names each failure in plain words, and says the map shows the tour", () => {
+  it("names each failure in plain words and what to do: try again, or reload for code that did not load (its page, not the map, shows it)", () => {
     for (const reason of [
       "chunk",
       "webgl",
@@ -374,9 +374,11 @@ describe("view3dFailureText", () => {
       expect(text).not.toMatch(/undefined|null/);
     }
     expect(view3dFailureText("webgl")).toMatch(/WebGL/);
-    expect(view3dFailureText("context-lost")).toMatch(/map/);
-    // Only a chunk that did not load is the connection's.
-    expect(view3dFailureText("chunk")).toMatch(/connection/);
-    expect(view3dFailureText("error")).not.toMatch(/connection/);
+    expect(view3dFailureText("context-lost")).toMatch(/try again/i);
+    // Only a chunk that did not load needs the page reloaded: trying
+    // again in place gets the browser's kept failure back.
+    expect(view3dFailureText("chunk")).toMatch(/reload the page/i);
+    expect(view3dFailureText("chunk")).not.toMatch(/try again/i);
+    expect(view3dFailureText("error")).not.toMatch(/reload/i);
   });
 });
