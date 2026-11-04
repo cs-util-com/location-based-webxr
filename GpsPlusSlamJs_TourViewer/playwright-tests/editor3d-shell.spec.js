@@ -770,6 +770,11 @@ test("the bottom panel keeps the keyboard focus through a choice, and Escape clo
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
+  // The sample has no problems; a new station has no content yet, which is
+  // one. The first station is selected again so the Enter makes a choice.
+  await page.locator("#tree-add").click();
+  await expect(page.locator("#tree-body .card")).toHaveCount(4);
+  await page.locator("#tree-body .card > .head").first().click();
   const toggle = page.locator('#shell-toggles [data-tab="problems"]');
   await toggle.click();
   const rows = page.locator("#shell-panel .prow");
