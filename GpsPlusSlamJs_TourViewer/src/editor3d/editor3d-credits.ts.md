@@ -29,7 +29,7 @@ a note under the list (the globe view passes GIBS's acknowledgement).
 - `button.view3d-credits-button[type=button][aria-expanded][aria-controls]`:
   where the credits hold the map's (short name "OpenStreetMap"), its words
   are `span.long` "Map data © OpenStreetMap contributors" and `span.short`
-  "© OSM" (`editor.css` shows the short one at 700 px or less), its
+  "© OSM" (`editor.css` shows the short one at 960 px or less, where the bottom bar also holds the actions and the panel toggles), its
   `aria-label` "Credits: Map data ..." and its title "All credits";
   otherwise "Credits". A disclosure (no `aria-haspopup`, no dialog role, since
   nothing traps focus in the panel);

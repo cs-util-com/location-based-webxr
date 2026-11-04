@@ -622,12 +622,16 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
   await card(page, "gate").locator(".pick").click();
   const del = page.locator('#inspector-body [data-act="delete"] kbd');
   await expect(del).toHaveText("Del");
-  expect(
-    await del.evaluate((k) => {
-      const s = getComputedStyle(k);
-      return { background: s.backgroundColor, border: s.borderTopWidth };
-    }),
-  ).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
+  // Polled: the inspector is drawn again whenever its model changes after
+  // the click, and a key read from a replaced draw has no style ("").
+  await expect
+    .poll(() =>
+      del.evaluate((k) => {
+        const s = getComputedStyle(k);
+        return { background: s.backgroundColor, border: s.borderTopWidth };
+      }),
+    )
+    .toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
   await page.keyboard.press("Escape");
   for (const size of [
     { width: 1440, height: 900 },

@@ -199,8 +199,10 @@ button:disabled {
   cursor: pointer;
 }
 
-/* The button names the map's source: in full, or "© OSM" on a narrow
- * window (`editor3d-credits.ts`). */
+/* The button names the map's source: in full, or "© OSM" below 960 px
+ * (`editor3d-credits.ts`), where the bottom bar also holds the
+ * selection's actions with their words and the panel toggles with theirs;
+ * the full credit is one click away in its panel. */
 .view3d-credits-button {
   white-space: nowrap;
 }
@@ -209,7 +211,7 @@ button:disabled {
   display: none;
 }
 
-@media (width <= 700px) {
+@media (width <= 960px) {
   .view3d-credits-button .long {
     display: none;
   }
