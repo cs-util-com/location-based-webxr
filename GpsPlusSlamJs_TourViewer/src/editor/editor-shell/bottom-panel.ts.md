@@ -40,7 +40,7 @@ this draws them and takes the clicks, the grip's drag and the keys.
     it (closes it, the focus back on its toggle);
   - `state()` - `{ open, tab, max, heightPx }`, for checks;
   - `hide()` - the view hides: closes it and forgets the frames.
-- `PanelMap` - the `map` dependency's shape (internal: not exported).
+- `PanelMap` (internal, not exported) - the `map` dependency's shape.
 - `PANEL_STORAGE_KEY` - `"editor-bottom-panel"`, its kept JSON `{ h, tab }`.
 
 ## Invariants & assumptions
