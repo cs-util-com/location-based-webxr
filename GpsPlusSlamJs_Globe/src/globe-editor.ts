@@ -73,5 +73,7 @@ export {
   type OsmGateLimits,
   type OsmCameraPose,
   type OsmMapLoad,
+  type OsmMapTile,
+  type OsmRetryOutcome,
   type OsmOverlayTerrain,
 } from "./globe-osm-overlay.js";
