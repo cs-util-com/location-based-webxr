@@ -58,7 +58,8 @@
  * lab.
  *
  * The OSM buildings (with their trees and roads) stand at the tour's
- * centre (`editor3d-globe-city.ts` over the Globe package's city, its
+ * centre, mounted once the tour has one (a new tour's stand-in place
+ * loads nothing) (`editor3d-globe-city.ts` over the Globe package's city, its
  * worker `globe-city-worker.ts`), on the relief's own height source; they
  * load once the camera is below 30 km, warm up from the approach's start,
  * draw see-through around the selection and stand in the clouds' depth.
@@ -128,7 +129,7 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
-import { mountEditorCity } from "./editor3d-globe-city.js";
+import { mountEditorCity, type EditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
 import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
@@ -303,6 +304,13 @@ function openCity<T>(on: boolean, make: () => T): T | null {
   }
 }
 
+/** The placed codes' places, which a tour's centre counts too. */
+function codeGeosOf(levels: ReturnType<Editor3dDeps["levels"]>) {
+  return [...levels.values()].flatMap((l) =>
+    l.qr.geo === undefined ? [] : [l.qr.geo],
+  );
+}
+
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
@@ -325,10 +333,7 @@ export async function openGlobeEditor(
   const state = deps.store.getState();
   const levels = deps.levels();
   const manifest = manifestToWrite(state.tourDocument);
-  const codeGeos = [...levels.values()].flatMap((l) =>
-    l.qr.geo === undefined ? [] : [l.qr.geo],
-  );
-  const tourAt = tourCentre(manifest?.stations ?? [], codeGeos);
+  const tourAt = tourCentre(manifest?.stations ?? [], codeGeosOf(levels));
   // A tour with nothing positioned yet (a new one) opens over the
   // creator's part of the world, its first station placed on the ground.
   const zone = browserZoneHint();
@@ -569,25 +574,40 @@ export async function openGlobeEditor(
     });
     const { ellipsoid } = ground.terrain.tiles;
     // The buildings at the tour's centre, on the relief's height source;
-    // none with `buildings=0` or without module workers.
-    const editorCity = openCity(knobs.buildings === 1, () =>
-      mountEditorCity({
-        city: createGlobeCity({
-          parent: globe.group,
-          ellipsoid,
-          heightsUrl: ground.heights.url,
-          // The library's own parameter types are narrower than the city's
-          // seam (it hands the worker's reply through as it came).
-          loadCityThree: () => import("gps-plus-slam-osm/three") as never,
-          createWorker: () =>
-            new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
-              type: "module",
-            }),
+    // none with `buildings=0` or without module workers, and none before
+    // the tour has a centre (a new tour opens over a stand-in place, where
+    // nothing may load): they are mounted when its first station is
+    // placed.
+    let editorCity: EditorCity | null = null;
+    /** Where the buildings stand (the tour's centre they were mounted at). */
+    let cityPlace: { readonly lat: number; readonly lng: number } | null = null;
+    let buildingsShown = true;
+    const mountCity = (at: { readonly lat: number; readonly lng: number }) => {
+      if (editorCity !== null) return;
+      const place = { lat: at.lat, lng: at.lng };
+      editorCity = openCity(knobs.buildings === 1, () =>
+        mountEditorCity({
+          city: createGlobeCity({
+            parent: globe.group,
+            ellipsoid,
+            heightsUrl: ground.heights.url,
+            // The library's own parameter types are narrower than the city's
+            // seam (it hands the worker's reply through as it came).
+            loadCityThree: () => import("gps-plus-slam-osm/three") as never,
+            createWorker: () =>
+              new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
+                type: "module",
+              }),
+          }),
+          place,
+          zoom: ground.heights.globalZoom,
         }),
-        place: { lat: centre.lat, lng: centre.lng },
-        zoom: ground.heights.globalZoom,
-      }),
-    );
+      );
+      if (editorCity === null) return;
+      cityPlace = place;
+      if (!buildingsShown) editorCity.setShown(false);
+    };
+    if (tourAt !== null) mountCity(tourAt);
     undo.push(() => {
       editorCity?.dispose();
     });
@@ -709,6 +729,13 @@ export async function openGlobeEditor(
       documentNow = next;
       tourNow = manifestToWrite(next);
       nearTour = reachOf(tourNow);
+      if (editorCity === null) {
+        const at = tourCentre(
+          tourNow?.stations ?? [],
+          codeGeosOf(deps.levels()),
+        );
+        if (at !== null) mountCity(at);
+      }
       layer.setTour(tourNow, deps.levels());
     });
     undo.push(unsubscribe);
@@ -1233,10 +1260,13 @@ export async function openGlobeEditor(
       interfacePass = null;
     });
     /** The buildings' part of the stats, their parity measured against
-     *  the relief at the tour's centre. */
+     *  the relief at the place they stand at. */
     const cityStats = () =>
-      editorCity?.stats(ground.groundAt(centre.lat * DEG, centre.lng * DEG)) ??
-      null;
+      editorCity === null || cityPlace === null
+        ? null
+        : editorCity.stats(
+            ground.groundAt(cityPlace.lat * DEG, cityPlace.lng * DEG),
+          );
     /** The clouds' part of the stats (see the comment there). */
     const cloudStats = () => ({
       driftRate: view.state().cloudDriftRate,
@@ -1505,6 +1535,7 @@ export async function openGlobeEditor(
         air?.setClouds(on);
       },
       setBuildings(on) {
+        buildingsShown = on;
         editorCity?.setShown(on);
       },
       setRealTime(on) {

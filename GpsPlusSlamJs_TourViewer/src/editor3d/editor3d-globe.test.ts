@@ -1243,6 +1243,60 @@ describe("openGlobeEditor's wiring", () => {
     vi.stubGlobal("Worker", noWorker);
   });
 
+  // Why: a new tour has no centre; the view opens over a stand-in place
+  // in the creator's part of the world, where no buildings may load (it
+  // is not the tour). Once the tour gets its first placed station the
+  // buildings are mounted there, hidden still if the view hid them.
+  it("mounts the buildings only at a real tour centre, once the tour has one", async () => {
+    vi.stubGlobal("Worker", class {});
+    fakes.manifest = { stations: [] };
+    let listener: () => void = () => undefined;
+    let tourDocument = {};
+    const store = {
+      getState: () => ({
+        tourDocument,
+        editorView: { selected: null, modelFocus: null, modelPick: null },
+      }),
+      subscribe: (next: () => void) => {
+        listener = next;
+        return () => undefined;
+      },
+      dispatch: () => undefined,
+    };
+    open = await openGlobeEditor(
+      { ...deps(), store: store as unknown as Editor3dDeps["store"] },
+      {
+        ...readGlobeSwitch(""),
+        hidePx: 4,
+        crowdPx: 16,
+      },
+    );
+    const view = open;
+    expect(fakes.cityOptions).toEqual([]);
+    expect(view.stats().city).toBeNull();
+    view.setBuildings?.(false);
+    // An edit that leaves the tour without a centre mounts nothing.
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toEqual([]);
+    tourAt(0);
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toHaveLength(1);
+    expect(view.stats().city?.shown).toBe(false);
+    view.setBuildings?.(true);
+    view.setDistance(200);
+    frameAt(16);
+    expect(fakes.cityLoads.at(-1)).toMatchObject({
+      target: { lat: MUNICH.lat, lng: MUNICH.lon },
+    });
+    // A later edit keeps the one city.
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toHaveLength(1);
+    vi.stubGlobal("Worker", noWorker);
+  });
+
   // Why: the cloud shell takes the clouds as the relief takes the ground,
   // as in the lab: the air asks the relief mount for the shell's share at
   // the flat layer's share it planned.

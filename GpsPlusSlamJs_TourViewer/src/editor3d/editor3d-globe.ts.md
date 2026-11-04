@@ -126,7 +126,10 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - **The OSM buildings** (`editor3d-globe-city.ts` over the Globe
   package's `createGlobeCity`, its worker `globe-city-worker.ts` made as
   a module worker from `new URL("./globe-city-worker.ts", import.meta.url)`):
-  under the Earth-centred group at the tour's centre, on the relief's own
+  under the Earth-centred group at the tour's centre (mounted only once
+  the tour has a real centre: a new tour opens over a stand-in place, and
+  the store's first edit that gives it one mounts them, hidden if
+  `setBuildings(false)` came first), on the relief's own
   height source (`ground.heights`: Mapterhorn at zoom 12), so the city's
   ground and the drawn relief agree by construction
   (`stats().city.parityM`). The approach's start warms them up (a fresh
