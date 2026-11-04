@@ -594,6 +594,34 @@ describe("GatedOsmOverlay", () => {
     vi.restoreAllMocks();
   });
 
+  // Why: the fetch reads the body inside its time limit and hands on a new
+  // Response; a body-less status (204, 205, 304) cannot carry even an
+  // empty body there, so the rebuild threw a TypeError and a tile server's
+  // "no content" read as a failed request.
+  it("hands on a body-less answer (204, 205, 304) as it came", async () => {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+    });
+    for (const status of [204, 205, 304]) {
+      vi.spyOn(proto, "fetch").mockImplementation(() =>
+        Promise.resolve(new Response(null, { status })),
+      );
+      const res = (await overlay.fetch("a")) as Response;
+      expect(res.status).toBe(status);
+      expect(res.body).toBeNull();
+      vi.restoreAllMocks();
+    }
+    vi.spyOn(proto, "fetch").mockImplementation(() =>
+      Promise.resolve(new Response(new Uint8Array([1, 2]), { status: 200 })),
+    );
+    const ok = (await overlay.fetch("b")) as Response;
+    expect([...new Uint8Array(await ok.arrayBuffer())]).toEqual([1, 2]);
+    vi.restoreAllMocks();
+  });
+
   // Why: the request ceiling holds at the network edge too: a fetch over
   // the ceiling waits until the oldest request of the minute ages out.
   it("holds each fetch to the ceiling", async () => {

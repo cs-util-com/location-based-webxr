@@ -110,7 +110,8 @@ message }` of the last, or null). RangeError
     runs from the moment the ceiling lets a request through to the answer's
     body: the body is read inside the limit and handed on whole (a server
     that sends the headers and then stalls would otherwise hold the
-    request's slot while the library reads it), and an answer with a
+    request's slot while the library reads it; a body-less 204, 205 or
+    304 is handed on without one), and an answer with a
     success status calls `onAnswered` (the factory's sign that the server
     is back, `retryBackoffMs`). Past the limit the request is
     aborted and fails with a `TimeoutError` (the plugin marks the tile
@@ -187,7 +188,11 @@ update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
       with its texture: the reset clears the failed mark at once, so that
       alone tells nothing) starts the waits over, and a map request
       answered since the last retry cuts the next wait to the first step
-      (5 s; a 60 s refusal maps again about 60 s in, not 97 s). **The reset runs after the update's re-evaluation, never
+      (5 s; a 60 s refusal maps again about 60 s in, not 97 s). That cut
+      needs the view's other requests: a still camera asks for nothing
+      but the retries, so it waits the back-off out (the map about 97 s
+      after a 60 s refusal, pinned in `globe-osm-map-ready.test.ts`),
+      kept so an outage is not asked for every 5 s. **The reset runs after the update's re-evaluation, never
       before it**: the reset releases the regions at once, the library's
       region cache drops a released region a microtask later, and the
       library locks it anew only on the next animation frame. A

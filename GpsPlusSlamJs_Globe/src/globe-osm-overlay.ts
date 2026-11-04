@@ -513,6 +513,14 @@ const isLoaded = (held: unknown): boolean =>
  * RangeError for a url without `{z}/{x}/{y}` or a keep that is not an
  * integer >= 0; TypeError without a gate.
  */
+/** The statuses a Response must be made without a body for. */
+const NULL_BODY_STATUS: ReadonlySet<number> = new Set([204, 205, 304]);
+
+/** `res` again with the body read from it; a body-less status cannot
+ *  carry even an empty body. */
+const rebodied = (res: Response, body: ArrayBuffer): Response =>
+  new Response(NULL_BODY_STATUS.has(res.status) ? null : body, res);
+
 export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly gate: (range: number[], level: number) => boolean;
   private readonly ceiling: RequestCeiling;
@@ -744,7 +752,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
       if (!(res instanceof Response)) return res;
       const body = await untilAborted(res.arrayBuffer(), signal);
       if (res.ok) this.onAnswered();
-      return new Response(body, res);
+      return rebodied(res, body);
     } catch (err) {
       if (limit.signal.aborted && !options.signal?.aborted) {
         throw new DOMException(

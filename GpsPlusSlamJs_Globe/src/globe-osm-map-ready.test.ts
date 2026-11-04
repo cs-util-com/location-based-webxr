@@ -742,6 +742,7 @@ async function simulate(
   server: Server,
   giveUpRetries: number,
   timeoutS: number,
+  { background = true }: { background?: boolean } = {},
 ) {
   let clock = 0;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
@@ -809,6 +810,11 @@ async function simulate(
       new Response(new Uint8Array(1), { status: backgroundOk ? 200 : 429 }),
     ),
   );
+  const askBackground = async (i: number, t: number) => {
+    if (!background || i % 20 !== 0 || server(t).afterS >= 1) return;
+    backgroundOk = server(t).ok;
+    await osm.overlay.fetch("background");
+  };
   let heldS = 0;
   let bareS = 0;
   let mapAtS: number | null = null;
@@ -816,10 +822,7 @@ async function simulate(
   for (let i = 0; i * stepS < HORIZON_S; i++) {
     const t = i * stepS;
     clock = t * 1000;
-    if (i % 20 === 0 && server(t).afterS < 1) {
-      backgroundOk = server(t).ok;
-      await osm.overlay.fetch("background");
-    }
+    await askBackground(i, t);
     const a = answer as { atS: number; ok: boolean } | null;
     if (a && a.atS <= t) {
       answer = null;
@@ -923,5 +926,31 @@ describe("the give-up knobs over a throttling fake server", () => {
         expect(r.mapAtS!).toBeLessThan(backS + 10);
       }
     }
+  }, 120_000);
+
+  // Why: the cut to the first wait above rides on the view's OTHER
+  // requests (the creator's camera moving, one every 2 s in the sweep).
+  // A still camera asks for nothing else, so nothing tells it the server
+  // is back: its refused tile waits out the back-off (measured: the map
+  // at 97.3 s after a 60 s refusal, at every give-up count and limit).
+  // Kept on purpose: retrying every failed tile every 5 s through an
+  // outage is what the back-off exists to stop (the tile server's usage
+  // policy). Pinned here so a change to either side is seen: the map
+  // comes at most one last back-off step after the refusal ends.
+  it("a still camera: the map within one last back-off step of a 60 s refusal's end", async () => {
+    const lastWaitS = GLOBE_OSM.retryBackoffMs.at(-1)! / 1000;
+    const rows: string[] = [];
+    for (const n of [2, 3, 4]) {
+      for (const timeoutS of [30, 60, 120]) {
+        const r = await simulate(SERVERS["429 for 60 s"]!, n, timeoutS, {
+          background: false,
+        });
+        rows.push(`still N=${n} T=${timeoutS}s map at ${r.mapAtS ?? "-"}`);
+        expect(r.mapAtS).not.toBeNull();
+        expect(r.mapAtS!).toBeGreaterThan(60);
+        expect(r.mapAtS!).toBeLessThan(60 + lastWaitS + 2);
+      }
+    }
+    process.stderr.write(`\n${rows.join("\n")}\n`);
   }, 120_000);
 });
