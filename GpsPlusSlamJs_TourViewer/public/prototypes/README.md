@@ -187,6 +187,12 @@ wired into its logic: every interaction is faked.
   (`?deband=off|refine|fine|entry|strat`) with a banding measure per method.
   Both pages' frame meters follow the display's refresh rate as it changes;
   made 2026-11-04.
+- `globe-look-10-living-lod-r2/` - the fifth round, a copy of the living
+  clouds page: far clouds marched with longer steps so they stay until the
+  haze hides them (`?far=new|old`), the sun disc and halo hidden by the
+  cloud in front of it (`?sunfix=1|0`), and a medium quality setting
+  (`?tier=low|medium|high`, `?mset=a|b|c|d` for the candidates measured);
+  made 2026-11-04.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
