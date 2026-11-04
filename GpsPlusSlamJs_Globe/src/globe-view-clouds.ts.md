@@ -12,12 +12,16 @@
     `cloudShellShadow 0.5`, plus `cloudShellKm` (the cloud shell's height,
     3 km), `cloudShadow` (the shell's soft ground shadow, 0.6) and
     `cloudShellFlat`.
-  - `globeViewClouds(view)`: a `CloudsFactory` for the air; it gets the
-    air's ground sky and space pass and returns the clouds, or null where
-    the ground sky cannot draw (its slab is the cloud volume).
+  - `globeViewClouds(view, options?)`: a `CloudsFactory` for the air; it
+    gets the air's ground sky and space pass and returns the clouds, or
+    null where the ground sky cannot draw (its slab is the cloud volume).
+    `GlobeViewCloudsOptions.shadow` (0..1, RangeError otherwise) sets both
+    shadows' strength, the shell's own (`cloudShellShadow`) and the
+    ground's soft one (`cloudShadow`): an app's link knob; without it the
+    lab's 0.5 and 0.6.
   - `createCloudsParts(view, drawers)`: the real parts (scene depth, cloud
     volume, spherical volume), or null without the ground sky.
-  - `createGlobeViewClouds(view, parts)` returns `GlobeViewClouds`:
+  - `createGlobeViewClouds(view, parts, options?)` returns `GlobeViewClouds`:
     - `patch(tiles)`: the volume's shadow on every model `tiles` loads, and
       that relief's group remembered for the scene depth. Call before the
       haze's patch (the air does).
@@ -32,7 +36,13 @@
       no shell; the flat layer only weakens near the ground). Off keeps
       the render targets allocated: the switch saves frame time, not
       memory.
-    - `state()`: `{ on, flat, shellOn }` of the last step.
+    - `state()`: `{ on, flat, shellOn, shellShadow, surfaceShadow }` of
+      the last step (the shell's own shadow strength this frame, and the
+      surface's `uCloudShadow`).
+    - `shell()`: `{ drawn, share, weight, slabWeight }` of the shell's
+      `state()` (no GPU read-back: the pass's `alphaGrid` read-back
+      stalled a software-drawn page): an undrawn shell told from an empty
+      one.
     - `dispose()`: frees each part once (one that throws leaves the others
       to run); everything then does nothing.
 - Invariants & assumptions:

@@ -102,12 +102,6 @@ export const GLOBE_VIEW_CLOUDS = Object.freeze({
   cloudShellFlat: 1,
 } as const satisfies GlobeViewCloudKnobs);
 
-/** The same with the slab off, and so the shell (the lab's `cloudVolume=0`). */
-const CLOUDS_OFF: GlobeViewCloudKnobs = Object.freeze({
-  ...GLOBE_VIEW_CLOUDS,
-  cloudVolume: 0,
-});
-
 /** What the clouds read and write of the view (a `GlobeView` is one). */
 export interface CloudsView {
   readonly renderer: THREE.WebGLRenderer;
@@ -159,8 +153,19 @@ export interface GlobeViewClouds {
   render(frame: CloudsRenderFrame): void;
   /** The heavy clouds on (the default) or off. */
   setOn(on: boolean): void;
-  /** Whether they are on, and the last plan's flat share and shell. */
-  state(): { on: boolean; flat: number; shellOn: boolean };
+  /** Whether they are on, and the last plan's flat share and shell, the
+   *  shell's own ground shadow and the surface's (`uCloudShadow`). */
+  state(): {
+    on: boolean;
+    flat: number;
+    shellOn: boolean;
+    shellShadow: number;
+    surfaceShadow: number;
+  };
+  /** The shell's frames drawn and its share and weights now (its
+   *  `state()`; no GPU read-back): what a shadow check reads to tell an
+   *  undrawn shell from an empty one. */
+  shell(): { drawn: number; share: number; weight: number; slabWeight: number };
   /** Frees the three parts; idempotent; every part then does nothing. */
   dispose(): void;
 }
@@ -209,23 +214,60 @@ export function createCloudsParts(
  * over the air's ground sky and space pass, none where the ground sky
  * cannot draw.
  */
-export function globeViewClouds(view: CloudsView): CloudsFactory {
+export function globeViewClouds(
+  view: CloudsView,
+  options: GlobeViewCloudsOptions = {},
+): CloudsFactory {
   return (drawers) => {
     const parts = createCloudsParts(view, drawers);
-    return parts ? createGlobeViewClouds(view, parts) : null;
+    return parts ? createGlobeViewClouds(view, parts, options) : null;
   };
+}
+
+/** What an app may tune of the view's clouds. */
+export interface GlobeViewCloudsOptions {
+  /**
+   * The clouds' shadow strength, 0 (none) to 1 (black under a full
+   * cloud): the shell's own ground shadow near the ground and the
+   * surface's soft one from orbit both take it, so the ground under a
+   * full cloud keeps 1 - shadow of its light at every height. Absent: the
+   * lab's (0.5 near the ground, 0.6 from orbit).
+   */
+  readonly shadow?: number;
+}
+
+/**
+ * The knobs with an app's shadow strength (the lab's without one).
+ * RangeError for a strength that is not a number in 0..1.
+ */
+function knobsWith({ shadow }: GlobeViewCloudsOptions): GlobeViewCloudKnobs {
+  if (shadow === undefined) return GLOBE_VIEW_CLOUDS;
+  if (!(shadow >= 0 && shadow <= 1)) {
+    throw new RangeError(`the clouds' shadow must be in 0..1, got ${shadow}`);
+  }
+  return Object.freeze({
+    ...GLOBE_VIEW_CLOUDS,
+    cloudShellShadow: shadow,
+    cloudShadow: shadow,
+  });
 }
 
 /** The clouds for `view` over `parts`; see the module's comment. */
 export function createGlobeViewClouds(
   view: CloudsView,
   parts: CloudsParts,
+  options: GlobeViewCloudsOptions = {},
 ): GlobeViewClouds {
   const { sceneDepth, cloudVolume, shellVolume } = parts;
   const clouds = createGlobeCloudStep({ cloudVolume, shellVolume });
-  let knobs: GlobeViewCloudKnobs = GLOBE_VIEW_CLOUDS;
+  const onKnobs = knobsWith(options);
+  const offKnobs: GlobeViewCloudKnobs = Object.freeze({
+    ...onKnobs,
+    cloudVolume: 0,
+  });
+  let knobs: GlobeViewCloudKnobs = onKnobs;
   let relief: THREE.Object3D | null = null;
-  let last = { flat: 1, shellOn: false };
+  let last = { flat: 1, shellOn: false, shellShadow: 0, surfaceShadow: 0 };
   let disposed = false;
   const direction = new THREE.Vector3();
   return {
@@ -249,7 +291,12 @@ export function createGlobeViewClouds(
         shellShare *
         plan.flatShadow *
         plan.shadow.mapFactor;
-      last = { flat: plan.flat, shellOn: plan.shellOn };
+      last = {
+        flat: plan.flat,
+        shellOn: plan.shellOn,
+        shellShadow: plan.shadow.shell,
+        surfaceShadow: globe.surfaceUniforms.uCloudShadow.value,
+      };
       clouds.updateVolumes(knobs, {
         observerKm,
         cameraAltM,
@@ -280,9 +327,13 @@ export function createGlobeViewClouds(
       });
     },
     setOn(on) {
-      knobs = on ? GLOBE_VIEW_CLOUDS : CLOUDS_OFF;
+      knobs = on ? onKnobs : offKnobs;
     },
     state: () => ({ on: knobs.cloudVolume !== 0, ...last }),
+    shell() {
+      const { drawn, share, weight, slabWeight } = shellVolume.state();
+      return { drawn, share, weight, slabWeight };
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

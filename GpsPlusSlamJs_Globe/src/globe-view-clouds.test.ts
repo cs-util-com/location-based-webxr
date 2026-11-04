@@ -63,7 +63,7 @@ function fakeView(altitudeM: number, framed = true) {
 function fakeParts() {
   const log: string[] = [];
   const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
-  const shellFrames: { altitudeKm: number }[] = [];
+  const shellFrames: { altitudeKm: number; shadow: number }[] = [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
   const parts = {
@@ -96,10 +96,17 @@ function fakeParts() {
     shellVolume: {
       setEnabled: (on: boolean) => log.push(`shell ${on ? "on" : "off"}`),
       setResolution() {},
-      update(frame: { altitudeKm: number }) {
+      update(frame: { altitudeKm: number; shadow: number }) {
         shellFrames.push(frame);
       },
       render: () => log.push("shell"),
+      state: () => ({
+        drawn: log.filter((l) => l === "shell").length,
+        share: 0.5,
+        weight: 0.4,
+        slabWeight: 0.6,
+        enabled: true,
+      }),
       dispose: () => log.push("dispose shell"),
     },
   };
@@ -185,6 +192,12 @@ describe("createGlobeViewClouds", () => {
       expect(view.globe.cloudShell.heightM()).toBe(3000);
       expect(flats).toEqual([clouds.state().flat]);
       expect(clouds.state()).toMatchObject({ on: true, shellOn: true });
+      // The shadows this frame, for the page's checks: the shell's own
+      // ground shadow and the surface's (the uniform as set).
+      const { shellShadow, surfaceShadow } = clouds.state();
+      expect(shellShadow).toBeGreaterThanOrEqual(0);
+      expect(shellShadow).toBeLessThanOrEqual(1);
+      expect(surfaceShadow).toBe(view.globe.surfaceUniforms.uCloudShadow.value);
       expect(fakes.log).toContain("slab on");
       expect(fakes.log).toContain("shell on");
       expect(fakes.slabFrames[0]?.radiusKm).toBe(80);
@@ -217,6 +230,49 @@ describe("createGlobeViewClouds", () => {
       expect(shadow).toBeLessThanOrEqual(high);
     },
   );
+
+  // Why: an app tunes how dark the ground (and what stands on it) gets
+  // under a cloud: the editor wants about 70 % under a full cloud where
+  // the lab keeps its 50 %. One strength sets both shadows, the shell's
+  // own near the ground (a full cloud darkens the frame by it there) and
+  // the surface's from orbit, so the look holds at every height.
+  it.each([0, 0.3, 0.45, 0.6])(
+    "takes the page's shadow strength %d for both shadows",
+    (strength) => {
+      const nearParts = fakeParts();
+      createGlobeViewClouds(fakeView(10_000), nearParts.parts, {
+        shadow: strength,
+      }).step({ observerKm: 10, shareClouds: () => 1 });
+      expect(nearParts.shellFrames[0]?.shadow).toBeCloseTo(strength, 9);
+      const far = fakeView(6_000_000);
+      createGlobeViewClouds(far, fakeParts().parts, { shadow: strength }).step({
+        observerKm: 6000,
+        shareClouds: () => 1,
+      });
+      const surface = far.globe.surfaceUniforms.uCloudShadow.value;
+      expect(surface).toBeLessThanOrEqual(strength);
+      expect(surface).toBeGreaterThanOrEqual(strength * 0.8);
+    },
+  );
+
+  // Why: without a strength the clouds are the lab's (its shell shadow
+  // 0.5 near the ground), and a strength the shader cannot mean is
+  // refused at the boundary rather than drawn as a negative shadow.
+  it("keeps the lab's shadow without one and refuses one out of 0..1", () => {
+    const fakes = fakeParts();
+    createGlobeViewClouds(fakeView(10_000), fakes.parts).step({
+      observerKm: 10,
+      shareClouds: () => 1,
+    });
+    expect(fakes.shellFrames[0]?.shadow).toBe(
+      GLOBE_VIEW_CLOUDS.cloudShellShadow,
+    );
+    for (const shadow of [-0.1, 1.1, Number.NaN]) {
+      expect(() =>
+        createGlobeViewClouds(fakeView(10_000), fakeParts().parts, { shadow }),
+      ).toThrow(RangeError);
+    }
+  });
 
   // Why: with the world in ECEF there is no frame for the shell's law;
   // the shell stays off and the flat layer draws, as in the lab.
@@ -284,6 +340,24 @@ describe("createGlobeViewClouds", () => {
     clouds.render({ weight: 1 });
     expect(clouds.state().on).toBe(true);
     expect(fakes.log).toContain("slab");
+  });
+
+  // Why: a page's shadow check must tell a shell that was never drawn
+  // from one that drew nothing; `shell()` hands the pass's own counters
+  // (and only those: no read-back of its targets).
+  it("hands the shell's frames drawn, share and weights", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    expect(clouds.shell()).toEqual({
+      drawn: 0,
+      share: 0.5,
+      weight: 0.4,
+      slabWeight: 0.6,
+    });
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(clouds.shell().drawn).toBe(1);
   });
 
   // Why: the editor mounts and unmounts the view; every part is freed

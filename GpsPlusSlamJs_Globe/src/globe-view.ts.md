@@ -32,7 +32,8 @@
     `earthCentreWorld()`; `fitDistance()` and `refit()`; `startClock(setting)`,
     `clock()`, `sceneMs()`, `resetCloudDrift()`, `sunNow()`; `frame()`;
     `state()` (`frameAt`, `frameRecentres`, `siderealAngleRad`,
-    `cloudDriftRate`); `dispose()` (the surface out of the scene and
+    `cloudDriftRate`, `cloudLonOffsetRad`: the clouds' longitude offset as
+    last drawn, rad in [0, 2 pi), what a motion check reads); `dispose()` (the surface out of the scene and
     freed, the sky pass, the renderer; the page stops its loop first;
     a second call does nothing and `frame()` afterwards throws an Error;
     the WebGL context is not released, since three's `renderer.dispose()`
