@@ -513,13 +513,18 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#shell-calls")).toBeHidden();
   await page.locator("#shell-debug").click();
   await expect(page.locator("#shell-calls")).toContainText("draw calls");
-  // Why: three.js resets its counters at every render, so the status bar
-  // once read only the frame's last pass (a handful of calls). The figure
-  // is the whole frame's, so it holds at least the main scene's own
-  // render; no fixed count, the scene's varies with the tiles shown.
-  const calls = (await view3d(page)).globe.drawCalls;
-  expect(calls.scene).toBeGreaterThan(0);
-  expect(calls.frame).toBeGreaterThanOrEqual(calls.scene);
+  // This is the older 3D view (`openSampleIn3d`: `?globe=0`), whose stats
+  // carry no globe: its bar shows the whole frame's count, never 0 with a
+  // tour drawn. The globe view's whole-frame count against its scene's
+  // own render is held in editor3d-globe.spec.js.
+  await expect
+    .poll(async () =>
+      Number.parseInt(
+        (await page.locator("#shell-calls").textContent()) ?? "",
+        10,
+      ),
+    )
+    .toBeGreaterThan(0);
   expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
   expect(await rejections(page)).toEqual([]);
 });
