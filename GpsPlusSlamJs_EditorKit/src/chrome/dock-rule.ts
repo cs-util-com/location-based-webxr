@@ -1,9 +1,9 @@
 /**
- * The 3D view's docks on a narrow window, pure. The tree (left, 272 px)
+ * The 3D view's docks on a narrow window, pure. The tree (left, 248 px)
  * and the inspector (right, 290 px) lie over the scene; from
  * `DOCKS_SIDE_BY_SIDE_PX` up they sit side by side. Below it - a tablet
  * in portrait, a 768 px window - two open docks would leave a strip of
- * about 200-260 px of scene, under `SCENE_FLOOR_PX`, so one is open at
+ * about 230-280 px of scene, under `SCENE_FLOOR_PX`, so one is open at
  * a time: opening the inspector (a selection, or unfolding it) folds the
  * tree to its header, and unfolding the tree folds the inspector. Below
  * `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
@@ -12,17 +12,18 @@
  */
 
 /** The tree dock's width (px), as `editor-shell.css` draws it. */
-export const TREE_DOCK_PX = 272;
+export const TREE_DOCK_PX = 248;
 /** The inspector dock's width (px), as `editor-shell.css` draws it. */
 export const INSPECTOR_DOCK_PX = 290;
 /**
  * The narrowest strip of scene (px) left between two open docks. Not a
  * measurement: a strip of about a third of a landscape phone, which still
- * shows a station and its surroundings. The strip is 206 px at 768, 258 at
- * 820, 338 at 900 and 462 at 1024; the floor keeps 900 px as the first
- * width with both docks open.
+ * shows a station and its surroundings. The strip is 230 px at 768, 282 at
+ * 820, 362 at 900 and 486 at 1024; the floor keeps 900 px as the first
+ * width with both docks open (the tree narrows to 210 px from 1100 px
+ * down, so the strip there is wider than this rule counts).
  */
-export const SCENE_FLOOR_PX = 338;
+export const SCENE_FLOOR_PX = 362;
 
 /** From this window width (px) up, both docks may be open at once: the
  *  two docks and the scene's floor between them. */

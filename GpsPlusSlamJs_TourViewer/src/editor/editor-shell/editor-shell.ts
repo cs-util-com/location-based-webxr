@@ -104,6 +104,9 @@ import { createBottomPanel } from "./bottom-panel.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
+import { createTreeAddMenu, type AddKind } from "./tree-add-menu.js";
+import { createAddPalette, isPaletteKey } from "./add-palette.js";
+import { stationTitle } from "../../station-run.js";
 import { buildTree, stationGroups } from "./tree-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
 import { createLongTextDock } from "../long-text/long-text-dock.js";
@@ -184,8 +187,9 @@ interface ShellEditCommands {
   groundItems(
     items: readonly { readonly id: string; readonly alt: number }[],
   ): void;
-  /** A new pin in the station, at a free spot near its anchor. */
-  addPin(stationId: string): void;
+  /** A new item of `kind` in the station, at a free spot near its
+   *  anchor. */
+  addItem(stationId: string, kind: AddKind): void;
   /** A long text's narration as it stands (`EditorSession.narration`). */
   narration(
     itemId: string,
@@ -326,8 +330,39 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     stationsHead: byId<HTMLButtonElement>("tree-stations"),
     fold: byId<HTMLButtonElement>("tree-fold"),
     add: byId<HTMLButtonElement>("tree-add"),
+    collapse: byId<HTMLButtonElement>("tree-collapse"),
+    search: byId<HTMLInputElement>("tree-search"),
     body: byId("tree-body"),
   };
+  // A row's "+" and an empty station's "Add content": one type menu.
+  const addMenu = createTreeAddMenu({
+    body: tree.body,
+    host: document.body,
+    choose: (id, kind) => {
+      addInPlace(id, kind);
+    },
+  });
+  // Ctrl+K: a kind and a place in one query.
+  const palette = createAddPalette({
+    host: document.body,
+    stations: () =>
+      (manifest()?.stations ?? []).map((station, index) => ({
+        id: station.id,
+        number: index + 1,
+        title: stationTitle(station, index + 1),
+      })),
+    selectedStation: () => selectedStationId(),
+    add: (what) => {
+      if (what.kind === "station") addStationAtCentre();
+      else addInPlace(what.stationId, what.kind);
+    },
+  });
+  /** Add to a station, unfolded first so the new row shows (and the
+   *  focus that follows it has a row to land on). */
+  function addInPlace(id: string, kind: AddKind): void {
+    store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+    deps.edits.addItem(id, kind);
+  }
   const inspector = {
     root: byId("shell-inspector"),
     head: byId("inspector-head"),
@@ -603,6 +638,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
+  /** The tree drawn from the store and its search as they stand. */
+  const drawTreeNow = () => {
+    const tour = manifest();
+    const ui = state().editorView;
+    drawTree(
+      tree,
+      buildTree({
+        stations: tour?.stations ?? [],
+        assets: tour?.assets ?? [],
+        codes: deps.codes(),
+        view: ui,
+        layers: SHELL_LAYERS,
+        query: tree.search.value,
+      }),
+      ui.foldedDocks.tree,
+      pictures,
+    );
+  };
+
   const draw = () => {
     const { tourDocument: doc, editorView: ui } = state();
     const busyAct = busy?.act ?? null;
@@ -620,21 +674,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const before = drawn?.ui ?? null;
     drawn = { doc, ui, positionOpen, busy: busyAct };
     const tour = manifest();
-    const codes = deps.codes();
-    if (docChanged || uiChanged) {
-      drawTree(
-        tree,
-        buildTree({
-          stations: tour?.stations ?? [],
-          assets: tour?.assets ?? [],
-          codes,
-          view: ui,
-          layers: SHELL_LAYERS,
-        }),
-        ui.foldedDocks.tree,
-        pictures,
-      );
-    }
+    if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
     drawInspectorNow(model);
     drawActs(model);
@@ -997,6 +1037,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // --- the tree's and the inspector's clicks ------------------------------
   tree.body.addEventListener("click", (event) => {
     const target = event.target as Element;
+    const adder = target.closest<HTMLElement>("[data-add], [data-fill]");
+    if (adder !== null) {
+      const id = adder.dataset["add"] ?? adder.dataset["fill"] ?? "";
+      const title =
+        adder.closest(".card")?.querySelector<HTMLElement>(".pick")?.title ??
+        "";
+      addMenu.openFor(adder, id, title);
+      return;
+    }
     const section = target.closest<HTMLElement>("[data-section]");
     if (section !== null) {
       const key = section.dataset["section"] as TreeSection;
@@ -1084,7 +1133,30 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }),
     );
   });
-  tree.add.addEventListener("click", () => {
+  // The search draws the tree again as it is typed; the field is the
+  // page's, never redrawn, so it keeps its focus and its text.
+  tree.search.addEventListener("input", () => {
+    drawTreeNow();
+    pictures.sweep();
+  });
+  tree.search.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || tree.search.value === "") return;
+    // Escape empties the search first; the shell's Escape (drop the
+    // selection) waits for the next press.
+    event.stopPropagation();
+    tree.search.value = "";
+    drawTreeNow();
+    pictures.sweep();
+  });
+  tree.collapse.addEventListener("click", () => {
+    creatorTouchesTree();
+    for (const id of state().editorView.openStations) {
+      store.dispatch(editorViewActions.stationFolded({ id, open: false }));
+    }
+  });
+  /** A new station at the centre of the view: the tree's "+" and the
+   *  palette's New station. */
+  function addStationAtCentre(): void {
     if (view === null) return;
     const place = view.centre();
     if (place === null) {
@@ -1092,7 +1164,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     deps.stations.add(place, "centre");
-  });
+  }
+  /** The station the selection is, or holds the selected item; null. */
+  function selectedStationId(): string | null {
+    const selected = state().editorView.selected;
+    if (selected === null) return null;
+    if (selected.startsWith(STATION_PREFIX)) {
+      return selected.slice(STATION_PREFIX.length);
+    }
+    return (
+      manifest()?.stations.find((s) => s.blocks.some((b) => b.id === selected))
+        ?.id ?? null
+    );
+  }
+  tree.add.addEventListener("click", addStationAtCentre);
   createTreeDrag({
     body: tree.body,
     cards: ".card[data-station]",
@@ -1148,7 +1233,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (act !== undefined) modelAct(selected, act);
     if (act === "add-pin" && selected.startsWith(STATION_PREFIX)) {
-      deps.edits.addPin(selected.slice(STATION_PREFIX.length));
+      deps.edits.addItem(selected.slice(STATION_PREFIX.length), "pin");
     }
     if (
       act?.startsWith("image:") === true &&
@@ -1278,6 +1363,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       event.stopPropagation();
       return;
     }
+    // Ctrl+K adds anything (`add-palette.ts`); in a field it is the
+    // field's (the long-text writer's Link key).
+    if (isPaletteKey(event) && !inField(event.target) && !deps.dialogOpen()) {
+      event.preventDefault();
+      event.stopPropagation();
+      palette.open();
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -1361,6 +1454,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       document.removeEventListener("pointerdown", onOutside);
       window.removeEventListener("resize", onResize);
       showHelp(false);
+      addMenu.close(false);
+      palette.close(false);
       panel.hide();
       ground.close();
       // Emptied before the pictures go: a later draw of the same selection

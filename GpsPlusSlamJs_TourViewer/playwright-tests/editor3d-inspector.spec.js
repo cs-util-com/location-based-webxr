@@ -227,7 +227,15 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).description)
     .toBe("Where the market\nmeets");
   expect(await revision(page)).toBe(start + 2);
-  await expect(field(page, "radius")).toBeFocused();
+  // A button is handed the focus too: the Place disclosure is next, and
+  // the radius is in it, first.
+  await expect(act(page, "position")).toBeFocused();
+  await expect(act(page, "position")).toContainText("Place");
+  await act(page, "position").press("Enter");
+  await expect(act(page, "position")).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator("#shell-inspector .pos .f").first().locator(".flabel, label"),
+  ).toHaveText("Radius");
 
   // The radius, typed with a comma, lowered under the pin: the pin stays
   // in the station, and a line says it stands outside the circle.
@@ -237,8 +245,6 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).foundRadiusM)
     .toBe(3.5);
   expect(await revision(page)).toBe(start + 3);
-  // A button is handed the focus too: the Position disclosure is next.
-  await expect(act(page, "position")).toBeFocused();
   await expect(page.locator("#shell-inspector .warn")).toHaveText(
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
@@ -288,6 +294,7 @@ test("a station's name, description and radius typed in the inspector are one st
   await expect(field(next, "description")).toHaveValue(
     "Where the market\nmeets",
   );
+  await act(next, "position").click();
   await expect(field(next, "radius")).toHaveValue("3.5");
 });
 
@@ -618,7 +625,8 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
       .editor()
       .editStation("a", { foundRadiusM: 24 }),
   );
-  await expect(field(page, "radius")).toHaveValue("24.0");
+  // Drawn again: the Place row says the new radius.
+  await expect(act(page, "position").locator(".sum")).toContainText("r 24 m");
   expect(await revision(page)).toBe(typedFrom + 1);
   await expect(field(page, "description")).toBeFocused();
   await expect(field(page, "description")).toHaveValue("By the foun");
@@ -629,7 +637,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
     .poll(async () => (await stationNow(page, "a")).description)
     .toBe("By the fountain");
   expect(await revision(page)).toBe(typedFrom + 2);
-  await expect(field(page, "radius")).toBeFocused();
+  await expect(act(page, "position")).toBeFocused();
   await page.locator("#studio-undo").click();
   await expect
     .poll(async () => (await stationNow(page, "a")).description ?? "")
@@ -749,11 +757,11 @@ async function expectInspectorLayout(page, size) {
     Math.abs(tag.y + tag.height / 2 - (thumb.y + thumb.height / 2)),
     at,
   ).toBeLessThanOrEqual(1);
-  // Position, open: the anchor, then the heading, then the height.
+  // Place, open: the radius, then the anchor, the heading, the height.
   const rows = await page
     .locator("#shell-inspector .pos > .f > :is(label, .flabel)")
     .allTextContents();
-  expect(rows, at).toEqual(["Anchor", "Heading", "Height"]);
+  expect(rows, at).toEqual(["Radius", "Anchor", "Heading", "Height"]);
 }
 
 test("the inspector's fields sit in place at a phone, a phone in landscape, a tablet and a desktop", async ({

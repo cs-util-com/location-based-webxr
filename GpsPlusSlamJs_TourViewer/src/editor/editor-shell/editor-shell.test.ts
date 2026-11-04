@@ -145,7 +145,7 @@ function setUp() {
     model: vi.fn((): "written" => "written"),
     scene: vi.fn(() => true),
     groundItems: vi.fn(),
-    addPin: vi.fn(),
+    addItem: vi.fn(),
     narration: vi.fn(() =>
       Promise.resolve({ kind: "refused" as const, reason: "none" }),
     ),
@@ -256,6 +256,206 @@ describe("the tree's add", () => {
   });
 });
 
+describe("the tree's add in place", () => {
+  /** The station's "+" as the tree draws it now. */
+  const plus = (id: string) =>
+    document.querySelector<HTMLElement>(`#tree-body [data-add="${id}"]`);
+  const menu = () => document.getElementById("tree-add-menu");
+
+  // Why: a row's "+" adds to that station, from its type menu, and the
+  // new row shows in place: the station unfolds. The add selects what it
+  // made, which draws the tree again from inside the action; the focus
+  // must come back to the station's "+" drawn again, not fall to the
+  // page, so the next add is one key away.
+  it("adds the kind chosen to the row's station, unfolded, the focus on its + after the add's own redraw", () => {
+    const { edits, select, store, shell } = setUp();
+    edits.addItem.mockImplementation((id: string) => {
+      select(`p${id}`);
+    });
+    const before = plus("b");
+    before?.click();
+    expect(menu()?.hidden).toBe(false);
+    expect(before?.getAttribute("aria-expanded")).toBe("true");
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="longText"]')
+      ?.click();
+    expect(edits.addItem).toHaveBeenCalledWith("b", "longText");
+    expect(store.getState().editorView.openStations).toContain("b");
+    expect(menu()?.hidden).toBe(true);
+    const after = plus("b");
+    expect(after).not.toBe(before);
+    expect(document.activeElement).toBe(after);
+    expect(after?.getAttribute("aria-expanded")).toBe("false");
+    shell.hide();
+  });
+
+  // Why: the menu's Escape is its own - it closes the menu and stops
+  // there, the selection kept (the page's Escape drops it).
+  it("closes on Escape with the selection kept and the focus on the +", () => {
+    const { edits, select, store, shell } = setUp();
+    select("station:a");
+    plus("a")?.click();
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(menu()?.hidden).toBe(true);
+    expect(store.getState().editorView.selected).toBe("station:a");
+    expect(document.activeElement).toBe(plus("a"));
+    expect(edits.addItem).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  // Why: an empty station's line offers "Add content", the same menu for
+  // the same station - never a second way to add.
+  it("opens the same menu from an empty station's Add content", () => {
+    const { edits, store, shell } = setUp();
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [{ ...station("c", 0), blocks: [] }],
+        },
+      }),
+    );
+    store.dispatch(editorViewActions.stationFolded({ id: "c", open: true }));
+    document.querySelector<HTMLElement>('#tree-body [data-fill="c"]')?.click();
+    expect(menu()?.hidden).toBe(false);
+    expect(menu()?.getAttribute("aria-label")).toBe("Add to Station c");
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="pin"]')
+      ?.click();
+    expect(edits.addItem).toHaveBeenCalledWith("c", "pin");
+    shell.hide();
+  });
+});
+
+describe("the Ctrl+K palette", () => {
+  const ctrlK = (target: EventTarget = document.body) => {
+    const event = new KeyboardEvent("keydown", {
+      key: "k",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(event);
+    return event;
+  };
+  const palette = () => document.getElementById("add-palette");
+  const input = () =>
+    document.getElementById("add-palette-input") as HTMLInputElement;
+  const typeQuery = (text: string) => {
+    input().value = text;
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const enter = () =>
+    input().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+
+  // Why: Ctrl+K adds by kind and place in one query, its place the
+  // selection's station when the query names none - an item selected
+  // counts as its station - and Chrome's own Ctrl+K (the address bar's
+  // search) must not run instead.
+  it("opens on Ctrl+K and adds to the selection's station, an item's station for a selected item", () => {
+    const { edits, select, shell } = setUp();
+    select("pb");
+    const event = ctrlK();
+    expect(event.defaultPrevented).toBe(true);
+    expect(palette()?.hidden).toBe(false);
+    expect(document.activeElement).toBe(input());
+    typeQuery("long");
+    enter();
+    expect(edits.addItem).toHaveBeenCalledWith("b", "longText");
+    expect(palette()?.hidden).toBe(true);
+    ctrlK();
+    typeQuery("pin 1");
+    enter();
+    expect(edits.addItem).toHaveBeenLastCalledWith("a", "pin");
+    shell.hide();
+  });
+
+  // Why: its New station is the tree's "+" - the same place, the same
+  // words when the view has none.
+  it("adds a new station at the view's centre", () => {
+    const { deps, shell } = setUp();
+    ctrlK();
+    typeQuery("new station");
+    enter();
+    expect(deps.stations.add).toHaveBeenCalledWith(
+      { lat: 48.1371, lon: 11.5754, alt: 560 },
+      "centre",
+    );
+    shell.hide();
+  });
+
+  // Why: in a field Ctrl+K is the field's (the long-text writer's Link
+  // key), and over a dialog it is the dialog's; and the palette is gone
+  // with the view.
+  it("leaves Ctrl+K to a field and to a dialog, and closes with the view", () => {
+    const { deps, shell } = setUp();
+    const search = document.getElementById("tree-search");
+    search?.focus();
+    const typed = ctrlK(search ?? document.body);
+    expect(typed.defaultPrevented).toBe(false);
+    expect(palette()?.hidden).toBe(true);
+    (deps as { dialogOpen: () => boolean }).dialogOpen = () => true;
+    ctrlK();
+    expect(palette()?.hidden).toBe(true);
+    (deps as { dialogOpen: () => boolean }).dialogOpen = () => false;
+    ctrlK();
+    expect(palette()?.hidden).toBe(false);
+    shell.hide();
+    expect(palette()?.hidden).toBe(true);
+  });
+});
+
+describe("the tree's search and its Fold every station", () => {
+  /** The stations the tree lists now. */
+  const listed = () =>
+    [...document.querySelectorAll<HTMLElement>("#tree-body .card")].map(
+      (c) => c.dataset["station"],
+    );
+
+  // Why: the search is typed into a field the tree never redraws, so it
+  // keeps its focus and its text while the list under it follows each
+  // letter; Escape empties it before it drops the selection, and a
+  // station's draw from the store keeps what is searched.
+  it("lists what is typed as it is typed, and Escape empties it first", () => {
+    const { select, store, shell } = setUp();
+    select("station:a");
+    const search = document.getElementById("tree-search") as HTMLInputElement;
+    search.focus();
+    search.value = "pin b";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(listed()).toEqual(["b"]);
+    expect(document.activeElement).toBe(search);
+    // A draw from the store (a fold) keeps the search.
+    store.dispatch(editorViewActions.stationFolded({ id: "a", open: true }));
+    expect(listed()).toEqual(["b"]);
+    search.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(search.value).toBe("");
+    expect(listed()).toEqual(["a", "b"]);
+    expect(store.getState().editorView.selected).toBe("station:a");
+    shell.hide();
+  });
+
+  // Why: an unfolded station lists all its items; with several unfolded
+  // the list gets long, and one press folds them all back to a line each.
+  it("folds every unfolded station in one press", () => {
+    const { store, shell } = setUp();
+    for (const id of ["a", "b"]) {
+      store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+    }
+    expect(document.querySelectorAll("#tree-body .card.open")).toHaveLength(2);
+    document.getElementById("tree-collapse")?.click();
+    expect(store.getState().editorView.openStations).toEqual([]);
+    expect(document.querySelectorAll("#tree-body .card.open")).toHaveLength(0);
+    shell.hide();
+  });
+});
+
 describe("the inspector's typed fields", () => {
   it("are written to the selection they were typed for when the selection changes", () => {
     const { select, edits, shell } = setUp();
@@ -354,7 +554,10 @@ describe("the inspector's typed fields", () => {
         what: "radius",
       }),
     );
-    expect(field("radius").value).toBe("30.0");
+    // Drawn again: the folded Place says the new radius.
+    expect(
+      document.querySelector("#shell-inspector .disc .sum")?.textContent,
+    ).toMatch(/^r 30 m/);
     expect(edits.station).not.toHaveBeenCalled();
     expect(field("description").value).toBe("By the foun");
     expect(document.activeElement).toBe(field("description"));
@@ -395,14 +598,14 @@ describe("the inspector's typed fields", () => {
     });
     select("station:a");
     const typed = typeInto("description", "By the fountain");
-    const radius = field("radius");
+    const name = field("title");
     typed.dispatchEvent(
-      new FocusEvent("focusout", { bubbles: true, relatedTarget: radius }),
+      new FocusEvent("focusout", { bubbles: true, relatedTarget: name }),
     );
     expect(edits.station).toHaveBeenCalledTimes(1);
     // Drawn again: a new field under the same name, and it has the focus.
-    expect(field("radius")).not.toBe(radius);
-    expect(document.activeElement).toBe(field("radius"));
+    expect(field("title")).not.toBe(name);
+    expect(document.activeElement).toBe(field("title"));
     shell.hide();
   });
 });

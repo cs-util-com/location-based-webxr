@@ -41,6 +41,9 @@
   --s-dock-top: var(--s-load-h);
   /* The inspector's width, which the map controls keep clear of. */
   --s-insp-w: 290px;
+  /* The tree dock: 248 px, 210 px from 1100 px down (a small laptop,
+   * a tablet in landscape), about half a phone. */
+  --s-tree-w: 248px;
   /* The bottom panel's severities and its all-clear. */
   --s-warn: #e9b86b;
   --s-info: #8fa6c0;
@@ -373,7 +376,7 @@ body[data-view="3d"] #view3d {
 
 #shell-tree {
   left: 0;
-  width: 272px;
+  width: var(--s-tree-w);
   border-left: 0;
 }
 
@@ -432,6 +435,146 @@ body[data-view="3d"] #view3d {
   display: none;
 }
 
+/* The tree's keys in words, under its list at the dock's foot (the
+ * explorer's footer); not on a phone, which has no keyboard, nor folded. */
+#tree-body {
+  flex: 1 1 auto;
+}
+
+.treefoot {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--s-line);
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.treefoot > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treefoot kbd {
+  padding: 0 3px;
+  border: 1px solid var(--s-line2);
+  border-radius: 3px;
+  font: 10px var(--s-mono);
+}
+
+.dock.collapsed .treefoot {
+  display: none;
+}
+
+/* The Ctrl+K palette: a field over the view, its rows under it. */
+#add-palette-back {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgb(10 11 13 / 45%);
+}
+
+#add-palette {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  z-index: 1101;
+  width: min(540px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: rgb(42 45 50 / 98%);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  transform: translateX(-50%);
+  color-scheme: dark;
+}
+
+#add-palette[hidden],
+#add-palette-back[hidden] {
+  display: none;
+}
+
+#add-palette .pline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--s-line2);
+  color: var(--s-muted);
+}
+
+#add-palette-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--s-text);
+  font: 13px var(--s-sans);
+}
+
+#add-palette-list {
+  max-height: min(360px, 55vh);
+  overflow: auto;
+  padding: 4px;
+}
+
+#add-palette .pr {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#add-palette .pr[aria-selected="true"],
+#add-palette .pr:hover {
+  background: var(--s-bg3);
+}
+
+#add-palette .pr svg.i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--s-accent-text);
+}
+
+#add-palette .pl {
+  white-space: nowrap;
+}
+
+#add-palette .pt {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  padding-left: 10px;
+  color: var(--s-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#add-palette .pempty {
+  padding: 14px 10px;
+  color: var(--s-dim);
+}
+
+#add-palette .pfoot {
+  padding: 6px 10px;
+  border-top: 1px solid var(--s-line);
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
 .ib {
   display: inline-flex;
   flex: none;
@@ -451,56 +594,89 @@ body[data-view="3d"] #view3d {
   color: var(--s-text);
 }
 
-/* The tree: the stations' story cards. */
+/* The tree's search: above the list, kept across the list's draws. */
+.tsearch {
+  flex: none;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--s-line);
+}
+
+.dock.collapsed .tsearch,
+#shell-tree.collapsed #tree-collapse {
+  display: none;
+}
+
+.tsearch input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: var(--s-bg0);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.tsearch input:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: -1px;
+}
+
+.nomatch {
+  padding: 10px 12px;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+/* The tree: the stations as a file explorer's rows, flush with the dock
+ * and with each other. */
 .cards {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 8px 4px;
+  padding: 4px 0;
 }
 
-.card {
-  overflow: hidden;
-  border: 1px solid var(--s-line2);
-  border-radius: 6px;
-  background: var(--s-bg2);
-}
-
-.card:hover {
-  border-color: #4a4e56;
-}
-
-.card.ctx {
-  border-color: var(--s-accent-line);
-}
-
-.card.sel {
-  border-color: var(--s-accent);
-  box-shadow: 0 0 0 1px var(--s-accent);
-}
-
-/* A station's row: one 28 px line - its button (the number chip, then
- * the name beside it, cut with an ellipsis), then the grip and the fold
- * arrow beside it in the page's order, never inside it. */
+/* A station's row: one 28 px line - its grip and its fold arrow, its
+ * button (the number chip, then the name beside it, cut with an
+ * ellipsis), then its marks, none inside another. The selection is the
+ * accent's tint with a 2 px bar at its left. */
 .card > .head {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 28px;
-  padding-right: 5px;
+  padding: 0 4px;
   cursor: pointer;
   user-select: none;
+}
+
+.card > .head:hover {
+  background: rgb(255 255 255 / 3.5%);
+}
+
+.card.ctx > .head {
+  background: rgb(233 162 59 / 5%);
+}
+
+.card.sel > .head {
+  background: var(--s-accent-bg);
+  box-shadow: inset 2px 0 0 var(--s-accent);
+}
+
+.cards:focus-within .card.sel > .head {
+  background: rgb(233 162 59 / 22%);
 }
 
 .head .pick {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   align-self: stretch;
   min-width: 0;
-  padding: 0 0 0 7px;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -517,11 +693,15 @@ body[data-view="3d"] #view3d {
 
 .head .n {
   flex: none;
-  padding: 1px 5px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 3px;
   border-radius: 3px;
-  background: var(--s-bg3);
+  background: #3d5a78;
   color: #e6f0fa;
   font: 600 10px var(--s-mono);
+  line-height: 16px;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -564,7 +744,7 @@ body[data-view="3d"] #view3d {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 16px;
   height: 20px;
   padding: 0;
   border: 0;
@@ -578,23 +758,148 @@ body[data-view="3d"] #view3d {
   color: var(--s-text);
 }
 
-/* An unfolded station's picture, under its row: only when it has one. */
+.head .tw svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+/* A row's marks: an unlocked station's, and the count of a folded one. */
+.head .lockg {
+  display: inline-flex;
+  flex: none;
+  color: var(--s-dim);
+}
+
+.head .lockg svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.head .meta,
+.folder .meta {
+  flex: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+/* An unfolded station's picture, under its row: only when it has one,
+ * in line with its items. */
 .card > .pic {
-  height: 72px;
+  height: 54px;
+  margin: 2px 8px 4px 54px;
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
   background: #33363c center / cover no-repeat;
 }
 
-.card > .ds {
-  padding: 5px 9px 0;
+.kids {
+  padding: 0 0 2px;
+}
+
+.emptyrow {
+  margin: 2px 8px 6px 54px;
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* An empty station's "Add content": a link's look, the type menu. */
+.emptyrow .fill {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--s-accent-text);
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+/* A row's "+", its last piece: shown where the pointer is, on the
+ * selection, on the keyboard's focus and while its menu is open, as the
+ * explorer shows it (always on a phone, which has no pointer over it). */
+.head .add {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.head:hover .add,
+.card.sel .head .add,
+.head .add:focus-visible,
+.head .add[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.head .add svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+/* The tree's type menu: under the "+" pressed, in the window. */
+#tree-add-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  min-width: 250px;
+}
+
+#tree-add-menu .mhead {
+  max-width: 300px;
   overflow: hidden;
-  color: var(--s-muted);
+  padding: 4px 9px 2px;
+  color: var(--s-dim);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kids {
-  padding: 3px 0 4px;
+#tree-add-menu [role="menuitem"] {
+  gap: 9px;
+  min-height: 28px;
+  padding: 0 9px;
+}
+
+#tree-add-menu [role="menuitem"] > svg.i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--s-accent-text);
+}
+
+#tree-add-menu [role="menuitem"][aria-disabled="true"] > svg.i {
+  color: var(--s-dim);
+}
+
+#tree-add-menu .hint {
+  max-width: 190px;
+  margin-left: auto;
+  overflow: hidden;
+  padding-left: 14px;
+  color: var(--s-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+/* A story folder's row, its entries a level deeper. */
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 60px;
+  color: var(--s-text);
+}
+
+.folder .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ic.story {
+  color: var(--s-accent-text);
 }
 
 .kid,
@@ -621,8 +926,14 @@ body[data-view="3d"] #view3d {
   outline-offset: -2px;
 }
 
+/* An item's row: its icon under its station's name. */
 .kid {
-  padding: 0 8px 0 12px;
+  height: 26px;
+  padding: 0 8px 0 60px;
+}
+
+.kid.deep {
+  padding-left: 76px;
 }
 
 .row {
@@ -630,7 +941,7 @@ body[data-view="3d"] #view3d {
 }
 
 .kid:hover {
-  background: var(--s-bg3);
+  background: rgb(255 255 255 / 3.5%);
 }
 
 .row:hover {
@@ -640,6 +951,10 @@ body[data-view="3d"] #view3d {
 .kid.sel,
 .row.sel {
   background: var(--s-accent-bg);
+}
+
+.cards:focus-within .kid.sel {
+  background: rgb(233 162 59 / 22%);
 }
 
 .kid.sel::before,
@@ -664,14 +979,6 @@ body[data-view="3d"] #view3d {
 .kid.sel .nm,
 .row.sel .nm {
   color: #fff;
-}
-
-.kid.empty {
-  height: auto;
-  padding: 4px 10px 4px 12px;
-  color: var(--s-dim);
-  line-height: 1.35;
-  white-space: normal;
 }
 
 .ic {
@@ -1385,7 +1692,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
-  left: 272px;
+  left: var(--s-tree-w);
 }
 
 #shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
@@ -2091,6 +2398,10 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 @media (width <= 1100px) {
+  :root {
+    --s-tree-w: 210px;
+  }
+
   #shell-panel .perf {
     grid-template-columns: minmax(0, 1fr) 210px;
   }
@@ -2193,8 +2504,9 @@ body[data-view="3d"] #view3d .view3d-canvas {
   color: var(--s-muted);
 }
 
-/* A card's grip: in its row beside its fold arrow, the same height, 4 px
- * apart (the row's gap). */
+/* A card's grip: first in its row, beside its fold arrow, the same
+ * height, 4 px apart (the row's gap). Shown where the pointer is, on the
+ * selection and on a touch screen, as the explorer shows it. */
 .head .grip {
   position: relative;
   display: flex;
@@ -2206,13 +2518,24 @@ body[data-view="3d"] #view3d .view3d-canvas {
   border-radius: 4px;
   color: var(--s-muted);
   cursor: grab;
+  opacity: 0;
   touch-action: none;
+}
+
+.head:hover .grip,
+.card.sel .head .grip,
+.card.dragging .head .grip {
+  opacity: 0.9;
 }
 
 /* On a touch screen the grip takes a finger: its hit area grows to
  * 24 x 24 px around the drawn 16 x 20 (WCAG's least target), reaching the
  * fold arrow's edge 4 px away but not over it. */
 @media (pointer: coarse) {
+  .head .grip {
+    opacity: 0.6;
+  }
+
   .head .grip::after {
     content: "";
     position: absolute;
@@ -2241,6 +2564,30 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
 .card.drop-after {
   box-shadow: 0 3px 0 0 var(--s-accent);
+}
+
+/* A phone: the rows take a finger, 34 px a station and 32 px an item. */
+@media (width <= 700px) {
+  .card > .head {
+    height: 34px;
+  }
+
+  .card.open > .head {
+    min-height: 34px;
+  }
+
+  .kid,
+  .folder {
+    height: 32px;
+  }
+
+  .head .add {
+    opacity: 1;
+  }
+
+  .treefoot {
+    display: none;
+  }
 }
 
 /* The inspector's place in the tour and its commands in words. */
@@ -2403,22 +2750,19 @@ body[data-view="3d"] #view3d .view3d-canvas {
     display: none;
   }
 
-  #shell-tree {
-    width: min(272px, 56vw);
-  }
-
   /* Folded, the tree's head ends where the inspector begins: on a phone
    * the two would overlap, and the inspector would cover the fold arrow. */
   #shell-tree.collapsed {
-    width: min(272px, 56vw, 100vw - var(--s-insp-w));
+    width: min(var(--s-tree-w), 100vw - var(--s-insp-w));
   }
 
   :root {
     --s-insp-w: min(290px, 60vw);
+    --s-tree-w: min(210px, 56vw);
   }
 
   #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
-    left: min(272px, 56vw);
+    left: var(--s-tree-w);
   }
 }
 

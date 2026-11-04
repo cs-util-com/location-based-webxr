@@ -296,6 +296,15 @@
           ></button>
           <span class="sp"></span>
           <button
+            class="ib"
+            id="tree-collapse"
+            type="button"
+            title="Fold every station"
+            aria-label="Fold every station"
+          >
+            <i data-icon="foldall"></i>
+          </button>
+          <button
             class="ib add"
             id="tree-add"
             type="button"
@@ -306,7 +315,23 @@
           </button>
           <button class="ib" id="tree-fold" type="button"></button>
         </div>
+        <div class="tsearch">
+          <input
+            id="tree-search"
+            type="search"
+            placeholder="Search the stations"
+            aria-label="Search the stations, their items and the codes"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
         <div class="dbody" id="tree-body"></div>
+        <div class="treefoot" id="tree-foot">
+          <span><kbd>Ctrl K</kbd> add</span>
+          <span><kbd>+</kbd> add here</span>
+          <span><kbd>Esc</kbd> deselect</span>
+          <span>Drag to reorder</span>
+        </div>
       </aside>
       <aside
         class="dock"

@@ -14,7 +14,11 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 // Activates the licence the station frame's geodesy needs.
 import "../test-support/tour-of.js";
-import { freePinSpot, newPin } from "./new-pin.js";
+import { freePinSpot, newLongText, newPin } from "./new-pin.js";
+import {
+  parseTourObject,
+  tourObjectRecord,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 const AT = "2026-10-25T10:00:00Z";
 
@@ -110,5 +114,47 @@ describe("newPin", () => {
     });
     expect(pin.geo.alt).toBeCloseTo(520, 6);
     expect(pin.caption).toBe("New pin 2");
+  });
+});
+
+// Why: the tree's "+" adds a long text in place as it adds a pin: the same
+// free spot and ground, its own name, and a text the file format takes (a
+// long text's title and body are both required, so an empty body would
+// be a tour the format refuses).
+describe("newLongText", () => {
+  it("is a reading sign of the station at the free spot, on the ground, named by its number", () => {
+    const s = station([[4, 0]]);
+    const text = newLongText({
+      station: s,
+      id: "long1",
+      nowIso: AT,
+      groundAt: () => 518.5,
+    });
+    expect(text).toMatchObject({
+      id: "long1",
+      kind: "longText",
+      view: "reading",
+      title: "New long text 1",
+      createdAtIso: AT,
+      station: "s",
+    });
+    expect(text.body.trim()).not.toBe("");
+    expect(text.geo.alt).toBeCloseTo(518.5, 6);
+    const local = localPoseOf(text.geo, s.geo);
+    const spot = freePinSpot(s);
+    expect(local.position[0]).toBeCloseTo(spot.northM, 3);
+    expect(local.position[2]).toBeCloseTo(spot.eastM, 3);
+  });
+
+  it("is an object the tour format reads back unchanged", () => {
+    const text = newLongText({
+      station: station([]),
+      id: "long1",
+      nowIso: AT,
+      groundAt: () => null,
+    });
+    expect(
+      parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(text)))),
+    ).toEqual(text);
   });
 });

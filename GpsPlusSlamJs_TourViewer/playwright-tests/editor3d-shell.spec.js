@@ -327,11 +327,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expectFrame(page, phone);
   // Folded, the tree's head keeps clear of where the inspector opens, so
   // its fold arrow can still be tapped while a selection shows.
-  const phoneHead = Math.min(272, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
+  const phoneHead = Math.min(210, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
   await expectTree(page, phoneHead, false);
   await expect(page.locator("#shell-inspector")).toBeHidden();
   await page.locator("#tree-fold").click();
-  await expectTree(page, Math.min(272, 0.56 * 390), true);
+  await expectTree(page, Math.min(210, 0.56 * 390), true);
   await card(page, "The old gate").locator(".pick").click();
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
@@ -350,8 +350,9 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectFrame(page, landscape);
+  // From 1100 px down the tree is 210 px wide.
   await page.locator("#tree-fold").click();
-  await expectTree(page, 272, true);
+  await expectTree(page, 210, true);
   const folded = await box(page.locator("#shell-inspector"));
   expect(folded.height).toBeCloseTo(FOLDED_PX, 0);
   expect(folded.x + folded.width).toBeCloseTo(844, 0);
@@ -373,18 +374,18 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.setViewportSize(tablet);
   await expectFrame(page, tablet);
   await page.locator('#inspector-head [data-act="fold"]').click();
-  await expectTree(page, Math.min(272, 0.56 * 820), false);
+  await expectTree(page, Math.min(210, 0.56 * 820), false);
   const tabletInspector = await box(page.locator("#shell-inspector"));
   expect(tabletInspector.width).toBeCloseTo(Math.min(290, 0.6 * 820), 0);
   await expect(page.locator("#inspector-body")).toBeVisible();
 
-  // A desktop: both docks open side by side, 272 and 290 px, the labels
-  // shown, the scene between them 878 px wide.
+  // A desktop: both docks open side by side, 248 and 290 px, the labels
+  // shown, the scene between them 902 px wide.
   const desktop = { width: 1440, height: 900 };
   await page.setViewportSize(desktop);
   await expectFrame(page, desktop);
   await page.locator("#tree-fold").click();
-  await expectTree(page, 272, true);
+  await expectTree(page, 248, true);
   const inspector = await box(page.locator("#shell-inspector"));
   expect(inspector).toMatchObject({
     x: 1440 - 290,
@@ -395,14 +396,20 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   await page.screenshot({ path: test.info().outputPath("shell-1440x900.png") });
-  // The cards: 8 px in from the dock, 6 px apart, each a one-line 28 px row.
+  // The stations: flush with the dock, one 28 px row each, no gap between
+  // them (the explorer's rows); the row runs to the dock's 1 px border.
   const tree = await box(page.locator("#shell-tree"));
+  const inner = await page
+    .locator("#tree-body")
+    .evaluate((el) => el.clientWidth);
   const rows = page.locator("#tree-body .card > .head");
   const first = await box(rows.nth(0));
   const second = await box(rows.nth(1));
-  expect(first.x - tree.x).toBe(9);
+  expect(first.x - tree.x).toBe(0);
+  expect(first.width).toBe(inner);
+  expect(tree.width - inner).toBeLessThanOrEqual(1);
   expect(first.height).toBe(28);
-  expect(second.y - (first.y + first.height)).toBe(8);
+  expect(second.y - (first.y + first.height)).toBe(0);
 });
 
 /**
@@ -486,7 +493,7 @@ async function expectPanel(page, size, heightPx) {
   expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
 }
 
-test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape and a desktop", async ({
+test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape, two laptop widths and a desktop", async ({
   page,
 }) => {
   test.setTimeout(150_000);
@@ -510,6 +517,17 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await page.locator("#shell-panel .bp-span").click();
   await expectPanel(page, desktop, 220);
   await page.locator("#shell-panel .bp-span").click();
+
+  // Two laptop widths: at 1180 px the tree is still 248 px, at 1024 px it
+  // is 210 px (the 1100 px step), the panel still between both docks and
+  // the toggles still clear of the selection's actions.
+  for (const laptop of [
+    { width: 1180, height: 820 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(laptop);
+    await expectPanel(page, laptop, 220);
+  }
 
   // A phone in landscape: one dock at a time.
   const landscape = { width: 844, height: 390 };
@@ -1017,9 +1035,11 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
       return {
         key:
           a.dataset["select"] ??
-          (a.dataset["unfold"] === undefined
-            ? a.id
-            : `unfold:${a.dataset["unfold"]}`),
+          (a.dataset["unfold"] !== undefined
+            ? `unfold:${a.dataset["unfold"]}`
+            : a.dataset["add"] !== undefined
+              ? `add:${a.dataset["add"]}`
+              : a.id),
         inBar: a.closest("#topbar") !== null,
         x: b.x,
       };
@@ -1050,14 +1070,19 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   // scene's Credits button closes the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
-  // Then the tree: its head ("Stations", "+", the fold arrow), then the
-  // first card and its fold arrow.
-  expect(keys.slice(-6)).toEqual([
+  // Then the tree: its head ("Stations", "Fold every station", "+", the
+  // fold arrow), its search, then each card's fold arrow, its row and
+  // its "+".
+  expect(keys.slice(-10)).toEqual([
     "tree-stations",
+    "tree-collapse",
     "tree-add",
     "tree-fold",
-    "station:column",
+    "tree-search",
     "unfold:column",
+    "station:column",
+    "add:column",
+    "unfold:gate",
     "station:gate",
   ]);
   await page.keyboard.press("Enter");
@@ -1068,8 +1093,12 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   ).toHaveValue("The old gate");
   await expect(gate.locator(".pick")).toBeFocused();
   await expect(gate.locator(".kids")).toBeVisible();
-  // Space on the fold arrow folds the card's items away again.
+  // The row's "+" is next; the fold arrow is before the row, and Space
+  // on it folds the card's items away again.
   await page.keyboard.press("Tab");
+  await expect(gate.locator(".head .add")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
   await expect(gate.locator(".tw")).toBeFocused();
   await page.keyboard.press("Space");
   await expect(gate.locator(".kids")).toHaveCount(0);

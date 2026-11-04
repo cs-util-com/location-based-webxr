@@ -18,6 +18,25 @@ the page's and keep their logic; the shell's stylesheet
 (`editor-shell.css`) dresses the menus in both views and the rest while
 the 3D view shows.
 
+The tree's head holds a search field (`#tree-search`, the page's, never
+redrawn: each letter typed draws the tree again for it, Escape empties it
+before the page's Escape drops the selection) and "Fold every station"
+(`#tree-collapse`, hidden while the dock is folded), which folds every
+unfolded station.
+
+Adding happens where the creator looks. A station row's "+" (and an
+empty station's "Add content") opens the tree's type menu
+(`tree-add-menu.ts`, made once for every row): a short text or a long
+text added to that station through `deps.edits.addItem`, the menu
+closed first and the focus back on that station's "+" after the add's
+redraw. Ctrl+K, outside a field and with no dialog open, opens the add
+palette (`add-palette.ts`): a kind and a place typed in one query, its
+place the selected station (or the station of the selected item) when
+the query names none, and its New station the head's "+" (a station at
+the centre of the view). Both close with the view. The tree's foot
+(`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
+nor while the dock is folded.
+
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
 null, it says to come closer to the ground and adds nothing), the scene's
@@ -56,7 +75,8 @@ character's view and advance chips (`characterChipEdit`: his station's
 value)` (a block's other text field, B2c), `scene(edit)` (a pose
     or a size, as the gestures write it; returns whether it was written,
     false when the page refused it and said why), `groundItems(items)` (heights,
-    one step), `addPin(stationId)`;
+    one step), `addItem(stationId, kind)` (a short text or a long text,
+    from the inspector's Add pin and the tree's add in place);
   - `deps.say(text)` - a passing line (the page's toast).
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
   the ground menu (a right click, a long press): opened at `point` (px in
@@ -193,7 +213,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   (`shell-tree.ts`, `shell-inspector.ts`).
 - **The stylesheet** (`editor-shell.css`, applied under
   `body[data-view="3d"]`, the menus' dress in both views): a 40 px top bar
-  and a 24 px bottom bar with the view between them; the tree 272 px and
+  and a 24 px bottom bar with the view between them; the tree 248 px
+  (`--s-tree-w`; 210 px from 1100 px down) and
   the inspector 290 px wide (`--s-insp-w`), flush with the window's edges,
   both running down to the bottom bar; the compass and the zoom buttons in
   one row at the view's foot, directly left of the inspector while it
@@ -302,7 +323,7 @@ const shell = createEditorShell({
     text: editText,
     scene: commitSceneEdit,
     groundItems,
-    addPin,
+    addItem,
   },
   say: (text) => toast(text),
 });

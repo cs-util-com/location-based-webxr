@@ -1,8 +1,9 @@
 /**
- * The 3D view's tree, as data (pure): a story card per station - its
- * number, name, description, card picture and items - the codes, and a
- * chip per layer the view can show, drawn from the tour and `editorView`
- * alone. The DOM is `shell-tree.ts`'s.
+ * The 3D view's tree, as data (pure): an explorer row per station - its
+ * number, name, item count, lock, card picture and items (story folders
+ * before free items, once the format has them) - the codes, and a chip
+ * per layer the view can show, drawn from the tour, `editorView` and the
+ * tree's search alone. The DOM is `shell-tree.ts`'s.
  *
  * @see tree-model.ts.md
  */
@@ -19,6 +20,7 @@ import type { TreeGroup } from "gps-plus-slam-editor-kit/chrome";
 import { worldBlocks } from "../../tour-document.js";
 
 import { stationTitle } from "../../station-run.js";
+import { KIND_SEARCH_WORDS, matchesQuery } from "../editor-model.js";
 import type {
   EditorViewState,
   ShellLayer,
@@ -34,8 +36,18 @@ const LAYER_LABELS: Readonly<Record<ShellLayer, string>> = {
   names: "Station names",
 };
 
-/** An item of a station, as its card lists it. */
-interface TreeChild {
+/** The words the tree's search finds an item by besides its title: the
+ *  2D rail's for a pin and a photo (`editor-model.ts`), each look's own
+ *  word, and a long text's and a model's. */
+const LOOK_SEARCH_WORDS: Readonly<Record<ObjectLook, string>> = {
+  pin: `pin ${KIND_SEARCH_WORDS.pin}`,
+  photo: `photo ${KIND_SEARCH_WORDS.photo}`,
+  text: "long text reading sign",
+  model: "3d model",
+};
+
+/** An item of a station, as its row lists it. */
+export interface TreeChild {
   readonly id: string;
   readonly kind: ObjectLook;
   /** Text, never markup: it comes from a file anyone can write. */
@@ -43,7 +55,17 @@ interface TreeChild {
   readonly selected: boolean;
 }
 
-/** A station's story card. */
+/** A story folder of a station: its entries, played in order. The
+ *  format has none yet, so `buildTree` lists none; its row is drawn
+ *  before the station's free items when one comes (`shell-tree.ts`). */
+export interface TreeFolder {
+  readonly id: string;
+  readonly title: string;
+  readonly open: boolean;
+  readonly children: readonly TreeChild[];
+}
+
+/** A station's row and what it lists. */
 export interface TreeCard {
   readonly id: string;
   /** The page's selection id for the station (`station:<id>`). */
@@ -55,11 +77,18 @@ export interface TreeCard {
   readonly description: string | null;
   /** The card picture's content path in the tour, or none. */
   readonly imagePath: string | null;
-  /** Its items listed (unfolded). */
+  /** Its items listed: unfolded, or a search found some of them. */
   readonly open: boolean;
+  /** How many items it holds (its folded row shows it). */
+  readonly count: number;
+  /** Its position may be moved (every station starts locked). */
+  readonly unlocked: boolean;
   readonly selected: boolean;
   /** One of its items is selected. */
   readonly context: boolean;
+  /** Its story folders, listed before its free items (none yet). */
+  readonly folders: readonly TreeFolder[];
+  /** Its free items (those a search found, while one runs). */
   readonly children: readonly TreeChild[];
 }
 
@@ -78,7 +107,10 @@ interface TreeChip {
 
 export interface TreeModel {
   readonly sections: Readonly<Record<TreeSection, boolean>>;
+  /** The tour's stations, found by a search or not. */
   readonly stationCount: number;
+  /** The search, trimmed ("": none runs). */
+  readonly query: string;
   readonly cards: readonly TreeCard[];
   readonly codes: readonly TreeCode[];
   readonly chips: readonly TreeChip[];
@@ -97,9 +129,12 @@ export interface TreeInput {
   readonly view: Pick<
     EditorViewState,
     "selected" | "openStations" | "openSections" | "hiddenLayers"
-  >;
+  > &
+    Partial<Pick<EditorViewState, "unlockedStations">>;
   /** The layers the view can show, a chip each, in this order. */
   readonly layers: readonly ShellLayer[];
+  /** The tree's search (none: every station, every code). */
+  readonly query?: string;
 }
 
 /**
@@ -127,42 +162,67 @@ export function stationImagePath(
   return first === undefined ? null : imagePath(first.image);
 }
 
-/** The tree for `input`. */
+/**
+ * The tree for `input`. With a search (`query`, the 2D rail's matching:
+ * `matchesQuery`), a station is listed when its name or description holds
+ * it - with its items, folded as it was - or when items of it do: then
+ * it is listed unfolded with just those items. Codes are listed when
+ * their title or line holds it.
+ */
 export function buildTree(input: TreeInput): TreeModel {
   const { stations, view } = input;
+  const query = (input.query ?? "").trim();
   const open = new Set(view.openStations);
-  const cards = stations.map((station, index): TreeCard => {
+  const unlocked = new Set(view.unlockedStations ?? []);
+  const cards = stations.flatMap((station, index): TreeCard[] => {
     const selection = `station:${station.id}`;
     const description = station.description?.trim() ?? "";
-    return {
-      id: station.id,
-      selection,
-      number: index + 1,
-      title: stationTitle(station, index + 1),
-      description: description === "" ? null : description,
-      imagePath: stationImagePath(station, input.assets),
-      open: open.has(station.id),
-      selected: view.selected === selection,
-      context: worldBlocks(station).some((i) => i.id === view.selected),
-      children: worldBlocks(station).map((item) => ({
-        id: item.id,
-        kind: objectLook(item.kind),
-        title: objectTitle(item),
-        selected: item.id === view.selected,
-      })),
-    };
+    const title = stationTitle(station, index + 1);
+    const items = worldBlocks(station).map((item): TreeChild => ({
+      id: item.id,
+      kind: objectLook(item.kind),
+      title: objectTitle(item),
+      selected: item.id === view.selected,
+    }));
+    const stationFound = matchesQuery(query, [title, description]);
+    const found = stationFound
+      ? items
+      : items.filter((c) =>
+          matchesQuery(query, [c.title, LOOK_SEARCH_WORDS[c.kind]]),
+        );
+    if (found.length === 0 && !stationFound) return [];
+    return [
+      {
+        id: station.id,
+        selection,
+        number: index + 1,
+        title,
+        description: description === "" ? null : description,
+        imagePath: stationImagePath(station, input.assets),
+        open: open.has(station.id) || !stationFound,
+        count: items.length,
+        unlocked: unlocked.has(station.id),
+        selected: view.selected === selection,
+        context: items.some((i) => i.selected),
+        folders: [],
+        children: found,
+      },
+    ];
   });
   const hidden = new Set(view.hiddenLayers);
   return {
     sections: { ...view.openSections },
     stationCount: stations.length,
+    query,
     cards,
-    codes: input.codes.map((code) => ({
-      id: code.id,
-      title: code.title,
-      meta: code.meta,
-      selected: code.id === view.selected,
-    })),
+    codes: input.codes
+      .filter((code) => matchesQuery(query, [code.title, code.meta]))
+      .map((code) => ({
+        id: code.id,
+        title: code.title,
+        meta: code.meta,
+        selected: code.id === view.selected,
+      })),
     chips: input.layers.map((layer) => ({
       layer,
       label: LAYER_LABELS[layer],
@@ -172,7 +232,8 @@ export function buildTree(input: TreeInput): TreeModel {
 }
 
 /** The folds a tree shows: its unfolded stations in the tour's order, and
- *  its sections. */
+ *  its sections. Meaningful for a tree drawn without a search, which
+ *  unfolds the stations whose items it finds. */
 export function treeFoldOf(tree: TreeModel): {
   readonly openStations: readonly string[];
   readonly openSections: Readonly<Record<TreeSection, boolean>>;

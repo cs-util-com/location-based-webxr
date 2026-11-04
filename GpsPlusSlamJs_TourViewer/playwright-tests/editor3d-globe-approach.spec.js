@@ -177,7 +177,11 @@ for (const [width, height] of [
         id: "#shell-tree",
         body: "#tree-body",
         left: true,
-        widthPx: narrow ? Math.min(272, width * 0.56) : 272,
+        widthPx: narrow
+          ? Math.min(210, width * 0.56)
+          : width <= 1100
+            ? 210
+            : 248,
       },
       {
         id: "#shell-inspector",
