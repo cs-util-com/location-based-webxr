@@ -9,6 +9,8 @@
  * @see frame-clock.ts.md
  */
 
+import { FRAMES_STOPPED_EVENT } from "../editor/browser-question.js";
+
 /** A frame longer than this (ms) is slow: under 20 frames a second. */
 export const SLOW_FRAME_MS = 50;
 
@@ -83,12 +85,13 @@ export function createFrameClock(keep = 60): FrameClock {
 /** What `pauseWhenHidden` listens to: the page's document. */
 interface VisiblePage {
   readonly hidden: boolean;
-  addEventListener(type: "visibilitychange", listener: () => void): void;
-  removeEventListener(type: "visibilitychange", listener: () => void): void;
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
 }
 
 /** Pauses `clock` whenever `page` is hidden (the browser draws no frames
- *  for a hidden tab); returns the function that stops listening. */
+ *  for a hidden tab) and after each of its questions
+ *  (`../editor/browser-question.ts`); returns the function that stops listening. */
 export function pauseWhenHidden(
   clock: Pick<FrameClock, "pause">,
   page: VisiblePage = document,
@@ -96,8 +99,13 @@ export function pauseWhenHidden(
   const onChange = () => {
     if (page.hidden) clock.pause();
   };
+  const onStopped = () => {
+    clock.pause();
+  };
   page.addEventListener("visibilitychange", onChange);
+  page.addEventListener(FRAMES_STOPPED_EVENT, onStopped);
   return () => {
     page.removeEventListener("visibilitychange", onChange);
+    page.removeEventListener(FRAMES_STOPPED_EVENT, onStopped);
   };
 }

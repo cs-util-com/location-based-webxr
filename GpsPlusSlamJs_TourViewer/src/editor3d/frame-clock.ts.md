@@ -20,8 +20,10 @@
     - `recentMs()`: the intervals kept, oldest first, as a copy (the
       globe's stats list them).
   - `pauseWhenHidden(clock, page = document)`: pauses `clock` on each
-    `visibilitychange` to hidden; returns the function that stops
-    listening (a view pushes it on its undo list).
+    `visibilitychange` to hidden and on each `framesstopped` (the
+    browser's own question answered, `../editor/browser-question.ts`);
+    returns the function that stops listening (a view pushes it on its
+    undo list).
 - Invariants & assumptions:
   - Bounded memory: at most `keep` intervals, and slow frames only from
     the last five seconds (pruned on each tick).
@@ -43,4 +45,4 @@
 - Tests: `frame-clock.test.ts` (the empty clock, mean and worst, the
   bound, the five-second window, the 50 ms edge, the gap after a pause untimed, a long frame without a
   pause counted, hiding pausing and the listener removed, a property over random
-  frame gaps).
+  frame gaps, the wait for the browser's question untimed).

@@ -14,6 +14,7 @@ import {
   pauseWhenHidden,
   SLOW_FRAME_MS,
 } from "./frame-clock.js";
+import { confirmPausingFrames } from "../editor/browser-question.js";
 
 /** A clock that ticked at each of `times` (ms). */
 function ticked(times: readonly number[], keep?: number) {
@@ -131,6 +132,38 @@ describe("createFrameClock", () => {
     page.hidden = true;
     page.dispatchEvent(new Event("visibilitychange"));
     clock.tick(12000);
+    expect(clock.slowFrames()).toBe(2);
+  });
+
+  // Why: the browser's own question (an unsaved-work guard before opening
+  // another tour or reloading) holds the page still until it is answered,
+  // the 3D view's frames with it. That wait is no slow frame: timed, it
+  // put a hitch of the answer's length into the Performance tab and its
+  // badge. The question tells the clocks their frames stopped; the
+  // answer is the question's, and a frame drawn after it is timed again.
+  it("does not time the wait for the browser's question", () => {
+    const page = Object.assign(new EventTarget(), { hidden: false });
+    const clock = ticked([0, 16]);
+    const stop = pauseWhenHidden(clock, page);
+    const asked: string[] = [];
+    const answer = confirmPausingFrames("Open another tour?", page, (m) => {
+      asked.push(m);
+      return false;
+    });
+    expect(answer).toBe(false);
+    expect(asked).toEqual(["Open another tour?"]);
+    clock.tick(6000);
+    expect(clock.slowFrames()).toBe(0);
+    expect(clock.worstMs()).toBe(16);
+    clock.tick(6100);
+    expect(clock.slowFrames()).toBe(1);
+    expect(confirmPausingFrames("Reload?", page, () => true)).toBe(true);
+    clock.tick(6200);
+    expect(clock.slowFrames()).toBe(1);
+    // Stopped listening (the view closed): a question no longer pauses it.
+    stop();
+    confirmPausingFrames("Reload?", page, () => true);
+    clock.tick(9000);
     expect(clock.slowFrames()).toBe(2);
   });
 });
