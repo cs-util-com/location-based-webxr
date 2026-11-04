@@ -3,9 +3,11 @@
  * Redo, Help), the Edit menu's Undo and Redo (where they fold at a
  * phone's width) and the View menu's Top view and Frame, the tree dock at
  * the left, the inspector dock at the right, the compass and the zoom
- * buttons at the bottom right, and the bottom bar's view line, hint and
- * debug readout. The page's own controls (the File menu, the view switch,
- * the save status) stay the page's.
+ * buttons at the bottom right, and the bottom bar's toggles with the
+ * bottom panel they open (`bottom-panel.ts`: the tour's problems, the
+ * edit history, the street map's loading and the view's frame times). The
+ * page's own controls (the File menu, the view switch, the save status)
+ * stay the page's.
  *
  * Everything it shows is drawn from the store - the tour from
  * `tourDocument`, the selection and the docks' and tree's folds from
@@ -98,7 +100,9 @@ import {
   focusControl,
   inspectorDrawing,
 } from "./shell-inspector.js";
+import { createBottomPanel } from "./bottom-panel.js";
 import { createShellPictures } from "./shell-pictures.js";
+import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
 import { buildTree, stationGroups } from "./tree-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
@@ -326,14 +330,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     body: byId("inspector-body"),
   };
   const bar = {
-    root: byId("shell-bar"),
-    view: byId("shell-view"),
     acts: byId("shell-acts"),
-    hint: byId("shell-hint"),
-    history: byId("shell-history"),
-    calls: byId("shell-calls"),
-    frame: byId("shell-frame"),
-    debug: byId<HTMLButtonElement>("shell-debug"),
   };
   const top = {
     undo: byId<HTMLButtonElement>("studio-undo"),
@@ -346,6 +343,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   const helpBox = byId("shell-help");
   const needle = byId<HTMLElement>("compass-needle");
+  /** The selection's hint, in the help (what a click there does). */
+  const helpHint = byId("shell-help-hint");
   for (const root of [byId("topbar"), byId("view3d")]) placeShellIcons(root);
 
   const pictures = createShellPictures({
@@ -389,6 +388,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
 
   let view: ShellView | null = null;
+  const panel = createBottomPanel({
+    panel: byId("shell-panel"),
+    toggles: byId("shell-toggles"),
+    box: viewBox,
+    choose: (selection) => {
+      deps.select(selection);
+      view?.flyTo(selection);
+    },
+    step: (which) => {
+      deps.step(which);
+    },
+    storage: (() => {
+      try {
+        return window.localStorage;
+      } catch {
+        return null;
+      }
+    })(),
+  });
   let unsubscribe: (() => void) | null = null;
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
@@ -511,9 +529,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
             : `${verb} ${next.what} (${key})`;
       }
     }
-    bar.history.textContent = `History ${String(doc.past.length)} / ${String(
-      doc.past.length + doc.future.length,
-    )}`;
+    panel.history({
+      past: doc.past,
+      future: doc.future,
+      position: doc.position,
+      savedAt: doc.save.inPlaceAt,
+    });
   };
 
   /** The bottom bar's power actions for the selection; a draw keeps the
@@ -579,9 +600,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const model = inspectorModel(ui);
     drawInspectorNow(model);
     drawActs(model);
-    bar.hint.textContent = inspectorHint(model);
-    bar.root.classList.toggle("debug", ui.readout);
-    bar.debug.setAttribute("aria-pressed", String(ui.readout));
+    helpHint.textContent = inspectorHint(model);
+    panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
@@ -813,14 +833,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (view === null) return;
     const r = view.readout();
     needle.setAttribute("transform", `rotate(${String(-r.headingDeg)} 12 12)`);
-    bar.view.textContent =
-      r.top || r.tiltDeg < 1
-        ? "Top view"
-        : `3D view, tilt ${String(Math.round(r.tiltDeg))} deg`;
     // A checkbox item of the View menu.
     top.topView.setAttribute("aria-checked", String(r.top));
-    bar.calls.textContent = `${String(r.drawCalls)} draw calls`;
-    bar.frame.textContent = `${r.frameMs.toFixed(1)} ms / frame`;
+    panel.tick(r);
     // The ground loads while the view shows: what stands off it shows
     // once it has.
     drawInspectorNow(inspectorModel(state().editorView));
@@ -1192,11 +1207,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   byId("compass").addEventListener("click", () => view?.northUp());
   byId("zoom-in").addEventListener("click", () => view?.zoom(1));
   byId("zoom-out").addEventListener("click", () => view?.zoom(-1));
-  bar.debug.addEventListener("click", () => {
-    store.dispatch(
-      editorViewActions.readoutShown({ shown: !state().editorView.readout }),
-    );
-  });
 
   // --- while the view shows ------------------------------------------------
   const onKey = (event: KeyboardEvent) => {
@@ -1224,6 +1234,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (inMenu(event.target, event.key)) return;
     // A toolbar's and a radio group's arrows, Home and End are theirs.
     if (inComposite(event.target, event.key)) return;
+    // The bottom panel's keys (Ctrl+J, Ctrl+Shift+M, Escape inside it).
+    // Its Escape goes no further (the page would deselect on it).
+    if (!deps.dialogOpen() && panel.key(event)) {
+      event.stopPropagation();
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -1307,6 +1323,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       document.removeEventListener("pointerdown", onOutside);
       window.removeEventListener("resize", onResize);
       showHelp(false);
+      panel.hide();
       ground.close();
       // Emptied before the pictures go: a later draw of the same selection
       // would otherwise be skipped and keep a card picture let go here.

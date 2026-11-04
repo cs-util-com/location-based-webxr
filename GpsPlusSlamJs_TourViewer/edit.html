@@ -372,6 +372,10 @@
           </button>
         </div>
       </div>
+      <!-- The bottom panel (bottom-panel.ts): Problems, History, Map
+           loading and Performance, opened by the bottom bar's toggles;
+           between the docks, or under them with its span button. -->
+      <section id="shell-panel" aria-label="Panel" hidden></section>
       <div id="shell-help" role="note" aria-label="Keyboard and mouse">
         <span>Mouse</span
         ><span
@@ -396,6 +400,14 @@
         <span><kbd>Esc</kbd></span
         ><span>deselect</span> <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span
         ><span>undo, add <kbd>Shift</kbd> to redo</span>
+        <span><kbd>Ctrl</kbd>+<kbd>J</kbd></span
+        ><span
+          >the bottom panel open / closed, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd
+            >M</kbd
+          >
+          its problems</span
+        >
+        <span>Selected</span><span id="shell-help-hint"></span>
       </div>
       <!-- What a keyboard reorder did, said to a screen reader (the
            inspector's Earlier and Later). -->
@@ -415,34 +427,29 @@
       </div>
     </div>
 
-    <!-- The bottom bar (editor-shell.ts): the save status in both views;
-         in the 3D view also the view, a hint, and the debug readout behind
-         its toggle. Shown with the top bar, once a tour is open. -->
+    <!-- The bottom bar (editor-shell.ts): in the 3D view the credits, the
+         selection's actions and the bottom panel's toggles. The save
+         status is said to a screen reader only (the top bar's unsaved
+         mark shows it). Shown with the top bar, once a tour is open. -->
     <footer id="shell-bar" aria-label="The editor's status" hidden>
       <!-- The 3D view's credits (the relief's and the map's), small at the
            bar's left: never under a dock, after the docks in the Tab order,
            their panel opening upward. Empty on the map. -->
       <div class="view3d-credits" id="view3d-credits"></div>
-      <span id="save-status" role="status" aria-live="polite" data-state="clean"
+      <span
+        id="save-status"
+        class="said"
+        role="status"
+        aria-live="polite"
+        data-state="clean"
         >No changes</span
       >
       <span id="view-loading" role="status" aria-live="polite" hidden></span>
-      <div id="shell-view"></div>
-      <!-- The selection's power actions (bar-actions.ts), drawn by the
-           shell: Duplicate, Align to station, Copy position. -->
       <div id="shell-acts" role="group" aria-label="The selection"></div>
-      <div id="shell-hint"></div>
-      <div id="shell-history" class="mono dbg"></div>
-      <div id="shell-calls" class="mono dbg"></div>
-      <div id="shell-frame" class="mono dbg wide"></div>
-      <button
-        id="shell-debug"
-        type="button"
-        aria-pressed="false"
-        title="Show or hide the debug readout (history, draw calls, frame time)"
-      >
-        debug
-      </button>
+      <div class="grow"></div>
+      <!-- The bottom panel's toggles, a badge on each only when there is
+           something to see (bottom-panel.ts draws them). -->
+      <div id="shell-toggles" role="group" aria-label="Panels"></div>
     </footer>
 
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera

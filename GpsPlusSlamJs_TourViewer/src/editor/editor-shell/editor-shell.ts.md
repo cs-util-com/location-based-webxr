@@ -6,9 +6,13 @@ The 3D view's studio shell: the top bar's studio controls
 (Undo, Redo, Help), the Edit menu's Undo and Redo (where those
 fold at a phone's width), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
-zoom buttons at the bottom right, and the bottom bar's 3D parts (the view
-line, a hint naming the selection's handles (`inspectorHint`), the debug
-readout behind its toggle). The page's own controls (the File menu, the
+zoom buttons at the bottom right, the bottom bar's toggles and the
+bottom panel they open (`bottom-panel.ts`: the tour's problems from
+`tour-problems.ts` on each draw, the edit history, and on the readout's
+tick the street map's loading and the view's frame times), and in the help
+a line naming the selection's handles (`inspectorHint`). The panel takes
+its keys from the shell's key handler (Ctrl+J, Ctrl+Shift+M, Escape inside
+it), its Escape going no further. The page's own controls (the File menu, the
 view switch, Show debug data, the save status and the unsaved mark) stay
 the page's and keep their logic; the shell's stylesheet
 (`editor-shell.css`) dresses the menus in both views and the rest while
@@ -111,7 +115,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 ## Invariants & assumptions
 
 - **One copy:** the tree, the inspector, the folds, the layers and the
-  readout's toggle are drawn from the store (`editorView`, `tourDocument`
+  bottom panel's problems and history are drawn from the store (`editorView`, `tourDocument`
   via `manifestToWrite`); a click dispatches, it never draws by itself. A
   draw runs only when the document, the view state or the position
   disclosure changed.
@@ -195,16 +199,20 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   shows and at the right edge otherwise; the scene's credits small at the
   bottom bar's left (their panel opens upward and wraps its lines, though
   the bar keeps its own parts on one line); the toasts 12 px above the map
-  controls' row, never over it; then the save status, cut
-  short with
-  an ellipsis (its words stay its text and its title). Every top-bar
+  controls' row, never over it; the save status said to a screen reader
+  only (`.said`), the bar's other parts after the credits: the
+  selection's actions, then the panel's toggles flush at the right edge.
+  The bottom panel lies over the view at its foot, between the open docks
+  (or under both, spanned), its height in `--s-panel-h` on the page, which
+  the map controls and the toasts stand above; at 700 px or less it takes
+  the width, the inspector ending at its top. Every top-bar
   control keeps its words at every width; the tour's name keeps a floor
   (`--s-name-min`, lowered step by step), and the bar folds in steps
   before the name goes under it:
-  - at 820 px the unsaved mark keeps its dot (its words are the bottom
-    bar's status line, and its title);
+  - at 820 px the unsaved mark keeps its dot (its words are its title,
+    and the save status a screen reader hears);
   - at 820 px too the docks shrink to 56 % and 60 % of the width where
-    that is less, and the hint goes; a folded tree's head ends where the
+    that is less; a folded tree's head ends where the
     inspector begins (156 px at 390), so the inspector never covers its
     fold arrow;
   - at 720 px the buttons drop their icons, keeping words;
@@ -318,7 +326,10 @@ touch at a phone's width, the unsaved mark beside File, the tree from the keyboa
 alone (Tab order: the top bar left to right, then the tree), a card's click selecting,
 unfolding and flying, a double click not toggling, a later click
 deselecting and folding, the folds and a layer kept across a trip to the
-map, Top view from View and by T, the zoom steps and the debug readout,
+map, Top view from View and by T, the zoom steps and the Performance
+tab's view and draw calls, the bottom panel's toggles and panel at a
+phone, a phone in landscape and a desktop (positions and gaps, spanned
+too, Ctrl+J),
 and on a phone the folded tree's "Stations" header unfolding the dock
 with its stations shown.
 
@@ -339,7 +350,10 @@ lines; a description and a pin text of several lines focused and left
 write nothing; a ground command
 waiting is called off by a selection change (later ground writes
 nothing), and writes once the ground arrives when the selection stays;
-the readout's tick builds no tour with nothing selected.
+the readout's tick builds no tour with nothing selected; the bottom
+panel lists the open tour's problems, a row selecting and flying to its
+item, Ctrl+J opening it, the tick feeding the Performance tab, and the
+help's line following the selection.
 
 The lock's click in the page: `editor3d-edit.spec.js`.
 

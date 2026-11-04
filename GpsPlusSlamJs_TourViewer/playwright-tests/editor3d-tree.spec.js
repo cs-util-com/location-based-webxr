@@ -644,18 +644,20 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       await page.locator("#tree-fold").click();
     }
     await expectTreeControls(page, size);
-    // The bar's actions follow the view line, inside the bar, each a
-    // button with its words (shown, or its name where they fold away).
+    // The bar's actions follow the credits, inside the bar and left of
+    // the panel's toggles, each a button with its words (shown, or its
+    // name where they fold away).
     await card(page, "gate").locator(".pick").click();
     const bar = await box(page.locator("#shell-bar"));
-    const view = await box(page.locator("#shell-view"));
+    const credits = await box(page.locator("#view3d-credits"));
+    const toggles = await box(page.locator("#shell-toggles"));
     const acts = page.locator("#shell-acts .sact");
     await expect(acts).toHaveCount(2);
     const first = await box(acts.first());
-    expect(first.x).toBeGreaterThanOrEqual(view.x + view.width);
+    expect(first.x).toBeGreaterThanOrEqual(credits.x + credits.width);
     for (const act of await acts.all()) {
       const b = await box(act);
-      expect(b.x + b.width).toBeLessThanOrEqual(bar.x + bar.width);
+      expect(b.x + b.width).toBeLessThanOrEqual(toggles.x);
       expect(b.y).toBeGreaterThanOrEqual(bar.y);
       expect(b.y + b.height).toBeLessThanOrEqual(bar.y + bar.height);
       expect(

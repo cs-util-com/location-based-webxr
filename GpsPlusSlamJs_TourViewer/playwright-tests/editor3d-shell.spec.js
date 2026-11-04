@@ -405,6 +405,131 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(second.y - (first.y + first.height)).toBe(8);
 });
 
+/**
+ * The bottom bar's toggles and the bottom panel they open, at one size:
+ * the four named toggles flush at the bar's right edge, side by side; the
+ * panel on the bar, between the open docks (or under both, spanned), its
+ * 30 px head with the tabs at its left, the map controls 14 px over it.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ * @param {number} heightPx the panel's height at this size
+ */
+async function expectPanel(page, size, heightPx) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  const bar = await box(page.locator("#shell-bar"));
+  const toggles = page.locator("#shell-toggles .tog");
+  await expect(toggles).toHaveCount(4);
+  const boxes = [];
+  for (const toggle of await toggles.all()) boxes.push(await box(toggle));
+  for (const [i, b] of boxes.entries()) {
+    expect(b.y, at).toBe(bar.y + 1);
+    expect(b.height, at).toBe(23);
+    if (i > 0) {
+      expect(b.x, at).toBeCloseTo(boxes[i - 1].x + boxes[i - 1].width, 0);
+    }
+  }
+  const last = boxes[boxes.length - 1];
+  expect(last.x + last.width, at).toBeCloseTo(size.width, 0);
+  // The credits and the selection's actions keep left of the toggles.
+  for (const id of ["#view3d-credits", "#shell-acts"]) {
+    const part = page.locator(id);
+    if (!(await part.isVisible())) continue;
+    const b = await box(part);
+    expect(b.x + b.width, `${id} ${at}`).toBeLessThanOrEqual(boxes[0].x);
+  }
+  const panel = await box(page.locator("#shell-panel"));
+  expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
+  expect(panel.height, at).toBeCloseTo(heightPx, 0);
+  const head = await box(page.locator("#shell-panel .bp-head"));
+  expect(head.height, at).toBe(30);
+  expect(head.y, at).toBeCloseTo(panel.y + 1, 0);
+  const tab = await box(page.locator("#shell-panel .tab").first());
+  expect(tab.x, at).toBeCloseTo(panel.x, 0);
+  expect(tab.height, at).toBe(29);
+  const close = await box(page.locator("#shell-panel .bp-close"));
+  expect(close.x + close.width, at).toBeCloseTo(panel.x + panel.width - 4, 0);
+  // Between the open docks, or the width on a phone.
+  const tree = page.locator("#shell-tree");
+  const inspector = page.locator("#shell-inspector");
+  const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
+    (await d.isVisible()) &&
+    !(await d.evaluate((el) => el.classList.contains("collapsed")));
+  const spanned = await page
+    .locator("#shell-panel")
+    .evaluate((el) => el.classList.contains("span"));
+  let left = 0;
+  let right = size.width;
+  if (size.width > 700 && !spanned) {
+    if (await open(tree)) {
+      const t = await box(tree);
+      left = t.x + t.width;
+    }
+    if (await open(inspector)) right = (await box(inspector)).x;
+  }
+  expect(panel.x, at).toBeCloseTo(left, 0);
+  expect(panel.x + panel.width, at).toBeCloseTo(right, 0);
+  // A dock the panel lies under ends at its top (on a phone the open
+  // tree lies over the panel instead).
+  for (const dock of [tree, inspector]) {
+    if (!(await open(dock))) continue;
+    const d = await box(dock);
+    const under = d.x < panel.x + panel.width && d.x + d.width > panel.x;
+    const treeOverIt = size.width <= 700 && dock === tree && !spanned;
+    if (under && !treeOverIt) {
+      expect(d.y + d.height, at).toBeCloseTo(panel.y, 0);
+    }
+  }
+  const compass = await box(page.locator("#compass"));
+  expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
+}
+
+test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape and a desktop", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const desktop = { width: 1440, height: 900 };
+  await page.setViewportSize(desktop);
+  await open3d(page);
+  // Nothing to say before an edit: no badge on History.
+  await expect(
+    page.locator('#shell-toggles [data-tab="history"] .badge'),
+  ).toBeHidden();
+  await expect(page.locator("#shell-toggles .tog .tl").first()).toBeVisible();
+  await card(page, "The old gate").locator(".pick").click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  const problems = page.locator('#shell-toggles [data-tab="problems"]');
+  await problems.click();
+  await expect(problems).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#shell-panel")).toBeVisible();
+  await expectPanel(page, desktop, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-1440x900.png") });
+  // Spanned, it runs under both docks, which end at its top.
+  await page.locator("#shell-panel .bp-span").click();
+  await expectPanel(page, desktop, 220);
+  await page.locator("#shell-panel .bp-span").click();
+
+  // A phone in landscape: one dock at a time.
+  const landscape = { width: 844, height: 390 };
+  await page.setViewportSize(landscape);
+  await expectPanel(page, landscape, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-844x390.png") });
+
+  // A phone: the panel takes the width, the toggles keep their icons.
+  const phone = { width: 390, height: 844 };
+  await page.setViewportSize(phone);
+  await expect(page.locator("#shell-toggles .tog .tl").first()).toBeHidden();
+  await expectPanel(page, phone, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-390x844.png") });
+
+  // Ctrl+J closes it, the map controls back over the bar.
+  await page.locator("#view3d").focus();
+  await page.keyboard.press("Control+j");
+  await expect(page.locator("#shell-panel")).toBeHidden();
+  await expect(problems).toHaveAttribute("aria-pressed", "false");
+  const compass = await box(page.locator("#compass"));
+  expect(phone.height - 24 - (compass.y + compass.height)).toBe(14);
+});
+
 test("a card's click selects, unfolds and flies; a second deselects and folds; a double click does not toggle", async ({
   page,
 }) => {
@@ -465,9 +590,10 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   );
   await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  // Over the map the bottom bar keeps only the save status.
-  await expect(page.locator("#save-status")).toBeVisible();
-  await expect(page.locator("#shell-view")).toBeHidden();
+  // Over the map the bottom bar keeps only the save status, said to a
+  // screen reader; the panel's toggles are the 3D view's.
+  await expect(page.locator("#save-status")).toHaveAttribute("role", "status");
+  await expect(page.locator("#shell-toggles")).toBeHidden();
   await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
   await expect(gate.locator(".kids")).toBeVisible();
@@ -496,7 +622,10 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#view-menu")).toBeHidden();
   await settled();
   expect((await view3d(page)).tiltDeg).toBeLessThan(1);
-  await expect(page.locator("#shell-view")).toHaveText("Top view");
+  await page.locator('#shell-toggles [data-tab="perf"]').click();
+  await expect(page.locator("#shell-pane-perf .nums")).toContainText(
+    "Top view",
+  );
   await page.keyboard.press("t");
   await settled();
   expect((await view3d(page)).tiltDeg).toBeGreaterThan(30);
@@ -509,10 +638,10 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await settled();
   expect((await view3d(page)).distanceM).toBeCloseTo(far, 0);
 
-  // The debug readout: hidden, then shown with its draw calls.
-  await expect(page.locator("#shell-calls")).toBeHidden();
-  await page.locator("#shell-debug").click();
-  await expect(page.locator("#shell-calls")).toContainText("draw calls");
+  // The Performance tab: the scene's draw calls.
+  await expect(page.locator("#shell-pane-perf .nums")).toContainText(
+    /Draw calls[1-9]/,
+  );
   expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
   expect(await rejections(page)).toEqual([]);
 });

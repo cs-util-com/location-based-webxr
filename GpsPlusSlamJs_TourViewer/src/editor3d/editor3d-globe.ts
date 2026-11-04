@@ -105,6 +105,7 @@ import type {
   Editor3dStats,
   Editor3dView,
 } from "./editor3d-scene.js";
+import { createFrameClock } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
 import {
   createBillboard,
@@ -654,8 +655,7 @@ export async function openGlobeEditor(
     let standing = 1;
     let frames = 0;
     let top = false;
-    const frameTimes: number[] = [];
-    let lastFrameAt: number | null = null;
+    const frameClock = createFrameClock();
     const cameraTour = new THREE.Vector3();
     const look = new THREE.Vector3();
     const projected = new THREE.Vector3();
@@ -852,11 +852,7 @@ export async function openGlobeEditor(
     }
 
     function updateLayers(now: number): void {
-      if (lastFrameAt !== null) {
-        frameTimes.push(now - lastFrameAt);
-        if (frameTimes.length > 60) frameTimes.shift();
-      }
-      lastFrameAt = now;
+      frameClock.tick(now);
       // The ground's share on the relief by the camera's altitude (the
       // band's hand-over); the carrier the page reports and picks on is
       // the one holding most of it.
@@ -1253,16 +1249,18 @@ export async function openGlobeEditor(
       },
       readout() {
         const pose = poseNow();
-        const mean =
-          frameTimes.length === 0
-            ? 0
-            : frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
         return {
           tiltDeg: 90 + pose.pitchDeg,
           headingDeg: pose.headingDeg,
           top,
           drawCalls: renderer.info.render.calls,
-          frameMs: mean,
+          triangles: renderer.info.render.triangles,
+          frameMs: frameClock.meanMs(),
+          worstFrameMs: frameClock.worstMs(),
+          slowFrames: frameClock.slowFrames(),
+          frameCount: frameClock.count(),
+          recentFrameMs: frameClock.recentMs(),
+          mapLoad: ground.osm.mapLoad(),
         };
       },
       setLayers(hiddenLayers) {
@@ -1379,7 +1377,7 @@ export async function openGlobeEditor(
             fitM: view.fitDistance(),
             startCentreM,
             // The last 60 frame intervals (ms), for a frame-time check.
-            frameTimesMs: [...frameTimes],
+            frameTimesMs: frameClock.recentMs(),
           },
         };
       },

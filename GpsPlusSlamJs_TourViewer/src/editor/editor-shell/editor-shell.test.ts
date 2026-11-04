@@ -94,7 +94,13 @@ function fakeView() {
       headingDeg: 0,
       top: false,
       drawCalls: 0,
+      triangles: 0,
       frameMs: 16,
+      worstFrameMs: 16,
+      slowFrames: 0,
+      frameCount: 0,
+      recentFrameMs: [],
+      mapLoad: { waiting: 0, failed: 0, givenUp: 0, ceilingWaitS: 0 },
     }),
     setLayers: vi.fn(),
     centre: () => ({ lat: 48.1371, lon: 11.5754, alt: 560 }),
@@ -1001,6 +1007,79 @@ describe("the page keys next to a toolbar", () => {
     expect(view.frame).not.toHaveBeenCalled();
     plain.dispatchEvent(home());
     expect(view.frame).toHaveBeenCalledWith(null);
+    shell.hide();
+  });
+});
+
+describe("the bottom panel", () => {
+  // Why: the panel's rules and drawing are tested on their own; what only
+  // the shell can get wrong is the wiring - the tour's problems reaching
+  // the toggle as the tour changes, a problem's row selecting its item and
+  // flying to it, the view's tick feeding the numbers, and the page's key
+  // handler handing it its keys.
+  it("lists the open tour's problems, selects and flies to one, and takes Ctrl+J", () => {
+    const { store, shell, view } = setUp();
+    const far = station("c", 0.0008);
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...far,
+              blocks: [
+                {
+                  ...(far.blocks[0] as object),
+                  id: "far",
+                  pose: { position: [40, 1.5, 0], rotation: [0, 0, 0, 1] },
+                },
+              ],
+            } as unknown as TourStation,
+          ],
+        },
+      }),
+    );
+    const badge = document.querySelector(
+      '#shell-toggles [data-tab="problems"] .badge',
+    );
+    expect(badge?.textContent).toBe("1");
+    const ctrlJ = new KeyboardEvent("keydown", {
+      code: "KeyJ",
+      key: "j",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(ctrlJ);
+    expect(document.getElementById("shell-panel")?.hidden).toBe(false);
+    document.querySelector<HTMLButtonElement>("#shell-panel .prow")?.click();
+    expect(store.getState().editorView.selected).toBe("far");
+    expect(view.flyTo).toHaveBeenCalledWith("far");
+    shell.hide();
+    expect(document.getElementById("shell-panel")?.hidden).toBe(true);
+  });
+
+  it("feeds the view's numbers to the Performance tab on its tick", () => {
+    const { shell } = setUp();
+    document
+      .querySelector<HTMLButtonElement>('#shell-toggles [data-tab="perf"]')
+      ?.click();
+    vi.advanceTimersByTime(400);
+    expect(document.querySelector("#shell-panel .nums")?.textContent).toContain(
+      "Average16.0 ms",
+    );
+    shell.hide();
+  });
+
+  // Why: the bottom bar's hint moved into the help; it must still follow
+  // the selection.
+  it("says in the help what the selection's click does", () => {
+    const { select, shell } = setUp();
+    const hint = () => document.getElementById("shell-help-hint")?.textContent;
+    const none = hint();
+    select("station:a");
+    expect(hint()).not.toBe(none);
+    expect(hint()).not.toBe("");
     shell.hide();
   });
 });

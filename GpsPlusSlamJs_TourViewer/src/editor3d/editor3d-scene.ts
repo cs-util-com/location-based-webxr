@@ -59,6 +59,7 @@ import {
   createEditorCamera,
   editorClipPlanes,
 } from "./editor3d-camera.js";
+import { createFrameClock } from "./frame-clock.js";
 import {
   createBillboard,
   createCodeFace,
@@ -234,8 +235,9 @@ export interface Editor3dView {
   ): readonly [number, number] | null;
 }
 
-/** The camera and the drawing, for the shell's compass, view line and
- *  debug readout. */
+/** The camera, the drawing and the street map's loading, for the shell's
+ *  compass, Top view item and bottom panel (its Performance and Map
+ *  loading tabs). */
 export interface Editor3dReadout {
   /** Degrees from straight down. */
   readonly tiltDeg: number;
@@ -243,8 +245,20 @@ export interface Editor3dReadout {
   readonly headingDeg: number;
   readonly top: boolean;
   readonly drawCalls: number;
-  /** The mean time between the last frames (ms). */
+  /** The triangles the last frame drew. */
+  readonly triangles: number;
+  /** The mean time between the last frames (ms, `frame-clock.ts`). */
   readonly frameMs: number;
+  /** The longest of those (ms). */
+  readonly worstFrameMs: number;
+  /** The frames over 50 ms in the last five seconds. */
+  readonly slowFrames: number;
+  /** How many frame intervals were ever timed, and the last of them (ms,
+   *  oldest first): the Performance tab's chart takes the new ones. */
+  readonly frameCount: number;
+  readonly recentFrameMs: readonly number[];
+  /** The street map's loading state (the overlay's `mapLoad`). */
+  readonly mapLoad: OsmMapLoad;
 }
 
 export interface Editor3dStats {
@@ -631,8 +645,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       editing.dispose();
     });
 
-    const frameTimes: number[] = [];
-    let lastFrameAt: number | null = null;
+    const frameClock = createFrameClock();
     let frames = 0;
     let standing = 1;
     const ecef = new THREE.Vector3();
@@ -648,11 +661,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       return ground.groundAt(at.lat, at.lon);
     };
     const frame = (now: number) => {
-      if (lastFrameAt !== null) {
-        frameTimes.push(now - lastFrameAt);
-        if (frameTimes.length > 60) frameTimes.shift();
-      }
-      lastFrameAt = now;
+      frameClock.tick(now);
       if (!stepFlight(now)) controls.update();
       // A tilt by hand leaves Top view.
       if (top && flight === null && cam.tiltDeg() > 3) {
@@ -761,16 +770,18 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       },
       readout() {
         const pose = poseNow();
-        const mean =
-          frameTimes.length === 0
-            ? 0
-            : frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
         return {
           tiltDeg: cam.tiltDeg(),
           headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
           top,
           drawCalls: renderer.info.render.calls,
-          frameMs: mean,
+          triangles: renderer.info.render.triangles,
+          frameMs: frameClock.meanMs(),
+          worstFrameMs: frameClock.worstMs(),
+          slowFrames: frameClock.slowFrames(),
+          frameCount: frameClock.count(),
+          recentFrameMs: frameClock.recentMs(),
+          mapLoad: ground.osm.mapLoad(),
         };
       },
       setLayers(hidden) {

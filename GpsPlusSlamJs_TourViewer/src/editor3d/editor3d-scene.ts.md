@@ -54,8 +54,11 @@ keys), and writes only through the page's `edits`.
     tilt by hand of more than 3 degrees leaves it;
   - `zoom(1 | -1)` - one step of 1.6 in or out; `northUp()`;
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
-    the camera looks toward), `top`, `drawCalls`, `frameMs` (the mean of
-    the last 60 frames);
+    the camera looks toward), `top`, `drawCalls`, `triangles`, `frameMs`
+    (the mean of the last 60 frames), `worstFrameMs`, `slowFrames` (over
+    50 ms in the last five seconds; both views tick one `frame-clock.ts`)
+    and `mapLoad` (the street map's loading state); the shell's bottom
+    panel shows them;
   - `setRealTime?(on)` - optional: the globe view's clock, the real time
     now (true) or held in daylight over the tour (false, its default);
     this view has no sky of its own and leaves it out;

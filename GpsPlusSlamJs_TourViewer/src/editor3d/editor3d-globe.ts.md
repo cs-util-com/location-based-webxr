@@ -260,7 +260,8 @@ The view disposes the run once the arrival is over.
   last run's once it ended) and `stats().globe.marks` are the page's
   checks; `stats().globe.dust` (the streaks' state), `centreM` (the
   camera's distance from the Earth's centre), `fitM` (the view's fit),
-  `startCentreM` and `frameTimesMs` (the last 60 frame intervals) are
+  `startCentreM` and `frameTimesMs` (the last 60 frame intervals,
+  `frame-clock.ts`, as the readout's frame numbers) are
   the start's and the streaks' checks.
 
 ## Invariants & assumptions
