@@ -4,7 +4,8 @@
  * marks and the model's section planes. The clouds' shadow and the haze
  * are composited over the whole frame after the scene (the shadow's rays
  * end at the relief's depth, behind these objects), so drawn in the scene
- * they were darkened like the ground. Lifted out of the scene's pass onto
+ * they are darkened like the ground (from reading the code; the phone
+ * check confirms it). Lifted out of the scene's pass onto
  * their own layer each frame, drawn again after the air, and put back,
  * they stay as bright as without clouds; the ground and the tour's models
  * stay in the scene and take the shadow.
@@ -32,6 +33,20 @@ export const GLOBE_INTERFACE = Object.freeze({
 
 const NAMED: ReadonlySet<string> = new Set(GLOBE_INTERFACE.names);
 
+/**
+ * Whether the interface is drawn over the air this frame: only while the
+ * camera is below the cloud deck (`deckM`, m over the ellipsoid). The
+ * cloud and haze composites write no depth, so drawn after them from
+ * above the deck the interface would show through clouds that hide it in
+ * the scene's own pass. False for a non-finite altitude.
+ */
+export function interfaceOverAir(
+  cameraAltitudeM: number,
+  deckM: number,
+): boolean {
+  return Number.isFinite(cameraAltitudeM) && cameraAltitudeM < deckM;
+}
+
 /** Whether a material (or each of a list) is drawn without a depth test. */
 function overlay(material: THREE.Material | THREE.Material[]): boolean {
   return Array.isArray(material)
@@ -54,8 +69,10 @@ export function isInterfacePart(object: THREE.Object3D): boolean {
 }
 
 export interface GlobeInterfacePass {
-  /** Before the scene draws: the interface under `roots` onto its layer. */
-  lift(): void;
+  /** Before the scene draws: the interface under `roots` onto its layer;
+   *  with `active` false nothing is lifted this frame (and `draw` draws
+   *  nothing), the interface staying in the scene's own pass. */
+  lift(active?: boolean): void;
   /** After the air: the lifted interface drawn over the frame, then put
    *  back on its own layers (the hit tests read them between frames). */
   draw(): void;
@@ -111,10 +128,10 @@ export function createGlobeInterfacePass(deps: {
   };
 
   return {
-    lift() {
+    lift(active = true) {
       // A frame that threw before its draw left objects lifted.
       putBack();
-      for (const root of roots()) walk(root);
+      if (active) for (const root of roots()) walk(root);
       count = objects.length;
     },
     draw() {

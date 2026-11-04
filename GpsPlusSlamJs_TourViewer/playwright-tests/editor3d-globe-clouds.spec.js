@@ -27,11 +27,14 @@ import {
  *   and title), a point of its found radius's ring and the tour's 3D model,
  *   with the clouds on and off. The shell's shadow is composited over the
  *   whole frame after the scene, so the interface is drawn after it
- *   (`globe-interface-pass.ts`) and must keep its brightness. How much
- *   the ground darkens is NOT asserted: the software renderer draws no
- *   cloud shadow at the landing (measured), so that is the phone's check.
+ *   (`globe-interface-pass.ts`) and must keep its brightness. The ratios
+ *   are asserted only where the clouds change the canvas measurably; the
+ *   software renderer draws no cloud shadow at the landing (measured), so
+ *   there they are readings, and the phone's check is the real one.
  * - the motion: the drift's rate and the map's offset over about 3 s at
- *   the landing (the canvas's change is read too, 0 where no cloud shows).
+ *   the landing (the canvas's change is read too, 0 where no cloud shows),
+ *   with the longest frame interval in the window and the seconds the
+ *   drift could step (it steps at most 1 s a frame).
  *
  * Extra readings: `CLOUD_SHADOW_SWEEP=0.2,0.45,0.6` and
  * `CLOUD_WIND_SWEEP=10,80` (extra pages; the defaults, shadow 0.3 and wind
@@ -237,7 +240,21 @@ async function driftOver3s(page) {
   const second = await view3d(page);
   const b = await canvasPixels(page);
   expect(second.camera).toEqual(first.camera);
+  // The frame intervals inside the window (the last 60 are kept): the
+  // drift steps at most 1 s a frame, so a longer frame drops time.
+  /** @type {number[]} */
+  const intervals = second.globe.frameTimesMs ?? [];
+  const inWindow = intervals.slice(
+    -Math.max(0, Math.min(intervals.length, second.frames - first.frames)),
+  );
   return {
+    longestFrameMs: Math.round(Math.max(0, ...inWindow)),
+    framesInWindow: inWindow.length,
+    // The seconds the drift could step: each interval capped at 1 s.
+    cappedSeconds:
+      Math.round(
+        inWindow.reduce((sum, ms) => sum + Math.min(ms, 1000), 0) / 100,
+      ) / 10,
     meanLumaChange: meanLumaChange(a, b),
     seconds: Math.round(((Date.now() - t0) / 1000) * 10) / 10,
     // The view's rate is in degrees a second already.
@@ -307,6 +324,12 @@ function drawnWith(stats) {
   };
 }
 
+/**
+ * The canvas's mean luma change (0-255) between clouds on and off above
+ * which the clouds show, and the shadow ratios are asserted.
+ */
+const SHADOW_VISIBLE_LUMA = 0.5;
+
 /** Extra strengths (`CLOUD_SHADOW_SWEEP`) and winds (`CLOUD_WIND_SWEEP`). */
 const SHADOW_SWEEP = sweepOf(process.env["CLOUD_SHADOW_SWEEP"], 0, 1);
 const WIND_SWEEP = sweepOf(process.env["CLOUD_WIND_SWEEP"], 0, 1000);
@@ -370,8 +393,9 @@ test("at the landing the clouds drift on real time and their shadow leaves the i
   expect(drift["driftRateDegPerS"]).toBeCloseTo(40 / 111_195, 6);
 
   // The shadow: the shell runs and casts at the link's strength, and the
-  // interface is drawn after it (lifted out of the scene's pass), so the
-  // billboards and rings keep their brightness.
+  // interface is drawn after it (lifted out of the scene's pass), so by
+  // reading the code the billboards and rings keep their brightness; the
+  // phone check confirms it.
   const shade = /** @type {Record<string, number>} */ (readings["shadow 0.3"]);
   expect(Object.keys(shade)).toEqual(
     expect.arrayContaining(["ground", "billboard", "ring"]),
@@ -380,9 +404,14 @@ test("at the landing the clouds drift on real time and their shadow leaves the i
   expect(shade["shellShadow"]).toBe(0.3);
   expect(shade["shellDrawn"]).toBeGreaterThan(0);
   expect(shade["lifted"]).toBeGreaterThan(0);
+  // The ratios are asserted only where the clouds change the canvas
+  // measurably: the software renderer draws no visible cloud shadow (the
+  // canvas identical on and off), and there they pass with or without the
+  // interface pass, so they are only readings (logged above).
   for (const [key, value] of Object.entries(readings)) {
     if (!key.startsWith("shadow ")) continue;
     const r = /** @type {Record<string, number>} */ (value);
+    if ((r["canvasChange"] ?? 0) <= SHADOW_VISIBLE_LUMA) continue;
     expect(r["billboard"]).toBeGreaterThan(0.95);
     expect(r["ring"]).toBeGreaterThan(0.95);
     // Never brighter with the clouds: they only take light.

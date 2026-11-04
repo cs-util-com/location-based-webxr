@@ -79,6 +79,7 @@ import {
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_INTRO,
+  GLOBE_VIEW_CLOUDS,
   globeViewClouds,
   globeZoomOutLimitM,
   mountGlobeRelief,
@@ -147,7 +148,12 @@ import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
 import {
+  createFrameDrawCalls,
+  type FrameDrawCalls,
+} from "./frame-draw-calls.js";
+import {
   createGlobeInterfacePass,
+  interfaceOverAir,
   type GlobeInterfacePass,
 } from "./globe-interface-pass.js";
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
@@ -352,6 +358,8 @@ export async function openGlobeEditor(
     // The interface drawn after the air (`globe-interface-pass.ts`): the
     // clouds' shadow is composited over the whole frame.
     let interfacePass: GlobeInterfacePass | null = null;
+    // The whole frame's draw calls (its passes summed), for the status bar.
+    let drawCalls: FrameDrawCalls | null = null;
     // The approach on opening the tour while it runs (`globe-approach-run.ts`).
     let approach: ApproachRun | null = null;
     /** How the last approach ended, for the page's checks. */
@@ -407,6 +415,7 @@ export async function openGlobeEditor(
           view.recentreFrame();
         },
         update: (now) => {
+          drawCalls?.begin();
           updateLayers(now);
         },
         afterSky: () => {
@@ -432,12 +441,20 @@ export async function openGlobeEditor(
             look: { count: SPEED_DUST_LOOK.count, gain: SPEED_DUST_LOOK.gain },
           });
           dust.render(renderer, 1 - SPEED_DUST_LOOK.over);
-          interfacePass?.lift();
+          // Above the deck the interface stays in the scene's pass, under
+          // the clouds (their composites write no depth).
+          interfacePass?.lift(
+            interfaceOverAir(
+              ellipsoid.getPositionElevation(pose.position),
+              GLOBE_VIEW_CLOUDS.cloudShellKm * 1000,
+            ),
+          );
         },
         afterScene: () => {
           dust.render(renderer, SPEED_DUST_LOOK.over);
           air?.afterScene();
           interfacePass?.draw();
+          drawCalls?.end();
         },
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
@@ -458,6 +475,7 @@ export async function openGlobeEditor(
       // hold one more, up to the browser's limit.
       renderer.forceContextLoss();
     });
+    drawCalls = createFrameDrawCalls(renderer.info);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // Daylight over the tour by default (held at its solar noon); the real
     // time now on request.
@@ -1389,7 +1407,7 @@ export async function openGlobeEditor(
           tiltDeg: 90 + pose.pitchDeg,
           headingDeg: pose.headingDeg,
           top,
-          drawCalls: renderer.info.render.calls,
+          drawCalls: drawCalls?.calls() ?? 0,
           frameMs: mean,
         };
       },

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_INTERFACE,
   createGlobeInterfacePass,
+  interfaceOverAir,
   isInterfacePart,
 } from "./globe-interface-pass.js";
 
@@ -183,6 +184,21 @@ describe("createGlobeInterfacePass", () => {
   });
 
   // Why: nothing to draw, no second pass over the scene.
+  // Why: above the cloud deck the interface must stay in the scene's pass
+  // (the cloud composites write no depth, so drawn after them it would
+  // punch through the clouds); an inactive lift puts last frame's objects
+  // back and lifts nothing, and the readout says 0.
+  it("lifts nothing on an inactive frame and puts the last one back", () => {
+    const { t, camera, drawn, pass } = setup();
+    pass.lift();
+    expect(pass.lifted()).toBe(5);
+    pass.lift(false);
+    expect(pass.lifted()).toBe(0);
+    expect(t.billboard.layers.test(camera.layers)).toBe(true);
+    pass.draw();
+    expect(drawn).toHaveLength(0);
+  });
+
   it("draws nothing when nothing is lifted", () => {
     const { t, drawn, pass } = setup();
     t.root.visible = false;
@@ -215,5 +231,21 @@ describe("createGlobeInterfacePass", () => {
     }).toThrow("context lost");
     expect(t.billboard.layers.test(camera.layers)).toBe(true);
     expect(camera.layers.isEnabled(GLOBE_INTERFACE.layer)).toBe(false);
+  });
+});
+
+describe("interfaceOverAir", () => {
+  // Why: the boundary decides whether pins and rings are drawn over the
+  // clouds; below the deck they are (the shadow must not darken them),
+  // at and above it they are not (they would show through the clouds).
+  it("is true only below the cloud deck", () => {
+    const deckM = 3000;
+    expect(interfaceOverAir(0, deckM)).toBe(true);
+    expect(interfaceOverAir(2999, deckM)).toBe(true);
+    expect(interfaceOverAir(3000, deckM)).toBe(false);
+    expect(interfaceOverAir(3001, deckM)).toBe(false);
+    expect(interfaceOverAir(400_000, deckM)).toBe(false);
+    expect(interfaceOverAir(-50, deckM)).toBe(true);
+    expect(interfaceOverAir(Number.NaN, deckM)).toBe(false);
   });
 });

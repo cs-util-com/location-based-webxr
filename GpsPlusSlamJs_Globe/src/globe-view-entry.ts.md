@@ -30,7 +30,9 @@
   - The heavy clouds: `globeViewClouds(view)` (`globe-view-clouds.ts`),
     passed to `mountGlobeViewAir` as its `clouds`: the lab's slab, shell
     and high layer with the lab's settings, switched by the air's
-    `setClouds`. The view must draw with standard depth.
+    `setClouds`. The view must draw with standard depth. Their settings
+    (`GLOBE_VIEW_CLOUDS`, e.g. the shell's height `cloudShellKm`) are
+    exported too.
   - The approach: `createGlobeApproach` (`globe-approach.ts`), `createGlobeLandingFlight`
     (`globe-landing-flight.ts`),
     `createApproachDrive` and `createFovReturn` (`globe-approach-camera.ts`)

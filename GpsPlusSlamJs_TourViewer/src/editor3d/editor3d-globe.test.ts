@@ -54,6 +54,7 @@ interface Fakes {
   busy: boolean;
   seams: null | Record<string, (...args: unknown[]) => unknown>;
   view: null | {
+    renderer: { render(scene: THREE.Scene, camera: THREE.Camera): void };
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     globe: { group: THREE.Group };
@@ -287,7 +288,15 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         options.seams.frameChanged?.(target);
       };
       const renderer = {
-        info: { render: { calls: 0 } },
+        // As three.js keeps it: each render adds its call, resetting first
+        // only with `autoReset`.
+        info: {
+          autoReset: true,
+          render: { calls: 0 },
+          reset() {
+            renderer.info.render.calls = 0;
+          },
+        },
         setPixelRatio() {},
         compile() {},
         initTexture() {},
@@ -296,6 +305,8 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         // The streaks, and the interface pass over the view's scene (the
         // view itself is faked).
         render: (drawn: THREE.Scene) => {
+          if (renderer.info.autoReset) renderer.info.reset();
+          renderer.info.render.calls++;
           if (drawn === fakes.view?.scene) {
             fakes.draws.push("interface");
             return;
@@ -1147,9 +1158,9 @@ describe("openGlobeEditor's wiring", () => {
 
   // Why: the streaks are drawn twice a frame, behind the Earth (before the
   // scene) and a share over it, before the air: the globe lab's order,
-  // which keeps the air's haze over them; the interface (the tour's
-  // billboards, rings and poles) last, after the air, so the clouds'
-  // shadow composited there never darkens it. Off for dust=0, the speed still
+  // which keeps the air's haze over them; the interface is not drawn after
+  // the air from this high (above the cloud deck it stays in the scene's
+  // pass, see the next test). Off for dust=0, the speed still
   // measured; a teleport (an arrow step) restarts their speed, so a jump
   // never flashes them.
   for (const { dust, label, shown, draws } of [
@@ -1157,13 +1168,13 @@ describe("openGlobeEditor's wiring", () => {
       dust: 1,
       label: "behind and over the Earth, before the air",
       shown: true,
-      draws: ["dust 0.75", "dust 0.25", "air", "interface"],
+      draws: ["dust 0.75", "dust 0.25", "air"],
     },
     {
       dust: 0,
       label: "nowhere for dust=0",
       shown: false,
-      draws: ["air", "interface"],
+      draws: ["air"],
     },
   ]) {
     it(`draws the speed streaks ${label}`, async () => {
@@ -1201,6 +1212,47 @@ describe("openGlobeEditor's wiring", () => {
       ).toBe(0);
     });
   }
+
+  // Why: below the cloud deck the interface (the tour's billboards, rings
+  // and poles) is drawn last, after the air, so the clouds' shadow
+  // composited there does not darken it; above the deck it stays in the
+  // scene's pass, as the cloud composites write no depth and it would show
+  // through the clouds. And the status bar's draw calls are the whole
+  // frame's, every pass summed, not the last pass's.
+  it("draws the interface after the air below the cloud deck only, and counts the whole frame's draw calls", async () => {
+    const view = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      dust: 0,
+    });
+    open = view;
+    const seams = fakes.seams;
+    if (seams === null) throw new Error("no seams");
+    const frameAt = (altitudeKm: number) => {
+      fakes.view?.placeView({
+        lat: MUNICH.lat,
+        lng: MUNICH.lon,
+        altitudeKm,
+        headingDeg: 0,
+        pitchDeg: -89,
+      });
+      fakes.draws = [];
+      seams.update?.(1_000);
+      seams.beforeScene?.();
+      // The view core's own scene pass (the fake logs every draw of the
+      // view's scene as "interface"; the air's fake draws nothing).
+      const scene = fakes.view?.scene;
+      if (scene) fakes.view?.renderer.render(scene, fakes.view.camera);
+      seams.afterScene?.();
+      return fakes.draws.filter((d) => d === "interface").length;
+    };
+    // Below the deck: the scene's pass and the interface pass, both counted.
+    expect(frameAt(1)).toBe(2);
+    expect(view.readout().drawCalls).toBe(2);
+    expect(frameAt(2.5)).toBe(2);
+    // Above it: the scene's pass alone.
+    expect(frameAt(5)).toBe(1);
+    expect(view.readout().drawCalls).toBe(1);
+  });
 
   // Why: the clouds and the air read the scene's depth as standard depth
   // (far at 1); reversed depth left them reading the near plane as the

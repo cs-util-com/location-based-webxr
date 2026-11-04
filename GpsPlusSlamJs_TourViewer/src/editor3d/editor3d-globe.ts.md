@@ -104,7 +104,7 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - The heavy clouds: the lab's slab, shell and high layer with the lab's
   settings (`globeViewClouds(view, { shadow })`, passed to the air), on by
   default; the link's `cloudShadow` (0.3) sets their shadows' strength
-  and `cloudWind` (10 m/s) the cloud map's wind floor.
+  and `cloudWind` (40 m/s) the cloud map's wind floor.
   The air steps them with the relief mount's cloud-shell share
   (`shareClouds(true, flat)`), draws them after the Earth and patches
   their shadow onto the relief; `setClouds(on)` is the View menu's
@@ -112,14 +112,20 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - **The interface over the clouds' shadow** (`globe-interface-pass.ts`):
   the shell's ground shadow is a full-screen quad composited after the
   scene, its rays ending at the relief's depth (the scene depth holds the
-  relief only), so it darkened every billboard, ring and pole in front of
-  the shaded ground as if it were that ground. Each frame the interface
+  relief only), so by reading the code it darkens every billboard, ring
+  and pole in front of the shaded ground as if it were that ground
+  (headless draws no visible cloud shadow; the phone check confirms the
+  cause). Each frame the interface
   under the tour's frame and the editing's scene objects (the gizmo) is
   lifted onto its own layer before the scene (`beforeScene`) and drawn
   after the air (`afterScene`), with the daylight lit on that layer; the
   renderer does not clear between the passes (`autoClear` is false in
   the view), so the relief still hides what is behind it. The ground and
-  the tour's models stay in the scene and take the shadow.
+  the tour's models stay in the scene and take the shadow. Only while
+  the camera is below the cloud deck (`interfaceOverAir`, the clouds'
+  shell height): the cloud and haze composites write no depth, so from
+  above the deck (the approach, a zoom-out) the interface stays in the
+  scene's pass, under the clouds that hide it.
 - Standard depth, not reversed: the clouds' and the air's scene-depth
   readers assume it, and reversed depth measured no better on the
   24-bit buffer.
@@ -278,6 +284,11 @@ takeover; what still loads does not keep it (it reads no load counts).
 - The globe's assets are served at `/globe-assets/` by the dev server
   (`../dev-server/globe-assets-route.ts`) and, on the built site, from
   the one copy the site build puts at its root (`scripts/build-site.mjs`).
+- The status bar's `readout().drawCalls` is the whole frame's
+  (`frame-draw-calls.ts`: the renderer's automatic reset off, reset in
+  the `update` seam, read at the end of `afterScene`), every pass summed:
+  the sky, the scene, the air's composites and the interface pass. With
+  the automatic reset it read only the last pass's.
 
 ## Stats
 
@@ -294,8 +305,8 @@ and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
 (`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
 from a stalled one. `clouds` is what the clouds' shadow and motion checks
 read: the drift rate (deg/s) and the map's longitude offset (rad), the
-link's `shadow` and `windMps`, the canvas probes (`probes`: pixels of the
-billboards, the rings, the poles, the models and the bare ground), the
+link's `shadow` and `windMps`, the canvas probes (`probes`: pixels of a
+billboard, a ring and a model), the
 shell's frames drawn, share and weights (`shell`) and
 how many objects the interface pass lifted (`interfaceLifted`).
 
