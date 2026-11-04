@@ -63,8 +63,8 @@ export const GLOBE_OSM = Object.freeze({
    * After this many retries of a tile that failed again, the relief stops
    * waiting for its map (`mapReady`): its parent no longer stands in for
    * it, and it is drawn bare until a later retry brings the map. The
-   * retries themselves go on (`retryBackoffMs`). Counted in retries, not
-   * in time: a full request ceiling holds the retries back (they would be
+   * retries themselves go on (`retryBackoffMs`). Counted in timed
+   * retries (one asked for, `retryNow`, does not count), not in time: a full request ceiling holds the retries back (they would be
    * turned away, not asked), so a busy ceiling never gives a tile up. 3:
    * a server failing every request gives up after about 35 s of waits
    * (5 + 10 + 20 s) plus the requests' own time; swept 2026-11-03 over 2,
@@ -927,12 +927,29 @@ export interface OsmMapTile {
   readonly ms: number | null;
 }
 
-/** The tiles the last retry asked for again (`lastRetry`): how many, and
- *  how many have their map now or failed again (the rest still load). */
+/** The tiles the last retry asked for again (`lastRetry`): which retry
+ *  it was, how many, and how many have their map now or failed again (the
+ *  rest still load). */
 export interface OsmRetryOutcome {
+  /** The retry's number, 1 for the first (timed or asked for): an
+   *  outcome answers an ask (`OsmRetryAsk.retry`) from that number up. */
+  readonly retry: number;
   readonly tiles: number;
   readonly loaded: number;
   readonly failed: number;
+}
+
+/** What `retryNow` did: how many failed tiles it asks for again, or why
+ *  it asks for none, and the number of the retry that will answer it. */
+export interface OsmRetryAsk {
+  /** The failed tiles asked for again (0 when refused). */
+  readonly tiles: number;
+  /** Why none were asked for: no tile failed, or the map is off (it asks
+   *  for nothing until it is on); null when asked. */
+  readonly refused: "none-failed" | "map-off" | null;
+  /** The `OsmRetryOutcome.retry` from which an outcome answers this ask:
+   *  an outcome with a lower number is from before it. */
+  readonly retry: number;
 }
 
 const NO_COVERAGE: OsmCoverage = Object.freeze({
@@ -1174,8 +1191,12 @@ export function createGlobeOsmOverlay({
     retryStreak++;
     retried = failed;
     lastRetried = failed;
-    for (const info of failed) {
-      retriesOf.set(info, (retriesOf.get(info) ?? 0) + 1);
+    // Only the timed retries count towards giving a tile up: one asked for
+    // is the person's click, not the server failing on its own clock.
+    if (!now) {
+      for (const info of failed) {
+        retriesOf.set(info, (retriesOf.get(info) ?? 0) + 1);
+      }
     }
     plugin.resetFailedOverlays();
   };
@@ -1385,25 +1406,28 @@ export function createGlobeOsmOverlay({
     /**
      * Asks for the failed tiles again now, through the timed retry's own
      * path (`retryFailed`): run at the next look, brought forward to the
-     * next `update`; it needs the map on and waits while the request
-     * ceiling is full. Returns how many failed tiles it asks for (0: none
-     * failed, nothing asked).
+     * next `update`; it waits while the request ceiling is full, and is
+     * not counted towards giving a tile up. Refused (nothing asked) with
+     * the map off or no tile failed.
      */
-    retryNow(): number {
+    retryNow(): OsmRetryAsk {
+      const retry = failedRetries + 1;
+      if (!active) return { tiles: 0, refused: "map-off", retry };
       const n = failedTiles(
         plugin as unknown as OverlayPluginInternals,
         overlay,
       ).length;
-      if (n === 0) return 0;
+      if (n === 0) return { tiles: 0, refused: "none-failed", retry };
       retryAsked = true;
       lastLook = Number.NEGATIVE_INFINITY;
-      return n;
+      return { tiles: n, refused: null, retry };
     },
     /** What became of the tiles the last retry asked for, or null before
      *  the first retry. */
     lastRetry(): OsmRetryOutcome | null {
       if (lastRetried === null) return null;
       return {
+        retry: failedRetries,
         tiles: lastRetried.length,
         loaded: lastRetried.filter((i) => i.target !== null).length,
         failed: lastRetried.filter((i) => i.failed).length,

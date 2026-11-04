@@ -1373,14 +1373,13 @@ describe("a map tile whose request failed", () => {
 
   // Why: the editor's Map loading tab has a Retry button. It must ask
   // through the same path as the timed retry (the library's reset, after
-  // the re-evaluation, counted towards giving a tile up), not a second
-  // path that could lock a region twice; and it must not wait out the
-  // backoff, or the button would do nothing for up to a minute.
+  // the re-evaluation, never locking a region twice); and it must not wait
+  // out the backoff, or the button would do nothing for up to a minute.
   it("asks again at the next update when retried now, without the wait", async () => {
     const { osm, reset, runTo } = await withFailedTile();
     runTo(200, 100);
     expect(reset).not.toHaveBeenCalled();
-    expect(osm.retryNow()).toBe(1);
+    expect(osm.retryNow()).toEqual({ tiles: 1, refused: null, retry: 1 });
     runTo(300, 100, 300);
     expect(reset).toHaveBeenCalledTimes(1);
     expect(osm.stats().failedRetries).toBe(1);
@@ -1389,41 +1388,98 @@ describe("a map tile whose request failed", () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
+  // Why: with the map off a retry asked for ran only once the map came
+  // back, unasked and without the wait, while the button said it was
+  // retrying; it is refused at once and says why instead.
   it("asks nothing when retried now with no failed tile, or with the map off", async () => {
     const off = await withFailedTile();
-    expect(off.osm.retryNow()).toBe(1);
-    off.runTo(1000, 300);
+    off.runTo(0, 300);
+    expect(off.osm.retryNow()).toEqual({
+      tiles: 0,
+      refused: "map-off",
+      retry: 1,
+    });
+    off.runTo(1000, 300, 100);
+    off.runTo(1200, 100, 1100);
     expect(off.reset).not.toHaveBeenCalled();
     const none = await withFailedTile();
+    none.runTo(0, 100);
     none.info.failed = false;
     none.info.target = { texture: 1 };
-    expect(none.osm.retryNow()).toBe(0);
-    none.runTo(1000, 100);
+    expect(none.osm.retryNow()).toEqual({
+      tiles: 0,
+      refused: "none-failed",
+      retry: 1,
+    });
+    none.runTo(1000, 100, 100);
     expect(none.reset).not.toHaveBeenCalled();
+  });
+
+  // Why: three quick clicks on Retry are the person asking, not the
+  // server failing three times on its own clock: counted, they gave a
+  // tile up within seconds and it was drawn bare. Only the timed retries
+  // count towards giving a tile up.
+  it("does not count retries asked for now towards giving a tile up", async () => {
+    const asked = await withFailedTile();
+    asked.runTo(0, 100);
+    for (let i = 1; i <= GLOBE_OSM.giveUpRetries + 1; i++) {
+      expect(asked.osm.retryNow().tiles).toBe(1);
+      asked.runTo(i * 300, 100, i * 300 - 200);
+    }
+    expect(asked.reset).toHaveBeenCalledTimes(GLOBE_OSM.giveUpRetries + 1);
+    expect(asked.osm.coverage().givenUp).toBe(0);
+    const timed = await withFailedTile();
+    timed.retriesUntil(200_000);
+    expect(timed.osm.coverage().givenUp).toBe(1);
   });
 
   // Why: the Retry button's final state reads this: "N loaded" or "failed
   // again" must describe the tiles that retry asked for, after the
-  // re-evaluation forgot them (it clears its own list once one heals).
+  // re-evaluation forgot them (it clears its own list once one heals); and
+  // its number tells an outcome from before the ask from the ask's own.
   it("reports what became of the last retry's tiles", async () => {
     const healed = await withFailedTile();
     expect(healed.osm.lastRetry()).toBeNull();
-    healed.osm.retryNow();
     healed.runTo(0, 100);
-    expect(healed.osm.lastRetry()).toEqual({ tiles: 1, loaded: 0, failed: 1 });
+    healed.osm.retryNow();
+    healed.runTo(100, 100, 100);
+    expect(healed.osm.lastRetry()).toEqual({
+      retry: 1,
+      tiles: 1,
+      loaded: 0,
+      failed: 1,
+    });
     healed.info.failed = false;
     healed.info.target = { texture: 1 };
-    healed.runTo(2000, 100, 100);
-    expect(healed.osm.lastRetry()).toEqual({ tiles: 1, loaded: 1, failed: 0 });
+    healed.runTo(2000, 100, 200);
+    expect(healed.osm.lastRetry()).toEqual({
+      retry: 1,
+      tiles: 1,
+      loaded: 1,
+      failed: 0,
+    });
     const again = await withFailedTile();
-    again.osm.retryNow();
+    again.runTo(0, 100);
+    expect(again.osm.retryNow().retry).toBe(1);
     again.reset.mockImplementation(() => {
       again.info.failed = false;
     });
-    again.runTo(0, 100);
-    expect(again.osm.lastRetry()).toEqual({ tiles: 1, loaded: 0, failed: 0 });
+    again.runTo(100, 100, 100);
+    expect(again.osm.lastRetry()).toEqual({
+      retry: 1,
+      tiles: 1,
+      loaded: 0,
+      failed: 0,
+    });
     again.info.failed = true;
-    expect(again.osm.lastRetry()).toEqual({ tiles: 1, loaded: 0, failed: 1 });
+    expect(again.osm.lastRetry()).toEqual({
+      retry: 1,
+      tiles: 1,
+      loaded: 0,
+      failed: 1,
+    });
+    // The next ask's outcome is the next retry's.
+    expect(again.osm.retryNow().retry).toBe(2);
   });
 
   // Why: the Map loading table names each tile by the map tile at its
