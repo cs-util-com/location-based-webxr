@@ -1,0 +1,1665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Relief cloud deck, round 2</title>
+    <style>
+      :root {
+        --panel: rgba(10, 16, 28, 0.62);
+        --text: #eef3fa;
+        --muted: #b7c3d4;
+        --accent: #ffd98a;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b1a33;
+        color: var(--text);
+        overflow: hidden;
+        font:
+          13px/1.35 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+      }
+      canvas:active {
+        cursor: grabbing;
+      }
+      .ui {
+        position: fixed;
+        z-index: 2;
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 8px 10px;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+      #readout {
+        top: 12px;
+        left: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: pre;
+        font-size: 12px;
+        max-width: calc(100vw - 48px);
+        overflow: hidden;
+        pointer-events: none;
+      }
+      #controls {
+        left: 12px;
+        bottom: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-width: calc(100vw - 48px);
+      }
+      #controls button {
+        font: inherit;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 7px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      #controls button[aria-pressed="true"] {
+        background: rgba(255, 217, 138, 0.25);
+        border-color: var(--accent);
+      }
+      #controls button:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      #controls .sep {
+        width: 1px;
+        background: rgba(255, 255, 255, 0.2);
+        margin: 0 2px;
+      }
+      #notes {
+        top: 12px;
+        right: 12px;
+        max-width: min(400px, calc(100vw - 48px));
+        max-height: calc(100vh - 120px);
+        overflow: auto;
+      }
+      #notes summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      #notes p,
+      #notes li {
+        color: var(--muted);
+        margin: 6px 0;
+      }
+      #notes ul {
+        padding-left: 18px;
+        margin: 4px 0;
+      }
+      #notes b {
+        color: var(--text);
+      }
+      #err {
+        position: fixed;
+        inset: auto 12px 64px 12px;
+        z-index: 3;
+        color: #ffb4a8;
+        display: none;
+      }
+      @media (max-width: 520px) {
+        #notes {
+          top: auto;
+          bottom: 104px;
+          right: 12px;
+          left: 12px;
+          max-width: none;
+          max-height: 45vh;
+        }
+        #readout {
+          font-size: 10.5px;
+        }
+        #controls button {
+          padding: 6px 8px;
+        }
+      }
+      @media (max-height: 420px) {
+        #notes {
+          max-height: calc(100vh - 110px);
+        }
+        #readout {
+          font-size: 10.5px;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="readout" class="ui">starting...</div>
+    <div id="controls" class="ui" role="group" aria-label="View and quality">
+      <button data-view="10km">10 km</button>
+      <button data-view="3km">3 km</button>
+      <button data-view="30km">30 km</button>
+      <button data-view="below" title="Under the cloud deck, looking up">
+        Below
+      </button>
+      <span class="sep"></span>
+      <button data-tier="low">Low</button>
+      <button data-tier="high">High</button>
+      <span class="sep"></span>
+      <button id="reset">Reset view</button>
+      <button id="measure">Measure</button>
+      <button id="clouds" title="Reload with or without clouds">
+        Clouds off
+      </button>
+    </div>
+    <details id="notes" class="ui">
+      <summary>Notes: relief cloud deck, round 2</summary>
+      <p>
+        <b>Controls.</b> Drag to look around, right-drag or two fingers to pan,
+        wheel or pinch to fly in and out, W A S D to move and Q E to sink and
+        climb (Shift is faster). The camera stays between 100 m and 60 km.
+      </p>
+      <p>
+        <b>Technique.</b> One full-screen pass over an analytic sphere. The
+        cloud layer is a volume with a flat base: everything between the base
+        height and a baked, tiling thickness map (clustered unions of domes plus
+        a billow detail map, with gradients and mipmaps). Each pixel marches its
+        ray through the part of the cloud slab it crosses, finds where it enters
+        the volume (through a flank, a top, or the flat base), refines the
+        entry, and then takes a few short taps further along the ray to measure
+        how much cloud it passes through: that chord sets the opacity, so thin
+        edges are translucent and every deep path is solid. Tops and flanks are
+        lit from the stored gradient with a short sun shadow march; the flat
+        base gets its own sky-lit, grey-blue shading with light leaking through
+        thin parts.
+      </p>
+      <p><b>What changed from round 1, and why.</b></p>
+      <ul>
+        <li>
+          <b>Solid undersides.</b> Round 1 set a hit's opacity from the column
+          thickness, so the lower part of every flank, where the column is thin,
+          faded out: clouds were transparent at the bottom. Opacity now comes
+          from the path length through the cloud, and the flat base is part of
+          the volume, so clouds seen from the side or from below are solid and
+          have a flat, darker base.
+        </li>
+        <li>
+          <b>Camera above, inside and below the deck.</b> Above: the march runs
+          from where the ray enters the top of the slab to where it meets the
+          base height (or leaves the slab again). Inside the slab: it starts at
+          the camera; if the camera is inside a cloud, the cloud is drawn as fog
+          up to the point where the ray leaves it, then the march carries on.
+          Below: it starts where the ray crosses the base height going up; if
+          there is cloud there, that is a hit on the flat base, otherwise the
+          ray climbs through the gap and can still hit the flank of a
+          neighbouring cloud.
+        </li>
+        <li>
+          <b>Soft base edges from below.</b> The cloud's outline sits 80 m up
+          the map's ramp from zero to the dome height: a contour right at zero
+          followed the texel grid of the blurred map and showed as stair steps
+          and straight cut-off lines along every base. Thin parts count as less
+          dense, so bases fade out where the cloud thins. The blur level is a
+          smooth function of distance (no stepped bands in the gaps). Light
+          leaks through a thin base only where the path to the sun is clear,
+          and the lowest few hundred metres of a flank seen from below take
+          the base's grey, so base and flank meet without a pale rim.
+        </li>
+        <li>
+          <b>Stable in time.</b> The per-pixel random march offset is gone (with
+          drifting clouds it crawled as a white fuzz on every edge). The march
+          is deterministic, and the cloud map is sampled at a blur level that
+          matches the march step as well as the pixel size, so far clouds blur
+          into the haze band instead of turning into crumbly noise.
+        </li>
+        <li>
+          Free camera, a "Below" preset, an honest frame meter with a Measure
+          button, and <code>?clouds=0</code> to measure the water alone.
+        </li>
+      </ul>
+      <p><b>Tiers.</b></p>
+      <ul>
+        <li>
+          <b>Low:</b> 20 march steps, 5 refinement steps, 2 chord taps, 3 shadow
+          taps, 1 sea-shadow tap, one glint level, 1024 texel cloud map, render
+          scale 0.6 of CSS pixels (adapts 0.45-0.8 to keep frames near 30 ms).
+        </li>
+        <li>
+          <b>High:</b> 44 march steps, 7 refinement steps, 4 chord taps, 7
+          shadow taps, 3 sea-shadow taps, two blended glint levels, 2048 texel
+          cloud map, render scale up to 1.5 device pixels.
+        </li>
+      </ul>
+      <p>
+        <b>The frame meter.</b> The readout shows frames per second and the
+        median and p95 frame interval over the last 2 s, and says "at display
+        cap" when the median sits within 1 ms of the display interval (measured
+        with empty frames at start). A 60 Hz screen never shows less than 16.7
+        ms, whatever the page costs. Where the browser offers a GPU timer, the
+        GPU time per frame is shown as well. <b>Measure</b> renders the whole
+        frame 1, 2, 4 and 8 times per shown frame (and keeps doubling up to 64
+        while the work is still small), about 2 s each, and waits for the GPU
+        after each shown frame; one frame's cost is the slope of that time
+        against the repetitions, so fixed overheads cancel. The GPU timer and
+        the slope of the plain display interval (over the points not held at the
+        cap) are shown next to it as cross-checks.
+      </p>
+      <p>
+        <b>Measured cost</b> (Measure button, laptop with an integrated Intel
+        Iris Xe GPU, Chromium with GPU, the machine shared with other work):
+      </p>
+      <ul id="measured-notes">
+        <li>
+          High, 1440x900 at 1 device px: 10 km about 12.0 ms per frame (GPU
+          timer 11.2 ms), 3 km 7.0 ms (6.9). The Below view (looking toward the sun
+          from a gap between clouds, much of the frame grazing the deck near the
+          horizon) about 8 ms (GPU timer 8.0); looking straight into the
+          underside of the big cluster, where most rays stop at the base at
+          once, 2.9 ms. Repeated runs on this shared machine vary by up to 2 ms. With
+          <code>?clouds=0</code> the water alone costs 1.45 ms (GPU timer 1.5
+          ms) at 10 km and 3 km, so the clouds are about 80-90% of those frames.
+        </li>
+        <li>
+          Low, 390x844 (234x506 px): GPU timer 0.38 ms at 10 km, 0.35 ms at 3 km and 0.18 ms
+          Below; water alone 0.13 ms. Low at 1440x900 (864x540 px): GPU timer 1.5
+          ms, water alone 0.5 ms, so in the low tier the water is about a third.
+          At these small costs the slope reads higher (0.4-4.7 ms), because the
+          fixed cost of each extra draw call dominates; the GPU timer is the
+          better number there.
+        </li>
+        <li>
+          Not measured on a phone. A low-end phone GPU is roughly 10-20 times
+          slower than this one, which would put the low tier at about 4-8 ms and
+          the high tier at a phone's full resolution well over the 50 ms budget.
+        </li>
+        <li>Startup: the cloud maps bake once in about 0.1-0.7 s.</li>
+      </ul>
+      <p>
+        <b>Stability check.</b> Two screenshots 1.5 s apart with the page panels
+        hidden: with time frozen (<code>?freeze=1</code>) they are identical, so
+        nothing changes from frame to frame by itself (no random march offset, a
+        fixed dither). With time running, the water alone changes as waves and
+        glints move (8 500-16 000 isolated single-pixel changes, the glitter
+        twinkling by design); with clouds the isolated changes drop to 2 500-6
+        700 (clouds cover water), and the cloud differences are whole surfaces
+        moving, not specks. A slow orbit (1 degree per second) adds no specks
+        either.
+      </p>
+      <p><b>Self-check against the reference and the review.</b></p>
+      <ul id="selfcheck">
+        <li>
+          <b>Undersides:</b> solid now from every side, with a flat grey-blue
+          base from below and darker lower flanks from the side. The base is
+          still too even: real cumulus bases are ragged and show darker cores
+          and lighter edges more strongly. Looking toward the sun the flanks
+          are a fairly flat grey with only a thin bright rim; the domes read
+          as lens shapes more than cauliflowers from below. The clusters are
+          large (several km), so under one the sky overhead is closed.
+        </li>
+        <li>
+          <b>Inside a cloud</b> the page draws an even grey fog up to where the
+          ray leaves the cloud: good enough to fly through, not a look (no
+          density variation, a hard line at the base height).
+        </li>
+        <li>
+          <b>Still pillows:</b> thin edges are now translucent and shadow sides
+          lighter, but the tops remain smooth dome unions with billows of
+          120-530 m; no wisps, no light through the body of a cloud. Real
+          softness needs a volume.
+        </li>
+        <li>
+          <b>Hard, aliased silhouettes:</b> without the random offset there is
+          no fuzz, but edges are single-sample, and seen from below near the
+          horizon far bases show thin ragged streaks. Temporal
+          accumulation with reprojection (one history buffer) would fix both.
+        </li>
+        <li>
+          <b>Far edges:</b> the deck now blurs into a smooth band toward the
+          horizon instead of white crumbs; far clouds are slightly lower and
+          softer than in round 1 as a result.
+        </li>
+        <li>
+          Unchanged from round 1: the haze band is thinner and less golden than
+          in the reference, the glitter path narrower near the horizon, the
+          small clouds at 30 km too uniform, the cloud map tiles every 64 km,
+          and the sky and haze are hand-fitted rather than a physical
+          atmosphere. Clouds drift about ten times faster than a real wind, on
+          purpose, and the billows slide over the domes at their own speed.
+        </li>
+      </ul>
+    </details>
+    <div id="err"></div>
+    <canvas id="c"></canvas>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const params = new URLSearchParams(location.search);
+      const num = (k, d) =>
+        Number.isFinite(parseFloat(params.get(k)))
+          ? parseFloat(params.get(k))
+          : d;
+      const coarse =
+        matchMedia("(pointer: coarse)").matches ||
+        Math.min(innerWidth, innerHeight) < 600;
+      const tierParam = params.get("tier");
+      const tier =
+        tierParam === "low" || tierParam === "high"
+          ? tierParam
+          : coarse
+            ? "low"
+            : "high";
+      const sunDeg = Math.min(85, Math.max(-2, num("sun", 10)));
+      const adapt = params.get("adapt") !== "0";
+      const clouds = params.get("clouds") !== "0";
+      // ?freeze=1 stops the time progression (used to check that a still frame is exactly still)
+      const freeze = params.get("freeze") === "1";
+      let view = ["10km", "3km", "30km", "below"].includes(params.get("view"))
+        ? params.get("view")
+        : "10km";
+
+      const TIERS = {
+        low: {
+          STEPS: 20,
+          REFINE: 5,
+          CHORD: 2,
+          SHADOW: 3,
+          SEA_SH: 1,
+          GLINT2: 0,
+          macro: 1024,
+          scale: 0.6,
+          minScale: 0.45,
+          maxScale: 0.8,
+          dprCap: 1,
+        },
+        high: {
+          STEPS: 44,
+          REFINE: 7,
+          CHORD: 4,
+          SHADOW: 7,
+          SEA_SH: 3,
+          GLINT2: 1,
+          macro: 2048,
+          scale: 1.0,
+          minScale: 1.0,
+          maxScale: 1.0,
+          dprCap: 1.5,
+        },
+      };
+      const T = TIERS[tier];
+
+      // ox/oz: camera position over the (tiling) cloud map in km
+      const VIEWS = {
+        "10km": { alt: 10.0, pitch: -9.0, yaw: -12.0, ox: 0, oz: 0 },
+        "3km": { alt: 3.0, pitch: -6.0, yaw: -14.0, ox: 0, oz: -20 },
+        "30km": { alt: 30.0, pitch: -15.0, yaw: -12.0, ox: 0, oz: 0 },
+        below: { alt: 0.6, pitch: 24.0, yaw: 0.0, ox: 3.75, oz: -12.75, fixedYaw: true },
+      };
+      const VFOV = 62;
+      const ALT_MIN = 0.1;
+      const ALT_MAX = 60;
+
+      const errBox = document.getElementById("err");
+      function fail(msg) {
+        errBox.style.display = "block";
+        errBox.textContent = msg;
+      }
+
+      const canvas = document.getElementById("c");
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          alpha: false,
+          powerPreference: "high-performance",
+        });
+      } catch (e) {
+        fail("WebGL is not available on this device.");
+        throw e;
+      }
+      renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+      renderer.autoClear = false;
+
+      const gl = renderer.getContext();
+      const canFloatRT =
+        renderer.extensions.has("EXT_color_buffer_float") ||
+        renderer.extensions.has("EXT_color_buffer_half_float");
+      const rtType = canFloatRT ? THREE.HalfFloatType : THREE.UnsignedByteType;
+      // 8-bit fallback stores encoded values; decode = raw * scale + bias.
+      const DEC_SCALE = canFloatRT
+        ? new THREE.Vector4(1, 1, 1, 1)
+        : new THREE.Vector4(2.0, 8.0, 8.0, 1.0);
+      const DEC_BIAS = canFloatRT
+        ? new THREE.Vector4(0, 0, 0, 0)
+        : new THREE.Vector4(-0.3, -4.0, -4.0, 0.0);
+
+      // ---------------------------------------------------------------------------
+      // Bake: cluster mask -> dome heights -> gradient + mips (macro and detail maps)
+      // ---------------------------------------------------------------------------
+      const MACRO_KM = 64.0;
+      const DETAIL_KM = 3.2;
+
+      const quadGeo = new THREE.PlaneGeometry(2, 2);
+      const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const quadMesh = new THREE.Mesh(quadGeo);
+      quadMesh.frustumCulled = false;
+      const quadScene = new THREE.Scene();
+      quadScene.add(quadMesh);
+
+      const VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+      const NOISE = /* glsl */ `
+  float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec4 hash42(vec2 p) { vec4 p4 = fract(vec4(p.xyxy) * vec4(0.1031, 0.1030, 0.0973, 0.1099)); p4 += dot(p4, p4.wzxy + 33.33); return fract((p4.xxyz + p4.yzzw) * p4.zywx); }
+  float vnoiseP(vec2 x, float per) {
+    vec2 i = floor(x), f = fract(x);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float a = hash12(mod(i, per)), b = hash12(mod(i + vec2(1, 0), per));
+    float c = hash12(mod(i + vec2(0, 1), per)), d = hash12(mod(i + vec2(1, 1), per));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+  float fbmP(vec2 x, float per) {
+    float s = 0.0, a = 0.5;
+    for (int k = 0; k < 5; k++) { s += a * vnoiseP(x, per); x *= 2.0; per *= 2.0; a *= 0.5; }
+    return s / 0.96875;
+  }
+`;
+
+      function makeRT(size, mips, type = rtType) {
+        return new THREE.WebGLRenderTarget(size, size, {
+          type,
+          format: THREE.RGBAFormat,
+          depthBuffer: false,
+          stencilBuffer: false,
+          wrapS: THREE.RepeatWrapping,
+          wrapT: THREE.RepeatWrapping,
+          magFilter: THREE.LinearFilter,
+          minFilter: mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter,
+          generateMipmaps: mips,
+        });
+      }
+
+      function runPass(material, target) {
+        quadMesh.material = material;
+        renderer.setRenderTarget(target);
+        renderer.clear();
+        renderer.render(quadScene, quadCam);
+        renderer.setRenderTarget(null);
+      }
+
+      const maskMat = new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader:
+          NOISE +
+          /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      float m = smoothstep(0.46, 0.74, fbmP(vUv * 3.0, 3.0));
+      gl_FragColor = vec4(m, 0.0, 0.0, 1.0);
+    }`,
+      });
+
+      // Dome unions: each cell may hold one dome (a cap standing on the flat base).
+      // The max of overlapping caps of several sizes gives cauliflower-like crowns with creases.
+      const domeMat = (detail) =>
+        new THREE.ShaderMaterial({
+          uniforms: {
+            tMask: { value: null },
+          },
+          vertexShader: VERT,
+          fragmentShader:
+            NOISE +
+            /* glsl */ `
+    varying vec2 vUv;
+    uniform sampler2D tMask;
+    #define DETAIL ${detail ? 1 : 0}
+    float cluster(vec2 uv) {
+    #if DETAIL
+      return 1.0;
+    #else
+      return texture2D(tMask, uv).r;
+    #endif
+    }
+    // zero-preserving soft union (p-norm): merges neighbouring domes without lifting empty sea
+    float smax(float a, float b, float p) { return pow(pow(max(a, 0.0), p) + pow(max(b, 0.0), p), 1.0 / p); }
+    // cap height in cell units; profile (1 - x^2)^0.55 gives rounded tops and steep flanks that meet the flat base
+    float domes(vec2 uv, float per, float rmin, float rmax, float d0, float d1, float salt, float k) {
+      vec2 x = uv * per; vec2 c0 = floor(x); float h = 0.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 c = c0 + vec2(float(i), float(j));
+        vec4 r = hash42(mod(c, per) + salt);
+        vec2 ctr = c + 0.15 + 0.7 * r.xy;
+        float m = cluster(ctr / per);
+        if (r.w > mix(d0, d1, m)) continue;
+        float rr = mix(rmin, rmax, r.z) * mix(0.6, 1.0, m);
+        vec2 dv = x - ctr; float q = 1.0 - dot(dv, dv) / (rr * rr);
+        if (q > 0.0) h = smax(h, rr * pow(q, 0.55), k);
+      }
+      return h;
+    }
+    vec2 grad2(vec2 i, float per, float salt) { float a = 6.2831853 * hash12(mod(i, per) + salt); return vec2(cos(a), sin(a)); }
+    float gnoiseP(vec2 x, float per, float salt) {
+      vec2 i = floor(x), f = fract(x);
+      vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+      float a = dot(grad2(i, per, salt), f), b = dot(grad2(i + vec2(1, 0), per, salt), f - vec2(1, 0));
+      float c = dot(grad2(i + vec2(0, 1), per, salt), f - vec2(0, 1)), d = dot(grad2(i + vec2(1, 1), per, salt), f - vec2(1, 1));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 1.4;
+    }
+    void main() {
+      vec2 uv = vUv;
+    #if DETAIL
+      // tile ${DETAIL_KM} km: billow noise (folded gradient noise: rounded crowns, creased valleys) of 120-530 m, centred around zero
+      float h = 0.0;
+      h += 0.120 * abs(gnoiseP(uv * 6.0, 6.0, 1.0));
+      h += 0.050 * abs(gnoiseP(uv * 13.0, 13.0, 2.0));
+      h += 0.020 * abs(gnoiseP(uv * 27.0, 27.0, 3.0));
+      h += 0.009 * abs(gnoiseP(uv * 56.0, 56.0, 4.0));
+      h -= 0.092;
+      gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
+    #else
+      // tile ${MACRO_KM} km: clustered big domes, medium domes on their shoulders, scattered small ones between clusters
+      float m = texture2D(tMask, uv).r;
+      uv += 0.012 * vec2(fbmP(uv * 9.0, 9.0) - 0.5, fbmP(uv * 9.0 + 4.7, 9.0) - 0.5);
+      float L1 = domes(uv, 18.0, 0.35, 0.85, 0.0, 0.85, 1.7, 5.0) * (${MACRO_KM.toFixed(1)} / 18.0) * 0.30;
+      float L2 = domes(uv, 46.0, 0.35, 0.85, 0.02, 0.75, 7.3, 4.0) * (${MACRO_KM.toFixed(1)} / 46.0) * 0.72;
+      float L3 = domes(uv, 120.0, 0.30, 0.70, 0.05, 0.22, 3.1, 4.0) * (${MACRO_KM.toFixed(1)} / 120.0) * 0.80;
+      float h = smax(L1, L2 + 0.30 * L1 * step(0.001, L2), 4.0);
+      h = smax(h, L3 + 0.15 * h * step(0.001, L3), 6.0);
+      h = 1.45 * tanh(h / 1.45);
+      gl_FragColor = vec4(h, 0.0, 0.0, m);
+    #endif
+    }`,
+        });
+
+      const gradMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tH: { value: null },
+          uTexel: { value: 1 },
+          uTexelKm: { value: 1 },
+          uEncS: { value: DEC_SCALE },
+          uEncB: { value: DEC_BIAS },
+        },
+        vertexShader: VERT,
+        fragmentShader: /* glsl */ `
+    varying vec2 vUv;
+    uniform sampler2D tH;
+    uniform float uTexel, uTexelKm;
+    uniform vec4 uEncS, uEncB;
+    void main() {
+      vec4 c = texture2D(tH, vUv);
+      float hx1 = texture2D(tH, vUv + vec2(uTexel, 0.0)).r, hx0 = texture2D(tH, vUv - vec2(uTexel, 0.0)).r;
+      float hz1 = texture2D(tH, vUv + vec2(0.0, uTexel)).r, hz0 = texture2D(tH, vUv - vec2(0.0, uTexel)).r;
+      vec4 v = vec4(c.r, (hx1 - hx0) / (2.0 * uTexelKm), (hz1 - hz0) / (2.0 * uTexelKm), c.a);
+      gl_FragColor = (v - uEncB) / uEncS;
+    }`,
+      });
+
+      function bake() {
+        const mask = makeRT(256, false);
+        runPass(maskMat, mask);
+
+        function heightMap(size, detail, tileKm) {
+          const raw = makeRT(
+            size,
+            false,
+            canFloatRT ? THREE.HalfFloatType : THREE.UnsignedByteType,
+          );
+          const dm = domeMat(detail);
+          dm.uniforms.tMask.value = mask.texture;
+          runPass(dm, raw);
+          const out = makeRT(size, true);
+          gradMat.uniforms.tH.value = raw.texture;
+          gradMat.uniforms.uTexel.value = 1 / size;
+          gradMat.uniforms.uTexelKm.value = tileKm / size;
+          runPass(gradMat, out);
+          raw.dispose();
+          dm.dispose();
+          return out;
+        }
+        const macro = heightMap(T.macro, false, MACRO_KM);
+        const detail = heightMap(256, true, DETAIL_KM);
+        mask.dispose();
+        return { macro, detail };
+      }
+
+      const bakeT0 = performance.now();
+      const maps = bake();
+      const bakeMs = performance.now() - bakeT0;
+
+      // ---------------------------------------------------------------------------
+      // Main pass
+      // ---------------------------------------------------------------------------
+      const mainFrag = /* glsl */ `
+  varying vec2 vUv;
+  uniform vec2 uRes;
+  uniform float uTime, uAlt, uTanHalf, uPixAngle, uDip;
+  uniform vec3 uFwd, uRight, uUp, uSun;
+  uniform vec3 uSunScreen;
+  uniform vec2 uWindM, uWindD, uSeaOff;
+  uniform sampler2D tMacro, tDetail;
+  uniform float uMacroTexel, uDetailTexel;
+  uniform vec4 uDecS, uDecB;
+
+  #define CLOUDS ${clouds ? 1 : 0}
+  #define STEPS ${T.STEPS}
+  #define REFINE ${T.REFINE}
+  #define CHORD ${T.CHORD}
+  #define SHADOW ${T.SHADOW}
+  #define SEA_SH ${T.SEA_SH}
+  #define GLINT2 ${T.GLINT2}
+  #define R 6371.0
+  #define BASE 1.2
+  #define TOP 2.72
+  #define MACRO_KM ${MACRO_KM.toFixed(1)}
+  #define DETAIL_KM ${DETAIL_KM.toFixed(2)}
+  #define PI 3.14159265
+  // the march samples the map at a blur matching this fraction of its step, so it never aliases
+  #define LODK 0.4
+  // extinction (per km) that turns the chord through the cloud into opacity
+  #define SIGMA 12.0
+
+  const vec3 SUN_COL = vec3(1.0, 0.93, 0.80) * 3.0;
+  const vec3 EXT = vec3(0.80, 1.0, 1.25);
+
+  float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+
+  // Stable sphere geometry relative to the camera (camera on the local +y axis).
+  float altAt(float t, float b, float c0) { float q = c0 + 2.0 * t * b + t * t; return q / (sqrt(R * R + q) + R); }
+  // ray against the sphere of altitude h; tn = entry (0 when the camera is inside), tf = far exit
+  bool shell(float a, float b, float h, out float tn, out float tf) {
+    float c = (h - a) * (2.0 * R + h + a);
+    float disc = b * b - c;
+    if (disc < 0.0) return false;
+    float s = sqrt(disc);
+    tf = -b + s;
+    if (c > 0.0) { if (b >= 0.0) return false; tn = c / (-b + s); } else { tn = 0.0; }
+    return true;
+  }
+
+  // ---- haze, sky ----
+  float hgPhase(float mu, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * mu, 1.5)); }
+  vec3 hazeCol(float mu) {
+    vec3 blue = vec3(0.22, 0.32, 0.50);
+    vec3 warm = vec3(0.95, 0.86, 0.66);
+    float f = pow(mu * 0.5 + 0.5, 7.0);
+    return mix(blue, warm, f) + vec3(1.0, 0.88, 0.66) * hgPhase(mu, 0.8) * 0.18;
+  }
+  float density(float a) { return 0.028 * exp(-a / 1.2) + 0.006 * exp(-a / 8.0); }
+  float opticalDepth(float t1, float b, float c0) {
+    float od = 0.0; float dt = t1 / 6.0;
+    for (int k = 0; k < 6; k++) { float tk = (float(k) + 0.5) * dt; od += density(max(altAt(tk, b, c0), 0.0)) * dt; }
+    return od;
+  }
+  vec3 applyHaze(vec3 col, float t, float b, float c0, float mu) {
+    vec3 tr = exp(-opticalDepth(t, b, c0) * EXT);
+    return col * tr + hazeCol(mu) * (1.0 - tr);
+  }
+  // bright pale band hugging the horizon, warmer toward the sun
+  vec3 horizonBand(float e, float mu) {
+    float a01 = clamp(uAlt / 40.0, 0.0, 1.0);
+    float w = mix(0.028, 0.013, a01);
+    return vec3(0.46, 0.39, 0.25) * exp(-abs(e) / w) * (0.4 + 1.1 * pow(mu * 0.5 + 0.5, 6.0));
+  }
+  vec3 skyCol(vec3 d, float mu) {
+    float e = asin(clamp(d.y, -1.0, 1.0)) + uDip;           // radians above the geometric horizon
+    float a01 = clamp(uAlt / 40.0, 0.0, 1.0);
+    vec3 zen = mix(vec3(0.022, 0.07, 0.33), vec3(0.014, 0.045, 0.22), a01);
+    vec3 mid = mix(vec3(0.10, 0.22, 0.58), vec3(0.07, 0.16, 0.46), a01);
+    float ee = max(e, 0.0);
+    float k1 = 1.0 - exp(-ee / mix(0.04, 0.02, a01));
+    float k2 = smoothstep(0.02, 0.6, ee);
+    vec3 c = mix(mix(hazeCol(mu), mid, k1), zen, k2);
+    c += horizonBand(e, mu);
+    c += vec3(1.0, 0.88, 0.68) * (0.20 * pow(max(mu, 0.0), 80.0) + 0.05 * pow(max(mu, 0.0), 10.0));
+    return c;
+  }
+
+  // ---- cloud thickness field ----
+  // returns thickness (km) above BASE, its gradient (dT/dx, dT/dz), and a crease factor
+  vec4 cloudT(vec2 xz, float fp) {
+    vec2 uvM = (xz + uWindM) / MACRO_KM;
+    float lodM = log2(max(fp / uMacroTexel, 1.0));
+    vec4 m = textureLod(tMacro, uvM, lodM) * uDecS + uDecB;
+    float v = textureLod(tMacro, uvM * 0.173 + vec2(0.31, 0.77), max(lodM - 2.5, 0.0)).a * uDecS.a + uDecB.a;
+    float s = mix(0.25, 1.0, smoothstep(0.05, 0.6, v));
+    vec4 r = vec4(m.rgb * s, 1.0);
+    if (r.x > 0.004) {
+      vec2 uvD = (xz + uWindD) / DETAIL_KM;
+      float lodD = log2(max(fp / uDetailTexel, 1.0));
+      vec4 dd = textureLod(tDetail, uvD, lodD) * uDecS + uDecB;
+      float w = smoothstep(0.0, 0.10, r.x) * (1.0 - smoothstep(3.0, 6.0, lodD));
+      r.xyz += w * vec3(dd.r, dd.gb * 0.65);
+      r.w = mix(1.0, smoothstep(-0.09, 0.03, dd.r), w);
+    }
+    return r;
+  }
+
+  // The cloud volume is {BASE <= altitude <= BASE + thickness - FOOT}. x: gap to it (< 0 inside),
+  // y: 1 when the flat base is the nearer boundary, z: that thickness at this column.
+  // FOOT puts the cloud's outline inside the map's ramp from zero to the dome height: a contour right at
+  // zero follows the texel grid of a blurred mip level and shows as staircases along every base edge.
+  #define FOOT 0.08
+  vec3 volGap(float t, vec3 d, float b, float c0, float fp) {
+    float a = altAt(t, b, c0);
+    float th = max(cloudT(t * d.xz, fp).x - FOOT, 0.0);
+    float gB = BASE - a, gT = a - BASE - th;
+    return vec3(max(gB, gT), gB > gT ? 1.0 : 0.0, th);
+  }
+
+  // self-shadow: march toward the sun inside the same field
+  float sunVis(vec2 xz, float a, vec3 L) {
+    float occ = 0.0;
+    float s = 0.06;
+    for (int k = 0; k < SHADOW; k++) {
+      vec2 q = xz + L.xz * s;
+      float aq = a + L.y * s;
+      float tq = cloudT(q, 0.03 + s * 0.08).x;
+      occ += clamp((BASE + tq - FOOT - aq) / (0.05 + 0.08 * s), 0.0, 1.0) * (3.0 / float(SHADOW));
+      s *= (SHADOW > 4 ? 1.8 : 3.4);
+    }
+    return exp(-occ * 2.0);
+  }
+
+  // tops and flanks
+  vec3 shadeCloud(vec2 xz, float a, vec4 g, vec3 d, float mu, vec3 L, float thin) {
+    vec3 n = normalize(vec3(-g.y, 1.0, -g.z));
+    float vis = sunVis(xz, a, L);
+    float crease = mix(0.55, 1.0, g.w);
+    float hrel = clamp((a - BASE) / 1.1, 0.0, 1.0);
+    // the lowest few hundred metres of a flank are darker: little sun gets that deep
+    float low = smoothstep(0.0, 0.45, a - BASE);
+    float ndl = dot(n, L);
+    float wrap = clamp((ndl + 0.06) / 1.06, 0.0, 1.0);
+    // sky light from above (blue-grey shadow sides), darker low in the cloud, faint sea bounce
+    vec3 sky = vec3(0.095, 0.14, 0.235) * (0.5 + 0.5 * n.y) * mix(0.45, 1.0, hrel);
+    vec3 ground = vec3(0.025, 0.035, 0.05) * (0.6 - 0.4 * n.y);
+    float edge = pow(1.0 - clamp(dot(n, -d), 0.0, 1.0), 3.0);
+    float fwd = hgPhase(mu, 0.7) * 4.0 * PI;
+    vec3 sun = SUN_COL * vis * (0.05 + 0.95 * pow(wrap, 0.85)) * mix(0.72, 1.0, hrel) * mix(0.5, 1.0, low);
+    vec3 rim = SUN_COL * mix(vis, 1.0, 0.35) * edge * fwd * 0.12 * mix(0.25, 1.0, low);
+    // thin parts let sun through toward the viewer (silver lining against the sun)
+    vec3 trans = SUN_COL * thin * fwd * 0.05 * vis * low;
+    // light scattered many times inside the cloud: keeps shadow sides and the lower flanks a clear grey, never sea-dark
+    vec3 ms = SUN_COL * 0.04 * mix(0.55, 1.0, hrel) * mix(0.6, 1.0, crease);
+    return 0.9 * (sun * mix(0.7, 1.0, g.w) + sky * crease + ground + ms) + rim + trans;
+  }
+
+  // the flat base seen from below: sky light from the horizon and the sea, light leaking through thin parts.
+  // Sun light leaks through only where the path toward the sun is clear too (vis), so a near edge of a cloud
+  // with the sun behind it stays as grey as the rest of the base instead of a pale rim.
+  vec3 shadeBase(float th, float mu, vec3 L, float seaSunUnder, float vis) {
+    float leak = exp(-max(th, 0.0) * 3.5);
+    vec3 c = vec3(0.062, 0.075, 0.105) * mix(0.75, 1.15, leak);
+    c += vec3(0.012, 0.017, 0.022) * seaSunUnder;   // bounce from the sunlit sea below
+    float fwd = hgPhase(mu, 0.55) * 4.0 * PI;
+    c += SUN_COL * leak * vis * (0.02 + 0.03 * fwd) * smoothstep(-0.05, 0.1, L.y);
+    return c;
+  }
+
+  // ---- sea ----
+  // value noise with its analytic derivative
+  vec3 noised(vec2 x) {
+    vec2 i = floor(x), f = fract(x);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+    float a = hash12(i), b = hash12(i + vec2(1, 0)), c = hash12(i + vec2(0, 1)), d = hash12(i + vec2(1, 1));
+    return vec3(a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y, du * (vec2(b - a, c - a) + (a - b - c + d) * u.yx));
+  }
+  // resolved wave slopes (dh/dx, dh/dz) and the slope variance of the waves too small for this pixel
+  vec3 swell(vec2 xm, float fp) {
+    vec3 r = vec3(0.0);
+    float lens[3]; lens[0] = 160.0; lens[1] = 62.0; lens[2] = 24.0;
+    vec2 drift[3]; drift[0] = vec2(1.2, 0.5); drift[1] = vec2(-0.6, 1.5); drift[2] = vec2(0.9, -1.1);
+    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+    vec2 x = xm;
+    for (int i = 0; i < 3; i++) {
+      float vis = 1.0 - smoothstep(lens[i] * 0.06, lens[i] * 0.35, fp);
+      vec3 nd = noised(x / lens[i] + drift[i] * uTime * (0.08 + 0.05 * float(i)));
+      float amp = 0.16;
+      r.xy += amp * (rot * nd.yz) * vis;   // slope ~ amp * derivative
+      r.z += 0.25 * amp * amp * (1.0 - vis);
+      x = rot * x;
+    }
+    return r;
+  }
+  float poisson(float lam, float u, float u2) {
+    if (lam > 7.0) { float gss = sqrt(-2.0 * log(max(u, 1e-6))) * cos(6.2831853 * u2); return max(0.0, lam + sqrt(lam) * gss); }
+    float p = exp(-lam), c = p, n = 0.0;
+    for (int k = 1; k < 14; k++) { if (u <= c) break; p *= lam / float(k); c += p; n += 1.0; }
+    return n;
+  }
+  float glintLevel(vec2 xm, float cell, float lam) {
+    vec2 id = floor(xm / cell);
+    vec2 h = hash22(id);
+    float slot = floor(uTime * 2.2 + h.x * 17.0);
+    vec2 u = hash22(id + slot * 13.17);
+    return poisson(lam, u.x, u.y) / max(lam, 1e-4);
+  }
+
+  vec3 shadeSea(float t, vec3 d, float b, float h, float mu, vec3 L, out float shadowOut) {
+    vec3 p = vec3(t * d.x, (R + h) + t * d.y, t * d.z);
+    vec3 n0 = normalize(p);
+    vec3 tx = normalize(vec3(1.0, 0.0, 0.0) - n0 * n0.x);
+    vec3 tz = cross(tx, n0);
+    vec2 xz = t * d.xz;
+    vec2 xm = xz * 1000.0 + uSeaOff;
+    float cosV = max(dot(n0, -d), 0.012);
+    float fp = t * uPixAngle * 1000.0;             // metres per pixel (across)
+    float area = fp * fp / cosV;                   // metres^2 per pixel (stretched along view)
+
+    float sunVis = 1.0;
+  #if CLOUDS
+    // cloud shadow from the same field, sampled along the sun ray
+    float Ly = max(dot(L, n0), 0.03);
+    float sh = 0.0;
+    for (int k = 0; k < SEA_SH; k++) {
+      float ak = BASE + (float(k) + 0.5) / float(SEA_SH) * 1.1;
+      float s = ak / Ly;
+      vec2 q = xz + L.xz * s;
+      float tq = cloudT(q, 0.05 + 0.02 * s).x;
+      sh += clamp((BASE + tq - FOOT - ak) / 0.12, 0.0, 1.0);
+    }
+    sunVis = 1.0 - 0.92 * clamp(sh / float(SEA_SH) * (SEA_SH > 1 ? 1.6 : 1.0), 0.0, 1.0);
+  #endif
+    shadowOut = sunVis;
+
+    vec3 sw = swell(xm, fp);
+    float sigma2 = 0.024 + sw.z;                   // unresolved slope variance (about 6 m/s wind)
+    vec3 H = normalize(L - d);
+    float hz = max(dot(H, n0), 1e-3);
+    vec2 sReq = vec2(-dot(H, tx), -dot(H, tz)) / hz - sw.xy;
+    float pSlope = exp(-dot(sReq, sReq) / sigma2) / (PI * sigma2);
+    float cosHV = clamp(dot(H, -d), 0.0, 1.0);
+    float F = 0.02 + 0.98 * pow(1.0 - cosHV, 5.0);
+    float spec = F * pSlope / (4.0 * cosV * hz * hz * hz * hz) * step(0.0, dot(L, n0));
+
+    // sparkle: Poisson count of glinting facets per pixel-sized cell; mean 1, so far away it is smooth
+    float lam = 0.0005 * pSlope * area;            // expected glinting facets in this pixel
+    float lv = log2(max(fp, 0.25));
+    float lf = fract(lv);
+    float cell0 = exp2(floor(lv));
+    float g = glintLevel(xm, cell0, lam);
+    #if GLINT2
+      float g1 = glintLevel(xm, cell0 * 2.0, lam);
+      g = mix(g, g1, lf);
+    #endif
+    float smoothF = smoothstep(3.0, 60.0, lam);
+    g = mix(g, 1.0, smoothF);
+
+    // sea body: deep blue-grey, sky reflection by Fresnel
+    vec3 ns = normalize(n0 - tx * sw.x - tz * sw.y);
+    vec3 rd = reflect(d, ns); rd.y = max(rd.y, 0.0);
+    float cv = clamp(dot(ns, -d), 0.0, 1.0);
+    float Fv = 0.02 + 0.98 * pow(1.0 - cv, 5.0);
+    vec3 skyR = skyCol(rd, dot(rd, L)) * mix(0.85, 1.0, sunVis);
+    vec3 body = vec3(0.006, 0.017, 0.030) * (0.45 + 0.55 * sunVis);
+    vec3 col = body * (1.0 - Fv) + skyR * Fv;
+    col += vec3(1.0, 0.86, 0.66) * 1.7 * spec * g * sunVis;
+    return col;
+  }
+
+  vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+  // Blur level for a sample at distance t: the pixel footprint or a fraction of the local march step,
+  // as a smooth function of t (not of the step index), so neighbouring pixels never jump between levels.
+  float marchFp(float t, float t0, float seg, float curve) {
+    float u = clamp((t - t0) / seg, 0.0, 1.0);
+    float f = curve > 0.001 ? (sqrt((1.0 - curve) * (1.0 - curve) + 4.0 * curve * u) - (1.0 - curve)) / (2.0 * curve) : u;
+    float stepLen = seg * (1.0 - curve + 2.0 * f * curve) / float(STEPS - 1);
+    return max(t * uPixAngle, LODK * stepLen);
+  }
+
+  // The part of the ray inside the cloud slab, for a camera above, inside or below it.
+  bool slabSegment(float b, float h, float tEnd, out float t0, out float t1, out bool fromBelow) {
+    float tTn, tTf, tBn, tBf;
+    fromBelow = false;
+    t0 = 0.0; t1 = 0.0;
+    if (!shell(TOP, b, h, tTn, tTf)) return false;    // above the slab and looking past it
+    bool hitBase = shell(BASE, b, h, tBn, tBf);
+    if (h > TOP) {            // above: enter through the top, leave at the base height or through the top again
+      t0 = tTn; t1 = hitBase ? tBn : tTf;
+    } else if (h >= BASE) {   // inside: start at the camera
+      t0 = 0.0; t1 = hitBase ? tBn : tTf;
+    } else {                  // below: start where the ray rises through the base height
+      t0 = tBf; t1 = tTf; fromBelow = true;
+    }
+    t1 = min(t1, tEnd);
+    return t1 > t0;
+  }
+
+  void main() {
+    vec2 ndc = vUv * 2.0 - 1.0;
+    float aspect = uRes.x / uRes.y;
+    vec3 d = normalize(uFwd + ndc.x * uTanHalf * aspect * uRight + ndc.y * uTanHalf * uUp);
+    vec3 L = uSun;
+    float mu = dot(d, L);
+    float h = uAlt;
+    float b = (R + h) * d.y;
+    float c0 = h * (2.0 * R + h);
+
+    vec3 col;
+    float tSea, tSeaF;
+    bool seaHit = shell(0.0, b, h, tSea, tSeaF);
+    float tEnd = seaHit ? tSea : 1e9;
+    float seaSun = 1.0;
+    if (seaHit) {
+      col = shadeSea(tSea, d, b, h, mu, L, seaSun);
+      col = applyHaze(col, tSea, b, c0, mu);
+    } else {
+      col = skyCol(d, mu);
+      // sun disc, halo and faint rays
+      float ang = acos(clamp(mu, -1.0, 1.0));
+      col += vec3(60.0, 56.0, 50.0) * (1.0 - smoothstep(0.0040, 0.0062, ang));
+      col += vec3(1.0, 0.93, 0.8) * (1.2 * exp(-ang / 0.008) + 0.12 * exp(-ang / 0.03));
+      vec2 sp = (ndc - uSunScreen.xy) * vec2(aspect, 1.0);
+      float rays = pow(0.5 + 0.5 * sin(atan(sp.y, sp.x) * 9.0 + 1.3) * sin(atan(sp.y, sp.x) * 5.0), 8.0);
+      col += vec3(1.0, 0.92, 0.8) * rays * 0.18 * exp(-ang / 0.06) * step(0.0, uSunScreen.z);
+    }
+
+  #if CLOUDS
+    // ---- march through the cloud slab ----
+    float t0, t1; bool fromBelow;
+    float fogA = 0.0; vec3 fogC = vec3(0.0);
+    if (slabSegment(b, h, tEnd, t0, t1, fromBelow)) {
+      float seg = min(t1 - t0, 420.0);
+      float curve = smoothstep(8.0, 80.0, seg);
+      float tPrev = t0; vec3 gPrev = vec3(1.0, 0.0, 0.0);
+      bool hit = false, baseHit = false, camIn = false;
+      float tHit = 0.0, tOut = -1.0;
+      for (int i = 0; i < STEPS; i++) {
+        float f = float(i) / float(STEPS - 1);
+        float t = t0 + seg * mix(f, f * f, curve);
+        vec3 g = volGap(t, d, b, c0, marchFp(t, t0, seg, curve));
+        if (i == 0 && fromBelow) {
+          // the ray rises through the base height here: cloud above it means a hit on the flat base
+          // (decided on the thickness alone; the altitude test is float noise exactly at the base)
+          if (g.z > 0.0) { hit = true; baseHit = true; tHit = t0; break; }
+          tPrev = t; gPrev = vec3(1.0, 1.0, g.z); continue;
+        }
+        if (i == 0 && g.x < 0.0) camIn = true;                              // the camera is inside a cloud
+        if (camIn && tOut < 0.0) {
+          if (g.x >= 0.0) tOut = t; else { tPrev = t; gPrev = g; continue; }
+        }
+        if (g.x < 0.0) {
+          // refine the entry between the last outside sample and this inside one
+          float lo = tPrev, hi = t; vec3 gLo = gPrev;
+          for (int k = 0; k < REFINE; k++) {
+            float mt = 0.5 * (lo + hi);
+            vec3 gm = volGap(mt, d, b, c0, marchFp(mt, t0, seg, curve));
+            if (gm.x < 0.0) hi = mt; else { lo = mt; gLo = gm; }
+          }
+          hit = true; tHit = hi; baseHit = gLo.y > 0.5;
+          break;
+        }
+        tPrev = t; gPrev = g;
+      }
+      if (camIn) {
+        // fog of the cloud the camera sits in, up to where the ray leaves it
+        float fogLen = (tOut < 0.0 ? t1 : tOut);
+        fogA = 1.0 - exp(-fogLen * 9.0);
+        float hrel = clamp((h - BASE) / 1.2, 0.0, 1.0);
+        fogC = mix(vec3(0.28, 0.31, 0.36), vec3(0.85, 0.86, 0.88), hrel) * (0.75 + 0.25 * smoothstep(-0.2, 1.0, mu));
+      }
+      if (hit) {
+        float tc = tHit;
+        float a = altAt(tc, b, c0);
+        vec2 xz = tc * d.xz;
+        vec4 g = cloudT(xz, marchFp(tc, t0, seg, curve));
+        // chord: how much cloud the ray crosses just past the entry -> opacity (thin edges translucent)
+        float sc = 1.0 + tc * 0.01;
+        float depth = 0.0, pPrev = 0.0;
+        for (int k = 0; k < CHORD; k++) {
+          float p = (CHORD > 2 ? (k == 0 ? 0.025 : k == 1 ? 0.07 : k == 2 ? 0.16 : 0.36) : (k == 0 ? 0.05 : 0.30)) * sc;
+          vec3 gk = volGap(tc + p, d, b, c0, marchFp(tc + p, t0, seg, curve));
+          // thin parts of a cloud are less dense, so bases and edges fade out where the cloud thins
+          depth += clamp(0.5 - gk.x / 0.03, 0.0, 1.0) * smoothstep(0.0, 0.25, gk.z) * (p - pPrev);
+          pPrev = p;
+        }
+        depth /= sc;
+        // a thick column is solid whatever the chord says (detail creases must not punch holes into a dome)
+        float alpha = max(1.0 - exp(-SIGMA * depth), smoothstep(0.08, 0.3, g.x));
+        float thin = 1.0 - smoothstep(0.0, 0.3, depth);
+        // local sun elevation changes with distance on the sphere
+        vec3 up = normalize(vec3(xz.x, R + a, xz.y));
+        vec3 Ll = vec3(L.x, dot(L, up), L.z);
+        vec3 cc;
+        if (baseHit) cc = shadeBase(g.x, mu, Ll, seaSun, sunVis(xz, a, Ll));
+        else {
+          cc = shadeCloud(xz, a, g, d, mu, Ll, thin);
+          // seen from below, the lowest few hundred metres of a flank shade into the base's own grey,
+          // so base and flank meet without a pale step
+          float under = smoothstep(-0.02, 0.1, dot(d, up)) * (1.0 - smoothstep(0.0, 0.4, a - BASE));
+          if (under > 0.001) cc = mix(cc, shadeBase(g.x, mu, Ll, seaSun, sunVis(xz, a, Ll)), under);
+        }
+        cc = applyHaze(cc, tc, b, c0, mu);
+        col = mix(col, cc, alpha);
+      }
+      col = mix(col, fogC, fogA);
+    }
+  #endif
+
+    // faint lens reflections along the sun-centre axis
+    if (uSunScreen.z > 0.0) {
+      vec2 sp = uSunScreen.xy;
+      vec3 gcol = vec3(0.0);
+      for (int i = 0; i < 4; i++) {
+        float k = (i == 0) ? -0.35 : (i == 1) ? -0.7 : (i == 2) ? -1.25 : 0.45;
+        float r = (i == 0) ? 0.05 : (i == 1) ? 0.11 : (i == 2) ? 0.22 : 0.03;
+        vec2 gp = sp * k;
+        float dd = length((ndc - gp) * vec2(aspect, 1.0));
+        float disc = smoothstep(r, r * 0.6, dd);
+        vec3 tint = (i == 2) ? vec3(0.45, 0.8, 0.6) : (i == 1) ? vec3(0.8, 0.6, 1.0) : vec3(1.0, 0.85, 0.6);
+        gcol += tint * disc * 0.022;
+        if (i == 2) { float ring = exp(-pow((dd - r) / (r * 0.08), 2.0)); gcol += vec3(0.9, 0.5, 0.9) * ring * 0.03 * smoothstep(-0.1, 0.4, dd - r * 0.9); }
+      }
+      float ghostVis = 1.0;
+    #if CLOUDS
+      // lens reflections need the sun itself: test the sun ray from the camera through the cloud slab
+      if (h < TOP && dot(gcol, vec3(1.0)) > 0.0) {   // only pixels inside a reflection pay for the test
+        float occ = 0.0;
+        for (int k = 0; k < 6; k++) {
+          float ak = BASE + (float(k) + 0.5) / 6.0 * (TOP - BASE);
+          if (ak > h && L.y > 0.01) { float s = (ak - h) / L.y; occ += clamp((BASE + cloudT(L.xz * s, 0.05).x - FOOT - ak) / 0.1, 0.0, 1.0); }
+        }
+        if (h >= BASE && h < BASE + cloudT(vec2(0.0), 0.05).x - FOOT) occ = 1.0;   // the camera is inside a cloud
+        ghostVis = 1.0 - clamp(occ, 0.0, 1.0);
+      }
+    #endif
+      col += gcol * smoothstep(-1.4, -0.2, -length(sp)) * ghostVis;
+    }
+
+    float eH = asin(clamp(d.y, -1.0, 1.0)) + uDip;
+    if (eH < 0.0) col += horizonBand(eH, mu);
+    col = aces(col * 0.82);
+    col = pow(col, vec3(1.0 / 2.2));
+    // static dither against banding (does not change from frame to frame)
+    col += (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+      const mainMat = new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader: mainFrag,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          uRes: { value: new THREE.Vector2(1, 1) },
+          uTime: { value: 0 },
+          uAlt: { value: 10 },
+          uTanHalf: { value: 0.5 },
+          uPixAngle: { value: 0.001 },
+          uDip: { value: 0 },
+          uFwd: { value: new THREE.Vector3() },
+          uRight: { value: new THREE.Vector3() },
+          uUp: { value: new THREE.Vector3() },
+          uSun: { value: new THREE.Vector3() },
+          uSunScreen: { value: new THREE.Vector3() },
+          uWindM: { value: new THREE.Vector2() },
+          uWindD: { value: new THREE.Vector2() },
+          uSeaOff: { value: new THREE.Vector2() },
+          tMacro: { value: maps.macro.texture },
+          tDetail: { value: maps.detail.texture },
+          uMacroTexel: { value: MACRO_KM / T.macro },
+          uDetailTexel: { value: DETAIL_KM / 256 },
+          uDecS: { value: DEC_SCALE },
+          uDecB: { value: DEC_BIAS },
+        },
+      });
+      const scene = new THREE.Scene();
+      const mainMesh = new THREE.Mesh(quadGeo, mainMat);
+      mainMesh.frustumCulled = false;
+      scene.add(mainMesh);
+
+      // ---------------------------------------------------------------------------
+      // Free camera
+      // ---------------------------------------------------------------------------
+      const deg = Math.PI / 180;
+      const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+      // x, z: km over the cloud and sea pattern; alt: km; yaw 0 looks toward the sun's azimuth
+      const cam = { x: 0, z: 0, alt: 10, yaw: 0, pitch: 0 };
+      let moved = false;
+      function presetCam(v, useUrl) {
+        const p = VIEWS[v];
+        // narrow (portrait) screens turn closer to the sun so it stays in frame
+        const yawScale = clamp(innerWidth / innerHeight / 1.6, 0.25, 1);
+        cam.alt = p.alt;
+        cam.yaw = p.yaw * deg * (p.fixedYaw ? 1 : yawScale);
+        cam.pitch = p.pitch * deg;
+        cam.x = p.ox;
+        cam.z = p.oz;
+        if (useUrl) {
+          cam.x = num("ox", cam.x);
+          cam.z = num("oz", cam.z);
+          cam.alt = clamp(num("alt", cam.alt), ALT_MIN, ALT_MAX);
+          cam.yaw = num("yaw", cam.yaw / deg) * deg;
+          cam.pitch = clamp(num("pitch", cam.pitch / deg), -89, 89) * deg;
+        }
+        moved = false;
+      }
+      presetCam(view, true);
+
+      function basis() {
+        const cy = Math.cos(cam.yaw),
+          sy = Math.sin(cam.yaw),
+          cp = Math.cos(cam.pitch),
+          sp = Math.sin(cam.pitch);
+        const fwd = new THREE.Vector3(sy * cp, sp, -cy * cp);
+        const right = new THREE.Vector3(cy, 0, sy);
+        const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+        return { fwd, right, up };
+      }
+      function moveBy(v) {
+        cam.x += v.x;
+        cam.z += v.z;
+        cam.alt = clamp(cam.alt + v.y, ALT_MIN, ALT_MAX);
+        moved = true;
+      }
+      const speedKm = () => Math.max(cam.alt, 0.3);
+      function look(dx, dy) {
+        const k = (VFOV * deg) / innerHeight;
+        cam.yaw -= dx * k;
+        cam.pitch = clamp(cam.pitch + dy * k, -89 * deg, 89 * deg);
+        moved = true;
+      }
+      function pan(dx, dy) {
+        const s = (speedKm() * 1.2) / innerHeight;
+        const { right, up } = basis();
+        moveBy(right.multiplyScalar(-dx * s).add(up.multiplyScalar(dy * s)));
+      }
+      function fly(km) {
+        moveBy(basis().fwd.multiplyScalar(km));
+      }
+
+      const pointers = new Map();
+      const pinch = () => {
+        const ps = [...pointers.values()];
+        const cx = (ps[0].x + ps[1].x) / 2,
+          cy = (ps[0].y + ps[1].y) / 2;
+        return { cx, cy, d: Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) };
+      };
+      canvas.addEventListener("pointerdown", (e) => {
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          // capture is a convenience (drags that leave the canvas); input works without it
+        }
+        pointers.set(e.pointerId, {
+          x: e.clientX,
+          y: e.clientY,
+          button: e.button,
+        });
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        const p = pointers.get(e.pointerId);
+        if (!p) return;
+        if (pointers.size >= 2) {
+          const a = pinch();
+          p.x = e.clientX;
+          p.y = e.clientY;
+          const b = pinch();
+          pan(b.cx - a.cx, b.cy - a.cy);
+          if (a.d > 10 && b.d > 10) fly((b.d / a.d - 1) * speedKm() * 1.5);
+          return;
+        }
+        const dx = e.clientX - p.x,
+          dy = e.clientY - p.y;
+        p.x = e.clientX;
+        p.y = e.clientY;
+        if (p.button === 2 || e.shiftKey) pan(dx, dy);
+        else look(dx, dy);
+      });
+      const drop = (e) => pointers.delete(e.pointerId);
+      canvas.addEventListener("pointerup", drop);
+      canvas.addEventListener("pointercancel", drop);
+      canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const dy =
+            e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+          fly(-clamp(dy, -400, 400) * 0.0012 * speedKm());
+        },
+        { passive: false },
+      );
+      const keys = new Set();
+      addEventListener("keydown", (e) => {
+        if (
+          e.target instanceof HTMLElement &&
+          e.target.matches("input, textarea")
+        )
+          return;
+        keys.add(e.key.toLowerCase());
+      });
+      addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+      addEventListener("blur", () => keys.clear());
+      function keyMove(dtS) {
+        if (!keys.size) return;
+        const v = (keys.has("shift") ? 4 : 1) * speedKm() * 0.5 * dtS;
+        const fh = new THREE.Vector3(Math.sin(cam.yaw), 0, -Math.cos(cam.yaw));
+        const rh = new THREE.Vector3(Math.cos(cam.yaw), 0, Math.sin(cam.yaw));
+        const m = new THREE.Vector3();
+        if (keys.has("w")) m.add(fh);
+        if (keys.has("s")) m.sub(fh);
+        if (keys.has("d")) m.add(rh);
+        if (keys.has("a")) m.sub(rh);
+        if (keys.has("e")) m.y += 1;
+        if (keys.has("q")) m.y -= 1;
+        if (m.lengthSq() > 0) moveBy(m.multiplyScalar(v));
+      }
+
+      // ---------------------------------------------------------------------------
+      // Sizing, uniforms
+      // ---------------------------------------------------------------------------
+      let renderScale = T.scale;
+      const dpr = window.devicePixelRatio || 1;
+      const pixelRatio = () => Math.min(dpr, T.dprCap) * renderScale;
+      function resize() {
+        renderer.setPixelRatio(pixelRatio());
+        renderer.setSize(innerWidth, innerHeight, false);
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      function setCamera() {
+        const u = mainMat.uniforms;
+        const { fwd, right, up } = basis();
+        u.uFwd.value.copy(fwd);
+        u.uRight.value.copy(right);
+        u.uUp.value.copy(up);
+        u.uAlt.value = cam.alt;
+        u.uTanHalf.value = Math.tan((VFOV * deg) / 2);
+        u.uDip.value = Math.acos(6371 / (6371 + cam.alt));
+        const e = sunDeg * deg;
+        const sun = new THREE.Vector3(0, Math.sin(e), -Math.cos(e));
+        u.uSun.value.copy(sun);
+        const z = sun.dot(fwd);
+        const aspect = innerWidth / innerHeight;
+        if (z > 0.01)
+          u.uSunScreen.value.set(
+            sun.dot(right) / z / (u.uTanHalf.value * aspect),
+            sun.dot(up) / z / u.uTanHalf.value,
+            1,
+          );
+        else u.uSunScreen.value.set(0, 0, -1);
+      }
+
+      // ---------------------------------------------------------------------------
+      // Buttons
+      // ---------------------------------------------------------------------------
+      const buttons = [...document.querySelectorAll("#controls button")];
+      const measureBtn = document.getElementById("measure");
+      const cloudsBtn = document.getElementById("clouds");
+      cloudsBtn.textContent = clouds ? "Clouds off" : "Clouds on";
+      cloudsBtn.setAttribute("aria-pressed", String(!clouds));
+      function syncButtons() {
+        for (const b of buttons) {
+          if (b.dataset.view)
+            b.setAttribute(
+              "aria-pressed",
+              String(b.dataset.view === view && !moved),
+            );
+          if (b.dataset.tier)
+            b.setAttribute("aria-pressed", String(b.dataset.tier === tier));
+        }
+      }
+      function reloadWith(k, v) {
+        const q = new URLSearchParams(location.search);
+        q.set(k, v);
+        q.set("view", view);
+        location.search = q.toString();
+      }
+      for (const b of buttons) {
+        b.addEventListener("click", () => {
+          if (b.dataset.view) {
+            view = b.dataset.view;
+            const q = new URLSearchParams(location.search);
+            q.set("view", view);
+            for (const k of ["alt", "yaw", "pitch", "ox", "oz"]) q.delete(k);
+            history.replaceState(null, "", "?" + q.toString());
+            presetCam(view, false);
+            frames.length = 0;
+          } else if (b.dataset.tier && b.dataset.tier !== tier) {
+            reloadWith("tier", b.dataset.tier);
+          }
+        });
+      }
+      document.getElementById("reset").addEventListener("click", () => {
+        presetCam(view, false);
+        frames.length = 0;
+      });
+      cloudsBtn.addEventListener("click", () =>
+        reloadWith("clouds", clouds ? "0" : "1"),
+      );
+      measureBtn.addEventListener("click", startMeasure);
+
+      // ---------------------------------------------------------------------------
+      // Frame meter: display interval, GPU timer, Measure
+      // ---------------------------------------------------------------------------
+      const frames = []; // [timestamp, interval ms]
+      let frameCount = 0;
+      let refreshMs = 16.67;
+      const median = (a) => {
+        if (!a.length) return 0;
+        const s = [...a].sort((x, y) => x - y);
+        return s[Math.floor(s.length / 2)];
+      };
+      const quant = (a, p) => {
+        if (!a.length) return 0;
+        const s = [...a].sort((x, y) => x - y);
+        return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))];
+      };
+
+      // GPU time per frame (EXT_disjoint_timer_query_webgl2), when the browser offers it
+      const tq = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+      const pending = [];
+      const gpuSamples = []; // [timestamp, ms per single frame]
+      function gpuBegin() {
+        if (!tq || pending.length > 6) return null;
+        const q = gl.createQuery();
+        gl.beginQuery(tq.TIME_ELAPSED_EXT, q);
+        return q;
+      }
+      function gpuEnd(q, reps) {
+        if (!q) return;
+        gl.endQuery(tq.TIME_ELAPSED_EXT);
+        pending.push({ q, reps, step: meas ? meas.reps : -1 });
+      }
+      function gpuPoll(now) {
+        if (!tq) return;
+        const disjoint = gl.getParameter(tq.GPU_DISJOINT_EXT);
+        while (pending.length) {
+          const p = pending[0];
+          if (
+            !disjoint &&
+            !gl.getQueryParameter(p.q, gl.QUERY_RESULT_AVAILABLE)
+          )
+            break;
+          pending.shift();
+          if (!disjoint) {
+            const ms =
+              gl.getQueryParameter(p.q, gl.QUERY_RESULT) / 1e6 / p.reps;
+            gpuSamples.push([now, ms]);
+            if (meas && p.step === meas.reps && meas.stepFrames > 2)
+              meas.gpu.push(ms);
+          }
+          gl.deleteQuery(p.q);
+        }
+        while (gpuSamples.length && now - gpuSamples[0][0] > 2000)
+          gpuSamples.shift();
+      }
+
+      // Measure: render the whole frame 1, 2, 4, 8 times per displayed frame, about 2 s each, and keep
+      // doubling (up to 64) while fewer than two points are free of the display cap.
+      let meas = null;
+      let measured = null;
+      const MAX_REPS = 64;
+      const syncPx = new Uint8Array(4);
+      function startMeasure() {
+        if (meas) return;
+        meas = {
+          reps: 1,
+          t0: performance.now(),
+          stepFrames: 0,
+          ints: [],
+          gpu: [],
+          sync: [],
+          points: [],
+        };
+        measureBtn.disabled = true;
+        measureBtn.textContent = "Measuring...";
+      }
+      // Theil-Sen slope of y against repetitions: the median of all pairwise slopes, robust to one disturbed point
+      function robustSlope(pts, k) {
+        const s = [];
+        for (let i = 0; i < pts.length; i++)
+          for (let j = i + 1; j < pts.length; j++)
+            s.push((pts[j][k] - pts[i][k]) / (pts[j].reps - pts[i].reps));
+        return s.length ? median(s) : NaN;
+      }
+      function measureFrame(now, dt) {
+        meas.stepFrames++;
+        // skip the first two intervals of a step: they still belong to the previous repetition count
+        if (meas.stepFrames > 2) meas.ints.push(dt);
+        if (now - meas.t0 < 2000 || meas.ints.length < 3) return;
+        const med = median(meas.ints);
+        meas.points.push({
+          reps: meas.reps,
+          // display interval per shown frame (held at the refresh rate when the work fits)
+          medianMs: +med.toFixed(2),
+          capped: med < refreshMs + 1.0,
+          // GPU timer per single frame, and GPU-synced CPU time per shown frame (all repetitions)
+          gpuMs: meas.gpu.length ? +median(meas.gpu).toFixed(2) : null,
+          syncMs: meas.sync.length ? +median(meas.sync).toFixed(2) : null,
+        });
+        meas.t0 = now;
+        meas.stepFrames = 0;
+        meas.ints = [];
+        meas.gpu = [];
+        meas.sync = [];
+        const pts = meas.points;
+        const last = pts[pts.length - 1];
+        // keep doubling until the repeated work is large against timer noise (about 20 ms) or 64x
+        if (meas.reps < 8 || (last.syncMs < 20 && meas.reps < MAX_REPS)) {
+          meas.reps *= 2;
+          return;
+        }
+        // one frame's cost = slope of the GPU-synced frame time against repetitions (fixed overheads cancel)
+        let costMs = robustSlope(pts, "syncMs");
+        let method = "slope";
+        if (!(costMs > 0)) {
+          costMs = last.syncMs / last.reps;
+          method = "upper bound";
+        }
+        // the same slope from display intervals, over the points not held at the display cap
+        const unc = pts.filter((p) => !p.capped);
+        const displaySlope =
+          unc.length >= 2 ? robustSlope(unc, "medianMs") : null;
+        const g = [...pts].reverse().find((p) => p.gpuMs != null);
+        measured = {
+          costMs: +costMs.toFixed(2),
+          method,
+          gpuCostMs: g ? g.gpuMs : null,
+          displaySlopeMs:
+            displaySlope != null ? +displaySlope.toFixed(2) : null,
+          refreshMs: +refreshMs.toFixed(2),
+          budget50Pct: +((100 * costMs) / 50).toFixed(1),
+          budget16Pct: +((100 * costMs) / 16.7).toFixed(1),
+          clouds,
+          view,
+          cameraAltM: Math.round(cam.alt * 1000),
+          renderScale: +(pixelRatio() / dpr).toFixed(3),
+          size: `${size.x}x${size.y}`,
+          points: pts,
+        };
+        meas = null;
+        measureBtn.disabled = false;
+        measureBtn.textContent = "Measure";
+      }
+      function measuredText() {
+        if (meas)
+          return `measuring: ${meas.reps} frames per displayed frame...`;
+        if (!measured) return "Measure: not run yet";
+        const m = measured;
+        const c =
+          m.method === "upper bound"
+            ? `at most ${m.costMs} ms`
+            : `about ${m.costMs} ms`;
+        const extra = [
+          m.gpuCostMs != null ? `GPU timer ${m.gpuCostMs} ms` : null,
+          m.displaySlopeMs != null
+            ? `display slope ${m.displaySlopeMs} ms`
+            : null,
+        ].filter(Boolean);
+        return (
+          `one frame costs ${c}${extra.length ? ` (${extra.join(", ")})` : ""}\n` +
+          `= ${m.budget16Pct}% of 16.7 ms, ${m.budget50Pct}% of 50 ms`
+        );
+      }
+
+      const size = new THREE.Vector2();
+      function stats() {
+        const now = performance.now();
+        // keep the last 2 s, but never fewer than 3 frames (very slow devices)
+        while (frames.length > 3 && now - frames[0][0] > 2000) frames.shift();
+        const ms = frames.map((f) => f[1]);
+        const med = quant(ms, 0.5);
+        const gpu = gpuSamples.map((g) => g[1]);
+        return {
+          tier,
+          view,
+          medianMs: +med.toFixed(1),
+          p95Ms: +quant(ms, 0.95).toFixed(1),
+          frames: frameCount,
+          dpr,
+          renderScale: +(pixelRatio() / dpr).toFixed(3),
+          fps: med > 0 ? +(1000 / med).toFixed(1) : 0,
+          atCap: med > 0 && Math.abs(med - refreshMs) <= 1.0,
+          refreshMs: +refreshMs.toFixed(2),
+          gpuMs: gpu.length ? +median(gpu).toFixed(2) : null,
+          gpuTimer: !!tq,
+          measured,
+          measuring: !!meas,
+          cameraAltM: Math.round(cam.alt * 1000),
+          camera: {
+            x: +cam.x.toFixed(3),
+            z: +cam.z.toFixed(3),
+            yawDeg: +(cam.yaw / deg).toFixed(2),
+            pitchDeg: +(cam.pitch / deg).toFixed(2),
+            moved,
+          },
+          clouds,
+        };
+      }
+      window.lookStats = stats;
+      window.lookCamera = cam; // for scripted checks (slow orbit)
+
+      // ---------------------------------------------------------------------------
+      // Loop
+      // ---------------------------------------------------------------------------
+      let last = 0;
+      let lastAdapt = 0;
+      let start = 0;
+      const readout = document.getElementById("readout");
+      let lastReadout = 0;
+
+      function frame(now) {
+        const dt = now - last;
+        last = now;
+        if (frameCount > 0) frames.push([now, dt]);
+        if (frameCount > 0 && meas) measureFrame(now, dt);
+        frameCount++;
+        keyMove(Math.min(dt, 100) / 1000);
+        const time = freeze ? 0 : (now - start) / 1000;
+        const u = mainMat.uniforms;
+        u.uTime.value = time;
+        // clouds drift (sped up so the motion is visible from altitude), billows evolve slightly faster
+        u.uWindM.value.set(cam.x - 0.12 * time, cam.z + 0.04 * time);
+        u.uWindD.value.set(cam.x - 0.16 * time, cam.z + 0.07 * time);
+        u.uSeaOff.value.set(cam.x * 1000, cam.z * 1000);
+        setCamera();
+        renderer.getDrawingBufferSize(size);
+        u.uRes.value.copy(size);
+        u.uPixAngle.value = (2 * u.uTanHalf.value) / size.y;
+        renderer.setRenderTarget(null);
+        const reps = meas ? meas.reps : 1;
+        const q = gpuBegin();
+        const tR = performance.now();
+        for (let r = 0; r < reps; r++) renderer.render(scene, quadCam);
+        gpuEnd(q, reps);
+        if (meas) {
+          // a 1-pixel readback waits for the GPU: CPU time per frame including the GPU work
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, syncPx);
+          meas.sync.push(performance.now() - tR);
+        }
+        gpuPoll(now);
+
+        if (
+          adapt &&
+          !meas &&
+          tier === "low" &&
+          now - lastAdapt > 1500 &&
+          frames.length > 20
+        ) {
+          const s = stats();
+          const target = renderScale * Math.sqrt(30 / Math.max(s.p95Ms, 1));
+          const next = Math.min(
+            T.maxScale,
+            Math.max(T.minScale, renderScale * 0.6 + target * 0.4),
+          );
+          if (Math.abs(next - renderScale) > 0.03) {
+            renderScale = next;
+            resize();
+          }
+          lastAdapt = now;
+        }
+        if (now - lastReadout > 250) {
+          const s = stats();
+          syncButtons();
+          const gpuLine = !tq
+            ? "GPU timer not available"
+            : s.gpuMs != null
+              ? `GPU ${s.gpuMs} ms per frame`
+              : "GPU timer: waiting";
+          readout.textContent =
+            `tier ${s.tier}  view ${s.view}${moved ? " (moved)" : ""}  sun ${sunDeg}°${clouds ? "" : "  clouds off"}\n` +
+            `camera ${cam.alt.toFixed(cam.alt < 10 ? 2 : 1)} km\n` +
+            `${s.fps} fps  median ${s.medianMs} ms  p95 ${s.p95Ms} ms${s.atCap ? "  at display cap" : ""}\n` +
+            `${gpuLine}\n` +
+            `scale ${s.renderScale} of device px  ${size.x}x${size.y}\n` +
+            measuredText();
+          lastReadout = now;
+        }
+        requestAnimationFrame(frame);
+      }
+
+      // measure the display interval with empty frames before the real work starts
+      function probeRefresh(n, done) {
+        const ts = [];
+        const tick = (t) => {
+          ts.push(t);
+          if (ts.length < n) return requestAnimationFrame(tick);
+          const d = [];
+          for (let i = 1; i < ts.length; i++) d.push(ts[i] - ts[i - 1]);
+          done(median(d));
+        };
+        requestAnimationFrame(tick);
+      }
+
+      renderer.compile(scene, quadCam);
+      probeRefresh(24, (ms) => {
+        refreshMs = ms > 2 ? ms : 16.67;
+        last = start = lastAdapt = performance.now();
+        requestAnimationFrame(frame);
+      });
+      console.info(
+        `relief deck: baked cloud maps in ${bakeMs.toFixed(0)} ms (${canFloatRT ? "half float" : "8-bit"}), GPU timer ${tq ? "available" : "not available"}`,
+      );
+    </script>
+  </body>
+</html>

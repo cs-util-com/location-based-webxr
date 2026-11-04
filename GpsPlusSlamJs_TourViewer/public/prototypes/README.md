@@ -162,6 +162,15 @@ wired into its logic: every interaction is faked.
   (`?view=10km|3km|30km`), `?sun=`, a `?tier=low|high` switch, a frame-time
   readout and `window.lookStats()`, and notes with its own self-check;
   made 2026-11-03.
+- `globe-look-1-glitter-haze-r2/` ... `globe-look-4-relief-deck-r2/`,
+  `globe-look-5-puffs-on-relief/`, `globe-look-6-raymarch-relief/` - the
+  second round: the first four with their visible faults fixed (clouds near
+  the camera, wobble, popping puffs, see-through bases), two combinations of
+  their cloud styles, a free camera on every page, and a frame meter that
+  reports frames per second, long frames, the GPU time where the browser
+  offers it, and a Measure button that renders each frame 1 to 8 times to
+  get the real cost of one frame on a display-capped screen; made
+  2026-11-04.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
