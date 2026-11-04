@@ -129,7 +129,7 @@ interface PanelHistory {
 
 /** The street map's tiles and its retry, as the Map loading tab reads
  *  them from the shown view (nothing without one). */
-export interface PanelMap {
+interface PanelMap {
   /** The near tiles, failed first (the overlay's `mapTiles`). */
   tiles(limit: number): readonly OsmMapTile[];
   /** Ask for the failed tiles again now: how many it asks for, or why
