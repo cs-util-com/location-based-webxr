@@ -72,6 +72,7 @@ export {
   type GlobeOsmOverlay,
   type OsmGateLimits,
   type OsmCameraPose,
+  type OsmGainMode,
   type OsmMapLoad,
   type OsmMapTile,
   type OsmRetryAsk,

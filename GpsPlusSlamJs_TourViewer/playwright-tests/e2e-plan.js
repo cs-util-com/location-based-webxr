@@ -41,6 +41,8 @@ export const SPECS = {
   "editor3d-character.spec.js": { project: "webgl", area: "editor" },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-approach.spec.js": { project: "webgl", area: "editor" },
+  "editor3d-globe-buildings.spec.js": { project: "webgl", area: "editor" },
+  "editor3d-globe-clouds.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-default.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-osm-gain.spec.js": { project: "webgl", area: "editor" },
   "editor3d-globe-osm-hold.spec.js": { project: "webgl", area: "editor" },

@@ -54,6 +54,8 @@ interface Fakes {
   busy: boolean;
   seams: null | Record<string, (...args: unknown[]) => unknown>;
   view: null | {
+    renderer: { render(scene: THREE.Scene, camera: THREE.Camera): void };
+    scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     globe: { group: THREE.Group };
     setFrameTarget(target: { lat: number; lng: number }): void;
@@ -98,6 +100,15 @@ interface Fakes {
   airSteps: { shareClouds?: (flat: number) => number }[];
   /** What the air's cloud switch was told. */
   cloudsOn: boolean[];
+  /** The options the clouds were made with (their `extra` depth). */
+  cloudsOptions: null | { extra?: () => readonly THREE.Object3D[] };
+  /** The options each city was made with, and the loads it was asked. */
+  cityOptions: {
+    parent: unknown;
+    heightsUrl?: string;
+    createWorker(): unknown;
+  }[];
+  cityLoads: { target: unknown; zoom: number; fresh: boolean }[];
   /** The share of the ground the relief mount reports (1: the relief
    *  carries all of it, 0: the globe's surface). */
   reliefShare: number;
@@ -115,6 +126,7 @@ interface Fakes {
     imagery?: unknown;
     template?: unknown;
     osmGain?: number;
+    osmGainMode?: string;
   };
   /** Whether the stations layer hands out its objects (a station is then
    *  admitted at its first upload); false: none ever is. */
@@ -158,6 +170,9 @@ const fakes = vi.hoisted((): Fakes => ({
   airOptions: null,
   airSteps: [],
   cloudsOn: [],
+  cloudsOptions: null,
+  cityOptions: [],
+  cityLoads: [],
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -173,7 +188,32 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
     ...(await importOriginal<object>()),
     creditsFor: () => [],
     // The air's clouds factory: the air is faked, so it is only passed on.
-    globeViewClouds: () => () => null,
+    globeViewClouds: (_view: unknown, options: Fakes["cloudsOptions"]) => {
+      fakes.cloudsOptions = options;
+      return () => null;
+    },
+    // The city: its options and loads recorded, its root a group.
+    createGlobeCity: (options: Fakes["cityOptions"][number]) => {
+      fakes.cityOptions.push(options);
+      const root = new THREE.Group();
+      let fade = 0;
+      return {
+        root,
+        load: (target: unknown, load: { zoom: number; fresh?: boolean }) => {
+          fakes.cityLoads.push({
+            target,
+            zoom: load.zoom,
+            fresh: load.fresh === true,
+          });
+          return { progress: () => 0, done: false };
+        },
+        setFade: (value: number) => {
+          fade = value;
+        },
+        state: () => ({ phase: "loading", fade, shown: 0, load: null }),
+        dispose() {},
+      };
+    },
     createGlobeImagery: () => fakes.imagery,
     mountGlobeRelief: (options: {
       globe: unknown;
@@ -225,6 +265,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         },
         haze() {},
         setClouds: (on: boolean) => fakes.cloudsOn.push(on),
+        cloudShell: () => null,
         state: () => null,
         dispose: () => fakes.log.push("air-dispose"),
       };
@@ -284,14 +325,29 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         options.seams.frameChanged?.(target);
       };
       const renderer = {
-        info: { render: { calls: 0 } },
+        // As three.js keeps it: each render adds its call, resetting first
+        // only with `autoReset`.
+        info: {
+          autoReset: true,
+          render: { calls: 0 },
+          reset() {
+            renderer.info.render.calls = 0;
+          },
+        },
         setPixelRatio() {},
         compile() {},
         initTexture() {},
         getDrawingBufferSize: (size: THREE.Vector2) => size.set(800, 600),
         getPixelRatio: () => 1,
-        // Only the streaks are drawn through it here (the view is faked).
+        // The streaks, and the interface pass over the view's scene (the
+        // view itself is faked).
         render: (drawn: THREE.Scene) => {
+          if (renderer.info.autoReset) renderer.info.reset();
+          renderer.info.render.calls++;
+          if (drawn === fakes.view?.scene) {
+            fakes.draws.push("interface");
+            return;
+          }
           const mesh = drawn.children[0] as THREE.Mesh<
             THREE.BufferGeometry,
             THREE.ShaderMaterial
@@ -378,6 +434,10 @@ vi.mock("./editor3d-terrain.js", async () => {
         groundAt: (latRad: number) => fakes.groundAt(latRad),
         update() {},
         credits: [],
+        heights: {
+          url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+          globalZoom: 12,
+        },
         osm: {
           stats: () => ({}),
           coverage: () => {
@@ -606,6 +666,9 @@ beforeEach(() => {
   fakes.airOptions = null;
   fakes.airSteps = [];
   fakes.cloudsOn = [];
+  fakes.cloudsOptions = null;
+  fakes.cityOptions = [];
+  fakes.cityLoads = [];
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1107,6 +1170,71 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.cloudsOn).toEqual([false, true]);
   });
 
+  /** The test page's own Worker (none), put back after a test stubs one. */
+  const noWorker = (globalThis as { Worker?: unknown }).Worker;
+
+  // Why: the buildings are opt-out for a developer (`buildings=0`): no
+  // city is made, so nothing is asked of Overpass, and the stats say so.
+  it("makes no buildings with buildings=0", async () => {
+    vi.stubGlobal("Worker", class {});
+    tourAt(0);
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch("?buildings=0"),
+    });
+    expect(fakes.cityOptions).toEqual([]);
+    expect(open.stats().city).toBeNull();
+    expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
+    vi.stubGlobal("Worker", noWorker);
+  });
+
+  // Why: the buildings stand on the relief's own height source (parity
+  // with the drawn ground), under the Earth-centred group; they load at
+  // the tour's centre on the relief's zoom once low enough, warm up from
+  // the approach's start, stand in the clouds' depth, and the view's
+  // toggle hides them.
+  it("mounts the buildings at the tour on the relief's heights, with a toggle", async () => {
+    const made: unknown[][] = [];
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor(...args: unknown[]) {
+          made.push(args);
+        }
+      },
+    );
+    const view = await openAt(0, { approach: { durationMs: 1_000 } });
+    expect(fakes.cityOptions).toEqual([
+      expect.objectContaining({
+        parent: fakes.view?.globe.group,
+        heightsUrl: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+      }),
+    ]);
+    for (const options of fakes.cityOptions) options.createWorker();
+    expect(made).toEqual([
+      [
+        expect.objectContaining({
+          href: expect.stringMatching(/\/globe-city-worker\.ts/),
+        }),
+        { type: "module" },
+      ],
+    ]);
+    // The approach's start warms the city up at the tour's centre.
+    expect(fakes.cityLoads[0]).toMatchObject({ zoom: 12, fresh: true });
+    // Taken from the flight near the tour: the frame loads it there.
+    view.setDistance(200);
+    frameAt(16);
+    expect(fakes.cityLoads.at(-1)).toMatchObject({ zoom: 12, fresh: false });
+    expect(view.stats().city).toMatchObject({
+      shown: true,
+      worker: "loading",
+      reliefGroundM: DRAWN_M,
+    });
+    view.setBuildings?.(false);
+    expect(view.stats().city?.shown).toBe(false);
+    expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
+    vi.stubGlobal("Worker", noWorker);
+  });
+
   // Why: the cloud shell takes the clouds as the relief takes the ground,
   // as in the lab: the air asks the relief mount for the shell's share at
   // the flat layer's share it planned.
@@ -1139,7 +1267,9 @@ describe("openGlobeEditor's wiring", () => {
 
   // Why: the streaks are drawn twice a frame, behind the Earth (before the
   // scene) and a share over it, before the air: the globe lab's order,
-  // which keeps the air's haze over them. Off for dust=0, the speed still
+  // which keeps the air's haze over them; the interface is not drawn after
+  // the air from this high (above the cloud deck it stays in the scene's
+  // pass, see the next test). Off for dust=0, the speed still
   // measured; a teleport (an arrow step) restarts their speed, so a jump
   // never flashes them.
   for (const { dust, label, shown, draws } of [
@@ -1149,7 +1279,12 @@ describe("openGlobeEditor's wiring", () => {
       shown: true,
       draws: ["dust 0.75", "dust 0.25", "air"],
     },
-    { dust: 0, label: "nowhere for dust=0", shown: false, draws: ["air"] },
+    {
+      dust: 0,
+      label: "nowhere for dust=0",
+      shown: false,
+      draws: ["air"],
+    },
   ]) {
     it(`draws the speed streaks ${label}`, async () => {
       let now = 1_000;
@@ -1186,6 +1321,49 @@ describe("openGlobeEditor's wiring", () => {
       ).toBe(0);
     });
   }
+
+  // Why: below the cloud deck the interface (the tour's billboards, rings
+  // and poles) is drawn last, after the air, so the clouds' shadow
+  // composited there does not darken it; above the deck it stays in the
+  // scene's pass, as the cloud composites write no depth and it would show
+  // through the clouds. And the status bar's draw calls are the whole
+  // frame's, every pass summed, not the last pass's.
+  it("draws the interface after the air below the cloud deck only, and counts the whole frame's draw calls", async () => {
+    const view = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch(""),
+      dust: 0,
+    });
+    open = view;
+    const seams = fakes.seams;
+    if (seams === null) throw new Error("no seams");
+    const frameAt = (altitudeKm: number) => {
+      fakes.view?.placeView({
+        lat: MUNICH.lat,
+        lng: MUNICH.lon,
+        altitudeKm,
+        headingDeg: 0,
+        pitchDeg: -89,
+      });
+      fakes.draws = [];
+      seams.update?.(1_000);
+      seams.beforeScene?.();
+      // The view core's own scene pass (the fake logs every draw of the
+      // view's scene as "interface"; the air's fake draws nothing).
+      const scene = fakes.view?.scene;
+      if (scene) fakes.view?.renderer.render(scene, fakes.view.camera);
+      seams.afterScene?.();
+      return fakes.draws.filter((d) => d === "interface").length;
+    };
+    // Below the deck: the scene's pass and the interface pass, both counted.
+    expect(frameAt(1)).toBe(2);
+    expect(view.readout().drawCalls).toBe(2);
+    // The scene's own render alone, beside the frame's total.
+    expect(view.stats().globe?.drawCalls).toEqual({ frame: 2, scene: 1 });
+    expect(frameAt(2.5)).toBe(2);
+    // Above it: the scene's pass alone.
+    expect(frameAt(5)).toBe(1);
+    expect(view.readout().drawCalls).toBe(1);
+  });
 
   // Why: the clouds and the air read the scene's depth as standard depth
   // (far at 1); reversed depth left them reading the near plane as the
@@ -1402,8 +1580,10 @@ describe("openGlobeEditor's wiring", () => {
     open = await openGlobeEditor(deps(), {
       ...readGlobeSwitch(""),
       osmGain: 0.45,
+      osmGainMode: "compress",
     });
     expect(fakes.terrainInput?.osmGain).toBe(0.45);
+    expect(fakes.terrainInput?.osmGainMode).toBe("compress");
   });
 
   // Why: the shell shows the street map's loading state; the view hands

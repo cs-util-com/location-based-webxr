@@ -30,7 +30,17 @@
   - The heavy clouds: `globeViewClouds(view)` (`globe-view-clouds.ts`),
     passed to `mountGlobeViewAir` as its `clouds`: the lab's slab, shell
     and high layer with the lab's settings, switched by the air's
-    `setClouds`. The view must draw with standard depth.
+    `setClouds`. The view must draw with standard depth. Their settings
+    (`GLOBE_VIEW_CLOUDS`, e.g. the shell's height `cloudShellKm`) are
+    exported too. Their `extra` option names what else stands on the
+    ground (the city's root) for the clouds' depth.
+  - The city: `createGlobeCity` (`globe-city.ts`; types `GlobeCity`,
+    `GlobeCityState`) and `createGlobeCityStep` (`globe-city-step.ts`,
+    `GlobeCityStep`): OSM's buildings, trees and roads on the globe's
+    Earth-centred group, loaded and built in the app's worker, whose shell
+    wires the package's `./city-worker` export
+    (`globe-city-worker-core.ts`) to the Osm library; the step loads,
+    retries and fades it by altitude, as in the lab.
   - The approach: `createGlobeApproach` (`globe-approach.ts`), `createGlobeLandingFlight`
     (`globe-landing-flight.ts`),
     `createApproachDrive` and `createFovReturn` (`globe-approach-camera.ts`)

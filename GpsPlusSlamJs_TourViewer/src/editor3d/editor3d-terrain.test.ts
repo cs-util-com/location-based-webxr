@@ -114,6 +114,22 @@ describe("createEditorTerrain", () => {
     tuned.dispose();
   });
 
+  // Why: the gain's mode reaches the shader as well: flat (the link's
+  // default) unless the page asks for the luma compression.
+  it("multiplies the map flat unless asked to compress", () => {
+    const plain = make();
+    expect(plain.osm.uniforms.uOsmFlat.value).toBe(1);
+    plain.dispose();
+    const compressed = createEditorTerrain({
+      renderer: {} as THREE.WebGLRenderer,
+      centre: { lat: 48.137393, lng: 11.575493 },
+      device: "desktop",
+      osmGainMode: "compress",
+    });
+    expect(compressed.osm.uniforms.uOsmFlat.value).toBe(0);
+    compressed.dispose();
+  });
+
   // Why: the heights' sources and the map are owed a visible credit each;
   // the page shows exactly this list.
   it("owes Mapterhorn, the elevation data behind it and OpenStreetMap", () => {
@@ -123,6 +139,12 @@ describe("createEditorTerrain", () => {
     expect(shorts).toMatch(/OpenStreetMap/);
     expect(ground.credits.length).toBeGreaterThanOrEqual(3);
     expect(ground.credits.at(-1)?.short).toMatch(/OpenStreetMap/);
+    // The globe view's buildings stand on the heights the relief is drawn
+    // from (its own source at its own zoom), or they float or sink.
+    expect(ground.heights).toEqual({
+      url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+      globalZoom: 12,
+    });
     for (const credit of ground.credits) {
       expect(credit.href).toMatch(/^https:\/\//);
     }

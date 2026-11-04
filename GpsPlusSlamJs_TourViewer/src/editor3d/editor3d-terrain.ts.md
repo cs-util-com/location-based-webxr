@@ -19,10 +19,11 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template?, osmGain? })` ->
+- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template?, osmGain?, osmGainMode? })` ->
   `EditorTerrain`. `osmGain` is the map's darkening gain (the link's
   `osmGain`, `../editor/globe-switch.ts`; its default 0.55 where not
-  given, as in the OrbitControls view). `placement` `"ecef"` leaves the tiles' group in ECEF
+  given, as in the OrbitControls view), `osmGainMode` how it darkens
+  ("flat" where not given, the link's `osmGainMode`). `placement` `"ecef"` leaves the tiles' group in ECEF
   for a parent that places it (the globe view's Earth-centred group,
   `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
   into it:
@@ -34,6 +35,9 @@ near the camera under the editor's own gate, and the credits both need.
   - `osm` - the attached, enabled map overlay;
   - `credits` - the heights' sources, then the map's (the globe's credit
     shape: `short`, full text, `href`);
+  - `heights` - the relief's height source (`url`, its `{z}/{x}/{y}`
+    template, and `globalZoom`): what the globe view's buildings stand on,
+    so they meet the drawn ground (`editor3d-globe-city.ts`);
   - `groundAt(latRad, lonRad)` - the drawn ground (m over the ellipsoid),
     null where none is loaded;
   - `update(camera, renderer, nowMs)` - per frame: the map's gate from the

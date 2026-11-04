@@ -663,6 +663,13 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#shell-pane-perf .nums")).toContainText(
     /Draw calls[1-9]/,
   );
+  // Why: three.js resets its counters at every render, so the figure
+  // once read only the frame's last pass (a handful of calls). The figure
+  // is the whole frame's, so it holds at least the main scene's own
+  // render; no fixed count, the scene's varies with the tiles shown.
+  const calls = (await view3d(page)).globe.drawCalls;
+  expect(calls.scene).toBeGreaterThan(0);
+  expect(calls.frame).toBeGreaterThanOrEqual(calls.scene);
   expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
   expect(await rejections(page)).toEqual([]);
 });

@@ -625,6 +625,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
         view3dDistance: (m: number) => void;
+        view3dBuildings: (on: boolean) => void;
         view3dPointOf: (
           selection: string,
         ) => readonly [number, number, number] | null;
@@ -655,6 +656,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     },
     view3dDistance: (m) => {
       shown3d?.setDistance(m);
+    },
+    view3dBuildings: (on) => {
+      shown3d?.setBuildings?.(on);
     },
     view3dPointOf: (selection) => shown3d?.pointOf(selection) ?? null,
     view3dScreenOf: (selection) => shown3d?.screenOf(selection) ?? null,

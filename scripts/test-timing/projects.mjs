@@ -608,22 +608,24 @@ export const PROJECTS = [
     ...demoAppProject("GpsPlusSlamJs_TourViewer"),
     stages: [
       BUILD_OSM_STAGE,
-      ...demoAppStages(["./src/workers/occlusion-mesher.worker.ts"]).map(
-        (stage) =>
-          stage.name === "lint:css"
+      ...demoAppStages([
+        "./src/workers/occlusion-mesher.worker.ts",
+        "./src/editor3d/globe-city-worker.ts",
+      ]).map((stage) =>
+        stage.name === "lint:css"
+          ? {
+              ...stage,
+              command:
+                'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
+            }
+          : stage.name === "test:e2e"
             ? {
                 ...stage,
                 command:
-                  'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
+                  "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
+                narrowable: true,
               }
-            : stage.name === "test:e2e"
-              ? {
-                  ...stage,
-                  command:
-                    "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
-                  narrowable: true,
-                }
-              : stage,
+            : stage,
       ),
     ],
   },

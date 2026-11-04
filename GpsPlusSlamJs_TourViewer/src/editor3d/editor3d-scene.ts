@@ -100,7 +100,9 @@ import {
   drawnCounts,
   viewFailure,
 } from "./editor3d-view-parts.js";
+import { createFrameDrawCalls } from "./frame-draw-calls.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
+import type { EditorCityStats } from "./editor3d-globe-city.js";
 
 /** The store, as the 3D view reads it. */
 interface Editor3dStore {
@@ -191,6 +193,11 @@ export interface Editor3dView {
   /** The globe view's heavy clouds on (true, their default) or off.
    *  Absent: the view has no clouds of its own. */
   setClouds?(on: boolean): void;
+  /** The globe view's OSM buildings (with their trees and roads) shown
+   *  (true, their default) or hidden: hidden, nothing more is loaded for
+   *  them and they are not drawn. Absent: the view has no buildings (or
+   *  the link turned them off, `buildings=0`, where this does nothing). */
+  setBuildings?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
   /** The street map's near tiles, failed first (the Map loading tab). */
@@ -315,6 +322,10 @@ export interface Editor3dStats {
   }[];
   /** The globe view's own (`editor3d-globe.ts`); absent in this one. */
   readonly globe?: Record<string, unknown>;
+  /** The globe view's buildings (`editor3d-globe-city.ts`: tiles,
+   *  buildings, the worker's state, the height parity); null with
+   *  `buildings=0` or without module workers; absent in the older view. */
+  readonly city?: EditorCityStats | null;
 }
 
 const BACKGROUND = 0x232427;
@@ -369,6 +380,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     renderer.forceContextLoss();
     renderer.domElement.remove();
   });
+  // The whole frame's draw calls, for the status bar.
+  const drawCalls = createFrameDrawCalls(renderer.info);
+  undo.push(() => drawCalls.dispose());
   /** True once the first frame is drawn and the view is handed out. */
   let shown = false;
   try {
@@ -687,6 +701,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     };
     const frame = (now: number) => {
       frameClock.tick(now);
+      drawCalls.begin();
       if (!stepFlight(now)) controls.update();
       // A tilt by hand leaves Top view.
       if (top && flight === null && cam.tiltDeg() > 3) {
@@ -726,6 +741,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         fovDeg: EDITOR_CAMERA.fovDeg,
       });
       renderer.render(scene, camera);
+      drawCalls.end();
       frames++;
       if (frames === 1) firstFrame();
     };
@@ -800,6 +816,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
           top,
           ...drawnCounts(renderer),
+          // The whole frame's calls (`frame-draw-calls.ts`).
+          drawCalls: drawCalls.calls(),
           frameMs: frameClock.meanMs(),
           worstFrameMs: frameClock.worstMs(),
           slowFrames: frameClock.slowFrames(),
