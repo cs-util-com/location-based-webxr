@@ -438,9 +438,6 @@ const opened = reduce(
   act.opened({ manifest: OPENED }),
 );
 
-/** What a reload brings back from the draft `state` wrote: its settings
- *  record as stored, read against the opened tour, and its objects'
- *  records, restored into a fresh open. */
 /** The object written as a draft writes it (tourObjectRecord, format 4,
  *  a minted picture with its asset entry) and read back as a reload reads
  *  it (parseDraftObject). */
@@ -451,6 +448,9 @@ function throughRecord(object: TourObject): TourObject {
   return read;
 }
 
+/** What a reload brings back from the draft `state` wrote: its settings
+ *  record as stored, read against the opened tour, and its objects'
+ *  records, restored into a fresh open. */
 function reloadedFromDraft(state: TourDocumentState): TourDocumentState {
   const record = parseSettingsRecord(
     settingsRecordText(settingsRecord(state)),

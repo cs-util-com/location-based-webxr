@@ -501,6 +501,14 @@ function checkKeep(keep: number): void {
 const isLoaded = (held: unknown): boolean =>
   held !== null && held !== undefined && !(held instanceof Promise);
 
+/** The statuses a Response must be made without a body for. */
+const NULL_BODY_STATUS: ReadonlySet<number> = new Set([204, 205, 304]);
+
+/** `res` again with the body read from it; a body-less status cannot
+ *  carry even an empty body. */
+const rebodied = (res: Response, body: ArrayBuffer): Response =>
+  new Response(NULL_BODY_STATUS.has(res.status) ? null : body, res);
+
 /**
  * The library's XYZ overlay behind a gate: the plugin's lock of a region
  * (which fetches) reaches the library only where `gate(range, level)`
@@ -513,14 +521,6 @@ const isLoaded = (held: unknown): boolean =>
  * RangeError for a url without `{z}/{x}/{y}` or a keep that is not an
  * integer >= 0; TypeError without a gate.
  */
-/** The statuses a Response must be made without a body for. */
-const NULL_BODY_STATUS: ReadonlySet<number> = new Set([204, 205, 304]);
-
-/** `res` again with the body read from it; a body-less status cannot
- *  carry even an empty body. */
-const rebodied = (res: Response, body: ArrayBuffer): Response =>
-  new Response(NULL_BODY_STATUS.has(res.status) ? null : body, res);
-
 export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly gate: (range: number[], level: number) => boolean;
   private readonly ceiling: RequestCeiling;
@@ -1085,10 +1085,10 @@ export function createGlobeOsmOverlay({
   let answeredSinceRetry = false;
   /** The tiles the last retry asked for again. */
   let retried: TileOverlayInfo[] = [];
-  /** Whether a range (normalised) comes within `withinM` of the camera;
-   *  false for one the projection cannot place. */
   /** The map's reach (m): the fade's end and the look's slack. */
   const reach = () => uniforms.uOsmFadeM.value + GLOBE_OSM.lookSlackM;
+  /** Whether a range (normalised) comes within `withinM` of the camera;
+   *  false for one the projection cannot place. */
   const rangeNear = (range: number[], withinM: number): boolean => {
     if (!terrain) return false;
     const { ellipsoid } = terrain.tiles;

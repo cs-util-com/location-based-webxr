@@ -218,7 +218,6 @@ const finiteOr0 = (value: unknown): number =>
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** The editor's city over `city` (`EditorCityOptions`). */
 /** A finite number as it is, anything else as null. */
 function finiteOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -236,6 +235,7 @@ function loadStats(load: GlobeCityState["load"]): EditorCityStats["load"] {
   );
 }
 
+/** The editor's city over `city` (`EditorCityOptions`). */
 export function mountEditorCity(options: EditorCityOptions): EditorCity {
   const { city, place, zoom } = options;
   const cityStep = options.step ?? createGlobeCityStep({ city });
