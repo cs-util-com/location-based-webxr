@@ -13,6 +13,10 @@ export const SLOW_FRAME_MS = 50;
 /** How long a slow frame is counted after it (ms). */
 const SLOW_WINDOW_MS = 5_000;
 
+/** A gap longer than this (ms) is a pause (a hidden tab, a stopped
+ *  loop), not a frame: not timed, and the clock starts again. */
+const PAUSE_MS = 1_000;
+
 export interface FrameClock {
   /** A frame was drawn at `now` (ms, the frame loop's clock). */
   tick(now: number): void;
@@ -39,7 +43,7 @@ export function createFrameClock(keep = 60): FrameClock {
   let timed = 0;
   return {
     tick(now) {
-      if (last !== null) {
+      if (last !== null && now - last <= PAUSE_MS) {
         const gap = now - last;
         intervals.push(gap);
         timed += 1;

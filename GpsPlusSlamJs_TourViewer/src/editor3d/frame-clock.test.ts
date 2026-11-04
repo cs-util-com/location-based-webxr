@@ -45,12 +45,9 @@ describe("createFrameClock", () => {
   it("counts a frame over 50 ms as slow for five seconds after it", () => {
     const clock = ticked([0, 16, 16 + SLOW_FRAME_MS + 1, 100]);
     expect(clock.slowFrames()).toBe(1);
-    clock.tick(4_000);
-    // The 3.9 s gap is itself a slow frame (a hidden tab, say).
-    expect(clock.slowFrames()).toBe(2);
-    for (let t = 4_016; t < 5_100; t += 16) clock.tick(t);
+    for (let t = 116; t < 5_000; t += 16) clock.tick(t);
     expect(clock.slowFrames()).toBe(1);
-    for (let t = 5_100; t < 9_100; t += 16) clock.tick(t);
+    for (let t = 5_000; t < 5_200; t += 16) clock.tick(t);
     expect(clock.slowFrames()).toBe(0);
   });
 
@@ -82,5 +79,19 @@ describe("createFrameClock", () => {
         },
       ),
     );
+  });
+
+  // Why: a hidden tab or a paused loop (the canvas at 0 px) stops the
+  // frames; the first frame after the return came a long gap after the
+  // last, and the Performance tab then showed "1 frame over 50 ms" after
+  // every return, a slow-down that never happened. A gap over a second is
+  // a pause: not timed, not slow, the clock starts again from that frame.
+  it("takes a gap over a second for a pause, not a slow frame", () => {
+    const clock = ticked([0, 16, 32, 5000, 5016]);
+    expect(clock.slowFrames()).toBe(0);
+    expect(clock.recentMs()).toEqual([16, 16, 16]);
+    expect(clock.count()).toBe(3);
+    const slow = ticked([0, 16, 900]);
+    expect(slow.slowFrames()).toBe(1);
   });
 });

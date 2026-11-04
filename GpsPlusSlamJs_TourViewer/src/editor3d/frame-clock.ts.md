@@ -8,6 +8,7 @@
   - `SLOW_FRAME_MS` (50): an interval over this is a slow frame.
   - (module-private) `SLOW_WINDOW_MS` (5,000): how long a slow frame is
     counted.
+  - (module-private) `PAUSE_MS` (1,000): a longer gap is a pause.
   - `createFrameClock(keep = 60)`: a `FrameClock` keeping the last `keep`
     intervals.
     - `tick(now)`: a frame drawn at `now` (ms).
@@ -22,8 +23,10 @@
     the last five seconds (pruned on each tick).
   - A frame of exactly 50 ms is not slow.
   - The window is measured from the last tick, not the wall clock: a view
-    that stops drawing keeps its last count until it draws again. A long
-    gap (a hidden tab) is itself one slow frame.
+    that stops drawing keeps its last count until it draws again. A gap over
+    `PAUSE_MS` (a hidden tab, a loop paused while the canvas has no size)
+    is a pause, not a slow frame: not timed, and the clock goes on from
+    the frame after it.
 - Example:
   ```ts
   const clock = createFrameClock();
@@ -33,5 +36,5 @@
   clock.meanMs(); // the readout's frame time
   ```
 - Tests: `frame-clock.test.ts` (the empty clock, mean and worst, the
-  bound, the five-second window, the 50 ms edge, a property over random
+  bound, the five-second window, the 50 ms edge, a pause, a property over random
   frame gaps).
