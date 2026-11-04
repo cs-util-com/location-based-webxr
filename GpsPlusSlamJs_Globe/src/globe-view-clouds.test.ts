@@ -66,12 +66,15 @@ function fakeParts() {
   const shellFrames: { altitudeKm: number; shadow: number }[] = [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
+  const depthExtra: unknown[] = [];
+  const slabExtra: unknown[] = [];
   const parts = {
     sceneDepth: {
       beginFrame: () => log.push("depth begin"),
-      render: (_camera: THREE.Camera, relief: unknown) => {
+      render: (_camera: THREE.Camera, relief: unknown, extra: unknown) => {
         log.push("depth");
         depthDrawn.push(relief);
+        depthExtra.push(extra);
       },
       dispose: () => log.push("dispose depth"),
     },
@@ -84,8 +87,9 @@ function fakeParts() {
         slabFrames.push(frame);
         return { share: 1, radiusM: 80_000 };
       },
-      render: () => {
+      render: (_camera: unknown, _relief: unknown, extra: unknown) => {
         log.push("slab");
+        slabExtra.push(extra);
         return true;
       },
       texture: new THREE.Texture(),
@@ -118,6 +122,8 @@ function fakeParts() {
     shellFrames,
     patched,
     depthDrawn,
+    depthExtra,
+    slabExtra,
   };
 }
 
@@ -304,6 +310,34 @@ describe("createGlobeViewClouds", () => {
       "shell",
     ]);
     expect(fakes.depthDrawn).toEqual([tiles.group]);
+  });
+
+  // Why: an app's city stands on the ground: the clouds' rays must end
+  // at its buildings as at the relief, in the depth pass and in the slab's
+  // own, and the list is asked each frame (a city shown, then hidden).
+  it("draws an app's extra objects into the clouds' depth, asked each frame", () => {
+    const fakes = fakeParts();
+    const city = new THREE.Group();
+    let shown: THREE.Object3D[] = [city];
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts, {
+      extra: () => shown,
+    });
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(fakes.depthExtra).toEqual([[city]]);
+    expect(fakes.slabExtra).toEqual([[city]]);
+    shown = [];
+    clouds.render({ weight: 1 });
+    expect(fakes.depthExtra.at(-1)).toEqual([]);
+    expect(fakes.slabExtra.at(-1)).toEqual([]);
+    // Without the option: none.
+    const plain = fakeParts();
+    const bare = createGlobeViewClouds(fakeView(10_000), plain.parts);
+    bare.patch(reliefTiles());
+    bare.step({ observerKm: 10, shareClouds: () => 1 });
+    bare.render({ weight: 1 });
+    expect(plain.depthExtra).toEqual([[]]);
   });
 
   // Why: the relief's depth costs a pass of its own; it is drawn for the

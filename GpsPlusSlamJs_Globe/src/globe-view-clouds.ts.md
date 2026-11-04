@@ -18,7 +18,10 @@
     `GlobeViewCloudsOptions.shadow` (0..1, RangeError otherwise) sets both
     shadows' strength, the shell's own (`cloudShellShadow`) and the
     ground's soft one (`cloudShadow`): an app's link knob; without it the
-    lab's 0.5 and 0.6.
+    lab's 0.5 and 0.6. `GlobeViewCloudsOptions.extra` (a function, asked
+    each frame) names what else stands on the ground (the Tour Viewer's
+    city root): drawn into the depth with the relief, so the clouds' rays
+    end at it; without it none (the lab passes its city the same way).
   - `createCloudsParts(view, drawers)`: the real parts (scene depth, cloud
     volume, spherical volume), or null without the ground sky.
   - `createGlobeViewClouds(view, parts, options?)` returns `GlobeViewClouds`:
@@ -69,6 +72,7 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
   volume updates at 6,000, 500, 80, 10 and 0.1 km; the ground shadow by
   the share across 6,000 to 10 km; no shell without a frame target; the
   patch, then the draw order (depth, slab, shell) and no depth at weight
-  0; the switch off and on; dispose once; null without the ground sky.
+  0; an app's extra objects in the depth and the slab, asked each frame,
+  none without the option; the switch off and on; dispose once; null without the ground sky.
   The drawing is checked in a browser by the Tour Viewer's
   `editor3d-globe.spec.js` (the switch) and the lab's own smokes.

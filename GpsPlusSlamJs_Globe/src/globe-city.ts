@@ -112,7 +112,7 @@ interface GlobeCityLoadState {
 export interface GlobeCityState {
   phase: "idle" | "loading" | "ready" | "failed";
   target?: LatLng;
-  stage?: string;
+  stage?: string | undefined;
   counts?: unknown;
   groundM?: unknown;
   objects?: number;
@@ -167,7 +167,7 @@ interface CityLoad {
   key: string;
   counts: CityLoadCounts;
   progress: number;
-  fullProgress?: number;
+  fullProgress?: number | undefined;
   frozen: number;
   outcome: string | null;
   ended: boolean;

@@ -32,6 +32,14 @@ export { mountGlobeViewAir, type GlobeViewAir } from "./globe-view-air.js";
 // The relief under the globe's surface: the band between the two carriers.
 export { mountGlobeRelief } from "./globe-relief-mount.js";
 export { GLOBE_VIEW_CLOUDS, globeViewClouds } from "./globe-view-clouds.js";
+// The city (OSM's buildings, trees and roads) in the globe's scene, built
+// in an app's worker (`./city-worker`), and its per-frame step.
+export {
+  createGlobeCity,
+  type GlobeCity,
+  type GlobeCityState,
+} from "./globe-city.js";
+export { createGlobeCityStep, type GlobeCityStep } from "./globe-city-step.js";
 // The approach: the globe's own pin flight (a meteor from far out down to a
 // place) and the frame loop's drive, for a page that lands on a place.
 export { createGlobeApproach } from "./globe-approach.js";

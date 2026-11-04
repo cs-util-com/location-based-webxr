@@ -224,6 +224,8 @@ export function globeViewClouds(
   };
 }
 
+const NO_EXTRA: readonly THREE.Object3D[] = Object.freeze([]);
+
 /** What an app may tune of the view's clouds. */
 export interface GlobeViewCloudsOptions {
   /**
@@ -234,6 +236,12 @@ export interface GlobeViewCloudsOptions {
    * lab's (0.5 near the ground, 0.6 from orbit).
    */
   readonly shadow?: number;
+  /**
+   * What else stands on the ground (an app's city root), asked each
+   * frame: drawn into the clouds' depth with the relief, so a cloud's
+   * rays end at a building rather than passing through it. Absent: none.
+   */
+  readonly extra?: () => readonly THREE.Object3D[];
 }
 
 /**
@@ -266,6 +274,7 @@ export function createGlobeViewClouds(
     cloudVolume: 0,
   });
   let knobs: GlobeViewCloudKnobs = onKnobs;
+  const extraOf = options.extra ?? (() => NO_EXTRA);
   let relief: THREE.Object3D | null = null;
   let last = { flat: 1, shellOn: false, shellShadow: 0, surfaceShadow: 0 };
   let disposed = false;
@@ -315,10 +324,11 @@ export function createGlobeViewClouds(
       if (knobs.cloudVolume === 0) return;
       // The relief's depth while the ground sky shows (the shell's rays end
       // at it by that weight); the slab draws it itself when only it needs it.
-      if (weight > 0) sceneDepth.render(camera, relief, []);
+      const extra = extraOf();
+      if (weight > 0) sceneDepth.render(camera, relief, extra);
       clouds.render(camera, {
         relief,
-        extra: [],
+        extra,
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
         sunIntensity: globe.sun.intensity,
