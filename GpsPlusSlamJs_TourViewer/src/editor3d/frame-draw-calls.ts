@@ -22,6 +22,9 @@ export interface FrameDrawCalls {
   end(): void;
   /** The last finished frame's draw calls (0 before the first). */
   calls(): number;
+  /** The calls of the frame under way so far (between `begin` and
+   *  `end`): a pass's own calls are the difference across it. */
+  now(): number;
   /** The automatic reset back as it was. */
   dispose(): void;
 }
@@ -38,6 +41,7 @@ export function createFrameDrawCalls(info: RenderInfo): FrameDrawCalls {
       last = info.render.calls;
     },
     calls: () => last,
+    now: () => info.render.calls,
     dispose() {
       info.autoReset = autoReset;
     },

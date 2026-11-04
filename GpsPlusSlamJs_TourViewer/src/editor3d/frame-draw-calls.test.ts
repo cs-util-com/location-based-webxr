@@ -43,6 +43,23 @@ describe("createFrameDrawCalls", () => {
     expect(counter.calls()).toBe(5);
   });
 
+  // Why: the e2e checks the frame's total is at least the main scene's
+  // calls; the scene's share is the difference of `now()` across its
+  // render, so `now()` must read the frame so far, not the last frame.
+  it("reads the frame under way so far, so a pass's calls are a difference", () => {
+    const info = fakeInfo();
+    const counter = createFrameDrawCalls(info);
+    counter.begin();
+    info.draw(3);
+    const from = counter.now();
+    info.draw(40);
+    expect(counter.now() - from).toBe(40);
+    info.draw(2);
+    counter.end();
+    expect(counter.now()).toBe(45);
+    expect(counter.calls()).toBe(45);
+  });
+
   // Why: dispose hands the renderer back as it was given.
   it("puts the automatic reset back on dispose", () => {
     const info = fakeInfo();

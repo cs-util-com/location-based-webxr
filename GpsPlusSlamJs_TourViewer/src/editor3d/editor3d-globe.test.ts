@@ -1248,6 +1248,8 @@ describe("openGlobeEditor's wiring", () => {
     // Below the deck: the scene's pass and the interface pass, both counted.
     expect(frameAt(1)).toBe(2);
     expect(view.readout().drawCalls).toBe(2);
+    // The scene's own render alone, beside the frame's total.
+    expect(view.stats().globe?.drawCalls).toEqual({ frame: 2, scene: 1 });
     expect(frameAt(2.5)).toBe(2);
     // Above it: the scene's pass alone.
     expect(frameAt(5)).toBe(1);

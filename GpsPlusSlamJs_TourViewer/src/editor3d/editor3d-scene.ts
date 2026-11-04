@@ -90,6 +90,7 @@ import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountCredits } from "./editor3d-credits.js";
 import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
+import { createFrameDrawCalls } from "./frame-draw-calls.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 
 /** The store, as the 3D view reads it. */
@@ -339,6 +340,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     renderer.forceContextLoss();
     renderer.domElement.remove();
   });
+  // The whole frame's draw calls, for the status bar.
+  const drawCalls = createFrameDrawCalls(renderer.info);
+  undo.push(() => drawCalls.dispose());
   /** True once the first frame is drawn and the view is handed out. */
   let shown = false;
   try {
@@ -653,6 +657,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         if (frameTimes.length > 60) frameTimes.shift();
       }
       lastFrameAt = now;
+      drawCalls.begin();
       if (!stepFlight(now)) controls.update();
       // A tilt by hand leaves Top view.
       if (top && flight === null && cam.tiltDeg() > 3) {
@@ -692,6 +697,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         fovDeg: EDITOR_CAMERA.fovDeg,
       });
       renderer.render(scene, camera);
+      drawCalls.end();
       frames++;
       if (frames === 1) firstFrame();
     };
@@ -769,7 +775,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           tiltDeg: cam.tiltDeg(),
           headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
           top,
-          drawCalls: renderer.info.render.calls,
+          drawCalls: drawCalls.calls(),
           frameMs: mean,
         };
       },

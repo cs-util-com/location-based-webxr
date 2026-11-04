@@ -304,7 +304,10 @@ The view disposes the run once the arrival is over.
   (`frame-draw-calls.ts`: the renderer's automatic reset off, reset in
   the `update` seam, read at the end of `afterScene`), every pass summed:
   the sky, the scene, the air's composites and the interface pass. With
-  the automatic reset it read only the last pass's.
+  the automatic reset it read only the last pass's. `stats().globe.drawCalls`
+  holds the same frame's total (`frame`) and the main scene's own render
+  (`scene`, the difference of the counter's `now()` across it), so a
+  check can hold the total to at least the scene's.
 
 ## Stats
 

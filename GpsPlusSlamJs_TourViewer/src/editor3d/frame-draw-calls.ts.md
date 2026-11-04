@@ -19,6 +19,9 @@ the interface pass's few calls as the frame's).
   - `end()` - after the frame's last render: keeps `info.render.calls`;
   - `calls()` - the last finished frame's total (0 before the first),
     the same mid-frame;
+  - `now()` - the frame under way so far (`info.render.calls`), so one
+    pass's calls are the difference of `now()` across it (the globe
+    editor's `stats().globe.drawCalls.scene`);
   - `dispose()` - `autoReset` back as it was.
 
 ## Invariants & assumptions
@@ -27,7 +30,10 @@ the interface pass's few calls as the frame's).
   renderer must sit between one `begin` and its `end`, or its calls count
   towards the next frame. The editor calls `begin` in the view's `update`
   seam (before the clear and the sky) and `end` at the end of its
-  `afterScene` seam (after the interface pass). A paused frame runs
+  `afterScene` seam (after the interface pass); the older 3D view
+  (`editor3d-scene.ts`) calls `begin` at its frame's start and `end`
+  after its one `render`, since its ground's update may draw too. Both
+  dispose the counter with the view. A paused frame runs
   neither, so `calls()` keeps the last drawn frame.
 - `info.render.triangles`, `points` and `lines` are summed over the frame
   too, while the counter lives.
@@ -47,4 +53,5 @@ readout.drawCalls = drawCalls.calls();
 ## Tests
 
 - `frame-draw-calls.test.ts` - a frame of three passes summed, the last
-  finished frame reported mid-frame, and `autoReset` put back on dispose.
+  finished frame reported mid-frame, one pass's calls as a difference of
+  `now()`, and `autoReset` put back on dispose.

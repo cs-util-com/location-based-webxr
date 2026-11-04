@@ -366,6 +366,12 @@ export async function openGlobeEditor(
     let interfacePass: GlobeInterfacePass | null = null;
     // The whole frame's draw calls (its passes summed), for the status bar.
     let drawCalls: FrameDrawCalls | null = null;
+    // The main scene's share of them (its one render), and where the frame
+    // stood when it began.
+    let sceneFrom = 0;
+    let sceneCalls = 0;
+    let lastSceneCalls = 0;
+    let lastFrameCalls = 0;
     // The approach on opening the tour while it runs (`globe-approach-run.ts`).
     let approach: ApproachRun | null = null;
     /** How the last approach ended, for the page's checks. */
@@ -455,12 +461,16 @@ export async function openGlobeEditor(
               GLOBE_VIEW_CLOUDS.cloudShellKm * 1000,
             ),
           );
+          sceneFrom = drawCalls?.now() ?? 0;
         },
         afterScene: () => {
+          sceneCalls = (drawCalls?.now() ?? 0) - sceneFrom;
           dust.render(renderer, SPEED_DUST_LOOK.over);
           air?.afterScene();
           interfacePass?.draw();
           drawCalls?.end();
+          lastSceneCalls = sceneCalls;
+          lastFrameCalls = drawCalls?.calls() ?? 0;
         },
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
@@ -482,6 +492,8 @@ export async function openGlobeEditor(
       renderer.forceContextLoss();
     });
     drawCalls = createFrameDrawCalls(renderer.info);
+    const frameCounter = drawCalls;
+    undo.push(() => frameCounter.dispose());
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // Daylight over the tour by default (held at its solar noon); the real
     // time now on request.
@@ -1543,6 +1555,13 @@ export async function openGlobeEditor(
             clouds: cloudStats(),
             // The last 60 frame intervals (ms), for a frame-time check.
             frameTimesMs: [...frameTimes],
+            // The last finished frame's draw calls, all passes and the main
+            // scene's render alone: the status bar's figure must hold at
+            // least the scene's.
+            drawCalls: {
+              frame: lastFrameCalls,
+              scene: lastSceneCalls,
+            },
           },
         };
       },
