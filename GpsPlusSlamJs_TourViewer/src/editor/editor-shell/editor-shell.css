@@ -463,6 +463,8 @@ body[data-view="3d"] #view3d {
   padding: 0 3px;
   border: 1px solid var(--s-line2);
   border-radius: 3px;
+  background: none;
+  color: var(--s-muted);
   font: 10px var(--s-mono);
 }
 

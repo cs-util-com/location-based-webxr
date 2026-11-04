@@ -618,6 +618,38 @@ async function expectTreeControls(page, size) {
   expect(grip.y, at).toBe(tw.y);
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
+  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less, as the
+  // explorer's; its search 8 px in, to the dock's line.
+  const tree = await box(page.locator("#shell-tree"));
+  expect(tree.width, at).toBe(size.width > 1100 ? 248 : 210);
+  const search = await box(page.locator("#tree-search"));
+  expect(search.x - tree.x, at).toBe(8);
+  expect(tree.x + tree.width - (search.x + search.width), at).toBe(9);
+  // A row's "+": 22 px, 4 px from the row's right end, in its middle.
+  const plus = await box(page.locator("#tree-body .card > .head .add").first());
+  expect([plus.width, plus.height], at).toEqual([22, 22]);
+  expect(row.x + row.width - (plus.x + plus.width), at).toBe(4);
+  expect(
+    Math.abs(plus.y + plus.height / 2 - (row.y + row.height / 2)),
+    at,
+  ).toBeLessThanOrEqual(0.5);
+  // The keys' foot: at the tree's bottom, its keys outlined, not filled;
+  // none on a phone, where the space is the rows'.
+  const foot = page.locator("#tree-foot");
+  if (size.width <= 700) {
+    await expect(foot, at).toBeHidden();
+    return;
+  }
+  const f = await box(foot);
+  expect(f.y + f.height, at).toBeCloseTo(tree.y + tree.height, 0);
+  expect(f.x, at).toBe(tree.x);
+  expect(
+    await foot
+      .locator("kbd")
+      .first()
+      .evaluate((k) => getComputedStyle(k).backgroundColor),
+    at,
+  ).toBe("rgba(0, 0, 0, 0)");
 }
 
 /**
@@ -774,6 +806,15 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     // the panel's toggles, each a button with its words (shown, or its
     // name where they fold away).
     await card(page, "gate").locator(".pick").click();
+    // A station selected on a desktop: the tree keeps its width beside
+    // the inspector, which stands at the window's right edge.
+    if (size.width > 1100) {
+      const tree = await box(page.locator("#shell-tree"));
+      const inspector = await box(page.locator("#shell-inspector"));
+      expect(tree.width).toBe(248);
+      expect(inspector.x + inspector.width).toBe(size.width);
+      expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
+    }
     const bar = await box(page.locator("#shell-bar"));
     const credits = await box(page.locator("#view3d-credits"));
     const toggles = await box(page.locator("#shell-toggles"));
