@@ -115,7 +115,7 @@ function fakeView() {
         ms: null,
       },
     ]),
-    retryMap: vi.fn(() => 1),
+    retryMap: vi.fn(() => ({ tiles: 1, refused: null, retry: 1 })),
     lastMapRetry: vi.fn(() => null),
   };
 }
@@ -143,7 +143,7 @@ function setUp() {
     block: vi.fn(),
     view: vi.fn(),
     model: vi.fn((): "written" => "written"),
-    scene: vi.fn(),
+    scene: vi.fn(() => true),
     groundItems: vi.fn(),
     addPin: vi.fn(),
     narration: vi.fn(() =>
@@ -1075,6 +1075,14 @@ describe("the bottom panel", () => {
     expect(deps.say).toHaveBeenCalledWith(
       expect.stringMatching(/^Moved ".+" inside its station's circle$/),
     );
+    // A refused edit (the page's toast says why) is not announced as done.
+    edits.scene.mockReturnValueOnce(false);
+    vi.mocked(deps.say).mockClear();
+    document
+      .querySelector<HTMLButtonElement>("#shell-panel .prow .fix")
+      ?.click();
+    expect(edits.scene).toHaveBeenCalledTimes(2);
+    expect(deps.say).not.toHaveBeenCalled();
     shell.hide();
   });
 

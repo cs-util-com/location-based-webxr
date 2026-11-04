@@ -779,7 +779,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `view` - `editor.editBlockView`, a free block's view (a long text's
     sign, from its writer's view picker);
   - `scene` - `commitSceneEdit`, as a gesture's (a typed place, a size,
-    a station put on the ground);
+    a station put on the ground); it returns whether the edit was
+    written (false: refused, its toast said why), so a caller announces
+    only what was applied;
   - `groundItems` - `editor.groundItems`, items' heights in one step
     (the ground under each, or a typed Height: their places untouched);
   - `addPin` (`addPinTo`) - a new pin in the station (`new-pin.ts`:

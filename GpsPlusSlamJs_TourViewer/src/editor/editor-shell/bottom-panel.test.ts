@@ -7,7 +7,11 @@
  * mislead silently. These run the real panel on its own markup, with the
  * page's commands as spies; its rules are `bottom-panel-model.test.ts`'s.
  */
-import type { OsmMapTile, OsmRetryOutcome } from "gps-plus-slam-globe/editor";
+import type {
+  OsmMapTile,
+  OsmRetryAsk,
+  OsmRetryOutcome,
+} from "gps-plus-slam-globe/editor";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Editor3dReadout } from "../../editor3d/editor3d-scene.js";
@@ -76,9 +80,16 @@ function fakeMap() {
   const map = {
     rows: [] as OsmMapTile[],
     asked: 0,
+    off: false,
+    /** The number of the retry the next ask waits for. */
+    next: 1,
     outcome: null as OsmRetryOutcome | null,
     tiles: vi.fn((limit: number) => map.rows.slice(0, limit)),
-    retry: vi.fn(() => map.asked),
+    retry: vi.fn((): OsmRetryAsk => ({
+      tiles: map.off ? 0 : map.asked,
+      refused: map.off ? "map-off" : map.asked > 0 ? null : "none-failed",
+      retry: map.next,
+    })),
     lastRetry: vi.fn(() => map.outcome),
   };
   return map;
@@ -558,10 +569,10 @@ describe("the Map loading tab", () => {
     expect(note()?.getAttribute("role")).toBe("status");
     // Focus stays inside though the busy chip is disabled.
     expect(el.contains(document.activeElement)).toBe(true);
-    map.outcome = { tiles: 2, loaded: 1, failed: 0 };
+    map.outcome = { retry: 1, tiles: 2, loaded: 1, failed: 0 };
     panel.tick(readoutOf({ frameCount: 9 }));
     expect(chipNow()?.disabled).toBe(true);
-    map.outcome = { tiles: 2, loaded: 2, failed: 0 };
+    map.outcome = { retry: 1, tiles: 2, loaded: 2, failed: 0 };
     panel.tick(readoutOf({ frameCount: 10 }));
     expect(chipNow()?.disabled).toBe(false);
     expect(chipNow()?.getAttribute("aria-busy")).toBe("false");
@@ -573,10 +584,49 @@ describe("the Map loading tab", () => {
     map.asked = 1;
     toggle("tiles").click();
     el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
-    map.outcome = { tiles: 1, loaded: 0, failed: 1 };
+    map.outcome = { retry: 1, tiles: 1, loaded: 0, failed: 1 };
     panel.tick(readoutOf({ frameCount: 9 }));
     expect(el.querySelector(".retry-note")?.textContent).toBe(
       "1 tile failed again",
+    );
+    expect(
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
+    ).toBe(false);
+  });
+
+  // Why: the overlay keeps the last retry's outcome until the next retry
+  // runs, which is a frame or more after the click (and never while the
+  // request ceiling is full). Read at once, the old outcome said "3 tiles
+  // failed again" before anything had been asked; only an outcome of the
+  // ask's own retry, or a later one, ends the wait.
+  it("ignores an outcome from before its own ask", () => {
+    const { panel, el, map } = setUp();
+    map.outcome = { retry: 1, tiles: 3, loaded: 0, failed: 3 };
+    map.next = 2;
+    map.asked = 3;
+    toggle("tiles").click();
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    panel.tick(readoutOf({ frameCount: 9 }));
+    const note = () => el.querySelector(".retry-note")?.textContent;
+    expect(note()).toBe("Retrying 3 tiles...");
+    expect(
+      el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
+    ).toBe(true);
+    map.outcome = { retry: 2, tiles: 3, loaded: 3, failed: 0 };
+    panel.tick(readoutOf({ frameCount: 10 }));
+    expect(note()).toBe("3 tiles loaded");
+  });
+
+  // Why: with the map off nothing is asked; saying "Retrying..." and then
+  // "Still loading" described a retry that never ran.
+  it("says the map is off instead of retrying", () => {
+    const { el, map } = setUp();
+    map.asked = 2;
+    map.off = true;
+    toggle("tiles").click();
+    el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
+    expect(el.querySelector(".retry-note")?.textContent).toBe(
+      "Not retried: the street map is off right now",
     );
     expect(
       el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.disabled,
@@ -607,7 +657,7 @@ describe("the Map loading tab", () => {
     map.asked = 3;
     toggle("tiles").click();
     el.querySelector<HTMLButtonElement>('[data-retry="map"]')?.click();
-    map.outcome = { tiles: 3, loaded: 1, failed: 0 };
+    map.outcome = { retry: 1, tiles: 3, loaded: 1, failed: 0 };
     clock.now += 31_000;
     panel.tick(readoutOf({ frameCount: 9 }));
     expect(el.querySelector(".retry-note")?.textContent).toBe(
@@ -656,6 +706,48 @@ describe("the height and what the browser keeps", () => {
       h: 350,
       tab: "perf",
     });
+  });
+
+  // Why: the view's canvas follows `--s-panel-h` through a resize
+  // observer, and each resize reallocates its buffers (at a phone's pixel
+  // ratio of 2, megabytes). Written on every pointer move, a drag resized
+  // the canvas many times a frame; it is written once per animation frame
+  // while dragging, and the release writes the final height at once.
+  it("resizes the view at most once a frame while the grip is dragged", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (run: FrameRequestCallback) => {
+      frames.push(run);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames[id - 1] = () => undefined;
+    });
+    try {
+      const { el } = setUp();
+      toggle("problems").click();
+      const viewH = () => document.body.style.getPropertyValue("--s-panel-h");
+      const before = viewH();
+      const grip = el.querySelector(".bp-grip") as HTMLElement;
+      grip.dispatchEvent(
+        new MouseEvent("pointerdown", { button: 0, clientY: 500 }),
+      );
+      for (const y of [480, 470, 460]) {
+        grip.dispatchEvent(new MouseEvent("pointermove", { clientY: y }));
+      }
+      expect(viewH()).toBe(before);
+      expect(frames).toHaveLength(1);
+      frames[0]!(0);
+      expect(viewH()).toBe("340px");
+      expect(el.style.height).toBe("340px");
+      grip.dispatchEvent(new MouseEvent("pointermove", { clientY: 455 }));
+      grip.dispatchEvent(new MouseEvent("pointerup", { clientY: 450 }));
+      expect(viewH()).toBe("350px");
+      // The frame asked for before the release writes nothing after it.
+      for (const run of frames.slice(1)) run(0);
+      expect(viewH()).toBe("350px");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("closes when dragged low, and works where the browser keeps nothing", () => {

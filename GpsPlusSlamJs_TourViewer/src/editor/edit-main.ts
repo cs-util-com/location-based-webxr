@@ -1326,9 +1326,9 @@ async function duplicateSelection(id: string): Promise<void> {
 }
 
 /** A gesture of the 3D view written (`scene-edits.ts`): one step; a
- *  refusal is said. */
-function commitSceneEdit(edit: GestureEdit): void {
-  if (editor === null) return;
+ *  refusal is said. Whether it was written. */
+function commitSceneEdit(edit: GestureEdit): boolean {
+  if (editor === null) return false;
   endUndo();
   const before = store.getState().tourDocument;
   const outcome = applySceneEdit(editor, edit);
@@ -1336,13 +1336,14 @@ function commitSceneEdit(edit: GestureEdit): void {
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
-    return;
+    return false;
   }
   if (edit.kind === "item-pose") {
     const reseat = announceReseat(before, edit.id);
     if (reseat !== null) toast(reseat.said);
   }
   autosave.changed();
+  return true;
 }
 
 /** An item a write gave another station (`reseat-note.ts`): a station

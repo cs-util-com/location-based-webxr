@@ -109,6 +109,34 @@ describe("tourProblems", () => {
     expect(empty?.problems[0]?.fix).toBeUndefined();
   });
 
+  // Why: a move of tens of metres on sloping ground kept the item's
+  // height in the station's frame, so it floated over a downhill spot or
+  // sank into an uphill one. Where the view has the ground loaded at both
+  // spots, the item keeps its height over the ground instead; where it
+  // has not, the frame's height is kept (as above).
+  it("keeps the moved item's height over the ground where the ground is known", () => {
+    const far = pin("far", 30, 40, "Far pin", 2.5);
+    const [group] = tourProblems([station("a", [far], "Square")]);
+    const fix = group!.problems[0]!.fix!;
+    const asked: { lat: number; lon: number }[] = [];
+    // The far spot (50 m out) lies 4 m lower than the station's anchor
+    // ground; the new spot (21 m out) 7 m higher than it.
+    const ground = (place: { lat: number; lon: number }) => {
+      asked.push(place);
+      const northM = (place.lat - 48.1) * 111_320;
+      return northM > 20 ? 556 : 567;
+    };
+    const geo = fix.edit(ground).geo;
+    expect(asked).toHaveLength(2);
+    // 6.5 m over the old ground (562.5 - 556), so 6.5 m over the new.
+    expect(geo.alt).toBeCloseTo(567 + 6.5, 3);
+    // One spot without ground loaded: the frame's height is kept.
+    const half = fix.edit((place) =>
+      (place.lat - 48.1) * 111_320 > 20 ? 556 : null,
+    ).geo;
+    expect(half.alt).toBeCloseTo(560 + 2.5, 3);
+  });
+
   it("moves an outside item of a small circle halfway in", () => {
     const [group] = tourProblems([
       station("a", [pin("far", 6, 8, "Far pin")], "Square", 4),

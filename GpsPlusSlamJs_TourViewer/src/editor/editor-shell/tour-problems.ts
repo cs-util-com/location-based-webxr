@@ -32,12 +32,20 @@ interface TourProblem {
   readonly fix?: ProblemFix;
 }
 
+/** The ground's height at a place as the view has it loaded, or null. */
+type GroundAt = (place: {
+  readonly lat: number;
+  readonly lon: number;
+}) => number | null;
+
 /** A one-click mend: the row's link, the edit the page writes (one undo
- *  step; made on the click, not on each draw) and what it says once
- *  written. */
+ *  step; made on the click, not on each draw, with the ground as loaded
+ *  then) and what it says once written. */
 export interface ProblemFix {
   readonly label: string;
-  readonly edit: () => Extract<GestureEdit, { kind: "item-pose" }>;
+  readonly edit: (
+    groundAt?: GroundAt,
+  ) => Extract<GestureEdit, { kind: "item-pose" }>;
   readonly done: string;
 }
 
@@ -76,21 +84,42 @@ export function outsideItems(
  *  a circle of twice this or less takes it halfway to the centre. */
 const INSIDE_BY_M = 4;
 
+/** A ground height `groundAt` gives at `place`, or null for none or one
+ *  that is not a number. */
+function groundOf(
+  groundAt: GroundAt | undefined,
+  place: { readonly lat: number; readonly lon: number },
+): number | null {
+  const m = groundAt?.({ lat: place.lat, lon: place.lon }) ?? null;
+  return m !== null && Number.isFinite(m) ? m : null;
+}
+
 /** The pose edit that moves `item` (outside) inside `station`'s circle
- *  along the line it stands on, its height and heading kept. */
+ *  along the line it stands on, its heading kept. Its height over the
+ *  ground is kept where `groundAt` has the ground at both spots (a long
+ *  move on a slope would otherwise float or bury it); else its height in
+ *  the station's frame. */
 function moveInside(
   station: TourStation,
   item: WorldBlock,
+  groundAt: GroundAt | undefined,
 ): Extract<GestureEdit, { kind: "item-pose" }> {
   const r = station.foundRadiusM;
   const to = r > 2 * INSIDE_BY_M ? r - INSIDE_BY_M : r / 2;
   const scale = to / groundDistanceM(item);
   const [north, up, east] = item.pose.position;
   const position: [number, number, number] = [north * scale, up, east * scale];
+  const geo = itemGeoPose({ ...item.pose, position }, station.geo);
+  const was = itemGeoPose(item.pose, station.geo);
+  const groundWas = groundOf(groundAt, was);
+  const groundNow = groundOf(groundAt, geo);
   return {
     kind: "item-pose",
     id: item.id,
-    geo: itemGeoPose({ ...item.pose, position }, station.geo),
+    geo:
+      groundWas === null || groundNow === null
+        ? geo
+        : { ...geo, alt: was.alt - groundWas + groundNow },
   };
 }
 
@@ -110,7 +139,7 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
       select: item.id,
       fix: {
         label: "Move inside",
-        edit: () => moveInside(station, item),
+        edit: (groundAt) => moveInside(station, item, groundAt),
         done: `Moved "${objectTitle(item)}" inside its station's circle`,
       },
     }));

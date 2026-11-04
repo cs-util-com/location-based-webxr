@@ -21,8 +21,9 @@ this draws them and takes the clicks, the grip's drag and the keys.
     `tour-problems.ts`; the shell selects, writes `fix.edit()` as one undo
     step and says `fix.done`);
   - `map` (`PanelMap`) - the shown view's street map: `tiles(limit)`,
-    `retry()` (how many failed tiles it asked for again), `lastRetry()`
-    (what became of them);
+    `retry()` (an `OsmRetryAsk`: how many failed tiles it asked for
+    again, or why none, and the retry number that answers it),
+    `lastRetry()` (what became of the last retry's tiles, with its number);
   - `stepTime(step)` - when a history step was made (ms), or undefined;
   - `now()` - the clock (default `Date.now`);
   - `step(which)` - one undo or redo (a History row takes several);
@@ -72,10 +73,13 @@ this draws them and takes the clicks, the grip's drag and the keys.
   60 fps, 30 fps and 50 ms; slow frames dotted), drawn only when the
   canvas has a size, and the numbers: frames (average, worst, slow in
   5 s), scene (draw calls, triangles), view (top or 3D, tilt and heading).
-- **Retry:** a click asks `map.retry()`. None failed: "Nothing to retry".
-  A throw: "Could not retry: ..." and the chip stays usable. Else the chip
+- **Retry:** a click asks `map.retry()`. None failed: "Nothing to retry";
+  the map off: "Not retried: the street map is off right now" (nothing
+  was asked, so nothing is watched). A throw: "Could not retry: ..." and the chip stays usable. Else the chip
   is disabled with `aria-busy` and "Retrying N tiles..." until
-  `map.lastRetry()` shows every retried tile loaded ("N tiles loaded") or
+  `map.lastRetry()`, of the ask's own retry number or later (the
+  overlay keeps the previous outcome until the next retry runs, so an
+  older one is never read as this ask's), shows every retried tile loaded ("N tiles loaded") or
   failed again ("N tiles failed again", or both counts), or 30 s pass
   ("Still loading - the map keeps asking for them"). The status line has
   `role="status"`.
@@ -91,7 +95,10 @@ this draws them and takes the clicks, the grip's drag and the keys.
 - **Height:** the first open of a visit starts at the kept height, at most
   about half the view, at least 120 px (`startHeight`; so a phone in
   landscape starts at half the view); later opens keep what the grip
-  left. The grip drags (pointer capture), closes under 70 px, maximises
+  left. The grip drags (pointer capture; the height, and `--s-panel-h`
+  that the view's canvas resizes to, written at most once per animation
+  frame while dragging, the final one at once on release), closes under
+  70 px, maximises
   near the top; a double click on it or the head maximises; ArrowUp and
   ArrowDown on the focused grip step 20 px. Maximised, it takes the view's
   whole height and the view above keeps none.
@@ -139,9 +146,10 @@ folds and empty state; History's rows taking exactly their steps, their
 ages kept current, the focus kept on the step taken, Undo and Redo
 enabled only with a step; Map loading's badge order, the one live
 banner, the tile table and counts, Retry busy until loaded, failed
-again, nothing to retry, a throw and the 30 s watch; Performance's badge
-and numbers; the kept tab and height, a dragged height kept, a low drag
-closing, storage that throws, maximise and restore, and `hide()`. The
+again, an outcome from before the ask ignored, the map off said,
+nothing to retry, a throw and the 30 s watch; Performance's badge
+and numbers; the kept tab and height, a dragged height kept, a drag
+resizing the view once a frame, a low drag closing, storage that throws, maximise and restore, and `hide()`. The
 wiring is `editor-shell.test.ts`'s; the layout at three sizes, the
 push-up, the landscape start and the keyboard walk are
 `editor3d-shell.spec.js`'s.

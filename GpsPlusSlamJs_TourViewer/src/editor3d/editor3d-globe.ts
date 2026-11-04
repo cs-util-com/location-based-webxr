@@ -105,7 +105,7 @@ import type {
   Editor3dStats,
   Editor3dView,
 } from "./editor3d-scene.js";
-import { createFrameClock } from "./frame-clock.js";
+import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
 import {
   createBillboard,
@@ -668,6 +668,7 @@ export async function openGlobeEditor(
     let frames = 0;
     let top = false;
     const frameClock = createFrameClock();
+    undo.push(pauseWhenHidden(frameClock));
     const cameraTour = new THREE.Vector3();
     const look = new THREE.Vector3();
     const projected = new THREE.Vector3();
@@ -1180,6 +1181,8 @@ export async function openGlobeEditor(
     // the page is told.
     renderer.setAnimationLoop(() => {
       if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+        // Not drawn: the gap until the next drawn frame is no slow frame.
+        frameClock.pause();
         firstTick();
         return;
       }

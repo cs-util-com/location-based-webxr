@@ -16,7 +16,11 @@
  *
  * @see bottom-panel.ts.md
  */
-import type { OsmMapTile, OsmRetryOutcome } from "gps-plus-slam-globe/editor";
+import type {
+  OsmMapTile,
+  OsmRetryAsk,
+  OsmRetryOutcome,
+} from "gps-plus-slam-globe/editor";
 
 import type { Editor3dReadout } from "../../editor3d/editor3d-scene.js";
 import {
@@ -128,8 +132,9 @@ interface PanelHistory {
 export interface PanelMap {
   /** The near tiles, failed first (the overlay's `mapTiles`). */
   tiles(limit: number): readonly OsmMapTile[];
-  /** Ask for the failed tiles again now: how many it asks for. */
-  retry(): number;
+  /** Ask for the failed tiles again now: how many it asks for, or why
+   *  none, and the retry that will answer it. */
+  retry(): OsmRetryAsk;
   /** What became of the last retry's tiles (null before it ran). */
   lastRetry(): OsmRetryOutcome | null;
 }
@@ -235,10 +240,14 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   let seenFrames = 0;
   /** The request ceiling's wait as it began (s): the banner's bar. */
   let waitTotalS = 0;
-  /** A retry under way (how many tiles it asked for, since when), and what
-   *  the last one came to (the tools' status line). */
-  let retryRun: { readonly asked: number; readonly since: number } | null =
-    null;
+  /** A retry under way (how many tiles it asked for, since when, the
+   *  retry number whose outcome answers it), and what the last one came to
+   *  (the tools' status line). */
+  let retryRun: {
+    readonly asked: number;
+    readonly since: number;
+    readonly retry: number;
+  } | null = null;
   let retryNote = "";
   /** The History rows' time labels and the steps they time. */
   let timeLabels: { readonly node: HTMLElement; readonly at: number }[] = [];
@@ -459,7 +468,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   };
 
   const startRetry = () => {
-    let asked: number;
+    let asked: OsmRetryAsk;
     try {
       asked = deps.map.retry();
     } catch (error) {
@@ -469,21 +478,31 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       );
       return;
     }
-    if (asked <= 0) {
+    if (asked.refused !== null || asked.tiles <= 0) {
       retryRun = null;
-      sayRetry("Nothing to retry");
+      sayRetry(
+        asked.refused === "map-off"
+          ? "Not retried: the street map is off right now"
+          : "Nothing to retry",
+      );
       return;
     }
-    retryRun = { asked, since: clock() };
-    sayRetry(`Retrying ${plural(asked, "tile")}...`);
+    retryRun = { asked: asked.tiles, since: clock(), retry: asked.retry };
+    sayRetry(`Retrying ${plural(asked.tiles, "tile")}...`);
   };
 
   /** A retry under way, looked at on the readout's tick: its tiles all
-   *  loaded or failed again, or still loading after `RETRY_WATCH_MS`. */
+   *  loaded or failed again, or still loading after `RETRY_WATCH_MS`. An
+   *  outcome of a retry before the ask's own (the overlay keeps the last
+   *  one until the next runs) is not this ask's. */
   const watchRetry = () => {
     if (retryRun === null) return;
     const outcome = deps.map.lastRetry();
-    if (outcome !== null && outcome.tiles > 0) {
+    if (
+      outcome !== null &&
+      outcome.retry >= retryRun.retry &&
+      outcome.tiles > 0
+    ) {
       const pending = outcome.tiles - outcome.loaded - outcome.failed;
       if (pending <= 0) {
         retryRun = null;
@@ -1048,15 +1067,32 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     grip.setPointerCapture?.(event.pointerId);
     grip.classList.add("drag");
   });
+  /** The animation frame that writes the dragged height, while one is
+   *  asked for, and the pointer's latest place. The view's canvas follows
+   *  `--s-panel-h` (each resize reallocates its buffers), so a drag writes
+   *  it once a frame, not on each of the frame's pointer moves. */
+  let dragFrame: number | null = null;
+  let dragY = 0;
+  const cancelDragFrame = () => {
+    if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+    dragFrame = null;
+  };
   grip.addEventListener("pointermove", (event) => {
     if (drag === null || drag.pointer !== event.pointerId) return;
-    const h = Math.max(0, heightAt(event.clientY));
-    panel.style.height = `${String(Math.min(h, mainPx()))}px`;
-    document.body.style.setProperty("--s-panel-h", panel.style.height);
+    dragY = event.clientY;
+    if (dragFrame !== null) return;
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = null;
+      if (drag === null) return;
+      const h = Math.max(0, heightAt(dragY));
+      panel.style.height = `${String(Math.min(h, mainPx()))}px`;
+      document.body.style.setProperty("--s-panel-h", panel.style.height);
+    });
   });
   const endDrag = (event: PointerEvent) => {
     if (drag === null || drag.pointer !== event.pointerId) return;
     drag = null;
+    cancelDragFrame();
     grip.classList.remove("drag");
     const out = dragged(heightAt(event.clientY), mainPx());
     if (out.kind === "close") {
@@ -1072,6 +1108,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   grip.addEventListener("pointercancel", (event) => {
     if (drag === null || drag.pointer !== event.pointerId) return;
     drag = null;
+    cancelDragFrame();
     grip.classList.remove("drag");
     draw();
   });

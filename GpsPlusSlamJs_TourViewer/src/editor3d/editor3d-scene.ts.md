@@ -56,13 +56,16 @@ keys), and writes only through the page's `edits`.
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
     the camera looks toward), `top`, `drawCalls`, `triangles`, `frameMs`
     (the mean of the last 60 frames), `worstFrameMs`, `slowFrames` (over
-    50 ms in the last five seconds; both views tick one `frame-clock.ts`)
+    50 ms in the last five seconds; both views tick one `frame-clock.ts`,
+    paused while the page is hidden, the globe view's also while its
+    canvas has no size)
     and `mapLoad` (the street map's loading state); the shell's bottom
     panel shows them. The draw calls and triangles come through
     `drawnCounts` (`editor3d-view-parts.ts`), the one accessor both views
     use;
   - `mapTiles(limit)`, `retryMap()`, `lastMapRetry()` - the street map's
-    near tiles, a retry of its failed ones now, and what became of it
+    near tiles, a retry of its failed ones now (an `OsmRetryAsk`: how
+    many, or refused with the map off or none failed), and what became of it
     (the overlay's `mapTiles`, `retryNow`, `lastRetry`), for the bottom
     panel's Map loading tab;
   - `setRealTime?(on)` - optional: the globe view's clock, the real time

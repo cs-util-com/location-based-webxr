@@ -30,7 +30,12 @@ its station's circle" that the inspector's count reads too.
     R m)" for each item of `outsideItems`, who = `objectTitle(item)`,
     with the fix "Move inside": the item moved along the line it stands
     on to 4 m inside the circle (halfway to the centre for a circle of
-    8 m or less), its height and heading kept;
+    8 m or less), its heading kept. `fix.edit(groundAt?)`: where
+    `groundAt` (the view's loaded ground, as "Put on the ground" reads it)
+    has the ground at both the old and the new spot, the item keeps its
+    height over the ground (a move of tens of metres on a slope would
+    otherwise leave it floating or buried); where either is missing, its
+    height in the station's frame is kept;
   - note: "Has no content yet" for a station with no blocks.
 - `problemCounts(groups)` -> `{ error, warning, note }`.
 

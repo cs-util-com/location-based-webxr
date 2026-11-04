@@ -176,8 +176,9 @@ interface ShellEditCommands {
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
-  /** A pose or a size, as the 3D view's gestures write them. */
-  scene(edit: GestureEdit): void;
+  /** A pose or a size, as the 3D view's gestures write them: whether it
+   *  was written (false: refused, and the page said why). */
+  scene(edit: GestureEdit): boolean;
   /** Items' heights (the ground under each, or a typed height), as one
    *  step; their places and turns kept. */
   groundItems(
@@ -414,19 +415,22 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
     fix: (selection, fix) => {
       deps.select(selection);
+      let written: boolean;
       try {
-        deps.edits.scene(fix.edit());
+        written = deps.edits.scene(fix.edit(groundAt));
       } catch (error) {
         deps.say(
           `Could not mend it: ${error instanceof Error ? error.message : String(error)}`,
         );
         return;
       }
-      deps.say(fix.done);
+      // Refused: the page has said why; announcing the mend would be false.
+      if (written) deps.say(fix.done);
     },
     map: {
       tiles: (limit) => view?.mapTiles(limit) ?? [],
-      retry: () => view?.retryMap() ?? 0,
+      retry: () =>
+        view?.retryMap() ?? { tiles: 0, refused: "map-off", retry: 0 },
       lastRetry: () => view?.lastMapRetry() ?? null,
     },
     stepTime: (step) => stepTimes.get(step),

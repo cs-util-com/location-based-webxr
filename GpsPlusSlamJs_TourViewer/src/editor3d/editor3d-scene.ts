@@ -53,6 +53,7 @@ import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import type {
   OsmMapLoad,
   OsmMapTile,
+  OsmRetryAsk,
   OsmRetryOutcome,
 } from "gps-plus-slam-globe/editor";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
@@ -63,7 +64,7 @@ import {
   createEditorCamera,
   editorClipPlanes,
 } from "./editor3d-camera.js";
-import { createFrameClock } from "./frame-clock.js";
+import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import {
   createBillboard,
   createCodeFace,
@@ -194,8 +195,9 @@ export interface Editor3dView {
   readout(): Editor3dReadout;
   /** The street map's near tiles, failed first (the Map loading tab). */
   mapTiles(limit: number): readonly OsmMapTile[];
-  /** Ask for the street map's failed tiles again now: how many. */
-  retryMap(): number;
+  /** Ask for the street map's failed tiles again now: how many, or why
+   *  none (the map off, none failed). */
+  retryMap(): OsmRetryAsk;
   /** What became of the last retry's tiles (null before it ran). */
   lastMapRetry(): OsmRetryOutcome | null;
   /** The layers turned off (the station names and the codes are drawn
@@ -668,6 +670,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     });
 
     const frameClock = createFrameClock();
+    undo.push(pauseWhenHidden(frameClock));
     let frames = 0;
     let standing = 1;
     const ecef = new THREE.Vector3();

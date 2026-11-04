@@ -9,7 +9,11 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { createFrameClock, SLOW_FRAME_MS } from "./frame-clock.js";
+import {
+  createFrameClock,
+  pauseWhenHidden,
+  SLOW_FRAME_MS,
+} from "./frame-clock.js";
 
 /** A clock that ticked at each of `times` (ms). */
 function ticked(times: readonly number[], keep?: number) {
@@ -84,14 +88,49 @@ describe("createFrameClock", () => {
   // Why: a hidden tab or a paused loop (the canvas at 0 px) stops the
   // frames; the first frame after the return came a long gap after the
   // last, and the Performance tab then showed "1 frame over 50 ms" after
-  // every return, a slow-down that never happened. A gap over a second is
-  // a pause: not timed, not slow, the clock starts again from that frame.
-  it("takes a gap over a second for a pause, not a slow frame", () => {
-    const clock = ticked([0, 16, 32, 5000, 5016]);
+  // every return, a slow-down that never happened. The view says when its
+  // frames stop (`pause`): the gap after it is not timed, not slow, and
+  // the clock starts again from the next frame.
+  it("does not time the gap after a pause", () => {
+    const clock = ticked([0, 16, 32]);
+    clock.pause();
+    clock.tick(5000);
+    clock.tick(5016);
     expect(clock.slowFrames()).toBe(0);
     expect(clock.recentMs()).toEqual([16, 16, 16]);
     expect(clock.count()).toBe(3);
-    const slow = ticked([0, 16, 900]);
-    expect(slow.slowFrames()).toBe(1);
+  });
+
+  // Why: a gap length cannot tell a pause from a hitch. Read as a pause,
+  // a real 1.5 s hitch (a shader compile, a tile burst) vanished from the
+  // Performance tab, the worst slow-down of all; without a pause signal
+  // every long frame is timed and counted.
+  it("counts a long frame that is not a pause, however long", () => {
+    const clock = ticked([0, 16, 1516, 1532]);
+    expect(clock.slowFrames()).toBe(1);
+    expect(clock.worstMs()).toBe(1500);
+    expect(clock.count()).toBe(3);
+  });
+
+  // Why: a hidden tab stops the browser's frames without the loop knowing;
+  // the page's visibility is the signal. Only hiding pauses (a frame drawn
+  // while shown is timed), and the listener goes with the view.
+  it("pauses the clock when the page is hidden", () => {
+    const page = Object.assign(new EventTarget(), { hidden: false });
+    const clock = ticked([0, 16]);
+    const stop = pauseWhenHidden(clock, page);
+    page.hidden = true;
+    page.dispatchEvent(new Event("visibilitychange"));
+    clock.tick(9000);
+    expect(clock.slowFrames()).toBe(0);
+    page.hidden = false;
+    page.dispatchEvent(new Event("visibilitychange"));
+    clock.tick(9100);
+    expect(clock.slowFrames()).toBe(1);
+    stop();
+    page.hidden = true;
+    page.dispatchEvent(new Event("visibilitychange"));
+    clock.tick(12000);
+    expect(clock.slowFrames()).toBe(2);
   });
 });

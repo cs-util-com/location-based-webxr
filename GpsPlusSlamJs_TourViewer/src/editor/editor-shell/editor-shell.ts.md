@@ -54,7 +54,8 @@ character's view and advance chips (`characterChipEdit`: his station's
   - `deps.edits` (`ShellEditCommands`) - the inspector's edits:
     `station(stationId, edit)`, `text(id, text)`, `block(id, field,
 value)` (a block's other text field, B2c), `scene(edit)` (a pose
-    or a size, as the gestures write it), `groundItems(items)` (heights,
+    or a size, as the gestures write it; returns whether it was written,
+    false when the page refused it and said why), `groundItems(items)` (heights,
     one step), `addPin(stationId)`;
   - `deps.say(text)` - a passing line (the page's toast).
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
@@ -353,7 +354,8 @@ waiting is called off by a selection change (later ground writes
 nothing), and writes once the ground arrives when the selection stays;
 the readout's tick builds no tour with nothing selected; the bottom
 panel lists the open tour's problems, a row selecting and flying to its
-item, its fix link writing the edit and saying so, Ctrl+J opening it,
+item, its fix link writing the edit (with the view's loaded ground, so a
+moved item keeps its height over it) and saying so only when written, Ctrl+J opening it,
 the view's map tiles listed and Retry reaching the view, the tick
 feeding the Performance tab, and the help's line following the
 selection. The panel's history times come from a subscription the shell
