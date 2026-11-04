@@ -20,13 +20,13 @@
 // expects; a missing one is warned about, an unreadable one fails the run
 // after every project ran.
 
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { changedPaths } from '../test-changed/changed-paths.mjs';
+import { changedPaths } from "../test-changed/changed-paths.mjs";
 import {
   CHANGED_REF_ENV,
   developerFiltered,
@@ -37,52 +37,65 @@ import {
   projectArgs,
   projectReportName,
   readReport,
-} from './project-runs.mjs';
+} from "./project-runs.mjs";
 
 const [planFile, cli, verb, configFlag, configFile, ...forwarded] =
   process.argv.slice(2);
 if (
   !planFile ||
-  cli !== 'playwright' ||
-  verb !== 'test' ||
-  configFlag !== '--config' ||
+  cli !== "playwright" ||
+  verb !== "test" ||
+  configFlag !== "--config" ||
   !configFile
 ) {
   console.error(
-    'usage: run-projects.mjs <plan.js> playwright test --config <config> [args...]'
+    "usage: run-projects.mjs <plan.js> playwright test --config <config> [args...]",
   );
   process.exit(2);
 }
 
 const cwd = process.cwd();
 const plan = await import(pathToFileURL(path.resolve(cwd, planFile)).href);
-const playwrightCli = createRequire(path.join(cwd, 'package.json')).resolve(
-  '@playwright/test/cli'
+const playwrightCli = createRequire(path.join(cwd, "package.json")).resolve(
+  "@playwright/test/cli",
 );
 
 /** @type {readonly string[] | null} the specs to run, null for all */
 let selected = null;
 if (mayNarrow(process.env, forwarded)) {
   const ref = /** @type {string} */ (process.env[CHANGED_REF_ENV]);
-  const root = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+  const root = spawnSync("git", ["rev-parse", "--show-toplevel"], {
     cwd,
-    encoding: 'utf8',
+    encoding: "utf8",
   }).stdout.trim();
   const selection = plan.selectSpecs(changedPaths(ref, root));
   if (selection.all) {
-    console.log(`e2e areas: all specs (changed vs ${ref}: "${selection.reason}")`);
+    console.log(
+      `e2e areas: all specs (changed vs ${ref}: "${selection.reason}")`,
+    );
   } else {
     selected = selection.specs;
-    const areas = selection.areas.length > 0 ? selection.areas.join(', ') : 'none';
+    const areas =
+      selection.areas.length > 0 ? selection.areas.join(", ") : "none";
     console.log(
-      `e2e areas: ${areas} vs ${ref} - ${selected.length} of ${Object.keys(plan.SPECS).length} spec files: ${selected.join(', ') || '(none)'}`
+      `e2e areas: ${areas} vs ${ref} - ${selected.length} of ${Object.keys(plan.SPECS).length} spec files: ${selected.join(", ") || "(none)"}`,
     );
   }
 }
 
-// A developer's `--project` picks the passes; each pass names its own.
-const named = namedProjects(forwarded, plan.PROJECTS);
-const base = ['test', '--config', configFile, ...named.rest];
+// A developer's `--project` picks the passes; each pass names its own. One
+// the plan does not know is a malformed command line: said, exit 2.
+/** @type {ReturnType<typeof namedProjects>} */
+let named;
+try {
+  named = namedProjects(forwarded, plan.PROJECTS);
+} catch (error) {
+  console.error(
+    `run-projects.mjs: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(2);
+}
+const base = ["test", "--config", configFile, ...named.rest];
 const resultsDir = path.resolve(cwd, plan.RESULTS_DIR);
 /**
  * The JSON reports to merge after the runs: the config's own reporter (CI
@@ -93,17 +106,18 @@ const resultsDir = path.resolve(cwd, plan.RESULTS_DIR);
  */
 const reportTargets = [
   {
-    env: 'E2E_RESULTS_NAME',
+    env: "E2E_RESULTS_NAME",
     file: path.join(resultsDir, plan.RESULTS_NAME),
     expected: Boolean(process.env.CI),
     valueFor: (p) => projectReportName(plan.RESULTS_NAME, p),
-    fileFor: (p) => path.join(resultsDir, projectReportName(plan.RESULTS_NAME, p)),
+    fileFor: (p) =>
+      path.join(resultsDir, projectReportName(plan.RESULTS_NAME, p)),
   },
 ];
 const gateReport = process.env.PLAYWRIGHT_JSON_OUTPUT_NAME;
 if (gateReport) {
   reportTargets.push({
-    env: 'PLAYWRIGHT_JSON_OUTPUT_NAME',
+    env: "PLAYWRIGHT_JSON_OUTPUT_NAME",
     file: gateReport,
     expected: true,
     valueFor: (p) => projectReportName(gateReport, p),
@@ -121,13 +135,16 @@ let exitCode = 0;
 const reports = new Map(reportTargets.map((t) => [t.file, []]));
 for (const [index, project] of plan.PROJECTS.entries()) {
   if (!named.projects.includes(project)) continue;
-  const specs = selected?.filter((name) => plan.specsOf(project).includes(name));
+  const specs = selected?.filter((name) =>
+    plan.specsOf(project).includes(name),
+  );
   if (specs && specs.length === 0) {
     console.log(`
 e2e project ${project}: no spec selected, skipped`);
     continue;
   }
-  const workers = index === 0 ? domWorkers(process.env, plan.LOCAL_DOM_WORKERS) : 1;
+  const workers =
+    index === 0 ? domWorkers(process.env, plan.LOCAL_DOM_WORKERS) : 1;
   const env = { ...process.env };
   for (const t of reportTargets) {
     env[t.env] = t.valueFor(project);
@@ -141,11 +158,11 @@ e2e project ${project}: no spec selected, skipped`);
     passWithNoTests: developerFiltered(forwarded),
   });
   console.log(`
-e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);
+e2e project ${project} (${workers} worker${workers === 1 ? "" : "s"})`);
   const child = spawnSync(process.execPath, [playwrightCli, ...args], {
     cwd,
     env,
-    stdio: 'inherit',
+    stdio: "inherit",
   });
   const status = child.status ?? 1;
   if (status !== 0 && exitCode === 0) exitCode = status;
@@ -153,7 +170,7 @@ e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);
     const file = t.fileFor(project);
     const read = readReport(file, t.expected, {
       exists: existsSync,
-      read: (f) => readFileSync(f, 'utf8'),
+      read: (f) => readFileSync(f, "utf8"),
     });
     if (read.warning) console.warn(`e2e project ${project}: ${read.warning}`);
     if (read.failed && exitCode === 0) exitCode = 1;

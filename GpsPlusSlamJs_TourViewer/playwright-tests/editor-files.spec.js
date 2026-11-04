@@ -121,6 +121,35 @@ function captionOf(page, id) {
 }
 
 /**
+ * Where the tour's object `id` stands as the page would write it: its
+ * station's place (an object placed on its own is a station of its own)
+ * and its pose's position in that station's frame, or `undefined` when
+ * the tour has no such object.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} id
+ * @returns {Promise<{ lat: number, lon: number, position: number[] } | undefined>}
+ */
+function placeOf(page, id) {
+  return page.evaluate((blockId) => {
+    // @ts-expect-error - the editor's dev-only test hook.
+    const manifest = window.__tourEditor.manifest();
+    for (const station of manifest.stations) {
+      const block = station.blocks.find(
+        (/** @type {{ id: string }} */ b) => b.id === blockId,
+      );
+      if (block !== undefined) {
+        return {
+          lat: station.geo.lat,
+          lon: station.geo.lon,
+          position: [...block.pose.position],
+        };
+      }
+    }
+    return undefined;
+  }, id);
+}
+
+/**
  * Wait until the tour's object `id` reads `caption` (`undefined`: gone).
  * @param {import("@playwright/test").Page} page
  * @param {string} id
@@ -664,6 +693,7 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   const buffer = await editorTour();
   await page.goto("/edit.html");
   await openFile(page, buffer, "editor-fixture.zip");
+  const before = await placeOf(page, FOUNTAIN);
   // About 30 m north-east of where it stands (editor-tours.js's `geo`).
   await sessionEdit(
     page,
@@ -677,6 +707,9 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   await expect(page.locator("#save-status")).toHaveText(
     "1 change not saved - kept in this browser until you save",
   );
+  const moved = await placeOf(page, FOUNTAIN);
+  expect(moved).toBeDefined();
+  expect(moved).not.toEqual(before);
   await backedUp(page);
   await page.close();
   const next = await newEditorPage(context);
@@ -687,6 +720,8 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   await expect(next.locator("#save-status")).toHaveText(
     "1 change not saved - kept in this browser until you save",
   );
+  // The move itself came back, not only a count of changes.
+  expect(await placeOf(next, FOUNTAIN)).toEqual(moved);
 });
 
 test("an edit after a download, with the downloaded copy put in place, is offered by that copy", async ({

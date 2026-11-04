@@ -207,7 +207,13 @@ test.describe("an empty tour", () => {
     await expect(page.locator("#view3d-failed")).toBeHidden();
     const start = await view3d(page);
     expect(start.stations).toBe(0);
-    expect(start.globe.altitudeM).toBeGreaterThan(1_000_000);
+    // The whole Earth in view: the approach's start, at least twice the
+    // view's own fit at this size, as `editor3d-globe-start.spec.js` pins
+    // for a flight (the old 8,000 km start fell short of the fit itself).
+    expect(start.globe.fitM).toBeGreaterThan(0);
+    expect(start.globe.centreM).toBeGreaterThanOrEqual(
+      2 * start.globe.fitM * 0.99,
+    );
     // Asia's latitude, by the zone's name (empty-tour-view.ts).
     expect(start.globe.pose.lat).toBeCloseTo(30, 0);
     expect(start.globe.pose.lng).toBeCloseTo(135, 0);

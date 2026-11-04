@@ -78,15 +78,16 @@ view.placeView(emptyTourView(centre, startAltitudeM / 1000));
 - `empty-tour-view.property.test.ts`: any offset and any zone (arbitrary
   strings and every zone the engine knows) give a place on the globe; for
   33 real zones checked against their cities' real places (ground truth
-  independent of the table), the city lies inside the start height's cap
-  with the standard or the summer offset, and inside a landscape picture
-  of any shape (aspect 1.2-2.4) with the standard one, each at the
-  approach's start height for that aspect (`meteorStartAltitudeM`); the
-  picture check can fail (a city on the far side of the Earth is not in
-  it); the six named
-  cities (Oslo, Edinburgh, Sydney, Auckland, Buenos Aires, Los Angeles) on
-  a 1440x900 screen and a 390x844 phone; and the check failing for Oslo
-  and Auckland on the offset alone.
+  independent of the table), the city lies within 40 deg of arc of the
+  centre (a bound the offset alone fails, Reykjavik at about 56 deg; with
+  the table the farthest is Jakarta at about 36 deg), inside the start
+  height's cap with the standard or the summer offset, and inside a
+  landscape picture of any shape (aspect 1.2-2.4) with the standard one,
+  each at the approach's start height for that aspect
+  (`meteorStartAltitudeM`); the six named cities (Oslo, Edinburgh, Sydney,
+  Auckland, Buenos Aires, Los Angeles) on a 1440x900 screen and a 390x844
+  phone; and the picture check refusing a city on the far side of the
+  Earth (Auckland from Oslo's view and Oslo from Auckland's).
 - e2e `editor3d-globe-default.spec.js`: an empty tour opens on the globe
   over Tokyo's zone and its first station is placed by right-clicking the
   ground.
