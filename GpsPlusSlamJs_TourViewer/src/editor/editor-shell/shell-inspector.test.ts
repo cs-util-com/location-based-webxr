@@ -530,10 +530,10 @@ describe("drawInspector", () => {
     expect(input("title")?.placeholder).toBe("Station 1");
     expect(dock.body.contains(input("title"))).toBe(true);
     expect(dock.body.querySelector(".sub")?.textContent).toBe("Station 1 of 2");
+    // The radius sits with the position under "Place", folded.
     expect(fields()).toEqual([
       ["Name", "The old gate"],
       ["Description", "Where the wall stood"],
-      ["Radius", "25.0 m"],
     ]);
     // The description starts three lines high: a box to write in, not a
     // line (it grows with its text, `field-sizing`, in the stylesheet).
@@ -551,11 +551,25 @@ describe("drawInspector", () => {
       picks.map((b) => [b.dataset["act"], b.getAttribute("aria-pressed")]),
     ).toEqual([["image:photo-1", "true"]]);
     expect(shown.map(([, path]) => path)).toEqual(["content/photo-1.jpg"]);
-    // Folded: a one-line summary in the plan's form, metres of the centre.
+    // Folded: a one-line summary, the radius first, then metres of the
+    // centre.
     const disclosure = dock.body.querySelector("button.disc");
     expect(disclosure?.getAttribute("aria-expanded")).toBe("false");
+    expect(disclosure?.querySelector(".lab")?.textContent).toBe("Place");
     expect(disclosure?.querySelector(".sum")?.textContent).toMatch(
-      /^E -?\d+\.\d {2}N -?\d+\.\d {2}30 deg$/,
+      /^r 25 m {2}E -?\d+\.\d {2}N -?\d+\.\d {2}30 deg$/,
+    );
+  });
+
+  // Why: the radius is where the station is felt, so it sits with the
+  // position (the place), first once unfolded, its note under it.
+  it("puts the radius first under Place, once unfolded", () => {
+    draw("station:gate", true);
+    expect(fields()[2]).toEqual(["Radius", "25.0 m"]);
+    const pos = dock.body.querySelector(".pos");
+    expect(pos?.contains(input("radius"))).toBe(true);
+    expect(pos?.querySelector(".note")?.textContent).toMatch(
+      /^Visitors who step inside this circle/,
     );
   });
 
@@ -631,6 +645,68 @@ describe("drawInspector", () => {
     expect(ground()?.disabled).toBe(false);
     // The radius is free either way.
     expect(input("radius")?.readOnly).toBe(false);
+  });
+
+  // Why: the shell draws the inspector again 5 times a second while the
+  // view shows, so the ground arriving or refining under the selection
+  // shows in "Put on the ground". That height changes often while the
+  // ground loads; a rebuild of the whole dock for it would swallow a
+  // click on the way and could lose a half-typed field. Only the ground
+  // button changes, in place: every other control stays the same node.
+  it("updates only the ground button when only the ground under it changes", () => {
+    const state = storeWith("station:gate").getState();
+    const tour = manifestToWrite(state.tourDocument);
+    const drawOver = (groundM: number | null) => {
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: "station:gate",
+          stations: tour?.stations ?? [],
+          assets: tour?.assets ?? [],
+          codes: CODES,
+          unlockedStations: ["gate"],
+          groundAt: () => groundM,
+        }),
+        { folded: false, positionOpen: true },
+        pictures,
+      );
+    };
+    const ground = () =>
+      dock.body.querySelector<HTMLButtonElement>('.pos [data-act="ground"]');
+    drawOver(null);
+    const north = input("north");
+    const button = ground();
+    north?.focus();
+    if (north !== null) north.value = "12";
+    for (const [groundM, note, disabled] of [
+      [550, "12.3 m up", false],
+      [550.04, "12.2 m up", false],
+      [562.25, "", true],
+      [null, "", false],
+    ] as const) {
+      drawOver(groundM);
+      expect(input("north"), String(groundM)).toBe(north);
+      expect(ground(), String(groundM)).toBe(button);
+      expect(document.activeElement).toBe(north);
+      expect(north?.value).toBe("12");
+      expect(button?.querySelector(".note")?.textContent ?? "").toBe(note);
+      expect(button?.disabled).toBe(disabled);
+    }
+    // Anything else that changes still draws the dock again.
+    drawInspector(
+      dock,
+      buildInspector({
+        selected: "station:gate",
+        stations: tour?.stations ?? [],
+        assets: tour?.assets ?? [],
+        codes: CODES,
+        unlockedStations: [],
+        groundAt: () => 550,
+      }),
+      { folded: false, positionOpen: true },
+      pictures,
+    );
+    expect(ground()).not.toBe(button);
   });
 
   // Why: a pin's words are its title; they are typed where the title is.
@@ -866,7 +942,7 @@ describe("drawInspector", () => {
   // edited elsewhere) draws it again; the control that had the focus must
   // have it again, or every edit made beside it drops a keyboard user.
   it("gives the focus back to the same control when the inspector is drawn again", () => {
-    draw("station:steps");
+    draw("station:steps", true);
     dock.body.querySelector<HTMLButtonElement>('[data-act="earlier"]')?.focus();
     const model = buildInspector({
       selected: "station:steps",
@@ -876,12 +952,7 @@ describe("drawInspector", () => {
       assets: [],
       codes: CODES,
     });
-    drawInspector(
-      dock,
-      model,
-      { folded: false, positionOpen: false },
-      pictures,
-    );
+    drawInspector(dock, model, { folded: false, positionOpen: true }, pictures);
     expect(fields()).toContainEqual(["Radius", "12.0 m"]);
     const again = dock.body.querySelector('[data-act="earlier"]');
     expect(again).not.toBeNull();

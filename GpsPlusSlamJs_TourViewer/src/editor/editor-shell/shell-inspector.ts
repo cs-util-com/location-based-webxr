@@ -1,7 +1,8 @@
 /**
  * The 3D view's inspector dock, drawn from its model
  * (`inspector-model.ts`): the selection's name, what it is, its fields,
- * and the position folded away under a disclosure. Text only, never
+ * and the position folded away under a disclosure (a station's "Place",
+ * its radius first; an item's "Position"). Text only, never
  * markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
@@ -17,11 +18,11 @@
  *
  * The buttons carry `data-act`, and the shell answers them: the head's
  * fold and close (`fold`, `close`), the disclosure (`position`), a
- * station's lock beside its Position (`lock`, pressed while locked), its
+ * station's lock beside its Place (`lock`, pressed while locked), its
  * Earlier and Later beside its place in the tour (`earlier`, `later`, off
  * at the ends), the card picture's choices (`image:<id>`, the shown one
  * pressed), and the selection's commands in words: a station's `add-pin`,
- * `ground-items` and `delete`, its own `ground` under Position; an item's
+ * `ground-items` and `delete`, its own `ground` under Place; an item's
  * `split` ("Move to a new station"), `ground` and `delete`. A command the
  * shell is running (`busy`) shows as waiting.
  *
@@ -267,21 +268,27 @@ function positionSummary(p: InspectorPosition): string {
   return `E ${fixed(p.eastM, 1)}  N ${fixed(p.northM, 1)}${heading}`;
 }
 
-/** The disclosure's button, and its fields when open (made only then). */
+/** The disclosure's button, and its fields when open (made only then);
+ *  a station's is "Place" (its radius with its position), an item's
+ *  "Position". */
 function disclosure(
   open: boolean,
   summary: string,
   fields: () => readonly HTMLElement[],
+  heading: { readonly label: string; readonly title: string } = {
+    label: "Position",
+    title: "Exact position and heading",
+  },
 ): HTMLElement[] {
   const b = el("button", "disc");
   b.type = "button";
   b.dataset["act"] = "position";
   b.classList.toggle("open", open);
   b.setAttribute("aria-expanded", String(open));
-  b.title = "Exact position and heading";
+  b.title = heading.title;
   b.append(
     shellIcon("right"),
-    el("span", "lab", "Position"),
+    el("span", "lab", heading.label),
     el("span", "sum", summary),
   );
   if (!open) return [b];
@@ -374,6 +381,16 @@ function action(
   return b;
 }
 
+/** `button` marked as a locked station's, which the ground's update
+ *  in place leaves off (`groundInPlace`). */
+function lockedGround(
+  button: HTMLButtonElement,
+  locked: boolean,
+): HTMLButtonElement {
+  if (locked) button.dataset["locked"] = "true";
+  return button;
+}
+
 function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
   const box = el("div", "acts");
   box.append(...buttons);
@@ -398,6 +415,49 @@ function onGround(m: number | null): boolean {
 function offText(m: number | null): string {
   if (m === null || onGround(m)) return "";
   return `${fixed(Math.abs(m), 1)} m ${m > 0 ? "up" : "down"}`;
+}
+
+/** The drawn "Put on the ground" set to the ground `m` below it, in
+ *  place: its note and its off state (on the ground: nothing to do). A
+ *  locked station's, or one the shell is running, is left as drawn. */
+function groundInPlace(body: HTMLElement, model: InspectorModel): void {
+  const button = body.querySelector<HTMLButtonElement>('[data-act="ground"]');
+  if (
+    button !== null &&
+    button.dataset["locked"] !== "true" &&
+    "groundOffM" in model
+  ) {
+    const m = model.groundOffM;
+    actionInPlace(button, onGround(m), offText(m));
+  }
+  const items = body.querySelector<HTMLButtonElement>(
+    '[data-act="ground-items"]',
+  );
+  if (items !== null && model.kind === "station") {
+    const off = model.offGround;
+    actionInPlace(items, off === 0, offCountText(off));
+  }
+}
+
+/** How many items are off the ground, in words ("2 off"; none or not
+ *  known yet: nothing). */
+function offCountText(off: number | null): string {
+  return off === null || off === 0 ? "" : `${String(off)} off`;
+}
+
+/** A drawn action's off state and note set in place, unless the shell is
+ *  running it (it draws its own end state then). */
+function actionInPlace(
+  button: HTMLButtonElement,
+  disabled: boolean,
+  text: string,
+): void {
+  if (button.getAttribute("aria-busy") === "true") return;
+  button.disabled = disabled;
+  const note = button.querySelector(".note");
+  if (text === "") note?.remove();
+  else if (note !== null) note.textContent = text;
+  else button.append(el("span", "note", text));
 }
 
 type StationModel = Extract<InspectorModel, { kind: "station" }>;
@@ -438,26 +498,30 @@ function imagePicker(
   return row;
 }
 
-/** The radius's note, and how many items stand outside the circle. */
-function radiusNotes(model: StationModel): HTMLElement[] {
-  const notes = [
+/** The radius's field and its note. */
+function radiusParts(model: StationModel): HTMLElement[] {
+  return [
+    numberField("Radius", "radius", fixed(model.foundRadiusM, 1), "m"),
     el(
       "div",
       "note",
       `Visitors who step inside this circle see the station's content; it starts loading ${fixed(model.activateRadiusM, 0)} m out.`,
     ),
   ];
-  if (model.outside > 0) {
-    const one = model.outside === 1;
-    notes.push(
-      el(
-        "div",
-        "warn",
-        `${String(model.outside)} ${one ? "item stands" : "items stand"} outside the circle: visitors see ${one ? "it" : "them"} only from inside the circle.`,
-      ),
-    );
-  }
-  return notes;
+}
+
+/** How many items stand outside the circle: shown whether the place is
+ *  open or not, since it asks for a change. */
+function outsideWarn(model: StationModel): HTMLElement[] {
+  if (model.outside <= 0) return [];
+  const one = model.outside === 1;
+  return [
+    el(
+      "div",
+      "warn",
+      `${String(model.outside)} ${one ? "item stands" : "items stand"} outside the circle: visitors see ${one ? "it" : "them"} only from inside the circle.`,
+    ),
+  ];
 }
 
 /** A station's place, height and heading, and its own ground command. */
@@ -485,11 +549,14 @@ function stationPosition(
     ),
     readOnlyNumber("Height", fixed(p.altM, 1), "m"),
     actions([
-      action("ground", "ground", "Put on the ground", {
-        disabled: model.locked || onGround(model.groundOffM),
-        note: offText(model.groundOffM),
-        busy: state.busy,
-      }),
+      lockedGround(
+        action("ground", "ground", "Put on the ground", {
+          disabled: model.locked || onGround(model.groundOffM),
+          note: offText(model.groundOffM),
+          busy: state.busy,
+        }),
+        model.locked,
+      ),
     ]),
     el(
       "div",
@@ -662,15 +729,13 @@ function stationParts(
       "Optional",
     ),
     imagePicker(model, pictures),
-    numberField("Radius", "radius", fixed(model.foundRadiusM, 1), "m"),
-    ...radiusNotes(model),
   );
   const parts: HTMLElement[] = [
     actions([
       action("add-pin", "pin", "Add a pin"),
       action("ground-items", "ground", "Put items on the ground", {
         disabled: off === 0,
-        note: off === null || off === 0 ? "" : `${String(off)} off`,
+        note: offCountText(off),
         busy: state.busy,
       }),
       action("delete", "trash", "Delete station", { key: DELETE_KEY }),
@@ -689,7 +754,9 @@ function stationParts(
   }
   const p = model.position;
   if (p === null) {
-    // Nothing for the lock to keep still: the note stands alone.
+    // Nothing for the lock to keep still: the radius and the note stand
+    // alone.
+    section.append(...radiusParts(model), ...outsideWarn(model));
     parts.push(
       el("div", "note pad", "The file gives this station no position."),
     );
@@ -697,15 +764,16 @@ function stationParts(
   }
   const [disc, ...open] = disclosure(
     state.positionOpen,
-    positionSummary(p),
-    () => stationPosition(model, p, state),
+    `r ${fixed(model.foundRadiusM, 0)} m  ${positionSummary(p)}`,
+    () => [...radiusParts(model), ...stationPosition(model, p, state)],
+    { label: "Place", title: "Radius, position and heading" },
   );
-  // The lock sits on the Position row: the disclosure and the lock side
-  // by side.
+  // The lock sits on the Place row: the disclosure and the lock side by
+  // side.
   const row = el("div", "posrow");
   if (disc !== undefined) row.append(disc);
   row.append(lockButton(model.locked));
-  parts.push(row, ...open);
+  parts.push(row, ...outsideWarn(model), ...open);
   return parts;
 }
 
@@ -1131,7 +1199,10 @@ export interface InspectorState {
 /**
  * The dock drawn from `model` (null: hidden), folded to its head or not,
  * its position disclosure open or not. Drawn again only when one of them
- * changed, and never from inside a draw (`inspectorDrawing`); the
+ * changed - when only the ground under the selection did (it loads and
+ * refines while the view shows, and the shell draws 5 times a second),
+ * just its "Put on the ground" is updated in place - and never from
+ * inside a draw (`inspectorDrawing`); the
  * control that had the focus has it again after a draw, with text typed
  * in it and not yet committed. `writer`, a long text's writer, is put
  * in the body and stays in the page while the next draw shows it too.
@@ -1148,8 +1219,15 @@ export function drawInspector(
   writer: HTMLElement | null = null,
 ): void {
   if (drawing.has(dock.root)) return;
-  const key = JSON.stringify([model, state, writer !== null]);
-  if (lastDrawn.get(dock.root) === key) return;
+  const key = JSON.stringify([
+    model === null ? null : { ...model, groundOffM: null, offGround: null },
+    state,
+    writer !== null,
+  ]);
+  if (lastDrawn.get(dock.root) === key) {
+    if (model !== null) groundInPlace(dock.body, model);
+    return;
+  }
   drawing.add(dock.root);
   try {
     lastDrawn.set(dock.root, key);
