@@ -180,6 +180,13 @@ wired into its logic: every interaction is faked.
   four frames with the camera's motion (`?method=base|new`). Each also has
   denser clouds and a far sea that keeps its long waves in the cheap tier;
   made 2026-11-04.
+- `globe-look-10-living-lod/`, `globe-look-11-no-slices/` - the fourth
+  round: the living cloud field combined with the distance scale, without
+  the slices, the far flicker and the small round clouds of round 3
+  (`?skip=live`, `?refdiv=` bring parts back), and a study of the slices
+  (`?deband=off|refine|fine|entry|strat`) with a banding measure per method.
+  Both pages' frame meters follow the display's refresh rate as it changes;
+  made 2026-11-04.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
