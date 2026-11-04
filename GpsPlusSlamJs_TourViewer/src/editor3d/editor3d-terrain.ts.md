@@ -36,7 +36,8 @@ near the camera under the editor's own gate, and the credits both need.
   - `credits` - the heights' sources, then the map's (the globe's credit
     shape: `short`, full text, `href`);
   - `heights` - the relief's height source (`url`, its `{z}/{x}/{y}`
-    template, and `globalZoom`): what the globe view's buildings stand on,
+    template, `globalZoom` and `maxZoom`, the deepest it draws where the
+    source has it): what the globe view's buildings stand on,
     so they meet the drawn ground (`editor3d-globe-city.ts`);
   - `groundAt(latRad, lonRad)` - the drawn ground (m over the ellipsoid),
     null where none is loaded;

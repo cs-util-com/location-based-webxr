@@ -130,7 +130,8 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   the tour has a real centre: a new tour opens over a stand-in place, and
   the store's first edit that gives it one mounts them, hidden if
   `setBuildings(false)` came first), on the relief's own
-  height source (`ground.heights`: Mapterhorn at zoom 12), so the city's
+  height source (`ground.heights`: Mapterhorn at zoom 14 where it has the
+  whole window there, else at zoom 12, `deepHeightsZoom`), so the city's
   ground and the drawn relief agree by construction
   (`stats().city.parityM`). The approach's start warms them up (a fresh
   load during the fall, `warmCity`); each frame (`stepCity`, after the

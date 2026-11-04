@@ -591,6 +591,7 @@ export async function openGlobeEditor(
             parent: globe.group,
             ellipsoid,
             heightsUrl: ground.heights.url,
+            deepHeightsZoom: ground.heights.maxZoom,
             // The library's own parameter types are narrower than the city's
             // seam (it hands the worker's reply through as it came).
             loadCityThree: () => import("gps-plus-slam-osm/three") as never,

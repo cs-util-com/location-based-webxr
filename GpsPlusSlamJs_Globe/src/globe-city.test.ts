@@ -108,6 +108,7 @@ function setup(
     roadLiftM?: number;
     roadOffset?: number;
     heightsUrl?: string;
+    deepHeightsZoom?: number;
     three?: () => Promise<GlobeCityThree>;
   } = {},
 ) {
@@ -180,6 +181,20 @@ describe("createGlobeCity: the root and the options", () => {
     );
     expect(() => setup({ heightsUrl: MAPTERHORN })).not.toThrow();
   });
+
+  // Why: the deep zoom reaches a worker that reads it from the same source;
+  // one the heights cannot read is refused where the city is made, not
+  // answered later from inside the worker.
+  it("refuses a deep heights zoom that is not 1-15", () => {
+    for (const deepHeightsZoom of [0, 16, 13.5, Number.NaN]) {
+      expect(() => setup({ heightsUrl: MAPTERHORN, deepHeightsZoom })).toThrow(
+        RangeError,
+      );
+    }
+    expect(() =>
+      setup({ heightsUrl: MAPTERHORN, deepHeightsZoom: 14 }),
+    ).not.toThrow();
+  });
 });
 
 describe("createGlobeCity: load", () => {
@@ -203,6 +218,26 @@ describe("createGlobeCity: load", () => {
       },
       progress: 0,
     });
+  });
+
+  // Why: the relief draws its deepest zoom where the source has it, so the
+  // worker is told that zoom with each load and reads it where it can.
+  it("posts the relief's deep zoom with each load", () => {
+    const { city, workers } = setup({
+      heightsUrl: MAPTERHORN,
+      deepHeightsZoom: 14,
+    });
+    city.load(BERN, { zoom: 12 });
+    expect(workers[0]?.posted).toEqual([
+      {
+        kind: "load",
+        id: 1,
+        target: BERN,
+        zoom: 12,
+        deepZoom: 14,
+        heightsUrl: MAPTERHORN,
+      },
+    ]);
   });
 
   it("refuses a target that is not finite and a zoom that is not 1-15", () => {

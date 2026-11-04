@@ -26,7 +26,7 @@
 import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
-import { cityHeights } from "./globe-city-heights.js";
+import { CITY_HEIGHTS_ZOOM, cityHeights } from "./globe-city-heights.js";
 import { ecefFromCityAt } from "./globe-frame.js";
 import type { LatLng } from "./globe-target.js";
 
@@ -95,6 +95,14 @@ export interface GlobeCityOptions {
    * reads AWS Terrarium without it. RangeError for one it cannot read.
    */
   heightsUrl?: string;
+  /**
+   * The deepest zoom the relief draws from `heightsUrl` where the source
+   * has it (Mapterhorn: 14); the worker reads the city's heights there
+   * when every tile of its window answers, else at the load's zoom, so the
+   * city stands on the ground drawn under it. RangeError for one that is
+   * not an integer 1-15; without it the load's zoom is read.
+   */
+  deepHeightsZoom?: number;
   /** The clock of the arrival fade (ms; default `performance.now`). */
   now?: () => number;
 }
@@ -243,6 +251,14 @@ function placeRoad(o: THREE.Object3D, liftM: number, offset: number): void {
   }
 }
 
+/** A heights zoom checked: an integer 1-15 (RangeError naming `what`). */
+function checkZoom(zoom: number, what: string): void {
+  const { min, max } = CITY_HEIGHTS_ZOOM;
+  if (!(Number.isInteger(zoom) && zoom >= min && zoom <= max)) {
+    throw new RangeError(`${what} (${min}-${max}), got ${zoom}`);
+  }
+}
+
 /** The target and zoom checked (RangeError). */
 function checkLoad(target: LatLng, zoom: number): void {
   if (!(Number.isFinite(target?.lat) && Number.isFinite(target?.lng))) {
@@ -250,9 +266,7 @@ function checkLoad(target: LatLng, zoom: number): void {
       `a city needs a finite target, got ${target?.lat},${target?.lng}`,
     );
   }
-  if (!(Number.isInteger(zoom) && zoom >= 1 && zoom <= 15)) {
-    throw new RangeError(`a city needs the relief's zoom, got ${zoom}`);
-  }
+  checkZoom(zoom, "a city needs the relief's zoom");
 }
 
 /** A new load's state, its `finished` promise and its resolver. */
@@ -301,9 +315,13 @@ export function createGlobeCity({
   roadLiftM = 2,
   roadOffset = 0,
   heightsUrl,
+  deepHeightsZoom,
   now = () => performance.now(),
 }: GlobeCityOptions): GlobeCity {
   if (heightsUrl !== undefined) cityHeights(1, heightsUrl);
+  if (deepHeightsZoom !== undefined) {
+    checkZoom(deepHeightsZoom, "a city needs a deep heights zoom");
+  }
   const root = new THREE.Group();
   root.name = "globe-city";
   root.matrixAutoUpdate = false;
@@ -473,6 +491,7 @@ export function createGlobeCity({
       id: requestId,
       target: at,
       zoom,
+      deepZoom: deepHeightsZoom,
       heightsUrl,
     });
     return current;

@@ -106,6 +106,7 @@ interface Fakes {
   cityOptions: {
     parent: unknown;
     heightsUrl?: string;
+    deepHeightsZoom?: number;
     createWorker(): unknown;
   }[];
   cityLoads: { target: unknown; zoom: number; fresh: boolean }[];
@@ -443,6 +444,7 @@ vi.mock("./editor3d-terrain.js", async () => {
         heights: {
           url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
           globalZoom: 12,
+          maxZoom: 14,
         },
         osm: {
           stats: () => ({}),
@@ -1214,6 +1216,10 @@ describe("openGlobeEditor's wiring", () => {
       expect.objectContaining({
         parent: fakes.view?.globe.group,
         heightsUrl: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+        // The relief draws zoom 14 where Mapterhorn has it: the buildings
+        // read their heights there too (a building on zoom 12 heights
+        // stood metres off the drawn ground).
+        deepHeightsZoom: 14,
       }),
     ]);
     for (const options of fakes.cityOptions) options.createWorker();

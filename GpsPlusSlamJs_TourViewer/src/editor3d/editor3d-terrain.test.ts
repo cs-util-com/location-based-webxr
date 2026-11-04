@@ -140,10 +140,12 @@ describe("createEditorTerrain", () => {
     expect(ground.credits.length).toBeGreaterThanOrEqual(3);
     expect(ground.credits.at(-1)?.short).toMatch(/OpenStreetMap/);
     // The globe view's buildings stand on the heights the relief is drawn
-    // from (its own source at its own zoom), or they float or sink.
+    // from (its own source at its own zooms: the global one everywhere,
+    // the deepest where the source has it), or they float or sink.
     expect(ground.heights).toEqual({
       url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
       globalZoom: 12,
+      maxZoom: 14,
     });
     for (const credit of ground.credits) {
       expect(credit.href).toMatch(/^https:\/\//);

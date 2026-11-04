@@ -31,6 +31,12 @@
     every load so the city stands on the heights the ground is drawn from
     (G1 1d); checked by `cityHeights`, RangeError for a template it cannot
     read; the worker reads AWS Terrarium without it;
+  - `deepHeightsZoom`: the deepest zoom the relief draws from that source
+    where the source has it (Mapterhorn: 14), posted with every load as
+    `deepZoom`; the worker reads the city's heights there when every
+    height tile of the window answers, else at the load's zoom (the
+    city reply's `counts.heightsZoom` says which); RangeError for one
+    that is not an integer 1-15; without it the load's zoom is read;
   - `now` (default `performance.now`): the clock of the arrival fade and
     of `mainMs`.
 

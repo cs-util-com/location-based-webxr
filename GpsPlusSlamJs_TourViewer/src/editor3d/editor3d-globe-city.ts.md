@@ -17,8 +17,10 @@ depth objects and the page's stats.
 - `mountEditorCity({ city, place, zoom, step? })` -> `EditorCity`:
   - `city` - the Globe package's city (`root`, `load`, `abort`,
     `setFade`, `state`, `dispose`);
-  - `place` - the tour's centre (degrees); `zoom` - the relief's height
-    zoom (12 for Mapterhorn), so the city reads the relief's own heights;
+  - `place` - the tour's centre (degrees); `zoom` - the relief's global
+    height zoom (12 for Mapterhorn), so the city reads the relief's own
+    heights (the city itself reads the deep zoom, 14, where the source has
+    it: `deepHeightsZoom` on `createGlobeCity`, set by the globe view);
   - `step` - the city's step (default `createGlobeCityStep(city)`).
 - `EditorCity`:
   - `step({ altitudeM, selection })` - each frame: the load (once below
