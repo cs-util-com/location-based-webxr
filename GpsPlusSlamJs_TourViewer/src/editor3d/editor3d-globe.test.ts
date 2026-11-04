@@ -54,6 +54,7 @@ interface Fakes {
   busy: boolean;
   seams: null | Record<string, (...args: unknown[]) => unknown>;
   view: null | {
+    scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     globe: { group: THREE.Group };
     setFrameTarget(target: { lat: number; lng: number }): void;
@@ -226,6 +227,7 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         },
         haze() {},
         setClouds: (on: boolean) => fakes.cloudsOn.push(on),
+        cloudShell: () => null,
         state: () => null,
         dispose: () => fakes.log.push("air-dispose"),
       };
@@ -291,8 +293,13 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
         initTexture() {},
         getDrawingBufferSize: (size: THREE.Vector2) => size.set(800, 600),
         getPixelRatio: () => 1,
-        // Only the streaks are drawn through it here (the view is faked).
+        // The streaks, and the interface pass over the view's scene (the
+        // view itself is faked).
         render: (drawn: THREE.Scene) => {
+          if (drawn === fakes.view?.scene) {
+            fakes.draws.push("interface");
+            return;
+          }
           const mesh = drawn.children[0] as THREE.Mesh<
             THREE.BufferGeometry,
             THREE.ShaderMaterial
@@ -1140,7 +1147,9 @@ describe("openGlobeEditor's wiring", () => {
 
   // Why: the streaks are drawn twice a frame, behind the Earth (before the
   // scene) and a share over it, before the air: the globe lab's order,
-  // which keeps the air's haze over them. Off for dust=0, the speed still
+  // which keeps the air's haze over them; the interface (the tour's
+  // billboards, rings and poles) last, after the air, so the clouds'
+  // shadow composited there never darkens it. Off for dust=0, the speed still
   // measured; a teleport (an arrow step) restarts their speed, so a jump
   // never flashes them.
   for (const { dust, label, shown, draws } of [
@@ -1148,9 +1157,14 @@ describe("openGlobeEditor's wiring", () => {
       dust: 1,
       label: "behind and over the Earth, before the air",
       shown: true,
-      draws: ["dust 0.75", "dust 0.25", "air"],
+      draws: ["dust 0.75", "dust 0.25", "air", "interface"],
     },
-    { dust: 0, label: "nowhere for dust=0", shown: false, draws: ["air"] },
+    {
+      dust: 0,
+      label: "nowhere for dust=0",
+      shown: false,
+      draws: ["air", "interface"],
+    },
   ]) {
     it(`draws the speed streaks ${label}`, async () => {
       let now = 1_000;

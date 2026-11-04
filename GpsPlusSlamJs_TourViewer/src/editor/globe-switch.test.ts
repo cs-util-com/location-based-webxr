@@ -24,6 +24,8 @@ describe("readGlobeSwitch", () => {
       dust: 1,
       osmGain: GLOBE_SWITCH.osmGain.fallback,
       osmGainMode: "flat",
+      cloudShadow: GLOBE_SWITCH.cloudShadow.fallback,
+      cloudWind: GLOBE_SWITCH.cloudWind.fallback,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(
       false,
@@ -154,6 +156,28 @@ describe("readGlobeSwitch", () => {
     }
   });
 
+  // Why: the clouds' shadow and wind are the look's A/B knobs; the
+  // editor's shadow is weaker than the lab's 0.5 so the tour reads under a
+  // cloud, and a value out of range reads as the default. The wind floor
+  // is 40 m/s: at the globe's 10 a cloud at 3 km moved 30 m in 3 s seen
+  // from the landing (about half a degree), read as static clouds.
+  it("reads the clouds' shadow (0.3 by default) and wind (40 by default)", () => {
+    expect(GLOBE_SWITCH.cloudShadow.fallback).toBe(0.3);
+    expect(GLOBE_SWITCH.cloudWind.fallback).toBe(40);
+    expect(readGlobeSwitch("?cloudWind=10").cloudWind).toBe(10);
+    expect(readGlobeSwitch("?globe=1&cloudShadow=0.6").cloudShadow).toBe(0.6);
+    expect(readGlobeSwitch("?cloudShadow=0").cloudShadow).toBe(0);
+    expect(readGlobeSwitch("?cloudWind=80").cloudWind).toBe(80);
+    for (const bad of ["", "abc", "-0.1", "1.5", "NaN"]) {
+      expect(readGlobeSwitch(`?cloudShadow=${bad}`).cloudShadow).toBe(0.3);
+    }
+    for (const bad of ["x", "-5", "2000"]) {
+      expect(readGlobeSwitch(`?cloudWind=${bad}`).cloudWind).toBe(
+        GLOBE_SWITCH.cloudWind.fallback,
+      );
+    }
+  });
+
   // Why: the meteor never lands shallower than it enters ("shallow to
   // steep"); a landing angle under the start angle is held at
   // the start angle, a straight line.
@@ -173,6 +197,8 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.landAglM,
       GLOBE_SWITCH.dust,
       GLOBE_SWITCH.osmGain,
+      GLOBE_SWITCH.cloudShadow,
+      GLOBE_SWITCH.cloudWind,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

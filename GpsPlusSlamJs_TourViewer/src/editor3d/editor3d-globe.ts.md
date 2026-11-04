@@ -99,14 +99,27 @@ ground.
   view core's sky is black at noon. It writes the globe's sun intensity
   (the eased exposure) every frame, so nothing here sets it.
   `stats().globe.air` carries its `weight`, `observerKm` and the ground
-  sky's state, and `clouds` (`{ on, flat, shellOn }`, or null where the
-  ground sky cannot draw).
+  sky's state, and `clouds` (`{ on, flat, shellOn, shellShadow,
+surfaceShadow }`, or null where the ground sky cannot draw).
 - The heavy clouds: the lab's slab, shell and high layer with the lab's
-  settings (`globeViewClouds(view)`, passed to the air), on by default.
+  settings (`globeViewClouds(view, { shadow })`, passed to the air), on by
+  default; the link's `cloudShadow` (0.3) sets their shadows' strength
+  and `cloudWind` (10 m/s) the cloud map's wind floor.
   The air steps them with the relief mount's cloud-shell share
   (`shareClouds(true, flat)`), draws them after the Earth and patches
   their shadow onto the relief; `setClouds(on)` is the View menu's
   switch. The cloud shell sits at 3 km, the lab's height.
+- **The interface over the clouds' shadow** (`globe-interface-pass.ts`):
+  the shell's ground shadow is a full-screen quad composited after the
+  scene, its rays ending at the relief's depth (the scene depth holds the
+  relief only), so it darkened every billboard, ring and pole in front of
+  the shaded ground as if it were that ground. Each frame the interface
+  under the tour's frame and the editing's scene objects (the gizmo) is
+  lifted onto its own layer before the scene (`beforeScene`) and drawn
+  after the air (`afterScene`), with the daylight lit on that layer; the
+  renderer does not clear between the passes (`autoClear` is false in
+  the view), so the relief still hides what is behind it. The ground and
+  the tour's models stay in the scene and take the shadow.
 - Standard depth, not reversed: the clouds' and the air's scene-depth
   readers assume it, and reversed depth measured no better on the
   24-bit buffer.
@@ -279,7 +292,12 @@ has settled (`settled`, the band's condition), the library's `loadProgress`
 and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
 `failed`), and its tile cache's bytes against the device budget
 (`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
-from a stalled one.
+from a stalled one. `clouds` is what the clouds' shadow and motion checks
+read: the drift rate (deg/s) and the map's longitude offset (rad), the
+link's `shadow` and `windMps`, the canvas probes (`probes`: pixels of the
+billboards, the rings, the poles, the models and the bare ground), the
+shell's frames drawn, share and weights (`shell`) and
+how many objects the interface pass lifted (`interfaceLifted`).
 
 ## Tests
 

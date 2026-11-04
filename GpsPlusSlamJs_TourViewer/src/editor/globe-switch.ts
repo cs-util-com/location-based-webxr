@@ -121,6 +121,31 @@ export const GLOBE_SWITCH = Object.freeze({
     param: "osmGainMode",
     fallback: "flat",
   }),
+  /**
+   * The clouds' shadow strength on the ground and the tour's 3D models
+   * (0 none, 1 black under a full cloud): weaker than the globe lab's 0.5,
+   * so the tour reads under a cloud. The interface (pins, rings, titles)
+   * is never darkened. The link's value is its A/B switch.
+   */
+  cloudShadow: Object.freeze({
+    param: "cloudShadow",
+    fallback: 0.3,
+    min: 0,
+    max: 1,
+  }) satisfies GlobeSwitchKnob,
+  /**
+   * The clouds' wind floor (m/s at the equator, the drift law's `windMps`):
+   * the slowest the cloud field moves, which is what is seen near the
+   * ground. 40, not the globe's 10: at 10 a cloud at 3 km moved 30 m in
+   * 3 s seen from the landing (about half a degree), read as static. The
+   * link's value is its A/B switch.
+   */
+  cloudWind: Object.freeze({
+    param: "cloudWind",
+    fallback: 40,
+    min: 0,
+    max: 1_000,
+  }) satisfies GlobeSwitchKnob,
 });
 
 /** What the link asks of the editor on the globe. */
@@ -141,6 +166,10 @@ export interface GlobeSwitch {
   readonly osmGain: number;
   /** How the gain darkens: "flat" or "compress". */
   readonly osmGainMode: "flat" | "compress";
+  /** The clouds' shadow strength, in [0, 1]. */
+  readonly cloudShadow: number;
+  /** The clouds' wind floor (m/s at the equator). */
+  readonly cloudWind: number;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -185,5 +214,7 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
       params.get(GLOBE_SWITCH.osmGainMode.param) === "compress"
         ? "compress"
         : GLOBE_SWITCH.osmGainMode.fallback,
+    cloudShadow: knob(params, GLOBE_SWITCH.cloudShadow),
+    cloudWind: knob(params, GLOBE_SWITCH.cloudWind),
   };
 }

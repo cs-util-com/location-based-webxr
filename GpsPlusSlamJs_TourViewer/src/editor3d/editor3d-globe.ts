@@ -146,6 +146,10 @@ import { createArrivalMarks } from "./globe-approach-marks.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
+import {
+  createGlobeInterfacePass,
+  type GlobeInterfacePass,
+} from "./globe-interface-pass.js";
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
 
 const DEG = Math.PI / 180;
@@ -169,6 +173,100 @@ function higherOf(a: number | null, b: number | null): number | null {
   return b === null ? a : Math.max(a, b);
 }
 
+const probeAt = new THREE.Vector3();
+const probeBox = new THREE.Box3();
+
+/** A world point on the canvas (CSS px), null behind the camera or off it. */
+function onCanvas(
+  world: THREE.Vector3,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+): readonly [number, number] | null {
+  const p = probeAt.copy(world).project(camera);
+  if (p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) {
+    return null;
+  }
+  return [
+    ((p.x + 1) / 2) * canvas.clientWidth,
+    ((1 - p.y) / 2) * canvas.clientHeight,
+  ];
+}
+
+/**
+ * Where the tour's first billboard (its anchor, bottom middle), a point of
+ * the first found radius's ring (the one nearest the canvas's middle) and
+ * the first lit model (its bounding box's centre) are on the canvas: the
+ * test hook's probes for the clouds' shadow check. Allocates; the page's
+ * checks only call it.
+ */
+function cloudProbes(
+  tourFrame: THREE.Object3D,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+) {
+  let billboard: THREE.Object3D | null = null;
+  let ring: THREE.Mesh | null = null;
+  let model: THREE.Object3D | null = null;
+  tourFrame.traverseVisible((o) => {
+    if (billboard === null && o.name.startsWith("billboard ")) billboard = o;
+    if (ring === null && o.name === "found-radius" && o instanceof THREE.Mesh) {
+      ring = o;
+    }
+    if (
+      model === null &&
+      o instanceof THREE.Mesh &&
+      o.material instanceof THREE.MeshStandardMaterial
+    ) {
+      model = o;
+    }
+  });
+  const world = (o: THREE.Object3D | null) =>
+    o === null
+      ? null
+      : onCanvas(o.getWorldPosition(new THREE.Vector3()), camera, canvas);
+  let ringPoint: readonly [number, number] | null = null;
+  const found = ring as THREE.Mesh | null;
+  if (found !== null) {
+    const { innerRadius, outerRadius } = (found.geometry as THREE.RingGeometry)
+      .parameters;
+    const r = (innerRadius + outerRadius) / 2;
+    let best = Infinity;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * 2 * Math.PI;
+      // The ring lies flat in its station's frame (y up).
+      const at = onCanvas(
+        found.localToWorld(
+          new THREE.Vector3(r * Math.cos(a), 0, r * Math.sin(a)),
+        ),
+        camera,
+        canvas,
+      );
+      if (at === null) continue;
+      const d = Math.hypot(
+        at[0] - canvas.clientWidth / 2,
+        at[1] - canvas.clientHeight / 2,
+      );
+      if (d < best) {
+        best = d;
+        ringPoint = at;
+      }
+    }
+  }
+  const lit = model as THREE.Object3D | null;
+  return {
+    billboard: world(billboard),
+    ring: ringPoint,
+    model:
+      lit === null
+        ? null
+        : onCanvas(
+            probeBox.setFromObject(lit).getCenter(new THREE.Vector3()),
+            camera,
+            canvas,
+          ),
+  };
+}
+
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
@@ -183,6 +281,8 @@ export async function openGlobeEditor(
     | "dust"
     | "osmGain"
     | "osmGainMode"
+    | "cloudShadow"
+    | "cloudWind"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -249,6 +349,9 @@ export async function openGlobeEditor(
     // The air (the blue sky, the haze over the relief), mounted once the
     // view and its relief exist; the view's sky alone is black at noon.
     let air: GlobeViewAir | null = null;
+    // The interface drawn after the air (`globe-interface-pass.ts`): the
+    // clouds' shadow is composited over the whole frame.
+    let interfacePass: GlobeInterfacePass | null = null;
     // The approach on opening the tour while it runs (`globe-approach-run.ts`).
     let approach: ApproachRun | null = null;
     /** How the last approach ended, for the page's checks. */
@@ -266,10 +369,12 @@ export async function openGlobeEditor(
     undo.push(() => {
       dust.dispose();
     });
+    // The clouds' wind floor is the link's: built once, read each frame.
+    const settings = globeEditorSettings({ windMps: knobs.cloudWind });
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
-      settings: globeEditorSettings,
+      settings: () => settings,
       solarPosition,
       // Standard depth (the view's default): the clouds and the air read
       // the scene's depth as standard, and reversed depth measured no
@@ -327,10 +432,12 @@ export async function openGlobeEditor(
             look: { count: SPEED_DUST_LOOK.count, gain: SPEED_DUST_LOOK.gain },
           });
           dust.render(renderer, 1 - SPEED_DUST_LOOK.over);
+          interfacePass?.lift();
         },
         afterScene: () => {
           dust.render(renderer, SPEED_DUST_LOOK.over);
           air?.afterScene();
+          interfacePass?.draw();
         },
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
@@ -365,7 +472,8 @@ export async function openGlobeEditor(
     startClock();
     // The tour's objects and the relief: the sun alone leaves their shaded
     // sides black.
-    scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9));
+    const daylight = new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9);
+    scene.add(daylight);
 
     const ground = createEditorTerrain({
       renderer,
@@ -400,7 +508,7 @@ export async function openGlobeEditor(
     const { ellipsoid } = ground.terrain.tiles;
     const mountedAir = mountGlobeViewAir(view, {
       coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
-      clouds: globeViewClouds(view),
+      clouds: globeViewClouds(view, { shadow: knobs.cloudShadow }),
     });
     air = mountedAir;
     undo.push(() => {
@@ -986,6 +1094,37 @@ export async function openGlobeEditor(
       ecefFromWorld.copy(worldFromEcef).invert();
     }
     followFrame();
+    // The interface's roots: the tour's frame (stations, codes, marks,
+    // models' sections) and what the editing adds to the scene (the
+    // gizmo); one array, refilled each frame.
+    const interfaceRoots: THREE.Object3D[] = [];
+    interfacePass = createGlobeInterfacePass({
+      renderer,
+      scene,
+      camera,
+      roots: () => {
+        interfaceRoots.length = 0;
+        interfaceRoots.push(tourFrame);
+        for (const child of scene.children) {
+          if (child !== globe.group) interfaceRoots.push(child);
+        }
+        return interfaceRoots;
+      },
+      lights: [daylight],
+    });
+    undo.push(() => {
+      interfacePass = null;
+    });
+    /** The clouds' part of the stats (see the comment there). */
+    const cloudStats = () => ({
+      driftRate: view.state().cloudDriftRate,
+      lonOffsetRad: view.state().cloudLonOffsetRad,
+      shadow: knobs.cloudShadow,
+      windMps: knobs.cloudWind,
+      probes: cloudProbes(tourFrame, camera, canvas),
+      shell: air?.cloudShell() ?? null,
+      interfaceLifted: interfacePass?.lifted() ?? 0,
+    });
     const editing = createSceneEditing({
       container: deps.container,
       canvas,
@@ -1367,6 +1506,10 @@ export async function openGlobeEditor(
             centreM: view.ecefCamera().position.length(),
             fitM: view.fitDistance(),
             startCentreM,
+            // The clouds' drift (deg/s and the map's offset now, rad), their
+            // knobs, and where the interface and the ground are on the
+            // canvas: what the clouds' shadow and motion checks read.
+            clouds: cloudStats(),
             // The last 60 frame intervals (ms), for a frame-time check.
             frameTimesMs: [...frameTimes],
           },

@@ -48,6 +48,17 @@ the default.
   them); `osmGainMode=compress` compresses its luma, the A/B that lowers
   them (the measurement above was taken in that mode). Anything but
   exactly "compress" reads as "flat".
+- `cloudShadow` - default 0.3, range 0-1: the clouds' shadow strength,
+  the shell's own on the relief and the ground's soft one from orbit
+  (`GlobeViewCloudsOptions.shadow`); the lab's 0.5 and 0.6 darkened the
+  landing too much. `cloudShadow=0.45` / `0.6` are the A/B links.
+- `cloudWind` - default 40, range 0-1000 (m/s): the clouds' wind floor
+  (`globeEditorSettings({ windMps })`), how fast the cloud field drifts at
+  the least, which is what is seen near the ground. The globe's own 10
+  read as static clouds at the landing: a cloud at 3 km moves 30 m in 3 s
+  (0.6 degrees seen from 150 m up, 9.0e-5 deg/s of longitude, measured by
+  `playwright-tests/editor3d-globe-clouds.spec.js`, 2026-11-03); 40 moves
+  it 120 m. `cloudWind=10` (the old look) / `80` are the A/B links.
 - `startKm` (a `GlobeSwitchOverride`: `param`, `min`, `max`, no default) -
   range 500-65000 km: the start height as an explicit override. Without
   it (`null`) the meteor starts where the globe lab's intro zooms out to
@@ -55,7 +66,7 @@ the default.
   portrait phone; `../editor3d/globe-approach-meteor.ts`).
 - `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
   `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
-  `dust`, `osmGain`, `osmGainMode`)
+  `dust`, `osmGain`, `osmGainMode`, `cloudShadow`, `cloudWind`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
