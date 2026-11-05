@@ -31,7 +31,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -59,6 +59,15 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
    full cascade, and on CI) no such env is set, so every spec runs;
 4. their dependents **minus themselves**
    (`--filter "...<name>" --filter "!<name>"`) with `skipBrowserEnv` set.
+
+`relatedUnitEnv` is passed by the per-commit fast gate only (the caller's
+skip switch is set). With a `ref`, the changed packages' command then also
+carries `<relatedUnitEnv>=<ref>`, so their vitest unit stages run only the
+tests related to the change
+([related-unit.mjs](related-unit.mjs.md)); the dependents' command carries it
+EMPTY, so an inherited value can never narrow a dependent's suite. Without
+the option (the milestone run) neither command carries it.
+
 
 `selectPackages` cannot compute the dependent set — it maps paths to
 top-level directories and nothing more — so the closure comes from pnpm’s

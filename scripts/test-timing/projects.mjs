@@ -896,6 +896,10 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
  * in `buildStageCommand`.
  *
+ * IN THE PER-COMMIT GATE OF A CHANGED PACKAGE (`UNIT_RELATED_ENV` set too) a
+ * vitest unit stage runs through the related-unit wrapper, which runs only
+ * the tests related to the change; never on the runner.
+ *
  * ON THE GITHUB RUNNER a Prettier stage CHECKS instead of writing. `--write` there rewrote the checkout and
  * exited 0, so a badly formatted PR was never red. Keyed on `GITHUB_ACTIONS`
  * (`onGithubRunner`), never on `CI`: every local gate sets `CI=1`, and a local
@@ -907,14 +911,31 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * @returns {string}
  */
 export function gateBaseCommand(stage, env = {}) {
+  const { skipBrowser } = resolveGateMode(env);
   const command =
-    resolveGateMode(env).skipBrowser && stage.fastGateCommand
-      ? stage.fastGateCommand
-      : stage.command;
-  return onGithubRunner(env) && /(?:^|\s)prettier\s/.test(command)
-    ? command.replace(" --write ", " --check ")
+    skipBrowser && stage.fastGateCommand ? stage.fastGateCommand : stage.command;
+  if (onGithubRunner(env)) {
+    return /(?:^|\s)prettier\s/.test(command)
+      ? command.replace(" --write ", " --check ")
+      : command;
+  }
+  // A CHANGED package's unit stage in the per-commit gate: only the tests
+  // related to the change (scripts/test-changed/related-unit.mjs). The ref is
+  // set for the changed packages only (select.mjs `gateCommands`), so a
+  // dependent, the milestone run and a package's own gate run the suite.
+  return skipBrowser &&
+    Boolean(env[UNIT_RELATED_ENV]) &&
+    stage.name === "test:unit" &&
+    stage.counts === "vitest"
+    ? `node ${RELATED_UNIT_SCRIPT} ${command}`
     : command;
 }
+
+/** Env var with the diff base for a changed package's related unit run. */
+export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
+
+/** The related-unit wrapper, relative to a package directory. */
+export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
 export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";

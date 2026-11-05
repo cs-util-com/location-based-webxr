@@ -44,6 +44,12 @@
     reads to run every changed spec file whole. The full cascade and CI set
     no such ref (CI gives the tier the pull request's base instead,
     `E2E_TIER_BASE`), so they run every spec, in their tier.
+  - In the per-commit fast gate (`GATE_SKIP_BROWSER_STAGES` set by the
+    caller) the changed packages' unit stages run only the tests related to
+    the change (`relatedUnitEnv`, [related-unit.mjs](related-unit.mjs.md)),
+    each saying so in one `related-unit:` line; the green banner says so
+    too. Dependents, the milestone run (no skip switch), a package's own
+    `pnpm test` and CI run every unit test.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e

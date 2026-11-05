@@ -54,7 +54,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
-import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
+import {
+  SKIP_BROWSER_ENV,
+  UNIT_RELATED_ENV,
+  resolveGateMode,
+} from '../test-timing/projects.mjs';
 import {
   STALL_EXIT,
   STALL_SUMMARY,
@@ -240,6 +244,11 @@ const status = runInOrder(
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
     ref,
+    // The per-commit fast gate (the skip switch set by its caller): the
+    // changed packages' unit stages run only the tests related to the change.
+    ...(resolveGateMode(process.env).skipBrowser
+      ? { relatedUnitEnv: UNIT_RELATED_ENV }
+      : {}),
   })
 );
 
@@ -247,7 +256,10 @@ if (status === 0 && names.length > 0) {
   console.log(
     '\ntest-changed: ✔ commit gate green (DEC-G1) — changed packages in full, dependents without e2e.\n' +
       '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.\n' +
-      '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.'
+      '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.' +
+      (resolveGateMode(process.env).skipBrowser
+        ? "\n  This fast gate ran only the changed packages' unit tests related to the change (the related-unit lines above)."
+        : '')
   );
 }
 process.exit(status);

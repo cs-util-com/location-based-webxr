@@ -23,6 +23,8 @@ import {
   resolveGateMode,
   gateBaseCommand,
   SKIP_BROWSER_ENV,
+  UNIT_RELATED_ENV,
+  RELATED_UNIT_SCRIPT,
 } from './projects.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -444,6 +446,60 @@ describe('gateBaseCommand (fast per-commit command)', () => {
     expect(framework.fastGateCommand).toBe(
       framework.command.replace(' --coverage', '')
     );
+  });
+});
+
+// Why this test matters: in the per-commit fast gate a CHANGED package's
+// unit stage runs only the tests related to the change (the related-unit
+// wrapper). That trade is only acceptable because every other run stays
+// whole: a dependent (no ref), the milestone run and a package's own
+// `pnpm test` (no skip switch) and CI (the GitHub runner). Each of those
+// must get the canonical command, byte for byte.
+describe('gateBaseCommand (related unit tests in the fast gate only)', () => {
+  const FAST = { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: 'HEAD' };
+  const unitStages = PROJECTS.flatMap((project) =>
+    project.stages
+      .filter((stage) => stage.name === 'test:unit' && stage.counts === 'vitest')
+      .map((stage) => ({ project: project.name, stage }))
+  );
+
+  it('finds the vitest unit stages (so the checks are not vacuous)', () => {
+    expect(unitStages.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each(unitStages)('$project wraps its unit stage in the fast gate of a changed package', ({ stage }) => {
+    const base = stage.fastGateCommand ?? stage.command;
+    expect(gateBaseCommand(stage, FAST)).toBe(`node ${RELATED_UNIT_SCRIPT} ${base}`);
+  });
+
+  it.each(unitStages)('$project keeps its unit stage whole everywhere else', ({ stage }) => {
+    // A dependent: the skip switch, no ref.
+    expect(gateBaseCommand(stage, { [SKIP_BROWSER_ENV]: '1' })).not.toContain(RELATED_UNIT_SCRIPT);
+    expect(gateBaseCommand(stage, { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: '' })).not.toContain(
+      RELATED_UNIT_SCRIPT
+    );
+    // The milestone run and a package's own gate: no skip switch.
+    expect(gateBaseCommand(stage, { [UNIT_RELATED_ENV]: 'HEAD' })).toBe(stage.command);
+    // CI.
+    expect(gateBaseCommand(stage, { ...FAST, GITHUB_ACTIONS: 'true' })).not.toContain(
+      RELATED_UNIT_SCRIPT
+    );
+  });
+
+  it('wraps no other stage', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        if (stage.name === 'test:unit' && stage.counts === 'vitest') continue;
+        expect(gateBaseCommand(stage, FAST), `${project.name} ${stage.name}`).not.toContain(
+          RELATED_UNIT_SCRIPT
+        );
+      }
+    }
+  });
+
+  it('points at the wrapper that exists', () => {
+    expect(RELATED_UNIT_SCRIPT).toBe('../scripts/test-changed/related-unit.mjs');
+    expect(existsSync(path.join(WORKSPACE_ROOT, 'scripts/test-changed/related-unit.mjs'))).toBe(true);
   });
 });
 

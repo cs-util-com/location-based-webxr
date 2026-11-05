@@ -21,8 +21,17 @@
     cost 29 % of that stage (106.4 / 103.9 s against 74.2 / 74.8 s, two quiet
     runs each at 4 workers) against a 15 % bar set before measuring
     (gate-speed plan 2026-10-04, G4 / TS-2). CI, the milestone run and every
-    recorded run keep coverage. The Recorder keeps it in every mode: its
-    coverage thresholds gate.
+    recorded run keep coverage. The Recorder keeps it in every mode but the
+    related-only run below: its coverage thresholds gate, and a slice of the
+    suite cannot meet them.
+    - In the fast gate of a CHANGED package (`GATE_UNIT_RELATED_REF`,
+      `UNIT_RELATED_ENV`, set as well; never on the runner) a vitest
+      `test:unit` stage becomes
+      `node ../scripts/test-changed/related-unit.mjs <command>`
+      (`RELATED_UNIT_SCRIPT`), which runs only the tests related to the
+      change ([related-unit.mjs](../test-changed/related-unit.mjs.md)). A
+      dependent (no ref), the milestone run and a package's own gate (no
+      skip switch) keep the command. Pinned by `projects.test.mjs`.
     - On the GitHub runner (`onGithubRunner` from `stage-args.mjs`, i.e.
       `GITHUB_ACTIONS` set, never plain `CI`) a Prettier stage's `--write`
       becomes `--check`, same globs and options: `--write` rewrote the checkout and exited 0, so CI

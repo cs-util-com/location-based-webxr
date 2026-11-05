@@ -218,6 +218,40 @@ describe('gateCommands', () => {
   });
 });
 
+// Why this test matters: the related-only unit run is licensed for the
+// CHANGED packages of the per-commit fast gate and nothing else. The ref
+// reaches them only when the caller passes `relatedUnitEnv` (the fast gate
+// does, the milestone run does not), and the dependents get it cleared, so an
+// inherited value can never narrow a dependent's suite.
+describe('gateCommands: related unit tests in the fast gate', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+  const RELATED = 'GATE_UNIT_RELATED_REF';
+
+  it('hands the ref to the changed packages and clears it for the dependents', () => {
+    const commands = gateCommands(['gps-plus-slam-tour-viewer'], {
+      skipBrowserEnv: ENV,
+      relatedUnitEnv: RELATED,
+      ref: 'HEAD',
+    });
+    const changed = commands.find((c) => c.command.endsWith('--filter gps-plus-slam-tour-viewer test'));
+    const dependents = commands.find((c) => c.command.includes('"...gps-plus-slam-tour-viewer"'));
+    expect(changed?.env[RELATED]).toBe('HEAD');
+    expect(dependents?.env[RELATED]).toBe('');
+  });
+
+  it('never sets it without the option (the milestone run)', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' })) {
+      expect(command.env).not.toHaveProperty(RELATED);
+    }
+  });
+
+  it('never sets it without a ref', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, relatedUnitEnv: RELATED })) {
+      expect(command.env[RELATED] ?? '').toBe('');
+    }
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §8, "the lab smoke must run on a
 // globe-only commit"): the design system does not DEPEND on the globe
 // package, it SERVES it through its routes, so pnpm's graph never selects

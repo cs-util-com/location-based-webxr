@@ -241,16 +241,21 @@ export function cascadeCommands() {
  *   rootChecks?: readonly string[],
  *   docOnlyNames?: readonly string[],
  *   ref?: string,
+ *   relatedUnitEnv?: string,
  * }} options - `skipBrowserEnv` names the env var that puts a gate run in
  *   dependent mode; `rootChecks` are root scripts to run (`check:deadcode`);
  *   `docOnlyNames` are pnpm names of packages that run only `format`;
  *   `ref` is the diff base, handed to the changed packages' full gates as
- *   CHANGED_REF_ENV (never to the dependents, which run no browser stage)
+ *   CHANGED_REF_ENV (never to the dependents, which run no browser stage);
+ *   `relatedUnitEnv`, passed by the per-commit fast gate only, names the env
+ *   var that hands the same ref to the changed packages' unit stages, which
+ *   then run only the tests related to the change (related-unit.mjs); the
+ *   dependents get it cleared, so they always run their whole suite
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
 export function gateCommands(
   names,
-  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref }
+  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv }
 ) {
   /** @type {{ command: string, env: Record<string, string> }[]} */
   const commands = [];
@@ -281,7 +286,10 @@ export function gateCommands(
   // actually edited.
   commands.push({
     command: `pnpm --workspace-concurrency=1 ${filters((n) => `--filter ${n}`)} test`,
-    env: ref ? { [CHANGED_REF_ENV]: ref } : {},
+    env: {
+      ...(ref ? { [CHANGED_REF_ENV]: ref } : {}),
+      ...(ref && relatedUnitEnv ? { [relatedUnitEnv]: ref } : {}),
+    },
   });
   // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
   // `!X` subtracts the ones that just ran in full. An empty result is a safe
@@ -291,7 +299,10 @@ export function gateCommands(
       filters((n) => `--filter "...${n}"`),
       filters((n) => `--filter "!${n}"`),
     ].join(' ')} test`,
-    env: { [skipBrowserEnv]: '1' },
+    env: {
+      [skipBrowserEnv]: '1',
+      ...(relatedUnitEnv ? { [relatedUnitEnv]: '' } : {}),
+    },
   });
   return commands;
 }
