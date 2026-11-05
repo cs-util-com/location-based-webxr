@@ -20,6 +20,9 @@ import {
 } from "./landing-mount.js";
 import type { UsesHeightEnv } from "./uses-height.js";
 
+// The awaited work is promise callbacks: poll every 1 ms, not every 50.
+const POLL = { interval: 1 };
+
 function makeDom(): LandingDom {
   document.body.innerHTML = `
     <div id="landing-film"><img alt="still"></div>
@@ -328,7 +331,7 @@ describe("mountLanding", () => {
     notify(true);
     await vi.waitFor(() => {
       expect(calls).toHaveLength(5);
-    });
+    }, POLL);
     expect(dom.film.dataset["filmFallback"]).toBeUndefined();
     expect(destroyed.sort()).toEqual(["cards", "film"]);
     const again = calls.slice(3);
@@ -372,7 +375,7 @@ describe("mountLanding", () => {
     await mounted.ready;
     await vi.waitFor(() => {
       expect(calls.filter((c) => c.part === "film")).toHaveLength(2);
-    });
+    }, POLL);
     expect(destroyed.filter((p) => p === "film")).toHaveLength(1);
     expect(
       calls.filter((c) => c.part === "film").at(-1)?.options,

@@ -66,6 +66,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
+import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
 
 beforeAll(() => {
@@ -128,6 +129,9 @@ function levelAt(geo: QrGeoPose): string {
   });
 }
 
+/** Every write to any memory store: what `flush` watches. */
+let storeOps = 0;
+
 /** One browser's draft namespaces, in memory: both pages' stores. */
 function memoryStores(): (key: string) => Promise<DraftFileStore> {
   const spaces = new Map<string, Map<string, Blob | string>>();
@@ -136,10 +140,12 @@ function memoryStores(): (key: string) => Promise<DraftFileStore> {
     spaces.set(key, files);
     return Promise.resolve({
       put: (k, data) => {
+        storeOps += 1;
         files.set(k, data as Blob | string);
         return Promise.resolve(true);
       },
       remove: (k) => {
+        storeOps += 1;
         files.delete(k);
         return Promise.resolve();
       },
@@ -163,6 +169,7 @@ function memoryStores(): (key: string) => Promise<DraftFileStore> {
       },
       keys: () => Promise.resolve([...files.keys()]),
       clear: () => {
+        storeOps += 1;
         files.clear();
         return Promise.resolve();
       },
@@ -170,8 +177,10 @@ function memoryStores(): (key: string) => Promise<DraftFileStore> {
   };
 }
 
-async function flush(): Promise<void> {
-  for (let i = 0; i < 40; i += 1) await new Promise((r) => setTimeout(r, 0));
+/** Until the page's draft writes and its store have stopped changing
+ *  (`page` is the phone's store; the desktop awaits its draft itself). */
+function flush(page?: { getState(): unknown }): Promise<void> {
+  return settle(() => [storeOps, page?.getState()]);
 }
 
 // --- the operations ---------------------------------------------------------
@@ -523,13 +532,13 @@ async function phonePage(
     },
   });
   setup.presentDraftForTour(session.archive.url);
-  await flush();
+  await flush(store);
   if (restore) {
     await vi.waitFor(() => {
       expect(dom.draftOfferText.textContent).not.toBe("");
     });
     dom.draftRestore.click();
-    await flush();
+    await flush(store);
   }
   const list = (): ObjectListHandlers => {
     const bound = dom.objectList.listHandlers;
@@ -542,20 +551,20 @@ async function phonePage(
   return {
     edit: async (id, text) => {
       list().editText(id, text);
-      await flush();
+      await flush(store);
     },
     remove: async (id) => {
       list().remove(id);
-      await flush();
+      await flush(store);
     },
     undoDelete: async () => {
       list().undo();
-      await flush();
+      await flush(store);
     },
     place: async (object) => {
       // As `creator-placement.ts` places after a tap in AR.
       ctx.tourDocument.place(object, {}, "a pin");
-      await flush();
+      await flush(store);
     },
     placeOwnStation: async (object) => {
       // As `creator-placement.ts` places after "New station here" and a
@@ -563,7 +572,7 @@ async function phonePage(
       ctx.tourDocument.armNewStation(true);
       ctx.tourDocument.armNewStation(false);
       ctx.tourDocument.place(object, { ownStation: true }, "a pin");
-      await flush();
+      await flush(store);
     },
     move: async (id, lat, lon) => {
       // As `object-editing.ts`'s move changes the document (its AR
@@ -574,7 +583,7 @@ async function phonePage(
         { ...found, geo: { ...found.geo, lat, lon } },
         "a note",
       );
-      await flush();
+      await flush(store);
     },
     moveStation: async (stationId, geo) => {
       // As `creator-settle.ts`'s settle moves it once its code was
@@ -588,11 +597,11 @@ async function phonePage(
         [{ id: `code-${stationId}`, json: levelAt(geo) }],
         "the settle of this visit",
       );
-      await flush();
+      await flush(store);
     },
     undo: async () => {
       ctx.tourDocument.undo();
-      await flush();
+      await flush(store);
     },
     setNeedsNoGps: () =>
       Promise.reject(new NoSuchOperation("phone: the needs-no-GPS setting")),
@@ -610,7 +619,7 @@ async function phonePage(
       // refusal is said beside the field and changes nothing, as on the
       // desktop.
       if (change.name !== undefined) setup.renameTour(change.name);
-      return flush();
+      return flush(store);
     },
     save: async () => {
       const started = setup.finishNow();

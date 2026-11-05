@@ -20,6 +20,7 @@ import {
   type NarrationSection,
   type NarrationSectionDeps,
 } from "./narration-section.js";
+import { settle } from "../../test-support/settle.js";
 
 const BODY = "The mill turned all day. The miller slept at night.";
 const VTT = [
@@ -107,7 +108,12 @@ const btn = (act: string) =>
 const file = (text: string, name: string) => new File([text], name);
 /** Let the awaited reads and file reads run. */
 async function flush(): Promise<void> {
-  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  await settle(() => [
+    section.node.innerHTML,
+    said.length,
+    shown.length,
+    edits.length,
+  ]);
   await section.settled();
 }
 
