@@ -13,11 +13,13 @@ codes, and a chip per layer the view can show, drawn from the tour,
 - `TreeInput` - `{ stations, assets, codes: { id, title, meta }[], view,
 layers, query? }`; `view` is the `editorView` state (its
   `unlockedStations` optional), `layers` the layers the view can draw
-  (the others get no chip), `query` the tree's search.
+  (the others get no chip), `query` the tree's search, `searchFolded`
+  the stations a search unfolded whose arrow folded them again (the
+  shell's, cleared with each new search).
 - `buildTree(input)` -> `TreeModel` `{ sections, stationCount, query,
 cards, codes, chips }`:
-  - `TreeCard` - `{ id, selection, number, title, description | null,
-imagePath | null, open, count, unlocked, selected, context, folders,
+  - `TreeCard` - `{ id, selection, number, title, imagePath | null,
+open, searchOpened, count, unlocked, selected, context, folders,
 children }`; `count` is how many items it holds, `unlocked` whether
     its position may be moved (every station starts locked), `context`
     is true for the card of a selected item; `children` are its free
@@ -28,7 +30,9 @@ children }`; `count` is how many items it holds, `unlocked` whether
     2D rail's does (`../editor-model.ts` `matchesQuery`): a station
     whose name or description holds it is listed with all its items as
     its fold has them; else one with items whose title or kind's words
-    hold it is listed unfolded with just those; else it is left out.
+    hold it is listed with just those (`searchOpened`), unfolded
+    unless `searchFolded` names it; else it is left out. The
+    description is matched, not listed: it is the inspector's.
     The kind's words are the rail's for a pin and a photo ("note short
     text", "note picture"), "long text reading sign" and "3d model".
     Codes are listed when their title or line holds it.

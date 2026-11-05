@@ -883,11 +883,14 @@ describe("drawInspector", () => {
         (b) => [b.dataset["act"], b.querySelector(".lbl")?.textContent],
       );
     draw("station:gate");
+    // Adding is the tree's and the palette's; Delete comes last, behind
+    // a separator, so it is never the next button by accident.
     expect(acts()).toEqual([
-      ["add-pin", "Add a pin"],
       ["ground-items", "Put items on the ground"],
       ["delete", "Delete station"],
     ]);
+    const sep = dock.body.querySelector('.acts [role="separator"]');
+    expect(sep?.nextElementSibling?.getAttribute("data-act")).toBe("delete");
     const del = dock.body.querySelector('.acts [data-act="delete"]');
     expect(del?.getAttribute("aria-keyshortcuts")).toBe("Delete");
     expect(del?.querySelector("kbd")?.getAttribute("aria-hidden")).toBe("true");
@@ -898,6 +901,11 @@ describe("drawInspector", () => {
       ["ground", "Put on the ground"],
       ["delete", "Delete photo"],
     ]);
+    expect(
+      dock.body
+        .querySelector('.acts [role="separator"]')
+        ?.nextElementSibling?.getAttribute("data-act"),
+    ).toBe("delete");
     // A code is read-only here: no actions.
     draw("level-1");
     expect(acts()).toEqual([]);

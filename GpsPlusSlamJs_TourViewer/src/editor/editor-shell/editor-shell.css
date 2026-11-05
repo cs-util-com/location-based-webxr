@@ -627,6 +627,7 @@ body[data-view="3d"] #view3d {
 
 .nomatch {
   padding: 10px 12px;
+  overflow-wrap: anywhere;
   color: var(--s-dim);
   font-size: 11px;
 }
@@ -2612,6 +2613,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   padding: 4px 6px 6px;
 }
 
+/* Delete stands apart from the commands before it. */
+.asep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--s-line);
+}
+
 .act {
   display: flex;
   align-items: center;
@@ -2796,6 +2804,11 @@ body[data-view="3d"] #view3d .view3d-canvas {
 @media (width <= 720px) {
   :root {
     --s-name-min: 94px;
+  }
+
+  /* Its key is a keyboard's: a narrow screen keeps the word. */
+  body[data-view="3d"] #studio-add kbd {
+    display: none;
   }
 
   body[data-view="3d"] #topbar .tbtn > svg.i:first-child:not(:last-child) {

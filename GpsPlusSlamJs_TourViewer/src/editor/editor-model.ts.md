@@ -47,7 +47,8 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 - `photoSource(item)` - where a photo item's bytes are: its content path
   (`loadContentEntry` joins the tour's folder); null without a photo (E1
   review #1).
-- `matchesQuery(query, texts)` - whether the trimmed query is in one of
+- `matchesQuery(query, texts)` - (both sides folded to one Unicode form,
+  NFC, and lower case) whether the trimmed query is in one of
   `texts`, case-insensitive; an empty query is in everything. The one
   matching rule of the 2D rail's search and the 3D tree's
   (`editor-shell/tree-model.ts`).

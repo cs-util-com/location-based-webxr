@@ -60,6 +60,35 @@ describe("paletteRows", () => {
     ]);
   });
 
+  it("adds to the station whose number the query names exactly, over the selection whose number contains it", () => {
+    // Why: places match by substring, so "1" is found in "in 11 ..."
+    // too, and the selection's default bonus once won: "long 1" with
+    // station 11 selected added to 11, not 1.
+    const twelve: PaletteStation[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `s${String(i + 1)}`,
+      number: i + 1,
+      title: `Stop ${String(i + 1)}`,
+    }));
+    expect(short(paletteRows("long 1", twelve, "s11"))[0]).toBe("longText@s1");
+    expect(short(paletteRows("short 2", twelve, "s12"))[0]).toBe("pin@s2");
+    // A number that only some places contain still lists them all.
+    expect(short(paletteRows("long 1", twelve, "s11"))).toContain(
+      "longText@s11",
+    );
+    // The selection still wins a kind named alone.
+    expect(short(paletteRows("long", twelve, "s11"))[0]).toBe("longText@s11");
+  });
+
+  it("matches a query typed in another Unicode form (NFC)", () => {
+    const cafe: PaletteStation[] = [
+      { id: "cafe", number: 1, title: "Caf\u00e9 corner" },
+    ];
+    // "e" + combining acute against the title's precomposed letter.
+    expect(short(paletteRows("long cafe\u0301", cafe, null))).toEqual([
+      "longText@cafe",
+    ]);
+  });
+
   it("puts the kind named by its label over one matched by another word", () => {
     // "text" starts both labels' second word; "short" only the pin's label.
     expect(short(paletteRows("short", STATIONS, "gate"))[0]).toBe("pin@gate");

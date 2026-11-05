@@ -73,12 +73,14 @@ export interface TreeCard {
   /** 1-based, in the tour's order. */
   readonly number: number;
   readonly title: string;
-  /** Trimmed; null when there is none. */
-  readonly description: string | null;
   /** The card picture's content path in the tour, or none. */
   readonly imagePath: string | null;
-  /** Its items listed: unfolded, or a search found some of them. */
+  /** Its items listed: unfolded, or a search found some of them (and
+   *  its arrow has not folded it since: `TreeInput.searchFolded`). */
   readonly open: boolean;
+  /** A search lists it for some of its items, not for itself: its fold
+   *  is the search's (`TreeInput.searchFolded`), not the store's. */
+  readonly searchOpened: boolean;
   /** How many items it holds (its folded row shows it). */
   readonly count: number;
   /** Its position may be moved (every station starts locked). */
@@ -135,6 +137,9 @@ export interface TreeInput {
   readonly layers: readonly ShellLayer[];
   /** The tree's search (none: every station, every code). */
   readonly query?: string;
+  /** The stations a search unfolded whose arrow folded them again while
+   *  it runs (the shell's, cleared with each new search). */
+  readonly searchFolded?: readonly string[];
 }
 
 /**
@@ -166,13 +171,15 @@ export function stationImagePath(
  * The tree for `input`. With a search (`query`, the 2D rail's matching:
  * `matchesQuery`), a station is listed when its name or description holds
  * it - with its items, folded as it was - or when items of it do: then
- * it is listed unfolded with just those items. Codes are listed when
+ * it is listed with just those items, unfolded unless `searchFolded`
+ * names it. Codes are listed when
  * their title or line holds it.
  */
 export function buildTree(input: TreeInput): TreeModel {
   const { stations, view } = input;
   const query = (input.query ?? "").trim();
   const open = new Set(view.openStations);
+  const searchFolded = new Set(input.searchFolded ?? []);
   const unlocked = new Set(view.unlockedStations ?? []);
   const cards = stations.flatMap((station, index): TreeCard[] => {
     const selection = `station:${station.id}`;
@@ -197,9 +204,11 @@ export function buildTree(input: TreeInput): TreeModel {
         selection,
         number: index + 1,
         title,
-        description: description === "" ? null : description,
         imagePath: stationImagePath(station, input.assets),
-        open: open.has(station.id) || !stationFound,
+        open: stationFound
+          ? open.has(station.id)
+          : !searchFolded.has(station.id),
+        searchOpened: !stationFound,
         count: items.length,
         unlocked: unlocked.has(station.id),
         selected: view.selected === selection,

@@ -170,7 +170,7 @@ import {
   createEditorShell,
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
-import { newLongText, newPin, type NewItemInput } from "./new-pin.js";
+import { addNewItem } from "./new-pin.js";
 import type { AddKind } from "./editor-shell/tree-add-menu.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
@@ -1411,31 +1411,32 @@ async function writeNarrationEdit(
   return "written";
 }
 
-/** The 3D inspector's Add pin and the tree's add in place: a new item of
- *  `kind` in `stationId`, clear of its items and on the ground where
- *  that has loaded (`new-pin.ts`), selected and said once it was placed;
- *  one step. */
+/** The tree's add in place and the palette's: a new item of `kind` in
+ *  `stationId`, clear of its items and on the ground where that has
+ *  loaded (`new-pin.ts`), selected and said once it was placed, its
+ *  refusal (a gone station's too) toasted; one step. */
 function addItemTo(stationId: string, kind: AddKind): void {
-  if (editor === null) return;
-  const station = manifestToWrite(store.getState().tourDocument)?.stations.find(
-    (s) => s.id === stationId,
-  );
-  if (station === undefined) return;
-  endUndo();
-  const input: NewItemInput = {
-    station,
+  const open = editor;
+  if (open === null) return;
+  const outcome = addNewItem({
+    stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+    stationId,
+    kind,
     id: newObjectId(),
     nowIso: new Date().toISOString(),
     groundAt: (place) => shown3d?.groundAt(place) ?? null,
-  };
-  const item = kind === "pin" ? newPin(input) : newLongText(input);
-  const outcome = editor.place(item);
-  refresh();
+    place: (item) => {
+      endUndo();
+      const placed = open.place(item);
+      refresh();
+      return placed;
+    },
+  });
   if (outcome.kind === "refused") {
     toast(outcome.reason);
     return;
   }
-  select(item.id);
+  select(outcome.item.id);
   const what = kind === "pin" ? "a pin" : "a long text";
   toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
   autosave.changed();

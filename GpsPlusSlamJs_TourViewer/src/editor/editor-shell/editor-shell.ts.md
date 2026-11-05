@@ -20,20 +20,29 @@ the 3D view shows.
 
 The tree's head holds a search field (`#tree-search`, the page's, never
 redrawn: each letter typed draws the tree again for it, Escape empties it
-before the page's Escape drops the selection) and "Fold every station"
+before the page's Escape drops the selection; emptied too when another
+tour opens and by an add in place, so the new item shows) and "Fold every station"
 (`#tree-collapse`, hidden while the dock is folded), which folds every
-unfolded station.
+unfolded station. A station the search unfolded (it found items of it)
+folds on its arrow all the same: its fold is the search's
+(`TreeInput.searchFolded`, cleared with each new search), not the
+store's. While a search runs the grips drag nothing (a drop would order
+the hidden stations unseen), and a press on one says "Clear the search
+to change the order of the stations".
 
 Adding happens where the creator looks. A station row's "+" (and an
 empty station's "Add content") opens the tree's type menu
 (`tree-add-menu.ts`, made once for every row): a short text or a long
 text added to that station through `deps.edits.addItem`, the menu
 closed first and the focus back on that station's "+" after the add's
-redraw. Ctrl+K, outside a field and with no dialog open, opens the add
-palette (`add-palette.ts`): a kind and a place typed in one query, its
+redraw. Ctrl+K - anywhere but in a text area or an editable element
+(the long-text writer's Link key) and with no dialog open, the
+browser's own Ctrl+K prevented - and the top bar's Add (`#studio-add`,
+the way in for a touch screen) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
 place the selected station (or the station of the selected item) when
 the query names none, and its New station the head's "+" (a station at
-the centre of the view). Both close with the view. The tree's foot
+the centre of the view). Escape closes the palette before the help it
+was opened over. Both close with the view. The tree's foot
 (`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
 nor while the dock is folded.
 
@@ -53,7 +62,7 @@ inspector (a station's name, description, radius, place and heading; a
 pin's text; an item's offset, height and heading; a model's size)
 becomes one edit (`inspector-edits.ts`) and one page command
 (`deps.edits`), one undo step per field; so do Put on the ground, Put
-items on the ground, the card's picture and Add pin, and a story
+items on the ground, the card's picture, and a story
 character's view and advance chips (`characterChipEdit`: his station's
 `StationEdit.character`; the chip already pressed writes nothing).
 
@@ -76,7 +85,7 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     or a size, as the gestures write it; returns whether it was written,
     false when the page refused it and said why), `groundItems(items)` (heights,
     one step), `addItem(stationId, kind)` (a short text or a long text,
-    from the inspector's Add pin and the tree's add in place);
+    from the tree's add in place and the palette);
   - `deps.say(text)` - a passing line (the page's toast).
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
   the ground menu (a right click, a long press): opened at `point` (px in

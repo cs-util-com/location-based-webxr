@@ -190,12 +190,18 @@ export const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
   station: "",
 };
 
-/** Whether `query` (case-insensitive, trimmed) is in one of `texts`;
- *  an empty query is in everything. The 2D rail's search, and the 3D
- *  tree's (`editor-shell/tree-model.ts`). */
+/** A text folded for the search: one Unicode form (NFC), lower case. */
+function foldForSearch(text: string): string {
+  return text.normalize("NFC").toLowerCase();
+}
+
+/** Whether `query` (trimmed; case-insensitive and blind to the Unicode
+ *  form, so a combining accent matches a precomposed one) is in one of
+ *  `texts`; an empty query is in everything. The 2D rail's search, and
+ *  the 3D tree's (`editor-shell/tree-model.ts`). */
 export function matchesQuery(query: string, texts: readonly string[]): boolean {
-  const q = query.trim().toLowerCase();
-  return q === "" || texts.some((text) => text.toLowerCase().includes(q));
+  const q = foldForSearch(query.trim());
+  return q === "" || texts.some((text) => foldForSearch(text).includes(q));
 }
 
 /** The rail's rows for a search: every item whose title, second line or

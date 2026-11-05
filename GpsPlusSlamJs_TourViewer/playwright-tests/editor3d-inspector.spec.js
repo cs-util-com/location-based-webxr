@@ -587,9 +587,10 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await expect.poll(() => revision(page)).toBe(before + 3);
   await expect(field(page, "heading")).toHaveValue("90.0");
 
-  // Add a pin: a new pin in b, selected and said; its words typed in the
-  // head.
-  await act(page, "add-pin").click();
+  // Add a pin (the row's "+"): a new pin in b, selected and said; its
+  // words typed in the head.
+  await page.locator('#tree-body .card[data-station="b"] .head .add').click();
+  await page.locator('#tree-add-menu [data-kind="pin"]').click();
   await expect(
     page.locator(".toast", { hasText: 'Added a pin to "Station B"' }),
   ).toBeVisible();

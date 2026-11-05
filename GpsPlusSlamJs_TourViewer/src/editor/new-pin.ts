@@ -102,6 +102,47 @@ export function newPin(input: NewItemInput): TourPin {
   };
 }
 
+/** Why an add found no station: it went (an undo, a delete) between
+ *  the press and the add. */
+const STATION_GONE =
+  "That station is no longer in this tour - nothing was added.";
+
+/** What an add came to: the item placed, or why not. */
+export type NewItemOutcome =
+  | { readonly kind: "added"; readonly item: TourPin | TourReadingSign }
+  | { readonly kind: "refused"; readonly reason: string };
+
+/**
+ * The 3D editor's add in place: a new pin or long text (`newPin`,
+ * `newLongText`) in the station `stationId` of `stations`, handed to
+ * `place` (the tour's own check). Refused in words when the station is
+ * gone (nothing placed) or when `place` refuses (its words).
+ */
+export function addNewItem(
+  input: Omit<NewItemInput, "station"> & {
+    readonly stations: readonly TourStation[];
+    readonly stationId: string;
+    readonly kind: "pin" | "longText";
+    readonly place: (
+      item: TourPin | TourReadingSign,
+    ) =>
+      | { readonly kind: "placed" }
+      | { readonly kind: "refused"; readonly reason: string };
+  },
+): NewItemOutcome {
+  const station = input.stations.find((s) => s.id === input.stationId);
+  if (station === undefined) return { kind: "refused", reason: STATION_GONE };
+  const made: NewItemInput = {
+    station,
+    id: input.id,
+    nowIso: input.nowIso,
+    groundAt: input.groundAt,
+  };
+  const item = input.kind === "pin" ? newPin(made) : newLongText(made);
+  const placed = input.place(item);
+  return placed.kind === "placed" ? { kind: "added", item } : placed;
+}
+
 /** The body a new long text starts with: the format requires one. */
 const NEW_LONG_TEXT_BODY = "Write the text here.";
 

@@ -358,9 +358,18 @@ test("Ctrl+K adds a kind to a place named in one query, and leaves the long-text
   await page.keyboard.press("Escape");
   await expect(palette).toBeHidden();
   expect(await selected(page)).toBe(chosen);
-  // In the tree's search Ctrl+K is the field's.
+  // In the tree's search too (a line field has no Ctrl+K of its own):
+  // the palette, and the browser's own Ctrl+K never runs.
   await page.locator("#tree-search").focus();
   await page.keyboard.press("Control+k");
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+  // The top bar's Add, for a screen with no keyboard.
+  await page.locator("#studio-add").click();
+  await expect(palette).toBeVisible();
+  await expect(page.locator("#add-palette-input")).toBeFocused();
+  await page.keyboard.press("Escape");
   await expect(palette).toBeHidden();
 });
 
@@ -583,6 +592,66 @@ test("a station copied with its photo is saved with a picture of its own, and op
   ).getEntries();
   const tourJson = names.find((e) => e.filename === "tour.json");
   expect(await tourJson?.getData(new TextWriter())).toContain(copy);
+});
+
+test("a long text added in place is saved and opens again as it was made", async ({
+  page,
+  context,
+}) => {
+  // Why: the new long text must be one the file keeps - its kind, its
+  // title, its body and its station - and that the next open lists, or
+  // the add makes something a save loses.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await context.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showSaveFilePicker;
+  });
+  await answerHosts(page);
+  await page.goto("/edit.html?globe=0");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const { zip } = await photoTour(page);
+  await openZip(page, zip, "one-photo.zip");
+  await expect(card(page, "fountain")).toBeVisible({ timeout: 60_000 });
+  await card(page, "fountain").locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="longText"]').click();
+  await expect(
+    page.locator(".toast", { hasText: 'Added a long text to "' }),
+  ).toBeVisible();
+  const made = await selected(page);
+
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const files = await entries(readFileSync(saved));
+  const written = JSON.parse(
+    new TextDecoder().decode(files.get("tour.json") ?? new Uint8Array()),
+  );
+  const block = written.stations[0].blocks.find(
+    (/** @type {any} */ b) => b.id === made,
+  );
+  expect(block).toMatchObject({
+    kind: "longText",
+    title: "New long text 1",
+    body: "Write the text here.",
+  });
+
+  const next = await context.newPage();
+  await next.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(next);
+  await next.goto("/edit.html?globe=0");
+  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(next, readFileSync(saved), "one-photo.zip");
+  const again = card(next, "fountain");
+  await expect(again).toBeVisible({ timeout: 60_000 });
+  const fold = again.locator(".tw");
+  if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+  await expect(
+    again.locator(`[data-select="${made}"]`, { hasText: "New long text 1" }),
+  ).toBeVisible();
 });
 
 /**

@@ -11,9 +11,10 @@ the add.
 
 - `isPaletteKey(event)` - Ctrl+K or Cmd+K without Shift or Alt, by the
   key's letter, else by its place (`KeyK`) where the layout's letter is
-  not Latin. Shift and Alt are left to others; the shell asks it only
-  outside a field, so the long-text writer's Ctrl+K (its Link key) and
-  the bottom panel's Ctrl+J and Ctrl+Shift+M stay theirs.
+  not Latin. Shift and Alt are left to others; the shell asks it
+  outside a text area or an editable element (a line field included),
+  so the long-text writer's Ctrl+K (its Link key) and the bottom
+  panel's Ctrl+J and Ctrl+Shift+M stay theirs.
 - `createAddPalette({ host, stations, selectedStation, add })` ->
   `{ open(), close(returnFocus), isOpen() }`:
   - `open()` - shown with an empty query over a backdrop, the focus in

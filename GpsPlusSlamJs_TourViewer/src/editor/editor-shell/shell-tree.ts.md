@@ -33,7 +33,8 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     `.fill` "Add content" (`data-fill`), the same menu.
 
   A search that finds nothing draws `.nomatch` 'Nothing matches "..."'
-  at the body's top. The station's description is no line of the list
+  at the body's top (wrapped anywhere: a long word typed stays inside
+  the dock). The station's description is no line of the list
   (the inspector shows it).
 
   After a redraw the focus goes back to the control that had it (found
@@ -49,6 +50,8 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   - `data-drag` - a card's grip (`.grip`, a `<span>` beside the card's
     buttons, never inside one, hidden from screen readers, titled "Drag
     to change its place in the tour"): the station `tree-drag.ts` drags.
+    While a search runs it is `.grip.off`, with no `data-drag` (it drags
+    nothing) and titled "Clear the search to change the order".
     It sits first in the row (4 px in), left of the fold arrow, its
     height, 4 px apart; drawn only under the pointer, on the selection
     and on a touch screen.

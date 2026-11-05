@@ -21,10 +21,12 @@ where, best first; Enter adds the first.
     in every station, then a new station;
   - an empty query lists the default place's rows only: the selected
     station's (else the first station's) kinds and the new station;
-  - otherwise a row is listed when every word of the query (lower case,
-    split on spaces) starts one of its kind's words (its label and
+  - otherwise a row is listed when every word of the query (NFC, lower
+    case, split on spaces; the places folded the same way) starts one of its kind's words (its label and
     `words`) or is anywhere in its place;
-  - ordered by a score: 10 for the default place, -1 for the new
+  - ordered by a score: 20 for a station whose number a word is
+    exactly (so "long 1" adds to 1 even with 11 selected, whose place
+    contains "1" too), 10 for the default place, -1 for the new
     station, per word 3 for a kind word it starts and 3 more when it
     starts the kind's label; equal scores keep the tour's order;
   - at most `PALETTE_MAX_ROWS` (40).
@@ -48,7 +50,9 @@ paletteRows("long steps", stations, "gate");
 ## Tests
 
 `add-palette-model.test.ts`: the empty query at the selection and at
-the first station, kind and place in one query, the label's rank, no
+the first station, kind and place in one query, an exact station
+number over the selection among 12 stations, a query in another
+Unicode form, the label's rank, no
 match and no picture, a tour without stations, case and spaces, and a
 property over 30 stations (each row once, the cap, a kind alone first at
 the selection).

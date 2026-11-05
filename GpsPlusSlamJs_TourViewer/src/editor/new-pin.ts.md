@@ -2,8 +2,8 @@
 
 ## Purpose
 
-The editor's new items, as data, pure: the inspector's Add pin and the
-tree's add in place (a short text or a long text). Where a new item goes
+The editor's new items, as data, pure: the tree's add in place and the
+add palette (a short text or a long text). Where a new item goes
 in its station (inside the circle, clear of the items already there) and
 the item itself, named by its number, standing on the ground where that
 has loaded and seated in the station it was added to.
@@ -28,6 +28,14 @@ has loaded and seated in the station it was added to.
   station's long texts), its body `NEW_LONG_TEXT_BODY` ("Write the text
   here."; the file's long text needs a body), placed and seated as a pin
   is.
+- `addNewItem({ stations, stationId, kind, id, nowIso, groundAt, place })`
+  -> `NewItemOutcome` (`{ kind: "added", item }` or `{ kind: "refused",
+reason }`): the add itself - the new pin or long text of the station,
+  handed to `place` (the tour's own check, `EditorSession.place`).
+  Refused in words when the station is gone (an undo or a delete between
+  the press and the add: "That station is no longer in this tour -
+  nothing was added.", `place` not called) or when `place` refuses (its
+  words). The page toasts the refusal.
 
 ## Invariants & assumptions
 
@@ -54,4 +62,5 @@ session.place(pin); // one undo step
 property that the spot is inside the circle for any items and radius;
 the pin's fields, its place in the frame, its height with and without
 the ground; the long text's fields and its round trip through the file's
-record (it parses back as written).
+record (it parses back as written); `addNewItem`'s gone station, its
+passed-on refusal and its placed item.

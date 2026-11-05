@@ -388,14 +388,27 @@ describe("the Ctrl+K palette", () => {
     shell.hide();
   });
 
-  // Why: in a field Ctrl+K is the field's (the long-text writer's Link
-  // key), and over a dialog it is the dialog's; and the palette is gone
-  // with the view.
-  it("leaves Ctrl+K to a field and to a dialog, and closes with the view", () => {
-    const { deps, shell } = setUp();
+  // Why: a line field (the tree's search, a name) has no Ctrl+K of its
+  // own, so the palette opens there too and the browser's own Ctrl+K
+  // (the address bar's search) never runs; in a text of several lines
+  // Ctrl+K is the field's (the long-text writer's Link key), and over a
+  // dialog it is the dialog's; and the palette is gone with the view.
+  it("opens from a line field, leaves Ctrl+K to a text area and to a dialog, and closes with the view", () => {
+    const { deps, select, shell } = setUp();
     const search = document.getElementById("tree-search");
     search?.focus();
-    const typed = ctrlK(search ?? document.body);
+    const inSearch = ctrlK(search ?? document.body);
+    expect(inSearch.defaultPrevented).toBe(true);
+    expect(palette()?.hidden).toBe(false);
+    input().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(palette()?.hidden).toBe(true);
+    select("station:a");
+    const area = field("description");
+    expect(area).toBeInstanceOf(HTMLTextAreaElement);
+    area.focus();
+    const typed = ctrlK(area);
     expect(typed.defaultPrevented).toBe(false);
     expect(palette()?.hidden).toBe(true);
     (deps as { dialogOpen: () => boolean }).dialogOpen = () => true;
@@ -406,6 +419,39 @@ describe("the Ctrl+K palette", () => {
     expect(palette()?.hidden).toBe(false);
     shell.hide();
     expect(palette()?.hidden).toBe(true);
+  });
+
+  // Why: a touch tablet has neither the keyboard's Ctrl+K nor a mouse
+  // for a row's "+": the top bar's Add is the palette's button.
+  it("opens from the top bar's Add", () => {
+    const { shell } = setUp();
+    const add = document.getElementById("studio-add");
+    expect(add?.getAttribute("aria-keyshortcuts")).toBe("Control+K");
+    add?.click();
+    expect(palette()?.hidden).toBe(false);
+    expect(document.activeElement).toBe(input());
+    shell.hide();
+  });
+
+  // Why: the palette opened over the help is the topmost layer, so
+  // Escape closes it first - the help goes on the next Escape.
+  it("closes on Escape before the help it was opened over", () => {
+    const { shell } = setUp();
+    document.getElementById("studio-help")?.click();
+    const help = document.getElementById("shell-help");
+    expect(help?.classList.contains("show")).toBe(true);
+    ctrlK();
+    expect(palette()?.hidden).toBe(false);
+    input().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(palette()?.hidden).toBe(true);
+    expect(help?.classList.contains("show")).toBe(true);
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(help?.classList.contains("show")).toBe(false);
+    shell.hide();
   });
 });
 
@@ -438,6 +484,97 @@ describe("the tree's search and its Fold every station", () => {
     expect(search.value).toBe("");
     expect(listed()).toEqual(["a", "b"]);
     expect(store.getState().editorView.selected).toBe("station:a");
+    shell.hide();
+  });
+
+  /** `text` typed into the tree's search. */
+  const search = (text: string): HTMLInputElement => {
+    const field = document.getElementById("tree-search") as HTMLInputElement;
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    return field;
+  };
+
+  // Why: a search belongs to the tour it was typed over; another tour
+  // opened under it would otherwise list only what matches a word typed
+  // for the last one, or nothing.
+  it("is emptied when another tour opens", () => {
+    const { store, shell } = setUp();
+    const field = search("pin b");
+    expect(listed()).toEqual(["b"]);
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [station("a", 0), station("b", 0.0004)],
+        },
+      }),
+    );
+    expect(field.value).toBe("");
+    expect(listed()).toEqual(["a", "b"]);
+    shell.hide();
+  });
+
+  // Why: with a search the list hides stations, so a drop among those
+  // shown would put the hidden ones in an order nobody saw; the drag is
+  // refused, and saying why keeps it from looking broken.
+  it("refuses a drag while it filters, and says why", () => {
+    const { deps, shell } = setUp();
+    const grips = () => [
+      ...document.querySelectorAll<HTMLElement>("#tree-body .grip"),
+    ];
+    expect(grips().map((g) => g.dataset["drag"])).toEqual(["a", "b"]);
+    search("station");
+    expect(grips().map((g) => g.dataset["drag"])).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(grips().every((g) => g.classList.contains("off"))).toBe(true);
+    grips()[0]?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(deps.say).toHaveBeenCalledWith(
+      "Clear the search to change the order of the stations",
+    );
+    shell.hide();
+  });
+
+  // Why: a station the search unfolded (it found items of it) is open
+  // without the store saying so, so its arrow must fold it all the same
+  // - and a new search starts with every found station unfolded again.
+  it("folds a station it unfolded on that station's arrow", () => {
+    const { store, shell } = setUp();
+    search("pin b");
+    const card = () => document.querySelector("#tree-body .card");
+    expect(card()?.classList.contains("open")).toBe(true);
+    document
+      .querySelector<HTMLElement>('#tree-body [data-unfold="b"]')
+      ?.click();
+    expect(card()?.classList.contains("open")).toBe(false);
+    expect(store.getState().editorView.openStations).not.toContain("b");
+    document
+      .querySelector<HTMLElement>('#tree-body [data-unfold="b"]')
+      ?.click();
+    expect(card()?.classList.contains("open")).toBe(true);
+    document
+      .querySelector<HTMLElement>('#tree-body [data-unfold="b"]')
+      ?.click();
+    search("pin");
+    expect(card()?.classList.contains("open")).toBe(true);
+    shell.hide();
+  });
+
+  // Why: an item added while a search runs would be made and not shown
+  // (its name, "New pin 2", matches no word typed): the add empties the
+  // search, so the new row is in the list.
+  it("is emptied by an add, so what was added shows", () => {
+    const { edits, shell } = setUp();
+    const field = search("pin b");
+    document.querySelector<HTMLElement>('#tree-body [data-add="b"]')?.click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="pin"]')
+      ?.click();
+    expect(edits.addItem).toHaveBeenCalledWith("b", "pin");
+    expect(field.value).toBe("");
+    expect(listed()).toEqual(["a", "b"]);
     shell.hide();
   });
 

@@ -21,9 +21,10 @@
  * station's lock beside its Place (`lock`, pressed while locked), its
  * Earlier and Later beside its place in the tour (`earlier`, `later`, off
  * at the ends), the card picture's choices (`image:<id>`, the shown one
- * pressed), and the selection's commands in words: a station's `add-pin`,
+ * pressed), and the selection's commands in words: a station's
  * `ground-items` and `delete`, its own `ground` under Place; an item's
- * `split` ("Move to a new station"), `ground` and `delete`. A command the
+ * `split` ("Move to a new station"), `ground` and `delete` - Delete
+ * last, behind a separator. A command the
  * shell is running (`busy`) shows as waiting.
  *
  * A long text shows its title in the head, typed there, with the
@@ -391,9 +392,17 @@ function lockedGround(
   return button;
 }
 
+/** The selection's commands, Delete last behind a separator. */
 function actions(buttons: readonly HTMLButtonElement[]): HTMLElement {
   const box = el("div", "acts");
-  box.append(...buttons);
+  for (const button of buttons) {
+    if (button.dataset["act"] === "delete") {
+      const sep = el("div", "asep");
+      sep.setAttribute("role", "separator");
+      box.append(sep);
+    }
+    box.append(button);
+  }
   return box;
 }
 
@@ -732,7 +741,6 @@ function stationParts(
   );
   const parts: HTMLElement[] = [
     actions([
-      action("add-pin", "pin", "Add a pin"),
       action("ground-items", "ground", "Put items on the ground", {
         disabled: off === 0,
         note: offCountText(off),

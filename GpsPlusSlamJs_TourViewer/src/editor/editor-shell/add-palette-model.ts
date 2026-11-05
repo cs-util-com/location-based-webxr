@@ -6,8 +6,10 @@
  * it found in the row's kind words (as a word's start) or in its place
  * (anywhere in it). An empty query lists what adds to the default place:
  * the selected station, else the first. The rows are ordered by how well
- * they match - the default place first, then the kind's name over its
- * other words - and the first is what Enter adds.
+ * they match - a station named by its exact number first, then the
+ * default place, then the kind's name over its other words - and the
+ * first is what Enter adds. Both sides are folded to one Unicode form
+ * (NFC) and lower case.
  *
  * @see add-palette-model.ts.md
  */
@@ -52,10 +54,17 @@ interface Candidate {
   readonly kindWords: readonly string[];
   readonly name: string;
   readonly placeText: string;
+  /** Its station's number, as typed ("2"); null for a new station. */
+  readonly number: string | null;
+}
+
+/** Folded for matching: one Unicode form (NFC), lower case. */
+function fold(text: string): string {
+  return text.normalize("NFC").toLowerCase();
 }
 
 function wordsOf(text: string): string[] {
-  return text.toLowerCase().split(/\s+/).filter(Boolean);
+  return fold(text).split(/\s+/).filter(Boolean);
 }
 
 function candidates(
@@ -79,7 +88,8 @@ function candidates(
         atDefault: station.id === defaultId,
         kindWords: wordsOf(`${choice.label} ${choice.words}`),
         name: choice.label.toLowerCase(),
-        placeText: place.toLowerCase(),
+        placeText: fold(place),
+        number: String(station.number),
       });
     }
   }
@@ -94,6 +104,7 @@ function candidates(
     kindWords: wordsOf(NEW_STATION_WORDS),
     name: "new station",
     placeText: NEW_STATION_PLACE,
+    number: null,
   });
   return out;
 }
@@ -125,6 +136,9 @@ export function paletteRows(
       let score =
         (c.atDefault ? 10 : 0) - (c.row.add.kind === "station" ? 1 : 0);
       for (const w of words) {
+        // A station's own number outranks the selection, whose number
+        // may merely contain it ("1" in "in 11 ...").
+        if (w === c.number) score += 20;
         if (kindHit(c, w)) score += 3;
         if (c.name.startsWith(w)) score += 3;
       }

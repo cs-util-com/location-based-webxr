@@ -113,9 +113,9 @@ describe("buildTree", () => {
       [1, "Market Square", true],
       [2, "Station 2", false],
     ]);
-    const [a, b] = tree.cards;
-    expect(a?.description).toBe("Old");
-    expect(b?.description).toBeNull();
+    const [a] = tree.cards;
+    // The description is the inspector's, not a line of the row.
+    expect(a).not.toHaveProperty("description");
     expect(a?.selection).toBe("station:a");
     expect(a?.children.map((c) => [c.kind, c.title])).toEqual([
       ["pin", "Fountain <b>1612</b>"],
@@ -244,6 +244,38 @@ describe("the tree's search", () => {
     ]);
     const model = buildTree(input({ query: "3D" }));
     expect(model.cards[0]?.children.map((k) => k.id)).toEqual(["model-1"]);
+  });
+
+  // Why: a station the search unfolded (its items found) must fold on
+  // its arrow like any other; the store's fold is not what keeps it
+  // open, so the search's own folds (`searchFolded`) do.
+  it("folds a station the search unfolded when the search's folds name it", () => {
+    const tree = buildTree(input({ query: "square in" }));
+    expect(tree.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [true, true],
+    ]);
+    const folded = buildTree(
+      input({ query: "square in", searchFolded: ["a"] }),
+    );
+    expect(folded.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [false, true],
+    ]);
+    // A station found by its name keeps the store's fold.
+    const byName = buildTree(input({ query: "market", searchFolded: ["a"] }));
+    expect(byName.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [false, false],
+    ]);
+  });
+
+  // Why: a name typed with a combining accent and one stored precomposed
+  // (or the other way round) look the same and must match.
+  it("matches across Unicode forms (NFC), case-blind", () => {
+    const cafe = input({
+      stations: [station("c", { title: "Caf\u00e9 Luitpold" })],
+    });
+    expect(
+      buildTree({ ...cafe, query: "CAFE\u0301" }).cards.map((c) => c.id),
+    ).toEqual(["c"]);
   });
 
   it("finds codes by their title or line, and finds nothing for a word in none", () => {

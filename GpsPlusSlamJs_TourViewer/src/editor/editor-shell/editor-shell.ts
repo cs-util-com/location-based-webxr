@@ -107,7 +107,7 @@ import { drawTree } from "./shell-tree.js";
 import { createTreeAddMenu, type AddKind } from "./tree-add-menu.js";
 import { createAddPalette, isPaletteKey } from "./add-palette.js";
 import { stationTitle } from "../../station-run.js";
-import { buildTree, stationGroups } from "./tree-model.js";
+import { buildTree, stationGroups, type TreeModel } from "./tree-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
 import { createLongTextDock } from "../long-text/long-text-dock.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
@@ -323,6 +323,15 @@ function characterChipEdit(
 /** A story character's chip: its kind, his block and the chip's value. */
 const CHARACTER_CHIP = /^character-(view|advance):(.+):([^:]+)$/;
 
+/** A field that writes text of several lines (a text area, an editable
+ *  element): its keys are its own, Ctrl+K among them. */
+function inWritingField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
 export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const { store } = deps;
   const tree = {
@@ -358,11 +367,27 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
   });
   /** Add to a station, unfolded first so the new row shows (and the
-   *  focus that follows it has a row to land on). */
+   *  focus that follows it has a row to land on); a search runs no more,
+   *  as the new item's name would match none of its words. */
   function addInPlace(id: string, kind: AddKind): void {
+    if (tree.search.value !== "") {
+      tree.search.value = "";
+      searchFolded.clear();
+      drawTreeNow();
+    }
     store.dispatch(editorViewActions.stationFolded({ id, open: true }));
     deps.edits.addItem(id, kind);
   }
+  // The top bar's Add: the palette for a touch screen, with no keys.
+  byId<HTMLButtonElement>("studio-add").addEventListener("click", () => {
+    palette.open();
+  });
+  /** The tree as last drawn, and the stations a search unfolded whose
+   *  arrow folded them since (`TreeInput.searchFolded`), for the tour
+   *  of `searchedTour` (its open count) the search was typed over. */
+  let drawnTree: TreeModel | null = null;
+  const searchFolded = new Set<string>();
+  let searchedTour = store.getState().tourDocument.generation;
   const inspector = {
     root: byId("shell-inspector"),
     head: byId("inspector-head"),
@@ -638,23 +663,26 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
-  /** The tree drawn from the store and its search as they stand. */
+  /** The tree drawn from the store and its search as they stand; a
+   *  search typed over another tour is emptied first. */
   const drawTreeNow = () => {
     const tour = manifest();
-    const ui = state().editorView;
-    drawTree(
-      tree,
-      buildTree({
-        stations: tour?.stations ?? [],
-        assets: tour?.assets ?? [],
-        codes: deps.codes(),
-        view: ui,
-        layers: SHELL_LAYERS,
-        query: tree.search.value,
-      }),
-      ui.foldedDocks.tree,
-      pictures,
-    );
+    const { editorView: ui, tourDocument: doc } = state();
+    if (doc.generation !== searchedTour) {
+      searchedTour = doc.generation;
+      tree.search.value = "";
+      searchFolded.clear();
+    }
+    drawnTree = buildTree({
+      stations: tour?.stations ?? [],
+      assets: tour?.assets ?? [],
+      codes: deps.codes(),
+      view: ui,
+      layers: SHELL_LAYERS,
+      query: tree.search.value,
+      searchFolded: [...searchFolded],
+    });
+    drawTree(tree, drawnTree, ui.foldedDocks.tree, pictures);
   };
 
   const draw = () => {
@@ -1074,6 +1102,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const unfold = target.closest<HTMLElement>("[data-unfold]");
     if (unfold !== null) {
       const id = unfold.dataset["unfold"] ?? "";
+      if (drawnTree?.cards.find((c) => c.id === id)?.searchOpened === true) {
+        // The search unfolded it: its fold is the search's.
+        if (!searchFolded.delete(id)) searchFolded.add(id);
+        drawTreeNow();
+        pictures.sweep();
+        return;
+      }
       const open = state().editorView.openStations.includes(id);
       store.dispatch(editorViewActions.stationFolded({ id, open: !open }));
       return;
@@ -1136,6 +1171,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // The search draws the tree again as it is typed; the field is the
   // page's, never redrawn, so it keeps its focus and its text.
   tree.search.addEventListener("input", () => {
+    searchFolded.clear();
     drawTreeNow();
     pictures.sweep();
   });
@@ -1145,6 +1181,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // selection) waits for the next press.
     event.stopPropagation();
     tree.search.value = "";
+    searchFolded.clear();
     drawTreeNow();
     pictures.sweep();
   });
@@ -1178,6 +1215,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     );
   }
   tree.add.addEventListener("click", addStationAtCentre);
+  // A search hides stations, so a drop would order the hidden ones
+  // unseen: its grips drag nothing (`shell-tree.ts`), and say why.
+  tree.body.addEventListener("pointerdown", (event) => {
+    if ((event.target as Element).closest(".grip.off") !== null) {
+      deps.say("Clear the search to change the order of the stations");
+    }
+  });
   createTreeDrag({
     body: tree.body,
     cards: ".card[data-station]",
@@ -1341,6 +1385,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       event.stopImmediatePropagation();
       return;
     }
+    // The palette is a layer over everything else, the help too.
+    if (event.key === "Escape" && palette.isOpen()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      palette.close(true);
+      return;
+    }
     if (
       event.key === "Escape" &&
       helpBox.classList.contains("show") &&
@@ -1363,9 +1414,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       event.stopPropagation();
       return;
     }
-    // Ctrl+K adds anything (`add-palette.ts`); in a field it is the
-    // field's (the long-text writer's Link key).
-    if (isPaletteKey(event) && !inField(event.target) && !deps.dialogOpen()) {
+    // Ctrl+K adds anything (`add-palette.ts`), from a line field too (the
+    // browser's own Ctrl+K never runs); in a text of several lines it is
+    // the field's (the long-text writer's Link key).
+    if (
+      isPaletteKey(event) &&
+      !inWritingField(event.target) &&
+      !deps.dialogOpen()
+    ) {
       event.preventDefault();
       event.stopPropagation();
       palette.open();

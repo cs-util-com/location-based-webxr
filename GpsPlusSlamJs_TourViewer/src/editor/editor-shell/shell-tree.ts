@@ -16,7 +16,7 @@
  * - `data-section` - a section's header: the section it folds;
  * - `data-layer` - a chip: the layer it turns on or off;
  * - `data-drag` - a card's grip (no button): the station it drags
- *   (`tree-drag.ts`);
+ *   (`tree-drag.ts`); none while a search runs - the grip is `off`;
  * - `data-add` - a card's "+", `data-fill` - its empty line's "Add
  *   content": the station the type menu adds to (`tree-add-menu.ts`).
  *
@@ -127,7 +127,11 @@ function folderOf(folder: TreeFolder): HTMLElement[] {
   ];
 }
 
-function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
+function cardOf(
+  card: TreeCard,
+  pictures: ShellPictures,
+  searching: boolean,
+): HTMLElement {
   const box = el("div", "card");
   box.classList.toggle("sel", card.selected);
   box.classList.toggle("ctx", card.context);
@@ -154,9 +158,14 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   );
   // The grip a card is dragged by (`tree-drag.ts`): no button - the
   // inspector's Earlier and Later are the keyboard's way to reorder.
-  const grip = el("span", "grip");
-  grip.dataset["drag"] = card.id;
-  grip.title = "Drag to change its place in the tour";
+  // While a search hides stations it drags nothing: a drop would order
+  // the hidden ones unseen.
+  const grip = el("span", searching ? "grip off" : "grip");
+  if (searching) grip.title = "Clear the search to change the order";
+  else {
+    grip.dataset["drag"] = card.id;
+    grip.title = "Drag to change its place in the tour";
+  }
   grip.setAttribute("aria-hidden", "true");
   grip.append(shellIcon("grip"));
   head.append(grip, fold, pick);
@@ -244,7 +253,8 @@ export function drawTree(
   }
   if (tree.sections.stations) {
     const cards = el("div", "cards");
-    for (const card of tree.cards) cards.append(cardOf(card, pictures));
+    for (const card of tree.cards)
+      cards.append(cardOf(card, pictures, tree.query !== ""));
     parts.push(cards);
   }
   const codesHead = el("div", "sec");

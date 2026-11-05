@@ -1359,7 +1359,8 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   // A new pin: its toast dark, its name typed in the head, with the pen
   // and the dotted underline at rest.
   await card(page, "The old gate").locator(".pick").click();
-  await page.locator('#shell-inspector [data-act="add-pin"]').click();
+  await card(page, "The old gate").locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="pin"]').click();
   const toast = page.locator(".toast", { hasText: "Added a pin" });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCSS("background-color", BG1);

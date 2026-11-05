@@ -786,9 +786,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     (the ground under each, or a typed Height: their places untouched);
   - `addItem` (`addItemTo`) - a new pin or long text in the station
     (`new-pin.ts`: clear of its items, inside its circle, on the ground
-    the 3D view has loaded), placed by `editor.place`, selected and
-    said (`Added a pin to "..."`, `Added a long text to "..."`) only
-    when it was placed.
+    the 3D view has loaded; `addNewItem`), placed by `editor.place`,
+    selected and said (`Added a pin to "..."`, `Added a long text to
+"..."`) only when it was placed; a refusal, a gone station's too, is
+    toasted.
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
   once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
   `2d`, which the shell's stylesheet follows), makes the map `inert`
