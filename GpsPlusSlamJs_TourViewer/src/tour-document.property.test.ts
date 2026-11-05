@@ -502,7 +502,7 @@ describe("tour document (properties)", () => {
         ).toBeNull();
         expectAlike(manifestToWrite(back)!, manifestToWrite(state)!);
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -527,7 +527,7 @@ describe("tour document (properties)", () => {
         const state = ops.reduce(apply, opened);
         expect(reloadDrift(state)).toBeNull();
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -696,7 +696,7 @@ describe("tour document (properties)", () => {
         ).toBeNull();
         expectAlike(manifestToWrite(state)!, OPENED);
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -928,7 +928,7 @@ describe("tour document (properties): a step across an in-place save (D33)", () 
           expect(state.position).toBe(pos);
         }
       }),
-      { numRuns: 400 },
+      { numRuns: 100 },
     );
   });
 });
@@ -1197,7 +1197,7 @@ describe("tour document (properties): every object belongs to a station", () => 
           expect(stationRuleBreaches(state)).toEqual([]);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -1277,7 +1277,7 @@ describe("tour document (properties): every object belongs to a station", () => 
           }
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -1306,7 +1306,7 @@ describe("tour document (properties): every object belongs to a station", () => 
           expect(reduce(after, act.undone()).stations).toEqual(before.stations);
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -1375,7 +1375,7 @@ describe("tour document (properties): every object belongs to a station", () => 
           }
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

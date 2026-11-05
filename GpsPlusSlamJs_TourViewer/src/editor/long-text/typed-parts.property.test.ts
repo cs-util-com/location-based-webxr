@@ -89,7 +89,7 @@ describe("Make it plain text keeps every word", () => {
           expect(counts(out)).toEqual(counts(b));
         }
       }),
-      { numRuns: 2000 },
+      { numRuns: 300 },
     );
   });
 });

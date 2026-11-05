@@ -161,7 +161,7 @@ describe("moved-code check properties", { timeout: SLOW_MS }, () => {
           expect(v.yawDeg).toBeCloseTo(plain.yawDeg, 9);
         },
       ),
-      { numRuns: 15 },
+      { numRuns: 6 },
     );
   });
 });

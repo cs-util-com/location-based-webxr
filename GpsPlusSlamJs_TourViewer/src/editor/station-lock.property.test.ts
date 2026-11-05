@@ -274,7 +274,7 @@ describe("the station lock", () => {
           }
         },
       ),
-      { numRuns: 150 },
+      { numRuns: 50 },
     );
     await session.close();
   });

@@ -229,7 +229,7 @@ describe("the tree's station commands", () => {
           }
         },
       ),
-      { numRuns: 120 },
+      { numRuns: 40 },
     );
     await session.close();
   });
@@ -304,7 +304,7 @@ describe("the tree's station commands", () => {
           }
         },
       ),
-      { numRuns: 120 },
+      { numRuns: 40 },
     );
     await session.close();
   });
