@@ -75,37 +75,6 @@ test.describe("caching and failure", () => {
     // fresh query with no probe — the precise failure this test exists to catch.
     expect(counts.overpassQuery).toBe(queriesAfterFirst);
   });
-
-  test("a failed fetch is reported, not silently blank", async ({ page }) => {
-    await stubNetwork(page, { overpassStatus: 400 });
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    // CELLS ON: they start OFF since DEC-R7b-6, and this test is about the
-    // grid. Switching them on here rather than changing the default keeps the
-    // default itself asserted in one place (the layer-toggle test).
-    await page.locator("#layer-cells").check();
-    // NOT `enableCellLayer` HERE, deliberately: every tile is refused, so the
-    // grid must stay EMPTY and a helper that waits for cells would hang.
-
-    // A blank map with no message looks exactly like "there is no data at this
-    // location" — the one reading that would send someone debugging the wrong
-    // layer entirely.
-    await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
-
-    // And the converse, which is the defect round-1 feedback reported: a map
-    // still drawing cells while the status line says the refresh failed. With
-    // every tile refused there is nothing to draw, so the grid must be empty.
-    //
-    // NOTE ON WHAT THIS DOES *NOT* COVER, deliberately. An HTTP failure never
-    // reaches the error path that clears a PREVIOUS snapshot: `DemoPipeline`
-    // collects refused tiles into `missingTiles` rather than throwing, so this
-    // stub produces a successful refresh that happens to be empty. The
-    // stale-snapshot case is unreachable from any network stub and is pinned
-    // where it can be reached — `refresh-cycle.test.ts` and the framework's
-    // `osm-view-slice` tests, which assert `fetchFailed` clears the snapshot
-    // while `nonFatalError` leaves it alone.
-    await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
-  });
 });
 
 /**

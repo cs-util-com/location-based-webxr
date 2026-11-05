@@ -27,7 +27,7 @@ import {
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
-  test("draws pixels and buildings, and repaints after a resize @pr", async ({
+  test("draws pixels and buildings, repaints after a resize, shows the terrain as a ramp, and the GPU path matches the CPU one @pr", async ({
     page,
   }) => {
     // THREE READ-MOSTLY BEHAVIOURS ON ONE BOOT, kept in file order so nothing
@@ -78,6 +78,14 @@ test.describe("the 3D view", () => {
       });
 
       expect(painted).toBeGreaterThan(500);
+    });
+
+    await test.step("lays out at its container's size at dpr 1", async () => {
+      // The desktop half of the high-dpr layout check below: at dpr 1 the
+      // attribute size and the container size coincide, so this guards a
+      // future change that sizes the canvas some third way. It rides this
+      // boot (desktop viewport, dpr 1) instead of paying a boot of its own.
+      await expectCanvasFillsContainer(page);
     });
 
     await test.step("repaints after a viewport resize, without waiting for a camera drag", async () => {
@@ -221,17 +229,11 @@ test.describe("the 3D view", () => {
       // failed to compile produces.
       await expect.poll(buildingPixels, REPAINT).toBeGreaterThan(2000);
     });
-  });
 
-  test("shows the terrain as a ramp, and the GPU path matches the CPU one @pr", async ({
-    page,
-  }) => {
-    // BOTH GROUND BEHAVIOURS ON ONE BOOT. The ramp step asserts the DEFAULT
-    // ground mode, so it has to precede the A/B that changes it.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
+    // THE GROUND BEHAVIOURS RIDE THE SAME DESKTOP BOOT (they were a second
+    // `@pr` test with an identical boot). They come after the pixel, resize
+    // and building steps because the ramp step changes the ground mode, and
+    // the ramp step has to precede the A/B that changes it again.
     await test.step("shows the terrain as a height ramp, which is the default ground", async () => {
       // WHY THIS TEST MATTERS (W24, DEC-R2-25). The ramp exists to answer "did the
       // DEM load, or is this place simply flat?" — a question DEC-R2-1's deliberately
@@ -475,14 +477,17 @@ test.describe("the 3D view", () => {
     });
   });
 
-  test("draws regions, slabs, roads and POIs, each from its own switch", async ({
+  test("draws regions, slabs, roads and POIs, cycles the tile presets, picks a grid cell on real terrain, and shows the buildings from beneath", async ({
     page,
   }) => {
-    // FOUR LAYER BEHAVIOURS ON ONE BOOT. Each step drives its OWN switch and
-    // measures against a frame it stashes itself, so a layer another step left
-    // off is a constant rather than an interference — which is why these four
-    // can share a boot without a restoration between every one of them.
-    await stubNetwork(page);
+    // ONE DESKTOP BOOT FOR FOUR FORMER TESTS (the e2e pruning audit: a boot
+    // costs about 6 s here). The four layer steps come first; each drives its
+    // OWN switch and measures against a frame it stashes itself, so a layer
+    // another step left off is a constant rather than an interference. Then
+    // the tile presets (the cycle ends on the shipped look again), the grid
+    // pick on an untouched camera, and LAST the camera move under the world,
+    // which cannot be undone.
+    const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
@@ -737,6 +742,10 @@ test.describe("the 3D view", () => {
       const changed = async () => (await diffFromStash(page, 8)).differing;
       await expect.poll(changed, REPAINT).toBeGreaterThan(10);
     });
+
+    await tilePresetSteps(page);
+    await gridPickAndTerrainSteps(page, counts);
+    await underTheWorldSteps(page);
   });
 
   test("keeps buildings unpickable, grades the sky, and redraws on a camera move", async ({
@@ -941,14 +950,12 @@ test.describe("the 3D view", () => {
     });
   });
 
-  test("picks a grid cell, stands on real terrain, and reports what it built", async ({
-    page,
-  }) => {
-    // THREE BEHAVIOURS ON ONE BOOT. The grid pick runs first because it is the
-    // one that needs an untouched camera; the two after it read the status line.
-    const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+  /**
+   * Picks a grid cell, stands on real terrain, and reports what it built.
+   * The grid pick runs first because it is the one that needs an untouched
+   * camera; the two after it read the status line.
+   */
+  async function gridPickAndTerrainSteps(page, counts) {
     // CELLS ON: they start OFF since DEC-R7b-6, and this test's first step is
     // ABOUT the grid. Without this the sweep still passes -- by picking the
     // region slab that lies under the grid -- so the M3 regression it was
@@ -1081,55 +1088,20 @@ test.describe("the 3D view", () => {
       );
       await expect(page.locator("#status")).toContainText("triangles");
     });
-  });
+  }
 });
 
-/**
- * W1 / finding R3-2 — the canvas must lay out at its container's size.
- *
- * TWO DESCRIBE BLOCKS because `test.use` is per-describe and the whole point is
- * to run the same assertion at two device pixel ratios: the bug is identically
- * zero at dpr 1, which is why every project in this suite ran at dpr 1 for the
- * whole of rounds 1 and 2 and never saw it.
- */
-test.describe("the 3D canvas at a high device pixel ratio", () => {
-  // A phone: 390x780 CSS pixels at dpr 2. Without the fix the canvas element is
-  // 780x1560 CSS pixels inside a 390-wide container.
-  test.use({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2 });
-
-  test("lays out at its container's size, not at its drawing buffer's", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await expectCanvasFillsContainer(page);
-  });
-});
-
-test.describe("the 3D canvas at dpr 1", () => {
-  test.use({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
-
-  test("still lays out at its container's size", async ({ page }) => {
-    // The regression guard for the fix itself: at dpr 1 the attribute size and
-    // the container size coincide, so this passed BEFORE the fix too. It is here
-    // so that a future change which sizes the canvas some third way cannot break
-    // the desktop case while the dpr-2 test keeps passing.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await expectCanvasFillsContainer(page);
-  });
-});
+// The canvas-fills-its-container check runs at TWO device pixel ratios, since
+// the bug it guards is identically zero at dpr 1: at dpr 1 inside the first
+// test of "the 3D view" above, at dpr 2 inside the phone-layout test of
+// `boot-and-shell.spec.js`.
 
 /**
  * From UNDER the world, with `No ground` (reported after the round-3 deploy).
  *
  * The report was "I turned off ground and looked at the 3D world from below,
  * and there was still some additional ground layer rendered — basically a full
- * black plane". This block is the reproduction, and what it establishes is that
+ * black plane". These steps are the reproduction, and what it establishes is that
  * **no geometry is drawn under the scene at all**: what fills the view is the
  * sky background, whose zenith end is a near-black blue and whose lower half is
  * a flat mid blue-grey. Both read as a surface and neither is one.
@@ -1137,43 +1109,45 @@ test.describe("the 3D canvas at dpr 1", () => {
  * The camera can get there because `MapControls` inherits `OrbitControls`'
  * default `maxPolarAngle` of PI — nothing stops it going under the world.
  */
-test.describe("under the world", () => {
-  test.use({ viewport: { width: 1280, height: 800 } });
+/** Rotates the camera down by `dy` pointer-pixels (MapControls: RIGHT = ROTATE). */
+const rotateUnder = async (page, dy) => {
+  const box = await page.locator("#scene canvas").boundingBox();
+  if (box === null) throw new Error("no canvas box");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down({ button: "right" });
+  for (let i = 1; i <= 8; i++) await page.mouse.move(cx, cy + (dy * i) / 8);
+  await page.mouse.up({ button: "right" });
+  // Damping eases over several frames; wait for the picture to stop moving.
+  let previous = "";
+  await expect
+    .poll(
+      async () => {
+        const now = await page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+        });
+        const stable = now === previous;
+        previous = now;
+        return stable;
+      },
+      { timeout: 15000, intervals: [300] },
+    )
+    .toBe(true);
+};
 
-  /** Rotates the camera down by `dy` pointer-pixels (MapControls: RIGHT = ROTATE). */
-  const rotateUnder = async (page, dy) => {
-    const box = await page.locator("#scene canvas").boundingBox();
-    if (box === null) throw new Error("no canvas box");
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    await page.mouse.move(cx, cy);
-    await page.mouse.down({ button: "right" });
-    for (let i = 1; i <= 8; i++) await page.mouse.move(cx, cy + (dy * i) / 8);
-    await page.mouse.up({ button: "right" });
-    // Damping eases over several frames; wait for the picture to stop moving.
-    let previous = "";
-    await expect
-      .poll(
-        async () => {
-          const now = await page.evaluate(() => {
-            const el = document.querySelector("#scene canvas");
-            return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-          });
-          const stable = now === previous;
-          previous = now;
-          return stable;
-        },
-        { timeout: 15000, intervals: [300] },
-      )
-      .toBe(true);
-  };
-
-  test("shows the buildings from beneath, and no ground under them", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+/** Shows the buildings from beneath, and no ground under them. */
+async function underTheWorldSteps(page) {
+  await test.step("shows the buildings from beneath, and no ground under them", async () => {
+    // THE DETAILS PANEL COMES DOWN FIRST: the grid pick before this may have
+    // opened it over the right half of the pane, and the rotation below drags
+    // from the pane's centre.
+    const panel = page.locator("#details");
+    if (await panel.isVisible()) {
+      await panel.locator(".panel-close").click();
+      await expect(panel).toBeHidden();
+    }
     await page.locator("#ground-mode").selectOption("none");
     // EVERY GROUND-HUGGING LAYER OFF, so what is left is the question actually
     // being asked. The affordance grid is DoubleSide and traces the terrain, so
@@ -1219,7 +1193,7 @@ test.describe("under the world", () => {
       .poll(async () => (await countNonSkyPixels(page)).count)
       .toBeLessThan(withBuildings.count / 20);
   });
-});
+}
 
 /**
  * W7 / DEC-R5-5 — the POI model gallery, which closes F28.
@@ -1410,7 +1384,14 @@ const settledChroma = async (page) => {
     const now = await meanChroma(page);
     if (Math.abs(now - previous) < 0.01) return now;
     previous = now;
-    await page.waitForTimeout(50);
+    // TWO ANIMATION FRAMES, not a fixed sleep: a repaint lands on a frame, so
+    // waiting for frames is the event the settle is about.
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
   }
   return previous;
 };
@@ -1608,18 +1589,24 @@ test.describe("the time of day", () => {
    * §15) pass every point, the 3.6° morning with the least to spare (17.6
    * against 16.8).
    */
+  //
+  // THE BINDING POINTS ONLY (the e2e pruning audit). Three interior suns were
+  // dropped as rows that do not bind: the evening golden hour (3.6°, the same
+  // elevation as the morning row, which has the least to spare), a 24° morning
+  // (inside the gain band, between the 3.6° morning and the September noon
+  // that bound the margin) and civil twilight at −2.9° (between the 3.6°
+  // morning and −5.9°, the darker twilight). That rests on the margin and the
+  // lit luma being monotone in elevation between the kept rows; if a run that
+  // logs all seven `DEC-R4-5 ... lit surfaces` lines ever shows a non-monotone
+  // lit luma inside the 18-40° gain band, the 24° row binds and comes back
+  // (morning 06:23 33.6, 24° 08:41 96.8, golden hour 17:36 42.6, −2.9° 18:17
+  // 20.8 were the approved lit-surface lumas). The June noon (62.5°) row runs
+  // in the light dialog's June-noon test, which shares its boot.
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
     //  the share of it the point must reach (half by default)]
-    ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
-    ["a 24° morning", "2026-09-23", "08:41", 96.8],
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
-    // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
-    // buildings and roads are lifted to the approved noon brightness, so this
-    // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
-    ["the June noon (62.5°)", "2026-06-21", "12:00", 64.7, 0.95],
-    ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
   ];
   for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
@@ -1627,28 +1614,35 @@ test.describe("the time of day", () => {
       page,
     }) => {
       await stubNetwork(page);
-      const pin =
-        time === null ? `&date=${date}` : `&date=${date}&time=${time}`;
-      await page.goto(`/?lat=${50.9231}&lng=${6.9445}${pin}`);
+      await page.goto(
+        `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}`,
+      );
       await waitForRefresh(page);
-      const DEFAULT_MODE = "cpu-slope";
-      // The lit city first, heat grid off, in the default ground mode.
-      await page.locator("#layer-cells").uncheck();
-      await settledChroma(page);
-      const lit = await litSurfaceLuma(page);
-      const plain = await marginFor(page, "cpu");
-      const byDefault = await marginFor(page, DEFAULT_MODE);
-      console.log(
-        `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), luma with cells ${(await meanLuma(page)).toFixed(1)}`,
-      );
-      expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
-      expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
-      expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(
-        approvedLit * share,
-      );
+      await expectHeatRampLoudest(page, label, approvedLit, share);
     });
   }
 });
+
+/**
+ * DEC-R4-5 at one booted sun: the heat grid's margin over the plain and the
+ * default ground, and the lit city's brightness with the grid off. Leaves the
+ * ground in the default mode with the cells ON.
+ */
+async function expectHeatRampLoudest(page, label, approvedLit, share = 0.5) {
+  const DEFAULT_MODE = "cpu-slope";
+  // The lit city first, heat grid off, in the default ground mode.
+  await page.locator("#layer-cells").uncheck();
+  await settledChroma(page);
+  const lit = await litSurfaceLuma(page);
+  const plain = await marginFor(page, "cpu");
+  const byDefault = await marginFor(page, DEFAULT_MODE);
+  console.log(
+    `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), luma with cells ${(await meanLuma(page)).toFixed(1)}`,
+  );
+  expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
+  expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
+  expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(approvedLit * share);
+}
 
 /**
  * The affordance-tile look presets (§3, DEC-R6-9/10/22).
@@ -1663,73 +1657,64 @@ test.describe("the time of day", () => {
  * the wider heat radius. Until then a preset accidentally becoming the default
  * would ship an experiment, and nothing else would notice.
  */
-test.describe("the affordance-tile look presets", () => {
-  test("cycle from a hotkey, change the picture, and start at the shipped look", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    // CELLS ON: they start OFF since DEC-R7b-6, and this test judges the GRID
-    // through the canvas rather than through the Leaflet DOM — so with the
-    // layer off it compares two identical pictures and reports 0 changed
-    // pixels, which looks like a broken repaint rather than a hidden layer.
-    await enableCellLayer(page); // async since round 10 stage B
+async function tilePresetSteps(page) {
+  // CELLS ON: they start OFF since DEC-R7b-6, and this test judges the GRID
+  // through the canvas rather than through the Leaflet DOM — so with the
+  // layer off it compares two identical pictures and reports 0 changed
+  // pixels, which looks like a broken repaint rather than a hidden layer.
+  await enableCellLayer(page); // async since round 10 stage B
 
-    await test.step("the default is the look that shipped", async () => {
-      // Asserted on the STATUS LINE rather than on pixels: "which preset is
-      // active" is a fact about state, and pixels are how the next step checks
-      // that the state reaches the screen. Conflating them would make a
-      // failure ambiguous.
-      await expect(page.locator("#status")).toContainText("tiles current");
-    });
-
-    await test.step("pressing the key changes the picture", async () => {
-      await installFrameProbe(page);
-      await stashStableFrame(page);
-
-      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
-      await page.keyboard.press("p");
-
-      // The first step away from `current` is `opaque`, which only changes
-      // alpha — so this also proves the cheap axes reach the material without a
-      // republish.
-      await expect(page.locator("#status")).toContainText("tiles opaque");
-      await expect
-        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-        .toBeGreaterThan(1000);
-    });
-
-    await test.step("a geometry preset rebuilds the grid rather than failing", async () => {
-      // `prototype` and `bars` change the VERTEX BUFFERS, so they go through the
-      // worker. The risk is not that they look wrong — it is that the rebuild
-      // throws on an indexing mistake and the grid silently disappears, which a
-      // cell-count assertion catches and a screenshot would not.
-      for (const expected of ["prototype", "bars"]) {
-        await page.keyboard.press("p");
-        await expect(page.locator("#status")).toContainText(
-          `tiles ${expected}`,
-        );
-        await expect(page.locator("#status")).toContainText(/\d+ cells/);
-      }
-    });
-
-    await test.step("the cycle returns to the default", async () => {
-      // Pressing through the whole list must come back, or the shipped look
-      // becomes unreachable once someone has pressed the key.
-      await page.keyboard.press("p");
-      await expect(page.locator("#status")).toContainText("tiles translucent");
-      await page.keyboard.press("p");
-      await expect(page.locator("#status")).toContainText("tiles current");
-    });
-
-    await test.step("the preset is listed in the shortcut help", async () => {
-      await page.keyboard.press("?");
-      await expect(page.locator("#hotkey-help")).toContainText("preset");
-      await page.keyboard.press("?");
-    });
+  await test.step("the default is the look that shipped", async () => {
+    // Asserted on the STATUS LINE rather than on pixels: "which preset is
+    // active" is a fact about state, and pixels are how the next step checks
+    // that the state reaches the screen. Conflating them would make a
+    // failure ambiguous.
+    await expect(page.locator("#status")).toContainText("tiles current");
   });
-});
+
+  await test.step("pressing the key changes the picture", async () => {
+    await installFrameProbe(page);
+    await stashStableFrame(page);
+
+    await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("p");
+
+    // The first step away from `current` is `opaque`, which only changes
+    // alpha — so this also proves the cheap axes reach the material without a
+    // republish.
+    await expect(page.locator("#status")).toContainText("tiles opaque");
+    await expect
+      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+      .toBeGreaterThan(1000);
+  });
+
+  await test.step("a geometry preset rebuilds the grid rather than failing", async () => {
+    // `prototype` and `bars` change the VERTEX BUFFERS, so they go through the
+    // worker. The risk is not that they look wrong — it is that the rebuild
+    // throws on an indexing mistake and the grid silently disappears, which a
+    // cell-count assertion catches and a screenshot would not.
+    for (const expected of ["prototype", "bars"]) {
+      await page.keyboard.press("p");
+      await expect(page.locator("#status")).toContainText(`tiles ${expected}`);
+      await expect(page.locator("#status")).toContainText(/\d+ cells/);
+    }
+  });
+
+  await test.step("the cycle returns to the default", async () => {
+    // Pressing through the whole list must come back, or the shipped look
+    // becomes unreachable once someone has pressed the key.
+    await page.keyboard.press("p");
+    await expect(page.locator("#status")).toContainText("tiles translucent");
+    await page.keyboard.press("p");
+    await expect(page.locator("#status")).toContainText("tiles current");
+  });
+
+  await test.step("the preset is listed in the shortcut help", async () => {
+    await page.keyboard.press("?");
+    await expect(page.locator("#hotkey-help")).toContainText("preset");
+    await page.keyboard.press("?");
+  });
+}
 
 test.describe("the NPC agent", () => {
   test("routes on a click, walks it, and lets the scene go quiet again", async ({
@@ -2070,57 +2055,6 @@ test.describe("the NPC agent", () => {
     await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
   });
 
-  test("draws a quest beacon in the 3D view, and takes it down again", async ({
-    page,
-  }) => {
-    /**
-     * WHY THIS TEST EXISTS NOW AND NOT BEFORE. N6's beacons shipped without an
-     * e2e, deliberately: a search panned the map and left the 3D camera where
-     * it was, so the marker sat outside the frustum — measured at ~370 m out —
-     * and a pixel test could not tell "drawn" from "drawn somewhere else". The
-     * first attempt proved that the hard way: it passed its first assertion by
-     * measuring the map-driven camera move, and reported nothing when the quest
-     * was cleared, because the beacon had never been visible.
-     *
-     * Once the camera follows the search, the marker is in view and pixels mean
-     * what they say. THE CLEAR IS THE ASSERTION THAT CARRIES THE WEIGHT: the
-     * camera does not move when a quest is cleared, so a frame that changes then
-     * changed because the beacon left it.
-     */
-    await pinQuestClock(page);
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    await page.locator("#geo-event").click();
-    // The map marker is the proof a quest was actually found; without it the
-    // pixel work below would be measuring an empty search.
-    await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
-
-    await installFrameProbe(page);
-    await stashStableFrame(page);
-
-    // CLEARING IS THE CLEAN EDGE. Searching moves the camera, so the frame
-    // changes either way and proves nothing about the beacon; clearing moves
-    // nothing but the marker.
-    await page.locator("#geo-event-clear").click();
-    await expect(page.locator("#map .geo-winner")).toHaveCount(0);
-
-    // THE FLOOR IS SET FROM A MEASUREMENT, and the measurement moved once.
-    // With the original 6 m mark this read 110 differing pixels; enlarging it
-    // to the size the report asked for took it to 286. 100 sits below both and
-    // far above the only failure that matters — 0, which is what this returned
-    // for the whole time the camera did not follow the search.
-    //
-    // Deliberately not tight: pinning 286 would fail a later restyle for being
-    // different rather than wrong.
-    await expect
-      .poll(async () => (await diffFromStash(page, 24)).differing, {
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(100);
-  });
-
   test("brings the beacon into frame even from a CLOSE camera", async ({
     page,
   }) => {
@@ -2133,7 +2067,8 @@ test.describe("the NPC agent", () => {
      * the frustum is hundreds of metres wide there — and fails close in, where
      * that same offset pushes the marker off the top of the screen.
      *
-     * The sibling test above cannot see the difference: at the default distance
+     * The default-distance beacon test (deleted as a duplicate of this one by the
+     * e2e pruning audit) could not see the difference: at the default distance
      * both aim points keep the beacon on screen, so it passed against the bug.
      * This one starts the camera at `MIN_CAMERA_DISTANCE_M` via the shareable
      * camera link, which is the route a user takes by pasting one.
@@ -2162,8 +2097,10 @@ test.describe("the NPC agent", () => {
     await installFrameProbe(page);
     await stashStableFrame(page);
 
-    // Same edge as the sibling: clearing moves nothing but the marker, so a
-    // frame that changes changed because the beacon left it.
+    // CLEARING IS THE CLEAN EDGE. Searching moves the camera, so the frame
+    // changes either way and proves nothing about the beacon; clearing moves
+    // nothing but the marker, so a frame that changes changed because the
+    // beacon left it.
     await page.locator("#geo-event-clear").click();
     await expect(page.locator("#map .geo-winner")).toHaveCount(0);
 
@@ -2284,87 +2221,104 @@ test.describe("the light dialog", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, value);
 
-  // WHY: each lever the owner tunes must move the lit surfaces the way the
-  // M0 spike measured, and the URL must keep the pick through a reload. From
-  // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
-  // lever is taken to its slider's end, so the step stays well above the
-  // threshold whatever the default.
-  test("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async ({
+  // ONE JUNE-NOON BOOT FOR THREE FORMER TESTS (the e2e pruning audit): the
+  // sun clock reads `?date=&time=` only at boot, so the DEC-R4-5 June row, the
+  // readout parity and the dialog's levers all share this state. Parity runs
+  // before the levers, because the levers change the light.
+  test("at the June noon: the heat ramp stays the loudest thing, the dialog reads the sweep's numbers, and its levers brighten noon, kept in the URL", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(JUNE_NOON);
     await waitForRefresh(page);
-    // The dialog opens from its button and the l key, and closes with Escape.
-    const dialog = page.locator("#light-dialog");
-    await expect(dialog).toBeHidden();
-    await page.locator("#light-open").click();
-    await expect(dialog).toBeVisible();
-    await page.locator("#light-gainMax").press("Escape");
-    await expect(dialog).toBeHidden();
-    await page.locator("body").press("l");
-    await expect(dialog).toBeVisible();
-    const base = await readoutLuma(page);
-    expect(base).toBeGreaterThan(50);
-    await slide(page, "gainMax", 2.5);
-    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
-    await page.locator("#light-reset").click();
-    await slide(page, "buildingSkyLight", 3);
-    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
-    await page.locator("#light-reset").click();
-    await slide(page, "exposureEv", -2.25);
-    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
-    await slide(page, "gainMax", 2);
-    // Sampled (400 ms, like the camera), so polled rather than read at once.
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get("light"))
-      .toBe("v1:gain=2,ev=-2.25");
-    const tuned = await readoutLuma(page);
-    await page.reload();
-    await waitForRefresh(page);
-    await page.locator("#light-open").click();
-    await expect(page.locator("#light-gainMax")).toHaveValue("2");
-    // WHY (review, 2026-09-24): the sliders showing the values is not the
-    // claim; the VIEW must boot in the tuned look, or the dialog would show
-    // tuned values over the shipped look. The same brightness as before the
-    // reload: within 2, which is ten times the drift between page loads
-    // (measured 0.2 once, 2026-09-24) and a tenth of what the tuned look adds
-    // (about 20 at EV -2.25, plan §8), so any value from about 0.5 to 10
-    // gives the same verdict.
-    expect(Math.abs((await readoutLuma(page)) - tuned)).toBeLessThan(2);
-    expect(tuned).toBeGreaterThan(base + 10);
-    await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
-  });
 
-  // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
-  // measures on the same view, or the owner would tune by a number the gate
-  // does not use. The margin is compared in the default ground mode.
-  test("reads the same brightness and heat-grid margin as the sweep", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(JUNE_NOON);
-    await waitForRefresh(page);
-    await page.locator("#layer-cells").uncheck();
-    await settledChroma(page);
-    const inlineLit = await litSurfaceLuma(page);
-    await page.locator("#light-open").click();
-    // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
-    // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
-    // real divergence in either measure shows well above them.
-    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
-    const inlineMargin = await marginFor(page, "cpu-slope");
-    await page.locator("#light-check").click();
-    await expect(page.locator("#light-readout")).toContainText(
-      "Heat grid adds",
-    );
-    const text = (await page.locator("#light-readout").textContent()) ?? "";
-    const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
-    console.log(
-      `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
-    );
-    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
-    expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
-    expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
+    await test.step("DEC-R4-5 at the June noon (62.5°)", async () => {
+      // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
+      // buildings and roads are lifted to the approved noon brightness, so this
+      // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
+      // It is the binding row from above: the lowest share of the margin.
+      await expectHeatRampLoudest(page, "the June noon (62.5°)", 64.7, 0.95);
+    });
+
+    await test.step("reads the same brightness and heat-grid margin as the sweep", async () => {
+      // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
+      // measures on the same view, or the owner would tune by a number the gate
+      // does not use. The margin is compared in the default ground mode.
+      await page.locator("#layer-cells").uncheck();
+      await settledChroma(page);
+      const inlineLit = await litSurfaceLuma(page);
+      await page.locator("#light-open").click();
+      // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
+      // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
+      // real divergence in either measure shows well above them.
+      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+      const inlineMargin = await marginFor(page, "cpu-slope");
+      await page.locator("#light-check").click();
+      await expect(page.locator("#light-readout")).toContainText(
+        "Heat grid adds",
+      );
+      const text = (await page.locator("#light-readout").textContent()) ?? "";
+      const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+      console.log(
+        `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
+      );
+      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+      expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
+      expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
+    });
+
+    await test.step("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async () => {
+      // WHY: each lever the owner tunes must move the lit surfaces the way the
+      // M0 spike measured, and the URL must keep the pick through a reload. From
+      // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
+      // lever is taken to its slider's end, so the step stays well above the
+      // threshold whatever the default.
+      // BACK TO THE BOOT STATE first: the parity step left the dialog open
+      // and the heat grid on, and the brightness compared across the reload
+      // below is the boot view's.
+      const dialog = page.locator("#light-dialog");
+      await page.locator("#light-gainMax").press("Escape");
+      await expect(dialog).toBeHidden();
+      await page.locator("#layer-cells").uncheck();
+      await settledChroma(page);
+      // The dialog opens from its button and the l key, and closes with Escape.
+      await expect(dialog).toBeHidden();
+      await page.locator("#light-open").click();
+      await expect(dialog).toBeVisible();
+      await page.locator("#light-gainMax").press("Escape");
+      await expect(dialog).toBeHidden();
+      await page.locator("body").press("l");
+      await expect(dialog).toBeVisible();
+      const base = await readoutLuma(page);
+      expect(base).toBeGreaterThan(50);
+      await slide(page, "gainMax", 2.5);
+      await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+      await page.locator("#light-reset").click();
+      await slide(page, "buildingSkyLight", 3);
+      await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
+      await page.locator("#light-reset").click();
+      await slide(page, "exposureEv", -2.25);
+      await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+      await slide(page, "gainMax", 2);
+      // Sampled (400 ms, like the camera), so polled rather than read at once.
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("light"))
+        .toBe("v1:gain=2,ev=-2.25");
+      const tuned = await readoutLuma(page);
+      await page.reload();
+      await waitForRefresh(page);
+      await page.locator("#light-open").click();
+      await expect(page.locator("#light-gainMax")).toHaveValue("2");
+      // WHY (review, 2026-09-24): the sliders showing the values is not the
+      // claim; the VIEW must boot in the tuned look, or the dialog would show
+      // tuned values over the shipped look. The same brightness as before the
+      // reload: within 2, which is ten times the drift between page loads
+      // (measured 0.2 once, 2026-09-24) and a tenth of what the tuned look adds
+      // (about 20 at EV -2.25, plan §8), so any value from about 0.5 to 10
+      // gives the same verdict.
+      expect(Math.abs((await readoutLuma(page)) - tuned)).toBeLessThan(2);
+      expect(tuned).toBeGreaterThan(base + 10);
+      await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
+    });
   });
 });

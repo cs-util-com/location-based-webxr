@@ -203,8 +203,7 @@ const EXPECTED = {
     "playwright-tests/boot-and-shell.spec.js: the offer's button is wired to AR entry, and the prompt clears the offer",
     'playwright-tests/data-and-caching.spec.js: a reload is served from OPFS without refetching',
     'playwright-tests/map-and-cells.spec.js: draws the cells, the extent, the outlines, the popup — and redraws on a category switch',
-    'playwright-tests/scene-3d.spec.js: draws pixels and buildings, and repaints after a resize',
-    'playwright-tests/scene-3d.spec.js: shows the terrain as a ramp, and the GPU path matches the CPU one',
+    'playwright-tests/scene-3d.spec.js: draws pixels and buildings, repaints after a resize, shows the terrain as a ramp, and the GPU path matches the CPU one',
   ],
   GpsPlusSlamJs_PhysicsDemo: [
     'playwright-tests/replay-flow.spec.js: reconstructs the mesh from a real recording and spawns bouncing balls',

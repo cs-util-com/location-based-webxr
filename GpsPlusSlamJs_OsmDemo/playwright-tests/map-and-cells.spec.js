@@ -871,9 +871,34 @@ test.describe("the geo-event", () => {
    * async control and which is easy to omit: the operation can score hundreds of
    * chunks, so a button that looked inert while it worked would read as broken.
    */
-  test("finds an event from the button and draws it on the map", async ({
+  // ONE PRESS, ONE BOOT (the e2e pruning audit): finding the event, the picker
+  // that opens on the same press, and clearing it were two tests that booted
+  // the same fixture and pressed the same button.
+  /**
+   * WHY THIS TEST EXISTS (G1, DEC-G1). The reported complaint: pressing the
+   * button a second time re-ran the identical search. "Identical" is exact
+   * rather than approximate — the event is a pure function of tile and
+   * quarter-hour — so within one 15-minute slot the second press could not
+   * produce anything new, and it read as a broken button.
+   *
+   * INVERTED 2026-08-19 (F4f, DEC-U13). The two-press behaviour was itself the
+   * fix for that complaint, and the owner then reported the two-step as the
+   * problem: the choice should be visible on the FIRST press. The picker now
+   * opens alongside the search rather than instead of it, so a second press no
+   * longer means something different from the first — which removes the
+   * original complaint by a different route.
+   *
+   * The unit tests cover the dialog's own behaviour. What only an e2e can show
+   * is that one press does both.
+   */
+  test("finds an event from the button, opens a time picker on the same press, draws it on the map, and can clear it", async ({
     page,
   }) => {
+    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
+    // function of tile and quarter-hour, so without this the test executes or
+    // not depending on when the suite runs — CI went red on a quarter-hour
+    // that yields nothing, on a change that touched none of this.
+    await pinQuestClock(page);
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -888,8 +913,16 @@ test.describe("the geo-event", () => {
     // proves that is the marker on the map and the toast, both asserted
     // elsewhere in this file.
     await expect(button).toHaveText(/Show Quests/);
+    const picker = page.locator("#geo-event-picker");
+    await expect(picker).toBeHidden();
 
     await button.click();
+
+    // THE PICKER IS ALREADY OPEN (F4f, DEC-U13) — that is the whole change.
+    // It used to take a second press, which made the second press mean
+    // something different from the first; the owner asked for the choice to be
+    // visible immediately, so it opens alongside the search.
+    await expect(picker).toBeVisible();
 
     // THE RESULT MOVED OFF THE BUTTON (F4a, 2026-08-19). It used to become the
     // description — which is exactly why it grew and shrank on every press —
@@ -1076,56 +1109,7 @@ test.describe("the geo-event", () => {
       }
       await expect(page.locator("#map .geo-candidate")).not.toHaveCount(0);
     }
-  });
 
-  /**
-   * WHY THIS TEST EXISTS (G1, DEC-G1). The reported complaint: pressing the
-   * button a second time re-ran the identical search. "Identical" is exact
-   * rather than approximate — the event is a pure function of tile and
-   * quarter-hour — so within one 15-minute slot the second press could not
-   * produce anything new, and it read as a broken button.
-   *
-   * INVERTED 2026-08-19 (F4f, DEC-U13). The two-press behaviour was itself the
-   * fix for that complaint, and the owner then reported the two-step as the
-   * problem: the choice should be visible on the FIRST press. The picker now
-   * opens alongside the search rather than instead of it, so a second press no
-   * longer means something different from the first — which removes the
-   * original complaint by a different route.
-   *
-   * The unit tests cover the dialog's own behaviour. What only an e2e can show
-   * is that one press does both.
-   */
-  test("opens a time picker on the FIRST press, and can clear the event", async ({
-    page,
-  }) => {
-    // CLOCK PINNED FIRST (see `pinQuestClock`). The geo-event is a pure
-    // function of tile and quarter-hour, so without this the test executes or
-    // not depending on when the suite runs — CI went red on a quarter-hour
-    // that yields nothing, on a change that touched none of this.
-    await pinQuestClock(page);
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const button = page.locator("#geo-event");
-    const picker = page.locator("#geo-event-picker");
-    await expect(picker).toBeHidden();
-
-    await button.click();
-
-    // THE PICKER IS ALREADY OPEN (F4f, DEC-U13) — that is the whole change.
-    // It used to take a second press, which made the second press mean
-    // something different from the first; the owner asked for the choice to be
-    // visible immediately, so it opens alongside the search.
-    await expect(picker).toBeVisible();
-
-    // AND THE SEARCH RAN ANYWAY, which is the half that would otherwise go
-    // unasserted: a picker that opened INSTEAD of searching would satisfy the
-    // line above and break the common one-tap case.
-    await expect(page.locator("#toast-root .toast")).toHaveText(
-      /Quest at|No quest nearby/,
-      { timeout: 30_000 },
-    );
     // Pre-filled from the event on the map, so the common edit is "later", not
     // "type a whole date".
     await expect(page.locator("#geo-event-date")).not.toHaveValue("");
@@ -1355,7 +1339,24 @@ test.describe("the geo-event", () => {
 });
 
 test.describe("the cell layer toggle", () => {
-  test("hides 'below threshold' while the cell layer is off (DEC-U9)", async ({
+  /**
+   * WHY THIS TEST EXISTS (F58).
+   *
+   * Round 10 stage B made switching the cell layer ON asynchronous: the snapshot
+   * omits the array while the layer is off, so the toggle triggers a refresh
+   * rather than a redraw. The round-10 summary ESTIMATED that this stays under
+   * the "few hundred milliseconds" at which the root `CLAUDE.md` requires an
+   * in-progress state, and flagged the estimate as an estimate.
+   *
+   * MEASURED AT ~1880 ms with the tiles already held — about 5x over. So the
+   * switch needs a transitional state, and this asserts it is reached rather
+   * than asserting a latency bound, which would be a machine-speed test.
+   *
+   * The rule the removed `setAvailable` left behind applies: DISABLED, never
+   * hidden, stored value untouched. A control that disappears reads as a bug,
+   * and one whose value is silently reset loses the choice just made.
+   */
+  test("hides 'below threshold' while the cell layer is off (DEC-U9), and shows an in-progress state while the cells are fetched", async ({
     page,
   }) => {
     // WHY THIS TEST EXISTS, and it is not tidiness: the bug it catches shipped.
@@ -1376,37 +1377,6 @@ test.describe("the cell layer toggle", () => {
 
     const showBelow = page.locator("#show-below-label");
     await expect(showBelow).toBeHidden();
-
-    await page.locator("#layer-cells").check();
-    await expect(showBelow).toBeVisible();
-
-    await page.locator("#layer-cells").uncheck();
-    await expect(showBelow).toBeHidden();
-  });
-
-  /**
-   * WHY THIS TEST EXISTS (F58).
-   *
-   * Round 10 stage B made switching the cell layer ON asynchronous: the snapshot
-   * omits the array while the layer is off, so the toggle triggers a refresh
-   * rather than a redraw. The round-10 summary ESTIMATED that this stays under
-   * the "few hundred milliseconds" at which the root `CLAUDE.md` requires an
-   * in-progress state, and flagged the estimate as an estimate.
-   *
-   * MEASURED AT ~1880 ms with the tiles already held — about 5x over. So the
-   * switch needs a transitional state, and this asserts it is reached rather
-   * than asserting a latency bound, which would be a machine-speed test.
-   *
-   * The rule the removed `setAvailable` left behind applies: DISABLED, never
-   * hidden, stored value untouched. A control that disappears reads as a bug,
-   * and one whose value is silently reset loses the choice just made.
-   */
-  test("shows an in-progress state while the cells are fetched", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
 
     const toggle = page.locator("#layer-cells");
     const row = page.locator("label.layer-toggle", { has: toggle });
@@ -1467,9 +1437,17 @@ test.describe("the cell layer toggle", () => {
       samples.some((sample) => sample.busy && sample.disabled),
       "never saw the row busy AND the input disabled at the same moment",
     ).toBe(true);
+
+    // THE CHECKBOX FOLLOWS THE LAYER, in both directions.
+    await expect(showBelow).toBeVisible();
+
+    await page.locator("#layer-cells").uncheck();
+    await expect(showBelow).toBeHidden();
   });
 
-  test("leaves the switch usable when the refresh fails", async ({ page }) => {
+  test("leaves the switch usable when the refresh fails, draws no cell, and takes both loading channels down", async ({
+    page,
+  }) => {
     // THE FAILURE PATH, which `CLAUDE.md` requires alongside the success one.
     // A busy state that only clears on success strands the control forever, and
     // that is exactly the shape a `.then()` instead of a `.finally()` produces.
@@ -1481,7 +1459,7 @@ test.describe("the cell layer toggle", () => {
     // not exist, so the evaluate was a no-op and the test silently re-ran the
     // success path. An unfailable test, in the file where this round has been
     // cataloguing unfailable tests.)
-    await stubNetwork(page, { overpassStatus: 400 });
+    const counts = await stubNetwork(page, { overpassStatus: 400 });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
     await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
@@ -1538,6 +1516,50 @@ test.describe("the cell layer toggle", () => {
       failSamples.some((busy) => busy),
       "the switch never entered the busy state, so 'not busy' proves nothing",
     ).toBe(true);
+
+    await test.step("a failed fetch is reported, not silently blank", async () => {
+      // A blank map with no message looks exactly like "there is no data at
+      // this location" - the reading that would send someone debugging the
+      // wrong layer. The status line is asserted above, right after the boot.
+      //
+      // And the converse, which is the defect round-1 feedback reported: a map
+      // still drawing cells while the status line says the refresh failed.
+      // With every tile refused there is nothing to draw, so the grid must be
+      // empty although the layer is switched on.
+      await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
+    });
+
+    await test.step("a site pick that fetches nothing still takes both loading channels down", async () => {
+      // THE OUTCOME WHERE A STUCK INDICATOR WOULD HURT MOST: the user waited, and
+      // got nothing. An indicator left running would say the app is still trying
+      // when it has stopped.
+      //
+      // WHAT THIS TEST LEARNED THE HARD WAY. Its first draft expected an ERROR
+      // TOAST here, on the assumption that a failed query fails the refresh. It
+      // does not: the pipeline tolerates a tile it could not fetch, publishes
+      // what it has, and reports the shortfall in the status line - which is why
+      // `waitForRefresh` watches for `unavailable` alongside `cells`. So the
+      // honest assertion is that the refresh ENDS and both channels clear, not
+      // that an error appears.
+      //
+      // 400 rather than 503 deliberately (see `fixtures.js`): a non-retryable
+      // status escapes the retry loop at once, so this costs a second rather than
+      // several of exponential backoff.
+      const AFTER_ANNOUNCE = { timeout: 8_000 };
+      counts.holdOverpass();
+      await page.selectOption("#site", "porto-ribeira");
+
+      const overlay = page.locator("#loading-overlay");
+      await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
+
+      counts.releaseOverpass();
+
+      await expect(overlay).toBeHidden(AFTER_ANNOUNCE);
+      await expect(page.locator("#status")).not.toHaveClass(
+        /is-loading/,
+        AFTER_ANNOUNCE,
+      );
+    });
 
     // NOTE ON WHAT THIS STILL DOES NOT COVER. `refresh()` does not reject here:
     // `update` collects refused tiles into `missingTiles` rather than throwing,
