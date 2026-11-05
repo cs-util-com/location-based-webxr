@@ -21,6 +21,14 @@
     `stations.spec.js` does not select `creator-stations.spec.js`.
   - `changedSpecNames(paths, pkg)`: the `*.spec.{js,mjs}` file names among
     changed repo paths inside one package folder.
+  - `specsImporting(paths, sources)`: the spec file names whose relative
+    imports (`import ... from "./x.js"`, `export ... from`, `import("./x")`)
+    reach a changed path, directly or through other helpers; sorted, no
+    duplicates. `sources` maps repo-relative posix paths to their source.
+  - `listedTotal(output)`: the count in `playwright test --list` output
+    ("Total: N tests"), 0 for "No tests found", `null` otherwise.
+  - `emptyTierWarning({ project, areas, ref, total })`: the `WARNING` line
+    for an area-narrowed tier project with 0 tests; `null` otherwise.
   - `developerSelected(argv, env)`: whether the command line holds a
     developer's own selection (a file filter, `-g`/`--grep`,
     `--last-failed`, `--only-changed`, a test list). `E2E_DEVELOPER_FILTER`
@@ -50,8 +58,13 @@
     runs the whole file, as before the tier existed. An unknown option
     followed by a value reads the value as a filter, which turns the tier
     off: more tests, never fewer.
-  - A spec helper (not a `*.spec.*` file) that changes does not widen the
-    tier; the full run covers it.
+  - A changed test script that is not a spec (a fixture, a helper) runs
+    every spec importing it whole: `playwrightGrep` reads the `.js`/`.mjs`
+    files under the config's folder (not `src`, `public`, `node_modules` or
+    the build and report output) only when such a path changed. A change
+    under the package's `src/` widens nothing: the app's code is what the
+    tagged tests cover, and the full run covers the rest. An import the
+    regular expression cannot read (a computed specifier) is not followed.
   - The tagged set is pinned per package by
     `tests/repo-config/e2e-pr-tier.test.js`, which also checks that every
     config reads this module and that every Tour Viewer CI lane holds a
@@ -60,7 +73,7 @@
   - The full set locally: `E2E_TIER=full pnpm run test:e2e`.
   - A package's own `pnpm test` runs the tier (no base: the tag only); add
     `E2E_TIER_BASE=origin2/main` to also run the specs changed since then.
-- Tests: `scripts/e2e/tier.test.mjs` (the rules, and a throwaway Playwright
+- Tests: `scripts/e2e/tier.test.mjs` and `tier.property.test.mjs` (the rules, and a throwaway Playwright
   suite for the empty-selection failure and the whole changed spec);
   `tests/repo-config/e2e-pr-tier.test.js` (the tagged set and the config
   wiring); `tests/repo-config/ci-jobs.test.js` (the workflow's tier choice).

@@ -5,8 +5,14 @@
 // flow out of every PR without a red; a tag that drifts in makes the tier
 // slower without anyone deciding it. So the tagged list is pinned here, per
 // package, by count and by name, and a change to it is a visible diff of
-// this file. The list came from the 2026-11-04 pruning audits; changing it
-// means saying why in the commit.
+// this file; changing it means saying why in the commit.
+//
+// What earns a tag: one test per core flow a pull request could break
+// (opening, editing and saving a tour, the visitor's walk, a page's boot
+// without errors, a known error path), and where a 2D and a 3D test cover
+// the same flow, the 3D one: the long-text test "words typed just before
+// Ctrl+S are in the saved tour" stands in for editor.spec.js's "Ctrl+S
+// saves, and the browser's own save never opens".
 //
 // What counts as a tag: a test title ending in " @pr" (Playwright reads an
 // `@word` in a title as a tag, and its grep matches the title), or the one
@@ -247,6 +253,7 @@ const EXPECTED = {
     'playwright-tests/editor.spec.js: a tour without a file is saved into the file its first Save asks for, and from then on in place and by itself',
     'playwright-tests/editor3d-edit.spec.js: drags a selected pin over the ground with the mouse: one step, kept above the ground, saved, undone and redone',
     "playwright-tests/editor3d-globe-approach.spec.js: the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring",
+    "playwright-tests/editor3d-globe-buildings.spec.js: the buildings load in their worker on the relief's ground, out of the picking's way",
     'playwright-tests/editor3d-globe-default.spec.js: the plain editor link opens the sample tour on the globe',
     "playwright-tests/editor3d-globe-default.spec.js: opens on the whole Earth over the creator's zone, and a right click on the ground places its first station",
     'playwright-tests/editor3d-globe-default.spec.js: without WebGL a plain page says so, and the tour still saves',

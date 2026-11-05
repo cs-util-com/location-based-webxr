@@ -9,6 +9,7 @@
 // The tagged set itself is pinned by tests/repo-config/e2e-pr-tier.test.js.
 
 import { execFileSync } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -95,6 +96,107 @@ export function changedSpecNames(paths, pkg) {
     .map((p) => p.slice(p.lastIndexOf('/') + 1));
 }
 
+/** A relative import or re-export specifier in a test script. */
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g;
+
+/** @param {string} p */
+const posix = (p) => p.replaceAll('\\', '/');
+
+/**
+ * The spec file names whose relative imports reach a changed file, directly
+ * or through other helpers: a changed fixture or helper runs every spec that
+ * uses it whole. A changed spec itself is `changedSpecNames`' part.
+ *
+ * @param {readonly string[]} paths - changed repo-relative paths, either slash style
+ * @param {Readonly<Record<string, string>>} sources - repo-relative posix path -> source, the specs and helpers to follow
+ * @returns {string[]} sorted, without duplicates
+ */
+export function specsImporting(paths, sources) {
+  const changed = new Set(paths.map(posix));
+  /** @type {Map<string, string[]>} file -> the files it imports */
+  const imports = new Map();
+  for (const [file, source] of Object.entries(sources)) {
+    const dir = path.posix.dirname(file);
+    imports.set(
+      file,
+      [...source.matchAll(RELATIVE_IMPORT)].map((m) => path.posix.join(dir, m[1])),
+    );
+  }
+  /** @type {Map<string, boolean>} */
+  const reaches = new Map();
+  /** @param {string} file @returns {boolean} */
+  const reachesChanged = (file) => {
+    const known = reaches.get(file);
+    if (known !== undefined) return known;
+    reaches.set(file, false); // an import cycle reaches nothing new
+    const hit = (imports.get(file) ?? []).some((dep) => changed.has(dep) || reachesChanged(dep));
+    reaches.set(file, hit);
+    return hit;
+  };
+  return Object.keys(sources)
+    .filter((file) => /\.spec\.m?js$/.test(file) && reachesChanged(file))
+    .map((file) => file.slice(file.lastIndexOf('/') + 1))
+    .filter((name, i, all) => all.indexOf(name) === i)
+    .sort();
+}
+
+/** Folders never searched for test scripts. */
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'test-results', 'playwright-report', 'src', 'public']);
+
+/**
+ * The test scripts (`.js`, `.mjs`) under a config's folder, outside the app's
+ * own sources and the build output, keyed repo-relative.
+ *
+ * @param {string} dir - absolute
+ * @param {string} top - the repo root, absolute
+ * @returns {Record<string, string>}
+ */
+function readTestSources(dir, top) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  /** @param {string} d */
+  const walk = (d) => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.m?js$/.test(entry.name)) out[posix(path.relative(top, full))] = readFileSync(full, 'utf8');
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+/**
+ * The total of a `playwright test --list` run's output: its "Total: N
+ * tests" line, 0 for "No tests found", `null` when neither is there.
+ *
+ * @param {string} output - stdout and stderr together
+ * @returns {number | null}
+ */
+export function listedTotal(output) {
+  const total = /Total: (\d+) tests? in/.exec(output);
+  if (total) return Number(total[1]);
+  return /No tests found/.test(output) ? 0 : null;
+}
+
+/**
+ * The warning for a project's run cut to the changed area that selects no
+ * test in the tier: it passes (the tier allows it), so it must not read as
+ * a green browser run. `null` when tests run or the count is unknown.
+ *
+ * @param {{ project: string, areas: readonly string[], ref: string, total: number | null }} run
+ * @returns {string | null}
+ */
+export function emptyTierWarning({ project, areas, ref, total }) {
+  if (total !== 0) return null;
+  const area = areas.length > 0 ? areas.join(', ') : 'none';
+  return (
+    `WARNING e2e project ${project}: 0 tests run. The changed area (${area}, vs ${ref}) holds no @pr test ` +
+    'and no changed spec, so the per-PR tier ran nothing here; E2E_TIER=full runs every test of the area.'
+  );
+}
+
 /** Playwright `test` options that take their value as the next argument. */
 const VALUE_OPTIONS = new Set([
   '-c',
@@ -175,11 +277,12 @@ export function passesEmpty({ developerFiltered, narrowed, env }) {
   return developerFiltered || (narrowed && e2eTier(env) === 'pr');
 }
 
-/** @type {{ root: (dir: string) => string, changed: (ref: string, root: string) => string[] }} */
+/** @type {{ root: (dir: string) => string, changed: (ref: string, root: string) => string[], sources: (dir: string, root: string) => Record<string, string> }} */
 const GIT_IO = {
   root: (dir) =>
     execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' }).trim(),
   changed: (ref, root) => changedPaths(ref, root),
+  sources: readTestSources,
 };
 
 /**
@@ -209,7 +312,7 @@ export function playwrightGrep(
         : parsed.grep.map((/** @type {string} */ s) => new RegExp(s));
     }
   }
-  const { root, changed } = { ...GIT_IO, ...io };
+  const { root, changed, sources } = { ...GIT_IO, ...io };
   /** @type {RegExp[] | undefined} */
   let grep;
   if (e2eTier(env) === 'full' || developerSelected(argv, env)) {
@@ -226,12 +329,29 @@ export function playwrightGrep(
       const ref = /** @type {string} */ (env[refEnv]);
       const top = root(configDir);
       const pkg = path.relative(top, configDir).split(/[\\/]/)[0];
+      /** @type {string[]} */
+      let paths;
       try {
-        whole = changedSpecNames(changed(ref, top), pkg);
+        paths = changed(ref, top);
       } catch (error) {
         throw new Error(
           `e2e tier: cannot diff against ${refEnv} "${ref}" to find the changed specs (${String(error)})`,
         );
+      }
+      whole = changedSpecNames(paths, pkg);
+      // A changed test script that is not a spec (a fixture, a helper): the
+      // specs importing it run whole. Read only when there is one.
+      const helpers = paths
+        .map(posix)
+        .filter(
+          (p) =>
+            p.startsWith(`${pkg}/`) &&
+            /\.m?js$/.test(p) &&
+            !/\.spec\.m?js$/.test(p) &&
+            !p.startsWith(`${pkg}/src/`),
+        );
+      if (helpers.length > 0) {
+        whole = [...new Set([...whole, ...specsImporting(helpers, sources(configDir, top))])];
       }
     }
     grep = tierGrep(env, whole);
