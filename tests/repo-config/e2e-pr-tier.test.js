@@ -193,9 +193,7 @@ const EXPECTED = {
     'playwright-tests/smoke.spec.js: loads without console errors and offers the replay path on desktop',
   ],
   GpsPlusSlamJs_QrTrackingDemo: [
-    'playwright-tests/qr-demo.spec.js: starts scanning with no measured size yet',
-    'playwright-tests/qr-demo.spec.js: measures the QR size from depth and converges to "estimated"',
-    'playwright-tests/qr-demo.spec.js: glues the debug axis + cube under arWorldGroup once locked',
+    'playwright-tests/qr-demo.spec.js: starts scanning, measures the size, converges and glues the debug objects',
     'playwright-tests/qr-demo.spec.js: withholds the overlay while the size stays unknown',
     'playwright-tests/smoke.spec.js: loads and gates WebXR-less desktop without crashing',
   ],

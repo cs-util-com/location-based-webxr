@@ -13,17 +13,17 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     await installQrDemoFakes(page);
   });
 
-  test("starts scanning with no measured size yet @pr", async ({ page }) => {
+  test("starts scanning, measures the size, converges and glues the debug objects @pr", async ({
+    page,
+  }) => {
     await bootQrDemo(page);
     await expect(page.getByTestId("hud-status")).toContainText("Scanning");
     await expect(page.getByTestId("hud-size")).toHaveText("—");
     await expect(page.getByTestId("hud-lifecycle")).toHaveText("unknown");
-  });
+    // The ?qrperf instrument stays invisible for everyone who did not ask.
+    await expect(page.getByTestId("qrperf-log")).toBeHidden();
+    await expect(page.getByTestId("qrperf-copy")).toBeHidden();
 
-  test('measures the QR size from depth and converges to "estimated" @pr', async ({
-    page,
-  }) => {
-    await bootQrDemo(page);
     await feedFrames(page, 12);
 
     // The faked planar square is 0.2 m on a side, every frame → median 20.0 cm.
@@ -36,17 +36,10 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     const log = page.getByTestId("debug-log");
     await expect(log).toContainText("estimated 20.0cm");
     await expect(log).toContainText("Δ"); // inter-lock cadence is shown
-  });
-
-  test("glues the debug axis + cube under arWorldGroup once locked @pr", async ({
-    page,
-  }) => {
-    await bootQrDemo(page);
-    await feedFrames(page, 12);
 
     const scene = await page.evaluate(() => {
-      // The debug objects and the motion trail (plan §26) each hang off their
-      // own WEBXR_TO_NUE basis node under arWorldGroup, found by name.
+      // The debug objects and the motion trail each hang off their own
+      // WEBXR_TO_NUE basis node under arWorldGroup, found by name.
       const top = window.__qrDemoTest.worldGroupChildren;
       const byName = (name) => top.find((o) => o.name === name);
       const kids = byName("qr-debug-basis")?.children ?? [];
@@ -64,8 +57,8 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     expect(scene.kidCount).toBe(2);
     expect(scene.lastVisible).toBe(true);
     expect(scene.trailVisible).toBe(true);
-    // The motion row is wired (plan §26). The faked frames never move, so
-    // this pins the wiring only - the detector itself is unit-tested.
+    // The motion row is wired. The faked frames never move, so this pins the
+    // wiring only - the detector itself is unit-tested.
     await expect(page.getByTestId("hud-motion")).toHaveText("still");
   });
 });
