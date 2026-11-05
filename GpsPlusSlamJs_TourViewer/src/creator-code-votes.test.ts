@@ -1295,34 +1295,64 @@ describe(
   "a visit the stored code lined up, walked with GPS and the code seen again",
   { timeout: SLOW_MS },
   () => {
-    it.each([10, 14])(
-      "corrects a stored code %d m off to where the visit's own GPS puts it, and stamps it",
-      async (storedErrorM) => {
-        const v = await mixedVisit({
-          walkM: 38,
-          accuracyM: 5,
-          storedErrorM,
-        });
-        // The votes were still holding the alignment at the settle.
-        expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
-        expect(v.decision?.decision).toEqual({ kind: "replace" });
-        expect(v.decision?.applied).toBe(true);
-        // Exact fixes: the device fit is exact, so the code lands on the
-        // truth.
-        expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
-        expect(v.mintQuality?.gpsAccuracyM).toBe(5);
-        // The log carries the fit's view, never the votes' (the stored
-        // spot).
-        expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
-      },
-    );
+    // One visit carries what were several visits' claims: each replayed the
+    // same walk and read another field of its record. Its pins and a new
+    // code are placed inside that same walk.
+    it("corrects a stored code 12 m off to where the visit's own GPS puts it and stamps it; its pins, path, a new code and its automatic measurement go through the same fit", async () => {
+      const v = await mixedVisit({
+        walkM: 38,
+        accuracyM: 5,
+        storedErrorM: 12,
+        pins: true,
+        newCode: true,
+      });
+      // The votes were still holding the alignment at the settle.
+      expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
+      expect(v.decision?.decision).toEqual({ kind: "replace" });
+      expect(v.decision?.applied).toBe(true);
+      // Exact fixes: the device fit is exact, so the code lands on the
+      // truth.
+      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
+      expect(v.mintQuality?.gpsAccuracyM).toBe(5);
+      // The log carries the fit's view, never the votes' (the stored
+      // spot).
+      expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
+      // Why: the visit's own pins were placed through the same vote-held
+      // alignment as the code. When the settle corrects the code through
+      // the visit's own GPS, a pin far from both looks at it (where it does
+      // not tie to the code) must be corrected with it - through the same
+      // fit - or a visitor lined up on the corrected code finds it as far
+      // off as the code was.
+      expect(v.pinErrM["Near"]).toBeLessThan(0.3);
+      expect(v.pinErrM["Far"]).toBeLessThan(0.3);
+      // Why: the visit log's path is what the summary map draws the
+      // visit's codes against. Through the votes it sits where the stored
+      // code put the visit, apart from its own fixes by the stored error.
+      expect(v.pathGapM).not.toBeNull();
+      expect(v.pathGapM!).toBeLessThan(1.5);
+      // Why: a NEW code measured in such a visit was minted through the
+      // vote-held alignment - carrying the stored code's error - but
+      // stamped with the device fixes' quality, so later visits kept it as
+      // good and it disagreed with the corrected stored code for good.
+      expect(v.newCode).not.toBeNull();
+      expect(v.newCode!.errM).toBeLessThan(0.5);
+      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBe(5);
+      // Why: the automatic measurement runs on the render the mint gate
+      // opens on - here the walk's third fix, with the code long out of
+      // view. Taken then from the last stable pose, it is a code event at
+      // the wrong moment, which the visit's notes nearby tie to.
+      expect(v.measuredDuringWalk).toBe(0);
+      // The look at the end still measures it.
+      expect(v.c.measuredAt.length).toBeGreaterThan(0);
+    });
 
-    it("writes no stamp and logs no code when the walk cannot judge the code", async () => {
+    it("writes no stamp and logs no code when the walk cannot judge the code, and stamps a new code with no claim of quality", async () => {
       // 24 m at 15 m accuracy: the heading needs about 72 m.
       const v = await mixedVisit({
         walkM: 24,
         accuracyM: 15,
         storedErrorM: 10,
+        newCode: true,
       });
       expect(v.votesAtEnd).toBeGreaterThan(0);
       // The result line says how much farther to walk.
@@ -1337,6 +1367,9 @@ describe(
       expect(v.loggedNE).toBeNull();
       // The walk itself is still logged: the creator's own GPS.
       expect(v.c.visitLog.entries().at(-1)?.gps.length).toBeGreaterThan(0);
+      expect(v.newCode).not.toBeNull();
+      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBeUndefined();
+      expect(v.newCode!.mintQuality?.alignmentGpsExtentM).toBeUndefined();
     });
 
     it("invents no position, stamp or log entry in a visit that never had a fix", async () => {
@@ -1374,62 +1407,6 @@ describe(
       expect(v.votesAtEnd).toBe(0);
       expect(v.decision?.decision).toEqual({ kind: "move" });
       expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(1);
-    });
-
-    // Why: the visit's own pins were placed through the same vote-held
-    // alignment as the code. When the settle corrects the code through the
-    // visit's own GPS, a pin far from both looks at it (where it does not
-    // tie to the code) must be corrected with it - through the same fit -
-    // or a visitor lined up on the corrected code finds it as far off as
-    // the code was.
-    it("settles the visit's pins with the corrected code, near a look and far from both", async () => {
-      const v = await mixedVisit({
-        walkM: 38,
-        accuracyM: 5,
-        storedErrorM: 12,
-        pins: true,
-      });
-      expect(v.decision?.decision).toEqual({ kind: "replace" });
-      expect(distM(v.afterNE!, v.truthNE)).toBeLessThan(0.3);
-      expect(v.pinErrM["Near"]).toBeLessThan(0.3);
-      expect(v.pinErrM["Far"]).toBeLessThan(0.3);
-    });
-
-    // Why: the visit log's path is what the summary map draws the visit's
-    // codes against. Through the votes it sits where the stored code put
-    // the visit, apart from its own fixes by the stored error.
-    it("logs the visit's path through the same fit as its codes", async () => {
-      const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM: 12 });
-      expect(v.pathGapM).not.toBeNull();
-      expect(v.pathGapM!).toBeLessThan(1.5);
-    });
-
-    // Why: a NEW code measured in such a visit was minted through the
-    // vote-held alignment - carrying the stored code's error - but stamped
-    // with the device fixes' quality, so later visits kept it as good and
-    // it disagreed with the corrected stored code for good.
-    it("measures a new code through the visit's own fit, not through the votes", async () => {
-      const v = await mixedVisit({
-        walkM: 38,
-        accuracyM: 5,
-        storedErrorM: 12,
-        newCode: true,
-      });
-      expect(v.newCode).not.toBeNull();
-      expect(v.newCode!.errM).toBeLessThan(0.5);
-      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBe(5);
-    });
-
-    it("stamps a new code with no claim of quality when the walk cannot judge it", async () => {
-      const v = await mixedVisit({
-        walkM: 24,
-        accuracyM: 15,
-        storedErrorM: 12,
-        newCode: true,
-      });
-      expect(v.newCode).not.toBeNull();
-      expect(v.newCode!.mintQuality?.gpsAccuracyM).toBeUndefined();
-      expect(v.newCode!.mintQuality?.alignmentGpsExtentM).toBeUndefined();
     });
 
     // Why: a phone keeps reporting fixes on its way back in and at the
@@ -1488,32 +1465,20 @@ describe(
     // was lined up by its votes - was replaced by the fit's own GPS error
     // and then stamped there, so later visits kept the wrong spot for good.
     // Seen within 0.75 times the fit's accuracy, it stays as it is, with no
-    // new stamp; the visit still logs where its own GPS saw it.
-    it.each([0, 3])(
-      "keeps an unstamped code stored %d m off, within the fit's own error",
-      async (storedErrorM) => {
-        const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM });
-        expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
-        expect(v.decision?.offsetM).toBeLessThan(0.75 * 5);
-        expect(v.decision?.decision).toEqual({
-          kind: "keep",
-          reason: "stored-good",
-        });
-        expect(v.afterNE).toEqual(v.storedNE);
-        expect(v.mintQuality).toBeUndefined();
-        expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
-      },
-    );
-
-    // Why: the automatic measurement runs on the render the mint gate
-    // opens on - here the walk's third fix, with the code long out of
-    // view. Taken then from the last stable pose, it is a code event at
-    // the wrong moment, which the visit's notes nearby tie to.
-    it("takes no automatic measurement while the code is out of view", async () => {
-      const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM: 10 });
-      expect(v.measuredDuringWalk).toBe(0);
-      // The look at the end still measures it.
-      expect(v.c.measuredAt.length).toBeGreaterThan(0);
+    // new stamp; the visit still logs where its own GPS saw it. 3 m sits
+    // near the 0.75 x 5 m bound; a code stored exactly right takes the
+    // same branch.
+    it("keeps an unstamped code stored 3 m off, within the fit's own error", async () => {
+      const v = await mixedVisit({ walkM: 38, accuracyM: 5, storedErrorM: 3 });
+      expect(v.votesAtEnd).toBeGreaterThan(v.votesAtStart);
+      expect(v.decision?.offsetM).toBeLessThan(0.75 * 5);
+      expect(v.decision?.decision).toEqual({
+        kind: "keep",
+        reason: "stored-good",
+      });
+      expect(v.afterNE).toEqual(v.storedNE);
+      expect(v.mintQuality).toBeUndefined();
+      expect(distM(v.loggedNE!, v.truthNE)).toBeLessThan(0.3);
     });
 
     it("does the same for a code only this device's code book stores", async () => {
@@ -1552,55 +1517,89 @@ describe(
   "the visit's own view of a code (sweep, property)",
   { timeout: 10 * SLOW_MS },
   () => {
-    it("is the same whatever the stored position, and a stamp only ever comes with a change", async () => {
-      await fc.assert(
-        fc.asyncProperty(
-          fc.constantFrom(...SWEEP_WALKS_M),
-          fc.constantFrom(...SWEEP_ACCURACIES_M),
-          fc.constantFrom(...SWEEP_DRIFTS_PCT),
-          fc.constantFrom(0, 5, 10, 15),
-          fc.constantFrom(0, 5, 10, 15),
-          fc.integer({ min: 1, max: 1000 }),
-          async (walkM, accuracyM, driftPct, errA, errB, seed) => {
-            const at = (storedErrorM: number) =>
-              mixedVisit({
-                walkM,
-                accuracyM,
-                storedErrorM,
-                driftPct,
-                noise: true,
-                seed,
-              });
-            const a = await at(errA);
-            const b = await at(errB);
-            for (const v of [a, b]) {
-              const changed =
-                v.decision?.applied === true &&
-                (v.decision.decision.kind === "replace" ||
-                  v.decision.decision.kind === "move");
-              expect(v.mintQuality !== undefined).toBe(changed);
-              // Unchanged means exactly as stored.
-              expect(v.afterNE).toEqual(changed ? v.afterNE : v.storedNE);
-              // A code the walk could not judge is not logged.
-              const codePlaced = v.decision?.decision.reason === "code-placed";
-              expect(codePlaced ? v.loggedNE : null).toBeNull();
-            }
-            // Both still lined up by the votes at the settle (the moved-code
-            // check withdrew none): their own views must agree.
-            const bothHeld = a.votesAtEnd > 0 && b.votesAtEnd > 0;
-            expect(
-              bothHeld && (a.loggedNE === null) !== (b.loggedNE === null),
-            ).toBe(false);
-            const gapM =
-              bothHeld && a.loggedNE !== null && b.loggedNE !== null
-                ? distM(a.loggedNE, b.loggedNE)
-                : 0;
-            expect(gapM).toBeLessThan(0.01);
-          },
-        ),
-        { numRuns: 5, seed: 20261025 },
+    type Visit = Awaited<ReturnType<typeof mixedVisit>>;
+    /** The claims on two visits that differ only in the stored position. */
+    const checkPair = (a: Visit, b: Visit): number => {
+      for (const v of [a, b]) {
+        const changed =
+          v.decision?.applied === true &&
+          (v.decision.decision.kind === "replace" ||
+            v.decision.decision.kind === "move");
+        expect(v.mintQuality !== undefined).toBe(changed);
+        // Unchanged means exactly as stored.
+        expect(v.afterNE).toEqual(changed ? v.afterNE : v.storedNE);
+        // A code the walk could not judge is not logged.
+        const codePlaced = v.decision?.decision.reason === "code-placed";
+        expect(codePlaced ? v.loggedNE : null).toBeNull();
+      }
+      // Both still lined up by the votes at the settle (the moved-code
+      // check withdrew none): their own views must agree.
+      const bothHeld = a.votesAtEnd > 0 && b.votesAtEnd > 0;
+      expect(bothHeld && (a.loggedNE === null) !== (b.loggedNE === null)).toBe(
+        false,
       );
+      const gapM =
+        bothHeld && a.loggedNE !== null && b.loggedNE !== null
+          ? distM(a.loggedNE, b.loggedNE)
+          : 0;
+      expect(gapM).toBeLessThan(0.01);
+      return gapM;
+    };
+
+    // One fixed pair carries the claim in the gate: the same noisy walk
+    // stored 0 and 15 m off. The test asserts that both visits held their
+    // votes and logged the code, since a pair where either did not passes
+    // the gap check with nothing compared.
+    it("is the same whatever the stored position, and a stamp only ever comes with a change", async () => {
+      const at = (storedErrorM: number) =>
+        mixedVisit({
+          walkM: 38,
+          accuracyM: 5,
+          storedErrorM,
+          driftPct: 1,
+          noise: true,
+          seed: 7,
+        });
+      const a = await at(0);
+      const b = await at(15);
+      expect(a.votesAtEnd > 0 && b.votesAtEnd > 0).toBe(true);
+      expect(a.loggedNE).not.toBeNull();
+      expect(b.loggedNE).not.toBeNull();
+      // Measured: 0 m is kept as stored-good, 15 m replaced, and the logged
+      // positions agree to under 0.0001 m, a factor 100 inside the bound.
+      checkPair(a, b);
     });
+
+    // The same claim drawn over the sweep's walks, accuracies, drifts and
+    // stored errors, about 1.75 s a visit: it runs with the full table.
+    it.runIf(SWEEP_OUT !== undefined)(
+      "is the same whatever the stored position, over the sweep",
+      async () => {
+        await fc.assert(
+          fc.asyncProperty(
+            fc.constantFrom(...SWEEP_WALKS_M),
+            fc.constantFrom(...SWEEP_ACCURACIES_M),
+            fc.constantFrom(...SWEEP_DRIFTS_PCT),
+            fc.constantFrom(0, 5, 10, 15),
+            fc.constantFrom(0, 5, 10, 15),
+            fc.integer({ min: 1, max: 1000 }),
+            async (walkM, accuracyM, driftPct, errA, errB, seed) => {
+              const at = (storedErrorM: number) =>
+                mixedVisit({
+                  walkM,
+                  accuracyM,
+                  storedErrorM,
+                  driftPct,
+                  noise: true,
+                  seed,
+                });
+              checkPair(await at(errA), await at(errB));
+            },
+          ),
+          { numRuns: 5, seed: 20261025 },
+        );
+      },
+    );
 
     it.runIf(SWEEP_OUT !== undefined)(
       "writes the full table",

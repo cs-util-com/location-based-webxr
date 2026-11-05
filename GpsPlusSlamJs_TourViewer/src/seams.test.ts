@@ -17,30 +17,10 @@ describe("getSeams", () => {
     expect(getSeams()).toBe(realSeams);
   });
 
-  it("exposes every device function main.ts wires", () => {
-    expect(typeof realSeams.controllerDeps).toBe("object");
-    expect(typeof realSeams.getArWorldGroup).toBe("function");
-    expect(typeof realSeams.enableArWorldGroupAlignment).toBe("function");
-    expect(typeof realSeams.startCameraFrameCapture).toBe("function");
-    expect(typeof realSeams.stopCameraFrameCapture).toBe("function");
-    expect(typeof realSeams.startDepthCapture).toBe("function");
-    expect(typeof realSeams.stopDepthCapture).toBe("function");
-    expect(typeof realSeams.createQrFrontEnd).toBe("function");
-    expect(typeof realSeams.solveQrPose).toBe("function");
-    expect(typeof realSeams.getIntrinsics).toBe("function");
-    expect(typeof realSeams.createQrDebugView).toBe("function");
-    expect(typeof realSeams.getScene).toBe("function");
-    // The pose every device GPS fix is paired with (D20 M5c: the e2e
-    // delivers fixes through the page's own GPS path).
-    expect(typeof realSeams.getArPose).toBe("function");
-    expect(typeof realSeams.queryGeolocationPermission).toBe("function");
-    expect(typeof realSeams.requestLocationOnce).toBe("function");
-    expect(typeof realSeams.shareOrDownloadZip).toBe("function");
-    expect(typeof realSeams.canShareZip).toBe("function");
-    expect(typeof realSeams.startHitTestReticle).toBe("function");
-    expect(typeof realSeams.encodeFrameJpeg).toBe("function");
-    expect(typeof realSeams.createLabel).toBe("function");
-    expect(typeof realSeams.schedule).toBe("function");
+  // Every device function main.ts wires is a key of TourViewerSeams, so tsc
+  // already refuses a missing one; what is left is the one seam whose
+  // answer in node is the claim.
+  it("has no XR projection without a camera", () => {
     // The radar view cone: the XR camera's
     // P[0]; null without a camera (node has none), so the fallback cone.
     expect(realSeams.xrProjection0()).toBeNull();

@@ -3219,7 +3219,7 @@ describe(
     // code was decided for the code IN HAND only, so a creator who walked
     // past two posters improved one of them. Every stored code the visit
     // saw gets its own decision.
-    it("decides the saved position of every stored code the visit saw", async () => {
+    it("decides the saved position of every stored code the visit saw, and takes each earlier pin along with one improved code only", async () => {
       const { a } = await twoStoredCodesSeenAgain();
       a.endVisit();
       const decisions = codePositions(a);
@@ -3237,17 +3237,10 @@ describe(
       expect(
         codeWorldOf(levels[0]!.json).distanceTo(codeWorldOf(levels[1]!.json)),
       ).toBeCloseTo(20, 0);
-    });
-
-    // Why this test matters (M5 design review #7): with two improved codes
-    // a pin within reach of both was taken along twice. Each object goes
-    // with the one code it belongs to (the nearest, before the settle).
-    it("takes each earlier pin along with one improved code only", async () => {
-      const { a } = await twoStoredCodesSeenAgain();
-      a.endVisit();
-      const moved = codePositions(a).flatMap((d) =>
-        d.movedWithCode.map((m) => m.id),
-      );
+      // Why (M5 design review #7): with two improved codes a pin within
+      // reach of both was taken along twice. Each object goes with the one
+      // code it belongs to (the nearest, before the settle).
+      const moved = decisions.flatMap((d) => d.movedWithCode.map((m) => m.id));
       expect(new Set(moved).size).toBe(moved.length);
       const between = a.ctx.tourDocument
         .entries()
@@ -3454,7 +3447,7 @@ describe(
     // history the code book is not part of. An undo of that settle's last
     // step puts the station back - that half holds today and must keep
     // holding.
-    it("an undo of the settle's station move puts the station back", async () => {
+    it("an undo of the settle puts the station back, takes the code's improvement back and lets the hand go of it, and keeps its book measurement", async () => {
       const { a, stored } = await secondVisit({
         yawDeg: 20,
         northM: 3,
@@ -3469,8 +3462,45 @@ describe(
       expect(stationOf(a, "near").geo, "the code took it along").not.toEqual(
         before,
       );
+      expect(a.codes.inHand()?.id).toBe(stored.id);
+      const visits = [0, 1, 2, 3, 4, 5].filter((v) =>
+        a.codes.measuredIn(stored.id, v),
+      );
+      expect(visits, "measured in a visit of this page").not.toEqual([]);
       expect(a.ctx.tourDocument.undo().kind).toBe("undone");
       expect(stationOf(a, "near").geo).toEqual(before);
+      // Why (plan M3b): the hand held the improved text, and the hand's
+      // text wins at every later change of the book - so an undo that only
+      // put the book back would see the improvement return at the next
+      // write. The undo makes the hand let go of the code it took back, its
+      // measurement with it.
+      expect(a.codes.inHand()).toBeNull();
+      expect(a.codes.measurement()).toBeNull();
+      // Why (plan M3b): the code keeps its BOOK measurement (the step holds
+      // the texts only), so the visit that measured it still lists it for
+      // a settle redone after a failed Finish.
+      for (const v of visits) {
+        expect(a.codes.measuredIn(stored.id, v)).toBe(true);
+        expect(a.codes.visitCodes(v).map((c) => c.level.id)).toContain(
+          stored.id,
+        );
+      }
+      // Was a known divergence until M3b: the same undo left the improved
+      // code in place, so the station was back at the old code's spot while
+      // the code book still held - and the next Finish wrote - the new one.
+      // The undo takes the code's improvement back too, and the earlier
+      // text stays at the next render and in what the next Finish and the
+      // draft write.
+      a.setup.renderAuthorReadout();
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      a.codes.finished([]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
+      for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
+        expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
+      }
+      // Changed live: a restored draft's text for the code does not win.
+      a.codes.restoreLevels([{ id: stored.id, json: '{"from":"a draft"}' }]);
+      expect(a.codes.savedText(stored.id)).toBe(stored.json);
     });
 
     // Why this test matters (plan M3b, Q-D): the settle moved
@@ -3507,51 +3537,6 @@ describe(
       expect(follows, "the draft follows the settle once").toBe(1);
     });
 
-    // Was today's split, a known divergence until M3b: the same undo left
-    // the improved code in place, so the station was back at the old
-    // code's spot while the code book still held - and the next Finish
-    // wrote - the new one. The code in hand's text wins in the book
-    // (`withHand`), so nothing short of the undo itself can put the
-    // earlier text back. M3b's one-step settle with its undo listener
-    // turned this row green; the marker came off, the assertion stayed.
-    it("an undo of the settle's station move takes the code's improvement back too", async () => {
-      const { a, stored } = await secondVisit({
-        yawDeg: 20,
-        northM: 3,
-        walkM: 30,
-      });
-      a.endVisit();
-      expect(a.codes.savedText(stored.id)).not.toBe(stored.json);
-      a.ctx.tourDocument.undo();
-      a.setup.renderAuthorReadout();
-      expect(a.codes.savedText(stored.id)).toBe(stored.json);
-    });
-
-    // Why this test matters (plan M3b): the hand held the improved text,
-    // and the hand's text wins at every later change of the book - so an
-    // undo that only put the book back would see the improvement return
-    // at the next write. The undo makes the hand let go of the code it
-    // took back, its measurement with it, and the earlier text stays at
-    // the next render and in what the next Finish and the draft write.
-    it("lets the hand go of the code an undo of the settle took back, and the earlier text stays", async () => {
-      const { a, stored } = await secondVisit({
-        yawDeg: 20,
-        northM: 3,
-        walkM: 30,
-      });
-      a.endVisit();
-      expect(a.codes.inHand()?.id).toBe(stored.id);
-      a.ctx.tourDocument.undo();
-      expect(a.codes.inHand()).toBeNull();
-      expect(a.codes.measurement()).toBeNull();
-      a.setup.renderAuthorReadout();
-      a.codes.finished([]);
-      expect(a.codes.savedText(stored.id)).toBe(stored.json);
-      for (const written of [a.codes.toWrite(), a.codes.notHosted()]) {
-        expect(written.find((l) => l.id === stored.id)?.json).toBe(stored.json);
-      }
-    });
-
     // Why this test matters (plan M3b): a redo of the settle's step puts
     // the improved text back, but NOT the hand. Intended: the undo let the
     // hand go of the code (its measurement too), and the step keeps the
@@ -3573,36 +3558,6 @@ describe(
       expect(a.codes.savedText(stored.id), "the text is redone").toBe(improved);
       expect(a.codes.inHand(), "the hand stays empty").toBeNull();
       expect(a.codes.measurement()).toBeNull();
-    });
-
-    // Why this test matters (plan M3b): the undo takes the settle's text
-    // back and lets the hand go, but the code keeps its BOOK measurement
-    // (the step holds the texts only). So the code still counts as changed
-    // live - a draft restore does not overwrite it - and the visit that
-    // measured it still lists it for a settle redone after a failed
-    // Finish. Pinned, so the sidecar's statement of it stays true.
-    it("keeps the code's book measurement after an undo of the settle, and the visit still lists it", async () => {
-      const { a, stored } = await secondVisit({
-        yawDeg: 20,
-        northM: 3,
-        walkM: 30,
-      });
-      a.endVisit();
-      const visits = [0, 1, 2, 3, 4, 5].filter((v) =>
-        a.codes.measuredIn(stored.id, v),
-      );
-      expect(visits, "measured in a visit of this page").not.toEqual([]);
-      a.ctx.tourDocument.undo();
-      expect(a.codes.inHand()).toBeNull();
-      for (const v of visits) {
-        expect(a.codes.measuredIn(stored.id, v)).toBe(true);
-        expect(a.codes.visitCodes(v).map((c) => c.level.id)).toContain(
-          stored.id,
-        );
-      }
-      // Changed live: a restored draft's text for the code does not win.
-      a.codes.restoreLevels([{ id: stored.id, json: '{"from":"a draft"}' }]);
-      expect(a.codes.savedText(stored.id)).toBe(stored.json);
     });
 
     // Why these tests matter: the one-step undo
