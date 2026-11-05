@@ -6,14 +6,14 @@ Loads HTML fragments from `index.html` to ensure tests use the exact same markup
 
 ## Public API
 
-| Function                  | Parameters     | Returns  | Description                                        |
-| ------------------------- | -------------- | -------- | -------------------------------------------------- |
-| `extractElementById`      | `elementId`    | `string` | Extract an element's outer HTML by its ID          |
-| `loadSettingsModalHtml`   | -              | `string` | Convenience: load settings-modal element           |
-| `loadSettingsButtonHtml`  | -              | `string` | Convenience: load btn-settings element             |
-| `loadSettingsTestFixture` | -              | `string` | Load full fixture for settings modal tests         |
-| `loadFullIndexHtml`       | -              | `string` | Load full index.html as raw string                 |
-| `loadAppCss`              | -              | `string` | Load styles/app.css as raw string                  |
+| Function                  | Parameters  | Returns  | Description                                |
+| ------------------------- | ----------- | -------- | ------------------------------------------ |
+| `extractElementById`      | `elementId` | `string` | Extract an element's outer HTML by its ID  |
+| `loadSettingsModalHtml`   | -           | `string` | Convenience: load settings-modal element   |
+| `loadSettingsButtonHtml`  | -           | `string` | Convenience: load btn-settings element     |
+| `loadSettingsTestFixture` | -           | `string` | Load full fixture for settings modal tests |
+| `loadFullIndexHtml`       | -           | `string` | Load full index.html as raw string         |
+| `loadAppCss`              | -           | `string` | Load styles/app.css as raw string          |
 
 ## Invariants & Assumptions
 
@@ -38,9 +38,7 @@ beforeEach(() => {
 ### Extracting Custom Elements
 
 ```typescript
-import {
-  extractElementById,
-} from '../test-utils/html-fixtures';
+import { extractElementById } from '../test-utils/html-fixtures';
 
 // Single element
 const modal = extractElementById('setup-modal');
