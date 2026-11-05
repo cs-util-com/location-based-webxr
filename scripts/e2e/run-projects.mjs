@@ -40,7 +40,13 @@ import {
   projectReportName,
   readReport,
 } from './project-runs.mjs';
-import { DEVELOPER_FILTER_ENV, passesEmpty } from './tier.mjs';
+import {
+  DEVELOPER_FILTER_ENV,
+  e2eTier,
+  emptyTierWarning,
+  listedTotal,
+  passesEmpty,
+} from './tier.mjs';
 
 const [planFile, cli, verb, configFlag, configFile, ...forwarded] =
   process.argv.slice(2);
@@ -67,8 +73,10 @@ const playwrightCli = createRequire(path.join(cwd, 'package.json')).resolve(
 let selected = null;
 /** Whether the run was cut to the changed area (a tier run may then select nothing). */
 let areaNarrowed = false;
+/** The changed areas and the ref of a narrowed run, for its empty-tier warning. */
+let narrowedAreas = /** @type {string[]} */ ([]);
+const ref = process.env[CHANGED_REF_ENV] ?? '';
 if (mayNarrow(process.env, forwarded)) {
-  const ref = /** @type {string} */ (process.env[CHANGED_REF_ENV]);
   const root = spawnSync('git', ['rev-parse', '--show-toplevel'], {
     cwd,
     encoding: 'utf8',
@@ -79,6 +87,7 @@ if (mayNarrow(process.env, forwarded)) {
   } else {
     selected = selection.specs;
     areaNarrowed = true;
+    narrowedAreas = selection.areas;
     const areas = selection.areas.length > 0 ? selection.areas.join(', ') : 'none';
     console.log(
       `e2e areas: ${areas} vs ${ref} - ${selected.length} of ${Object.keys(plan.SPECS).length} spec files: ${selected.join(', ') || '(none)'}`
@@ -132,6 +141,13 @@ if (gateReport) {
   });
 }
 
+// A tier run cut to the changed area passes when it selects nothing, which
+// must not read as a green browser run: such a project is listed first, and
+// an empty one is skipped with a warning naming the area and the count 0.
+const tierMayRunEmpty =
+  areaNarrowed && !developerFiltered(forwarded) && e2eTier(process.env) === 'pr';
+/** @type {string[]} */
+const emptyWarnings = [];
 let exitCode = 0;
 /**
  * target file -> the parsed per-project reports. Read right after each run:
@@ -167,6 +183,21 @@ e2e project ${project}: no spec selected, skipped`);
       env: process.env,
     }),
   });
+  if (tierMayRunEmpty) {
+    const listed = spawnSync(process.execPath, [playwrightCli, ...args, '--list'], {
+      cwd,
+      env,
+      encoding: 'utf8',
+    });
+    const total = listed.status === 0 ? listedTotal(`${listed.stdout}${listed.stderr}`) : null;
+    const warning = emptyTierWarning({ project, areas: narrowedAreas, ref, total });
+    if (warning) {
+      console.warn(`
+${warning}`);
+      emptyWarnings.push(warning);
+      continue;
+    }
+  }
   console.log(`
 e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);
   const child = spawnSync(process.execPath, [playwrightCli, ...args], {
@@ -193,4 +224,6 @@ for (const [target, parsed] of reports) {
   if (parsed.length === 0) continue;
   writeFileSync(target, JSON.stringify(mergeReports(parsed), null, 2));
 }
+for (const warning of emptyWarnings) console.warn(`
+${warning}`);
 process.exit(exitCode);

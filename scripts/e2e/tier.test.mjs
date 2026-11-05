@@ -22,8 +22,11 @@ import {
   changedSpecNames,
   developerSelected,
   e2eTier,
+  emptyTierWarning,
+  listedTotal,
   passesEmpty,
   playwrightGrep,
+  specsImporting,
   tierGrep,
   tierRetries,
   tierStageRun,
@@ -149,6 +152,56 @@ describe('passesEmpty', () => {
   });
 });
 
+describe('specsImporting', () => {
+  // Why: a changed spec helper or fixture breaks the specs that import it,
+  // and before this only the tagged tests of those specs ran in the tier.
+  const pkg = 'P/playwright-tests';
+  const sources = {
+    [`${pkg}/a.spec.js`]: 'import { open } from "./fixture.js";\nimport x from "../src/x.js";',
+    [`${pkg}/b.spec.js`]: "import { menus } from './menus.js';",
+    [`${pkg}/c.spec.js`]: 'import { test } from "@playwright/test";',
+    [`${pkg}/menus.js`]: "export * from './fixture.js';",
+    [`${pkg}/fixture.js`]: '',
+  };
+
+  it('selects every spec whose relative imports reach a changed file, directly or through a helper', () => {
+    expect(specsImporting([`${pkg}/fixture.js`], sources)).toEqual(['a.spec.js', 'b.spec.js']);
+    expect(specsImporting([`${pkg}/menus.js`], sources)).toEqual(['b.spec.js']);
+    expect(specsImporting(['P\\src\\x.js'], sources)).toEqual(['a.spec.js']);
+  });
+
+  it('selects nothing for a file no spec imports, or for a changed spec itself', () => {
+    expect(specsImporting(['P/other.js'], sources)).toEqual([]);
+    expect(specsImporting([`${pkg}/c.spec.js`], sources)).toEqual([]);
+    expect(specsImporting([], sources)).toEqual([]);
+  });
+});
+
+describe('listedTotal and emptyTierWarning', () => {
+  // Why: a test:changed run cut to an area whose specs hold no tagged test
+  // passes with zero tests (the tier allows it), which must not read as a
+  // green browser run: it is said loudly, with the area and the count.
+  it("reads the count of Playwright's --list output, 0 for no tests, null when unreadable", () => {
+    expect(listedTotal('...\nTotal: 12 tests in 3 files\n')).toBe(12);
+    expect(listedTotal('Total: 1 test in 1 file')).toBe(1);
+    expect(listedTotal('Error: No tests found')).toBe(0);
+    expect(listedTotal('Total: 0 tests in 0 files')).toBe(0);
+    expect(listedTotal('something else')).toBeNull();
+  });
+
+  it('warns, naming the area, the ref and the count 0, only when nothing runs', () => {
+    const warning = emptyTierWarning({ project: 'webgl', areas: ['editor'], ref: 'r1', total: 0 });
+    expect(warning).toMatch(/WARNING/);
+    expect(warning).toContain('webgl');
+    expect(warning).toContain('editor');
+    expect(warning).toContain('r1');
+    expect(warning).toContain('0 tests');
+    expect(emptyTierWarning({ project: 'dom', areas: [], ref: 'r1', total: 0 })).toContain('none');
+    expect(emptyTierWarning({ project: 'dom', areas: ['viewer'], ref: 'r1', total: 3 })).toBeNull();
+    expect(emptyTierWarning({ project: 'dom', areas: ['viewer'], ref: 'r1', total: null })).toBeNull();
+  });
+});
+
 describe('playwrightGrep', () => {
   const configUrl = pathToFileURL(
     path.join(ROOT, 'GpsPlusSlamJs_TourViewer/playwright-tests/x.config.js'),
@@ -193,6 +246,26 @@ describe('playwrightGrep', () => {
     ).toBeUndefined();
   });
 
+  it('runs whole every spec that imports a changed helper', () => {
+    /** @type {string[]} */
+    const asked = [];
+    const io = {
+      root: () => ROOT,
+      changed: () => ['GpsPlusSlamJs_TourViewer/playwright-tests/fixture.js'],
+      sources: (/** @type {string} */ dir) => {
+        asked.push(dir);
+        return {
+          'GpsPlusSlamJs_TourViewer/playwright-tests/editor.spec.js': "import './fixture.js';",
+          'GpsPlusSlamJs_TourViewer/playwright-tests/fixture.js': '',
+        };
+      },
+    };
+    const grep = playwrightGrep(configUrl, { env: { [TIER_BASE_ENV]: 'base' }, argv, io });
+    expect(selects(grep, 'dom editor.spec.js untagged')).toBe(true);
+    expect(selects(grep, 'dom stations.spec.js untagged')).toBe(false);
+    expect(asked).toHaveLength(1);
+  });
+
   it('fails loudly when the base cannot be read, rather than skip the changed specs', () => {
     const io = {
       root: () => ROOT,
@@ -226,11 +299,11 @@ describe('an empty tier selection fails in Playwright itself', () => {
     path.join(dir, 'a.spec.mjs'),
     `import { test } from ${JSON.stringify(playwright)};\ntest("untagged", () => {});\ntest("another", () => {});\n`,
   );
-  /** @param {Record<string, string>} extra */
-  const list = (extra) =>
+  /** @param {Record<string, string>} extra @param {string[]} [args] */
+  const list = (extra, args = []) =>
     spawnSync(
       process.execPath,
-      [cli, 'test', '--config', path.join(dir, 'pw.config.mjs'), '--list'],
+      [cli, 'test', '--config', path.join(dir, 'pw.config.mjs'), '--list', ...args],
       {
         cwd: dir,
         env: { ...process.env, CI: '', [TIER_ENV]: '', ...extra },
@@ -242,6 +315,12 @@ describe('an empty tier selection fails in Playwright itself', () => {
     const run = list({});
     expect(run.status).not.toBe(0);
     expect(`${run.stdout}${run.stderr}`).toContain('No tests found');
+  }, 60_000);
+
+  it('lists an area-narrowed empty tier as 0 tests, which the runner then warns about', () => {
+    const run = list({}, ['--pass-with-no-tests']);
+    expect(run.status).toBe(0);
+    expect(listedTotal(`${run.stdout}${run.stderr}`)).toBe(0);
   }, 60_000);
 
   it('runs every test of a changed spec, and every test in the full set', () => {

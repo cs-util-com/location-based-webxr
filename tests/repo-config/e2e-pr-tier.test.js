@@ -5,8 +5,14 @@
 // flow out of every PR without a red; a tag that drifts in makes the tier
 // slower without anyone deciding it. So the tagged list is pinned here, per
 // package, by count and by name, and a change to it is a visible diff of
-// this file. The list came from the 2026-11-04 pruning audits; changing it
-// means saying why in the commit.
+// this file; changing it means saying why in the commit.
+//
+// What earns a tag: one test per core flow a pull request could break
+// (opening, editing and saving a tour, the visitor's walk, a page's boot
+// without errors, a known error path), and where a 2D and a 3D test cover
+// the same flow, the 3D one: the long-text test "words typed just before
+// Ctrl+S are in the saved tour" stands in for editor.spec.js's "Ctrl+S
+// saves, and the browser's own save never opens".
 //
 // What counts as a tag: a test title ending in " @pr" (Playwright reads an
 // `@word` in a title as a tag, and its grep matches the title), or the one

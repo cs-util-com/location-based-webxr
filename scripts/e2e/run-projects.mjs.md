@@ -56,7 +56,11 @@
     holds a developer's filter (`E2E_DEVELOPER_FILTER`), since the spec
     filters it adds are its own. A tier run cut to the changed area may
     select nothing in a project and passes (`passesEmpty`); a whole tier
-    run, or a CI lane, that selects nothing fails.
+    run, or a CI lane, that selects nothing fails. So that such a pass never
+    reads as a green browser run, each project of an area-narrowed tier run
+    is listed first (`--list`, a few seconds): a project with 0 tests is
+    skipped with a `WARNING` naming the changed area, the ref and the count
+    0 (`emptyTierWarning`), repeated at the end of the run.
   - The worker count: `domWorkers` for the first project, 1 for the rest.
   - Playwright is resolved from the package (`@playwright/test/cli`) and run
     with the same Node.
