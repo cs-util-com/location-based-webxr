@@ -980,6 +980,44 @@ function readBlock(v: Fields, ctx: BlockContext): TourBlockRead {
 }
 
 /**
+ * A reader of single blocks under `options` (the assets indexed once): it
+ * reads the block record `value` at `at` - each field checked, each media
+ * reference resolved - or returns null when a lenient reader skips it,
+ * reported as a `block` drop. Its view is settled by the caller, which
+ * knows whether the block is free ({@link placeTourBlocks}). The id is
+ * checked at every minor; uniqueness is the caller's.
+ */
+export function tourBlockReader(
+  options: TourBlocksReadOptions
+): (
+  value: Readonly<Record<string, unknown>>,
+  at: string
+) => TourBlockRead | null {
+  const assets = new Map(options.assets.map((a) => [a.id, a.kind] as const));
+  const characters = options.characters ?? new Map();
+  const lenient = options.lenient === true;
+  return (v, at) => {
+    const id = blockIdOf(v, at, options.fail);
+    const ctx: BlockContext = {
+      at,
+      id,
+      assets,
+      characters,
+      fail: options.fail,
+      lenient,
+      onDropped: options.onDropped,
+    };
+    try {
+      return readBlock(v, ctx);
+    } catch (err) {
+      if (!(err instanceof SkippedBlock)) throw err;
+      options.onDropped?.({ kind: 'block', block: id, reason: err.message });
+      return null;
+    }
+  };
+}
+
+/**
  * Read one station's blocks (`value`, at `at`): each field checked, each
  * media reference resolved against `assets`, block ids unique. Their views
  * are settled by {@link placeTourBlocks} once the story is read. A lenient
@@ -992,30 +1030,14 @@ export function readTourBlocks(
 ): TourBlockRead[] {
   const fail: Fail = options.fail;
   if (!Array.isArray(value)) return fail(`"${at}" must be an array`);
-  const assets = new Map(options.assets.map((a) => [a.id, a.kind] as const));
-  const lenient = options.lenient === true;
+  const readOne = tourBlockReader(options);
   const ids: string[] = [];
   const read = (value as unknown[]).flatMap((v, i): TourBlockRead[] => {
     const blockAt = `${at}[${String(i)}]`;
     if (!isRecord(v)) return fail(`"${blockAt}" must be an object`);
-    const id = blockIdOf(v, blockAt, fail);
-    ids.push(id);
-    const ctx: BlockContext = {
-      at: blockAt,
-      id,
-      assets,
-      characters: options.characters ?? new Map(),
-      fail,
-      lenient,
-      onDropped: options.onDropped,
-    };
-    try {
-      return [readBlock(v, ctx)];
-    } catch (err) {
-      if (!(err instanceof SkippedBlock)) throw err;
-      options.onDropped?.({ kind: 'block', block: id, reason: err.message });
-      return [];
-    }
+    ids.push(blockIdOf(v, blockAt, fail));
+    const block = readOne(v, blockAt);
+    return block === null ? [] : [block];
   });
   assertUniqueTourIds(ids, 'block', fail);
   return read;

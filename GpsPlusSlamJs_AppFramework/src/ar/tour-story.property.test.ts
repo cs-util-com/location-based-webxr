@@ -16,6 +16,12 @@
  *    out, reported, when it is optional;
  * 4. the generators themselves stay inside the format (property 1 reading
  *    every generated record is that check), at several sizes.
+ *
+ * The same promises hold for the version 5 children list (stories holding
+ * their own blocks, choices and quizzes, free blocks in any order around
+ * them), plus its own: every block is listed once in document order, every
+ * child is found where it is, and an id two children share - in a station
+ * or across two - is refused at every minor.
  */
 
 import fc from 'fast-check';
@@ -23,6 +29,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TOUR_ARBITRARY_ASSETS,
+  tourIdArbitrary,
+  tourStationChildrenArbitrary,
   tourStationContentArbitrary,
   tourTextArbitrary,
 } from '../test-utils/tour-arbitraries';
@@ -30,11 +38,24 @@ import {
   TOUR_BLOCK_TEXT_RULES,
   TOUR_WORLD_VIEWS,
   type TourBlockDrop,
+  tourTextCount,
   type TourBlockKind,
   type TourTextRule,
 } from './tour-blocks';
 import { parseTourAssets } from './tour-assets';
-import { parseTourStationContent, type TourStationContent } from './tour-story';
+import {
+  checkTourChildIdsUnique,
+  parseTourStationChildren,
+  parseTourStationContent,
+  TOUR_STORY_TITLE_RULE,
+  tourChildrenBlocks,
+  tourChildrenFreeBlocks,
+  tourChildrenPlace,
+  tourChildrenStories,
+  type TourChildDrop,
+  type TourStationChild,
+  type TourStationContent,
+} from './tour-story';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -291,6 +312,287 @@ describe('caps (properties)', () => {
         ]);
       }),
       { numRuns: 150 }
+    );
+  });
+});
+
+// --- version 5: a station's children ------------------------------------
+
+type Child = Record<string, unknown>;
+
+function children(
+  list: unknown,
+  options: { lenient?: boolean; drops?: TourChildDrop[] } = {}
+): TourStationChild[] {
+  return parseTourStationChildren(list, 'children', {
+    assets: ASSETS,
+    fail,
+    lenient: options.lenient === true,
+    onDropped: (d) => options.drops?.push(d),
+  });
+}
+
+/** Every child of a children list, stories' children included, in
+ *  document order. */
+function allChildren(list: readonly Child[]): Child[] {
+  return list.flatMap((c) =>
+    c['kind'] === 'story' ? [c, ...(c['children'] as Child[])] : [c]
+  );
+}
+
+const isBlockRecord = (c: Child): boolean =>
+  !['story', 'choice', 'quiz'].includes(c['kind'] as string);
+
+const CHILDREN_SIZES = [
+  { maxStories: 1, maxFreeBlocks: 1, maxStoryChildren: 2 },
+  { maxStories: 4, maxFreeBlocks: 4, maxStoryChildren: 5 },
+  { maxStories: 8, maxFreeBlocks: 8, maxStoryChildren: 12 },
+];
+
+const SMALL = { maxStories: 2, maxFreeBlocks: 2, maxStoryChildren: 2 };
+
+describe('version 5 children (properties)', () => {
+  // Swept: small stations, the default, and crowded ones.
+  for (const size of CHILDREN_SIZES) {
+    it(`the reader keeps a valid list exactly, and what it read reads back the same through JSON (up to ${String(size.maxStories)} stories)`, () => {
+      fc.assert(
+        fc.property(tourStationChildrenArbitrary(size), (record) => {
+          const parsed = children(record);
+          // Nothing added, nothing rewritten, the order as written (free
+          // blocks before, between or after the stories).
+          expect(parsed).toEqual(record);
+          expect(children(copy(parsed))).toEqual(parsed);
+        }),
+        { numRuns: size.maxStories > 4 ? 40 : 120 }
+      );
+    });
+  }
+
+  it('lists every block once, in document order, and finds every child where it is', () => {
+    fc.assert(
+      fc.property(
+        tourStationChildrenArbitrary(),
+        tourIdArbitrary,
+        (record, other) => {
+          const parsed = children(record);
+          const all = allChildren(record);
+          expect(tourChildrenBlocks(parsed).map((b) => b.id)).toEqual(
+            all.filter(isBlockRecord).map((c) => c['id'])
+          );
+          // Stories and free blocks split the list, each in its order.
+          expect(tourChildrenStories(parsed)).toEqual(
+            parsed.filter((c) => c.kind === 'story')
+          );
+          expect(tourChildrenFreeBlocks(parsed)).toEqual(
+            parsed.filter((c) => c.kind !== 'story')
+          );
+          const ids = all.map((c) => c['id'] as string);
+          const places = ids.map((id) => tourChildrenPlace(parsed, id));
+          // Each place holds the child with that id, its story (if any)
+          // being one of the list's own.
+          expect(
+            places.map((p) =>
+              p === null
+                ? null
+                : (p.story === undefined
+                    ? parsed[p.index]
+                    : p.story.children[p.index]
+                  )?.id
+            )
+          ).toEqual(ids);
+          expect(
+            places.filter(
+              (p) => p?.story !== undefined && !parsed.includes(p.story)
+            )
+          ).toEqual([]);
+          // An id no child has has no place.
+          expect(tourChildrenPlace(parsed, other) === null).toBe(
+            !ids.includes(other)
+          );
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+
+  it('refuses a list in which two children share an id, strict and lenient', () => {
+    fc.assert(
+      fc.property(
+        tourStationChildrenArbitrary(),
+        fc.nat(),
+        fc.nat(),
+        (record, a, b) => {
+          const odd = copy(record);
+          const all = allChildren(odd);
+          fc.pre(all.length >= 2);
+          const i = a % all.length;
+          const j = (i + 1 + (b % (all.length - 1))) % all.length;
+          all[j]!['id'] = all[i]!['id'];
+          expect(() => children(odd)).toThrow(Invalid);
+          expect(() => children(odd, { lenient: true })).toThrow(Invalid);
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+
+  it('ids are unique across stations: the check throws exactly when two lists share one', () => {
+    let shared = 0;
+    let apart = 0;
+    fc.assert(
+      fc.property(
+        tourStationChildrenArbitrary(SMALL),
+        tourStationChildrenArbitrary(SMALL),
+        (first, second) => {
+          const a = children(first);
+          const b = children(second);
+          const ids = new Set(allChildren(first).map((c) => c['id']));
+          const meet = allChildren(second).some((c) => ids.has(c['id']));
+          if (meet) shared++;
+          else apart++;
+          let outcome = 'passed';
+          try {
+            checkTourChildIdsUnique([a, b], fail);
+          } catch (err) {
+            outcome = err instanceof Invalid ? 'refused' : String(err);
+          }
+          expect(outcome).toBe(meet ? 'refused' : 'passed');
+        }
+      ),
+      { numRuns: 300 }
+    );
+    // Both sides of the rule were actually exercised.
+    expect(shared).toBeGreaterThan(0);
+    expect(apart).toBeGreaterThan(0);
+  });
+});
+
+/** Every place a newer minor could put a value this reader does not know,
+ *  in a copy of a children list; one of them (by `pick`) is applied. */
+function injectNewerChildren(list: Child[], pick: number): void {
+  const sites: (() => void)[] = [];
+  const block = (b: Child, inStory: boolean) => {
+    sites.push(() => {
+      b['view'] = 'hologram';
+    });
+    sites.push(() => {
+      b['kind'] = 'primitives';
+    });
+    if ('image' in b) {
+      sites.push(() => {
+        b['image'] = 'splat';
+      });
+    }
+    if (b['kind'] === 'shortText') {
+      sites.push(() => {
+        b['caption'] = 'w'.repeat(41);
+      });
+    }
+    if (inStory) {
+      sites.push(() => {
+        b['advance'] = { mode: 'gaze' };
+      });
+    }
+  };
+  for (const child of list) {
+    if (child['kind'] !== 'story') {
+      block(child, false);
+      continue;
+    }
+    sites.push(() => {
+      child['title'] = 't'.repeat(TOUR_STORY_TITLE_RULE.max + 1);
+    });
+    sites.push(() => {
+      child['kind'] = 'scene';
+    });
+    for (const kid of child['children'] as Child[]) {
+      sites.push(() => {
+        kid['kind'] = 'dance';
+      });
+      if (kid['kind'] === 'quiz') {
+        sites.push(() => {
+          (kid['answer'] as Child)['type'] = 'map-pick';
+        });
+      } else if (kid['kind'] !== 'choice') {
+        block(kid, true);
+      }
+    }
+  }
+  if (sites.length > 0) sites[pick % sites.length]!();
+}
+
+describe('version 5: a list of a newer minor (properties)', () => {
+  it('lenient: never fails, and what remains still resolves; strict: the same list is refused', () => {
+    fc.assert(
+      fc.property(
+        tourStationChildrenArbitrary(),
+        fc.array(fc.nat(), { minLength: 1, maxLength: 3 }),
+        (record, picks) => {
+          const odd = copy(record);
+          for (const pick of picks) injectNewerChildren(odd, pick);
+          fc.pre(JSON.stringify(odd) !== JSON.stringify(record));
+          const drops: TourChildDrop[] = [];
+          const read = children(odd, { lenient: true, drops });
+          const stories = tourChildrenStories(read);
+          // Every choice keeps two ways on, each to a child still in its
+          // story; every story block moves on in a known way.
+          const faults = stories.flatMap((story) => {
+            const ids = new Set(story.children.map((c) => c.id));
+            return story.children.flatMap((c) => {
+              if (c.kind === 'quiz') return [];
+              if (c.kind !== 'choice') {
+                return ['tap', 'auto', 'lineEnd'].includes(c.advance.mode)
+                  ? []
+                  : [`${c.id}: advance ${c.advance.mode}`];
+              }
+              const dangling = c.options.filter(
+                (o) => o.goto !== undefined && !ids.has(o.goto)
+              );
+              return [
+                ...(c.options.length < 2 ? [`${c.id}: one way on`] : []),
+                ...dangling.map((o) => `${c.id}: goto ${String(o.goto)}`),
+              ];
+            });
+          });
+          expect(faults).toEqual([]);
+          expect(
+            stories.filter(
+              (s) => tourTextCount(s.title) > TOUR_STORY_TITLE_RULE.max
+            )
+          ).toEqual([]);
+          expect(
+            tourChildrenFreeBlocks(read).filter(
+              (b) => !TOUR_WORLD_VIEWS.has(b.view)
+            )
+          ).toEqual([]);
+          // Every child it left out was reported, by id.
+          const reported = new Set(
+            drops.flatMap((d) =>
+              d.kind === 'child'
+                ? [d.child]
+                : d.kind === 'block'
+                  ? [d.block]
+                  : []
+            )
+          );
+          const keptTop = new Set(read.map((c) => c.id));
+          const lost = odd
+            .map((c) => c['id'] as string)
+            .filter((id) => !keptTop.has(id));
+          for (const story of stories) {
+            const kept = new Set(story.children.map((c) => c.id));
+            const source = odd.find((c) => c['id'] === story.id)!;
+            for (const kid of source['children'] as Child[]) {
+              if (!kept.has(kid['id'] as string)) {
+                lost.push(kid['id'] as string);
+              }
+            }
+          }
+          expect(lost.filter((id) => !reported.has(id))).toEqual([]);
+          expect(() => children(odd)).toThrow(Invalid);
+        }
+      ),
+      { numRuns: 300 }
     );
   });
 });

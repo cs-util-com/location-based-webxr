@@ -81,6 +81,11 @@ model | character`.
 - `placeTourBlocks(read, shown, { fail, lenient?, onDropped? }): TourBlock[]`
   - `shown` holds the ids the station's `show` steps name; every other
     block must stand in a world view.
+- `tourBlockReader(options)` - the per-block reader `readTourBlocks` runs
+  over a list, for a reader whose blocks are not one list (the version 5
+  children, `tour-story.ts`): `(value, at) => TourBlockRead | null`,
+  `null` when a lenient read skipped the block (reported). It checks no
+  id uniqueness; the caller does.
 - `checkTourBlockIdsUnique(stations, fail)` - block ids are unique across
   the whole tour, not only within a station (for the manifest reader).
 - `TourBlocksReadOptions` - `{ assets, fail, lenient?, onDropped? }`.

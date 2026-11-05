@@ -6,8 +6,10 @@
  * every property that uses it while they all stay green. This pins what
  * the generators claim: exact counts in the reader's own unit, the
  * boundaries actually reached, the hostile spellings actually produced,
- * ids at their limit and colliding across namespaces, and version 4
- * manifests the reader accepts.
+ * ids at their limit and colliding across namespaces, version 4
+ * manifests the reader accepts, and version 5 children lists that reach
+ * every shape the reader must keep (no story and four, an empty story, a
+ * free block after a story, gotos back and forward, every child kind).
  */
 
 import fc from 'fast-check';
@@ -21,12 +23,15 @@ import {
   type TourTextRule,
 } from '../ar/tour-blocks';
 import { parseTourManifest } from '../ar/tour-manifest';
+import { parseTourStationChildren } from '../ar/tour-story';
 import { tourObjects } from '../ar/tour-station-pose';
+import { parseTourAssets } from '../ar/tour-assets';
 import {
   TOUR_ARBITRARY_ASSETS,
   TOUR_FREE_VIEWS,
   tourIdArbitrary,
   tourManifestArbitrary,
+  tourStationChildrenArbitrary,
   tourTextArbitrary,
 } from './tour-arbitraries';
 
@@ -161,5 +166,72 @@ describe('tourManifestArbitrary', () => {
       { numRuns: 300, seed: 9 }
     );
     expect(views).toEqual(TOUR_WORLD_VIEWS);
+  });
+});
+
+describe('tourStationChildrenArbitrary', () => {
+  // Why this test matters: the version 5 properties are only as wide as
+  // this generator. One that always put free blocks first, never wrote an
+  // empty story or never jumped backward would let an order or goto bug
+  // through every property while they all stay green.
+  it('builds children lists the reader accepts, reaching every shape it must keep', () => {
+    const assets = parseTourAssets(
+      TOUR_ARBITRARY_ASSETS.map((a) => ({ ...a })),
+      {
+        fail: (m: string): never => {
+          throw new Error(m);
+        },
+      }
+    );
+    const seen = new Set<string>();
+    fc.assert(
+      fc.property(tourStationChildrenArbitrary(), (children) => {
+        parseTourStationChildren(JSON.parse(JSON.stringify(children)), 'c', {
+          assets,
+          fail: (m: string): never => {
+            throw new Error(m);
+          },
+        });
+        const stories = children.filter((c) => c['kind'] === 'story');
+        seen.add(`stories:${String(stories.length)}`);
+        const firstStory = children.findIndex((c) => c['kind'] === 'story');
+        if (firstStory >= 0 && children.length > firstStory + stories.length) {
+          // A free block somewhere after the first story.
+          if (children.slice(firstStory).some((c) => c['kind'] !== 'story')) {
+            seen.add('free after story');
+          }
+        }
+        for (const story of stories) {
+          const kids = story['children'] as Record<string, unknown>[];
+          if (kids.length === 0) seen.add('empty story');
+          kids.forEach((kid, i) => {
+            const kind = kid['kind'] as string;
+            seen.add(kind === 'choice' || kind === 'quiz' ? kind : 'block');
+            if (kind !== 'choice') return;
+            for (const o of kid['options'] as { goto?: string }[]) {
+              if (o.goto === undefined) continue;
+              const j = kids.findIndex((k) => k['id'] === o.goto);
+              seen.add(
+                j < i ? 'goto back' : j > i ? 'goto forward' : 'goto self'
+              );
+            }
+          });
+        }
+      }),
+      { numRuns: 300, seed: 9 }
+    );
+    for (const shape of [
+      'stories:0',
+      'stories:4',
+      'empty story',
+      'free after story',
+      'block',
+      'choice',
+      'quiz',
+      'goto back',
+      'goto forward',
+    ]) {
+      expect(seen, shape).toContain(shape);
+    }
   });
 });
