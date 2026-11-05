@@ -171,52 +171,9 @@ describe('tour stations (properties)', () => {
           }
           expect(() => parseAll(copy), 'strict refuses').toThrow(Invalid);
 
-          // Breaking any one asset reference is refused.
-          const broken = copyOf();
-          const sites = broken.flatMap((s) =>
-            s.blocks.flatMap((block) =>
-              MEDIA_FIELDS.filter((f) => typeof block[f] === 'string').map(
-                (f) => () => {
-                  block[f] = 'missing';
-                }
-              )
-            )
-          );
-          if (sites.length > 0) {
-            assetBreaks += 1;
-            sites[pick % sites.length]!();
-          }
-          const assetRefusal =
-            sites.length > 0 ? refusalOf(() => parseAll(broken)) : null;
-          expect(
-            assetRefusal === null || assetRefusal instanceof Invalid,
-            'a broken asset reference is refused'
-          ).toBe(true);
-
-          // A choice jumping to a step that does not exist is refused.
-          const jumped = copyOf();
-          const station = jumped.find((s) =>
-            s.steps.some((st) => (st.action as Json).kind === 'choice')
-          );
-          const canJump =
-            station !== undefined &&
-            !station.steps.some((st) => st.id === ghost);
-          if (canJump) {
-            choiceBreaks += 1;
-            const choice = station.steps.find(
-              (st) => (st.action as Json).kind === 'choice'
-            )!.action as { options: { goto?: string }[] };
-            choice.options[0]!.goto = ghost;
-          }
-          const choiceRefusal = canJump
-            ? refusalOf(() => parseAll(jumped))
-            : null;
-          expect(
-            choiceRefusal === null ||
-              (choiceRefusal instanceof Error &&
-                /must name a step of this station/.test(choiceRefusal.message)),
-            'a choice to no step is refused'
-          ).toBe(true);
+          // Breaking any one asset reference, or a choice target, is refused.
+          assetBreaks += Number(refusesABrokenAsset(data, pick));
+          choiceBreaks += Number(refusesAChoiceToNoStep(data, ghost));
         }
       ),
       { numRuns: RUNS }
@@ -232,14 +189,51 @@ describe('tour stations (properties)', () => {
 });
 
 /**
- * The error `fn` throws, or undefined when it returns, so a property can
- * assert a refusal outside the branch that set its case up.
+ * Breaks one asset reference of a copy of `data` and expects the parse to
+ * refuse it; false (nothing checked) when no block has a media field.
  */
-function refusalOf(fn: () => unknown): unknown {
-  try {
-    fn();
-  } catch (error) {
-    return error;
+function refusesABrokenAsset(
+  data: readonly StationJson[],
+  pick: number
+): boolean {
+  const broken = JSON.parse(JSON.stringify(data)) as StationJson[];
+  const sites = broken.flatMap((s) =>
+    s.blocks.flatMap((block) =>
+      MEDIA_FIELDS.filter((f) => typeof block[f] === 'string').map(
+        (f) => () => {
+          block[f] = 'missing';
+        }
+      )
+    )
+  );
+  if (sites.length === 0) return false;
+  sites[pick % sites.length]!();
+  expect(() => parseAll(broken), 'a broken asset reference').toThrow(Invalid);
+  return true;
+}
+
+/**
+ * Points the first choice of a copy of `data` at the step `ghost` and
+ * expects the parse to refuse it; false (nothing checked) when no station
+ * has a choice or `ghost` happens to name one of its steps.
+ */
+function refusesAChoiceToNoStep(
+  data: readonly StationJson[],
+  ghost: string
+): boolean {
+  const jumped = JSON.parse(JSON.stringify(data)) as StationJson[];
+  const station = jumped.find((s) =>
+    s.steps.some((st) => (st.action as Json).kind === 'choice')
+  );
+  if (station === undefined || station.steps.some((st) => st.id === ghost)) {
+    return false;
   }
-  return undefined;
+  const choice = station.steps.find(
+    (st) => (st.action as Json).kind === 'choice'
+  )!.action as { options: { goto?: string }[] };
+  choice.options[0]!.goto = ghost;
+  expect(() => parseAll(jumped), 'a choice to no step').toThrow(
+    /must name a step of this station/
+  );
+  return true;
 }
