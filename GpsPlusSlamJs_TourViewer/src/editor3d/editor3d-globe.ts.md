@@ -111,14 +111,56 @@ ground.
   view core's sky is black at noon. It writes the globe's sun intensity
   (the eased exposure) every frame, so nothing here sets it.
   `stats().globe.air` carries its `weight`, `observerKm` and the ground
-  sky's state, and `clouds` (`{ on, flat, shellOn }`, or null where the
-  ground sky cannot draw).
+  sky's state, and `clouds` (`{ on, flat, shellOn, shellShadow,
+surfaceShadow }`, or null where the ground sky cannot draw).
 - The heavy clouds: the lab's slab, shell and high layer with the lab's
-  settings (`globeViewClouds(view)`, passed to the air), on by default.
+  settings (`globeViewClouds(view, { shadow })`, passed to the air), on by
+  default; the link's `cloudShadow` (0.3) sets their shadows' strength
+  and `cloudWind` (40 m/s) the cloud map's wind floor.
   The air steps them with the relief mount's cloud-shell share
   (`shareClouds(true, flat)`), draws them after the Earth and patches
   their shadow onto the relief; `setClouds(on)` is the View menu's
-  switch. The cloud shell sits at 3 km, the lab's height.
+  switch. The cloud shell sits at 3 km, the lab's height. The clouds'
+  `extra` depth carries the buildings' root, so a cloud behind a
+  building is hidden as one behind the relief is.
+- **The OSM buildings** (`editor3d-globe-city.ts` over the Globe
+  package's `createGlobeCity`, its worker `globe-city-worker.ts` made as
+  a module worker from `new URL("./globe-city-worker.ts", import.meta.url)`):
+  under the Earth-centred group at the tour's centre (mounted only once
+  the tour has a real centre: a new tour opens over a stand-in place, and
+  the store's first edit that gives it one mounts them, hidden if
+  `setBuildings(false)` came first), on the relief's own
+  height source (`ground.heights`: Mapterhorn at zoom 14 where it has the
+  whole window there, else at zoom 12, `deepHeightsZoom`), so the city's
+  ground and the drawn relief agree by construction
+  (`stats().city.parityM`). The approach's start warms them up (a fresh
+  load during the fall, `warmCity`); each frame (`stepCity`, after the
+  uploads) loads them once below 30 km and fades them in by altitude, and
+  the selection's place, its up and its radius turn the buildings and
+  trees around it see-through. `setBuildings(on)` shows or hides them (no
+  chip yet). None is made with the link's `buildings=0`, in a browser
+  without workers, or when making it throws (`openCity`): the view opens
+  without buildings, never not at all. Picking never meets them: the
+  stations are picked by the layer and the ground on the sampled relief
+  (`groundPointOfRay`, `controls.pickFrom` the relief's tiles), and
+  nothing raycasts the city.
+- **The interface over the clouds' shadow** (`globe-interface-pass.ts`):
+  the shell's ground shadow is a full-screen quad composited after the
+  scene, its rays ending at the relief's depth (the scene depth holds the
+  relief only), so by reading the code it darkens every billboard, ring
+  and pole in front of the shaded ground as if it were that ground
+  (headless draws no visible cloud shadow; the phone check confirms the
+  cause). Each frame the interface
+  under the tour's frame and the editing's scene objects (the gizmo) is
+  lifted onto its own layer before the scene (`beforeScene`) and drawn
+  after the air (`afterScene`), with the daylight lit on that layer; the
+  renderer does not clear between the passes (`autoClear` is false in
+  the view), so the relief still hides what is behind it. The ground and
+  the tour's models stay in the scene and take the shadow. Only while
+  the camera is below the cloud deck (`interfaceOverAir`, the clouds'
+  shell height): the cloud and haze composites write no depth, so from
+  above the deck (the approach, a zoom-out) the interface stays in the
+  scene's pass, under the clouds that hide it.
 - Standard depth, not reversed: the clouds' and the air's scene-depth
   readers assume it, and reversed depth measured no better on the
   24-bit buffer.
@@ -281,6 +323,14 @@ The view disposes the run once the arrival is over.
 - The globe's assets are served at `/globe-assets/` by the dev server
   (`../dev-server/globe-assets-route.ts`) and, on the built site, from
   the one copy the site build puts at its root (`scripts/build-site.mjs`).
+- The status bar's `readout().drawCalls` is the whole frame's
+  (`frame-draw-calls.ts`: the renderer's automatic reset off, reset in
+  the `update` seam, read at the end of `afterScene`), every pass summed:
+  the sky, the scene, the air's composites and the interface pass. With
+  the automatic reset it read only the last pass's. `stats().globe.drawCalls`
+  holds the same frame's total (`frame`) and the main scene's own render
+  (`scene`, the difference of the counter's `now()` across it), so a
+  check can hold the total to at least the scene's.
 
 ## Stats
 
@@ -295,7 +345,16 @@ has settled (`settled`, the band's condition), the library's `loadProgress`
 and its tile counters (`queued`, `downloading`, `parsing`, `loaded`,
 `failed`), and its tile cache's bytes against the device budget
 (`cacheBytes`, `cacheMaxBytes`). A test that waits for the carrier reads it to tell a slow load
-from a stalled one.
+from a stalled one. `clouds` is what the clouds' shadow and motion checks
+read: the drift rate (deg/s) and the map's longitude offset (rad), the
+link's `shadow` and `windMps`, the canvas probes (`probes`: pixels of a
+billboard, a ring and a model), the
+shell's frames drawn, share and weights (`shell`) and
+how many objects the interface pass lifted (`interfaceLifted`).
+`city` (top level, beside `globe`) is the buildings' (`EditorCityStats`:
+the worker's phase, tiles, buildings, objects, geometry bytes, fade, the
+height parity against the relief at the tour's centre, the load and the
+see-through), null without buildings.
 
 ## Tests
 

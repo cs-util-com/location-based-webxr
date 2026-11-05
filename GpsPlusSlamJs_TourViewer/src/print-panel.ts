@@ -267,7 +267,7 @@ export function wirePrintPanel(deps: {
   const creator = mode === "creator";
   /** The link step 2 handed over unconfirmed, until a check confirms it. */
   let unverifiedUrl: string | null = null;
-  /** One render of the code, with the async-UI cycle around it: in-progress
+  /* One render of the code, with the async-UI cycle around it: in-progress
    *  before the awaits, a durable end state after, and a failure that says
    *  so in the panel instead of leaving a stale code on screen. */
   /** Bumped per render; every continuation checks it before touching the

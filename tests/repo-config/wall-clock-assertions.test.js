@@ -78,6 +78,10 @@ const ALLOWLIST = new Map([
     'GpsPlusSlamJs_Globe/src/globe-speed-dust-pass.test.ts',
     'Absolute budget with ~40x headroom: 2,500 streaks step in 0.14-0.20 ms a frame (mean of 120) against 8 ms. A milestone review asked for a cost check of the per-frame path; its main assertion (no typed array made per frame) has no clock.',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/playwright-tests/editor3d-globe-clouds.spec.js',
+    'The clouds drift on real time, not per frame: their offset change over the seconds waited lies between 0.4x and 1.2x of rate * seconds (0.69 measured on a loaded machine, 2026-11-04). A ratio of real time to real time, with wide margins; the waited seconds are the denominator, not a budget. The other numeric assertions (probe brightness ratios, counters) take no clock.',
+  ],
 
   // --- Measured and reported, not asserted on the clock ---
   [

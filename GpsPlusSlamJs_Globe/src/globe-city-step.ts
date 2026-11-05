@@ -9,7 +9,7 @@
  * The flight's place, or the link's, is loaded here when no warm-up is
  * running for it (`prefetch=0`, `cityWarm=0`, a stopped flight). A load of
  * a place that runs or ran is the same load (`GlobeCity.load` returns it),
- * so nothing is downloaded twice.
+ * so nothing is downloaded twice; an aborted one is asked for again.
  *
  * @see globe-city-step.ts.md
  */
@@ -110,6 +110,19 @@ export function createGlobeCityStep({
   };
 
   /**
+   * An aborted load of the asked place (a view that hid its city) is asked
+   * for again; the abort was no failed build, so it spends no try.
+   */
+  const reaskIfAborted = (key: string | null) => {
+    if (key === null || key !== cityKey) return;
+    const s = city.state();
+    if (s.load?.outcome !== "aborted" || s.target === undefined) return;
+    if (cityKeyOf(s.target) !== key) return;
+    cityKey = null;
+    tries = Math.max(0, tries - 1);
+  };
+
+  /**
    * Without a warm-up (`cityWarm=0`, `prefetch=0`) the frame loop loads
    * only once the city could be seen (below `topM`): a link that names a
    * place for its view loads no city data from orbit.
@@ -130,6 +143,7 @@ export function createGlobeCityStep({
       }
       const at = now();
       retryIfDue(key, at, city.state().phase === "failed");
+      reaskIfAborted(key);
       if (key !== null && key !== cityKey && wanted(frame, groundTrue)) {
         city.load(frame.place as LatLng, { zoom: frame.zoom });
         cityKey = key;

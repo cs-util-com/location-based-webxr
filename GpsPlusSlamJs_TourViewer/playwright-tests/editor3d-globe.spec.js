@@ -80,6 +80,14 @@ test("opens the sample tour on the globe at street level with ?globe=1", async (
   expect(stats.distanceM).toBeLessThan(200);
   // The stations are drawn, none hidden as too small this close.
   expect(stats.globe.hiddenStations).toEqual([]);
+  // Why: three.js resets its counters at every render, so the status bar
+  // once read only the frame's last pass (a handful of calls). The figure
+  // is the whole frame's, so it holds at least the main scene's own
+  // render; no fixed count, the scene's varies with the tiles shown.
+  expect(stats.globe.drawCalls.scene).toBeGreaterThan(0);
+  expect(stats.globe.drawCalls.frame).toBeGreaterThanOrEqual(
+    stats.globe.drawCalls.scene,
+  );
   // The staged uploads: every station admitted once, a few a frame.
   await expect
     .poll(async () => (await view3d(page))?.globe?.uploads?.pending)

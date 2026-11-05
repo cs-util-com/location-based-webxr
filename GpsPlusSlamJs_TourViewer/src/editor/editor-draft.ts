@@ -556,10 +556,6 @@ interface EditorDraftOpened {
   readonly backedUp: boolean;
 }
 
-/** The writes and a save's two notes for one opened tour (E2c review #6,
- *  the E2b-2 milestone review #1): once that tour closes or another opens,
- *  each is dropped, so a late write or save of the old tour never lands in
- *  the new tour's namespace, its seen versions or its key. */
 /** The settings record's write (QR-first M1b-2). */
 interface DraftSettingsWrites {
   /** The tour's settings as they stand now: kept while the file does not
@@ -567,6 +563,10 @@ interface DraftSettingsWrites {
   saveSettings(settings: EditorTourSettings): Promise<boolean>;
 }
 
+/** The writes and a save's two notes for one opened tour (E2c review #6,
+ *  the E2b-2 milestone review #1): once that tour closes or another opens,
+ *  each is dropped, so a late write or save of the old tour never lands in
+ *  the new tour's namespace, its seen versions or its key. */
 export interface EditorTourDraft
   extends DraftObjectWrites, DraftSettingsWrites {
   /** A save was built: its versions are this browser's own work. */
@@ -840,12 +840,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     ).catch(() => false);
   }
 
-  /**
-   * Run `task` for object `id` in `s`'s queue. An id the meta rejects is
-   * CLAIMED first - its files removed, the meta rewritten without it - so
-   * the change is newer than the rejection and the next read sees it (the
-   * phone's `creator-draft.ts` rule, M4 review #1).
-   */
   /** `work` counted for `idle` and for `s`'s hold. */
   function inSpace<T>(s: Space, work: Promise<T>): Promise<T> {
     s.work.add(work);
@@ -861,6 +855,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     while (s.work.size > 0) await Promise.allSettled([...s.work]);
   }
 
+  /**
+   * Run `task` for object `id` in `s`'s queue. An id the meta rejects is
+   * CLAIMED first - its files removed, the meta rewritten without it - so
+   * the change is newer than the rejection and the next read sees it (the
+   * phone's `creator-draft.ts` rule, M4 review #1).
+   */
   function inQueue(
     s: Space,
     id: string,

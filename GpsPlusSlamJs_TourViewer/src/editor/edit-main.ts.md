@@ -798,13 +798,14 @@ pin to "..."`).
   page reads now), and its codes come from `shellCodes` (the model's
   codes with their stored position and print size as opened).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited(), view3d(), view3dTilt(deg), view3dDistance(m),
+edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dBuildings(on),
 view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part),
 view3dGizmoSizes(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
-  `view3dDistance(m)` moves it in or out, `view3dPointOf(selection)` says
+  `view3dDistance(m)` moves it in or out, `view3dBuildings(on)` shows or
+  hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
   on the canvas and how large; `manifest()` is what a save would write

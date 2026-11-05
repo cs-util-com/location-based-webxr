@@ -395,10 +395,13 @@ function poleOf(): THREE.Mesh {
     0.5,
     0,
   );
-  return new THREE.Mesh(
+  const pole = new THREE.Mesh(
     geometry,
     new THREE.MeshLambertMaterial({ color: POLE_COLOUR }),
   );
+  // The interface's name: the globe draws it after the clouds' shadow.
+  pole.name = "pole";
+  return pole;
 }
 
 /** Free an object's geometries and materials, and their maps unless a

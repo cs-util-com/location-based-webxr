@@ -9,6 +9,11 @@
  * - **The relief's own meshes**, their colour writes off: the displacement
  *   is in their vertex shader, so an override material would draw them
  *   flat.
+ * - **The extras (the city) with one unlit depth-only material**, swapped
+ *   in for the pass: their geometry is not displaced, and their own lit
+ *   materials would shade every pixel a second time a frame for a depth
+ *   alone. Their dithered fade and any discard of their own are not in
+ *   the depth.
  * - **Its own near plane** (at most 10 m): the camera's is fitted to the
  *   ground (0.3 x the clearance), and a pass that ends at the depth must see
  *   everything nearer than that too. A reader reconstructs a point through
@@ -60,6 +65,8 @@ export function createGlobeSceneDepth(
   });
   const camera = new THREE.PerspectiveCamera();
   const size = new THREE.Vector2();
+  /** The extras' material for the pass: depth only, no colour, unlit. */
+  const depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
   let frames = 0;
   let fresh = false;
 
@@ -76,23 +83,30 @@ export function createGlobeSceneDepth(
       camera.updateProjectionMatrix();
       const drawn = [relief, ...extra];
       const written: THREE.Material[] = [];
-      for (const root of drawn) {
+      const swapped: [THREE.Mesh, THREE.Mesh["material"]][] = [];
+      for (const root of extra) {
         root.traverse((o) => {
-          // A mesh's single material only, as the lab did (an array's
-          // `colorWrite` is undefined).
-          const material = (o as Partial<THREE.Mesh>).isMesh
-            ? (o as THREE.Mesh).material
-            : undefined;
-          if (
-            material !== undefined &&
-            !Array.isArray(material) &&
-            material.colorWrite
-          ) {
-            material.colorWrite = false;
-            written.push(material);
-          }
+          if (!(o as Partial<THREE.Mesh>).isMesh) return;
+          const m = o as THREE.Mesh;
+          swapped.push([m, m.material]);
+          m.material = depthOnly;
         });
       }
+      relief.traverse((o) => {
+        // A mesh's single material only, as the lab did (an array's
+        // `colorWrite` is undefined).
+        const material = (o as Partial<THREE.Mesh>).isMesh
+          ? (o as THREE.Mesh).material
+          : undefined;
+        if (
+          material !== undefined &&
+          !Array.isArray(material) &&
+          material.colorWrite
+        ) {
+          material.colorWrite = false;
+          written.push(material);
+        }
+      });
       const previous = renderer.getRenderTarget();
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
@@ -100,6 +114,7 @@ export function createGlobeSceneDepth(
       renderer.clear(false, true, false);
       for (const root of drawn) renderer.render(root, camera);
       for (const m of written) m.colorWrite = true;
+      for (const [m, material] of swapped) m.material = material;
       renderer.setRenderTarget(previous);
       renderer.autoClear = autoClear;
       frames += 1;
@@ -115,6 +130,7 @@ export function createGlobeSceneDepth(
       return { frames, fresh, near: camera.near };
     },
     dispose() {
+      depthOnly.dispose();
       target.dispose();
       texture.dispose();
     },

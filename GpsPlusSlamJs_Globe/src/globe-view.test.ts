@@ -337,6 +337,9 @@ describe("createGlobeView: the clouds' drift", () => {
     expect(rate).toBeLessThanOrEqual(settings.cloudDrift);
     // A second at that rate, in radians.
     expect(b - a).toBeCloseTo(rate * DEG, 9);
+    // The offset is read back as drawn: a page's check of the drift
+    // measures what the shaders get.
+    expect(view.state().cloudLonOffsetRad).toBe(b);
     view.resetCloudDrift();
     view.frame();
     expect(view.globe.surfaceUniforms.uCloudLonOffset.value).not.toBe(b);
