@@ -23,104 +23,10 @@ test.describe('Reference Point Picker Modal', () => {
     );
   });
 
-  test('modal is hidden by default', async ({ page }) => {
-    const modal = page.locator('#ref-point-picker-modal');
-    await expect(modal).toHaveClass(/hidden/);
-  });
-
-  test('modal contains expected structure when shown', async ({ page }) => {
-    // Use the application's real showRefPointPicker function
-    // which populates the modal with proper HTML and sets up handlers
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker();
-      }
-    });
-
-    const modal = page.locator('#ref-point-picker-modal');
-    await expect(modal).not.toHaveClass(/hidden/);
-
-    // Check for key elements
-    await expect(page.locator('#ref-point-picker-input')).toBeVisible();
-    await expect(page.locator('#ref-point-picker-cancel')).toBeVisible();
-    await expect(page.locator('#ref-point-picker-confirm')).toBeVisible();
-  });
-
-  test('cancel button hides the modal', async ({ page }) => {
-    // Hide setup modal so it doesn't block clicks
-    await page.evaluate(() => {
-      const setupModal = document.getElementById('setup-modal');
-      setupModal?.classList.add('hidden');
-    });
-
-    // Use the application's real showRefPointPicker function
-    // which sets up all event handlers properly
-    await page.evaluate(() => {
-      // The app exposes this API on window after initialization
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        // Start the picker (don't await - we'll interact with it)
-        api.showRefPointPicker();
-      }
-    });
-
-    const modal = page.locator('#ref-point-picker-modal');
-    await expect(modal).not.toHaveClass(/hidden/);
-
-    // Click cancel - this uses the application's real handler
-    await page.locator('#ref-point-picker-cancel').click();
-
-    // Modal should be hidden by the real application handler
-    await expect(modal).toHaveClass(/hidden/);
-  });
-
-  test('input field accepts text', async ({ page }) => {
-    // Use the application's real showRefPointPicker function
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker();
-      }
-    });
-
-    const input = page.locator('#ref-point-picker-input');
-    await input.fill('Test Reference Point');
-    await expect(input).toHaveValue('Test Reference Point');
-  });
-
-  test('confirm button with empty input keeps modal visible', async ({
-    page,
-  }) => {
-    // Hide setup modal so it doesn't block clicks
-    await page.evaluate(() => {
-      const setupModal = document.getElementById('setup-modal');
-      setupModal?.classList.add('hidden');
-    });
-
-    // Use the application's real showRefPointPicker function
-    await page.evaluate(() => {
-      const api = window.refPointPickerApi;
-      if (api?.showRefPointPicker) {
-        api.showRefPointPicker();
-      }
-    });
-
-    const modal = page.locator('#ref-point-picker-modal');
-
-    // Ensure input is empty (the real app clears it on show)
-    const input = page.locator('#ref-point-picker-input');
-    await input.clear();
-    await expect(input).toHaveValue('');
-
-    // Click confirm - the real application handler rejects empty input
-    await page.locator('#ref-point-picker-confirm').click();
-
-    // Modal should still be visible (empty names not allowed by real handler)
-    await expect(modal).not.toHaveClass(/hidden/);
-  });
-
   test('confirm button with valid input hides the modal', async ({ page }) => {
+    // Why: the one picker flow kept in the browser. The unit tests hold the
+    // picker itself (ref-point-picker.test.ts); this holds that the page wires
+    // it, which jsdom cannot see.
     // Hide setup modal so it doesn't block clicks
     await page.evaluate(() => {
       const setupModal = document.getElementById('setup-modal');

@@ -25,11 +25,10 @@ Shared test helper module that centralizes commonly used helper functions across
 ## Consumers
 
 - `enter-ar-flow.spec.js` — imports `callRealPopulateScenarios`, `setPermissionsReady`, `setStorageReady`, `waitForTestHooks`, `fakeWebXRSupport`
-- `setup-modal.spec.js` — imports `callRealPopulateScenarios`, `setPermissionsReady`, `setStorageReady`, `waitForTestHooks`, `fakeWebXRSupport`
+- `setup-modal.spec.js` — imports `callRealPopulateScenarios`, `setStorageReady`, `waitForTestHooks`, `fakeWebXRSupport`
 - `test-hooks-verification.spec.js` — imports `setPermissionsReady`, `setStorageReady`, `waitForTestHooks`
 - `session-summary.spec.js` — imports `waitForTestHooks`
-- `button-states.spec.js` — imports `fakeWebXRSupport`, `waitForTestHooksSubset`
-- `gps-event-markers.spec.js` — imports `waitForTestHooksSubset`
+- `button-states.spec.js` — imports `fakeWebXRSupport`
 - `log-panel.spec.js` — imports `waitForTestHooksSubset`
 
 ## Tests

@@ -359,8 +359,9 @@ test.describe("the hero film on a phone", () => {
 // all say the tour opens in the browser. Every caption must fit the room
 // the box keeps for it (three lines up to 480 px wide, two wider): the box
 // has a fixed height, so a longer one would be cut, not make room. Checked
-// in the system face and in a wide one, down to a 320 px phone.
-for (const viewport of [
+// in the system face and in a wide one, down to a 320 px phone: one test
+// per face, the page opened afresh at each size.
+const SCAN_VIEWPORTS = [
   { width: 320, height: 640 },
   { width: 390, height: 844 },
   { width: 844, height: 390 },
@@ -371,15 +372,20 @@ for (const viewport of [
   { width: 1100, height: 700 },
   { width: 1159, height: 800 },
   { width: 1280, height: 600 },
-]) {
-  for (const wide of [false, true]) {
-    test.describe(`the scanning part at ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
-      test.use({ viewport, storageState: FIRST_VISIT });
+];
+for (const wide of [false, true]) {
+  test.describe(`the scanning part${wide ? ", in a wide face" : ""}`, () => {
+    test.use({ storageState: FIRST_VISIT });
 
-      test("says the tour opens in the browser with no app, its chip inside the screen, every caption in its room", async ({
-        page,
-      }) => {
-        if (wide) await useWideFont(page);
+    test(`says the tour opens in the browser with no app, its chip inside the screen, every caption in its room, at ${SCAN_VIEWPORTS.map((v) => `${String(v.width)}x${String(v.height)}`).join(", ")}`, async ({
+      page,
+    }) => {
+      // Eight fresh opens of the film in one test.
+      test.setTimeout(120_000);
+      if (wide) await useWideFont(page);
+      for (const viewport of SCAN_VIEWPORTS) {
+        const size = `${String(viewport.width)}x${String(viewport.height)}`;
+        await page.setViewportSize(viewport);
         const host = await openFilm(page);
         await host.scrollIntoViewIfNeeded();
 
@@ -397,8 +403,8 @@ for (const viewport of [
           cap.textContent = shown;
           return { room, over };
         });
-        expect(fits.room).toBeGreaterThan(0);
-        expect(fits.over).toEqual([]);
+        expect(fits.room, size).toBeGreaterThan(0);
+        expect(fits.over, size).toEqual([]);
 
         const scan = host.locator(".lf-seg").nth(7);
         await expect(scan).toHaveAccessibleName(
@@ -435,14 +441,14 @@ for (const viewport of [
           null,
           { polling: "raf", timeout: 10000 },
         );
-        expect(await at.jsonValue()).toEqual({
+        expect(await at.jsonValue(), size).toEqual({
           text: "Tour found: Mill ParkOpened in the browser",
           inside: true,
           clear: true,
         });
-      });
+      }
     });
-  }
+  });
 }
 
 // The box is reserved before the film arrives: the page's still stands

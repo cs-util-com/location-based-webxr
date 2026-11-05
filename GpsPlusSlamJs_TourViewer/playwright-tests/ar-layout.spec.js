@@ -40,11 +40,13 @@ async function controlsBelowTheFold(page) {
   });
 }
 
-const PHONES = [
-  { width: 360, height: 640 },
-  { width: 360, height: 800 },
-  { width: 390, height: 844 },
-];
+// One phone: the smallest supported screen. The check is vertical only
+// (no control below the screen's bottom), and taller phones (360x800,
+// 390x844) give the panel more height. The one width rule between them,
+// `@media (width <= 380px)` in index.html, tightens the creator's chips in
+// AR, not this panel, and makes nothing taller, so whatever fits here
+// fits there.
+const PHONES = [{ width: 360, height: 640 }];
 
 for (const viewport of PHONES) {
   test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the size offer open${viewport.height === 640 ? " @pr" : ""}`, async ({

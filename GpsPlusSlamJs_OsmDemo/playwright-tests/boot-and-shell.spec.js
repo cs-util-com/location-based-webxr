@@ -144,10 +144,12 @@ async function buildArOverlayFixture(page) {
 }
 
 test.describe("the demo boots", () => {
-  test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening @pr", async ({
+  test("loads the rule table, draws a basemap, reports its scale, says when it is still widening, on a clean console and a real worker, the views filling the row @pr", async ({
     page,
   }) => {
-    // FOUR BEHAVIOURS, ONE BOOT. All four assert on the SAME boot and none of
+    // SEVEN BEHAVIOURS, ONE BOOT (the console, the worker and the desktop
+    // layout joined the first four: each was a boot of its own asserting on
+    // an unchanged page). All four assert on the SAME boot and none of
     // them mutates anything, so paying for four boots bought nothing but wall
     // clock. `test.step` keeps each one separately named in the report, which is
     // what stops a failure from pointing at a group instead of at a behaviour.
@@ -163,6 +165,26 @@ test.describe("the demo boots", () => {
     // twice in five full-suite runs. `recordStatusFromBoot` installs at
     // document-start, so there is no window to lose it in.
     const history = await recordStatusFromBoot(page);
+    // The console from the first line on (see "stays clean" below).
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+    // Every `new Worker`, installed before any module runs, so the demo's own
+    // construction is seen.
+    await page.addInitScript(() => {
+      const w = /** @type {any} */ (window);
+      w.__workers = [];
+      const Real = window.Worker;
+      // @ts-expect-error — deliberately replacing the constructor.
+      window.Worker = class extends Real {
+        constructor(url, options) {
+          w.__workers.push(String(url));
+          super(url, options);
+        }
+      };
+    });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
@@ -270,111 +292,85 @@ test.describe("the demo boots", () => {
       await expect(page.locator("#status")).not.toContainText("widening");
       await expect(page.locator("#status")).toContainText(/\d+ cells/);
     });
-  });
-});
 
-test.describe("the browser console", () => {
-  test("stays clean — no shader, WebGL or page errors @pr", async ({
-    page,
-  }) => {
-    // WHY THIS TEST EXISTS. A three.js material whose shader fails to compile is
-    // simply NOT DRAWN. There is no exception, no rejected promise, nothing in the
-    // DOM and nothing in any status line — the geometry is handed to the renderer,
-    // counted, reported, and silently skipped. The only signal is a `console.error`
-    // from `WebGLProgram`.
-    //
-    // That is not hypothetical: setting `scene.environment` to a raw equirect
-    // texture (rather than a PMREM-processed one) made EVERY `MeshStandardMaterial`
-    // fail to compile — buildings, trees, ground plane and plates all vanished from
-    // the demo — while the suite stayed green and the status line reported
-    // "21 volumes". The whole suite asserted on pixels that the surviving
-    // `MeshBasicMaterial` grid happened to satisfy.
-    //
-    // So the console is now part of the contract. Vite's own dev-server noise and
-    // the deliberately-stubbed network are filtered; everything else fails.
-    const errors = [];
-    page.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
+    await test.step("stays clean — no shader, WebGL or page errors", async () => {
+      // WHY THIS TEST EXISTS. A three.js material whose shader fails to compile is
+      // simply NOT DRAWN. There is no exception, no rejected promise, nothing in the
+      // DOM and nothing in any status line — the geometry is handed to the renderer,
+      // counted, reported, and silently skipped. The only signal is a `console.error`
+      // from `WebGLProgram`.
+      //
+      // That is not hypothetical: setting `scene.environment` to a raw equirect
+      // texture (rather than a PMREM-processed one) made EVERY `MeshStandardMaterial`
+      // fail to compile — buildings, trees, ground plane and plates all vanished from
+      // the demo — while the suite stayed green and the status line reported
+      // "21 volumes". The whole suite asserted on pixels that the surviving
+      // `MeshBasicMaterial` grid happened to satisfy.
+      //
+      // So the console is now part of the contract. Vite's own dev-server noise and
+      // the deliberately-stubbed network are filtered; everything else fails.
+      const ignorable = (text) =>
+        // The suite blocks the live rule sheet on purpose; the app reports the
+        // degradation in its status line and the fixture asserts on it.
+        /Rule table fetch failed/.test(text) ||
+        // Blocked by `stubNetwork`, deliberately. `net::ERR_FAILED` is what
+        // Chrome logs for a route that ABORTS the request, which is what the stub
+        // does — it never answers with a status code.
+        //
+        // `Failed to load resource` IS NO LONGER IGNORED. This clause used to
+        // read `net::ERR_FAILED|Failed to load resource`, which swallowed every
+        // response answered with an error status — a 404, a 429, a 500 — along
+        // with the aborts it was written for. Those are exactly the failures
+        // worth hearing about. Aborted requests are still tolerated above.
+        //
+        // IT IS NOT, HOWEVER, WHY THE `favicon.ico` 404 SURVIVED (corrected in
+        // review on #279). `scene-3d.spec.js` loads `/gallery.html` — a page that
+        // had no favicon either — and asserts an EMPTY console with no filter at
+        // all, and it is green. Headless Chromium in this suite never requests
+        // `/favicon.ico`, so no filter here could have caught it. That one was
+        // only ever visible in a real browser.
+        /net::ERR_FAILED/.test(text);
+
+      const real = errors.filter((text) => !ignorable(text));
+      expect(
+        real,
+        `unexpected console errors:\n${real.join("\n---\n")}`,
+      ).toEqual([]);
     });
-    page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
 
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("is served by a worker that was really constructed, so the UI thread is not doing the work", async () => {
+      // WHY THIS STEP MATTERS. Every other test in this suite would pass just
+      // as well if the worker were quietly bypassed and everything ran on the
+      // main thread — they assert on what is drawn, and the drawing is
+      // identical either way. Counting `new Worker` rather than timing
+      // anything: a timing assertion for "the UI thread stayed responsive" is
+      // exactly the kind of threshold that passes on a fast machine and flakes
+      // in CI.
+      const workers = await page.evaluate(
+        () => /** @type {any} */ (window).__workers,
+      );
+      expect(workers).toHaveLength(1);
+      expect(workers[0]).toContain("demo-worker");
+      // And it ANSWERED: the status line's cell count comes back over the RPC
+      // boundary, so a worker that started and then died would fail here.
+      await expect(page.locator("#status")).toContainText(/\d+ cells/);
+    });
 
-    const ignorable = (text) =>
-      // The suite blocks the live rule sheet on purpose; the app reports the
-      // degradation in its status line and the fixture asserts on it.
-      /Rule table fetch failed/.test(text) ||
-      // Blocked by `stubNetwork`, deliberately. `net::ERR_FAILED` is what
-      // Chrome logs for a route that ABORTS the request, which is what the stub
-      // does — it never answers with a status code.
-      //
-      // `Failed to load resource` IS NO LONGER IGNORED. This clause used to
-      // read `net::ERR_FAILED|Failed to load resource`, which swallowed every
-      // response answered with an error status — a 404, a 429, a 500 — along
-      // with the aborts it was written for. Those are exactly the failures
-      // worth hearing about. Aborted requests are still tolerated above.
-      //
-      // IT IS NOT, HOWEVER, WHY THE `favicon.ico` 404 SURVIVED (corrected in
-      // review on #279). `scene-3d.spec.js` loads `/gallery.html` — a page that
-      // had no favicon either — and asserts an EMPTY console with no filter at
-      // all, and it is green. Headless Chromium in this suite never requests
-      // `/favicon.ico`, so no filter here could have caught it. That one was
-      // only ever visible in a real browser.
-      /net::ERR_FAILED/.test(text);
-
-    const real = errors.filter((text) => !ignorable(text));
-    expect(real, `unexpected console errors:\n${real.join("\n---\n")}`).toEqual(
-      [],
-    );
+    await test.step("leaves the desktop layout alone while no session is running", async () => {
+      // `#ar-root` is a child of the same grid as `#map` and `#scene`. As an
+      // in-flow item with no CSS it added an implicit second row and took
+      // roughly half the height from the views. The views fill the row; a
+      // stolen implicit row shows up here as roughly half, so the bound is
+      // generous and still discriminating.
+      const main = await page.locator("main").boundingBox();
+      const scene = await page.locator("#scene").boundingBox();
+      if (main === null || scene === null) throw new Error("no boxes");
+      expect(scene.height).toBeGreaterThan(main.height * 0.9);
+    });
   });
 });
 
 test.describe("the worker", () => {
-  test("is really constructed, and the UI thread is not doing the work @pr", async ({
-    page,
-  }) => {
-    // WHY THIS TEST MATTERS. Every other test in this suite would pass just as
-    // well if the worker were quietly bypassed and everything ran on the main
-    // thread — they assert on what is drawn, and the drawing is identical either
-    // way. The whole point of the split is WHERE the work happens, and that is
-    // invisible to every assertion except this one.
-    //
-    // Counting `new Worker` rather than timing anything: a timing assertion for
-    // "the UI thread stayed responsive" is exactly the kind of threshold that
-    // passes on a fast machine and flakes in CI.
-    await stubNetwork(page);
-
-    // Installed before any module runs, so the demo's own construction is seen.
-    await page.addInitScript(() => {
-      const w = /** @type {any} */ (window);
-      w.__workers = [];
-      const Real = window.Worker;
-      // @ts-expect-error — deliberately replacing the constructor.
-      window.Worker = class extends Real {
-        constructor(url, options) {
-          w.__workers.push(String(url));
-          super(url, options);
-        }
-      };
-    });
-
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const workers = await page.evaluate(
-      () => /** @type {any} */ (window).__workers,
-    );
-    expect(workers).toHaveLength(1);
-    expect(workers[0]).toContain("demo-worker");
-
-    // And it ANSWERED: the status line's cell count comes back over the RPC
-    // boundary, so a worker that started and then died would fail here rather
-    // than leaving a passing test and a blank page.
-    await expect(page.locator("#status")).toContainText(/\d+ cells/);
-  });
-
   test("a dead worker is REPORTED, not left hanging @pr", async ({ page }) => {
     // WHY THIS TEST MATTERS, and it was missing when the worker landed. A worker
     // that dies — a syntax error in its module graph, an OOM — fires `error` and
@@ -1311,68 +1307,6 @@ test.describe("the header", () => {
     const wideQuests = await box("#geo-event");
     const wideLayers = await box("#layers");
     expect(wideLayers.y).toBeGreaterThan(wideQuests.y + wideQuests.height - 1);
-  });
-
-  test("keeps the caret level with the city dropdown on a 390 px phone", async ({
-    page,
-  }) => {
-    /**
-     * WHY THIS TEST MATTERS (r543 field report).
-     *
-     * "Dieses Dreieck ganz oben links bei Jump To City ist immer noch zu groß
-     * und immer noch nicht auf einer Höhe mit dem Jump To City Dropdown."
-     *
-     * WHAT THIS TEST IS FOR, STATED HONESTLY — an earlier version of this
-     * docblock overclaimed and a cold review caught it.
-     *
-     * It implied this viewport can see a misalignment the desktop test cannot.
-     * **It cannot.** The mutation run passes with the header back on
-     * `baseline` at 390 px exactly as it does at 1280 px; Chromium reproduces
-     * the reported symptom at NEITHER width, which is why the fix ships
-     * labelled as a hypothesis (a native Android `<select>` is taller than the
-     * headless one and moves the synthesised baseline).
-     *
-     * What this test genuinely adds is the SIZE pin at the width the reports
-     * come from — the phone stylesheet is free to restyle either the caret or
-     * the dropdown below 860 px, where the header becomes a floating overlay,
-     * and the desktop assertions would not notice. Two separate defects this
-     * session were invisible because their tests ran at the wrong viewport;
-     * the alignment check here rides along as a cheap regression guard rather
-     * than as proof of anything.
-     */
-    await page.setViewportSize({ width: 390, height: 844 });
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const measured = await page.evaluate(() => {
-      const rect = (selector) => {
-        const el = document.querySelector(selector);
-        if (el === null) throw new Error(`no ${selector}`);
-        const r = el.getBoundingClientRect();
-        return { y: r.y, height: r.height, centre: r.y + r.height / 2 };
-      };
-      const site = document.querySelector("#site");
-      if (site === null) throw new Error("no #site");
-      return {
-        caret: rect(".header-caret"),
-        site: rect("#site"),
-        siteFontPx: Number.parseFloat(getComputedStyle(site).fontSize),
-      };
-    });
-
-    // LEVEL WITH THE DROPDOWN. Same 2 px window as the desktop check: centred
-    // means centred, and the wider slack elsewhere is for controls of
-    // genuinely different heights sharing a row.
-    expect(
-      Math.abs(measured.caret.centre - measured.site.centre),
-      `caret centre ${measured.caret.centre.toFixed(1)} vs dropdown ${measured.site.centre.toFixed(1)}`,
-    ).toBeLessThanOrEqual(2);
-
-    // AND STILL SIZED TO THE DROPDOWN'S TEXT here too, because the phone
-    // stylesheet is free to restyle either of them.
-    expect(measured.caret.height).toBeGreaterThanOrEqual(measured.siteFontPx);
-    expect(measured.caret.height).toBeLessThanOrEqual(measured.siteFontPx + 4);
   });
 
   test("puts every header control in a block over a fully transparent bar", async ({
@@ -2369,7 +2303,7 @@ test.describe("the AR entry point", () => {
     await page.locator(".locate-button").click({ trial: true });
   });
 
-  test("keeps the AR overlay's controls OUT of the 3D content, top and bottom", async ({
+  test("keeps the AR overlay's controls OUT of the 3D content on a desktop, its bottom stack readable on a 390 px phone, and its experiment panel hidden when marked hidden", async ({
     page,
   }) => {
     /**
@@ -2404,343 +2338,338 @@ test.describe("the AR entry point", () => {
      * so neither quoted string is current — read them as the history that
      * motivated mounting the real module.
      */
+    // ONE BOOT, THREE CHECKS, in this order: the desktop first, then the
+    // same overlay resized to a phone (a resize, not a cold load at that
+    // size), then the panel's hidden state, which adds to `#ar-root` and so
+    // comes last.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
     await buildArOverlayFixture(page);
 
-    const viewport = page.viewportSize();
-    const hudBox = await page
-      .locator("#ar-root .ar-stack .ar-hud")
-      .boundingBox();
-    const bottomBox = await page.locator("#ar-root .ar-bottom").boundingBox();
-    const rowBox = await page
-      .locator("#ar-root .ar-bottom .ar-bottom-row")
-      .boundingBox();
-    const compassBox = await page
-      .locator("#ar-root .ar-bottom .ar-compass")
-      .boundingBox();
-    if (
-      hudBox === null ||
-      bottomBox === null ||
-      rowBox === null ||
-      compassBox === null ||
-      viewport === null
-    ) {
-      throw new Error("no boxes");
-    }
+    await test.step("on the desktop, the controls stay out of the 3D content", async () => {
+      const viewport = page.viewportSize();
+      const hudBox = await page
+        .locator("#ar-root .ar-stack .ar-hud")
+        .boundingBox();
+      const bottomBox = await page.locator("#ar-root .ar-bottom").boundingBox();
+      const rowBox = await page
+        .locator("#ar-root .ar-bottom .ar-bottom-row")
+        .boundingBox();
+      const compassBox = await page
+        .locator("#ar-root .ar-bottom .ar-compass")
+        .boundingBox();
+      if (
+        hudBox === null ||
+        bottomBox === null ||
+        rowBox === null ||
+        compassBox === null ||
+        viewport === null
+      ) {
+        throw new Error("no boxes");
+      }
 
-    // NEAR THE TOP IN ABSOLUTE TERMS, not merely "above the midpoint". The
-    // relative pair alone would pass on a layout that put the readout at 40%
-    // and the slider at 45% — and the blocker this test missed pushed both a
-    // whole viewport DOWN, which a midpoint check catches only by luck.
-    expect(hudBox.y).toBeLessThan(120);
+      // NEAR THE TOP IN ABSOLUTE TERMS, not merely "above the midpoint". The
+      // relative pair alone would pass on a layout that put the readout at 40%
+      // and the slider at 45% — and the blocker this test missed pushed both a
+      // whole viewport DOWN, which a midpoint check catches only by luck.
+      expect(hudBox.y).toBeLessThan(120);
 
-    // THE SLIDER MOVED TO THE BOTTOM (H6), INVERTING WHAT THIS TEST USED TO
-    // ASSERT — and the inversion is deliberate, not drift.
-    //
-    // It read `compassBox.y + compassBox.height < viewport.height / 2`, pinning
-    // DEC-W5's top-of-screen column. The fourteenth session asked for the
-    // slider "nach unten ... neben die Plus-Minus-UI". G9's original complaint,
-    // which DEC-W5 answered, was that the slider sat in the MIDDLE of the view
-    // and occluded the AR content — and the bottom satisfies that just as well
-    // as the top did, so the earlier decision is superseded rather than broken.
-    expect(compassBox.y).toBeGreaterThan(viewport.height / 2);
+      // THE SLIDER MOVED TO THE BOTTOM (H6), INVERTING WHAT THIS TEST USED TO
+      // ASSERT — and the inversion is deliberate, not drift.
+      //
+      // It read `compassBox.y + compassBox.height < viewport.height / 2`, pinning
+      // DEC-W5's top-of-screen column. The fourteenth session asked for the
+      // slider "nach unten ... neben die Plus-Minus-UI". G9's original complaint,
+      // which DEC-W5 answered, was that the slider sat in the MIDDLE of the view
+      // and occluded the AR content — and the bottom satisfies that just as well
+      // as the top did, so the earlier decision is superseded rather than broken.
+      expect(compassBox.y).toBeGreaterThan(viewport.height / 2);
 
-    // AND THE READOUT IS BELOW THE ROW, not beside it. This is the assertion
-    // that would have caught the two earlier versions of this row: the row is
-    // ~189 px of controls and the readout is ~40 characters, so a single-row
-    // layout overflows a phone. Stated as "the readout starts below the row's
-    // bottom edge" rather than as a pixel count, so it survives a font change.
-    expect(compassBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height - 1);
+      // AND THE READOUT IS BELOW THE ROW, not beside it. This is the assertion
+      // that would have caught the two earlier versions of this row: the row is
+      // ~189 px of controls and the readout is ~40 characters, so a single-row
+      // layout overflows a phone. Stated as "the readout starts below the row's
+      // bottom edge" rather than as a pixel count, so it survives a font change.
+      expect(compassBox.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height - 1);
 
-    // NOTHING OVERFLOWS THE VIEWPORT HORIZONTALLY, which is the failure the
-    // arithmetic in `.ar-bottom`'s comment predicts if anyone puts the readout
-    // back on the row or restores the 55vw slider.
-    expect(bottomBox.x).toBeGreaterThanOrEqual(0);
-    expect(bottomBox.x + bottomBox.width).toBeLessThanOrEqual(
-      viewport.width + 1,
-    );
+      // NOTHING OVERFLOWS THE VIEWPORT HORIZONTALLY, which is the failure the
+      // arithmetic in `.ar-bottom`'s comment predicts if anyone puts the readout
+      // back on the row or restores the 55vw slider.
+      expect(bottomBox.x).toBeGreaterThanOrEqual(0);
+      expect(bottomBox.x + bottomBox.width).toBeLessThanOrEqual(
+        viewport.width + 1,
+      );
 
-    // AND IT STAYS CLEAR OF THE TOAST BAND. `.ar-toast` sits at 12vh, and the
-    // far-travel toast fires at 2 km — during exactly the long walk this slider
-    // is used on. A second row makes the stack taller, so this is the
-    // constraint the extra row actually threatens (PR #311 review, finding 4).
-    expect(bottomBox.y).toBeGreaterThan(viewport.height * 0.12);
-  });
-
-  test("keeps the AR bottom stack readable on a 390 px phone", async ({
-    page,
-  }) => {
-    /**
-     * WHY THIS TEST MATTERS (r541 field report, Q8; owner disagreement on Q4).
-     *
-     * "Der Kompass-Balken nutzt etwa die halbe Breite und bricht auf vier
-     * Zeilen um, wo zwei reichen würden." The owner confirmed Q4 is NOT done.
-     *
-     * THE TEST ABOVE CANNOT SEE THIS, and that is the point of this one. It
-     * asserts nothing OVERFLOWS the viewport — which a box that is too NARROW
-     * passes trivially — and it runs at the suite's 1280 px Desktop Chrome
-     * while doing its arithmetic against "a 390 px phone" in the comments. Both
-     * halves of that gap are what let a folded stack ship.
-     *
-     * WHAT IS ASSERTED, and why these two together are not vacuous in either
-     * direction:
-     *
-     * - the readout and the hint each render on ONE line box, which forces the
-     *   compass box WIDE enough for the real 40-character string;
-     * - nothing overflows the viewport, which caps it.
-     *
-     * Line boxes are counted with `Range.getClientRects()` — one rect per line
-     * — rather than by dividing height by an assumed line-height, so the count
-     * stays true if the font or the leading changes.
-     */
-    await page.setViewportSize({ width: 390, height: 844 });
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    await buildArOverlayFixture(page);
-
-    // FLUSH AT THE BOTTOM, AND CONFINED TO THE BOTTOM QUARTER (r541, Q8).
-    //
-    // Reported as "floats mid-screen instead of sitting flush at the bottom
-    // edge". MEASURED, before and after the wrap fix, at this viewport:
-    //
-    //   before: height 189.4 px, top 620.8, bottom 810.25, gap below 33.75
-    //   after:  height 133.0 px, top 677.2, bottom 810.25, gap below 33.75
-    //
-    // THE BOTTOM EDGE NEVER MOVED. `bottom: 4vh` was always working, so the
-    // bar was never mis-positioned in Chromium -- it was 56 px TALLER, because
-    // the readout wrapped to three lines plus a wrapped hint, and a box anchored
-    // at the bottom grows UPWARD. That is why it read as floating.
-    //
-    // The 0.75 threshold is calibrated against those two numbers rather than
-    // chosen: the pre-fix layout fails it by 12 px and the current one clears it
-    // by 44. A looser bound (0.66) passes both and would guard nothing.
-    const placement = await page.evaluate(() => {
-      const el = document.querySelector("#ar-root .ar-bottom");
-      if (el === null) throw new Error("no .ar-bottom");
-      const r = el.getBoundingClientRect();
-      return {
-        top: r.top,
-        gapBelow: window.innerHeight - r.bottom,
-        viewportH: window.innerHeight,
-      };
+      // AND IT STAYS CLEAR OF THE TOAST BAND. `.ar-toast` sits at 12vh, and the
+      // far-travel toast fires at 2 km — during exactly the long walk this slider
+      // is used on. A second row makes the stack taller, so this is the
+      // constraint the extra row actually threatens (PR #311 review, finding 4).
+      expect(bottomBox.y).toBeGreaterThan(viewport.height * 0.12);
     });
-    expect(
-      placement.gapBelow,
-      `the control stack sits ${Math.round(placement.gapBelow)} px off the bottom edge`,
-    ).toBeLessThanOrEqual(placement.viewportH * 0.06);
-    expect(
-      placement.top,
-      `the control stack reaches up to ${Math.round(placement.top)} px, into the AR content`,
-    ).toBeGreaterThan(placement.viewportH * 0.75);
 
-    const measured = await page.evaluate(() => {
-      const lineCount = (selector) => {
-        const el = document.querySelector(selector);
-        if (el === null) throw new Error(`no ${selector}`);
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        return range.getClientRects().length;
-      };
-      const width = (selector) => {
-        const el = document.querySelector(selector);
-        if (el === null) throw new Error(`no ${selector}`);
-        return el.getBoundingClientRect().width;
-      };
-      const box = (selector) => {
-        const el = document.querySelector(selector);
-        if (el === null) throw new Error(`no ${selector}`);
+    await test.step("on a 390 px phone, the bottom stack stays readable", async () => {
+      /**
+       * WHY THIS TEST MATTERS (r541 field report, Q8; owner disagreement on Q4).
+       *
+       * "Der Kompass-Balken nutzt etwa die halbe Breite und bricht auf vier
+       * Zeilen um, wo zwei reichen würden." The owner confirmed Q4 is NOT done.
+       *
+       * THE TEST ABOVE CANNOT SEE THIS, and that is the point of this one. It
+       * asserts nothing OVERFLOWS the viewport — which a box that is too NARROW
+       * passes trivially — and it runs at the suite's 1280 px Desktop Chrome
+       * while doing its arithmetic against "a 390 px phone" in the comments. Both
+       * halves of that gap are what let a folded stack ship.
+       *
+       * WHAT IS ASSERTED, and why these two together are not vacuous in either
+       * direction:
+       *
+       * - the readout and the hint each render on ONE line box, which forces the
+       *   compass box WIDE enough for the real 40-character string;
+       * - nothing overflows the viewport, which caps it.
+       *
+       * Line boxes are counted with `Range.getClientRects()` — one rect per line
+       * — rather than by dividing height by an assumed line-height, so the count
+       * stays true if the font or the leading changes.
+       */
+      await page.setViewportSize({ width: 390, height: 844 });
+
+      // FLUSH AT THE BOTTOM, AND CONFINED TO THE BOTTOM QUARTER (r541, Q8).
+      //
+      // Reported as "floats mid-screen instead of sitting flush at the bottom
+      // edge". MEASURED, before and after the wrap fix, at this viewport:
+      //
+      //   before: height 189.4 px, top 620.8, bottom 810.25, gap below 33.75
+      //   after:  height 133.0 px, top 677.2, bottom 810.25, gap below 33.75
+      //
+      // THE BOTTOM EDGE NEVER MOVED. `bottom: 4vh` was always working, so the
+      // bar was never mis-positioned in Chromium -- it was 56 px TALLER, because
+      // the readout wrapped to three lines plus a wrapped hint, and a box anchored
+      // at the bottom grows UPWARD. That is why it read as floating.
+      //
+      // The 0.75 threshold is calibrated against those two numbers rather than
+      // chosen: the pre-fix layout fails it by 12 px and the current one clears it
+      // by 44. A looser bound (0.66) passes both and would guard nothing.
+      const placement = await page.evaluate(() => {
+        const el = document.querySelector("#ar-root .ar-bottom");
+        if (el === null) throw new Error("no .ar-bottom");
         const r = el.getBoundingClientRect();
-        return { x: r.x, width: r.width, centre: r.y + r.height / 2 };
-      };
-      return {
-        readoutLines: lineCount("#ar-root .ar-bottom .ar-compass-value"),
-        hintLines: lineCount("#ar-root .ar-bottom .ar-compass-hint"),
-        compassWidth: width("#ar-root .ar-bottom .ar-compass"),
-        rowWidth: width("#ar-root .ar-bottom .ar-bottom-row"),
-        bottomWidth: width("#ar-root .ar-bottom"),
-        slider: box("#ar-root .ar-bottom .ar-compass-slider"),
-        hint: box("#ar-root .ar-bottom .ar-compass-hint"),
-        readout: box("#ar-root .ar-bottom .ar-compass-value"),
-      };
+        return {
+          top: r.top,
+          gapBelow: window.innerHeight - r.bottom,
+          viewportH: window.innerHeight,
+        };
+      });
+      expect(
+        placement.gapBelow,
+        `the control stack sits ${Math.round(placement.gapBelow)} px off the bottom edge`,
+      ).toBeLessThanOrEqual(placement.viewportH * 0.06);
+      expect(
+        placement.top,
+        `the control stack reaches up to ${Math.round(placement.top)} px, into the AR content`,
+      ).toBeGreaterThan(placement.viewportH * 0.75);
+
+      const measured = await page.evaluate(() => {
+        const lineCount = (selector) => {
+          const el = document.querySelector(selector);
+          if (el === null) throw new Error(`no ${selector}`);
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return range.getClientRects().length;
+        };
+        const width = (selector) => {
+          const el = document.querySelector(selector);
+          if (el === null) throw new Error(`no ${selector}`);
+          return el.getBoundingClientRect().width;
+        };
+        const box = (selector) => {
+          const el = document.querySelector(selector);
+          if (el === null) throw new Error(`no ${selector}`);
+          const r = el.getBoundingClientRect();
+          return { x: r.x, width: r.width, centre: r.y + r.height / 2 };
+        };
+        return {
+          readoutLines: lineCount("#ar-root .ar-bottom .ar-compass-value"),
+          hintLines: lineCount("#ar-root .ar-bottom .ar-compass-hint"),
+          compassWidth: width("#ar-root .ar-bottom .ar-compass"),
+          rowWidth: width("#ar-root .ar-bottom .ar-bottom-row"),
+          bottomWidth: width("#ar-root .ar-bottom"),
+          slider: box("#ar-root .ar-bottom .ar-compass-slider"),
+          hint: box("#ar-root .ar-bottom .ar-compass-hint"),
+          readout: box("#ar-root .ar-bottom .ar-compass-value"),
+        };
+      });
+
+      // TWO ROWS, NOT THREE (J5, DEC-J8). "Den könnte man einfach rechts neben
+      // den Slider packen, sodass das dann nur noch zwei Zeilen sind."
+      //
+      // COMPARED BY VERTICAL CENTRE, not by `y`. `.ar-compass` is
+      // `align-items: center` and a 0.72rem hint is shorter than a range input,
+      // so their TOPS never line up — an assertion on `y` would fail against a
+      // correct implementation. Cold review of the plan caught exactly that.
+      // DEC-L2-13 (2026-09-03): the READOUT shares the slider's row and the hint
+      // has its own line below - the catalog's arrangement; DEC-J8's was the
+      // reverse, and the comments above describe that earlier state.
+      expect(
+        Math.abs(measured.readout.centre - measured.slider.centre),
+        "the compass readout is not on the slider's row",
+      ).toBeLessThanOrEqual(2);
+      // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
+      expect(measured.readout.x).toBeGreaterThanOrEqual(
+        measured.slider.x + measured.slider.width - 1,
+      );
+      // WHILE THE HINT KEEPS A LINE OF ITS OWN (DEC-L2-13): it explains the
+      // control, so it reads below the slider+readout row rather than beside it.
+      expect(measured.hint.centre).toBeGreaterThan(measured.slider.centre);
+
+      // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
+      // readout now sharing its row could have been fitted by shrinking the
+      // slider instead of using the free space — and every other assertion here
+      // passes with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is
+      // draggable with a thumb outdoors.
+      expect(
+        measured.slider.width,
+        `the compass slider shrank to ${Math.round(measured.slider.width)} px`,
+      ).toBeGreaterThanOrEqual(144);
+
+      // ONE LINE EACH. `compass 0.80 target — now 1.00 cold start` is ~40
+      // characters at 0.9rem monospace, i.e. ~345 px of ink; it fits a 390 px
+      // phone with room to spare, and only fails to fit when the box around it
+      // has been shrunk to its slider.
+      expect(
+        measured.readoutLines,
+        `the compass readout wraps to ${measured.readoutLines} lines in a ${Math.round(measured.compassWidth)} px box`,
+      ).toBe(1);
+      expect(
+        measured.hintLines,
+        `the compass hint wraps to ${measured.hintLines} lines`,
+      ).toBe(1);
+
+      // AND THE BOX FILLS THE COLUMN, stated as an equality rather than as
+      // "wider than the row". Two separate properties ride on this:
+      //
+      // - the "nutzt etwa die halbe Breite" half of the report: `.ar-bottom` is
+      //   a centred flex COLUMN, so a shrink-to-fit child sizes to its widest
+      //   unwrappable item -- the 9rem slider -- and the readout then wrapped
+      //   inside ~195 px however much room the phone actually had;
+      // - the box must not RESIZE as the readout text changes. The fusion phase
+      //   makes that string change length at runtime, so a shrink-to-fit box
+      //   grows and shrinks under a stationary slider. A ">= rowWidth" bound
+      //   passed with `align-self: stretch` deleted, which a mutation run
+      //   showed; this equality is what actually pins that rule.
+      expect(
+        measured.compassWidth,
+        "the compass box does not fill the bottom column",
+      ).toBeCloseTo(measured.bottomWidth, 0);
+
+      // STILL CAPPED. Without this the two assertions above are satisfied by any
+      // box wide enough to overflow the screen, which is the failure the previous
+      // two versions of this row actually shipped.
+      expect(measured.bottomWidth).toBeLessThanOrEqual(390);
+
+      // AND IT DOES NOT RESIZE WHEN THE READOUT GETS SHORTER, which is the
+      // property `align-self: stretch` actually carries -- and the reason this
+      // step exists at all.
+      //
+      // A MUTATION RUN CAUGHT THE FIRST VERSION OF THIS BEING VACUOUS. With the
+      // long 40-character string the box exceeds the column`s width anyway and
+      // clamps to it, so deleting the rule changed nothing measurable and the
+      // equality above passed either way. The readout is only that long during
+      // cold start; once the fusion settles it is short, shrink-to-fit collapses
+      // the box to its 9rem slider, and the bar visibly narrows under a
+      // stationary control. Re-measuring with the SHORT string is what makes the
+      // rule load-bearing instead of decorative.
+      const shortened = await page.evaluate(() => {
+        const readout = document.querySelector(
+          "#ar-root .ar-bottom .ar-compass-value",
+        );
+        const hint = document.querySelector(
+          "#ar-root .ar-bottom .ar-compass-hint",
+        );
+        if (readout === null || hint === null) throw new Error("no readout");
+        readout.textContent = "compass 0.80";
+        hint.textContent = "";
+        const box = document.querySelector("#ar-root .ar-bottom .ar-compass");
+        const column = document.querySelector("#ar-root .ar-bottom");
+        if (box === null || column === null) throw new Error("no box");
+        return {
+          compassWidth: box.getBoundingClientRect().width,
+          bottomWidth: column.getBoundingClientRect().width,
+        };
+      });
+      expect(
+        shortened.compassWidth,
+        "the compass box shrinks to its slider once the readout text is short",
+      ).toBeCloseTo(shortened.bottomWidth, 0);
     });
 
-    // TWO ROWS, NOT THREE (J5, DEC-J8). "Den könnte man einfach rechts neben
-    // den Slider packen, sodass das dann nur noch zwei Zeilen sind."
-    //
-    // COMPARED BY VERTICAL CENTRE, not by `y`. `.ar-compass` is
-    // `align-items: center` and a 0.72rem hint is shorter than a range input,
-    // so their TOPS never line up — an assertion on `y` would fail against a
-    // correct implementation. Cold review of the plan caught exactly that.
-    // DEC-L2-13 (2026-09-03): the READOUT shares the slider's row and the hint
-    // has its own line below - the catalog's arrangement; DEC-J8's was the
-    // reverse, and the comments above describe that earlier state.
-    expect(
-      Math.abs(measured.readout.centre - measured.slider.centre),
-      "the compass readout is not on the slider's row",
-    ).toBeLessThanOrEqual(2);
-    // AND TO THE RIGHT of it, so "beside" means beside rather than behind.
-    expect(measured.readout.x).toBeGreaterThanOrEqual(
-      measured.slider.x + measured.slider.width - 1,
-    );
-    // WHILE THE HINT KEEPS A LINE OF ITS OWN (DEC-L2-13): it explains the
-    // control, so it reads below the slider+readout row rather than beside it.
-    expect(measured.hint.centre).toBeGreaterThan(measured.slider.centre);
+    await test.step("the experiment panel is hidden while marked hidden", async () => {
+      /**
+       * WHY THIS TEST MATTERS (r541 and r543 field reports, DEC-Y16).
+       *
+       * "Der Settings Button funktioniert immer noch nicht" and "das wird halt
+       * gar nicht ein/ausgeblendet, das ist immer sichtbar" — reported twice,
+       * two branches apart.
+       *
+       * THE CAUSE IS A CSS CASCADE RULE, not an event problem, and that matters
+       * because two rounds of diagnosis went looking in the wrong place.
+       * `ar-experiment-panel.ts` opens and closes by writing `body.hidden`, which
+       * takes effect through the USER-AGENT stylesheet's `[hidden] { display:
+       * none }`. `.ar-experiments` sets `display: flex` in the AUTHOR stylesheet,
+       * and author rules beat user-agent rules whatever their specificity. So
+       * `hidden` did nothing at all: the panel was permanently visible, and the
+       * gear toggled a flag with no visual effect — which is exactly what a dead
+       * button looks like.
+       *
+       * ONE CAUSE, BOTH SYMPTOMS. The plan's DEC-Y16 argued they had to be two
+       * independent failures, reasoning that a panel which mounts CLOSED cannot
+       * be reported as permanently VISIBLE by a broken toggle. The premise was
+       * right and the conclusion was wrong, because the panel never actually
+       * mounted closed on screen — only in the DOM.
+       *
+       * jsdom cannot see this (no stylesheet, no cascade) and the unit test that
+       * asserts `body.hidden` passes against the defect, which is why this one is
+       * an e2e measuring `display` rather than the attribute.
+       */
 
-    // THE SLIDER DID NOT PAY FOR IT. `width: 9rem` is `flex: 0 1 auto`, so the
-    // readout now sharing its row could have been fitted by shrinking the
-    // slider instead of using the free space — and every other assertion here
-    // passes with a 100 px slider. 9rem is 144 px, and it exists so 0-1 is
-    // draggable with a thumb outdoors.
-    expect(
-      measured.slider.width,
-      `the compass slider shrank to ${Math.round(measured.slider.width)} px`,
-    ).toBeGreaterThanOrEqual(144);
+      const display = await page.evaluate(() => {
+        const root = document.querySelector("#ar-root");
+        if (root === null) throw new Error("no #ar-root");
+        const wrap = document.createElement("div");
+        wrap.className = "ar-gear-wrap";
+        const body = document.createElement("div");
+        // the builder adds the design system's classes beside the hook (M6b)
+        body.className = "ar-experiments exp-panel plate";
+        // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
+        body.hidden = true;
+        const row = document.createElement("label");
+        row.className = "ar-experiments-row exp-row";
+        row.textContent = "rotation prior";
+        body.append(row);
+        wrap.append(body);
+        root.append(wrap);
+        return {
+          hidden: getComputedStyle(body).display,
+          // AND THE OPEN STATE STILL LAYS OUT, so the fix cannot be "display:
+          // none always", which would hide the panel for good and make the gear
+          // genuinely dead rather than merely looking it.
+          shown: (() => {
+            body.hidden = false;
+            return getComputedStyle(body).display;
+          })(),
+        };
+      });
 
-    // ONE LINE EACH. `compass 0.80 target — now 1.00 cold start` is ~40
-    // characters at 0.9rem monospace, i.e. ~345 px of ink; it fits a 390 px
-    // phone with room to spare, and only fails to fit when the box around it
-    // has been shrunk to its slider.
-    expect(
-      measured.readoutLines,
-      `the compass readout wraps to ${measured.readoutLines} lines in a ${Math.round(measured.compassWidth)} px box`,
-    ).toBe(1);
-    expect(
-      measured.hintLines,
-      `the compass hint wraps to ${measured.hintLines} lines`,
-    ).toBe(1);
-
-    // AND THE BOX FILLS THE COLUMN, stated as an equality rather than as
-    // "wider than the row". Two separate properties ride on this:
-    //
-    // - the "nutzt etwa die halbe Breite" half of the report: `.ar-bottom` is
-    //   a centred flex COLUMN, so a shrink-to-fit child sizes to its widest
-    //   unwrappable item -- the 9rem slider -- and the readout then wrapped
-    //   inside ~195 px however much room the phone actually had;
-    // - the box must not RESIZE as the readout text changes. The fusion phase
-    //   makes that string change length at runtime, so a shrink-to-fit box
-    //   grows and shrinks under a stationary slider. A ">= rowWidth" bound
-    //   passed with `align-self: stretch` deleted, which a mutation run
-    //   showed; this equality is what actually pins that rule.
-    expect(
-      measured.compassWidth,
-      "the compass box does not fill the bottom column",
-    ).toBeCloseTo(measured.bottomWidth, 0);
-
-    // STILL CAPPED. Without this the two assertions above are satisfied by any
-    // box wide enough to overflow the screen, which is the failure the previous
-    // two versions of this row actually shipped.
-    expect(measured.bottomWidth).toBeLessThanOrEqual(390);
-
-    // AND IT DOES NOT RESIZE WHEN THE READOUT GETS SHORTER, which is the
-    // property `align-self: stretch` actually carries -- and the reason this
-    // step exists at all.
-    //
-    // A MUTATION RUN CAUGHT THE FIRST VERSION OF THIS BEING VACUOUS. With the
-    // long 40-character string the box exceeds the column`s width anyway and
-    // clamps to it, so deleting the rule changed nothing measurable and the
-    // equality above passed either way. The readout is only that long during
-    // cold start; once the fusion settles it is short, shrink-to-fit collapses
-    // the box to its 9rem slider, and the bar visibly narrows under a
-    // stationary control. Re-measuring with the SHORT string is what makes the
-    // rule load-bearing instead of decorative.
-    const shortened = await page.evaluate(() => {
-      const readout = document.querySelector(
-        "#ar-root .ar-bottom .ar-compass-value",
-      );
-      const hint = document.querySelector(
-        "#ar-root .ar-bottom .ar-compass-hint",
-      );
-      if (readout === null || hint === null) throw new Error("no readout");
-      readout.textContent = "compass 0.80";
-      hint.textContent = "";
-      const box = document.querySelector("#ar-root .ar-bottom .ar-compass");
-      const column = document.querySelector("#ar-root .ar-bottom");
-      if (box === null || column === null) throw new Error("no box");
-      return {
-        compassWidth: box.getBoundingClientRect().width,
-        bottomWidth: column.getBoundingClientRect().width,
-      };
+      expect(
+        display.hidden,
+        "the experiment panel still renders while marked hidden",
+      ).toBe("none");
+      expect(display.shown).toBe("flex");
     });
-    expect(
-      shortened.compassWidth,
-      "the compass box shrinks to its slider once the readout text is short",
-    ).toBeCloseTo(shortened.bottomWidth, 0);
   });
 
-  test("hides the AR experiment panel when it is marked hidden", async ({
-    page,
-  }) => {
-    /**
-     * WHY THIS TEST MATTERS (r541 and r543 field reports, DEC-Y16).
-     *
-     * "Der Settings Button funktioniert immer noch nicht" and "das wird halt
-     * gar nicht ein/ausgeblendet, das ist immer sichtbar" — reported twice,
-     * two branches apart.
-     *
-     * THE CAUSE IS A CSS CASCADE RULE, not an event problem, and that matters
-     * because two rounds of diagnosis went looking in the wrong place.
-     * `ar-experiment-panel.ts` opens and closes by writing `body.hidden`, which
-     * takes effect through the USER-AGENT stylesheet's `[hidden] { display:
-     * none }`. `.ar-experiments` sets `display: flex` in the AUTHOR stylesheet,
-     * and author rules beat user-agent rules whatever their specificity. So
-     * `hidden` did nothing at all: the panel was permanently visible, and the
-     * gear toggled a flag with no visual effect — which is exactly what a dead
-     * button looks like.
-     *
-     * ONE CAUSE, BOTH SYMPTOMS. The plan's DEC-Y16 argued they had to be two
-     * independent failures, reasoning that a panel which mounts CLOSED cannot
-     * be reported as permanently VISIBLE by a broken toggle. The premise was
-     * right and the conclusion was wrong, because the panel never actually
-     * mounted closed on screen — only in the DOM.
-     *
-     * jsdom cannot see this (no stylesheet, no cascade) and the unit test that
-     * asserts `body.hidden` passes against the defect, which is why this one is
-     * an e2e measuring `display` rather than the attribute.
-     */
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const display = await page.evaluate(() => {
-      const root = document.querySelector("#ar-root");
-      if (root === null) throw new Error("no #ar-root");
-      const wrap = document.createElement("div");
-      wrap.className = "ar-gear-wrap";
-      const body = document.createElement("div");
-      // the builder adds the design system's classes beside the hook (M6b)
-      body.className = "ar-experiments exp-panel plate";
-      // EXACTLY WHAT THE PRODUCTION CODE WRITES at mount and on close.
-      body.hidden = true;
-      const row = document.createElement("label");
-      row.className = "ar-experiments-row exp-row";
-      row.textContent = "rotation prior";
-      body.append(row);
-      wrap.append(body);
-      root.append(wrap);
-      return {
-        hidden: getComputedStyle(body).display,
-        // AND THE OPEN STATE STILL LAYS OUT, so the fix cannot be "display:
-        // none always", which would hide the panel for good and make the gear
-        // genuinely dead rather than merely looking it.
-        shown: (() => {
-          body.hidden = false;
-          return getComputedStyle(body).display;
-        })(),
-      };
-    });
-
-    expect(
-      display.hidden,
-      "the experiment panel still renders while marked hidden",
-    ).toBe("none");
-    expect(display.shown).toBe("flex");
-  });
-
-  test("does NOT offer AR when the user only pressed the GPS button", async ({
+  test("does NOT offer AR when the user only pressed the GPS button, and keeps the map beside AR", async ({
     page,
     context,
   }) => {
@@ -2786,83 +2715,15 @@ test.describe("the AR entry point", () => {
       { timeout: 10000 },
     );
     await expect(page.locator("#ar-offer")).toBeHidden();
-  });
 
-  test("keeps the map when AR is available — DEC-12", async ({
-    page,
-    context,
-  }) => {
-    // The rule the reference consumer's pattern would break. Asserted in the
-    // real DOM rather than only over the pure state function, because the
-    // failure mode is a call site toggling the map, not the derivation.
-    //
-    // THE STUB IS WHAT MAKES THIS TEST MEAN ANYTHING. Without it headless
-    // Chromium reports no immersive-ar, so AR is never "available" and the two
-    // assertions below hold in every state the app can reach — including with
-    // the whole AR path deleted. The first version omitted it and was exactly
-    // the kind of test this branch keeps retiring.
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "xr", {
-        configurable: true,
-        value: { isSessionSupported: () => Promise.resolve(true) },
-      });
-    });
-    await context.grantPermissions(["geolocation"]);
-    await context.setGeolocation({ latitude: 50.9231, longitude: 6.9445 });
-    await stubNetwork(page);
-    await page.goto("/");
-    await waitForRefresh(page);
-    await page.locator(".locate-button").click();
-
-    // AR really is offered here — otherwise the map's survival proves nothing.
+    // THE MAP STAYS WHEN AR IS AVAILABLE. The rule the reference consumer's
+    // pattern would break, asserted in the real DOM rather than only over the
+    // pure state function, because the failure mode is a call site toggling
+    // the map, not the derivation. The xr stub above is what makes it mean
+    // anything: without it AR is never "available" and both views hold in
+    // every state, including with the whole AR path deleted.
     await expect(page.locator("#enter-ar")).toBeEnabled({ timeout: 10000 });
-
     await expect(page.locator("#map")).toBeVisible();
     await expect(page.locator("#scene")).toBeVisible();
-  });
-
-  test("leaves the desktop layout alone while no session is running @pr", async ({
-    page,
-  }) => {
-    // `#ar-root` is a child of the same grid as `#map` and `#scene`. As an
-    // in-flow item with no CSS it added an implicit second row and took roughly
-    // half the height from the views — caught in review, invisible to every
-    // existing gate because the height assertion runs only at the mobile
-    // viewport and the canvas check compares against `#scene`'s own box.
-    await stubNetwork(page);
-    await page.goto("/");
-    await waitForRefresh(page);
-
-    const main = await page.locator("main").boundingBox();
-    const scene = await page.locator("#scene").boundingBox();
-
-    // The views fill the row. A stolen implicit row shows up here as roughly
-    // half, so the bound is generous and still discriminating.
-    expect(scene.height).toBeGreaterThan(main.height * 0.9);
-  });
-
-  test("accepts the auto-elevation kill switch in the URL and boots clean", async ({
-    page,
-  }) => {
-    // HONESTY NOTE (cold-review F8): this desktop e2e CANNOT DISCRIMINATE
-    // the kill switch. Headless never enters AR, so no HUD and no estimator
-    // exist with the switch in EITHER position — every assertion below would
-    // pass identically without `autoElevation=off` in the URL. What it can
-    // honestly pin is only that a flagged URL does not break the boot (the
-    // switch's whole surface is the URL, and a boot that chokes on the
-    // parameter would kill the field A/B before it starts). The tests that
-    // DO discriminate the switch are unit tests: the parser in
-    // `ar-elevation-auto.test.ts` (`autoElevationEnabled`) and the wiring in
-    // `ar-mode.test.ts` / `ar-mode.depth-wiring.test.ts` (no depth feature,
-    // no capture, no pipeline without the dep).
-    await stubNetwork(page);
-    await page.goto(`${AT_FIXTURE}&autoElevation=off`);
-    await waitForRefresh(page);
-
-    await expect(page.locator("#scene")).toBeVisible();
-    // A LAYOUT invariant, not a switch assertion: `#ar-root` must stay
-    // `:empty` on the desktop (it covers the page the moment it is not) —
-    // asserted here so the flagged boot keeps that property too.
-    await expect(page.locator("#ar-root")).toBeEmpty();
   });
 });

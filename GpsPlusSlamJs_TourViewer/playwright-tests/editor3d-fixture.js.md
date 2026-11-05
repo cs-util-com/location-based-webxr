@@ -26,6 +26,10 @@ stats.
   input, as a dropped file.
 - `view3d(page)` - `window.__tourEditor.view3d()`: the shown 3D view's
   stats, or null on the map.
+- `noApproach(page)`, `noClouds(page)` - init scripts: the next globe open
+  starts at street level, or without the heavy clouds.
+- `capture(target, path)` - a page or locator screenshot, taken only with
+  `PLAYWRIGHT_CAPTURE=1` (no assertion reads it; each one costs frames).
 
 ## Tests
 

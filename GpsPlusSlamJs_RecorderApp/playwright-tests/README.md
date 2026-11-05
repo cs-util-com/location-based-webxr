@@ -16,10 +16,9 @@ npm run test:e2e
 | `smoke.spec.js`                   | Basic app loading and element existence checks     |
 | `setup-modal.spec.js`             | Setup modal workflow (folder selection, scenarios) |
 | `enter-ar-flow.spec.js`           | Complete flow from setup to AR mode entry          |
-| `button-states.spec.js`           | Button visibility, styling, and HUD elements       |
+| `button-states.spec.js`           | Button labels, HUD text and the controls layout    |
 | `settings-modal.spec.js`          | Settings modal interactions and persistence        |
 | `ref-point-picker.spec.js`        | Reference point picker modal interactions          |
-| `gps-event-markers.spec.js`       | GPS event visualization test hooks integration     |
 | `test-hooks-verification.spec.js` | Verifies testHooks match real application behavior |
 
 ## Testing Guidelines

@@ -42,16 +42,6 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('GPS accuracy ellipsoid (§3c)', () => {
-  test('test hooks for accuracy ellipsoid are exposed', async ({ page }) => {
-    const hooks = await page.evaluate(() => ({
-      hasAdd: typeof window.testHooks.addGpsEventForTest === 'function',
-      hasSizes:
-        typeof window.testHooks.getRawGpsMarkerWorldSizes === 'function',
-    }));
-    expect(hooks.hasAdd).toBe(true);
-    expect(hooks.hasSizes).toBe(true);
-  });
-
   test('low-accuracy event (large latLongAccuracy in metres) produces markedly larger bbox than high-accuracy event', async ({
     page,
   }) => {

@@ -19,7 +19,7 @@ import {
   readLock,
   writeLock,
 } from './gate-lock.mjs';
-import { holdMachineSlotForProcess } from './machine-slot.mjs';
+import { holdMachineSlotForProcess, queueClassOf } from './machine-slot.mjs';
 import {
   resolveProject,
   PROJECTS,
@@ -28,6 +28,7 @@ import {
   gateStages,
   resolveGateMode,
   SKIP_BROWSER_ENV,
+  isBrowserStage,
 } from './projects.mjs';
 import {
   WORKSPACE_ROOT,
@@ -117,8 +118,15 @@ function printSummaryTable() {
 // is the OUTER lock: it queues behind any other session's gate, sweep or
 // browser suite. The per-tree lock below is the INNER one and refuses rather
 // than waits, so the two cannot deadlock. A nested run (the cascade's package
-// gates) inherits the holder's token and re-enters at once.
-await holdMachineSlotForProcess(`pnpm test in ${project.name}`);
+// gates) inherits the holder's token and re-enters at once. A run that starts
+// no browser queues ahead of younger browser runs; the root's own stages are
+// the package gates, which do start browsers.
+await holdMachineSlotForProcess(`pnpm test in ${project.name}`, {
+  queueClass: queueClassOf({
+    skipBrowser: resolveGateMode(process.env).skipBrowser,
+    runsBrowser: project.dir === '.' || project.stages.some(isBrowserStage),
+  }),
+});
 
 // The watchdog limit this run's stages get, for whoever waits on its log
 // (wait-gate.mjs sizes its quiet window from it).

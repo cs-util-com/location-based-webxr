@@ -53,8 +53,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
-import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
+import {
+  holdMachineSlotForProcess,
+  queueClassOf,
+} from '../test-timing/machine-slot.mjs';
+import { SKIP_BROWSER_ENV, resolveGateMode } from '../test-timing/projects.mjs';
 import {
   STALL_EXIT,
   STALL_SUMMARY,
@@ -62,6 +65,7 @@ import {
 } from '../test-timing/stall-watch.mjs';
 import {
   cascadeCommands,
+  cascadeTierBase,
   describeRun,
   docOnlyDirs,
   gateCommands,
@@ -137,8 +141,41 @@ if (linkOverride) {
 // The machine slot for the WHOLE run (machine-slot.mjs): every gate this
 // spawns inherits the token and re-enters, so another session cannot slip in
 // between the repo-config tests and the last dependent. A dry run takes nothing.
+// The per-commit gate (browser stages skipped) queues ahead of browser runs.
 if (!dryRun) {
-  await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`);
+  await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`, {
+    queueClass: queueClassOf({
+      skipBrowser: resolveGateMode(process.env).skipBrowser,
+      runsBrowser: true,
+    }),
+  });
+}
+
+/** The main line a branch is cut from, for the cascade's tier base. */
+const MAIN_LINE = 'origin2/main';
+
+/**
+ * The cascade's tier base (select.mjs `cascadeTierBase`), said in the log.
+ * @returns {string | null}
+ */
+function tierBaseForCascade() {
+  const base = cascadeTierBase({
+    env: process.env,
+    ref: refIdx !== -1 ? ref : null,
+    mergeBase: () => {
+      const found = spawnSync('git', ['merge-base', 'HEAD', MAIN_LINE], {
+        cwd: WORKSPACE_ROOT,
+        encoding: 'utf8',
+      });
+      return found.status === 0 ? found.stdout.trim() || null : null;
+    },
+  });
+  console.log(
+    base
+      ? `test-changed: the browser tier runs every spec changed since ${base} whole`
+      : `test-changed: ⚠ no merge-base with ${MAIN_LINE}: the browser tier runs only the @pr tests, no changed spec whole`
+  );
+  return base;
 }
 
 // The watchdog limit every stage of this run gets, for whoever waits on its
@@ -150,7 +187,7 @@ if (runAll) {
     console.log('test-changed: --all ⇒ full cascade (pnpm test)');
     process.exit(0);
   }
-  process.exit(runInOrder(cascadeCommands()));
+  process.exit(runInOrder(cascadeCommands({ tierBase: tierBaseForCascade() })));
 }
 
 const dirs = packageDirs();
@@ -167,7 +204,7 @@ if (selection.mode === 'all') {
   if (dryRun) {
     process.exit(0);
   }
-  process.exit(runInOrder(cascadeCommands()));
+  process.exit(runInOrder(cascadeCommands({ tierBase: tierBaseForCascade() })));
 }
 
 const names = selection.packages.map(packageName);

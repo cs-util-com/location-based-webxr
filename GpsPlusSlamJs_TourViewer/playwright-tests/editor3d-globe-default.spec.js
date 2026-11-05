@@ -20,6 +20,7 @@ import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
+  capture,
   keepRejections,
   noApproach,
   noClouds,
@@ -170,11 +171,12 @@ test("the plain editor link opens the sample tour on the globe @pr", async ({
   for (const size of VIEWPORTS) {
     await page.setViewportSize(size);
     await afterFrames(page, 2);
-    await page.screenshot({
-      path: testInfo.outputPath(
+    await capture(
+      page,
+      testInfo.outputPath(
         `default-open-${String(size.width)}x${String(size.height)}.png`,
       ),
-    });
+    );
   }
   expect(await rejections(page)).toEqual([]);
 });
@@ -191,6 +193,9 @@ test.describe("an empty tour", () => {
     await answerHosts(page, { globeAssets: "serve" });
     await keepRejections(page);
     await withoutPickers(page);
+    // The heavy clouds off (`noClouds`): in this software renderer they
+    // hold the frame rate near 1 a second.
+    await noClouds(page);
     await page.goto("/edit.html");
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
     // Opened from a file, as a new tour is: the approach is due, and has
@@ -224,19 +229,15 @@ test.describe("an empty tour", () => {
     for (const size of VIEWPORTS) {
       await page.setViewportSize(size);
       await afterFrames(page, 2);
-      await page.screenshot({
-        path: testInfo.outputPath(
+      await capture(
+        page,
+        testInfo.outputPath(
           `empty-tour-${String(size.width)}x${String(size.height)}.png`,
         ),
-      });
+      );
     }
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // The heavy clouds off: in this software renderer they hold the frame
-    // rate near 1 a second.
-    await page.locator("#view-menu-btn").click();
-    await page.locator("#view-clouds").click();
-    await page.keyboard.press("Escape");
     // Down to about 1 km over the answered ground (at 515.5 m everywhere),
     // looking down, and wait for the answered ground to be sampled under
     // the camera: the ground menu places on the sampled ground, not on
@@ -343,11 +344,12 @@ test.describe("where the 3D view cannot open", () => {
       // Every action whole on screen, nothing over it: not the bottom bar,
       // not the "Opened" line the open has just said.
       await expectActionsUncovered(failed);
-      await page.screenshot({
-        path: testInfo.outputPath(
+      await capture(
+        page,
+        testInfo.outputPath(
           `cannot-open-${String(size.width)}x${String(size.height)}.png`,
         ),
-      });
+      );
     }
     // Why: toasts sit above the page (a save's result must be seen), so a
     // stack of them - a line and a save error that stays until closed -
@@ -388,11 +390,12 @@ test.describe("where the 3D view cannot open", () => {
       for (const t of await page.locator(".e2e-toast").all()) {
         await expect(t).toBeInViewport({ ratio: 1 });
       }
-      await page.screenshot({
-        path: testInfo.outputPath(
+      await capture(
+        page,
+        testInfo.outputPath(
           `cannot-open-toasts-${String(size.width)}x${String(size.height)}.png`,
         ),
-      });
+      );
     }
     await page.evaluate(() => {
       for (const t of document.querySelectorAll(".e2e-toast")) t.remove();

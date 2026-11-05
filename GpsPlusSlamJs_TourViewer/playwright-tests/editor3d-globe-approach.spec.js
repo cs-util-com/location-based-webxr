@@ -4,13 +4,25 @@ import { expect, test } from "@playwright/test";
 import {
   afterFrames,
   answerHosts,
+  capture,
   keepRejections,
   noApproach,
+  noClouds,
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
 
-/**
+// No spec here is about the clouds: without them the globe draws about
+// four times the frames in this software renderer (`noClouds`). One
+// flight, the cheapest, keeps them, so a default run still flies through
+// the clouds the creator sees.
+const FLIGHT_WITH_CLOUDS =
+  "the load ends after the line's done-hold while tiles are still held";
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title !== FLIGHT_WITH_CLOUDS) await noClouds(page);
+});
+
+/*
  * Why these tests matter: a tour opened in the globe view flies in from
  * high above, a thin full-width accent line glued under the menu bar
  * filling with the camera's fall (a progress bar named "Loading tour"),
@@ -124,53 +136,66 @@ async function expectLoadOver(page, options = {}) {
   expect(["gone", "full"]).toContain(run);
 }
 
-for (const [width, height] of [
-  [1440, 900],
-  [1280, 720],
-  [1024, 768],
-  [844, 390],
-  [390, 844],
-]) {
-  test(`the line is glued under the menu bar, thin, in the accent colour, the docks hanging directly from it down to the bottom bar at ${width}x${height}`, async ({
-    page,
-  }) => {
-    // Why: the loading bar became a
-    // thin accent line that fills and stays, with no tab, and both docks
-    // attached directly under it - the earlier tab and the 8 px gap read
-    // as a hole between the menu bar and the panels. Positions, gaps and
-    // the colour are what make that read; a presence check passes a line
-    // floating in the view, a gap over a dock, or a dock stopping short of
-    // the bottom bar. The phone sizes (landscape and portrait) hold the
-    // line as at a desktop; there one dock shows at a time
-    // (`dock-rule.ts`), so only the shown dock is checked.
-    test.setTimeout(180_000);
+/**
+ * The line at each size, on one open: glued under the menu bar, thin, in
+ * the accent colour, the window's full width, letting pointers through.
+ * Checked before the pick that shows the inspector (the pick sends the
+ * flight elsewhere).
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }[]} sizes
+ */
+async function expectLineAt(page, sizes) {
+  const approach = page.locator("#view3d .approach");
+  for (const { width, height } of sizes) {
+    const at = `at ${String(width)}x${String(height)}`;
     await page.setViewportSize({ width, height });
-    await answerHosts(page, { globeAssets: "serve" });
-    await approachLasting(page, 600_000);
-    await openSampleOnGlobe(page);
-    const approach = page.locator("#view3d .approach");
     await expect(approach).toBeVisible();
-    const bar = await box(approach.locator(".approach-track"));
     // The line: the window's full width, right under the menu bar, 3 px,
     // filling in the accent colour; no tab under it.
-    expect(bar).toEqual({ x: 0, y: TOP_PX, width, height: LINE_PX });
+    await expect
+      .poll(() => box(approach.locator(".approach-track")), { message: at })
+      .toEqual({ x: 0, y: TOP_PX, width, height: LINE_PX });
     await expect(approach.locator(".approach-fill")).toHaveCSS(
       "background-color",
       ACCENT,
     );
     await expect(page.locator("#view3d .approach-title")).toHaveCount(0);
     // The permanent line it covers while it loads: the same place.
-    expect(await box(page.locator("#load-line"))).toEqual(bar);
-    // The docks: open the tree, then pick a station (the inspector
-    // shows); each shown dock flush with its side, hanging from the line
-    // with no gap and running down to the bottom bar. Below 820 px a dock
-    // takes at most about half the width (`editor-shell.css`, narrow
-    // windows).
-    if (!(await page.locator("#tree-body").isVisible())) {
-      await page.locator("#tree-fold").click();
-    }
-    await page.locator("#tree-body .card .pick").first().click();
-    await expect(page.locator("#inspector-body")).toBeVisible();
+    expect(await box(page.locator("#load-line")), at).toEqual({
+      x: 0,
+      y: TOP_PX,
+      width,
+      height: LINE_PX,
+    });
+    // Neither takes a pointer: a drag that starts on them reaches the view.
+    await expect(approach).toHaveCSS("pointer-events", "none");
+    await capture(
+      page,
+      test.info().outputPath(`approach-${width}x${height}.png`),
+    );
+  }
+}
+
+/**
+ * The docks at each size: open the tree, then pick a station (the
+ * inspector shows); each shown dock flush with its side, hanging from the
+ * line with no gap and running down to the bottom bar. Below 820 px a dock
+ * takes at most about half the width (`editor-shell.css`, narrow
+ * windows); below 900 px one dock shows at a time (`dock-rule.ts`), so
+ * only the shown dock is checked.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }[]} sizes
+ */
+async function expectDocksAt(page, sizes) {
+  if (!(await page.locator("#tree-body").isVisible())) {
+    await page.locator("#tree-fold").click();
+  }
+  await page.locator("#tree-body .card .pick").first().click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  for (const { width, height } of sizes) {
+    await page.setViewportSize({ width, height });
+    await afterFrames(page, 2);
+    const bar = { x: 0, y: TOP_PX, width, height: LINE_PX };
     const narrow = width <= 820;
     const docks = [
       {
@@ -194,40 +219,52 @@ for (const [width, height] of [
     for (const dock of docks) {
       if (!(await page.locator(dock.body).isVisible())) continue;
       shown++;
+      const at = `${dock.id} at ${String(width)}x${String(height)}`;
       const d = await box(page.locator(dock.id));
-      if (dock.left) expect(d.x, dock.id).toBe(0);
-      else expect(d.x + d.width, dock.id).toBeCloseTo(width, 0);
+      if (dock.left) expect(d.x, at).toBe(0);
+      else expect(d.x + d.width, at).toBeCloseTo(width, 0);
       // No gap: the dock's top is the line's bottom.
-      expect(d.y, dock.id).toBe(bar.y + bar.height);
-      expect(d.y + d.height, dock.id).toBeCloseTo(height - BOTTOM_PX, 0);
-      expect(d.width, dock.id).toBeCloseTo(dock.widthPx, 0);
-      expect(overlaps(d, bar), dock.id).toBe(false);
+      expect(d.y, at).toBe(bar.y + bar.height);
+      expect(d.y + d.height, at).toBeCloseTo(height - BOTTOM_PX, 0);
+      expect(d.width, at).toBeCloseTo(dock.widthPx, 0);
+      expect(overlaps(d, bar), at).toBe(false);
       // Square corners where it meets the line.
       const corners = await page.locator(dock.id).evaluate((el) => {
         const c = getComputedStyle(el);
         return [c.borderTopLeftRadius, c.borderTopRightRadius];
       });
-      expect(corners, dock.id).toEqual(["0px", "0px"]);
+      expect(corners, at).toEqual(["0px", "0px"]);
     }
     // Both from 900 px up (the dock rule's side by side), else one.
-    expect(shown).toBe(width >= 900 ? 2 : 1);
-    // Neither takes a pointer: a drag that starts on them reaches the view.
-    await expect(approach).toHaveCSS("pointer-events", "none");
-    await page.screenshot({
-      path: test.info().outputPath(`approach-${width}x${height}.png`),
-    });
-  });
+    expect(shown, `${String(width)}x${String(height)}`).toBe(
+      width >= 900 ? 2 : 1,
+    );
+  }
 }
 
-test("the line is a progressbar with a value and a name while it loads", async ({
+// Why: the loading bar became a thin accent line that fills and stays,
+// with no tab, and both docks attached directly under it - the earlier
+// tab and the 8 px gap read as a hole between the menu bar and the
+// panels. Positions, gaps and the colour are what make that read; a
+// presence check passes a line floating in the view, a gap over a dock,
+// or a dock stopping short of the bottom bar. The desktop sizes share one
+// open, resized; each phone (landscape and portrait) opens at its own
+// size, as a phone does.
+test("the line is glued under the menu bar, thin, in the accent colour, a named progressbar, the docks hanging directly from it down to the bottom bar at 1440x900, 1280x720 and 1024x768", async ({
   page,
 }) => {
-  // Why: a screen reader user hears that the tour is loading and how far;
-  // the "Loading tour" words, no longer shown on a tab, are its name.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
+  const desktops = [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+  ];
+  await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page, { globeAssets: "serve" });
   await approachLasting(page, 600_000);
   await openSampleOnGlobe(page);
+  // A screen reader user hears that the tour is loading and how far; the
+  // "Loading tour" words, no longer shown on a tab, are its name.
   const track = page.locator("#view3d .approach-track");
   await expect(track).toHaveAttribute("role", "progressbar");
   await expect(track).toHaveAttribute("aria-valuemin", "0");
@@ -242,10 +279,28 @@ test("the line is a progressbar with a value and a name while it loads", async (
   await expect(approachBox.locator('[role="status"], [aria-live]')).toHaveCount(
     0,
   );
-  await expect(page.locator("#view3d .approach-title")).toHaveCount(0);
   const stats = await approachOf(page);
   expect(stats).toMatchObject({ flying: true, durationMs: 600_000 });
+  await expectLineAt(page, desktops);
+  await expectDocksAt(page, desktops);
 });
+
+for (const [width, height] of [
+  [844, 390],
+  [390, 844],
+]) {
+  test(`the line is glued under the menu bar, thin, in the accent colour, the docks hanging directly from it down to the bottom bar at ${width}x${height}`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width, height });
+    await answerHosts(page, { globeAssets: "serve" });
+    await approachLasting(page, 600_000);
+    await openSampleOnGlobe(page);
+    await expectLineAt(page, [{ width, height }]);
+    await expectDocksAt(page, [{ width, height }]);
+  });
+}
 
 test("a drag in the 3D view takes the camera where it is; typing in the panel and a pick in the list do not", async ({
   page,
@@ -295,9 +350,7 @@ test("a drag in the 3D view takes the camera where it is; typing in the panel an
   expect(await rejections(page)).toEqual([]);
 });
 
-test("the load ends after the line's done-hold while tiles are still held", async ({
-  page,
-}) => {
+test(FLIGHT_WITH_CLOUDS, async ({ page }) => {
   // Why: the box used to stay after the landing for as long as the relief
   // still loaded, under a line saying so; the owner dropped the line, and
   // the box's end is now the bar's own (a beat after the landing). The
@@ -320,6 +373,9 @@ test("the load ends after the line's done-hold while tiles are still held", asyn
     await approachLasting(page, 3_000);
     await openSampleOnGlobe(page);
     await expect(page.locator("#view3d .approach")).toBeVisible();
+    await expect
+      .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+      .toBe(true);
     await expect
       .poll(() => held.length, { timeout: 60_000 })
       .toBeGreaterThan(0);
@@ -384,23 +440,12 @@ test("the flight lands close to the tour, looking steeply down, and moves the vi
 test.describe("with reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
 
-  test("there is no flight: the view cuts to the landing", async ({ page }) => {
-    // Why: a creator who asked for less motion still gets the tour, in a
-    // cut to the flight's end view (no flight at all) and a short arrival.
-    test.setTimeout(180_000);
-    await answerHosts(page, { globeAssets: "serve" });
-    await openSampleOnGlobe(page);
-    await expect
-      .poll(async () => (await approachOf(page))?.ended ?? null)
-      .toBe("landed");
-    expect((await approachOf(page))?.durationMs).toBe(0);
-    expect((await view3d(page)).distanceM).toBeLessThan(400);
-  });
-
-  test("the rail unfolds at the landing without its animation", async ({
+  test("there is no flight: the view cuts to the landing, and the rail unfolds without its animation", async ({
     page,
   }) => {
-    // Why: reduced motion skips the rail's unfolding animation, never the
+    // Why: a creator who asked for less motion still gets the tour, in a
+    // cut to the flight's end view (no flight at all) and a short arrival.
+    // Reduced motion skips the rail's unfolding animation, never the
     // unfold itself.
     test.setTimeout(180_000);
     await answerHosts(page, { globeAssets: "serve" });
@@ -411,6 +456,8 @@ test.describe("with reduced motion", () => {
         timeout: 60_000,
       })
       .toBe("landed");
+    expect((await approachOf(page))?.durationMs).toBe(0);
+    expect((await view3d(page)).distanceM).toBeLessThan(400);
     await expect(page.locator("#tree-body")).toBeVisible({ timeout: 5_000 });
     expect(await animationsOf(page)).not.toContain("dock-unfold");
   });
@@ -477,12 +524,14 @@ test("the rail is a tab during the flight, unfolds with an animation at the land
   await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
 });
 
-test("a view opened without the approach starts with the rail open", async ({
+test("a view opened without the approach starts with the rail open, and a restored draft goes straight to the tour", async ({
   page,
+  context,
 }) => {
   // Why: only the approach folds the rail; any other open shows it as
-  // the creator left it.
-  test.setTimeout(180_000);
+  // the creator left it. A creator coming back to unsaved work wants it
+  // at once; the flight is for a tour opened afresh.
+  test.setTimeout(300_000);
   await answerHosts(page, { globeAssets: "serve" });
   await recordAnimations(page);
   await noApproach(page);
@@ -490,18 +539,6 @@ test("a view opened without the approach starts with the rail open", async ({
   await expect(page.locator("#tree-body")).toBeVisible();
   await afterFrames(page, 3);
   expect(await animationsOf(page)).not.toContain("dock-unfold");
-});
-
-test("a restored draft goes straight to the tour, without the approach", async ({
-  page,
-  context,
-}) => {
-  // Why: a creator coming back to unsaved work wants it at once; the
-  // flight is for a tour opened afresh.
-  test.setTimeout(300_000);
-  await answerHosts(page, { globeAssets: "serve" });
-  await noApproach(page);
-  await openSampleOnGlobe(page);
   await page.locator("#tree-body .card .pick").first().click();
   const description = page
     .locator("#shell-inspector")
@@ -512,6 +549,7 @@ test("a restored draft goes straight to the tour, without the approach", async (
   await page.close();
 
   const next = await context.newPage();
+  await noClouds(next);
   await answerHosts(next, { globeAssets: "serve" });
   await openSampleOnGlobe(next);
   await expect(next.locator(".toast.draft-offer")).toBeVisible();
