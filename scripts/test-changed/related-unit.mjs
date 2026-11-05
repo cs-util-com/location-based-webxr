@@ -12,13 +12,13 @@
 // failure) the given command runs unchanged.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { UNIT_RELATED_ENV } from '../test-timing/projects.mjs';
 import { trackedPaths } from './changed-paths.mjs';
-import { planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
+import { planRelatedRun, relatedVitestArgs, upstreamChange } from './related-tests.mjs';
 
 const TEST_FILE_RE = /\.test\.[cm]?[jt]sx?$/;
 
@@ -36,6 +36,22 @@ function git(args) {
     .filter(Boolean);
 }
 
+/**
+ * Every top-level workspace package: its directory, name and dependency names.
+ * @param {string} root
+ */
+function workspacePackages(root) {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(root, entry.name, 'package.json');
+    if (!entry.isDirectory() || !existsSync(file)) return [];
+    const pkg = JSON.parse(readFileSync(file, 'utf8'));
+    const deps = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].flatMap(
+      (field) => Object.keys(pkg[field] ?? {})
+    );
+    return [{ dir: entry.name, name: String(pkg.name ?? ''), deps }];
+  });
+}
+
 /** @returns {{ files: string[] } | { reason: string }} */
 function computePlan() {
   const ref = process.env[UNIT_RELATED_ENV];
@@ -45,13 +61,18 @@ function computePlan() {
     const prefix = path.relative(root, pkgDir).replaceAll('\\', '/') + '/';
     const inPackage = (/** @type {string} */ p) =>
       p.startsWith(prefix) ? [p.slice(prefix.length)] : [];
-    const changed = [
-      ...trackedPaths(ref, root).flatMap(inPackage),
+    const everyChange = [
+      ...trackedPaths(ref, root),
       // Files, not the collapsed directories `git status` shows for a new dir.
-      ...git(['ls-files', '--others', '--exclude-standard', '--full-name', '.']).flatMap(
-        inPackage
-      ),
+      ...git(['ls-files', '--others', '--exclude-standard', '--full-name', ':/']),
     ];
+    const upstream = upstreamChange({
+      changed: everyChange,
+      packageDir: prefix.slice(0, -1),
+      packages: workspacePackages(root),
+    });
+    if (upstream) return { reason: `a package this one depends on changed too (${upstream})` };
+    const changed = everyChange.flatMap(inPackage);
     const deleted = changed.filter((p) => !existsSync(path.join(pkgDir, p)));
     const testFiles = git(['ls-files', '--cached', '--others', '--exclude-standard', '.'])
       .filter((p) => TEST_FILE_RE.test(p) && !p.startsWith('playwright-tests/'))

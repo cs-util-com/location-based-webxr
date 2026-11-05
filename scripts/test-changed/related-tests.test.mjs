@@ -4,7 +4,7 @@
 // a file by name, a test that scans the whole tree) or falls back to the full
 // suite (configs, data, deletions, setup files) is pinned here.
 import { describe, it, expect } from 'vitest';
-import { planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
+import { planRelatedRun, relatedVitestArgs, upstreamChange } from './related-tests.mjs';
 
 /** @param {Partial<Parameters<typeof planRelatedRun>[0]>} partial */
 function plan(partial) {
@@ -135,5 +135,38 @@ describe('relatedVitestArgs', () => {
   it('refuses a command that is not a plain vitest run', () => {
     expect(relatedVitestArgs(['node', '--test', 'x.mjs'], ['src/a.ts'])).toBeNull();
     expect(relatedVitestArgs(['vitest'], ['src/a.ts'])).toBeNull();
+  });
+});
+
+// Why: an app's tests can import an upstream workspace package's SOURCE
+// (an alias, or exports that point at src), so a commit that edits the
+// framework and an app at once must not run only the app's own slice: the
+// app's tests of the framework module would be skipped. Any change in a
+// package this one depends on, directly or through another, runs the full
+// suite.
+describe('upstreamChange', () => {
+  const packages = [
+    { dir: 'Fw', name: 'fw', deps: [] },
+    { dir: 'Kit', name: 'kit', deps: ['fw'] },
+    { dir: 'Tour', name: 'tour', deps: ['kit', 'three'] },
+    { dir: 'Other', name: 'other', deps: [] },
+  ];
+  it('names a changed path in a direct or transitive upstream package', () => {
+    expect(upstreamChange({ changed: ['Kit/src/a.ts'], packageDir: 'Tour', packages })).toBe('Kit/src/a.ts');
+    expect(upstreamChange({ changed: ['Tour/src/b.ts', 'Fw/src/x.ts'], packageDir: 'Tour', packages })).toBe('Fw/src/x.ts');
+  });
+  it('ignores the package itself, unrelated packages, root files and dependents', () => {
+    expect(
+      upstreamChange({ changed: ['Tour/src/b.ts', 'Other/src/c.ts', 'scripts/s.mjs', 'Tour'], packageDir: 'Tour', packages })
+    ).toBeNull();
+    expect(upstreamChange({ changed: ['Tour/src/b.ts'], packageDir: 'Fw', packages })).toBeNull();
+  });
+  it('survives a dependency cycle and an unknown package', () => {
+    const cyclic = [
+      { dir: 'A', name: 'a', deps: ['b'] },
+      { dir: 'B', name: 'b', deps: ['a'] },
+    ];
+    expect(upstreamChange({ changed: ['B/x.ts'], packageDir: 'A', packages: cyclic })).toBe('B/x.ts');
+    expect(upstreamChange({ changed: ['B/x.ts'], packageDir: 'Nope', packages: cyclic })).toBeNull();
   });
 });

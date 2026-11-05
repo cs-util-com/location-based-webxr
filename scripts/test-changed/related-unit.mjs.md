@@ -14,12 +14,17 @@
   [select.mjs](select.mjs.md) sets the ref for the changed packages of the
   fast gate only and clears it for their dependents.
 - Invariants & assumptions:
+  - A change in a workspace package this one depends on (directly or
+    transitively, any dependency field) runs the full suite
+    (`upstreamChange`): a test can import that package's source through an
+    alias or a src export, which a package-local related run cannot see.
   - Prints ONE line saying what it runs: `related-unit: only the tests
     related to N changed or reading file(s) ...`, `related-unit: no unit test
     can read this change, so none runs ...`, or `related-unit: full suite -
     <reason>`. The full suite runs when the ref is missing, git fails, the
     plan says so, or the command is not a plain `vitest run`.
-  - Changed files: `git diff --name-only <ref>` (staged and unstaged) plus
+  - Changed files: `git diff --name-only --no-renames <ref>` (staged and unstaged; a rename
+    lists both names) plus
     `git ls-files --others --exclude-standard` (untracked FILES, not the
     collapsed directory `git status` shows for a new folder), limited to the
     package.

@@ -83,6 +83,37 @@ export function planRelatedRun({ changed, deleted, testFiles, maxFiles = DEFAULT
 }
 
 /**
+ * The first changed path that lies in a workspace package `packageDir`
+ * depends on, directly or through another, or null. Such a change runs the
+ * full suite: a test can import that package's source (an alias, or exports
+ * that point at `src`), and the related run, which sees only this package's
+ * own paths, would skip it.
+ *
+ * @param {object} input
+ * @param {readonly string[]} input.changed - repo-relative changed paths
+ * @param {string} input.packageDir - this package's top-level directory
+ * @param {readonly { dir: string, name: string, deps: readonly string[] }[]} input.packages
+ *   - every workspace package: its directory, its name and the names it
+ *   depends on (any dependency field)
+ * @returns {string | null}
+ */
+export function upstreamChange({ changed, packageDir, packages }) {
+  const byName = new Map(packages.map((p) => [p.name, p]));
+  const self = packages.find((p) => p.dir === packageDir);
+  if (!self) return null;
+  /** @type {Set<string>} */
+  const upstream = new Set();
+  const queue = [...self.deps];
+  while (queue.length > 0) {
+    const pkg = byName.get(/** @type {string} */ (queue.pop()));
+    if (!pkg || pkg.dir === packageDir || upstream.has(pkg.dir)) continue;
+    upstream.add(pkg.dir);
+    queue.push(...pkg.deps);
+  }
+  return changed.find((p) => upstream.has(normalize(p).split('/')[0])) ?? null;
+}
+
+/**
  * The vitest arguments of the related run, from the stage's full command.
  * `--coverage` is dropped: coverage (and its thresholds) of a slice is
  * meaningless, as for a filtered run.
