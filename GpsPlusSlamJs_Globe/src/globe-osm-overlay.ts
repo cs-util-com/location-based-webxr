@@ -1241,18 +1241,6 @@ export function createGlobeOsmOverlay({
     const backoff = waits[Math.min(retryStreak, waits.length - 1)]!;
     return answeredSinceRetry ? Math.min(backoff, waits[0]!) : backoff;
   };
-  /**
-   * The library never asks again for a tile whose request failed: once a
-   * failed tile has waited `retryWaitMs`, its reset releases every failed
-   * tile and locks it anew (through the gate and the ceiling). Each retry
-   * lengthens the next wait; a retried tile that got its map (no longer
-   * failed, with its texture) starts the waits over, and any answered
-   * request since the last retry cuts the next wait to the first step. The reset clears the
-   * failed mark at once, so only the texture tells a success. The wait
-   * stands still while the request ceiling is full: a retry then would be
-   * turned away by the gate, not asked, and would count towards giving the
-   * tile up (`giveUpRetries`) without a request having failed.
-   */
   /** Whether the failed tiles have waited out the backoff (the first sight
    *  starts the wait; it stands still while the ceiling is full). */
   const waitedOut = (sinceLook: number): boolean => {
@@ -1264,8 +1252,22 @@ export function createGlobeOsmOverlay({
     failedWaitedMs += Math.max(0, sinceLook);
     return failedWaitedMs >= retryWaitMs();
   };
-  /** `now`: a retry asked for (`retryNow`) skips the first sight and the
-   *  backoff, but still waits while the ceiling is full. */
+  /**
+   * The library never asks again for a tile whose request failed: once a
+   * failed tile has waited `retryWaitMs`, its reset releases every failed
+   * tile and locks it anew (through the gate and the ceiling). Each retry
+   * lengthens the next wait; a retried tile that got its map (no longer
+   * failed, with its texture) starts the waits over, and any answered
+   * request since the last retry cuts the next wait to the first step.
+   * The reset clears the failed mark at once, so only the texture tells a
+   * success. The wait stands still while the request ceiling is full: a
+   * retry then would be turned away by the gate, not asked, and would count
+   * towards giving the tile up (`giveUpRetries`) without a request having
+   * failed.
+   *
+   * `now`: a retry asked for (`retryNow`) skips the first sight and the
+   * backoff, but still waits while the ceiling is full.
+   */
   const retryFailed = (nowMs: number, now: boolean) => {
     const internals = plugin as unknown as OverlayPluginInternals;
     const sinceLook = lastRetryLook === null ? 0 : nowMs - lastRetryLook;
