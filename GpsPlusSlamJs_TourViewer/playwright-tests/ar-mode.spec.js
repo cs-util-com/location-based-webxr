@@ -579,10 +579,12 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterReenter.isRecording).toBe(true);
 });
 
-test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json @pr", async ({
+test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json", async ({
   page,
   request,
 }) => {
+  // In the full run only: the per-PR tier drives the same measure, finish
+  // and rebuilt zip through the test of a code the tour does not store.
   // Why this matters (QR-pose plan M3): this drives the COMPOSED author
   // pipeline — scripted device detect/solve, but the REAL tracking
   // controller, the real qrDetected slice + stability gate, the real

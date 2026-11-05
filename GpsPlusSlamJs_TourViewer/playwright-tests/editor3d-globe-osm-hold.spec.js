@@ -23,7 +23,14 @@ import {
  * tile server refuses every request (429) while the camera comes closer:
  * the finer tiles are asked for and refused, and every tile drawn near the
  * camera must still carry the map. Then the server answers again and the
- * finer tiles get theirs. A unit test runs the patched traversal itself
+ * finer tiles get theirs. And before all that, every map tile's first
+ * request fails at the network: one dropped request once left its relief
+ * tile without the map for as long as the tile stayed loaded (a dark
+ * square with straight edges under the camera), and the first retry made
+ * it worse, locking the region again while the library still held the
+ * failed request, so the tile never healed. The map must ask for each
+ * such tile again, and the first full load is only reached that way.
+ * A unit test runs the patched traversal itself
  * (`GpsPlusSlamJs_Globe/src/globe-osm-map-ready.test.ts`); this one checks
  * the page wires it and the patched build is what it runs.
  */
@@ -63,8 +70,20 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   /** @type {"answer" | "refuse"} */
   let server = "answer";
   let refused = 0;
+  // Until the first full load, every tile's first request fails at the
+  // network (so the tiles under the camera are among them whichever the
+  // relief draws there), and the later ones pass on.
+  let failFirst = true;
+  /** @type {Map<string, number>} */
+  const asked = new Map();
   // Matched before `answerHosts`' plain tile (routes added later go first).
   await page.route("https://tile.openstreetmap.org/**", (route) => {
+    if (server === "answer" && failFirst) {
+      const url = route.request().url();
+      const n = (asked.get(url) ?? 0) + 1;
+      asked.set(url, n);
+      return n === 1 ? route.abort("failed") : route.fallback();
+    }
     if (server === "answer") return route.fallback();
     refused++;
     return route.fulfill({ status: 429, body: "Too Many Requests" });
@@ -76,6 +95,13 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
     timeout: 120_000,
   });
   await reliefCarries(page);
+  // Why: three.js resets its counters at every render, so the status bar
+  // once read only the frame's last pass (a handful of calls). The figure
+  // is the whole frame's, so it holds at least the main scene's own
+  // render; no fixed count, the scene's varies with the tiles shown.
+  const drawn = (await view3d(page)).globe.drawCalls;
+  expect(drawn.scene).toBeGreaterThan(0);
+  expect(drawn.frame).toBeGreaterThanOrEqual(drawn.scene);
 
   /** @type {any} */
   let osm = null;
@@ -96,13 +122,23 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   await page.evaluate(() =>
     /** @type {any} */ (window).__tourEditor.view3dDistance(1200),
   );
+  // Loaded in full only through the retries of the failed first requests:
+  // none left failed.
   await expect
-    .poll(fullyMapped, { timeout: 120_000, intervals: [1_000] })
+    .poll(
+      async () =>
+        (await fullyMapped()) &&
+        (osm?.failedRetries ?? 0) >= 1 &&
+        osm.coverage.failed === 0,
+      { timeout: 180_000, intervals: [1_000] },
+    )
     .toBe(true)
     .catch((/** @type {unknown} */ error) => {
       console.log(`the map never loaded: ${JSON.stringify(osm)}`);
       throw error;
     });
+  expect([...asked.values()].some((n) => n >= 2)).toBe(true);
+  failFirst = false;
 
   // Refused from here on, and the camera comes closer: the finer tiles are
   // asked for and refused, and none may be drawn in its parent's place.

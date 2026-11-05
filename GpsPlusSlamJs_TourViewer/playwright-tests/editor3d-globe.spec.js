@@ -9,7 +9,6 @@ import {
   noApproach,
   noClouds,
   rejections,
-  reliefCarries,
   view3d,
 } from "./editor3d-fixture.js";
 
@@ -17,102 +16,11 @@ import {
  * Why these tests matter: the editor on the globe view is the default
  * (`globe=1` still names it). These open the sample tour on it and check,
  * through the page's test hook (a software-drawn WebGL shows little a
- * screenshot could assert on), that the globe view opens - drawing, at
- * street level, the relief carrying the ground, the three stations in its
- * Earth-centred group.
+ * screenshot could assert on), that the globe view opens at street level
+ * with the three stations in its Earth-centred group, its sky follows the
+ * clock, a gizmo drag is the gizmo's alone, and a pinch steps toward the
+ * ground under the fingers.
  */
-
-test("opens the sample tour on the globe at street level with ?globe=1", async ({
-  page,
-}, testInfo) => {
-  // The relief loads from its root tile down, every tile a synthetic image
-  // on a software-drawn WebGL, with the globe's sky and surface on top;
-  // the hand-over alone may take 400 frames (`reliefCarries`), 200 s at
-  // the software renderer's 2 frames a second.
-  test.setTimeout(420_000);
-  await answerHosts(page, { globeAssets: "serve" });
-  await keepRejections(page);
-  await noApproach(page);
-  // The relief draws the globe's own imagery (not the plain beige ground)
-  // is pinned by the unit test of the view's wiring, not here: with the
-  // stencil fill the globe's surface is updated every frame and asks the
-  // same imagery's fine levels itself, and the relief takes its first
-  // pixels only once its view is refined, so neither a count of the
-  // imagery's levels nor one taken after the hand-over tells the two
-  // carriers' asks apart.
-  await page.goto("/edit.html?globe=1");
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
-    timeout: 120_000,
-  });
-  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
-  // The heavy clouds are on by default; the View menu's Clouds turns them
-  // off. Off from here on: in this software renderer they hold the frame
-  // rate near 1 a second, and the relief's tiles load a few a frame, so
-  // the relief would not be ready within the test's time.
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
-    .toBe(true);
-  await page.locator("#view-menu-btn").click();
-  const clouds = page.locator("#view-clouds");
-  await expect(clouds).toHaveAttribute("aria-checked", "true");
-  await clouds.click();
-  await expect(clouds).toHaveAttribute("aria-checked", "false");
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
-    .toBe(false);
-  await page.keyboard.press("Escape");
-  await afterFrames(page, 5);
-
-  // Street level: the relief carries the ground once its view is loaded
-  // (the globe's surface fills in until then), the camera is an eye
-  // height over the square, not in orbit. The hand-over is bound by frames
-  // (the relief parses about a tile a frame), so its wait counts frames.
-  await reliefCarries(page);
-  const stats = await view3d(page);
-  expect(stats.globe).toBeDefined();
-  expect(stats.globe.altitudeM).toBeGreaterThan(0);
-  expect(stats.globe.altitudeM).toBeLessThan(2_000);
-  // The tour sits in front of the camera, a few tens of metres away.
-  expect(stats.distanceM).toBeLessThan(200);
-  // The stations are drawn, none hidden as too small this close.
-  expect(stats.globe.hiddenStations).toEqual([]);
-  // Why: three.js resets its counters at every render, so the status bar
-  // once read only the frame's last pass (a handful of calls). The figure
-  // is the whole frame's, so it holds at least the main scene's own
-  // render; no fixed count, the scene's varies with the tiles shown.
-  expect(stats.globe.drawCalls.scene).toBeGreaterThan(0);
-  expect(stats.globe.drawCalls.frame).toBeGreaterThanOrEqual(
-    stats.globe.drawCalls.scene,
-  );
-  // The staged uploads: every station admitted once, a few a frame.
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.uploads?.pending)
-    .toBe(0);
-  const staged = (await view3d(page)).globe.uploads;
-  expect(staged.ran).toBe(3);
-  expect(staged.admitted).toBe(3);
-  await capture(page, testInfo.outputPath("globe-street.png"));
-  // The sky opens in daylight whatever the hour; the View menu's Real time
-  // runs the clock at the real time now.
-  expect(stats.globe.clock.realTime).toBe(false);
-  expect(stats.globe.clock.sunElevationDeg).toBeGreaterThan(0);
-  const realTime = page.locator("#view-realtime");
-  // The menu may have closed after Clouds.
-  if (!(await realTime.isVisible())) {
-    await page.locator("#view-menu-btn").click();
-  }
-  await expect(realTime).toBeVisible();
-  await realTime.click();
-  await expect(realTime).toHaveAttribute("aria-checked", "true");
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.clock?.realTime)
-    .toBe(true);
-  const clock = (await view3d(page)).globe.clock;
-  expect(Math.abs(clock.sceneMs - Date.now())).toBeLessThan(120_000);
-  expect(await rejections(page)).toEqual([]);
-});
 
 /**
  * The sky's colour: the per-channel median (0-255) of the canvas's top
@@ -241,67 +149,6 @@ test("the sky over the tour is blue at noon and dark at its midnight", async ({
   expect(await rejections(page)).toEqual([]);
 });
 
-// Why: one dropped street-map request left its relief tile without the map
-// for as long as the tile stayed loaded (a dark square with straight
-// edges under the camera), and the first retry made it worse: it locked
-// the region again while the library still held the failed request, so the
-// tile never healed. On the real page, the first map request fails at the
-// network; the map must ask for that tile again and every tile near the
-// camera must end up with its map. Every tile's first request fails, so the
-// tiles under the camera are among them whichever the relief draws there.
-test("a street-map tile whose first request failed gets its map", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await answerHosts(page, { globeAssets: "serve" });
-  await keepRejections(page);
-  await noApproach(page);
-  // The heavy clouds off: in this software renderer they hold the frame
-  // rate near 1 a second.
-  await noClouds(page);
-  /** @type {Map<string, number>} */
-  const asked = new Map();
-  // Routes added later are matched first: this one sees every map request
-  // before the plain tile of `answerHosts`, fails each tile's first, and
-  // passes the later ones on.
-  await page.route("https://tile.openstreetmap.org/**", (route) => {
-    const url = route.request().url();
-    const n = (asked.get(url) ?? 0) + 1;
-    asked.set(url, n);
-    return n === 1 ? route.abort("failed") : route.fallback();
-  });
-  await page.goto("/edit.html?globe=1");
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
-    timeout: 120_000,
-  });
-  await expect.poll(() => asked.size, { timeout: 60_000 }).toBeGreaterThan(0);
-  /** @type {any} */
-  let osm = null;
-  await expect
-    .poll(
-      async () => {
-        osm = (await view3d(page))?.osm ?? null;
-        const c = osm?.coverage;
-        return (
-          (osm?.failedRetries ?? 0) >= 1 &&
-          c.near > 0 &&
-          c.failed === 0 &&
-          c.withMap === c.near
-        );
-      },
-      { timeout: 90_000, intervals: [1_000] },
-    )
-    .toBe(true)
-    .catch((/** @type {unknown} */ error) => {
-      console.log(`the map never healed: ${JSON.stringify(osm)}`);
-      throw error;
-    });
-  expect([...asked.values()].some((n) => n >= 2)).toBe(true);
-  expect(await rejections(page)).toEqual([]);
-});
-
 /**
  * The page point of a gizmo part, once it shows.
  * @param {import("@playwright/test").Page} page
@@ -320,17 +167,24 @@ async function handleOnPage(page, part) {
   return { x: canvas.x + at[0], y: canvas.y + at[1] };
 }
 
-// Why: on the globe the camera's controls and the editor's gizmo share the
+// Why: the editor on the globe opens the sample at street level: the
+// camera an eye height over the square, the tour a few tens of metres in
+// front, the stations drawn and admitted, the sky in daylight, the View
+// menu's Real time running the clock at the real time. (The relief's
+// hand-over is not waited for here: both tests of
+// editor3d-globe-osm-hold.spec.js wait for it and fail without it, and the
+// first reads the frame's draw calls once it has.) And
+// on the globe the camera's controls and the editor's gizmo share the
 // pointer. A drag on a handle must be the gizmo's alone - the controls
 // leased off, so the globe neither pans nor turns under the pointer - and
 // the world frame (which follows the camera) must hold still until the
 // release, or the gesture's world points move under it. The drag writes
 // one edit, at its end. The sample's stations are locked in place, so the
 // drag is of a radius dot (a locked station's gizmo is its dots alone).
-test("drags a selected station's radius dot on the globe: one edit, the camera and the frame held still", async ({
+test("opens the sample at street level on the globe, and drags a selected station's radius dot: one edit, the camera and the frame held still", async ({
   page,
-}) => {
-  test.setTimeout(180_000);
+}, testInfo) => {
+  test.setTimeout(240_000);
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
@@ -342,6 +196,30 @@ test("drags a selected station's radius dot on the globe: one edit, the camera a
     timeout: 120_000,
   });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  const stats = await view3d(page);
+  expect(stats.globe).toBeDefined();
+  expect(stats.globe.altitudeM).toBeGreaterThan(0);
+  expect(stats.globe.altitudeM).toBeLessThan(2_000);
+  // The tour sits in front of the camera, a few tens of metres away.
+  expect(stats.distanceM).toBeLessThan(200);
+  // The stations are drawn, none hidden as too small this close.
+  expect(stats.globe.hiddenStations).toEqual([]);
+  // The staged uploads: every station admitted once, a few a frame.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.uploads?.pending)
+    .toBe(0);
+  const staged = (await view3d(page)).globe.uploads;
+  expect(staged.ran).toBe(3);
+  expect(staged.admitted).toBe(3);
+  // The frame's draw calls are read in editor3d-globe-osm-hold.spec.js,
+  // once the relief carries the ground: before that the scene's pass
+  // draws nothing of its own.
+  await capture(page, testInfo.outputPath("globe-street.png"));
+  // The sky opens in daylight whatever the hour (the clock is read on, after
+  // the drag, through the View menu's Real time).
+  expect(stats.globe.clock.realTime).toBe(false);
+  expect(stats.globe.clock.sunElevationDeg).toBeGreaterThan(0);
+
   const tourOf = () =>
     page.evaluate(() => /** @type {any} */ (window).__tourEditor.manifest());
   const revision = () =>
@@ -387,8 +265,26 @@ test("drags a selected station's radius dot on the globe: one edit, the camera a
   );
   // Locked: the drag changed the radius, never the place.
   expect(moved.geo).toEqual(first.geo);
+
+  // The View menu's Real time runs the clock at the real time now (the
+  // page's own clock: the scene's time is read against it in the page).
+  await page.locator("#view-menu-btn").click();
+  const realTime = page.locator("#view-realtime");
+  await expect(realTime).toBeVisible();
+  await realTime.click();
+  await expect(realTime).toHaveAttribute("aria-checked", "true");
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.clock?.realTime)
+    .toBe(true);
+  const clock = (await view3d(page)).globe.clock;
+  const pageNow = await page.evaluate(() => Date.now());
+  expect(Math.abs(clock.sceneMs - pageNow)).toBeLessThan(120_000);
   expect(await rejections(page)).toEqual([]);
 });
+
+/** Each pinch in six moves: twelve judged the same steps (the ratios
+ *  within 0.07) in more than twice the time. */
+const PINCH_MOVES = 6;
 
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true });
@@ -414,6 +310,9 @@ test.describe("on a touch screen", () => {
     page,
   }) => {
     test.setTimeout(300_000);
+    // A phone's size, as the gesture is a phone's: a software frame costs
+    // by the pixel, and the steps are the same as at the desktop default.
+    await page.setViewportSize({ width: 390, height: 844 });
     await answerHosts(page, { globeAssets: "serve" });
     await keepRejections(page);
     await noApproach(page);
@@ -447,10 +346,10 @@ test.describe("on a touch screen", () => {
       const at = `pinch ${String(pinch.from)} -> ${String(pinch.to)} px`;
       const before = await view3d(page);
       await touch("touchStart", pair(pinch.from));
-      for (let i = 1; i <= 12; i++) {
+      for (let i = 1; i <= PINCH_MOVES; i++) {
         await touch(
           "touchMove",
-          pair(pinch.from + ((pinch.to - pinch.from) * i) / 12),
+          pair(pinch.from + ((pinch.to - pinch.from) * i) / PINCH_MOVES),
         );
         await afterFrames(page, 2);
       }
