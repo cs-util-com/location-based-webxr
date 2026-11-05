@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { fixedScale } from "./heat-colours.js";
 import { LegendView } from "./legend-view.js";
 
-function rendered(aboveThresholdCount: number, showBelow: boolean): HTMLElement {
+function rendered(
+  aboveThresholdCount: number,
+  showBelow: boolean,
+): HTMLElement {
   const container = document.createElement("div");
   new LegendView({ container }).render(fixedScale(4), "park", showBelow, {
     aboveThresholdCount,
