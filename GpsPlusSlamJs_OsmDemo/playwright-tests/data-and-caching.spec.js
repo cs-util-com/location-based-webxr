@@ -126,219 +126,98 @@ test.describe("a superseded refresh", () => {
     // is a refresh rather than a redraw.
     await enableCellLayer(page);
 
-    await test.step("never reports a failure, and never blanks what is drawn", async () => {
-      const cells = page.locator("#map path.affordance-cell");
-      expect(await cells.count()).toBeGreaterThan(0);
-
-      const statusHistory = await recordStatus(page);
-      const toastHistory = await recordToasts(page);
-
-      // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
-      // supersedes the first while it is still in flight, which is the whole
-      // input. A test that waited between them would exercise nothing.
-      const picker = page.locator("#category");
-      const started = await picker.inputValue();
-      await picker.selectOption(await otherCategory(page, started));
-      await picker.selectOption(started);
-      await waitForRefresh(page);
-
-      // WHERE A FAILURE BECOMES VISIBLE MOVED (2026-08-19, DEC-U10): errors go
-      // to the toast now, and `writeStatus` no longer renders the error phase
-      // at all. Watching only `#status` would make this assertion unfailable —
-      // green for a build that surfaced the superseded message loudly. Both
-      // channels are checked, so the test keeps meaning what it meant.
-      const history = [...(await statusHistory()), ...(await toastHistory())];
-      // ANCHORED TO THE MESSAGE, not to the bare word. `Failed: ` with the colon
-      // is how `writeStatus` renders an error phase; a bare `/Failed/` matched
-      // by accident only because it is case-SENSITIVE — every status line here
-      // already contains "live fetch failed and no cache", which `main.ts` folds
-      // in through `tableNote` whenever the suite blocks the live rule sheet.
-      // One lowercase change in that message and this assertion would have
-      // started failing for a reason that has nothing to do with what it tests.
-      expect(history.join(" | ")).not.toMatch(/Failed: |superseded/i);
-
-      // And the picture survived: the grid is still there, drawn for the category
-      // the picker ended on.
-      expect(await cells.count()).toBeGreaterThan(0);
+    // TWO INVARIANTS ON ONE SUPERSEDE, because both are about what it must NOT
+    // touch. The selection half is `fetchFailed` clearing `selectedCell`: the
+    // panel dismissing itself while it is being read. The camera half: a reset
+    // must not start happening unnoticed.
+    //
+    // Move the camera off its default pose first, or "the camera did not move"
+    // is satisfied by a camera that was reset TO the pose it was already in.
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 200, box.y + box.height / 2, {
+      steps: 17,
     });
+    await page.mouse.up();
 
-    await test.step("keeps the details panel open, and does not move the camera", async () => {
-      // TWO INVARIANTS IN ONE STEP because they share an expensive setup and both
-      // are about what a supersede must NOT touch. The selection half is
-      // `fetchFailed` clearing `selectedCell` — the panel dismissing itself while
-      // it is being read. The camera half is DEC-R3-1: the owner could not confirm
-      // whether the camera reset too, so nothing was fixed for it and this asserts
-      // it cannot start happening unnoticed.
-      //
-      // Move the camera off its default pose first, or "the camera did not move"
-      // is satisfied by a camera that was reset TO the pose it was already in.
-      const canvas = page.locator("#scene canvas");
-      const box = await canvas.boundingBox();
-      if (box === null) throw new Error("no canvas box");
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2);
-      await page.mouse.up();
-
-      await page.locator("#map path.affordance-cell").first().click();
-      await expect(page.locator("#details")).toBeVisible();
-
-      /**
-       * The drawing buffer stands in for the camera matrix, which is not exposed.
-       *
-       * BOTH THE CAPTURE AND THE COMPARISON HAPPEN IN THE PAGE. The first version
-       * returned the pixels — a ~4 million element array per call — and marshalling
-       * that over CDP took seconds under a loaded three-worker run, so two
-       * "consecutive" reads spanned a progressive ring landing and the stability
-       * poll could never converge. It was green standalone and timed out in the
-       * full suite, which is the signature of a test measuring the machine.
-       */
-      const capture = () =>
-        page.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          if (!(el instanceof HTMLCanvasElement)) return false;
-          const probe = document.createElement("canvas");
-          probe.width = el.width;
-          probe.height = el.height;
-          const ctx = probe.getContext("2d");
-          if (ctx === null) return false;
-          ctx.drawImage(el, 0, 0);
-          /** @type {Record<string, unknown>} */ (window).__frame =
-            ctx.getImageData(0, 0, probe.width, probe.height).data;
-          return true;
-        });
-
-      /** Fraction of RGB samples differing from the captured frame by > 2 levels. */
-      const diffFromCapture = () =>
-        page.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          const previous = /** @type {Record<string, unknown>} */ (window)
-            .__frame;
-          if (
-            !(el instanceof HTMLCanvasElement) ||
-            !(previous instanceof Uint8ClampedArray)
-          ) {
-            return 1;
-          }
-          const probe = document.createElement("canvas");
-          probe.width = el.width;
-          probe.height = el.height;
-          const ctx = probe.getContext("2d");
-          if (ctx === null) return 1;
-          ctx.drawImage(el, 0, 0);
-          const now = ctx.getImageData(0, 0, probe.width, probe.height).data;
-          if (now.length !== previous.length) return 1;
-          let changed = 0;
-          for (let i = 0; i < now.length; i += 4) {
-            if (
-              Math.abs((now[i] ?? 0) - (previous[i] ?? 0)) > 2 ||
-              Math.abs((now[i + 1] ?? 0) - (previous[i + 1] ?? 0)) > 2 ||
-              Math.abs((now[i + 2] ?? 0) - (previous[i + 2] ?? 0)) > 2
-            ) {
-              changed++;
-            }
-          }
-          return changed / (now.length / 4);
-        });
-
-      // SWITCH OFF EVERYTHING THAT CAN CHANGE ON ITS OWN, so that what remains in
-      // the canvas is the ground plane and the sky — neither of which a scoring
-      // pass touches. What is left of any difference is then the VIEWPOINT, which
-      // is the only thing this test is about.
-      //
-      // This is the second attempt at making it robust and the first one that
-      // addresses the real cause. Comparing the full scene meant comparing the
-      // affordance grid, and `waitForRefresh` used to return on three stable status
-      // reads 250 ms apart — on a loaded machine running three browsers a
-      // progressive ring can take longer than that, so the reference frame could be
-      // captured mid-widening and the comparison then failed at ~13 % PERSISTENTLY.
-      // Waiting harder is a race against the machine; removing the moving parts is
-      // not.
-      //
-      // That helper no longer guesses (F42): the app says `widening…` until the
-      // last ring lands and `waitForRefresh` waits for it to clear. The layers stay
-      // switched off anyway — this step's assertion is EXACTLY zero changed pixels,
-      // and fewer moving parts is still the reason it can be.
-      await page.locator("#layer-cells").uncheck();
-      await page.locator("#layer-buildings").uncheck();
-      await page.locator("#layer-trees").uncheck();
-      // `areas` JOINS THE LIST BECAUSE THE SLABS BECAME SHINY. Region slabs went to
-      // roughness 0.25 with emissive, and a tight specular lobe turns sub-pixel
-      // camera drift — damping is on, and the sun's azimuth follows the camera —
-      // into visibly different pixels. Measured: 0.08 % of the frame differed
-      // between two captures of a scene nobody had touched, against an assertion
-      // that demands EXACTLY zero.
-      //
-      // Loosening the threshold was the alternative and is worse: this test's
-      // whole point is that a superseded refresh moves the camera by nothing at
-      // all, and a real move differs by tens of percent (the comment above records
-      // ~13 % for a mid-widening mismatch). Removing one more moving part keeps
-      // the assertion exact.
-      await page.locator("#layer-areas").uncheck();
-      // AND THE GROUND GOES PLAIN (§2). The slope treatment adds a rim light,
-      // and a rim term is view-dependent by definition — it is `1 − dot(V, N)` —
-      // so sub-pixel camera drift moves it and the frame stops being stable.
-      // This is the "remove one more moving part" lever the comment below says
-      // is exhausted, applied once more: the ground can lose its APPEARANCE
-      // without disappearing, which is different from switching it off.
-      await page.locator("#ground-mode").selectOption("cpu");
-
-      // NO LONGER EXACTLY ZERO (§1, DEC-R6-2), and this IS the loosening the
-      // comment above argued against — so the reason is on the record.
-      //
-      // That argument was "remove one more moving part rather than raise the
-      // threshold", and it worked while the shiny surfaces were switchable
-      // layers. §1 gave the scene an environment map, so the GROUND PLANE is now
-      // specular too, and its reflection depends on the view direction:
-      // sub-pixel camera drift from damping changes pixels. The ground cannot be
-      // switched off the way a layer can without gutting what this test is
-      // about, so the "remove a moving part" lever is exhausted.
-      //
-      // Measured across §1 and §2 as the scene gained view-dependent shading:
-      // 0.06 % with the environment map alone, 0.23 % once the ground was also
-      // specular under it. A real superseded-refresh mismatch is ~13 %
-      // (recorded above), so the bound below sits about 4x above the observed
-      // noise and 13x below a genuine failure.
-      //
-      // THE GENERAL FACT, which is worth stating once rather than rediscovering
-      // each stage: **a frame containing a specular surface lit by an
-      // environment map cannot be byte-stable under damping drift**, because
-      // the reflection is a function of view direction and the camera never
-      // exactly stops. Exactly-zero is not available again for any scene with
-      // the ground switched on.
-      await capture();
+    /** The camera as the app reports it, once it has stopped changing. */
+    const settledCamera = async () => {
+      const read = () => {
+        const params = new URL(page.url()).searchParams;
+        return ["clat", "clng", "cdist"].map((k) => params.get(k)).join(",");
+      };
+      let previous = "";
+      let stable = 0;
       await expect
-        .poll(async () => {
-          const moved = await diffFromCapture();
-          await capture();
-          return moved;
-        }, REPAINT)
-        .toBeLessThan(0.01);
+        .poll(
+          () => {
+            const current = read();
+            stable = current === previous ? stable + 1 : 0;
+            previous = current;
+            return current.includes(",,") || current.startsWith(",")
+              ? 0
+              : stable;
+          },
+          { timeout: 30000, intervals: [500] },
+        )
+        .toBeGreaterThanOrEqual(3);
+      return previous;
+    };
+    const cells = page.locator("#map path.affordance-cell");
+    await cells.first().click();
+    await expect(page.locator("#details")).toBeVisible();
+    expect(await cells.count()).toBeGreaterThan(0);
+    const cameraBefore = await settledCamera();
 
-      // Supersede: two category changes with no wait, then back to where it
-      // started so the scene is comparable again.
-      const picker = page.locator("#category");
-      const started = await picker.inputValue();
-      await picker.selectOption(await otherCategory(page, started));
-      await picker.selectOption(started);
-      await waitForRefresh(page);
+    const statusHistory = await recordStatus(page);
+    const toastHistory = await recordToasts(page);
 
-      // A category change KEEPS the selection by design (`categoryChanged` in the
-      // slice) — "what does this same cell score for the other category?" is the
-      // obvious next question. Only `fetchFailed` cleared it.
-      await expect(page.locator("#details")).toBeVisible();
+    // TWO CHANGES IN QUICK SUCCESSION, with no wait between them: the second
+    // supersedes the first while it is still in flight, which is the whole
+    // input. A test that waited between them would exercise nothing.
+    const picker = page.locator("#category");
+    const started = await picker.inputValue();
+    await picker.selectOption(await otherCategory(page, started));
+    await picker.selectOption(started);
+    await waitForRefresh(page);
 
-      // A FRACTION of changed pixels against the parked frame, not equality. Same
-      // position, same category and the same scored chunks, so the scene is the
-      // same scene — but the two frames are not bit-identical, and chasing that
-      // would be chasing the wrong thing: what this asserts is that the VIEWPOINT
-      // did not change, and a camera reset to the default pose moves essentially
-      // every pixel of a city. The scale is known from having got this wrong:
-      // selecting the wrong category for the return leg changed 43 % of pixels,
-      // which is the order a genuine viewpoint change lands at. 5 % is far below
-      // that and far above frame-to-frame noise.
-      await expect.poll(diffFromCapture, REPAINT).toBeLessThan(0.05);
-    });
+    // Errors go to the toast, and `writeStatus` does not render the error phase
+    // at all, so both channels are checked: watching only `#status` would be
+    // green for a build that surfaced the superseded message loudly.
+    const history = [...(await statusHistory()), ...(await toastHistory())];
+    // ANCHORED TO THE MESSAGE, not to the bare word. `Failed: ` with the colon
+    // is how `writeStatus` renders an error phase; every status line here
+    // already contains "live fetch failed and no cache", which `main.ts` folds
+    // in through `tableNote` whenever the suite blocks the live rule sheet.
+    expect(history.join(" | ")).not.toMatch(/Failed: |superseded/i);
+
+    // And the picture survived: the grid is still there, drawn for the category
+    // the picker ended on.
+    expect(await cells.count()).toBeGreaterThan(0);
+
+    // A category change KEEPS the selection by design (`categoryChanged` in the
+    // slice): "what does this same cell score for the other category?" is the
+    // obvious next question. Only `fetchFailed` cleared it.
+    await expect(page.locator("#details")).toBeVisible();
+
+    // The URL's camera keys are the one machine-readable statement of the view;
+    // every controls change writes them on a 400 ms throttle.
+    //
+    // THE DISTANCE IS EXACT, THE TARGET NEARLY. The view repaints on demand, so
+    // the drag's damping is only finished off by the refresh's own repaints:
+    // the target creeps 0.00002-0.00005° (about 4 m) in a passing run. The
+    // tolerance is about 11 m, and the drag above is about 60 m, so a reset to
+    // the pose before the drag is well outside it. A reset within 11 m of
+    // where the drag ended would pass.
+    const cameraAfter = await settledCamera();
+    const [latBefore, lngBefore, distanceBefore] = cameraBefore.split(",");
+    const [latAfter, lngAfter, distanceAfter] = cameraAfter.split(",");
+    expect(distanceAfter).toBe(distanceBefore);
+    expect(Math.abs(Number(latAfter) - Number(latBefore))).toBeLessThan(1e-4);
+    expect(Math.abs(Number(lngAfter) - Number(lngBefore))).toBeLessThan(1e-4);
   });
 });
 
@@ -394,18 +273,27 @@ test.describe("the terrain load and the refresh", () => {
  * that the user's own fetch is never queued behind a background one, and that a
  * prefetched tile is genuinely reused rather than fetched twice.
  */
-test.describe("the background ring prefetch", () => {
-  test("warms the neighbours, and reuses them instead of refetching", async ({
+test.describe("the background ring prefetch and the rule table cache", () => {
+  /** A minimal but real table: one rule, one category. */
+  const CSV = ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join(
+    "\n",
+  );
+
+  test("warms the neighbours, serves the rule table from its cache, and reuses the neighbours instead of refetching", async ({
     page,
   }) => {
-    // ONE BOOT, and here the sharing is more than a saving: both steps assert on
-    // the SAME request counter, and the second one's claim — that moving does not
-    // refetch what the ring already pulled — is only meaningful against a ring
-    // the first step has just established. Two boots asserted that twice from
-    // scratch.
-    const counts = await stubNetwork(page);
+    // ONE BOOT, and here the sharing is more than a saving: the prefetch steps
+    // assert on the SAME request counter, and the last one's claim — that moving
+    // does not refetch what the ring already pulled — is only meaningful against
+    // a ring the first step has just established.
+    const counts = await stubNetwork(page, { ruleSheetCsv: CSV });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+
+    // First load: the live sheet, and the status line names the tier it used.
+    await expect(page.locator("#status")).toContainText(/rules: live/);
+    const fetchedOnce = counts.ruleSheet;
+    expect(fetchedOnce).toBeGreaterThan(0);
 
     await test.step("warms the neighbours, and never more than one at a time", async () => {
       // The user's own tile, plus the ring arriving behind it. The count is what
@@ -434,22 +322,36 @@ test.describe("the background ring prefetch", () => {
       expect(counts.overpassQuery).toBeLessThanOrEqual(8);
     });
 
+    // Let the ring settle before the reload below ends it.
+    let previous = -1;
+    await expect
+      .poll(
+        () => {
+          const settled = counts.overpassQuery === previous;
+          previous = counts.overpassQuery;
+          return settled;
+        },
+        { timeout: 30000, intervals: [500] },
+      )
+      .toBe(true);
+
+    await test.step("the rule table is written on the first load and served on the next", async () => {
+      // `loadRuleTable({})` was once called with no store, so `readCache`
+      // returned `undefined` before doing anything: the TTL short-circuit never
+      // fired, every boot went to the network, and `checkDrift` had no baseline
+      // to compare against. The guard existed and was inert in its only consumer.
+      await page.reload();
+      await waitForRefresh(page);
+
+      // Second load: served from OPFS inside the TTL, with NO new request.
+      await expect(page.locator("#status")).toContainText(/rules: cache/);
+      expect(counts.ruleSheet).toBe(fetchedOnce);
+    });
+
     await test.step("a prefetched neighbour is reused, not fetched again", async () => {
       // The payoff, and the only way to see it is a request count. Without the
       // prefetch this click is an ~15–90 s fetch; with it, the tile is already in
       // OPFS and the click costs nothing on the wire.
-      // Let the ring settle, then remember what has been spent.
-      let previous = -1;
-      await expect
-        .poll(
-          () => {
-            const settled = counts.overpassQuery === previous;
-            previous = counts.overpassQuery;
-            return settled;
-          },
-          { timeout: 30000, intervals: [500] },
-        )
-        .toBe(true);
       const spent = counts.overpassQuery;
 
       // Move far enough to need a different fetch tile — the fixture answers every
@@ -462,43 +364,5 @@ test.describe("the background ring prefetch", () => {
       // ring rather than by everything all over again.
       expect(counts.overpassQuery - spent).toBeLessThanOrEqual(7);
     });
-  });
-});
-
-/**
- * The rule table's cache tier, raised in review on PR #233.
- *
- * `loadRuleTable({})` was called with no store, so `readCache` returned
- * `undefined` before doing anything: the TTL short-circuit never fired — every
- * boot went to the network — and `checkDrift`, which the loader's own header
- * calls "not optional", had no baseline to compare against and was therefore
- * never evaluated. The guard existed and was inert in its only consumer.
- */
-test.describe("the rule table cache", () => {
-  /** A minimal but real table: one rule, one category. */
-  const CSV = ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join(
-    "\n",
-  );
-
-  test("is written on the first load and served on the next", async ({
-    page,
-  }) => {
-    const counts = await stubNetwork(page, { ruleSheetCsv: CSV });
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // First load: the live sheet, and the status line names the tier it used.
-    await expect(page.locator("#status")).toContainText(/rules: live/);
-    const fetchedOnce = counts.ruleSheet;
-    expect(fetchedOnce).toBeGreaterThan(0);
-
-    await page.reload();
-    await waitForRefresh(page);
-
-    // Second load: served from OPFS inside the TTL, with NO new request. Before
-    // the fix this said `rules: live` again and the count went up — the cache was
-    // never written, so there was nothing to serve.
-    await expect(page.locator("#status")).toContainText(/rules: cache/);
-    expect(counts.ruleSheet).toBe(fetchedOnce);
   });
 });

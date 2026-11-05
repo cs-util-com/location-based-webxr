@@ -505,75 +505,34 @@ test.describe("explaining one cell", () => {
  * W12 / finding R3-8 — one scale, and a legend that says when there is no ramp.
  */
 test.describe("the legend", () => {
-  test("keeps its scale, and says when nothing qualifies", async () => {
-    // TWO BEHAVIOURS, ONE BOOT. The boot is ~4.8 s of a ~6.5 s test and both of
-    // these want the identical one, so paying it twice bought nothing. They stay
-    // separately named through `test.step`, which is what keeps a failure
-    // pointing at one behaviour rather than at a pair — see
-    // GpsPlusSlamJs_Docs/docs/2026-08-02-0612-osm-demo-e2e-fusion-plan.md.
+  // The sentence for an empty scale is held by src/legend-model.test.ts and src/legend-view.test.ts.
+  test("keeps its scale when the cells layer is switched off", async () => {
+    // THE DEFECT, and it is not in the notes: the scale was derived from the
+    // cells the MAP was handed, and those are filtered by this switch. So
+    // switching it off collapsed the ramp — the legend went to "1 to 1" and the
+    // 2D region fills were coloured on an empty scale while the 3D slabs used a
+    // different one. Two views, two scales, the same regions.
+    const legend = shared.locator("#legend");
+    const before = await legend.textContent();
+    expect(before).not.toBeNull();
 
-    await test.step("keeps its scale when the cells layer is switched off", async () => {
-      // THE DEFECT, and it is not in the notes: the scale was derived from the
-      // cells the MAP was handed, and those are filtered by this switch. So
-      // switching it off collapsed the ramp — the legend went to "1 to 1" and the
-      // 2D region fills were coloured on an empty scale while the 3D slabs used a
-      // different one. Two views, two scales, the same regions.
-      const legend = shared.locator("#legend");
-      const before = await legend.textContent();
-      expect(before).not.toBeNull();
+    await shared.locator("#layer-cells").uncheck();
+    await expect(shared.locator("#map path.affordance-cell")).toHaveCount(0);
 
-      await shared.locator("#layer-cells").uncheck();
-      await expect(shared.locator("#map path.affordance-cell")).toHaveCount(0);
+    // The cells are gone from the map; the scale describes the data, not the
+    // drawing, so the legend must be unchanged.
+    await expect(legend).toHaveText(before ?? "");
 
-      // The cells are gone from the map; the scale describes the data, not the
-      // drawing, so the legend must be unchanged.
-      await expect(legend).toHaveText(before ?? "");
-
-      // RESTORED before the next step. This step's own claim is that the legend
-      // does not depend on the switch, so leaving it off would be harmless here —
-      // but a step that hands the next one a state it did not ask for is how
-      // fused tests start failing for reasons that are not about them.
-      //
-      // THROUGH THE HELPER, not a hand-rolled check-and-assert. Switching this
-      // layer on is a REFETCH, not a redraw (cells are data-gated since round 10
-      // stage B), so the whole progressive cycle runs and the default 5 s expect
-      // timeout is racing it on a loaded machine. This site hand-rolled exactly
-      // what `enableCellLayer` was given a `waitForRefresh` for in 518fd7d — the
-      // FOURTH appearance of that same failure, and it duly failed in a full
-      // gate run while passing in isolation.
-      await enableCellLayer(shared);
-    });
-
-    await test.step("says nothing qualifies instead of showing a 1-to-1 ramp", async () => {
-      // The reported symptom, as an assertion. Any category with no cell above the
-      // bar produces a degenerate scale; the fixture's own categories are used
-      // rather than a hardcoded name, so this stays true if the rule table moves.
-      const picker = shared.locator("#category");
-      const values = await shared
-        .locator("#category option")
-        .evaluateAll((nodes) =>
-          nodes.map((node) => /** @type {HTMLOptionElement} */ (node).value),
-        );
-
-      for (const value of values) {
-        await picker.selectOption(value);
-        await waitForRefresh(shared);
-        const text = (await shared.locator("#legend").textContent()) ?? "";
-        // Either there is a real ramp, or there is a sentence — never a ramp whose
-        // two ends carry the same number.
-        const min = await shared.locator("#legend .legend-min").count();
-        if (min === 0) {
-          expect(text).toContain("no cell scores above");
-          return;
-        }
-      }
-      // Not a failure: this fixture may have data for every category. Recorded so
-      // a green run cannot be mistaken for proof that the empty state was reached.
-      test.info().annotations.push({
-        type: "note",
-        description: "every category had cells above the bar in this fixture",
-      });
-    });
+    // RESTORED for the tests that share this page.
+    //
+    // THROUGH THE HELPER, not a hand-rolled check-and-assert. Switching this
+    // layer on is a REFETCH, not a redraw (cells are data-gated since round 10
+    // stage B), so the whole progressive cycle runs and the default 5 s expect
+    // timeout is racing it on a loaded machine. This site hand-rolled exactly
+    // what `enableCellLayer` was given a `waitForRefresh` for in 518fd7d — the
+    // FOURTH appearance of that same failure, and it duly failed in a full
+    // gate run while passing in isolation.
+    await enableCellLayer(shared);
   });
 });
 
@@ -871,9 +830,8 @@ test.describe("the geo-event", () => {
    * async control and which is easy to omit: the operation can score hundreds of
    * chunks, so a button that looked inert while it worked would read as broken.
    */
-  // ONE PRESS, ONE BOOT (the e2e pruning audit): finding the event, the picker
-  // that opens on the same press, and clearing it were two tests that booted
-  // the same fixture and pressed the same button.
+  // ONE PRESS, ONE BOOT: finding the event, the picker that opens on the same
+  // press, and clearing it all follow one press of the button.
   /**
    * WHY THIS TEST EXISTS (G1, DEC-G1). The reported complaint: pressing the
    * button a second time re-ran the identical search. "Identical" is exact
