@@ -150,7 +150,7 @@ function firstStation(page) {
   );
 }
 
-test("the buildings load in their worker on the relief's ground, out of the picking's way", async ({
+test("the buildings load in their worker on the relief's ground, out of the picking's way @pr", async ({
   page,
 }) => {
   // A cold landing, a city load and several frame waits: on a loaded
