@@ -167,6 +167,8 @@ interface GlobeViewState {
   readonly siderealAngleRad: number;
   /** The clouds' drift rate at the camera's altitude (deg/s). */
   readonly cloudDriftRate: number;
+  /** The clouds' longitude offset as last drawn (rad, in [0, 2 pi)). */
+  readonly cloudLonOffsetRad: number;
 }
 
 export interface GlobeView {
@@ -546,6 +548,7 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
       frameRecentres,
       siderealAngleRad,
       cloudDriftRate: cloudDrift.rate,
+      cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
     }),
     dispose() {
       if (disposed) return;

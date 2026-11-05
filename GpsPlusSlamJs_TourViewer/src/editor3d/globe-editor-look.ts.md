@@ -13,9 +13,11 @@ and a camera pose read back as a view.
 - `GLOBE_EDITOR_LOOK` (frozen): `fovYDeg` 50, `backM` 30, `eyeM` (the
   globe's eye height), `reliefCeilingM` 25,000 (over it `centre()`
   names no place; declared, not measured), `aimPitchDeg` -30, `aimRadii` 3.
-- `globeEditorSettings()`: the view's settings, the same frozen object
-  every call (world frame follows the target, sky on, the lab's navy space,
-  no debug hole colour, the globe's cloud drift law).
+- `globeEditorSettings({ windMps }?)`: the view's settings (world frame
+  follows the target, sky on, the lab's navy space, no debug hole colour,
+  the globe's cloud drift law with the wind floor `windMps`, the link's
+  `cloudWind`; without it the globe's own). Frozen; RangeError for a
+  wind that is not finite and at least 0.
 - `streetView(centre, groundM)`: `backM` south of the centre, `eyeM` over
   `groundM`, facing north and down at the centre's ground. RangeError for a
   value that is not finite.

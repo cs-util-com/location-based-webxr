@@ -75,6 +75,24 @@ function trackedSourceFiles() {
 }
 
 /**
+ * Whether a line opens a doc block: OPEN first on it, alone or with text
+ * after it on the same line (a one-line block is a doc comment too; it is
+ * the shape a bare-OPEN match missed twice in one review). An empty
+ * comment (OPEN directly closed) is not one.
+ */
+function opensDocBlock(line) {
+  const trimmed = line.trim();
+  return trimmed.startsWith(OPEN) && !trimmed.startsWith(`${OPEN}/`);
+}
+
+/** A block's first words: the text on its opening line, else the next. */
+function firstTextOf(lines, start, end) {
+  const opening = lines[start].trim().slice(OPEN.length).replace(CLOSE, '').trim();
+  if (opening !== '' || start === end) return opening;
+  return (lines[start + 1] ?? '').trim().replace(/^\*\s?/, '');
+}
+
+/**
  * The orphaned blocks in one file's text, as `{ line, firstLine }`.
  *
  * Exported so the LOGIC is covered even in a tree where it finds nothing — a
@@ -115,10 +133,23 @@ export function orphanedDocBlocks(text) {
 
   const found = [];
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() !== OPEN) continue;
+    if (!opensDocBlock(lines[i])) continue;
+    // The block ends at the first CLOSE after its opening: on the same line
+    // for a one-line block, which is as much a doc comment as a long one.
+    const openAt = lines[i].indexOf(OPEN) + OPEN.length;
     let end = i;
-    while (end < lines.length && !lines[end].trim().endsWith(CLOSE)) end++;
+    let closeAt = lines[i].indexOf(CLOSE, openAt);
+    while (closeAt < 0 && ++end < lines.length) {
+      closeAt = lines[end].indexOf(CLOSE);
+    }
     if (end >= lines.length) break;
+
+    // Code after the block on its own last line is what it documents (an
+    // inline `@type` cast, a one-line member): attached, whatever follows.
+    if (lines[end].slice(closeAt + CLOSE.length).trim() !== '') {
+      i = end;
+      continue;
+    }
 
     let next = end + 1;
     while (next < lines.length && lines[next].trim() === '') next++;
@@ -135,19 +166,48 @@ export function orphanedDocBlocks(text) {
 
     if (
       next < lines.length &&
-      lines[next].trim() === OPEN &&
+      opensDocBlock(lines[next]) &&
       i > firstStatement &&
       !isStandaloneTypeDecl
     ) {
-      found.push({
-        line: i + 1,
-        firstLine: (lines[i + 1] ?? '').trim().replace(/^\*\s?/, ''),
-      });
+      found.push({ line: i + 1, firstLine: firstTextOf(lines, i, end) });
     }
     i = end;
   }
   return found;
 }
+
+/**
+ * The orphans this guard found when it learned the one-line shapes
+ * (2026-11-04), per file, in packages that change was not about: each is a
+ * real displaced doc block, left for a cleanup of its own so that change
+ * stayed out of those packages' gates. A file may hold at most its count;
+ * the scan below fails once a count is higher than the file needs, so the
+ * list only shrinks. Never add to it: fix the new block instead.
+ */
+const KNOWN_ORPHANS = Object.freeze({
+  'GpsPlusSlamJs_AppFramework/src/ar/occupancy-mesher.ts': 1,
+  'GpsPlusSlamJs_AppFramework/src/ar/qr/qr-tracking-controller.ts': 1,
+  'GpsPlusSlamJs_AppFramework/src/storage/remote-range-byte-source.test.ts': 1,
+  'GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/cloud-slab.ts': 1,
+  'GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/sky-atmosphere.ts': 1,
+  'GpsPlusSlamJs_AppFramework/src/visualization/leaflet-map-overlay.ts': 1,
+  'GpsPlusSlamJs_Landing/src/scene/story-timeline.ts': 1,
+  'GpsPlusSlamJs_Osm/src/mesh/barrier-gates.test.ts': 1,
+  'GpsPlusSlamJs_Osm/src/mesh/buildings.test.ts': 1,
+  'GpsPlusSlamJs_Osm/src/mesh/poi-models.test.ts': 1,
+  'GpsPlusSlamJs_Osm/src/mesh/poi-primitives.ts': 1,
+  'GpsPlusSlamJs_Osm/src/nav/obstacles.test.ts': 3,
+  'GpsPlusSlamJs_Osm/src/places/geo-event.test.ts': 1,
+  'GpsPlusSlamJs_Osm/src/spatial/spatial-query.bench.ts': 1,
+  'GpsPlusSlamJs_Osm/src/testdata/fixture-formatting.test.ts': 1,
+  'GpsPlusSlamJs_OsmDemo/src/building-view.ts': 2,
+  'GpsPlusSlamJs_OsmDemo/src/demo-pipeline.test.ts': 2,
+  'GpsPlusSlamJs_OsmDemo/src/picker-places.ts': 1,
+  'GpsPlusSlamJs_OsmDemo/src/terrain-cycle.test.ts': 1,
+  'GpsPlusSlamJs_RecorderApp/src/ar/ar-session-resources.ts': 1,
+  'GpsPlusSlamJs_RecorderApp/src/ui/session-summary.ts': 1,
+});
 
 describe('doc-comment attachment guard', () => {
   describe('orphanedDocBlocks', () => {
@@ -245,6 +305,83 @@ describe('doc-comment attachment guard', () => {
       expect(orphanedDocBlocks(text)).toEqual([]);
     });
 
+    it('finds a long block displaced by a one-line block', () => {
+      // A class's JSDoc left above a constant added before the class, the
+      // constant documented in one line: the bare-OPEN match saw only the
+      // first block's opening and never looked at what followed.
+      const text = [
+        'const x = 1;',
+        '',
+        OPEN,
+        ' * Documents the class.',
+        ' ' + CLOSE,
+        `${OPEN} Documents the constant. ${CLOSE}`,
+        'const y = 2;',
+        'class Z {}',
+        '',
+      ].join('\n');
+
+      expect(orphanedDocBlocks(text)).toEqual([
+        { line: 3, firstLine: 'Documents the class.' },
+      ]);
+    });
+
+    it('finds a one-line block followed by another block', () => {
+      // A stray one-line doc in front of a helper's own: the shape that
+      // opened neither block on a bare OPEN line.
+      const text = [
+        'const x = 1;',
+        '',
+        `${OPEN} Documents nothing. ${CLOSE}`,
+        `${OPEN} Documents \`y\`. ${CLOSE}`,
+        'const y = 2;',
+        '',
+      ].join('\n');
+
+      expect(orphanedDocBlocks(text)).toEqual([
+        { line: 3, firstLine: 'Documents nothing.' },
+      ]);
+    });
+
+    it('finds a block whose text starts on its opening line', () => {
+      // OPEN with text after it, running on to a further line, then another
+      // block.
+      const text = [
+        'const x = 1;',
+        '',
+        `${OPEN} Documents nothing,`,
+        ' *  over two lines. ' + CLOSE,
+        OPEN,
+        ' * Documents `y`.',
+        ' ' + CLOSE,
+        'const y = 2;',
+        '',
+      ].join('\n');
+
+      expect(orphanedDocBlocks(text)).toEqual([
+        { line: 3, firstLine: 'Documents nothing,' },
+      ]);
+    });
+
+    it('accepts a one-line block with its code after it on the same line', () => {
+      // An inline cast or a one-line member documented in place is attached
+      // to the code after it, whatever the next line holds; an empty
+      // comment opens no block.
+      const text = [
+        'const x = 1;',
+        '',
+        `${OPEN} @type {any} ${CLOSE} (globalThis).a = 1;`,
+        `${OPEN} Documents \`y\`. ${CLOSE}`,
+        'const y = 2;',
+        `${OPEN}/`,
+        `${OPEN} Documents \`z\`. ${CLOSE}`,
+        'const z = 3;',
+        '',
+      ].join('\n');
+
+      expect(orphanedDocBlocks(text)).toEqual([]);
+    });
+
     it('reports every occurrence in a file, not just the first', () => {
       // `recording-options.ts` carried two, 700 lines apart. A guard that
       // stopped at the first would have taken two sweeps to clear one file.
@@ -279,6 +416,8 @@ describe('doc-comment attachment guard', () => {
 
   it('no tracked source file has a doc comment attached to nothing', () => {
     const offenders = [];
+    /** Files that hold fewer orphans than their KNOWN_ORPHANS count now. */
+    const shrunk = [];
     for (const file of trackedSourceFiles()) {
       let text;
       try {
@@ -286,10 +425,21 @@ describe('doc-comment attachment guard', () => {
       } catch {
         continue; // tracked but deleted in the working tree
       }
-      for (const hit of orphanedDocBlocks(text)) {
+      const hits = orphanedDocBlocks(text);
+      const known = KNOWN_ORPHANS[file] ?? 0;
+      if (hits.length < known) shrunk.push(`${file}: ${hits.length} of ${known}`);
+      if (hits.length <= known) continue;
+      for (const hit of hits) {
         offenders.push(`${file}:${hit.line}  ${hit.firstLine.slice(0, 70)}`);
       }
     }
+
+    // The list only shrinks: a file whose count fell is lowered there, so
+    // the room it left cannot take a new orphan unnoticed.
+    expect(
+      shrunk,
+      'These files hold fewer orphans than KNOWN_ORPHANS allows: lower (or remove) their counts.'
+    ).toEqual([]);
 
     expect(
       offenders,

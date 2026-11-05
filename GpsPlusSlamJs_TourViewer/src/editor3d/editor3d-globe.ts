@@ -55,7 +55,17 @@
  * slab near the ground, the spherical volume from orbit down, the high
  * layer), on by default; the View menu's Clouds turns them off
  * (`setClouds`). The cloud shell's share is the relief mount's, as in the
- * lab. Not yet here: a layer chip for the buildings.
+ * lab.
+ *
+ * The OSM buildings (with their trees and roads) stand at the tour's
+ * centre, mounted once the tour has one (a new tour's stand-in place
+ * loads nothing) (`editor3d-globe-city.ts` over the Globe package's city, its
+ * worker `globe-city-worker.ts`), on the relief's own height source; they
+ * load once the camera is below 30 km, warm up from the approach's start,
+ * draw see-through around the selection and stand in the clouds' depth.
+ * The view's `setBuildings` shows or hides them (no chip yet);
+ * `buildings=0` makes no city at all. Picking never meets them: the
+ * stations are picked by the layer and the ground on the sampled relief.
  *
  * The approach starts where the globe lab's intro zooms out to (the whole
  * Earth in view at the page's aspect), and the controls zoom out as far as
@@ -73,12 +83,14 @@ import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import {
   createGlobeCameraControls,
+  createGlobeCity,
   createGlobeImagery,
   createGlobeView,
   createSpeedDustPass,
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_INTRO,
+  GLOBE_VIEW_CLOUDS,
   globeViewClouds,
   globeZoomOutLimitM,
   mountGlobeRelief,
@@ -117,6 +129,7 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
+import { mountEditorCity, type EditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
 import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
@@ -151,6 +164,15 @@ import { createArrivalMarks } from "./globe-approach-marks.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
+import {
+  createFrameDrawCalls,
+  type FrameDrawCalls,
+} from "./frame-draw-calls.js";
+import {
+  createGlobeInterfacePass,
+  interfaceOverAir,
+  type GlobeInterfacePass,
+} from "./globe-interface-pass.js";
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
 
 const DEG = Math.PI / 180;
@@ -174,6 +196,121 @@ function higherOf(a: number | null, b: number | null): number | null {
   return b === null ? a : Math.max(a, b);
 }
 
+const probeAt = new THREE.Vector3();
+const probeBox = new THREE.Box3();
+
+/** A world point on the canvas (CSS px), null behind the camera or off it. */
+function onCanvas(
+  world: THREE.Vector3,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+): readonly [number, number] | null {
+  const p = probeAt.copy(world).project(camera);
+  if (p.z < -1 || p.z > 1 || Math.abs(p.x) > 1 || Math.abs(p.y) > 1) {
+    return null;
+  }
+  return [
+    ((p.x + 1) / 2) * canvas.clientWidth,
+    ((1 - p.y) / 2) * canvas.clientHeight,
+  ];
+}
+
+/**
+ * Where the tour's first billboard (its anchor, bottom middle), a point of
+ * the first found radius's ring (the one nearest the canvas's middle) and
+ * the first lit model (its bounding box's centre) are on the canvas: the
+ * test hook's probes for the clouds' shadow check. Allocates; the page's
+ * checks only call it.
+ */
+function cloudProbes(
+  tourFrame: THREE.Object3D,
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+) {
+  let billboard: THREE.Object3D | null = null;
+  let ring: THREE.Mesh | null = null;
+  let model: THREE.Object3D | null = null;
+  tourFrame.traverseVisible((o) => {
+    if (billboard === null && o.name.startsWith("billboard ")) billboard = o;
+    if (ring === null && o.name === "found-radius" && o instanceof THREE.Mesh) {
+      ring = o;
+    }
+    if (
+      model === null &&
+      o instanceof THREE.Mesh &&
+      o.material instanceof THREE.MeshStandardMaterial
+    ) {
+      model = o;
+    }
+  });
+  const world = (o: THREE.Object3D | null) =>
+    o === null
+      ? null
+      : onCanvas(o.getWorldPosition(new THREE.Vector3()), camera, canvas);
+  let ringPoint: readonly [number, number] | null = null;
+  const found = ring as THREE.Mesh | null;
+  if (found !== null) {
+    const { innerRadius, outerRadius } = (found.geometry as THREE.RingGeometry)
+      .parameters;
+    const r = (innerRadius + outerRadius) / 2;
+    let best = Infinity;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * 2 * Math.PI;
+      // The ring lies flat in its station's frame (y up).
+      const at = onCanvas(
+        found.localToWorld(
+          new THREE.Vector3(r * Math.cos(a), 0, r * Math.sin(a)),
+        ),
+        camera,
+        canvas,
+      );
+      if (at === null) continue;
+      const d = Math.hypot(
+        at[0] - canvas.clientWidth / 2,
+        at[1] - canvas.clientHeight / 2,
+      );
+      if (d < best) {
+        best = d;
+        ringPoint = at;
+      }
+    }
+  }
+  const lit = model as THREE.Object3D | null;
+  return {
+    billboard: world(billboard),
+    ring: ringPoint,
+    model:
+      lit === null
+        ? null
+        : onCanvas(
+            probeBox.setFromObject(lit).getCenter(new THREE.Vector3()),
+            camera,
+            canvas,
+          ),
+  };
+}
+
+/**
+ * The buildings' city, or null: with the link's `buildings=0`, in a
+ * browser without workers, or when making it throws (the view opens
+ * without buildings rather than not at all).
+ */
+function openCity<T>(on: boolean, make: () => T): T | null {
+  if (!on || typeof Worker === "undefined") return null;
+  try {
+    return make();
+  } catch {
+    return null;
+  }
+}
+
+/** The placed codes' places, which a tour's centre counts too. */
+function codeGeosOf(levels: ReturnType<Editor3dDeps["levels"]>) {
+  return [...levels.values()].flatMap((l) =>
+    l.qr.geo === undefined ? [] : [l.qr.geo],
+  );
+}
+
 /** The globe view in `deps.container`, once its loop has run. */
 export async function openGlobeEditor(
   deps: Editor3dDeps,
@@ -187,15 +324,16 @@ export async function openGlobeEditor(
     | "startKm"
     | "dust"
     | "osmGain"
+    | "osmGainMode"
+    | "cloudShadow"
+    | "cloudWind"
+    | "buildings"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
   const levels = deps.levels();
   const manifest = manifestToWrite(state.tourDocument);
-  const codeGeos = [...levels.values()].flatMap((l) =>
-    l.qr.geo === undefined ? [] : [l.qr.geo],
-  );
-  const tourAt = tourCentre(manifest?.stations ?? [], codeGeos);
+  const tourAt = tourCentre(manifest?.stations ?? [], codeGeosOf(levels));
   // A tour with nothing positioned yet (a new one) opens over the
   // creator's part of the world, its first station placed on the ground.
   const zone = browserZoneHint();
@@ -254,6 +392,17 @@ export async function openGlobeEditor(
     // The air (the blue sky, the haze over the relief), mounted once the
     // view and its relief exist; the view's sky alone is black at noon.
     let air: GlobeViewAir | null = null;
+    // The interface drawn after the air (`globe-interface-pass.ts`): the
+    // clouds' shadow is composited over the whole frame.
+    let interfacePass: GlobeInterfacePass | null = null;
+    // The whole frame's draw calls (its passes summed), for the status bar.
+    let drawCalls: FrameDrawCalls | null = null;
+    // The main scene's share of them (its one render), and where the frame
+    // stood when it began.
+    let sceneFrom = 0;
+    let sceneCalls = 0;
+    let lastSceneCalls = 0;
+    let lastFrameCalls = 0;
     // The approach on opening the tour while it runs (`globe-approach-run.ts`).
     let approach: ApproachRun | null = null;
     /** How the last approach ended, for the page's checks. */
@@ -271,10 +420,12 @@ export async function openGlobeEditor(
     undo.push(() => {
       dust.dispose();
     });
+    // The clouds' wind floor is the link's: built once, read each frame.
+    const settings = globeEditorSettings({ windMps: knobs.cloudWind });
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
-      settings: globeEditorSettings,
+      settings: () => settings,
       solarPosition,
       // Standard depth (the view's default): the clouds and the air read
       // the scene's depth as standard, and reversed depth measured no
@@ -307,6 +458,7 @@ export async function openGlobeEditor(
           view.recentreFrame();
         },
         update: (now) => {
+          drawCalls?.begin();
           updateLayers(now);
         },
         afterSky: () => {
@@ -332,10 +484,24 @@ export async function openGlobeEditor(
             look: { count: SPEED_DUST_LOOK.count, gain: SPEED_DUST_LOOK.gain },
           });
           dust.render(renderer, 1 - SPEED_DUST_LOOK.over);
+          // Above the deck the interface stays in the scene's pass, under
+          // the clouds (their composites write no depth).
+          interfacePass?.lift(
+            interfaceOverAir(
+              ellipsoid.getPositionElevation(pose.position),
+              GLOBE_VIEW_CLOUDS.cloudShellKm * 1000,
+            ),
+          );
+          sceneFrom = drawCalls?.now() ?? 0;
         },
         afterScene: () => {
+          sceneCalls = (drawCalls?.now() ?? 0) - sceneFrom;
           dust.render(renderer, SPEED_DUST_LOOK.over);
           air?.afterScene();
+          interfacePass?.draw();
+          drawCalls?.end();
+          lastSceneCalls = sceneCalls;
+          lastFrameCalls = drawCalls?.calls() ?? 0;
         },
         // An edit's gesture holds the frame still too: its world points
         // would move under it.
@@ -356,6 +522,9 @@ export async function openGlobeEditor(
       // hold one more, up to the browser's limit.
       renderer.forceContextLoss();
     });
+    drawCalls = createFrameDrawCalls(renderer.info);
+    const frameCounter = drawCalls;
+    undo.push(() => frameCounter.dispose());
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // Daylight over the tour by default (held at its solar noon); the real
     // time now on request.
@@ -370,7 +539,8 @@ export async function openGlobeEditor(
     startClock();
     // The tour's objects and the relief: the sun alone leaves their shaded
     // sides black.
-    scene.add(new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9));
+    const daylight = new THREE.HemisphereLight(0xe9eef5, 0x5d5a52, 0.9);
+    scene.add(daylight);
 
     const ground = createEditorTerrain({
       renderer,
@@ -382,6 +552,7 @@ export async function openGlobeEditor(
       imagery: createGlobeImagery(),
       template: globe.template,
       osmGain: knobs.osmGain,
+      osmGainMode: knobs.osmGainMode,
     });
     undo.push(() => {
       ground.dispose();
@@ -402,9 +573,52 @@ export async function openGlobeEditor(
       reliefMount.dispose();
     });
     const { ellipsoid } = ground.terrain.tiles;
+    // The buildings at the tour's centre, on the relief's height source;
+    // none with `buildings=0` or without module workers, and none before
+    // the tour has a centre (a new tour opens over a stand-in place, where
+    // nothing may load): they are mounted when its first station is
+    // placed.
+    let editorCity: EditorCity | null = null;
+    /** Where the buildings stand (the tour's centre they were mounted at). */
+    let cityPlace: { readonly lat: number; readonly lng: number } | null = null;
+    let buildingsShown = true;
+    const mountCity = (at: { readonly lat: number; readonly lng: number }) => {
+      if (editorCity !== null) return;
+      const place = { lat: at.lat, lng: at.lng };
+      editorCity = openCity(knobs.buildings === 1, () =>
+        mountEditorCity({
+          city: createGlobeCity({
+            parent: globe.group,
+            ellipsoid,
+            heightsUrl: ground.heights.url,
+            deepHeightsZoom: ground.heights.maxZoom,
+            // The library's own parameter types are narrower than the city's
+            // seam (it hands the worker's reply through as it came).
+            loadCityThree: () => import("gps-plus-slam-osm/three") as never,
+            createWorker: () =>
+              new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
+                type: "module",
+              }),
+          }),
+          place,
+          zoom: ground.heights.globalZoom,
+        }),
+      );
+      if (editorCity === null) return;
+      cityPlace = place;
+      if (!buildingsShown) editorCity.setShown(false);
+    };
+    if (tourAt !== null) mountCity(tourAt);
+    undo.push(() => {
+      editorCity?.dispose();
+    });
     const mountedAir = mountGlobeViewAir(view, {
       coarsePointer: window.matchMedia?.("(pointer: coarse)").matches === true,
-      clouds: globeViewClouds(view),
+      clouds: globeViewClouds(view, {
+        shadow: knobs.cloudShadow,
+        // The buildings hide the clouds behind them, as the relief does.
+        extra: () => editorCity?.extra() ?? [],
+      }),
     });
     air = mountedAir;
     undo.push(() => {
@@ -516,6 +730,13 @@ export async function openGlobeEditor(
       documentNow = next;
       tourNow = manifestToWrite(next);
       nearTour = reachOf(tourNow);
+      if (editorCity === null) {
+        const at = tourCentre(
+          tourNow?.stations ?? [],
+          codeGeosOf(deps.levels()),
+        );
+        if (at !== null) mountCity(at);
+      }
       layer.setTour(tourNow, deps.levels());
     });
     undo.push(unsubscribe);
@@ -926,6 +1147,7 @@ export async function openGlobeEditor(
       });
       // After the layer's update: a station's billboard is made there.
       uploads.step();
+      stepCity(altitudeM, ui.selected);
 
       // The near plane keeps clear of the drawn stations.
       eyeSpheres.length = 0;
@@ -937,6 +1159,33 @@ export async function openGlobeEditor(
       }
       editing.update();
       frames++;
+    }
+
+    // The buildings' frame: their load and fade by the camera's altitude,
+    // and the see-through around the selection (world space).
+    const seeAt = new THREE.Vector3();
+    const seeUp = new THREE.Vector3();
+    /** The buildings' data loads during the approach's fall, so they
+     *  stand on landing. */
+    function warmCity(): void {
+      editorCity?.warmUp();
+    }
+    function stepCity(altitudeM: number, selected: string | null): void {
+      if (editorCity === null) return;
+      const place = selected === null ? null : placeOf(selected);
+      editorCity.step({
+        altitudeM,
+        selection:
+          place === null
+            ? null
+            : {
+                at: worldOf(place.at, seeAt),
+                up: seeUp
+                  .set(0, 1, 0)
+                  .transformDirection(tourFrame.matrixWorld),
+                radiusM: place.radiusM,
+              },
+      });
     }
 
     const aimAt = (at: THREE.Vector3, radiusM: number) => {
@@ -990,6 +1239,45 @@ export async function openGlobeEditor(
       ecefFromWorld.copy(worldFromEcef).invert();
     }
     followFrame();
+    // The interface's roots: the tour's frame (stations, codes, marks,
+    // models' sections) and what the editing adds to the scene (the
+    // gizmo); one array, refilled each frame.
+    const interfaceRoots: THREE.Object3D[] = [];
+    interfacePass = createGlobeInterfacePass({
+      renderer,
+      scene,
+      camera,
+      roots: () => {
+        interfaceRoots.length = 0;
+        interfaceRoots.push(tourFrame);
+        for (const child of scene.children) {
+          if (child !== globe.group) interfaceRoots.push(child);
+        }
+        return interfaceRoots;
+      },
+      lights: [daylight],
+    });
+    undo.push(() => {
+      interfacePass = null;
+    });
+    /** The buildings' part of the stats, their parity measured against
+     *  the relief at the place they stand at. */
+    const cityStats = () =>
+      editorCity === null || cityPlace === null
+        ? null
+        : editorCity.stats(
+            ground.groundAt(cityPlace.lat * DEG, cityPlace.lng * DEG),
+          );
+    /** The clouds' part of the stats (see the comment there). */
+    const cloudStats = () => ({
+      driftRate: view.state().cloudDriftRate,
+      lonOffsetRad: view.state().cloudLonOffsetRad,
+      shadow: knobs.cloudShadow,
+      windMps: knobs.cloudWind,
+      probes: cloudProbes(tourFrame, camera, canvas),
+      shell: air?.cloudShell() ?? null,
+      interfaceLifted: interfacePass?.lifted() ?? 0,
+    });
     const editing = createSceneEditing({
       container: deps.container,
       canvas,
@@ -1085,6 +1373,7 @@ export async function openGlobeEditor(
         true;
       // The frame at the tour, once: the flight moves the camera only.
       view.setFrameTarget({ lat: centre.lat, lng: centre.lng });
+      warmCity();
       const driver = createMeteorApproach({
         ellipsoid,
         view,
@@ -1246,6 +1535,10 @@ export async function openGlobeEditor(
       setClouds(on) {
         air?.setClouds(on);
       },
+      setBuildings(on) {
+        buildingsShown = on;
+        editorCity?.setShown(on);
+      },
       setRealTime(on) {
         if (on === realTime) return;
         realTime = on;
@@ -1261,7 +1554,7 @@ export async function openGlobeEditor(
           tiltDeg: 90 + pose.pitchDeg,
           headingDeg: pose.headingDeg,
           top,
-          drawCalls: renderer.info.render.calls,
+          drawCalls: drawCalls?.calls() ?? 0,
           frameMs: mean,
         };
       },
@@ -1378,9 +1671,24 @@ export async function openGlobeEditor(
             centreM: view.ecefCamera().position.length(),
             fitM: view.fitDistance(),
             startCentreM,
+            // The clouds' drift (deg/s and the map's offset now, rad), their
+            // knobs, and where the interface and the ground are on the
+            // canvas: what the clouds' shadow and motion checks read.
+            clouds: cloudStats(),
             // The last 60 frame intervals (ms), for a frame-time check.
             frameTimesMs: [...frameTimes],
+            // The last finished frame's draw calls, all passes and the main
+            // scene's render alone: the status bar's figure must hold at
+            // least the scene's.
+            drawCalls: {
+              frame: lastFrameCalls,
+              scene: lastSceneCalls,
+            },
           },
+          // The buildings: tiles, buildings, the worker's state, their
+          // geometry's size and the height parity with the relief at the
+          // tour's centre.
+          city: cityStats(),
         };
       },
     };

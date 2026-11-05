@@ -242,7 +242,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   let videoStep = false;
   /** The step's object URLs (a picture; a clip and its poster). */
   const liveUrls: string[] = [];
-  /** The step's media share one status line (r881 re-review M1: one
+  /* The step's media share one status line (r881 re-review M1: one
    *  asset's settle blanked another's line). What it says, per step: */
   /** The figure or model the stage holds back for the visitor's position. */
   let figureWait: string | null = null;

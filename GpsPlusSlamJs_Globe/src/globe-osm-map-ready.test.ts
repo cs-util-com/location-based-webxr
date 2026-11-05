@@ -281,6 +281,8 @@ async function reliefWithMap({
   return {
     osm,
     renderer,
+    place,
+    tileInfo,
     parent,
     children,
     infos,
@@ -425,17 +427,108 @@ describe("mapReady", () => {
 
   // Why: the distance and the zoom are worked out once per tile per
   // 500 ms look, not per frame (the traversal asks every child every
-  // frame); a camera that moved away is seen at the next look.
+  // frame); a camera that moved less than the look's slack keeps the
+  // answer until the next look.
   it("looks at a tile's distance once per 500 ms look", async () => {
     const r = await reliefWithMap();
     r.frame(0);
     const [a] = r.children;
     expect(r.osm.mapReady(a!)).toBe(false);
+    // 10 m north, under the slack: the cached answer.
+    const near = cameraAt(LAT + 0.00009, LON, 100);
+    r.osm.update({
+      position: near,
+      aboveGroundM: 100,
+      speedMps: 0,
+      nowMs: 100,
+    });
+    expect(r.osm.mapReady(a!)).toBe(false);
+    expect(GLOBE_OSM.lookSlackM).toBeGreaterThan(10);
+  });
+
+  // Why: a camera that jumps (a zoom step, a flight to an object) within a
+  // look must not keep last look's answer: a tile that came into reach
+  // would be drawn bare in place of its mapped parent until the next look.
+  // A move past the slack starts a new look at once, both ways.
+  it("looks again at once when the camera moved past the slack", async () => {
+    const r = await reliefWithMap();
+    r.frame(0);
+    const [a] = r.children;
     const far = cameraAt(LAT + 0.05, LON, 100);
     r.osm.update({ position: far, aboveGroundM: 100, speedMps: 0, nowMs: 100 });
-    expect(r.osm.mapReady(a!)).toBe(false);
-    r.osm.update({ position: far, aboveGroundM: 100, speedMps: 0, nowMs: 600 });
     expect(r.osm.mapReady(a!)).toBe(true);
+    const back = cameraAt(LAT, LON, 100);
+    r.osm.update({
+      position: back,
+      aboveGroundM: 100,
+      speedMps: 0,
+      nowMs: 200,
+    });
+    expect(r.osm.mapReady(a!)).toBe(false);
+  });
+
+  // Why: the gate asks for maps out to the fade's end (fadeM), and the map
+  // is drawn at about 90 % well past the fade's start, so a tile between
+  // the two must be held like a nearer one: held only inside the fade's
+  // start, children 0.7-1 x fadeM away replaced a mapped parent bare, and
+  // the traversal never swapped the parent back. Swept across the band.
+  it.each([0.75, 0.85, 0.97])(
+    "holds a tile at %s x the fade's reach, and none past it",
+    async (share) => {
+      const r = await reliefWithMap();
+      r.frame(0);
+      const mPerDeg = 111_200;
+      const at = (m: number) => {
+        const tile = {};
+        r.place(tile, regionAround(LAT + m / mPerDeg, LON, 0.00005));
+        return tile;
+      };
+      const fadeM = r.osm.uniforms.uOsmFadeM.value;
+      expect(r.osm.mapReady(at(share * fadeM))).toBe(false);
+      expect(r.osm.mapReady(at(1.2 * fadeM))).toBe(true);
+    },
+  );
+
+  // Why: the gate and the hold must agree on what is near: a tile held
+  // but never asked for would keep its parent drawn for good.
+  it("asks for a map wherever it holds a tile for one", async () => {
+    const r = await reliefWithMap();
+    r.frame(0);
+    const fadeM = r.osm.uniforms.uOsmFadeM.value;
+    for (const share of [0.5, 0.9, 0.99, 1.01, 1.2]) {
+      const tile = {};
+      const info = r.place(
+        tile,
+        regionAround(LAT + (share * fadeM) / 111_200, LON, 0.00005),
+      );
+      expect(r.osm.overlay.wanted(info.range!)).toBe(!r.osm.mapReady(tile));
+    }
+  });
+
+  // Why: a tile the map has no content for (the street map ends at about
+  // 85 degrees of latitude) is never asked for and never gets a map; held
+  // for one, its parent would be drawn there for good.
+  it("never holds a tile the map has no content for", async () => {
+    const r = await reliefWithMap();
+    const polar = cameraAt(86.5, LON, 100);
+    r.osm.update({ position: polar, aboveGroundM: 100, speedMps: 0, nowMs: 0 });
+    const tile = {};
+    r.place(tile, regionAround(86.5, LON, 0.0002));
+    expect(r.osm.mapReady(tile)).toBe(true);
+  });
+
+  // Why: what the e2e of a zoom-in counts: a drawn tile near the camera
+  // without its map under a parent that has one is the hold failing (the
+  // parent's map replaced by bare relief). Given-up tiles are not counted.
+  it("counts drawn tiles drawn bare under a mapped parent", async () => {
+    const r = await reliefWithMap();
+    r.frame(0);
+    r.tileInfo.get(r.parent)!.target = { texture: 1 };
+    r.renderer.visibleTiles.clear();
+    for (const c of r.children) r.renderer.visibleTiles.add(c);
+    expect(r.osm.coverage().bareUnderMap).toBe(4);
+    r.infos[0]!.target = { texture: 1 };
+    expect(r.osm.coverage().bareUnderMap).toBe(3);
   });
 
   it("refuses a give-up count that is not an integer >= 0", () => {
@@ -556,6 +649,57 @@ describe("a map request's time limit", () => {
     expect(signal!.aborted).toBe(false);
   });
 
+  // Why: the library reads a tile's body after the answer's headers; a
+  // server that sends the headers and then stalls held the download slot
+  // with the time limit already cleared. The body is read inside the
+  // limit, so a stalled body fails as a TimeoutError like no answer.
+  it("fails an answer whose body stalls after its headers", async () => {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+      timeoutMs: 1_000,
+    });
+    vi.spyOn(proto, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(new ReadableStream({ start() {} }), { status: 200 }),
+      ),
+    );
+    const outcome = overlay.fetch("a").then(
+      () => "answered",
+      (e: Error) => e.name,
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await outcome).toBe("TimeoutError");
+  });
+
+  // Why: the body read inside the limit is handed on whole, with the
+  // answer's status, so the library decodes the same tile.
+  it("hands on an answer's body and status, read inside the limit", async () => {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+      timeoutMs: 1_000,
+    });
+    vi.spyOn(proto, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+      ),
+    );
+    const res = (await overlay.fetch("a")) as Response;
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+
   it("refuses a time limit that is not finite and > 0", () => {
     for (const timeoutMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(
@@ -598,6 +742,7 @@ async function simulate(
   server: Server,
   giveUpRetries: number,
   timeoutS: number,
+  { background = true }: { background?: boolean } = {},
 ) {
   let clock = 0;
   vi.spyOn(performance, "now").mockImplementation(() => clock);
@@ -656,6 +801,20 @@ async function simulate(
     ask(clock / 1000);
   };
   ask(0);
+  // The other requests a creator's view makes meanwhile (the tiles it
+  // comes to): one every 2 s, answered at once by a server that answers
+  // quickly, 200 or 429 as it would answer the tile.
+  let backgroundOk = false;
+  vi.spyOn(proto, "fetch").mockImplementation(() =>
+    Promise.resolve(
+      new Response(new Uint8Array(1), { status: backgroundOk ? 200 : 429 }),
+    ),
+  );
+  const askBackground = async (i: number, t: number) => {
+    if (!background || i % 20 !== 0 || server(t).afterS >= 1) return;
+    backgroundOk = server(t).ok;
+    await osm.overlay.fetch("background");
+  };
   let heldS = 0;
   let bareS = 0;
   let mapAtS: number | null = null;
@@ -663,6 +822,7 @@ async function simulate(
   for (let i = 0; i * stepS < HORIZON_S; i++) {
     const t = i * stepS;
     clock = t * 1000;
+    await askBackground(i, t);
     const a = answer as { atS: number; ok: boolean } | null;
     if (a && a.atS <= t) {
       answer = null;
@@ -750,5 +910,47 @@ describe("the give-up knobs over a throttling fake server", () => {
         x.timeoutS * 1000 === GLOBE_OSM.requestTimeoutMs,
     );
     expect(defaults?.r).toEqual({ heldS: 45, bareS: 0, mapAtS: 45 });
+    // A server refusing for a while, then answering: as soon as any
+    // request is answered the failed tiles are asked for again (within the
+    // first wait), not after the back-off's 60 s step. The bare time while
+    // the server still refuses is the give-up's (held about 37 s, then
+    // bare until it answers); what is pinned is the map within 10 s of the
+    // server's return, at every give-up count and time limit. Before: the
+    // map 37 s after a 60 s refusal ended (at 97 s), 38 s after a 180 s one.
+    for (const [name, backS] of [
+      ["429 for 60 s", 60],
+      ["429 for 180 s", 180],
+    ] as const) {
+      for (const { r } of runs.filter((x) => x.name === name)) {
+        expect(r.mapAtS).not.toBeNull();
+        expect(r.mapAtS!).toBeLessThan(backS + 10);
+      }
+    }
+  }, 120_000);
+
+  // Why: the cut to the first wait above rides on the view's OTHER
+  // requests (the creator's camera moving, one every 2 s in the sweep).
+  // A still camera asks for nothing else, so nothing tells it the server
+  // is back: its refused tile waits out the back-off (measured: the map
+  // at 97.3 s after a 60 s refusal, at every give-up count and limit).
+  // Kept on purpose: retrying every failed tile every 5 s through an
+  // outage is what the back-off exists to stop (the tile server's usage
+  // policy). Pinned here so a change to either side is seen: the map
+  // comes at most one last back-off step after the refusal ends.
+  it("a still camera: the map within one last back-off step of a 60 s refusal's end", async () => {
+    const lastWaitS = GLOBE_OSM.retryBackoffMs.at(-1)! / 1000;
+    const rows: string[] = [];
+    for (const n of [2, 3, 4]) {
+      for (const timeoutS of [30, 60, 120]) {
+        const r = await simulate(SERVERS["429 for 60 s"]!, n, timeoutS, {
+          background: false,
+        });
+        rows.push(`still N=${n} T=${timeoutS}s map at ${r.mapAtS ?? "-"}`);
+        expect(r.mapAtS).not.toBeNull();
+        expect(r.mapAtS!).toBeGreaterThan(60);
+        expect(r.mapAtS!).toBeLessThan(60 + lastWaitS + 2);
+      }
+    }
+    process.stderr.write(`\n${rows.join("\n")}\n`);
   }, 120_000);
 });

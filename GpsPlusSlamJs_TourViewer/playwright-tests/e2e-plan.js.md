@@ -60,7 +60,10 @@ cannot reach.
   one. The first split (2026-11-05) was balanced by hand from the per-spec
   durations of CI runs 41761594716 and 41820703091 (one worker, about 22-30
   min a lane); rebalance it from the uploaded `playwright-report-tour-*`
-  reports once they exist.
+  reports once they exist. The globe clouds spec (about 8-10 min an
+  attempt) went to lane 1 and the globe buildings spec (about 5 min) to
+  lane 3 by the estimates of the 2026-11-04 e2e cost audit, so lane 1 is
+  the longest (about 35 min, up to about 55 with the clouds test retried).
 
 ## Measurement (2026-11-01)
 

@@ -216,13 +216,13 @@ function minimalGlb() {
   return out;
 }
 
-/** Metres to degrees at the spec's zero (47.5, 8.7). */
 /** The facing a measurement of the fakes' code stores: it faces the
  *  camera, -90 degrees about Up in GPS-world NUE (WEBXR_TO_NUE). Every
  *  fixture code uses it, so no stored code is off its measurement by
  *  construction (r811's red CI: the settle replaces a code whose heading the
  *  visit's GPS cannot explain, field test 3 D-F6a). */
 const MEASURED_CODE_ROTATION = [0, -Math.SQRT1_2, 0, Math.SQRT1_2];
+/** Metres to degrees at the spec's zero (47.5, 8.7). */
 const DEG_PER_M_LAT = 8.9832e-6;
 const DEG_PER_M_LON = 1.32966e-5;
 

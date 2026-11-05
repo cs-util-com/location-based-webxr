@@ -126,6 +126,9 @@ export interface GlobeViewAir {
   haze(tiles: HazedTiles): void;
   /** The heavy clouds on or off (nothing without the clouds). */
   setClouds(on: boolean): void;
+  /** The heavy clouds' shell (`GlobeViewClouds.shell`); null without the
+   *  clouds. */
+  cloudShell(): ReturnType<GlobeViewClouds["shell"]> | null;
   /** The ground sky's share now, the observer's height (km), its stage,
    *  and the clouds' state (null without them). */
   state(): {
@@ -244,6 +247,7 @@ export function mountGlobeViewAir(
     setClouds(on) {
       clouds?.setOn(on);
     },
+    cloudShell: () => clouds?.shell() ?? null,
     state: () => ({
       weight: air.weight(),
       observerKm: air.observerKm(),

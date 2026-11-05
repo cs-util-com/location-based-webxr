@@ -672,8 +672,8 @@ interface Row {
    *  something else, is a red row (the r880 milestone review LOW-6). */
   readonly byDesign?: true;
   /** What each page must leave, beyond agreeing with the other: two pages
-   *  that share a bug agree too (the r880 milestone review, HIGH-1). */
-  /** It sees each page's records (null for a row that compares none)
+   *  that share a bug agree too (the r880 milestone review, HIGH-1).
+   *  It sees each page's records (null for a row that compares none)
    *  and written tour. A by-design row whose DESKTOP lacks the operation
    *  still runs it on the phone against this (the r886 review M2:
    *  otherwise the phone's half never ran). */
@@ -689,8 +689,6 @@ const NORTH = 48.5205;
 const STATIONS_DESKTOP_ONLY =
   "by design: the 3D editor's station edits are the desktop's; the phone edits stations only by placing in AR";
 
-/** The item ids of a written tour, station by station: the opened tour's
- *  stations, and the stations the write added. */
 /** A station's title, or its id when it has none. */
 function titleOrId(station: TourStation): string {
   return station.title ?? station.id;
@@ -701,6 +699,8 @@ function kindOf(item: TourStation["blocks"][number]): string {
   return item.kind;
 }
 
+/** The item ids of a written tour, station by station: the opened tour's
+ *  stations, and the stations the write added. */
 function itemsByStation(written: TourManifest): {
   opened: string[][];
   added: string[][];

@@ -125,10 +125,16 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   const bare = [];
   /** @type {any} */
   let last;
+  // The relief's cache at its fullest while the refusals hold the parents
+  // (each held parent is drawn with its children loaded), not after.
+  let cacheMax = 0;
+  let cacheBudget = 0;
   for (;;) {
     const stats = await view3d(page);
     last = stats;
     const frame = framesOf(stats);
+    cacheMax = Math.max(cacheMax, stats?.globe?.relief?.cacheBytes ?? 0);
+    cacheBudget = stats?.globe?.relief?.cacheMaxBytes ?? cacheBudget;
     if (frame >= Math.min(refuseUntil, movedAt + FIRST_REFUSAL_FRAMES)) break;
     const c = stats?.osm?.coverage;
     if (stats?.osm?.active && c && c.waiting - c.givenUp > 0) {
@@ -164,15 +170,88 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
     });
   // The refusals show in the map's own diagnostics.
   expect(lockErrorCount(osm)).toBeGreaterThan(0);
-  // And the relief's cache near the phone's budget at the end. The budget
-  // is the library's soft one: it unloads unused tiles down to it, never
-  // drawn ones, and a held parent is drawn with its children loaded
-  // (measured 1.01 times the budget at 25 m). A fifth over is the margin.
-  const relief = (await view3d(page))?.globe?.relief;
-  console.log(
-    `relief cache ${relief.cacheBytes} of ${relief.cacheMaxBytes} bytes`,
-  );
-  expect(relief.cacheBytes).toBeGreaterThan(0);
-  expect(relief.cacheBytes).toBeLessThanOrEqual(relief.cacheMaxBytes * 1.2);
+  // And the relief's cache near the phone's budget at its fullest, while
+  // the refusals held the parents. The budget is the library's soft one:
+  // it unloads unused tiles down to it, never drawn ones, and a held
+  // parent is drawn with its children loaded (measured 1.01 times the
+  // budget at 25 m after the recovery). A fifth over is the margin.
+  console.log(`relief cache at most ${cacheMax} of ${cacheBudget} bytes`);
+  expect(cacheMax).toBeGreaterThan(0);
+  expect(cacheMax).toBeLessThanOrEqual(cacheBudget * 1.2);
+  expect(await rejections(page)).toEqual([]);
+});
+
+/** The zoom-in's steps (m from the tour): 3000 m to 25 m, evenly in the
+ *  distance's logarithm. */
+const ZOOM_STEPS = Array.from({ length: 10 }, (_, i) =>
+  Math.round(3000 * (25 / 3000) ** (i / 9)),
+);
+
+/** At most this many frames per step for the map to load in full. */
+const STEP_FRAMES = 200;
+
+test("a zoom-in in steps never draws a tile bare in place of a mapped one", async ({
+  page,
+}, testInfo) => {
+  // Why: the hold reached only the fade's start (0.7 of the fade) while
+  // the map is asked for, and drawn at about 90 %, out to the fade's end:
+  // on a zoom-in, children finishing between the two replaced a mapped
+  // parent bare. With the server answering, at every frame of a zoom-in
+  // from 3000 m to 25 m no drawn tile in the map's reach may be bare under
+  // a parent that has its map (`coverage.bareUnderMap`).
+  test.setTimeout(900_000);
+  await page.setViewportSize(PHONE);
+  await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
+  await noApproach(page);
+  await page.goto("/edit.html?globe=1");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+    .toBe(true);
+  await page.locator("#view-menu-btn").click();
+  await page.locator("#view-clouds").click();
+  await page.keyboard.press("Escape");
+  await reliefCarries(page);
+  /** @type {{ distanceM: number, frames: number, bareUnderMap: number, mapped: boolean }[]} */
+  const steps = [];
+  /** @type {any[]} */
+  const bare = [];
+  for (const distanceM of ZOOM_STEPS) {
+    await page.evaluate(
+      (m) => /** @type {any} */ (window).__tourEditor.view3dDistance(m),
+      distanceM,
+    );
+    const from = (await view3d(page))?.frames ?? 0;
+    let mapped = false;
+    let worst = 0;
+    /** @type {number} */
+    let frames;
+    for (;;) {
+      const stats = await view3d(page);
+      frames = (stats?.frames ?? 0) - from;
+      const c = stats?.osm?.coverage;
+      if (stats?.osm?.active && c) {
+        worst = Math.max(worst, c.bareUnderMap);
+        if (c.bareUnderMap > 0) bare.push({ distanceM, frames, coverage: c });
+        mapped = c.withMap > 0 && c.withMap + c.coarse === c.near;
+      }
+      if (mapped || frames >= STEP_FRAMES) break;
+      await expect
+        .poll(async () => (await view3d(page))?.frames)
+        .toBeGreaterThan(stats?.frames ?? 0);
+    }
+    steps.push({ distanceM, frames, bareUnderMap: worst, mapped });
+  }
+  const reading = JSON.stringify(steps);
+  testInfo.annotations.push({ type: "zoom-in steps", description: reading });
+  console.log(`zoom-in steps ${reading}`);
+  // Not vacuous: the map was on and loaded in full on the way in.
+  expect(steps.some((s) => s.mapped)).toBe(true);
+  expect(bare).toEqual([]);
   expect(await rejections(page)).toEqual([]);
 });

@@ -34,6 +34,7 @@
       for each relief the app draws, before it loads and after the
       relief's own load hooks.
     - `setClouds(on)`: the heavy clouds' switch (nothing without them).
+    - `cloudShell()`: the clouds' `shell()`, or null without the clouds.
     - `state()`: `{ weight, observerKm, groundSky, clouds }` (`clouds`:
       the clouds' `state()`, or null) (the ground sky's
       `state()`: `supported`, `lastStage`, `rebuilds`, its exposure).

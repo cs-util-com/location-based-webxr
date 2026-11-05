@@ -17,11 +17,14 @@
     `reevaluateLimit` 8, `retryBackoffMs` 5000, 10000, 20000, 60000 (how
     long the failed tiles wait before they are asked for again: each
     retry that fails waits the next, then the last again; a retried tile
-    that gets its map starts them over), `giveUpRetries` 3 (retries after
+    that gets its map starts them over; once any map request was
+    answered since the last retry, the next waits the first step at most,
+    so a refusal that ended is not waited out at 60 s), `giveUpRetries` 3 (retries after
     which the relief stops waiting for a tile's map, `mapReady`),
     `requestTimeoutMs` 60000 (a map request's time limit), `gain` 1 (the
     map's darkening, `patchOsmFade`: 1 draws it as the tile server made
-    it), `resolution` 256, `keepRegions` 64 (released map textures kept in memory, below).
+    it), `gainMode` "flat" (how the gain darkens, `OsmGainMode`: "flat"
+    multiplies, "compress" compresses the luma), `resolution` 256, `keepRegions` 64 (released map textures kept in memory, below).
   - `osmCredit(attributionHtml)`: the framework's `OSM_TILE_ATTRIBUTION`
     as a `GlobeCredit` (`short` "OpenStreetMap", `full` its text,
     `href` its link). RangeError without an https link.
@@ -56,11 +59,14 @@ limits = GLOBE_OSM)`: the limits below are the defaults;
     (`tint.rgba *= layerInfo[ i ].opacity * wOpacity;`, 0.5.3) to fade
     between `uOsmFadeStart x uOsmFadeM` and `uOsmFadeM` from the camera
     and to drop with `uOsmOn` 0; false (untouched) where the line is
-    missing. Before the blend it darkens the tile's colour by `uOsmGain`:
-    its luma L (Rec. 709 weights) compressed to L g / (g + (1 - g) L), the
-    colour scaled by the same factor. White ends at g, a dark line keeps
-    nearly its luma, the hue stays; a flat multiply by g would blacken the
-    map's dark lines along with its pale ground. g 1 changes nothing.
+    missing. Before the blend it darkens the tile's colour by `uOsmGain`,
+    in one of two ways picked by `uOsmFlat`: 1, a flat multiply by g,
+    which keeps every contrast of the map (a road and a name against the
+    land read as on the tile server's map); 0, its luma L (Rec. 709
+    weights) compressed to L g / (g + (1 - g) L), the colour scaled by the
+    same factor: white ends at g, a dark line keeps nearly its luma, the
+    hue stays, and the map's contrasts are lowered (a name's against the
+    land most). g 1 changes nothing in either.
   - `GatedOsmOverlay` (extends the library's `XYZTilesOverlay`): a lock
     (which fetches) reaches the library only through `gate(range,
 level)`; a region counts as content only while locked; a release
@@ -102,7 +108,12 @@ message }` of the last, or null). RangeError
     a time limit (`timeoutMs`, default `GLOBE_OSM.requestTimeoutMs`) that
     is not finite and > 0, TypeError without a gate. **The time limit**
     runs from the moment the ceiling lets a request through to the answer's
-    headers (the body's read is not limited): past it the request is
+    body: the body is read inside the limit and handed on whole (a server
+    that sends the headers and then stalls would otherwise hold the
+    request's slot while the library reads it; a body-less 204, 205 or
+    304 is handed on without one), and an answer with a
+    success status calls `onAnswered` (the factory's sign that the server
+    is back, `retryBackoffMs`). Past the limit the request is
     aborted and fails with a `TimeoutError` (the plugin marks the tile
     failed, and the retries ask for it again); a caller's own abort stays
     an `AbortError`. Without it a server that never answers would hold a
@@ -114,10 +125,12 @@ message }` of the last, or null). RangeError
     the gate would have let through beyond the limit (the next look's
     backlog).
   - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
-limits?, keep?, timeoutMs?, giveUpRetries?, gain? })` -> `{ credit, limits,
+limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
 overlay, plugin, uniforms, attach(terrain), setEnabled(on), setFadeM(m),
 update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
-    the map's darkening, `uniforms.uOsmGain`; RangeError outside (0, 1]):
+    the map's darkening, `uniforms.uOsmGain`; RangeError outside (0, 1];
+    `gainMode` how, `uniforms.uOsmFlat`; RangeError unless "flat" or
+    "compress"):
     - `attach` registers the plugin (tile splitting off, so the relief's
       mesh is not refined for the map) on the relief's tiles and patches
       the fade into every relief material, loaded already or to come
@@ -129,13 +142,22 @@ update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
     - `mapReady(tile)`: whether a relief tile may replace its drawn
       parent as far as the map goes. False only while the map is active
       and the overlay ready, for a tile the plugin has placed, without its
-      map texture, not given up, at `minZoom` or finer, and within the
-      fade's start of the camera (where `coverage` counts it waiting).
+      map texture, not given up, at `minZoom` or finer, inside the
+      map's content (`hasContent`: never for a tile past the street
+      map's latitudes, about 85 degrees, which no request would ever map),
+      and within the map's reach: the fade's end plus `lookSlackM` (25
+      m), the same reach the gate asks for maps in and `coverage` counts
+      in. A hold inside the fade's start only (0.7 x the fade) let
+      children 0.7-1 x the fade away replace a mapped parent bare, where
+      the map is still drawn at about 90 %.
       The patched traversal asks it of child tiles only, never of the
       parent's hold, so a parent already drawn stays drawn until its
       children have their map: the relief never swaps a mapped tile for
-      bare finer ones. The level and distance are looked at once per
-      `reevaluateMs` look per tile. **Giving up**: a tile that failed
+      bare finer ones. The level, content and distance are looked at once
+      per look per tile: a look is taken every `reevaluateMs`, and at once
+      when the camera moved `lookSlackM` from where the last was taken (a
+      zoom step or a flight within a look would otherwise keep a tile that
+      came into reach unheld until the next look). **Giving up**: a tile that failed
       again after `giveUpRetries` retries (default 3, RangeError unless an
       integer >= 0) is given up, and stays so through the later retries
       (each clears the failed mark while it runs) until it gets its map:
@@ -164,7 +186,13 @@ update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
       the request ceiling with retries bound to fail (the tile server's
       usage policy). A retried tile that got its map (no longer failed,
       with its texture: the reset clears the failed mark at once, so that
-      alone tells nothing) starts the waits over. **The reset runs after the update's re-evaluation, never
+      alone tells nothing) starts the waits over, and a map request
+      answered since the last retry cuts the next wait to the first step
+      (5 s; a 60 s refusal maps again about 60 s in, not 97 s). That cut
+      needs the view's other requests: a still camera asks for nothing
+      but the retries, so it waits the back-off out (the map about 97 s
+      after a 60 s refusal, pinned in `globe-osm-map-ready.test.ts`),
+      kept so an outage is not asked for every 5 s. **The reset runs after the update's re-evaluation, never
       before it**: the reset releases the regions at once, the library's
       region cache drops a released region a microtask later, and the
       library locks it anew only on the next animation frame. A
@@ -191,17 +219,19 @@ update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
       unpatched renderer), the overlay's `lockErrors` and
       `lastLockError`.
     - `coverage()` -> `OsmCoverage` `{ near, withMap, coarse, waiting,
-failed, givenUp, unprocessed }`: the relief tiles drawn in the last update
-      (`tiles.visibleTiles`, optional on `OsmOverlayTerrain`) that come
-      within the fade's start of the camera of the last update (where the
-      map is at full strength), with their map, too coarse for it (the level picked under
+failed, givenUp, unprocessed, bareUnderMap }`: the relief tiles drawn in
+      the last update (`tiles.visibleTiles`, optional on
+      `OsmOverlayTerrain`) that come within the map's reach of the camera
+      of the last update (the fade's end plus `lookSlackM`, where the gate
+      asks for the map), with their map, too coarse for it (the level picked under
       the coarsest zoom: bare relief by design), or waiting for it (gated,
       throttled, loading or failed; `failed` counts the failed ones among
       them apart, since a failed tile is asked for again only every
       `retryBackoffMs` and a check waiting for the map must not wait on it;
       `givenUp` counts those among the failed that `mapReady` no longer
-      holds back); and drawn tiles the plugin
-      has not placed yet. All zero before `attach`, without `visibleTiles` or while
+      holds back; `bareUnderMap` those not given up whose parent tile has
+      its map: drawn bare in place of a mapped tile, the hold's failure);
+      and drawn tiles the plugin has not placed yet. All zero before `attach`, without `visibleTiles` or while
       the overlay is not ready. It walks every drawn tile: for checks and
       measurements, not each frame.
     - `mapLoad()` -> `OsmMapLoad` `{ waiting, failed, givenUp,
@@ -355,7 +385,8 @@ ceilingWaitS }`: the street map's loading state for an interface to
   through the band and the ramp, the sliding
   ceiling, the region test by extent and on the sampled ground, the fade
   patch against the library's own blend line (and the gain compressing
-  the map's luma before the blend, the factory's gain and its range), the
+  the map's luma before the blend or multiplying flat, the factory's gain,
+  its range and its mode), the
   gated lock and release
   through the library class, the finest level asked for, the fetch held
   to the ceiling, the
@@ -392,9 +423,13 @@ ceilingWaitS }`: the street map's loading state for an interface to
   from the bundled build and run over a fake relief: without the hook the
   children replace the parent; with it the parent stays drawn while the
   children wait, through a full ceiling for 60 s with no retry, and is let
-  go when the textures come or after the given-up retries; the 500 ms look
-  cache, the hook composed with one there already, the time limit's
-  `TimeoutError` against a caller's `AbortError`, and the give-up sweep). The Tour
+  go when the textures come or after the given-up retries; the look cache
+  and its slack, the hold's reach against the gate's (swept over 0.75,
+  0.85 and 0.97 of the fade), a tile past the map's content,
+  `bareUnderMap`, the hook composed with one there already, the time limit's
+  `TimeoutError` against a caller's `AbortError`, a body that stalls
+  after its headers, and the give-up sweep, its "429 for 60 s" and "for
+  180 s" rows mapped again within 10 s of the server's return). The Tour
   Viewer's `playwright-tests/editor3d-globe.spec.js` aborts the first
   request of a street-map tile on the real page and waits for that tile
   to be asked for again and for every near tile to carry its map. The design
@@ -407,7 +442,11 @@ ceilingWaitS }`: the street map's loading state for an interface to
   comes to 25 m: no near tile drawn without its map, `readinessAsks` above
   0 so the patched traversal is the one running), and
   `editor3d-globe-osm-gain.spec.js` measures the gain's step at the fade's
-  edge.
+  edge and, on a tile drawn like the street map (land, white roads, dark
+  names), that the flat mode keeps its contrasts and the compression
+  lowers them; the hold spec also zooms in from 3000 m to 25 m in ten
+  steps and counts the tiles drawn bare where a mapped parent was
+  (`bareUnderMap`, none).
 
 - Frame cost of the hold: the traversal asks `isTileReady` once per used
   child tile per frame (on the hold e2e about 5 700 asks over its minute,
