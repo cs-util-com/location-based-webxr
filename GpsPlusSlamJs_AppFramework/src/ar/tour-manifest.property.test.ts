@@ -94,8 +94,10 @@ describe('tour manifest version 4 (properties)', () => {
   // blocks and card images stay where they were written; and, collected
   // over the runs, the generator reaches every block kind, every step kind,
   // free blocks and every world view (were it to miss one, every claim
-  // above would silently skip it). Seeded, so the coverage claims are
-  // deterministic. Each claim carries its own failure message.
+  // above would silently skip it). Unseeded, so every run draws new
+  // manifests: the coverage claims held in 24 of 24 runs at 40 manifests and
+  // in 20 of 24 at 20, so 300 leaves them a wide margin. Each claim carries
+  // its own failure message.
   it('every manifest the writer accepts: identity, idempotent parse, a byte fixed point, stations and card images kept; the generator reaches every kind and world view', () => {
     // The generator's free views must be exactly the format's world views
     // (a long text's lectern and reading sign once went untested because
@@ -201,7 +203,7 @@ describe('tour manifest version 4 (properties)', () => {
             .map((s) => s.id)
         );
       }),
-      { numRuns: 300, seed: 9 }
+      { numRuns: 300 }
     );
     expect([...kinds].sort(), 'every block kind').toEqual(
       [
