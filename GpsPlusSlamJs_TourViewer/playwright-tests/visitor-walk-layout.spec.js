@@ -34,11 +34,12 @@ const WALK_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/walk-tour.zip";
 const FIXED_WALK_ARCHIVE =
   "http://127.0.0.1:5197/ranges-ok/walk-tour-fixed.zip";
 
+// The narrowest portrait and the lowest landscape phone, and a desktop:
+// 390x844 and 915x412 cross no layout rule (the strip's aspect queries,
+// the scripts' aspect for the field of view) that these do not.
 const VIEWPORTS = [
-  { width: 390, height: 844 },
   { width: 360, height: 740 },
   { width: 844, height: 390 },
-  { width: 915, height: 412 },
   { width: 1440, height: 900 },
 ];
 

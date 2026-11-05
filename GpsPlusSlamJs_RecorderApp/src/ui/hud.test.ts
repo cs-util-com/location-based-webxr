@@ -2637,6 +2637,9 @@ describe('help section collapse persistence', () => {
     setupWithHelp();
     initUI(createMockCallbacks());
     expect(help().open).toBe(true);
+    // The first start marks the help as seen, so the next start opens it
+    // collapsed; nothing else checks this write.
+    expect(localStorage.getItem(HELP_SEEN_KEY)).toBe('true');
   });
 
   it('persists a collapse to localStorage when the user closes it', () => {

@@ -130,37 +130,6 @@ function tileResult(
   };
 }
 
-interface Accept {
-  readonly nth: number;
-  readonly mergeMs: number;
-  readonly featuresHeld: number;
-}
-
-/** Accepts `TILES` tiles of `copies`× corpus density, timing each accept. */
-function acceptRun(copies: number): Accept[] {
-  const index = new AffordanceIndex({ table: TABLE });
-  const accepts: Accept[] = [];
-  let featuresHeld = 0;
-  for (let nth = 0; nth < TILES; nth++) {
-    const tile = TILE_IDS[nth];
-    if (tile === undefined) throw new Error("not enough tile ids");
-    const features = tileFeatures(nth, copies);
-    featuresHeld += features.length;
-    const started = performance.now();
-    index.acceptTile(tileResult(tile, features));
-    accepts.push({
-      nth: nth + 1,
-      mergeMs: performance.now() - started,
-      featuresHeld,
-    });
-  }
-  return accepts;
-}
-
-function mean(values: readonly number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
 describe("stage 3 — merge, across a session", () => {
   // NO WALL-CLOCK ASSERTIONS IN THIS FILE, and that is a deliberate reversal.
   // The first version asserted timing RATIOS — last accept > 2× the first, and
@@ -259,30 +228,5 @@ describe("stage 4 — score, at real corpus density", () => {
     const second = index.update(SITE.centre, 2);
 
     expect(second.scored).toHaveLength(0);
-  });
-});
-
-describe("the recorded curve", () => {
-  it("still produces timings, even though none of them are asserted", () => {
-    // The measuring apparatus is kept and exercised, so the numbers in the
-    // header can be reproduced by re-running this file — but nothing here
-    // compares a duration against another duration. See the note at the top of
-    // the merge describe for why that reversal happened.
-    //
-    // `mean` exists for the same reason: reading the curve by hand is what the
-    // header table came from.
-    const single = acceptRun(1);
-    const perFeatureUs = single.map(
-      (accept) => (accept.mergeMs * 1000) / accept.featuresHeld,
-    );
-
-    expect(single).toHaveLength(TILES);
-    // FINITE, not positive (r513 review). `> 0` is still a clock comparison:
-    // on a machine with a coarse timer every accept can round to 0 ms, and the
-    // mean is then exactly 0 — a red gate that says nothing about the code.
-    // What this test is for is that the apparatus produces real numbers.
-    expect(perFeatureUs).toHaveLength(TILES);
-    expect(perFeatureUs.every((value) => Number.isFinite(value))).toBe(true);
-    expect(mean(perFeatureUs)).toBeGreaterThanOrEqual(0);
   });
 });

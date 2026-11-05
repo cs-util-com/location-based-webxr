@@ -5,6 +5,7 @@ import {
   afterFrames,
   answerHosts,
   keepRejections,
+  noClouds,
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
@@ -21,8 +22,20 @@ import {
  * (`dust=0`, the A/B link), both sampled at the same height of the
  * flight. This cannot test the phone's rule of no frame over 50 ms: a
  * headless browser draws the view in software, every frame over 50 ms
- * with or without the streaks; that rule is checked on a phone.
+ * with or without the streaks; that rule is checked on a phone. The
+ * comparison's second flight runs only with FRAME_TIME=1 (a measurement,
+ * as `story-blocks-frame-time.spec.js`); by default one flight checks the
+ * streaks show.
  */
+
+/** The frame-time comparison runs only on request. */
+const FRAME_TIME = process.env.FRAME_TIME === "1";
+
+// Neither spec is about the clouds: without them the globe draws about
+// four times the frames in this software renderer (`noClouds`).
+test.beforeEach(async ({ page }) => {
+  await noClouds(page);
+});
 
 /** Both runs' frames are taken from this height down (m): high and fast,
  *  where the streaks show. */
@@ -86,11 +99,11 @@ function summary(ms) {
   };
 }
 
-const VIEWPORTS = [
-  { name: "phone portrait", width: 390, height: 844 },
-  { name: "phone landscape", width: 844, height: 390 },
-  { name: "desktop", width: 1280, height: 720 },
-];
+// The phone held upright only: the narrowest aspect, where the fit is
+// widest and a wrong aspect estimate falls shortest. Every aspect's start
+// against its fit is held by `globe-approach-meteor.test.ts` ("starts
+// with the whole Earth in view on a ...").
+const VIEWPORTS = [{ name: "phone portrait", width: 390, height: 844 }];
 
 for (const { name, width, height } of VIEWPORTS) {
   test(`the approach starts with the whole Earth in view on a ${name}`, async ({
@@ -134,7 +147,7 @@ for (const { name, width, height } of VIEWPORTS) {
 test("the speed streaks show mid-flight and cost no frame time against none", async ({
   page,
 }) => {
-  test.setTimeout(480_000);
+  test.setTimeout(FRAME_TIME ? 480_000 : 240_000);
   await page.setViewportSize({ width: 1280, height: 720 });
   await keepRejections(page);
   await answerHosts(page, { globeAssets: "serve" });
@@ -176,25 +189,27 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
 
   // With the streaks first: a cold page, so any doubt is against them.
   const on = await run("");
-  const off = await run("&dust=0");
-  test.info().annotations.push({
-    type: "frame times",
-    description: JSON.stringify({
-      on: { km: [on.fromKm, on.toKm], ...on.times },
-      off: { km: [off.fromKm, off.toKm], ...off.times },
-    }),
-  });
   // Mid-flight, high and fast: the streaks show, in the lab's look.
   expect(on.shown).toBe(true);
   expect(on.dust.count).toBe(2500);
   expect(on.dust.gain).toBe(2);
-  expect(off.dust.shown).toBe(false);
-  // Off still measures the speed: the same flight, nothing drawn.
-  expect(off.dust.speedMps).toBeGreaterThan(0);
-  // The streaks add no time on a typical frame against the same flight
-  // without them, at the same height. The count of frames over 50 ms is
-  // only annotated: headless, every frame is over 50 ms either way, so a
-  // comparison of it would pass whatever the streaks cost.
-  expect(on.times.median).toBeLessThanOrEqual(off.times.median * 1.25 + 5);
+  if (FRAME_TIME) {
+    const off = await run("&dust=0");
+    test.info().annotations.push({
+      type: "frame times",
+      description: JSON.stringify({
+        on: { km: [on.fromKm, on.toKm], ...on.times },
+        off: { km: [off.fromKm, off.toKm], ...off.times },
+      }),
+    });
+    expect(off.dust.shown).toBe(false);
+    // Off still measures the speed: the same flight, nothing drawn.
+    expect(off.dust.speedMps).toBeGreaterThan(0);
+    // The streaks add no time on a typical frame against the same flight
+    // without them, at the same height. The count of frames over 50 ms is
+    // only annotated: headless, every frame is over 50 ms either way, so a
+    // comparison of it would pass whatever the streaks cost.
+    expect(on.times.median).toBeLessThanOrEqual(off.times.median * 1.25 + 5);
+  }
   expect(await rejections(page)).toEqual([]);
 });

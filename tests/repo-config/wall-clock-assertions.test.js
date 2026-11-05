@@ -93,10 +93,6 @@ const ALLOWLIST = new Map([
     'Measures and prints; every assertion is on counts, never on the duration.',
   ],
   [
-    'GpsPlusSlamJs_Osm/src/score/merge-and-score-cost.test.ts',
-    'Asserts the timing is FINITE rather than positive, because ">0" is itself a clock comparison on a coarse timer. The exemplar for this shape.',
-  ],
-  [
     'GpsPlusSlamJs_AppFramework/src/ar/qr/qr-zxing.sweep.test.ts',
     'Opt-in sweep (QR_SWEEP=1, skipped in every gate). The empty-frame decode time is measured and printed only; the numeric assertions are on row counts.',
   ],

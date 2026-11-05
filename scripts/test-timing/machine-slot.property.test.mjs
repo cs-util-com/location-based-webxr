@@ -14,7 +14,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { MAX_LOCK_AGE_MS } from './gate-lock.mjs';
-import { HEARTBEAT_STALE_MS, decideMachineSlot } from './machine-slot.mjs';
+import {
+  HEARTBEAT_STALE_MS,
+  QUEUE_AGING_MS,
+  TICKET_STALE_MS,
+  decideMachineSlot,
+  rankQueue,
+} from './machine-slot.mjs';
 
 const arbRecord = fc.record({
   token: fc.option(fc.string({ minLength: 1, maxLength: 8 }), { nil: undefined }),
@@ -110,6 +116,138 @@ describe('machine slot invariants', () => {
         });
         expect(decision.action).toBe('acquire');
         expect(decision.reason.length).toBeGreaterThan(0);
+      })
+    );
+  });
+});
+
+// Why these matter (the fair queue, 2026-11-05): the ranking decides who gets
+// the machine next, so a mistake is either two waiters both believing they are
+// first (both mkdir: the old race again), a dead waiter blocking everyone for
+// good, or a browser run starved by a steady stream of short gates.
+//
+//   5. The ranking is a total order: unique tokens, the same result for any
+//      input order, so exactly one waiter is first.
+//   6. Dead tickets (no heartbeat past the limit) never rank.
+//   7. A run with no browser stage always beats a browser run younger than
+//      the aging bound, and no browser run ever passes an older run with no
+//      browser stage.
+//   8. Aging bounds every browser wait: in a simulated single slot fed a
+//      finite stream of arrivals, a browser run starts at most one hold after
+//      it ages, plus one hold per older run of any class.
+describe('fair queue invariants', () => {
+  const MIN = 60_000;
+  const NOW = 700 * MIN;
+  // Queued from two aging bounds ago up to now, so about half the browser
+  // tickets are younger than the bound: the case the ranking orders behind
+  // a run with no browser stage. (Queued 100 min or more before NOW, as
+  // before, every ticket had aged, and plain first-come-first-served passed
+  // every property.)
+  const arbTicket = fc.record({
+    token: fc.string({ minLength: 1, maxLength: 6 }),
+    pid: fc.integer({ min: 1, max: 99 }),
+    enqueuedAt: fc.integer({ min: NOW - 2 * (QUEUE_AGING_MS / MIN) * MIN, max: NOW }),
+    queueClass: fc.constantFrom('fast', 'browser'),
+    command: fc.constant('x'),
+    silent: fc.integer({ min: 0, max: 2 * TICKET_STALE_MS }),
+  });
+  /** @param {{ silent: number }} t */
+  const withHeartbeat = ({ silent, ...t }) => ({ ...t, heartbeatMs: NOW - silent });
+  const arbQueue = fc.uniqueArray(arbTicket, { selector: (t) => t.token, maxLength: 12 });
+
+  it('is a total order: one first-ranked ticket, whatever the input order', () => {
+    fc.assert(
+      fc.property(arbQueue, fc.integer(), (raw, seed) => {
+        const tickets = raw.map(withHeartbeat);
+        const ranked = rankQueue(tickets, NOW).map((t) => t.token);
+        expect(new Set(ranked).size).toBe(ranked.length);
+        const shuffled = [...tickets].sort(
+          (a, b) => ((a.token.charCodeAt(0) * seed) % 7) - ((b.token.charCodeAt(0) * seed) % 7)
+        );
+        expect(rankQueue(shuffled, NOW).map((t) => t.token)).toEqual(ranked);
+      })
+    );
+  });
+
+  it('never ranks a dead ticket, and ranks every live one', () => {
+    fc.assert(
+      fc.property(arbQueue, (raw) => {
+        const tickets = raw.map(withHeartbeat);
+        const ranked = new Set(rankQueue(tickets, NOW).map((t) => t.token));
+        for (const t of tickets) {
+          expect(ranked.has(t.token)).toBe(NOW - t.heartbeatMs <= TICKET_STALE_MS);
+        }
+      })
+    );
+  });
+
+  it('a run with no browser stage beats every browser run younger than the aging bound', () => {
+    fc.assert(
+      fc.property(arbQueue, (raw) => {
+        const ranked = rankQueue(raw.map(withHeartbeat), NOW);
+        ranked.forEach((t, i) => {
+          if (t.queueClass !== 'fast') return;
+          for (const later of ranked.slice(0, i)) {
+            if (later.queueClass === 'browser') {
+              expect(NOW - later.enqueuedAt).toBeGreaterThanOrEqual(QUEUE_AGING_MS);
+            }
+          }
+        });
+      })
+    );
+  });
+
+  it('no browser run ever ranks ahead of an older run with no browser stage', () => {
+    fc.assert(
+      fc.property(arbQueue, (raw) => {
+        const ranked = rankQueue(raw.map(withHeartbeat), NOW);
+        ranked.forEach((t, i) => {
+          if (t.queueClass !== 'fast') return;
+          for (const ahead of ranked.slice(0, i)) {
+            if (ahead.queueClass === 'browser') {
+              expect(ahead.enqueuedAt).toBeLessThanOrEqual(t.enqueuedAt);
+            }
+          }
+        });
+      })
+    );
+  });
+
+  it('aging bounds every browser wait, whatever the stream of runs with no browser stage', () => {
+    const arbArrivals = fc.uniqueArray(
+      fc.record({
+        token: fc.string({ minLength: 1, maxLength: 6 }),
+        at: fc.integer({ min: 0, max: 600 * MIN }),
+        queueClass: fc.constantFrom('fast', 'browser'),
+        hold: fc.integer({ min: 1, max: 150 * MIN }),
+      }),
+      { selector: (a) => a.token, minLength: 1, maxLength: 25 }
+    );
+    fc.assert(
+      fc.property(arbArrivals, (arrivals) => {
+        const maxHold = Math.max(...arrivals.map((a) => a.hold));
+        /** @type {Map<string, number>} */
+        const started = new Map();
+        let free = 0;
+        const waiting = [...arrivals];
+        while (waiting.length > 0) {
+          const now = Math.max(free, Math.min(...waiting.map((a) => a.at)));
+          const present = waiting
+            .filter((a) => a.at <= now)
+            .map((a) => ({ token: a.token, pid: 1, enqueuedAt: a.at, queueClass: a.queueClass, command: 'x', heartbeatMs: now }));
+          const first = rankQueue(present, now)[0];
+          const run = waiting.splice(waiting.findIndex((a) => a.token === first.token), 1)[0];
+          started.set(run.token, now);
+          free = now + run.hold;
+        }
+        for (const b of arrivals.filter((a) => a.queueClass === 'browser')) {
+          const older = arrivals.filter(
+            (a) => a !== b && (a.at < b.at || (a.at === b.at && a.token < b.token))
+          ).length;
+          expect(started.get(b.token)).toBeLessThanOrEqual(
+            b.at + QUEUE_AGING_MS + maxHold * (1 + older)
+          );
+        }
       })
     );
   });

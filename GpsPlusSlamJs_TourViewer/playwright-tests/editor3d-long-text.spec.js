@@ -24,8 +24,7 @@ import {
  * zeroes paragraph and list margins, so a port can lose every gap and
  * still pass a test that asks whether things are visible. The layout test
  * pins positions and gaps from the prototype's CSS numbers (not from the
- * code under test) at three desktop sizes, and leaves screenshots of the
- * prototype and the build side by side for the check by eye.
+ * code under test) at three desktop sizes.
  */
 
 test.describe.configure({ mode: "default" });
@@ -38,7 +37,6 @@ const BUDGET_MS = 420_000;
 const POLL_MS = 30_000;
 
 const TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
-const PROTOTYPE = "/prototypes/longtext-editor-1-in-the-inspector/index.html";
 
 const SIZES = [
   { width: 1440, height: 900 },
@@ -341,13 +339,11 @@ test("words typed just before Ctrl+S are in the saved tour @pr", async ({
   expect(essay.body).toMatch(/ Saved at once\.$/);
 });
 
-test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768, beside the prototype", async ({
+test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768", async ({
   page,
-  context,
-}, testInfo) => {
+}) => {
   test.setTimeout(BUDGET_MS);
   await openEssay(page);
-  const proto = await context.newPage();
   for (const size of SIZES) {
     await page.setViewportSize(size);
     // The inspector eases to its width, and the preview lays itself out
@@ -375,14 +371,5 @@ test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768
       )
       .toBe(14);
     await expectWriterLayout(page, size);
-    const name = `${String(size.width)}x${String(size.height)}`;
-    await page.screenshot({ path: testInfo.outputPath(`build-${name}.png`) });
-    await proto.setViewportSize(size);
-    await proto.goto(PROTOTYPE);
-    await proto.locator("#wta").waitFor({ state: "visible" });
-    await proto.screenshot({
-      path: testInfo.outputPath(`prototype-${name}.png`),
-    });
   }
-  await proto.close();
 });

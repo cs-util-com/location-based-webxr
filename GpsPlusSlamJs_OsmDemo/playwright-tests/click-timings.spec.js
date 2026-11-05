@@ -41,7 +41,7 @@ function collectTimingLines(page) {
 }
 
 test.describe("the click-path breakdown survives the worker boundary", () => {
-  test("prints one reconciling line per ring, with shares and a residual", async ({
+  test("prints one reconciling line per ring, with shares and a residual, naming every stage the plan enumerates, the zeros included", async ({
     page,
   }) => {
     const lines = collectTimingLines(page);
@@ -99,20 +99,12 @@ test.describe("the click-path breakdown survives the worker boundary", () => {
       const wall = /^click ring \d+: (\d+) ms total/.exec(line)?.[1];
       expect(Number(wall)).toBeGreaterThan(0);
     }
-  });
 
-  test("names the stages the plan enumerates, including the ones that are zero", async ({
-    page,
-  }) => {
-    // The two zeros that discriminate the plan's competing predictions: `parse`
-    // is genuinely 0 on a cache hit and `terrain-wait` is 0 on a widening ring.
-    // Dropping them would leave the line unable to falsify the thing it exists
-    // to test, which is what the first implementation did.
-    const lines = collectTimingLines(page);
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
+    // THE STAGES BY NAME, including the two zeros that discriminate the
+    // plan's competing predictions: `parse` is genuinely 0 on a cache hit and
+    // `terrain-wait` is 0 on a widening ring. Dropping them would leave the
+    // line unable to falsify the thing it exists to test, which is what the
+    // first implementation did.
     const first = lines[0] ?? "";
     for (const stage of [
       "fetch",

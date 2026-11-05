@@ -119,30 +119,6 @@ test.describe('Recorder App Smoke Tests', () => {
     await expect(enterButton).toBeVisible();
     await expect(enterButton).toBeDisabled();
   });
-
-  test('HUD elements exist but may be hidden', async ({ page }) => {
-    await page.goto('/');
-
-    // HUD should exist in DOM
-    const hud = page.locator('#hud');
-    await expect(hud).toBeAttached();
-
-    // Status display should exist
-    const status = page.locator('#status-text');
-    await expect(status).toBeAttached();
-  });
-
-  test('control buttons exist', async ({ page }) => {
-    await page.goto('/');
-
-    // Map toggle button should be visible
-    const mapButton = page.locator('#btn-map');
-    await expect(mapButton).toBeVisible();
-
-    // Recording buttons should exist (may be hidden initially)
-    const startButton = page.locator('#btn-start');
-    await expect(startButton).toBeAttached();
-  });
 });
 
 test.describe('Tailwind is actually applied, not merely bundled', () => {

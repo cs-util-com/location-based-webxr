@@ -122,19 +122,27 @@ export function specsImporting(paths, sources) {
       [...source.matchAll(RELATIVE_IMPORT)].map((m) => path.posix.join(dir, m[1])),
     );
   }
-  /** @type {Map<string, boolean>} */
-  const reaches = new Map();
-  /** @param {string} file @returns {boolean} */
-  const reachesChanged = (file) => {
-    const known = reaches.get(file);
-    if (known !== undefined) return known;
-    reaches.set(file, false); // an import cycle reaches nothing new
-    const hit = (imports.get(file) ?? []).some((dep) => changed.has(dep) || reachesChanged(dep));
-    reaches.set(file, hit);
-    return hit;
-  };
+  // Walked backwards from the changed files: every file importing a reached
+  // one is reached. No answer is cached mid-walk, so an import cycle cannot
+  // leave a wrong "no" behind for a file met while its importer was open.
+  /** @type {Map<string, string[]>} file -> the files importing it */
+  const importers = new Map();
+  for (const [file, deps] of imports) {
+    for (const dep of deps) importers.set(dep, [...(importers.get(dep) ?? []), file]);
+  }
+  /** @type {Set<string>} */
+  const reached = new Set();
+  const todo = [...changed];
+  while (todo.length > 0) {
+    const file = /** @type {string} */ (todo.pop());
+    for (const importer of importers.get(file) ?? []) {
+      if (reached.has(importer)) continue;
+      reached.add(importer);
+      todo.push(importer);
+    }
+  }
   return Object.keys(sources)
-    .filter((file) => /\.spec\.m?js$/.test(file) && reachesChanged(file))
+    .filter((file) => /\.spec\.m?js$/.test(file) && reached.has(file))
     .map((file) => file.slice(file.lastIndexOf('/') + 1))
     .filter((name, i, all) => all.indexOf(name) === i)
     .sort();
@@ -197,6 +205,24 @@ export function emptyTierWarning({ project, areas, ref, total }) {
   );
 }
 
+/**
+ * The warning for a tier project whose `--list` probe failed or printed no
+ * count: whether it selects any test is unknown, so the run that follows
+ * may pass with none, and that must not read as a green browser run.
+ * `null` when the probe gave a count.
+ *
+ * @param {{ project: string, status: number | null, total: number | null }} probe
+ * @returns {string | null}
+ */
+export function failedProbeWarning({ project, status, total }) {
+  if (status === 0 && total !== null) return null;
+  const why = status === 0 ? 'printed no test count' : `exited ${status ?? 'by a signal'}`;
+  return (
+    `WARNING e2e project ${project}: the --list probe ${why}, so whether the per-PR tier selects any test here is unknown; ` +
+    'the run below may pass with 0 tests. Its own summary line says how many ran.'
+  );
+}
+
 /** Playwright `test` options that take their value as the next argument. */
 const VALUE_OPTIONS = new Set([
   '-c',
@@ -255,14 +281,22 @@ export function developerSelected(argv, env) {
 
 /**
  * Whether a stage run is a tier run, which records no timing row (it is not
- * the suite): a Playwright stage outside the full set.
+ * the suite): a Playwright stage outside the full set, or a root stage that
+ * runs a package's whole gate (`nestedGate`) while that gate's browser
+ * stages run the tier. Without the second, the root cascade recorded its
+ * package rows and its total for a partial browser run, and those entered
+ * the medians of the full runs. In dependent mode (`skipBrowser`) a nested
+ * gate runs no browser stage, so the tier does not touch it.
  *
- * @param {{ counts?: string | null }} stage
+ * @param {{ counts?: string | null, nestedGate?: boolean }} stage
  * @param {Record<string, string | undefined>} env
+ * @param {{ skipBrowser?: boolean }} [mode]
  * @returns {boolean}
  */
-export function tierStageRun(stage, env) {
-  return stage.counts === 'playwright' && e2eTier(env) === 'pr';
+export function tierStageRun(stage, env, { skipBrowser = false } = {}) {
+  if (e2eTier(env) !== 'pr') return false;
+  if (stage.counts === 'playwright') return true;
+  return stage.nestedGate === true && !skipBrowser;
 }
 
 /**

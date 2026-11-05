@@ -250,6 +250,9 @@ test("a tour with nothing positioned opens on the 2D map quietly: a passing line
   await expect(line).toHaveCount(0, { timeout: 20_000 });
 });
 
+// Why: a failed switch from the 2D map leaves the map as it was: the
+// switch reads "3D view" and can be pressed again, the 3D box stays hidden
+// and the markers stay. Kept while the 2D map exists.
 test("a 3D view whose code cannot load is said on its page, the view closed", async ({
   page,
 }) => {

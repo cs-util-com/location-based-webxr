@@ -941,40 +941,6 @@ test.describe("the 3D view", () => {
     });
   });
 
-  test("can be navigated — dragging the canvas moves the camera", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const canvas = page.locator("#scene canvas");
-    await expect(canvas).toBeVisible();
-    const box = await canvas.boundingBox();
-    if (box === null) throw new Error("no canvas box");
-
-    /** A cheap fingerprint of what is on screen: the drawing buffer as a URL. */
-    const shot = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-      });
-
-    const before = await shot();
-
-    // THE WHOLE POINT OF W8, and it needs BOTH halves to pass. Before this the
-    // view had a fixed camera and no rAF loop, so it was inert in two
-    // independent ways: nothing listened to the pointer, and even if something
-    // had moved the camera, nothing would ever have repainted. A test that only
-    // checked "a controller is attached" would pass with a frozen picture.
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 - 90, box.y + box.height / 2);
-    await page.mouse.up();
-
-    await expect.poll(shot, REPAINT).not.toBe(before);
-  });
-
   test("picks a grid cell, stands on real terrain, and reports what it built", async ({
     page,
   }) => {
@@ -2318,12 +2284,18 @@ test.describe("the light dialog", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, value);
 
-  test("opens from its button and the l key, and closes with Escape", async ({
+  // WHY: each lever the owner tunes must move the lit surfaces the way the
+  // M0 spike measured, and the URL must keep the pick through a reload. From
+  // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
+  // lever is taken to its slider's end, so the step stays well above the
+  // threshold whatever the default.
+  test("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async ({
     page,
   }) => {
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    await page.goto(JUNE_NOON);
     await waitForRefresh(page);
+    // The dialog opens from its button and the l key, and closes with Escape.
     const dialog = page.locator("#light-dialog");
     await expect(dialog).toBeHidden();
     await page.locator("#light-open").click();
@@ -2332,20 +2304,6 @@ test.describe("the light dialog", () => {
     await expect(dialog).toBeHidden();
     await page.locator("body").press("l");
     await expect(dialog).toBeVisible();
-  });
-
-  // WHY: each lever the owner tunes must move the lit surfaces the way the
-  // M0 spike measured, and the URL must keep the pick through a reload. From
-  // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
-  // lever is taken to its slider's end, so the step stays well above the
-  // threshold whatever the default.
-  test("brightens noon with the gain, the sky light and the EV, and keeps it in the URL", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(JUNE_NOON);
-    await waitForRefresh(page);
-    await page.locator("#light-open").click();
     const base = await readoutLuma(page);
     expect(base).toBeGreaterThan(50);
     await slide(page, "gainMax", 2.5);

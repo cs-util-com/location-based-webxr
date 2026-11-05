@@ -60,7 +60,10 @@
     reads as a green browser run, each project of an area-narrowed tier run
     is listed first (`--list`, a few seconds): a project with 0 tests is
     skipped with a `WARNING` naming the changed area, the ref and the count
-    0 (`emptyTierWarning`), repeated at the end of the run.
+    0 (`emptyTierWarning`), repeated at the end of the run. A probe that
+    fails, or prints no count, is said the same way (`failedProbeWarning`):
+    the project then runs, and may pass with 0 tests, so the warning is
+    what keeps that pass from reading as green.
   - The worker count: `domWorkers` for the first project, 1 for the rest.
   - Playwright is resolved from the package (`@playwright/test/cli`) and run
     with the same Node.
