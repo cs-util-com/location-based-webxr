@@ -76,6 +76,13 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
     timeout: 120_000,
   });
   await reliefCarries(page);
+  // Why: three.js resets its counters at every render, so the status bar
+  // once read only the frame's last pass (a handful of calls). The figure
+  // is the whole frame's, so it holds at least the main scene's own
+  // render; no fixed count, the scene's varies with the tiles shown.
+  const drawn = (await view3d(page)).globe.drawCalls;
+  expect(drawn.scene).toBeGreaterThan(0);
+  expect(drawn.frame).toBeGreaterThanOrEqual(drawn.scene);
 
   /** @type {any} */
   let osm = null;
@@ -174,6 +181,74 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   console.log(`relief cache at most ${cacheMax} of ${cacheBudget} bytes`);
   expect(cacheMax).toBeGreaterThan(0);
   expect(cacheMax).toBeLessThanOrEqual(cacheBudget * 1.2);
+  expect(await rejections(page)).toEqual([]);
+});
+
+// Why: one dropped street-map request left its relief tile without the map
+// for as long as the tile stayed loaded (a dark square with straight
+// edges under the camera), and the first retry made it worse: it locked
+// the region again while the library still held the failed request, so the
+// tile never healed. On the real page, the first map request fails at the
+// network; the map must ask for that tile again and every tile near the
+// camera must end up with its map. Every tile's first request fails, so the
+// tiles under the camera are among them whichever the relief draws there.
+// Its own test, not a stage of the hold test above. As one test the failed
+// requests sometimes left the refusals with nothing to refuse: a failed tile
+// is asked for again (a loaded tile on the retries' 5 to 60 s back-off, a
+// disposed one when it next loads), so that test's timing moved with them.
+test("a street-map tile whose first request failed gets its map", async ({
+  page,
+}) => {
+  // The retries back off in time and the page starts at a software
+  // renderer's frame rate: the wait below is on the healed state, and its
+  // limit only has to outlast a loaded machine.
+  test.setTimeout(300_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
+  await noApproach(page);
+  // The heavy clouds off: in this software renderer they hold the frame
+  // rate near 1 a second.
+  await noClouds(page);
+  /** @type {Map<string, number>} */
+  const asked = new Map();
+  // Routes added later are matched first: this one sees every map request
+  // before the plain tile of `answerHosts`, fails each tile's first, and
+  // passes the later ones on.
+  await page.route("https://tile.openstreetmap.org/**", (route) => {
+    const url = route.request().url();
+    const n = (asked.get(url) ?? 0) + 1;
+    asked.set(url, n);
+    return n === 1 ? route.abort("failed") : route.fallback();
+  });
+  await page.goto("/edit.html?globe=1");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect.poll(() => asked.size, { timeout: 60_000 }).toBeGreaterThan(0);
+  /** @type {any} */
+  let osm = null;
+  await expect
+    .poll(
+      async () => {
+        osm = (await view3d(page))?.osm ?? null;
+        const c = osm?.coverage;
+        return (
+          (osm?.failedRetries ?? 0) >= 1 &&
+          c.near > 0 &&
+          c.failed === 0 &&
+          c.withMap === c.near
+        );
+      },
+      { timeout: 180_000, intervals: [1_000] },
+    )
+    .toBe(true)
+    .catch((/** @type {unknown} */ error) => {
+      console.log(`the map never healed: ${JSON.stringify(osm)}`);
+      throw error;
+    });
+  expect([...asked.values()].some((n) => n >= 2)).toBe(true);
   expect(await rejections(page)).toEqual([]);
 });
 
