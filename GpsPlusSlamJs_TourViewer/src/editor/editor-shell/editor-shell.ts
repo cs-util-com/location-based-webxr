@@ -1279,9 +1279,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (act !== undefined) modelAct(selected, act);
-    if (act === "add-pin" && selected.startsWith(STATION_PREFIX)) {
-      deps.edits.addItem(selected.slice(STATION_PREFIX.length), "pin");
-    }
     if (
       act?.startsWith("image:") === true &&
       selected.startsWith(STATION_PREFIX)
