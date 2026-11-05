@@ -37,7 +37,10 @@
     Nor is a Playwright stage in the per-PR browser tier (`tierStageRun`
     in [`scripts/e2e/tier.mjs`](../e2e/tier.mjs.md): `E2E_TIER` unset or
     `pr` runs the `@pr` tests, not the suite); `E2E_TIER=full` runs and
-    records the full set.
+    records the full set. The same holds for a root row running a package's
+    whole gate (`nestedGate`) in that tier, unless the browser stages are
+    skipped; the root's total is then skipped too, since `run-gate.mjs`
+    writes it only when every stage recorded.
   - Counts capture: vitest `--reporter=default --reporter=json
     --outputFile.json=<scratch>`; playwright `--reporter=list,json` +
     `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.

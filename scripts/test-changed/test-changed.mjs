@@ -65,6 +65,7 @@ import {
 } from '../test-timing/stall-watch.mjs';
 import {
   cascadeCommands,
+  cascadeTierBase,
   describeRun,
   docOnlyDirs,
   gateCommands,
@@ -150,6 +151,33 @@ if (!dryRun) {
   });
 }
 
+/** The main line a branch is cut from, for the cascade's tier base. */
+const MAIN_LINE = 'origin2/main';
+
+/**
+ * The cascade's tier base (select.mjs `cascadeTierBase`), said in the log.
+ * @returns {string | null}
+ */
+function tierBaseForCascade() {
+  const base = cascadeTierBase({
+    env: process.env,
+    ref: refIdx !== -1 ? ref : null,
+    mergeBase: () => {
+      const found = spawnSync('git', ['merge-base', 'HEAD', MAIN_LINE], {
+        cwd: WORKSPACE_ROOT,
+        encoding: 'utf8',
+      });
+      return found.status === 0 ? found.stdout.trim() || null : null;
+    },
+  });
+  console.log(
+    base
+      ? `test-changed: the browser tier runs every spec changed since ${base} whole`
+      : `test-changed: ⚠ no merge-base with ${MAIN_LINE}: the browser tier runs only the @pr tests, no changed spec whole`
+  );
+  return base;
+}
+
 // The watchdog limit every stage of this run gets, for whoever waits on its
 // log (wait-gate.mjs sizes its quiet window from it, not from its own env).
 console.log(watchLine(process.env, { watched: !process.stdout.isTTY }));
@@ -159,7 +187,7 @@ if (runAll) {
     console.log('test-changed: --all ⇒ full cascade (pnpm test)');
     process.exit(0);
   }
-  process.exit(runInOrder(cascadeCommands()));
+  process.exit(runInOrder(cascadeCommands({ tierBase: tierBaseForCascade() })));
 }
 
 const dirs = packageDirs();
@@ -176,7 +204,7 @@ if (selection.mode === 'all') {
   if (dryRun) {
     process.exit(0);
   }
-  process.exit(runInOrder(cascadeCommands()));
+  process.exit(runInOrder(cascadeCommands({ tierBase: tierBaseForCascade() })));
 }
 
 const names = selection.packages.map(packageName);

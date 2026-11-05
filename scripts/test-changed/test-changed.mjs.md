@@ -42,8 +42,11 @@
     the Tour Viewer's e2e stage (`scripts/e2e/run-projects.mjs`) reads to
     skip the specs of an area the change cannot reach, and the browser tier
     reads to run every changed spec file whole. The full cascade and CI set
-    no such ref (CI gives the tier the pull request's base instead,
-    `E2E_TIER_BASE`), so they run every spec, in their tier.
+    no such ref, so no package is cut to the changed area; the cascade gives
+    the tier its base as `E2E_TIER_BASE` instead (`cascadeTierBase` in
+    select.mjs: the `--ref`, else the merge-base with `origin2/main`), as CI
+    does with the pull request's base, so a changed spec runs whole there
+    too.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e

@@ -44,6 +44,7 @@ import {
   DEVELOPER_FILTER_ENV,
   e2eTier,
   emptyTierWarning,
+  failedProbeWarning,
   listedTotal,
   passesEmpty,
 } from './tier.mjs';
@@ -190,6 +191,12 @@ e2e project ${project}: no spec selected, skipped`);
       encoding: 'utf8',
     });
     const total = listed.status === 0 ? listedTotal(`${listed.stdout}${listed.stderr}`) : null;
+    const unknown = failedProbeWarning({ project, status: listed.status, total });
+    if (unknown) {
+      console.warn(`
+${unknown}`);
+      emptyWarnings.push(unknown);
+    }
     const warning = emptyTierWarning({ project, areas: narrowedAreas, ref, total });
     if (warning) {
       console.warn(`

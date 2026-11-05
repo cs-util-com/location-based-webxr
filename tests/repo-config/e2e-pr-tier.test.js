@@ -84,6 +84,18 @@ const PLAIN_TAG = / @pr$/;
 const CONDITIONAL_TAG = /\$\{\s*([^{}?]+?)\s*\?\s*(["'])\s?@pr\2\s*:\s*(["'])\3\s*\}$/;
 
 /**
+ * Whether the line holding `at` is a comment line: one that starts, after
+ * its indentation, with "//", "/*" or "*" (a line of a block comment). A
+ * test commented out is written so; a full parser for the rest (a test
+ * after code on its line) is not worth its own failure modes here.
+ * @param {string} text @param {number} at @returns {boolean}
+ */
+function onCommentLine(text, at) {
+  const start = text.lastIndexOf('\n', at - 1) + 1;
+  return /^\s*(\/\/|\/\*|\*)/.test(text.slice(start, at));
+}
+
+/**
  * The tagged tests of one spec file, and how many "@pr" the file holds.
  * @param {string} text
  * @returns {{ tagged: string[], mentions: number }}
@@ -94,6 +106,9 @@ function scanSpec(text) {
   const call = /\btest\(\s*/g;
   let match;
   while ((match = call.exec(text))) {
+    // A commented-out test is no test: its tag must not count. Its "@pr"
+    // still counts among the mentions below, so the guard says so.
+    if (onCommentLine(text, match.index)) continue;
     const at = match.index + match[0].length;
     if (!'"\'`'.includes(text[at] ?? '')) continue;
     const end = endOfLiteral(text, at);
@@ -354,9 +369,23 @@ describe('scanSpec', () => {
       'test("e", { tag: "@pr" }, async () => {});',
       'test(`g${x ? " @pr" : ""} tail`, async () => {});',
       'test("h", async () => {}); // @pr',
+      '// test("i @pr", async () => {});',
+      '/* test("j @pr", async () => {}); */',
     ]) {
       const { tagged, mentions } = scanSpec(text);
       expect(mentions, text).toBeGreaterThan(tagged.length);
     }
+  });
+
+  // Why: a commented-out tagged test once counted as a tier test, so the
+  // pinned set could name a test that never runs.
+  it('reads no tag from a commented-out test, and keeps a "//" inside a title', () => {
+    const text = [
+      '  // test("gone @pr", async () => {});',
+      '/* test("also gone @pr", async () => {}); */',
+      ' * test("in a doc comment @pr", async () => {});',
+      'test("kept // not a comment @pr", async () => {});',
+    ].join('\n');
+    expect(scanSpec(text).tagged).toEqual(['kept // not a comment']);
   });
 });
