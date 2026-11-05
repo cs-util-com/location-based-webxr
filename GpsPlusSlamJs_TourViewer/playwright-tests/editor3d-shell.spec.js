@@ -328,11 +328,11 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expectFrame(page, phone);
   // Folded, the tree's head keeps clear of where the inspector opens, so
   // its fold arrow can still be tapped while a selection shows.
-  const phoneHead = Math.min(272, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
+  const phoneHead = Math.min(210, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
   await expectTree(page, phoneHead, false);
   await expect(page.locator("#shell-inspector")).toBeHidden();
   await page.locator("#tree-fold").click();
-  await expectTree(page, Math.min(272, 0.56 * 390), true);
+  await expectTree(page, Math.min(210, 0.56 * 390), true);
   await card(page, "The old gate").locator(".pick").click();
   const phoneInspector = await box(page.locator("#shell-inspector"));
   expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
@@ -351,8 +351,9 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectFrame(page, landscape);
+  // From 1100 px down the tree is 210 px wide.
   await page.locator("#tree-fold").click();
-  await expectTree(page, 272, true);
+  await expectTree(page, 210, true);
   const folded = await box(page.locator("#shell-inspector"));
   expect(folded.height).toBeCloseTo(FOLDED_PX, 0);
   expect(folded.x + folded.width).toBeCloseTo(844, 0);
@@ -374,18 +375,18 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await page.setViewportSize(tablet);
   await expectFrame(page, tablet);
   await page.locator('#inspector-head [data-act="fold"]').click();
-  await expectTree(page, Math.min(272, 0.56 * 820), false);
+  await expectTree(page, Math.min(210, 0.56 * 820), false);
   const tabletInspector = await box(page.locator("#shell-inspector"));
   expect(tabletInspector.width).toBeCloseTo(Math.min(290, 0.6 * 820), 0);
   await expect(page.locator("#inspector-body")).toBeVisible();
 
-  // A desktop: both docks open side by side, 272 and 290 px, the labels
-  // shown, the scene between them 878 px wide.
+  // A desktop: both docks open side by side, 248 and 290 px, the labels
+  // shown, the scene between them 902 px wide.
   const desktop = { width: 1440, height: 900 };
   await page.setViewportSize(desktop);
   await expectFrame(page, desktop);
   await page.locator("#tree-fold").click();
-  await expectTree(page, 272, true);
+  await expectTree(page, 248, true);
   const inspector = await box(page.locator("#shell-inspector"));
   expect(inspector).toMatchObject({
     x: 1440 - 290,
@@ -396,14 +397,159 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
   await capture(page, test.info().outputPath("shell-1440x900.png"));
-  // The cards: 8 px in from the dock, 6 px apart, each a one-line 28 px row.
+  // The stations: flush with the dock, one 28 px row each, no gap between
+  // them (the explorer's rows); the row runs to the dock's 1 px border.
   const tree = await box(page.locator("#shell-tree"));
+  const inner = await page
+    .locator("#tree-body")
+    .evaluate((el) => el.clientWidth);
   const rows = page.locator("#tree-body .card > .head");
   const first = await box(rows.nth(0));
   const second = await box(rows.nth(1));
-  expect(first.x - tree.x).toBe(9);
+  expect(first.x - tree.x).toBe(0);
+  expect(first.width).toBe(inner);
+  expect(tree.width - inner).toBeLessThanOrEqual(1);
   expect(first.height).toBe(28);
-  expect(second.y - (first.y + first.height)).toBe(8);
+  expect(second.y - (first.y + first.height)).toBe(0);
+});
+
+/**
+ * The bottom bar's toggles and the bottom panel they open, at one size:
+ * the four named toggles flush at the bar's right edge, side by side; the
+ * panel on the bar, between the open docks (or under both, spanned), its
+ * 30 px head with the tabs at its left, the map controls 14 px over it.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ * @param {number} heightPx the panel's height at this size
+ */
+async function expectPanel(page, size, heightPx) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  const bar = await box(page.locator("#shell-bar"));
+  const toggles = page.locator("#shell-toggles .tog");
+  await expect(toggles).toHaveCount(4);
+  const boxes = [];
+  for (const toggle of await toggles.all()) boxes.push(await box(toggle));
+  for (const [i, b] of boxes.entries()) {
+    expect(b.y, at).toBe(bar.y + 1);
+    expect(b.height, at).toBe(23);
+    if (i > 0) {
+      expect(b.x, at).toBeCloseTo(boxes[i - 1].x + boxes[i - 1].width, 0);
+    }
+  }
+  const last = boxes[boxes.length - 1];
+  expect(last.x + last.width, at).toBeCloseTo(size.width, 0);
+  // The credits and the selection's actions keep left of the toggles.
+  for (const id of ["#view3d-credits", "#shell-acts"]) {
+    const part = page.locator(id);
+    if (!(await part.isVisible())) continue;
+    const b = await box(part);
+    expect(b.x + b.width, `${id} ${at}`).toBeLessThanOrEqual(boxes[0].x);
+  }
+  const panel = await box(page.locator("#shell-panel"));
+  expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
+  expect(panel.height, at).toBeCloseTo(heightPx, 0);
+  // It pushes the view up: the view's canvas ends at its top.
+  const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
+  expect(canvas.y + canvas.height, at).toBeCloseTo(panel.y, 0);
+  const head = await box(page.locator("#shell-panel .bp-head"));
+  expect(head.height, at).toBe(30);
+  expect(head.y, at).toBeCloseTo(panel.y + 1, 0);
+  const tab = await box(page.locator("#shell-panel .tab").first());
+  expect(tab.x, at).toBeCloseTo(panel.x, 0);
+  expect(tab.height, at).toBe(29);
+  const close = await box(page.locator("#shell-panel .bp-close"));
+  expect(close.x + close.width, at).toBeCloseTo(panel.x + panel.width - 4, 0);
+  // Between the open docks, or the width on a phone.
+  const tree = page.locator("#shell-tree");
+  const inspector = page.locator("#shell-inspector");
+  const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
+    (await d.isVisible()) &&
+    !(await d.evaluate((el) => el.classList.contains("collapsed")));
+  const spanned = await page
+    .locator("#shell-panel")
+    .evaluate((el) => el.classList.contains("span"));
+  let left = 0;
+  let right = size.width;
+  if (size.width > 700 && !spanned) {
+    if (await open(tree)) {
+      const t = await box(tree);
+      left = t.x + t.width;
+    }
+    if (await open(inspector)) right = (await box(inspector)).x;
+  }
+  expect(panel.x, at).toBeCloseTo(left, 0);
+  expect(panel.x + panel.width, at).toBeCloseTo(right, 0);
+  // A dock the panel lies under ends at its top (on a phone the open
+  // tree lies over the panel instead).
+  for (const dock of [tree, inspector]) {
+    if (!(await open(dock))) continue;
+    const d = await box(dock);
+    const under = d.x < panel.x + panel.width && d.x + d.width > panel.x;
+    const treeOverIt = size.width <= 700 && dock === tree && !spanned;
+    if (under && !treeOverIt) {
+      expect(d.y + d.height, at).toBeCloseTo(panel.y, 0);
+    }
+  }
+  const compass = await box(page.locator("#compass"));
+  expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
+}
+
+test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape, two laptop widths and a desktop", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const desktop = { width: 1440, height: 900 };
+  await page.setViewportSize(desktop);
+  await open3d(page);
+  // Nothing to say before an edit: no badge on History.
+  await expect(
+    page.locator('#shell-toggles [data-tab="history"] .badge'),
+  ).toBeHidden();
+  await expect(page.locator("#shell-toggles .tog .tl").first()).toBeVisible();
+  await card(page, "The old gate").locator(".pick").click();
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  const problems = page.locator('#shell-toggles [data-tab="problems"]');
+  await problems.click();
+  await expect(problems).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#shell-panel")).toBeVisible();
+  await expectPanel(page, desktop, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-1440x900.png") });
+  // Spanned, it runs under both docks, which end at its top.
+  await page.locator("#shell-panel .bp-span").click();
+  await expectPanel(page, desktop, 220);
+  await page.locator("#shell-panel .bp-span").click();
+
+  // Two laptop widths: at 1180 px the tree is still 248 px, at 1024 px it
+  // is 210 px (the 1100 px step), the panel still between both docks and
+  // the toggles still clear of the selection's actions.
+  for (const laptop of [
+    { width: 1180, height: 820 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(laptop);
+    await expectPanel(page, laptop, 220);
+  }
+
+  // A phone in landscape: one dock at a time.
+  const landscape = { width: 844, height: 390 };
+  await page.setViewportSize(landscape);
+  await expectPanel(page, landscape, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-844x390.png") });
+
+  // A phone: the panel takes the width, the toggles keep their icons.
+  const phone = { width: 390, height: 844 };
+  await page.setViewportSize(phone);
+  await expect(page.locator("#shell-toggles .tog .tl").first()).toBeHidden();
+  await expectPanel(page, phone, 220);
+  await page.screenshot({ path: test.info().outputPath("panel-390x844.png") });
+
+  // Ctrl+J closes it, the map controls back over the bar.
+  await page.locator("#view3d").focus();
+  await page.keyboard.press("Control+j");
+  await expect(page.locator("#shell-panel")).toBeHidden();
+  await expect(problems).toHaveAttribute("aria-pressed", "false");
+  const compass = await box(page.locator("#compass"));
+  expect(phone.height - 24 - (compass.y + compass.height)).toBe(14);
 });
 
 test("a card's click selects, unfolds and flies; a second deselects and folds; a double click does not toggle", async ({
@@ -466,9 +612,10 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   );
   await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  // Over the map the bottom bar keeps only the save status.
-  await expect(page.locator("#save-status")).toBeVisible();
-  await expect(page.locator("#shell-view")).toBeHidden();
+  // Over the map the bottom bar keeps only the save status, said to a
+  // screen reader; the panel's toggles are the 3D view's.
+  await expect(page.locator("#save-status")).toHaveAttribute("role", "status");
+  await expect(page.locator("#shell-toggles")).toBeHidden();
   await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
   await expect(gate.locator(".kids")).toBeVisible();
@@ -497,7 +644,10 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(page.locator("#view-menu")).toBeHidden();
   await settled();
   expect((await view3d(page)).tiltDeg).toBeLessThan(1);
-  await expect(page.locator("#shell-view")).toHaveText("Top view");
+  await page.locator('#shell-toggles [data-tab="perf"]').click();
+  await expect(page.locator("#shell-pane-perf .nums")).toContainText(
+    "Top view",
+  );
   await page.keyboard.press("t");
   await settled();
   expect((await view3d(page)).tiltDeg).toBeGreaterThan(30);
@@ -510,22 +660,13 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await settled();
   expect((await view3d(page)).distanceM).toBeCloseTo(far, 0);
 
-  // The debug readout: hidden, then shown with its draw calls.
-  await expect(page.locator("#shell-calls")).toBeHidden();
-  await page.locator("#shell-debug").click();
-  await expect(page.locator("#shell-calls")).toContainText("draw calls");
-  // This is the older 3D view (`openSampleIn3d`: `?globe=0`), whose stats
-  // carry no globe: its bar shows the whole frame's count, never 0 with a
-  // tour drawn. The globe view's whole-frame count against its scene's
-  // own render is held in editor3d-globe.spec.js.
-  await expect
-    .poll(async () =>
-      Number.parseInt(
-        (await page.locator("#shell-calls").textContent()) ?? "",
-        10,
-      ),
-    )
-    .toBeGreaterThan(0);
+  // The Performance tab: the whole frame's draw calls, never 0 with a
+  // tour drawn. This is the older 3D view (`openSampleIn3d`: `?globe=0`),
+  // whose stats carry no globe; the globe view's whole-frame count against
+  // its scene's own render is held in editor3d-globe.spec.js.
+  await expect(page.locator("#shell-pane-perf .nums")).toContainText(
+    /Draw calls[1-9]/,
+  );
   expect((await view3d(page)).osm.requests).toBeGreaterThan(0);
   expect(await rejections(page)).toEqual([]);
 });
@@ -587,13 +728,98 @@ test("the top bar holds every control in its most crowded state, at every step i
     const size = { width, height: width < 721 ? 844 : 800 };
     await page.setViewportSize(size);
     await expectFrame(page, size);
-    // The status line stays inside the bottom bar, cut short if it must.
-    const line = await box(status);
-    expect(
-      line.x + line.width,
-      `the status at ${String(width)} px`,
-    ).toBeLessThanOrEqual(width);
+    // The status line is said, not shown: it stays visually hidden (a
+    // pixel, clipped) and keeps its live role at every width.
+    const at = `the status at ${String(width)} px`;
+    await expect(status, at).toHaveAttribute("role", "status");
+    const hidden = await status.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        small: r.width <= 1 && r.height <= 1,
+        clipped: style.clipPath !== "none" || style.clip !== "auto",
+      };
+    });
+    expect(hidden, at).toEqual({ small: true, clipped: true });
   }
+});
+
+// Why: a fresh page opens the panel at half the view at most (at least
+// 120 px, at most its usual height), as the chosen layout does, so a phone
+// in landscape starts at half the view; the resize in the test above keeps
+// the height the panel already had. Each size is its own fresh page with
+// nothing selected: the screenshots are the side-by-side check against
+// the chosen prototype.
+test("the bottom panel opens at its start height on a fresh page, at a phone, a phone in landscape and a desktop", async ({
+  browser,
+}) => {
+  test.setTimeout(300_000);
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 1440, height: 900 },
+  ]) {
+    const context = await browser.newContext({ viewport: size });
+    const page = await context.newPage();
+    await open3d(page);
+    await page.locator('#shell-toggles [data-tab="problems"]').click();
+    await expect(page.locator("#shell-panel")).toBeVisible();
+    const main = await page
+      .locator("#view3d")
+      .evaluate((el) => el.clientHeight);
+    const start = Math.max(
+      90,
+      Math.min(Math.min(220, Math.max(120, main * 0.5)), main),
+    );
+    await expectPanel(page, size, start);
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(
+          `panel-fresh-${String(size.width)}x${String(size.height)}.png`,
+        ),
+    });
+    await context.close();
+  }
+});
+
+// Why: a problem's row redraws the panel as it selects (the selection is
+// marked); the focus once fell to the page, where Escape no longer closed
+// the panel and the keyboard user lost their place.
+test("the bottom panel keeps the keyboard focus through a choice, and Escape closes it", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open3d(page);
+  // The sample has no problems; a new station has no content yet, which is
+  // one. The first station is selected again so the Enter makes a choice.
+  await page.locator("#tree-add").click();
+  await expect(page.locator("#tree-body .card")).toHaveCount(4);
+  await page.locator("#tree-body .card > .head").first().click();
+  const toggle = page.locator('#shell-toggles [data-tab="problems"]');
+  await toggle.click();
+  const rows = page.locator("#shell-panel .prow");
+  await expect(rows.first()).toBeVisible();
+  await rows.first().focus();
+  const chosen = await rows.first().getAttribute("data-select");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator(`#shell-panel .prow[data-select="${chosen ?? ""}"]`),
+  ).toHaveClass(/\bsel\b/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const at = document.activeElement;
+        return at instanceof HTMLElement && at.closest("#shell-panel") !== null
+          ? (at.dataset["select"] ?? at.className)
+          : "outside";
+      }),
+    )
+    .toBe(chosen);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#shell-panel")).toBeHidden();
+  await expect(toggle).toBeFocused();
 });
 
 test("the File, Edit and View menus work from the keyboard and by touch", async ({
@@ -815,9 +1041,11 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
       return {
         key:
           a.dataset["select"] ??
-          (a.dataset["unfold"] === undefined
-            ? a.id
-            : `unfold:${a.dataset["unfold"]}`),
+          (a.dataset["unfold"] !== undefined
+            ? `unfold:${a.dataset["unfold"]}`
+            : a.dataset["add"] !== undefined
+              ? `add:${a.dataset["add"]}`
+              : a.id),
         inBar: a.closest("#topbar") !== null,
         x: b.x,
       };
@@ -848,14 +1076,19 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   // scene's Credits button closes the view, after the docks).
   expect(visited.findIndex((v) => !v.inBar)).toBe(bar.length);
   expect(keys[bar.length]).toBe("tree-stations");
-  // Then the tree: its head ("Stations", "+", the fold arrow), then the
-  // first card and its fold arrow.
-  expect(keys.slice(-6)).toEqual([
+  // Then the tree: its head ("Stations", "Fold every station", "+", the
+  // fold arrow), its search, then each card's fold arrow, its row and
+  // its "+".
+  expect(keys.slice(-10)).toEqual([
     "tree-stations",
+    "tree-collapse",
     "tree-add",
     "tree-fold",
-    "station:column",
+    "tree-search",
     "unfold:column",
+    "station:column",
+    "add:column",
+    "unfold:gate",
     "station:gate",
   ]);
   await page.keyboard.press("Enter");
@@ -866,8 +1099,12 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   ).toHaveValue("The old gate");
   await expect(gate.locator(".pick")).toBeFocused();
   await expect(gate.locator(".kids")).toBeVisible();
-  // Space on the fold arrow folds the card's items away again.
+  // The row's "+" is next; the fold arrow is before the row, and Space
+  // on it folds the card's items away again.
   await page.keyboard.press("Tab");
+  await expect(gate.locator(".head .add")).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
   await expect(gate.locator(".tw")).toBeFocused();
   await page.keyboard.press("Space");
   await expect(gate.locator(".kids")).toHaveCount(0);
@@ -1125,7 +1362,8 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   // A new pin: its toast dark, its name typed in the head, with the pen
   // and the dotted underline at rest.
   await card(page, "The old gate").locator(".pick").click();
-  await page.locator('#shell-inspector [data-act="add-pin"]').click();
+  await card(page, "The old gate").locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="pin"]').click();
   const toast = page.locator(".toast", { hasText: "Added a pin" });
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCSS("background-color", BG1);

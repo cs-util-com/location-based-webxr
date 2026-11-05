@@ -50,7 +50,12 @@ import {
   type ShellLayer,
 } from "../editor/editor-view.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
-import type { OsmMapLoad } from "gps-plus-slam-globe/editor";
+import type {
+  OsmMapLoad,
+  OsmMapTile,
+  OsmRetryAsk,
+  OsmRetryOutcome,
+} from "gps-plus-slam-globe/editor";
 import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
@@ -59,6 +64,7 @@ import {
   createEditorCamera,
   editorClipPlanes,
 } from "./editor3d-camera.js";
+import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import {
   createBillboard,
   createCodeFace,
@@ -89,7 +95,11 @@ import type { InputPage } from "./editor3d-input.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountCredits } from "./editor3d-credits.js";
-import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
+import {
+  createViewRenderer,
+  drawnCounts,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { createFrameDrawCalls } from "./frame-draw-calls.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 import type { EditorCityStats } from "./editor3d-globe-city.js";
@@ -190,6 +200,13 @@ export interface Editor3dView {
   setBuildings?(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
+  /** The street map's near tiles, failed first (the Map loading tab). */
+  mapTiles(limit: number): readonly OsmMapTile[];
+  /** Ask for the street map's failed tiles again now: how many, or why
+   *  none (the map off, none failed). */
+  retryMap(): OsmRetryAsk;
+  /** What became of the last retry's tiles (null before it ran). */
+  lastMapRetry(): OsmRetryOutcome | null;
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
@@ -241,8 +258,9 @@ export interface Editor3dView {
   ): readonly [number, number] | null;
 }
 
-/** The camera and the drawing, for the shell's compass, view line and
- *  debug readout. */
+/** The camera, the drawing and the street map's loading, for the shell's
+ *  compass, Top view item and bottom panel (its Performance and Map
+ *  loading tabs). */
 export interface Editor3dReadout {
   /** Degrees from straight down. */
   readonly tiltDeg: number;
@@ -250,8 +268,20 @@ export interface Editor3dReadout {
   readonly headingDeg: number;
   readonly top: boolean;
   readonly drawCalls: number;
-  /** The mean time between the last frames (ms). */
+  /** The triangles the last frame drew. */
+  readonly triangles: number;
+  /** The mean time between the last frames (ms, `frame-clock.ts`). */
   readonly frameMs: number;
+  /** The longest of those (ms). */
+  readonly worstFrameMs: number;
+  /** The frames over 50 ms in the last five seconds. */
+  readonly slowFrames: number;
+  /** How many frame intervals were ever timed, and the last of them (ms,
+   *  oldest first): the Performance tab's chart takes the new ones. */
+  readonly frameCount: number;
+  readonly recentFrameMs: readonly number[];
+  /** The street map's loading state (the overlay's `mapLoad`). */
+  readonly mapLoad: OsmMapLoad;
 }
 
 export interface Editor3dStats {
@@ -361,10 +391,17 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     canvas.className = "view3d-canvas";
     deps.container.prepend(canvas);
     // The box is hidden until the first frame is drawn (the map stays in
-    // view while the view loads): the window's size until it shows.
+    // view while the view loads): the window's size until it shows. Once
+    // shown, the height is the canvas's: the bottom panel shortens it
+    // (pushes the view up), to nothing when maximised.
     const size = () => ({
       w: Math.max(1, deps.container.clientWidth || window.innerWidth),
-      h: Math.max(1, deps.container.clientHeight || window.innerHeight),
+      h: Math.max(
+        1,
+        deps.container.clientHeight > 0
+          ? canvas.clientHeight
+          : window.innerHeight,
+      ),
     });
     renderer.setSize(size().w, size().h, false);
 
@@ -461,6 +498,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       });
     });
     resize.observe(deps.container);
+    resize.observe(canvas);
     undo.push(() => resize.disconnect());
 
     let firstFrame: () => void = () => undefined;
@@ -645,8 +683,8 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       editing.dispose();
     });
 
-    const frameTimes: number[] = [];
-    let lastFrameAt: number | null = null;
+    const frameClock = createFrameClock();
+    undo.push(pauseWhenHidden(frameClock));
     let frames = 0;
     let standing = 1;
     const ecef = new THREE.Vector3();
@@ -662,11 +700,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       return ground.groundAt(at.lat, at.lon);
     };
     const frame = (now: number) => {
-      if (lastFrameAt !== null) {
-        frameTimes.push(now - lastFrameAt);
-        if (frameTimes.length > 60) frameTimes.shift();
-      }
-      lastFrameAt = now;
+      frameClock.tick(now);
       drawCalls.begin();
       if (!stepFlight(now)) controls.update();
       // A tilt by hand leaves Top view.
@@ -777,18 +811,24 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       },
       readout() {
         const pose = poseNow();
-        const mean =
-          frameTimes.length === 0
-            ? 0
-            : frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
         return {
           tiltDeg: cam.tiltDeg(),
           headingDeg: (((-pose.azimuthRad / DEG) % 360) + 360) % 360,
           top,
+          ...drawnCounts(renderer),
+          // The whole frame's calls (`frame-draw-calls.ts`).
           drawCalls: drawCalls.calls(),
-          frameMs: mean,
+          frameMs: frameClock.meanMs(),
+          worstFrameMs: frameClock.worstMs(),
+          slowFrames: frameClock.slowFrames(),
+          frameCount: frameClock.count(),
+          recentFrameMs: frameClock.recentMs(),
+          mapLoad: ground.osm.mapLoad(),
         };
       },
+      mapTiles: (limit) => ground.osm.mapTiles(limit),
+      retryMap: () => ground.osm.retryNow(),
+      lastMapRetry: () => ground.osm.lastRetry(),
       setLayers(hidden) {
         layer.setShown({
           names: !hidden.includes("names"),

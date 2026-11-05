@@ -41,6 +41,13 @@
   --s-dock-top: var(--s-load-h);
   /* The inspector's width, which the map controls keep clear of. */
   --s-insp-w: 290px;
+  /* The tree dock: 248 px, 210 px from 1100 px down (a small laptop,
+   * a tablet in landscape), about half a phone. */
+  --s-tree-w: 248px;
+  /* The bottom panel's severities and its all-clear. */
+  --s-warn: #e9b86b;
+  --s-info: #8fa6c0;
+  --s-ok: #7fb77a;
   /* The narrowest the brand (the tour's name and its pen) gets
    * before the bar's other controls fold: the fold steps below are set so
    * the bar fits with it at this, and lower it as they go. */
@@ -369,7 +376,7 @@ body[data-view="3d"] #view3d {
 
 #shell-tree {
   left: 0;
-  width: 272px;
+  width: var(--s-tree-w);
   border-left: 0;
 }
 
@@ -428,6 +435,148 @@ body[data-view="3d"] #view3d {
   display: none;
 }
 
+/* The tree's keys in words, under its list at the dock's foot (the
+ * explorer's footer); not on a phone, which has no keyboard, nor folded. */
+#tree-body {
+  flex: 1 1 auto;
+}
+
+.treefoot {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--s-line);
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.treefoot > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treefoot kbd {
+  padding: 0 3px;
+  border: 1px solid var(--s-line2);
+  border-radius: 3px;
+  background: none;
+  color: var(--s-muted);
+  font: 10px var(--s-mono);
+}
+
+.dock.collapsed .treefoot {
+  display: none;
+}
+
+/* The Ctrl+K palette: a field over the view, its rows under it. */
+#add-palette-back {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgb(10 11 13 / 45%);
+}
+
+#add-palette {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  z-index: 1101;
+  width: min(540px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: rgb(42 45 50 / 98%);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  transform: translateX(-50%);
+  color-scheme: dark;
+}
+
+#add-palette[hidden],
+#add-palette-back[hidden] {
+  display: none;
+}
+
+#add-palette .pline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--s-line2);
+  color: var(--s-muted);
+}
+
+#add-palette-input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--s-text);
+  font: 13px var(--s-sans);
+}
+
+#add-palette-list {
+  max-height: min(360px, 55vh);
+  overflow: auto;
+  padding: 4px;
+}
+
+#add-palette .pr {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#add-palette .pr[aria-selected="true"],
+#add-palette .pr:hover {
+  background: var(--s-bg3);
+}
+
+#add-palette .pr svg.i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--s-accent-text);
+}
+
+#add-palette .pl {
+  white-space: nowrap;
+}
+
+#add-palette .pt {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  padding-left: 10px;
+  color: var(--s-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#add-palette .pempty {
+  padding: 14px 10px;
+  color: var(--s-dim);
+}
+
+#add-palette .pfoot {
+  padding: 6px 10px;
+  border-top: 1px solid var(--s-line);
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
 .ib {
   display: inline-flex;
   flex: none;
@@ -447,56 +596,90 @@ body[data-view="3d"] #view3d {
   color: var(--s-text);
 }
 
-/* The tree: the stations' story cards. */
+/* The tree's search: above the list, kept across the list's draws. */
+.tsearch {
+  flex: none;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--s-line);
+}
+
+.dock.collapsed .tsearch,
+#shell-tree.collapsed #tree-collapse {
+  display: none;
+}
+
+.tsearch input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: var(--s-bg0);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.tsearch input:focus-visible {
+  outline: 2px solid var(--s-focus);
+  outline-offset: -1px;
+}
+
+.nomatch {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+/* The tree: the stations as a file explorer's rows, flush with the dock
+ * and with each other. */
 .cards {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 8px 4px;
+  padding: 4px 0;
 }
 
-.card {
-  overflow: hidden;
-  border: 1px solid var(--s-line2);
-  border-radius: 6px;
-  background: var(--s-bg2);
-}
-
-.card:hover {
-  border-color: #4a4e56;
-}
-
-.card.ctx {
-  border-color: var(--s-accent-line);
-}
-
-.card.sel {
-  border-color: var(--s-accent);
-  box-shadow: 0 0 0 1px var(--s-accent);
-}
-
-/* A station's row: one 28 px line - its button (the number chip, then
- * the name beside it, cut with an ellipsis), then the grip and the fold
- * arrow beside it in the page's order, never inside it. */
+/* A station's row: one 28 px line - its grip and its fold arrow, its
+ * button (the number chip, then the name beside it, cut with an
+ * ellipsis), then its marks, none inside another. The selection is the
+ * accent's tint with a 2 px bar at its left. */
 .card > .head {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 28px;
-  padding-right: 5px;
+  padding: 0 4px;
   cursor: pointer;
   user-select: none;
+}
+
+.card > .head:hover {
+  background: rgb(255 255 255 / 3.5%);
+}
+
+.card.ctx > .head {
+  background: rgb(233 162 59 / 5%);
+}
+
+.card.sel > .head {
+  background: var(--s-accent-bg);
+  box-shadow: inset 2px 0 0 var(--s-accent);
+}
+
+.cards:focus-within .card.sel > .head {
+  background: rgb(233 162 59 / 22%);
 }
 
 .head .pick {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   align-self: stretch;
   min-width: 0;
-  padding: 0 0 0 7px;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -513,11 +696,15 @@ body[data-view="3d"] #view3d {
 
 .head .n {
   flex: none;
-  padding: 1px 5px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 3px;
   border-radius: 3px;
-  background: var(--s-bg3);
+  background: #3d5a78;
   color: #e6f0fa;
   font: 600 10px var(--s-mono);
+  line-height: 16px;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -560,7 +747,7 @@ body[data-view="3d"] #view3d {
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 16px;
   height: 20px;
   padding: 0;
   border: 0;
@@ -574,23 +761,148 @@ body[data-view="3d"] #view3d {
   color: var(--s-text);
 }
 
-/* An unfolded station's picture, under its row: only when it has one. */
+.head .tw svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+/* A row's marks: an unlocked station's, and the count of a folded one. */
+.head .lockg {
+  display: inline-flex;
+  flex: none;
+  color: var(--s-dim);
+}
+
+.head .lockg svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.head .meta,
+.folder .meta {
+  flex: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono);
+}
+
+/* An unfolded station's picture, under its row: only when it has one,
+ * in line with its items. */
 .card > .pic {
-  height: 72px;
+  height: 54px;
+  margin: 2px 8px 4px 54px;
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
   background: #33363c center / cover no-repeat;
 }
 
-.card > .ds {
-  padding: 5px 9px 0;
+.kids {
+  padding: 0 0 2px;
+}
+
+.emptyrow {
+  margin: 2px 8px 6px 54px;
+  color: var(--s-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* An empty station's "Add content": a link's look, the type menu. */
+.emptyrow .fill {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--s-accent-text);
+  font: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+/* A row's "+", its last piece: shown where the pointer is, on the
+ * selection, on the keyboard's focus and while its menu is open, as the
+ * explorer shows it (always on a phone, which has no pointer over it). */
+.head .add {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.head:hover .add,
+.card.sel .head .add,
+.head .add:focus-visible,
+.head .add[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.head .add svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+/* The tree's type menu: under the "+" pressed, in the window. */
+#tree-add-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  min-width: 250px;
+}
+
+#tree-add-menu .mhead {
+  max-width: 300px;
   overflow: hidden;
-  color: var(--s-muted);
+  padding: 4px 9px 2px;
+  color: var(--s-dim);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kids {
-  padding: 3px 0 4px;
+#tree-add-menu [role="menuitem"] {
+  gap: 9px;
+  min-height: 28px;
+  padding: 0 9px;
+}
+
+#tree-add-menu [role="menuitem"] > svg.i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--s-accent-text);
+}
+
+#tree-add-menu [role="menuitem"][aria-disabled="true"] > svg.i {
+  color: var(--s-dim);
+}
+
+#tree-add-menu .hint {
+  max-width: 190px;
+  margin-left: auto;
+  overflow: hidden;
+  padding-left: 14px;
+  color: var(--s-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+/* A story folder's row, its entries a level deeper. */
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 60px;
+  color: var(--s-text);
+}
+
+.folder .nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ic.story {
+  color: var(--s-accent-text);
 }
 
 .kid,
@@ -617,8 +929,14 @@ body[data-view="3d"] #view3d {
   outline-offset: -2px;
 }
 
+/* An item's row: its icon under its station's name. */
 .kid {
-  padding: 0 8px 0 12px;
+  height: 26px;
+  padding: 0 8px 0 60px;
+}
+
+.kid.deep {
+  padding-left: 76px;
 }
 
 .row {
@@ -626,7 +944,7 @@ body[data-view="3d"] #view3d {
 }
 
 .kid:hover {
-  background: var(--s-bg3);
+  background: rgb(255 255 255 / 3.5%);
 }
 
 .row:hover {
@@ -636,6 +954,10 @@ body[data-view="3d"] #view3d {
 .kid.sel,
 .row.sel {
   background: var(--s-accent-bg);
+}
+
+.cards:focus-within .kid.sel {
+  background: rgb(233 162 59 / 22%);
 }
 
 .kid.sel::before,
@@ -660,14 +982,6 @@ body[data-view="3d"] #view3d {
 .kid.sel .nm,
 .row.sel .nm {
   color: #fff;
-}
-
-.kid.empty {
-  height: auto;
-  padding: 4px 10px 4px 12px;
-  color: var(--s-dim);
-  line-height: 1.35;
-  white-space: normal;
 }
 
 .ic {
@@ -1121,11 +1435,12 @@ button.thumb:focus-visible {
 
 /* --- the map controls: white pills, 38 px buttons ------------------------- */
 /* One row at the view's foot: at the right edge, or directly left of the
- * inspector while it shows (the docks run down to the bottom bar). */
+ * inspector while it shows (the docks run down to the bottom bar), over
+ * the bottom panel while it is open. */
 #map-controls {
   position: absolute;
   right: 12px;
-  bottom: 14px;
+  bottom: calc(14px + var(--s-panel-h, 0px));
   z-index: 4;
   display: flex;
   flex-direction: row;
@@ -1212,32 +1527,10 @@ button.thumb:focus-visible {
   display: none;
 }
 
-/* The save status, first in the bottom bar (both views): a long line ends
- * in an ellipsis, its whole text its title (and still announced). */
-#save-status {
-  display: block;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: min(60%, 520px);
-  height: 100%;
-  overflow: hidden;
-  padding: 0 10px;
-  border-right: 1px solid var(--s-line);
-  color: var(--s-muted);
-  line-height: 23px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#save-status[data-state="pending"],
-#save-status[data-state="saving"] {
-  background: var(--s-accent-bg);
-  color: var(--s-accent-text);
-}
-
-#save-status[data-state="error"] {
-  background: rgb(217 125 121 / 16%);
-  color: #f0a8a5;
+/* The save status is said to a screen reader only (`.said`, edit.html):
+ * the top bar's unsaved mark shows it, and a save's result is a toast. */
+#shell-bar > #save-status {
+  position: absolute;
 }
 
 /* "Loading 3D view…" while the 3D view loads (view-switch.ts). */
@@ -1305,49 +1598,898 @@ button.thumb:focus-visible {
   line-height: 16px;
 }
 
-#shell-view {
-  color: var(--s-text);
-  font-weight: 500;
-}
-
 #shell-bar .mono {
   font: 10.5px var(--s-mono);
 }
 
-#shell-hint {
-  display: block !important;
+#shell-bar > .grow {
   flex: 1;
   min-width: 0;
-  line-height: 23px;
-  text-overflow: ellipsis;
+  padding: 0;
+  border-right: 0;
 }
 
-#shell-bar .dbg {
-  display: none !important;
-}
-
-#shell-bar.debug .dbg {
-  display: flex !important;
-}
-
-#shell-debug {
+/* The bottom panel's toggles, at the bar's right: a named button each, a
+ * badge only when there is something to see, an accent line over the one
+ * whose tab is open. */
+#shell-bar > #shell-toggles {
   flex: none;
+  align-items: stretch;
+  padding: 0;
+  border-right: 0;
+}
+
+.tog {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 100%;
   padding: 0 9px;
   border: 0;
   border-left: 1px solid var(--s-line);
   background: transparent;
-  color: var(--s-dim);
-  font: 10px var(--s-mono);
+  color: var(--s-muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-#shell-debug:hover {
+.tog:hover {
   background: var(--s-bg2);
   color: var(--s-text);
 }
 
-#shell-bar.debug #shell-debug {
+.tog svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.tog[aria-pressed="true"] {
+  background: var(--s-bg2);
   color: var(--s-accent-text);
+}
+
+.tog[aria-pressed="true"]::before {
+  position: absolute;
+  inset: -1px 0 auto;
+  height: 2px;
+  background: var(--s-accent);
+  content: "";
+}
+
+.tog .badge {
+  height: 14px;
+}
+
+/* --- the bottom panel ----------------------------------------------------- */
+/* At the view's foot between the open docks (each runs down to the bottom
+ * bar beside it), or under both with its span button, the docks then
+ * ending at its top. Its height is `--s-panel-h` on the page, which the
+ * map controls and the toasts keep clear of. It pushes the view up: the
+ * view's canvas ends at its top (the view reads its size from the canvas),
+ * while the docks keep their height. */
+body[data-view="3d"] #view3d .view3d-canvas {
+  height: calc(100% - var(--s-panel-h, 0px));
+}
+
+#shell-panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-top: 1px solid var(--s-line2);
+  background: var(--s-bg1);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+  container-type: inline-size;
+}
+
+#shell-panel[hidden] {
+  display: none;
+}
+
+#shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+  left: var(--s-tree-w);
+}
+
+#shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+  right: var(--s-insp-w);
+}
+
+#view3d.panel-span .dock:not(.collapsed) {
+  bottom: var(--s-panel-h, 0px);
+  border-bottom: 1px solid var(--s-line);
+}
+
+.bp-grip {
+  position: absolute;
+  inset: -4px 0 auto;
+  z-index: 3;
+  height: 8px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.bp-grip::after {
+  position: absolute;
+  inset: 3px 0 auto;
+  height: 2px;
+  background: transparent;
+  content: "";
+  transition: background 0.1s 0.15s;
+}
+
+.bp-grip:hover::after,
+.bp-grip:focus-visible::after,
+.bp-grip.drag::after {
+  background: var(--s-accent);
+}
+
+.bp-grip:focus-visible {
+  outline: none;
+}
+
+.bp-head {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px 0 0;
+  border-bottom: 1px solid var(--s-line);
+}
+
+.bp-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bp-tabs .tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 0;
+  background: transparent;
+  color: var(--s-muted);
+  font: 11px var(--s-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bp-tabs .tab svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.bp-tabs .tab:hover,
+.bp-tabs .tab[aria-selected="true"] {
+  color: var(--s-text);
+}
+
+.bp-tabs .tab[aria-selected="true"]::after {
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  background: var(--s-accent);
+  content: "";
+}
+
+#shell-panel .badge,
+#shell-toggles .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--s-bg4);
+  color: var(--s-text);
+  font: 10px/1 var(--s-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#shell-panel .badge.error,
+#shell-toggles .badge.error {
+  background: rgb(217 125 121 / 22%);
+  color: #f0b0ad;
+}
+
+#shell-panel .badge.warning,
+#shell-toggles .badge.warning {
+  background: rgb(233 184 107 / 20%);
+  color: #f1cf96;
+}
+
+#shell-panel .badge.busy,
+#shell-toggles .badge.busy {
+  padding: 0 2px;
+  background: transparent;
+  color: var(--s-muted);
+}
+
+#shell-panel .badge:empty,
+#shell-toggles .badge:empty {
+  display: none;
+}
+
+.badge .spin {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border: 1.5px solid var(--s-dim);
+  border-top-color: var(--s-accent);
+  border-radius: 50%;
+  animation: bp-spin 0.8s linear infinite;
+}
+
+@keyframes bp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bp-tools {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 8px;
+}
+
+.bp-tools .tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.bp-tools .sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--s-line2);
+}
+
+.bp-tools .ib[aria-pressed="true"] {
+  color: var(--s-accent-text);
+}
+
+#shell-panel .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 7px;
+  border: 1px solid var(--s-line2);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--s-muted);
+  font: 11px var(--s-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#shell-panel .chip:hover:not(:disabled),
+#shell-panel .chip[aria-pressed="true"] {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+#shell-panel .chip[aria-pressed="false"] {
+  opacity: 0.55;
+}
+
+#shell-panel .chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#shell-panel .chip svg.i {
+  width: 13px;
+  height: 13px;
+}
+
+.bp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bp-body .pane[hidden] {
+  display: none;
+}
+
+#shell-panel .sev-error {
+  color: var(--s-danger);
+}
+
+#shell-panel .sev-warning {
+  color: var(--s-warn);
+}
+
+#shell-panel .sev-note {
+  color: var(--s-info);
+}
+
+/* The group heads and History rows are buttons (a row's look, a button's
+ * keys); a problem's row is a focusable row holding its fix link. */
+#shell-panel :is(.ghead, .prow, .hrow) {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#shell-panel .ghead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  color: var(--s-text);
+  white-space: nowrap;
+}
+
+#shell-panel :is(.ghead, .prow, .hrow):hover {
+  background: var(--s-bg2);
+}
+
+.ghead .chev {
+  width: 14px;
+  height: 14px;
+  color: var(--s-dim);
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+
+.pgrp.fold > .ghead .chev {
+  transform: none;
+}
+
+.pgrp.fold .prow {
+  display: none;
+}
+
+.ghead .num {
+  padding: 0 4px;
+  border-radius: 2px;
+  background: #3d5a78;
+  color: #e6f0fa;
+  font: 10px var(--s-mono);
+}
+
+.ghead .gtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ghead .cnt {
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+#shell-panel .prow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 2px 10px 2px 32px;
+}
+
+#shell-panel .prow.sel {
+  background: var(--s-accent-bg);
+}
+
+#shell-panel .prow:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
+}
+
+/* A row's link (a problem's fix): shown on hover, on the selected row and
+ * while the row or the link has the focus. */
+#shell-panel .lnk {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--s-accent-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+#shell-panel .lnk:hover {
+  text-decoration: underline;
+}
+
+#shell-panel .prow .fix {
+  visibility: hidden;
+}
+
+#shell-panel .prow:is(:hover, .sel, :focus-within) .fix {
+  visibility: visible;
+}
+
+.prow svg.i {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.prow .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prow .what em {
+  color: var(--s-muted);
+  font-style: normal;
+}
+
+#shell-panel .empty-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 14px;
+  color: var(--s-muted);
+}
+
+#shell-panel .empty-state svg.i {
+  width: 14px;
+  height: 14px;
+  color: var(--s-ok);
+}
+
+#shell-panel .hrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px 0 12px;
+  white-space: nowrap;
+}
+
+.hrow .dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--s-dim);
+  border-radius: 50%;
+  background: var(--s-bg1);
+}
+
+.hrow::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 16px;
+  width: 1px;
+  background: var(--s-line2);
+  content: "";
+}
+
+.hrow:first-child::before {
+  top: 12px;
+}
+
+.hrow:last-child::before {
+  bottom: 12px;
+}
+
+.hrow.done .dot {
+  border-color: var(--s-muted);
+  background: var(--s-muted);
+}
+
+.hrow.cur .dot {
+  border-color: var(--s-accent);
+  background: var(--s-accent);
+  box-shadow: 0 0 0 3px var(--s-accent-bg);
+}
+
+#shell-panel .hrow.cur {
+  background: var(--s-accent-bg);
+}
+
+#shell-panel .hrow.undone {
+  color: var(--s-dim);
+}
+
+.hrow .lbl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hrow .tagm {
+  padding: 0 5px;
+  border: 1px solid var(--s-line2);
+  border-radius: 3px;
+  color: var(--s-muted);
+  font-size: 10px;
+}
+
+.hrow .tagm.now {
+  border-color: var(--s-accent-line);
+  color: var(--s-accent-text);
+}
+
+.hrow .tagm.saved {
+  border-color: rgb(127 183 122 / 45%);
+  color: var(--s-ok);
+}
+
+.hrow .tm {
+  flex: none;
+  color: var(--s-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#shell-panel .hnote {
+  padding: 6px 12px 8px;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+#shell-panel .sumrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--s-line);
+}
+
+.sumrow .st {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.sumrow .st b {
+  color: var(--s-text);
+  font: 500 12px var(--s-mono);
+}
+
+.sumrow .st.bad b {
+  color: var(--s-danger);
+}
+
+.sumrow .st span,
+.sumrow .st.src {
+  color: var(--s-muted);
+}
+
+#shell-panel .rl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 4px;
+  padding: 7px 10px;
+  border: 1px solid rgb(233 184 107 / 35%);
+  border-radius: 4px;
+  background: rgb(233 184 107 / 8%);
+}
+
+#shell-panel .rl[hidden] {
+  display: none;
+}
+
+.rl svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.rl .t {
+  flex: 1;
+  min-width: 180px;
+}
+
+.rl .t b {
+  color: var(--s-warn);
+  font-weight: 600;
+}
+
+.rl .bar {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--s-bg3);
+}
+
+.rl .bar i {
+  display: block;
+  height: 100%;
+  background: var(--s-warn);
+}
+
+.rl .cd {
+  color: var(--s-warn);
+  font: 12px var(--s-mono);
+}
+
+/* The near tiles: one row each, failed first; the head stays in view. */
+#shell-panel table.tiles {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#shell-panel table.tiles th {
+  position: sticky;
+  top: 0;
+  padding: 4px 12px;
+  background: var(--s-bg1);
+  color: var(--s-dim);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+#shell-panel table.tiles td {
+  padding: 3px 12px;
+  white-space: nowrap;
+}
+
+#shell-panel table.tiles :is(td.k, td.ms) {
+  font-family: var(--s-mono);
+}
+
+#shell-panel table.tiles .ms {
+  text-align: right;
+}
+
+#shell-panel .stt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#shell-panel .stt i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+#shell-panel .stt.failed {
+  color: var(--s-danger);
+}
+
+#shell-panel .stt.loaded {
+  color: var(--s-muted);
+}
+
+#shell-panel .stt.waiting {
+  color: var(--s-text);
+}
+
+#shell-panel .stt.loading {
+  color: var(--s-accent-text);
+}
+
+/* Retry's status line, beside its chip. */
+#shell-panel .retry-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--s-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#shell-pane-perf:not([hidden]) {
+  height: 100%;
+}
+
+#shell-panel .perf {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 260px;
+  height: 100%;
+  min-height: 150px;
+}
+
+.perf > * {
+  min-height: 0;
+  overflow: auto;
+}
+
+.perf .chart {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 8px 12px;
+  border-right: 1px solid var(--s-line);
+}
+
+.perf .chart .cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--s-muted);
+  font-size: 11px;
+}
+
+.perf .chart .cap b {
+  color: var(--s-text);
+  font: 12px var(--s-mono);
+}
+
+.perf .spark {
+  display: block;
+  flex: 1;
+  width: 100%;
+  height: 0;
+  min-height: 60px;
+}
+
+.perf .nums {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-content: start;
+  gap: 3px 12px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+}
+
+.perf .nums .k {
+  color: var(--s-muted);
+  white-space: nowrap;
+}
+
+.perf .nums .v {
+  font: 11.5px var(--s-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.perf .nums .v.warn {
+  color: var(--s-warn);
+}
+
+.perf .nums h5 {
+  grid-column: 1 / -1;
+  margin: 6px 0 2px;
+  color: var(--s-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.perf .nums h5:first-child {
+  margin-top: 0;
+}
+
+@media (width <= 1100px) {
+  :root {
+    --s-tree-w: 210px;
+  }
+
+  #shell-panel .perf {
+    grid-template-columns: minmax(0, 1fr) 210px;
+  }
+}
+
+/* A phone: the panel takes the width (the tree, open, lies over it; the
+ * inspector ends at its top), the toggles keep their icons and badges. */
+@media (width <= 700px) {
+  #shell-panel,
+  #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span),
+  #shell-inspector:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+    right: 0;
+    left: 0;
+  }
+
+  #shell-inspector:not(.collapsed) {
+    bottom: var(--s-panel-h, 0px);
+    border-bottom: 1px solid var(--s-line);
+  }
+
+  .tog .tl,
+  .bp-tabs .tab .tl,
+  #shell-panel .chip .cl,
+  .bp-tools .bp-span {
+    display: none;
+  }
+
+  .tog {
+    gap: 4px;
+    padding: 0 8px;
+  }
+
+  .bp-tabs .tab {
+    padding: 0 9px;
+  }
+
+  #shell-panel .perf {
+    grid-template-rows: 120px auto;
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .perf .chart {
+    min-height: 110px;
+    border-right: 0;
+    border-bottom: 1px solid var(--s-line);
+  }
+}
+
+/* The panel's head folds its words when the panel itself is narrow. */
+@container (width <= 760px) {
+  .bp-tabs .tab .tl {
+    display: none;
+  }
+
+  .bp-tabs .tab {
+    padding: 0 9px;
+  }
+}
+
+@container (width <= 540px) {
+  #shell-panel .chip .cl,
+  .bp-tools .bp-span {
+    display: none;
+  }
+}
+
+@container (width <= 420px) {
+  #shell-panel .chip {
+    gap: 3px;
+    padding: 0 4px;
+  }
+
+  .bp-tools,
+  .bp-tools .tools {
+    gap: 2px;
+  }
+
+  .bp-tools {
+    padding-left: 4px;
+  }
+
+  .bp-tabs .tab {
+    padding: 0 7px;
+  }
 }
 
 /* --- tree editing (the Studio 3 prototype's measures) --------------------- */
@@ -1365,8 +2507,9 @@ button.thumb:focus-visible {
   color: var(--s-muted);
 }
 
-/* A card's grip: in its row beside its fold arrow, the same height, 4 px
- * apart (the row's gap). */
+/* A card's grip: first in its row, beside its fold arrow, the same
+ * height, 4 px apart (the row's gap). Shown where the pointer is, on the
+ * selection and on a touch screen, as the explorer shows it. */
 .head .grip {
   position: relative;
   display: flex;
@@ -1378,13 +2521,24 @@ button.thumb:focus-visible {
   border-radius: 4px;
   color: var(--s-muted);
   cursor: grab;
+  opacity: 0;
   touch-action: none;
+}
+
+.head:hover .grip,
+.card.sel .head .grip,
+.card.dragging .head .grip {
+  opacity: 0.9;
 }
 
 /* On a touch screen the grip takes a finger: its hit area grows to
  * 24 x 24 px around the drawn 16 x 20 (WCAG's least target), reaching the
  * fold arrow's edge 4 px away but not over it. */
 @media (pointer: coarse) {
+  .head .grip {
+    opacity: 0.6;
+  }
+
   .head .grip::after {
     content: "";
     position: absolute;
@@ -1415,6 +2569,30 @@ button.thumb:focus-visible {
   box-shadow: 0 3px 0 0 var(--s-accent);
 }
 
+/* A phone: the rows take a finger, 34 px a station and 32 px an item. */
+@media (width <= 700px) {
+  .card > .head {
+    height: 34px;
+  }
+
+  .card.open > .head {
+    min-height: 34px;
+  }
+
+  .kid,
+  .folder {
+    height: 32px;
+  }
+
+  .head .add {
+    opacity: 1;
+  }
+
+  .treefoot {
+    display: none;
+  }
+}
+
 /* The inspector's place in the tour and its commands in words. */
 .sub {
   display: flex;
@@ -1433,6 +2611,13 @@ button.thumb:focus-visible {
 
 .acts {
   padding: 4px 6px 6px;
+}
+
+/* Delete stands apart from the commands before it. */
+.asep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--s-line);
 }
 
 .act {
@@ -1561,7 +2746,7 @@ button.thumb:focus-visible {
 
 /* --- narrow windows ------------------------------------------------------- */
 /* A tablet in portrait: the docks take at most about half the width each
- * (one is open at a time, `dock-rule.ts`), and the hint goes. */
+ * (one is open at a time, `dock-rule.ts`). */
 @media (width <= 820px) {
   /* The bar's actions keep their icons and their names (their titles and
    * labels), as the prototype's. */
@@ -1575,23 +2760,19 @@ button.thumb:focus-visible {
     display: none;
   }
 
-  #shell-tree {
-    width: min(272px, 56vw);
-  }
-
   /* Folded, the tree's head ends where the inspector begins: on a phone
    * the two would overlap, and the inspector would cover the fold arrow. */
   #shell-tree.collapsed {
-    width: min(272px, 56vw, 100vw - var(--s-insp-w));
+    width: min(var(--s-tree-w), 100vw - var(--s-insp-w));
   }
 
   :root {
     --s-insp-w: min(290px, 60vw);
+    --s-tree-w: min(210px, 56vw);
   }
 
-  #shell-hint,
-  #shell-bar .dbg.wide {
-    display: none !important;
+  #shell-tree:not([hidden], .collapsed) ~ #shell-panel:not(.span) {
+    left: var(--s-tree-w);
   }
 }
 
@@ -1605,8 +2786,8 @@ button.thumb:focus-visible {
  * width, worked out from its parts' measured widths: 747 px unfolded, 687
  * after the first step, 454 after the second, 394 after the third (378
  * with a 40 px name) and 301 after the last.
- * - 820 px: the unsaved mark keeps its dot (its words are the bottom
- *   bar's status line, and its title);
+ * - 820 px: the unsaved mark keeps its dot (its words are its title, and
+ *   the save status a screen reader hears);
  * - 720 px: the buttons drop their icons, keeping words;
  * - 520 px: Undo and Redo fold into the Edit menu;
  * - 400 px: the menus' carets go and the groups close up. */
@@ -1625,6 +2806,11 @@ button.thumb:focus-visible {
     --s-name-min: 94px;
   }
 
+  /* Its key is a keyboard's: a narrow screen keeps the word. */
+  body[data-view="3d"] #studio-add kbd {
+    display: none;
+  }
+
   body[data-view="3d"] #topbar .tbtn > svg.i:first-child:not(:last-child) {
     display: none;
   }
@@ -1632,6 +2818,11 @@ button.thumb:focus-visible {
 
 @media (width <= 520px) {
   body[data-view="3d"] #topbar .studio.grp:not(#studio-help-group) {
+    display: none;
+  }
+
+  /* No room for Add beside Help: it is the Edit menu's. */
+  body[data-view="3d"] #studio-add {
     display: none;
   }
 
@@ -1930,9 +3121,10 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
 }
 
 /* In the 3D view the toasts stand over the map controls row (14 px over
- * the bottom bar, 38 px high), 12 px clear of it, never covering it. */
+ * the bottom bar or the open bottom panel, 38 px high), 12 px clear of it,
+ * never covering it. */
 body[data-view="3d"] #toasts {
-  bottom: calc(var(--s-bar-h) + 64px);
+  bottom: calc(var(--s-bar-h) + var(--s-panel-h, 0px) + 64px);
 }
 
 .backdrop :is(.btn, .drop, .cover-choice),

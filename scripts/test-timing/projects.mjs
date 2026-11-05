@@ -787,12 +787,23 @@ export const PROJECTS = [
         // had against its own median. It is NOT a licence to grow into: the next
         // reader should read the two numbers above as the price of two rings and
         // ask whether a third is worth another quarter.
-        //        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
+        //
+        // RAISED 1300 -> 1700 (2026-11-03), AND THIS TIME IT IS SUITE GROWTH
+        // at an unchanged per-test cost. The 1300 s was set for 74 tests at
+        // ~1016 s; the suite now has 96 tests (+30 %). Measured holding the
+        // machine slot: 1332.5 s for 96 tests, ~13.9 s per test against
+        // ~13.7 s before (1016 / 74). Two contended runs read 1358.7 s and
+        // 1413 s. 1700 s is ~1330 s + 28 %, the same loose-alarm shape as the
+        // 1300 had against its ~1016 s. Raise it again only for the same
+        // reason (more tests at the same cost); a higher per-test time is the
+        // regrowth this alarm exists to report.
+        //
+        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
         // 30 %, and CI records no median of its own, so enforcing it there
         // measured the runner and failed two all-green PRs. See the CI note in
         // `budget.mjs`.
         .map((stage) =>
-          stage.name === "test:e2e" ? { ...stage, budgetSeconds: 1300 } : stage,
+          stage.name === "test:e2e" ? { ...stage, budgetSeconds: 1700 } : stage,
         ),
     ],
   },

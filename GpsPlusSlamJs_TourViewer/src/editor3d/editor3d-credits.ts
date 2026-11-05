@@ -1,7 +1,9 @@
 /**
- * The 3D view's credits: one "Credits" button at the bottom bar's left
- * (the page places the box), a disclosure that shows a panel listing every source in full with
- * its link, and a note under the list (the globe view's: GIBS's
+ * The 3D view's credits: one button at the bottom bar's left (the page
+ * places the box) that names the map's source ("Map data © OpenStreetMap
+ * contributors", "© OSM" on a narrow window; "Credits" where the map has
+ * none), a disclosure that shows a panel listing every source in full
+ * with its link, and a note under the list (the globe view's: GIBS's
  * acknowledgement). Esc anywhere while it is open (heard on the document)
  * and a pointer down outside close it; Esc gives focus back to the button
  * when focus was in the box or on the page itself.
@@ -12,9 +14,9 @@
 
 import type { EditorCredit as Credit } from "./editor3d-terrain.js";
 
-/** Whether the map's short credit ("© OpenStreetMap contributors") shows
- *  beside the button by default. Off: the owner chose the button alone;
- *  the option is kept so turning it on is one word. */
+/** Whether the map's credit also shows beside the button as a link by
+ *  default. Off: the button itself names it; the option is kept so
+ *  turning it on is one word. */
 const OSM_BESIDE_BUTTON = false;
 
 /** The short name of the map's credit (`globe-osm-overlay.ts`). */
@@ -46,7 +48,22 @@ export function mountCredits(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "view3d-credits-button";
-  button.textContent = "Credits";
+  const osm = credits.find((c) => c.short === OSM_SHORT);
+  if (osm === undefined) {
+    button.textContent = "Credits";
+  } else {
+    // The map's own credit is the button's words; a click still opens
+    // every source in full.
+    const long = document.createElement("span");
+    long.className = "long";
+    long.textContent = `Map data ${osm.full}`;
+    const short = document.createElement("span");
+    short.className = "short";
+    short.textContent = "© OSM";
+    button.append(long, short);
+    button.setAttribute("aria-label", `Credits: Map data ${osm.full}`);
+    button.title = "All credits";
+  }
   button.setAttribute("aria-expanded", "false");
 
   const panel = document.createElement("div");
@@ -71,7 +88,6 @@ export function mountCredits(
   }
 
   const parts: HTMLElement[] = [button];
-  const osm = credits.find((c) => c.short === OSM_SHORT);
   if ((options.osmBeside ?? OSM_BESIDE_BUTTON) && osm !== undefined) {
     parts.push(link(osm, "view3d-credits-beside"));
   }
