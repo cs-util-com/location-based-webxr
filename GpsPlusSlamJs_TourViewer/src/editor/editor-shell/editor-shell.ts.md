@@ -38,7 +38,7 @@ closed first and the focus back on that station's "+" after the add's
 redraw. Ctrl+K - anywhere but in a text area or an editable element
 (the long-text writer's Link key) and with no dialog open, the
 browser's own Ctrl+K prevented - and the top bar's Add (`#studio-add`,
-the way in for a touch screen) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
+the way in for a touch screen; at a phone's width the Edit menu's `#edit-add`) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
 place the selected station (or the station of the selected item) when
 the query names none, and its New station the head's "+" (a station at
 the centre of the view). Escape closes the palette before the help it

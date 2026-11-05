@@ -378,10 +378,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     store.dispatch(editorViewActions.stationFolded({ id, open: true }));
     deps.edits.addItem(id, kind);
   }
-  // The top bar's Add: the palette for a touch screen, with no keys.
-  byId<HTMLButtonElement>("studio-add").addEventListener("click", () => {
-    palette.open();
-  });
+  // The top bar's Add (the Edit menu's at a phone's width): the palette
+  // for a touch screen, with no keys.
+  for (const id of ["studio-add", "edit-add"]) {
+    byId<HTMLButtonElement>(id).addEventListener("click", () => {
+      palette.open();
+    });
+  }
   /** The tree as last drawn, and the stations a search unfolded whose
    *  arrow folded them since (`TreeInput.searchFolded`), for the tour
    *  of `searchedTour` (its open count) the search was typed over. */

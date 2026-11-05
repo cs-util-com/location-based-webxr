@@ -699,17 +699,21 @@ async function expectInspectorLayout(page, size) {
   const title = await box(page.locator("#inspector-head .ttl"));
   expect(title.x - (icon.x + icon.width), at).toBe(6);
   // The commands: 28 px rows, 6 px in from the dock's 1 px border, one
-  // under another.
+  // under another - Delete last, after a 1 px separator 4 px from each.
   const acts = await page.locator("#inspector-body > .acts > .act").all();
-  expect(acts.length, at).toBe(3);
+  expect(acts.length, at).toBe(2);
   let last = null;
   for (const a of acts) {
     const b = await box(a);
     expect(b.height, at).toBe(28);
     expect(b.x - dock.x, at).toBe(7);
-    if (last !== null) expect(b.y, at).toBe(last.y + last.height);
+    if (last !== null)
+      expect(b.y - (last.y + last.height), at).toBeCloseTo(9, 0);
     last = b;
   }
+  await expect(
+    page.locator("#inspector-body > .acts > .act").last(),
+  ).toHaveAttribute("data-act", "delete");
   // A field: its label 74 px, its box 6 px after, 24 px high (the
   // description three lines, 52 px, AU-2), inside the dock's 12 px
   // padding (and its left border: the dock is flush with the window's

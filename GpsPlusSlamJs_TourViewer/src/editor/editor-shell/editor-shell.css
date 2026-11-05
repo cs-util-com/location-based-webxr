@@ -2821,6 +2821,11 @@ body[data-view="3d"] #view3d .view3d-canvas {
     display: none;
   }
 
+  /* No room for Add beside Help: it is the Edit menu's. */
+  body[data-view="3d"] #studio-add {
+    display: none;
+  }
+
   body[data-view="3d"] #edit-menu-wrap {
     display: flex;
   }

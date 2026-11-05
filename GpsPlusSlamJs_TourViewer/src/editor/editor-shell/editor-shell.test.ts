@@ -422,14 +422,21 @@ describe("the Ctrl+K palette", () => {
   });
 
   // Why: a touch tablet has neither the keyboard's Ctrl+K nor a mouse
-  // for a row's "+": the top bar's Add is the palette's button.
-  it("opens from the top bar's Add", () => {
+  // for a row's "+": the top bar's Add is the palette's button, and at a
+  // phone's width, where the bar has no room for it, the Edit menu's.
+  it("opens from the top bar's Add and from the Edit menu's", () => {
     const { shell } = setUp();
-    const add = document.getElementById("studio-add");
-    expect(add?.getAttribute("aria-keyshortcuts")).toBe("Control+K");
-    add?.click();
-    expect(palette()?.hidden).toBe(false);
-    expect(document.activeElement).toBe(input());
+    for (const id of ["studio-add", "edit-add"]) {
+      const add = document.getElementById(id);
+      expect(add?.getAttribute("aria-keyshortcuts"), id).toBe("Control+K");
+      add?.click();
+      expect(palette()?.hidden, id).toBe(false);
+      expect(document.activeElement, id).toBe(input());
+      input().dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      expect(palette()?.hidden, id).toBe(true);
+    }
     shell.hide();
   });
 

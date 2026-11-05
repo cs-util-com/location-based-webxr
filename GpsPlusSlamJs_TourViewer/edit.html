@@ -108,8 +108,8 @@
           ><span class="dot" aria-hidden="true"></span
           ><span class="lbl">Not saved</span></span
         >
-        <!-- At a phone's width the bar has no room for Undo and Redo in
-             words: they fold into this menu (editor-shell.css). -->
+        <!-- At a phone's width the bar has no room for Undo, Redo and Add
+             in words: they fold into this menu (editor-shell.css). -->
         <div class="menu-wrap studio" id="edit-menu-wrap">
           <button class="tbtn menu-btn" id="edit-menu-btn" type="button">
             <span class="lbl">Edit</span><i data-icon="down"></i>
@@ -132,6 +132,15 @@
               aria-keyshortcuts="Control+Shift+Z"
             >
               Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
+            </button>
+            <!-- The top bar's Add, folded in with Undo and Redo. -->
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-add"
+              aria-keyshortcuts="Control+K"
+            >
+              Add...<kbd aria-hidden="true">Ctrl K</kbd>
             </button>
           </div>
         </div>
