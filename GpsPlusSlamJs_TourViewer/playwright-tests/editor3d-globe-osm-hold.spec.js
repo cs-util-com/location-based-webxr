@@ -5,6 +5,7 @@ import {
   answerHosts,
   keepRejections,
   noApproach,
+  noClouds,
   rejections,
   reliefCarries,
   view3d,
@@ -56,6 +57,9 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
+  // The heavy clouds off: in this software renderer they hold the frame
+  // rate near 1 a second.
+  await noClouds(page);
   /** @type {"answer" | "refuse"} */
   let server = "answer";
   let refused = 0;
@@ -71,14 +75,6 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
-  // The heavy clouds off, as in the other globe tests: in this software
-  // renderer they hold the frame rate near 1 a second.
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
-    .toBe(true);
-  await page.locator("#view-menu-btn").click();
-  await page.locator("#view-clouds").click();
-  await page.keyboard.press("Escape");
   await reliefCarries(page);
 
   /** @type {any} */
@@ -204,18 +200,13 @@ test("a zoom-in in steps never draws a tile bare in place of a mapped one", asyn
   await answerHosts(page, { globeAssets: "serve" });
   await keepRejections(page);
   await noApproach(page);
+  await noClouds(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
-  await expect
-    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
-    .toBe(true);
-  await page.locator("#view-menu-btn").click();
-  await page.locator("#view-clouds").click();
-  await page.keyboard.press("Escape");
   await reliefCarries(page);
   /** @type {{ distanceM: number, frames: number, bareUnderMap: number, mapped: boolean }[]} */
   const steps = [];
