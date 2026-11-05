@@ -26,11 +26,10 @@ Shared test helper module that centralizes commonly used helper functions across
 
 - `enter-ar-flow.spec.js` — imports `callRealPopulateScenarios`, `setPermissionsReady`, `setStorageReady`, `waitForTestHooks`, `fakeWebXRSupport`
 - `setup-modal.spec.js` — imports `callRealPopulateScenarios`, `setStorageReady`, `waitForTestHooks`, `fakeWebXRSupport`
-- `test-hooks-verification.spec.js` — imports `setPermissionsReady`, `setStorageReady`, `waitForTestHooks`
-- `session-summary.spec.js` — imports `waitForTestHooks`
+- `test-hooks-verification.spec.js` — imports `fakeWebXRSupport`, `REQUIRED_TEST_HOOKS`, `TEST_HOOKS_TIMEOUT_MS`
+- `session-summary.spec.js`, `toast.spec.js` — import `waitForTestHooks`
 - `button-states.spec.js` — imports `fakeWebXRSupport`
-- `log-panel.spec.js` — imports `waitForTestHooksSubset`
 
 ## Tests
 
-Covered indirectly by every spec file that imports from it. The `test-hooks-verification.spec.js` test "all exposed testHooks are waited for in waitForTestHooks" validates that `waitForTestHooks` stays in sync with the actual hooks exposed by the app.
+Covered indirectly by every spec file that imports from it. The `test-hooks-verification.spec.js` test "REQUIRED_TEST_HOOKS matches the exposed window.testHooks surface" validates that `waitForTestHooks` stays in sync with the actual hooks exposed by the app.

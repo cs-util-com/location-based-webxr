@@ -16,7 +16,7 @@ import { test, expect } from './e2e-test.js';
  */
 
 test.describe('Alignment timing page', () => {
-  test('boots, prints its parameters and the device, and refuses to run empty @pr', async ({
+  test('boots, prints its parameters and the device, offers the swept repeat counts, and refuses to run empty @pr', async ({
     page,
   }) => {
     await page.goto('/alignment-timing.html');
@@ -30,18 +30,15 @@ test.describe('Alignment timing page', () => {
     const device = page.locator('#timing-device');
     await expect(device).toContainText('hardwareConcurrency');
 
+    const options = page.locator('#timing-repeats option');
+    await expect(options).toHaveCount(3);
+    await expect(page.locator('#timing-repeats')).toHaveValue('5');
+
     // The run button stays disabled until a recording is chosen - the only
     // input this page has.
     await expect(page.locator('#timing-run')).toBeDisabled();
     await expect(page.locator('#timing-status')).toContainText(
       'Choose a recording zip'
     );
-  });
-
-  test('offers the swept repeat counts', async ({ page }) => {
-    await page.goto('/alignment-timing.html');
-    const options = page.locator('#timing-repeats option');
-    await expect(options).toHaveCount(3);
-    await expect(page.locator('#timing-repeats')).toHaveValue('5');
   });
 });

@@ -1,177 +1,25 @@
 /**
- * Tests for html-fixtures.ts
- *
- * Why these tests matter:
- * - Validates that the fixture loader correctly extracts HTML from index.html
- * - Ensures the loader handles nested elements properly
- * - Guards against regressions in the extraction logic
+ * Production invariants of index.html and app.css, read through the fixture
+ * loader. The loader itself needs no tests of its own: a broken loader fails
+ * every suite that consumes it.
  *
  * @vitest-environment node
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   extractElementById,
-  extractElementsById,
-  loadSettingsModalHtml,
-  loadSettingsButtonHtml,
-  loadSettingsTestFixture,
   loadFullIndexHtml,
   loadAppCss,
-  clearHtmlCache,
 } from './html-fixtures';
 
 describe('html-fixtures', () => {
-  describe('extractElementById', () => {
-    it('extracts settings-modal element', () => {
-      const html = extractElementById('settings-modal');
-
-      expect(html).toContain('id="settings-modal"');
-      expect(html).toContain('id="depth-enabled"');
-      expect(html).toContain('id="btn-settings-save"');
-      // Should be complete element with closing tag
-      expect(html).toMatch(/<div[^>]*id="settings-modal"[^>]*>[\s\S]*<\/div>$/);
-    });
-
-    it('extracts btn-settings element', () => {
-      const html = extractElementById('btn-settings');
-
-      expect(html).toContain('id="btn-settings"');
-      expect(html).toContain('⚙️');
-      expect(html).toContain('aria-label="Recording Settings"');
-    });
-
-    it('extracts setup-modal element with nested content', () => {
-      const html = extractElementById('setup-modal');
-
-      expect(html).toContain('id="setup-modal"');
-      // Should include nested elements
-      expect(html).toContain('id="btn-settings"');
-      expect(html).toContain('id="btn-enter-ar"');
-    });
-
-    it('throws error for non-existent element', () => {
-      expect(() => extractElementById('non-existent-element')).toThrow(
-        'Element with id="non-existent-element" not found in index.html'
-      );
-    });
-
-    it('handles elements with single quotes in id attribute', () => {
-      // Most IDs in index.html use double quotes, but the loader should handle both
-      // This test verifies the regex pattern works for typical cases
-      const html = extractElementById('status');
-      expect(html).toContain('id="status"');
-    });
-  });
-
-  describe('extractElementsById', () => {
-    it('extracts multiple elements', () => {
-      const html = extractElementsById(['settings-modal', 'hud']);
-
-      expect(html).toContain('id="settings-modal"');
-      expect(html).toContain('id="hud"');
-    });
-
-    it('preserves order of elements', () => {
-      const html = extractElementsById(['hud', 'settings-modal']);
-
-      const hudIndex = html.indexOf('id="hud"');
-      const modalIndex = html.indexOf('id="settings-modal"');
-      expect(hudIndex).toBeLessThan(modalIndex);
-    });
-
-    it('returns empty string for empty array', () => {
-      const html = extractElementsById([]);
-      expect(html).toBe('');
-    });
-  });
-
-  describe('loadSettingsModalHtml', () => {
-    it('returns settings modal HTML', () => {
-      const html = loadSettingsModalHtml();
-
-      expect(html).toContain('id="settings-modal"');
-      expect(html).toContain('Recording Settings');
-    });
-
-    it('includes all required form elements', () => {
-      const html = loadSettingsModalHtml();
-
-      // Depth controls
-      expect(html).toContain('id="depth-enabled"');
-      expect(html).toContain('id="depth-interval"');
-      expect(html).toContain('id="depth-grid"');
-
-      // Image controls
-      expect(html).toContain('id="images-enabled"');
-      expect(html).toContain('id="images-interval"');
-      expect(html).toContain('id="images-quality"');
-
-      // Value displays
-      expect(html).toContain('id="depth-interval-value"');
-      expect(html).toContain('id="depth-grid-value"');
-      expect(html).toContain('id="images-interval-value"');
-      expect(html).toContain('id="images-quality-value"');
-
-      // Buttons
-      expect(html).toContain('id="btn-settings-close"');
-      expect(html).toContain('id="btn-settings-save"');
-      expect(html).toContain('id="btn-settings-reset"');
-    });
-  });
-
-  describe('loadSettingsButtonHtml', () => {
-    it('returns settings button HTML', () => {
-      const html = loadSettingsButtonHtml();
-
-      expect(html).toContain('id="btn-settings"');
-      expect(html).toContain('⚙️');
-    });
-
-    it('has accessible attributes', () => {
-      const html = loadSettingsButtonHtml();
-
-      expect(html).toContain('aria-label="Recording Settings"');
-      expect(html).toContain('title="Recording Settings"');
-    });
-  });
-
-  describe('loadSettingsTestFixture', () => {
-    it('includes both settings modal and setup modal', () => {
-      const html = loadSettingsTestFixture();
-
-      expect(html).toContain('id="settings-modal"');
-      expect(html).toContain('id="setup-modal"');
-    });
-
-    it('includes the settings button from setup modal', () => {
-      const html = loadSettingsTestFixture();
-
-      expect(html).toContain('id="btn-settings"');
-    });
-  });
-
-  describe('cache behavior', () => {
-    beforeEach(() => {
-      // Clear cache to test the caching mechanism itself
-      clearHtmlCache();
-    });
-
-    it('returns consistent results across calls', () => {
-      const html1 = loadSettingsModalHtml();
-      const html2 = loadSettingsModalHtml();
-
-      expect(html1).toBe(html2);
-    });
-
-    it('clearHtmlCache allows fresh load', () => {
-      const html1 = loadSettingsModalHtml();
-      clearHtmlCache();
-      const html2 = loadSettingsModalHtml();
-
-      // Content should still be the same (file hasn't changed)
-      expect(html1).toBe(html2);
-    });
+  it('ships the WebXR warning, hidden until a capability check fails', () => {
+    // Why: hud.ts finds this element by id at runtime and its unit tests build
+    // their own markup, so only this reads the page that actually ships.
+    expect(extractElementById('webxr-warning')).toMatch(
+      /class="[^"]*\bhidden\b/
+    );
   });
 
   describe('production HTML invariants — Issue 4 (log panel visibility & mobile usability)', () => {

@@ -66,9 +66,6 @@ beforeEach(() => {
 
 ## Tests
 
-See `html-fixtures.test.ts` for coverage of:
-
-- Element extraction by ID
-- Nested element handling
-- Error cases (missing elements)
-- Cache behavior
+The loader has no tests of its own: a broken loader fails every suite that
+consumes it. `html-fixtures.test.ts` uses it to hold the production invariants
+of `index.html` and `app.css` (z-index, tap targets, safe-area padding).

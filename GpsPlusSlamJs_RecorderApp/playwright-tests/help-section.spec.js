@@ -33,12 +33,14 @@ async function toggleHelpSection(page) {
 }
 
 test.describe('Help Section', () => {
-  // Simulate a genuine FIRST-TIME user: clear BOTH the collapsed preference and
-  // the "seen" marker, then reload so that reload is the first launch this user
-  // has ever made (open by default). The "show the manual once" behaviour
-  // (2026-06-19) collapses on every *subsequent* start, so the seen marker must
-  // be cleared too or the reload would already count as a return visit.
-  test.beforeEach(async ({ page }) => {
+  test('explains the concepts on a first launch, and collapses and re-expands', async ({
+    page,
+  }) => {
+    // Simulate a genuine FIRST-TIME user: clear BOTH the collapsed preference and
+    // the "seen" marker, then reload so that reload is the first launch this user
+    // has ever made (open by default). The "show the manual once" behaviour
+    // (2026-06-19) collapses on every *subsequent* start, so the seen marker must
+    // be cleared too or the reload would already count as a return visit.
     await page.goto('/');
     await page.evaluate(
       ([collapsedKey, seenKey]) => {
@@ -51,54 +53,50 @@ test.describe('Help Section', () => {
     await page.reload();
     // Wait for setup modal to be visible
     await page.locator('#setup-modal').waitFor({ state: 'visible' });
-  });
 
-  test('help section contains key concept explanations', async ({ page }) => {
     const helpContent = page.locator('#help-section-content');
 
-    // Should explain what the app is for. `[\s\S]*` (not `.*`) so the match
-    // tolerates the prettier-wrapped multi-line Purpose paragraph — "Record
-    // synchronized AR + GPS data …" spans several source lines.
-    await expect(helpContent).toContainText(/record[\s\S]*AR[\s\S]*GPS/i);
+    await test.step('it explains the app', async () => {
+      // Should explain what the app is for. `[\s\S]*` (not `.*`) so the match
+      // tolerates the prettier-wrapped multi-line Purpose paragraph — "Record
+      // synchronized AR + GPS data …" spans several source lines.
+      await expect(helpContent).toContainText(/record[\s\S]*AR[\s\S]*GPS/i);
 
-    // D1 (2026-06-19 round-2 feedback): the Purpose copy now foregrounds the
-    // concrete artifact — the ZIP's COLMAP folder structure — rather than the
-    // abstract "build 3D reconstructions". Assert the COLMAP linkage survives so
-    // the wording can't silently regress to the old generic framing. Kept loose
-    // (`/COLMAP/i`) so the exact phrasing ("COLMAP folder structure" /
-    // "COLMAP-conform") can be tuned without churning the test.
-    await expect(helpContent).toContainText(/COLMAP/i);
+      // D1 (2026-06-19 round-2 feedback): the Purpose copy now foregrounds the
+      // concrete artifact — the ZIP's COLMAP folder structure — rather than the
+      // abstract "build 3D reconstructions". Assert the COLMAP linkage survives so
+      // the wording can't silently regress to the old generic framing. Kept loose
+      // (`/COLMAP/i`) so the exact phrasing ("COLMAP folder structure" /
+      // "COLMAP-conform") can be tuned without churning the test.
+      await expect(helpContent).toContainText(/COLMAP/i);
 
-    // Should explain what Reference Points are
-    await expect(helpContent).toContainText(/reference point/i);
-  });
+      // Should explain what Reference Points are
+      await expect(helpContent).toContainText(/reference point/i);
+    });
 
-  // D6 item 3 (2026-06-16 user feedback): the Scenario/Session explanations were
-  // moved OUT of the top "What is this app?" help and into the self-contained
-  // (collapsed) scenario/session section, so the manual no longer dominates the
-  // first viewport. The explanations must still exist — just in their new home.
-  test('scenario/session explanations live in the scenario section', async ({
-    page,
-  }) => {
-    const scenarioSection = page.locator('#scenario-section');
-    // toContainText reads textContent, so it works even while collapsed.
-    await expect(scenarioSection).toContainText(/scenario/i);
-    await expect(scenarioSection).toContainText(/session/i);
-    // And they are no longer duplicated in the help text.
-    await expect(page.locator('#help-section-content')).not.toContainText(
-      /A named[\s\S]*physical area/i
-    );
-  });
+    // D6 item 3 (2026-06-16 user feedback): the Scenario/Session explanations were
+    // moved OUT of the top "What is this app?" help and into the self-contained
+    // (collapsed) scenario/session section, so the manual no longer dominates the
+    // first viewport. The explanations must still exist — just in their new home.
+    await test.step('scenario and session are explained in their own section', async () => {
+      const scenarioSection = page.locator('#scenario-section');
+      // toContainText reads textContent, so it works even while collapsed.
+      await expect(scenarioSection).toContainText(/scenario/i);
+      await expect(scenarioSection).toContainText(/session/i);
+      // And they are no longer duplicated in the help text.
+      await expect(helpContent).not.toContainText(
+        /A named[\s\S]*physical area/i
+      );
+    });
 
-  test('help section can be re-expanded after collapsing', async ({ page }) => {
-    const helpContent = page.locator('#help-section-content');
+    await test.step('it collapses and re-expands', async () => {
+      // Collapse using helper
+      await toggleHelpSection(page);
+      await expect(helpContent).not.toBeVisible();
 
-    // Collapse using helper
-    await toggleHelpSection(page);
-    await expect(helpContent).not.toBeVisible();
-
-    // Re-expand using helper
-    await toggleHelpSection(page);
-    await expect(helpContent).toBeVisible();
+      // Re-expand using helper
+      await toggleHelpSection(page);
+      await expect(helpContent).toBeVisible();
+    });
   });
 });

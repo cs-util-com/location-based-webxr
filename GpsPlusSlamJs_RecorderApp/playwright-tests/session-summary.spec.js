@@ -41,198 +41,109 @@ test.beforeEach(async ({ page }) => {
   await page.locator('#session-summary-panel').waitFor({ state: 'attached' });
 });
 
-test.describe('Session Summary Panel - Visibility', () => {
-  test('summary panel is hidden initially', async ({ page }) => {
-    const panel = page.locator('#session-summary-panel');
-    await expect(panel).toHaveClass(/hidden/);
-  });
-
-  test('summary panel becomes visible when showSessionSummary is called', async ({
+test.describe('Session Summary Panel', () => {
+  test('hidden at first, then over the recording controls with its buttons, its map, and the way to the logs', async ({
     page,
   }) => {
-    await waitForTestHooks(page);
-
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, sampleSummaryData);
-
+    /** Sample data with GPS paths (Issue #4, 2026-01-27: the Leaflet 2D map). */
+    const summaryDataWithPaths = {
+      ...sampleSummaryData,
+      rawGpsPath: [
+        { lat: 50.0, lng: 8.0 },
+        { lat: 50.001, lng: 8.001 },
+        { lat: 50.002, lng: 8.002 },
+      ],
+      fusedPath: [],
+      referencePointsForMap: [{ lat: 50.001, lng: 8.001, name: 'TestPoint' }],
+    };
     const panel = page.locator('#session-summary-panel');
-    await expect(panel).not.toHaveClass(/hidden/);
-    await expect(panel).toBeVisible();
-  });
-});
 
-test.describe('Session Summary Panel - Edge Cases', () => {
-  test('handles zero duration session', async ({ page }) => {
+    await test.step('hidden initially', async () => {
+      await expect(panel).toHaveClass(/hidden/);
+    });
+
+    await test.step('appears over the recording controls', async () => {
+      await waitForTestHooks(page);
+
+      // First show recording controls
+      await page.evaluate(() => {
+        window.testHooks.showRecordingControls();
+      });
+
+      // Then show summary (which should appear on top)
+      await page.evaluate((data) => {
+        window.testHooks.showSessionSummary(data);
+      }, summaryDataWithPaths);
+
+      await expect(panel).not.toHaveClass(/hidden/);
+      await expect(panel).toBeVisible();
+
+      // Should cover viewport (allow some tolerance for margins)
+      const boundingBox = await panel.boundingBox();
+      expect(boundingBox.width).toBeGreaterThan(100);
+      expect(boundingBox.height).toBeGreaterThan(100);
+    });
+
+    await test.step('its buttons', async () => {
+      const newRecordingBtn = page.locator('#btn-new-recording');
+      await expect(newRecordingBtn).toBeVisible();
+      await expect(newRecordingBtn).toContainText('New Recording');
+
+      const viewLogsBtn = page.locator('#btn-view-logs');
+      await expect(viewLogsBtn).toBeVisible();
+      await expect(viewLogsBtn).toContainText('View Full Logs');
+    });
+
+    await test.step('the recorded path map', async () => {
+      const mapContainer = page.locator('#summary-map-container');
+      await expect(mapContainer).toBeVisible();
+      await expect(
+        page.locator('#session-summary-panel h2:has-text("Recorded Path")')
+      ).toBeVisible();
+      await expect(page.locator('text=Raw GPS')).toBeVisible();
+      await expect(page.locator('text=Fused Path')).toBeVisible();
+
+      // Leaflet adds its class directly to the container or creates internal structure.
+      // Look for Leaflet's attribution control which is always present with a tile layer.
+      const leafletAttribution = mapContainer.locator(
+        '.leaflet-control-attribution'
+      );
+      await expect(leafletAttribution).toBeVisible({ timeout: 5000 });
+
+      // Also verify the Leaflet link is present (confirms Leaflet loaded)
+      await expect(leafletAttribution).toContainText('Leaflet');
+    });
+
+    await test.step('View Full Logs opens the log panel', async () => {
+      // Hide the setup modal so it cannot take the click.
+      await page.evaluate(() => {
+        document.getElementById('setup-modal')?.classList.add('hidden');
+      });
+      await page.locator('#btn-view-logs').click();
+      await expect(page.locator('#log-panel')).toBeVisible();
+    });
+  });
+
+  test('a session of no length and no GPS says so', async ({ page }) => {
     await waitForTestHooks(page);
 
     const now = Date.now();
-    const zeroDuration = {
-      ...sampleSummaryData,
-      duration: { startTime: now, endTime: now },
-    };
-
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, zeroDuration);
-
-    const duration = page.locator('#summary-duration');
-    await expect(duration).toContainText('0:00');
-  });
-});
-
-test.describe('Session Summary Panel - Buttons', () => {
-  test.beforeEach(async ({ page }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, sampleSummaryData);
-  });
-
-  test('New Recording button is visible', async ({ page }) => {
-    const newRecordingBtn = page.locator('#btn-new-recording');
-    await expect(newRecordingBtn).toBeVisible();
-    await expect(newRecordingBtn).toContainText('New Recording');
-  });
-
-  test('View Full Logs button is visible', async ({ page }) => {
-    const viewLogsBtn = page.locator('#btn-view-logs');
-    await expect(viewLogsBtn).toBeVisible();
-    await expect(viewLogsBtn).toContainText('View Full Logs');
-  });
-});
-
-test.describe('Session Summary Panel - Terminal State', () => {
-  test('summary panel overlays the entire viewport', async ({ page }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, sampleSummaryData);
-
-    const panel = page.locator('#session-summary-panel');
-    const boundingBox = await panel.boundingBox();
-
-    // Should cover viewport (allow some tolerance for margins)
-    expect(boundingBox.width).toBeGreaterThan(100);
-    expect(boundingBox.height).toBeGreaterThan(100);
-  });
-
-  test('recording controls are not visible when summary is shown', async ({
-    page,
-  }) => {
-    await waitForTestHooks(page);
-
-    // First show recording controls
-    await page.evaluate(() => {
-      window.testHooks.showRecordingControls();
-    });
-
-    // Then show summary (which should appear on top)
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, sampleSummaryData);
-
-    // The summary panel should be on top (z-50) obscuring controls
-    const panel = page.locator('#session-summary-panel');
-    await expect(panel).toBeVisible();
-
-    // Verify summary is in the foreground by checking it can receive clicks
-    const newRecordingBtn = page.locator('#btn-new-recording');
-    await expect(newRecordingBtn).toBeVisible();
-  });
-});
-
-/**
- * Summary Map Tests (Issue #4, 2026-01-27)
- *
- * Tests for the Leaflet-based 2D map that shows the recorded GPS path
- * in the session summary panel.
- */
-test.describe('Session Summary Panel - Map Display', () => {
-  /** Sample data with GPS paths for map testing */
-  const summaryDataWithPaths = {
-    ...sampleSummaryData,
-    rawGpsPath: [
-      { lat: 50.0, lng: 8.0 },
-      { lat: 50.001, lng: 8.001 },
-      { lat: 50.002, lng: 8.002 },
-    ],
-    fusedPath: [],
-    referencePointsForMap: [{ lat: 50.001, lng: 8.001, name: 'TestPoint' }],
-  };
-
-  test('map container exists in summary panel', async ({ page }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, summaryDataWithPaths);
-
-    const mapContainer = page.locator('#summary-map-container');
-    await expect(mapContainer).toBeVisible();
-  });
-
-  test('map section has "Recorded Path" heading', async ({ page }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, summaryDataWithPaths);
-
-    const heading = page.locator(
-      '#session-summary-panel h2:has-text("Recorded Path")'
+    await page.evaluate(
+      (data) => {
+        window.testHooks.showSessionSummary(data);
+      },
+      {
+        ...sampleSummaryData,
+        duration: { startTime: now, endTime: now },
+        rawGpsPath: [],
+        fusedPath: [],
+        referencePointsForMap: [],
+      }
     );
-    await expect(heading).toBeVisible();
-  });
 
-  test('map legend shows raw GPS and fused path labels', async ({ page }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, summaryDataWithPaths);
-
-    const rawGpsLegend = page.locator('text=Raw GPS');
-    const fusedPathLegend = page.locator('text=Fused Path');
-
-    await expect(rawGpsLegend).toBeVisible();
-    await expect(fusedPathLegend).toBeVisible();
-  });
-
-  test('map renders Leaflet elements when GPS data provided', async ({
-    page,
-  }) => {
-    await waitForTestHooks(page);
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, summaryDataWithPaths);
-
-    // Wait for Leaflet to initialize
-    const mapContainer = page.locator('#summary-map-container');
-
-    // Leaflet adds its class directly to the container or creates internal structure.
-    // Look for Leaflet's attribution control which is always present with a tile layer.
-    const leafletAttribution = mapContainer.locator(
-      '.leaflet-control-attribution'
+    await expect(page.locator('#summary-duration')).toContainText('0:00');
+    await expect(page.locator('#summary-map-container')).toContainText(
+      'No GPS path recorded'
     );
-    await expect(leafletAttribution).toBeVisible({ timeout: 5000 });
-
-    // Also verify the Leaflet link is present (confirms Leaflet loaded)
-    await expect(leafletAttribution).toContainText('Leaflet');
-  });
-
-  test('shows "No GPS path recorded" when no GPS data', async ({ page }) => {
-    await waitForTestHooks(page);
-
-    const noGpsData = {
-      ...sampleSummaryData,
-      rawGpsPath: [],
-      fusedPath: [],
-      referencePointsForMap: [],
-    };
-
-    await page.evaluate((data) => {
-      window.testHooks.showSessionSummary(data);
-    }, noGpsData);
-
-    const mapContainer = page.locator('#summary-map-container');
-    await expect(mapContainer).toContainText('No GPS path recorded');
   });
 });

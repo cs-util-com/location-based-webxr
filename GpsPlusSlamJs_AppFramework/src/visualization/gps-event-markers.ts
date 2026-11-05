@@ -376,7 +376,7 @@ export class GpsEventVisualizer {
    * Diagnostic accessor: returns the world-space size (`THREE.Box3.setFromObject`)
    * of each raw-GPS marker, in insertion order.
    *
-   * Used by the rec31 accuracy-ellipsoid Playwright spec (§3c) to verify the
+   * Used to verify in a test the
    * relative scaling of two events with different `latLongAccuracy`. This is
    * the size of the rendered ellipsoid in scene units (= metres in replay
    * mode), not the underlying geometry radius — so it correctly reflects the

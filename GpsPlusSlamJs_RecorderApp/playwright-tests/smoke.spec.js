@@ -2,9 +2,9 @@ import { test, expect } from './e2e-test.js';
 import { fakeWebXRSupport } from './test-helpers.js';
 
 /**
- * Smoke tests for the Recorder App.
+ * Smoke test for the Recorder App.
  *
- * These tests verify the app loads and renders correctly in a desktop browser.
+ * This verifies the app loads and renders correctly in a desktop browser.
  * WebXR functionality cannot be tested here - that requires a real Android device.
  */
 
@@ -16,12 +16,12 @@ const isWebXrError = (text) =>
   text.toLowerCase().includes('webxr') || text.toLowerCase().includes('xr');
 
 test.describe('Recorder App Smoke Tests', () => {
-  // Fake WebXR so app stays in recording mode (Playwright has no WebXR)
-  test.beforeEach(async ({ page }) => {
+  test('boots to the setup modal with its controls and Tailwind applied, on a clean console @pr', async ({
+    page,
+  }) => {
+    // Fake WebXR so app stays in recording mode (Playwright has no WebXR)
     await fakeWebXRSupport(page);
-  });
 
-  test('loads without console errors @pr', async ({ page }) => {
     const consoleIssues = [];
     const pageErrors = [];
     const allowedWarningPatterns = [
@@ -68,90 +68,77 @@ test.describe('Recorder App Smoke Tests', () => {
     // Wait for the setup modal to be visible (indicates app fully loaded)
     await page.locator('#setup-modal').waitFor({ state: 'visible' });
 
-    expect(consoleIssues, 'Console errors detected').toEqual([]);
-    expect(pageErrors, 'Page errors detected').toEqual([]);
-  });
-
-  test('shows setup modal on load @pr', async ({ page }) => {
-    await page.goto('/');
-
-    // The setup modal should be visible
-    const setupModal = page.locator('#setup-modal');
-    await expect(setupModal).toBeVisible();
-
-    // Title should be present
-    await expect(
-      page.getByRole('heading', { name: 'GPS + SLAM Recorder' })
-    ).toBeVisible();
-  });
-
-  test('setup modal has required UI elements @pr', async ({ page }) => {
-    await page.goto('/');
-
-    // Storage setup section should be visible with mandatory buttons (Task 1a-fix)
-    const storageSetup = page.locator('#storage-setup');
-    await expect(storageSetup).toBeVisible();
-
-    // The save location is the mandatory storage step and is visible by default.
-    // The folder-import step is an optional collapsed section (D5), so its
-    // button is present but hidden until expanded.
-    const openFolderBtn = page.locator('#btn-open-folder');
-    await expect(openFolderBtn).toBeAttached();
-    await expect(openFolderBtn).toContainText('Open Previous Recordings');
-
-    // Choose save location button should be visible
-    const chooseSaveBtn = page.locator('#btn-choose-save');
-    await expect(chooseSaveBtn).toBeVisible();
-    await expect(chooseSaveBtn).toContainText('Choose Save Location');
-
-    // Scenario dropdown lives in the collapsed scenario/session section (D6
-    // item 3), so it is present but hidden until the section is expanded.
-    const scenarioSelect = page.locator('#scenario-select');
-    await expect(scenarioSelect).toBeAttached();
-    await page.evaluate(() => {
-      const section = document.getElementById('scenario-section');
-      if (section) section.open = true;
-    });
-    await expect(scenarioSelect).toBeVisible();
-
-    // Enter AR button (initially disabled)
-    const enterButton = page.locator('#btn-enter-ar');
-    await expect(enterButton).toBeVisible();
-    await expect(enterButton).toBeDisabled();
-  });
-});
-
-test.describe('Tailwind is actually applied, not merely bundled', () => {
-  /**
-   * WHY THIS EXISTS. On 2026-08-19 Tailwind moved from `cdn.tailwindcss.com`
-   * (the v3 Play CDN, which compiled in the browser by scanning the live DOM)
-   * to a v4 build. Two things could go wrong silently, and neither is visible
-   * to a test that reads markup:
-   *
-   * - the build-time scanner reads SOURCE TEXT, so a class assembled from
-   *   fragments would emit no CSS at all;
-   * - v4 renamed and rescaled part of v3's utility set.
-   *
-   * Both were checked against the built stylesheet — 235 utilities, none
-   * missing — but that check is a script someone ran once. This asserts the
-   * thing that actually matters, in a real browser: the rules reach the
-   * elements. If the stylesheet stopped being built, stopped being linked, or
-   * started emitting nothing for a class the app uses, the page still renders
-   * and every markup-reading test stays green. This one does not.
-   */
-
-  test('applies utility classes to the document @pr', async ({ page }) => {
-    await fakeWebXRSupport(page);
-    await page.goto('/');
-
-    // `bg-black text-white` on <body> — the most load-bearing pair in the app,
-    // and the reason the UI is legible at all.
-    const body = await page.evaluate(() => {
-      const style = getComputedStyle(document.body);
-      return { background: style.backgroundColor, colour: style.color };
+    await test.step('the setup modal and its title', async () => {
+      await expect(page.locator('#setup-modal')).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'GPS + SLAM Recorder' })
+      ).toBeVisible();
     });
 
-    expect(body.background).toBe('rgb(0, 0, 0)');
-    expect(body.colour).toBe('rgb(255, 255, 255)');
+    await test.step('the required controls', async () => {
+      // Storage setup section should be visible with mandatory buttons (Task 1a-fix)
+      await expect(page.locator('#storage-setup')).toBeVisible();
+
+      // The save location is the mandatory storage step and is visible by default.
+      // The folder-import step is an optional collapsed section (D5), so its
+      // button is present but hidden until expanded.
+      const openFolderBtn = page.locator('#btn-open-folder');
+      await expect(openFolderBtn).toBeAttached();
+      await expect(openFolderBtn).toContainText('Open Previous Recordings');
+
+      // Choose save location button should be visible
+      const chooseSaveBtn = page.locator('#btn-choose-save');
+      await expect(chooseSaveBtn).toBeVisible();
+      await expect(chooseSaveBtn).toContainText('Choose Save Location');
+
+      // Scenario dropdown lives in the collapsed scenario/session section (D6
+      // item 3), so it is present but hidden until the section is expanded.
+      const scenarioSelect = page.locator('#scenario-select');
+      await expect(scenarioSelect).toBeAttached();
+      await page.evaluate(() => {
+        const section = document.getElementById('scenario-section');
+        if (section) section.open = true;
+      });
+      await expect(scenarioSelect).toBeVisible();
+
+      // Enter AR button (initially disabled)
+      const enterButton = page.locator('#btn-enter-ar');
+      await expect(enterButton).toBeVisible();
+      await expect(enterButton).toBeDisabled();
+    });
+
+    /**
+     * WHY THIS EXISTS. On 2026-08-19 Tailwind moved from `cdn.tailwindcss.com`
+     * (the v3 Play CDN, which compiled in the browser by scanning the live DOM)
+     * to a v4 build. Two things could go wrong silently, and neither is visible
+     * to a test that reads markup:
+     *
+     * - the build-time scanner reads SOURCE TEXT, so a class assembled from
+     *   fragments would emit no CSS at all;
+     * - v4 renamed and rescaled part of v3's utility set.
+     *
+     * Both were checked against the built stylesheet — 235 utilities, none
+     * missing — but that check is a script someone ran once. This asserts the
+     * thing that actually matters, in a real browser: the rules reach the
+     * elements. If the stylesheet stopped being built, stopped being linked, or
+     * started emitting nothing for a class the app uses, the page still renders
+     * and every markup-reading test stays green. This one does not.
+     */
+    await test.step('Tailwind is actually applied, not merely bundled', async () => {
+      // `bg-black text-white` on <body> — the most load-bearing pair in the app,
+      // and the reason the UI is legible at all.
+      const body = await page.evaluate(() => {
+        const style = getComputedStyle(document.body);
+        return { background: style.backgroundColor, colour: style.color };
+      });
+
+      expect(body.background).toBe('rgb(0, 0, 0)');
+      expect(body.colour).toBe('rgb(255, 255, 255)');
+    });
+
+    await test.step('the console stayed clean', async () => {
+      expect(consoleIssues, 'Console errors detected').toEqual([]);
+      expect(pageErrors, 'Page errors detected').toEqual([]);
+    });
   });
 });
