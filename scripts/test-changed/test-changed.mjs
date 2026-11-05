@@ -53,8 +53,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
-import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
+import {
+  holdMachineSlotForProcess,
+  queueClassOf,
+} from '../test-timing/machine-slot.mjs';
+import { SKIP_BROWSER_ENV, resolveGateMode } from '../test-timing/projects.mjs';
 import {
   STALL_EXIT,
   STALL_SUMMARY,
@@ -137,8 +140,14 @@ if (linkOverride) {
 // The machine slot for the WHOLE run (machine-slot.mjs): every gate this
 // spawns inherits the token and re-enters, so another session cannot slip in
 // between the repo-config tests and the last dependent. A dry run takes nothing.
+// The per-commit gate (browser stages skipped) queues ahead of browser runs.
 if (!dryRun) {
-  await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`);
+  await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`, {
+    queueClass: queueClassOf({
+      skipBrowser: resolveGateMode(process.env).skipBrowser,
+      runsBrowser: true,
+    }),
+  });
 }
 
 // The watchdog limit every stage of this run gets, for whoever waits on its

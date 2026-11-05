@@ -51,7 +51,9 @@
   - The machine slot ([machine-slot.mjs](../test-timing/machine-slot.mjs.md))
     is taken once for the WHOLE run (not on `--dry-run`); every gate it
     spawns inherits the token and re-enters, so no other session slips in
-    between the repo-config tests and the last dependent.
+    between the repo-config tests and the last dependent. With
+    `GATE_SKIP_BROWSER_STAGES=1` (the per-commit gate) it queues as `fast`,
+    ahead of browser runs that queued after it or less than an hour before.
   - Whenever a package gate or a root check runs (and before the full
     cascade too), the framework's `dist` is built if stale FIRST
     (`FRAMEWORK_BUILD_IF_STALE` in `select.mjs`), so neither a repo-config

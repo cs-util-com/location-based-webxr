@@ -8,6 +8,7 @@
 import {
   holdMachineSlotForProcess,
   resolveSlotDir,
+  stageQueueClass,
   stageRunTakesSlot,
 } from './machine-slot.mjs';
 import { getStage, resolveProject, PROJECTS } from './projects.mjs';
@@ -33,14 +34,16 @@ if (!project) {
 
 // Every stage run takes the machine slot (inside a gate it re-enters), except
 // a filtered unit-test run, which opts in with GATE_SLOT=take (machine-slot.mjs).
+const stage = getStage(project, stageName);
 const slotRule = stageRunTakesSlot({
-  stage: getStage(project, stageName),
+  stage,
   forwardedArgs,
   env: process.env,
 });
 if (slotRule.take) {
   await holdMachineSlotForProcess(
-    [`${stageName} in ${project.name}`, ...forwardedArgs].join(' ')
+    [`${stageName} in ${project.name}`, ...forwardedArgs].join(' '),
+    { queueClass: stageQueueClass(stage) }
   );
 } else if (resolveSlotDir(process.env) !== null) {
   console.error(slotRule.reason);
