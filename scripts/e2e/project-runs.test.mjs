@@ -8,6 +8,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CHANGED_REF_ENV,
+  LANE_ENV,
+  intersectSelections,
+  laneSpecs,
   DOM_WORKERS_ENV,
   developerFiltered,
   domWorkers,
@@ -254,5 +257,54 @@ describe('namedProjects', () => {
   it('refuses a project the plan does not have, and a flag without a name', () => {
     expect(() => namedProjects(['--project', 'chromium'], ['dom', 'webgl'])).toThrow(RangeError);
     expect(() => namedProjects(['--project'], ['dom', 'webgl'])).toThrow(RangeError);
+  });
+});
+
+// Why this test matters (test-suite pruning plan 2026-11-04, T-M1): a CI
+// lane is chosen by an environment variable, never by forwarded arguments,
+// because a forwarded argument sets `passWithNoTests` and a stale lane would
+// then pass with no test run. An unknown or empty lane must fail the job.
+describe('laneSpecs', () => {
+  const plan = {
+    LANES: ['dom', 'webgl-1'],
+    specsOfLane: (/** @type {string} */ lane) => {
+      if (lane === 'dom') return ['a.spec.js'];
+      if (lane === 'webgl-1') return ['b.spec.js'];
+      throw new RangeError(`no lane ${lane}`);
+    },
+  };
+
+  it('is null (every spec) when no lane is set', () => {
+    expect(laneSpecs({}, plan)).toBeNull();
+    expect(laneSpecs({ [LANE_ENV]: '' }, plan)).toBeNull();
+  });
+
+  it('is the lane\'s spec list when one is set', () => {
+    expect(laneSpecs({ [LANE_ENV]: 'webgl-1' }, plan)).toEqual(['b.spec.js']);
+  });
+
+  it('throws on a lane the plan does not name', () => {
+    expect(() => laneSpecs({ [LANE_ENV]: 'webgl-9' }, plan)).toThrow(RangeError);
+  });
+
+  it('throws on a lane that holds no spec (a job that runs no tests fails)', () => {
+    const empty = { LANES: ['dom'], specsOfLane: () => [] };
+    expect(() => laneSpecs({ [LANE_ENV]: 'dom' }, empty)).toThrow(RangeError);
+  });
+
+  it('throws on a plan without lanes, rather than running everything', () => {
+    expect(() => laneSpecs({ [LANE_ENV]: 'dom' }, {})).toThrow(RangeError);
+  });
+});
+
+describe('intersectSelections', () => {
+  it('keeps the other side when one is null (all)', () => {
+    expect(intersectSelections(null, null)).toBeNull();
+    expect(intersectSelections(['a'], null)).toEqual(['a']);
+    expect(intersectSelections(null, ['b'])).toEqual(['b']);
+  });
+
+  it('keeps only the specs in both, in the first list\'s order', () => {
+    expect(intersectSelections(['c', 'a', 'b'], ['b', 'c'])).toEqual(['c', 'b']);
   });
 });

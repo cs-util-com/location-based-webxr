@@ -29,6 +29,8 @@ import { pathToFileURL } from 'node:url';
 import { changedPaths } from '../test-changed/changed-paths.mjs';
 import {
   CHANGED_REF_ENV,
+  intersectSelections,
+  laneSpecs,
   developerFiltered,
   domWorkers,
   mayNarrow,
@@ -78,6 +80,21 @@ if (mayNarrow(process.env, forwarded)) {
       `e2e areas: ${areas} vs ${ref} - ${selected.length} of ${Object.keys(plan.SPECS).length} spec files: ${selected.join(', ') || '(none)'}`
     );
   }
+}
+
+// A CI lane (E2E_LANE): one job's share of the specs. An unknown or empty
+// lane stops the run, so a job never passes having run no test.
+try {
+  const lane = laneSpecs(process.env, plan);
+  if (lane !== null) {
+    selected = intersectSelections(lane, selected);
+    console.log(
+      `e2e lane ${process.env.E2E_LANE}: ${selected.length} spec files: ${selected.join(', ') || '(none)'}`
+    );
+  }
+} catch (error) {
+  console.error(`e2e lane: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(2);
 }
 
 // A developer's `--project` picks the passes; each pass names its own.

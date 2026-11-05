@@ -35,8 +35,8 @@ export default defineConfig({
     ? [
         ["github"],
         // The runner gives each project its own file and merges them into
-        // RESULTS_NAME. (The GitHub workflow uploads only the Recorder's
-        // results, not this file.)
+        // RESULTS_NAME. (CI uploads this file per Tour Viewer job, as
+        // playwright-report-<job>; .github/workflows/ci.yml.)
         [
           "json",
           {

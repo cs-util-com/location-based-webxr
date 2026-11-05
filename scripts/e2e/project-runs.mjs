@@ -2,8 +2,8 @@
 // run, the DOM project's worker count, whether a run may be narrowed to an
 // area, whether such a run may record a timing row, the reading of each
 // project's JSON report and their merge into the one file the gate's counts
-// read (and the config's CI-mode reporter names; the GitHub workflow uploads
-// only the Recorder's results). No I/O here (the report reader takes its file
+// read (and the config's CI-mode reporter names; CI uploads it per Tour
+// Viewer job), and the CI lane a job runs (E2E_LANE). No I/O here (the report reader takes its file
 // access as an argument), so every rule is unit-testable.
 
 import { onGithubRunner } from '../test-timing/stage-args.mjs';
@@ -235,4 +235,51 @@ export function namedProjects(forwarded, known) {
     named.add(name);
   }
   return { projects: named.size === 0 ? [...known] : known.filter((p) => named.has(p)), rest };
+}
+
+/** Env var naming the CI lane to run (a plan's `LANES`, e.g. `webgl-2`). */
+export const LANE_ENV = 'E2E_LANE';
+
+/**
+ * The specs of the lane `E2E_LANE` names, or null (every spec) when it is
+ * unset or empty.
+ *
+ * An ENVIRONMENT VARIABLE, never a forwarded argument: any forwarded
+ * argument sets `passWithNoTests` (`developerFiltered`), so a stale lane
+ * would pass with no test run. For the same reason a lane the plan does not
+ * name, or one that holds no spec, throws: a job that runs no tests fails.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @param {{ LANES?: readonly string[], specsOfLane?: (lane: string) => string[] }} plan
+ * @returns {string[] | null}
+ * @throws {RangeError} on an unknown or empty lane, or a plan without lanes
+ */
+export function laneSpecs(env, plan) {
+  const lane = env[LANE_ENV];
+  if (lane === undefined || lane === '') return null;
+  if (!Array.isArray(plan.LANES) || typeof plan.specsOfLane !== 'function') {
+    throw new RangeError(`${LANE_ENV}="${lane}" is set, but this e2e plan has no lanes`);
+  }
+  if (!plan.LANES.includes(lane)) {
+    throw new RangeError(`${LANE_ENV}="${lane}" is not one of ${plan.LANES.join(', ')}`);
+  }
+  const specs = plan.specsOfLane(lane);
+  if (specs.length === 0) {
+    throw new RangeError(`${LANE_ENV}="${lane}" holds no spec, so its job would run no test`);
+  }
+  return specs;
+}
+
+/**
+ * Two spec selections combined: null means every spec, so it keeps the other
+ * side; two lists keep the specs in both, in the first list's order.
+ *
+ * @param {readonly string[] | null} a
+ * @param {readonly string[] | null} b
+ * @returns {string[] | null}
+ */
+export function intersectSelections(a, b) {
+  if (a === null) return b === null ? null : [...b];
+  if (b === null) return [...a];
+  return a.filter((name) => b.includes(name));
 }
