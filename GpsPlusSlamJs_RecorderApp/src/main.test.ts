@@ -526,7 +526,7 @@ import { loadRecordingOptions } from './state/recording-options';
 // vi.clearAllMocks() keeps an implementation set with mockResolvedValue or
 // mockImplementation, so each test starts from the defaults here.
 beforeEach(() => {
-  vi.mocked(requestOrientationPermission).mockResolvedValue(undefined);
+  vi.mocked(requestOrientationPermission).mockResolvedValue(true);
   mockShowRefPointPicker.mockResolvedValue(null);
   setRecordingOptionsForTesting(vi.mocked(loadRecordingOptions)());
 });
