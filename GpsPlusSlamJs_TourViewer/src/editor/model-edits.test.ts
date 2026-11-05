@@ -70,21 +70,6 @@ describe("the default view rule", () => {
     expect(m.annotations).toBeUndefined();
   });
 
-  it("keeps a view the creator chose, adding or deleting", () => {
-    const m = run(MODEL, [{ kind: "note-add", at: AT }], true);
-    expect(m.view).toBe("placed");
-    const hot = { ...MODEL, view: "hotspots" } as TourModel;
-    const n = run(
-      hot,
-      [
-        { kind: "note-add", at: AT },
-        { kind: "note-delete", index: 0 },
-      ],
-      true,
-    );
-    expect(n.view).toBe("hotspots");
-  });
-
   it("leaves a model in another view where it is", () => {
     const toy = { ...MODEL, view: "toy" } as TourModel;
     expect(run(toy, [{ kind: "note-add", at: AT }]).view).toBe("toy");

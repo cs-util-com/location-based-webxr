@@ -40,5 +40,5 @@ reliefMs, fields }`, the fields transferred (`height`, `gx`, `gy`,
     which the shader draws as a hatch.
 - Tests: none in Node for this file itself (it is wiring over browser APIs);
   its chain is `terrain-pipeline.test.mjs` (the real served modules, held to
-  the Mercator formula), and `terrain.smoke.spec.mjs` runs it on real and
+  the Mercator formula), and `terrain.smoke.spec.mjs` (removed; in git history) runs it on real and
   synthetic tiles, including a failing tile and every tile failing.

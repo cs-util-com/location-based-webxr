@@ -81,7 +81,7 @@ gx, gy, smallM, latDeg, spreadM?, svf? }`; the options are the hash's `tree`,
   equal to the ramp, "higher is lighter", lit warmer than shaded over 500
   random slopes, the lowlands' lower contrast; E's colours and its
   saturation property over 2000 random shades). In the browser:
-  `terrain-styles.smoke.spec.mjs` and `terrain-lowland.smoke.spec.mjs`
+  `terrain-styles.smoke.spec.mjs` (removed; in git history) and `terrain-lowland.smoke.spec.mjs` (removed; in git history)
   (the drawn lowland against `naturalColour`; its luminance and variety
   on northern Germany and the Alps against style B as it was, the wood
   mix swept).

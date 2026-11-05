@@ -10,7 +10,7 @@
  * Pattern mirrors camera-follower.ts tests — real Three.js objects,
  * no mocks for scene-graph ops.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';

@@ -117,9 +117,9 @@
     blend (the far field's altitudes) is computed on the page.
   - The page sets `frustumCulled = false`: the grid's flat bounds do not
     contain the lifted surface.
-- Tests: through `terrain.smoke.spec.mjs` (style A: a flat tile's colour
+- Tests: through `terrain.smoke.spec.mjs` (removed; in git history) (style A: a flat tile's colour
   equals the reference at E 1, 2, 5 and 10; a tilted plane; a ridge's lifted
-  silhouette; the hatch; no FloatType) and `terrain-styles.smoke.spec.mjs`
+  silhouette; the hatch; no FloatType) and `terrain-styles.smoke.spec.mjs` (removed; in git history)
   (each style's pixels against A; B's snow mask on the Alps at E 1, 2, 5;
   D warm and cool and higher-is-lighter; E's saturation; C's far pixel
   against the grid and the imagery).

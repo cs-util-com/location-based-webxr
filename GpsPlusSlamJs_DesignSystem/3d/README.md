@@ -31,10 +31,15 @@ here is a copy: the atmosphere judged on this page is the code the apps run.
 - `gpu-timer.js` — GPU frame time for the cost readout, where the
   `EXT_disjoint_timer_query_webgl2` extension exists.
 - `lookdev.css` — page layout only.
-- `lookdev.smoke.spec.mjs` + `playwright.config.mjs` — the `test:e2e` gate
-  stage.
+- `pages.fast.spec.mjs` + `playwright.config.mjs` — the `test:e2e` gate
+  stage: the page boots in its default look, compiles its cloud modes,
+  shadows and tiers, and draws, with no console error.
 
-## The smoke test (`pnpm run test:e2e`)
+## The smoke test (removed; in git history)
+
+The measurement specs below (`lookdev.smoke.spec.mjs` and its siblings)
+were deleted once the page's look decisions were taken; restore them from
+git history before a look change on this page. What they asserted:
 
 The only place the atmosphere's shaders are compiled, drawn and checked. A
 three.js shader error throws nothing and only logs, so the smoke asserts
@@ -66,7 +71,7 @@ what three cannot hide:
   pixels more than 30 levels off the canvas to ≤ 75 % of the no-MSAA count;
   and its bloom glows around the TRUE sun position (+4.7), veils < 15 % of
   the frame and darkens nothing;
-- the preset buttons glide (`preset-glide.smoke.spec.mjs`): eased at
+- the preset buttons glide (`preset-glide.smoke.spec.mjs` (removed; in git history)): eased at
   t = 0.25, the short azimuth arc, a retarget from the current state, the
   exact end and the hash written then, a link that cancels it, and no
   program compiled mid-glide across the 2° shadow floor.

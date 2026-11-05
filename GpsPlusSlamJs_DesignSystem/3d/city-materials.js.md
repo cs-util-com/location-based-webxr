@@ -51,4 +51,4 @@
   (stand-in-scene.js) splits the lots with `groupRanks`.
 - Tests: `city-materials.test.mjs` (the pool, every swept count's mix, the
   refusals, and a 100-trial property check of the split); the page's use in
-  `lookdev-tidy.smoke.spec.mjs`.
+  `lookdev-tidy.smoke.spec.mjs` (removed; in git history).

@@ -8,7 +8,7 @@
  * silently affect every map. These tests pin down the contract documented in
  * `accuracy-circles.ts.md`.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

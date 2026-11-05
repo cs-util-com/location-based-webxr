@@ -74,7 +74,7 @@ height), sunIntensity)`: flat ground under the globe's sun. That is
 - Waits: each capture waits for the hash to apply, the relief, the
   imagery and the imagery styles' grids, and the sky view, each bounded;
   a timeout ends the run with `error` set and says so on the page.
-- Tests: `terrain-compare.smoke.spec.mjs` (the bounded run completes on
+- Tests: `terrain-compare.smoke.spec.mjs` (removed; in git history) (the bounded run completes on
   the committed tiles with finite numbers and a pinned 800 x 500 buffer;
   `TERRAIN_COMPARE_FULL=1` runs the full table) and
   `terrain-compare.test.mjs` (the plan, the pixel scale against an

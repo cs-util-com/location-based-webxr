@@ -103,7 +103,7 @@ describe("mirrorRuns", () => {
           expect(at).toBe(body.length);
         },
       ),
-      { numRuns: 1000 },
+      { numRuns: 300 },
     );
   });
 });

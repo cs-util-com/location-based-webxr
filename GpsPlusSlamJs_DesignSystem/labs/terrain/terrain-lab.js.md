@@ -143,7 +143,7 @@
     the end of the fly-in show the z8 data magnified (about 480 m a texel).
   - Pan is off: the camera orbits the region's centre, so the hash's pose
     alone reproduces a view.
-- Tests: `terrain.smoke.spec.mjs` (boot on the committed tiles with nothing
+- Tests: `terrain.smoke.spec.mjs` (removed; in git history) (boot on the committed tiles with nothing
   leaving the machine and a positive, exact tile count; the loading line's
   sequence; a failing tile and all tiles failing; the auto switch; a flat
   tile unchanged at E 1, 2, 5 and 10; a tilted plane's colours unchanged at
@@ -151,10 +151,10 @@
   ridge's silhouette against E; the fly-in; the plate and the hash; a drag's
   pose written after the damping settles, within the frames
   `settleFrameBound` allows, the wall clock only a hang guard) and
-  `terrain-styles.smoke.spec.mjs` (T2: every style against A, B's snow on
+  `terrain-styles.smoke.spec.mjs` (removed; in git history) (T2: every style against A, B's snow on
   the Alps at E 1, 2, 5, D's warm and cool slopes and terraces, E's
   saturation, C's far field against the grid and the imagery, a failed
-  imagery load, the plate's styles) and `terrain-places.smoke.spec.mjs`
+  imagery load, the plate's styles) and `terrain-places.smoke.spec.mjs` (removed; in git history)
   (T3: every place on its own tiles and switched on the plate without a
   reload, Germany flat with sea posts, the GPS place granted, linked,
   denied, timed out and cancelled with the browser's geolocation mocked,

@@ -40,7 +40,7 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   `dist-site/globe-assets/` (about 12.6 MB), shared with the look-dev
   labs, so the deployed `/tour/edit.html` resolves the same
   absolute paths. No visitor page's bundle names them
-  (`src/editor3d-lazy.test.ts`).
+  (`src/app-bundle.test.ts`).
 
 ## Invariants & assumptions
 
