@@ -316,15 +316,13 @@ describe("bounded concurrency", () => {
 
       // Drain until every request has started and been answered: a count of
       // turns would be a guess at how long the chain is on a loaded machine.
-      const macrotask = () => new Promise((resolve) => setTimeout(resolve, 0));
-      const deadline = Date.now() + 5_000;
-      while (
-        fetchImpl.mock.calls.length < tiles.length &&
-        Date.now() < deadline
-      ) {
-        await macrotask();
-        while (resolvers.length > 0) resolvers.shift()?.();
-      }
+      await vi.waitFor(
+        () => {
+          while (resolvers.length > 0) resolvers.shift()?.();
+          expect(fetchImpl.mock.calls.length).toBe(tiles.length);
+        },
+        { timeout: 5_000, interval: 1 },
+      );
       while (resolvers.length > 0) resolvers.shift()?.();
       await Promise.allSettled(pending);
 
