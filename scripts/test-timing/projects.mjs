@@ -20,6 +20,8 @@
 
 import path from "node:path";
 
+import { onGithubRunner } from "./stage-args.mjs";
+
 /**
  * @typedef {Object} StageConfig
  * @property {string} name - pnpm script name; also the md row label
@@ -892,14 +894,25 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
  * in `buildStageCommand`.
  *
+ * ON THE GITHUB RUNNER a Prettier stage CHECKS instead of writing (test-suite
+ * pruning plan 2026-11-04, T-M0). `--write` there rewrote the checkout and
+ * exited 0, so a badly formatted PR was never red. Keyed on `GITHUB_ACTIONS`
+ * (`onGithubRunner`), never on `CI`: every local gate sets `CI=1`, and a local
+ * format stage must keep fixing files. Only the mode flag changes, so the
+ * runner checks exactly the files a local run formats.
+ *
  * @param {StageConfig} stage
  * @param {Record<string, string | undefined>} [env]
  * @returns {string}
  */
 export function gateBaseCommand(stage, env = {}) {
-  return resolveGateMode(env).skipBrowser && stage.fastGateCommand
-    ? stage.fastGateCommand
-    : stage.command;
+  const command =
+    resolveGateMode(env).skipBrowser && stage.fastGateCommand
+      ? stage.fastGateCommand
+      : stage.command;
+  return onGithubRunner(env) && /(?:^|\s)prettier\s/.test(command)
+    ? command.replace(" --write ", " --check ")
+    : command;
 }
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */

@@ -28,6 +28,12 @@ cannot reach.
   changed area's specs, the `both` specs and any changed spec file.
 - `RESULTS_DIR`, `RESULTS_NAME`: where the config's CI JSON reporter writes,
   from the package.
+- `LANES`: `["dom", "webgl-1", ..., "webgl-4"]`, the CI jobs the browser
+  specs are split into (`E2E_LANE`, `.github/workflows/ci.yml`).
+- `specsOfLane(lane)`: `dom` is `specsOf("dom")`; `webgl-N` is the `webgl`
+  specs whose entry has `lane: N`. Throws `RangeError` on any other name.
+- Each `webgl` entry of `SPECS` carries `lane` (1-4); `dom` entries carry
+  none.
 
 ## Invariants & assumptions
 
@@ -49,6 +55,12 @@ cannot reach.
   kit folders above, is `null`.
 - **Fail safe:** a path not named is `null`, so a new folder runs every spec
   until someone classifies it. CI and the full cascade never narrow.
+- **Lanes (CI only):** every `webgl` spec has exactly one lane, so a new
+  spec fails `tests/repo-config/tour-viewer-e2e-plan.test.js` until it gets
+  one. The first split (2026-11-05) was balanced by hand from the per-spec
+  durations of CI runs 41761594716 and 41820703091 (one worker, about 22-30
+  min a lane); rebalance it from the uploaded `playwright-report-tour-*`
+  reports once they exist.
 
 ## Measurement (2026-11-01)
 
