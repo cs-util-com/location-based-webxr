@@ -231,7 +231,7 @@ test.describe("the 3D view", () => {
     });
 
     // THE GROUND BEHAVIOURS RIDE THE SAME DESKTOP BOOT (they were a second
-    // `@pr` test with an identical boot). They come after the pixel, resize
+    // per-PR test with an identical boot). They come after the pixel, resize
     // and building steps because the ramp step changes the ground mode, and
     // the ramp step has to precede the A/B that changes it again.
     await test.step("shows the terrain as a height ramp, which is the default ground", async () => {
@@ -1096,7 +1096,7 @@ test.describe("the 3D view", () => {
 // test of "the 3D view" above, at dpr 2 inside the phone-layout test of
 // `boot-and-shell.spec.js`.
 
-/**
+/*
  * From UNDER the world, with `No ground` (reported after the round-3 deploy).
  *
  * The report was "I turned off ground and looked at the 3D world from below,
