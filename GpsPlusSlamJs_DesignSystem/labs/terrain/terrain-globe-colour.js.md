@@ -98,7 +98,7 @@ blockPx, bands, minCount, fit, cv }`: the in-sample error and the
   against hand-computed L*; the sweep's two errors, the block folds and
   the one-pixel folds' leak; the footprint mean of the unclamped detail
   ratio is 1 at every texel; C1's linear chromaticity is the albedo's) and
-  `terrain-globe-colour.smoke.spec.mjs` (C1 at real Alps pixels against
+  `terrain-globe-colour.smoke.spec.mjs` (removed; in git history) (C1 at real Alps pixels against
   its reference; the detail moves pixels but not the region's mean, the
   share declared and swept over 1/2-1/10; C3 against its reference, the
   top band's clamp, and the band-width sweep on the Alps and the Blue

@@ -71,4 +71,4 @@
   frames, the refusals, and a 200-trial seeded property check that a glide
   stays between its ends, never turns the azimuth more than its short arc,
   and settles exactly); the page's use, and the on-demand cost and
-  stepping sweep, in `preset-glide.smoke.spec.mjs`.
+  stepping sweep, in `preset-glide.smoke.spec.mjs` (removed; in git history).

@@ -162,7 +162,7 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     `atmosphere.configure({ cloudHex })`, so the sky, the sheet, the slab
     and the cloud shadow read the big-shape octave hex-tiled (no repeat at
     24 km, the field repeating at 13 tiles). `setCloudHex(on)` for tests.
-    Measured by `cloud-hex.smoke.spec.mjs` with the drift pinned.
+    Measured by `cloud-hex.smoke.spec.mjs` (removed; in git history) with the drift pinned.
   - `setGodRays(bool)`: god rays (round-3 look-dev programme, stream G;
     [god-rays.js](god-rays.js.md)), radial screen-space light shafts from
     the sky around the sun, ONE SWITCH AND HASH KEY (`godRays`), off by
@@ -294,17 +294,17 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     deviation in the plan. OsmDemo now shows the REAL sun for its place and
     date (`sun-clock.ts`, plan 2026-09-23-2149).
 - Examples: `pnpm run serve` → `/3d/#preset=blueHour&tone=aces`.
-- Tests: `lookdev.smoke.spec.mjs`, `preset-glide.smoke.spec.mjs` (the
-  preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (the
+- Tests: `lookdev.smoke.spec.mjs` (removed; in git history), `preset-glide.smoke.spec.mjs` (removed; in git history) (the
+  preset glide, and its on-demand cost and stepping sweep), `lookdev-tidy.smoke.spec.mjs` (removed; in git history) (the
   round-3 labels, ramp row, varied city and its logged cost) and
-  `ambient-occlusion.smoke.spec.mjs` (the AO switch and its checks),
-  `water-polish.smoke.spec.mjs` (the water polish: each trick against
+  `ambient-occlusion.smoke.spec.mjs` (removed; in git history) (the AO switch and its checks),
+  `water-polish.smoke.spec.mjs` (removed; in git history) (the water polish: each trick against
   P50 at the same pixels, all off byte-identical, on-demand cost and
   sweeps; metrics in `water-metrics.mjs`),
-  `sun-clouds.smoke.spec.mjs` (the sun through clouds, the cloud
+  `sun-clouds.smoke.spec.mjs` (removed; in git history) (the sun through clouds, the cloud
   shadows and the sun light dimming against the no-effect baseline, one
   switch per effect, their costs, and the horizon shimmer per cloud mode,
-  logged), `god-rays.smoke.spec.mjs` (the god rays against their own
+  logged), `god-rays.smoke.spec.mjs` (removed; in git history) (the god rays against their own
   off baseline, sky only, nothing behind the camera or below the horizon,
   the switch off byte-identical on both tiers, the switch and key, the
   cost; stage `test:e2e`), and `shoot-3d.mjs`. The readout's stats line names the

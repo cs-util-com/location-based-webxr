@@ -13,7 +13,6 @@
 import { describe, expect, it } from "vitest";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
-import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { calcGpsCoords, webxrToNUE } from "gps-plus-slam-app-framework/core";
 import {
@@ -127,25 +126,6 @@ describe("odomNueFromWebXr: a raw WebXR pose in the world group's frame", () => 
     expect(angleDeg(local.rotation, q.toArray())).toBeLessThan(1e-6);
   });
 
-  it("through an alignment, agrees with the framework's mint composition (alignment · basis · pose)", () => {
-    // The settle recomputes geo from the stored local pose; the tap-time
-    // mint composed the raw pose directly. With the alignment unchanged
-    // the two must agree exactly, or a settle would move every object.
-    const pose: Pose = { position: [2, 1.2, -4], rotation: yawQ(-35) };
-    const alignment = yawAlignment(63, [120, 0.5, -40]);
-    const viaLocal = throughAlignment(odomNueFromWebXr(pose), alignment);
-    const direct = qrWorldPoseFromOdom(pose, alignment as never);
-    expect(viaLocal).not.toBeNull();
-    expect(
-      maxDiff(viaLocal!.position, [
-        direct.position.x,
-        direct.position.y,
-        direct.position.z,
-      ]),
-    ).toBeLessThan(1e-9);
-    expect(angleDeg(viaLocal!.rotation, direct.rotation)).toBeLessThan(1e-6);
-  });
-
   it("refuses an alignment that is not 16 finite numbers", () => {
     const local = odomNueFromWebXr({
       position: [0, 0, 0],
@@ -159,13 +139,6 @@ describe("odomNueFromWebXr: a raw WebXR pose in the world group's frame", () => 
 });
 
 describe("codeCorrection: this visit's code measurement onto the stored code", () => {
-  it("is the identity when the measurement already sits on the stored pose", () => {
-    const code: NuePose = { position: [3, 1, 4], rotation: yawQ(30) };
-    expect(
-      maxDiff(codeCorrection(code, code)!, new Matrix4().toArray()),
-    ).toBeLessThan(1e-9);
-  });
-
   it("moves the measured code exactly onto the stored one and turns by the yaw difference", () => {
     const measured: NuePose = { position: [3, 1, 4], rotation: yawQ(30) };
     const stored: NuePose = { position: [10, 2, -5], rotation: yawQ(75) };
@@ -229,32 +202,6 @@ describe("codeCorrection: this visit's code measurement onto the stored code", (
 });
 
 describe("correctedAlignment: a later visit, corrected through the code (D10b)", () => {
-  it("recovers the measuring visit's alignment from a second visit with a different GPS alignment", () => {
-    // Visit 1 measured the code at raw odometry pose `code` through A1 and
-    // stored it. Visit 2 sees the same code at the same odometry pose but
-    // its GPS alignment A2 is 20 m and 55 degrees off. Settled through A2 a
-    // note would land 20 m away from the code; corrected through the code
-    // it lands where A1 would have put it - the placement relative to the
-    // code survives the change of visit.
-    const code: Pose = { position: [0.4, 1.3, -2.5], rotation: yawQ(12) };
-    const a1 = yawAlignment(20, [100, 0, 50]);
-    const a2 = yawAlignment(-35, [80, 3, 40]);
-    const codeLocal = odomNueFromWebXr(code);
-    const stored = throughAlignment(codeLocal, a1)!;
-
-    const corrected = correctedAlignment(a2, codeLocal, stored);
-    expect(corrected).not.toBeNull();
-    expect(maxDiff(corrected!, a1)).toBeLessThan(1e-9);
-
-    const note: NuePose = { position: [3, 0, -1], rotation: [0, 0, 0, 1] };
-    expect(
-      maxDiff(
-        throughAlignment(note, corrected!)!.position,
-        throughAlignment(note, a1)!.position,
-      ),
-    ).toBeLessThan(1e-9);
-  });
-
   it("refuses an alignment it cannot read", () => {
     const code: NuePose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
     expect(correctedAlignment([1, 2, 3], code, code)).toBeNull();

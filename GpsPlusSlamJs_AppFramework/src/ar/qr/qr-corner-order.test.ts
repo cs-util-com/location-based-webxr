@@ -26,12 +26,29 @@ const PAYLOAD =
   'https://gps-plus-slam.csutil.workers.dev/tour/?t=S/k7Qm2xPz9LbV4nRw8TcY3hFd6JsA1eGu5oKi0MNq';
 type Quad = [Point2, Point2, Point2, Point2];
 
-function frame(opts: {
+type FrameOpts = {
   rollDeg: number;
   tiltXDeg?: number;
   tiltYDeg?: number;
   distanceM?: number;
-}) {
+};
+
+// Each render is a 2048x1536 supersampled image (most of this file's time),
+// and several tests read the same pose. The canonicaliser only reads the
+// pixels, so one render per pose is shared; a test that paints into a frame
+// renders its own.
+const frames = new Map<string, ReturnType<typeof renderFrame>>();
+function frame(opts: FrameOpts) {
+  const key = JSON.stringify(opts);
+  let f = frames.get(key);
+  if (f === undefined) {
+    f = renderFrame(opts);
+    frames.set(key, f);
+  }
+  return f;
+}
+
+function renderFrame(opts: FrameOpts) {
   const projection = perspectiveProjection({ fovYDeg: 50, aspect: 1024 / 768 });
   return renderQrFrame({
     text: PAYLOAD,
@@ -97,7 +114,9 @@ function expectSameCorners(
 }
 
 describe('canonicalizeCorners', () => {
-  it.each([0, 17, 45, 90, 133, 180, 222, 270, 315])(
+  // The axis-aligned rolls (0, 90, 180, 270) are covered by the small-code
+  // rows below and the finder-mimic rows; these are the oblique ones.
+  it.each([17, 45, 133, 222, 315])(
     'recovers the symbol order from image-ordered corners at roll %i deg',
     (rollDeg) => {
       const f = frame({ rollDeg });
@@ -157,21 +176,20 @@ describe('canonicalizeCorners', () => {
   // BR corner the diagonal crosses data modules and then the alignment
   // pattern's rings; for many printed codes they merge into a perfect
   // 1:1:3:1:1, so BR reads as a fourth finder and the order is never known.
-  // These short payloads (version 2) all did that with the diagonal-only rule.
-  it.each([
-    'https://ex.co/p/0',
-    'https://ex.co/p/10',
-    'https://ex.co/p/14',
-    'https://ex.co/p/17',
-  ])('orders a code whose BR diagonal mimics a finder (%s)', (text) => {
-    for (const rollDeg of [0, 180]) {
-      const f = codeFrame(text, rollDeg);
-      const truth = rounded(f.truthCorners);
-      const out = canonicalizeCorners(f.image, imageOrder(truth));
-      expect(out.confident, `roll ${rollDeg}`).toBe(true);
-      expectSameCorners(out.corners, truth);
+  // These short payloads (version 2) all did that with the diagonal-only rule
+  // (p/0, p/10, p/14 and p/17 measured alike); two keep the class pinned.
+  it.each(['https://ex.co/p/0', 'https://ex.co/p/17'])(
+    'orders a code whose BR diagonal mimics a finder (%s)',
+    (text) => {
+      for (const rollDeg of [0, 180]) {
+        const f = codeFrame(text, rollDeg);
+        const truth = rounded(f.truthCorners);
+        const out = canonicalizeCorners(f.image, imageOrder(truth));
+        expect(out.confident, `roll ${rollDeg}`).toBe(true);
+        expectSameCorners(out.corners, truth);
+      }
     }
-  });
+  );
 
   // Why this test matters: with a real finder washed out (glare, a smudge),
   // a BR that mimics a finder must not stand in for it - that was a

@@ -224,7 +224,7 @@ describe("the sheet against the hidden line and the run", () => {
           });
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

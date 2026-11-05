@@ -11,10 +11,13 @@
  * reader does not know.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  TOUR_FREE_VIEWS,
   tourIdArbitrary,
   tourManifestArbitrary,
 } from '../test-utils/tour-arbitraries';
@@ -23,7 +26,7 @@ import {
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
 } from './tour-manifest';
-import { tourBlocksMinor } from './tour-blocks';
+import { TOUR_WORLD_VIEWS, tourBlocksMinor } from './tour-blocks';
 import { tourObjects } from './tour-station-pose';
 
 /** What a card image or the cover may name: an image asset, another
@@ -84,11 +87,49 @@ function imageIds(m: ReturnType<typeof parseTourManifest>): Set<string> {
 }
 
 describe('tour manifest version 4 (properties)', () => {
-  it('serialize -> parse is the identity on every manifest the writer accepts, local poses bit for bit', () => {
+  // One generation for every claim about a manifest the writer accepts
+  // (each claim used to draw its own 100-300 manifests): the reader accepts
+  // it, serialize -> parse is the identity with poses bit for bit, parsing
+  // is idempotent, a written file is a byte-for-byte fixed point, stations,
+  // blocks and card images stay where they were written; and, collected
+  // over the runs, the generator reaches every block kind, every step kind,
+  // free blocks and every world view (were it to miss one, every claim
+  // above would silently skip it). Unseeded, so every run draws new
+  // manifests: the coverage claims held in 24 of 24 runs at 40 manifests and
+  // in 20 of 24 at 20, so 300 leaves them a wide margin. Each claim carries
+  // its own failure message.
+  it('every manifest the writer accepts: identity, idempotent parse, a byte fixed point, stations and card images kept; the generator reaches every kind and world view', () => {
+    // The generator's free views must be exactly the format's world views
+    // (a long text's lectern and reading sign once went untested because
+    // the generator never wrote them).
+    expect(new Set(Object.values(TOUR_FREE_VIEWS).flat())).toEqual(
+      TOUR_WORLD_VIEWS
+    );
+    const kinds = new Set<string>();
+    const steps = new Set<string>();
+    const views = new Set<string>();
+    let free = 0;
     fc.assert(
       fc.property(manifest, (m) => {
-        const parsed = parseTourManifest(m);
-        const written = JSON.parse(serializeTourManifest(parsed)) as unknown;
+        const dropped: string[] = [];
+        const parsed = parseTourManifest(m, {
+          onDropped: (drop) => {
+            if ('station' in drop && drop.field === 'image') {
+              dropped.push(drop.station);
+            }
+          },
+        });
+        for (const station of parsed.stations) {
+          for (const block of station.blocks) kinds.add(block.kind);
+          for (const step of station.steps) steps.add(step.action.kind);
+        }
+        for (const object of tourObjects(parsed)) views.add(object.view);
+        free += tourObjects(parsed).length;
+
+        // Identity through the writer: the lowest minor the tour needs is
+        // stamped, everything else reads back unchanged.
+        const text = serializeTourManifest(parsed);
+        const written = JSON.parse(text) as unknown;
         const again = parseTourManifest(written);
         // The writer stamps the lowest minor the tour needs; everything
         // else reads back unchanged.
@@ -105,21 +146,83 @@ describe('tour manifest version 4 (properties)', () => {
         expect(JSON.stringify(tourObjects(again))).toBe(
           JSON.stringify(tourObjects(parsed))
         );
-      }),
-      { numRuns: 150 }
-    );
-  });
 
-  it('parsing is idempotent: parsing a parsed manifest changes nothing', () => {
-    fc.assert(
-      fc.property(manifest, (m) => {
-        const once = parseTourManifest(m);
-        expect(parseTourManifest(JSON.parse(JSON.stringify(once)))).toEqual(
-          once
+        // Idempotent: parsing a parsed manifest changes nothing.
+        expect(
+          parseTourManifest(JSON.parse(JSON.stringify(parsed))),
+          'parsing is idempotent'
+        ).toEqual(parsed);
+
+        // A written file is a fixed point: read and written again, the same
+        // bytes; and every step is written under its one key.
+        const file = written as {
+          stations: { steps: Record<string, unknown>[] }[];
+        };
+        expect(
+          file.stations
+            .flatMap((s) => s.steps)
+            .filter((s) => !('action' in s) || 'block' in s),
+          'every step under its one key'
+        ).toEqual([]);
+        expect(
+          serializeTourManifest(parseTourManifest(JSON.parse(text))),
+          'a written file is a fixed point'
+        ).toBe(text);
+
+        // Every station and every block stays in the station it was
+        // written in; a cover or card image only when it names an image
+        // asset, and every card image dropped is reported.
+        const stations = m.stations as {
+          id: string;
+          blocks: { id: string }[];
+          image?: string;
+        }[];
+        expect(parsed.stations.map((s) => s.id)).toEqual(
+          stations.map((s) => s.id)
+        );
+        expect(parsed.stations.map((s) => s.blocks.map((b) => b.id))).toEqual(
+          stations.map((s) => s.blocks.map((b) => b.id))
+        );
+        const images = imageIds(parsed);
+        expect(
+          parsed.cover === undefined || images.has(parsed.cover),
+          'the cover names an image asset'
+        ).toBe(true);
+        for (const s of parsed.stations) {
+          expect(
+            s.image === undefined || images.has(s.image),
+            'a card image names an image asset'
+          ).toBe(true);
+        }
+        expect(dropped, 'every dropped card image is reported').toEqual(
+          stations
+            .filter(
+              (s, i) =>
+                s.image !== undefined && parsed.stations[i]?.image === undefined
+            )
+            .map((s) => s.id)
         );
       }),
-      { numRuns: 100 }
+      { numRuns: 300 }
     );
+    expect([...kinds].sort(), 'every block kind').toEqual(
+      [
+        'audio',
+        'character',
+        'longText',
+        'model',
+        'picture',
+        'shortText',
+        'video',
+      ].sort()
+    );
+    expect([...steps].sort(), 'every step kind').toEqual([
+      'choice',
+      'quiz',
+      'show',
+    ]);
+    expect(free, 'free blocks').toBeGreaterThan(0);
+    expect(views, 'every world view').toEqual(TOUR_WORLD_VIEWS);
   });
 
   it('the writer refuses every tour of a newer minor: it was read without what this reader does not know', () => {
@@ -136,48 +239,6 @@ describe('tour manifest version 4 (properties)', () => {
         }
       ),
       { numRuns: 60 }
-    );
-  });
-
-  it('keeps every station and every block in the station it was written in, and a cover or card image only when it names an image asset, reporting every card image it drops', () => {
-    fc.assert(
-      fc.property(manifest, (m) => {
-        const dropped: string[] = [];
-        const parsed = parseTourManifest(m, {
-          onDropped: (drop) => {
-            if ('station' in drop && drop.field === 'image') {
-              dropped.push(drop.station);
-            }
-          },
-        });
-        const stations = m.stations as {
-          id: string;
-          blocks: { id: string }[];
-          image?: string;
-        }[];
-        expect(parsed.stations.map((s) => s.id)).toEqual(
-          stations.map((s) => s.id)
-        );
-        expect(parsed.stations.map((s) => s.blocks.map((b) => b.id))).toEqual(
-          stations.map((s) => s.blocks.map((b) => b.id))
-        );
-        const images = imageIds(parsed);
-        expect(parsed.cover === undefined || images.has(parsed.cover)).toBe(
-          true
-        );
-        for (const s of parsed.stations) {
-          expect(s.image === undefined || images.has(s.image)).toBe(true);
-        }
-        expect(dropped).toEqual(
-          stations
-            .filter(
-              (s, i) =>
-                s.image !== undefined && parsed.stations[i]?.image === undefined
-            )
-            .map((s) => s.id)
-        );
-      }),
-      { numRuns: 150 }
     );
   });
 });

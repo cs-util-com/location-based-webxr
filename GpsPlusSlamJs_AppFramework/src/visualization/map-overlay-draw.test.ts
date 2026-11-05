@@ -12,7 +12,7 @@
  * that contract so the two renderers cannot silently diverge again (see the
  * user-feedback doc, Findings 1 & 4).
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

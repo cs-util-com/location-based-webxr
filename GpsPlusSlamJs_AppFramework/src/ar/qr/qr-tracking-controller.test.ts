@@ -8,6 +8,8 @@
  * a device, or a real store.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../../test-setup';
 import { describe, it, expect, vi } from 'vitest';
 import {
   createQrTrackingController,

@@ -75,7 +75,7 @@ sunLight(Math.sin((5 * Math.PI) / 180), params); // warm chroma, intensity < 1
   20 000 steps (zenith → horizon), sun colour and disc fade.
 - `atmosphere-model.property.test.ts` — monotonicity (visibility, zenith
   angle, sun elevation), transmittance within [0, 1], chroma validity.
-- GPU parity: `GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`.
+- GPU parity: `GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history).
 
 ## Import path
 

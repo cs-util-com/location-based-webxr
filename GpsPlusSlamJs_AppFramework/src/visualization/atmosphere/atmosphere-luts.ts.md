@@ -65,7 +65,7 @@ if (!device.supported) {
 ## Tests
 
 No unit test (it is the part CI cannot run). Exercised by the look-dev smoke
-(`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`): every pass draws,
+(`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)): every pass draws,
 readbacks feed the GPU/CPU parity check. `sky-atmosphere.test.ts` pins the
 interface with a fake.
 

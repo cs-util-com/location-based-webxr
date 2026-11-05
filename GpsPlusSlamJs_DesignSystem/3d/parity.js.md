@@ -24,5 +24,5 @@
   scene scale, no tone mapping): the only check of the sky pass's LOOKUP
   path, scale and colour space. Measured: within 2 levels at noon and golden
   hour.
-- Tests: called by `lookdev.smoke.spec.mjs` at noon, golden hour and blue
+- Tests: called by `lookdev.smoke.spec.mjs` (removed; in git history) at noon, golden hour and blue
   hour with a 5 % bound; `shoot-3d.mjs --parity` prints the details.

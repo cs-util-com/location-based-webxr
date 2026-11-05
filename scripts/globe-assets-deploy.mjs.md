@@ -37,7 +37,7 @@ globe view and the look-dev labs (the full-globe editor plan 2026-10-27-1850
 - Symbolic links are skipped (only regular files are listed).
 - The visitor half (no visitor page's bundle names the folder) is not
   here: it needs the bundle's chunk graph, which the Tour Viewer's
-  `src/editor3d-lazy.test.ts` has.
+  `src/app-bundle.test.ts` has.
 
 ## Examples
 

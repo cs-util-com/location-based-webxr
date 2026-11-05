@@ -1,6 +1,6 @@
 # Terrain lab fixtures: provenance
 
-The terrain lab's smoke (`../terrain.smoke.spec.mjs`) serves these tiles in
+The terrain lab's smoke (`../terrain.smoke.spec.mjs` (removed; in git history)) serves these tiles in
 place of the network, so no request leaves the machine (terrain plan
 2026-09-27-0605 §5 T1, §9 finding 6).
 
