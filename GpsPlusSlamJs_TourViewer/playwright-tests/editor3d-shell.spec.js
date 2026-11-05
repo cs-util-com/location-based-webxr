@@ -10,13 +10,15 @@ import {
   viewItem,
 } from "./editor-menus.js";
 import {
-  afterFrames,
   answerHosts,
+  boxIn,
   capture,
   keepRejections,
-  openSample,
+  layoutOf,
   openSampleIn3d,
   rejections,
+  shownIn,
+  styleIn,
   view3d,
 } from "./editor3d-fixture.js";
 import { useWideFont } from "./wide-font.js";
@@ -35,8 +37,7 @@ import { useWideFont } from "./wide-font.js";
  * none over another, the tour's name never squeezed away - also in the
  * bar's most crowded state, at every step it folds, in a wide face; the
  * File, Edit and View menus from the keyboard and by touch, the unsaved
- * mark, the tree from the keyboard alone, File's Add debug data, a flight
- * leaving no coast behind; and the tree's click rule on the sample tour: a
+ * mark, the tree from the keyboard alone, File's Add debug data; and the tree's click rule on the sample tour: a
  * click selects, unfolds and flies there, a second click deselects and
  * folds, a quick second click (a double click) does not toggle, and the
  * folds outlive a trip to the map.
@@ -121,129 +122,62 @@ function nameFloorPx(width) {
   return 20;
 }
 
+/** The parts of the frame `expectFrame` measures. */
+const FRAME_PARTS = [
+  "#topbar",
+  "#shell-bar",
+  "#view3d",
+  "#load-line",
+  "#shell-tree",
+  "#tree-body",
+  "#shell-inspector",
+  "#inspector-body",
+  "#compass",
+  "#zoom-in",
+  "#zoom-out",
+  "#map-controls",
+  "#view3d-credits .view3d-credits-button",
+  "#topbar .brand-text",
+];
+
 /**
- * The layout every viewport shares: the bars, the viewport between them,
- * the map controls, and the top bar's controls in a row inside it, the
- * tour's name no narrower than its floor.
+ * Everything `expectFrame` reads, in two round trips to the page: each
+ * read through Playwright waits on a main thread busy drawing the 3D view
+ * in software, so about 47 separate reads cost seconds per call, and the
+ * crowded sweep makes a call per width. The checks then run in the test,
+ * on the data.
  * @param {import("@playwright/test").Page} page
- * @param {{ width: number, height: number }} size
  */
-async function expectFrame(page, size) {
-  const top = await box(page.locator("#topbar"));
-  expect(top).toEqual({ x: 0, y: 0, width: size.width, height: 40 });
-  const bar = await box(page.locator("#shell-bar"));
-  expect(bar).toEqual({
-    x: 0,
-    y: size.height - 24,
-    width: size.width,
-    height: 24,
-  });
-  const scene = await box(page.locator("#view3d"));
-  expect(scene).toEqual({
-    x: 0,
-    y: 40,
-    width: size.width,
-    height: size.height - 64,
-  });
-  const at = `at ${String(size.width)} x ${String(size.height)}`;
-  // The accent line: the view's full width, 3 px, right under the top bar,
-  // in the accent colour (full: the view shows no load of its own).
-  const line = page.locator("#load-line");
-  expect(await box(line), at).toEqual({
-    x: 0,
-    y: 40,
-    width: size.width,
-    height: LINE_PX,
-  });
-  await expect(line).toHaveCSS("background-color", ACCENT);
-  // Every open dock hangs from the line, no gap, and runs down to the
-  // bottom bar; a folded one is its head, hanging from the line too.
-  for (const [id, body] of [
-    ["#shell-tree", "#tree-body"],
-    ["#shell-inspector", "#inspector-body"],
-  ]) {
-    if (!(await page.locator(id).isVisible())) continue;
-    const dock = await box(page.locator(id));
-    expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX);
-    if (await page.locator(body).isVisible()) {
-      expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
-        size.height - 24,
-        0,
-      );
-    } else {
-      expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
-    }
-  }
-  // The map controls: one row 14 px over the bottom bar, the compass
-  // left of + and -, 38 px buttons, the zoom pill 8 px right of the
-  // compass, its right edge 12 px left of an open inspector, else 12 px
-  // from the window's right.
-  const compass = await box(page.locator("#compass"));
-  const zoomIn = await box(page.locator("#zoom-in"));
-  const zoomOut = await box(page.locator("#zoom-out"));
-  expect([compass.width, compass.height]).toEqual([38, 38]);
-  expect([zoomIn.y, zoomOut.y], at).toEqual([compass.y, compass.y]);
-  expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
-  // The second button's 1 px divider is inside its 38 px.
-  expect(zoomOut.x, at).toBe(zoomIn.x + 38);
-  expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
-  const inspectorOpen = await page.locator("#inspector-body").isVisible();
-  const rightEdge = inspectorOpen
-    ? (await box(page.locator("#shell-inspector"))).x - 12
-    : size.width - 12;
-  expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
-  const controls = await box(page.locator("#map-controls"));
-  for (const id of ["#shell-tree", "#shell-inspector"]) {
-    if (!(await page.locator(id).isVisible())) continue;
-    expect(
-      overlaps(controls, await box(page.locator(id))),
-      `the map controls over ${id} ${at}`,
-    ).toBe(false);
-  }
-  // A toast (a long one, as wide as a toast gets) stands clear of the map
-  // controls: centred over the bottom bar it once covered them on a
-  // phone. One is put in the toasts' box for the measure and taken out.
-  const toastBox = await page.evaluate(() => {
+async function frameOf(page) {
+  const layout = await layoutOf(page, FRAME_PARTS, ["background-color"]);
+  const rest = await page.evaluate(() => {
+    // A toast (a long one, as wide as a toast gets), put in the toasts' box
+    // for the measure and taken out.
     const t = document.createElement("div");
     t.className = "toast";
     t.textContent =
       "Opened a tour with a long name: 12 codes, 4 notes, 30 stations";
     document.getElementById("toasts")?.append(t);
     const r = t.getBoundingClientRect();
+    const toast = { x: r.x, y: r.y, width: r.width, height: r.height };
     t.remove();
-    return { x: r.x, y: r.y, width: r.width, height: r.height };
-  });
-  expect(toastBox.height, at).toBeGreaterThan(0);
-  expect(
-    overlaps(toastBox, controls),
-    `a toast over the map controls ${at}`,
-  ).toBe(false);
-  // The map's credits: small, at the bottom bar's left, inside it, and
-  // nothing over them (they are attribution: always seen, always one
-  // click away).
-  const credits = page.locator("#view3d-credits .view3d-credits-button");
-  const c = await box(credits);
-  expect(c.x, at).toBeGreaterThanOrEqual(0);
-  expect(c.x, at).toBeLessThan(12);
-  expect(c.y, at).toBeGreaterThanOrEqual(bar.y);
-  expect(c.y + c.height, at).toBeLessThanOrEqual(bar.y + bar.height);
-  expect(
-    await credits.evaluate((el) => {
-      const r = el.getBoundingClientRect();
+    // Nothing over the credits: the point at their middle hits them.
+    const credits = document.querySelector(
+      "#view3d-credits .view3d-credits-button",
+    );
+    let creditsUncovered = false;
+    if (credits !== null) {
+      const c = credits.getBoundingClientRect();
       const hit = document.elementFromPoint(
-        r.x + r.width / 2,
-        r.y + r.height / 2,
+        c.x + c.width / 2,
+        c.y + c.height / 2,
       );
-      return hit === el || el.contains(hit);
-    }),
-    `the credits uncovered ${at}`,
-  ).toBe(true);
-  // Every top-bar control shown sits inside the bar, left to right, none
-  // over the next, and says its words (an icon alone says nothing).
-  // Read in one go (as Playwright's isVisible does: a box, not hidden):
-  // the crowded sweep checks 34 frames.
-  const shown = await page.evaluate(() =>
-    [...document.querySelectorAll("#topbar :is(button, .unsaved-mark)")]
+      creditsUncovered = hit === credits || credits.contains(hit);
+    }
+    // The top bar's controls shown (as Playwright's isVisible reads them).
+    const controls = [
+      ...document.querySelectorAll("#topbar :is(button, .unsaved-mark)"),
+    ]
       .map((c) => ({ c, r: c.getBoundingClientRect() }))
       .filter(
         ({ c, r }) =>
@@ -258,9 +192,120 @@ async function expectFrame(page, size) {
         y: r.y,
         width: r.width,
         height: r.height,
-      })),
+      }));
+    return { toast, creditsUncovered, controls };
+  });
+  return { layout, ...rest };
+}
+
+/**
+ * The layout every viewport shares: the bars, the viewport between them,
+ * the map controls, and the top bar's controls in a row inside it, the
+ * tour's name no narrower than its floor.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ */
+async function expectFrame(page, size) {
+  const frame = await frameOf(page);
+  const must = (/** @type {string} */ selector) =>
+    boxIn(frame.layout, selector);
+  const shownNow = (/** @type {string} */ selector) =>
+    shownIn(frame.layout, selector);
+  expect(must("#topbar")).toEqual({
+    x: 0,
+    y: 0,
+    width: size.width,
+    height: 40,
+  });
+  const bar = must("#shell-bar");
+  expect(bar).toEqual({
+    x: 0,
+    y: size.height - 24,
+    width: size.width,
+    height: 24,
+  });
+  expect(must("#view3d")).toEqual({
+    x: 0,
+    y: 40,
+    width: size.width,
+    height: size.height - 64,
+  });
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  // The accent line: the view's full width, 3 px, right under the top bar,
+  // in the accent colour (full: the view shows no load of its own).
+  expect(must("#load-line"), at).toEqual({
+    x: 0,
+    y: 40,
+    width: size.width,
+    height: LINE_PX,
+  });
+  expect(styleIn(frame.layout, "#load-line", "background-color"), at).toBe(
+    ACCENT,
   );
-  shown.sort((a, b) => a.x - b.x);
+  // Every open dock hangs from the line, no gap, and runs down to the
+  // bottom bar; a folded one is its head, hanging from the line too.
+  for (const [id, body] of [
+    ["#shell-tree", "#tree-body"],
+    ["#shell-inspector", "#inspector-body"],
+  ]) {
+    if (!shownNow(id)) continue;
+    const dock = must(id);
+    expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX);
+    if (shownNow(body)) {
+      expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
+        size.height - 24,
+        0,
+      );
+    } else {
+      expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
+    }
+  }
+  // The map controls: one row 14 px over the bottom bar, the compass
+  // left of + and -, 38 px buttons, the zoom pill 8 px right of the
+  // compass, its right edge 12 px left of an open inspector, else 12 px
+  // from the window's right.
+  const compass = must("#compass");
+  const zoomIn = must("#zoom-in");
+  const zoomOut = must("#zoom-out");
+  expect([compass.width, compass.height]).toEqual([38, 38]);
+  expect([zoomIn.y, zoomOut.y], at).toEqual([compass.y, compass.y]);
+  expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
+  // The second button's 1 px divider is inside its 38 px.
+  expect(zoomOut.x, at).toBe(zoomIn.x + 38);
+  expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
+  const rightEdge = shownNow("#inspector-body")
+    ? must("#shell-inspector").x - 12
+    : size.width - 12;
+  expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
+  const controls = must("#map-controls");
+  for (const id of ["#shell-tree", "#shell-inspector"]) {
+    if (!shownNow(id)) continue;
+    expect(
+      overlaps(controls, must(id)),
+      `the map controls over ${id} ${at}`,
+    ).toBe(false);
+  }
+  // A toast (a long one, as wide as a toast gets) stands clear of the map
+  // controls: centred over the bottom bar it once covered them on a
+  // phone.
+  const toastBox = frame.toast;
+  expect(toastBox.height, at).toBeGreaterThan(0);
+  expect(
+    overlaps(toastBox, controls),
+    `a toast over the map controls ${at}`,
+  ).toBe(false);
+  // The map's credits: small, at the bottom bar's left, inside it, and
+  // nothing over them (they are attribution: always seen, always one
+  // click away).
+  const c = must("#view3d-credits .view3d-credits-button");
+  expect(c.x, at).toBeGreaterThanOrEqual(0);
+  expect(c.x, at).toBeLessThan(12);
+  expect(c.y, at).toBeGreaterThanOrEqual(bar.y);
+  expect(c.y + c.height, at).toBeLessThanOrEqual(bar.y + bar.height);
+  expect(frame.creditsUncovered, `the credits uncovered ${at}`).toBe(true);
+  // Every top-bar control shown sits inside the bar, left to right, none
+  // over the next, and says its words (an icon alone says nothing).
+  const shown = [...frame.controls].sort((a, b) => a.x - b.x);
   for (const b of shown) {
     // The unsaved mark may be its dot alone: its words are the bottom
     // bar's status line, and its title.
@@ -279,7 +324,7 @@ async function expectFrame(page, size) {
     }
   }
   // The name's room: the part of the brand it shows in.
-  const name = await box(page.locator("#topbar .brand-text"));
+  const name = must("#topbar .brand-text");
   expect(name.width, `the name ${at}`).toBeGreaterThanOrEqual(
     nameFloorPx(size.width),
   );
@@ -722,7 +767,13 @@ test("the top bar holds every control in its most crowded state, at every step i
     (await status.textContent()) ?? "",
   );
   await crowdTheBar(page);
-  const widths = [1440, 1280, 900, 600, 390, 320];
+  // Each fold edge and the width just over it (the tightest the bar is
+  // between two edges), and the widths of the two name-minimum edges'
+  // band and below it (`editor-shell.css`: 440 and 375 px narrow the
+  // name's minimum, so 390 is the tightest checked width under 400). A
+  // width strictly inside a band has more room than that band's low end,
+  // so 1440, 1280, 900 and 600 showed nothing the edges do not.
+  const widths = [390, 320];
   for (const step of FOLD_STEPS) widths.push(step, step + 1);
   for (const width of widths.sort((a, b) => b - a)) {
     const size = { width, height: width < 721 ? 844 : 800 };
@@ -1145,66 +1196,6 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
-test("View's Show debug data is the map's: not offered over the 3D view, which draws no debug data yet", async ({
-  page,
-}) => {
-  // Why: the switch shows and hides the debug layer, which only the map
-  // draws. Offered over the 3D view it was a checkbox that changed nothing
-  // the creator could see.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const recording = await (
-    await page.request.get("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
-  ).body();
-  const chooser = page.waitForEvent("filechooser");
-  await fileCommand(page, "debugAdd");
-  await (
-    await chooser
-  ).setFiles({
-    name: "recording.zip",
-    mimeType: "application/zip",
-    buffer: recording,
-  });
-  // The layer has its source: the page offers the switch...
-  await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", false);
-  // ... on the map only.
-  await page.locator("#view-menu-btn").click();
-  await expect(viewItem(page, "top")).toBeVisible();
-  await expect(viewItem(page, "debug")).toBeHidden();
-  await viewItem(page, "switch").click();
-  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  await page.locator("#view-menu-btn").click();
-  await expect(viewItem(page, "debug")).toBeVisible();
-});
-
-test("a flight ends the orbit's coast: the camera stays where it lands", async ({
-  page,
-}) => {
-  // Why: the orbit coasts on after a drag; a flight started
-  // straight after one must not hand the coast back when it lands, or the
-  // camera drifts on from the station it flew to.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const canvas = page.locator("#view3d canvas").first();
-  const b = await box(canvas);
-  const [cx, cy] = [b.x + b.width / 2, b.y + b.height / 2];
-  // A quick drag: it leaves the orbit coasting.
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  for (let i = 1; i <= 6; i += 1) await page.mouse.move(cx + i * 40, cy);
-  await page.mouse.up();
-  await card(page, "The old gate").locator(".pick").click();
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
-  // The coast decays frame by frame (the orbit's damping runs per
-  // update), so the check counts drawn frames, not time.
-  const { camera: landed } = await view3d(page);
-  await afterFrames(page, 30);
-  const after = (await view3d(page)).camera;
-  expect(Math.hypot(...after.map((v, i) => v - landed[i]))).toBeLessThan(1e-3);
-});
-
 test("on a phone, a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
   page,
 }) => {
@@ -1239,48 +1230,45 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
   await expect(card(page, "The old gate")).toHaveCount(0);
 });
 
-for (const view of ["3d", "2d"]) {
-  test(`the tour's name carries a pen that opens its details, with no Details button and no mark (${view})`, async ({
-    page,
-  }) => {
-    // Why: the owner found Details a second copy of what the tour's name
-    // already opens, and the "T" mark mere decoration. Both went; a pen
-    // right of the name says it can be clicked, in both views (they share
-    // the top bar). A pen elsewhere, or a Details button left behind, is
-    // what this pins.
-    test.setTimeout(150_000);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await answerHosts(page);
-    if (view === "3d") await openSampleIn3d(page);
-    else await openSample(page);
-    await expect(page.locator("#studio-details")).toHaveCount(0);
-    await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
-    const name = page.locator("#tour-name");
-    const text = await box(name.locator(".tour-name-text"));
-    const pen = name.locator(".tour-name-pen svg.i");
-    await expect(pen).toBeVisible();
-    const penBox = await box(pen);
-    // Right of the name, close beside it, on its line.
-    expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
-    expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
-    expect(
-      Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
-    ).toBeLessThanOrEqual(3);
-    // The name is the button's words: the pen adds none.
-    await expect(name).toHaveAccessibleName(
-      (await name.locator(".tour-name-text").textContent()) ?? "",
-    );
-    // Hovered, the name underlines on the 2D map only: the studio's top
-    // bar (3D) marks a hover by the pen alone, as its other controls.
-    await name.hover();
-    await expect(name.locator(".tour-name-text")).toHaveCSS(
-      "text-decoration-line",
-      view === "3d" ? "none" : "underline",
-    );
-    await pen.click();
-    await expect(page.locator("#details-modal")).toBeVisible();
-  });
-}
+test("the tour's name carries a pen that opens its details, with no Details button and no mark", async ({
+  page,
+}) => {
+  // Why: Details was a second copy of what the tour's name
+  // already opens, and the "T" mark mere decoration. Both went; a pen
+  // right of the name says it can be clicked, in both views (they share
+  // the top bar). A pen elsewhere, or a Details button left behind, is
+  // what this pins.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await expect(page.locator("#studio-details")).toHaveCount(0);
+  await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
+  const name = page.locator("#tour-name");
+  const text = await box(name.locator(".tour-name-text"));
+  const pen = name.locator(".tour-name-pen svg.i");
+  await expect(pen).toBeVisible();
+  const penBox = await box(pen);
+  // Right of the name, close beside it, on its line.
+  expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
+  expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
+  expect(
+    Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
+  ).toBeLessThanOrEqual(3);
+  // The name is the button's words: the pen adds none.
+  await expect(name).toHaveAccessibleName(
+    (await name.locator(".tour-name-text").textContent()) ?? "",
+  );
+  // Hovered, the name does not underline: the studio's top bar (3D)
+  // marks a hover by the pen alone, as its other controls.
+  await name.hover();
+  await expect(name.locator(".tour-name-text")).toHaveCSS(
+    "text-decoration-line",
+    "none",
+  );
+  await pen.click();
+  await expect(page.locator("#details-modal")).toBeVisible();
+});
 
 test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
   page,

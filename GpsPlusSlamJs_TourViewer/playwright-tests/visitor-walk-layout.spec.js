@@ -179,335 +179,355 @@ test("a toast joining three messages stays clear of the radar and the coach at 3
 for (const viewport of VIEWPORTS) {
   const label = `${String(viewport.width)}x${String(viewport.height)}`;
 
-  // Why this test matters: in AR every control of the walk must be on the
-  // screen without scrolling the page, and the page must not scroll
-  // sideways - a phone pans a page that is wider than the screen under a
-  // swipe meant for the sheet. The framework's window-sized canvas, laid
-  // out at the overlay root's place, made the page wider than the window.
-  // The page must not scroll down either (a sideways phone's header once
-  // pushed the AR overlay below the fold), in every state the walk's
-  // controls take: the peek, the list, a row's armed Skip, the quick
-  // action's full-width undo and the complete tour's card.
-  test(`in AR the page does not scroll sideways and every control of the walk is on the screen at ${label}`, async ({
+  // Why this test matters: the walk's layout is the prototype's, and each
+  // step pins one part of it at this size, on one entry into the walk
+  // (each step leaves the walk as it found it, the last excepted).
+  test(`the walk's sheet, its edge pill, its list and toast, and every control on the screen with no page scroll, sit where the prototype puts them at ${label}`, async ({
     page,
   }) => {
+    // Four layouts on one entry: longer than one check's 30 s.
+    test.setTimeout(120_000);
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
     await enterTheWalk(page);
-    /** @param {string} state */
-    const pageFits = async (state) => {
-      const o = await page.evaluate(() => {
-        const d = document.documentElement;
+    await test.step("the sheet, its peek and the Exit button", async () => {
+      const sheet = await box(page, "walk-sheet");
+      if (sideways(viewport)) {
+        // A card at the bottom left, 10 px from both edges.
+        expect(sheet.x).toBeCloseTo(10, 0);
+        expect(viewport.height - (sheet.y + sheet.height)).toBeCloseTo(10, 0);
+        expect(sheet.width).toBeCloseTo(
+          Math.min(370, viewport.width * 0.48),
+          0,
+        );
+      } else {
+        // On the bottom edge, at most 520 px wide, centred.
+        expect(sheet.y + sheet.height).toBeCloseTo(viewport.height, 0);
+        const width = Math.min(viewport.width, 520);
+        expect(sheet.width).toBeCloseTo(width, 0);
+        expect(sheet.x).toBeCloseTo((viewport.width - width) / 2, 0);
+      }
+      // The grab is the sheet's top 22 px (its box: the layout is the prototype's);
+      // the segments 6 px tall, 4 px apart, 16 px in from the sheet's sides;
+      // the peek's row at least 56 px tall (48 sideways).
+      const grab = await box(page, "walk-grab");
+      expect(grab.y).toBeCloseTo(sheet.y + 1, 0); // under the 1 px border
+      expect(grab.height).toBeCloseTo(22, 0);
+      // Its target is 44 px: 10 px above the sheet's edge
+      // and 10 px below the grab's box, a tap still lands on the grab.
+      expect(
+        await page.evaluate(
+          ({ x, ys }) =>
+            ys.map(
+              (y) =>
+                document.elementFromPoint(x, y)?.closest("#walk-grab") != null,
+            ),
+          {
+            x: grab.x + grab.width / 2,
+            ys: [grab.y - 10, grab.y + grab.height + 10],
+          },
+        ),
+      ).toEqual([true, true]);
+      await expect(page.getByTestId("walk-grab")).toHaveAttribute(
+        "aria-controls",
+        "walk-list",
+      );
+      const segments = page.getByTestId("walk-segments").locator("i");
+      const first = await segments.nth(0).boundingBox();
+      const second = await segments.nth(1).boundingBox();
+      if (first === null || second === null) throw new Error("no segments");
+      expect(first.height).toBeCloseTo(6, 0);
+      expect(second.x - (first.x + first.width)).toBeCloseTo(4, 0);
+      expect(first.x - sheet.x).toBeCloseTo(sideways(viewport) ? 17 : 16, 0);
+      expect(first.y - (grab.y + grab.height)).toBeCloseTo(2, 0);
+      const row = await box(page, "walk-peek-row");
+      expect(row.y - (first.y + first.height)).toBeCloseTo(10, 0);
+      expect(row.height).toBeGreaterThanOrEqual(sideways(viewport) ? 48 : 56);
+      // The quick action sits on the row, right of the title, inside the
+      // sheet; at most 46 % of the row.
+      const quick = await box(page, "station-skip");
+      expect(quick.x + quick.width).toBeLessThanOrEqual(
+        sheet.x + sheet.width - 15,
+      );
+      expect(quick.y).toBeGreaterThanOrEqual(row.y - 1);
+      expect(quick.y + quick.height).toBeLessThanOrEqual(
+        row.y + row.height + 1,
+      );
+      expect(quick.width).toBeLessThanOrEqual(row.width * 0.46 + 1);
+      expect(quick.height).toBeGreaterThanOrEqual(44);
+      // ... on the title's line, 12 px after the title's column.
+      const title = await box(page, "walk-title");
+      expect(quick.y).toBeLessThanOrEqual(title.y + title.height);
+      expect(quick.y + quick.height).toBeGreaterThanOrEqual(title.y);
+      const column = await page
+        .getByTestId("walk-peek-row")
+        .locator(".walk-peek-main")
+        .boundingBox();
+      if (column === null) throw new Error("no title column");
+      expect(quick.x - (column.x + column.width)).toBeCloseTo(12, 0);
+      // The distance's figures are lining and of one width, as the prototype's.
+      await expect(page.getByTestId("walk-distance")).toHaveCSS(
+        "font-variant-numeric",
+        "lining-nums tabular-nums",
+      );
+      // The round Exit button: 44 px, 12 px from the left, 30 px from the
+      // top (10 sideways).
+      const exit = await box(page, "enter-ar");
+      expect(exit.width).toBeCloseTo(44, 0);
+      expect(exit.height).toBeCloseTo(44, 0);
+      expect(exit.x).toBeCloseTo(12, 0);
+      expect(exit.y).toBeCloseTo(sideways(viewport) ? 10 : 30, 0);
+      // Nothing of the walk reaches past the screen's right edge. (The page
+      // as a whole is not asked: the AR fakes' window-sized canvas sits
+      // offset inside #ar-root and overflows on its own.)
+      expect(
+        await page.evaluate(() =>
+          ["walk-sheet", "walk-toast-root", "enter-ar"].filter((id) => {
+            const el = document.getElementById(id);
+            return (
+              el !== null &&
+              el.getBoundingClientRect().right > window.innerWidth + 0.5
+            );
+          }),
+        ),
+      ).toEqual([]);
+    });
+    // The prototype's "on the way": the pill stands at 42 % of the
+    // height, 8 px in from the edge on its station's side; sideways the
+    // left one starts right of the sheet's card, which would cover it.
+    await test.step("the edge pill: 42 % of the height, 8 px from its edge, clear of the sheet", async () => {
+      const facing0 = await page.evaluate(() => {
+        const t = /** @type {any} */ (window).__tourViewerTest;
         return {
-          x: d.scrollWidth - d.clientWidth,
-          y: d.scrollHeight - d.clientHeight,
-          scrolled: window.scrollX + window.scrollY,
+          facing: t.facing ?? null,
+          orientation: t.arPose?.orientation ?? null,
         };
       });
-      expect(o.x, `${state}: sideways overflow`).toBeLessThanOrEqual(0);
-      expect(o.y, `${state}: downward overflow`).toBeLessThanOrEqual(0);
-      expect(o.scrolled, `${state}: page scrolled`).toBe(0);
-    };
-    /** @param {{ x: number, y: number, width: number, height: number }} b
-     *  @param {string} id */
-    const onScreen = (b, id) => {
-      expect(b.x, id).toBeGreaterThanOrEqual(0);
-      expect(b.y, id).toBeGreaterThanOrEqual(0);
-      expect(b.x + b.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
-      expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
-    };
-    await pageFits("the peek");
-    for (const id of [
-      "enter-ar",
-      "walk-radar",
-      "walk-grab",
-      "walk-peek",
-      "station-skip",
-    ]) {
-      onScreen(await box(page, id), id);
-    }
-    // A tap on the radar shows its range label and the chip (quiet while
-    // a code holds the position) for a moment: both on the screen.
-    await page.getByTestId("walk-radar").click();
-    for (const id of ["walk-range", "walk-precision"]) {
-      await expect(page.getByTestId(id)).toBeVisible();
-      onScreen(await box(page, id), id);
-    }
-    // The list open: its close button, its title, its first row and that
-    // row's Skip on the screen.
-    await page.getByTestId("walk-grab").click();
-    for (const id of ["walk-close", "walk-list-title"]) {
-      onScreen(await box(page, id), id);
-    }
-    onScreen(await boxOf(page.getByTestId("walk-row").first()), "first row");
-    onScreen(
-      await boxOf(walkRowControl(page, "The gate", "act")),
-      "a row's Skip",
-    );
-    await pageFits("the list");
-    // A row's Skip armed: its confirm and Cancel on the screen.
-    await walkRowControl(page, "The gate", "act").click();
-    onScreen(
-      await boxOf(walkRowControl(page, "The gate", "confirm")),
-      "the confirm",
-    );
-    onScreen(await boxOf(walkRowControl(page, "The gate", "cancel")), "Cancel");
-    await pageFits("a row armed");
-    await walkRowControl(page, "The gate", "cancel").click();
-    // The quick action wrapped to its own line, full width: its undo.
-    await page.getByTestId("walk-close").click();
-    await page.getByTestId("station-skip").click();
-    await walkRowControl(page, "The gate", "confirm").click();
-    await page.getByTestId("walk-close").click();
-    const quick = page.getByTestId("station-skip");
-    await expect(quick).toHaveAttribute("data-kind", "undo");
-    onScreen(await box(page, "station-skip"), "the quick action's undo");
-    expect((await box(page, "station-skip")).width).toBeCloseTo(
-      (await box(page, "walk-peek-row")).width,
-      0,
-    );
-    await pageFits("the quick action's undo");
-    // The tour complete: the completion card is on the screen (scrolled
-    // into the list's view, never the page's), and the page still fits.
-    await page.getByTestId("walk-grab").click();
-    for (const title of ["The well", "The tower", "The garden"]) {
-      await walkRowControl(page, title, "act").click();
-      await walkRowControl(page, title, "confirm").click();
-    }
-    await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
-      "data-complete",
-      "true",
-    );
-    await page.getByTestId("walk-done").scrollIntoViewIfNeeded();
-    await expect(page.getByTestId("walk-done")).toBeVisible();
-    onScreen(await box(page, "walk-done"), "the completion card");
-    await pageFits("the tour complete");
-  });
-
-  // Why this test matters (the prototype's "on the way"): the
-  // pill stands at 42 % of the height, 8 px in from the edge on its
-  // station's side; sideways the left one starts right of the sheet's
-  // card, which would cover it.
-  test(`the edge pill sits at 42 % of the height, 8 px from its edge, clear of the sheet, at ${label}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    await installTourViewerArFakes(page);
-    await enterTheWalk(page);
-    const pill = page.getByTestId("walk-edge-pill");
-    // Facing east, the gate (north) is to the left.
-    await faceBearing(page, 90);
-    await expect(pill).toHaveAttribute("data-side", "left");
-    const left = await box(page, "walk-edge-pill");
-    expect(left.y).toBeCloseTo(viewport.height * 0.42, 0);
-    if (sideways(viewport)) {
-      expect(left.x).toBeCloseTo(viewport.width / 2 + 10, 0);
+      const pillShown = await page.getByTestId("walk-edge-pill").isVisible();
+      const pill = page.getByTestId("walk-edge-pill");
+      // Facing east, the gate (north) is to the left.
+      await faceBearing(page, 90);
+      await expect(pill).toHaveAttribute("data-side", "left");
+      const left = await box(page, "walk-edge-pill");
+      expect(left.y).toBeCloseTo(viewport.height * 0.42, 0);
+      if (sideways(viewport)) {
+        expect(left.x).toBeCloseTo(viewport.width / 2 + 10, 0);
+        const sheet = await box(page, "walk-sheet");
+        expect(left.x).toBeGreaterThan(sheet.x + sheet.width);
+      } else {
+        expect(left.x).toBeCloseTo(8, 0);
+      }
+      expect(left.width).toBeLessThanOrEqual(viewport.width * 0.44 + 0.5);
+      // Its chevron first, pointing out, 6 px before the words.
+      const arrow = await boxOf(pill.locator("svg"));
+      const words = await box(page, "walk-edge-pill-text");
+      expect(arrow.x).toBeLessThan(words.x);
+      expect(words.x - (arrow.x + arrow.width)).toBeCloseTo(6, 0);
+      // Facing west, on the right: the chevron after the words.
+      await faceBearing(page, 270);
+      await expect(pill).toHaveAttribute("data-side", "right");
+      const right = await box(page, "walk-edge-pill");
+      expect(right.x + right.width).toBeCloseTo(viewport.width - 8, 0);
+      expect(right.y).toBeCloseTo(viewport.height * 0.42, 0);
+      const arrowR = await boxOf(pill.locator("svg"));
+      const wordsR = await box(page, "walk-edge-pill-text");
+      expect(arrowR.x - (wordsR.x + wordsR.width)).toBeCloseTo(6, 0);
+      // The heading back as it was: the next steps read the walk facing
+      // its first station, the pill as at the entry.
+      await page.evaluate((f) => {
+        const t = /** @type {any} */ (window).__tourViewerTest;
+        t.facing = f.facing;
+        if (t.arPose !== null && f.orientation !== null) {
+          t.arPose = { ...t.arPose, orientation: f.orientation };
+        }
+        t.emitFrames(1);
+      }, facing0);
+      await expect.poll(() => pill.isVisible()).toBe(pillShown);
+    });
+    await test.step("the list opens inside the screen with 44 px rows, and the toast stays clear of the radar's corner", async () => {
+      await page.getByTestId("walk-grab").click();
+      await expect(page.getByTestId("walk-list")).toBeVisible();
       const sheet = await box(page, "walk-sheet");
-      expect(left.x).toBeGreaterThan(sheet.x + sheet.width);
-    } else {
-      expect(left.x).toBeCloseTo(8, 0);
-    }
-    expect(left.width).toBeLessThanOrEqual(viewport.width * 0.44 + 0.5);
-    // Its chevron first, pointing out, 6 px before the words.
-    const arrow = await boxOf(pill.locator("svg"));
-    const words = await box(page, "walk-edge-pill-text");
-    expect(arrow.x).toBeLessThan(words.x);
-    expect(words.x - (arrow.x + arrow.width)).toBeCloseTo(6, 0);
-    // Facing west, on the right: the chevron after the words.
-    await faceBearing(page, 270);
-    await expect(pill).toHaveAttribute("data-side", "right");
-    const right = await box(page, "walk-edge-pill");
-    expect(right.x + right.width).toBeCloseTo(viewport.width - 8, 0);
-    expect(right.y).toBeCloseTo(viewport.height * 0.42, 0);
-    const arrowR = await boxOf(pill.locator("svg"));
-    const wordsR = await box(page, "walk-edge-pill-text");
-    expect(arrowR.x - (wordsR.x + wordsR.width)).toBeCloseTo(6, 0);
-  });
-
-  test(`the walk's sheet, its peek and the Exit button sit where the prototype puts them at ${label}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    await installTourViewerArFakes(page);
-    await enterTheWalk(page);
-    const sheet = await box(page, "walk-sheet");
-    if (sideways(viewport)) {
-      // A card at the bottom left, 10 px from both edges.
-      expect(sheet.x).toBeCloseTo(10, 0);
-      expect(viewport.height - (sheet.y + sheet.height)).toBeCloseTo(10, 0);
-      expect(sheet.width).toBeCloseTo(Math.min(370, viewport.width * 0.48), 0);
-    } else {
-      // On the bottom edge, at most 520 px wide, centred.
-      expect(sheet.y + sheet.height).toBeCloseTo(viewport.height, 0);
-      const width = Math.min(viewport.width, 520);
-      expect(sheet.width).toBeCloseTo(width, 0);
-      expect(sheet.x).toBeCloseTo((viewport.width - width) / 2, 0);
-    }
-    // The grab is the sheet's top 22 px (its box: the layout is the prototype's);
-    // the segments 6 px tall, 4 px apart, 16 px in from the sheet's sides;
-    // the peek's row at least 56 px tall (48 sideways).
-    const grab = await box(page, "walk-grab");
-    expect(grab.y).toBeCloseTo(sheet.y + 1, 0); // under the 1 px border
-    expect(grab.height).toBeCloseTo(22, 0);
-    // Its target is 44 px: 10 px above the sheet's edge
-    // and 10 px below the grab's box, a tap still lands on the grab.
-    expect(
-      await page.evaluate(
-        ({ x, ys }) =>
-          ys.map(
-            (y) =>
-              document.elementFromPoint(x, y)?.closest("#walk-grab") != null,
-          ),
-        {
-          x: grab.x + grab.width / 2,
-          ys: [grab.y - 10, grab.y + grab.height + 10],
-        },
-      ),
-    ).toEqual([true, true]);
-    await expect(page.getByTestId("walk-grab")).toHaveAttribute(
-      "aria-controls",
-      "walk-list",
-    );
-    const segments = page.getByTestId("walk-segments").locator("i");
-    const first = await segments.nth(0).boundingBox();
-    const second = await segments.nth(1).boundingBox();
-    if (first === null || second === null) throw new Error("no segments");
-    expect(first.height).toBeCloseTo(6, 0);
-    expect(second.x - (first.x + first.width)).toBeCloseTo(4, 0);
-    expect(first.x - sheet.x).toBeCloseTo(sideways(viewport) ? 17 : 16, 0);
-    expect(first.y - (grab.y + grab.height)).toBeCloseTo(2, 0);
-    const row = await box(page, "walk-peek-row");
-    expect(row.y - (first.y + first.height)).toBeCloseTo(10, 0);
-    expect(row.height).toBeGreaterThanOrEqual(sideways(viewport) ? 48 : 56);
-    // The quick action sits on the row, right of the title, inside the
-    // sheet; at most 46 % of the row.
-    const quick = await box(page, "station-skip");
-    expect(quick.x + quick.width).toBeLessThanOrEqual(
-      sheet.x + sheet.width - 15,
-    );
-    expect(quick.y).toBeGreaterThanOrEqual(row.y - 1);
-    expect(quick.y + quick.height).toBeLessThanOrEqual(row.y + row.height + 1);
-    expect(quick.width).toBeLessThanOrEqual(row.width * 0.46 + 1);
-    expect(quick.height).toBeGreaterThanOrEqual(44);
-    // ... on the title's line, 12 px after the title's column.
-    const title = await box(page, "walk-title");
-    expect(quick.y).toBeLessThanOrEqual(title.y + title.height);
-    expect(quick.y + quick.height).toBeGreaterThanOrEqual(title.y);
-    const column = await page
-      .getByTestId("walk-peek-row")
-      .locator(".walk-peek-main")
-      .boundingBox();
-    if (column === null) throw new Error("no title column");
-    expect(quick.x - (column.x + column.width)).toBeCloseTo(12, 0);
-    // The distance's figures are lining and of one width, as the prototype's.
-    await expect(page.getByTestId("walk-distance")).toHaveCSS(
-      "font-variant-numeric",
-      "lining-nums tabular-nums",
-    );
-    // The round Exit button: 44 px, 12 px from the left, 30 px from the
-    // top (10 sideways).
-    const exit = await box(page, "enter-ar");
-    expect(exit.width).toBeCloseTo(44, 0);
-    expect(exit.height).toBeCloseTo(44, 0);
-    expect(exit.x).toBeCloseTo(12, 0);
-    expect(exit.y).toBeCloseTo(sideways(viewport) ? 10 : 30, 0);
-    // Nothing of the walk reaches past the screen's right edge. (The page
-    // as a whole is not asked: the AR fakes' window-sized canvas sits
-    // offset inside #ar-root and overflows on its own.)
-    expect(
-      await page.evaluate(() =>
-        ["walk-sheet", "walk-toast-root", "enter-ar"].filter((id) => {
-          const el = document.getElementById(id);
-          return (
-            el !== null &&
-            el.getBoundingClientRect().right > window.innerWidth + 0.5
-          );
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  test(`the list opens inside the screen with 44 px rows, and the toast stays clear of the radar's corner at ${label}`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    await installTourViewerArFakes(page);
-    await enterTheWalk(page);
-    await page.getByTestId("walk-grab").click();
-    await expect(page.getByTestId("walk-list")).toBeVisible();
-    const sheet = await box(page, "walk-sheet");
-    expect(sheet.y).toBeGreaterThanOrEqual(0);
-    expect(sheet.height).toBeLessThanOrEqual(
-      sideways(viewport)
-        ? viewport.height - 74 + 1
-        : viewport.height * 0.66 + 1,
-    );
-    const rows = page.getByTestId("walk-row");
-    await expect(rows).toHaveCount(4);
-    for (let i = 0; i < 4; i += 1) {
-      const r = await rows.nth(i).boundingBox();
-      if (r === null) continue; // scrolled out of the list's own view
-      expect(r.height).toBeGreaterThanOrEqual(44);
-    }
-    // The last row can be reached: scrolled into the list's view, it
-    // stands inside the sheet and the screen.
-    await rows.last().scrollIntoViewIfNeeded();
-    const last = await rows.last().boundingBox();
-    if (last === null) throw new Error("no last row");
-    expect(last.y + last.height).toBeLessThanOrEqual(
-      sheet.y + sheet.height + 0.5,
-    );
-    expect(last.y + last.height).toBeLessThanOrEqual(viewport.height + 0.5);
-    // The open sheet leaves the Exit button free.
-    const exitButton = await box(page, "enter-ar");
-    expect(
-      sheet.y >= exitButton.y + exitButton.height ||
-        sheet.x >= exitButton.x + exitButton.width,
-    ).toBe(true);
-    // The prototype's figures are lining: the app font's old-style numerals would
-    // shrink the rows' numbers.
-    await expect(rows.first().locator(".walk-glyph")).toHaveCSS(
-      "font-variant-numeric",
-      "lining-nums",
-    );
-    await page.getByTestId("walk-close").click();
-    // A skip's toast: in the prototype's place, left of the radar's corner (132 px
-    // at the top right) on a phone, centred on a desktop. "Can't get
-    // there?" opens the list on the gate's row; its confirm skips.
-    const quick = page.getByTestId("station-skip");
-    await quick.click();
-    await page.getByTestId("walk-row-confirm").click();
-    const toast = page.locator("#walk-toast");
-    await expect(toast).toHaveText("Skipped The gate.");
-    // The toast's place is its root's: the toast itself slides in a few
-    // pixels as it enters.
-    const t = await page.locator("#walk-toast-root").boundingBox();
-    if (t === null) throw new Error("no toast root");
-    const wide =
-      viewport.width > 520 &&
-      (viewport.height > 520 || viewport.width < viewport.height);
-    if (wide) {
-      expect(t.x + t.width / 2).toBeCloseTo(viewport.width / 2, 0);
-      expect(t.y).toBeCloseTo(84, 0);
-    } else if (sideways(viewport)) {
-      expect(t.x + t.width).toBeCloseTo(viewport.width - 130, 0);
-      expect(t.y).toBeCloseTo(14, 0);
-    } else {
-      expect(t.x).toBeCloseTo(12, 0);
-      expect(t.x + t.width).toBeLessThanOrEqual(viewport.width - 132);
-      expect(t.y).toBeCloseTo(84, 0);
-    }
-    // A suggestion or an undo takes the row's full width, on its own line
-    // (the list closed: the quick action is not shown over it).
-    await page.getByTestId("walk-close").click();
-    const undo = await box(page, "station-skip");
-    const row = await box(page, "walk-peek-row");
-    expect(undo.width).toBeCloseTo(row.width, 0);
-    // Nothing of the walk under the Exit button.
-    const exit = await box(page, "enter-ar");
-    expect(t.y >= exit.y + exit.height || t.x >= exit.x + exit.width).toBe(
-      true,
-    );
+      expect(sheet.y).toBeGreaterThanOrEqual(0);
+      expect(sheet.height).toBeLessThanOrEqual(
+        sideways(viewport)
+          ? viewport.height - 74 + 1
+          : viewport.height * 0.66 + 1,
+      );
+      const rows = page.getByTestId("walk-row");
+      await expect(rows).toHaveCount(4);
+      for (let i = 0; i < 4; i += 1) {
+        const r = await rows.nth(i).boundingBox();
+        if (r === null) continue; // scrolled out of the list's own view
+        expect(r.height).toBeGreaterThanOrEqual(44);
+      }
+      // The last row can be reached: scrolled into the list's view, it
+      // stands inside the sheet and the screen.
+      await rows.last().scrollIntoViewIfNeeded();
+      const last = await rows.last().boundingBox();
+      if (last === null) throw new Error("no last row");
+      expect(last.y + last.height).toBeLessThanOrEqual(
+        sheet.y + sheet.height + 0.5,
+      );
+      expect(last.y + last.height).toBeLessThanOrEqual(viewport.height + 0.5);
+      // The open sheet leaves the Exit button free.
+      const exitButton = await box(page, "enter-ar");
+      expect(
+        sheet.y >= exitButton.y + exitButton.height ||
+          sheet.x >= exitButton.x + exitButton.width,
+      ).toBe(true);
+      // The prototype's figures are lining: the app font's old-style numerals would
+      // shrink the rows' numbers.
+      await expect(rows.first().locator(".walk-glyph")).toHaveCSS(
+        "font-variant-numeric",
+        "lining-nums",
+      );
+      await page.getByTestId("walk-close").click();
+      // A skip's toast: in the prototype's place, left of the radar's corner (132 px
+      // at the top right) on a phone, centred on a desktop. "Can't get
+      // there?" opens the list on the gate's row; its confirm skips.
+      const quick = page.getByTestId("station-skip");
+      await quick.click();
+      await page.getByTestId("walk-row-confirm").click();
+      const toast = page.locator("#walk-toast");
+      await expect(toast).toHaveText("Skipped The gate.");
+      // The toast's place is its root's: the toast itself slides in a few
+      // pixels as it enters.
+      const t = await page.locator("#walk-toast-root").boundingBox();
+      if (t === null) throw new Error("no toast root");
+      const wide =
+        viewport.width > 520 &&
+        (viewport.height > 520 || viewport.width < viewport.height);
+      if (wide) {
+        expect(t.x + t.width / 2).toBeCloseTo(viewport.width / 2, 0);
+        expect(t.y).toBeCloseTo(84, 0);
+      } else if (sideways(viewport)) {
+        expect(t.x + t.width).toBeCloseTo(viewport.width - 130, 0);
+        expect(t.y).toBeCloseTo(14, 0);
+      } else {
+        expect(t.x).toBeCloseTo(12, 0);
+        expect(t.x + t.width).toBeLessThanOrEqual(viewport.width - 132);
+        expect(t.y).toBeCloseTo(84, 0);
+      }
+      // A suggestion or an undo takes the row's full width, on its own line
+      // (the list closed: the quick action is not shown over it).
+      await page.getByTestId("walk-close").click();
+      const undo = await box(page, "station-skip");
+      const row = await box(page, "walk-peek-row");
+      expect(undo.width).toBeCloseTo(row.width, 0);
+      // Nothing of the walk under the Exit button.
+      const exit = await box(page, "enter-ar");
+      expect(t.y >= exit.y + exit.height || t.x >= exit.x + exit.width).toBe(
+        true,
+      );
+      // The skip undone: the last step skips the gate itself.
+      await quick.click();
+      await expect(toast).toHaveText("Brought back The gate.");
+      await expect(quick).toHaveText("Can't get there?");
+    });
+    // In AR every control of the walk must be on the screen without
+    // scrolling the page, and the page must not scroll sideways - a phone
+    // pans a page that is wider than the screen under a swipe meant for
+    // the sheet. The framework's window-sized canvas, laid out at the
+    // overlay root's place, made the page wider than the window. The page
+    // must not scroll down either (a sideways phone's header once pushed
+    // the AR overlay below the fold), in every state the walk's controls
+    // take: the peek, the list, a row's armed Skip, the quick action's
+    // full-width undo and the complete tour's card. Last: it completes
+    // the tour.
+    await test.step("the page does not scroll and every control is on the screen", async () => {
+      /** @param {string} state */
+      const pageFits = async (state) => {
+        const o = await page.evaluate(() => {
+          const d = document.documentElement;
+          return {
+            x: d.scrollWidth - d.clientWidth,
+            y: d.scrollHeight - d.clientHeight,
+            scrolled: window.scrollX + window.scrollY,
+          };
+        });
+        expect(o.x, `${state}: sideways overflow`).toBeLessThanOrEqual(0);
+        expect(o.y, `${state}: downward overflow`).toBeLessThanOrEqual(0);
+        expect(o.scrolled, `${state}: page scrolled`).toBe(0);
+      };
+      /** @param {{ x: number, y: number, width: number, height: number }} b
+       *  @param {string} id */
+      const onScreen = (b, id) => {
+        expect(b.x, id).toBeGreaterThanOrEqual(0);
+        expect(b.y, id).toBeGreaterThanOrEqual(0);
+        expect(b.x + b.width, id).toBeLessThanOrEqual(viewport.width + 0.5);
+        expect(b.y + b.height, id).toBeLessThanOrEqual(viewport.height + 0.5);
+      };
+      await pageFits("the peek");
+      for (const id of [
+        "enter-ar",
+        "walk-radar",
+        "walk-grab",
+        "walk-peek",
+        "station-skip",
+      ]) {
+        onScreen(await box(page, id), id);
+      }
+      // A tap on the radar shows its range label and the chip (quiet while
+      // a code holds the position) for a moment: both on the screen.
+      await page.getByTestId("walk-radar").click();
+      for (const id of ["walk-range", "walk-precision"]) {
+        await expect(page.getByTestId(id)).toBeVisible();
+        onScreen(await box(page, id), id);
+      }
+      // The list open: its close button, its title, its first row and that
+      // row's Skip on the screen.
+      await page.getByTestId("walk-grab").click();
+      for (const id of ["walk-close", "walk-list-title"]) {
+        onScreen(await box(page, id), id);
+      }
+      onScreen(await boxOf(page.getByTestId("walk-row").first()), "first row");
+      onScreen(
+        await boxOf(walkRowControl(page, "The gate", "act")),
+        "a row's Skip",
+      );
+      await pageFits("the list");
+      // A row's Skip armed: its confirm and Cancel on the screen.
+      await walkRowControl(page, "The gate", "act").click();
+      onScreen(
+        await boxOf(walkRowControl(page, "The gate", "confirm")),
+        "the confirm",
+      );
+      onScreen(
+        await boxOf(walkRowControl(page, "The gate", "cancel")),
+        "Cancel",
+      );
+      await pageFits("a row armed");
+      await walkRowControl(page, "The gate", "cancel").click();
+      // The quick action wrapped to its own line, full width: its undo.
+      await page.getByTestId("walk-close").click();
+      await page.getByTestId("station-skip").click();
+      await walkRowControl(page, "The gate", "confirm").click();
+      await page.getByTestId("walk-close").click();
+      const quick = page.getByTestId("station-skip");
+      await expect(quick).toHaveAttribute("data-kind", "undo");
+      onScreen(await box(page, "station-skip"), "the quick action's undo");
+      expect((await box(page, "station-skip")).width).toBeCloseTo(
+        (await box(page, "walk-peek-row")).width,
+        0,
+      );
+      await pageFits("the quick action's undo");
+      // The tour complete: the completion card is on the screen (scrolled
+      // into the list's view, never the page's), and the page still fits.
+      await page.getByTestId("walk-grab").click();
+      for (const title of ["The well", "The tower", "The garden"]) {
+        await walkRowControl(page, title, "act").click();
+        await walkRowControl(page, title, "confirm").click();
+      }
+      await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+        "data-complete",
+        "true",
+      );
+      await page.getByTestId("walk-done").scrollIntoViewIfNeeded();
+      await expect(page.getByTestId("walk-done")).toBeVisible();
+      onScreen(await box(page, "walk-done"), "the completion card");
+      await pageFits("the tour complete");
+    });
   });
 
   test(`the coach stands centred (at 60 % across in landscape, beside the sheet) at ${label}`, async ({
@@ -702,102 +722,129 @@ const overlaps = (a, b) =>
   a.y < b.y + b.height - 0.5 &&
   b.y < a.y + a.height - 0.5;
 
-for (const viewport of VIEWPORTS) {
-  const label = `${String(viewport.width)}x${String(viewport.height)}`;
-  for (const archive of [WALK_ARCHIVE, ITEMS_ARCHIVE]) {
-    const tour = archive === WALK_ARCHIVE ? "stories" : "items";
-    test(`the radar sits at the top right with the chip under it, clear of the walk, at ${label} (${tour})`, async ({
-      page,
-    }) => {
-      // Why: the prototype's radar is 132 px,
-      // 30 px from the top and 12 px from the right (108 px and 10 px on a
-      // phone held sideways); the chip stands 6 px under it, right-aligned,
-      // at most 36 px wider; neither covers the Exit button, the sheet
-      // (closed or open) or the toast's place. The chip speaks only while
-      // the position is one the visitor can act on: hidden while a code
-      // holds it, its place measured while tracking is lost.
+for (const archive of [WALK_ARCHIVE, ITEMS_ARCHIVE]) {
+  const tour = archive === WALK_ARCHIVE ? "stories" : "items";
+  test(`the radar sits at the top right with the chip under it, clear of the walk, at 360x740, 844x390 and 1440x900 (${tour})`, async ({
+    page,
+  }) => {
+    // Why: the prototype's radar is 132 px,
+    // 30 px from the top and 12 px from the right (108 px and 10 px on a
+    // phone held sideways); the chip stands 6 px under it, right-aligned,
+    // at most 36 px wider; neither covers the Exit button, the sheet
+    // (closed or open) or the toast's place. The chip speaks only while
+    // the position is one the visitor can act on: hidden while a code
+    // holds it, its place measured while tracking is lost.
+    // One entry, resized to each size in turn: the radar's canvas reads
+    // its size again on a resize (a ResizeObserver), and the layout is
+    // the CSS's at the new size. Each size's checks leave the walk as
+    // they found it.
+    test.setTimeout(120_000);
+    await installTourViewerArFakes(page);
+    for (const [i, viewport] of VIEWPORTS.entries()) {
+      const label = `${String(viewport.width)}x${String(viewport.height)}`;
       await page.setViewportSize(viewport);
-      await installTourViewerArFakes(page);
-      await enterTheWalk(page, archive);
-      await expect(page.getByTestId("walk-precision")).toBeHidden();
-      await reportArTracking(page, false);
-      await expect(page.getByTestId("walk-precision")).toBeVisible();
-      const size = sideways(viewport) ? 108 : 132;
-      const radar = await box(page, "walk-radar");
-      expect(radar.width).toBeCloseTo(size, 0);
-      expect(radar.height).toBeCloseTo(size, 0);
-      expect(viewport.width - (radar.x + radar.width)).toBeCloseTo(12, 0);
-      expect(radar.y).toBeCloseTo(sideways(viewport) ? 10 : 30, 0);
-      await expect(page.getByTestId("walk-radar")).toHaveCSS(
-        "border-radius",
-        "50%",
-      );
-      const chip = await box(page, "walk-precision");
-      expect(chip.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
-      expect(chip.x + chip.width).toBeCloseTo(radar.x + radar.width, 0);
-      expect(chip.width).toBeLessThanOrEqual(size + 36 + 0.5);
-      await expect(page.getByTestId("walk-precision")).toHaveCSS(
-        "font-size",
-        "12px",
-      );
-      await expect(page.getByTestId("walk-precision")).toHaveCSS(
-        "border-radius",
-        "14px",
-      );
-      const exit = await box(page, "enter-ar");
-      const sheet = await box(page, "walk-sheet");
-      for (const other of [exit, sheet]) {
-        expect(overlaps(radar, other)).toBe(false);
-        expect(overlaps(chip, other)).toBe(false);
-      }
-      // Tracking back: the chip hides again; its place (measured above)
-      // must stay clear of the open list and the toast.
-      await trackingOk(page);
-      await expect(page.getByTestId("walk-precision")).toBeHidden();
-      // A tap steps the range and opens no list: the range label and the
-      // chip show under the radar for a moment, 6 px apart and
-      // right-aligned with it, clear of the Exit button and the sheet.
-      await page.getByTestId("walk-radar").click();
-      await expect(page.getByTestId("walk-range")).toHaveText("Range: 30 m");
-      await expect(page.getByTestId("walk-precision")).toBeVisible();
-      await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
-        "data-sheet",
-        "peek",
-      );
-      const range = await box(page, "walk-range");
-      const tapped = await box(page, "walk-precision");
-      expect(range.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
-      expect(tapped.y - (range.y + range.height)).toBeCloseTo(6, 0);
-      expect(range.x + range.width).toBeCloseTo(radar.x + radar.width, 0);
-      for (const other of [exit, sheet]) {
-        expect(overlaps(range, other)).toBe(false);
-        expect(overlaps(tapped, other)).toBe(false);
-      }
-      await expect(page.getByTestId("walk-range")).toBeHidden({
-        timeout: 5000,
+      if (i === 0) await enterTheWalk(page, archive);
+      await test.step(label, async () => {
+        await expect(page.getByTestId("walk-precision")).toBeHidden();
+        await reportArTracking(page, false);
+        await expect(page.getByTestId("walk-precision")).toBeVisible();
+        const size = sideways(viewport) ? 108 : 132;
+        const radar = await box(page, "walk-radar");
+        expect(radar.width).toBeCloseTo(size, 0);
+        expect(radar.height).toBeCloseTo(size, 0);
+        expect(viewport.width - (radar.x + radar.width)).toBeCloseTo(12, 0);
+        expect(radar.y).toBeCloseTo(sideways(viewport) ? 10 : 30, 0);
+        await expect(page.getByTestId("walk-radar")).toHaveCSS(
+          "border-radius",
+          "50%",
+        );
+        const chip = await box(page, "walk-precision");
+        expect(chip.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
+        expect(chip.x + chip.width).toBeCloseTo(radar.x + radar.width, 0);
+        expect(chip.width).toBeLessThanOrEqual(size + 36 + 0.5);
+        await expect(page.getByTestId("walk-precision")).toHaveCSS(
+          "font-size",
+          "12px",
+        );
+        await expect(page.getByTestId("walk-precision")).toHaveCSS(
+          "border-radius",
+          "14px",
+        );
+        const exit = await box(page, "enter-ar");
+        const sheet = await box(page, "walk-sheet");
+        for (const other of [exit, sheet]) {
+          expect(overlaps(radar, other)).toBe(false);
+          expect(overlaps(chip, other)).toBe(false);
+        }
+        // Tracking back: the chip hides again; its place (measured above)
+        // must stay clear of the open list and the toast.
+        await trackingOk(page);
+        await expect(page.getByTestId("walk-precision")).toBeHidden();
+        // A tap steps the range and opens no list: the range label and the
+        // chip show under the radar for a moment, 6 px apart and
+        // right-aligned with it, clear of the Exit button and the sheet.
+        await page.getByTestId("walk-radar").click();
+        await expect(page.getByTestId("walk-range")).toHaveText("Range: 30 m");
+        await expect(page.getByTestId("walk-precision")).toBeVisible();
+        await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+          "data-sheet",
+          "peek",
+        );
+        const range = await box(page, "walk-range");
+        const tapped = await box(page, "walk-precision");
+        expect(range.y - (radar.y + radar.height)).toBeCloseTo(6, 0);
+        expect(tapped.y - (range.y + range.height)).toBeCloseTo(6, 0);
+        expect(range.x + range.width).toBeCloseTo(radar.x + radar.width, 0);
+        for (const other of [exit, sheet]) {
+          expect(overlaps(range, other)).toBe(false);
+          expect(overlaps(tapped, other)).toBe(false);
+        }
+        await expect(page.getByTestId("walk-range")).toBeHidden({
+          timeout: 5000,
+        });
+        await expect(page.getByTestId("walk-precision")).toBeHidden();
+        // The list open: still clear of the radar and the chip.
+        await page.getByTestId("walk-grab").click();
+        await expect(page.getByTestId("walk-list")).toBeVisible();
+        const open = await box(page, "walk-sheet");
+        expect(overlaps(radar, open)).toBe(false);
+        expect(overlaps(chip, open)).toBe(false);
+        await page.getByTestId("walk-close").click();
+        // A skip's toast stands clear of the radar and the chip (the
+        // stories tour: the items tour's first station is found at the
+        // code, its story playing).
+        if (archive === WALK_ARCHIVE) {
+          const quick = page.getByTestId("station-skip");
+          await quick.click();
+          await page.getByTestId("walk-row-confirm").click();
+          await expect(page.locator("#walk-toast")).toBeVisible();
+          const toast = await page.locator("#walk-toast").boundingBox();
+          if (toast === null) throw new Error("no toast");
+          expect(overlaps(radar, toast)).toBe(false);
+          expect(overlaps(chip, toast)).toBe(false);
+          // The skip undone, for the next size (the list closed: it
+          // covers the quick action).
+          await page.getByTestId("walk-close").click();
+          await quick.click();
+          await expect(page.locator("#walk-toast")).toHaveText(
+            "Brought back The gate.",
+          );
+          await expect(quick).toHaveText("Can't get there?");
+        }
+        // The range back to automatic for the next size: a tap steps
+        // through 30, 100 and 300 m, then automatic.
+        for (const r of ["Range: 100 m", "Range: 300 m"]) {
+          await page.getByTestId("walk-radar").click();
+          await expect(page.getByTestId("walk-range")).toHaveText(r);
+        }
+        await page.getByTestId("walk-radar").click();
+        await expect(page.getByTestId("walk-range")).toBeHidden({
+          timeout: 5000,
+        });
+        await expect(page.getByTestId("walk-precision")).toBeHidden();
       });
-      await expect(page.getByTestId("walk-precision")).toBeHidden();
-      // The list open: still clear of the radar and the chip.
-      await page.getByTestId("walk-grab").click();
-      await expect(page.getByTestId("walk-list")).toBeVisible();
-      const open = await box(page, "walk-sheet");
-      expect(overlaps(radar, open)).toBe(false);
-      expect(overlaps(chip, open)).toBe(false);
-      await page.getByTestId("walk-close").click();
-      // A skip's toast stands clear of the radar and the chip (the
-      // stories tour: the items tour's first station is found at the
-      // code, its story playing).
-      if (archive !== WALK_ARCHIVE) return;
-      const quick = page.getByTestId("station-skip");
-      await quick.click();
-      await page.getByTestId("walk-row-confirm").click();
-      await expect(page.locator("#walk-toast")).toBeVisible();
-      const toast = await page.locator("#walk-toast").boundingBox();
-      if (toast === null) throw new Error("no toast");
-      expect(overlaps(radar, toast)).toBe(false);
-      expect(overlaps(chip, toast)).toBe(false);
-    });
-  }
+    }
+  });
 }
 
 test("the away block sits above the start's safety line, inside a phone's screen", async ({

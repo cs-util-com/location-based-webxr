@@ -22,6 +22,7 @@ import {
   afterFrames,
   answerHosts,
   capture,
+  capturing,
   keepRejections,
   noApproach,
   noClouds,
@@ -145,43 +146,6 @@ function luminance(css) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-test("the plain editor link opens the sample tour on the globe @pr", async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(180_000);
-  await answerHosts(page, { globeAssets: "serve" });
-  await keepRejections(page);
-  await noApproach(page);
-  await page.goto("/edit.html");
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
-    timeout: 120_000,
-  });
-  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
-  const stats = await view3d(page);
-  // The globe's own stats: only the globe view reports them.
-  expect(stats.globe).toBeDefined();
-  expect(stats.globe.altitudeM).toBeLessThan(2_000);
-  // Its sky's items in the View menu, which the older view hides.
-  await page.locator("#view-menu-btn").click();
-  await expect(page.locator("#view-realtime")).toBeVisible();
-  await expect(page.locator("#view-clouds")).toBeVisible();
-  await page.locator("#view-clouds").click();
-  await page.keyboard.press("Escape");
-  for (const size of VIEWPORTS) {
-    await page.setViewportSize(size);
-    await afterFrames(page, 2);
-    await capture(
-      page,
-      testInfo.outputPath(
-        `default-open-${String(size.width)}x${String(size.height)}.png`,
-      ),
-    );
-  }
-  expect(await rejections(page)).toEqual([]);
-});
-
 // Why this test matters: the units check the table and the wiring on a fake;
 // only this shows that the link's name reaches the renderer the real page
 // draws with. The clouds and the approach are off: only the grade is read.
@@ -258,17 +222,21 @@ test.describe("an empty tour", () => {
     // The tree is not held folded for an approach that never flies.
     await expect(page.locator("#shell-tree")).toBeVisible();
     await expect(page.locator("#shell-tree")).not.toHaveClass(/collapsed/);
-    for (const size of VIEWPORTS) {
-      await page.setViewportSize(size);
-      await afterFrames(page, 2);
-      await capture(
-        page,
-        testInfo.outputPath(
-          `empty-tour-${String(size.width)}x${String(size.height)}.png`,
-        ),
-      );
+    // The screenshots only: resizing a software-drawn globe three times
+    // costs frames no assertion reads.
+    if (capturing) {
+      for (const size of VIEWPORTS) {
+        await page.setViewportSize(size);
+        await afterFrames(page, 2);
+        await capture(
+          page,
+          testInfo.outputPath(
+            `empty-tour-${String(size.width)}x${String(size.height)}.png`,
+          ),
+        );
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
     }
-    await page.setViewportSize({ width: 1440, height: 900 });
 
     // Down to about 1 km over the answered ground (at 515.5 m everywhere),
     // looking down, and wait for the answered ground to be sampled under
@@ -557,19 +525,20 @@ test.describe("where the 3D view cannot open", () => {
   });
 });
 
-// Why: "This tour needs no GPS" lived only in the map's rail; in the 3D
-// view it is in Tour details, and it must reach the file and come back.
-test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back @pr", async ({
+// Why: the plain editor link opens the sample tour on the globe (only the
+// globe view reports the globe's stats, and its sky's items show in the
+// View menu, which the older view hides, Clouds among them, on by default
+// and switched off there). And "This tour needs no GPS"
+// lived only in the map's rail; in the 3D view it is in Tour details, and
+// it must reach the file and come back.
+test("the plain editor link opens the sample tour on the globe, and 'needs no GPS' is set in its Tour details, saved, and read back @pr", async ({
   page,
-}) => {
+}, testInfo) => {
   // One globe open and a zip download in the software renderer.
   test.setTimeout(240_000);
   await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
   await noApproach(page);
-  // The heavy clouds off (`noClouds`): with them each click here waits on
-  // frames of about 0.7 s, which ran the test past its budget on CI. The
-  // setting has nothing to do with clouds.
-  await noClouds(page);
   await withoutPickers(page);
   await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
@@ -577,11 +546,40 @@ test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back 
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
+  // The heavy clouds are on by default, and the View menu's Clouds turns
+  // them off: first thing here, as with them each click waits on frames of
+  // about 0.7 s, which ran the test past its budget on CI.
   await expect
     .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on, {
       timeout: 60_000,
     })
+    .toBe(true);
+  await page.locator("#view-menu-btn").click();
+  await expect(page.locator("#view-realtime")).toBeVisible();
+  const clouds = page.locator("#view-clouds");
+  await expect(clouds).toHaveAttribute("aria-checked", "true");
+  await clouds.click();
+  await expect(clouds).toHaveAttribute("aria-checked", "false");
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
     .toBe(false);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  const stats = await view3d(page);
+  expect(stats.globe).toBeDefined();
+  expect(stats.globe.altitudeM).toBeLessThan(2_000);
+  if (capturing) {
+    for (const size of VIEWPORTS) {
+      await page.setViewportSize(size);
+      await afterFrames(page, 2);
+      await capture(
+        page,
+        testInfo.outputPath(
+          `default-open-${String(size.width)}x${String(size.height)}.png`,
+        ),
+      );
+    }
+  }
   await fileCommand(page, "details");
   const setting = page.locator("#details-no-gps");
   await expect(setting).not.toBeChecked();
@@ -609,4 +607,5 @@ test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back 
   await expect(page.locator("#details-modal")).toBeHidden();
   await fileCommand(page, "details");
   await expect(page.locator("#details-no-gps")).not.toBeChecked();
+  expect(await rejections(page)).toEqual([]);
 });
