@@ -10,6 +10,7 @@
  */
 
 import { test, expect } from "./e2e-test.js";
+import { PROGRESSIVE_RADII } from "gps-plus-slam-osm";
 
 import {
   AT_FIXTURE,
@@ -20,6 +21,9 @@ import {
   REPAINT,
   appSearch,
   expectCanvasFillsContainer,
+  diffFromStash,
+  installFrameProbe,
+  stashStableFrame,
 } from "./fixtures.js";
 
 /**
@@ -426,9 +430,8 @@ test.describe("the worker", () => {
 const AFTER_ANNOUNCE = { timeout: 8_000 };
 
 test.describe("the location picker", () => {
-  // TWO TESTS, ONE PER GESTURE (the e2e pruning audit). Each used to be several
-  // tests that booted the same fixture and then made the same gesture; one
-  // boot per gesture now carries all of them, in the order the states occur.
+  // TWO TESTS, ONE PER GESTURE. One boot per gesture carries every check of that
+  // gesture, in the order the states occur.
   test("jumps to a named place: clears the old city at once, announces the load centred on the scene, re-runs the pipeline, and keeps the place in the URL across a reload", async ({
     page,
   }) => {
@@ -794,9 +797,8 @@ test.describe("the location picker", () => {
 
 test.describe("the phone layout", () => {
   /**
-   * ONE BOOT FOR EVERY PHONE-LAYOUT CHECK (the e2e pruning audit). Each step
-   * below was a test of its own that booted the same fixture at 390 x 780 and
-   * asserted on the same page. The steps that measure the page at rest run
+   * ONE BOOT FOR EVERY PHONE-LAYOUT CHECK, at 390 x 780. The steps that measure
+   * the page at rest run
    * first, the ones that change it (the sheet drag, the header toggles, the
    * resizes) after them, and the caret step resizes to 1920 px, so it runs last.
    *
@@ -1323,9 +1325,9 @@ test.describe("the phone layout", () => {
       const before = await header.boundingBox();
       const sceneBefore = await scene.boundingBox();
       if (before === null || sceneBefore === null) throw new Error("no boxes");
-      // THE CATEGORY LABEL IS SHOWN WHILE EXPANDED (G3, DEC-W4). The decision
-      // to drop it is about the COLLAPSED bar, asserted below, so deleting the
-      // element outright would overshoot and take DEC-1's heading with it.
+      // THE CATEGORY LABEL IS SHOWN WHILE EXPANDED. Dropping it is about the
+      // COLLAPSED bar, asserted below, so deleting the element outright would
+      // overshoot and take the legend's heading with it.
       await expect(page.locator("#legend .legend-category")).toBeVisible();
 
       await page.locator("#header-toggle").click();
@@ -1767,6 +1769,92 @@ test.describe("the phone layout", () => {
 });
 
 test.describe("my location", () => {
+  test.describe("at a desktop width", () => {
+    // The phone-layout test measures the pin, the credit and the header at
+    // 390 px. These are the same claims at 1280 x 720, where the map is a side
+    // pane rather than a sheet and the header is a full row: one boot for all.
+    test.use({ viewport: { width: 1280, height: 720 } });
+
+    test("the pin sits bottom-right above the credit, the credit inside the map, and a denied locate toasts with the header collapsed", async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        // A DENIED PERMISSION, not a missing API: the app branches on the error
+        // it gets back, and removing `geolocation` entirely would take a
+        // different path (unsupported) that reports through a different string.
+        const denied = {
+          code: 1,
+          PERMISSION_DENIED: 1,
+          POSITION_UNAVAILABLE: 2,
+          TIMEOUT: 3,
+          message: "User denied Geolocation",
+        };
+        Object.defineProperty(navigator, "geolocation", {
+          configurable: true,
+          value: {
+            getCurrentPosition: (_ok, fail) => fail?.(denied),
+            watchPosition: (_ok, fail) => {
+              fail?.(denied);
+              return 1;
+            },
+            clearWatch: () => {},
+          },
+        });
+      });
+      await stubNetwork(page);
+      await page.goto(AT_FIXTURE);
+      await waitForRefresh(page);
+
+      await test.step("the pin and the credit", async () => {
+        const [box, mapBox, attribution] = await Promise.all([
+          page.locator(".locate-button").boundingBox(),
+          page.locator("#map").boundingBox(),
+          page.locator("#map .leaflet-control-attribution").boundingBox(),
+        ]);
+        if (box === null || mapBox === null) throw new Error("no boxes");
+        expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
+        expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+        // UNCONDITIONAL: `boundingBox()` returns null for a hidden element, so
+        // a guard on it here would skip exactly when the credit went missing.
+        expect(attribution).not.toBeNull();
+        // Strictly above the credit, not overlapping it.
+        expect(box.y + box.height).toBeLessThanOrEqual(
+          (attribution?.y ?? 0) + 1,
+        );
+        // INSIDE THE MAP, not merely "visible": `toBeVisible()` does not detect
+        // an element clipped by the `overflow: hidden` of `.leaflet-container`.
+        expect(
+          (attribution?.y ?? 0) + (attribution?.height ?? 0),
+        ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
+      });
+
+      await test.step("a denied locate toasts, and the header stays collapsed", async () => {
+        // If the toast wiring is ever lost nothing else fails: the header stays
+        // put and errors become invisible. COLLAPSED FIRST, because expanded,
+        // an old status line would pass for a build with no toast at all.
+        await page.locator("#header-toggle").click();
+        await expect(page.locator("#header-bar")).toHaveAttribute(
+          "data-collapsed",
+          "true",
+        );
+
+        await page.locator(".locate-button").click();
+
+        // The wording is the locate control's; the claim is that SOMETHING
+        // reached a surface the user can see while collapsed.
+        const toast = page.locator("#toast-root .toast");
+        await expect(toast).toHaveText(/./, { timeout: 15000 });
+
+        // AND THE HEADER DID NOT MOVE, which a build that expanded it to show
+        // the error would otherwise pass.
+        await expect(page.locator("#header-bar")).toHaveAttribute(
+          "data-collapsed",
+          "true",
+        );
+      });
+    });
+  });
+
   test("moves the user to a real fix, and says so while it is working", async ({
     page,
     context,
@@ -1851,81 +1939,226 @@ test.describe("my location", () => {
 });
 
 /**
- * W14 / DEC-R3-9, DEC-R3-18 — the performance panels.
+ * The desktop controls, on one boot.
  *
- * THIS ITEM SHIPS THE INSTRUMENT; it does not take the measurement. The
- * CPU-vs-GPU comparison the note asked for happens on a phone, which is why the
- * control is a switch rather than a URL parameter.
+ * ORDER MATTERS: the breakdown reads what the boot printed, the perf overlay
+ * compares against the picture the boot left, and the control bar runs last
+ * because it ends at a phone width.
  */
-test.describe("the perf overlay", () => {
-  test("mounts on demand and leaves the scene alone", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const panels = page.locator("#scene .perf-stats-overlay");
-    await expect(panels).toHaveCount(0);
-
-    /** Non-background pixels, so "the scene is unchanged" is a real claim. */
-    const painted = () =>
-      page.evaluate(() => {
-        const el = document.querySelector("#scene canvas");
-        if (!(el instanceof HTMLCanvasElement)) return -1;
-        const probe = document.createElement("canvas");
-        probe.width = el.width;
-        probe.height = el.height;
-        const ctx = probe.getContext("2d");
-        if (ctx === null) return -1;
-        ctx.drawImage(el, 0, 0);
-        const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-        let count = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
-            count++;
-          }
-        }
-        return count;
-      });
-
-    const before = await painted();
-    await page.locator("#perf-stats").check();
-
-    // The panels are DOM over the canvas, so the rendered scene must not move —
-    // an overlay that changed the picture would corrupt the very comparison it
-    // exists to support.
-    await expect(panels).toHaveCount(1);
-    expect(Math.abs((await painted()) - before)).toBeLessThan(before * 0.02);
-
-    await page.locator("#perf-stats").uncheck();
-    await expect(panels).toHaveCount(0);
-  });
-});
-
-/**
- * W15 / DEC-R3-10 — the control bar is grouped, and every layer still has a
- * switch.
- */
-test.describe("the control bar", () => {
-  test("gives every layer one switch, and collapses to the essentials", async ({
+test.describe("the desktop controls", () => {
+  test("print the click breakdown, mount the perf overlay, move the sun and the render distance, and give every layer a switch that collapses", async ({
     page,
   }) => {
+    // Installed before the page loads: the lines are printed during the boot.
+    const lines = [];
+    page.on("console", (message) => {
+      const text = message.text();
+      if (text.startsWith("click ring ")) lines.push(text);
+    });
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await test.step("gives every layer a VISIBLE switch", async () => {
-      // WHAT IS LEFT HERE IS THE PART THAT NEEDS A BROWSER, and only that.
+    await test.step("the click breakdown survives the worker boundary", async () => {
+      // This does NOT rank a real click: Overpass is blocked here, so the fetch
+      // stages are a small fixture. What only a real browser can show is that
+      // the instrument composes across a real dedicated worker with its own
+      // time origin, and that the numbers survive a real structured clone.
       //
-      // The inventory — one switch per `ALL_LAYERS` entry, each uniquely
-      // addressable as `#layer-<id>`, each inside a named group box — moved to
-      // `layer-toggles.test.ts` (jsdom), where it is checked against the
-      // registry itself rather than against the DOM's internal consistency, and
-      // where four mutations of `layer-toggles.ts` prove it can fail.
+      // One line per ring: the widening publishes per ring, and the stages that
+      // happen once are zero on the later rings by design.
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      for (const line of lines) {
+        // The ring is checked against the real list. A digit match would take
+        // any number, and a character class once rejected a new ring.
+        expect(line).toMatch(/^click ring \d+: \d+ ms total/);
+        expect(PROGRESSIVE_RADII).toContain(
+          Number(/^click ring (\d+):/.exec(line)?.[1]),
+        );
+        // Every stage carries its share of the whole.
+        expect(line).toMatch(/ \d+ ms \(\d+ %\)/);
+        // The residual is printed always, even when small.
+        expect(line).toContain("residual ");
+        expect(line).toContain("tiles ");
+        // Every stage has a number. A reused dev server serving a stale build
+        // of the library once printed `0 ms` with `1 unmeasured`.
+        expect(line, `no tile was measured in: ${line}`).not.toContain(
+          "unmeasured",
+        );
+        // `reconciles` is deliberately not asserted: its tolerance is a guess
+        // that one sample cannot re-fit, and asserting today's outcome would
+        // freeze that guess as a requirement.
+        const wall = /^click ring \d+: (\d+) ms total/.exec(line)?.[1];
+        expect(Number(wall)).toBeGreaterThan(0);
+      }
+
+      // By name, the zeros included: `parse` is 0 on a cache hit and
+      // `terrain-wait` on a widening ring, and they are what lets the line
+      // falsify a prediction.
+      const first = lines[0] ?? "";
+      for (const stage of [
+        "fetch",
+        "parse",
+        "merge",
+        "score",
+        "derive",
+        "terrain-wait",
+        "mesh",
+        "boundary",
+        "draw",
+      ]) {
+        expect(first, `${stage} missing from: ${first}`).toContain(`${stage} `);
+      }
+    });
+
+    await test.step("the perf overlay mounts on demand and leaves the scene alone", async () => {
+      const panels = page.locator("#scene .perf-stats-overlay");
+      await expect(panels).toHaveCount(0);
+
+      /** Non-background pixels, so "the scene is unchanged" is a real claim. */
+      const painted = () =>
+        page.evaluate(() => {
+          const el = document.querySelector("#scene canvas");
+          if (!(el instanceof HTMLCanvasElement)) return -1;
+          const probe = document.createElement("canvas");
+          probe.width = el.width;
+          probe.height = el.height;
+          const ctx = probe.getContext("2d");
+          if (ctx === null) return -1;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] + data[i + 1] + data[i + 2] > 0x11 + 0x13 + 0x1a + 60) {
+              count++;
+            }
+          }
+          return count;
+        });
+
+      const before = await painted();
+      await page.locator("#perf-stats").check();
+
+      // The panels are DOM over the canvas, so the rendered scene must not
+      // move: an overlay that changed the picture would corrupt the very
+      // comparison it exists to support.
+      await expect(panels).toHaveCount(1);
+      expect(Math.abs((await painted()) - before)).toBeLessThan(before * 0.02);
+
+      await page.locator("#perf-stats").uncheck();
+      await expect(panels).toHaveCount(0);
+    });
+
+    await test.step("a hotkey moves the sun, and stepping back returns", async () => {
+      // The boot readout: the afternoon sun at 20° of the pinned date, in
+      // labelled apparent solar time.
+      const readout = page.locator("#sun-readout");
+      await expect(readout).toHaveText("15:47 solar time");
+      await expect(page.locator("#sun-date")).toHaveValue("2026-09-23");
+      // The exact text for the return trip: a regex cannot tell the golden hour
+      // from the stop half a degree away, both read 17:3x.
+      const bootReadout = await readout.textContent();
+
+      // FOUR: from the 20° boot, two 30-min clock stops (above 12°) and two
+      // fine 1.5° stops near the horizon take the sun to ~10°, a clearly
+      // different picture.
+      await installFrameProbe(page);
+      await stashStableFrame(page);
+      // Focus the body rather than a field: the registry deliberately ignores
+      // keys typed into inputs, and the site picker is a `<select>`.
+      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+      for (let k = 0; k < 4; k++) await page.keyboard.press("t");
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(1000);
+
+      // The stop list makes forward-then-back the identity (unit-tested in
+      // sun-clock.test.ts); this proves the page agrees.
+      for (let k = 0; k < 4; k++) await page.keyboard.press("T");
+      await expect(readout).toHaveText(bootReadout ?? "");
+    });
+
+    await test.step("the date field keeps focus while edited, and Enter hands it back", async () => {
+      // "change" fires per edited segment, so a field that blurred on it lost
+      // focus after the first edit. It must then give focus back on Enter, or
+      // "t" would be swallowed as typing.
+      const input = page.locator("#sun-date");
+      await input.fill("2026-12-21");
+      await expect(input).toHaveValue("2026-12-21");
+      // The boot's phase (20° in the afternoon) does not exist on 21 Dec at the
+      // fixture (15.6° at noon), so the sun lands on that day's noon.
+      await expect(page.locator("#sun-readout")).toHaveText("12:00 solar time");
+      await expect(input).toBeFocused();
+      await input.press("Enter");
+      await expect(input).not.toBeFocused();
+      const before = await page.locator("#sun-readout").textContent();
+      await page.keyboard.press("t");
+      await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
+    });
+
+    await test.step("the time slider moves the sun, and the keys still work after it", async () => {
+      // A range input takes no typed text, so "t" must still step the sun while
+      // it has focus (the hotkey registry exempts non-text inputs).
+      const slider = page.locator("#sun-time");
+      const readout = page.locator("#sun-readout");
+      const before = await readout.textContent();
+      await slider.fill("150");
+      await expect(readout).not.toHaveText(before ?? "");
+      const afterSlider = await readout.textContent();
+      await slider.focus();
+      await page.keyboard.press("t");
+      await expect(readout).not.toHaveText(afterSlider ?? "");
+      await expect(slider).not.toHaveValue("150");
+    });
+
+    await test.step("the shortcut list is discoverable and matches the bindings", async () => {
+      const help = page.locator("#hotkey-help");
+      await expect(help).toBeHidden();
+      await page.keyboard.press("?");
+      await expect(help).toBeVisible();
+      // Rendered FROM the registry, so this also catches a binding added
+      // without a description.
+      await expect(help).toContainText("step the sun forward");
+      await expect(help).toContainText("step the sun back");
+      await expect(help.locator("kbd")).not.toHaveCount(0);
+      await page.keyboard.press("?");
+      await expect(help).toBeHidden();
+    });
+
+    await test.step("the render-distance dial moves the camera AND the fog, boots at 2x, and is inert at 1x", async () => {
+      // The readout is painted from `buildingView.farPlaneM()` and `fogNearM()`,
+      // which read back from the CAMERA and the FOG rather than from the slider,
+      // so the text proves the projection matrix and the fog were written.
       //
-      // Visibility cannot move: it is CSS resolving against real layout, which
-      // jsdom does not do. So the assertion left in the browser is the one the
-      // unit test cannot make — that the switches the registry promises are
-      // actually ON SCREEN, not merely in the document.
+      // The fog half is the point. `THREE.Fog` is linear with `far` at the far
+      // plane, so everything past it is already fully fog coloured: moving the
+      // far plane alone would show an identical image.
+      //
+      // `BuildingView` constructs a `WebGLRenderer`, so none of this can be a
+      // unit test, and this first line is the only pin of the boot path:
+      // painting without applying would read 2400 while the thumb sat at 2.
+      const readout = page.locator("#render-distance-value");
+      await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
+
+      const slider = page.locator("#render-distance");
+      await slider.fill("10");
+      await slider.dispatchEvent("input");
+
+      // Both moved, by the same factor: 10x is 24000, and the haze keeps its
+      // 0.66 ratio. A far plane that moved alone would read haze 1584 m.
+      await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
+
+      // And back. This asserts the 1x baseline after an explicit `fill("1")`,
+      // not the boot default, which is why it reads 2400.
+      await slider.fill("1");
+      await slider.dispatchEvent("input");
+      await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+    });
+
+    await test.step("every layer has a VISIBLE switch", async () => {
+      // Only what needs a browser. The inventory lives in
+      // `layer-toggles.test.ts`; visibility is CSS resolving against real
+      // layout, which jsdom does not do.
       const switches = page.locator("#layers input[type=checkbox][data-layer]");
       const count = await switches.count();
       expect(count).toBeGreaterThan(0);
@@ -1934,7 +2167,7 @@ test.describe("the control bar", () => {
       }
 
       // And the groups are on screen, with the perf switch inside the
-      // diagnostics one — it is not a layer, so nothing else would put it there.
+      // diagnostics one: it is not a layer, so nothing else would put it there.
       await expect(page.locator("#layer-group-overlays")).toBeVisible();
       await expect(page.locator("#layer-group-world")).toBeVisible();
       await expect(
@@ -1942,56 +2175,32 @@ test.describe("the control bar", () => {
       ).toBeVisible();
     });
 
-    await test.step("collapses to the title, the category picker and the affordance block", async () => {
-      // DEC-R6b-5 REDREW THIS LINE, and the shape of the change is the point.
-      // Before round 7 exactly ONE setting collapsed — `show-below` — while the
-      // World, Debug and Ground controls stayed on screen. That is backwards
-      // from what the bar is for, and it is what the sixth session reported.
+    await test.step("the bar collapses to the title, the category picker and the affordance block", async () => {
+      // Collapsed keeps the category picker and the whole affordance block
+      // including `show-below`. Collapsed hides the hint, the status string,
+      // World, Debug, Ground and the legend, whose category the picker one line
+      // below now names with a control rather than a label.
       //
-      // Collapsed now keeps: the category picker and the whole affordance block
-      // INCLUDING `show-below`, which moved into that group.
-      // Collapsed now hides: the hint, the status string, World, Debug, Ground
-      // — and, since round three, the legend (G3, DEC-W4). It used to be on the
-      // "keeps" list to satisfy DEC-1's requirement that the active category be
-      // named on screen; the category picker one line below now does that, and
-      // does it with a control rather than a label.
-      //
-      // `show-below` being VISIBLE here is a deliberate reversal. The session's
-      // first impression was that its disappearing was a bug; moving it into the
-      // block the legend describes is what makes it stop disappearing.
-      //
-      // The narrow viewport is set HERE rather than at the top, so the step above
-      // still runs at the desktop width it was written for. A resize is a repaint,
-      // not a reload — the scene and the working set survive it, which is the
-      // whole reason these two can share a boot.
+      // The narrow viewport is set HERE, so everything above runs at the
+      // desktop width it was written for. A resize is a repaint, not a reload.
       await page.setViewportSize({ width: 390, height: 780 });
       await page.locator("#header-toggle").click();
 
       await expect(page.locator("#category")).toBeVisible();
       await expect(page.locator("#legend")).toBeHidden();
       await expect(page.locator("#layer-cells")).toBeVisible();
-      // HIDDEN, because `cells` is off by default (DEC-U9, 2026-08-19). This
-      // line asserted the opposite and was GREEN BECAUSE THE FEATURE WAS
-      // BROKEN: the paint ran only from a change-subscriber, so the default
-      // state was never painted at all. The old comment called the visibility
-      // "a deliberate reversal", which it had been — of an older decision, and
-      // DEC-U9 reverses it back for a different reason: this control has
-      // nothing to be below the threshold OF while the cells are not drawn.
-      //
-      // The collapse behaviour it was really testing is unchanged and still
-      // covered: with `cells` ON the checkbox collapses and expands with the
-      // affordance block it belongs to, which is asserted in
-      // map-and-cells.spec.js.
+      // HIDDEN because `cells` is off by default: this control has nothing to be
+      // below the threshold OF while the cells are not drawn. An older form of
+      // this line asserted the opposite and was green because the default state
+      // was never painted. With `cells` on, the checkbox collapses with its
+      // block, which map-and-cells.spec.js asserts.
       await expect(page.locator("#show-below")).toBeHidden();
 
       await expect(page.locator("#status")).toBeHidden();
       await expect(page.locator("#layer-group-world")).toBeHidden();
       await expect(page.locator("#layer-group-diagnostics")).toBeHidden();
-      // The ground picker goes too (Q-R6b-3). It is the one control here that
-      // changes what is DRAWN rather than whether it is drawn, and `index.html`
-      // used to call it one of "the two primary inputs" — the owner chose the
-      // session's note over that precedent, so the comment was reworded rather
-      // than left describing a rule the code no longer follows.
+      // The ground picker goes too: it changes what is drawn, and still counts
+      // as an expert control.
       await expect(page.locator("#ground-mode-label")).toBeHidden();
 
       // And expanding brings all three back, so this is a collapse rather than
@@ -2002,12 +2211,9 @@ test.describe("the control bar", () => {
       await expect(page.locator("#ground-mode-label")).toBeVisible();
     });
 
-    await test.step("puts show-below inside the affordance group, not beside it", async () => {
-      // The MOVE, asserted structurally rather than by position on screen —
-      // `layer-toggles.ts` has an `extrasAfter` hook for exactly this (the perf
-      // switch already uses it), so the checkbox is a child of the group rather
-      // than a sibling that happens to render nearby. A CSS-only fix would look
-      // identical collapsed and wrong the moment the groups are reordered.
+    await test.step("show-below sits inside the affordance group, not beside it", async () => {
+      // Structural rather than by position: a CSS-only fix would look identical
+      // collapsed and wrong the moment the groups are reordered.
       await expect(
         page.locator("#layer-group-overlays #show-below"),
       ).toBeAttached();
@@ -2238,9 +2444,7 @@ test.describe("the AR entry point", () => {
     // ...and no offer, because the press that wanted one failed long ago.
     await expect(page.locator("#ar-offer")).toBeHidden();
 
-    // THE MAP STAYS WHEN AR IS AVAILABLE, after exactly the plain GPS press a
-    // test of its own used to make (merged here by the e2e pruning audit).
-    // THE MAP STAYS WHEN AR IS AVAILABLE. The rule the reference consumer's
+    // THE MAP STAYS WHEN AR IS AVAILABLE, after exactly a plain GPS press. The rule the reference consumer's
     // pattern would break, asserted in the real DOM rather than only over the
     // pure state function, because the failure mode is a call site toggling
     // the map, not the derivation. The xr stub above is what makes it mean

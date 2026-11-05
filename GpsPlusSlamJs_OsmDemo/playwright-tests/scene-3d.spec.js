@@ -480,8 +480,7 @@ test.describe("the 3D view", () => {
   test("draws regions, slabs, roads and POIs, cycles the tile presets, picks a grid cell on real terrain, and shows the buildings from beneath", async ({
     page,
   }) => {
-    // ONE DESKTOP BOOT FOR FOUR FORMER TESTS (the e2e pruning audit: a boot
-    // costs about 6 s here). The four layer steps come first; each drives its
+    // ONE DESKTOP BOOT FOR ALL OF THIS (a boot costs about 6 s here). The four layer steps come first; each drives its
     // OWN switch and measures against a frame it stashes itself, so a layer
     // another step left off is a constant rather than an interference. Then
     // the tile presets (the cycle ends on the shipped look again), the grid
@@ -1377,22 +1376,24 @@ const meanLuma = (page) =>
  * measurement taken immediately after a toggle reads the PREVIOUS frame — the
  * first version of this did exactly that and reported a difference of exactly
  * zero, which looks like a real answer.
+ *
+ * SETTLED MEANS TWO READS 100 ms APART AGREE, bounded by wall clock. A count of
+ * animation frames is no such bound: on a fast page two frames can pass before
+ * the repaint lands, and the next read then measures the previous picture.
  */
 const settledChroma = async (page) => {
   let previous = -1;
-  for (let i = 0; i < 40; i++) {
-    const now = await meanChroma(page);
-    if (Math.abs(now - previous) < 0.01) return now;
-    previous = now;
-    // TWO ANIMATION FRAMES, not a fixed sleep: a repaint lands on a frame, so
-    // waiting for frames is the event the settle is about.
-    await page.evaluate(
-      () =>
-        new Promise((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(resolve)),
-        ),
-    );
-  }
+  await expect
+    .poll(
+      async () => {
+        const now = await meanChroma(page);
+        const moved = Math.abs(now - previous);
+        previous = now;
+        return moved;
+      },
+      { intervals: [100], timeout: 5_000 },
+    )
+    .toBeLessThan(0.01);
   return previous;
 };
 
@@ -1465,95 +1466,6 @@ const marginFor = async (page, mode) => {
  * was "measured" four times).
  */
 test.describe("the time of day", () => {
-  test("moves the sun from a hotkey, and stepping back returns", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    // The boot readout: the afternoon sun at 20° of the pinned date
-    // (DEC-SUN-13), in labelled apparent solar time without the date the
-    // field shows (DEC-SUN-8; plan 2026-09-24-0706).
-    await expect(page.locator("#sun-readout")).toHaveText("15:47 solar time");
-    await expect(page.locator("#sun-date")).toHaveValue("2026-09-23");
-    // THE EXACT TEXT, kept for the return trip (M2 review finding 5): the
-    // regex alone cannot tell the golden hour from the stop half a degree
-    // away, both read 17:3x.
-    const bootReadout = await page.locator("#sun-readout").textContent();
-
-    await test.step("four presses take the afternoon sun toward the evening, and repaint", async () => {
-      // FOUR: from the 20° boot, two 30-min clock stops (above 12°) and two
-      // fine 1.5° stops near the horizon (DEC-SUN-7) take the sun to ~10°,
-      // a clearly different picture.
-      await installFrameProbe(page);
-      await stashStableFrame(page);
-      // Focus the body rather than a field: the registry deliberately ignores
-      // keys typed into inputs, and the site picker is a `<select>`.
-      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
-      for (let k = 0; k < 4; k++) await page.keyboard.press("t");
-      await expect
-        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-        .toBeGreaterThan(1000);
-    });
-
-    await test.step("stepping back returns to where it started", async () => {
-      // Determinism, visibly: the stop list makes forward-then-back the
-      // identity (unit-tested in sun-clock.test.ts); this proves the page
-      // agrees.
-      for (let k = 0; k < 4; k++) await page.keyboard.press("T");
-      await expect(page.locator("#sun-readout")).toHaveText(bootReadout ?? "");
-    });
-
-    await test.step("the date field keeps focus while edited, and Enter hands it back", async () => {
-      // M2 review finding 4: the field once blurred on every "change", which
-      // fires per edited segment, so typing a year or stepping with ↑/↓ lost
-      // focus after the first edit. It now keeps focus until Enter or Escape,
-      // and must then give it back, or "t" would be swallowed as typing.
-      const input = page.locator("#sun-date");
-      await input.fill("2026-12-21");
-      await expect(input).toHaveValue("2026-12-21");
-      // The boot's phase (20° in the afternoon) does not exist on 21 Dec at
-      // the fixture (15.6° at noon), so the sun lands on that day's noon.
-      await expect(page.locator("#sun-readout")).toHaveText("12:00 solar time");
-      await expect(input).toBeFocused();
-      await input.press("Enter");
-      await expect(input).not.toBeFocused();
-      const before = await page.locator("#sun-readout").textContent();
-      await page.keyboard.press("t");
-      await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
-    });
-
-    await test.step("the time slider moves the sun, and the keys still work after it", async () => {
-      // DEC-SUN-15 (plan 2026-09-24-0706): a dawn-to-dusk slider. A range
-      // input takes no typed text, so "t" must still step the sun while it
-      // has focus (the hotkey registry exempts non-text inputs).
-      const slider = page.locator("#sun-time");
-      const readout = page.locator("#sun-readout");
-      const before = await readout.textContent();
-      await slider.fill("150");
-      await expect(readout).not.toHaveText(before ?? "");
-      const afterSlider = await readout.textContent();
-      await slider.focus();
-      await page.keyboard.press("t");
-      await expect(readout).not.toHaveText(afterSlider ?? "");
-      await expect(slider).not.toHaveValue("150");
-    });
-
-    await test.step("the shortcut list is discoverable and matches the bindings", async () => {
-      const help = page.locator("#hotkey-help");
-      await expect(help).toBeHidden();
-      await page.keyboard.press("?");
-      await expect(help).toBeVisible();
-      // Rendered FROM the registry, so this also catches a binding added
-      // without a description.
-      await expect(help).toContainText("step the sun forward");
-      await expect(help).toContainText("step the sun back");
-      await expect(help.locator("kbd")).not.toHaveCount(0);
-      await page.keyboard.press("?");
-      await expect(help).toBeHidden();
-    });
-  });
-
   /**
    * DEC-R4-5 AT EVERY SUN THE USER CAN REACH, one test per point, each booted
    * by URL pin at the fixture: the evening golden hour (the boot), a 3.6°
@@ -1589,24 +1501,18 @@ test.describe("the time of day", () => {
    * §15) pass every point, the 3.6° morning with the least to spare (17.6
    * against 16.8).
    */
-  //
-  // THE BINDING POINTS ONLY (the e2e pruning audit). Three interior suns were
-  // dropped as rows that do not bind: the evening golden hour (3.6°, the same
-  // elevation as the morning row, which has the least to spare), a 24° morning
-  // (inside the gain band, between the 3.6° morning and the September noon
-  // that bound the margin) and civil twilight at −2.9° (between the 3.6°
-  // morning and −5.9°, the darker twilight). That rests on the margin and the
-  // lit luma being monotone in elevation between the kept rows; if a run that
-  // logs all seven `DEC-R4-5 ... lit surfaces` lines ever shows a non-monotone
-  // lit luma inside the 18-40° gain band, the 24° row binds and comes back
-  // (morning 06:23 33.6, 24° 08:41 96.8, golden hour 17:36 42.6, −2.9° 18:17
-  // 20.8 were the approved lit-surface lumas). The June noon (62.5°) row runs
-  // in the light dialog's June-noon test, which shares its boot.
+  // Every row stays: the lit luma is not monotone in elevation (33.6 at 3.6°,
+  // 96.8 at 24°, 75.1 at 38.9°), so no row is implied by its neighbours. The
+  // June noon (62.5°) runs in the light dialog's June-noon test, which shares
+  // its boot.
   const SUN_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
     //  the share of it the point must reach (half by default)]
+    ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
     ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
+    ["a 24° morning", "2026-09-23", "08:41", 96.8],
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
+    ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
   ];
   for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
@@ -1624,7 +1530,7 @@ test.describe("the time of day", () => {
 });
 
 /**
- * DEC-R4-5 at one booted sun: the heat grid's margin over the plain and the
+ * The heat-ramp rule at one booted sun: the heat grid's margin over the plain and the
  * default ground, and the lit city's brightness with the grid off. Leaves the
  * ground in the default mode with the cells ON.
  */
@@ -1989,72 +1895,6 @@ test.describe("the NPC agent", () => {
     });
   });
 
-  test("the render-distance dial moves the camera AND the fog, boots at 2x, and is still inert at 1x", async ({
-    page,
-  }) => {
-    /**
-     * WHY THIS TEST MATTERS (r541 Q9/Q10, owner decision 2026-08-21).
-     *
-     * "Der 3D-View läuft stabil auf 60 FPS. Ich würde gerne wissen, wie viel
-     * weiter man rendern könnte." The dial is the instrument for answering that
-     * on a session that has accumulated tiles.
-     *
-     * WHAT IT ASSERTS AND WHY IT IS NOT VACUOUS. The readout is painted from
-     * `buildingView.farPlaneM()` and `fogNearM()`, which read back from the
-     * CAMERA and the FOG rather than from the slider — so asserting the text
-     * proves the projection matrix and the fog were actually written. A readout
-     * fed from the requested value would keep reporting 24000 while a
-     * `setFarPlane` that had stopped writing the camera did nothing.
-     *
-     * THE FOG HALF IS THE POINT, not a bonus. `THREE.Fog` is linear and built
-     * with `far = FAR_PLANE_M`, so everything past it is already fully fog
-     * coloured: moving the camera's far plane alone would draw more geometry
-     * and show an identical image. That is the failure this pins.
-     *
-     * `BuildingView` constructs a `WebGLRenderer`, so none of this can be a unit
-     * test — `building-view-content.test.ts` records that constraint.
-     */
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const readout = page.locator("#render-distance-value");
-
-    // BOOTS AT 2x (DEC-K2, superseding DEC-Y24). It used to say "INERT AT 1x —
-    // the shipped view must be untouched until the operator moves the dial".
-    // A field session tested 4800 m on a phone and asked for it as the default,
-    // so the page now applies the markup's value at boot instead of only
-    // painting it.
-    //
-    // THIS ASSERTION IS THE ONLY THING PINNING THE BOOT PATH. The unit suite
-    // can pin the markup against the constant, but `BuildingView` constructs a
-    // `WebGLRenderer` and cannot be instantiated there — so "the camera was
-    // actually moved to match" is provable only here. Painting without applying
-    // would leave this reading 2400 while the thumb sat at 2.
-    await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
-
-    const slider = page.locator("#render-distance");
-    await slider.fill("10");
-    await slider.dispatchEvent("input");
-
-    // BOTH MOVED, BY THE SAME FACTOR. 10x is 24000, and the haze keeps its
-    // 0.66 ratio at 15840 — a far plane that moved without the fog would read
-    // "draw 24000 m · haze 1584 m" and fail here.
-    await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
-
-    // AND BACK, so the dial is reversible on the street rather than a one-way
-    // door that needs a reload to undo.
-    //
-    // ⚠️ THIS ONE STAYS 2400. It follows an explicit `fill("1")`, so it asserts
-    // the 1x BASELINE and not the boot default — the two were the same number
-    // until DEC-K2 and are not any more. Changing it alongside the boot
-    // expectation above would turn a correct test red; the cold review of the
-    // plan caught exactly that edit.
-    await slider.fill("1");
-    await slider.dispatchEvent("input");
-    await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
-  });
-
   test("brings the beacon into frame even from a CLOSE camera", async ({
     page,
   }) => {
@@ -2067,9 +1907,8 @@ test.describe("the NPC agent", () => {
      * the frustum is hundreds of metres wide there — and fails close in, where
      * that same offset pushes the marker off the top of the screen.
      *
-     * The default-distance beacon test (deleted as a duplicate of this one by the
-     * e2e pruning audit) could not see the difference: at the default distance
-     * both aim points keep the beacon on screen, so it passed against the bug.
+     * A beacon check at the default distance cannot see the difference: there
+     * both aim points keep the beacon on screen, so it passes against the bug.
      * This one starts the camera at `MIN_CAMERA_DISTANCE_M` via the shareable
      * camera link, which is the route a user takes by pasting one.
      *
@@ -2182,8 +2021,9 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
       await page.locator("#geo-event").click();
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
       await stashStableFrame(page);
-      // Clearing moves nothing but the marker (the sibling beacon test);
-      // measured 248 differing pixels, and the sibling's floor of 100 holds.
+      // Clearing moves nothing but the marker, as the close-camera test above
+      // explains, so the difference is the beacon: measured 248 differing
+      // pixels at this distance, against a floor of 100.
       await page.locator("#geo-event-clear").click();
       await expect(page.locator("#map .geo-winner")).toHaveCount(0);
       await expect
@@ -2221,10 +2061,9 @@ test.describe("the light dialog", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, value);
 
-  // ONE JUNE-NOON BOOT FOR THREE FORMER TESTS (the e2e pruning audit): the
-  // sun clock reads `?date=&time=` only at boot, so the DEC-R4-5 June row, the
-  // readout parity and the dialog's levers all share this state. Parity runs
-  // before the levers, because the levers change the light.
+  // ONE JUNE-NOON BOOT: the sun clock reads `?date=&time=` only at boot, so the
+  // heat-ramp check, the readout parity and the dialog's levers all share this
+  // state. Parity runs before the levers, because the levers change the light.
   test("at the June noon: the heat ramp stays the loudest thing, the dialog reads the sweep's numbers, and its levers brighten noon, kept in the URL", async ({
     page,
   }) => {
@@ -2232,11 +2071,10 @@ test.describe("the light dialog", () => {
     await page.goto(JUNE_NOON);
     await waitForRefresh(page);
 
-    await test.step("DEC-R4-5 at the June noon (62.5°)", async () => {
+    await test.step("the heat ramp stays the loudest thing at the June noon (62.5°)", async () => {
       // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
       // buildings and roads are lifted to the approved noon brightness, so this
       // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
-      // It is the binding row from above: the lowest share of the margin.
       await expectHeatRampLoudest(page, "the June noon (62.5°)", 64.7, 0.95);
     });
 
@@ -2247,6 +2085,8 @@ test.describe("the light dialog", () => {
       await page.locator("#layer-cells").uncheck();
       await settledChroma(page);
       const inlineLit = await litSurfaceLuma(page);
+      // Closed at boot: nothing below has opened it yet.
+      await expect(page.locator("#light-dialog")).toBeHidden();
       await page.locator("#light-open").click();
       // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
       // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
@@ -2282,7 +2122,6 @@ test.describe("the light dialog", () => {
       await page.locator("#layer-cells").uncheck();
       await settledChroma(page);
       // The dialog opens from its button and the l key, and closes with Escape.
-      await expect(dialog).toBeHidden();
       await page.locator("#light-open").click();
       await expect(dialog).toBeVisible();
       await page.locator("#light-gainMax").press("Escape");

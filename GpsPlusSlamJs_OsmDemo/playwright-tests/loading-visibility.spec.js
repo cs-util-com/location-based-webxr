@@ -46,6 +46,33 @@ import {
 const AFTER_ANNOUNCE = { timeout: 8_000 };
 
 test.describe("the loading channels", () => {
+  test("opening the page announces its own cold start", async ({ page }) => {
+    // Reported after using the app, 2026-09-22: "the LOADING OPENSTREETMAP DATA
+    // does not show yet when the page is initially loaded, fix that".
+    //
+    // It had been deliberately silent, on the rule that only a refresh someone
+    // ASKED for announces itself - and opening a page is not a click. That
+    // reasoning survived until the app was actually opened: the cold start is
+    // the longest wait it has, it is the first thing a new visitor sees, and
+    // the status-line dot is not what someone staring at an empty scene for
+    // thirty seconds needs. Nobody gestured, but opening the app IS the intent.
+    //
+    // NOTHING ELSE HOLDS THE BOOT'S OWN `arm()`: the mid-fetch test below also
+    // sees the overlay during the boot refresh, but its site pick arms the
+    // announcer itself, so that test stays green with the boot's call deleted.
+    const counts = await stubNetwork(page);
+    counts.holdOverpass();
+    await page.goto(AT_FIXTURE);
+
+    const overlay = page.locator("#loading-overlay");
+    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
+    await expect(overlay).toContainText("Loading", AFTER_ANNOUNCE);
+
+    counts.releaseOverpass();
+    await waitForRefresh(page);
+    await expect(overlay).toBeHidden(REPAINT);
+  });
+
   test("a refresh the user did not ask for stays silent", async ({
     page,
     context,
