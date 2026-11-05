@@ -307,8 +307,8 @@ describe('selectSpecs', () => {
 // Plain `--shard` is not used because it cuts the alphabetical list, which
 // would put every `editor3d-globe-*` spec in one shard.
 describe('the e2e plan puts every spec in exactly one CI lane', () => {
-  it('names the lanes: the page tests and four 3D lanes', () => {
-    expect(plan.LANES).toEqual(['dom', 'webgl-1', 'webgl-2', 'webgl-3', 'webgl-4']);
+  it('names the lanes: two page-test lanes and four 3D lanes', () => {
+    expect(plan.LANES).toEqual(['dom-1', 'dom-2', 'webgl-1', 'webgl-2', 'webgl-3', 'webgl-4']);
   });
 
   it('puts every spec in exactly one lane, and every lane holds a spec', () => {
@@ -319,27 +319,25 @@ describe('the e2e plan puts every spec in exactly one CI lane', () => {
     }
   });
 
-  it('keeps each lane inside one project: dom is the dom project, webgl-N its 3D specs', () => {
-    expect(plan.specsOfLane('dom')).toEqual(plan.specsOf('dom'));
-    for (const lane of plan.LANES.filter((l) => l !== 'dom')) {
+  it('keeps each lane inside one project: dom-N its page specs, webgl-N its 3D specs', () => {
+    for (const lane of plan.LANES) {
+      const project = lane.split('-')[0];
       for (const name of plan.specsOfLane(lane)) {
-        expect(plan.SPECS[name].project, `${name} in ${lane}`).toBe('webgl');
+        expect(plan.SPECS[name].project, `${name} in ${lane}`).toBe(project);
       }
     }
   });
 
-  it('gives every webgl spec a lane number from 1 to 4, and no dom spec one', () => {
+  it('gives every dom spec a lane number of 1 or 2, and every webgl spec one from 1 to 4', () => {
     for (const [name, entry] of Object.entries(plan.SPECS)) {
-      if (entry.project === 'webgl') {
-        expect([1, 2, 3, 4], name).toContain(entry.lane);
-      } else {
-        expect(entry.lane, name).toBeUndefined();
-      }
+      expect(entry.project === 'webgl' ? [1, 2, 3, 4] : [1, 2], name).toContain(entry.lane);
     }
   });
 
   it('refuses a lane it does not know', () => {
     expect(() => plan.specsOfLane('webgl-5')).toThrow(RangeError);
+    expect(() => plan.specsOfLane('dom-3')).toThrow(RangeError);
+    expect(() => plan.specsOfLane('dom')).toThrow(RangeError);
     expect(() => plan.specsOfLane('')).toThrow(RangeError);
   });
 });
