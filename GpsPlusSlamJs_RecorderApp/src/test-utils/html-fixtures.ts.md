@@ -9,13 +9,11 @@ Loads HTML fragments from `index.html` to ensure tests use the exact same markup
 | Function                  | Parameters     | Returns  | Description                                        |
 | ------------------------- | -------------- | -------- | -------------------------------------------------- |
 | `extractElementById`      | `elementId`    | `string` | Extract an element's outer HTML by its ID          |
-| `extractElementsById`     | `elementIds[]` | `string` | Extract multiple elements and concatenate HTML     |
 | `loadSettingsModalHtml`   | -              | `string` | Convenience: load settings-modal element           |
 | `loadSettingsButtonHtml`  | -              | `string` | Convenience: load btn-settings element             |
 | `loadSettingsTestFixture` | -              | `string` | Load full fixture for settings modal tests         |
 | `loadFullIndexHtml`       | -              | `string` | Load full index.html as raw string                 |
 | `loadAppCss`              | -              | `string` | Load styles/app.css as raw string                  |
-| `clearHtmlCache`          | -              | `void`   | Clear cached HTML and CSS (for testing the loader) |
 
 ## Invariants & Assumptions
 
@@ -42,15 +40,10 @@ beforeEach(() => {
 ```typescript
 import {
   extractElementById,
-  extractElementsById,
 } from '../test-utils/html-fixtures';
 
 // Single element
 const modal = extractElementById('setup-modal');
-
-// Multiple elements
-const html = extractElementsById(['settings-modal', 'setup-modal']);
-document.body.innerHTML = html;
 ```
 
 ### Full Settings Test Fixture

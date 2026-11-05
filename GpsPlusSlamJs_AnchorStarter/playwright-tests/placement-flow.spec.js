@@ -185,8 +185,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     // vertical (up/down) axis too, not just lat/lon. The placed `altitude` is
     // encoded into `?show=` (so the copied link carries it) and, when that link
     // is loaded on the cache-hit path, the anchor is re-created with the same
-    // altitude (so it applies on load). See
-    // GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md.
+    // altitude (so it applies on load).
     // `?show=` encodes the committed reference as a JSON envelope; its
     // required `alt` field must equal the placed altitude.
     const showParam = await page.evaluate(() =>
