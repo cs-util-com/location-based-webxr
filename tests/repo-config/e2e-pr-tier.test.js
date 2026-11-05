@@ -254,14 +254,10 @@ const EXPECTED = {
   ],
   GpsPlusSlamJs_WayfindingHudDemo: [
     'playwright-tests/entrance.spec.js: the outline grows monotonically, the dot pops last, and the settled frame is the static sprite',
-    'playwright-tests/entrance.spec.js: reduced motion shows the complete marker on the first frame',
-    "playwright-tests/hud-render.spec.js: the ahead target's ring is actually drawn, not just reported by the status line",
-    'playwright-tests/hysteresis-bypass.spec.js: a deactivated target stays hidden through a look-away/look-back cycle',
     'playwright-tests/indicator-style.spec.js: toggling switches the live HUD between procedural and image indicators',
-    'playwright-tests/smoke.spec.js: loads the simulator with the real HUD and no console errors',
-    'playwright-tests/smoke.spec.js: dismisses the mode screen on first interaction',
+    'playwright-tests/smoke.spec.js: loads the simulator with the real HUD, draws the ring the status line claims, on a clean console',
     'playwright-tests/walk-flow.spec.js: arriving hides the ring, walking away reactivates it beyond distanceMax',
-    'playwright-tests/walk-flow.spec.js: slider changes re-create the HUD with the new deadband live',
+    'playwright-tests/walk-flow.spec.js: the deadband: a deactivated target survives a look-away, and the sliders re-create the HUD live',
   ],
 };
 

@@ -18,7 +18,9 @@ import { countAccentPixels, countInkPixels } from "./count-accent-pixels.js";
  * is PAUSED after boot, because an installed clock otherwise keeps running in
  * real time (measured: one screenshot cost ~180 ms of timeline). Every HUD
  * whose timeline is measured is created AFTER the pause, so no real time
- * leaks into it.
+ * leaks into it. Reduced motion is the framework's unit test, the OS-setting
+ * read included (`wayfinding-hud.entrance.test.ts`): the pixel comparison that
+ * stood here measured the runner's fonts as much as the HUD.
  *
  * Playwright's faked `requestAnimationFrame` fires on a 16 ms grid whatever
  * the size of a `runFor`, so every frame's `dt` is 16 ms and the simulator's
@@ -185,40 +187,6 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     // draw measures 0.00 here and the figure is unassertable by
     // construction — only the counts are.)
     await expect(off.status).not.toContainText("animating");
-    expect(errors).toEqual([]);
-  });
-
-  test("reduced motion shows the complete marker on the first frame @pr", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    const on = await bootWithImageIndicators(page, { entrance: true });
-    // A HUD created under the PAUSED clock, given exactly one frame: with
-    // reduced motion the accent dot is already there and nothing animates.
-    // (Measured before the pause, real time could have finished the
-    // entrance on its own and passed this vacuously — M4 milestone review.)
-    await recreateHud(page, { entrance: true });
-    await advance(page, 16);
-    const first = await countMarker(page, on.clip);
-    expect(first.accent).toBeGreaterThan(20);
-    // Conditions, not a frame count (PR #426 review): the exact per-frame
-    // trio ("0 animating · 1 redraws") exists for ONE frame — `stats` reset
-    // per update, and the faked clock measures every draw at 0.00 so the
-    // whole suffix vanishes on the next — and where the pause lands on the
-    // 16 ms rAF grid is not a contract. What is: nothing ever animates, and
-    // a hundred frames later the marker is still the settled one — within
-    // the bands the main test uses (±15 % ink, the dot present), not to the
-    // pixel: an exact count tripped on the CI runner once (PR #427's
-    // cascade), where the simulator's walk and the runner's fonts move a
-    // few edge pixels of the clip between two shots.
-    await expect(on.status).not.toContainText("1 animating");
-    await advance(page, 1600);
-    const later = await countMarker(page, on.clip);
-    expect(later.accent).toBeGreaterThan(20);
-    expect(later.ink).toBeGreaterThan(first.ink * 0.85);
-    expect(later.ink).toBeLessThan(first.ink * 1.15);
-    await expect(on.status).not.toContainText("1 animating");
     expect(errors).toEqual([]);
   });
 });
