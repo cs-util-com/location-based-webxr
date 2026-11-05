@@ -123,6 +123,83 @@ describe('scrubText', () => {
     expect(scrubText('scale 1.50, 2.25', OWN)).toBe('scale 1.50, 2.25');
   });
 
+  it('keeps a host whole when its name holds a label and a digit', () => {
+    // A number glued to `lat` or `lon` also counts as a coordinate, and a host
+    // can read that way. Cutting the host in two ended the link there, and
+    // its path and query reached the report.
+    for (const host of [
+      'lon5.tiles.example.org',
+      'cdn-lat1.example.org',
+      'eu-lng2.example.org',
+      'a0lon0a.example.org',
+      'myLat5.example.org',
+      'lat:8080',
+      'salon1.example.org',
+      'babylon5.example.org',
+    ]) {
+      expect(scrubText(`see https://${host}/x/7?k=v`, OWN)).toBe(
+        `see https://${host}/${REDACTED}`
+      );
+    }
+  });
+
+  it('removes a whole foreign link when a coordinate sits inside it', () => {
+    // A tile or geocoding call carries the position beside a key: removing
+    // the position alone must not leave the rest of the query behind.
+    const out = scrubText(
+      'GET https://tiles.example.org/t?lat=48.1&lon=11.5&key=abc 200',
+      OWN
+    );
+    expect(out).toBe(`GET https://tiles.example.org/${REDACTED} 200`);
+    expect(scrubText('https://a.example.org/x/lon5/y?k=v', OWN)).toBe(
+      `https://a.example.org/${REDACTED}`
+    );
+    expect(scrubText('https://a.example.org/48.1371,11.5761/y', OWN)).toBe(
+      `https://a.example.org/${REDACTED}`
+    );
+  });
+
+  it('removes the whole query of an own or a relative link around a coordinate', () => {
+    expect(scrubText('https://gps.csutil.com/t/?lat=48.1&id=abc', OWN)).toBe(
+      `https://gps.csutil.com/t/?${REDACTED}`
+    );
+    expect(scrubText('GET /api/tile?lat=48.1&key=abc 200', OWN)).toBe(
+      `GET /api/tile?${REDACTED} 200`
+    );
+    expect(scrubText('GET /api/lon5/tile?key=abc 200', OWN)).toBe(
+      `GET /api/lon${REDACTED}/tile?${REDACTED} 200`
+    );
+  });
+
+  it('still removes a coordinate written where a host would be', () => {
+    expect(scrubText('https://lat=48.1/x', OWN)).toBe(
+      `https://lat=${REDACTED}/${REDACTED}`
+    );
+    expect(scrubText('https://48.1371,11.5761/x', OWN)).toBe(
+      `https://${REDACTED}/${REDACTED}`
+    );
+  });
+
+  it('does not take a label inside a word for a coordinate', () => {
+    // A hashed asset name can hold `3lat2`: cutting it would break the path
+    // a stack trace needs to find its source map.
+    const frame = 'https://gps.csutil.com/assets/index-Bx3lat2a9Q.js';
+    expect(scrubText(frame, OWN)).toBe(frame);
+    expect(scrubText('see a0lon0a.aa', OWN)).toBe('see a0lon0a.aa');
+  });
+
+  it('still removes labelled numbers in plain text, with or without a separator', () => {
+    expect(scrubText('at lat48.137 lon11', OWN)).toBe(
+      `at lat${REDACTED} lon${REDACTED}`
+    );
+    expect(scrubText('lat48.1lon11.5', OWN)).toBe(
+      `lat${REDACTED}lon${REDACTED}`
+    );
+    expect(scrubText('0lat=5 lat=48N originLat48.1', OWN)).toBe(
+      `0lat=${REDACTED} lat=${REDACTED}N originLat${REDACTED}`
+    );
+  });
+
   it('leaves ordinary log text alone', () => {
     const line = '[Recorder] Session started: 3 frames, 1.5x speed, rate 0.25';
     expect(scrubText(line, OWN)).toBe(line);

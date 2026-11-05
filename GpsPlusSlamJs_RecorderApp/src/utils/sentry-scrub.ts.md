@@ -23,7 +23,12 @@ dependency on the SDK, so its rules are tested on their own.
   - a number labelled `lat`, `latitude`, `lon`, `lng` or `longitude`
     (`lat=48.1`, `"latitude":48.1`, quoted or not), also after a prefix
     (`originLat`, `start_lng`), loses its value; a word that merely ends
-    in a label (`flat`, `salon`) does not count;
+    in a label (`flat`, `salon`) does not count, nor does a label inside a
+    link's host (`lon5.tiles.example.org`, `lat:8080`) or a whole number
+    running on into a word (`lon0a`, `lat2a9Q` in a hashed asset name). A
+    separator is not required (`lat48.1` still goes). A character no host
+    contains after the label overrides the host exception
+    (`https://lat=48.1/x`);
   - a pair of decimal numbers that looks like a latitude/longitude pair
     (`48.137154, 11.576124`, `48.1371,11.5761`, `-33.86882 151.20929`,
     `48.1, 11.576124`) is removed: one of the two needs three or more
@@ -31,11 +36,12 @@ dependency on the SDK, so its rules are tested on their own.
   - a string that is nothing but a query or a fragment (`?id=...`,
     `#station-2`; the SDK's `http.query` and `http.fragment` span
     attributes) becomes `[redacted]`.
-  - Order: coordinates first, then links, then the query-only rule. A
-    `[redacted]` ends a link, so removing a coordinate from inside a kept
-    link AFTER the link rules would split that link on the next pass and
-    expose what follows it; the query-only rule runs last so that a string
-    the other rules reduce to `?[redacted]` is not changed again.
+  - Order: coordinates first, then links, then the query-only rule. Brackets
+    end a link, but a `[redacted]` does not: a coordinate removed from inside
+    a link stays part of that link, so its path and query after the marker
+    go too (`?lat=48.1&key=abc`) and every pass reads the same link. The
+    query-only rule runs last so that a string the other rules reduce to
+    `?[redacted]` is not changed again.
 - `scrubDeep(value, ownHost): T` - a copy of `value` with every string
   scrubbed. Arrays and plain objects are copied, cycles kept as cycles;
   numbers, booleans and other objects pass through, so event ids,
@@ -82,6 +88,10 @@ dependency on the SDK, so its rules are tested on their own.
   id-like segments are removed from it.
 - A link inside a word with no separator before it (`x/api?id=1`) is not
   recognised as a relative link.
+- A whole number glued between a label and a word (`lat48N`) is kept; with a
+  separator (`lat=48N`) or a decimal point (`lat48.1N`) it goes.
+- A name with no scheme in front (`lon5.tiles.example.org`) is not known to
+  be a host, so it reads as a label and a number and is cut there.
 
 ## Examples
 
@@ -100,8 +110,10 @@ scrubText('https://drive.google.com/file/d/1AbC.../view', 'gps.csutil.com');
   numbers kept, input not mutated, cycles, the depth limit.
 - `sentry-scrub.property.test.ts` - no coordinate pair survives (3 to 8
   decimals on one number, 1 to 2 on the other allowed), no camelCase
-  labelled value survives, no foreign path survives (also after `{n}`),
+  labelled value survives, no foreign path survives (also after `{n}`, and
+  with hosts and path segments built to read like a labelled number, such as
+  `lon5.tiles.example.org`), nothing after a coordinate in a query survives,
   idempotence on random strings and on 2,000 strings built from report
-  fragments (links, ids, queries, pairs, labels and punctuation; checked
-  once at 100,000 without a counterexample), plain text unchanged.
+  fragments (links, ids, queries, pairs, labels and punctuation), plain
+  text unchanged. All were checked once at 100 times their run count.
 - `sentry.test.ts` - the hooks that apply it.

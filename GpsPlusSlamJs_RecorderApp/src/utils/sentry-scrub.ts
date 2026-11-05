@@ -34,10 +34,18 @@ const MAX_DEPTH = 24;
 /**
  * Characters that end a link inside free text. Braces are NOT among them:
  * the framework logger writes `{n}` for digits inside a link, and the rest
- * of the link after it must go too. `[` and `]` are, so that a scrubbed link
- * (`.../[redacted]`) is left as it is on a second pass.
+ * of the link after it must go too.
  */
 const URL_STOP = String.raw`\s"'<>()[\]`;
+
+/**
+ * One character of a link, or a whole `[redacted]`. Brackets end a link, but
+ * the marker must not: the coordinate rules run first, and a link cut at the
+ * marker they leave would keep everything after it (the `key` of
+ * `?lat=[redacted]&key=abc`).
+ */
+const urlPiece = (stops = '') =>
+  String.raw`(?:[^${URL_STOP}${stops}]|\[redacted\])`;
 
 /**
  * No word boundary before the scheme: whether a link is found must not
@@ -45,12 +53,12 @@ const URL_STOP = String.raw`\s"'<>()[\]`;
  * (`lat=0https://...` becomes `lat=[redacted]https://...`).
  */
 const ABSOLUTE_URL = new RegExp(
-  String.raw`([a-z][a-z0-9+.-]*:\/\/)([^${URL_STOP}/?#]+)([^${URL_STOP}]*)`,
+  String.raw`([a-z][a-z0-9+.-]*:\/\/)(${urlPiece('/?#')}+)(${urlPiece()}*)`,
   'gi'
 );
 
 const RELATIVE_URL_WITH_QUERY = new RegExp(
-  String.raw`(^|[\s"'(=])(\/[^${URL_STOP}?#]*)([?#][^${URL_STOP}]+)`,
+  String.raw`(^|[\s"'(=])(\/${urlPiece('?#')}*)([?#]${urlPiece()}+)`,
   'g'
 );
 
@@ -63,6 +71,17 @@ const ID_SEGMENT = new RegExp(
 const LABELLED_VALUE = String.raw`("?\s*[:=]?\s*)"?-?\d+(?:\.\d+)?"?`;
 
 /**
+ * What must hold right after a label for the number behind it to be its value:
+ * - it is not a whole number running on into a word (`lon0a`, `lat2a9Q` in a
+ *   hashed asset name);
+ * - the label is not part of a link's host (`lon5.tiles.example.org`,
+ *   `lat:8080`), unless a character no host contains follows it, which is a
+ *   coordinate in a host's place (`https://lat=48.1/x`). A host is the one
+ *   part of a link that is always kept, so it must arrive whole.
+ */
+const VALUE_MAY_FOLLOW = String.raw`(?!\d+[A-Za-z_])(?:(?<!:\/\/[\w.:@-]*)|(?=[="\s]))`;
+
+/**
  * `lat`, `latitude`, `lon`, `lng` or `longitude` in any case, after anything
  * but a letter (`lat`, `start_lat`, `0lat`); not inside a longer word
  * (`flat`, `salon`). A digit in front does not stop it, because another rule
@@ -70,13 +89,13 @@ const LABELLED_VALUE = String.raw`("?\s*[:=]?\s*)"?-?\d+(?:\.\d+)?"?`;
  * found.
  */
 const KEYED_COORDINATE = new RegExp(
-  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude)${LABELLED_VALUE}`,
+  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude)${VALUE_MAY_FOLLOW}${LABELLED_VALUE}`,
   'gi'
 );
 
 /** The same labels in camelCase after a lowercase prefix (`originLat`). */
 const CAMEL_KEYED_COORDINATE = new RegExp(
-  String.raw`(?<![A-Za-z])([a-z][A-Za-z0-9]*?(?:Lat|Latitude|Lon|Lng|Longitude))${LABELLED_VALUE}`,
+  String.raw`(?<![A-Za-z])([a-z][A-Za-z0-9]*?(?:Lat|Latitude|Lon|Lng|Longitude))${VALUE_MAY_FOLLOW}${LABELLED_VALUE}`,
   'g'
 );
 
@@ -135,9 +154,8 @@ function scrubOwnRest(rest: string): string {
  */
 export function scrubText(text: string, ownHost: string | undefined): string {
   const own = ownHost?.toLowerCase();
-  // Coordinates go BEFORE links: `[redacted]` ends a link, so a coordinate
-  // removed from inside a kept link of this site after the link rules had
-  // run would split that link on a second pass and expose what follows.
+  // Coordinates go BEFORE links, so the link rules see a link's final text,
+  // markers included, and read it the same way on a second pass.
   const scrubbed = text
     .replace(KEYED_COORDINATE, `$1$2${REDACTED}`)
     .replace(CAMEL_KEYED_COORDINATE, `$1$2${REDACTED}`)

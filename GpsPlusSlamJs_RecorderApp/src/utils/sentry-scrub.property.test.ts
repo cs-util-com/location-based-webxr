@@ -7,7 +7,9 @@
  * at any precision the scrubber claims to catch (one number with 3 to 8
  * decimals) never survives, a labelled coordinate never keeps its value, a
  * link to another host never keeps its path (not even after a `{n}`
- * placeholder), scrubbing twice changes nothing more than scrubbing once
+ * placeholder, and not when its host or path reads like a labelled number:
+ * those shapes are generated on purpose, because a random host hits one only
+ * once in very many runs), scrubbing twice changes nothing more than scrubbing once
  * (Sentry may run the breadcrumb and the event hook over the same text), and
  * text with nothing to scrub comes back unchanged.
  */
@@ -43,6 +45,38 @@ const coordinate = (max: number, minDecimals = 3, maxDecimals = 8) =>
 
 const pairSeparator = fc.constantFrom(', ', ',', ' ');
 
+const label = fc.constantFrom(
+  'lat',
+  'lon',
+  'lng',
+  'latitude',
+  'longitude',
+  'Lat',
+  'LON',
+  'originLat'
+);
+
+/** A name that reads like a labelled number: `lon5`, `cdn-lat1a`, `a0lng0`. */
+const labelledName = fc
+  .tuple(
+    fc.constantFrom('', 'a', 'a0', 'cdn-', 'sa', 'x_', '7'),
+    label,
+    fc.nat({ max: 999 }),
+    fc.constantFrom('', 'a', '-1', '0b', '-x')
+  )
+  .map((parts) => parts.join(''));
+
+/** A host of such a name, with or without a subdomain under it and a port. */
+const labelledHost = fc
+  .tuple(
+    labelledName,
+    fc.constantFrom('.example.org', '.tiles.example.org', '.aa'),
+    fc.constantFrom('', ':8080')
+  )
+  .map((parts) => parts.join(''));
+
+const foreignHost = fc.oneof(fc.domain(), labelledHost);
+
 /**
  * Pieces of the text an error report really carries: links to this site and
  * to others (with `{n}` placeholders, queries and fragments), relative calls
@@ -56,8 +90,15 @@ const reportFragment = fc.oneof(
   fc.constantFrom(' ', ',', '"', "'", '=', ':', '?', '#', '/', '{n}', '[', ']'),
   fc.constant(REDACTED),
   fc
-    .tuple(fc.domain(), fc.stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,30}$/))
+    .tuple(foreignHost, fc.stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,30}$/))
     .map(([host, rest]) => `https://${host}/${rest}`),
+  labelledName,
+  fc
+    .tuple(foreignHost, labelledName)
+    .map(([host, name]) => `https://${host}/${name}?k=v`),
+  fc
+    .tuple(labelledName, labelledName)
+    .map(([name, other]) => `/api/${name}?${other}=1&k=v`),
   fc
     .stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,40}$/)
     .map((rest) => `https://${OWN}/${rest}`),
@@ -76,7 +117,9 @@ const reportFragment = fc.oneof(
         'lon: ',
         '"latitude":',
         'originLat=',
-        'start_lng:'
+        'start_lng:',
+        'lat',
+        'lon'
       ),
       coordinate(180, 0)
     )
@@ -141,8 +184,8 @@ describe('scrubText properties', () => {
   it("never keeps the path of another host's link", () => {
     fc.assert(
       fc.property(
-        fc.domain().filter((d) => d !== OWN),
-        fc.stringMatching(/^[A-Za-z0-9_-]{1,30}$/),
+        foreignHost.filter((d) => d !== OWN),
+        fc.oneof(fc.stringMatching(/^[A-Za-z0-9_-]{1,30}$/), labelledName),
         fc.constantFrom('/x/', '/x/{n}/', '/{n}/', '/x/{n}-'),
         (host, segment, path) => {
           const out = scrubText(
@@ -150,6 +193,28 @@ describe('scrubText properties', () => {
             OWN
           );
           expect(out).toBe(`see https://${host}/${REDACTED}`);
+        }
+      )
+    );
+  });
+
+  it("never keeps what follows a coordinate in a link's query", () => {
+    fc.assert(
+      fc.property(
+        foreignHost.filter((d) => d !== OWN),
+        fc.constantFrom('lat=', 'lon=', 'originLat=', 'latitude:'),
+        coordinate(180, 0),
+        (host, key, value) => {
+          const tail = `?${key}${value}&key=abc`;
+          expect(scrubText(`https://${host}/t${tail}`, OWN)).toBe(
+            `https://${host}/${REDACTED}`
+          );
+          expect(scrubText(`https://${OWN}/t${tail}`, OWN)).toBe(
+            `https://${OWN}/t?${REDACTED}`
+          );
+          expect(scrubText(`GET /t${tail} 200`, OWN)).toBe(
+            `GET /t?${REDACTED} 200`
+          );
         }
       )
     );
