@@ -151,8 +151,8 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     expect(tierExpr).toContain("github.event_name == 'workflow_dispatch' && inputs.tier");
   });
 
-  it('runs the full set on a push to main and the tier otherwise', () => {
-    expect(tierExpr).toContain("github.event_name == 'push' && 'full'");
+  it('runs the tier on a push to main too: the full-ci label runs the full set before a merge', () => {
+    expect(tierExpr).not.toContain("'push'");
     expect(tierExpr.trim().endsWith("|| 'pr' }}")).toBe(true);
   });
 
@@ -170,12 +170,19 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     expect(workflow.concurrency.group).toContain('github.run_id');
   });
 
-  it("dispatches the full set nightly on the newest rNNN branch", () => {
+  it('dispatches the full set nightly on the newest rNNN branch whose ci.yml can be dispatched', () => {
     expect(nightly.on.schedule).toHaveLength(1);
     expect(nightly.permissions.actions).toBe('write');
     const run = nightly.jobs.dispatch.steps.map((s) => s.run ?? '').join('\n');
     expect(run).toContain('gh workflow run ci.yml --ref "$branch" -f tier=full');
     expect(nightly.jobs.dispatch['timeout-minutes']).toBeGreaterThan(0);
+    // A branch older than the workflow_dispatch trigger refuses the dispatch
+    // (HTTP 422) and the night would run nothing: each candidate's ci.yml is
+    // read first, newest first, then main; finding none is an error.
+    expect(run).toContain('contents/.github/workflows/ci.yml?ref=');
+    expect(run).toContain('workflow_dispatch');
+    expect(run).toMatch(/for branch in [^\n]* main/);
+    expect(run).toContain('::error::');
   });
 
   it("keeps the design system's measurement specs out of every run", () => {
