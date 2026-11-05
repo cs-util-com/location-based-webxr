@@ -23,6 +23,7 @@ import {
   developerSelected,
   e2eTier,
   emptyTierWarning,
+  failedProbeWarning,
   listedTotal,
   passesEmpty,
   playwrightGrep,
@@ -139,6 +140,16 @@ describe('tierStageRun', () => {
     expect(tierStageRun({ counts: 'vitest' }, {})).toBe(false);
     expect(tierStageRun({ counts: null }, {})).toBe(false);
   });
+
+  // Why: the root cascade recorded each package gate's row, and its total,
+  // for a run whose browser stages ran only the tier, so partial runs
+  // entered the medians the full runs are compared against.
+  it("marks a root stage running a package's gate in the tier, unless that gate skips its browser stages", () => {
+    expect(tierStageRun({ counts: null, nestedGate: true }, {})).toBe(true);
+    expect(tierStageRun({ counts: null, nestedGate: true }, { [TIER_ENV]: 'full' })).toBe(false);
+    expect(tierStageRun({ counts: null, nestedGate: true }, {}, { skipBrowser: true })).toBe(false);
+    expect(tierStageRun({ counts: 'playwright' }, {}, { skipBrowser: true })).toBe(true);
+  });
 });
 
 describe('passesEmpty', () => {
@@ -170,10 +181,42 @@ describe('specsImporting', () => {
     expect(specsImporting(['P\\src\\x.js'], sources)).toEqual(['a.spec.js']);
   });
 
+  // Why: a cycle once left a cached "no" for a helper first met while its
+  // importer was still being walked, so a spec importing only that helper
+  // was dropped from running whole.
+  it('selects a spec that reaches the change only through an import cycle', () => {
+    const cyclic = {
+      [`${pkg}/a.spec.js`]: 'import "./h1.js";',
+      [`${pkg}/b.spec.js`]: 'import "./h2.js";',
+      [`${pkg}/h1.js`]: 'import "./h2.js";\nimport "./h3.js";',
+      [`${pkg}/h2.js`]: 'import "./h1.js";',
+      [`${pkg}/h3.js`]: '',
+    };
+    expect(specsImporting([`${pkg}/h3.js`], cyclic)).toEqual(['a.spec.js', 'b.spec.js']);
+  });
+
   it('selects nothing for a file no spec imports, or for a changed spec itself', () => {
     expect(specsImporting(['P/other.js'], sources)).toEqual([]);
     expect(specsImporting([`${pkg}/c.spec.js`], sources)).toEqual([]);
     expect(specsImporting([], sources)).toEqual([]);
+  });
+});
+
+describe('failedProbeWarning', () => {
+  // Why: a failing --list probe gave no count, so its project ran with
+  // --pass-with-no-tests and could pass having run nothing, unsaid.
+  it('warns when the probe failed or printed no count, and only then', () => {
+    expect(failedProbeWarning({ project: 'dom', status: 0, total: 3 })).toBeNull();
+    expect(failedProbeWarning({ project: 'dom', status: 0, total: 0 })).toBeNull();
+    expect(failedProbeWarning({ project: 'dom', status: 1, total: null })).toMatch(
+      /^WARNING e2e project dom: the --list probe exited 1, .*may pass with 0 tests/,
+    );
+    expect(failedProbeWarning({ project: 'webgl', status: 0, total: null })).toMatch(
+      /probe printed no test count/,
+    );
+    expect(failedProbeWarning({ project: 'webgl', status: null, total: null })).toMatch(
+      /exited by a signal/,
+    );
   });
 });
 

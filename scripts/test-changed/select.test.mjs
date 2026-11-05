@@ -3,14 +3,22 @@
 // the plan's Phase B.2 guard rails; a regression in any of them reopens a
 // documented footgun (root-file blindness, untracked-file blindness, or the
 // generated-timings-file feedback loop).
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
 import { describe, it, expect } from 'vitest';
+
+import { playwrightGrep } from '../e2e/tier.mjs';
 import {
   selectPackages,
   gateCommands,
   cascadeCommands,
+  cascadeTierBase,
   describeRun,
   FRAMEWORK_BUILD_IF_STALE,
 } from './select.mjs';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const DIRS = [
   'GpsPlusSlamJs_AppFramework',
@@ -193,6 +201,43 @@ describe('gateCommands', () => {
       { command: FRAMEWORK_BUILD_IF_STALE, env: {} },
       { command: 'pnpm test', env: {} },
     ]);
+  });
+
+  // Why: a full-cascade fallback (a root script changed) gave the browser
+  // tier no diff base, so only the @pr tests ran and the branch's own
+  // changed specs did not run whole, exactly on the widest runs.
+  it("hands the cascade's browser tier a base, so a changed spec runs whole there", () => {
+    const [, cascade] = cascadeCommands({ tierBase: 'abc123' });
+    expect(cascade.env).toEqual({ E2E_TIER_BASE: 'abc123' });
+    expect(cascade.env).not.toHaveProperty('GATE_CHANGED_REF');
+    const configUrl = pathToFileURL(
+      path.join(ROOT, 'GpsPlusSlamJs_TourViewer/playwright-tests/x.config.js'),
+    ).href;
+    /** @type {string[]} */
+    const asked = [];
+    const grep = playwrightGrep(configUrl, {
+      env: { ...cascade.env },
+      argv: ['node', 'cli.js', 'test'],
+      io: {
+        root: () => ROOT,
+        changed: (/** @type {string} */ ref) => {
+          asked.push(ref);
+          return ['GpsPlusSlamJs_TourViewer/playwright-tests/editor.spec.js'];
+        },
+      },
+    });
+    expect(asked).toEqual(['abc123']);
+    const selects = (/** @type {string} */ line) => grep?.some((re) => re.test(line)) ?? true;
+    expect(selects('dom playwright-tests/editor.spec.js an untagged test')).toBe(true);
+    expect(selects('dom playwright-tests/other.spec.js an untagged test')).toBe(false);
+  });
+
+  it('takes the tier base from CI, then from --ref, then from the merge-base', () => {
+    const mergeBase = () => 'mb';
+    expect(cascadeTierBase({ env: { E2E_TIER_BASE: 'ci' }, ref: 'r1', mergeBase })).toBe('ci');
+    expect(cascadeTierBase({ env: {}, ref: 'r1', mergeBase })).toBe('r1');
+    expect(cascadeTierBase({ env: {}, ref: null, mergeBase })).toBe('mb');
+    expect(cascadeTierBase({ env: {}, ref: null, mergeBase: () => null })).toBeNull();
   });
 
   it('never puts the changed packages in skip mode', () => {

@@ -43,7 +43,7 @@ import {
   stallMessage,
   stallPollMs,
 } from './stall-watch.mjs';
-import { gateBaseCommand, getStage, stageOrder } from './projects.mjs';
+import { gateBaseCommand, getStage, resolveGateMode, stageOrder } from './projects.mjs';
 import {
   LOWERED_MARKER_ENV,
   spawnAtPriority,
@@ -517,12 +517,14 @@ export async function runStage(project, stageName, forwardedArgs) {
   // Viewer's e2e cut to the changed area, or to nothing): it is not the full
   // suite, whatever its command says.
   // Nor is a browser stage in the per-PR tier (E2E_TIER, scripts/e2e/tier.mjs):
-  // it runs the tagged tests, not the suite; E2E_TIER=full records.
-  const tierRun = tierStageRun(stage, process.env);
+  // it runs the tagged tests, not the suite; E2E_TIER=full records. Nor is a
+  // root stage running a package's gate in that tier, so the root's total
+  // is skipped too (run-gate.mjs records it only when every stage recorded).
+  const tierRun = tierStageRun(stage, process.env, resolveGateMode(process.env));
   const narrowed = narrowedStageRun(stage, process.env) || tierRun;
   if (tierRun) {
     console.log(
-      `test-timing: ${stageName} runs the per-PR tier (E2E_TIER=pr), so it records no timing row; E2E_TIER=full runs and records the full set`
+      `test-timing: ${stageName} runs the per-PR tier (E2E_TIER=pr)${stage.counts === 'playwright' ? '' : ' in its browser stages'}, so it records no timing row; E2E_TIER=full runs and records the full set`
     );
   } else if (narrowed) {
     console.log(

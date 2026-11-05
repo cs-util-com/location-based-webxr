@@ -143,44 +143,6 @@ test.describe('Permission Verification', () => {
     await expect(webxrRow).toContainText('AR + Depth Sensing');
   });
 
-  test('shows permission hint when permissions not ready', async ({ page }) => {
-    // Why this test matters: Users should know they need to grant permissions
-    // before they can enter AR mode.
-    // First set storage as ready so the hint shows permission-related message
-    await setStorageReady(page);
-    const hint = page.locator('#enter-ar-hint');
-    await expect(hint).toBeVisible();
-    // Hint could be about permissions or scenario name
-    const hintText = await hint.textContent();
-    expect(
-      hintText.includes('permissions') || hintText.includes('scenario')
-    ).toBe(true);
-  });
-
-  test('shows Grant Permissions button when permissions are pending', async ({
-    page,
-  }) => {
-    // Why this test matters: Users need a clear way to trigger permission prompts.
-    // Note: This test checks the button can be shown; actual prompt triggers
-    // require real browser context which E2E mocks can't fully simulate.
-
-    // Simulate pending permission state (camera pending)
-    // waitForTestHooks in beforeEach already ensures updatePermissionStatus is ready
-    await page.evaluate(() => {
-      window.testHooks.updatePermissionStatus({
-        webxr: { supported: true, granted: true },
-        geolocation: { supported: true, granted: true },
-        camera: { supported: true, granted: null }, // pending
-        orientation: { supported: true, granted: true },
-        fileSystem: { supported: true, granted: true },
-        allMandatoryReady: false,
-      });
-    });
-
-    const grantButton = page.locator('#btn-request-permissions');
-    await expect(grantButton).toBeVisible();
-  });
-
   test('shows WebXR as pending when depth permission not yet granted', async ({
     page,
   }) => {

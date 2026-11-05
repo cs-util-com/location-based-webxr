@@ -12,6 +12,7 @@ import {
 import {
   afterFrames,
   answerHosts,
+  capture,
   keepRejections,
   openSample,
   openSampleIn3d,
@@ -340,7 +341,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
   // The one dock a phone shows, with the map controls left of it.
   await expectFrame(page, phone);
-  await page.screenshot({ path: test.info().outputPath("shell-390x844.png") });
+  await capture(page, test.info().outputPath("shell-390x844.png"));
   await expectTree(page, phoneHead, false);
   const phoneFold = await box(page.locator("#tree-fold"));
   expect(phoneFold.x + phoneFold.width).toBeLessThanOrEqual(phoneInspector.x);
@@ -357,7 +358,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   expect(folded.x + folded.width).toBeCloseTo(844, 0);
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
-  await page.screenshot({ path: test.info().outputPath("shell-844x390.png") });
+  await capture(page, test.info().outputPath("shell-844x390.png"));
   // With the inspector open instead (the map controls then left of it),
   // then folded again.
   await page.locator('#inspector-head [data-act="fold"]').click();
@@ -394,7 +395,7 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   });
   await expect(page.locator("#inspector-body")).toBeVisible();
   await expectFrame(page, desktop);
-  await page.screenshot({ path: test.info().outputPath("shell-1440x900.png") });
+  await capture(page, test.info().outputPath("shell-1440x900.png"));
   // The cards: 8 px in from the dock, 6 px apart, each a one-line 28 px row.
   const tree = await box(page.locator("#shell-tree"));
   const rows = page.locator("#tree-body .card > .head");
@@ -632,23 +633,26 @@ test("the File, Edit and View menus work from the keyboard and by touch", async 
   await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "false");
 });
 
-for (const [width, height] of [
-  [390, 844],
-  [1440, 900],
-]) {
-  test(`the credits panel opens above the bottom bar, inside the window, its lines wrapped at ${String(width)}x${String(height)}`, async ({
-    page,
-  }) => {
-    // Why: the bottom bar keeps its parts on one line (no wrap), and the
-    // credits' panel opens out of the bar, so it inherited that: its
-    // sources ran off as one long line each, cut or scrolled sideways. A
-    // panel that is merely shown passes that; its box, its overflow and
-    // its line count do not.
-    test.setTimeout(150_000);
+test("the credits panel opens above the bottom bar, inside the window, its lines wrapped at 390x844 and 1440x900", async ({
+  page,
+}) => {
+  // Why: the bottom bar keeps its parts on one line (no wrap), and the
+  // credits' panel opens out of the bar, so it inherited that: its
+  // sources ran off as one long line each, cut or scrolled sideways. A
+  // panel that is merely shown passes that; its box, its overflow and
+  // its line count do not. One open, resized from a phone to a desktop.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open3d(page);
+  const panel = page.locator("#view3d-credits .view3d-credits-panel");
+  for (const [width, height] of [
+    [390, 844],
+    [1440, 900],
+  ]) {
     await page.setViewportSize({ width, height });
-    await open3d(page);
-    await page.locator("#view3d-credits .view3d-credits-button").click();
-    const panel = page.locator("#view3d-credits .view3d-credits-panel");
+    if (!(await panel.isVisible())) {
+      await page.locator("#view3d-credits .view3d-credits-button").click();
+    }
     await expect(panel).toBeVisible();
     const at = `at ${String(width)}x${String(height)}`;
     const p = await box(panel);
@@ -694,13 +698,12 @@ for (const [width, height] of [
         expect(b.lines, JSON.stringify(b)).toBeGreaterThan(1);
       }
     }
-    await page.screenshot({
-      path: test
-        .info()
-        .outputPath(`credits-${String(width)}x${String(height)}.png`),
-    });
-  });
-}
+    await capture(
+      page,
+      test.info().outputPath(`credits-${String(width)}x${String(height)}.png`),
+    );
+  }
+});
 
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true });
@@ -1106,7 +1109,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
     contrast(noCoverColours.fg, noCoverColours.bg),
     JSON.stringify(noCoverColours),
   ).toBeGreaterThanOrEqual(4.5);
-  await page.screenshot({ path: test.info().outputPath("details-dark.png") });
+  await capture(page, test.info().outputPath("details-dark.png"));
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
 
@@ -1129,7 +1132,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   await expect(toast).toHaveCSS("color", TEXT);
   const name = page.locator("#shell-inspector .ttlin");
   await expect(name).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath("pin-toast.png") });
+  await capture(page, test.info().outputPath("pin-toast.png"));
   await name.evaluate((el) => /** @type {HTMLElement} */ (el).blur());
   await page.mouse.move(700, 450);
   const rest = await name.evaluate((el) => {

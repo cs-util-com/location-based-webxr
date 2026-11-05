@@ -19,6 +19,7 @@ import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
+  capture,
   openSample,
   openZip,
   view3d,
@@ -806,11 +807,12 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
     await afterFrames(page, 2);
     if (m === 300) {
       const size = page.viewportSize();
-      await page.screenshot({
-        path: test
+      await capture(
+        page,
+        test
           .info()
           .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
-      });
+      );
     }
     const stats = await view3d(page);
     const box = await page.locator(".view3d-canvas").boundingBox();

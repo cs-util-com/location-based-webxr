@@ -18,7 +18,10 @@
     takes the machine-wide slot `C:\gps\.e2e-slots\gate`; see
     [machine-slot.mjs](machine-slot.mjs.md) (gate-speed plan 2026-10-04, G1).
     It QUEUES behind another session's gate, sweep or browser suite, printing
-    who holds it; nested runs inherit `GATE_MACHINE_SLOT_TOKEN` and re-enter.
+    who holds it and its place in the queue; nested runs inherit
+    `GATE_MACHINE_SLOT_TOKEN` and re-enter. It queues as `fast` (ahead of
+    younger browser runs) when browser stages are skipped or the project has
+    none; the root gate always queues as `browser`.
     It is the OUTER lock and the tree lock the inner one; the tree lock's
     exit handler is prepended so the inner lock is freed first.
   - **One gate run per working tree.** Before any stage runs, the gate takes an

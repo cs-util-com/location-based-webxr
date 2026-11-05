@@ -67,31 +67,59 @@ describe('tier selection properties', () => {
     );
   });
 
-  it('selects a spec for a changed helper exactly when the spec imports it, and more changes never select fewer', () => {
+  it('selects a spec for a changed helper exactly when the spec reaches it, through helpers and their import cycles, and more changes never select fewer', () => {
     fc.assert(
       fc.property(
-        fc.uniqueArray(specName, { minLength: 1, maxLength: 4 }),
-        fc.uniqueArray(fc.stringMatching(/^h[0-9]$/), { minLength: 1, maxLength: 4 }),
-        fc.func(fc.boolean()),
-        fc.integer({ min: 0, max: 3 }),
-        (specs, helpers, imports, pick) => {
+        fc.integer({ min: 2, max: 4 }),
+        // Each spec imports one helper; the helpers import each other along
+        // generated edges, cycles included.
+        fc.array(fc.nat(), { minLength: 1, maxLength: 4 }),
+        fc.array(fc.tuple(fc.nat(), fc.nat()), { maxLength: 8 }),
+        fc.nat(),
+        (count, specImports, helperEdges, pick) => {
+          const helpers = Array.from({ length: count }, (_, i) => `h${i}`);
+          /** @type {Record<string, string[]>} file -> the files it imports */
+          const edges = Object.fromEntries(helpers.map((h) => [h, /** @type {string[]} */ ([])]));
+          for (const [a, b] of helperEdges) {
+            const [from, to] = [helpers[a % count], helpers[b % count]];
+            if (from !== to && !edges[from].includes(to)) edges[from].push(to);
+          }
+          const specs = specImports.map((_, i) => `s${i}.spec.js`);
+          specs.forEach((s, i) => {
+            edges[s] = [helpers[specImports[i] % count]];
+          });
           /** @type {Record<string, string>} */
           const sources = {};
-          for (const h of helpers) sources[`P/t/${h}.js`] = '';
-          for (const s of specs) {
-            sources[`P/t/${s}`] = helpers
-              .filter((h) => imports(s, h))
-              .map((h) => `import "./${h}.js";`)
-              .join('\n');
+          for (const [file, deps] of Object.entries(edges)) {
+            const key = file.endsWith('.spec.js') ? `P/t/${file}` : `P/t/${file}.js`;
+            sources[key] = deps.map((h) => `import "./${h}.js";`).join('\n');
           }
-          const changed = [`P/t/${helpers[pick % helpers.length]}.js`];
+          const changedHelper = helpers[pick % count];
+          // The reference: a walk with its own visited set per spec, which no
+          // cycle can fool.
+          const reaches = (/** @type {string} */ from) => {
+            const seen = new Set();
+            const todo = [...edges[from]];
+            while (todo.length > 0) {
+              const next = /** @type {string} */ (todo.pop());
+              if (next === changedHelper) return true;
+              if (seen.has(next)) continue;
+              seen.add(next);
+              todo.push(...edges[next]);
+            }
+            return false;
+          };
+          const changed = [`P/t/${changedHelper}.js`];
           const selected = specsImporting(changed, sources);
-          const h = helpers[pick % helpers.length];
-          expect(selected).toEqual(specs.filter((s) => imports(s, h)).sort());
+          expect(selected).toEqual(specs.filter(reaches).sort());
           const more = specsImporting([...changed, ...helpers.map((x) => `P/t/${x}.js`)], sources);
           for (const s of selected) expect(more).toContain(s);
         },
       ),
+      // The shape a cached answer got wrong (a helper first met while its
+      // own importer was still being walked) is about 1 in 120 of these
+      // graphs, so 2000 runs miss it with odds near 1 in 10^7.
+      { numRuns: 2000 },
     );
   });
 });

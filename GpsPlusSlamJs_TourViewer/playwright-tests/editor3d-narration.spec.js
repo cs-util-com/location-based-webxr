@@ -18,10 +18,8 @@ import {
  * with the text, the tour's write, and the inspector following it. The
  * walk pins the promise the section makes: an edited word marks the
  * read-along stale, and lining the voice up again makes it read along
- * once more without touching the text. The layout test leaves the
- * prototype's section and the build's side by side at three desktop
- * sizes for the check by eye, and pins the rows' measures from the
- * prototype's CSS.
+ * once more without touching the text. The layout test pins the rows'
+ * measures from the prototype's CSS at three desktop sizes.
  */
 
 test.describe.configure({ mode: "default" });
@@ -33,7 +31,6 @@ test.describe.configure({ mode: "default" });
 const BUDGET_MS = 240_000;
 
 const TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
-const PROTOTYPE = "/prototypes/longtext-editor-1-in-the-inspector/index.html";
 const VTT = [
   "WEBVTT",
   "",
@@ -203,13 +200,11 @@ test("a voice and its timing are imported, a word is edited, and lining the voic
   expect(relined.textHash).not.toBe(imported.textHash);
 });
 
-test("the Narration section sits in place at 1440x900, 1280x720 and 1024x768, beside the prototype", async ({
+test("the Narration section sits in place at 1440x900, 1280x720 and 1024x768", async ({
   page,
-  context,
-}, testInfo) => {
+}) => {
   test.setTimeout(BUDGET_MS);
   await openNarration(page);
-  const proto = await context.newPage();
   for (const size of SIZES) {
     const at = `at ${String(size.width)}x${String(size.height)}`;
     await page.setViewportSize(size);
@@ -233,31 +228,5 @@ test("the Narration section sits in place at 1440x900, 1280x720 and 1024x768, be
     expect(Math.round(body.x + body.width - (drop.x + drop.width)), at).toBe(
       12,
     );
-    const name = `${String(size.width)}x${String(size.height)}`;
-    await section.screenshot({
-      path: testInfo.outputPath(`build-narration-${name}.png`),
-    });
-    await page.screenshot({
-      path: testInfo.outputPath(`build-${name}.png`),
-    });
-    await proto.setViewportSize(size);
-    await proto.goto(PROTOTYPE);
-    // The prototype opens on a narrated text with its section open: its
-    // own debug bar takes the narration off, as the build's text is.
-    await proto.getByRole("button", { name: "No narration" }).click();
-    if (
-      (await proto.locator("#narrHead").getAttribute("aria-expanded")) !==
-      "true"
-    ) {
-      await proto.locator("#narrHead").click();
-    }
-    await proto.locator("#narrBody .drop").waitFor({ state: "visible" });
-    await proto.locator("#nsec").screenshot({
-      path: testInfo.outputPath(`prototype-narration-${name}.png`),
-    });
-    await proto.screenshot({
-      path: testInfo.outputPath(`prototype-${name}.png`),
-    });
   }
-  await proto.close();
 });

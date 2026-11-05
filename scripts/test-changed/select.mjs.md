@@ -84,12 +84,21 @@ An empty dependent set is a safe no-op: pnpm prints "No projects matched the
 filters" and exits 0 (verified), which is what a package with no dependents
 gets.
 
-## `cascadeCommands()`
+## `cascadeCommands({ tierBase })` and `cascadeTierBase`
 
 The full-cascade fallback (`--all`, or a change outside the package dirs):
 the same framework build first, then `pnpm test`. The cascade runs
 `check:deadcode` (knip resolves workspace packages through their `dist`)
 before any package stage builds the framework.
+
+`tierBase` reaches every package's browser tier as `E2E_TIER_BASE`, so a
+spec the branch changed still runs whole on the widest run; without it the
+cascade ran only the `@pr` tests. It is not `GATE_CHANGED_REF`, which would
+also cut each package's run to the changed area. `cascadeTierBase` picks
+it: an `E2E_TIER_BASE` already set (CI), else the run's `--ref`, else the
+merge-base with `origin2/main` (the gate's default diff base, `HEAD`, would
+name only uncommitted specs); `null` when none is found, which the run
+says in its log.
 
 ## The served-by edges (globe plan 2026-09-26-0539 §8, W7 M0; globe editor plan GV5)
 

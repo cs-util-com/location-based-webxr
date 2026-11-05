@@ -24,6 +24,7 @@
 //   doc markdown.
 
 import { CHANGED_REF_ENV } from '../e2e/project-runs.mjs';
+import { TIER_BASE_ENV } from '../e2e/tier.mjs';
 
 /**
  * @typedef {{ mode: 'all', reason: string }
@@ -210,13 +211,36 @@ export const FRAMEWORK_BUILD_IF_STALE =
  * The cascade runs `check:deadcode` (knip, which resolves workspace packages
  * through their `dist`) before any package stage has built the framework.
  *
+ * `tierBase` reaches every package's browser tier as `E2E_TIER_BASE`, so
+ * a spec the branch changed still runs whole on this, the widest run. It is
+ * not `GATE_CHANGED_REF`: that one also cuts a package's run to the changed
+ * area, and the cascade runs every package.
+ *
+ * @param {{ tierBase?: string | null }} [options]
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
-export function cascadeCommands() {
+export function cascadeCommands({ tierBase = null } = {}) {
   return [
     { command: FRAMEWORK_BUILD_IF_STALE, env: {} },
-    { command: 'pnpm test', env: {} },
+    { command: 'pnpm test', env: tierBase ? { [TIER_BASE_ENV]: tierBase } : {} },
   ];
+}
+
+/**
+ * The base a full cascade's browser tier diffs against for the changed
+ * specs: an `E2E_TIER_BASE` already set (CI) wins, then the `--ref` the
+ * run was given, then the merge-base with the main line (`mergeBase()`,
+ * null when it cannot be found). Without `--ref` the gate's own diff base
+ * is `HEAD`, which would name only the uncommitted specs, so the branch's
+ * base is taken instead.
+ *
+ * @param {{ env: Record<string, string | undefined>, ref: string | null, mergeBase: () => string | null }} input
+ * @returns {string | null}
+ */
+export function cascadeTierBase({ env, ref, mergeBase }) {
+  if (env[TIER_BASE_ENV]) return /** @type {string} */ (env[TIER_BASE_ENV]);
+  if (ref) return ref;
+  return mergeBase();
 }
 
 /**

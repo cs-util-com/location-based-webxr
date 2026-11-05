@@ -23,19 +23,24 @@
     changed repo paths inside one package folder.
   - `specsImporting(paths, sources)`: the spec file names whose relative
     imports (`import ... from "./x.js"`, `export ... from`, `import("./x")`)
-    reach a changed path, directly or through other helpers; sorted, no
-    duplicates. `sources` maps repo-relative posix paths to their source.
+    reach a changed path, directly or through other helpers (import cycles
+    included, walked backwards from the change); sorted, no duplicates. `sources` maps repo-relative posix paths to their source.
   - `listedTotal(output)`: the count in `playwright test --list` output
     ("Total: N tests"), 0 for "No tests found", `null` otherwise.
   - `emptyTierWarning({ project, areas, ref, total })`: the `WARNING` line
     for an area-narrowed tier project with 0 tests; `null` otherwise.
+  - `failedProbeWarning({ project, status, total })`: the `WARNING` line
+    for a project whose `--list` probe failed or printed no count (the run
+    that follows may pass with 0 tests); `null` when the probe counted.
   - `developerSelected(argv, env)`: whether the command line holds a
     developer's own selection (a file filter, `-g`/`--grep`,
     `--last-failed`, `--only-changed`, a test list). `E2E_DEVELOPER_FILTER`
     (`1`/`0`, set by `run-projects.mjs`, whose command line carries its own
     spec filters) overrides the reading.
-  - `tierStageRun(stage, env)`: a `counts: "playwright"` stage in the tier
-    (no timing row).
+  - `tierStageRun(stage, env, { skipBrowser })`: a `counts: "playwright"`
+    stage in the tier, or a root row running a package's whole gate
+    (`nestedGate`) while its browser stages run the tier (no timing row, so
+    no root total either).
   - `passesEmpty({ developerFiltered, narrowed, env })`: whether a run that
     selects no test may pass: a developer's filter, or a tier run cut to the
     changed area by `test:changed` (its specs may hold no tagged test).
@@ -59,12 +64,17 @@
     followed by a value reads the value as a filter, which turns the tier
     off: more tests, never fewer.
   - A changed test script that is not a spec (a fixture, a helper) runs
-    every spec importing it whole: `playwrightGrep` reads the `.js`/`.mjs`
-    files under the config's folder (not `src`, `public`, `node_modules` or
-    the build and report output) only when such a path changed. A change
-    under the package's `src/` widens nothing: the app's code is what the
-    tagged tests cover, and the full run covers the rest. An import the
-    regular expression cannot read (a computed specifier) is not followed.
+    every spec importing it whole, directly, through other helpers or
+    through an import cycle: `playwrightGrep` reads the `.js`/`.mjs` files
+    under the config's folder (not `src`, `public`, `node_modules` or the
+    build and report output) only when such a path changed. **Only a helper
+    inside the config's own package widens the selection:** a changed test
+    script of another package, or a shared one under the repo's
+    `scripts/`, selects no spec here, even when a spec imports it; the full
+    run covers those. A change under the package's `src/` widens nothing
+    either: the app's code is what the tagged tests cover, and the full run
+    covers the rest. An import the regular expression cannot read (a
+    computed specifier) is not followed.
   - The tagged set is pinned per package by
     `tests/repo-config/e2e-pr-tier.test.js`, which also checks that every
     config reads this module and that every Tour Viewer CI lane holds a

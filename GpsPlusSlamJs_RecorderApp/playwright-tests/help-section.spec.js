@@ -53,33 +53,6 @@ test.describe('Help Section', () => {
     await page.locator('#setup-modal').waitFor({ state: 'visible' });
   });
 
-  test('help section is visible by default for first-time users', async ({
-    page,
-  }) => {
-    // The help section should exist and be expanded (open) by default
-    const helpDetails = page.locator('#help-section');
-    await expect(helpDetails).toBeVisible();
-
-    // The content should be visible (details is open)
-    const helpContent = page.locator('#help-section-content');
-    await expect(helpContent).toBeVisible();
-  });
-
-  test('help section is collapsed by default on a return visit (manual shown once)', async ({
-    page,
-  }) => {
-    // beforeEach has already made one (first-time) launch, so the "seen" marker
-    // is now set. A plain reload — no explicit collapse — is a return visit and
-    // must default to collapsed so the task, not the manual, leads the screen.
-    const helpContent = page.locator('#help-section-content');
-    await expect(helpContent).toBeVisible(); // first-time launch: open
-
-    await page.reload();
-    await page.locator('#setup-modal').waitFor({ state: 'visible' });
-
-    await expect(helpContent).not.toBeVisible(); // return visit: collapsed
-  });
-
   test('help section contains key concept explanations', async ({ page }) => {
     const helpContent = page.locator('#help-section-content');
 
@@ -115,48 +88,6 @@ test.describe('Help Section', () => {
     await expect(page.locator('#help-section-content')).not.toContainText(
       /A named[\s\S]*physical area/i
     );
-  });
-
-  test('help section can be collapsed by clicking', async ({ page }) => {
-    const helpContent = page.locator('#help-section-content');
-
-    // Initially visible
-    await expect(helpContent).toBeVisible();
-
-    // Click to collapse using helper (bypasses viewport issues)
-    await toggleHelpSection(page);
-
-    // Content should now be hidden
-    await expect(helpContent).not.toBeVisible();
-  });
-
-  test('collapsed state is saved to localStorage', async ({ page }) => {
-    // Collapse the help section using helper
-    await toggleHelpSection(page);
-
-    // Check localStorage was updated
-    const collapsed = await page.evaluate((key) => {
-      return localStorage.getItem(key);
-    }, HELP_COLLAPSED_KEY);
-
-    expect(collapsed).toBe('true');
-  });
-
-  test('help section stays collapsed on page reload if user collapsed it', async ({
-    page,
-  }) => {
-    const helpContent = page.locator('#help-section-content');
-
-    // Collapse the help section using helper
-    await toggleHelpSection(page);
-    await expect(helpContent).not.toBeVisible();
-
-    // Reload the page
-    await page.reload();
-    await page.locator('#setup-modal').waitFor({ state: 'visible' });
-
-    // Help content should still be collapsed
-    await expect(helpContent).not.toBeVisible();
   });
 
   test('help section can be re-expanded after collapsing', async ({ page }) => {

@@ -17,6 +17,7 @@ import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
+  capture,
   openSampleIn3d,
   openZip,
   view3d,
@@ -805,9 +806,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     await expect(long.locator(".pick")).toHaveAccessibleName(
       new RegExp(`${LONG_NAME}$`),
     );
-    await page.screenshot({
-      path: test.info().outputPath(`rows-folded-${name}.png`),
-    });
+    await capture(page, test.info().outputPath(`rows-folded-${name}.png`));
 
     // Unfolded: the picture under the row of the station that has one,
     // no picture for the one that has none; both list their items.
@@ -848,9 +847,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     await card(page, "long").locator(".tw").click();
     await expect(card(page, "long").locator(".kids")).toHaveCount(0);
     expect((await box(longHead)).height, at).toBeCloseTo(28, 0);
-    await page.screenshot({
-      path: test.info().outputPath(`rows-unfolded-${name}.png`),
-    });
+    await capture(page, test.info().outputPath(`rows-unfolded-${name}.png`));
     await card(page, "short").locator(".tw").click();
     await card(page, "plain").locator(".tw").click();
     await expect(page.locator("#tree-body .kids")).toHaveCount(0);

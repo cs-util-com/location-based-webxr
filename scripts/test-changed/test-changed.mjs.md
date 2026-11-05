@@ -42,8 +42,11 @@
     the Tour Viewer's e2e stage (`scripts/e2e/run-projects.mjs`) reads to
     skip the specs of an area the change cannot reach, and the browser tier
     reads to run every changed spec file whole. The full cascade and CI set
-    no such ref (CI gives the tier the pull request's base instead,
-    `E2E_TIER_BASE`), so they run every spec, in their tier.
+    no such ref, so no package is cut to the changed area; the cascade gives
+    the tier its base as `E2E_TIER_BASE` instead (`cascadeTierBase` in
+    select.mjs: the `--ref`, else the merge-base with `origin2/main`), as CI
+    does with the pull request's base, so a changed spec runs whole there
+    too.
   - In the per-commit fast gate (`GATE_SKIP_BROWSER_STAGES` set by the
     caller) the changed packages' unit stages run only the tests related to
     the change (`relatedUnitEnv`, [related-unit.mjs](related-unit.mjs.md)),
@@ -59,7 +62,9 @@
   - The machine slot ([machine-slot.mjs](../test-timing/machine-slot.mjs.md))
     is taken once for the WHOLE run (not on `--dry-run`); every gate it
     spawns inherits the token and re-enters, so no other session slips in
-    between the repo-config tests and the last dependent.
+    between the repo-config tests and the last dependent. With
+    `GATE_SKIP_BROWSER_STAGES=1` (the per-commit gate) it queues as `fast`,
+    ahead of browser runs that queued after it or less than an hour before.
   - Whenever a package gate or a root check runs (and before the full
     cascade too), the framework's `dist` is built if stale FIRST
     (`FRAMEWORK_BUILD_IF_STALE` in `select.mjs`), so neither a repo-config
