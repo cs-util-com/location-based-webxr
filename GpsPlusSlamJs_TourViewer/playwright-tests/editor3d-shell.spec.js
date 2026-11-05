@@ -10,11 +10,9 @@ import {
   viewItem,
 } from "./editor-menus.js";
 import {
-  afterFrames,
   answerHosts,
   capture,
   keepRejections,
-  openSample,
   openSampleIn3d,
   rejections,
   view3d,
@@ -35,8 +33,7 @@ import { useWideFont } from "./wide-font.js";
  * none over another, the tour's name never squeezed away - also in the
  * bar's most crowded state, at every step it folds, in a wide face; the
  * File, Edit and View menus from the keyboard and by touch, the unsaved
- * mark, the tree from the keyboard alone, File's Add debug data, a flight
- * leaving no coast behind; and the tree's click rule on the sample tour: a
+ * mark, the tree from the keyboard alone, File's Add debug data; and the tree's click rule on the sample tour: a
  * click selects, unfolds and flies there, a second click deselects and
  * folds, a quick second click (a double click) does not toggle, and the
  * folds outlive a trip to the map.
@@ -908,66 +905,6 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
-test("View's Show debug data is the map's: not offered over the 3D view, which draws no debug data yet", async ({
-  page,
-}) => {
-  // Why: the switch shows and hides the debug layer, which only the map
-  // draws. Offered over the 3D view it was a checkbox that changed nothing
-  // the creator could see.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const recording = await (
-    await page.request.get("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
-  ).body();
-  const chooser = page.waitForEvent("filechooser");
-  await fileCommand(page, "debugAdd");
-  await (
-    await chooser
-  ).setFiles({
-    name: "recording.zip",
-    mimeType: "application/zip",
-    buffer: recording,
-  });
-  // The layer has its source: the page offers the switch...
-  await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", false);
-  // ... on the map only.
-  await page.locator("#view-menu-btn").click();
-  await expect(viewItem(page, "top")).toBeVisible();
-  await expect(viewItem(page, "debug")).toBeHidden();
-  await viewItem(page, "switch").click();
-  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  await page.locator("#view-menu-btn").click();
-  await expect(viewItem(page, "debug")).toBeVisible();
-});
-
-test("a flight ends the orbit's coast: the camera stays where it lands", async ({
-  page,
-}) => {
-  // Why: the orbit coasts on after a drag; a flight started
-  // straight after one must not hand the coast back when it lands, or the
-  // camera drifts on from the station it flew to.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const canvas = page.locator("#view3d canvas").first();
-  const b = await box(canvas);
-  const [cx, cy] = [b.x + b.width / 2, b.y + b.height / 2];
-  // A quick drag: it leaves the orbit coasting.
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  for (let i = 1; i <= 6; i += 1) await page.mouse.move(cx + i * 40, cy);
-  await page.mouse.up();
-  await card(page, "The old gate").locator(".pick").click();
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
-  // The coast decays frame by frame (the orbit's damping runs per
-  // update), so the check counts drawn frames, not time.
-  const { camera: landed } = await view3d(page);
-  await afterFrames(page, 30);
-  const after = (await view3d(page)).camera;
-  expect(Math.hypot(...after.map((v, i) => v - landed[i]))).toBeLessThan(1e-3);
-});
-
 test("on a phone, a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
   page,
 }) => {
@@ -1002,48 +939,45 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
   await expect(card(page, "The old gate")).toHaveCount(0);
 });
 
-for (const view of ["3d", "2d"]) {
-  test(`the tour's name carries a pen that opens its details, with no Details button and no mark (${view})`, async ({
-    page,
-  }) => {
-    // Why: the owner found Details a second copy of what the tour's name
-    // already opens, and the "T" mark mere decoration. Both went; a pen
-    // right of the name says it can be clicked, in both views (they share
-    // the top bar). A pen elsewhere, or a Details button left behind, is
-    // what this pins.
-    test.setTimeout(150_000);
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await answerHosts(page);
-    if (view === "3d") await openSampleIn3d(page);
-    else await openSample(page);
-    await expect(page.locator("#studio-details")).toHaveCount(0);
-    await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
-    const name = page.locator("#tour-name");
-    const text = await box(name.locator(".tour-name-text"));
-    const pen = name.locator(".tour-name-pen svg.i");
-    await expect(pen).toBeVisible();
-    const penBox = await box(pen);
-    // Right of the name, close beside it, on its line.
-    expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
-    expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
-    expect(
-      Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
-    ).toBeLessThanOrEqual(3);
-    // The name is the button's words: the pen adds none.
-    await expect(name).toHaveAccessibleName(
-      (await name.locator(".tour-name-text").textContent()) ?? "",
-    );
-    // Hovered, the name underlines on the 2D map only: the studio's top
-    // bar (3D) marks a hover by the pen alone, as its other controls.
-    await name.hover();
-    await expect(name.locator(".tour-name-text")).toHaveCSS(
-      "text-decoration-line",
-      view === "3d" ? "none" : "underline",
-    );
-    await pen.click();
-    await expect(page.locator("#details-modal")).toBeVisible();
-  });
-}
+test("the tour's name carries a pen that opens its details, with no Details button and no mark", async ({
+  page,
+}) => {
+  // Why: the owner found Details a second copy of what the tour's name
+  // already opens, and the "T" mark mere decoration. Both went; a pen
+  // right of the name says it can be clicked, in both views (they share
+  // the top bar). A pen elsewhere, or a Details button left behind, is
+  // what this pins.
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await expect(page.locator("#studio-details")).toHaveCount(0);
+  await expect(page.locator("#topbar .brand-mark")).toHaveCount(0);
+  const name = page.locator("#tour-name");
+  const text = await box(name.locator(".tour-name-text"));
+  const pen = name.locator(".tour-name-pen svg.i");
+  await expect(pen).toBeVisible();
+  const penBox = await box(pen);
+  // Right of the name, close beside it, on its line.
+  expect(penBox.x).toBeGreaterThanOrEqual(text.x + text.width - 0.5);
+  expect(penBox.x - (text.x + text.width)).toBeLessThan(12);
+  expect(
+    Math.abs(penBox.y + penBox.height / 2 - (text.y + text.height / 2)),
+  ).toBeLessThanOrEqual(3);
+  // The name is the button's words: the pen adds none.
+  await expect(name).toHaveAccessibleName(
+    (await name.locator(".tour-name-text").textContent()) ?? "",
+  );
+  // Hovered, the name does not underline: the studio's top bar (3D)
+  // marks a hover by the pen alone, as its other controls.
+  await name.hover();
+  await expect(name.locator(".tour-name-text")).toHaveCSS(
+    "text-decoration-line",
+    "none",
+  );
+  await pen.click();
+  await expect(page.locator("#details-modal")).toBeVisible();
+});
 
 test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
   page,

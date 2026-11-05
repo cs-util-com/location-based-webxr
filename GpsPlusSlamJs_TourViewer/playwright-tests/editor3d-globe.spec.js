@@ -8,7 +8,6 @@ import {
   keepRejections,
   noApproach,
   noClouds,
-  openSampleIn3d,
   rejections,
   reliefCarries,
   view3d,
@@ -16,14 +15,11 @@ import {
 
 /**
  * Why these tests matter: the editor on the globe view is the default
- * (`globe=1` still names it), and the OrbitControls view opens only with
- * the temporary way back, `globe=0`. These open the sample tour both ways
- * and check, through the page's test
- * hook (a software-drawn WebGL shows little a screenshot could assert on),
- * that the globe view opens - drawing, at street level, the
- * relief carrying the ground, the three stations in its Earth-centred
- * group - and that with `globe=0` nothing of the globe loads: no globe stats,
- * no ask for its whole-Earth imagery.
+ * (`globe=1` still names it). These open the sample tour on it and check,
+ * through the page's test hook (a software-drawn WebGL shows little a
+ * screenshot could assert on), that the globe view opens - drawing, at
+ * street level, the relief carrying the ground, the three stations in its
+ * Earth-centred group.
  */
 
 test("opens the sample tour on the globe at street level with ?globe=1", async ({
@@ -304,21 +300,6 @@ test("a street-map tile whose first request failed gets its map", async ({
     });
   expect([...asked.values()].some((n) => n >= 2)).toBe(true);
   expect(await rejections(page)).toEqual([]);
-});
-
-test("opens the OrbitControls view with ?globe=0, nothing of the globe asked for", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  const imagery = await answerHosts(page);
-  await openSampleIn3d(page);
-  await afterFrames(page, 3);
-  const stats = await view3d(page);
-  expect(stats.globe).toBeUndefined();
-  expect(imagery.asks).toBe(0);
-  // No sky of its own: no clock item in the View menu.
-  await expect(page.locator("#view-realtime")).toBeHidden();
-  await expect(page.locator("#view-clouds")).toBeHidden();
 });
 
 /**

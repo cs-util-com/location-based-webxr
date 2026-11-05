@@ -28,8 +28,8 @@ import {
  *   footprint stands on the ground, not on its roof (20 m up), the place
  *   checked to lie inside that footprint (else the check proves nothing);
  * - the selection's surroundings turn see-through;
- * - the view's toggle hides and restores the buildings, and `buildings=0`
- *   makes none (no Overpass request at all);
+ * - the view's toggle hides and restores the buildings (`buildings=0`
+ *   making none is held by the unit tests of the switch and the globe view);
  * - no console error and no rejected promise along the way.
  *
  * The frame cost is not read here: a software renderer's frame times say
@@ -105,9 +105,8 @@ function consoleErrors(page) {
  * The editor on the globe at the sample's landing (reduced motion: the
  * view cuts to the approach's end), the relief carrying the ground.
  * @param {import("@playwright/test").Page} page
- * @param {string} query
  */
-async function landed(page, query) {
+async function landed(page) {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await answerHosts(page, {
@@ -116,7 +115,7 @@ async function landed(page, query) {
   });
   await keepRejections(page);
   await noClouds(page);
-  await page.goto(`/edit.html${query}`);
+  await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -158,7 +157,7 @@ test("the buildings load in their worker on the relief's ground, out of the pick
   test.setTimeout(300_000);
   const errors = consoleErrors(page);
   const from = { ...cityRequests };
-  await landed(page, "");
+  await landed(page);
   await cityReady(page);
   const city = /** @type {any} */ ((await view3d(page))?.city);
   expect(city.tiles).toBeGreaterThan(0);
@@ -239,21 +238,6 @@ test("the buildings load in their worker on the relief's ground, out of the pick
     .poll(async () => (await view3d(page))?.city?.fade, { timeout: 60_000 })
     .toBeGreaterThan(0);
 
-  expect(errors).toEqual([]);
-  expect(await rejections(page)).toEqual([]);
-});
-
-test("buildings=0 makes no buildings and asks Overpass nothing", async ({
-  page,
-}) => {
-  // A cold landing on a loaded machine: longer than a tripled default.
-  test.setTimeout(300_000);
-  const errors = consoleErrors(page);
-  const before = cityRequests.overpass;
-  await landed(page, "?buildings=0");
-  await afterFrames(page, 20);
-  expect((await view3d(page))?.city).toBeNull();
-  expect(cityRequests.overpass).toBe(before);
   expect(errors).toEqual([]);
   expect(await rejections(page)).toEqual([]);
 });

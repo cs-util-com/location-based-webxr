@@ -129,8 +129,10 @@ once):
 - **(b) map-only until the globe editor has the panel:** `editor.spec.js`
   567, 590, 638, 692, 816, 865, 922 (a walk's debug data on the map and its
   panel; the globe draws no debug data yet, `editor3d-shell` 896).
-- **(c) dies with the map or the older view (deleted with them, not
-  before):** `editor.spec.js` 276 (the card beside its marker), 343 (the
+- **(c) dies with the map or the older view (DELETED on 2026-11-05 by the
+  e2e pruning audit's second round, before the map itself goes: since the
+  globe opens by default no creator reaches them; the list below is kept
+  as the record of what went, with its old line numbers):** `editor.spec.js` 276 (the card beside its marker), 343 (the
   rail's layout per viewport), 424 and 451 (the map's top bar and menus),
   721 (the card against the debug panel), 1180 (a marker drag), 1332 (a
   station and its code both reachable on the map); `editor3d-globe.spec.js`
@@ -140,7 +142,8 @@ once):
   half of 279, 321 and 371.
 - **(d) a gap in the globe editor, listed, not built:** the rail's search
   (`#filter`, `editor.spec.js` 1963: a group's count follows a delete while
-  the search hides it; the tree has no filter); the rail's list of every
+  the search hides it; the tree has no filter; that test was deleted with
+  class (c)); the rail's list of every
   code and note by kind, labels as text (245; the tree lists stations and
   their items).
 
