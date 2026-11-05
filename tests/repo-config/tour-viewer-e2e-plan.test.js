@@ -301,7 +301,7 @@ describe('selectSpecs', () => {
   });
 });
 
-// Why this test matters (test-suite pruning plan 2026-11-04, T-M1): CI runs
+// Why this test matters: CI runs
 // the browser specs as one job per lane (`E2E_LANE`), so a spec in no lane
 // never runs on CI and the run stays green, and a spec in two runs twice.
 // Plain `--shard` is not used because it cuts the alphabetical list, which
