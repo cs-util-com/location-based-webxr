@@ -291,6 +291,41 @@ describe('scrubText', () => {
     }
   });
 
+  it('removes a pair at the end of a sentence or split by a semicolon', () => {
+    expect(scrubText('at 48.137154, 11.576124.', OWN)).toBe(`at ${REDACTED}.`);
+    expect(scrubText('at 48.1371;11.5761', OWN)).toBe(`at ${REDACTED}`);
+    // A dot with a digit behind it is still a longer number, not an end.
+    expect(scrubText('v 1.234 5.6.7', OWN)).toBe('v 1.234 5.6.7');
+  });
+
+  it('removes the value behind a label with an index or a unit', () => {
+    expect(scrubText('lat1=48.1371 lon12: 11.5761', OWN)).toBe(
+      `lat1=${REDACTED} lon12: ${REDACTED}`
+    );
+    expect(scrubText('latDeg=48.1371 {lon_deg:11.5761}', OWN)).toBe(
+      `latDeg=${REDACTED} {lon_deg:${REDACTED}}`
+    );
+    expect(scrubText('originLatDeg=48.1371 aLonDegrees: 11.5', OWN)).toBe(
+      `originLatDeg=${REDACTED} aLonDegrees: ${REDACTED}`
+    );
+  });
+
+  it('reads `long` as a label only with a separator', () => {
+    expect(scrubText('long=11.5761 "long":11.5', OWN)).toBe(
+      `long=${REDACTED} "long":${REDACTED}`
+    );
+    // The ordinary word stays.
+    expect(scrubText('too long 5 ms, isLong=1', OWN)).toBe(
+      'too long 5 ms, isLong=1'
+    );
+  });
+
+  it('removes a value in single quotes', () => {
+    expect(scrubText("{lat: '48.1371', 'lon': '11.5761'}", OWN)).toBe(
+      `{lat: ${REDACTED}, 'lon': ${REDACTED}}`
+    );
+  });
+
   it('removes an id from a relative link with no query', () => {
     expect(scrubText(`GET /files/${DRIVE_ID} 200`, OWN)).toBe(
       `GET /files/${REDACTED} 200`
@@ -338,6 +373,8 @@ describe('scrubDeep', () => {
         flat: 5,
         isLatest: 1,
         lat_note: 'ok',
+        latDeg: 48.1371,
+        long: 11.5761,
         nested: [{ LON: 11.5 }],
         unset: { lat: null },
       },
@@ -351,6 +388,8 @@ describe('scrubDeep', () => {
       flat: 5,
       isLatest: 1,
       lat_note: 'ok',
+      latDeg: REDACTED,
+      long: REDACTED,
       nested: [{ LON: REDACTED }],
       unset: { lat: null },
     });

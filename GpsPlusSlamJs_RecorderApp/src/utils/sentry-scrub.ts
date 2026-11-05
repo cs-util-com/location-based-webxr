@@ -77,8 +77,14 @@ const ID_SEGMENT = new RegExp(
   'g'
 );
 
-/** A label's separator and its number, quoted or not: `":"48.1"`, `= 48`. */
-const LABELLED_VALUE = String.raw`("?\s*(?:[:=]\s*)?)"?-?\d+(?:\.\d+)?"?`;
+/**
+ * A label's separator and its number, quoted or not: `":"48.1"`, `= 48`,
+ * `: '48.1'`. An index or a unit between the two (`lat1=48.1`, `latDeg=48.1`)
+ * counts only with a real separator: without one the digits are the value.
+ * A `[redacted]` is a value too, so that `lat1=[redacted]` keeps its index on a
+ * second pass.
+ */
+const LABELLED_VALUE = String.raw`((?:\d{1,2}|_?[Dd]eg(?:rees)?)["']?\s*[:=]\s*|["']?\s*(?:[:=]\s*)?)["']?(?:-?\d+(?:\.\d+)?["']?|\[redacted\])`;
 
 /**
  * One to three digits running on into a word are not a value (`lon0a`,
@@ -92,11 +98,12 @@ const NOT_A_SHORT_RUN_ON = String.raw`(?!\d{1,3}[A-Za-z])`;
  * but a letter (`lat`, `start_lat`, `0lat`); not inside a longer word
  * (`flat`, `salon`). A digit in front does not stop it, because another rule
  * may turn that digit into `]`, and the second pass must find what the first
- * found. A host can read this way too (`lon5.tiles.example.org`) and is cut
+ * found. `long` counts only with a separator, being an ordinary word. A host
+ * can read this way too (`lon5.tiles.example.org`) and is cut
  * like any other text: the link rules still remove all that follows it.
  */
 const KEYED_COORDINATE = new RegExp(
-  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude)${NOT_A_SHORT_RUN_ON}${LABELLED_VALUE}`,
+  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude|long(?=["']?\s*[:=]))${NOT_A_SHORT_RUN_ON}${LABELLED_VALUE}`,
   'gi'
 );
 
@@ -112,9 +119,9 @@ const CAMEL_KEYED_COORDINATE = new RegExp(
 
 const PAIR_PRECISE = String.raw`-?\d{1,3}\.\d{${PAIR_MIN_DECIMALS},}`;
 const PAIR_ANY = String.raw`-?\d{1,3}\.\d+`;
-const PAIR_SEPARATOR = String.raw`(?:\s*(?:,|\/|\+|%2[Cc]|%20)\s*|\s+)`;
+const PAIR_SEPARATOR = String.raw`(?:\s*(?:,|;|\/|\+|%2[Cc]|%20)\s*|\s+)`;
 const COORDINATE_PAIR = new RegExp(
-  String.raw`(?<![\d.])(?:${PAIR_PRECISE}${PAIR_SEPARATOR}${PAIR_ANY}|${PAIR_ANY}${PAIR_SEPARATOR}${PAIR_PRECISE})(?![\d.])`,
+  String.raw`(?<![\d.])(?:${PAIR_PRECISE}${PAIR_SEPARATOR}${PAIR_ANY}|${PAIR_ANY}${PAIR_SEPARATOR}${PAIR_PRECISE})(?!\d|\.\d)`,
   'g'
 );
 

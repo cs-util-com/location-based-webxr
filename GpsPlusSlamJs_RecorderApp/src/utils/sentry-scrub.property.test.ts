@@ -43,7 +43,7 @@ const coordinate = (max: number, minDecimals = 3, maxDecimals = 8) =>
       return `${whole}.${digits}`;
     });
 
-const pairSeparator = fc.constantFrom(', ', ',', ' ');
+const pairSeparator = fc.constantFrom(', ', ',', ' ', ';');
 
 const label = fc.constantFrom(
   'lat',
@@ -122,7 +122,12 @@ const reportFragment = fc.oneof(
         'originLat=',
         'start_lng:',
         'lat',
-        'lon'
+        'lon',
+        'lat1=',
+        'latDeg=',
+        'originLonDeg:',
+        'long=',
+        "lat: '"
       ),
       coordinate(180, 0)
     )

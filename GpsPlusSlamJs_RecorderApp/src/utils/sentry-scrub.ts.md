@@ -30,8 +30,11 @@ dependency on the SDK, so its rules are tested on their own.
   - a relative link (`/api/drive-proxy?id=...`, `./t?k=v`) loses its query,
     its fragment and any id-like segment;
   - a number labelled `lat`, `latitude`, `lon`, `lng` or `longitude`
-    (`lat=48.1`, `"latitude":48.1`, quoted or not), also after a prefix
-    (`originLat`, `start_lng`), loses its value; a word that merely ends
+    (`lat=48.1`, `"latitude":48.1`, `lat: '48.1'`, quoted or not), also after
+    a prefix (`originLat`, `start_lng`) or with an index or a unit before a
+    separator (`lat1=48.1`, `latDeg=48.1`), loses its value; `long` counts
+    only with `:` or `=`, being an ordinary word, and not after a prefix
+    (`isLong=1` stays); a word that merely ends
     in a label (`flat`, `salon`) does not count, nor do one to three digits
     running on into a word (`lon0a`, `lat2a9Q` in a hashed asset name). A
     separator is not required (`lat48.1`, `lat48_137154`, `lat48137154N`
@@ -39,8 +42,8 @@ dependency on the SDK, so its rules are tested on their own.
     the link rules remove what follows it just the same;
   - a pair of decimal numbers that looks like a latitude/longitude pair
     (`48.137154, 11.576124`, `48.1371,11.5761`, `-33.86882 151.20929`,
-    `48.1, 11.576124`, `48.1371/11.5761`, `48.1371%2C11.5761`,
-    `48.1371+11.5761`) is removed: one of the two needs three or more
+    `48.1, 11.576124`, `48.1371/11.5761`, `48.1371;11.5761`,
+    `48.1371%2C11.5761`, `48.1371+11.5761`) is removed: one of the two needs three or more
     decimals, the other a decimal point;
   - a string that is nothing but a query or a fragment (`?id=...`,
     `#station-2`; the SDK's `http.query` and `http.fragment` span
