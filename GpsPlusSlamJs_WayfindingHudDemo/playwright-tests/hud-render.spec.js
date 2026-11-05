@@ -24,7 +24,7 @@ import { countAccentPixels } from "./count-accent-pixels.js";
  */
 
 test.describe("Wayfinding HUD demo — rendered pixels", () => {
-  test("the ahead target's ring is actually drawn, not just reported by the status line", async ({
+  test("the ahead target's ring is actually drawn, not just reported by the status line @pr", async ({
     page,
   }) => {
     await page.goto("/");

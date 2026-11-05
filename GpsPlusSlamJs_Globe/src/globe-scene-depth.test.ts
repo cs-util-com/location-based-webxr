@@ -112,6 +112,44 @@ describe("createGlobeSceneDepth", () => {
     expect((many.material as THREE.Material[])[0]?.colorWrite).toBe(true);
   });
 
+  // Why: the city is drawn twice a frame (the scene, and this depth), and
+  // its own lit materials cost a full shading pass here for a depth alone;
+  // the extras are drawn with one unlit depth-only material instead (their
+  // geometry is not displaced, so nothing is lost), and get theirs back.
+  it("draws the extras with one depth-only material, arrays too, and gives theirs back", () => {
+    const { renderer, raw } = fakeRenderer();
+    const seen: (THREE.Material | THREE.Material[])[] = [];
+    const draw = raw.render;
+    raw.render = (scene, camera) => {
+      scene.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) seen.push((o as THREE.Mesh).material);
+      });
+      draw(scene, camera);
+    };
+    const depth = createGlobeSceneDepth(renderer);
+    const relief = new THREE.Group();
+    const ground = mesh();
+    relief.add(ground);
+    const city = new THREE.Group();
+    const building = mesh();
+    const own = building.material;
+    const trees = [
+      new THREE.MeshStandardMaterial(),
+      new THREE.MeshBasicMaterial(),
+    ];
+    const tree = new THREE.Mesh(new THREE.BufferGeometry(), trees);
+    city.add(building, tree);
+    depth.render(viewCamera(5), relief, [city]);
+    expect(seen[0]).toBe(ground.material); // the relief keeps its own
+    const [forBuilding, forTree] = [seen[1], seen[2]];
+    expect(forBuilding).toBeInstanceOf(THREE.MeshBasicMaterial);
+    expect(forBuilding).toBe(forTree);
+    expect((forBuilding as THREE.Material).colorWrite).toBe(false);
+    expect(building.material).toBe(own);
+    expect(tree.material).toBe(trees);
+    expect(own.colorWrite).toBe(true);
+  });
+
   // Its own near plane is the view camera's capped at 10 m, so a deck
   // nearer than the ground's fitted near plane is still in the depth.
   it("draws with the view camera's pose and a near plane of at most 10 m", () => {

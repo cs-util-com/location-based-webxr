@@ -23,8 +23,8 @@ export const SQUARE_GROUND_M = 515.5;
  * tile; refuse the globe's whole-Earth imagery, counting any ask (or,
  * with `globeAssets: "serve"`, let the dev server answer it, still
  * counted: the editor on the globe view draws it). The globe view's
- * buildings are answered too, on the CONTEXT so their worker's requests
- * are (`answerCityData`): Overpass with `overpass` (an Overpass JSON
+ * buildings are answered too, for their worker (`answerCityData`):
+ * Overpass with `overpass` (an Overpass JSON
  * object, every tile the same; no buildings by default), the heights
  * with the same flat ground. Nothing leaves the machine.
  * @param {import("@playwright/test").Page} page
@@ -68,8 +68,11 @@ const isOverpassHost = (/** @type {URL} */ url) =>
   (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/"));
 
 /**
- * The buildings' data for the city worker, routed on the page's context
- * (a dedicated worker's requests do not pass the page's own routes):
+ * The buildings' data for the city worker, routed on the page's context.
+ * A dedicated worker's requests DO pass the page's own routes, and a page
+ * route wins over a context route, so the worker's height tiles are
+ * answered by the page's Mapterhorn route in `answerHosts` and this
+ * route's height branch is only the fallback for a page without one:
  * Overpass with `overpass`, Mapterhorn's heights with `flat`, and a
  * CORS preflight answered (the worker's requests are cross-origin, so the
  * browser checks the headers on a fulfilled response too). The requests

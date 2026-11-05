@@ -45,7 +45,7 @@ test("Save with nothing changed says so in a toast, and saves nothing", async ({
  * is; the dialog is busy while it runs and says why a link did not open.
  */
 test.describe("open a tour from its link", () => {
-  test("opens the tour behind the link, busy until it has", async ({
+  test("opens the tour behind the link, busy until it has @pr", async ({
     page,
   }) => {
     await page.goto("/edit.html");

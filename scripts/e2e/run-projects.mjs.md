@@ -8,8 +8,8 @@
 - Public API (CLI):
   `node ../scripts/e2e/run-projects.mjs <plan.js> playwright test --config <config> [forwarded...]`,
   run from the package. `<plan.js>` exports `PROJECTS`, `SPECS`,
-  `specsOf`, `LOCAL_DOM_WORKERS`, `RESULTS_DIR`, `RESULTS_NAME` and
-  `selectSpecs` (see
+  `specsOf`, `LOCAL_DOM_WORKERS`, `RESULTS_DIR`, `RESULTS_NAME`,
+  `selectSpecs` and, for `E2E_LANE`, `LANES` and `specsOfLane` (see
   [`e2e-plan.js`](../../GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js.md)).
   Forwarded arguments (a developer's filter, the gate's `--reporter=list,json`)
   go to every project's run, except `--project <name>`: it picks which
@@ -36,8 +36,15 @@
     exactly that way (2026-11-01). A report that should exist (the config's
     in CI mode, the gate's whenever it is asked for) but is missing is warned
     about; an unreadable one (truncated) is warned about and fails the run,
-    but only after every project ran (`readReport`). The GitHub workflow
-    uploads only the Recorder's results, not this merged file.
+    but only after every project ran (`readReport`). CI uploads this merged
+    file from each Tour Viewer job (`playwright-report-<job>`).
+  - **A CI lane** (`E2E_LANE`, `laneSpecs` in
+    [`project-runs.mjs`](project-runs.mjs.md)): one CI job's share of the
+    specs, intersected with any narrowing. An env var, never a forwarded
+    argument, so it adds no `--pass-with-no-tests`. An unknown lane, or one
+    that holds no spec, prints `e2e lane: ...` and exits 2 before any run, so
+    a job never passes having run no test. Unset (every local run), it
+    changes nothing.
   - **Narrowing** (`mayNarrow` in [`project-runs.mjs`](project-runs.mjs.md)):
     only off the GitHub runner, only with `GATE_CHANGED_REF` set (the
     changed packages' full gates under `test:changed`), only without a
@@ -45,6 +52,13 @@
     project with no selected spec is skipped; an unknown path selects all.
     Such a run records no timing row (`narrowedStageRun`). Real-Playwright
     check, 2026-11-01: see the r1012 entry of the globe editor feedback plan.
+  - **The browser tier** ([`tier.mjs`](tier.mjs.md)): the config's `grep`
+    selects the `@pr` tests plus the changed spec files unless
+    `E2E_TIER=full`. The runner tells the config whether its command line
+    holds a developer's filter (`E2E_DEVELOPER_FILTER`), since the spec
+    filters it adds are its own. A tier run cut to the changed area may
+    select nothing in a project and passes (`passesEmpty`); a whole tier
+    run, or a CI lane, that selects nothing fails.
   - The worker count: `domWorkers` for the first project, 1 for the rest.
   - Playwright is resolved from the package (`@playwright/test/cli`) and run
     with the same Node.

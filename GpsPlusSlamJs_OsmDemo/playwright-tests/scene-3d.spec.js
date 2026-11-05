@@ -27,7 +27,7 @@ import {
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
-  test("draws pixels and buildings, and repaints after a resize", async ({
+  test("draws pixels and buildings, and repaints after a resize @pr", async ({
     page,
   }) => {
     // THREE READ-MOSTLY BEHAVIOURS ON ONE BOOT, kept in file order so nothing
@@ -223,7 +223,7 @@ test.describe("the 3D view", () => {
     });
   });
 
-  test("shows the terrain as a ramp, and the GPU path matches the CPU one", async ({
+  test("shows the terrain as a ramp, and the GPU path matches the CPU one @pr", async ({
     page,
   }) => {
     // BOTH GROUND BEHAVIOURS ON ONE BOOT. The ramp step asserts the DEFAULT

@@ -402,11 +402,6 @@ export function wireCreatorDraft(deps: {
     deps.render();
   }
 
-  /**
-   * Record something placed. Fire-and-forget on purpose: the placement
-   * already happened in memory, and the draft is a safety net - a storage
-   * problem must never fail the tap that made it.
-   */
   /** The tour as it was OPENED (M6 E2p review #2): a Finish advances the
    *  tour document to what this page wrote, which is not what is hosted
    *  until the creator uploads it. Every hosted comparison of `present`
@@ -428,6 +423,11 @@ export function wireCreatorDraft(deps: {
     return hostedObjects(openedTour()).key(id);
   }
 
+  /**
+   * Record something placed. Fire-and-forget on purpose: the placement
+   * already happened in memory, and the draft is a safety net - a storage
+   * problem must never fail the tap that made it.
+   */
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
     const tourUrl = draftTourUrl;

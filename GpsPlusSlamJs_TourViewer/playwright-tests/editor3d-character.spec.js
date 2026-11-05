@@ -19,6 +19,7 @@ import {
   SQUARE_GROUND_M,
   answerHosts,
   noApproach,
+  noClouds,
   openZip,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
@@ -123,6 +124,10 @@ async function openAndSelect(page, zip) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
   await noApproach(page);
+  // Not about the clouds: without them a click waits about 1.8 s rather
+  // than 9-10 s (`noClouds`), and with them a CI runner ran out the 5 s
+  // wait for the picked station.
+  await noClouds(page);
   await page.goto(GLOBE_VIEW);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "wendel.zip");

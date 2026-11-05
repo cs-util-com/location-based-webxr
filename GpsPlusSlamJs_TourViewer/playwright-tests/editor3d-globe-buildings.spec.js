@@ -25,14 +25,16 @@ import {
  *   height parity at the tour's centre within half a metre);
  * - picking still meets the ground: a station inside a building is picked
  *   by a click on it, and a new station placed inside a building's
- *   footprint stands on the ground, not on its roof (20 m up);
+ *   footprint stands on the ground, not on its roof (20 m up), the place
+ *   checked to lie inside that footprint (else the check proves nothing);
  * - the selection's surroundings turn see-through;
  * - the view's toggle hides and restores the buildings, and `buildings=0`
  *   makes none (no Overpass request at all);
- * - no console error and no rejected promise along the way;
- * - the frame cost with the buildings against without, as a relative
- *   reading (logged: a software renderer's frame times say little about a
- *   phone's, so nothing is asserted on it).
+ * - no console error and no rejected promise along the way.
+ *
+ * The frame cost is not read here: a software renderer's frame times say
+ * little about a phone's, and a reading nothing asserts on cost a second
+ * cold landing per run.
  */
 
 // One worker for the file, its tests in order: software-drawn 3D views
@@ -48,14 +50,21 @@ const N_M = 45.68;
 /** A building's height in the fixture (m). */
 const BUILDING_M = 20;
 
+/** Half a fixture building's side (m). */
+const HALF_SIDE_M = 15;
+
+/** Metres per degree of latitude, and of longitude at the square. */
+const M_PER_DEG_LAT = 110_946;
+const M_PER_DEG_LNG = 111_319.49 * Math.cos((FIRST.lat * Math.PI) / 180);
+
 /** A 5 x 5 grid of 30 m square buildings 60 m apart, one around the first
  *  station. */
 function overpassFixture() {
   const elements = [];
-  const mLat = 1 / 110_946;
-  const mLng = 1 / (111_319.49 * Math.cos((FIRST.lat * Math.PI) / 180));
-  const dLat = 15 * mLat;
-  const dLng = 15 * mLng;
+  const mLat = 1 / M_PER_DEG_LAT;
+  const mLng = 1 / M_PER_DEG_LNG;
+  const dLat = HALF_SIDE_M * mLat;
+  const dLng = HALF_SIDE_M * mLng;
   let id = 1;
   for (const i of [-2, -1, 0, 1, 2]) {
     for (const j of [-2, -1, 0, 1, 2]) {
@@ -141,19 +150,7 @@ function firstStation(page) {
   );
 }
 
-/**
- * The mean frame interval of the last frames (ms), once 40 more drew.
- * @param {import("@playwright/test").Page} page
- */
-async function meanFrameMs(page) {
-  await afterFrames(page, 40);
-  const times = /** @type {number[]} */ (
-    (await view3d(page))?.globe?.frameTimesMs ?? []
-  );
-  return times.reduce((a, b) => a + b, 0) / Math.max(1, times.length);
-}
-
-test("the buildings load in their worker on the relief's ground, out of the picking's way", async ({
+test("the buildings load in their worker on the relief's ground, out of the picking's way @pr", async ({
   page,
 }) => {
   // A cold landing, a city load and several frame waits: on a loaded
@@ -216,6 +213,13 @@ test("the buildings load in their worker on the relief's ground, out of the pick
   const added = await page.evaluate(
     () => /** @type {any} */ (window).__tourEditor.manifest().stations[3].geo,
   );
+  // The offset beside the marker landed inside the building around the
+  // first station (the grid's centre one), so its roof was under the
+  // cursor and the ground check below means something.
+  const eastM = (added.lon - FIRST.lng) * M_PER_DEG_LNG;
+  const northM = (added.lat - FIRST.lat) * M_PER_DEG_LAT;
+  expect(Math.abs(eastM)).toBeLessThan(HALF_SIDE_M);
+  expect(Math.abs(northM)).toBeLessThan(HALF_SIDE_M);
   expect(added.alt).toBeCloseTo(SQUARE_GROUND_M + N_M, 0);
   expect(added.alt).toBeLessThan(SQUARE_GROUND_M + N_M + BUILDING_M / 2);
 
@@ -239,33 +243,17 @@ test("the buildings load in their worker on the relief's ground, out of the pick
   expect(await rejections(page)).toEqual([]);
 });
 
-test("buildings=0 makes no buildings and asks Overpass nothing; the frame cost with and without", async ({
-  browser,
+test("buildings=0 makes no buildings and asks Overpass nothing", async ({
+  page,
 }) => {
-  // Two cold landings plus a city load and two frame samples: longer
-  // than a tripled default on a loaded machine.
+  // A cold landing on a loaded machine: longer than a tripled default.
   test.setTimeout(300_000);
-  // Each on its own page (its own context: its own draft and tile store).
-  const withPage = await browser.newPage();
-  const withErrors = consoleErrors(withPage);
-  await landed(withPage, "");
-  await cityReady(withPage);
-  const withMs = await meanFrameMs(withPage);
-  expect(withErrors).toEqual([]);
-  await withPage.close();
-
-  const page = await browser.newPage();
   const errors = consoleErrors(page);
   const before = cityRequests.overpass;
   await landed(page, "?buildings=0");
   await afterFrames(page, 20);
   expect((await view3d(page))?.city).toBeNull();
-  const withoutMs = await meanFrameMs(page);
   expect(cityRequests.overpass).toBe(before);
-  console.log(
-    `frame cost: ${withMs.toFixed(1)} ms with the buildings, ${withoutMs.toFixed(1)} ms without (x${(withMs / Math.max(1e-6, withoutMs)).toFixed(2)}, headless software renderer)`,
-  );
   expect(errors).toEqual([]);
   expect(await rejections(page)).toEqual([]);
-  await page.close();
 });

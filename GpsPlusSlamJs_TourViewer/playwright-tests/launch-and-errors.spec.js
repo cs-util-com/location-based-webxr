@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
 const ARCHIVE_HOST = "http://127.0.0.1:5197";
 const RANGES_URL = `${ARCHIVE_HOST}/ranges-ok/tour.zip`;
 
-test("a ?qr= launch opens the archive with no interaction", async ({
+test("a ?qr= launch opens the archive with no interaction @pr", async ({
   page,
 }) => {
   await page.goto(`/?nocache=1&qr=${encodeURIComponent(RANGES_URL)}`);
@@ -71,7 +71,7 @@ test("a missing archive reports a clear error and restores the button (failure p
   await expect(page.getByTestId("open-button")).toBeEnabled();
 });
 
-test("the page boots without console errors", async ({ page }) => {
+test("the page boots without console errors @pr", async ({ page }) => {
   /** @type {string[]} */
   const errors = [];
   page.on("console", (message) => {
@@ -93,7 +93,7 @@ test("the page boots without console errors", async ({ page }) => {
 test.describe("a first visit", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("boots the landing without console errors", async ({ page }) => {
+  test("boots the landing without console errors @pr", async ({ page }) => {
     /** @type {string[]} */
     const errors = [];
     page.on("console", (message) => {
@@ -117,7 +117,7 @@ test.describe("a first visit", () => {
   });
 });
 
-/**
+/*
  * Why these tests matter: the setup page is a DOCUMENT, and its ground is a
  * page rather than the camera - which is why it opts into `.page` while the
  * five AR apps do not. Light mode rides that same opt-in (owner decision

@@ -2,7 +2,7 @@ import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
-import type { GlobeCityState } from "gps-plus-slam-globe/view";
+import { createGlobeCity, type GlobeCityState } from "gps-plus-slam-globe/view";
 
 import {
   EDITOR_CITY,
@@ -44,6 +44,7 @@ function fakeCity() {
       state = { ...state, fade: value };
     }),
     state: () => state,
+    abort: vi.fn(),
     dispose: vi.fn(),
   };
   return {
@@ -72,6 +73,28 @@ function standardShader() {
     fragmentShader: THREE.ShaderLib.standard.fragmentShader,
     uniforms: {} as Record<string, unknown>,
   };
+}
+
+/** The see-through define, as three.js prefixes it to the shader. */
+const SEE = "EDITOR_SEE_THROUGH";
+
+/** A shader's lines as compiled without the see-through define: each
+ *  `#ifdef EDITOR_SEE_THROUGH` block dropped, with the blocks nested in
+ *  it (three.js's own `#ifdef`s elsewhere are kept as they are). */
+function withoutSeeThrough(source: string): string {
+  const kept: string[] = [];
+  let depth = 0; // the conditional depth inside a dropped block
+  for (const line of source.split("\n")) {
+    const directive = line.trim();
+    if (depth > 0) {
+      if (/^#if/.test(directive)) depth += 1;
+      else if (directive.startsWith("#endif")) depth -= 1;
+      continue;
+    }
+    if (directive === `#ifdef ${SEE}`) depth = 1;
+    else kept.push(line);
+  }
+  return kept.join("\n");
 }
 
 const compile = (material: THREE.Material) => {
@@ -118,6 +141,7 @@ describe("mountEditorCity", () => {
     fake.city.root.visible = true;
     expect(city.extra()).toEqual([fake.city.root]);
     city.setShown(false);
+    expect(fake.city.abort).toHaveBeenCalledTimes(1);
     expect(fake.city.setFade).toHaveBeenLastCalledWith(0);
     expect(city.extra()).toEqual([]);
     city.warmUp();
@@ -127,6 +151,59 @@ describe("mountEditorCity", () => {
     city.setShown(true);
     city.step({ altitudeM: 500, selection: null });
     expect(fake.loads).toHaveLength(1);
+    // Hidden again while it loads: the load is stopped, not only undrawn.
+    city.setShown(false);
+    expect(fake.city.abort).toHaveBeenCalledTimes(2);
+  });
+
+  // Why: hiding must stop a load that is already running, end to end: the
+  // Globe package's own city is told to abort in its worker, and the
+  // buildings the worker had already sent are never built.
+  it("stops a running load when hidden: the worker is told, nothing is built", async () => {
+    const posted: { kind: string; id?: number }[] = [];
+    let reply: (data: unknown) => void = () => undefined;
+    const built: unknown[] = [];
+    const parent = new THREE.Group();
+    const globeCity = createGlobeCity({
+      parent,
+      ellipsoid: {} as never, // never read: nothing is drawn
+      createWorker: () => ({
+        addEventListener(type: string, listener: (e: unknown) => void) {
+          if (type === "message") reply = (data) => listener({ data });
+        },
+        postMessage: (message: { kind: string; id?: number }) =>
+          posted.push(message),
+        terminate() {},
+      }),
+      loadCityThree: () =>
+        Promise.resolve({
+          cityObjects: (city: unknown) => {
+            built.push(city);
+            return [];
+          },
+          disposeCityObjects() {},
+        }),
+    });
+    const city = mountEditorCity({ city: globeCity, place: BERN, zoom: 12 });
+    city.step({ altitudeM: 500, selection: null });
+    expect(posted.map((m) => m.kind)).toEqual(["load"]);
+    city.setShown(false);
+    expect(posted.at(-1)).toEqual({ kind: "abort", id: 1 });
+    reply({
+      kind: "city",
+      id: 1,
+      ok: true,
+      buildings: [],
+      trees: [],
+      roads: [],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(built).toEqual([]);
+    city.step({ altitudeM: 500, selection: null });
+    expect(posted).toHaveLength(2); // hidden: nothing asked
+    city.setShown(true);
+    city.step({ altitudeM: 500, selection: null });
+    expect(posted.at(-1)).toMatchObject({ kind: "load", id: 2 });
   });
 
   // Why: a worker that cannot be made (a browser without module workers)
@@ -224,13 +301,53 @@ describe("mountEditorCity", () => {
     });
     const shader = compile(building.material);
     expect(shader.fragmentShader).toContain("discard");
+    expect(building.material.defines).toHaveProperty(SEE);
+    expect(tree.material.defines).toHaveProperty(SEE);
     expect(shader.uniforms["uSeeCentre"]).toEqual({ value: at });
     expect(shader.uniforms["uSeeUp"]).toEqual({
       value: new THREE.Vector3(0, 1, 0),
     });
-    expect(compile(road.material).fragmentShader).not.toContain("uSeeOn");
+    expect(compile(road.material).fragmentShader).not.toContain("uSeeCentre");
+    expect(road.material.defines ?? {}).not.toHaveProperty(SEE);
     city.step({ altitudeM: 500, selection: null });
     expect(city.stats(null).seeThrough.on).toBe(false);
+    expect(building.material.defines ?? {}).not.toHaveProperty(SEE);
+  });
+
+  // Why: the see-through is a define, so a building far from any
+  // selection runs a shader with no discard (a discard keeps the GPU from
+  // its early depth test); three.js switches the program on the define's
+  // edge only, never every frame.
+  it("switches the see-through's define on its edges only", () => {
+    const fake = fakeCity();
+    const city = mountEditorCity({ city: fake.city, place: BERN, zoom: 12 });
+    const building = cityMesh("buildings");
+    fake.city.root.add(building);
+    const selection = {
+      at: new THREE.Vector3(),
+      up: new THREE.Vector3(0, 1, 0),
+      radiusM: 5,
+    };
+    city.step({ altitudeM: 500, selection: null });
+    const patchedAt = building.material.version;
+    city.step({ altitudeM: 500, selection: null });
+    expect(building.material.version).toBe(patchedAt);
+    city.step({ altitudeM: 500, selection });
+    city.step({ altitudeM: 500, selection });
+    expect(building.material.version).toBe(patchedAt + 1);
+    city.step({ altitudeM: 500, selection: null });
+    city.step({ altitudeM: 500, selection: null });
+    expect(building.material.version).toBe(patchedAt + 2);
+    // A material patched while the see-through is on starts with it.
+    city.step({ altitudeM: 500, selection });
+    const late = cityMesh("buildings");
+    fake.city.root.add(late);
+    city.step({ altitudeM: 500, selection });
+    expect(late.material.defines).toHaveProperty(SEE);
+    // Hidden, the define goes.
+    city.setShown(false);
+    city.step({ altitudeM: 500, selection });
+    expect(late.material.defines ?? {}).not.toHaveProperty(SEE);
   });
 
   // Why: the trees' materials are shared with every later city, so a
@@ -290,7 +407,6 @@ describe("mountEditorCity", () => {
 
 describe("patchSeeThrough", () => {
   const uniforms = () => ({
-    uSeeOn: { value: 1 },
     uSeeCentre: { value: new THREE.Vector3() },
     uSeeUp: { value: new THREE.Vector3(0, 1, 0) },
     uSeeRadius: { value: 10 },
@@ -305,11 +421,22 @@ describe("patchSeeThrough", () => {
     expect(shader.vertexShader).toContain("seeAt = instanceMatrix * seeAt");
     expect(shader.fragmentShader).toContain("length(seeFlat) < uSeeRadius");
     expect(Object.keys(shader.uniforms)).toEqual([
-      "uSeeOn",
       "uSeeCentre",
       "uSeeUp",
       "uSeeRadius",
     ]);
+  });
+
+  // Why: without the define the compiled shader must hold no discard and
+  // no see-through work at all (the define is what keeps a city with
+  // nothing selected on the plain shader).
+  it("holds no discard and reads no uniform of its own without the define", () => {
+    const shader = standardShader();
+    patchSeeThrough(shader, uniforms());
+    const plain = withoutSeeThrough(shader.fragmentShader);
+    expect(plain).not.toContain("discard");
+    expect(plain).not.toContain("uSeeRadius");
+    expect(withoutSeeThrough(shader.vertexShader)).not.toContain("vSeeWorld");
   });
 
   // Why: a material whose shader lacks the anchors is left as it is (no

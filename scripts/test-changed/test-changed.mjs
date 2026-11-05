@@ -13,6 +13,13 @@
 // stronger one: a change that breaks only a DEPENDENT's rendering (its e2e) is
 // not caught here — it is caught by the session-end cascade or by CI.
 //
+// THE BROWSER STAGES RUN A TIER (E2E_TIER, scripts/e2e/tier.mjs): by default
+// the tests tagged `@pr` plus every spec file changed against --ref, whole;
+// E2E_TIER=full runs every test. CI runs the same tier on every PR and the
+// full set nightly, on dispatch and on a `full-ci` label. So a green browser
+// run, here or on a PR, says nothing about an untagged test of an unchanged
+// spec: that is the full run's job.
+//
 // Scope: `location-based-webxr` only. `GpsPlusSlamJs` and
 // `GpsPlusSlamJs_Investigation` have no equivalent and keep their own full gate.
 //
@@ -21,7 +28,9 @@
 //              the sibling gps-plus-slam-js library consumed via a pnpm
 //              link: override, which is invisible to this repo's git)
 //   --ref      diff base for tracked changes (default: HEAD — uncommitted
-//              work against the last commit)
+//              work against the last commit); the browser tier also runs
+//              every spec file changed against it whole
+//   E2E_TIER=full (env) runs every browser test instead of the @pr tier
 //   --dry-run  print the selection decision without running anything
 //
 // Selection guard rails live in select.mjs (pure, tested). This shell only
@@ -237,7 +246,8 @@ const status = runInOrder(
 if (status === 0 && names.length > 0) {
   console.log(
     '\ntest-changed: ✔ commit gate green (DEC-G1) — changed packages in full, dependents without e2e.\n' +
-      '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.'
+      '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.\n' +
+      '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.'
   );
 }
 process.exit(status);

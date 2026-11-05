@@ -30,7 +30,7 @@ const isExpectedCapabilityNoise = (text) => {
 };
 
 test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
-  test("loads without unexpected console errors", async ({ page }) => {
+  test("loads without unexpected console errors @pr", async ({ page }) => {
     const consoleIssues = [];
     const pageErrors = [];
 
@@ -62,7 +62,7 @@ test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
     expect(pageErrors, "Unexpected page errors detected").toEqual([]);
   });
 
-  test("renders the start screen and intro copy", async ({ page }) => {
+  test("renders the start screen and intro copy @pr", async ({ page }) => {
     await page.goto("/");
 
     await expect(page.getByTestId("start-screen")).toBeVisible();
@@ -72,7 +72,7 @@ test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
     await expect(page.getByTestId("start-button")).toBeVisible();
   });
 
-  test("keeps the live guidance and placement panels hidden on boot", async ({
+  test("keeps the live guidance and placement panels hidden on boot @pr", async ({
     page,
   }) => {
     await page.goto("/");
@@ -82,7 +82,7 @@ test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
     await expect(page.getByTestId("placement")).toBeHidden();
   });
 
-  test("fires the E1 capability gate when WebXR is unavailable", async ({
+  test("fires the E1 capability gate when WebXR is unavailable @pr", async ({
     page,
   }) => {
     await page.goto("/");

@@ -77,7 +77,10 @@ async function landed(browser, query, grey) {
   await page.route(CLOUD_MAP, (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: map }),
   );
-  await page.goto(`/edit.html?globe=1&${query}`);
+  // Without the city's buildings, which are not what this spec reads and
+  // whose load and draw cost the software-drawn page the frames its 900 s
+  // budget needs.
+  await page.goto(`/edit.html?globe=1&buildings=0&${query}`);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

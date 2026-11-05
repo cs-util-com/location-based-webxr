@@ -55,6 +55,19 @@ function fakes() {
   let stores = 0;
   const store = deferred<unknown>();
   const shared = chunk();
+  /** The heights' fetches: each URL with its signal, answered by `answer`. */
+  const asked: { url: string; signal: AbortSignal | null | undefined }[] = [];
+  const net = {
+    answer: (url: string): Promise<Response> | Response => {
+      void url;
+      return new Response(null, { status: 200 });
+    },
+  };
+  const heightFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input.toString();
+    asked.push({ url, signal: init?.signal });
+    return Promise.resolve(net.answer(url));
+  };
   const deps: CityWorkerDeps = {
     post: (message, transfer) => {
       posted.push({ message: message as Record<string, unknown>, transfer });
@@ -70,10 +83,11 @@ function fakes() {
       TERRARIUM_URL_TEMPLATE: TERRARIUM,
       cityDataPlan: (target, options) => {
         plans.push({ target, heights: options.heights });
-        return { target };
+        const z = options.heights.zoom;
+        return { target, heightUrls: [`h/${z}/0`, `h/${z}/1`, `h/${z}/2`] };
       },
       createCityTileSource: () => ({ source: true }),
-      createCachingTileFetch: () => ({ fetch: true }),
+      createCachingTileFetch: () => heightFetch,
       browserPngDecoder: () => ({ decode: true }),
       buildCity: () => ({
         buildings: [shared, chunk()],
@@ -108,6 +122,9 @@ function fakes() {
     loads,
     plans,
     store,
+    asked,
+    net,
+    heightFetch,
     stores: () => stores,
     kinds: () =>
       posted.map(
@@ -278,6 +295,146 @@ describe("createCityWorkerCore", () => {
       { id: 3, kind: "city", ok: false, message: "no network" },
       { id: 3, kind: "finished", outcome: "settled" },
     ]);
+  });
+
+  // Why: the relief draws its deepest zoom wherever the source has it
+  // (Mapterhorn: 14 in much of Europe, 12 everywhere), so a city read at the
+  // global zoom stood metres off the ground drawn under it. Where every
+  // height tile of the city's window answers at the deep zoom, the city
+  // reads them there, through the same caching fetch the load then reuses
+  // (the probe's tiles are its cache hits), and says which zoom it read.
+  it("reads the heights at the deep zoom where every deep tile answers", async () => {
+    const f = fakes();
+    const core = createCityWorkerCore(f.deps);
+    core.handle({
+      kind: "load",
+      id: 1,
+      target: MUNICH,
+      zoom: 12,
+      deepZoom: 14,
+      heightsUrl: RELIEF,
+    });
+    f.store.resolve({});
+    await settle();
+    expect(f.asked.map((a) => a.url)).toEqual(["h/14/0", "h/14/1", "h/14/2"]);
+    const load = f.loads[0];
+    if (!load) throw new Error("no load");
+    expect(load.plan).toMatchObject({
+      heightUrls: ["h/14/0", "h/14/1", "h/14/2"],
+    });
+    expect(f.plans.map((p) => p.heights)).toEqual([
+      { urlTemplates: [RELIEF], zoom: 14 },
+    ]);
+    expect(load.options["heightFetch"]).toBe(f.heightFetch);
+    (load.options["onData"] as (d: unknown) => void)({
+      stage: "first",
+      features: [],
+      ground: {},
+      tiles: { loaded: 1, missing: [] },
+      groundM: 520,
+    });
+    expect(f.posted[0]?.message["counts"]).toMatchObject({ heightsZoom: 14 });
+  });
+
+  // Why: one deep tile missing (a 404 where the source has no deep model,
+  // or a failed request) and the relief draws that part from the global
+  // zoom: the city then reads the global zoom everywhere rather than stand
+  // on a patchwork, and a first tile that fails asks no others.
+  it("keeps the global zoom where a deep tile is missing or fails", async () => {
+    for (const [miss, askedCount] of [
+      ["h/14/0", 1],
+      ["h/14/2", 3],
+    ] as const) {
+      for (const failure of ["404", "throws"] as const) {
+        const f = fakes();
+        f.net.answer = (url) => {
+          if (url !== miss) return new Response(null, { status: 200 });
+          if (failure === "throws") throw new TypeError("offline");
+          return new Response(null, { status: 404 });
+        };
+        const core = createCityWorkerCore(f.deps);
+        core.handle({
+          kind: "load",
+          id: 1,
+          target: MUNICH,
+          zoom: 12,
+          deepZoom: 14,
+          heightsUrl: RELIEF,
+        });
+        f.store.resolve({});
+        await settle();
+        expect(f.asked).toHaveLength(askedCount);
+        expect(f.loads[0]?.plan).toMatchObject({
+          heightUrls: ["h/12/0", "h/12/1", "h/12/2"],
+        });
+        (f.loads[0]?.options["onData"] as (d: unknown) => void)({
+          stage: "first",
+          features: [],
+          ground: {},
+          tiles: { loaded: 1, missing: [] },
+          groundM: 520,
+        });
+        expect(f.posted[0]?.message["counts"]).toMatchObject({
+          heightsZoom: 12,
+        });
+      }
+    }
+  });
+
+  // Why: hiding the buildings stops their load at once (the page's abort):
+  // a load stopped while its deep tiles are asked for calls them off and
+  // never starts; a deep zoom at or below the global one asks nothing, and
+  // a deep zoom the heights cannot read is answered as a bad one.
+  it("calls the deep probe off on abort, and checks the deep zoom", async () => {
+    const f = fakes();
+    let answer!: (r: Response) => void;
+    f.net.answer = () =>
+      new Promise<Response>((r) => {
+        answer = r;
+      });
+    const core = createCityWorkerCore(f.deps);
+    core.handle({
+      kind: "load",
+      id: 1,
+      target: MUNICH,
+      zoom: 12,
+      deepZoom: 14,
+    });
+    f.store.resolve({});
+    await settle();
+    expect(f.asked).toHaveLength(1);
+    core.handle({ kind: "abort", id: 1 });
+    expect(f.asked[0]?.signal?.aborted).toBe(true);
+    answer(new Response(null, { status: 200 }));
+    await settle();
+    expect(f.loads).toHaveLength(0);
+    expect(f.posted).toEqual([]);
+
+    const g = fakes();
+    const other = createCityWorkerCore(g.deps);
+    other.handle({
+      kind: "load",
+      id: 2,
+      target: MUNICH,
+      zoom: 12,
+      deepZoom: 12,
+    });
+    g.store.resolve({});
+    await settle();
+    expect(g.asked).toEqual([]);
+    expect(g.plans.map((p) => p.heights)).toEqual([
+      { urlTemplates: [TERRARIUM], zoom: 12 },
+    ]);
+    other.handle({
+      kind: "load",
+      id: 3,
+      target: MUNICH,
+      zoom: 12,
+      deepZoom: 16,
+    });
+    expect(
+      g.posted.map((p) => p.message["outcome"] ?? p.message["kind"]),
+    ).toEqual(["city", "invalid-target"]);
   });
 
   // Why: anything that is not a load or an abort is ignored.

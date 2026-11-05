@@ -47,7 +47,7 @@ const PHONES = [
 ];
 
 for (const viewport of PHONES) {
-  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the size offer open`, async ({
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the size offer open${viewport.height === 640 ? " @pr" : ""}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);

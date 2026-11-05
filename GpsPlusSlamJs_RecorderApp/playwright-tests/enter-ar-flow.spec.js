@@ -395,7 +395,7 @@ test.describe('With Permissions Granted', () => {
   });
 
   test.describe('Complete Enter AR Flow', () => {
-    test('clicking enabled Enter AR button hides setup modal', async ({
+    test('clicking enabled Enter AR button hides setup modal @pr', async ({
       page,
     }) => {
       // Why this test matters: Verifies the happy path - user can actually
@@ -418,7 +418,9 @@ test.describe('With Permissions Granted', () => {
       await expect(setupModal).toHaveClass(/hidden/);
     });
 
-    test('new scenario creation completes Enter AR flow', async ({ page }) => {
+    test('new scenario creation completes Enter AR flow @pr', async ({
+      page,
+    }) => {
       // Why this test matters: Verifies the complete happy path for NEW scenario
       // creation - user selects folder with no scenarios, enters a name, and
       // proceeds to AR mode. This was a reported pain point in user feedback.
@@ -513,7 +515,7 @@ test.describe('With Permissions Granted', () => {
 }); // End of 'With Permissions Granted' parent describe block
 
 test.describe('D5: read folder is optional for Enter AR', () => {
-  test('Enter AR enables without opening a folder; folder section collapsed by default', async ({
+  test('Enter AR enables without opening a folder; folder section collapsed by default @pr', async ({
     page,
   }) => {
     // Why this test matters: D5 (2026-06-05 recorder setup UX) makes the read

@@ -117,10 +117,14 @@ export interface EditorTerrain {
   readonly osm: GlobeOsmOverlay;
   /** The heights' sources, then the map's. */
   readonly credits: readonly EditorCredit[];
-  /** The relief's height source (its `{z}/{x}/{y}` template and the zoom
-   *  it reads heights at): what the buildings stand on, so they meet the
-   *  drawn ground. */
-  readonly heights: { readonly url: string; readonly globalZoom: number };
+  /** The relief's height source (its `{z}/{x}/{y}` template, the zoom it
+   *  covers the planet at and the deepest it draws where the source has
+   *  it): what the buildings stand on, so they meet the drawn ground. */
+  readonly heights: {
+    readonly url: string;
+    readonly globalZoom: number;
+    readonly maxZoom: number;
+  };
   /** The drawn ground (m over the ellipsoid) at a latitude and longitude
    *  in radians, null where none is loaded. */
   groundAt(latRad: number, lonRad: number): number | null;
@@ -217,7 +221,11 @@ export function createEditorTerrain(input: {
     worldFromEcef,
     osm,
     credits: [...reliefCredits(source), osm.credit],
-    heights: { url: source.url, globalZoom: source.globalZoom },
+    heights: {
+      url: source.url,
+      globalZoom: source.globalZoom,
+      maxZoom: source.maxZoom,
+    },
     groundAt,
     update(camera, renderer, nowMs) {
       group.updateMatrixWorld(true);

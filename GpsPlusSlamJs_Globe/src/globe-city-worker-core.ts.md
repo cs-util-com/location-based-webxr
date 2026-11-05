@@ -26,16 +26,24 @@ filed follow-up.
   - `userAgent`: how the app names itself to the Overpass operators;
   - `now` (default `performance.now`): the clock of `buildMs`.
 - `handle(data)` takes the page's messages:
-  - `{ kind: "load", id, target, zoom, heightsUrl?, firstRings? }`: stops
-    the load before and starts `loadCityData` for `target` on
-    `cityHeights(zoom, heightsUrl ?? TERRARIUM_URL_TEMPLATE)`;
+  - `{ kind: "load", id, target, zoom, deepZoom?, heightsUrl?, firstRings? }`:
+    stops the load before and starts `loadCityData` for `target` on
+    `cityHeights(zoom, heightsUrl ?? TERRARIUM_URL_TEMPLATE)`. With a
+    `deepZoom` above `zoom` it first asks for every height tile of the
+    window at `deepZoom` (the first alone, then the rest together, through
+    the caching fetch the load then reuses, so they are its cache hits)
+    and plans on `deepZoom` only when every one answers 200: the relief
+    draws a missing deep tile from its global zoom, so the city reads the
+    global zoom everywhere rather than stand on a patchwork. The lab's
+    no-build copy sends no `deepZoom` and reads the load's zoom;
   - `{ kind: "abort", id }`: stops that load, if it is the current one;
   - anything else is ignored.
 - Replies, each with the load's `id`:
   - `progress` (`counts`, `progress`, `landing`);
   - `city` with `ok: true`, `stage`, `buildings`, `trees`, `roads`,
     `counts` (`features`, `tiles`, `missingTiles`, `volumes`, `barriers`,
-    `trees`, `roads`, `buildMs`) and `groundM`, the buildings' and roads'
+    `trees`, `roads`, `buildMs`, `heightsZoom`: the zoom the heights were
+    read at) and `groundM`, the buildings' and roads'
     buffers transferred (each once);
   - `settled` (every job tried once), then `finished` (after the retries);
   - `city` with `ok: false` and a `message` for a load that ended without
@@ -44,7 +52,12 @@ filed follow-up.
 ## Invariants & assumptions
 
 - One load at a time; a superseded or aborted load's late replies are
-  dropped, and a load superseded while the store opened never starts.
+  dropped, and a load superseded while the store opened, or while its
+  deep tiles were asked for (those requests are called off), never starts.
+- The deep probe costs requests: the city's window holds 9-25 height tiles
+  at zoom 14 (16 at Munich and Bern, 25 at Oslo, 9 at Quito; `cityDataPlan`,
+  counted 2026-11-04) against 2-4 at zoom 12, each a cache hit on the next
+  visit; a source without the deep zoom here costs one request.
 - Bad input is answered, never thrown: a target that is not finite, or a
   zoom or template `cityHeights` refuses, replies `city` `ok: false` and
   `finished` `invalid-target`; a load that throws replies `city`
@@ -71,6 +84,9 @@ self.onmessage = (event) => core.handle(event.data);
   the store): a load on the relief's heights replying progress, city,
   settled and finished with each buffer transferred once; supersession and
   the dropped late replies; the store opened once; an abort of the named
-  load only; a load superseded while the store opened; a load without a
+  load only; a load superseded while the store opened; the deep zoom read
+  where every deep tile answers, the global one where one is missing (404)
+  or fails (first or last), the probe called off on abort, a deep zoom at
+  the global one asking nothing and one above 15 refused; a load without a
   city saying why; a bad target, a bad zoom and a throwing load answered;
   other messages ignored.

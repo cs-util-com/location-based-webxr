@@ -34,7 +34,7 @@ test.describe('Toast', () => {
     await waitForTestHooks(page);
   });
 
-  test('appears with its message, announces politely, and is really visible', async ({
+  test('appears with its message, announces politely, and is really visible @pr', async ({
     page,
   }) => {
     await page.evaluate(() => {
@@ -65,7 +65,7 @@ test.describe('Toast', () => {
     expect(box.height).toBeGreaterThan(0);
   });
 
-  test('mounts inside the #app overlay root, so it composites over AR', async ({
+  test('mounts inside the #app overlay root, so it composites over AR @pr', async ({
     page,
   }) => {
     // The 2026-06-16 D4 regression in its real form: under WebXR DOM Overlay
@@ -86,7 +86,7 @@ test.describe('Toast', () => {
     expect(insideApp).toBe(true);
   });
 
-  test('goes away on its own, against a real clock', async ({ page }) => {
+  test('goes away on its own, against a real clock @pr', async ({ page }) => {
     // The unit suite drives this with fake timers, which cannot show that the
     // timer is armed against the real event loop at all.
     //

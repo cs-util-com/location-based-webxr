@@ -1,7 +1,8 @@
 /**
  * The globe city's worker, as a core an app's worker shell wires to the
  * Osm library: one load at a time, the library's `loadCityData` for a
- * place on the relief's own heights, `buildCity` on each delivery, and
+ * place on the relief's own heights (at its deep zoom where the source
+ * has every tile there), `buildCity` on each delivery, and
  * the replies `globe-city.ts` reads. The library is handed in (`osm`), so
  * this package needs no dependency on it, and the core runs under a unit
  * test without a worker. The design system's globe lab keeps its own
@@ -56,7 +57,7 @@ export interface CityWorkerOsm {
   cityDataPlan(
     target: { lat: number; lng: number },
     options: { heights: CityHeightsSpec },
-  ): unknown;
+  ): { readonly heightUrls: readonly string[] };
   createCityTileSource(store: never, options: { userAgent: string }): unknown;
   createCachingTileFetch(options: { store: never }): unknown;
   browserPngDecoder(): unknown;
@@ -130,10 +131,37 @@ function noCityMessage(report: Awaited<CityWorkerLoad["finished"]>): string {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+/**
+ * Whether every one of `urls` answers 200 through `fetchTile`: the first
+ * alone (a source without the deep zoom here costs one request), then the
+ * rest together. A failed request reads as a missing tile.
+ */
+async function answersEverywhere(
+  urls: readonly string[],
+  fetchTile: typeof fetch,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const answers = async (url: string) => {
+    try {
+      const response = await fetchTile(url, { signal });
+      // The caching fetch keeps its own copy; this body is not read.
+      void response.body?.cancel().catch(() => undefined);
+      return response.status === 200;
+    } catch {
+      return false;
+    }
+  };
+  const [first, ...rest] = urls;
+  if (first === undefined || !(await answers(first))) return false;
+  return (await Promise.all(rest.map(answers))).every(Boolean);
+}
+
 interface LoadMessage {
   readonly id: unknown;
   readonly target: { lat: number; lng: number };
   readonly zoom: number;
+  /** The relief's deepest zoom, read where the source has it all. */
+  readonly deepZoom?: number;
   readonly heightsUrl?: string;
   readonly firstRings?: number;
 }
@@ -145,22 +173,78 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
   };
   const now = deps.now ?? (() => performance.now());
   let store: Promise<unknown> | null = null;
-  let current: { id: unknown; load: CityWorkerLoad | null } | null = null;
+  let current: {
+    id: unknown;
+    load: CityWorkerLoad | null;
+    /** Calls off the deep heights' probe. */
+    probe: AbortController;
+  } | null = null;
+  const stopCurrent = () => {
+    current?.probe.abort();
+    current?.load?.abort();
+  };
+
+  /**
+   * The plan on the deep heights where every tile of the window answers
+   * there, else on `heights`; null when the load was stopped meanwhile.
+   */
+  const planOn = async (
+    id: unknown,
+    target: { lat: number; lng: number },
+    heights: CityHeightsSpec,
+    deep: CityHeightsSpec | null,
+    heightFetch: typeof fetch,
+  ) => {
+    if (deep !== null) {
+      const deepPlan = osm.cityDataPlan(target, { heights: deep });
+      const signal = current?.probe.signal;
+      if (signal === undefined) return null;
+      const all = await answersEverywhere(
+        deepPlan.heightUrls,
+        heightFetch,
+        signal,
+      );
+      if (current?.id !== id) return null; // stopped while it was asked
+      if (all) return { plan: deepPlan, zoom: deep.zoom };
+    }
+    return { plan: osm.cityDataPlan(target, { heights }), zoom: heights.zoom };
+  };
+
+  /**
+   * The store, the heights' fetch and the plan for load `id`; null when it
+   * was stopped meanwhile. One caching fetch serves the probe and the
+   * load: the probe's tiles are the load's cache hits.
+   */
+  const prepare = async (
+    id: unknown,
+    target: { lat: number; lng: number },
+    heights: CityHeightsSpec,
+    deep: CityHeightsSpec | null,
+  ) => {
+    store ??= deps.openStore();
+    const opened = (await store) as never;
+    if (current?.id !== id) return null; // superseded while the store opened
+    const heightFetch = osm.createCachingTileFetch({
+      store: opened,
+    }) as typeof fetch;
+    const planned = await planOn(id, target, heights, deep, heightFetch);
+    return planned === null ? null : { opened, heightFetch, ...planned };
+  };
 
   const start = async (
     id: unknown,
     target: { lat: number; lng: number },
     heights: CityHeightsSpec,
+    deep: CityHeightsSpec | null,
     firstRings: number,
   ) => {
-    store ??= deps.openStore();
-    const opened = (await store) as never;
-    if (current?.id !== id) return; // superseded while the store opened
-    const plan = osm.cityDataPlan(target, { heights }) as never;
+    const planned = await prepare(id, target, heights, deep);
+    if (planned === null) return;
+    const { opened, heightFetch } = planned;
     let built = false;
-    const load = osm.loadCityData(plan, {
+    const load = osm.loadCityData(planned.plan as never, {
       source: osm.createCityTileSource(opened, { userAgent }) as never,
-      heightFetch: osm.createCachingTileFetch({ store: opened }) as never,
+      heightFetch: heightFetch as never,
       decodePng: osm.browserPngDecoder() as never,
       firstRings,
       onProgress: (counts, progress, landing) => {
@@ -197,6 +281,7 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
               trees: city.trees.length,
               roads: city.roadCount,
               buildMs: Math.round(now() - startedAt),
+              heightsZoom: planned.zoom,
             },
             groundM: data.groundM,
           },
@@ -230,28 +315,35 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
   };
 
   const load = (message: LoadMessage) => {
-    const { id, target, zoom, heightsUrl, firstRings } = message;
-    current?.load?.abort();
-    current = { id, load: null };
+    const { id, target, zoom, deepZoom, heightsUrl, firstRings } = message;
+    stopCurrent();
+    current = { id, load: null, probe: new AbortController() };
     let heights: CityHeightsSpec;
+    let deep: CityHeightsSpec | null = null;
     try {
       if (!(Number.isFinite(target?.lat) && Number.isFinite(target?.lng))) {
         throw new RangeError(
           `a city needs a finite target, got ${JSON.stringify(target)}`,
         );
       }
-      heights = cityHeights(zoom, heightsUrl ?? osm.TERRARIUM_URL_TEMPLATE);
+      const url = heightsUrl ?? osm.TERRARIUM_URL_TEMPLATE;
+      heights = cityHeights(zoom, url);
+      if (deepZoom !== undefined && deepZoom > zoom) {
+        deep = cityHeights(deepZoom, url);
+      }
     } catch (error) {
       current = null;
       post({ id, kind: "city", ok: false, message: messageOf(error) }, []);
       post({ id, kind: "finished", outcome: "invalid-target" }, []);
       return;
     }
-    start(id, target, heights, firstRings ?? 1).catch((error: unknown) => {
-      if (current?.id !== id) return;
-      post({ id, kind: "city", ok: false, message: messageOf(error) }, []);
-      post({ id, kind: "finished", outcome: "settled" }, []);
-    });
+    start(id, target, heights, deep, firstRings ?? 1).catch(
+      (error: unknown) => {
+        if (current?.id !== id) return;
+        post({ id, kind: "city", ok: false, message: messageOf(error) }, []);
+        post({ id, kind: "finished", outcome: "settled" }, []);
+      },
+    );
   };
 
   return {
@@ -260,7 +352,7 @@ export function createCityWorkerCore(deps: CityWorkerDeps): CityWorkerCore {
       const message = data as { kind?: unknown; id?: unknown };
       if (message.kind === "abort") {
         if (current !== null && current.id === message.id) {
-          current.load?.abort();
+          stopCurrent();
           current = null;
         }
         return;

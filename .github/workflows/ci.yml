@@ -1,17 +1,41 @@
 name: CI
 
+# Two browser tiers (E2E_TIER, scripts/e2e/tier.mjs): a pull request runs the
+# per-PR tier, the tests tagged `@pr` plus every test of a spec file it adds or
+# changes. The full set runs on a push to `main`, when dispatched (by hand, or
+# nightly on the newest rNNN branch by nightly-full.yml), and on a pull request
+# that carries the `full-ci` label. tests/repo-config/ci-jobs.test.js holds the
+# triggers and the tier choice.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Browser tier: full (every test) or pr (the @pr tests)"
+        type: choice
+        options: [full, pr]
+        default: full
 
 permissions:
   contents: read
 
+# A newer push to a pull request's branch cancels its superseded run. Pushes to
+# `main` are releases and every one of them runs to the end. Adding any label
+# but `full-ci` starts a run that skips every job; its own group (the run id)
+# keeps it from cancelling the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && format('-{0}', github.run_id) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   deadcode:
     name: Dead code (knip)
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'full-ci' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -38,13 +62,101 @@ jobs:
       # Whole-workspace knip pass. Runs as its own job so dead-code
       # enforcement is independent of the test suite (no framework build, no
       # Playwright browsers) and a finding is attributed to this step rather
-      # than masquerading as a Starter test failure.
+      # than masquerading as a Starter test failure. It is also the root
+      # cascade's `check:deadcode` stage, which no job below repeats.
       - name: Check for dead code
         run: pnpm run check:deadcode
 
+  # The root cascade (`pnpm test`) split into parallel jobs (test-suite
+  # pruning plan 2026-11-04, T-M1): one serial job took 3.4-4.1 h, and a red
+  # stage hid every package after it. Each job runs the SAME package gates a
+  # developer runs (the root's `test:<package>` scripts), so every stage,
+  # command and budget is unchanged; only the order and the machine differ.
+  # The Tour Viewer's gate runs without its browser stage, and its browser
+  # specs run as five lanes of `GpsPlusSlamJs_TourViewer/playwright-tests/
+  # e2e-plan.js` (`E2E_LANE`). `tests/repo-config/ci-jobs.test.js` holds this
+  # matrix to the cascade: every root stage in exactly one job, every lane in
+  # exactly one job, a time limit on each.
   test:
-    name: Test (all workspaces)
+    name: ${{ matrix.job }}
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'full-ci' }}
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    env:
+      E2E_LANE: ${{ matrix.lane }}
+      # The full set on a dispatch (its input), on a push to main and on a
+      # pull request labelled full-ci; the per-PR tier otherwise.
+      E2E_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || github.event_name == 'push' && 'full' || contains(github.event.pull_request.labels.*.name, 'full-ci') && 'full' || 'pr' }}
+      # A pull request's base: the tier runs every spec file the branch
+      # changed against it whole. Empty outside a pull request.
+      E2E_TIER_BASE: ${{ github.event.pull_request.base.sha }}
+      GATE_SKIP_BROWSER_STAGES: ${{ matrix.skip_browser }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # About 7 min (CI runs of 2026-11-04).
+          - job: libraries
+            scripts: test:repo-config test:framework test:osm test:globe test:editor-kit test:site-worker
+            timeout: 30
+          # About 11.5 min, nearly all of it e2e.
+          - job: design-system
+            scripts: test:design-system
+            browsers: true
+            timeout: 40
+          # About 10.5 min.
+          - job: apps
+            scripts: test:recorder test:starter test:example test:qr-demo test:landing test:physics test:wayfinding
+            browsers: true
+            report: GpsPlusSlamJs_RecorderApp/test-results/
+            timeout: 40
+          # About 33 min, the longest job until the Tour lanes are measured.
+          - job: osm-demo
+            scripts: test:osm-demo
+            browsers: true
+            timeout: 75
+          # The Tour Viewer's builds, static checks and unit tests, about 5 min.
+          - job: tour-static-unit
+            scripts: test:tour
+            skip_browser: "1"
+            timeout: 30
+          # The Tour Viewer's browser specs: the page tests (about 28 min at
+          # one worker) and four 3D lanes (about 22-30 min each, estimated).
+          - job: tour-dom
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: dom
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 60
+          - job: tour-webgl-1
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: webgl-1
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 75
+          - job: tour-webgl-2
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: webgl-2
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 75
+          - job: tour-webgl-3
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: webgl-3
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 75
+          - job: tour-webgl-4
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: webgl-4
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 75
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -63,6 +175,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The checkout holds only the merge commit; the tier diffs against the
+      # base commit's tree, so that one commit is fetched too.
+      - name: Fetch the pull request's base
+        if: ${{ env.E2E_TIER_BASE != '' }}
+        run: git fetch --no-tags --depth=1 origin "$E2E_TIER_BASE"
+
       # Recorder + example resolve `gps-plus-slam-app-framework` via the
       # package's `exports` -> `./dist/...`, so the framework must be built
       # before its consumers run their tests.
@@ -70,21 +188,28 @@ jobs:
         run: pnpm run build:framework
 
       - name: Install Playwright browsers
+        if: ${{ matrix.browsers }}
         working-directory: GpsPlusSlamJs_RecorderApp
         run: pnpm exec playwright install --with-deps chromium
 
-      # Root `pnpm test` runs: repo-config + framework + recorder (core + e2e)
-      # + anchor-starter + minimal example. This is the single source of truth,
-      # matching the command developers run locally. (knip also runs here
-      # transitively via the starter gate, but the dedicated `deadcode` job
-      # above is the authoritative gate.)
-      - name: Run full test suite
-        run: pnpm test
+      # Every script runs even after a red one, so one job reports every
+      # package it holds; the job fails if any of them failed.
+      - name: Run ${{ matrix.scripts }}
+        env:
+          SCRIPTS: ${{ matrix.scripts }}
+          SCRIPT_DIR: ${{ matrix.dir || '.' }}
+        run: |
+          rc=0
+          for script in $SCRIPTS; do
+            echo "::notice::running $script in $SCRIPT_DIR"
+            pnpm --dir "$SCRIPT_DIR" run "$script" || rc=1
+          done
+          exit $rc
 
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.report }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
-          path: GpsPlusSlamJs_RecorderApp/test-results/
+          name: playwright-report-${{ matrix.job }}
+          path: ${{ matrix.report }}
           retention-days: 14

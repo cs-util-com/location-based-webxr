@@ -106,9 +106,12 @@ interface Fakes {
   cityOptions: {
     parent: unknown;
     heightsUrl?: string;
+    deepHeightsZoom?: number;
     createWorker(): unknown;
   }[];
   cityLoads: { target: unknown; zoom: number; fresh: boolean }[];
+  /** How often a city was told to stop its load. */
+  cityAborts: number;
   /** The share of the ground the relief mount reports (1: the relief
    *  carries all of it, 0: the globe's surface). */
   reliefShare: number;
@@ -173,6 +176,7 @@ const fakes = vi.hoisted((): Fakes => ({
   cloudsOptions: null,
   cityOptions: [],
   cityLoads: [],
+  cityAborts: 0,
 }));
 
 vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
@@ -211,6 +215,9 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
           fade = value;
         },
         state: () => ({ phase: "loading", fade, shown: 0, load: null }),
+        abort() {
+          fakes.cityAborts += 1;
+        },
         dispose() {},
       };
     },
@@ -437,6 +444,7 @@ vi.mock("./editor3d-terrain.js", async () => {
         heights: {
           url: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
           globalZoom: 12,
+          maxZoom: 14,
         },
         osm: {
           stats: () => ({}),
@@ -669,6 +677,7 @@ beforeEach(() => {
   fakes.cloudsOptions = null;
   fakes.cityOptions = [];
   fakes.cityLoads = [];
+  fakes.cityAborts = 0;
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1207,6 +1216,10 @@ describe("openGlobeEditor's wiring", () => {
       expect.objectContaining({
         parent: fakes.view?.globe.group,
         heightsUrl: "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+        // The relief draws zoom 14 where Mapterhorn has it: the buildings
+        // read their heights there too (a building on zoom 12 heights
+        // stood metres off the drawn ground).
+        deepHeightsZoom: 14,
       }),
     ]);
     for (const options of fakes.cityOptions) options.createWorker();
@@ -1230,8 +1243,63 @@ describe("openGlobeEditor's wiring", () => {
       reliefGroundM: DRAWN_M,
     });
     view.setBuildings?.(false);
+    expect(fakes.cityAborts).toBe(1); // the running load is stopped
     expect(view.stats().city?.shown).toBe(false);
     expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
+    vi.stubGlobal("Worker", noWorker);
+  });
+
+  // Why: a new tour has no centre; the view opens over a stand-in place
+  // in the creator's part of the world, where no buildings may load (it
+  // is not the tour). Once the tour gets its first placed station the
+  // buildings are mounted there, hidden still if the view hid them.
+  it("mounts the buildings only at a real tour centre, once the tour has one", async () => {
+    vi.stubGlobal("Worker", class {});
+    fakes.manifest = { stations: [] };
+    let listener: () => void = () => undefined;
+    let tourDocument = {};
+    const store = {
+      getState: () => ({
+        tourDocument,
+        editorView: { selected: null, modelFocus: null, modelPick: null },
+      }),
+      subscribe: (next: () => void) => {
+        listener = next;
+        return () => undefined;
+      },
+      dispatch: () => undefined,
+    };
+    open = await openGlobeEditor(
+      { ...deps(), store: store as unknown as Editor3dDeps["store"] },
+      {
+        ...readGlobeSwitch(""),
+        hidePx: 4,
+        crowdPx: 16,
+      },
+    );
+    const view = open;
+    expect(fakes.cityOptions).toEqual([]);
+    expect(view.stats().city).toBeNull();
+    view.setBuildings?.(false);
+    // An edit that leaves the tour without a centre mounts nothing.
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toEqual([]);
+    tourAt(0);
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toHaveLength(1);
+    expect(view.stats().city?.shown).toBe(false);
+    view.setBuildings?.(true);
+    view.setDistance(200);
+    frameAt(16);
+    expect(fakes.cityLoads.at(-1)).toMatchObject({
+      target: { lat: MUNICH.lat, lng: MUNICH.lon },
+    });
+    // A later edit keeps the one city.
+    tourDocument = {};
+    listener();
+    expect(fakes.cityOptions).toHaveLength(1);
     vi.stubGlobal("Worker", noWorker);
   });
 

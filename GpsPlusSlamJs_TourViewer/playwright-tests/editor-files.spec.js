@@ -176,7 +176,7 @@ const ADDED_ELSEWHERE = "pin-elsewhere";
 // the draft's writes (E2c plan review #12).
 // ---------------------------------------------------------------------------
 
-test("edits survive a closed tab: the same file reopened offers them, and Restore brings them back", async ({
+test("edits survive a closed tab: the same file reopened offers them, and Restore brings them back @pr", async ({
   page,
   context,
 }) => {

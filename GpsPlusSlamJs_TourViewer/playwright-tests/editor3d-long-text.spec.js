@@ -8,6 +8,7 @@ import {
   GLOBE_VIEW,
   answerHosts,
   noApproach,
+  noClouds,
   openZip,
 } from "./editor3d-fixture.js";
 
@@ -75,6 +76,12 @@ async function openEssay(page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
   await noApproach(page);
+  // Not about the clouds: without them the globe draws about 6 frames a
+  // second here rather than 1.4, and a click waits about 1.8 s rather
+  // than 9-10 s (`noClouds`). With them a CI runner ran this spec's
+  // 5 s waits out: the inspector's width after "Wider", the imported
+  // voice's file name.
+  await noClouds(page);
   await page.goto(GLOBE_VIEW);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "long-text-tour.zip");
@@ -305,7 +312,7 @@ async function expectWriterLayout(page, size) {
   expect(phone.y + phone.height, at).toBeLessThanOrEqual(view.y + view.height);
 }
 
-test("words typed just before Ctrl+S are in the saved tour", async ({
+test("words typed just before Ctrl+S are in the saved tour @pr", async ({
   page,
 }) => {
   // Why: the writer writes its text into the tour only after a pause in

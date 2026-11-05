@@ -26,7 +26,7 @@
 import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
-import { cityHeights } from "./globe-city-heights.js";
+import { CITY_HEIGHTS_ZOOM, cityHeights } from "./globe-city-heights.js";
 import { ecefFromCityAt } from "./globe-frame.js";
 import type { LatLng } from "./globe-target.js";
 
@@ -95,6 +95,14 @@ export interface GlobeCityOptions {
    * reads AWS Terrarium without it. RangeError for one it cannot read.
    */
   heightsUrl?: string;
+  /**
+   * The deepest zoom the relief draws from `heightsUrl` where the source
+   * has it (Mapterhorn: 14); the worker reads the city's heights there
+   * when every tile of its window answers, else at the load's zoom, so the
+   * city stands on the ground drawn under it. RangeError for one that is
+   * not an integer 1-15; without it the load's zoom is read.
+   */
+  deepHeightsZoom?: number;
   /** The clock of the arrival fade (ms; default `performance.now`). */
   now?: () => number;
 }
@@ -155,6 +163,14 @@ export interface GlobeCity {
     target: LatLng,
     options: { zoom: number; fresh?: boolean },
   ): GlobeCityLoadHandle;
+  /**
+   * Stops the current load wherever it is: its first pass, its outer rings
+   * or its retries. The worker is told, nothing it still sends is built,
+   * and the place is loaded again when it is next asked for. A city
+   * already drawn stays; a load still running leaves the phase "idle".
+   * Does nothing before a load or after one ended.
+   */
+  abort(): void;
   /** 0 hides the city, 1 draws it whole; between, a dithered share. */
   setFade(value: number): void;
   state(): GlobeCityState;
@@ -171,6 +187,8 @@ interface CityLoad {
   frozen: number;
   outcome: string | null;
   ended: boolean;
+  /** Stopped by an abort: nothing more of it is built or reused. */
+  cut: boolean;
   stages: string[];
   resolve: (report: GlobeCityLoadReport) => void;
   finished: Promise<GlobeCityLoadReport>;
@@ -233,6 +251,14 @@ function placeRoad(o: THREE.Object3D, liftM: number, offset: number): void {
   }
 }
 
+/** A heights zoom checked: an integer 1-15 (RangeError naming `what`). */
+function checkZoom(zoom: number, what: string): void {
+  const { min, max } = CITY_HEIGHTS_ZOOM;
+  if (!(Number.isInteger(zoom) && zoom >= min && zoom <= max)) {
+    throw new RangeError(`${what} (${min}-${max}), got ${zoom}`);
+  }
+}
+
 /** The target and zoom checked (RangeError). */
 function checkLoad(target: LatLng, zoom: number): void {
   if (!(Number.isFinite(target?.lat) && Number.isFinite(target?.lng))) {
@@ -240,9 +266,7 @@ function checkLoad(target: LatLng, zoom: number): void {
       `a city needs a finite target, got ${target?.lat},${target?.lng}`,
     );
   }
-  if (!(Number.isInteger(zoom) && zoom >= 1 && zoom <= 15)) {
-    throw new RangeError(`a city needs the relief's zoom, got ${zoom}`);
-  }
+  checkZoom(zoom, "a city needs the relief's zoom");
 }
 
 /** A new load's state, its `finished` promise and its resolver. */
@@ -259,6 +283,7 @@ function newLoad(id: number, target: LatLng): CityLoad {
     frozen: 0,
     outcome: null,
     ended: false,
+    cut: false,
     stages: [],
     resolve,
     finished,
@@ -290,9 +315,13 @@ export function createGlobeCity({
   roadLiftM = 2,
   roadOffset = 0,
   heightsUrl,
+  deepHeightsZoom,
   now = () => performance.now(),
 }: GlobeCityOptions): GlobeCity {
   if (heightsUrl !== undefined) cityHeights(1, heightsUrl);
+  if (deepHeightsZoom !== undefined) {
+    checkZoom(deepHeightsZoom, "a city needs a deep heights zoom");
+  }
   const root = new THREE.Group();
   root.name = "globe-city";
   root.matrixAutoUpdate = false;
@@ -361,8 +390,9 @@ export function createGlobeCity({
       fail(String(error));
       return;
     }
-    // A newer load may have started while the module loaded.
-    if (reply.id !== requestId) return;
+    // A newer load may have started, or this one been aborted, while the
+    // module loaded.
+    if (reply.id !== requestId || load.cut) return;
     const firstOfPlace = drawnKey !== load.key;
     drawnKey = load.key;
     clear(lib);
@@ -416,7 +446,8 @@ export function createGlobeCity({
 
   const onMessage = (event: MessageEvent) => {
     const reply = event.data as CityReply | null | undefined;
-    if (reply?.id !== requestId || current === null) return; // superseded
+    // Superseded, or aborted after the worker posted this.
+    if (reply?.id !== requestId || current === null || current.cut) return;
     const load = current;
     if (reply.kind === "progress") return onProgress(reply, load);
     if (reply.kind === "settled" || reply.kind === "finished") {
@@ -460,9 +491,25 @@ export function createGlobeCity({
       id: requestId,
       target: at,
       zoom,
+      deepZoom: deepHeightsZoom,
       heightsUrl,
     });
     return current;
+  };
+
+  /**
+   * Stops `load`: its outcome reads "aborted" (a first pass that settled
+   * keeps its promise's report), and the worker is told if it is the
+   * current load.
+   */
+  const cut = (load: CityLoad) => {
+    if (load.cut || load.ended) return;
+    load.cut = true;
+    settle(load, "aborted");
+    load.outcome = "aborted";
+    if (load.id !== requestId) return;
+    worker?.postMessage({ kind: "abort", id: load.id });
+    if (state.phase === "loading") state = { ...state, phase: "idle" };
   };
 
   /** The prefetch-shaped handle a flight paces on. */
@@ -473,12 +520,10 @@ export function createGlobeCity({
     },
     finished: load.finished,
     stats: () => ({ counts: load.counts, inFlight: 0, bytesStored: 0 }),
+    // A flight stops pacing on a load it no longer waits for; once the
+    // first pass settled, the outer rings are the city's to stop.
     abort: () => {
-      if (load.outcome !== null) return;
-      settle(load, "aborted");
-      if (worker && load.id === requestId) {
-        worker.postMessage({ kind: "abort", id: load.id });
-      }
+      if (load.outcome === null) cut(load);
     },
   });
 
@@ -500,6 +545,9 @@ export function createGlobeCity({
           ? current
           : startLoad(target, zoom);
       return handleOf(load);
+    },
+    abort() {
+      if (current !== null) cut(current);
     },
     setFade(value) {
       if (!(value >= 0 && value <= 1)) {

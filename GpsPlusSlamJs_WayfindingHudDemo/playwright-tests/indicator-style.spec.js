@@ -24,7 +24,7 @@ import { countAccentPixels, countInkPixels } from "./count-accent-pixels.js";
  */
 
 test.describe("Wayfinding HUD demo — image-indicator toggle", () => {
-  test("toggling switches the live HUD between procedural and image indicators", async ({
+  test("toggling switches the live HUD between procedural and image indicators @pr", async ({
     page,
   }) => {
     const errors = [];

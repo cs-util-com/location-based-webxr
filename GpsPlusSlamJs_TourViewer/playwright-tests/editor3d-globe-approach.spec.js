@@ -353,7 +353,7 @@ test("the load ends after the line's done-hold while tiles are still held", asyn
   await expect.poll(async () => (await view3d(page)).stations).toBe(3);
 });
 
-test("the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring", async ({
+test("the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring @pr", async ({
   page,
 }) => {
   // Why: the meteor ends close to the tour at its landing angle

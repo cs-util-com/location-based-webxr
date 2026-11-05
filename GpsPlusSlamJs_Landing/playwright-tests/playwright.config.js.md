@@ -15,7 +15,11 @@ decision, 2026-07-12).
 - Chromium-only (matches the sibling apps); dev server on the landing's
   dedicated port **5182** via `webServer` (`pnpm run dev -- --port 5182`),
   reused locally, fresh in CI.
-- CI: 2 retries, 1 worker, github + json reporters; local: list + html.
+- CI: 1 retry in the per-PR tier and 2 in the full set, 1 worker, github +
+  json reporters; local: 1 retry, list + html.
+- The browser tier (`grep`): by default the `@pr` tests plus every changed
+  spec file, `E2E_TIER=full` every test
+  ([`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)).
 - `PLAYWRIGHT_CAPTURE=1` forces trace/screenshot/video capture.
 - Chromium is launched with `browserLaunchArgs(process.env)` from `scripts/e2e/browser-launch.mjs`: `--in-process-gpu` when run-stage lowered the browser stage (Windows), so the WebGL work inherits the lowered priority; nothing otherwise.
 

@@ -12,6 +12,16 @@
   here. Dependents run with `GATE_SKIP_BROWSER_STAGES` set, so they pay
   for their builds, static checks and unit tests but not for a browser.
 
+  **The browser stages run a tier** ([`tier.mjs`](../e2e/tier.mjs.md)):
+  by default (`E2E_TIER` unset or `pr`) the tests tagged `@pr` plus
+  every spec file changed against `--ref`, whole; `E2E_TIER=full` runs
+  every test. This holds for the milestone browser run
+  (`test:changed --ref <milestone base>`) and for a package's own
+  `pnpm test`; CI runs the same tier on every PR and the full set nightly
+  (on the newest rNNN branch), on dispatch and on a `full-ci` label. A
+  green browser run therefore says nothing about an untagged test of an
+  unchanged spec. Tier runs record no timing row.
+
   Scope is `location-based-webxr` only — the primary repo’s projects have
   no equivalent and keep their own full gate.
 - Public API (CLI): `pnpm run test:changed [--all] [--ref <git-ref>]
@@ -30,8 +40,10 @@
     executes the decision.
   - The changed packages' full gates get the ref as `GATE_CHANGED_REF`, which
     the Tour Viewer's e2e stage (`scripts/e2e/run-projects.mjs`) reads to
-    skip the specs of an area the change cannot reach. The full cascade and
-    CI set no ref, so they run every spec.
+    skip the specs of an area the change cannot reach, and the browser tier
+    reads to run every changed spec file whole. The full cascade and CI set
+    no such ref (CI gives the tier the pull request's base instead,
+    `E2E_TIER_BASE`), so they run every spec, in their tier.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e

@@ -59,7 +59,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("streams the gallery from range requests without downloading the whole archive", async ({
+test("streams the gallery from range requests without downloading the whole archive @pr", async ({
   page,
   request,
 }) => {

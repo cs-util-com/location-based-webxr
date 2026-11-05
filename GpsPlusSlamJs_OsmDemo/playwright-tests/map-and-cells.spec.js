@@ -111,7 +111,7 @@ test.afterEach(async ({}, testInfo) => {
 });
 
 test.describe("the affordance map", () => {
-  test("draws the cells, the extent, the outlines, the popup — and redraws on a category switch", async () => {
+  test("draws the cells, the extent, the outlines, the popup — and redraws on a category switch @pr", async () => {
     // FIVE BEHAVIOURS, ONE BOOT, and the plan for this budgeted two tests here.
     // One is enough: the first four are read-only, and the category switch is the
     // only mutation, so it simply goes last. The ordering rule does the work that

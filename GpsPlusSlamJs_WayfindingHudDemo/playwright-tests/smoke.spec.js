@@ -13,7 +13,7 @@ import { test, expect } from "./e2e-test.js";
  */
 
 test.describe("Wayfinding HUD demo — smoke & desktop entry", () => {
-  test("loads the simulator with the real HUD and no console errors", async ({
+  test("loads the simulator with the real HUD and no console errors @pr", async ({
     page,
   }) => {
     const errors = [];
@@ -50,7 +50,9 @@ test.describe("Wayfinding HUD demo — smoke & desktop entry", () => {
     expect(errors).toEqual([]);
   });
 
-  test("dismisses the mode screen on first interaction", async ({ page }) => {
+  test("dismisses the mode screen on first interaction @pr", async ({
+    page,
+  }) => {
     await page.goto("/");
     await expect(page.getByTestId("mode-screen")).toBeVisible();
     // Wait until the simulator booted (status line live) — the dismissal
