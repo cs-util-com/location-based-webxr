@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Process-wide vitest setup file for `gps-plus-slam-app-framework`. Activates
-the `gps-plus-slam-js` library once at the start of the test process so any
+Licence activation for `gps-plus-slam-app-framework` tests. Activates
+the `gps-plus-slam-js` library when imported, so any
 public API (reducers, action creators, selectors, math helpers like
 `calcGpsCoords` / `calcRelativeCoordsInMeters`) is
 callable from framework tests without each test manually constructing a
@@ -11,8 +11,14 @@ store via `createSlamAppStore()` / `createGpsSlamStore({ licenseKey })`.
 
 ## Public API
 
-None — this file is loaded by vitest via
-`config/vitest.config.ts#test.setupFiles` and runs for its side effect only.
+None — it runs for its side effect only. A unit test that reaches a licensed
+export imports it as its FIRST import (`import '../test-setup';`), so the
+library is active before any module under test loads; the bench config
+(`config/vitest.bench.config.ts`) still loads it as a setup file. It is not
+a global unit-test setup any more: the activation costs about 0.1 s per file
+(signature verification), and 22 of the 414 test files need it. A file that
+forgets the import fails loudly with the library's own "license not
+activated" error, so the cause is named in the red.
 
 ## Invariants & assumptions
 
@@ -39,11 +45,10 @@ None — this file is loaded by vitest via
 
 ## Examples
 
-Loaded automatically — no usage by hand. Verification is implicit: every
-gated framework test that previously failed with `license not activated`
-(e.g. `src/utils/fused-path.test.ts`,
-`src/visualization/reference-points.test.ts`,
-`src/state/store-subscribers.test.ts`) now passes.
+`import '../test-setup';` at the top of the test file. Verification is
+implicit: the test files that import it (e.g. `src/utils/fused-path.test.ts`,
+`src/state/store-subscribers.test.ts`, `src/visualization/gps-anchor.test.ts`)
+fail with `license not activated` without it, and pass with it.
 
 ## Tests
 

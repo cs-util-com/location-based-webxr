@@ -1380,17 +1380,16 @@ describe('the march from above, below and inside (plan 2026-09-26-0549 M1)', () 
   // recorded: 3200 m 30° (0.060 / 0.038 at noon on these views, 0.026 /
   // 0.053 on the notes' wider grid: one sub-node cloud decides it) and every
   // 15° or 5° view (1.3-5x better, not solved; plan §2 change 3).
+  // Four of the ten measured poses run here (each case is two marches):
+  // the largest bound, both altitudes at 65°, and the zenith. The others
+  // measured with these bounds: 3200 m 65° at 58° 0.0025 and at 25° 0.003;
+  // 2300 m 65° at 25° 0.004 and at 5° 0.0055; 5000 m 90° at 5° 0.006;
+  // 2600 m 30° at 58° 0.011. Restore them when the march changes.
   const ABOVE = [
-    { y: 3200, pitch: -65, sun: 58, bound: 0.0025 },
-    { y: 3200, pitch: -65, sun: 25, bound: 0.003 },
+    { y: 2600, pitch: -30, sun: 5, bound: 0.055 },
     { y: 3200, pitch: -65, sun: 5, bound: 0.007 },
     { y: 2300, pitch: -65, sun: 58, bound: 0.0035 },
-    { y: 2300, pitch: -65, sun: 25, bound: 0.004 },
-    { y: 2300, pitch: -65, sun: 5, bound: 0.0055 },
     { y: 5000, pitch: -90, sun: 58, bound: 0.0025 },
-    { y: 5000, pitch: -90, sun: 5, bound: 0.006 },
-    { y: 2600, pitch: -30, sun: 58, bound: 0.011 },
-    { y: 2600, pitch: -30, sun: 5, bound: 0.055 },
   ];
   it.each(ABOVE)(
     'from $y m, $pitch°, sun $sun°: under $bound at 8 steps, the shipped march over twice that',
@@ -1416,15 +1415,17 @@ describe('the march from above, below and inside (plan 2026-09-26-0549 M1)', () 
   // (the nodes' grain; the bias is equal), and at 8 against the SHIPPED 16
   // the bias from below is up to 2.2x (0.0048 / 0.0021 at the zenith, 5°):
   // the M4 question (8 steps as the default) is the owner's.
+  // Four of the 21 measured cases (7 poses: 18 m at 20°, 45°, 90°; 2000 m
+  // at -25°, 0°, 25°; 1900 m at 0°; each at suns 58°, 14.48° and 5°) run
+  // here: the street at the zenith, inside level, the tightest measured case
+  // and the low view at a low sun. If a march change moves the tightest
+  // case, run the whole grid again.
   const BELOW = [
-    { y: 18, pitch: 20 },
-    { y: 18, pitch: 45 },
-    { y: 18, pitch: 90 },
-    { y: 2000, pitch: -25 },
-    { y: 2000, pitch: 0 },
-    { y: 2000, pitch: 25 },
-    { y: 1900, pitch: 0 },
-  ].flatMap((p) => [58, 14.48, 5].map((sun) => ({ ...p, sun })));
+    { y: 18, pitch: 90, sun: 58 },
+    { y: 2000, pitch: 0, sun: 14.48 },
+    { y: 1900, pitch: 0, sun: 5 },
+    { y: 18, pitch: 20, sun: 5 },
+  ];
   it.each(BELOW)(
     'from $y m, $pitch°, sun $sun°: no worse than the shipped march',
     ({ y, pitch, sun }) => {

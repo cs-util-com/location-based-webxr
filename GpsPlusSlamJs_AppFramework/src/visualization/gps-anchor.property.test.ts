@@ -14,6 +14,8 @@
  * caught the bug directly. We pair it with the `inverse(M) ∘ M ≈ I`
  * round-trip that underpins the fix.
  */
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fc from 'fast-check';
 import * as THREE from 'three';

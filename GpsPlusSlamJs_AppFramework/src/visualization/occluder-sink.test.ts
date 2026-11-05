@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 /**
  * createOccluderSink — the shared persistent-occluder wiring, lifted from the
  * RecorderApp into the framework (Tour Viewer polish round M5a, DEC-H3) so

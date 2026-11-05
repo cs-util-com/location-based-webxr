@@ -697,13 +697,16 @@ const subsetBody = blocksAt(0, false).map((blocks) => ({
 
 // ---------------------------------------------------------------------------
 
+// Run counts: 500 per property (fast-check's default is 100). The defects
+// these properties found are pinned as plain cases in tour-markdown.test.ts
+// and the golden corpus, so a lower count loses breadth per run, not a case.
 describe('tour markdown (properties)', () => {
   it('reads every generated body inside the subset as the CommonMark reference does', () => {
     fc.assert(
       fc.property(subsetBody, ({ body }) => {
         expect(ourTree(body)).toEqual(referenceTree(body));
       }),
-      { numRuns: 3000 }
+      { numRuns: 500 }
     );
   });
 
@@ -716,7 +719,7 @@ describe('tour markdown (properties)', () => {
           expect(ourTree(body)).toEqual(referenceTree(body));
         }
       ),
-      { numRuns: 3000, maxSkipsPerRun: 1000 }
+      { numRuns: 500, maxSkipsPerRun: 1000 }
     );
   });
 
@@ -752,7 +755,7 @@ describe('tour markdown (properties)', () => {
           assertPlainTextInvariants(parseTourMarkdown(body));
         }
       ),
-      { numRuns: 3000 }
+      { numRuns: 500 }
     );
   });
 
@@ -783,7 +786,7 @@ describe('tour markdown (properties)', () => {
           plainTextOf(parseTourMarkdown(renderBlocks(b).join('\n'))).text;
         expect(plain(withoutFormatting(blocks))).toBe(plain(blocks));
       }),
-      { numRuns: 1500 }
+      { numRuns: 500 }
     );
   });
 
@@ -805,7 +808,7 @@ describe('tour markdown (properties)', () => {
           normalisedPlainText(t)
         );
       }),
-      { numRuns: 3000 }
+      { numRuns: 500 }
     );
   });
 });

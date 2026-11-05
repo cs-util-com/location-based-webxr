@@ -1,3 +1,5 @@
+// Activates the core library's licence before any module under test loads.
+import '../../test-setup';
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
