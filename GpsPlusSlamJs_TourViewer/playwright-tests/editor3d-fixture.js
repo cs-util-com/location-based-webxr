@@ -26,15 +26,20 @@ export const SQUARE_GROUND_M = 515.5;
  * buildings are answered too, for their worker (`answerCityData`):
  * Overpass with `overpass` (an Overpass JSON
  * object, every tile the same; no buildings by default), the heights
- * with the same flat ground. Nothing leaves the machine.
+ * with the same flat ground. `groundM` stands that ground at another
+ * height (m). Nothing leaves the machine.
  * @param {import("@playwright/test").Page} page
- * @param {{ globeAssets?: "refuse" | "serve", overpass?: object }} [options]
+ * @param {{ globeAssets?: "refuse" | "serve", overpass?: object, groundM?: number }} [options]
  */
 export async function answerHosts(
   page,
-  { globeAssets = "refuse", overpass = NO_BUILDINGS } = {},
+  {
+    globeAssets = "refuse",
+    overpass = NO_BUILDINGS,
+    groundM = SQUARE_GROUND_M,
+  } = {},
 ) {
-  const flat = terrariumPng(512, 512, () => SQUARE_GROUND_M);
+  const flat = terrariumPng(512, 512, () => groundM);
   await answerCityData(page, flat, overpass);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
     if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {

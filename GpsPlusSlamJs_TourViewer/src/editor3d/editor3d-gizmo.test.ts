@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { createGizmo } from "./editor3d-gizmo.js";
+import { RING_RENDER_ORDER } from "./editor3d-stations.js";
 import { GIZMO, gizmoLayout, type GizmoSubject } from "./gizmo-maths.js";
 
 const PICTURES = {
@@ -50,6 +51,16 @@ function frame(subject: GizmoSubject, hovered: "move" | "turn" | "dot" | null) {
 }
 
 describe("createGizmo", () => {
+  // Why: the found radius is drawn over the ground without a depth test,
+  // so only the draw order keeps it under the gizmo whose dots sit on it.
+  it("draws every part after the found radius's ring", () => {
+    const gizmo = createGizmo(new THREE.Scene(), PICTURES);
+    const { ring, disc, bar, knob, dots } = gizmo.parts;
+    for (const part of [ring, disc, bar, knob, ...dots]) {
+      expect(part.renderOrder).toBeGreaterThan(RING_RENDER_ORDER);
+    }
+  });
+
   it("draws a station's knob, dots and move disc where the layout has them, without a ring", () => {
     const parent = new THREE.Scene();
     const gizmo = createGizmo(parent, PICTURES);
