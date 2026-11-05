@@ -17,7 +17,7 @@ import {
  * here, and check what a creator sees: a 3D view whose code cannot load is
  * said on a page of its own (`#view3d-failed`), the tour still open behind
  * it; a later open that shows the view takes that page away; a first frame
- * that fails leaves nothing of the view behind; and twenty opens never run
+ * that fails leaves nothing of the view behind; and seventeen opens never run
  * out of the browser's WebGL contexts.
  */
 
@@ -143,10 +143,11 @@ for (const [view, link] of VIEWS) {
 // code squares' shared face texture did, through its dispose listener)
 // keeps it alive too. A creator switching back and forth would reach the
 // browser's limit (16 in Chromium), which then drops the oldest context -
-// the map's markers or the next 3D view among them. Twenty switches must
-// never warn of too many contexts.
+// the map's markers or the next 3D view among them. Seventeen switches
+// must never warn of too many contexts: a leak of one context per open
+// shows from the 16th, and one more keeps a spare.
 for (const [view, link] of VIEWS) {
-  test(`switching to 3D and back twenty times keeps the browser's WebGL contexts free (${view})`, async ({
+  test(`switching to 3D and back seventeen times keeps the browser's WebGL contexts free (${view})`, async ({
     page,
   }) => {
     test.setTimeout(480_000);
@@ -158,17 +159,17 @@ for (const [view, link] of VIEWS) {
       }
     });
     await answerHosts(page);
-    // Twenty opens straight at the tour, the globe's heavy clouds off
+    // The opens straight at the tour, the globe's heavy clouds off
     // (`noClouds`): with them each menu click waits on frames of about
     // 0.7 s here, which ran past the budget on a slower CI runner. The
     // contexts are the renderer's, made and given back per open whatever
-    // the view draws; twenty stays, since fewer than Chromium's 16 could
+    // the view draws; seventeen, since fewer than Chromium's 16 could
     // not show a leak.
     await noApproach(page);
     await noClouds(page);
     await openSample(page, link);
     const button = page.locator("#view-switch");
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 17; i++) {
       await viewCommand(page, "switch");
       await expect(button).toHaveText("2D map", { timeout: 60_000 });
       await viewCommand(page, "switch");

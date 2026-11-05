@@ -347,78 +347,90 @@ test("a section is added by a click on the model, named, flipped and deleted, it
   await expect.poll(async () => (await parts())?.planes).toBe(0);
 });
 
-test("the gizmo moves, turns and resizes a model in each of its views, one step each", async ({
+// Why: each of the gizmo's three gestures is one step of the tour, and
+// a view of the model (which changes how it draws, and loads it again)
+// keeps the gizmo working. The gizmo has no per-view branch, so each view
+// takes one gesture and each gesture is taken at least once: moved in
+// the ghost view, turned in the hotspots view, resized in the cutaway
+// view, moved back in the toy view. Each view switch reloads the model,
+// and that reload is checked four times.
+test("the gizmo moves, turns and resizes a model across its views, one step each", async ({
   page,
 }) => {
-  // Twelve drags, each loading the model again: minutes on a
+  // Four drags, each after loading the model again: minutes on a
   // software-rendered page beside other workers.
   test.setTimeout(240_000);
   await openWithModel(page);
-  const views = ["ghost", "hotspots", "cutaway", "toy"];
-  for (const [k, view] of views.entries()) {
-    // Back and forth, so four moves keep it inside its station's circle.
-    const sign = k % 2 === 0 ? 1 : -1;
+  /** @type {[string, "move" | "turn" | "resize"][]} */
+  const plan = [
+    ["ghost", "move"],
+    ["hotspots", "turn"],
+    ["cutaway", "resize"],
+    ["toy", "move"],
+  ];
+  let sign = 1;
+  for (const [view, gesture] of plan) {
     await act(page, `view:${view}`).click();
     await expect.poll(async () => (await modelNow(page)).view).toBe(view);
     await expect(act(page, `view:${view}`)).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-
-    // Moved by its middle.
-    let steps = await changes(page);
-    let before = await modelNow(page);
+    const steps = await changes(page);
+    const before = await modelNow(page);
     const middle = await handle(page, "middle");
-    await drag(
-      page,
-      middle,
-      Array.from({ length: 8 }, (_, i) => ({
-        x: middle.x + sign * (i + 1) * 5,
-        y: middle.y + sign * (i + 1) * 2,
-      })),
-    );
+    if (gesture === "move") {
+      // Moved by its middle; there and back, so it stays inside its
+      // station's circle.
+      await drag(
+        page,
+        middle,
+        Array.from({ length: 8 }, (_, i) => ({
+          x: middle.x + sign * (i + 1) * 5,
+          y: middle.y + sign * (i + 1) * 2,
+        })),
+      );
+      sign = -sign;
+    } else if (gesture === "turn") {
+      // Turned by its knob, about its middle.
+      const knob = await handle(page, "knob");
+      const r = Math.hypot(knob.x - middle.x, knob.y - middle.y);
+      const a0 = Math.atan2(knob.y - middle.y, knob.x - middle.x);
+      await drag(
+        page,
+        knob,
+        Array.from({ length: 8 }, (_, i) => {
+          const a = a0 + ((i + 1) * 5 * Math.PI) / 180;
+          return {
+            x: middle.x + r * Math.cos(a),
+            y: middle.y + r * Math.sin(a),
+          };
+        }),
+      );
+    } else {
+      // Resized by a dot, outward.
+      const dot = await handle(page, "dot");
+      const len = Math.hypot(dot.x - middle.x, dot.y - middle.y);
+      const ux = (dot.x - middle.x) / len;
+      const uy = (dot.y - middle.y) / len;
+      await drag(
+        page,
+        dot,
+        Array.from({ length: 8 }, (_, i) => ({
+          x: dot.x + ux * (i + 1) * 5,
+          y: dot.y + uy * (i + 1) * 5,
+        })),
+      );
+    }
     await expect.poll(() => changes(page), { message: view }).toBe(steps + 1);
-    let after = await modelNow(page);
-    expect(after.pose.position, view).not.toEqual(before.pose.position);
-
-    // Turned by its knob, about its middle.
-    steps = await changes(page);
-    before = after;
-    const centre = await handle(page, "middle");
-    const knob = await handle(page, "knob");
-    const r = Math.hypot(knob.x - centre.x, knob.y - centre.y);
-    const a0 = Math.atan2(knob.y - centre.y, knob.x - centre.x);
-    await drag(
-      page,
-      knob,
-      Array.from({ length: 8 }, (_, i) => {
-        const a = a0 + ((i + 1) * 5 * Math.PI) / 180;
-        return { x: centre.x + r * Math.cos(a), y: centre.y + r * Math.sin(a) };
-      }),
-    );
-    await expect.poll(() => changes(page), { message: view }).toBe(steps + 1);
-    after = await modelNow(page);
-    expect(after.pose.rotation, view).not.toEqual(before.pose.rotation);
-
-    // Resized by a dot, outward.
-    steps = await changes(page);
-    before = after;
-    const mid = await handle(page, "middle");
-    const dot = await handle(page, "dot");
-    const len = Math.hypot(dot.x - mid.x, dot.y - mid.y);
-    const ux = (dot.x - mid.x) / len;
-    const uy = (dot.y - mid.y) / len;
-    await drag(
-      page,
-      dot,
-      Array.from({ length: 8 }, (_, i) => ({
-        x: dot.x + ux * (i + 1) * 5,
-        y: dot.y + uy * (i + 1) * 5,
-      })),
-    );
-    await expect.poll(() => changes(page), { message: view }).toBe(steps + 1);
-    after = await modelNow(page);
-    expect(after.sizeM, view).toBeGreaterThan(before.sizeM);
+    const after = await modelNow(page);
+    if (gesture === "move") {
+      expect(after.pose.position, view).not.toEqual(before.pose.position);
+    } else if (gesture === "turn") {
+      expect(after.pose.rotation, view).not.toEqual(before.pose.rotation);
+    } else {
+      expect(after.sizeM, view).toBeGreaterThan(before.sizeM);
+    }
     expect(after.view, view).toBe(view);
   }
 });

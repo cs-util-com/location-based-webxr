@@ -9,7 +9,6 @@ import {
   keepRejections,
   noClouds,
   rejections,
-  reliefCarries,
   view3d,
 } from "./editor3d-fixture.js";
 
@@ -103,7 +102,10 @@ function consoleErrors(page) {
 
 /**
  * The editor on the globe at the sample's landing (reduced motion: the
- * view cuts to the approach's end), the relief carrying the ground.
+ * view cuts to the approach's end). It does not wait for the relief to
+ * carry the ground: the city loads by altitude, not by the carrier (the
+ * city's unit tests), and the test checks its ground's parity with the
+ * relief's either way.
  * @param {import("@playwright/test").Page} page
  */
 async function landed(page) {
@@ -126,7 +128,6 @@ async function landed(page) {
       timeout: 120_000,
     })
     .toBe("landed");
-  await reliefCarries(page);
 }
 
 /** @param {import("@playwright/test").Page} page */

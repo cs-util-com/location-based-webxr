@@ -174,7 +174,9 @@ test("the speed streaks show mid-flight and cost no frame time against none", as
       )
       .toBe(true);
     const below = await globeOf(page);
-    await afterFrames(page, 40);
+    // The 40 frames feed only the frame-time comparison; without it a few
+    // frames show the streaks and the flight still flying.
+    await afterFrames(page, FRAME_TIME ? 40 : 3);
     const globe = await globeOf(page);
     expect(globe.approach?.flying).toBe(true);
     shown ||= globe.dust?.shown === true;
