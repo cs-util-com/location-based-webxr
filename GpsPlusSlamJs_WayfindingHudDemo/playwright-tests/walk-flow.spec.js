@@ -15,7 +15,7 @@ import { test, expect } from "./e2e-test.js";
  */
 
 test.describe("Wayfinding HUD demo — walk flow (real HUD)", () => {
-  test("arriving hides the ring, walking away reactivates it beyond distanceMax", async ({
+  test("arriving hides the ring, walking away reactivates it beyond distanceMax @pr", async ({
     page,
   }) => {
     await page.goto("/");
@@ -38,7 +38,7 @@ test.describe("Wayfinding HUD demo — walk flow (real HUD)", () => {
     await expect(status).toContainText("rings 1");
   });
 
-  test("slider changes re-create the HUD with the new deadband live", async ({
+  test("slider changes re-create the HUD with the new deadband live @pr", async ({
     page,
   }) => {
     await page.goto("/");

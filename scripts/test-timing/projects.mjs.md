@@ -23,6 +23,12 @@
     (gate-speed plan 2026-10-04, G4 / TS-2). CI, the milestone run and every
     recorded run keep coverage. The Recorder keeps it in every mode: its
     coverage thresholds gate.
+    - On the GitHub runner (`onGithubRunner` from `stage-args.mjs`, i.e.
+      `GITHUB_ACTIONS` set, never plain `CI`) a Prettier stage's `--write`
+      becomes `--check`, same globs and options: `--write` rewrote the checkout and exited 0, so CI
+      had never checked formatting. Local gates (`CI=1`) keep writing.
+      Pinned by `projects.test.mjs`, "format stages check on the GitHub
+      runner and write everywhere else".
 - Invariants & assumptions:
   - Stage `name` === the package.json script name === the md row label; the
     package.json script must invoke `timed-stage.mjs <name>` (enforced by

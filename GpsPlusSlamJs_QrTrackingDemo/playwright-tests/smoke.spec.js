@@ -7,7 +7,7 @@ import { test, expect } from "./e2e-test.js";
  * exercises the REAL capability path.
  */
 test.describe("QR-tracking demo — capability gate", () => {
-  test("loads and gates WebXR-less desktop without crashing", async ({
+  test("loads and gates WebXR-less desktop without crashing @pr", async ({
     page,
   }) => {
     const errors = [];

@@ -19,7 +19,7 @@ import { test, expect } from "./e2e-test.js";
  */
 
 test.describe("Wayfinding HUD demo — no hysteresis bypass via look-away (field repro, revised rule)", () => {
-  test("a deactivated target stays hidden through a look-away/look-back cycle", async ({
+  test("a deactivated target stays hidden through a look-away/look-back cycle @pr", async ({
     page,
   }) => {
     await page.goto("/");

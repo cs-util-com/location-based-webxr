@@ -312,7 +312,7 @@ async function expectWriterLayout(page, size) {
   expect(phone.y + phone.height, at).toBeLessThanOrEqual(view.y + view.height);
 }
 
-test("words typed just before Ctrl+S are in the saved tour", async ({
+test("words typed just before Ctrl+S are in the saved tour @pr", async ({
   page,
 }) => {
   // Why: the writer writes its text into the tour only after a pause in

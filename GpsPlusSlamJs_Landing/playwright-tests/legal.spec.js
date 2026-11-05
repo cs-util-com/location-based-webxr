@@ -13,7 +13,7 @@ import { test, expect } from "./e2e-test.js";
  * scrolling, and it must not print a console error.
  */
 
-test("the legal page loads with both sections, the operator placeholder and the claims held to the code", async ({
+test("the legal page loads with both sections, the operator placeholder and the claims held to the code @pr", async ({
   page,
 }) => {
   /** @type {string[]} */
@@ -61,7 +61,7 @@ test("the legal page loads with both sections, the operator placeholder and the 
   expect(errors).toEqual([]);
 });
 
-test("the landing page links the legal page", async ({ page }) => {
+test("the landing page links the legal page @pr", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator('a[href="/legal/"]')).toHaveText(
     "Legal notice and privacy",

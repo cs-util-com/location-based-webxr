@@ -29,7 +29,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await installAnchorStarterFakes(page);
   });
 
-  test("reveals the live HUD with a placeable button after boot", async ({
+  test("reveals the live HUD with a placeable button after boot @pr", async ({
     page,
   }) => {
     await bootAnchorStarter(page);
@@ -46,7 +46,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.getByTestId("start-screen")).toBeHidden();
   });
 
-  test("renders the onboarding guidance from a ready tracking report", async ({
+  test("renders the onboarding guidance from a ready tracking report @pr", async ({
     page,
   }) => {
     // Default fake report is `ok` → the guidance maps to the ready band.
@@ -60,7 +60,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     );
   });
 
-  test("renders a warming-up tracking report as a progress phase", async ({
+  test("renders a warming-up tracking report as a progress phase @pr", async ({
     page,
   }) => {
     await installAnchorStarterFakes(page, {
@@ -81,7 +81,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     );
   });
 
-  test("wires BOTH the tracking store and the tracking-restart callback during boot", async ({
+  test("wires BOTH the tracking store and the tracking-restart callback during boot @pr", async ({
     page,
   }) => {
     // Regression guard for the "guidance stuck on AR tracking lost" bug. The
@@ -103,7 +103,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(wiring.callbacks).toBe(true);
   });
 
-  test("a user-ended session fires the store teardown (recording closed)", async ({
+  test("a user-ended session fires the store teardown (recording closed) @pr", async ({
     page,
   }) => {
     // Why this test matters (PR #363/#364 reviews): THREE apps each shipped
@@ -149,7 +149,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.getByTestId("placement")).toBeHidden();
   });
 
-  test("saves the anchor and surfaces the share/reload affordances", async ({
+  test("saves the anchor and surfaces the share/reload affordances @pr", async ({
     page,
   }) => {
     await bootAnchorStarter(page);
@@ -167,7 +167,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.getByTestId("copy-link-button")).toBeVisible();
   });
 
-  test("writes the anchor into the ?show= URL param on place", async ({
+  test("writes the anchor into the ?show= URL param on place @pr", async ({
     page,
   }) => {
     await bootAnchorStarter(page);
@@ -186,7 +186,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(showValue.length).toBeGreaterThan(4);
   });
 
-  test("round-trips ?show= — reloading the saved link restores the anchor", async ({
+  test("round-trips ?show= — reloading the saved link restores the anchor @pr", async ({
     page,
   }) => {
     await bootAnchorStarter(page);
@@ -223,7 +223,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     });
   });
 
-  test("starts the wayfinding HUD for the placed anchor (F2)", async ({
+  test("starts the wayfinding HUD for the placed anchor (F2) @pr", async ({
     page,
   }) => {
     // Why this matters: the wayfinding HUD is the F2 "guide me to the anchor"
@@ -248,7 +248,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     });
   });
 
-  test("starts the wayfinding HUD on the ?show= cache-hit boot (F2 user story)", async ({
+  test("starts the wayfinding HUD on the ?show= cache-hit boot (F2 user story) @pr", async ({
     page,
   }) => {
     // The F2 story: open a shared link and the HUD guides you to the anchor
@@ -274,7 +274,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(hudCalls[0].hasGetTargets).toBe(true);
   });
 
-  test("does not start the wayfinding HUD when anchor creation fails", async ({
+  test("does not start the wayfinding HUD when anchor creation fails @pr", async ({
     page,
   }) => {
     // The HUD belongs to a successfully spawned anchor; a failed placement
@@ -294,7 +294,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(hudCalls.length).toBe(0);
   });
 
-  test("blocks placement with the point-at-the-ground hint when no surface is under the reticle", async ({
+  test("blocks placement with the point-at-the-ground hint when no surface is under the reticle @pr", async ({
     page,
   }) => {
     // The anchor is placed under the hit-test reticle (the AR cursor), so a
@@ -327,7 +327,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(placeButton).toHaveText("Saved ✓");
   });
 
-  test("blocks placement with the alignment hint when GPS alignment has not arrived", async ({
+  test("blocks placement with the alignment hint when GPS alignment has not arrived @pr", async ({
     page,
   }) => {
     // A surface is under the cursor but alignment is still null → the reticle's
@@ -349,7 +349,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     expect(search).not.toMatch(/[?&]show=/);
   });
 
-  test("reverts and surfaces an error when anchor creation fails", async ({
+  test("reverts and surfaces an error when anchor creation fails @pr", async ({
     page,
   }) => {
     await bootAnchorStarter(page);
@@ -373,7 +373,7 @@ test.describe("Anchor starter — Tier 1 placement flow", () => {
     await expect(page.getByTestId("copy-link-button")).toBeHidden();
   });
 
-  test("does not leak a marker into the scene when placement fails, and retries stay clean", async ({
+  test("does not leak a marker into the scene when placement fails, and retries stay clean @pr", async ({
     page,
   }) => {
     // Why this matters: spawnAnchor adds the marker to the AR world group
@@ -420,7 +420,7 @@ test.describe("Anchor starter — boot rollback", () => {
    * we force the awaited `requestDeviceOrientationPermission` to reject and
    * assert the UI is fully rewound.
    */
-  test("rewinds to the start screen when a post-initAR step rejects", async ({
+  test("rewinds to the start screen when a post-initAR step rejects @pr", async ({
     page,
   }) => {
     await installAnchorStarterFakes(page, { failOrientationPermission: true });
@@ -453,7 +453,7 @@ test.describe("Anchor starter — boot rollback", () => {
    * no-op), but we can assert the call happened and that the retry boots
    * cleanly.
    */
-  test("calls endARSession on post-initAR failure and retry boots cleanly", async ({
+  test("calls endARSession on post-initAR failure and retry boots cleanly @pr", async ({
     page,
   }) => {
     await installAnchorStarterFakes(page, { failOrientationPermission: true });

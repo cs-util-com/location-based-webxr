@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
+import { playwrightGrep, tierRetries } from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 // The lab specs import lab modules that import another package's source by
@@ -51,6 +52,9 @@ export default defineConfig({
   testDir: "..",
   testMatch: FULL ? [...FAST_SPECS, ...SMOKE_SPECS] : FAST_SPECS,
   workers: 1,
+  // The per-PR tier (`@pr` tests) or the full set: scripts/e2e/tier.mjs.
+  retries: tierRetries(process.env),
+  grep: playwrightGrep(import.meta.url),
   // A cold SwiftShader boot plus the CPU parity oracle (a few million
   // scattering evaluations) is slow by design, not by defect.
   timeout: 180_000,

@@ -155,7 +155,7 @@ async function enterAr(page) {
   await button.click();
 }
 
-test("the plain page is the creator's setup; a ?qr= launch is the visitor's screen", async ({
+test("the plain page is the creator's setup; a ?qr= launch is the visitor's screen @pr", async ({
   page,
 }) => {
   // Why this test matters (guided-setup plan DEC-N1): the two pages share
@@ -196,7 +196,7 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
 });
 
-test("a visitor who refuses the location starts the tour on codes alone: no location request, no GPS watch, no GPS escape, and a code places the tour (QR-first M1b-1)", async ({
+test("a visitor who refuses the location starts the tour on codes alone: no location request, no GPS watch, no GPS escape, and a code places the tour (QR-first M1b-1) @pr", async ({
   page,
 }) => {
   // Why this matters (QR-first plan 2026-10-14-0445 §7 #10, §8 Q-QF-1): a
@@ -431,7 +431,7 @@ test("a first-time visitor is asked for the location on its own tap, then starts
   await expect(button).toHaveText("Exit AR");
 });
 
-test("visitor mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
+test("visitor mode boots to running: session started, alignment bound, capture at 8 Hz @pr", async ({
   page,
 }) => {
   await openAsVisitor(page, RANGES_ARCHIVE);
@@ -579,7 +579,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterReenter.isRecording).toBe(true);
 });
 
-test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json", async ({
+test("the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json @pr", async ({
   page,
   request,
 }) => {
@@ -993,7 +993,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
  *  code measured into it is a FIRST measurement (D10b keeps nothing). */
 const PLAIN_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
 
-test("a first measurement of a code the tour does not store is minted into the rebuilt zip, and re-minted by the Finish", async ({
+test("a first measurement of a code the tour does not store is minted into the rebuilt zip, and re-minted by the Finish @pr", async ({
   page,
 }) => {
   // Why this matters (QR-pose plan M3; authoring plan 2026-09-28-0953 M2c):
@@ -1523,7 +1523,7 @@ test("a visitor of a tour without stations reads that it is not finished, with w
   await expect(page.getByTestId("enter-ar")).toBeHidden();
 });
 
-test("the visitor's content waits for the lock; the escape after its clock places by GPS instead", async ({
+test("the visitor's content waits for the lock; the escape after its clock places by GPS instead @pr", async ({
   page,
 }) => {
   // Why this matters: the mandatory scan is the demo's claim. Before the
@@ -1793,7 +1793,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   }
 });
 
-test("viewer mode relocalizes against the tour's level: budgeted votes, marker, the station's photos", async ({
+test("viewer mode relocalizes against the tour's level: budgeted votes, marker, the station's photos @pr", async ({
   page,
 }) => {
   // Why this matters (QR-pose plan M4): the COMPOSED viewer loop — the
@@ -2518,7 +2518,7 @@ async function measureTheCode(page) {
   await measureWithGpsFirst(page);
 }
 
-test("a crash does not lose the walk: placed content survives a reload and lands in the zip", async ({
+test("a crash does not lose the walk: placed content survives a reload and lands in the zip @pr", async ({
   page,
 }) => {
   // THE promise of crash-safe authoring (F13), driven end to end through

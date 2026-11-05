@@ -1,0 +1,46 @@
+name: Nightly full browser run
+
+# The per-PR tier (ci.yml, E2E_TIER=pr) runs the tests tagged `@pr`. Once a
+# night this dispatches ci.yml with the full set on the newest rNNN branch,
+# the branch that carries the most unreleased work, so every test still runs
+# at least daily on it. A schedule runs on the default branch only, so it
+# cannot run ci.yml on another branch itself; a dispatch can.
+#
+# A branch whose ci.yml predates the dispatch trigger and its `tier` input
+# refuses the dispatch (HTTP 422), so each candidate's ci.yml is read first:
+# the newest rNNN branch that accepts it, else `main`, else the run fails.
+on:
+  schedule:
+    - cron: "30 1 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch the full run on the newest rNNN branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch ci.yml with the full set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          candidates=$(git ls-remote --heads "https://github.com/${GH_REPO}.git" \
+            | sed -n 's#^.*refs/heads/\(r[0-9][0-9]*\)$#\1#p' \
+            | sort -t r -k 2 -rn | head -n 20)
+          for branch in $candidates main; do
+            workflow=$(gh api "repos/${GH_REPO}/contents/.github/workflows/ci.yml?ref=${branch}" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null) || continue
+            if printf '%s\n' "$workflow" | grep -qE '^  workflow_dispatch:' \
+              && printf '%s\n' "$workflow" | grep -q 'inputs.tier'; then
+              echo "::notice::full browser run on $branch"
+              gh workflow run ci.yml --ref "$branch" -f tier=full
+              exit 0
+            fi
+            echo "::notice::$branch: its ci.yml takes no tier dispatch, trying the next"
+          done
+          echo "::error::no rNNN branch and not main has a ci.yml that takes a tier dispatch"
+          exit 1

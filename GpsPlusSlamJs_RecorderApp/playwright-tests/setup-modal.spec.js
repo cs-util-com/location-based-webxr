@@ -61,7 +61,7 @@ test.describe('Setup Modal Flow', () => {
     expect(parseInt(modalZIndex)).toBeGreaterThanOrEqual(50);
   });
 
-  test('scenario dropdown is populated after OPFS auto-init', async ({
+  test('scenario dropdown is populated after OPFS auto-init @pr', async ({
     page,
   }) => {
     // Scenario controls are collapsed by default (D6 item 3); expand to view.
@@ -159,7 +159,7 @@ test.describe('Setup Modal Flow', () => {
   // the bar states are driven via the same testHooks the app wires
   // (setFolderImportProgress) — asserting the transitional AND the durable
   // end state per the CLAUDE.md async-UX rule.
-  test('folder-import progress bar shows in-progress and durable ✓ end states', async ({
+  test('folder-import progress bar shows in-progress and durable ✓ end states @pr', async ({
     page,
   }) => {
     const progress = page.getByTestId('folder-import-progress');
@@ -446,7 +446,7 @@ test.describe('Session Notes Interaction', () => {
 // contract per the UI-feedback rule; the dominant-CTA *styling* is a visual
 // concern checked on-device.
 test.describe('Pinned Enter AR footer', () => {
-  test('Enter AR stays in the viewport without scrolling on a short screen', async ({
+  test('Enter AR stays in the viewport without scrolling on a short screen @pr', async ({
     page,
   }) => {
     // Force a short viewport so the modal content genuinely overflows — that is
@@ -471,7 +471,7 @@ test.describe('Pinned Enter AR footer', () => {
     await expect(enterButton).toBeInViewport();
   });
 
-  test('Enter AR and its hint share the pinned footer (outside the scroll area)', async ({
+  test('Enter AR and its hint share the pinned footer (outside the scroll area) @pr', async ({
     page,
   }) => {
     // The hint must travel with the button in the footer, and neither may be a

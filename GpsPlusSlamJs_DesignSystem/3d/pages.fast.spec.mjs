@@ -104,12 +104,12 @@ async function drawnStdev(page) {
   return Math.max(...channels.slice(0, 3).map((c) => c.stdev));
 }
 
-test("every deployable page has a ready signal here", () => {
+test("every deployable page has a ready signal here @pr", () => {
   const pages = ["/index.html", ...discoverEntries(ROOT)];
   expect(pages.filter((p) => !(p in READY))).toEqual([]);
 });
 
-test("the catalog page opens without errors", async ({ page }) => {
+test("the catalog page opens without errors @pr", async ({ page }) => {
   const problems = await watch(page);
   await page.goto("/");
   await expect(page.locator("body")).not.toBeEmpty();
@@ -135,6 +135,20 @@ async function lookdevVariants(page, name, variants) {
   console.log(`look-dev (${name}) drawn: stdev ${stdev.toFixed(1)}`);
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 }
+
+// Why this test matters: the two variant tests below take minutes on
+// SwiftShader and run only in the full browser run. This one is the per-PR
+// guard that the look-dev page still compiles its default look and draws:
+// `look-presets` and `water-surface-material` have no other importer, and a
+// shader that fails to compile only writes to the console, so without it a
+// broken look would pass every per-PR check.
+test("the look-dev page boots in its default look and draws, without errors @pr", async ({
+  page,
+}) => {
+  // No switch: the "variant" is the page's own default look, its frames
+  // drawn and its problems checked like any other.
+  await lookdevVariants(page, "default look", [["default look", () => {}]]);
+});
 
 test("the look-dev page's cloud modes and scene effects compile and draw without errors", async ({
   page,
@@ -187,7 +201,7 @@ async function openGlobeLab(page) {
   return problems;
 }
 
-test("the globe lab opens with the relief and the band, and draws, without errors", async ({
+test("the globe lab opens with the relief and the band, and draws, without errors @pr", async ({
   page,
 }) => {
   const problems = await openGlobeLab(page);
@@ -265,7 +279,7 @@ test("the globe lab keeps the space shell at x1 low down across hash changes, wi
   expect(problems).toEqual([]);
 });
 
-test("the globe-terrain carrier lab opens and draws without errors", async ({
+test("the globe-terrain carrier lab opens and draws without errors @pr", async ({
   page,
 }) => {
   const problems = await watch(page);
@@ -304,7 +318,7 @@ test("the terrain lab opens in every style without errors", async ({
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 });
 
-test("the terrain colour comparison page starts and drives the lab", async ({
+test("the terrain colour comparison page starts and drives the lab @pr", async ({
   page,
 }) => {
   const problems = await watch(page);
@@ -330,7 +344,9 @@ test("the terrain colour comparison page starts and drives the lab", async ({
   expect(problems).toEqual([]);
 });
 
-test("the AR shadows lab opens and draws without errors", async ({ page }) => {
+test("the AR shadows lab opens and draws without errors @pr", async ({
+  page,
+}) => {
   const problems = await watch(page);
   await page.goto("/labs/ar-shadows/");
   await ready(page, "__arShadowsLab");

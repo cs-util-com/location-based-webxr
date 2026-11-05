@@ -24,53 +24,86 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  * - area `editor`: only the desktop editor (`edit.html`); `viewer`: only the
  *   other pages (the visitor's and the phone creator's page, the check
  *   pages); `both`: the spec opens the editor and another page.
+ * - lane (webgl specs only, 1 to 4): the CI job that runs the spec (see
+ *   `LANES`). Balanced by the CI minutes of runs 41761594716 and 41820703091
+ *   (2026-11-04), each lane about 22-30 min before the globe buildings and
+ *   clouds specs (see the sidecar for the totals since);
+ *   rebalance from the uploaded JSON report's per-test durations.
  *
- * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both" }>>}
+ * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane?: 1 | 2 | 3 | 4 }>>}
  */
 export const SPECS = {
   "ar-layout.spec.js": { project: "dom", area: "viewer" },
   "ar-mode.spec.js": { project: "dom", area: "viewer" },
-  "blocks-tour.spec.js": { project: "webgl", area: "both" },
-  "character-views.spec.js": { project: "webgl", area: "viewer" },
+  "blocks-tour.spec.js": { project: "webgl", area: "both", lane: 4 },
+  "character-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "code-auto-move.spec.js": { project: "dom", area: "viewer" },
   "creator-indoor.spec.js": { project: "dom", area: "viewer" },
   "creator-stations.spec.js": { project: "dom", area: "viewer" },
   "editor-entry.spec.js": { project: "dom", area: "editor" },
   "editor-files.spec.js": { project: "dom", area: "editor" },
   "editor.spec.js": { project: "dom", area: "editor" },
-  "editor3d-character.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-edit.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-approach.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-buildings.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-clouds.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-default.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-osm-gain.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-osm-hold.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe-start.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-globe.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-inspector.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-long-text.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-model.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-narration.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-shell.spec.js": { project: "webgl", area: "editor" },
-  "editor3d-tree.spec.js": { project: "webgl", area: "editor" },
-  "editor3d.spec.js": { project: "webgl", area: "editor" },
+  "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-globe-approach.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 1,
+  },
+  "editor3d-globe-buildings.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 3,
+  },
+  "editor3d-globe-clouds.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 1,
+  },
+  "editor3d-globe-default.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
+  "editor3d-globe-osm-gain.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
+  "editor3d-globe-osm-hold.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
+  "editor3d-globe-start.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-globe.spec.js": { project: "webgl", area: "editor", lane: 1 },
+  "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-long-text.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-narration.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-shell.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "file-access-check.spec.js": { project: "dom", area: "viewer" },
-  "landing-film.spec.js": { project: "webgl", area: "viewer" },
-  "landing.spec.js": { project: "webgl", area: "viewer" },
+  "landing-film.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "landing.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "launch-and-errors.spec.js": { project: "dom", area: "viewer" },
-  "lectern-check.spec.js": { project: "webgl", area: "viewer" },
-  "legal.spec.js": { project: "webgl", area: "both" },
+  "lectern-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "legal.spec.js": { project: "webgl", area: "both", lane: 4 },
   "long-text-check.spec.js": { project: "dom", area: "viewer" },
-  "model-views.spec.js": { project: "webgl", area: "viewer" },
+  "model-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "narration-check.spec.js": { project: "dom", area: "viewer" },
   "object-editing.spec.js": { project: "dom", area: "viewer" },
-  "older-format.spec.js": { project: "webgl", area: "both" },
+  "older-format.spec.js": { project: "webgl", area: "both", lane: 4 },
   "open-file.spec.js": { project: "dom", area: "viewer" },
   "sample-tour.spec.js": { project: "dom", area: "viewer" },
   "setup-flow.spec.js": { project: "dom", area: "viewer" },
   "stations.spec.js": { project: "dom", area: "viewer" },
-  "story-blocks-frame-time.spec.js": { project: "webgl", area: "viewer" },
+  "story-blocks-frame-time.spec.js": {
+    project: "webgl",
+    area: "viewer",
+    lane: 4,
+  },
   "story-blocks.spec.js": { project: "dom", area: "viewer" },
   "streaming.spec.js": { project: "dom", area: "viewer" },
   "summary.spec.js": { project: "dom", area: "viewer" },
@@ -90,6 +123,40 @@ export const SPECS = {
  */
 export function specsOf(project) {
   return Object.keys(SPECS).filter((name) => SPECS[name].project === project);
+}
+
+/**
+ * The CI lanes, one GitHub job each, chosen by the `E2E_LANE` environment
+ * variable (`scripts/e2e/project-runs.mjs`, `laneSpecs`): `dom` is the whole
+ * DOM project, `webgl-N` the WebGL specs whose `lane` is N. Not Playwright's
+ * `--shard`, which cuts the alphabetical list and would put every
+ * `editor3d-globe-*` spec in one shard.
+ */
+export const LANES = /** @type {const} */ ([
+  "dom",
+  "webgl-1",
+  "webgl-2",
+  "webgl-3",
+  "webgl-4",
+]);
+
+/**
+ * The spec file names of one CI lane, in table order.
+ *
+ * @param {string} lane - one of `LANES`
+ * @returns {string[]}
+ * @throws {RangeError} on a lane `LANES` does not name
+ */
+export function specsOfLane(lane) {
+  if (lane === "dom") return specsOf("dom");
+  const match = /^webgl-([1-4])$/.exec(lane);
+  if (!match) {
+    throw new RangeError(
+      `unknown e2e lane "${lane}"; known: ${LANES.join(", ")}`,
+    );
+  }
+  const n = Number(match[1]);
+  return specsOf("webgl").filter((name) => SPECS[name].lane === n);
 }
 
 /**

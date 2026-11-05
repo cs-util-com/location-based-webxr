@@ -22,7 +22,7 @@ test.describe('Replay Mode — Desktop Browser', () => {
   // Playwright's Chromium has no WebXR, so the app should auto-detect
   // this and switch to replay mode (Issue 1, Option A).
 
-  test('auto-switches to replay mode when WebXR is not supported', async ({
+  test('auto-switches to replay mode when WebXR is not supported @pr', async ({
     page,
   }) => {
     await page.goto('/');
@@ -130,7 +130,7 @@ test.describe('Replay Mode — Desktop Browser', () => {
     await expect(scenarioSelect).toBeDisabled();
   });
 
-  test('no console errors during replay mode initialization', async ({
+  test('no console errors during replay mode initialization @pr', async ({
     page,
   }) => {
     // Known, expected error patterns when WebXR is unavailable in Playwright's

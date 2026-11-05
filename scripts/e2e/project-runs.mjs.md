@@ -33,6 +33,14 @@
     every named project in every pass (a `--project webgl` run ran the WebGL
     specs at the DOM worker count, then again). Throws `RangeError` on a
     name the plan lacks or a bare `--project`.
+  - `LANE_ENV` (`E2E_LANE`) and `laneSpecs(env, plan)`: null when the var
+    is unset or empty; else the plan's `specsOfLane(lane)`. Throws
+    `RangeError` when the plan has no `LANES`/`specsOfLane`, when the lane
+    is not in `LANES`, or when it holds no spec (a CI job must never pass
+    having run nothing).
+  - `intersectSelections(a, b)`: two spec selections (null = all) as one:
+    null when both are, the other side when one is, else the specs of `a`
+    that are in `b`, in `a`'s order.
   - `readReport(file, expected, io)`: `{ report, warning, failed }`, never
     throws. Missing: a warning when `expected`, else nothing. Unparsable or
     without `stats`: a warning and `failed`.

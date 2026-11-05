@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
+import { playwrightGrep, tierRetries } from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 
@@ -34,7 +35,9 @@ export default defineConfig({
   globalSetup: "../../scripts/e2e/playwright-global-setup.mjs",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
+  // The per-PR tier (`@pr` tests) or the full set: scripts/e2e/tier.mjs.
+  retries: tierRetries(process.env, 1),
+  grep: playwrightGrep(import.meta.url),
   // ONE worker everywhere: every spec drives a full WebGL scene, and
   // several parallel GL contexts under an already-loaded GPU lose their
   // contexts (observed locally: CONTEXT_LOST_WEBGL + SharedImage

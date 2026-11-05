@@ -16,7 +16,7 @@ import { test, expect } from './e2e-test.js';
  */
 
 test.describe('Alignment timing page', () => {
-  test('boots, prints its parameters and the device, and refuses to run empty', async ({
+  test('boots, prints its parameters and the device, and refuses to run empty @pr', async ({
     page,
   }) => {
     await page.goto('/alignment-timing.html');

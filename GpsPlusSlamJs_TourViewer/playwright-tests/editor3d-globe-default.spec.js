@@ -143,7 +143,7 @@ function luminance(css) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
-test("the plain editor link opens the sample tour on the globe", async ({
+test("the plain editor link opens the sample tour on the globe @pr", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -183,7 +183,7 @@ test.describe("an empty tour", () => {
   // No summer time there: the zone's longitude (UTC+9, 135 E) is known.
   test.use({ timezoneId: "Asia/Tokyo" });
 
-  test("opens on the whole Earth over the creator's zone, and a right click on the ground places its first station", async ({
+  test("opens on the whole Earth over the creator's zone, and a right click on the ground places its first station @pr", async ({
     page,
   }, testInfo) => {
     test.setTimeout(240_000);
@@ -288,7 +288,7 @@ test.describe("where the 3D view cannot open", () => {
   // Why: without WebGL the 3D view cannot draw; the page says so in plain
   // words over the map, and the tour's File actions stay within reach - a
   // save goes out as a download.
-  test("without WebGL a plain page says so, and the tour still saves", async ({
+  test("without WebGL a plain page says so, and the tour still saves @pr", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -518,7 +518,7 @@ test.describe("where the 3D view cannot open", () => {
 
 // Why: "This tour needs no GPS" lived only in the map's rail; in the 3D
 // view it is in Tour details, and it must reach the file and come back.
-test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back", async ({
+test("'needs no GPS' is set in the 3D view's Tour details, saved, and read back @pr", async ({
   page,
 }) => {
   // One globe open and a zip download in the software renderer.

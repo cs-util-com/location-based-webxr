@@ -22,6 +22,10 @@
   Chromium genuinely lacks `navigator.xr`, which is exactly the capability-gate
   state under test. CI tightens `forbidOnly`, adds retries, and serialises
   workers.
+- **The browser tier** (`grep`, `retries`): by default the run selects the
+  `@pr` tests plus every changed spec file, and `E2E_TIER=full` every
+  test; on CI 1 retry in the tier, 2 in the full set
+  ([`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)).
 - **Run:** `pnpm run test:e2e` (never call `playwright` directly, per repo
   rules). `:headed` / `:ui` variants exist for debugging.
 - **Tests:** drives [smoke.spec.js](smoke.spec.js).

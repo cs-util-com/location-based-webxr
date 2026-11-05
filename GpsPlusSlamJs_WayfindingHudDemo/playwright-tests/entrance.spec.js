@@ -132,7 +132,7 @@ async function recreateHud(page, { entrance }) {
 }
 
 test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => {
-  test("the outline grows monotonically, the dot pops last, and the settled frame is the static sprite", async ({
+  test("the outline grows monotonically, the dot pops last, and the settled frame is the static sprite @pr", async ({
     page,
   }) => {
     const errors = collectErrors(page);
@@ -188,7 +188,7 @@ test.describe("Wayfinding HUD demo — the diamond's entrance animation", () => 
     expect(errors).toEqual([]);
   });
 
-  test("reduced motion shows the complete marker on the first frame", async ({
+  test("reduced motion shows the complete marker on the first frame @pr", async ({
     page,
   }) => {
     const errors = collectErrors(page);

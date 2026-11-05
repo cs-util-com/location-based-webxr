@@ -41,7 +41,7 @@ function collectErrors(page) {
   return errors;
 }
 
-test("boots and activates every chapter while scrolling, with zero errors", async ({
+test("boots and activates every chapter while scrolling, with zero errors @pr", async ({
   page,
 }) => {
   const errors = collectErrors(page);
@@ -84,7 +84,7 @@ test("boots and activates every chapter while scrolling, with zero errors", asyn
   expect(errors).toEqual([]);
 });
 
-test("renders the 3D canvas, or engages the static-DOM floor cleanly", async ({
+test("renders the 3D canvas, or engages the static-DOM floor cleanly @pr", async ({
   page,
 }) => {
   await page.goto("/");
@@ -131,7 +131,7 @@ test("palette button cycles the palette and the choice persists across reload", 
   await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
 });
 
-test("a ?qr= launch forwards to the tour viewer with the payload intact", async ({
+test("a ?qr= launch forwards to the tour viewer with the payload intact @pr", async ({
   page,
 }) => {
   // Why this matters: printed QR codes encode the BARE host so the densest
@@ -148,7 +148,7 @@ test("a ?qr= launch forwards to the tour viewer with the payload intact", async 
   await page.waitForURL(/\/tour\/\?qr=https%3A%2F%2Fexample\.com%2Ftour\.zip/);
 });
 
-test("all eight demo apps stay launchable from the demos hub", async ({
+test("all eight demo apps stay launchable from the demos hub @pr", async ({
   page,
 }) => {
   await page.goto("/");
@@ -291,7 +291,7 @@ for (const [orientation, viewport] of [
   test.describe(`mobile ${orientation}`, () => {
     test.use({ viewport, isMobile: true, hasTouch: true });
 
-    test(`shows every chapter readable on a phone (${orientation})`, async ({
+    test(`shows every chapter readable on a phone (${orientation})${orientation === "portrait" ? " @pr" : ""}`, async ({
       page,
     }) => {
       const errors = collectErrors(page);
@@ -320,7 +320,7 @@ for (const [orientation, viewport] of [
 test.describe("reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
 
-  test("still presents every chapter readable, without errors", async ({
+  test("still presents every chapter readable, without errors @pr", async ({
     page,
   }) => {
     const errors = collectErrors(page);

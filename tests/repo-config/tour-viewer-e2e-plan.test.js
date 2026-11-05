@@ -17,8 +17,10 @@
 // `new URL("./...", import.meta.url)`, and the editor kit's subpaths into the
 // kit's own sources; a relative import it cannot resolve to a file fails the
 // test rather than being skipped. An import built from a variable is
-// invisible to it. CI and the full cascade run every spec whatever this plan
-// says.
+// invisible to it. CI and the full cascade ignore the plan's areas: they run
+// every spec, in the browser tier E2E_TIER selects (scripts/e2e/tier.mjs; by
+// default the `@pr` tests plus every changed spec file, with E2E_TIER=full
+// every test).
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -296,5 +298,48 @@ describe('selectSpecs', () => {
 
   it('accepts either slash style', () => {
     expect(plan.pathArea('GpsPlusSlamJs_TourViewer\\src\\editor\\x.ts')).toBe('editor');
+  });
+});
+
+// Why this test matters: CI runs
+// the browser specs as one job per lane (`E2E_LANE`), so a spec in no lane
+// never runs on CI and the run stays green, and a spec in two runs twice.
+// Plain `--shard` is not used because it cuts the alphabetical list, which
+// would put every `editor3d-globe-*` spec in one shard.
+describe('the e2e plan puts every spec in exactly one CI lane', () => {
+  it('names the lanes: the page tests and four 3D lanes', () => {
+    expect(plan.LANES).toEqual(['dom', 'webgl-1', 'webgl-2', 'webgl-3', 'webgl-4']);
+  });
+
+  it('puts every spec in exactly one lane, and every lane holds a spec', () => {
+    const all = plan.LANES.flatMap((lane) => plan.specsOfLane(lane));
+    expect([...all].sort()).toEqual(specFiles);
+    for (const lane of plan.LANES) {
+      expect(plan.specsOfLane(lane).length, lane).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps each lane inside one project: dom is the dom project, webgl-N its 3D specs', () => {
+    expect(plan.specsOfLane('dom')).toEqual(plan.specsOf('dom'));
+    for (const lane of plan.LANES.filter((l) => l !== 'dom')) {
+      for (const name of plan.specsOfLane(lane)) {
+        expect(plan.SPECS[name].project, `${name} in ${lane}`).toBe('webgl');
+      }
+    }
+  });
+
+  it('gives every webgl spec a lane number from 1 to 4, and no dom spec one', () => {
+    for (const [name, entry] of Object.entries(plan.SPECS)) {
+      if (entry.project === 'webgl') {
+        expect([1, 2, 3, 4], name).toContain(entry.lane);
+      } else {
+        expect(entry.lane, name).toBeUndefined();
+      }
+    }
+  });
+
+  it('refuses a lane it does not know', () => {
+    expect(() => plan.specsOfLane('webgl-5')).toThrow(RangeError);
+    expect(() => plan.specsOfLane('')).toThrow(RangeError);
   });
 });

@@ -30,7 +30,7 @@ async function placeAndSave(page) {
 }
 
 test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
-  test("flips the label to a success confirmation, then reverts", async ({
+  test("flips the label to a success confirmation, then reverts @pr", async ({
     page,
   }) => {
     await installAnchorStarterFakes(page);
@@ -76,7 +76,9 @@ test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
     await expect(copyButton).toHaveText("Copy link");
   });
 
-  test("shows a fallback hint when clipboard write fails", async ({ page }) => {
+  test("shows a fallback hint when clipboard write fails @pr", async ({
+    page,
+  }) => {
     await installAnchorStarterFakes(page, { failClipboard: true });
     await placeAndSave(page);
 
@@ -90,7 +92,7 @@ test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
     await expect(copyButton).toHaveText("Copy link");
   });
 
-  test("persists the placed altitude into ?show= and re-applies it on reload", async ({
+  test("persists the placed altitude into ?show= and re-applies it on reload @pr", async ({
     page,
   }) => {
     // Why this test matters: a shared anchor must be positioned on the vertical

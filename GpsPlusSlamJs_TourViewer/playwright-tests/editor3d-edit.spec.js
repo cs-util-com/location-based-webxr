@@ -230,7 +230,7 @@ async function saveAndRead(page) {
   return JSON.parse(json);
 }
 
-test("drags a selected pin over the ground with the mouse: one step, kept above the ground, saved, undone and redone", async ({
+test("drags a selected pin over the ground with the mouse: one step, kept above the ground, saved, undone and redone @pr", async ({
   page,
 }) => {
   // Measured locally at one worker (2026-11-03): 21-33 s, of which the

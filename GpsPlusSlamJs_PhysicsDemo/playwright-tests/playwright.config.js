@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
+import { playwrightGrep, tierRetries } from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 
@@ -29,7 +30,9 @@ export default defineConfig({
   globalSetup: "../../scripts/e2e/playwright-global-setup.mjs",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // The per-PR tier (`@pr` tests) or the full set: scripts/e2e/tier.mjs.
+  retries: tierRetries(process.env),
+  grep: playwrightGrep(import.meta.url),
   // ONE worker, locally as well as in CI (decided 2026-08-17, DEC-N8). Three
   // parallel workers each drive a full WebGL scene, so they queue on one GPU
   // instead of overlapping, and the queueing is what expires the per-test

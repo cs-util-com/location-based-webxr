@@ -447,6 +447,52 @@ describe('gateBaseCommand (fast per-commit command)', () => {
   });
 });
 
+// Why this test matters: every format stage runs `prettier --write`, which on the GitHub runner rewrote the
+// checkout and exited 0, so a badly formatted PR was never red and CI had
+// never checked formatting. On the runner the stage must CHECK. It is keyed on
+// `GITHUB_ACTIONS`, not `CI`: every local gate sets `CI=1`, and a local format
+// stage must keep fixing files, so the local rows here must stay `--write`.
+describe('format stages check on the GitHub runner and write everywhere else', () => {
+  const RUNNER = { GITHUB_ACTIONS: 'true', CI: 'true' };
+  const formatStages = PROJECTS.flatMap((project) =>
+    project.stages
+      .filter((stage) => /(^|\s)prettier\s/.test(stage.command))
+      .map((stage) => ({ project: project.name, stage }))
+  );
+
+  it('finds the format stages (so the check is not vacuous)', () => {
+    expect(formatStages.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it.each(formatStages)('$project $stage.name checks on the runner', ({ stage }) => {
+    const command = gateBaseCommand(stage, RUNNER);
+    expect(command).toMatch(/(^|\s)--check(\s|$)/);
+    expect(command).not.toMatch(/(^|\s)--write(\s|$)/);
+    // Same globs and options, only the mode differs.
+    expect(command).toBe(stage.command.replace(' --write ', ' --check '));
+  });
+
+  it.each(formatStages)('$project $stage.name still writes in local gates', ({ stage }) => {
+    expect(gateBaseCommand(stage, { CI: '1' })).toBe(stage.command);
+    expect(
+      gateBaseCommand(stage, { CI: '1', [SKIP_BROWSER_ENV]: '1' })
+    ).toBe(stage.command);
+    expect(gateBaseCommand(stage, { CI: '1', GITHUB_ACTIONS: '' })).toBe(stage.command);
+    expect(stage.command).toMatch(/(^|\s)--write(\s|$)/);
+  });
+
+  it('leaves every other stage on the runner as it is', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        if (/(^|\s)prettier\s/.test(stage.command)) continue;
+        expect(gateBaseCommand(stage, RUNNER), `${project.name} ${stage.name}`).toBe(
+          stage.command
+        );
+      }
+    }
+  });
+});
+
 // Why this test matters (gate-speed plan 2026-10-04, G5): Prettier's cache
 // skips files whose content it has already formatted. `content` keys it on a
 // hash of the file, never on mtimes (which every checkout and format run

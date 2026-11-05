@@ -12,7 +12,7 @@ import { test, expect } from "./e2e-test.js";
  * assumption.
  */
 test.describe("Physics Demo Smoke", () => {
-  test("loads without console errors and offers the replay path on desktop", async ({
+  test("loads without console errors and offers the replay path on desktop @pr", async ({
     page,
   }) => {
     const errors = [];

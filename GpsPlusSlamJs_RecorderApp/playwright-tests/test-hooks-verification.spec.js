@@ -231,7 +231,7 @@ test.describe('Hook coverage guard', () => {
     });
   });
 
-  test('REQUIRED_TEST_HOOKS matches the exposed window.testHooks surface', async ({
+  test('REQUIRED_TEST_HOOKS matches the exposed window.testHooks surface @pr', async ({
     page,
   }) => {
     // Why this test matters: waitForTestHooks derives from REQUIRED_TEST_HOOKS

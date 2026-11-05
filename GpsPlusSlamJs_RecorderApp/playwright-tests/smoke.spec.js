@@ -21,7 +21,7 @@ test.describe('Recorder App Smoke Tests', () => {
     await fakeWebXRSupport(page);
   });
 
-  test('loads without console errors', async ({ page }) => {
+  test('loads without console errors @pr', async ({ page }) => {
     const consoleIssues = [];
     const pageErrors = [];
     const allowedWarningPatterns = [
@@ -72,7 +72,7 @@ test.describe('Recorder App Smoke Tests', () => {
     expect(pageErrors, 'Page errors detected').toEqual([]);
   });
 
-  test('shows setup modal on load', async ({ page }) => {
+  test('shows setup modal on load @pr', async ({ page }) => {
     await page.goto('/');
 
     // The setup modal should be visible
@@ -85,7 +85,7 @@ test.describe('Recorder App Smoke Tests', () => {
     ).toBeVisible();
   });
 
-  test('setup modal has required UI elements', async ({ page }) => {
+  test('setup modal has required UI elements @pr', async ({ page }) => {
     await page.goto('/');
 
     // Storage setup section should be visible with mandatory buttons (Task 1a-fix)
@@ -164,7 +164,7 @@ test.describe('Tailwind is actually applied, not merely bundled', () => {
    * and every markup-reading test stays green. This one does not.
    */
 
-  test('applies utility classes to the document', async ({ page }) => {
+  test('applies utility classes to the document @pr', async ({ page }) => {
     await fakeWebXRSupport(page);
     await page.goto('/');
 

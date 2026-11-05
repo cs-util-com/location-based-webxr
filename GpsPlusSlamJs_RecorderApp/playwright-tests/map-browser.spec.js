@@ -52,7 +52,7 @@ test.describe('Map-Centric Recording Browser', () => {
       .waitFor({ state: 'visible' });
   });
 
-  test('renders a full-bleed map filling the viewport (not a split/modal)', async ({
+  test('renders a full-bleed map filling the viewport (not a split/modal) @pr', async ({
     page,
   }) => {
     // Why: D3a requires the map to fill the whole window with overlays on top,
@@ -176,7 +176,7 @@ test.describe('Map-Centric Recording Browser — progressive streaming', () => {
       .waitFor({ state: 'visible' });
   });
 
-  test('map is interactive and shows progress before any recording streams in', async ({
+  test('map is interactive and shows progress before any recording streams in @pr', async ({
     page,
   }) => {
     // Why: the whole point of Slice A — the user sees (and can pan/zoom) the map
@@ -202,7 +202,7 @@ test.describe('Map-Centric Recording Browser — progressive streaming', () => {
     ).toHaveCount(0);
   });
 
-  test('tiles and tours grow as recordings stream in, and progress counts up', async ({
+  test('tiles and tours grow as recordings stream in, and progress counts up @pr', async ({
     page,
   }) => {
     // Stream the first recording → one tour, progress 1 / total.
@@ -233,7 +233,7 @@ test.describe('Map-Centric Recording Browser — progressive streaming', () => {
     ).toHaveCount(2);
   });
 
-  test('progress pill hides once indexing completes', async ({ page }) => {
+  test('progress pill hides once indexing completes @pr', async ({ page }) => {
     // Why: the durable-end-state rule — once done === total the pill shows a
     // brief confirmation and then disappears, leaving the map unobstructed.
     await page.evaluate(
@@ -293,7 +293,7 @@ test.describe('Map-Centric Recording Browser — coverage backfill CTA (B1)', ()
       .waitFor({ state: 'visible' });
   }
 
-  test('shows the CTA after indexing, embeds on click, then confirms and hides', async ({
+  test('shows the CTA after indexing, embeds on click, then confirms and hides @pr', async ({
     page,
   }) => {
     await mount(page, successOutcome);
@@ -315,7 +315,7 @@ test.describe('Map-Centric Recording Browser — coverage backfill CTA (B1)', ()
     expect(calls).toBe(1);
   });
 
-  test('reverts to a retry label when write access is denied', async ({
+  test('reverts to a retry label when write access is denied @pr', async ({
     page,
   }) => {
     await mount(page, deniedOutcome);

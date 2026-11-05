@@ -19,7 +19,7 @@ const FIXTURE = join(here, "fixtures", "sample-recording.zip");
  * The live-AR path stays device-only (no navigator.xr in Playwright).
  */
 test.describe("Physics Demo — desktop replay end-to-end", () => {
-  test("reconstructs the mesh from a real recording and spawns bouncing balls", async ({
+  test("reconstructs the mesh from a real recording and spawns bouncing balls @pr", async ({
     page,
   }) => {
     test.setTimeout(120_000);
