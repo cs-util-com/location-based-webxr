@@ -424,7 +424,7 @@ describe(
       expect(payload.evidence.magnitudeM).toBeGreaterThan(35);
       expect(payload.recovery.refedFixes).toBeGreaterThan(60);
       expect(payload.recovery.batches).toBe(1);
-      // Why (r881 review M1): the veto takes every vote back, but the page
+      // Why: the veto takes every vote back, but the page
       // kept its count of voted locks, so every reader of "a code lined the
       // tour up" kept believing it on what was a GPS-only alignment again:
       // the stations trusted it whatever the raw accuracy, and the status
@@ -443,7 +443,7 @@ describe(
         state: "placed-gps",
         text: "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
       });
-      // Why (r881 re-review L-F, L1): the veto sets the voted count back to
+      // Why: the veto sets the voted count back to
       // 0, and "a code in view with no vote yet" is when the line shows the
       // code-measuring hint, so the ignored code still in view read "Code
       // measured - placing the tour." The page withholds the hint of an
@@ -605,7 +605,7 @@ describe(
         s += 1;
       }
       expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
-      // The gate stays with B, the code that passed it (M5c review M1).
+      // The gate stays with B, the code that passed it.
       expect(v.ctx.ignoredCodes.has(LEVEL_ID_B)).toBe(false);
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
       expect(codePlacedTour(v.ctx)).toBe(false);

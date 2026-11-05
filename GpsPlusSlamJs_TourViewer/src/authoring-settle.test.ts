@@ -3237,7 +3237,7 @@ describe(
       expect(
         codeWorldOf(levels[0]!.json).distanceTo(codeWorldOf(levels[1]!.json)),
       ).toBeCloseTo(20, 0);
-      // Why (M5 design review #7): with two improved codes a pin within
+      // Why: with two improved codes a pin within
       // reach of both was taken along twice. Each object goes with the one
       // code it belongs to (the nearest, before the settle).
       const moved = decisions.flatMap((d) => d.movedWithCode.map((m) => m.id));
@@ -3469,14 +3469,14 @@ describe(
       expect(visits, "measured in a visit of this page").not.toEqual([]);
       expect(a.ctx.tourDocument.undo().kind).toBe("undone");
       expect(stationOf(a, "near").geo).toEqual(before);
-      // Why (plan M3b): the hand held the improved text, and the hand's
+      // Why: the hand held the improved text, and the hand's
       // text wins at every later change of the book - so an undo that only
       // put the book back would see the improvement return at the next
       // write. The undo makes the hand let go of the code it took back, its
       // measurement with it.
       expect(a.codes.inHand()).toBeNull();
       expect(a.codes.measurement()).toBeNull();
-      // Why (plan M3b): the code keeps its BOOK measurement (the step holds
+      // Why: the code keeps its BOOK measurement (the step holds
       // the texts only), so the visit that measured it still lists it for
       // a settle redone after a failed Finish.
       for (const v of visits) {
@@ -3485,7 +3485,7 @@ describe(
           stored.id,
         );
       }
-      // Was a known divergence until M3b: the same undo left the improved
+      // This used to be a known divergence: the same undo left the improved
       // code in place, so the station was back at the old code's spot while
       // the code book still held - and the next Finish wrote - the new one.
       // The undo takes the code's improvement back too, and the earlier

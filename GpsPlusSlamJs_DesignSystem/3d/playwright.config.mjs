@@ -9,8 +9,9 @@ import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 import "../test-route-loader.mjs";
 
 /**
- * The 3D look-dev page's smoke test and the lab pages' specs (the design
- * system's `test:e2e` stage).
+ * The design system's page specs (its `test:e2e` stage): the fast check that
+ * every page boots and draws, and the look-dev and lab measurements (the two
+ * tiers below).
  *
  * Port 5198 is allocated in docs/dev-server-ports.md (aux range). The server
  * is NEVER reused: `pnpm run serve` for a phone round listens on 4173 on all

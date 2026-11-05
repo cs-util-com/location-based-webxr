@@ -26,9 +26,9 @@ const cleanArcSeed3 = () => (cleanArcSeed3Rows ??= measureWalk(ARC_SEED_3));
 // The harness serves one opt-in sweep (`qr-zxing.sweep.test.ts`, run with
 // `QR_SWEEP=1`), so its checks run exactly when its only consumer does.
 describe.runIf(process.env.QR_SWEEP === '1')(
-  'measureWalk (M0 walk harness)',
+  'measureWalk (the walk harness)',
   () => {
-    // Why this test matters: the M0 baselines and every later verdict come
+    // Why this test matters: the baselines and every later verdict come
     // from these rows; on a clean, strongly oblique walk every method must be
     // near the truth, and the row must carry the reached obliqueness it will be
     // binned by.
@@ -48,7 +48,7 @@ describe.runIf(process.env.QR_SWEEP === '1')(
       expect(last.errRawDeg).toBeLessThan(3);
       expect(last.errFusedDeg.rotSharedFreeT!).toBeLessThan(1);
       expect(last.errProductionDeg).toBeLessThan(1);
-      // Today's gate stays SHUT even here (M3b design review §16 #1): the raw
+      // Today's gate stays SHUT even here: the raw
       // rotations of this clean, strongly oblique window spread 5.7 deg, just
       // over the 5 deg gate (3 cm / 1 cm is fine), while the joint solve on
       // the same window is within 1 deg. Measured 2026-09-24.
@@ -64,7 +64,7 @@ describe.runIf(process.env.QR_SWEEP === '1')(
       expect(last.window).toBe(rows.length);
     }, 120_000);
 
-    // Why this test matters: the variant ranking hinges on SLAM error (plan §8);
+    // Why this test matters: the variant ranking hinges on SLAM error;
     // the noise must reach what the SOLVERS see, not the rendered image, or the
     // sweep would measure nothing. Same frames, same seed: only the poses the
     // solvers are handed differ.
