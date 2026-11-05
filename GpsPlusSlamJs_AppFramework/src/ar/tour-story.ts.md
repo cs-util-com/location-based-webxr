@@ -60,16 +60,19 @@ a free block (standing in the world) or a story, which holds its own
 ordered list of blocks, choices and quizzes. A block lives in one place,
 so being in a story is what shows it.
 
-- `parseTourStationChildren(value, at, options): TourStationChild[]` -
-  `options` are `TourChildrenReadOptions` (the block reader's options,
-  `onDropped` taking a `TourChildDrop`).
+- `parseTourStationChildren(value, at, options): TourStationChildrenRead`
+  - `{ children, ids }`: the children as read, and every child id the file
+    names in the station, the ones a lenient read left out included, in file
+    order. `options` are `TourChildrenReadOptions` (the block reader's
+    options, `onDropped` taking a `TourChildDrop`).
 - Types: `TourStationChild` (`TourBlock | TourStory`), `TourStory`
   (`{ id, kind: 'story', title, children }`), `TourStoryChild`
   (`TourStoryBlock | TourChoice | TourQuizEntry`), `TourStoryBlock` (a
   block with `advance`), `TourChoice` (`{ id, kind: 'choice', prompt,
 options }`), `TourQuizEntry` (`TourQuiz` with `id` and `kind: 'quiz'`),
-  `TourChildDrop` (a `TourBlockDrop` or `{ kind: 'child', child, reason }`),
-  `TourChildPlace` (`{ index, story? }`).
+  `TourChildDrop` (a `TourBlockDrop`, `{ kind: 'child', child, reason }`,
+  or `{ kind: 'option', child, option, reason }` for a way on a kept choice
+  lost with the child it named), `TourChildrenPlace` (`{ index, story? }`).
 - `TOUR_CHILD_KINDS` - `story`, `choice`, `quiz`: disjoint from the block
   kinds, so `kind` alone tells every child apart.
 - `TOUR_STORY_TITLE_RULE` - required, 1-80 code points (`tourTextCount`).
@@ -78,7 +81,8 @@ options }`), `TourQuizEntry` (`TourQuiz` with `id` and `kind: 'quiz'`),
   `tourChildrenBlocks` (every block once, in document order),
   `tourChildrenPlace(children, id)` (null when no child has it).
 - `checkTourChildIdsUnique(stations, fail)` - child ids are unique across
-  the tour (one children list per station).
+  the tour: one read per station, checked on its `ids`, so an id a lenient
+  read left out still counts.
 
 Rules:
 
@@ -99,7 +103,9 @@ Rules:
   still fail).
 - A station-level choice or quiz, a story inside a story, or any unknown
   kind fails strict and is left out, reported, under lenient; so is a quiz
-  of an unknown answer type. Options naming a left-out child are pruned,
+  of an unknown answer type. (A story inside a story is not read, so its
+  own children's ids are not counted.) Options naming a left-out child are
+  pruned, each reported,
   and a choice left with fewer than two goes, reported, repeatedly.
 - Structural faults fail even a lenient read: an id, a duplicate, a
   `goto` naming nothing, a story without a title or `children`, a missing

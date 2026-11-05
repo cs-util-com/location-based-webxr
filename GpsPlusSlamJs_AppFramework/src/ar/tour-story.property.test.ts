@@ -320,16 +320,22 @@ describe('caps (properties)', () => {
 
 type Child = Record<string, unknown>;
 
-function children(
-  list: unknown,
-  options: { lenient?: boolean; drops?: TourChildDrop[] } = {}
-): TourStationChild[] {
+type ChildrenOptions = { lenient?: boolean; drops?: TourChildDrop[] };
+
+function childrenRead(list: unknown, options: ChildrenOptions = {}) {
   return parseTourStationChildren(list, 'children', {
     assets: ASSETS,
     fail,
     lenient: options.lenient === true,
     onDropped: (d) => options.drops?.push(d),
   });
+}
+
+function children(
+  list: unknown,
+  options: ChildrenOptions = {}
+): TourStationChild[] {
+  return childrenRead(list, options).children;
 }
 
 /** Every child of a children list, stories' children included, in
@@ -444,8 +450,8 @@ describe('version 5 children (properties)', () => {
         tourStationChildrenArbitrary(SMALL),
         tourStationChildrenArbitrary(SMALL),
         (first, second) => {
-          const a = children(first);
-          const b = children(second);
+          const a = childrenRead(first);
+          const b = childrenRead(second);
           const ids = new Set(allChildren(first).map((c) => c['id']));
           const meet = allChildren(second).some((c) => ids.has(c['id']));
           if (meet) shared++;
@@ -565,14 +571,17 @@ describe('version 5: a list of a newer minor (properties)', () => {
               (b) => !TOUR_WORLD_VIEWS.has(b.view)
             )
           ).toEqual([]);
-          // Every child it left out was reported, by id.
+          // Every child it left out was reported, by id, and every way on
+          // a kept choice lost, by choice and option.
           const reported = new Set(
             drops.flatMap((d) =>
               d.kind === 'child'
                 ? [d.child]
                 : d.kind === 'block'
                   ? [d.block]
-                  : []
+                  : d.kind === 'option'
+                    ? [`${d.child}/${d.option}`]
+                    : []
             )
           );
           const keptTop = new Set(read.map((c) => c.id));
@@ -585,6 +594,16 @@ describe('version 5: a list of a newer minor (properties)', () => {
             for (const kid of source['children'] as Child[]) {
               if (!kept.has(kid['id'] as string)) {
                 lost.push(kid['id'] as string);
+              }
+            }
+            for (const c of story.children) {
+              if (c.kind !== 'choice') continue;
+              const options = new Set(c.options.map((o) => o.id));
+              const written = (source['children'] as Child[]).find(
+                (k) => k['id'] === c.id
+              )!['options'] as { id: string }[];
+              for (const o of written) {
+                if (!options.has(o.id)) lost.push(`${c.id}/${o.id}`);
               }
             }
           }

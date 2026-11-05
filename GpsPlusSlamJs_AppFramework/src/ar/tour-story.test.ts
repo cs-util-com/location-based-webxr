@@ -409,16 +409,20 @@ describe('a file of a newer minor (lenient)', () => {
 
 type ChildrenOptions = { lenient?: boolean; drops?: TourChildDrop[] };
 
-function children(
-  value: unknown,
-  options: ChildrenOptions = {}
-): TourStationChild[] {
+function childrenRead(value: unknown, options: ChildrenOptions = {}) {
   return parseTourStationChildren(value, 'stations[0].children', {
     assets: ASSETS,
     fail,
     lenient: options.lenient === true,
     onDropped: (drop) => options.drops?.push(drop),
   });
+}
+
+function children(
+  value: unknown,
+  options: ChildrenOptions = {}
+): TourStationChild[] {
+  return childrenRead(value, options).children;
 }
 
 const storyOf = (id: string, kids: unknown[], title = 'The old gate') => ({
@@ -679,7 +683,7 @@ describe('version 5 children: what fails the file (strict)', () => {
 });
 
 describe('version 5 children: ids across stations', () => {
-  const read = (value: unknown[]) => children(value);
+  const read = (value: unknown[]) => childrenRead(value);
 
   it('a choice id used in two stations fails', () => {
     const a = read([storyOf('a', [choiceOf('c', [undefined, undefined])])]);
@@ -710,6 +714,38 @@ describe('version 5 children: ids across stations', () => {
     const b = read([storyOf('gate', [quizOf('q')])]);
     expect(() => checkTourChildIdsUnique([a, b], fail)).not.toThrow();
   });
+
+  it('an id a lenient read left out still counts across stations', () => {
+    // Why: a newer minor's child this reader cannot show still owns its id
+    // in the file; another station reusing it is a duplicate there, as it
+    // is within one station. Each case: what station 0 left out, and the
+    // id station 1's free block reuses.
+    const lenient = (value: unknown[]) =>
+      childrenRead(value, { lenient: true });
+    const cases: [unknown[], string][] = [
+      [[{ id: 'x', kind: 'scene' }], 'x'],
+      [[storyOf('a', [{ id: 'x', kind: 'scene' }])], 'x'],
+      [[storyOf('a', [{ ...quizOf('x'), answer: { type: 'map-pick' } }])], 'x'],
+      [
+        [
+          storyOf('a', [
+            choiceOf('x', ['gone', undefined]),
+            { id: 'gone', kind: 'scene' },
+          ]),
+        ],
+        'x',
+      ],
+      [[storyOf('x', [text], 't'.repeat(81))], 'x'],
+      [[storyOf('a', [text], 't'.repeat(81))], 'intro'],
+    ];
+    for (const [first, id] of cases) {
+      const a = lenient(first);
+      const b = lenient([{ ...pin, id }]);
+      expect(() => checkTourChildIdsUnique([a, b], fail)).toThrow(
+        `duplicate child id "${id}"`
+      );
+    }
+  });
 });
 
 describe('version 5 children: a file of a newer minor (lenient)', () => {
@@ -728,6 +764,48 @@ describe('version 5 children: a file of a newer minor (lenient)', () => {
     expect(drops).toEqual([
       expect.objectContaining({ kind: 'child', child: 'scene1' }),
       expect.objectContaining({ kind: 'child', child: 'scene2' }),
+    ]);
+  });
+
+  it('an option pruned from a choice that keeps two ways on is reported', () => {
+    // Why: the visitor loses a way on; an editor opening a newer file must
+    // be able to say so, as it does for every child it left out.
+    const drops: TourChildDrop[] = [];
+    children(
+      [
+        storyOf('a', [
+          { id: 'later', kind: 'scene' },
+          choiceOf('c', ['later', 'intro', undefined]),
+          text,
+        ]),
+      ],
+      { lenient: true, drops }
+    );
+    expect(drops).toEqual([
+      expect.objectContaining({ kind: 'child', child: 'later' }),
+      expect.objectContaining({ kind: 'option', child: 'c', option: 'o0' }),
+    ]);
+  });
+
+  it('a known kind out of its place is skipped and reported: a choice or a quiz in a station, a story in a story', () => {
+    // Why: the strict side fails these; the lenient side must leave them
+    // out and say so, never place them somewhere they do not belong.
+    const drops: TourChildDrop[] = [];
+    const read = children(
+      [
+        choiceOf('c', [undefined, undefined]),
+        quizOf('q'),
+        storyOf('a', [storyOf('inner', [text]), video]),
+        pin,
+      ],
+      { lenient: true, drops }
+    );
+    expect(read.map((c) => c.id)).toEqual(['a', 'sign']);
+    expect(read[0]).toMatchObject({ children: [{ id: 'film' }] });
+    expect(drops.map((d) => [d.kind, 'child' in d ? d.child : ''])).toEqual([
+      ['child', 'c'],
+      ['child', 'q'],
+      ['child', 'inner'],
     ]);
   });
 
@@ -759,7 +837,7 @@ describe('version 5 children: a file of a newer minor (lenient)', () => {
       { lenient: true, drops }
     );
     expect(read).toEqual([storyOf('a', [{ ...text, advance: tap }])]);
-    expect(drops.map((d) => (d.kind === 'child' ? d.child : d.block))).toEqual([
+    expect(drops.map((d) => ('child' in d ? d.child : d.block))).toEqual([
       'gone',
       'c1',
       'c0',

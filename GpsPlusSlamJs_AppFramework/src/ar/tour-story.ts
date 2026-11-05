@@ -580,10 +580,17 @@ export type TourStationChild = TourBlock | TourStory;
 
 /** What the children reader left out: a block or a block's field (as the
  *  block reader reports it), or a whole child it cannot show in its place
- *  (a story, choice or quiz it skipped included). */
+ *  (a story, choice or quiz it skipped included), or one way on a choice
+ *  lost because the child it named was left out (`child` is the choice). */
 export type TourChildDrop =
   | TourBlockDrop
-  | { readonly kind: 'child'; readonly child: string; readonly reason: string };
+  | { readonly kind: 'child'; readonly child: string; readonly reason: string }
+  | {
+      readonly kind: 'option';
+      readonly child: string;
+      readonly option: string;
+      readonly reason: string;
+    };
 
 /** How the children reader reads: as the block reader, with its own
  *  report. */
@@ -710,7 +717,8 @@ function checkStoryGotos(
 /**
  * After a lenient reader left children out: a choice keeps the options
  * whose child is still there (no `goto`: always), and a choice left with
- * fewer than two goes too, reported - repeated, because dropping a choice
+ * fewer than two goes too, reported (a pruned option of a choice that
+ * stays is reported on its own) - repeated, because dropping a choice
  * can strand another that jumped to it. Ends: every round removes one.
  */
 function withoutStrandedStoryChoices(
@@ -728,7 +736,17 @@ function withoutStrandedStoryChoices(
       );
       if (options.length === child.options.length) return [child];
       changed = true;
-      if (options.length >= 2) return [{ ...child, options }];
+      if (options.length >= 2) {
+        for (const o of child.options.filter((x) => !options.includes(x))) {
+          ctx.options.onDropped?.({
+            kind: 'option',
+            child: child.id,
+            option: o.id,
+            reason: `option "${o.id}" names a child this reader left out`,
+          });
+        }
+        return [{ ...child, options }];
+      }
       dropChild(ctx, child.id, `choice "${child.id}" has fewer than 2 ways on`);
       return [];
     });
@@ -788,6 +806,14 @@ function readStationChild(
   return unknownChild(ctx, id, at, 'a block kind or story');
 }
 
+/** One station's children as read, and every child id its file names -
+ *  the ones a lenient read left out included, in file order - which is
+ *  what the ids across stations are checked on. */
+export interface TourStationChildrenRead {
+  readonly children: TourStationChild[];
+  readonly ids: readonly string[];
+}
+
 /**
  * Read one station's `children` (the list `value`, at `at`): every block
  * checked (`tour-blocks.ts`), every free block standing in the world, every
@@ -805,7 +831,7 @@ export function parseTourStationChildren(
   value: unknown,
   at: string,
   options: TourChildrenReadOptions
-): TourStationChild[] {
+): TourStationChildrenRead {
   const ctx: ChildrenContext = {
     fail: options.fail,
     lenient: options.lenient === true,
@@ -820,7 +846,7 @@ export function parseTourStationChildren(
     }
   );
   assertUniqueTourIds(ctx.ids, 'child', options.fail, `${at}: `);
-  return children;
+  return { children, ids: ctx.ids };
 }
 
 /** Whether a station's child is a story (else it is a free block). */
@@ -869,7 +895,7 @@ export function tourChildrenBlocks(
 
 /** Where a child is: its index in the station's list, or its story and its
  *  index there. */
-export interface TourChildPlace {
+export interface TourChildrenPlace {
   readonly index: number;
   readonly story?: TourStory;
 }
@@ -879,7 +905,7 @@ export interface TourChildPlace {
 export function tourChildrenPlace(
   children: readonly TourStationChild[],
   id: string
-): TourChildPlace | null {
+): TourChildrenPlace | null {
   for (const [index, child] of children.entries()) {
     if (child.id === id) return { index };
     if (!isTourStory(child)) continue;
@@ -889,19 +915,16 @@ export function tourChildrenPlace(
   return null;
 }
 
-/** Every id of a children list, stories' children included, in document
- *  order. */
-function childIds(children: readonly TourStationChild[]): string[] {
-  return children.flatMap((c) =>
-    isTourStory(c) ? [c.id, ...c.children.map((s) => s.id)] : [c.id]
-  );
-}
-
 /** Child ids are unique across the tour, not only within a station: one
- *  children list per station, as read. */
+ *  read per station, its `ids` - so an id a lenient read left out still
+ *  counts, as it does within the station. */
 export function checkTourChildIdsUnique(
-  stations: readonly (readonly TourStationChild[])[],
+  stations: readonly Pick<TourStationChildrenRead, 'ids'>[],
   fail: TourFail
 ): void {
-  assertUniqueTourIds(stations.flatMap(childIds), 'child', fail);
+  assertUniqueTourIds(
+    stations.flatMap((s) => s.ids),
+    'child',
+    fail
+  );
 }
