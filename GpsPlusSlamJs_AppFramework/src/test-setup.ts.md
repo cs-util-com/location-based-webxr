@@ -43,6 +43,10 @@ activated" error, so the cause is named in the red.
   `license expired`, regenerate via the key-rotation tooling shipped with
   `gps-plus-slam-js`.
 
+`tests/repo-config/framework-licence-setup.test.js` pins the two silent ways
+of getting this wrong: it stays the first import of the files that use it, and
+it stays a setup file of the bench config.
+
 ## Examples
 
 `import '../test-setup';` at the top of the test file. Verification is
