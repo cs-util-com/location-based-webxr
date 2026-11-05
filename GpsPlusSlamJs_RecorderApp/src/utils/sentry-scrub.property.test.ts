@@ -77,6 +77,9 @@ const labelledHost = fc
 
 const foreignHost = fc.oneof(fc.domain(), labelledHost);
 
+/** A link reduced to its host, however much of the host a label cost it. */
+const HOST_ONLY = /^https:\/\/[^/?#]*\/\[redacted\]$/;
+
 /**
  * Pieces of the text an error report really carries: links to this site and
  * to others (with `{n}` placeholders, queries and fragments), relative calls
@@ -192,7 +195,7 @@ describe('scrubText properties', () => {
             `see https://${host}${path}${segment}?k=v`,
             OWN
           );
-          expect(out).toBe(`see https://${host}/${REDACTED}`);
+          expect(out.slice('see '.length)).toMatch(HOST_ONLY);
         }
       )
     );
@@ -206,15 +209,26 @@ describe('scrubText properties', () => {
         coordinate(180, 0),
         (host, key, value) => {
           const tail = `?${key}${value}&key=abc`;
-          expect(scrubText(`https://${host}/t${tail}`, OWN)).toBe(
-            `https://${host}/${REDACTED}`
-          );
+          expect(scrubText(`https://${host}/t${tail}`, OWN)).toMatch(HOST_ONLY);
           expect(scrubText(`https://${OWN}/t${tail}`, OWN)).toBe(
             `https://${OWN}/t?${REDACTED}`
           );
           expect(scrubText(`GET /t${tail} 200`, OWN)).toBe(
             `GET /t?${REDACTED} 200`
           );
+        }
+      )
+    );
+  });
+
+  it('never keeps the path of a link with URL punctuation in it', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Za-z0-9_()[\]'{}.,;!*~-]{1,30}$/),
+        (segment) => {
+          const out = scrubText(`https://example.org/${segment}/s?k=v`, OWN);
+          expect(out).toMatch(HOST_ONLY);
+          expect(scrubText(`/t?${segment}&k=v`, OWN)).toBe(`/t?${REDACTED}`);
         }
       )
     );

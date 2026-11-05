@@ -123,24 +123,28 @@ describe('scrubText', () => {
     expect(scrubText('scale 1.50, 2.25', OWN)).toBe('scale 1.50, 2.25');
   });
 
-  it('keeps a host whole when its name holds a label and a digit', () => {
-    // A number glued to `lat` or `lon` also counts as a coordinate, and a host
-    // can read that way. Cutting the host in two ended the link there, and
-    // its path and query reached the report.
-    for (const host of [
-      'lon5.tiles.example.org',
-      'cdn-lat1.example.org',
-      'eu-lng2.example.org',
-      'a0lon0a.example.org',
-      'myLat5.example.org',
-      'lat:8080',
-      'salon1.example.org',
-      'babylon5.example.org',
-    ]) {
+  it('removes the path and query when a host reads like a labelled number', () => {
+    // A number glued to `lat` or `lon` counts as a coordinate, and a host can
+    // read that way. Which part of the host survives is cosmetic; what the
+    // link rule must still do is remove everything behind it.
+    for (const [host, kept] of [
+      ['lon5.tiles.example.org', `lon${REDACTED}.tiles.example.org`],
+      ['cdn-lat1.example.org', `cdn-lat${REDACTED}.example.org`],
+      ['eu-lng2.example.org', `eu-lng${REDACTED}.example.org`],
+      ['myLat5.example.org', `myLat${REDACTED}.example.org`],
+      ['lat:8080', `lat:${REDACTED}`],
+      ['a0lon0a.example.org', 'a0lon0a.example.org'],
+      ['salon1.example.org', 'salon1.example.org'],
+      ['babylon5.example.org', 'babylon5.example.org'],
+    ] as const) {
       expect(scrubText(`see https://${host}/x/7?k=v`, OWN)).toBe(
-        `see https://${host}/${REDACTED}`
+        `see https://${kept}/${REDACTED}`
       );
     }
+  });
+
+  it('keeps removing a whole coordinate written as a host', () => {
+    expect(scrubText('https://lat48.1371', OWN)).toBe(`https://lat${REDACTED}`);
   });
 
   it('removes a whole foreign link when a coordinate sits inside it', () => {
@@ -200,6 +204,118 @@ describe('scrubText', () => {
     );
   });
 
+  it('removes a glued number of more than three digits, or one split by an underscore', () => {
+    // One to three digits are at best a degree (about 111 km) and can be part
+    // of a word. From four digits on the value names a place.
+    expect(scrubText('lat48_137154', OWN)).toBe(`lat${REDACTED}_137154`);
+    expect(scrubText('lat48137154N', OWN)).toBe(`lat${REDACTED}N`);
+    expect(scrubText('lat4813a', OWN)).toBe(`lat${REDACTED}a`);
+    expect(scrubText('lat48N', OWN)).toBe('lat48N');
+  });
+
+  it('removes a link past a bracket, parenthesis or quote in it', () => {
+    // These characters are legal in a real URL, so none of them can end one:
+    // a query like `a[0]=s` is what a form library sends.
+    expect(scrubText('https://[2001:db8::1]/secret?k=v', OWN)).toBe(
+      `https://[2001:db8::1]/${REDACTED}`
+    );
+    for (const path of ['[x]/secret', '(x)/secret', "o'x/secret"]) {
+      expect(scrubText(`https://example.org/${path}?k=v`, OWN)).toBe(
+        `https://example.org/${REDACTED}`
+      );
+    }
+    expect(scrubText('GET /t?a[0]=s&key=abc 200', OWN)).toBe(
+      `GET /t?${REDACTED} 200`
+    );
+    expect(scrubText('https://gps.csutil.com/t?a[0]=s&key=abc', OWN)).toBe(
+      `https://gps.csutil.com/t?${REDACTED}`
+    );
+  });
+
+  it('still reads a link inside a stack frame or a bracketed list', () => {
+    const frame = 'at f (https://gps.csutil.com/recorder/assets/a.js:1:2)';
+    expect(scrubText(frame, OWN)).toBe(frame);
+    expect(scrubText('[https://example.org/secret, 2]', OWN)).toBe(
+      `[https://example.org/${REDACTED} 2]`
+    );
+  });
+
+  it('removes another link written against the path of an own link', () => {
+    expect(
+      scrubText("'https://gps.csutil.com/a','https://example.org/secret'", OWN)
+    ).toBe(`'https://gps.csutil.com/${REDACTED}`);
+  });
+
+  it('removes the user name and password of a link', () => {
+    // The browser quotes such a URL in the error it throws for it.
+    expect(scrubText('https://user:pw@example.org/x', OWN)).toBe(
+      `https://${REDACTED}@example.org/${REDACTED}`
+    );
+    expect(scrubText('https://user:pw@example.org', OWN)).toBe(
+      `https://${REDACTED}@example.org`
+    );
+    expect(scrubText('https://user:pw@gps.csutil.com/a.js?x=1', OWN)).toBe(
+      `https://${REDACTED}@gps.csutil.com/a.js?${REDACTED}`
+    );
+  });
+
+  it('removes the query of a link relative to the current folder', () => {
+    expect(scrubText('GET ./t?key=abc 200', OWN)).toBe(
+      `GET ./t?${REDACTED} 200`
+    );
+    expect(scrubText('GET ../a/t?key=abc 200', OWN)).toBe(
+      `GET ../a/t?${REDACTED} 200`
+    );
+  });
+
+  it('treats a host with no scheme as a link', () => {
+    expect(scrubText('see www.example.org/secret?k=v now', OWN)).toBe(
+      `see www.example.org/${REDACTED} now`
+    );
+    expect(scrubText('see //cdn.example.org/secret?k=v now', OWN)).toBe(
+      `see //cdn.example.org/${REDACTED} now`
+    );
+    expect(scrubText('see gps.csutil.com/recorder/a.js?x=1', OWN)).toBe(
+      `see gps.csutil.com/recorder/a.js?${REDACTED}`
+    );
+    // A file path stays: its first part has no dot and top-level name.
+    expect(scrubText('src/utils/sentry.ts', OWN)).toBe('src/utils/sentry.ts');
+  });
+
+  it('removes a pair written as a path or percent-encoded', () => {
+    expect(scrubText('GET /tiles/48.1371/11.5761/z.png 200', OWN)).toBe(
+      `GET /tiles/${REDACTED}/z.png 200`
+    );
+    for (const sep of ['%2C', '%2c', '%20', '+']) {
+      expect(scrubText(`at=48.1371${sep}11.5761`, OWN)).toBe(`at=${REDACTED}`);
+    }
+  });
+
+  it('removes an id from a relative link with no query', () => {
+    expect(scrubText(`GET /files/${DRIVE_ID} 200`, OWN)).toBe(
+      `GET /files/${REDACTED} 200`
+    );
+  });
+
+  // Why this test matters: this code runs on the phone inside the error path,
+  // on text it does not control. Each input is sized so that a rule that
+  // rescans (quadratic) would run for minutes and fail on the test timeout,
+  // while a linear one takes a blink, so no clock is read and no load margin
+  // is needed.
+  it.each([
+    ['labels glued to digits', 'lat5.'],
+    ['camelCase prefixes', 'a0'],
+    ['a scheme that never ends', 'a'],
+    ['labels before spaces', 'lat  '],
+    ['spaces after a label', ' '],
+    ['relative links with no query', '=/a'],
+    ['numbers with no partner', '1.234 '],
+    ['dotted names', 'a.b'],
+  ])('stays linear on %s', (_name, unit) => {
+    const text = `lat${unit.repeat(Math.ceil(2_000_000 / unit.length))}`;
+    expect(typeof scrubText(text, OWN)).toBe('string');
+  });
+
   it('leaves ordinary log text alone', () => {
     const line = '[Recorder] Session started: 3 frames, 1.5x speed, rate 0.25';
     expect(scrubText(line, OWN)).toBe(line);
@@ -210,6 +326,36 @@ describe('scrubText', () => {
 });
 
 describe('scrubDeep', () => {
+  it('removes a coordinate held as a number under a labelled key', () => {
+    // An object the app logs, or an error's own fields, carry numbers rather
+    // than text, and the text rules never see those.
+    const out = scrubDeep(
+      {
+        lat: 48.1371,
+        longitude: '11.5761',
+        originLat: 48.1,
+        start_lng: 11.5,
+        flat: 5,
+        isLatest: 1,
+        lat_note: 'ok',
+        nested: [{ LON: 11.5 }],
+        unset: { lat: null },
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      lat: REDACTED,
+      longitude: REDACTED,
+      originLat: REDACTED,
+      start_lng: REDACTED,
+      flat: 5,
+      isLatest: 1,
+      lat_note: 'ok',
+      nested: [{ LON: REDACTED }],
+      unset: { lat: null },
+    });
+  });
+
   it('scrubs every string in a nested event and keeps ids and numbers', () => {
     const event = {
       event_id: 'a3f2504e04f8911d39a0c0305e82c330',
