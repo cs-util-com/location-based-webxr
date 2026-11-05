@@ -40,9 +40,12 @@ async function controlsBelowTheFold(page) {
   });
 }
 
-// One phone: the smallest supported screen. Taller and wider phones
-// (360x800, 390x844) cross no layout rule of the panel's CSS or scripts
-// between them, so whatever fits here fits there.
+// One phone: the smallest supported screen. The check is vertical only
+// (no control below the screen's bottom), and taller phones (360x800,
+// 390x844) give the panel more height. The one width rule between them,
+// `@media (width <= 380px)` in index.html, tightens the creator's chips in
+// AR, not this panel, and makes nothing taller, so whatever fits here
+// fits there.
 const PHONES = [{ width: 360, height: 640 }];
 
 for (const viewport of PHONES) {

@@ -13,9 +13,13 @@ import {
 } from "./editor3d-fixture.js";
 
 // No spec here is about the clouds: without them the globe draws about
-// four times the frames in this software renderer (`noClouds`).
-test.beforeEach(async ({ page }) => {
-  await noClouds(page);
+// four times the frames in this software renderer (`noClouds`). One
+// flight, the cheapest, keeps them, so a default run still flies through
+// the clouds the creator sees.
+const FLIGHT_WITH_CLOUDS =
+  "the load ends after the line's done-hold while tiles are still held";
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title !== FLIGHT_WITH_CLOUDS) await noClouds(page);
 });
 
 /*
@@ -342,9 +346,7 @@ test("a drag in the 3D view takes the camera where it is; typing in the panel an
   expect(await rejections(page)).toEqual([]);
 });
 
-test("the load ends after the line's done-hold while tiles are still held", async ({
-  page,
-}) => {
+test(FLIGHT_WITH_CLOUDS, async ({ page }) => {
   // Why: the box used to stay after the landing for as long as the relief
   // still loaded, under a line saying so; the owner dropped the line, and
   // the box's end is now the bar's own (a beat after the landing). The
@@ -367,6 +369,9 @@ test("the load ends after the line's done-hold while tiles are still held", asyn
     await approachLasting(page, 3_000);
     await openSampleOnGlobe(page);
     await expect(page.locator("#view3d .approach")).toBeVisible();
+    await expect
+      .poll(async () => (await view3d(page))?.globe?.air?.clouds?.on)
+      .toBe(true);
     await expect
       .poll(() => held.length, { timeout: 60_000 })
       .toBeGreaterThan(0);
