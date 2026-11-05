@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
   await noClouds(page);
 });
 
-/**
+/*
  * Why these tests matter: a tour opened in the globe view flies in from
  * high above, a thin full-width accent line glued under the menu bar
  * filling with the camera's fall (a progress bar named "Loading tour"),
