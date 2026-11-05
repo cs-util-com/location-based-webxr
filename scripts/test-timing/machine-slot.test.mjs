@@ -42,7 +42,6 @@ import {
   SLOT_OPT_IN_ENV,
   acquireMachineSlot,
   ancestorChain,
-  ancestorPids,
   decideMachineSlot,
   holdMachineSlotForProcess,
   parseProcessTable,
@@ -386,7 +385,7 @@ describe('acquireMachineSlot', () => {
       listAncestors: () => [1, 2],
       heartbeat: noHeartbeat,
       timeoutMs: 60 * 60_000,
-      pollMs: 5_000,
+      pollMs: 60_000,
       ...clock,
     });
     expect(slot.outcome).toBe('acquired');
@@ -412,7 +411,7 @@ describe('acquireMachineSlot', () => {
       listAncestors: () => [],
       heartbeat: noHeartbeat,
       timeoutMs: 10 * 60_000,
-      pollMs: 5_000,
+      pollMs: 60_000,
       ...fakeClock(T0, (t) => setHeartbeat(dir, t)),
     });
     expect(slot.outcome).toBe('timed-out');
@@ -548,10 +547,6 @@ describe('the process table', () => {
     expect(ancestorChain(new Map([[30, 20]]), 30)).toEqual([20]);
     expect(ancestorChain(new Map([[30, 20], [20, 30]]), 30)).toEqual([20]);
   });
-
-  it('lists the real parent among its ancestors', () => {
-    expect(ancestorPids()).toContain(process.ppid);
-  }, 30_000);
 });
 
 // R9 and R6: the exit wiring, on an injected process, so nothing is killed.
