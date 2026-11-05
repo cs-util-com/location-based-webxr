@@ -38,7 +38,7 @@ export const GLOBE_GRADES = Object.freeze({
 export type GlobeGradeName = keyof typeof GLOBE_GRADES;
 
 /** The look a view has when nothing names one. */
-export const DEFAULT_GLOBE_GRADE: GlobeGradeName = "neutral";
+export const DEFAULT_GLOBE_GRADE: GlobeGradeName = "aces-bright";
 
 /** The link's parameter: `?grade=<name>`. */
 export const GLOBE_GRADE_PARAM = "grade";

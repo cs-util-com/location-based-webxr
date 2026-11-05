@@ -83,7 +83,7 @@
     rate x time, which jumps at a change of height); `resetCloudDrift()`
     seeds the next frame at the far rate x the drift time.
   - The renderer: antialiased, the named grade (`globe-grade.ts`; its
-    default is Neutral at exposure 1), `autoClear` off.
+    default is ACES at exposure 0.75), `autoClear` off.
 - Examples:
 
   ```ts

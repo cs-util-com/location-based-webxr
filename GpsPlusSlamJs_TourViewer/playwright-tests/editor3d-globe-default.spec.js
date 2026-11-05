@@ -202,13 +202,13 @@ test("the link's grade reaches the renderer, and no name keeps the default", asy
     });
     return (await view3d(page)).globe.grade;
   };
-  expect(await gradeOf("/edit.html?grade=aces")).toEqual({
-    toneMapping: ACESFilmicToneMapping,
-    exposure: 0.47,
-  });
-  expect(await gradeOf("/edit.html")).toEqual({
+  expect(await gradeOf("/edit.html?grade=neutral")).toEqual({
     toneMapping: NeutralToneMapping,
     exposure: 1,
+  });
+  expect(await gradeOf("/edit.html")).toEqual({
+    toneMapping: ACESFilmicToneMapping,
+    exposure: 0.75,
   });
   expect(await rejections(page)).toEqual([]);
 });

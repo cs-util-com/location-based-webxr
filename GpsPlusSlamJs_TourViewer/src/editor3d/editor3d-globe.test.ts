@@ -704,7 +704,7 @@ describe("openGlobeEditor's wiring", () => {
     open = await openGlobeEditor(deps(), {
       ...readGlobeSwitch("?grade=nope"),
     });
-    expect(fakes.colourGrade).toBe("neutral");
+    expect(fakes.colourGrade).toBe("aces-bright");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("nope"));
     warn.mockRestore();
   });

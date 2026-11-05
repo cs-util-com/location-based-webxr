@@ -153,8 +153,8 @@ describe("createGlobeView: dispose", () => {
 
 /**
  * Why this test matters: the view is the one place the renderer's grade is
- * set, so an app that names no grade must get the look from before the
- * presets, and a named one must reach the renderer every pass draws through.
+ * set, so an app that names no grade must get the default look, and a named
+ * one must reach the renderer every pass draws through.
  */
 describe("createGlobeView: the grade", () => {
   const open = (grade?: GlobeGradeName) => {
@@ -174,14 +174,14 @@ describe("createGlobeView: the grade", () => {
 
   it("is the default grade when none is named", () => {
     const renderer = open();
-    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
-    expect(renderer.toneMappingExposure).toBe(1);
+    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+    expect(renderer.toneMappingExposure).toBe(0.75);
   });
 
   it("sets a named grade on the renderer", () => {
-    const renderer = open("aces");
-    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.47);
+    const renderer = open("neutral");
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMappingExposure).toBe(1);
   });
 });
 
