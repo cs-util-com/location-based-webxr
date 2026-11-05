@@ -23,14 +23,7 @@ import {
  * tile server refuses every request (429) while the camera comes closer:
  * the finer tiles are asked for and refused, and every tile drawn near the
  * camera must still carry the map. Then the server answers again and the
- * finer tiles get theirs. And before all that, every map tile's first
- * request fails at the network: one dropped request once left its relief
- * tile without the map for as long as the tile stayed loaded (a dark
- * square with straight edges under the camera), and the first retry made
- * it worse, locking the region again while the library still held the
- * failed request, so the tile never healed. The map must ask for each
- * such tile again, and the first full load is only reached that way.
- * A unit test runs the patched traversal itself
+ * finer tiles get theirs. A unit test runs the patched traversal itself
  * (`GpsPlusSlamJs_Globe/src/globe-osm-map-ready.test.ts`); this one checks
  * the page wires it and the patched build is what it runs.
  */
@@ -70,20 +63,8 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   /** @type {"answer" | "refuse"} */
   let server = "answer";
   let refused = 0;
-  // Until the first full load, every tile's first request fails at the
-  // network (so the tiles under the camera are among them whichever the
-  // relief draws there), and the later ones pass on.
-  let failFirst = true;
-  /** @type {Map<string, number>} */
-  const asked = new Map();
   // Matched before `answerHosts`' plain tile (routes added later go first).
   await page.route("https://tile.openstreetmap.org/**", (route) => {
-    if (server === "answer" && failFirst) {
-      const url = route.request().url();
-      const n = (asked.get(url) ?? 0) + 1;
-      asked.set(url, n);
-      return n === 1 ? route.abort("failed") : route.fallback();
-    }
     if (server === "answer") return route.fallback();
     refused++;
     return route.fulfill({ status: 429, body: "Too Many Requests" });
@@ -122,23 +103,13 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   await page.evaluate(() =>
     /** @type {any} */ (window).__tourEditor.view3dDistance(1200),
   );
-  // Loaded in full only through the retries of the failed first requests:
-  // none left failed.
   await expect
-    .poll(
-      async () =>
-        (await fullyMapped()) &&
-        (osm?.failedRetries ?? 0) >= 1 &&
-        osm.coverage.failed === 0,
-      { timeout: 180_000, intervals: [1_000] },
-    )
+    .poll(fullyMapped, { timeout: 120_000, intervals: [1_000] })
     .toBe(true)
     .catch((/** @type {unknown} */ error) => {
       console.log(`the map never loaded: ${JSON.stringify(osm)}`);
       throw error;
     });
-  expect([...asked.values()].some((n) => n >= 2)).toBe(true);
-  failFirst = false;
 
   // Refused from here on, and the camera comes closer: the finer tiles are
   // asked for and refused, and none may be drawn in its parent's place.
@@ -210,6 +181,73 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   console.log(`relief cache at most ${cacheMax} of ${cacheBudget} bytes`);
   expect(cacheMax).toBeGreaterThan(0);
   expect(cacheMax).toBeLessThanOrEqual(cacheBudget * 1.2);
+  expect(await rejections(page)).toEqual([]);
+});
+
+// Why: one dropped street-map request left its relief tile without the map
+// for as long as the tile stayed loaded (a dark square with straight
+// edges under the camera), and the first retry made it worse: it locked
+// the region again while the library still held the failed request, so the
+// tile never healed. On the real page, the first map request fails at the
+// network; the map must ask for that tile again and every tile near the
+// camera must end up with its map. Every tile's first request fails, so the
+// tiles under the camera are among them whichever the relief draws there.
+// Its own test, not a stage of the hold test above: a request dropped at
+// street level leaves that test's finer tiles unasked after the move, and
+// the refusals then have nothing to refuse.
+test("a street-map tile whose first request failed gets its map", async ({
+  page,
+}) => {
+  // The retries back off in time and the page starts at a software
+  // renderer's frame rate: the wait below is on the healed state, and its
+  // limit only has to outlast a loaded machine.
+  test.setTimeout(300_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
+  await noApproach(page);
+  // The heavy clouds off: in this software renderer they hold the frame
+  // rate near 1 a second.
+  await noClouds(page);
+  /** @type {Map<string, number>} */
+  const asked = new Map();
+  // Routes added later are matched first: this one sees every map request
+  // before the plain tile of `answerHosts`, fails each tile's first, and
+  // passes the later ones on.
+  await page.route("https://tile.openstreetmap.org/**", (route) => {
+    const url = route.request().url();
+    const n = (asked.get(url) ?? 0) + 1;
+    asked.set(url, n);
+    return n === 1 ? route.abort("failed") : route.fallback();
+  });
+  await page.goto("/edit.html?globe=1");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect.poll(() => asked.size, { timeout: 60_000 }).toBeGreaterThan(0);
+  /** @type {any} */
+  let osm = null;
+  await expect
+    .poll(
+      async () => {
+        osm = (await view3d(page))?.osm ?? null;
+        const c = osm?.coverage;
+        return (
+          (osm?.failedRetries ?? 0) >= 1 &&
+          c.near > 0 &&
+          c.failed === 0 &&
+          c.withMap === c.near
+        );
+      },
+      { timeout: 180_000, intervals: [1_000] },
+    )
+    .toBe(true)
+    .catch((/** @type {unknown} */ error) => {
+      console.log(`the map never healed: ${JSON.stringify(osm)}`);
+      throw error;
+    });
+  expect([...asked.values()].some((n) => n >= 2)).toBe(true);
   expect(await rejections(page)).toEqual([]);
 });
 

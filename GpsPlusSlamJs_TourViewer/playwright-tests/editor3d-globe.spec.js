@@ -171,7 +171,7 @@ async function handleOnPage(page, part) {
 // camera an eye height over the square, the tour a few tens of metres in
 // front, the stations drawn and admitted, the sky in daylight, the View
 // menu's Real time running the clock at the real time. (The relief's
-// hand-over is not waited for here: both tests of
+// hand-over is not waited for here: the hold and zoom-in tests of
 // editor3d-globe-osm-hold.spec.js wait for it and fail without it, and the
 // first reads the frame's draw calls once it has.) And
 // on the globe the camera's controls and the editor's gizmo share the
