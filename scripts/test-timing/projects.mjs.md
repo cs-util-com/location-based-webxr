@@ -54,6 +54,16 @@
       had never checked formatting. Local gates (`CI=1`) keep writing.
       Pinned by `projects.test.mjs`, "format stages check on the GitHub
       runner and write everywhere else".
+  - ESLint concurrency: the framework's and the Tour Viewer's `lint` stages
+    run with `--concurrency auto` (ESLint 10 multithreaded linting).
+    Measured 2026-11-05 on the 8-core gate machine, three interleaved runs
+    per mode, no ESLint cache (the stages use none; typed rules make it
+    unsafe), first run = cold file cache: framework off 42.0 / 33.8 / 33.3 s,
+    auto 29.2 / 28.5 / 26.2 s, 4 threads 28.9 / 29.8 / 27.7 s, 2 threads
+    29.1 / 28.7 / 28.8 s; Tour Viewer off 46.6 / 46.3 / 46.2 s, auto 34.0 /
+    33.7 / 33.7 s, 4 threads 36.2 / 35.5 / 35.3 s, 2 threads 37.9 / 37.9 /
+    37.9 s. The other packages were not measured and keep one thread. A
+    machine already saturated by a parallel gate gains less.
 - Invariants & assumptions:
   - Stage `name` === the package.json script name === the md row label; the
     package.json script must invoke `timed-stage.mjs <name>` (enforced by

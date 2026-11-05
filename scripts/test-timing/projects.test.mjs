@@ -419,6 +419,21 @@ describe('dependent trim (per-commit gate, dependents only)', () => {
   });
 });
 
+// Why this test matters: ESLint's multithreaded linting was measured on the
+// two largest lint stages (framework 33-42 s -> 26-29 s, Tour Viewer 46 s ->
+// 34 s, three runs each, 8 cores) and adopted there only; the other packages
+// were not measured and keep the single thread.
+describe('ESLint concurrency', () => {
+  it('runs the framework and Tour Viewer lint stages with --concurrency auto, and no other', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages.filter((s) => /(?:^|\s)eslint\s/.test(s.command))) {
+        const expected = ['GpsPlusSlamJs_AppFramework', 'GpsPlusSlamJs_TourViewer'].includes(project.name);
+        expect(stage.command.includes(' --concurrency auto'), `${project.name} ${stage.name}`).toBe(expected);
+      }
+    }
+  });
+});
+
 // Why this test matters: the mode is selected by an environment variable, and
 // the failure mode of getting it wrong is asymmetric — a run that silently
 // covers less than it claims. "Unset means full gate" is the safe direction and

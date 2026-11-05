@@ -295,7 +295,9 @@ export const PROJECTS = [
       },
       {
         name: "lint",
-        command: "eslint . --config config/eslint.config.mjs --max-warnings 37",
+        // --concurrency auto: 33-42 s -> 26-29 s (projects.mjs.md).
+        command:
+          "eslint . --config config/eslint.config.mjs --max-warnings 37 --concurrency auto",
         counts: null,
       },
       {
@@ -623,7 +625,10 @@ export const PROJECTS = [
               command:
                 'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
             }
-          : stage.name === "check:boundaries"
+          : stage.name === "lint"
+            ? // --concurrency auto: 46 s -> 34 s (projects.mjs.md).
+              { ...stage, command: `${stage.command} --concurrency auto` }
+            : stage.name === "check:boundaries"
             ? // includeOnly reaches ../GpsPlusSlamJs_EditorKit/src: an editor
               // kit change can break this package's boundary rules.
               { ...stage, readsUpstreamSources: true }
