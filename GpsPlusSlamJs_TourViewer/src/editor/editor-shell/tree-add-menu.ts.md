@@ -1,0 +1,66 @@
+# tree-add-menu.ts
+
+## Purpose
+
+The tree's type menu: what a station row's "+" (and an empty station's
+"Add content") adds in place - a short text or a long text at a free
+spot of that station; a picture is listed, off, with its reason (it is
+taken on site with the phone). One menu for every row, opened under the
+button pressed.
+
+## Public API
+
+- `AddKind` - `"pin" | "longText"`: the kinds the editor makes from
+  nothing (`../new-pin.ts`).
+- `ADD_CHOICES` - the menu's lines in order, `{ kind, label, hint, words,
+icon, addable }`: Short text ("A pin with a caption"), Long text ("A
+  reading sign: a title and its text"), Picture (off: "Taken on site with
+  the phone"). `words` is what a search for the kind matches.
+- `addMenuSpot(anchor, size, view)` -> `{ left, top }` (window px, pure):
+  under the button, opening rightwards from 20 px left of its right
+  edge (over the view beside the tree, not over its rows), else as far
+  right as fits, 8 px inside the window's edges; above the button where
+  there is no room below it.
+- `createTreeAddMenu({ body, host, choose })` -> `{ openFor(anchor,
+stationId, title), close(returnFocus), isOpen() }`: builds
+  `#tree-add-menu` (`.menu`, `role="menu"`) into `host`. `openFor` titles
+  it "Add to <title>" (its head and its `aria-label`), places it, marks
+  the opener `aria-expanded="true"` and focuses its first item. A click on
+  an item that is not off closes it, the focus back on the station's
+  "+", then calls `choose(stationId, kind)`.
+
+## Invariants & assumptions
+
+- Keys inside it are the WAI-ARIA menu's: the arrows wrap, Home and End
+  jump, a letter moves to the next item whose label starts with it; the
+  item that is off keeps its place in that order (`aria-disabled`, never
+  `disabled`). Escape closes it with the focus back on the "+" and stops
+  there (`stopPropagation`: the page's Escape would drop the selection);
+  Tab closes it and lets the focus move; a press outside closes it.
+- The focus goes back by the station's id (`[data-add="<id>"]` in
+  `body`), not to the element pressed: "Add content" is gone once the
+  station holds an item, and the shell's redraw after the add keeps the
+  focus on the "+" by that id (`shell-tree.ts`'s focus keys).
+- The menu closes before `choose` runs: the add may draw the tree again.
+- Every word is text, never markup.
+
+## Examples
+
+```ts
+const menu = createTreeAddMenu({
+  body: treeBody,
+  host: document.body,
+  choose: (id, kind) => deps.edits.addItem(id, kind),
+});
+menu.openFor(plusButton, "gate", "The old gate");
+```
+
+## Tests
+
+`tree-add-menu.test.ts` (jsdom): the menu titled by its station, its
+items in order and the picture off with its reason; the keys; a choice
+closing first, the focus back on the "+", `aria-expanded` back to false;
+the item that is off adding nothing; Escape stopping at the menu; Tab and
+a press outside closing it; `addMenuSpot` below, at the edges, above, and
+a property that it stays inside the window. The shell's
+`editor-shell.test.ts` covers the focus after the add's own redraw.

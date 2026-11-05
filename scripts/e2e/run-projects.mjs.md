@@ -18,7 +18,9 @@
   developer's filter also adds
   `--pass-with-no-tests` (it may match only the other project's specs),
   nothing else does. Exit code: the first non-zero one, else 1 when a report
-  was unreadable, else 0; 2 on a malformed command line.
+  was unreadable, else 0; 2 on a malformed command line (the arguments
+  missing, or a `--project` the plan does not know: its message on one
+  line, no stack trace).
 - Invariants & assumptions:
   - **Every project runs**, even after a red one. This is why it is not
     Playwright's project `dependencies`, which skip a dependent project when
@@ -70,6 +72,8 @@
 - Example: from `GpsPlusSlamJs_TourViewer`,
   `E2E_DOM_WORKERS=2 node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js`.
 - Tests: the pure rules in `project-runs.test.mjs` and its property test;
+  the refusals (an unknown `--project`, no arguments: exit 2 and one line,
+  no stack trace) in `run-projects.test.mjs`, which runs the script;
   the plan in `tests/repo-config/tour-viewer-e2e-plan.test.js`; the stage
   command in `scripts/test-timing/projects.test.mjs`. The process wiring
   itself (spawn, merge on disk) is exercised by every Tour Viewer e2e run

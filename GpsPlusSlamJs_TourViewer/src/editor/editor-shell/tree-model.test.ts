@@ -113,9 +113,9 @@ describe("buildTree", () => {
       [1, "Market Square", true],
       [2, "Station 2", false],
     ]);
-    const [a, b] = tree.cards;
-    expect(a?.description).toBe("Old");
-    expect(b?.description).toBeNull();
+    const [a] = tree.cards;
+    // The description is the inspector's, not a line of the row.
+    expect(a).not.toHaveProperty("description");
     expect(a?.selection).toBe("station:a");
     expect(a?.children.map((c) => [c.kind, c.title])).toEqual([
       ["pin", "Fountain <b>1612</b>"],
@@ -187,6 +187,103 @@ describe("buildTree", () => {
       }),
     );
     expect(treeFoldOf(tree).openStations).toEqual(["b"]);
+  });
+});
+
+// Why: the explorer row says what a folded station holds (its count),
+// flags a station that may be moved (its lock is off: every station
+// starts locked), and the story folders a later format brings slot in
+// before the free items - none exist yet, so none is listed.
+describe("the explorer row's facts", () => {
+  it("counts a station's items, flags an unlocked one, and lists no folders yet", () => {
+    const tree = buildTree(
+      input({ view: { ...initialEditorViewState, unlockedStations: ["b"] } }),
+    );
+    expect(tree.cards.map((c) => [c.count, c.unlocked, c.folders])).toEqual([
+      [4, false, []],
+      [0, true, []],
+    ]);
+  });
+});
+
+// Why: the tree's search finds what the old 2D rail's search finds - a
+// title or a kind's words, case-insensitive - and shows where it is: a
+// station found by its name or its description, or by one of its items,
+// whose card then lists just the items found, unfolded. A search that
+// finds nothing must say so rather than show an empty dock.
+describe("the tree's search", () => {
+  it("lists every station for an empty or blank query", () => {
+    for (const query of ["", "   "]) {
+      const tree = buildTree(input({ query }));
+      expect(tree.cards.map((c) => c.id)).toEqual(["a", "b"]);
+      expect(tree.query).toBe("");
+    }
+  });
+
+  it("finds a station by its name or its description, its items as they were", () => {
+    for (const query of ["market", "  OLD "]) {
+      const tree = buildTree(input({ query }));
+      expect(tree.cards.map((c) => [c.id, c.open, c.children.length])).toEqual([
+        ["a", false, 4],
+      ]);
+      expect(tree.query).toBe(query.trim());
+    }
+  });
+
+  it("finds items by their title or their kind's words, their station unfolded", () => {
+    const byTitle = buildTree(input({ query: "square in" }));
+    expect(
+      byTitle.cards.map((c) => [c.id, c.open, c.children.map((k) => k.id)]),
+    ).toEqual([["a", true, ["photo-2"]]]);
+    // "note" is the rail's word for a pin or a photo; "3d" a model's.
+    const note = buildTree(input({ query: "note" }));
+    expect(note.cards[0]?.children.map((k) => k.id)).toEqual([
+      "pin-1",
+      "photo-1",
+      "photo-2",
+    ]);
+    const model = buildTree(input({ query: "3D" }));
+    expect(model.cards[0]?.children.map((k) => k.id)).toEqual(["model-1"]);
+  });
+
+  // Why: a station the search unfolded (its items found) must fold on
+  // its arrow like any other; the store's fold is not what keeps it
+  // open, so the search's own folds (`searchFolded`) do.
+  it("folds a station the search unfolded when the search's folds name it", () => {
+    const tree = buildTree(input({ query: "square in" }));
+    expect(tree.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [true, true],
+    ]);
+    const folded = buildTree(
+      input({ query: "square in", searchFolded: ["a"] }),
+    );
+    expect(folded.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [false, true],
+    ]);
+    // A station found by its name keeps the store's fold.
+    const byName = buildTree(input({ query: "market", searchFolded: ["a"] }));
+    expect(byName.cards.map((c) => [c.open, c.searchOpened])).toEqual([
+      [false, false],
+    ]);
+  });
+
+  // Why: a name typed with a combining accent and one stored precomposed
+  // (or the other way round) look the same and must match.
+  it("matches across Unicode forms (NFC), case-blind", () => {
+    const cafe = input({
+      stations: [station("c", { title: "Caf\u00e9 Luitpold" })],
+    });
+    expect(
+      buildTree({ ...cafe, query: "CAFE\u0301" }).cards.map((c) => c.id),
+    ).toEqual(["c"]);
+  });
+
+  it("finds codes by their title or line, and finds nothing for a word in none", () => {
+    expect(buildTree(input({ query: "printed" })).codes).toHaveLength(1);
+    const none = buildTree(input({ query: "zebra" }));
+    expect([none.cards.length, none.codes.length]).toEqual([0, 0]);
+    // The count in the head stays the tour's.
+    expect(none.stationCount).toBe(2);
   });
 });
 

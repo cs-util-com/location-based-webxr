@@ -183,12 +183,26 @@ export function buildEditorModel(input: {
  *  (the search box's word for a pin or a photo), and the words the 3D
  *  editor once used for those kinds, which a creator may still type.
  *  The kind's own word is in its second line already. */
-const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
+export const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
   code: "",
   pin: "note short text",
   photo: "note picture",
   station: "",
 };
+
+/** A text folded for the search: one Unicode form (NFC), lower case. */
+function foldForSearch(text: string): string {
+  return text.normalize("NFC").toLowerCase();
+}
+
+/** Whether `query` (trimmed; case-insensitive and blind to the Unicode
+ *  form, so a combining accent matches a precomposed one) is in one of
+ *  `texts`; an empty query is in everything. The 2D rail's search, and
+ *  the 3D tree's (`editor-shell/tree-model.ts`). */
+export function matchesQuery(query: string, texts: readonly string[]): boolean {
+  const q = foldForSearch(query.trim());
+  return q === "" || texts.some((text) => foldForSearch(text).includes(q));
+}
 
 /** The rail's rows for a search: every item whose title, second line or
  *  kind's words (`KIND_SEARCH_WORDS`) contain `query` (case-insensitive,
@@ -197,13 +211,8 @@ export function filterItems(
   items: readonly EditorItem[],
   query: string,
 ): EditorItem[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return [...items];
-  return items.filter(
-    (i) =>
-      i.title.toLowerCase().includes(q) ||
-      i.meta.toLowerCase().includes(q) ||
-      KIND_SEARCH_WORDS[i.kind].includes(q),
+  return items.filter((i) =>
+    matchesQuery(query, [i.title, i.meta, KIND_SEARCH_WORDS[i.kind]]),
   );
 }
 

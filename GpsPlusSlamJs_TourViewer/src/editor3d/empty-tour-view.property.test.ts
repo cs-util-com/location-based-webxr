@@ -5,8 +5,9 @@
  * core places a camera only there), and the view must look down at it. And
  * it is meant to show the creator's own part of the world: for real zones,
  * checked against their cities' real places (not against the module's own
- * table), the city must lie inside what the start height sees, and on a
- * landscape screen inside the picture itself.
+ * table), the city must lie near the centre (an arc bound the offset alone
+ * does not meet), inside what the start height sees, and on a landscape
+ * screen inside the picture itself.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -30,6 +31,14 @@ function startKm(aspect: number): number {
     }) / 1000
   );
 }
+
+/** How far (deg of arc) a real zone's city may lie from the centre. The
+ *  start height sees the whole visible half of the Earth, so the cap and
+ *  the picture checks pass even a wrong region table; this bound does not:
+ *  with the table the farthest city is Jakarta at about 36 deg, with the
+ *  offset alone (the fallback latitude for every zone) Reykjavik at about
+ *  56 deg. */
+const NEAR_ARC_DEG = 40;
 
 /** The lowest of those over the shapes tested here (the widest screen
  *  starts nearest), for the cap check. */
@@ -199,10 +208,38 @@ describe("the empty tour's view (properties)", () => {
     );
   });
 
-  // Why: a landscape screen sees less from north to south than the cap:
-  // at lat 10 for every zone, Oslo and Auckland started off its top and
-  // bottom edges. With the zone's region they are in the picture, at any
-  // landscape shape.
+  // Why: a region table that put a zone in the wrong part of the world
+  // must fail somewhere, and from the approach's start height the cap and
+  // the picture see too much to catch it. The arc from the centre to the
+  // zone's own city does, with the standard or the summer offset.
+  it("puts a real zone's city near the centre (a wrong region fails)", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...CITIES),
+        fc.boolean(),
+        ([zone, stdH, summerH, lat, lng], summer) => {
+          const hours = summer ? summerH : stdH;
+          const centre = emptyTourCentre(-hours * 60, zone);
+          expect(arcDeg(centre, { lat, lng })).toBeLessThan(NEAR_ARC_DEG);
+        },
+      ),
+    );
+  });
+
+  // Why: the bound above must be able to fail. Without the zone's region
+  // (the offset alone, one fallback latitude for every zone) some city lies
+  // beyond it.
+  it("puts some city beyond the bound on the offset alone", () => {
+    const worst = Math.max(
+      ...CITIES.map(([, stdH, , lat, lng]) =>
+        arcDeg(emptyTourCentre(-stdH * 60), { lat, lng }),
+      ),
+    );
+    expect(worst).toBeGreaterThan(NEAR_ARC_DEG);
+  });
+
+  // Why: the city must also be in the picture itself, at any landscape
+  // shape, not only in the cap.
   it("puts a real zone's city in a landscape picture (standard offset)", () => {
     fc.assert(
       fc.property(

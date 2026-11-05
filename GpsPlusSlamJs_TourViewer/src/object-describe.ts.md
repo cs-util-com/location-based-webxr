@@ -25,7 +25,7 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
 - `BLOCK_KIND_LABEL` - each kind in the ONE word every creator page uses
   for it ("Pin", "Long text", "Photo", "Video", "Audio", "3D model",
   "Character"): the name of a block with no text of its own, the
-  inspector's kind line and its commands ("Add a pin", "Delete photo"),
+  inspector's kind line and its commands ("Delete photo"),
   the 2D card's kind, and the second line of the object list and the
   editor's rail.
   - **Why "Pin" and "Photo", not the format's "short text" and

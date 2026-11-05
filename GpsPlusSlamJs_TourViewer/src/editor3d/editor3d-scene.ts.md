@@ -56,7 +56,20 @@ keys), and writes only through the page's `edits`.
   - `readout()` - `Editor3dReadout`: `tiltDeg`, `headingDeg` (the bearing
     the camera looks toward), `top`, `drawCalls` (the whole frame's,
     `frame-draw-calls.ts`: the ground's update may draw before the
-    scene's render), `frameMs` (the mean of the last 60 frames);
+    scene's render), `triangles`, `frameMs`
+    (the mean of the last 60 frames), `worstFrameMs`, `slowFrames` (over
+    50 ms in the last five seconds; both views tick one `frame-clock.ts`,
+    paused while the page is hidden, the globe view's also while its
+    canvas has no size)
+    and `mapLoad` (the street map's loading state); the shell's bottom
+    panel shows them. The draw calls and triangles come through
+    `drawnCounts` (`editor3d-view-parts.ts`), the one accessor both views
+    use;
+  - `mapTiles(limit)`, `retryMap()`, `lastMapRetry()` - the street map's
+    near tiles, a retry of its failed ones now (an `OsmRetryAsk`: how
+    many, or refused with the map off or none failed), and what became of it
+    (the overlay's `mapTiles`, `retryNow`, `lastRetry`), for the bottom
+    panel's Map loading tab;
   - `setRealTime?(on)` - optional: the globe view's clock, the real time
     now (true) or held in daylight over the tour (false, its default);
     this view has no sky of its own and leaves it out;
@@ -123,8 +136,10 @@ keys), and writes only through the page's `edits`.
   preview), the layer (handed the camera's position, the view's height
   and the lens: a code laid flat is sized on screen by them), the render.
 - **Sizes:** the box is hidden while the view loads (the map stays in
-  view), so the window's size stands in until it shows; a ResizeObserver
-  follows the box and keeps the billboards' screen size; it also keeps
+  view), so the window's size stands in until it shows. Once shown, the
+  height is the canvas's: the bottom panel shortens the canvas (it pushes
+  the view up; none left when maximised). A ResizeObserver follows the
+  box and the canvas and keeps the billboards' screen size; it also keeps
   the view's height the layer sizes codes by (read there, never per
   frame: a read of the box's size can force a layout).
 - **The geoid** (`gps-plus-slam-osm/elevation/egm96`, about 170 KB) is

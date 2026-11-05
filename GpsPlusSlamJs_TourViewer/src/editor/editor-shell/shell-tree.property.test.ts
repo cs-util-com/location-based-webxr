@@ -117,11 +117,19 @@ describe("a folded station's row", () => {
           // One child: the row. No picture, description or items.
           expect([...card.children].map((c) => c.className)).toEqual(["head"]);
           const head = card.children[0] as HTMLElement;
+          // The explorer row: grip, fold arrow, the button, the count of
+          // its one photo, then its "+".
           expect([...head.children].map((c) => c.className)).toEqual([
-            "pick",
             "grip",
             "tw",
+            "pick",
+            "meta",
+            "ib add",
           ]);
+          // The "+" names its station whatever the name holds.
+          expect(head.querySelector(".add")?.getAttribute("aria-label")).toBe(
+            `Add to "${title}"`,
+          );
           const pick = head.querySelector<HTMLButtonElement>(".pick");
           expect([...(pick?.children ?? [])].map((c) => c.tagName)).toEqual([
             "SPAN",

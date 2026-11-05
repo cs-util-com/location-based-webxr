@@ -22,7 +22,8 @@ origin?, groundAt? })` ->
     the image it shows, and each asset once, B2a review 3) and
     `imageId` (the one its card shows, or null), `foundRadiusM`,
     `activateRadiusM`, `outside` (how many of its items stand outside
-    the found circle), `offGround` (how many items stand more than
+    the found circle: `tour-problems.ts`'s `outsideItems`, the rule the
+    bottom panel's Problems tab lists by), `offGround` (how many items stand more than
     `ON_GROUND_M` off the ground; null while the ground under any has not
     loaded), `groundOffM` (the anchor's height over the ground as shown:
     in tenths of a metre, 0 within `ON_GROUND_M`; null while unknown),
