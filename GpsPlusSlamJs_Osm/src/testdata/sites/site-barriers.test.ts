@@ -96,14 +96,16 @@ describe("site barriers", () => {
   });
 
   it.each(cases)("%s produces no NaN vertex", (id) => {
+    // NaN removes the object from the three.js scene with nothing reported
+    // — a wall that silently does not exist, which reads as sparse OSM data
+    // rather than as a bug.
+    const offenders: unknown[] = [];
     for (const volume of built.get(id)?.volumes ?? []) {
       for (const value of volume.mesh.positions) {
-        // NaN removes the object from the three.js scene with nothing reported
-        // — a wall that silently does not exist, which reads as sparse OSM data
-        // rather than as a bug.
-        expect(Number.isFinite(value)).toBe(true);
+        if (!Number.isFinite(value)) offenders.push(value);
       }
     }
+    expect(offenders).toEqual([]);
   });
 
   it.each(cases)("%s draws every barrier it also indexes", (id) => {

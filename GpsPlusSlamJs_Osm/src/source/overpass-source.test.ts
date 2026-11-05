@@ -314,11 +314,18 @@ describe("bounded concurrency", () => {
 
       resolvers.shift()?.();
 
+      // Drain until every request has started and been answered: a count of
+      // turns would be a guess at how long the chain is on a loaded machine.
       const macrotask = () => new Promise((resolve) => setTimeout(resolve, 0));
-      for (let i = 0; i < 12; i++) {
+      const deadline = Date.now() + 5_000;
+      while (
+        fetchImpl.mock.calls.length < tiles.length &&
+        Date.now() < deadline
+      ) {
         await macrotask();
         while (resolvers.length > 0) resolvers.shift()?.();
       }
+      while (resolvers.length > 0) resolvers.shift()?.();
       await Promise.allSettled(pending);
 
       expect(peak, `third caller arriving ${arrivalTicks} microtasks in`).toBe(

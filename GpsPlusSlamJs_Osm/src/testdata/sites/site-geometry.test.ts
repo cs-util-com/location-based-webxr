@@ -52,14 +52,16 @@ describe("site geometry", () => {
   });
 
   it.each(cases)("%s produces no NaN vertex", (id) => {
+    // NaN propagates into the transform and REMOVES the object from the
+    // scene with nothing reported — a building that silently does not
+    // exist, which reads as sparse OSM data rather than as a bug.
+    const offenders: unknown[] = [];
     for (const volume of built.get(id) ?? []) {
       for (const value of volume.mesh.positions) {
-        // NaN propagates into the transform and REMOVES the object from the
-        // scene with nothing reported — a building that silently does not
-        // exist, which reads as sparse OSM data rather than as a bug.
-        expect(Number.isFinite(value)).toBe(true);
+        if (!Number.isFinite(value)) offenders.push(value);
       }
     }
+    expect(offenders).toEqual([]);
   });
 
   it.each(cases)(
@@ -86,13 +88,19 @@ describe("site geometry", () => {
       // land geometry kilometres or millions of metres out rather than 1.7x.
       const limit = Math.max(halfWidthM, halfHeightM) * 10;
 
+      // One expect per site rather than per vertex: a hundred thousand
+      // assertion objects were most of this file's run time.
+      const offenders: number[] = [];
       for (const volume of built.get(id) ?? []) {
         const p = volume.mesh.positions;
         for (let i = 0; i < p.length; i += 3) {
-          expect(Math.abs(p[i] as number)).toBeLessThan(limit);
-          expect(Math.abs(p[i + 2] as number)).toBeLessThan(limit);
+          const x = p[i] as number;
+          const z = p[i + 2] as number;
+          if (!(Math.abs(x) < limit)) offenders.push(x);
+          if (!(Math.abs(z) < limit)) offenders.push(z);
         }
       }
+      expect(offenders).toEqual([]);
     },
   );
 
@@ -100,12 +108,15 @@ describe("site geometry", () => {
     // 830 m is the Burj Khalifa. Nothing in this corpus is close, so anything
     // above it is arithmetic rather than architecture — a metres/feet mix-up,
     // a level count read as a height, or a terrain base subtracted twice.
+    const offenders: number[] = [];
     for (const volume of built.get(id) ?? []) {
       const p = volume.mesh.positions;
       for (let i = 1; i < p.length; i += 3) {
-        expect(p[i] as number).toBeLessThan(830);
+        const y = p[i] as number;
+        if (!(y < 830)) offenders.push(y);
       }
     }
+    expect(offenders).toEqual([]);
   });
 
   it.each(cases)(
@@ -116,6 +127,7 @@ describe("site geometry", () => {
       // geometry reaches the height its ROOF was supposed to taper from. Stated
       // as "no vertex is above the resolved total height" it is checkable
       // without knowing what the right shape was.
+      const offenders: number[] = [];
       for (const volume of built.get(id) ?? []) {
         // A metre of slack: the roof generator and the height resolver work in
         // floats, and the vertical stretch applied for terrain rise is applied
@@ -123,11 +135,11 @@ describe("site geometry", () => {
         const ceiling = volume.heights.totalHeightM + 1;
         const p = volume.mesh.positions;
         for (let i = 1; i < p.length; i += 3) {
-          expect(p[i] as number).toBeLessThanOrEqual(
-            ceiling + volume.mesh.positions.length * 0,
-          );
+          const y = p[i] as number;
+          if (!(y <= ceiling)) offenders.push(y);
         }
       }
+      expect(offenders).toEqual([]);
     },
   );
 
