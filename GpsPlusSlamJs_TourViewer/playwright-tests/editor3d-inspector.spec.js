@@ -676,26 +676,18 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
  */
 async function expectInspectorLayout(page, size) {
   const at = `at ${String(size.width)}x${String(size.height)}`;
-  const box = async (/** @type {import("@playwright/test").Locator} */ l) => {
-    const b = await l.boundingBox();
-    if (b === null) throw new Error(`not shown ${at}`);
-    return b;
-  };
-  const dock = await box(page.locator("#shell-inspector"));
+  const l = await inspectorLayoutOf(page);
+  const dock = l.dock;
   expect(dock.x, at).toBeGreaterThanOrEqual(0);
   expect(dock.x + dock.width, at).toBeLessThanOrEqual(size.width);
   // The head: the station's name as text, 6 px after the kind's icon
   // (AU-2: the name is typed in its labelled field below).
-  const icon = await box(page.locator("#inspector-head .hic"));
-  const title = await box(page.locator("#inspector-head .ttl"));
-  expect(title.x - (icon.x + icon.width), at).toBe(6);
+  expect(l.title.x - (l.icon.x + l.icon.width), at).toBe(6);
   // The commands: 28 px rows, 6 px in from the dock's 1 px border, one
   // under another.
-  const acts = await page.locator("#inspector-body > .acts > .act").all();
-  expect(acts.length, at).toBe(3);
+  expect(l.acts.length, at).toBe(3);
   let last = null;
-  for (const a of acts) {
-    const b = await box(a);
+  for (const b of l.acts) {
     expect(b.height, at).toBe(28);
     expect(b.x - dock.x, at).toBe(7);
     if (last !== null) expect(b.y, at).toBe(last.y + last.height);
@@ -705,25 +697,13 @@ async function expectInspectorLayout(page, size) {
   // description three lines, 52 px, AU-2), inside the dock's 12 px
   // padding (and its left border: the dock is flush with the window's
   // right edge). The name first, the description under it.
-  const nameRow = await box(
-    field(page, "title").locator(
-      "xpath=ancestor::div[contains(@class,'f')][1]",
-    ),
-  );
-  const descriptionRow = await box(
-    field(page, "description").locator(
-      "xpath=ancestor::div[contains(@class,'f')][1]",
-    ),
-  );
-  expect(descriptionRow.y, at).toBeGreaterThan(nameRow.y);
-  for (const name of ["title", "description", "radius"]) {
-    const input = field(page, name);
-    const row = input.locator("xpath=ancestor::div[contains(@class,'f')][1]");
-    const r = await box(row);
-    const label = await box(row.locator("label"));
-    const shown = await box(
-      name === "radius" ? input.locator("xpath=..") : input,
-    );
+  expect(l.fields.description.row.y, at).toBeGreaterThan(l.fields.title.row.y);
+  for (const name of /** @type {const} */ ([
+    "title",
+    "description",
+    "radius",
+  ])) {
+    const { row: r, label, shown } = l.fields[name];
     expect(label.width, `${name} ${at}`).toBe(74);
     expect(shown.x - (label.x + label.width), `${name} ${at}`).toBe(6);
     expect(shown.height, `${name} ${at}`).toBe(
@@ -736,13 +716,8 @@ async function expectInspectorLayout(page, size) {
   }
   // The card's pictures: 54 x 32 px, after the label's 74 px and a 6 px
   // gap, the label centred beside them.
-  const thumb = await box(
-    page.locator("#shell-inspector button.thumb").first(),
-  );
+  const { thumb, tag } = l;
   expect([thumb.width, thumb.height], at).toEqual([54, 32]);
-  const tag = await box(
-    page.locator("#shell-inspector .flabel", { hasText: "Card image" }),
-  );
   expect(tag.width, at).toBe(74);
   expect(thumb.x - (tag.x + tag.width), at).toBe(6);
   expect(
@@ -750,10 +725,85 @@ async function expectInspectorLayout(page, size) {
     at,
   ).toBeLessThanOrEqual(1);
   // Position, open: the anchor, then the heading, then the height.
-  const rows = await page
-    .locator("#shell-inspector .pos > .f > :is(label, .flabel)")
-    .allTextContents();
-  expect(rows, at).toEqual(["Anchor", "Heading", "Height"]);
+  expect(l.positionRows, at).toEqual(["Anchor", "Heading", "Height"]);
+}
+
+/**
+ * Everything `expectInspectorLayout` reads, in one round trip to the page:
+ * each read through Playwright waits on the software-drawn 3D view, about
+ * 31 of them per size. As the locators it replaces: a field's row is its
+ * nearest `div` ancestor whose class holds an "f", each single part must
+ * be the only match (a throw names it otherwise), "Card image" is matched
+ * as Playwright's `hasText` does (any case, inside the text).
+ * @param {import("@playwright/test").Page} page
+ */
+function inspectorLayoutOf(page) {
+  return page.evaluate(() => {
+    /** @param {Element} el */
+    const rect = (el) => {
+      if (el.getClientRects().length === 0) {
+        throw new Error(`not shown: ${el.outerHTML.slice(0, 80)}`);
+      }
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    /** @param {ParentNode} root @param {string} selector */
+    const one = (root, selector) => {
+      const all = root.querySelectorAll(selector);
+      if (all.length !== 1) {
+        throw new Error(`${String(all.length)} matches, not one: ${selector}`);
+      }
+      return /** @type {Element} */ (all[0]);
+    };
+    /** @param {Element} el */
+    const rowOf = (el) => {
+      for (let p = el.parentElement; p !== null; p = p.parentElement) {
+        if (p.tagName === "DIV" && p.className.includes("f")) return p;
+      }
+      throw new Error("no field row");
+    };
+    const fieldOf = (/** @type {string} */ name) => {
+      const input = one(document, `#shell-inspector [data-field="${name}"]`);
+      const row = rowOf(input);
+      const shownEl =
+        name === "radius"
+          ? /** @type {Element} */ (input.parentElement)
+          : input;
+      return {
+        row: rect(row),
+        label: rect(one(row, "label")),
+        shown: rect(shownEl),
+      };
+    };
+    const tags = [
+      ...document.querySelectorAll("#shell-inspector .flabel"),
+    ].filter((t) => (t.textContent ?? "").toLowerCase().includes("card image"));
+    if (tags.length !== 1) {
+      throw new Error(`${String(tags.length)} "Card image" labels, not one`);
+    }
+    const thumb = document.querySelector("#shell-inspector button.thumb");
+    if (thumb === null) throw new Error("no card picture");
+    return {
+      dock: rect(one(document, "#shell-inspector")),
+      icon: rect(one(document, "#inspector-head .hic")),
+      title: rect(one(document, "#inspector-head .ttl")),
+      acts: [
+        ...document.querySelectorAll("#inspector-body > .acts > .act"),
+      ].map(rect),
+      fields: {
+        title: fieldOf("title"),
+        description: fieldOf("description"),
+        radius: fieldOf("radius"),
+      },
+      thumb: rect(thumb),
+      tag: rect(/** @type {Element} */ (tags[0])),
+      positionRows: [
+        ...document.querySelectorAll(
+          "#shell-inspector .pos > .f > :is(label, .flabel)",
+        ),
+      ].map((r) => r.textContent ?? ""),
+    };
+  });
 }
 
 test("the inspector's fields sit in place at a phone, a phone in landscape, a tablet and a desktop", async ({

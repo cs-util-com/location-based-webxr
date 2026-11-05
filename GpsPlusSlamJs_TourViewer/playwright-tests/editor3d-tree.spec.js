@@ -17,7 +17,9 @@ import {
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
+  boxIn,
   capture,
+  layoutOf,
   openSampleIn3d,
   openZip,
   view3d,
@@ -473,9 +475,20 @@ test("a station copied with its photo is saved with a picture of its own, and op
  */
 async function expectTreeControls(page, size) {
   const at = `at ${String(size.width)}x${String(size.height)}`;
-  const head = await box(page.locator("#shell-tree .dhead"));
-  const add = await box(page.locator("#tree-add"));
-  const fold = await box(page.locator("#tree-fold"));
+  // Read in one go (`layoutOf`): each read through Playwright waits on
+  // the software-drawn 3D view.
+  const l = await layoutOf(page, [
+    "#shell-tree .dhead",
+    "#tree-add",
+    "#tree-fold",
+    "#tree-body .card > .head",
+    "#tree-body .grip",
+    "#tree-body .head .tw",
+    "#tree-body .head .n",
+  ]);
+  const head = boxIn(l, "#shell-tree .dhead");
+  const add = boxIn(l, "#tree-add");
+  const fold = boxIn(l, "#tree-fold");
   // "+" is a 26 px icon button beside the fold arrow, 6 px from it, in
   // line with it, inside the head (whose box takes a 1 px line at its foot
   // when unfolded, so its own middle is half a pixel low).
@@ -488,10 +501,10 @@ async function expectTreeControls(page, size) {
   expect(add.y + add.height, at).toBeLessThanOrEqual(head.y + head.height);
   // A card's grip: in its row, left of its fold arrow, clear of the
   // number badge.
-  const row = await box(page.locator("#tree-body .card > .head").first());
-  const grip = await box(page.locator("#tree-body .grip").first());
-  const tw = await box(page.locator("#tree-body .head .tw").first());
-  const n = await box(page.locator("#tree-body .head .n").first());
+  const row = boxIn(l, "#tree-body .card > .head", 0);
+  const grip = boxIn(l, "#tree-body .grip", 0);
+  const tw = boxIn(l, "#tree-body .head .tw", 0);
+  const n = boxIn(l, "#tree-body .head .n", 0);
   expect(grip.x, at).toBeGreaterThanOrEqual(n.x + n.width);
   expect(tw.x - (grip.x + grip.width), at).toBe(4);
   expect(grip.y, at).toBe(tw.y);
@@ -610,6 +623,19 @@ test("add, reorder, split and delete come back whole from the draft after a relo
   expect(await tourNow(next)).toEqual(before);
 });
 
+/**
+ * Whether the bar's first action shows its words.
+ * @param {Record<string, import("./editor3d-fixture.js").LaidOut[]>} l
+ */
+function shownWords(l) {
+  return l["#shell-acts .sact .lbl"]?.[0]?.shown === true;
+}
+
+/** @param {{ width: number, height: number }} size */
+function atSize(size) {
+  return `at ${String(size.width)}x${String(size.height)}`;
+}
+
 test("the tree's add, its grips and the bar's actions sit in place at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
@@ -648,24 +674,31 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
     // The bar's actions follow the view line, inside the bar, each a
     // button with its words (shown, or its name where they fold away).
     await card(page, "gate").locator(".pick").click();
-    const bar = await box(page.locator("#shell-bar"));
-    const view = await box(page.locator("#shell-view"));
     const acts = page.locator("#shell-acts .sact");
     await expect(acts).toHaveCount(2);
-    const first = await box(acts.first());
+    const l = await layoutOf(page, [
+      "#shell-bar",
+      "#shell-view",
+      "#shell-acts .sact",
+      "#shell-acts .sact .lbl",
+    ]);
+    const bar = boxIn(l, "#shell-bar");
+    const view = boxIn(l, "#shell-view");
+    const first = boxIn(l, "#shell-acts .sact", 0);
     expect(first.x).toBeGreaterThanOrEqual(view.x + view.width);
-    for (const act of await acts.all()) {
-      const b = await box(act);
+    for (const [i] of (l["#shell-acts .sact"] ?? []).entries()) {
+      const b = boxIn(l, "#shell-acts .sact", i);
       expect(b.x + b.width).toBeLessThanOrEqual(bar.x + bar.width);
       expect(b.y).toBeGreaterThanOrEqual(bar.y);
       expect(b.y + b.height).toBeLessThanOrEqual(bar.y + bar.height);
-      expect(
-        (await act.getAttribute("aria-label")) ?? (await act.textContent()),
-      ).not.toBe("");
     }
-    const words = page.locator("#shell-acts .sact .lbl").first();
-    if (size.width > 820) await expect(words).toBeVisible();
-    else await expect(words).toBeHidden();
+    // Each a button with its words: its name, else its text.
+    expect(
+      await acts.evaluateAll((all) =>
+        all.map((a) => a.getAttribute("aria-label") ?? a.textContent),
+      ),
+    ).not.toContain("");
+    expect(shownWords(l), atSize(size)).toBe(size.width > 820);
     // Deselected: the bar has no actions to show.
     await page.keyboard.press("Escape");
     await expect(acts).toHaveCount(0);
@@ -755,15 +788,32 @@ test("a folded station is one line, its number and name side by side; unfolded i
     ) {
       await page.locator("#tree-fold").click();
     }
-    for (const id of ["short", "long", "plain"]) {
-      const each = card(page, id);
-      await expect(each.locator(".pic, .ds, .kids")).toHaveCount(0);
-      const row = await box(each.locator(".head"));
-      const n = await box(each.locator(".head .n"));
-      const nm = await box(each.locator(".head .nm"));
-      const grip = await box(each.locator(".head .grip"));
-      const arrow = await box(each.locator(".head .tw"));
-      const pick = await box(each.locator(".head .pick"));
+    // The three rows read in one go (`layoutOf`): each read through
+    // Playwright waits on the software-drawn 3D view.
+    const ids = ["short", "long", "plain"];
+    const cardOf = (/** @type {string} */ id) =>
+      `#tree-body .card[data-station="${id}"]`;
+    // A folded card's picture, story and items: none of them.
+    const extras = (/** @type {string} */ id) =>
+      [".pic", ".ds", ".kids"].map((p) => `${cardOf(id)} ${p}`).join(", ");
+    const PARTS = [".head", ".head .n", ".head .nm", ".head .grip"];
+    PARTS.push(".head .tw", ".head .pick");
+    const rows = await layoutOf(
+      page,
+      ids.flatMap((id) => [
+        extras(id),
+        ...PARTS.map((p) => `${cardOf(id)} ${p}`),
+      ]),
+    );
+    for (const id of ids) {
+      const c = cardOf(id);
+      expect(rows[extras(id)]?.length, `${id} ${at}`).toBe(0);
+      const row = boxIn(rows, `${c} .head`);
+      const n = boxIn(rows, `${c} .head .n`);
+      const nm = boxIn(rows, `${c} .head .nm`);
+      const grip = boxIn(rows, `${c} .head .grip`);
+      const arrow = boxIn(rows, `${c} .head .tw`);
+      const pick = boxIn(rows, `${c} .head .pick`);
       expect(row.height, `${id} ${at}`).toBeCloseTo(28, 0);
       // The row's frame: the button fills the row's height and its width
       // up to the grip (4 px gap), the fold arrow sits at the row's right
