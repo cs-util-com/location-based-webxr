@@ -697,9 +697,12 @@ const subsetBody = blocksAt(0, false).map((blocks) => ({
 
 // ---------------------------------------------------------------------------
 
-// Run counts: 500 per property (fast-check's default is 100). The defects
-// these properties found are pinned as plain cases in tour-markdown.test.ts
-// and the golden corpus, so a lower count loses breadth per run, not a case.
+// Run counts. The defects these properties found are pinned as plain cases in
+// tour-markdown.test.ts and the golden corpus. A flanking rule broken on
+// purpose was caught over 24 seeds by run 30 and run 283 at worst in the two
+// properties at 500, but only 21 of 24 seeds by run 3000 in the short wild
+// body property, so that one keeps 3000. The other two at 3000 caught none of
+// the seeded defects and cost under 0.5 s.
 describe('tour markdown (properties)', () => {
   it('reads every generated body inside the subset as the CommonMark reference does', () => {
     fc.assert(
@@ -719,7 +722,7 @@ describe('tour markdown (properties)', () => {
           expect(ourTree(body)).toEqual(referenceTree(body));
         }
       ),
-      { numRuns: 500, maxSkipsPerRun: 1000 }
+      { numRuns: 3000, maxSkipsPerRun: 1000 }
     );
   });
 
@@ -755,7 +758,7 @@ describe('tour markdown (properties)', () => {
           assertPlainTextInvariants(parseTourMarkdown(body));
         }
       ),
-      { numRuns: 500 }
+      { numRuns: 3000 }
     );
   });
 
@@ -808,7 +811,7 @@ describe('tour markdown (properties)', () => {
           normalisedPlainText(t)
         );
       }),
-      { numRuns: 500 }
+      { numRuns: 3000 }
     );
   });
 });

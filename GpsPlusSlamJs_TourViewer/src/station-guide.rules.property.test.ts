@@ -356,6 +356,8 @@ describe("the walk's rules over random walks", () => {
     // a hang, not for a slow machine.
   }, 30_000);
 
+  // At 100 runs: a found station's end tap that does nothing on the fourth
+  // station was caught over 24 seeds by run 66 at worst (about 1 run in 20).
   // "No order can deadlock", re-stated over the story card and the no-guess rule's three tap paths: "Can't get
   // there?" then the armed row's confirm, "Can't get there?" then a row in
   // the chooser, and a row's Skip then its confirm - each two taps; a

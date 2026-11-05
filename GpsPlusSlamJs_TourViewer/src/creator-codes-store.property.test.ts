@@ -460,7 +460,7 @@ describe("creator-codes: the store keeps every rule of the codes as they were", 
       fc.property(fc.array(op, { maxLength: 30 }), (ops) => {
         compareWithReference(ops, false);
       }),
-      { numRuns: 100 },
+      { numRuns: 300 },
     );
   });
 });
@@ -484,7 +484,7 @@ describe("creator-codes: a settle's codes (plan M3b, Q-D)", () => {
       fc.property(fc.array(opWithSettle, { maxLength: 30 }), (ops) => {
         compareWithReference(ops, true);
       }),
-      { numRuns: 100 },
+      { numRuns: 300 },
     );
   });
 
@@ -546,7 +546,7 @@ describe("creator-codes: a settle's codes (plan M3b, Q-D)", () => {
           expect(codes.measurement()).toEqual(letGo ? null : measured);
         },
       ),
-      { numRuns: 100 },
+      { numRuns: 300 },
     );
   });
 });

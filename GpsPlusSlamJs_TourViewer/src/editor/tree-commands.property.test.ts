@@ -307,8 +307,10 @@ describe("the tree's station commands", () => {
           }
         },
       ),
-      { numRuns: 40 },
+      // A title wrong on the seventh station was caught over 24 seeds by run
+      // 36 at worst (about 1 run in 10), so 40 had no margin; about 0.08 s a run.
+      { numRuns: 60 },
     );
     await session.close();
-  });
+  }, 20_000);
 });
