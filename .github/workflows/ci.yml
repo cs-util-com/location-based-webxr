@@ -79,7 +79,7 @@ jobs:
   # developer runs (the root's `test:<package>` scripts), so every stage,
   # command and budget is unchanged; only the order and the machine differ.
   # The Tour Viewer's gate runs without its browser stage, and its browser
-  # specs run as five lanes of `GpsPlusSlamJs_TourViewer/playwright-tests/
+  # specs run as six lanes of `GpsPlusSlamJs_TourViewer/playwright-tests/
   # e2e-plan.js` (`E2E_LANE`). `tests/repo-config/ci-jobs.test.js` holds this
   # matrix to the cascade: every root stage in exactly one job, every lane in
   # exactly one job, a time limit on each.
@@ -104,17 +104,14 @@ jobs:
           - job: libraries
             scripts: test:repo-config test:framework test:osm test:globe test:editor-kit test:site-worker
             timeout: 30
-          # About 11.5 min, nearly all of it e2e.
-          - job: design-system
-            scripts: test:design-system
-            browsers: true
-            timeout: 40
-          # About 10.5 min.
-          - job: apps
-            scripts: test:recorder test:starter test:example test:qr-demo test:landing test:physics test:wayfinding
+          # About 22 min: the design system (about 11.5 min, nearly all of
+          # it e2e) and the apps (about 10.5 min) in one job, which keeps the
+          # run at 11 jobs beside the Tour Viewer's two page-test lanes.
+          - job: design-system-and-apps
+            scripts: test:design-system test:recorder test:starter test:example test:qr-demo test:landing test:physics test:wayfinding
             browsers: true
             report: GpsPlusSlamJs_RecorderApp/test-results/
-            timeout: 40
+            timeout: 50
           # About 33 min, the longest job until the Tour lanes are measured.
           - job: osm-demo
             scripts: test:osm-demo
@@ -125,18 +122,28 @@ jobs:
             scripts: test:tour
             skip_browser: "1"
             timeout: 30
-          # The Tour Viewer's browser specs: the page tests (about 28 min at
-          # one worker) and four 3D lanes, estimated from the 2026-11-04 CI
-          # runs: lane 1 about 35 min (about 55 when its clouds spec is
-          # retried), lanes 2-4 about 26-32 min. The 3D lanes keep a 75 min
-          # limit: 60 would cancel lane 1 on its first clouds retry.
-          - job: tour-dom
+          # The Tour Viewer's browser specs: the page tests in two lanes
+          # (one worker each on CI; the whole set took about 28 min in one)
+          # and four 3D lanes. The 2026-11-04 CI runs had lane 1 at about
+          # 35 min (about 55 when its clouds spec is retried) and lanes 2-4
+          # at about 26-32 min, before a second round of test cuts
+          # shortened them; the lanes are balanced from a local full run since. The
+          # 3D lanes keep a 75 min limit: 60 would cancel lane 1 on its first
+          # clouds retry.
+          - job: tour-dom-1
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e
-            lane: dom
+            lane: dom-1
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
-            timeout: 60
+            timeout: 45
+          - job: tour-dom-2
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: dom-2
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            timeout: 45
           - job: tour-webgl-1
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e

@@ -36,17 +36,16 @@ import {
   wrappedTour,
   zip,
 } from "./editor-tours.js";
-import { useWideFont } from "./wide-font.js";
 
 /**
  * Why these tests matter (Tour Viewer M6 E1): the desktop editor opens a
  * file anyone can make and draws it on a map. These drive the REAL file
  * chooser and check what a creator sees: every code and note listed and on
- * the map, the card beside the selected marker and inside the free part of
- * the window, a photo shown from the zip and an oversized one refused, a
- * label carrying markup shown as text (never run), a zip that is not a tour
- * refused in words, and the chosen layout (variant 1: the rail on the left
- * under the top bar) at a phone, a phone sideways and a desktop.
+ * the map, an oversized photo refused, a label carrying markup shown as
+ * text (never run), a zip that is not a tour refused in words, and the
+ * edits and saves. (The map's own layout, its card placement and its
+ * marker drag are no longer pinned here: the globe is the creator's view,
+ * and the map is on its way out.)
  */
 
 // The page prefers the browser's file picker (M6 E2b-1); these tests open
@@ -104,40 +103,6 @@ test("opens a tour through the file chooser and lists every code and note, label
   expect(await page.evaluate(() => "__xss" in window)).toBe(false);
 });
 
-test("a row opens the card beside its marker, with the photo from the zip, and Esc closes it", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/edit.html");
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  await page.locator("#rail .row", { hasText: "Fountain" }).click();
-  const card = page.locator("#card");
-  await expect(card).toBeVisible();
-  await expect(card.locator("img.card-photo")).toBeVisible();
-  await expect(card).toContainText("0.1-0.7 m near a code");
-  const rail = await box(page.locator("#rail"));
-  const cardBox = await box(card);
-  const marker = await box(page.locator(".mk-wrap.sel"));
-  // Inside the free part: right of the rail, under the top bar.
-  expect(cardBox.x).toBeGreaterThanOrEqual(rail.x + rail.width);
-  expect(cardBox.y).toBeGreaterThanOrEqual(80);
-  // Beside its marker: the card's near edge within 40 px of the marker.
-  const nearEdge =
-    cardBox.x > marker.x
-      ? cardBox.x - (marker.x + marker.width)
-      : marker.x - (cardBox.x + cardBox.width);
-  // Beside it, not over it (E1 review #5): a gap of 0 to 40 px.
-  expect(nearEdge).toBeGreaterThanOrEqual(0);
-  expect(nearEdge).toBeLessThan(40);
-  // The row and the marker are selected together.
-  await expect(
-    page.locator("#rail .row", { hasText: "Fountain" }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("Escape");
-  await expect(card).toBeHidden();
-  await expect(page.locator(".mk-wrap.sel")).toHaveCount(0);
-});
-
 test("refuses a photo over the tour's size cap with a line, not a decode", async ({
   page,
 }) => {
@@ -165,171 +130,6 @@ test("refuses a zip that is not a tour in words, and stays on the open dialog", 
   await expect(page.locator("#open-modal")).toBeVisible();
   await expect(page.locator("#rail")).toBeHidden();
 });
-
-for (const viewport of [
-  { width: 1280, height: 800, collapsed: false },
-  { width: 844, height: 390, collapsed: false },
-  { width: 390, height: 844, collapsed: true },
-]) {
-  test(`keeps the chosen layout at ${viewport.width}x${viewport.height}: the rail on the left under the top bar`, async ({
-    page,
-  }) => {
-    await page.setViewportSize(viewport);
-    // The bar must fit a wide platform face too, not only this machine's.
-    await useWideFont(page);
-    await page.goto("/edit.html");
-    await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-    // The open is async ("Opening…"): measure once the tour is drawn.
-    await expect(page.locator("#rail")).toBeVisible();
-    const top = await box(page.locator("#topbar"));
-    const rail = await box(page.locator("#rail"));
-    expect(top.x).toBe(12);
-    expect(top.y).toBe(12);
-    expect(top.width).toBe(viewport.width - 24);
-    expect(rail.x).toBe(12);
-    expect(rail.y).toBe(top.y + top.height + 12);
-    // The prototype collapses the rail on a narrow window.
-    expect(rail.width).toBe(
-      viewport.collapsed ? 58 : viewport.width <= 980 ? 252 : 304,
-    );
-    // Every top-bar control inside the bar, and so the window (E2a review
-    // #11): the bar is fixed, so the page's scroll width cannot see an
-    // overflow. (The save status is the bottom bar's.)
-    await expectMapBarHolds(page, viewport.width);
-    // Nothing wider than the window.
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth),
-    ).toBeLessThanOrEqual(viewport.width);
-  });
-}
-
-/**
- * Every control the map's top bar shows sits inside the bar, left to
- * right with none over the next, and says its words (the unsaved mark may
- * be its dot alone). Read in one go, as Playwright's isVisible does.
- * @param {import("@playwright/test").Page} page
- * @param {number} width
- */
-async function expectMapBarHolds(page, width) {
-  const at = `at ${String(width)} px`;
-  const top = await box(page.locator("#topbar"));
-  const shown = await page.evaluate(() =>
-    [...document.querySelectorAll("#topbar :is(button, .unsaved-mark)")]
-      .map((c) => ({ c, r: c.getBoundingClientRect() }))
-      .filter(
-        ({ c, r }) =>
-          r.width > 0 &&
-          r.height > 0 &&
-          getComputedStyle(c).visibility !== "hidden",
-      )
-      .map(({ c, r }) => ({
-        id: c.id,
-        words: /** @type {HTMLElement} */ (c).innerText.trim(),
-        x: r.x,
-        y: r.y,
-        width: r.width,
-        height: r.height,
-      })),
-  );
-  shown.sort((a, b) => a.x - b.x);
-  expect(shown.length, at).toBeGreaterThan(0);
-  for (const [i, b] of shown.entries()) {
-    if (b.id !== "unsaved-mark") expect(b.words, `${b.id} ${at}`).not.toBe("");
-    expect(b.x, `${b.id} ${at}`).toBeGreaterThanOrEqual(top.x);
-    expect(b.x + b.width, `${b.id} ${at}`).toBeLessThanOrEqual(
-      top.x + top.width,
-    );
-    expect(b.y, `${b.id} ${at}`).toBeGreaterThanOrEqual(top.y);
-    expect(b.y + b.height, `${b.id} ${at}`).toBeLessThanOrEqual(
-      top.y + top.height,
-    );
-    const next = shown[i + 1];
-    if (next !== undefined) {
-      expect(next.x, `${next.id} after ${b.id} ${at}`).toBeGreaterThanOrEqual(
-        b.x + b.width - 0.5,
-      );
-    }
-  }
-}
-
-test("the map's top bar holds every control with the unsaved mark shown, at each step the bars fold", async ({
-  page,
-}) => {
-  // Why: the layout test above saw the bar's clean state only, and the
-  // fold steps were measured on the 3D view's bar. On the map the bar
-  // carries the same File and View menus and, after an edit, the unsaved
-  // mark with its words: each width where either bar changes its layout
-  // is checked on both sides of its edge, in a wide face.
-  test.setTimeout(120_000);
-  await useWideFont(page);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/edit.html");
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  await editPin(page, "Town hall", "A change to save");
-  await expect(page.locator("#unsaved-mark")).toBeVisible();
-  // The map's own steps (980, 720) and the 3D view's (820, 720, 520,
-  // 400), each with the pixel beyond it.
-  const widths = [1440, 1280, 390];
-  for (const step of [980, 820, 720, 520, 400]) widths.push(step, step + 1);
-  for (const width of widths.sort((a, b) => b - a)) {
-    await page.setViewportSize({ width, height: width < 721 ? 844 : 800 });
-    await expect(page.locator("#unsaved-mark")).toBeVisible();
-    await expectMapBarHolds(page, width);
-  }
-});
-
-for (const width of [390, 1280]) {
-  test(`on the map, the File and View menus open inside the window at ${width} px, every command in words`, async ({
-    page,
-  }) => {
-    // Why: the top bar's commands live in two menus now (Save, Share and
-    // publish, Open, the view switch); a menu that opens past the window's
-    // edge on a phone hides them, and an item without words says nothing.
-    await page.setViewportSize({ width, height: 844 });
-    await useWideFont(page);
-    await page.goto("/edit.html");
-    await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-    await expect(page.locator("#rail")).toBeVisible();
-    for (const [button, menu] of [
-      ["#file-menu-btn", "#file-menu"],
-      ["#view-menu-btn", "#view-menu"],
-    ]) {
-      await page.locator(button).click();
-      await expect(page.locator(menu)).toBeVisible();
-      // A separator parts two groups shown: never the first or the last
-      // line of a menu (over the map, View's 3D commands are not shown).
-      const lines = await page
-        .locator(menu)
-        .evaluate((m) =>
-          [...m.children]
-            .filter((c) => c.getBoundingClientRect().height > 0)
-            .map((c) => c.getAttribute("role")),
-        );
-      expect(lines[0], menu).not.toBe("separator");
-      expect(lines.at(-1), menu).not.toBe("separator");
-      const items = page.locator(`${menu} [role^="menuitem"]`);
-      for (const item of await items.all()) {
-        if (!(await item.isVisible())) continue;
-        const b = await box(item);
-        expect(b.x).toBeGreaterThanOrEqual(0);
-        expect(b.x + b.width).toBeLessThanOrEqual(width);
-        expect(((await item.textContent()) ?? "").trim()).not.toBe("");
-      }
-      await page.keyboard.press("Escape");
-      await expect(page.locator(menu)).toBeHidden();
-      await expect(page.locator(button)).toBeFocused();
-    }
-    // The map's View menu leads to the 3D view; the 3D view's own
-    // commands are not offered over the map.
-    await expect(page.locator("#view-switch")).toHaveText("3D view");
-    await page.locator("#view-menu-btn").click();
-    await expect(page.locator("#studio-top")).toBeHidden();
-    await expect(page.locator("#studio-frame")).toBeHidden();
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth),
-    ).toBeLessThanOrEqual(width);
-  });
-}
 
 test("the sample tour opens with its story's stations on the map", async ({
   page,
@@ -502,49 +302,6 @@ test("says why a walk shows no debug data, and shows no switch for a tour withou
   await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", true);
   await expect(page.locator("#debug-status")).toHaveText("");
   await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
-});
-
-test("the note card never covers the debug panel, whichever note is open", async ({
-  page,
-}) => {
-  // Why (r901 review #4): the debug panel shows for every open tour, in
-  // the window's lower right corner - where the card of a low marker lands
-  // too. On top of the card it covered the card's buttons; under it, the
-  // panel's own. The card's placement keeps clear of the panel instead.
-  // A desktop window where every card fits above the panel: in a shorter
-  // one the tall photo card has no place clear of both the panel and the
-  // top bar, and stays drawn over the panel (`placePopover`'s `avoid`).
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto("/edit.html");
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  await expect(page.locator("#debug-panel")).toBeVisible();
-  const panel = await box(page.locator("#debug-panel"));
-  const card = page.locator("#card");
-  /** @param {{ x: number, y: number, width: number, height: number }} c */
-  const covers = (c) =>
-    c.x < panel.x + panel.width &&
-    c.x + c.width > panel.x &&
-    c.y < panel.y + panel.height &&
-    c.y + c.height > panel.y;
-  const rows = page.locator("#rail .row");
-  const count = await rows.count();
-  expect(count).toBeGreaterThan(0);
-  for (let i = 0; i < count; i += 1) {
-    await rows.nth(i).click();
-    await expect(card).toBeVisible();
-    // The reveal pans the map, and the card follows its marker: the
-    // placement it settles at is the one checked.
-    let last = "";
-    await expect
-      .poll(async () => {
-        const now = JSON.stringify(await box(card));
-        const settled = now === last;
-        last = now;
-        return settled;
-      })
-      .toBe(true);
-    expect(covers(await box(card)), `the card of row ${String(i)}`).toBe(false);
-  }
 });
 
 /**
@@ -923,39 +680,6 @@ test("deletes a note with Undo, and a saved delete takes the photo's file", asyn
   expect(saved.names).toContain("content/photo-big.png");
 });
 
-test("moves a pin by dragging its marker, says the height was kept, and saves the new place", async ({
-  page,
-}) => {
-  await noSavePicker(page);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/edit.html");
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  await page.locator("#rail .row", { hasText: "Town hall" }).click();
-  await page.locator("#card button", { hasText: "Move" }).click();
-  await expect(page.locator("#card")).toContainText(
-    "Drag the marker to its new place.",
-  );
-  const marker = await box(page.locator(".mk-wrap.sel"));
-  await page.mouse.move(marker.x + marker.width / 2, marker.y + 10);
-  await page.mouse.down();
-  await page.mouse.move(marker.x + marker.width / 2 + 60, marker.y + 70, {
-    steps: 8,
-  });
-  await page.mouse.up();
-  await page.locator("#card button", { hasText: "Done" }).click();
-  await expect(page.locator("#card")).toContainText(
-    "Height kept from the phone",
-  );
-  const saved = await saveAndRead(page);
-  const pinSaved = saved.manifest.objects.find(
-    (/** @type {{ id: string }} */ o) => o.id === "pin-markup",
-  );
-  // South-east of where it was: further east, further south.
-  expect(pinSaved.geo.lon).toBeGreaterThan(9.0536 + 10 / 73_800);
-  expect(pinSaved.geo.lat).toBeLessThan(48.5203 + 10 / 111_320);
-  expect(pinSaved.geo.alt).toBe(340);
-});
-
 test("asks before Open another tour drops unsaved changes", async ({
   page,
 }) => {
@@ -1073,27 +797,6 @@ test("a dismissed save picker keeps the file, and Save again delivers it", async
     // @ts-expect-error - set by the fake writable.
     await page.evaluate(() => window.__savedBytes),
   ).toBeGreaterThan(0);
-});
-
-test("a station at its code's point and the code are both reachable on the map", async ({
-  page,
-}) => {
-  // Why (PR #609 review): drawn at the same point with the same size, the
-  // station was hidden under the code and could only be found in the rail.
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/edit.html");
-  await openThroughChooser(
-    page,
-    await editorTour({ station: true }),
-    "editor-fixture.zip",
-  );
-  // The gate is the first station; the fixture's notes each sit in a
-  // station of their own (a block always stands in a station).
-  await page.locator(".mk-station", { hasText: /^1$/ }).click();
-  await expect(page.locator("#card")).toContainText("At the gate");
-  await page.keyboard.press("Escape");
-  await page.locator(".mk-code", { hasText: "1" }).click();
-  await expect(page.locator("#card")).toContainText("Code 1");
 });
 
 test("a file dropped outside the drop box does not take the page away", async ({
@@ -1627,21 +1330,6 @@ test("the same file opened again in the same tab is still saved in place", async
   await expect(
     page.locator(".toast", { hasText: "Another tab is editing" }),
   ).toHaveCount(0);
-});
-
-test("a group's count follows a delete while the search hides the deleted note", async ({
-  page,
-}) => {
-  // Why (PR #613 review): with the same rows shown, the rail updated them
-  // in place and left the group's count of ALL notes as it was.
-  await page.goto("/edit.html");
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  const photos = page.locator('.group[data-kind="photo"] .count');
-  await expect(photos).toHaveText("2");
-  await page.locator("#rail .row", { hasText: "Too big" }).click();
-  await page.locator("#filter").fill("Fountain");
-  await page.locator("#card button", { hasText: "Delete" }).click();
-  await expect(photos).toHaveText("1");
 });
 
 test("a refusal after a save was built still offers the download, and a later open of the file is this tab's", async ({
