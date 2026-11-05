@@ -23,6 +23,37 @@ test.describe('Reference Point Picker Modal', () => {
     );
   });
 
+  test('confirm button with valid input hides the modal', async ({ page }) => {
+    // Why: the one picker flow kept in the browser. The unit tests hold the
+    // picker itself (ref-point-picker.test.ts); this holds that the page wires
+    // it, which jsdom cannot see.
+    // Hide setup modal so it doesn't block clicks
+    await page.evaluate(() => {
+      const setupModal = document.getElementById('setup-modal');
+      setupModal?.classList.add('hidden');
+    });
+
+    // Use the application's real showRefPointPicker function
+    await page.evaluate(() => {
+      const api = window.refPointPickerApi;
+      if (api?.showRefPointPicker) {
+        api.showRefPointPicker();
+      }
+    });
+
+    const modal = page.locator('#ref-point-picker-modal');
+    const input = page.locator('#ref-point-picker-input');
+
+    // Enter a valid name
+    await input.fill('Fountain Corner');
+
+    // Click confirm - the real application handler accepts valid input
+    await page.locator('#ref-point-picker-confirm').click();
+
+    // Modal should be hidden by the real application handler
+    await expect(modal).toHaveClass(/hidden/);
+  });
+
   test('heading displays correct text', async ({ page }) => {
     // Use the application's real showRefPointPicker function
     await page.evaluate(() => {
