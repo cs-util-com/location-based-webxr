@@ -896,8 +896,7 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
  * in `buildStageCommand`.
  *
- * ON THE GITHUB RUNNER a Prettier stage CHECKS instead of writing (test-suite
- * pruning plan 2026-11-04, T-M0). `--write` there rewrote the checkout and
+ * ON THE GITHUB RUNNER a Prettier stage CHECKS instead of writing. `--write` there rewrote the checkout and
  * exited 0, so a badly formatted PR was never red. Keyed on `GITHUB_ACTIONS`
  * (`onGithubRunner`), never on `CI`: every local gate sets `CI=1`, and a local
  * format stage must keep fixing files. Only the mode flag changes, so the

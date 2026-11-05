@@ -1,7 +1,7 @@
 // Repo-meta test: the CI workflow's job layout (.github/workflows/ci.yml).
 //
-// Why this test matters (test-suite pruning plan 2026-11-04, T-M1): CI no
-// longer runs the root cascade (`pnpm test`) in one serial job; it runs the
+// Why this test matters: one serial CI job took 3.4-4.1 h, and a red stage
+// hid every package after it. So CI no longer runs the root cascade (`pnpm test`) in one serial job; it runs the
 // same package gates in parallel jobs, and the Tour Viewer's browser specs in
 // lanes chosen by `E2E_LANE`. A split like that fails silently in three ways,
 // each of which leaves CI green while checking less:
@@ -30,6 +30,8 @@ const plan = await import(
 
 const TOUR_DIR = 'GpsPlusSlamJs_TourViewer';
 const testJob = workflow.jobs.test;
+const RESULT_JOB = 'ci-result';
+const resultJob = workflow.jobs[RESULT_JOB];
 /** @type {{ job: string, dir?: string, scripts: string, lane?: string, skip_browser?: string, browsers?: boolean, report?: string, timeout: number }[]} */
 const entries = testJob.strategy.matrix.include;
 const rootStages = PROJECTS.find((p) => p.dir === '.').stages.map((s) => s.name);
@@ -103,9 +105,45 @@ describe('the Tour Viewer runs its static checks and unit tests once, and its br
   });
 });
 
+// Why these matter: the jobs run their scripts in one shell step that
+// collects the exit codes, so that step alone decides whether a job is red;
+// and with eleven jobs a branch rule cannot name each one, so a single
+// result job is what a rule or a reader checks.
+describe('a red script makes its job red, and one result job says whether all passed', () => {
+  const runStep = testJob.steps.find((s) => String(s.name).startsWith('Run ${{ matrix.scripts }}'));
+
+  it('runs every script, remembers a failure, and exits with it', () => {
+    expect(runStep, 'the run step').toBeDefined();
+    expect(runStep.run).toContain('|| rc=1');
+    expect(runStep.run.trim().split('\n').at(-1).trim()).toBe('exit $rc');
+  });
+
+  it('never lets the run step pass on a failure or skip it', () => {
+    expect(runStep).not.toHaveProperty('continue-on-error');
+    expect(runStep).not.toHaveProperty('if');
+    expect(testJob).not.toHaveProperty('continue-on-error');
+  });
+
+  it('has a result job that waits for every other job, always runs, and is red unless all succeeded', () => {
+    expect(resultJob, RESULT_JOB).toBeDefined();
+    expect(resultJob.name).toBe('CI result');
+    const others = Object.keys(workflow.jobs).filter((id) => id !== RESULT_JOB);
+    expect([...resultJob.needs].sort()).toEqual(others.sort());
+    expect(resultJob.if).toBe('${{ always() }}');
+    expect(resultJob['timeout-minutes']).toBeGreaterThan(0);
+    const run = resultJob.steps.map((s) => s.run ?? '').join('\n');
+    // Every need must have concluded "success": a cancelled, timed-out or
+    // skipped job reads red, not only a failed one.
+    expect(run).toContain('all(.value.result == "success")');
+    expect(resultJob.steps.map((s) => s.env?.RESULTS)).toContain('${{ toJSON(needs) }}');
+  });
+});
+
 describe('the workflow stays inside the free plan and never hangs', () => {
+  // The result job is not counted: it starts only when the others are done,
+  // so it never takes one of the shared concurrent job slots beside them.
   it('has between 8 and 11 jobs per run (20 concurrent jobs are shared by the organisation)', () => {
-    const count = entries.length + Object.keys(workflow.jobs).length - 1;
+    const count = entries.length + Object.keys(workflow.jobs).length - 2;
     expect(count).toBeGreaterThanOrEqual(8);
     expect(count).toBeLessThanOrEqual(11);
   });
@@ -124,8 +162,14 @@ describe('the workflow stays inside the free plan and never hangs', () => {
     expect(testJob.strategy['fail-fast']).toBe(false);
   });
 
-  it('cancels a superseded pull request run on the same branch', () => {
-    expect(workflow.concurrency.group).toContain('${{ github.ref }}');
+  // GitHub keeps only ONE pending run per concurrency group, so pushes to
+  // main must not share one: of three quick merges the middle one would lose
+  // its run. A pull request groups by its ref (a newer push cancels the old
+  // run); every other event gets a group of its own.
+  it('cancels a superseded pull request run on the same branch, and gives every push to main its own run', () => {
+    expect(workflow.concurrency.group).toBe(
+      "ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+    );
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
   });
 });

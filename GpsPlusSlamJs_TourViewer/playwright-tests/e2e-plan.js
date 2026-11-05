@@ -26,7 +26,8 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  *   pages); `both`: the spec opens the editor and another page.
  * - lane (webgl specs only, 1 to 4): the CI job that runs the spec (see
  *   `LANES`). Balanced by the CI minutes of runs 41761594716 and 41820703091
- *   (test-suite pruning plan 2026-11-04, T-M1), each lane about 22-30 min;
+ *   (2026-11-04), each lane about 22-30 min before the globe buildings and
+ *   clouds specs (see the sidecar for the totals since);
  *   rebalance from the uploaded JSON report's per-test durations.
  *
  * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane?: 1 | 2 | 3 | 4 }>>}

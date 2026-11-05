@@ -9,9 +9,11 @@ permissions:
   contents: read
 
 # A newer push to a pull request's branch cancels its superseded run. Pushes to
-# `main` are releases and every one of them runs to the end.
+# `main` are releases and every one of them runs to the end, so each gets a
+# group of its own: GitHub keeps only one PENDING run per group, and with one
+# group for `main` the middle of three quick merges would lose its run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -50,9 +52,8 @@ jobs:
       - name: Check for dead code
         run: pnpm run check:deadcode
 
-  # The root cascade (`pnpm test`) split into parallel jobs (test-suite
-  # pruning plan 2026-11-04, T-M1): one serial job took 3.4-4.1 h, and a red
-  # stage hid every package after it. Each job runs the SAME package gates a
+  # The root cascade (`pnpm test`) split into parallel jobs: one serial job
+  # took 3.4-4.1 h, and a red stage hid every package after it. Each job runs the SAME package gates a
   # developer runs (the root's `test:<package>` scripts), so every stage,
   # command and budget is unchanged; only the order and the machine differ.
   # The Tour Viewer's gate runs without its browser stage, and its browser
@@ -97,7 +98,10 @@ jobs:
             skip_browser: "1"
             timeout: 30
           # The Tour Viewer's browser specs: the page tests (about 28 min at
-          # one worker) and four 3D lanes (about 22-30 min each, estimated).
+          # one worker) and four 3D lanes, estimated from the 2026-11-04 CI
+          # runs: lane 1 about 35 min (about 55 when its clouds spec is
+          # retried), lanes 2-4 about 26-32 min. The 3D lanes keep a 75 min
+          # limit: 60 would cancel lane 1 on its first clouds retry.
           - job: tour-dom
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e
@@ -183,3 +187,20 @@ jobs:
           name: playwright-report-${{ matrix.job }}
           path: ${{ matrix.report }}
           retention-days: 14
+
+  # One result for the whole run, with a stable name for a branch rule or a
+  # reader: red unless every job concluded "success", so a cancelled,
+  # timed-out or skipped job reads red too, not only a failed one.
+  ci-result:
+    name: CI result
+    needs: [deadcode, test]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq -e 'to_entries | all(.value.result == "success")' > /dev/null
