@@ -28,14 +28,15 @@ cannot reach.
   changed area's specs, the `both` specs and any changed spec file.
 - `RESULTS_DIR`, `RESULTS_NAME`: where the config's CI JSON reporter writes,
   from the package.
-- `LANES`: `["dom", "webgl-1", ..., "webgl-4"]`, the CI jobs the browser
-  specs are split into (`E2E_LANE`, `.github/workflows/ci.yml`).
-- `specsOfLane(lane)`: `dom` is `specsOf("dom")`; `webgl-N` is the `webgl`
-  specs whose entry has `lane: N`. Throws `RangeError` on any other name.
-- Each `webgl` entry of `SPECS` carries `lane` (1-4); `dom` entries carry
-  none.
+- `LANES`: `["dom-1", "dom-2", "webgl-1", ..., "webgl-4"]`, the CI jobs the
+  browser specs are split into (`E2E_LANE`, `.github/workflows/ci.yml`).
+- `specsOfLane(lane)`: the specs of the lane's project (`dom-N`: `dom`,
+  `webgl-N`: `webgl`) whose entry has `lane: N`. Throws `RangeError` on
+  any name `LANES` does not hold (`dom` alone included).
+- Every entry of `SPECS` carries `lane`: 1-2 for a `dom` spec, 1-4 for a
+  `webgl` spec.
 - **The lanes in the per-PR tier** (`E2E_TIER=pr`, the default; see
-  [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)): the same five
+  [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)): the same six
   jobs, each running the `@pr` tests of its own specs plus any spec file
   the pull request changed, whole. A tagged 3D test runs in its spec's lane;
   nothing is moved for the tier. A lane job that selects no test fails, so
@@ -64,7 +65,7 @@ cannot reach.
   kit folders above, is `null`.
 - **Fail safe:** a path not named is `null`, so a new folder runs every spec
   until someone classifies it. CI and the full cascade never narrow.
-- **Lanes (CI only):** every `webgl` spec has exactly one lane, so a new
+- **Lanes (CI only):** every spec has exactly one lane, so a new
   spec fails `tests/repo-config/tour-viewer-e2e-plan.test.js` until it gets
   one. The first split (2026-11-05) was balanced by hand from the per-spec
   durations of CI runs 41761594716 and 41820703091 (one worker, about 22-30
@@ -73,6 +74,18 @@ cannot reach.
   attempt) went to lane 1 and the globe buildings spec (about 5 min) to
   lane 3 by the estimates of the 2026-11-04 e2e cost audit, so lane 1 is
   the longest (about 35 min, up to about 55 with the clouds test retried).
+- **Rebalanced 2026-11-05** after the e2e pruning audit's second round, from
+  the per-spec seconds of one local full run (`E2E_TIER=full`, `dom` at 3
+  workers, `webgl` at 1): the `dom` project (1,766 s of test time, one
+  worker on CI, so about 28 min in one job) split in two of about 880 s
+  each: lane 1 `ar-mode` (442 s), `editor` (295 s), `editor-files` (96
+  s) and five short specs; lane 2 the rest. The 3D lanes (2,031 s of test
+  time, the globe spec cut short by a red test, so about 2,120 s) at about
+  490-570 s each: `editor3d-globe-start` (83 s) from lane 2 and
+  `editor3d-globe-buildings` (38 s, no longer waiting for the relief) from
+  lane 3 moved to lane 1, which stays the lightest by local seconds for its
+  clouds spec's CI retries. Local seconds are not CI minutes; rebalance
+  from the uploaded reports.
 
 ## Measurement (2026-11-01)
 
