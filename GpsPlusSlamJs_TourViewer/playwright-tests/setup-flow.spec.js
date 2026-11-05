@@ -22,7 +22,7 @@ test.describe("a first visit", () => {
   // No stored host: the suite's default (playwright.config.js) is cleared.
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("starts at the host tiles, and a chosen host carries on to the link", async ({
+  test("starts at the host tiles, and a chosen host carries on to the link @pr", async ({
     page,
   }) => {
     await page.goto("/?nocache=1");

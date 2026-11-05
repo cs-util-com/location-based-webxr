@@ -36,7 +36,7 @@ async function openHostStep(page) {
   await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
 }
 
-test("opens a tour zip from the device through the file chooser", async ({
+test("opens a tour zip from the device through the file chooser @pr", async ({
   page,
   request,
 }) => {

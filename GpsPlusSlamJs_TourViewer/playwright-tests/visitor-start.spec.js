@@ -60,7 +60,7 @@ const VIEWPORTS = [
 ];
 
 for (const viewport of VIEWPORTS) {
-  test(`the start page leads with the tour's name and puts the round button on the first ${viewport.width}x${viewport.height} screen`, async ({
+  test(`the start page leads with the tour's name and puts the round button on the first ${viewport.width}x${viewport.height} screen${viewport.height === 640 ? " @pr" : ""}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);

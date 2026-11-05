@@ -22,7 +22,9 @@ import {
 } from "./fixtures.js";
 
 test.describe("caching and failure", () => {
-  test("a reload is served from OPFS without refetching", async ({ page }) => {
+  test("a reload is served from OPFS without refetching @pr", async ({
+    page,
+  }) => {
     const counts = await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);

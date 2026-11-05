@@ -166,7 +166,7 @@ async function visit(page, station, second) {
     .toBe(true);
 }
 
-test("the peek names the nearest station; the list opens by the grab and by a drag, and closes", async ({
+test("the peek names the nearest station; the list opens by the grab and by a drag, and closes @pr", async ({
   page,
 }) => {
   // Why this test matters: the sheet replaces the

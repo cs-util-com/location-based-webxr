@@ -51,7 +51,7 @@ async function startTheTour(page) {
   await seedAlignment(page);
 }
 
-test("a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({
+test("a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped @pr", async ({
   page,
 }) => {
   // Why this test matters (tour kit plan K4): it is the castle example in

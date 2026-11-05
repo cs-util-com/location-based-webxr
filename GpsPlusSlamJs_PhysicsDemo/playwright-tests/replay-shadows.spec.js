@@ -268,7 +268,7 @@ test.describe("Physics Demo - shadows you can see", () => {
   // on. It measured nothing and was dropped; see the first-visit findings.)
   for (const skin of ["depth-shaded-wireframe", "off"]) {
     const label = skin;
-    test(`on first load (${label}), with no change, the shadow shows`, async ({
+    test(`on first load (${label}), with no change, the shadow shows${skin === "off" ? " @pr" : ""}`, async ({
       page,
     }) => {
       test.setTimeout(180_000);

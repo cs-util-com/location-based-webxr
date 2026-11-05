@@ -1,0 +1,311 @@
+// Repo-meta test: the per-PR browser tier, the Playwright tests tagged `@pr`.
+//
+// Why this test matters: a pull request runs only the tagged tests (the full
+// set runs on the full run). A tag that drifts out of a spec takes a core
+// flow out of every PR without a red; a tag that drifts in makes the tier
+// slower without anyone deciding it. So the tagged list is pinned here, per
+// package, by count and by name, and a change to it is a visible diff of
+// this file. The list came from the 2026-11-04 pruning audits; changing it
+// means saying why in the commit.
+//
+// What counts as a tag: a test title ending in " @pr" (Playwright reads an
+// `@word` in a title as a tag, and its grep matches the title), or the one
+// conditional form a loop needs, a template title ending in
+// `${<condition> ? " @pr" : ""}`. A title tag rather than the `{ tag }`
+// option, because the option's extra argument makes Prettier re-indent the
+// whole test body, a diff that collides with every branch editing the spec.
+// Any other "@pr" in a spec file (a describe title, the middle of a title, a
+// helper, the tag option) fails the scan, because the scan could not name
+// what it selects.
+//
+// Coverage limits: it reads the source, not Playwright's loader, so a
+// conditional tag is pinned as its condition, not as the instances it
+// selects; and a spec file must sit under a package's own folder (not
+// `node_modules`, `dist` or `test-results`).
+
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const SKIP = new Set(['node_modules', 'dist', 'test-results', 'playwright-report', '.vite']);
+
+/** @param {string} dir @returns {string[]} spec files under dir, absolute */
+function specFiles(dir) {
+  /** @type {string[]} */
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...specFiles(path));
+    else if (/\.spec\.m?js$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
+/**
+ * The index just past the string literal that starts at `i`.
+ * @param {string} s @param {number} i @returns {number}
+ */
+function endOfLiteral(s, i) {
+  const quote = s[i];
+  for (let j = i + 1; j < s.length; j += 1) {
+    if (s[j] === '\\') j += 1;
+    else if (s[j] === quote) return j + 1;
+  }
+  throw new Error(`unterminated string literal at ${i}`);
+}
+
+const PLAIN_TAG = / @pr$/;
+const CONDITIONAL_TAG = /\$\{\s*([^{}?]+?)\s*\?\s*(["'])\s?@pr\2\s*:\s*(["'])\3\s*\}$/;
+
+/**
+ * The tagged tests of one spec file, and how many "@pr" the file holds.
+ * @param {string} text
+ * @returns {{ tagged: string[], mentions: number }}
+ */
+function scanSpec(text) {
+  /** @type {string[]} */
+  const tagged = [];
+  const call = /\btest\(\s*/g;
+  let match;
+  while ((match = call.exec(text))) {
+    const at = match.index + match[0].length;
+    if (!'"\'`'.includes(text[at] ?? '')) continue;
+    const end = endOfLiteral(text, at);
+    const title = text.slice(at + 1, end - 1);
+    if (PLAIN_TAG.test(title)) {
+      tagged.push(title.slice(0, -' @pr'.length));
+      continue;
+    }
+    const conditional = text[at] === '`' ? CONDITIONAL_TAG.exec(title) : null;
+    if (conditional) {
+      const base = title.slice(0, conditional.index);
+      tagged.push(`${base} [if ${conditional[1].replace(/\s+/g, ' ')}]`);
+    }
+  }
+  return { tagged, mentions: (text.match(/@pr\b/g) ?? []).length };
+}
+
+/** package folder -> its tagged tests, as "spec file: title" */
+function scanPackages() {
+  /** @type {Record<string, string[]>} */
+  const byPackage = {};
+  /** @type {string[]} */
+  const unreadable = [];
+  for (const pkg of readdirSync(ROOT)
+    .filter((d) => d.startsWith('GpsPlusSlamJs_'))
+    .sort()) {
+    for (const file of specFiles(join(ROOT, pkg)).sort()) {
+      const { tagged, mentions } = scanSpec(readFileSync(file, 'utf8'));
+      const name = relative(join(ROOT, pkg), file).replaceAll('\\', '/');
+      if (mentions !== tagged.length) {
+        unreadable.push(`${pkg}/${name}: ${mentions} "@pr" but ${tagged.length} tagged tests`);
+      }
+      if (tagged.length > 0) {
+        byPackage[pkg] = [...(byPackage[pkg] ?? []), ...tagged.map((t) => `${name}: ${t}`)];
+      }
+    }
+  }
+  return { byPackage, unreadable };
+}
+
+/** The pinned per-PR tier. Edit together with the tags, never apart. */
+const EXPECTED = {
+  GpsPlusSlamJs_AnchorStarter: [
+    'playwright-tests/placement-flow.spec.js: reveals the live HUD with a placeable button after boot',
+    'playwright-tests/placement-flow.spec.js: renders the onboarding guidance from a ready tracking report',
+    'playwright-tests/placement-flow.spec.js: renders a warming-up tracking report as a progress phase',
+    'playwright-tests/placement-flow.spec.js: wires BOTH the tracking store and the tracking-restart callback during boot',
+    'playwright-tests/placement-flow.spec.js: a user-ended session fires the store teardown (recording closed)',
+    'playwright-tests/placement-flow.spec.js: saves the anchor and surfaces the share/reload affordances',
+    'playwright-tests/placement-flow.spec.js: writes the anchor into the ?show= URL param on place',
+    'playwright-tests/placement-flow.spec.js: round-trips ?show= — reloading the saved link restores the anchor',
+    'playwright-tests/placement-flow.spec.js: starts the wayfinding HUD for the placed anchor (F2)',
+    'playwright-tests/placement-flow.spec.js: starts the wayfinding HUD on the ?show= cache-hit boot (F2 user story)',
+    'playwright-tests/placement-flow.spec.js: does not start the wayfinding HUD when anchor creation fails',
+    'playwright-tests/placement-flow.spec.js: blocks placement with the point-at-the-ground hint when no surface is under the reticle',
+    'playwright-tests/placement-flow.spec.js: blocks placement with the alignment hint when GPS alignment has not arrived',
+    'playwright-tests/placement-flow.spec.js: reverts and surfaces an error when anchor creation fails',
+    'playwright-tests/placement-flow.spec.js: does not leak a marker into the scene when placement fails, and retries stay clean',
+    'playwright-tests/placement-flow.spec.js: rewinds to the start screen when a post-initAR step rejects',
+    'playwright-tests/placement-flow.spec.js: calls endARSession on post-initAR failure and retry boots cleanly',
+    'playwright-tests/share-link.spec.js: flips the label to a success confirmation, then reverts',
+    'playwright-tests/share-link.spec.js: shows a fallback hint when clipboard write fails',
+    'playwright-tests/share-link.spec.js: persists the placed altitude into ?show= and re-applies it on reload',
+    'playwright-tests/smoke.spec.js: loads without unexpected console errors',
+    'playwright-tests/smoke.spec.js: renders the start screen and intro copy',
+    'playwright-tests/smoke.spec.js: keeps the live guidance and placement panels hidden on boot',
+    'playwright-tests/smoke.spec.js: fires the E1 capability gate when WebXR is unavailable',
+  ],
+  GpsPlusSlamJs_DesignSystem: [
+    '3d/pages.fast.spec.mjs: every deployable page has a ready signal here',
+    '3d/pages.fast.spec.mjs: the catalog page opens without errors',
+    '3d/pages.fast.spec.mjs: the look-dev page boots in its default look and draws, without errors',
+    '3d/pages.fast.spec.mjs: the globe lab opens with the relief and the band, and draws, without errors',
+    '3d/pages.fast.spec.mjs: the globe-terrain carrier lab opens and draws without errors',
+    '3d/pages.fast.spec.mjs: the terrain colour comparison page starts and drives the lab',
+    '3d/pages.fast.spec.mjs: the AR shadows lab opens and draws without errors',
+  ],
+  GpsPlusSlamJs_Landing: [
+    'playwright-tests/legal.spec.js: the legal page loads with both sections, the operator placeholder and the claims held to the code',
+    'playwright-tests/legal.spec.js: the landing page links the legal page',
+    'playwright-tests/scroll-story.spec.js: boots and activates every chapter while scrolling, with zero errors',
+    'playwright-tests/scroll-story.spec.js: renders the 3D canvas, or engages the static-DOM floor cleanly',
+    'playwright-tests/scroll-story.spec.js: a ?qr= launch forwards to the tour viewer with the payload intact',
+    'playwright-tests/scroll-story.spec.js: all eight demo apps stay launchable from the demos hub',
+    'playwright-tests/scroll-story.spec.js: shows every chapter readable on a phone (${orientation}) [if orientation === "portrait"]',
+    'playwright-tests/scroll-story.spec.js: still presents every chapter readable, without errors',
+  ],
+  GpsPlusSlamJs_OsmDemo: [
+    'playwright-tests/boot-and-shell.spec.js: loads the rule table, draws a basemap, reports its scale, and says when it is still widening',
+    'playwright-tests/boot-and-shell.spec.js: stays clean — no shader, WebGL or page errors',
+    'playwright-tests/boot-and-shell.spec.js: is really constructed, and the UI thread is not doing the work',
+    'playwright-tests/boot-and-shell.spec.js: a dead worker is REPORTED, not left hanging',
+    'playwright-tests/boot-and-shell.spec.js: locates when pressed without a fix, then OFFERS to enter AR',
+    "playwright-tests/boot-and-shell.spec.js: the offer's button is wired to AR entry, and the prompt clears the offer",
+    'playwright-tests/boot-and-shell.spec.js: leaves the desktop layout alone while no session is running',
+    'playwright-tests/data-and-caching.spec.js: a reload is served from OPFS without refetching',
+    'playwright-tests/map-and-cells.spec.js: draws the cells, the extent, the outlines, the popup — and redraws on a category switch',
+    'playwright-tests/scene-3d.spec.js: draws pixels and buildings, and repaints after a resize',
+    'playwright-tests/scene-3d.spec.js: shows the terrain as a ramp, and the GPU path matches the CPU one',
+  ],
+  GpsPlusSlamJs_PhysicsDemo: [
+    'playwright-tests/replay-flow.spec.js: reconstructs the mesh from a real recording and spawns bouncing balls',
+    'playwright-tests/replay-shadows.spec.js: on first load (${label}), with no change, the shadow shows [if skin === "off"]',
+    'playwright-tests/smoke.spec.js: loads without console errors and offers the replay path on desktop',
+  ],
+  GpsPlusSlamJs_QrTrackingDemo: [
+    'playwright-tests/qr-demo.spec.js: starts scanning with no measured size yet',
+    'playwright-tests/qr-demo.spec.js: measures the QR size from depth and converges to "estimated"',
+    'playwright-tests/qr-demo.spec.js: glues the debug axis + cube under arWorldGroup once locked',
+    'playwright-tests/qr-demo.spec.js: withholds the overlay while the size stays unknown',
+    'playwright-tests/smoke.spec.js: loads and gates WebXR-less desktop without crashing',
+  ],
+  GpsPlusSlamJs_RecorderApp: [
+    'playwright-tests/alignment-timing.spec.js: boots, prints its parameters and the device, and refuses to run empty',
+    'playwright-tests/debug-wheel.spec.js: is absent without the flag - no gear, and the hook reports null',
+    'playwright-tests/debug-wheel.spec.js: with ?debug=1 the gear opens a panel and a preset change reaches the wheel',
+    'playwright-tests/enter-ar-flow.spec.js: clicking enabled Enter AR button hides setup modal',
+    'playwright-tests/enter-ar-flow.spec.js: new scenario creation completes Enter AR flow',
+    'playwright-tests/enter-ar-flow.spec.js: Enter AR enables without opening a folder; folder section collapsed by default',
+    'playwright-tests/map-browser.spec.js: renders a full-bleed map filling the viewport (not a split/modal)',
+    'playwright-tests/map-browser.spec.js: map is interactive and shows progress before any recording streams in',
+    'playwright-tests/map-browser.spec.js: tiles and tours grow as recordings stream in, and progress counts up',
+    'playwright-tests/map-browser.spec.js: progress pill hides once indexing completes',
+    'playwright-tests/map-browser.spec.js: shows the CTA after indexing, embeds on click, then confirms and hides',
+    'playwright-tests/map-browser.spec.js: reverts to a retry label when write access is denied',
+    'playwright-tests/replay-mode.spec.js: auto-switches to replay mode when WebXR is not supported',
+    'playwright-tests/replay-mode.spec.js: no console errors during replay mode initialization',
+    'playwright-tests/setup-modal.spec.js: scenario dropdown is populated after OPFS auto-init',
+    'playwright-tests/setup-modal.spec.js: folder-import progress bar shows in-progress and durable ✓ end states',
+    'playwright-tests/setup-modal.spec.js: Enter AR stays in the viewport without scrolling on a short screen',
+    'playwright-tests/setup-modal.spec.js: Enter AR and its hint share the pinned footer (outside the scroll area)',
+    'playwright-tests/smoke.spec.js: loads without console errors',
+    'playwright-tests/smoke.spec.js: shows setup modal on load',
+    'playwright-tests/smoke.spec.js: setup modal has required UI elements',
+    'playwright-tests/smoke.spec.js: applies utility classes to the document',
+    'playwright-tests/test-hooks-verification.spec.js: REQUIRED_TEST_HOOKS matches the exposed window.testHooks surface',
+    'playwright-tests/toast.spec.js: appears with its message, announces politely, and is really visible',
+    'playwright-tests/toast.spec.js: mounts inside the #app overlay root, so it composites over AR',
+    'playwright-tests/toast.spec.js: goes away on its own, against a real clock',
+  ],
+  GpsPlusSlamJs_TourViewer: [
+    'playwright-tests/ar-layout.spec.js: every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the size offer open [if viewport.height === 640]',
+    "playwright-tests/ar-mode.spec.js: the plain page is the creator's setup; a ?qr= launch is the visitor's screen",
+    'playwright-tests/ar-mode.spec.js: a visitor who refuses the location starts the tour on codes alone: no location request, no GPS watch, no GPS escape, and a code places the tour (QR-first M1b-1)',
+    'playwright-tests/ar-mode.spec.js: visitor mode boots to running: session started, alignment bound, capture at 8 Hz',
+    'playwright-tests/ar-mode.spec.js: the creator measures the code, finishes, and downloads a rebuilt zip that carries the level and tour.json',
+    'playwright-tests/ar-mode.spec.js: a first measurement of a code the tour does not store is minted into the rebuilt zip, and re-minted by the Finish',
+    "playwright-tests/ar-mode.spec.js: the visitor's content waits for the lock; the escape after its clock places by GPS instead",
+    "playwright-tests/ar-mode.spec.js: viewer mode relocalizes against the tour's level: budgeted votes, marker, the station's photos",
+    'playwright-tests/ar-mode.spec.js: a crash does not lose the walk: placed content survives a reload and lands in the zip',
+    "playwright-tests/blocks-tour.spec.js: the visitor sees a station's pin, its captured photo, its picture and its placed model in the world",
+    'playwright-tests/blocks-tour.spec.js: the editor opens a tour of every free block, edits its pin, saves it whole, and the saved file opens again',
+    'playwright-tests/editor-entry.spec.js: opens the tour behind the link, busy until it has',
+    'playwright-tests/editor-files.spec.js: edits survive a closed tab: the same file reopened offers them, and Restore brings them back',
+    "playwright-tests/editor.spec.js: edits a pin's text and saves a tour that carries it",
+    'playwright-tests/editor.spec.js: saves in place to the file it opened, and keeps the walk recording',
+    'playwright-tests/editor.spec.js: refuses to write over a file that changed meanwhile, and offers the download',
+    'playwright-tests/editor.spec.js: saves by itself a few seconds after a change, quietly, and the next open finds no leftover draft',
+    'playwright-tests/editor.spec.js: Done saves what is pending, says where it is and how to update the tour, and moves the walk out into a file of its own',
+    'playwright-tests/editor.spec.js: a tour without a file is saved into the file its first Save asks for, and from then on in place and by itself',
+    'playwright-tests/editor3d-edit.spec.js: drags a selected pin over the ground with the mouse: one step, kept above the ground, saved, undone and redone',
+    "playwright-tests/editor3d-globe-approach.spec.js: the flight lands close to the tour, looking steeply down, and moves the view's frame only by its recentring",
+    'playwright-tests/editor3d-globe-default.spec.js: the plain editor link opens the sample tour on the globe',
+    "playwright-tests/editor3d-globe-default.spec.js: opens on the whole Earth over the creator's zone, and a right click on the ground places its first station",
+    'playwright-tests/editor3d-globe-default.spec.js: without WebGL a plain page says so, and the tour still saves',
+    "playwright-tests/editor3d-globe-default.spec.js: 'needs no GPS' is set in the 3D view's Tour details, saved, and read back",
+    'playwright-tests/editor3d-long-text.spec.js: words typed just before Ctrl+S are in the saved tour',
+    'playwright-tests/launch-and-errors.spec.js: a ?qr= launch opens the archive with no interaction',
+    'playwright-tests/launch-and-errors.spec.js: the page boots without console errors',
+    'playwright-tests/launch-and-errors.spec.js: boots the landing without console errors',
+    'playwright-tests/open-file.spec.js: opens a tour zip from the device through the file chooser',
+    'playwright-tests/setup-flow.spec.js: starts at the host tiles, and a chosen host carries on to the link',
+    'playwright-tests/stations.spec.js: a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped',
+    'playwright-tests/streaming.spec.js: streams the gallery from range requests without downloading the whole archive',
+    "playwright-tests/visitor-start.spec.js: the start page leads with the tour's name and puts the round button on the first ${viewport.width}x${viewport.height} screen [if viewport.height === 640]",
+    'playwright-tests/visitor-walk.spec.js: the peek names the nearest station; the list opens by the grab and by a drag, and closes',
+  ],
+  GpsPlusSlamJs_WayfindingHudDemo: [
+    'playwright-tests/entrance.spec.js: the outline grows monotonically, the dot pops last, and the settled frame is the static sprite',
+    'playwright-tests/entrance.spec.js: reduced motion shows the complete marker on the first frame',
+    "playwright-tests/hud-render.spec.js: the ahead target's ring is actually drawn, not just reported by the status line",
+    'playwright-tests/hysteresis-bypass.spec.js: a deactivated target stays hidden through a look-away/look-back cycle',
+    'playwright-tests/indicator-style.spec.js: toggling switches the live HUD between procedural and image indicators',
+    'playwright-tests/smoke.spec.js: loads the simulator with the real HUD and no console errors',
+    'playwright-tests/smoke.spec.js: dismisses the mode screen on first interaction',
+    'playwright-tests/walk-flow.spec.js: arriving hides the ring, walking away reactivates it beyond distanceMax',
+    'playwright-tests/walk-flow.spec.js: slider changes re-create the HUD with the new deadband live',
+  ],
+};
+
+describe('the per-PR browser tier', () => {
+  const { byPackage, unreadable } = scanPackages();
+
+  it('reads every "@pr" in a spec file as a test tag it can name', () => {
+    expect(unreadable).toEqual([]);
+  });
+
+  it('holds the pinned count per package', () => {
+    const counts = Object.fromEntries(Object.entries(byPackage).map(([p, t]) => [p, t.length]));
+    const expected = Object.fromEntries(Object.entries(EXPECTED).map(([p, t]) => [p, t.length]));
+    expect(counts).toEqual(expected);
+  });
+
+  it('holds the pinned tests by name', () => {
+    expect(byPackage).toEqual(EXPECTED);
+  });
+});
+
+describe('scanSpec', () => {
+  // Why: the guard above is only as honest as its scanner; these pin the
+  // forms it accepts and the ones it must refuse to read.
+  it('reads a plain tag and a conditional one, and ignores an untagged test', () => {
+    const text = [
+      'test("a @pr", async () => {});',
+      "test('b', async () => {});",
+      'test(`c ${v.w}${v.w === 640 ? " @pr" : ""}`, async () => {});',
+      "test(`d${x === 'y' ? ' @pr' : ''}`, async () => {});",
+    ].join('\n');
+    expect(scanSpec(text)).toEqual({
+      tagged: ['a', 'c ${v.w} [if v.w === 640]', "d [if x === 'y']"],
+      mentions: 3,
+    });
+  });
+
+  it('counts an "@pr" it cannot read as a tag, so the guard fails on it', () => {
+    for (const text of [
+      'test.describe("d @pr", () => {});',
+      'test("title with @pr in it", async () => {});',
+      'test("e", { tag: "@pr" }, async () => {});',
+      'test(`g${x ? " @pr" : ""} tail`, async () => {});',
+      'test("h", async () => {}); // @pr',
+    ]) {
+      const { tagged, mentions } = scanSpec(text);
+      expect(mentions, text).toBeGreaterThan(tagged.length);
+    }
+  });
+});

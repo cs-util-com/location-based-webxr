@@ -15,7 +15,7 @@ import { test, expect } from '@playwright/test';
 import { fakeWebXRSupport, waitForTestHooks } from './test-helpers.js';
 
 test.describe('debug wheel', () => {
-  test('is absent without the flag - no gear, and the hook reports null', async ({
+  test('is absent without the flag - no gear, and the hook reports null @pr', async ({
     page,
   }) => {
     await fakeWebXRSupport(page);
@@ -29,7 +29,7 @@ test.describe('debug wheel', () => {
     expect(values).toBeNull();
   });
 
-  test('with ?debug=1 the gear opens a panel and a preset change reaches the wheel', async ({
+  test('with ?debug=1 the gear opens a panel and a preset change reaches the wheel @pr', async ({
     page,
   }) => {
     await fakeWebXRSupport(page);

@@ -144,7 +144,7 @@ async function buildArOverlayFixture(page) {
 }
 
 test.describe("the demo boots", () => {
-  test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening", async ({
+  test("loads the rule table, draws a basemap, reports its scale, and says when it is still widening @pr", async ({
     page,
   }) => {
     // FOUR BEHAVIOURS, ONE BOOT. All four assert on the SAME boot and none of
@@ -274,7 +274,9 @@ test.describe("the demo boots", () => {
 });
 
 test.describe("the browser console", () => {
-  test("stays clean — no shader, WebGL or page errors", async ({ page }) => {
+  test("stays clean — no shader, WebGL or page errors @pr", async ({
+    page,
+  }) => {
     // WHY THIS TEST EXISTS. A three.js material whose shader fails to compile is
     // simply NOT DRAWN. There is no exception, no rejected promise, nothing in the
     // DOM and nothing in any status line — the geometry is handed to the renderer,
@@ -330,7 +332,7 @@ test.describe("the browser console", () => {
 });
 
 test.describe("the worker", () => {
-  test("is really constructed, and the UI thread is not doing the work", async ({
+  test("is really constructed, and the UI thread is not doing the work @pr", async ({
     page,
   }) => {
     // WHY THIS TEST MATTERS. Every other test in this suite would pass just as
@@ -373,7 +375,7 @@ test.describe("the worker", () => {
     await expect(page.locator("#status")).toContainText(/\d+ cells/);
   });
 
-  test("a dead worker is REPORTED, not left hanging", async ({ page }) => {
+  test("a dead worker is REPORTED, not left hanging @pr", async ({ page }) => {
     // WHY THIS TEST MATTERS, and it was missing when the worker landed. A worker
     // that dies — a syntax error in its module graph, an OOM — fires `error` and
     // then never replies to anything. Every pending call hangs forever, and an
@@ -2066,7 +2068,7 @@ test.describe("the AR entry point", () => {
    * stops at the boundary: does the button become usable, and does pressing it
    * reach the AR path rather than doing nothing.
    */
-  test("locates when pressed without a fix, then OFFERS to enter AR", async ({
+  test("locates when pressed without a fix, then OFFERS to enter AR @pr", async ({
     page,
     context,
   }) => {
@@ -2192,7 +2194,7 @@ test.describe("the AR entry point", () => {
     await expect(page.locator("#ar-offer")).toBeHidden();
   });
 
-  test("the offer's button is wired to AR entry, and the prompt clears the offer", async ({
+  test("the offer's button is wired to AR entry, and the prompt clears the offer @pr", async ({
     page,
     context,
   }) => {
@@ -2819,7 +2821,7 @@ test.describe("the AR entry point", () => {
     await expect(page.locator("#scene")).toBeVisible();
   });
 
-  test("leaves the desktop layout alone while no session is running", async ({
+  test("leaves the desktop layout alone while no session is running @pr", async ({
     page,
   }) => {
     // `#ar-root` is a child of the same grid as `#map` and `#scene`. As an

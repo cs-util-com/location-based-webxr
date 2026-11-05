@@ -49,7 +49,7 @@ function drawnIdsIn(page, group) {
   }, group);
 }
 
-test("the visitor sees a station's pin, its captured photo, its picture and its placed model in the world", async ({
+test("the visitor sees a station's pin, its captured photo, its picture and its placed model in the world @pr", async ({
   page,
 }) => {
   // Why this test matters: a free block is drawn by its view - a pin as a
@@ -145,7 +145,7 @@ async function openInEditor(page, zip) {
   await expect(page.locator("#tour-name")).toHaveText("E2E castle");
 }
 
-test("the editor opens a tour of every free block, edits its pin, saves it whole, and the saved file opens again", async ({
+test("the editor opens a tour of every free block, edits its pin, saves it whole, and the saved file opens again @pr", async ({
   page,
   context,
 }) => {

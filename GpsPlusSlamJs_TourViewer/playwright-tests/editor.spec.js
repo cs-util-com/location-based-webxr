@@ -795,7 +795,7 @@ test("Open another tour can be cancelled, and a refused file keeps the open tour
   await expect(page.locator("#card img.card-photo")).toBeVisible();
 });
 
-test("edits a pin's text and saves a tour that carries it", async ({
+test("edits a pin's text and saves a tour that carries it @pr", async ({
   page,
 }) => {
   // Why (M6 E2a): an edit on the desktop must reach the file the creator
@@ -1381,7 +1381,7 @@ test("a copy leaves the tour's own save due: it says it saves a copy, keeps the 
   await expect(page.locator("#unsaved-mark")).toBeHidden();
 });
 
-test("saves in place to the file it opened, and keeps the walk recording", async ({
+test("saves in place to the file it opened, and keeps the walk recording @pr", async ({
   page,
 }) => {
   // Why (M6 E2b-1, E2b plan review #1): where the browser allows it, Save
@@ -1407,7 +1407,7 @@ test("saves in place to the file it opened, and keeps the walk recording", async
   expect(texts["mytour/tour.json"]).not.toContain("captureSpots");
 });
 
-test("refuses to write over a file that changed meanwhile, and offers the download", async ({
+test("refuses to write over a file that changed meanwhile, and offers the download @pr", async ({
   page,
 }) => {
   // Why (E2b plan review #4): another program's write must never be
@@ -1818,7 +1818,7 @@ function writes(page) {
   return page.evaluate(() => window.__writes);
 }
 
-test("saves by itself a few seconds after a change, quietly, and the next open finds no leftover draft", async ({
+test("saves by itself a few seconds after a change, quietly, and the next open finds no leftover draft @pr", async ({
   page,
   context,
 }) => {
@@ -3016,7 +3016,7 @@ test("the open dialog's fine print says what Save does in this browser", async (
 // bundle since M2 of the debug-captures plan).
 // ---------------------------------------------------------------------------
 
-test("Done saves what is pending, says where it is and how to update the tour, and moves the walk out into a file of its own", async ({
+test("Done saves what is pending, says where it is and how to update the tour, and moves the walk out into a file of its own @pr", async ({
   page,
 }) => {
   // Why (W2, D18, D19): a creator leaving the editor must learn where the
@@ -3706,7 +3706,7 @@ test("a tour with no file to write into is downloaded without the walk on a seco
   expect(names).not.toContain("mytour/images/frame-000002.png");
 });
 
-test("a tour without a file is saved into the file its first Save asks for, and from then on in place and by itself", async ({
+test("a tour without a file is saved into the file its first Save asks for, and from then on in place and by itself @pr", async ({
   page,
 }) => {
   // Why: a tour opened from a link, the sample or a drop used to be

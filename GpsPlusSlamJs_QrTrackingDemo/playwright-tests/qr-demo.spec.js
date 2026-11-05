@@ -13,14 +13,14 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     await installQrDemoFakes(page);
   });
 
-  test("starts scanning with no measured size yet", async ({ page }) => {
+  test("starts scanning with no measured size yet @pr", async ({ page }) => {
     await bootQrDemo(page);
     await expect(page.getByTestId("hud-status")).toContainText("Scanning");
     await expect(page.getByTestId("hud-size")).toHaveText("—");
     await expect(page.getByTestId("hud-lifecycle")).toHaveText("unknown");
   });
 
-  test('measures the QR size from depth and converges to "estimated"', async ({
+  test('measures the QR size from depth and converges to "estimated" @pr', async ({
     page,
   }) => {
     await bootQrDemo(page);
@@ -38,7 +38,7 @@ test.describe("QR-tracking demo — measure + glue flow", () => {
     await expect(log).toContainText("Δ"); // inter-lock cadence is shown
   });
 
-  test("glues the debug axis + cube under arWorldGroup once locked", async ({
+  test("glues the debug axis + cube under arWorldGroup once locked @pr", async ({
     page,
   }) => {
     await bootQrDemo(page);
@@ -84,7 +84,7 @@ test.describe("QR-tracking demo — no overlay until a size exists (PnP needs sc
     await installQrDemoFakes(page, { planar: false });
   });
 
-  test("withholds the overlay while the size stays unknown", async ({
+  test("withholds the overlay while the size stays unknown @pr", async ({
     page,
   }) => {
     await bootQrDemo(page);
