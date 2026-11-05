@@ -183,7 +183,7 @@ drifting after a flight that followed a drag, Frame, Top view, the
 zoom steps, north up and the layer chips.
 `playwright-tests/editor3d-edit.spec.js` edits in it: a mouse drag saved,
 undone and redone; every key; a second finger cancelling a touch drag;
-the gizmo's sizes on the screen at four window sizes in a wide face. `editor3d-lazy.test.ts` checks no page loads it before an
+the gizmo's sizes on the screen at four window sizes in a wide face. `app-bundle.test.ts` checks no page loads it before an
 `import()` runs.
 
 The lock in the scene: `editor3d-edit.spec.js`.

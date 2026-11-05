@@ -63,7 +63,7 @@ sub-build fails or any post-build assertion fails.
    the folder is missing or empty (before this, the deployed editor's globe
    got 404s while every dev-server run was green). That no VISITOR page's
    bundle names the folder is held by the Tour Viewer's
-   `src/editor3d-lazy.test.ts`, on the bundle's chunk graph.
+   `src/app-bundle.test.ts`, on the bundle's chunk graph.
 7. Assert the landing HTML still links every demo app (`/starter/`,
    `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`, `/wayfinding/`,
    `/osm/`, `/tour/`) and `/blog/`, and that every local asset URL it

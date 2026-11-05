@@ -6,7 +6,9 @@
  *
  * Two builds count: the app's own (`vite.config.ts`, every page it
  * builds), and an entry that imports the globe's editor blocks, which the
- * 3D editor will import (`globe-dependency.test.ts`).
+ * 3D editor will import (`app-bundle.test.ts`). Each runs once per test
+ * file: a Vite build is the most CPU-heavy thing in the unit stage, so the
+ * file that reads them all asks for each build once.
  */
 import { fileURLToPath } from "node:url";
 
@@ -50,9 +52,16 @@ function moduleIdsOf(result: Awaited<ReturnType<typeof build>>): string[] {
   return ids.map((id) => id.replaceAll("\\", "/"));
 }
 
+let globeBuild: Promise<string[]> | null = null;
+
 /** The module ids of a production build of the globe consumer's entry,
  *  from this app's root. */
 export async function globeEntryModuleIds(): Promise<string[]> {
+  globeBuild ??= buildGlobeEntry();
+  return [...(await globeBuild)];
+}
+
+async function buildGlobeEntry(): Promise<string[]> {
   return moduleIdsOf(
     await build({
       configFile: false,
@@ -70,16 +79,9 @@ export async function globeEntryModuleIds(): Promise<string[]> {
 }
 
 /** The module ids of this app's own production build (its config, every
- *  page), written nowhere. */
+ *  page), written nowhere: every chunk's, from `appChunks`. */
 export async function appModuleIds(): Promise<string[]> {
-  return moduleIdsOf(
-    await build({
-      configFile: `${APP_ROOT}vite.config.ts`,
-      root: APP_ROOT,
-      logLevel: "silent",
-      build: { write: false, minify: false },
-    }),
-  );
+  return (await appChunks()).flatMap((c) => c.moduleIds);
 }
 
 /** A chunk of a build, as the closure reads it (paths with `/`). */
@@ -95,8 +97,15 @@ export interface BuiltChunk {
   readonly code: string;
 }
 
+let appBuild: Promise<BuiltChunk[]> | null = null;
+
 /** The chunks of this app's own production build, written nowhere. */
 export async function appChunks(): Promise<BuiltChunk[]> {
+  appBuild ??= buildAppChunks();
+  return [...(await appBuild)];
+}
+
+async function buildAppChunks(): Promise<BuiltChunk[]> {
   const result = await build({
     configFile: `${APP_ROOT}vite.config.ts`,
     root: APP_ROOT,

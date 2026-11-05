@@ -425,7 +425,7 @@ assertNoBareAbsoluteUrlsInDir(join(distSite, 'lookdev'), '/lookdev/');
 // The globe's imagery, once, at the site root (the Globe asks for it by
 // root-absolute paths, `/globe-assets/...`). Only the creator's editor on the
 // globe view and the look-dev labs load it; no visitor page does
-// (GpsPlusSlamJs_TourViewer/src/editor3d-lazy.test.ts holds that). The guard
+// (GpsPlusSlamJs_TourViewer/src/app-bundle.test.ts holds that). The guard
 // fails the build when any app's chunk names the folder and it is not there
 // (every app folder of the site is scanned, not a list of the known ones).
 console.log('• Copying the globe assets (once, /globe-assets/)');

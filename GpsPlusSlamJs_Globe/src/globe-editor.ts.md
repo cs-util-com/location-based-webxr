@@ -46,8 +46,8 @@
     other, `./test-utils/synthetic-heights`, is test support), as
     TypeScript source: a Vite app depends on `gps-plus-slam-globe`
     (`workspace:*`), imports `gps-plus-slam-globe/editor`, and builds it
-    (the Tour Viewer's `src/globe-dependency.test.ts` builds an entry
-    importing it: one three in the bundle; its `src/third-party-licenses.test.ts`
+    (the Tour Viewer's `src/app-bundle.test.ts` builds an entry
+    importing it: one three in the bundle; its `src/app-bundle.test.ts`
     then holds every third-party package it bundles named in the Tour
     Viewer's `NOTICE`, with its licence shipped).
   - A `knip` entry of the Globe workspace (root `knip.json`): the lab
@@ -73,5 +73,5 @@
 
 - Tests: none of its own (it adds no behaviour); each block's tests, and
   the globe lab's `globe-editor-blocks.smoke.spec.mjs`, which loads it, and
-  the Tour Viewer's `src/globe-dependency.test.ts`, which imports and
+  the Tour Viewer's `src/app-bundle.test.ts`, which imports and
   builds it as a dependency.

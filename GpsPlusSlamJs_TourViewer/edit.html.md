@@ -161,7 +161,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `viewer-not-to-editor`), so a visitor never downloads the editor's
   Leaflet.
 - The 3D view's modules load only by the switch's `import()`:
-  `src/editor3d-lazy.test.ts` reads a production build and fails when any
+  `src/app-bundle.test.ts` reads a production build and fails when any
   page loads the globe, the tile renderer, the elevation package or
   `src/editor3d/` before an `import()` runs.
 
