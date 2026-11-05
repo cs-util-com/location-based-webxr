@@ -29,7 +29,7 @@ slopeGlsl }`.
     changes the city-view distances, so the far-field numbers are to be
     re-measured before a candidate becomes the default.
 - Examples: `new WaterSurface({ slopeGlsl: WATER_CANDIDATES[2].slopeGlsl })`.
-- Tests: `lookdev.smoke.spec.mjs`, "the water candidates compile, change the
+- Tests: `lookdev.smoke.spec.mjs` (removed; in git history), "the water candidates compile, change the
   pond, and travel in the address": each compiles without console errors,
   changes at least 4 of 12 pond points against today's waves (measured
   2026-09-26: C1 9, P50 12, P30 11, D30 12), and keeps moving.

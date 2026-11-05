@@ -67,5 +67,5 @@
   sampler, the grid's placement and read-back, empty texels, the sRGB
   round trip, the tone mapping worked by hand, the weights at their ends
   and with swept altitudes). In the browser:
-  `terrain-styles.smoke.spec.mjs` (the far pixel against the grid and the
+  `terrain-styles.smoke.spec.mjs` (removed; in git history) (the far pixel against the grid and the
   imagery, style A as the counter-case, a failed imagery load).

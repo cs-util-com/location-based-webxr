@@ -132,5 +132,5 @@ water.configurePolish({ varianceScale: 0.5 }); // no recompile
   stays a unit direction on the dispersion curve.
 - `water-surface-material.test.ts`: the pins, the all-off equality, each
   switch on the real ShaderLib shader with its own program key.
-- GPU: `GpsPlusSlamJs_DesignSystem/3d/water-polish.smoke.spec.mjs`
+- GPU: `GpsPlusSlamJs_DesignSystem/3d/water-polish.smoke.spec.mjs` (removed; in git history)
   (each trick against the unpolished water at the same pixels).

@@ -79,7 +79,7 @@ if (sunShadowActive(elevationDeg)) {
 - the restore on dispose, and no updates after it;
 - `enableSunShadows`.
 
-The look-dev smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`)
+The look-dev smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history))
 is the GPU check at noon, hazy and golden: the ground behind the tallest
 building gets darker; a diffuse sunlit roof and sunlit ground do not, and
 an acne bias (0.1) visibly darkens the roof; the manual flags are back

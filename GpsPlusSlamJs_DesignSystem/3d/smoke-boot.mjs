@@ -3,7 +3,7 @@
  * every look-dev (`/3d/`) smoke boots the page through here, so a change of
  * the page's defaults cannot silently change what an unrelated test measures.
  * The pins themselves live in `smoke-pins.mjs`, free of Playwright, with
- * their own unit test. (`design-atoms.smoke.spec.mjs` opens a fixture page,
+ * their own unit test. (`design-atoms.smoke.spec.mjs` (removed; in git history) opens a fixture page,
  * not the look-dev page, and does not use it.)
  */
 import { expect } from "@playwright/test";

@@ -47,6 +47,6 @@ probe.atSun(atmosphere, camera.position, sunVector()); // { tau, drawn, noise }
 
 ## Tests
 
-- `sun-clouds.smoke.spec.mjs`: the offsets it picks give the disc and glow
+- `sun-clouds.smoke.spec.mjs` (removed; in git history): the offsets it picks give the disc and glow
   measurements their cloud (a wrong twin finds no offset, or measures the
   wrong sky, and the bounds fail).

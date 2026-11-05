@@ -125,7 +125,7 @@ cloudShadow.sync(atmosphere);
   wrapper's, a space, a line break), patched once before it;
   `applyToObject`; the shared texture and offset, the
   copied threshold, one switch for every material.
-- `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs`: on the GPU,
+- `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs` (removed; in git history): on the GPU,
   ground under a cloud darker than with the patch off where the CPU twin
   (`cloudColumnTransmittanceToward`) says it is, clear ground unchanged, the
   pattern following the drift, with the ring shadow and the haze; the cost
