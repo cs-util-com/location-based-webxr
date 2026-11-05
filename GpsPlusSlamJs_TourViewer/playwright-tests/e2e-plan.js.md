@@ -74,7 +74,7 @@ cannot reach.
   attempt) went to lane 1 and the globe buildings spec (about 5 min) to
   lane 3 by the estimates of the 2026-11-04 e2e cost audit, so lane 1 is
   the longest (about 35 min, up to about 55 with the clouds test retried).
-- **Rebalanced 2026-11-05** after the e2e pruning audit's second round, from
+- **Rebalanced 2026-11-05** after a second round of test cuts, from
   the per-spec seconds of one local full run (`E2E_TIER=full`, `dom` at 3
   workers, `webgl` at 1): the `dom` project (1,766 s of test time, one
   worker on CI, so about 28 min in one job) split in two of about 880 s
@@ -142,8 +142,8 @@ once):
 - **(b) map-only until the globe editor has the panel:** `editor.spec.js`
   567, 590, 638, 692, 816, 865, 922 (a walk's debug data on the map and its
   panel; the globe draws no debug data yet, `editor3d-shell` 896).
-- **(c) dies with the map or the older view (DELETED on 2026-11-05 by the
-  e2e pruning audit's second round, before the map itself goes: since the
+- **(c) dies with the map or the older view (DELETED on 2026-11-05 by a
+  second round of test cuts, before the map itself goes: since the
   globe opens by default no creator reaches them; the list below is kept
   as the record of what went, with its old line numbers):** `editor.spec.js` 276 (the card beside its marker), 343 (the
   rail's layout per viewport), 424 and 451 (the map's top bar and menus),

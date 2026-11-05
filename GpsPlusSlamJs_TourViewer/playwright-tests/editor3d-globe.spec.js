@@ -172,8 +172,9 @@ async function handleOnPage(page, part) {
 // front, the stations drawn and admitted, the sky in daylight, the View
 // menu's Real time running the clock at the real time. (The relief's
 // hand-over is not waited for here: the hold and zoom-in tests of
-// editor3d-globe-osm-hold.spec.js wait for it and fail without it, and the
-// first reads the frame's draw calls once it has.) And
+// editor3d-globe-osm-hold.spec.js wait for it and fail without it, the first
+// reading the frame's draw calls once it has, and the buildings' test waits
+// for it at a desktop's size.) And
 // on the globe the camera's controls and the editor's gizmo share the
 // pointer. A drag on a handle must be the gizmo's alone - the controls
 // leased off, so the globe neither pans nor turns under the pointer - and

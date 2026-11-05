@@ -9,6 +9,7 @@ import {
   keepRejections,
   noClouds,
   rejections,
+  reliefCarries,
   view3d,
 } from "./editor3d-fixture.js";
 
@@ -104,8 +105,8 @@ function consoleErrors(page) {
  * The editor on the globe at the sample's landing (reduced motion: the
  * view cuts to the approach's end). It does not wait for the relief to
  * carry the ground: the city loads by altitude, not by the carrier (the
- * city's unit tests), and the test checks its ground's parity with the
- * relief's either way.
+ * city's unit tests), so the test reads the city first and the relief's
+ * hand-over after it.
  * @param {import("@playwright/test").Page} page
  */
 async function landed(page) {
@@ -150,7 +151,7 @@ function firstStation(page) {
   );
 }
 
-test("the buildings load in their worker on the relief's ground, out of the picking's way @pr", async ({
+test("the buildings load in their worker on the relief's ground, the relief takes the ground over, and they keep out of the picking's way @pr", async ({
   page,
 }) => {
   // A cold landing, a city load and several frame waits: on a loaded
@@ -172,6 +173,11 @@ test("the buildings load in their worker on the relief's ground, out of the pick
   console.log(
     `city: ${String(city.tiles)} tiles, ${String(city.buildings)} buildings, ${String(city.objects)} objects, ${String(Math.round(city.geometryBytes / 1024))} KiB geometry, parity ${String(city.parityM)} m`,
   );
+
+  // The relief takes the ground over at a desktop's size too: the per-PR
+  // tier's only wait for that hand-over, the others run at a phone's size
+  // in the full run.
+  await reliefCarries(page);
 
   // Picking: a click on the first station (inside a building) picks it.
   const id = await firstStation(page);

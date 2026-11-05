@@ -181,8 +181,9 @@ async function expectLineAt(page, sizes) {
 }
 
 /**
- * The docks at each size: open the tree, then pick a station (the
- * inspector shows); each shown dock flush with its side, hanging from the
+ * The docks at each size: open the tree, then pick the first station (the
+ * inspector shows). Nothing may be selected yet: a pick of the selected
+ * station deselects it and folds, so a test calls this once. Each shown dock flush with its side, hanging from the
  * line with no gap and running down to the bottom bar. Below 820 px a dock
  * takes at most about half the width (`editor-shell.css`, narrow
  * windows); below 900 px one dock shows at a time (`dock-rule.ts`), so
@@ -191,6 +192,11 @@ async function expectLineAt(page, sizes) {
  * @param {{ width: number, height: number }[]} sizes
  */
 async function expectDocksAt(page, sizes) {
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.selected(),
+    ),
+  ).toBeNull();
   if (!(await page.locator("#tree-body").isVisible())) {
     await page.locator("#tree-fold").click();
   }
@@ -306,11 +312,16 @@ test("the line is glued under the menu bar, thin, in the accent colour, a named 
   await expectLineAt(page, desktops);
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // The rail is a tab while it flies; the creator opens it.
-  await page.locator("#tree-fold").click();
-  await page.locator("#tree-body .card .pick").first().click();
+  // The rail is a tab while it flies; the creator opens it. The pick that
+  // shows the docks, read here in flight, is the list's pick that sends the
+  // flight to that station.
+  await expect(page.locator("#tree-body")).toBeHidden();
+  await expectDocksAt(page, desktops);
   await expect.poll(async () => (await approachOf(page))?.retargets).toBe(1);
   expect((await approachOf(page)).flying).toBe(true);
+  // The typing and the drag at the first desktop size: they have no size
+  // of their own, and this flight has just been through all three.
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   const description = page
     .locator("#shell-inspector")
@@ -336,7 +347,6 @@ test("the line is glued under the menu bar, thin, in the accent colour, a named 
   );
   // Taken, the load is over at once: the line full, no longer announced.
   await expectLoadOver(page);
-  await expectDocksAt(page, desktops);
   expect(await rejections(page)).toEqual([]);
 });
 
@@ -350,7 +360,7 @@ test("the line is glued under the menu bar, thin, in the accent colour, the dock
   await openSampleOnGlobe(page);
   // Turned: the only size wider than the narrow windows' 820 px and under
   // the side-by-side docks' 900 px. The docks at both sizes from one
-  // pick: a second pick of the same station would close the inspector.
+  // pick (`expectDocksAt`).
   const phone = [
     { width: 390, height: 844 },
     { width: 844, height: 390 },

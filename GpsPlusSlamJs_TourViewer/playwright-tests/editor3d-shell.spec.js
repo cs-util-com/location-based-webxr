@@ -1233,7 +1233,7 @@ test("on a phone, a tap on the folded tree's Stations header opens the dock with
 test("the tour's name carries a pen that opens its details, with no Details button and no mark", async ({
   page,
 }) => {
-  // Why: the owner found Details a second copy of what the tour's name
+  // Why: Details was a second copy of what the tour's name
   // already opens, and the "T" mark mere decoration. Both went; a pen
   // right of the name says it can be clicked, in both views (they share
   // the top bar). A pen elsewhere, or a Details button left behind, is

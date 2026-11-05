@@ -126,8 +126,8 @@ jobs:
           # (one worker each on CI; the whole set took about 28 min in one)
           # and four 3D lanes. The 2026-11-04 CI runs had lane 1 at about
           # 35 min (about 55 when its clouds spec is retried) and lanes 2-4
-          # at about 26-32 min, before the e2e pruning audit's second round
-          # cut them; the lanes are balanced from a local full run since. The
+          # at about 26-32 min, before a second round of test cuts
+          # shortened them; the lanes are balanced from a local full run since. The
           # 3D lanes keep a 75 min limit: 60 would cancel lane 1 on its first
           # clouds retry.
           - job: tour-dom-1

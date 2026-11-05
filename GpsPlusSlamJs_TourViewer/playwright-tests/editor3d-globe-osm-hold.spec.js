@@ -192,9 +192,10 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
 // network; the map must ask for that tile again and every tile near the
 // camera must end up with its map. Every tile's first request fails, so the
 // tiles under the camera are among them whichever the relief draws there.
-// Its own test, not a stage of the hold test above: a request dropped at
-// street level leaves that test's finer tiles unasked after the move, and
-// the refusals then have nothing to refuse.
+// Its own test, not a stage of the hold test above. As one test the failed
+// requests sometimes left the refusals with nothing to refuse: a failed tile
+// is asked for again (a loaded tile on the retries' 5 to 60 s back-off, a
+// disposed one when it next loads), so that test's timing moved with them.
 test("a street-map tile whose first request failed gets its map", async ({
   page,
 }) => {
