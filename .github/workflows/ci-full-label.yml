@@ -1,0 +1,21 @@
+name: CI full set on label
+
+# Adding the `full-ci` label to a pull request runs CI (ci.yml) with the full
+# browser set: ci.yml reads the label from the pull request (E2E_TIER) and
+# shares the pull request's concurrency group, so this run cancels the tier
+# run in progress. ci.yml itself listens to no label, so any other label
+# starts no CI job: a skipped job would be a check named like the real one on
+# the same commit, sitting over its earlier result. Its one skipped job here
+# carries this workflow's own name. tests/repo-config/ci-jobs.test.js holds it.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    name: full-ci
+    if: ${{ github.event.label.name == 'full-ci' }}
+    uses: ./.github/workflows/ci.yml

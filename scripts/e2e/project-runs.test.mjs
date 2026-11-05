@@ -260,9 +260,8 @@ describe('namedProjects', () => {
   });
 });
 
-// Why this test matters (test-suite pruning plan 2026-11-04, T-M1): a CI
-// lane is chosen by an environment variable, never by forwarded arguments,
-// because a forwarded argument sets `passWithNoTests` and a stale lane would
+// Why this test matters: a CI lane is chosen by an environment variable,
+// never by forwarded arguments, because a forwarded argument sets `passWithNoTests` and a stale lane would
 // then pass with no test run. An unknown or empty lane must fail the job.
 describe('laneSpecs', () => {
   const plan = {

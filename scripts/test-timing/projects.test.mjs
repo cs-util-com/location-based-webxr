@@ -447,8 +447,7 @@ describe('gateBaseCommand (fast per-commit command)', () => {
   });
 });
 
-// Why this test matters (test-suite pruning plan 2026-11-04, T-M0): every
-// format stage runs `prettier --write`, which on the GitHub runner rewrote the
+// Why this test matters: every format stage runs `prettier --write`, which on the GitHub runner rewrote the
 // checkout and exited 0, so a badly formatted PR was never red and CI had
 // never checked formatting. On the runner the stage must CHECK. It is keyed on
 // `GITHUB_ACTIONS`, not `CI`: every local gate sets `CI=1`, and a local format

@@ -25,8 +25,7 @@
     coverage thresholds gate.
     - On the GitHub runner (`onGithubRunner` from `stage-args.mjs`, i.e.
       `GITHUB_ACTIONS` set, never plain `CI`) a Prettier stage's `--write`
-      becomes `--check`, same globs and options (test-suite pruning plan
-      2026-11-04, T-M0): `--write` rewrote the checkout and exited 0, so CI
+      becomes `--check`, same globs and options: `--write` rewrote the checkout and exited 0, so CI
       had never checked formatting. Local gates (`CI=1`) keep writing.
       Pinned by `projects.test.mjs`, "format stages check on the GitHub
       runner and write everywhere else".
