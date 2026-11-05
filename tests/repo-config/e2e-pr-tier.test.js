@@ -25,11 +25,14 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const tourPlan = await import(
+  pathToFileURL(join(ROOT, 'GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js')).href
+);
 const SKIP = new Set(['node_modules', 'dist', 'test-results', 'playwright-report', '.vite']);
 
 /** @param {string} dir @returns {string[]} spec files under dir, absolute */
@@ -41,6 +44,19 @@ function specFiles(dir) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...specFiles(path));
     else if (/\.spec\.m?js$/.test(entry.name)) out.push(path);
+  }
+  return out;
+}
+
+/** @param {string} dir @returns {string[]} Playwright configs under dir, absolute */
+function configFiles(dir) {
+  /** @type {string[]} */
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP.has(entry.name) || entry.name.startsWith('.')) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...configFiles(path));
+    else if (/^playwright\.config\.m?js$/.test(entry.name)) out.push(path);
   }
   return out;
 }
@@ -277,6 +293,37 @@ describe('the per-PR browser tier', () => {
 
   it('holds the pinned tests by name', () => {
     expect(byPackage).toEqual(EXPECTED);
+  });
+
+  // Each Tour Viewer lane is its own CI job, and a tier job that selects no
+  // test fails ("No tests found"): so every lane must hold a tagged test.
+  // A spec that moves lanes, or a lane whose last tag goes, fails here first.
+  it('gives every Tour Viewer CI lane at least one tier test', () => {
+    const taggedSpecs = new Set(
+      (byPackage.GpsPlusSlamJs_TourViewer ?? []).map((entry) =>
+        entry.slice(0, entry.indexOf(':')).split('/').pop(),
+      ),
+    );
+    for (const lane of tourPlan.LANES) {
+      const held = tourPlan.specsOfLane(lane).filter((name) => taggedSpecs.has(name));
+      expect(held.length, `lane ${lane}`).toBeGreaterThan(0);
+    }
+  });
+
+  // A config that does not read the tier runs its whole suite on every PR
+  // (or, without the retries rule, retries a flake twice where the tier
+  // allows one): the tag would pin a list nobody selects.
+  it('has every Playwright config select the tier and its retries', () => {
+    const configs = readdirSync(ROOT)
+      .filter((d) => d.startsWith('GpsPlusSlamJs_'))
+      .flatMap((pkg) => configFiles(join(ROOT, pkg)));
+    expect(configs.length).toBeGreaterThanOrEqual(9);
+    for (const file of configs) {
+      const text = readFileSync(file, 'utf8');
+      const name = relative(ROOT, file);
+      expect(text, name).toMatch(/grep: playwrightGrep\(import\.meta\.url\)/);
+      expect(text, name).toMatch(/retries: tierRetries\(process\.env/);
+    }
   });
 });
 

@@ -34,6 +34,15 @@ cannot reach.
   specs whose entry has `lane: N`. Throws `RangeError` on any other name.
 - Each `webgl` entry of `SPECS` carries `lane` (1-4); `dom` entries carry
   none.
+- **The lanes in the per-PR tier** (`E2E_TIER=pr`, the default; see
+  [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)): the same five
+  jobs, each running the `@pr` tests of its own specs plus any spec file
+  the pull request changed, whole. A tagged 3D test runs in its spec's lane;
+  nothing is moved for the tier. A lane job that selects no test fails, so
+  `tests/repo-config/e2e-pr-tier.test.js` requires a tagged test in every
+  lane: when a lane's last tag goes, tag another of its tests or move a
+  tagged spec into it. In the full set (`E2E_TIER=full`) the lanes run
+  every test, as balanced above.
 
 ## Invariants & assumptions
 

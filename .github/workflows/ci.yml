@@ -1,22 +1,39 @@
 name: CI
 
+# Two browser tiers (E2E_TIER, scripts/e2e/tier.mjs): a pull request runs the
+# per-PR tier, the tests tagged `@pr` plus every test of a spec file it adds or
+# changes. The full set runs on a push to `main`, when dispatched (by hand, or
+# nightly on the newest rNNN branch by nightly-full.yml), and on a pull request
+# that carries the `full-ci` label. tests/repo-config/ci-jobs.test.js holds the
+# triggers and the tier choice.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Browser tier: full (every test) or pr (the @pr tests)"
+        type: choice
+        options: [full, pr]
+        default: full
 
 permissions:
   contents: read
 
 # A newer push to a pull request's branch cancels its superseded run. Pushes to
-# `main` are releases and every one of them runs to the end.
+# `main` are releases and every one of them runs to the end. Adding any label
+# but `full-ci` starts a run that skips every job; its own group (the run id)
+# keeps it from cancelling the run in progress.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   deadcode:
     name: Dead code (knip)
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'full-ci' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,10 +79,17 @@ jobs:
   # exactly one job, a time limit on each.
   test:
     name: ${{ matrix.job }}
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'full-ci' }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
       E2E_LANE: ${{ matrix.lane }}
+      # The full set on a dispatch (its input), on a push to main and on a
+      # pull request labelled full-ci; the per-PR tier otherwise.
+      E2E_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || github.event_name == 'push' && 'full' || contains(github.event.pull_request.labels.*.name, 'full-ci') && 'full' || 'pr' }}
+      # A pull request's base: the tier runs every spec file the branch
+      # changed against it whole. Empty outside a pull request.
+      E2E_TIER_BASE: ${{ github.event.pull_request.base.sha }}
       GATE_SKIP_BROWSER_STAGES: ${{ matrix.skip_browser }}
     strategy:
       fail-fast: false
@@ -150,6 +174,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # The checkout holds only the merge commit; the tier diffs against the
+      # base commit's tree, so that one commit is fetched too.
+      - name: Fetch the pull request's base
+        if: ${{ env.E2E_TIER_BASE != '' }}
+        run: git fetch --no-tags --depth=1 origin "$E2E_TIER_BASE"
 
       # Recorder + example resolve `gps-plus-slam-app-framework` via the
       # package's `exports` -> `./dist/...`, so the framework must be built

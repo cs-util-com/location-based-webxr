@@ -17,8 +17,10 @@
 // `new URL("./...", import.meta.url)`, and the editor kit's subpaths into the
 // kit's own sources; a relative import it cannot resolve to a file fails the
 // test rather than being skipped. An import built from a variable is
-// invisible to it. CI and the full cascade run every spec whatever this plan
-// says.
+// invisible to it. CI and the full cascade ignore the plan's areas: they run
+// every spec, in the browser tier E2E_TIER selects (scripts/e2e/tier.mjs; by
+// default the `@pr` tests plus every changed spec file, with E2E_TIER=full
+// every test).
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';

@@ -50,6 +50,13 @@
     project with no selected spec is skipped; an unknown path selects all.
     Such a run records no timing row (`narrowedStageRun`). Real-Playwright
     check, 2026-11-01: see the r1012 entry of the globe editor feedback plan.
+  - **The browser tier** ([`tier.mjs`](tier.mjs.md)): the config's `grep`
+    selects the `@pr` tests plus the changed spec files unless
+    `E2E_TIER=full`. The runner tells the config whether its command line
+    holds a developer's filter (`E2E_DEVELOPER_FILTER`), since the spec
+    filters it adds are its own. A tier run cut to the changed area may
+    select nothing in a project and passes (`passesEmpty`); a whole tier
+    run, or a CI lane, that selects nothing fails.
   - The worker count: `domWorkers` for the first project, 1 for the rest.
   - Playwright is resolved from the package (`@playwright/test/cli`) and run
     with the same Node.

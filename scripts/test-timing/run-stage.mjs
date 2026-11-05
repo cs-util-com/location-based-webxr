@@ -31,6 +31,7 @@ import { computeDelta } from './delta.mjs';
 import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { narrowedStageRun } from '../e2e/project-runs.mjs';
+import { tierStageRun } from '../e2e/tier.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
 import {
   STALL_EXIT,
@@ -515,8 +516,15 @@ export async function runStage(project, stageName, forwardedArgs) {
   // Nor is a run of a narrowable stage inside test:changed (the Tour
   // Viewer's e2e cut to the changed area, or to nothing): it is not the full
   // suite, whatever its command says.
-  const narrowed = narrowedStageRun(stage, process.env);
-  if (narrowed) {
+  // Nor is a browser stage in the per-PR tier (E2E_TIER, scripts/e2e/tier.mjs):
+  // it runs the tagged tests, not the suite; E2E_TIER=full records.
+  const tierRun = tierStageRun(stage, process.env);
+  const narrowed = narrowedStageRun(stage, process.env) || tierRun;
+  if (tierRun) {
+    console.log(
+      `test-timing: ${stageName} runs the per-PR tier (E2E_TIER=pr), so it records no timing row; E2E_TIER=full runs and records the full set`
+    );
+  } else if (narrowed) {
     console.log(
       `test-timing: ${stageName} may run only the changed area here (test:changed), so it records no timing row`
     );

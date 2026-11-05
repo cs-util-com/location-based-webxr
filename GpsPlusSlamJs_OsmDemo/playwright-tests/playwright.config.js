@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
+import { playwrightGrep, tierRetries } from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 
@@ -83,7 +84,9 @@ export default defineConfig({
   timeout: 180_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // The per-PR tier (`@pr` tests) or the full set: scripts/e2e/tier.mjs.
+  retries: tierRetries(process.env),
+  grep: playwrightGrep(import.meta.url),
   // ONE, EVERYWHERE — and the parallel version is not slower, it is just noisier.
   //
   // Each worker is a headless Chromium doing software-rasterised WebGL, which

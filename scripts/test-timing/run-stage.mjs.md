@@ -34,6 +34,10 @@
     `narrowable` stage inside `test:changed` (`narrowedStageRun` in
     `scripts/e2e/project-runs.mjs`; the Tour Viewer's e2e, which may run
     only the changed area's specs, or none); it prints one line saying so.
+    Nor is a Playwright stage in the per-PR browser tier (`tierStageRun`
+    in [`scripts/e2e/tier.mjs`](../e2e/tier.mjs.md): `E2E_TIER` unset or
+    `pr` runs the `@pr` tests, not the suite); `E2E_TIER=full` runs and
+    records the full set.
   - Counts capture: vitest `--reporter=default --reporter=json
     --outputFile.json=<scratch>`; playwright `--reporter=list,json` +
     `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.

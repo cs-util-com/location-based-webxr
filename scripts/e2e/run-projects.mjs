@@ -40,6 +40,7 @@ import {
   projectReportName,
   readReport,
 } from './project-runs.mjs';
+import { DEVELOPER_FILTER_ENV, passesEmpty } from './tier.mjs';
 
 const [planFile, cli, verb, configFlag, configFile, ...forwarded] =
   process.argv.slice(2);
@@ -64,6 +65,8 @@ const playwrightCli = createRequire(path.join(cwd, 'package.json')).resolve(
 
 /** @type {readonly string[] | null} the specs to run, null for all */
 let selected = null;
+/** Whether the run was cut to the changed area (a tier run may then select nothing). */
+let areaNarrowed = false;
 if (mayNarrow(process.env, forwarded)) {
   const ref = /** @type {string} */ (process.env[CHANGED_REF_ENV]);
   const root = spawnSync('git', ['rev-parse', '--show-toplevel'], {
@@ -75,6 +78,7 @@ if (mayNarrow(process.env, forwarded)) {
     console.log(`e2e areas: all specs (changed vs ${ref}: "${selection.reason}")`);
   } else {
     selected = selection.specs;
+    areaNarrowed = true;
     const areas = selection.areas.length > 0 ? selection.areas.join(', ') : 'none';
     console.log(
       `e2e areas: ${areas} vs ${ref} - ${selected.length} of ${Object.keys(plan.SPECS).length} spec files: ${selected.join(', ') || '(none)'}`
@@ -145,7 +149,9 @@ e2e project ${project}: no spec selected, skipped`);
     continue;
   }
   const workers = index === 0 ? domWorkers(process.env, plan.LOCAL_DOM_WORKERS) : 1;
-  const env = { ...process.env };
+  // The config's tier reads whether this command line carries a developer's
+  // selection from here: the spec filters below are the runner's own.
+  const env = { ...process.env, [DEVELOPER_FILTER_ENV]: developerFiltered(forwarded) ? '1' : '0' };
   for (const t of reportTargets) {
     env[t.env] = t.valueFor(project);
     rmSync(t.fileFor(project), { force: true });
@@ -155,7 +161,11 @@ e2e project ${project}: no spec selected, skipped`);
     project,
     workers,
     specs: specs ?? null,
-    passWithNoTests: developerFiltered(forwarded),
+    passWithNoTests: passesEmpty({
+      developerFiltered: developerFiltered(forwarded),
+      narrowed: areaNarrowed,
+      env: process.env,
+    }),
   });
   console.log(`
 e2e project ${project} (${workers} worker${workers === 1 ? '' : 's'})`);

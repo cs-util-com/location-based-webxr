@@ -129,3 +129,57 @@ describe('the workflow stays inside the free plan and never hangs', () => {
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
   });
 });
+
+// Why: the per-PR tier runs the `@pr` tests only, so the full set is safe
+// only while something still runs it. Each trigger below is one of those
+// somethings, and each fails silently when it goes: CI stays green while
+// testing less. The tier itself is chosen by E2E_TIER (scripts/e2e/tier.mjs).
+describe('the browser tier: the tagged tests per pull request, the full set on schedule and on demand', () => {
+  const tierExpr = String(testJob.env.E2E_TIER);
+  const raw = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+  const nightly = parse(readFileSync(join(ROOT, '.github/workflows/nightly-full.yml'), 'utf8'));
+
+  it('runs on the full-ci label as well as on every push to a pull request', () => {
+    expect(workflow.on.pull_request.types).toEqual(['opened', 'synchronize', 'reopened', 'labeled']);
+    expect(tierExpr).toContain("contains(github.event.pull_request.labels.*.name, 'full-ci') && 'full'");
+  });
+
+  it('runs a dispatch at its tier input, the full set by default', () => {
+    const input = workflow.on.workflow_dispatch.inputs.tier;
+    expect(input.default).toBe('full');
+    expect([...input.options].sort()).toEqual(['full', 'pr']);
+    expect(tierExpr).toContain("github.event_name == 'workflow_dispatch' && inputs.tier");
+  });
+
+  it('runs the full set on a push to main and the tier otherwise', () => {
+    expect(tierExpr).toContain("github.event_name == 'push' && 'full'");
+    expect(tierExpr.trim().endsWith("|| 'pr' }}")).toBe(true);
+  });
+
+  it("gives the tier the pull request's base, and fetches that commit", () => {
+    expect(testJob.env.E2E_TIER_BASE).toBe('${{ github.event.pull_request.base.sha }}');
+    const fetch = testJob.steps.find((s) => String(s.run ?? '').includes('git fetch'));
+    expect(fetch?.run).toContain('"$E2E_TIER_BASE"');
+  });
+
+  it('skips every job on any other label, without cancelling the run in progress', () => {
+    const gate = "${{ github.event.action != 'labeled' || github.event.label.name == 'full-ci' }}";
+    expect(testJob.if).toBe(gate);
+    expect(workflow.jobs.deadcode.if).toBe(gate);
+    expect(workflow.concurrency.group).toContain("github.event.label.name != 'full-ci'");
+    expect(workflow.concurrency.group).toContain('github.run_id');
+  });
+
+  it("dispatches the full set nightly on the newest rNNN branch", () => {
+    expect(nightly.on.schedule).toHaveLength(1);
+    expect(nightly.permissions.actions).toBe('write');
+    const run = nightly.jobs.dispatch.steps.map((s) => s.run ?? '').join('\n');
+    expect(run).toContain('gh workflow run ci.yml --ref "$branch" -f tier=full');
+    expect(nightly.jobs.dispatch['timeout-minutes']).toBeGreaterThan(0);
+  });
+
+  it("keeps the design system's measurement specs out of every run", () => {
+    // DS_E2E_TIER=full adds hours of SwiftShader sweeps; they run by hand.
+    expect(raw).not.toContain('DS_E2E_TIER');
+  });
+});
