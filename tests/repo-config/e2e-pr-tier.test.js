@@ -190,7 +190,6 @@ const EXPECTED = {
   GpsPlusSlamJs_PhysicsDemo: [
     'playwright-tests/replay-flow.spec.js: reconstructs the mesh from a real recording and spawns bouncing balls',
     'playwright-tests/replay-shadows.spec.js: on first load (${label}), with no change, the shadow shows [if skin === "off"]',
-    'playwright-tests/smoke.spec.js: loads without console errors and offers the replay path on desktop',
   ],
   GpsPlusSlamJs_QrTrackingDemo: [
     'playwright-tests/qr-demo.spec.js: starts scanning, measures the size, converges and glues the debug objects',

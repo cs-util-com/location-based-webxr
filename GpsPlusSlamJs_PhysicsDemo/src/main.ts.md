@@ -54,11 +54,11 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
 - `#overlay` is nested inside `#app` (the scene mount) per the DOM-Overlay stacking
   convention.
 - `requireEl` throws on a missing element (fail fast on an HTML/JS drift).
-- No unit test — this is DOM wiring; covered by `playwright-tests/smoke.spec.js`
+- No unit test — this is DOM wiring; covered by `playwright-tests/replay-flow.spec.js`
   and the unit-tested modules it composes.
 
 ## Tests
 
-- `playwright-tests/smoke.spec.js` — page loads without console errors, the mode
+- `playwright-tests/replay-flow.spec.js` — page loads without console errors, the mode
   screen + recording input render, and (no `navigator.xr` in Playwright) the
   desktop-replay path is offered with the AR button hidden.
