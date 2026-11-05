@@ -7,10 +7,17 @@
 // canonical command from projects.mjs.
 import {
   holdMachineSlotForProcess,
+  queueClassOf,
   resolveSlotDir,
   stageRunTakesSlot,
 } from './machine-slot.mjs';
-import { getStage, resolveProject, PROJECTS } from './projects.mjs';
+import {
+  getStage,
+  isBrowserStage,
+  resolveGateMode,
+  resolveProject,
+  PROJECTS,
+} from './projects.mjs';
 import {
   forwardSignalsToStages,
   runStage,
@@ -33,14 +40,23 @@ if (!project) {
 
 // Every stage run takes the machine slot (inside a gate it re-enters), except
 // a filtered unit-test run, which opts in with GATE_SLOT=take (machine-slot.mjs).
+const stage = getStage(project, stageName);
 const slotRule = stageRunTakesSlot({
-  stage: getStage(project, stageName),
+  stage,
   forwardedArgs,
   env: process.env,
 });
 if (slotRule.take) {
   await holdMachineSlotForProcess(
-    [`${stageName} in ${project.name}`, ...forwardedArgs].join(' ')
+    [`${stageName} in ${project.name}`, ...forwardedArgs].join(' '),
+    {
+      // An unknown stage queues as a browser run, the direction that never
+      // jumps the queue.
+      queueClass: queueClassOf({
+        skipBrowser: resolveGateMode(process.env).skipBrowser,
+        runsBrowser: stage === undefined || isBrowserStage(stage),
+      }),
+    }
   );
 } else if (resolveSlotDir(process.env) !== null) {
   console.error(slotRule.reason);

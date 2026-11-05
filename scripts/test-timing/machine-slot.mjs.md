@@ -5,7 +5,8 @@
 One machine-wide slot for every session's gates, sweeps and browser suites
 (gate-speed plan 2026-10-04, TS-3 / G1). A run that finds the slot taken
 QUEUES, saying so, until the holder is done. Liveness is a heartbeat, not a
-pid (milestone review R1).
+pid (milestone review R1). The waiters queue in a fair order: runs that start
+no browser first, browser runs after them unless they have waited an hour.
 
 ## Why it exists
 
@@ -39,7 +40,8 @@ do, the sessions' quiet flag stays the way to keep them apart.
     given. A real run first joined them unquoted, and `node -e "()=>{}"` lost
     its `>` to a shell redirect.
 - `acquireMachineSlot({ dir, env, command, log, now?, sleep?, timeoutMs?,
-  pollMs?, pid?, cwd?, listAncestors?, heartbeat?, steal? }) ->
+  pollMs?, pid?, cwd?, listAncestors?, heartbeat?, steal?, queueClass?,
+  onExit? }) ->
   Promise<{ outcome, release }>`
   - `outcome`: `acquired` (this run holds the slot and its heartbeat runs),
     `reentered` (an ancestor run holds it and exported its token),
@@ -50,12 +52,20 @@ do, the sessions' quiet flag stays the way to keep them apart.
     holds it; a no-op for every other outcome.
   - On `acquired` it writes the token to `env[SLOT_HELD_ENV]`, so with
     `process.env` every child inherits it and re-enters.
-- `holdMachineSlotForProcess(command, deps?)` - the shells' one-liner:
+  - `queueClass`: `fast` for a run that starts no browser, `browser`
+    (the default, also the CLI's) for anything else.
+- `holdMachineSlotForProcess(command, { queueClass?, ... })` - the shells' one-liner:
   takes the slot and frees it on every way out. Exits `QUEUE_TIMEOUT_EXIT`
   (75) on a queue timeout, 1 on an ancestor holder, 130 on SIGINT / SIGTERM.
 - `decideMachineSlot({ present, existing, heartbeatMs, inheritedToken, now })
   -> { action, reason }` - the whole rule, pure. `action` is `acquire`,
   `reenter`, `wait` or `steal`. No pid input: liveness is the heartbeat.
+- `rankQueue(tickets, now, { agingMs?, staleMs? }) -> QueueTicket[]` - the
+  queue's whole ordering rule, pure (see "The queue").
+- `queueClassOf({ skipBrowser, runsBrowser }) -> 'fast' | 'browser'`.
+- `describePlace(ranked, token)` - `2nd of 3 in the queue, behind "<command>"`.
+- `writeTicket`, `readQueue`, `removeTicket`, `queueDirOf` - the tickets on
+  disk.
 - `startHeartbeat(file, ms?) -> stop` - the worker-thread heartbeat.
 - `parseProcessTable(text) -> Map` and `ancestorChain(parentOf, pid)` - the
   pure parts of `ancestorPids()`, tested with injected text.
@@ -65,7 +75,8 @@ do, the sessions' quiet flag stays the way to keep them apart.
   (`GATE_SLOT_DIR`), `SLOT_OPT_IN_ENV` (`GATE_SLOT`, value `take`),
   `SLOT_TIMEOUT_ENV` (`GATE_SLOT_TIMEOUT_MIN`), `SLOTS_PARENT`, `OWNER_FILE`,
   `HEARTBEAT_MS`, `HEARTBEAT_STALE_MS`, `DEFAULT_TIMEOUT_MS`,
-  `DEFAULT_POLL_MS`, `REMIND_EVERY_MS`, `QUEUE_TIMEOUT_EXIT`.
+  `DEFAULT_POLL_MS`, `REMIND_EVERY_MS`, `QUEUE_TIMEOUT_EXIT`, `QUEUE_SUFFIX`,
+  `QUEUE_AGING_MS`.
 
 ## Who takes it
 
@@ -87,7 +98,14 @@ do, the sessions' quiet flag stays the way to keep them apart.
   slot from its repo-config tests to its last dependent instead of
   releasing it between package gates.
 - Every nested run (the cascade's package gates, a stage that calls
-  `pnpm run`) inherits the token and re-enters.
+  `pnpm run`) inherits the token and re-enters, so only the outermost run's
+  queue class counts.
+- **Queue classes, by caller:** `test-changed.mjs` is `fast` with
+  `GATE_SKIP_BROWSER_STAGES=1` (the per-commit gate) and `browser` without;
+  `run-gate.mjs` is `fast` when browser stages are skipped or its project has
+  no browser stage, and the ROOT gate is always `browser` (its stages are the
+  package gates, which start browsers); `timed-stage.mjs` is `browser` for a
+  `playwright` stage or an unknown one; the CLI is always `browser`.
 - **Browser suites take it whole.** Per-spec-file splitting inside the e2e
   stage was not wired: both long suites (`GpsPlusSlamJs_DesignSystem`'s
   `DS_E2E_TIER=full` and OsmDemo's) run as one `playwright test` through
@@ -96,6 +114,37 @@ do, the sessions' quiet flag stays the way to keep them apart.
   that runs the full tier and wants to let others in between files runs it
   file by file instead (`pnpm run test:e2e <spec>` per file), and each such
   run takes and frees the slot on its own.
+
+## The queue
+
+Without it the slot went to whichever waiter's 5 s poll hit the free slot
+first: a 3-minute per-commit gate could wait behind two browser runs that
+arrived after it. Now:
+
+- **Tickets.** A waiter writes `<token>.json` (`token`, `pid`, `enqueuedAt`,
+  `queueClass`, `command`, `cwd`) into `<slot dir>-queue/`, BESIDE the slot,
+  not inside it, so an older copy of this script sees the slot exactly as
+  before. The write is atomic (a temporary file renamed into place). The
+  file's mtime is the waiter's heartbeat, refreshed on every poll; a ticket
+  silent for `HEARTBEAT_STALE_MS` is dead, never ranks, and is deleted by
+  whoever reads the queue. A ticket is removed when its waiter takes the
+  slot, re-enters, times out, stops on an ancestor holder, or exits.
+- **The ranking** (`rankQueue`, pure): browser runs that have queued
+  `QUEUE_AGING_MS` or longer first, then `fast` runs, then younger browser
+  runs and any unknown class; first come first served within each; the token
+  breaks a tie, so exactly one waiter is first.
+- **Taking a free slot.** A run that finds the slot free and no other live
+  ticket takes it at once and writes no ticket (the uncontended case is as
+  before). If live tickets exist, it joins the queue and takes the slot only
+  when it ranks first; otherwise it waits, saying `the machine slot is free,
+  but this run is 2nd of 3 in the queue, behind "..."`.
+- **Mixed versions never deadlock.** An older copy writes no ticket and still
+  races for `mkdir`; it may win, and the queue simply waits for it like any
+  holder. A file-system error on the queue turns the queue off for that
+  waiter, which then races as an older copy does. Nothing in the queue can
+  hold a free slot for longer than one dead ticket's 3 min.
+- **The QUEUED line names the place**, e.g. `...; 2nd of 3 in the queue,
+  behind "test:changed in C:\gps\wt-x"` (the run directly ahead).
 
 ## Invariants & assumptions
 
@@ -176,8 +225,29 @@ do, the sessions' quiet flag stays the way to keep them apart.
   behind one of them plus anything else, and 3 h is the staleness cap. It is
   reversed if one hold routinely exceeds ~2 h, which is exactly the
   design-system full tier taken whole, hence the file-by-file advice above.
-- `DEFAULT_POLL_MS` = 5 s: one stat and one small read per poll; a hand-over
-  costs at most 5 s.
+- `DEFAULT_POLL_MS` = 5 s: one stat and one small read per poll (plus, while
+  queued, one ticket write and one listing of the queue); a hand-over costs
+  at most 5 s.
+- `QUEUE_AGING_MS` = 60 min: a browser run queued this long ranks ahead of
+  every fast run. Two bounds fix the range. It must stay below the queue
+  timeout minus the longest fast run (2 h - ~25 min), or an aged browser run
+  times out before its turn; and well above the fast holds (3-25 min), or a
+  browser run that waited one fast gate jumps the rest and the defect the
+  queue removes is back. Swept (2026-11-05, a scratch simulation of the
+  single slot: 8 h of arrivals, a third of them browser runs of 20-60 min
+  with one in eight 150 min, fast runs of 5-25 min, 40 seeds, utilisation
+  0.5-0.95) over 15, 30, 45, 60, 75, 90, 120 min and no aging:
+  - At utilisation 0.5 every value behaves the same (fast mean wait 7.5-9.4
+    min, browser 9.5-11.1).
+  - At 0.85: fast mean wait 49, 46, 39, **35**, 32, 30, 25, 19 min; browser
+    worst wait 220, 220, 230, **254**, 254, 274, 274, 293 min.
+  - The trade is monotone, with no knee: a lower bound helps the browser
+    runs' worst case, a higher one the fast runs' mean. No aging at all
+    gives the fastest gates and the fewest waits over 2 h, but no bound on a
+    browser wait.
+  - What would reverse 60: browser runs timing out at 2 h in the queue
+    while fast runs flow (then lower it, to 30-45); fast gates still
+    waiting behind browser runs (then raise it, to 75-90, never past ~95).
 
 ## Examples
 
@@ -211,7 +281,24 @@ await holdMachineSlotForProcess('test:unit in GpsPlusSlamJs_AppFramework');
   one argument runs as a raw shell line). A real two-process run on a
   scratch slot (2026-10-04): the second CLI run queued behind the first with
   the QUEUED line, took the slot after 11 s and returned its command's code. Real temp directories, a fake clock.
+- `machine-slot.queue.test.mjs`: the ranking by example (a fast run beats a
+  younger browser run; first come first served; the aging boundary, at the
+  bound and 1 ms short of it; dead tickets left out; an unknown class ranks
+  as browser), `describePlace`, `queueClassOf`, the tickets on disk (written,
+  read, removed; dead tickets and junk cleaned; a missing queue reads empty),
+  and `acquireMachineSlot` with a queue in real temp directories: two
+  waiters in one process (the fast one takes the freed slot though it queued
+  second; two of one class go first come first served), a newcomer does not
+  take a free slot while a live waiter ranks ahead, a dead head ticket never
+  blocks, a waiter with no ticket (an older copy) wins the race and the queue
+  continues behind it, the QUEUED line names the place, a timeout removes
+  the ticket, and an uncontended run writes no ticket.
 - `machine-slot.property.test.mjs`: a beating holder below the 3 h cap is
   never stolen from; a silent holder is always reclaimed unless the waiter is
   part of its run; re-entry only on an exact token match; a free slot is
-  always acquired.
+  always acquired. The queue: the ranking is a total order (one first, the
+  same for any input order); dead tickets never rank and live ones always
+  do; a fast run beats every browser run younger than the aging bound; and
+  in a simulated single slot fed any stream of arrivals, a browser run
+  starts within the aging bound plus one longest hold per older browser run
+  plus one.

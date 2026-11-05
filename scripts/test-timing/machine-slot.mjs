@@ -45,9 +45,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -231,6 +233,231 @@ export function stageRunTakesSlot({ stage, forwardedArgs, env }) {
     reason: filteredUnit
       ? `${SLOT_OPT_IN_ENV}=take: this filtered unit-test run takes the machine slot`
       : 'a full stage run, or a browser run',
+  };
+}
+
+/**
+ * The waiters' queue: a directory BESIDE the slot (`<slot dir>-queue`), one
+ * ticket file per waiter. Beside, not inside: the slot directory is created
+ * and removed as the lock itself, and an older copy of this script, which
+ * knows no queue, must see the slot exactly as before.
+ */
+export const QUEUE_SUFFIX = '-queue';
+
+/**
+ * A browser run that has queued this long ranks ahead of every run with no
+ * browser stage. See the sidecar's "Thresholds": it must stay below the queue
+ * timeout minus the longest such run (2 h - 25 min), or an aged browser run
+ * times out before its turn; and it should stay well above the longest such
+ * run, or one 2.5 h browser run again holds up the short gates queued behind
+ * it, which is the defect the queue exists to remove.
+ */
+export const QUEUE_AGING_MS = 60 * 60_000;
+
+/**
+ * @typedef {'fast' | 'browser'} QueueClass `fast`: a run that starts no
+ *   browser (the per-commit gate); `browser`: anything else, or unknown
+ */
+
+/**
+ * @typedef {object} QueueTicket
+ * @property {string} token the waiter's token (also its slot token)
+ * @property {number} pid
+ * @property {number} enqueuedAt epoch ms when it joined the queue
+ * @property {QueueClass} queueClass
+ * @property {string} [command] what it runs, for the queue line
+ * @property {string} [cwd]
+ * @property {number} heartbeatMs the ticket file's mtime
+ */
+
+/**
+ * The class of a run: `fast` when it starts no browser, either because the
+ * browser stages are skipped or because it has none.
+ *
+ * @param {{ skipBrowser: boolean, runsBrowser: boolean }} input
+ * @returns {QueueClass}
+ */
+export function queueClassOf({ skipBrowser, runsBrowser }) {
+  return skipBrowser || !runsBrowser ? 'fast' : 'browser';
+}
+
+/**
+ * @param {string} dir the slot directory
+ * @returns {string} its queue directory
+ */
+export function queueDirOf(dir) {
+  return `${dir}${QUEUE_SUFFIX}`;
+}
+
+/**
+ * Pure ranking of the waiters: the live tickets, first-ranked first.
+ *
+ * - Dead tickets (no heartbeat for `staleMs`) and malformed ones never rank.
+ * - Tier 0: browser runs that have waited `agingMs` or longer.
+ * - Tier 1: runs with no browser stage.
+ * - Tier 2: younger browser runs, and any unknown class (the direction that
+ *   never jumps the queue).
+ * - Within a tier, first come first served; the token breaks a tie, so the
+ *   order is total and exactly one waiter is first.
+ *
+ * @param {readonly QueueTicket[]} tickets
+ * @param {number} now
+ * @param {{ agingMs?: number, staleMs?: number }} [options]
+ * @returns {QueueTicket[]}
+ */
+export function rankQueue(
+  tickets,
+  now,
+  { agingMs = QUEUE_AGING_MS, staleMs = HEARTBEAT_STALE_MS } = {}
+) {
+  /** @param {QueueTicket} t */
+  const tier = (t) =>
+    t.queueClass === 'fast' ? 1 : now - t.enqueuedAt >= agingMs ? 0 : 2;
+  return tickets
+    .filter(
+      (t) =>
+        t !== null &&
+        typeof t === 'object' &&
+        typeof t.token === 'string' &&
+        t.token !== '' &&
+        Number.isFinite(t.enqueuedAt) &&
+        Number.isFinite(t.heartbeatMs) &&
+        now - t.heartbeatMs <= staleMs
+    )
+    .map((t) => ({ t, k: tier(t) }))
+    .sort(
+      (a, b) =>
+        a.k - b.k ||
+        a.t.enqueuedAt - b.t.enqueuedAt ||
+        (a.t.token < b.t.token ? -1 : a.t.token > b.t.token ? 1 : 0)
+    )
+    .map(({ t }) => t);
+}
+
+/** @type {Record<number, string>} */
+const ORDINAL_SUFFIX = { 1: 'st', 2: 'nd', 3: 'rd' };
+
+/**
+ * @param {number} n
+ * @returns {string} 1st, 2nd, 3rd, 4th, ..., 11th, 12th, 13th, 21st
+ */
+function ordinal(n) {
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  return `${n}${teen ? 'th' : (ORDINAL_SUFFIX[n % 10] ?? 'th')}`;
+}
+
+/**
+ * @param {readonly QueueTicket[]} ranked the output of rankQueue
+ * @param {string} token
+ * @returns {string} e.g. `2nd of 3 in the queue, behind "pnpm test in X"`
+ */
+export function describePlace(ranked, token) {
+  const index = ranked.findIndex((t) => t.token === token);
+  if (index < 0) {
+    return 'not in the queue';
+  }
+  const place = `${ordinal(index + 1)} of ${ranked.length} in the queue`;
+  if (index === 0) {
+    return place;
+  }
+  const ahead = /** @type {QueueTicket} */ (ranked[index - 1]);
+  return `${place}, behind "${ahead.command ?? `pid ${ahead.pid}`}"`;
+}
+
+/**
+ * Writes (or refreshes) a ticket atomically: a temporary file renamed into
+ * place, its mtime set to `at`, which is the waiter's heartbeat.
+ *
+ * @param {string} queueDir
+ * @param {Omit<QueueTicket, 'heartbeatMs'>} ticket
+ * @param {number} at epoch ms
+ * @returns {void} throws on a file-system error
+ */
+export function writeTicket(queueDir, ticket, at) {
+  mkdirSync(queueDir, { recursive: true });
+  const { token, pid, enqueuedAt, queueClass, command, cwd } = ticket;
+  const file = path.join(queueDir, `${token}.json`);
+  const tmp = `${file}.tmp-${Math.random().toString(36).slice(2, 8)}`;
+  writeFileSync(
+    tmp,
+    `${JSON.stringify({ token, pid, enqueuedAt, queueClass, command, cwd })}\n`,
+    'utf8'
+  );
+  renameSync(tmp, file);
+  utimesSync(file, new Date(at), new Date(at));
+}
+
+/**
+ * @param {string} queueDir
+ * @param {string} token
+ * @returns {void}
+ */
+export function removeTicket(queueDir, token) {
+  rmSync(path.join(queueDir, `${token}.json`), { force: true });
+}
+
+/**
+ * Reads every ticket in the queue, removing the dead ones (and leftover
+ * temporary files) on the way. A missing or unreadable queue is empty; a
+ * file that is not a ticket is skipped.
+ *
+ * @param {string} queueDir
+ * @param {number} now
+ * @param {number} [staleMs]
+ * @returns {QueueTicket[]} the live tickets, unranked
+ */
+export function readQueue(queueDir, now, staleMs = HEARTBEAT_STALE_MS) {
+  /** @type {string[]} */
+  let names;
+  try {
+    names = readdirSync(queueDir);
+  } catch {
+    return [];
+  }
+  /** @type {QueueTicket[]} */
+  const live = [];
+  for (const name of names) {
+    const file = path.join(queueDir, name);
+    try {
+      const stats = statSync(file, { throwIfNoEntry: false });
+      if (!stats) {
+        continue;
+      }
+      if (now - stats.mtimeMs > staleMs) {
+        rmSync(file, { force: true });
+        continue;
+      }
+      if (!name.endsWith('.json')) {
+        continue;
+      }
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      if (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        typeof parsed.token === 'string' &&
+        `${parsed.token}.json` === name &&
+        Number.isInteger(parsed.pid) &&
+        Number.isFinite(parsed.enqueuedAt)
+      ) {
+        live.push({ ...parsed, heartbeatMs: stats.mtimeMs });
+      }
+    } catch {
+      // Not a ticket, or removed between the listing and the read.
+    }
+  }
+  return live;
+}
+
+/**
+ * Removes the waiter's ticket if the process exits while it queues.
+ *
+ * @param {() => void} cleanup
+ * @returns {() => void} unregisters the cleanup
+ */
+function onProcessExit(cleanup) {
+  process.once('exit', cleanup);
+  return () => {
+    process.off('exit', cleanup);
   };
 }
 
@@ -419,6 +646,10 @@ export function startHeartbeat(file, ms = HEARTBEAT_MS) {
  * @param {(file: string) => () => void} [options.heartbeat] starts the
  *   holder's heartbeat; returns its stop function
  * @param {typeof stealSlot} [options.steal] injected for tests
+ * @param {QueueClass} [options.queueClass] `fast` for a run that starts no
+ *   browser; ranks it ahead of younger browser runs in the queue
+ * @param {(cleanup: () => void) => () => void} [options.onExit] registers the
+ *   ticket's removal for a process exit while queued; injected for tests
  * @returns {Promise<HeldSlot>}
  */
 export async function acquireMachineSlot({
@@ -435,6 +666,8 @@ export async function acquireMachineSlot({
   listAncestors = ancestorPids,
   heartbeat = startHeartbeat,
   steal = stealSlot,
+  queueClass = 'browser',
+  onExit = onProcessExit,
 }) {
   const noop = () => {};
   if (dir === null) {
@@ -446,23 +679,36 @@ export async function acquireMachineSlot({
   let ancestors = null;
   /** @type {SlotDecision | null} */
   let lastDecision = null;
+  const token = `${pid}-${start.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const queue = joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit });
 
   for (;;) {
     const seen = readSlot(dir);
-    const decision = decideMachineSlot({
+    let decision = decideMachineSlot({
       ...seen,
       inheritedToken: env[SLOT_HELD_ENV],
       now: now(),
     });
-    lastDecision = decision;
 
     if (decision.action === 'reenter') {
+      queue.leave();
       return { outcome: 'reentered', release: noop };
     }
     if (decision.action === 'acquire') {
+      // A free slot goes to the first-ranked waiter. With no other live
+      // ticket (the common case) nothing is written; a waiter running an
+      // older copy of this script writes no ticket and may still win the
+      // mkdir below, and the queue then simply waits for it.
+      const ahead = queue.placeIfOthersWait();
+      if (ahead !== null) {
+        decision = { action: 'wait', reason: `the machine slot is free, but this run is ${ahead}` };
+      }
+    }
+    lastDecision = decision;
+    if (decision.action === 'acquire') {
       const startedAt = now();
-      const token = `${pid}-${startedAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       if (tryCreateSlot(dir, { token, pid, startedAt, command, cwd })) {
+        queue.leave();
         if (start !== startedAt && Number.isFinite(lastReminder)) {
           log(`machine slot: taken after ${formatWait(startedAt - start)} in the queue`);
         }
@@ -501,6 +747,7 @@ export async function acquireMachineSlot({
             `so waiting would wait for itself. A shell must not create ${dir} around a node gate; ` +
             `take the slot with \`node scripts/test-timing/machine-slot.mjs run -- <command>\` instead.`
         );
+        queue.leave();
         return { outcome: 'held-by-ancestor', release: noop };
       }
     }
@@ -508,6 +755,7 @@ export async function acquireMachineSlot({
     const t = now();
     const waited = t - start;
     if (waited >= timeoutMs) {
+      queue.leave();
       log(
         `machine slot: QUEUE TIMEOUT (exit ${QUEUE_TIMEOUT_EXIT}) - this is NOT a test failure. ` +
           `Gave up after ${Math.round(timeoutMs / 60_000)} min in the queue; ${lastDecision.reason}. ` +
@@ -515,16 +763,109 @@ export async function acquireMachineSlot({
       );
       return { outcome: 'timed-out', release: noop };
     }
-    if (decision.action === 'wait' && t - lastReminder >= REMIND_EVERY_MS) {
-      log(
-        lastReminder === Number.NEGATIVE_INFINITY
-          ? `machine slot: QUEUED (not hung) - "${command}" waits for ${dir}, ${decision.reason}; waiting up to ${Math.round(timeoutMs / 60_000)} min`
-          : `machine slot: still queued after ${formatWait(waited)} - "${command}" waits; ${decision.reason}`
-      );
-      lastReminder = t;
+    if (decision.action === 'wait') {
+      // Join, or refresh: the ticket's mtime is this waiter's heartbeat.
+      const place = queue.join();
+      if (t - lastReminder >= REMIND_EVERY_MS) {
+        const where = place === null ? '' : `; ${place}`;
+        log(
+          lastReminder === Number.NEGATIVE_INFINITY
+            ? `machine slot: QUEUED (not hung) - "${command}" waits for ${dir}, ${decision.reason}${where}; waiting up to ${Math.round(timeoutMs / 60_000)} min`
+            : `machine slot: still queued after ${formatWait(waited)} - "${command}" waits; ${decision.reason}${where}`
+        );
+        lastReminder = t;
+      }
     }
     await sleep(pollMs);
   }
+}
+
+/**
+ * One waiter's ticket in the queue. Every file-system error is swallowed and
+ * turns the queue off for this waiter, which then races for `mkdir` as an
+ * older copy of this script does: the queue may make a waiter wait its turn,
+ * never wait forever.
+ *
+ * @param {object} input
+ * @param {string} input.dir the slot directory
+ * @param {string} input.token
+ * @param {number} input.pid
+ * @param {QueueClass} input.queueClass
+ * @param {string} input.command
+ * @param {string} input.cwd
+ * @param {() => number} input.now
+ * @param {(cleanup: () => void) => () => void} input.onExit
+ */
+function joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit }) {
+  const queueDir = queueDirOf(dir);
+  /** @type {number | null} */
+  let enqueuedAt = null;
+  let broken = false;
+  let unregister = () => {};
+
+  /** @returns {QueueTicket} */
+  const mine = () => ({
+    token,
+    pid,
+    enqueuedAt: /** @type {number} */ (enqueuedAt),
+    queueClass,
+    command,
+    cwd,
+    heartbeatMs: now(),
+  });
+  /** @returns {QueueTicket[]} the other waiters' live tickets */
+  const others = () => readQueue(queueDir, now()).filter((t) => t.token !== token);
+  const ensureTicket = () => {
+    if (broken) {
+      return false;
+    }
+    try {
+      if (enqueuedAt === null) {
+        enqueuedAt = now();
+        unregister = onExit(() => removeTicket(queueDir, token));
+      }
+      writeTicket(queueDir, mine(), now());
+      return true;
+    } catch {
+      broken = true;
+      return false;
+    }
+  };
+
+  return {
+    /** @returns {string | null} this waiter's place, or null without a queue */
+    join() {
+      if (!ensureTicket()) {
+        return null;
+      }
+      return describePlace(rankQueue([...others(), mine()], now()), token);
+    },
+    /**
+     * On a free slot: null when this waiter may take it (no other live
+     * waiter, or this one ranks first); otherwise its place.
+     * @returns {string | null}
+     */
+    placeIfOthersWait() {
+      const waiting = others();
+      if (waiting.length === 0 || !ensureTicket()) {
+        return null;
+      }
+      const ranked = rankQueue([...waiting, mine()], now());
+      return ranked[0]?.token === token ? null : describePlace(ranked, token);
+    },
+    leave() {
+      if (enqueuedAt === null) {
+        return;
+      }
+      try {
+        removeTicket(queueDir, token);
+      } catch {
+        // The staleness rule cleans a ticket that outlives its waiter.
+      }
+      unregister();
+      enqueuedAt = null;
+    },
+  };
 }
 
 /**
@@ -679,16 +1020,19 @@ function releaseSlot(dir, token) {
  * @param {object} [deps] injected for tests
  * @param {ProcessLike} [deps.proc]
  * @param {(options: Parameters<typeof acquireMachineSlot>[0]) => Promise<HeldSlot>} [deps.acquire]
+ * @param {QueueClass} [deps.queueClass] `fast` for a run that starts no
+ *   browser (`queueClassOf`); unknown callers queue as `browser`
  * @returns {Promise<HeldSlot>}
  */
 export async function holdMachineSlotForProcess(
   command,
-  { proc = process, acquire = acquireMachineSlot } = {}
+  { proc = process, acquire = acquireMachineSlot, queueClass = 'browser' } = {}
 ) {
   const slot = await acquire({
     dir: resolveSlotDir(proc.env),
     env: proc.env,
     command,
+    queueClass,
     log: (line) => console.error(line),
   });
   if (slot.outcome === 'timed-out') {

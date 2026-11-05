@@ -15,6 +15,8 @@
 - Invariants & assumptions:
   - Every stage run takes the machine slot first (see
     [machine-slot.mjs](machine-slot.mjs.md)); inside a gate it re-enters.
+    A `playwright` stage (or an unknown one) queues as `browser`, any other
+    stage as `fast`, ahead of younger browser runs.
     **Except a filtered unit-test run** (a vitest stage, `test:unit` or
     `test:repo-config`, with file arguments): a 1-5 s TDD step must not queue
     behind a browser run, so it prints
