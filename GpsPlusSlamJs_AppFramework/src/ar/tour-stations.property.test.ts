@@ -185,29 +185,38 @@ describe('tour stations (properties)', () => {
           if (sites.length > 0) {
             assetBreaks += 1;
             sites[pick % sites.length]!();
-            expect(() => parseAll(broken), 'a broken asset reference').toThrow(
-              Invalid
-            );
           }
+          const assetRefusal =
+            sites.length > 0 ? refusalOf(() => parseAll(broken)) : null;
+          expect(
+            assetRefusal === null || assetRefusal instanceof Invalid,
+            'a broken asset reference is refused'
+          ).toBe(true);
 
           // A choice jumping to a step that does not exist is refused.
           const jumped = copyOf();
           const station = jumped.find((s) =>
             s.steps.some((st) => (st.action as Json).kind === 'choice')
           );
-          if (
+          const canJump =
             station !== undefined &&
-            !station.steps.some((st) => st.id === ghost)
-          ) {
+            !station.steps.some((st) => st.id === ghost);
+          if (canJump) {
             choiceBreaks += 1;
             const choice = station.steps.find(
               (st) => (st.action as Json).kind === 'choice'
             )!.action as { options: { goto?: string }[] };
             choice.options[0]!.goto = ghost;
-            expect(() => parseAll(jumped), 'a choice to no step').toThrow(
-              /must name a step of this station/
-            );
           }
+          const choiceRefusal = canJump
+            ? refusalOf(() => parseAll(jumped))
+            : null;
+          expect(
+            choiceRefusal === null ||
+              (choiceRefusal instanceof Error &&
+                /must name a step of this station/.test(choiceRefusal.message)),
+            'a choice to no step is refused'
+          ).toBe(true);
         }
       ),
       { numRuns: RUNS }
@@ -221,3 +230,16 @@ describe('tour stations (properties)', () => {
     );
   });
 });
+
+/**
+ * The error `fn` throws, or undefined when it returns, so a property can
+ * assert a refusal outside the branch that set its case up.
+ */
+function refusalOf(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
