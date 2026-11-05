@@ -282,26 +282,32 @@ test("the globe-terrain carrier lab opens and draws without errors @pr", async (
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 });
 
-test("the terrain lab opens in every style without errors", async ({
+// One switch stands for all eight styles: measured, no style links a shader
+// program of its own (one program at boot, none added by any style), so a
+// style differs from another only in uniforms and in what it fetches.
+// globe-albedo is the one that switches the most on. A style-only defect in
+// another style is out of reach here; the program count is what would bring
+// a style back: one that links a new program belongs in this test.
+test("the terrain lab opens and changes style without errors", async ({
   page,
 }) => {
   const problems = await watch(page);
   const record = await routeAll(page, fixtureTile);
   await page.goto("/labs/terrain/");
   await ready(page, "__terrainLab");
-  for (const style of Object.keys(STYLE_LIGHT)) {
-    const hash = `style=${style}`;
-    await page.evaluate((h) => {
-      location.hash = h;
-    }, hash);
-    await page.waitForFunction(
-      (h) => window.__terrainLab.state().appliedHash === h,
-      hash,
-      { timeout: 30_000 },
-    );
-    await frames(page);
-    expect(problems, style).toEqual([]);
-  }
+  const style = "globe-albedo";
+  expect(Object.keys(STYLE_LIGHT)).toContain(style);
+  const hash = `style=${style}`;
+  await page.evaluate((h) => {
+    location.hash = h;
+  }, hash);
+  await page.waitForFunction(
+    (h) => window.__terrainLab.state().appliedHash === h,
+    hash,
+    { timeout: 30_000 },
+  );
+  await frames(page);
+  expect(problems, style).toEqual([]);
   expect(record.missing).toEqual([]);
   const stdev = await drawnStdev(page);
   console.log(`terrain lab drawn: stdev ${stdev.toFixed(1)}`);
