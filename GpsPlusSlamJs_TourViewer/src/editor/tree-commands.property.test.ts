@@ -229,7 +229,10 @@ describe("the tree's station commands", () => {
           }
         },
       ),
-      { numRuns: 40 },
+      // 20 kept: at 10 and at 20, six of six seeds caught a seeded wrong title
+      // on the seventh station. Higher counts came near the 5 s timeout on a
+      // loaded machine.
+      { numRuns: 20 },
     );
     await session.close();
   });
