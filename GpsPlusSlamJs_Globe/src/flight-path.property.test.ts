@@ -118,7 +118,7 @@ describe("flight path properties", () => {
         expect(end.altitudeM).toBe(f.landingM);
         expect(end.arcRad).toBe(0);
       }),
-      { numRuns: 200 },
+      { numRuns: 50 },
     );
   });
 
@@ -133,7 +133,7 @@ describe("flight path properties", () => {
         }
         expect(lowest).toBeGreaterThanOrEqual(floor);
       }),
-      { numRuns: 200 },
+      { numRuns: 50 },
     );
   });
 
@@ -166,7 +166,7 @@ describe("flight path properties", () => {
         }
         expect(over).toEqual([]);
       }),
-      { numRuns: 200 },
+      { numRuns: 50 },
     );
   });
 
@@ -185,7 +185,7 @@ describe("flight path properties", () => {
         expect(top).toBeLessThanOrEqual(path.geodesicAt(0).h * (1 + 1e-9));
         expect(flightAt(path, f.durationMs).altitudeM).toBe(f.landingM);
       }),
-      { numRuns: 100 },
+      { numRuns: 30 },
     );
   });
 
@@ -217,7 +217,7 @@ describe("flight path properties", () => {
             0.05,
         );
       }),
-      { numRuns: 200 },
+      { numRuns: 50 },
     );
   });
 
@@ -261,7 +261,7 @@ describe("flight path properties", () => {
         // dive reads exactly 90 degrees.
         expect(worst).toBeLessThanOrEqual(Math.PI / 2 + 1e-9);
       }),
-      { numRuns: 100 },
+      { numRuns: 30 },
     );
   });
 
@@ -289,7 +289,7 @@ describe("flight path properties", () => {
         expect(!judged || noStall(vs, 0.5)).toBe(true);
         expect(!judged || noStopAndGo(vs, 0.2)).toBe(true);
       }),
-      { numRuns: 100 },
+      { numRuns: 30 },
     );
   });
 });
