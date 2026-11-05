@@ -37,6 +37,7 @@ import {
   worldFromEcefAt,
   type GlobeOsmOverlay,
   type GlobeTerrain,
+  type OsmGainMode,
   type OsmGateLimits,
   type ReliefDeviceClass,
 } from "gps-plus-slam-globe/editor";
@@ -116,6 +117,14 @@ export interface EditorTerrain {
   readonly osm: GlobeOsmOverlay;
   /** The heights' sources, then the map's. */
   readonly credits: readonly EditorCredit[];
+  /** The relief's height source (its `{z}/{x}/{y}` template, the zoom it
+   *  covers the planet at and the deepest it draws where the source has
+   *  it): what the buildings stand on, so they meet the drawn ground. */
+  readonly heights: {
+    readonly url: string;
+    readonly globalZoom: number;
+    readonly maxZoom: number;
+  };
   /** The drawn ground (m over the ellipsoid) at a latitude and longitude
    *  in radians, null where none is loaded. */
   groundAt(latRad: number, lonRad: number): number | null;
@@ -161,6 +170,9 @@ export function createEditorTerrain(input: {
   /** The map's darkening gain (the link's `osmGain`; its default where
    *  not given). */
   readonly osmGain?: number;
+  /** How the gain darkens (the link's `osmGainMode`; flat where not
+   *  given). */
+  readonly osmGainMode?: OsmGainMode;
 }): EditorTerrain {
   const source = mapterhornRelief({
     url: MAPTERHORN_URL_TEMPLATE,
@@ -198,6 +210,7 @@ export function createEditorTerrain(input: {
     limits: EDITOR_OSM_LIMITS,
     keep: EDITOR_OSM_KEEP[input.device],
     gain: input.osmGain ?? GLOBE_SWITCH.osmGain.fallback,
+    gainMode: input.osmGainMode ?? GLOBE_SWITCH.osmGainMode.fallback,
   });
   osm.attach(terrain);
   osm.setEnabled(true);
@@ -208,6 +221,11 @@ export function createEditorTerrain(input: {
     worldFromEcef,
     osm,
     credits: [...reliefCredits(source), osm.credit],
+    heights: {
+      url: source.url,
+      globalZoom: source.globalZoom,
+      maxZoom: source.maxZoom,
+    },
     groundAt,
     update(camera, renderer, nowMs) {
       group.updateMatrixWorld(true);

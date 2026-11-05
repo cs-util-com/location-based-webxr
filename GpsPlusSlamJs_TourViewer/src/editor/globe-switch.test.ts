@@ -24,6 +24,10 @@ describe("readGlobeSwitch", () => {
       startKm: null,
       dust: 1,
       osmGain: GLOBE_SWITCH.osmGain.fallback,
+      osmGainMode: "flat",
+      cloudShadow: GLOBE_SWITCH.cloudShadow.fallback,
+      cloudWind: GLOBE_SWITCH.cloudWind.fallback,
+      buildings: 1,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });
@@ -130,6 +134,17 @@ describe("readGlobeSwitch", () => {
     }
   });
 
+  // Why: the buildings are on by default; buildings=0 is the developer's
+  // link without them (no city worker, no Overpass traffic), a typo keeps
+  // them.
+  it("reads the buildings on by default and off for buildings=0", () => {
+    expect(readGlobeSwitch("").buildings).toBe(1);
+    expect(readGlobeSwitch("?buildings=0").buildings).toBe(0);
+    for (const bad of ["abc", "2", "-1", ""]) {
+      expect(readGlobeSwitch(`?buildings=${bad}`).buildings).toBe(1);
+    }
+  });
+
   // Why: the street map's darkening gain is a look choice tuned by eye;
   // the link's osmGain is its A/B switch, and a value out of its range
   // (one that would blank or brighten the map) reads as the default.
@@ -139,6 +154,40 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?globe=1&osmGain=1").osmGain).toBe(1);
     for (const bad of ["", "abc", "0", "0.1", "1.5", "-1", "Infinity"]) {
       expect(readGlobeSwitch(`?osmGain=${bad}`).osmGain).toBe(0.55);
+    }
+  });
+
+  // Why: the gain's mode is the street map's A/B switch: flat (the map's
+  // contrasts kept) unless the link asks for exactly "compress".
+  it("reads the street map's gain mode, flat unless the link says compress", () => {
+    expect(GLOBE_SWITCH.osmGainMode.fallback).toBe("flat");
+    expect(readGlobeSwitch("?globe=1&osmGainMode=compress").osmGainMode).toBe(
+      "compress",
+    );
+    for (const other of ["", "flat", "Compress", "x"]) {
+      expect(readGlobeSwitch(`?osmGainMode=${other}`).osmGainMode).toBe("flat");
+    }
+  });
+
+  // Why: the clouds' shadow and wind are the look's A/B knobs; the
+  // editor's shadow is weaker than the lab's 0.5 so the tour reads under a
+  // cloud, and a value out of range reads as the default. The wind floor
+  // is 40 m/s: at the globe's 10 a cloud at 3 km moved 30 m in 3 s seen
+  // from the landing (about half a degree), read as static clouds.
+  it("reads the clouds' shadow (0.3 by default) and wind (40 by default)", () => {
+    expect(GLOBE_SWITCH.cloudShadow.fallback).toBe(0.3);
+    expect(GLOBE_SWITCH.cloudWind.fallback).toBe(40);
+    expect(readGlobeSwitch("?cloudWind=10").cloudWind).toBe(10);
+    expect(readGlobeSwitch("?globe=1&cloudShadow=0.6").cloudShadow).toBe(0.6);
+    expect(readGlobeSwitch("?cloudShadow=0").cloudShadow).toBe(0);
+    expect(readGlobeSwitch("?cloudWind=80").cloudWind).toBe(80);
+    for (const bad of ["", "abc", "-0.1", "1.5", "NaN"]) {
+      expect(readGlobeSwitch(`?cloudShadow=${bad}`).cloudShadow).toBe(0.3);
+    }
+    for (const bad of ["x", "-5", "2000"]) {
+      expect(readGlobeSwitch(`?cloudWind=${bad}`).cloudWind).toBe(
+        GLOBE_SWITCH.cloudWind.fallback,
+      );
     }
   });
 
@@ -161,6 +210,9 @@ describe("readGlobeSwitch", () => {
       GLOBE_SWITCH.landAglM,
       GLOBE_SWITCH.dust,
       GLOBE_SWITCH.osmGain,
+      GLOBE_SWITCH.cloudShadow,
+      GLOBE_SWITCH.cloudWind,
+      GLOBE_SWITCH.buildings,
     ]) {
       expect(knob.fallback).toBeGreaterThanOrEqual(knob.min);
       expect(knob.fallback).toBeLessThanOrEqual(knob.max);

@@ -117,7 +117,7 @@ test.describe("a first visit", () => {
   });
 });
 
-/**
+/*
  * Why these tests matter: the setup page is a DOCUMENT, and its ground is a
  * page rather than the camera - which is why it opts into `.page` while the
  * five AR apps do not. Light mode rides that same opt-in (owner decision

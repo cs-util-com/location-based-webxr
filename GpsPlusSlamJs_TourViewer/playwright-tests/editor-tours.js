@@ -203,8 +203,8 @@ export async function openThroughChooser(page, buffer, name) {
 }
 
 /** A tour in the wrapped shape ("compress this folder") carrying a walk
- *  recording and its frame, and a code with no stored position. */
-/** @param {{ pin: boolean, extra?: boolean }} options -
+ *  recording and its frame, and a code with no stored position.
+ *  @param {{ pin: boolean, extra?: boolean }} options -
  *  `extra`: a second pin, as another program's edit of the same tour would
  *  add */
 export async function wrappedTour(options = { pin: false }) {

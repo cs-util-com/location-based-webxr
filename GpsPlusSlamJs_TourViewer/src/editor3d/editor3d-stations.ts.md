@@ -193,6 +193,9 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
   free blocks in their `placed` view at their pose, scaled to their size
   by `modelScale`; a model whose file cannot be read, or one without a
   size, is left out.
+- **Names the globe's interface pass reads** (`globe-interface-pass.ts`):
+  the ring `found-radius` and the billboard's pole `pole`; renaming
+  either lets the clouds' shadow darken it.
 - **The found-radius circle** is the selected station's ring: amber (the
   gizmo's colour, its radius dots sit on it) while the station itself is
   selected, a lighter blue while an item in it is, else blue.

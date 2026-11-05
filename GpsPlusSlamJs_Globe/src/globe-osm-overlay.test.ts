@@ -25,6 +25,7 @@ import {
   GatedOsmOverlay,
   createGlobeOsmOverlay,
   createRequestCeiling,
+  type OsmGainMode,
   type OverlayPluginInternals,
   osmCredit,
   osmGateLimits,
@@ -385,6 +386,7 @@ describe("patchOsmFade", () => {
       uOsmOn: { value: 1 },
       uOsmFadeStart: { value: 0.7 },
       uOsmGain: { value: 0.55 },
+      uOsmFlat: { value: 0 },
     };
     expect(patchOsmFade(shader, uniforms)).toBe(true);
     expect(shader.fragmentShader).toContain("uniform float uOsmFadeM;");
@@ -416,6 +418,7 @@ describe("patchOsmFade", () => {
       uOsmOn: { value: 1 },
       uOsmFadeStart: { value: 0.7 },
       uOsmGain: { value: 0.55 },
+      uOsmFlat: { value: 0 },
     };
     expect(patchOsmFade(shader, uniforms)).toBe(true);
     const glsl = shader.fragmentShader;
@@ -425,10 +428,36 @@ describe("patchOsmFade", () => {
     // L' = L g / (g + (1 - g) L), the colour scaled by L' / L.
     expect(glsl).toContain("vec3( 0.2126, 0.7152, 0.0722 )");
     expect(glsl).toContain("g / ( g + ( 1.0 - g ) * l )");
-    const gained = glsl.indexOf("tint.rgb = osmGain( tint.rgb, uOsmGain );");
+    const gained = glsl.indexOf(": osmGain( tint.rgb, uOsmGain );");
     const blended = glsl.indexOf("tint.rgba *= layerInfo[ i ].opacity");
     expect(gained).toBeGreaterThan(-1);
     expect(blended).toBeGreaterThan(gained);
+  });
+
+  // Why: a flat multiply keeps the map's own contrasts (a road against
+  // the land, a name against it) where the luma compression lowers them;
+  // `uOsmFlat` 1 picks the multiply, 0 the compression, in one shader.
+  it("multiplies the map flat by its gain where uOsmFlat is 1", () => {
+    const shader = {
+      uniforms: {} as Record<string, unknown>,
+      fragmentShader: `#include <common>
+void main() {
+${readFileSync(join(LIBRARY, "overlays/wrapOverlaysMaterial.js"), "utf8")}
+}`,
+    };
+    const uniforms = {
+      uOsmFadeM: { value: 300 },
+      uOsmOn: { value: 1 },
+      uOsmFadeStart: { value: 0.7 },
+      uOsmGain: { value: 0.55 },
+      uOsmFlat: { value: 1 },
+    };
+    expect(patchOsmFade(shader, uniforms)).toBe(true);
+    expect(shader.fragmentShader).toContain("uniform float uOsmFlat;");
+    expect(shader.uniforms.uOsmFlat).toBe(uniforms.uOsmFlat);
+    expect(shader.fragmentShader).toContain(
+      "tint.rgb = uOsmFlat > 0.5 ? tint.rgb * uOsmGain : osmGain( tint.rgb, uOsmGain );",
+    );
   });
 
   it("reports a shader without the blend line, untouched", () => {
@@ -439,6 +468,7 @@ describe("patchOsmFade", () => {
         uOsmOn: { value: 1 },
         uOsmFadeStart: { value: 0.7 },
         uOsmGain: { value: 1 },
+        uOsmFlat: { value: 0 },
       }),
     ).toBe(false);
     expect(shader.fragmentShader).toBe("void main() {}");
@@ -561,6 +591,34 @@ describe("GatedOsmOverlay", () => {
     await overlay.lockTexture(R, 13);
     await overlay.lockTexture(R, 11);
     expect(overlay.stats()).toMatchObject({ finestLevel: 13, locks: 0 });
+    vi.restoreAllMocks();
+  });
+
+  // Why: the fetch reads the body inside its time limit and hands on a new
+  // Response; a body-less status (204, 205, 304) cannot carry even an
+  // empty body there, so the rebuild threw a TypeError and a tile server's
+  // "no content" read as a failed request.
+  it("hands on a body-less answer (204, 205, 304) as it came", async () => {
+    const overlay = new GatedOsmOverlay({
+      url: TEMPLATE,
+      maxZoom: 19,
+      gate: () => true,
+      ceiling: createRequestCeiling(150),
+    });
+    for (const status of [204, 205, 304]) {
+      vi.spyOn(proto, "fetch").mockImplementation(() =>
+        Promise.resolve(new Response(null, { status })),
+      );
+      const res = (await overlay.fetch("a")) as Response;
+      expect(res.status).toBe(status);
+      expect(res.body).toBeNull();
+      vi.restoreAllMocks();
+    }
+    vi.spyOn(proto, "fetch").mockImplementation(() =>
+      Promise.resolve(new Response(new Uint8Array([1, 2]), { status: 200 })),
+    );
+    const ok = (await overlay.fetch("b")) as Response;
+    expect([...new Uint8Array(await ok.arrayBuffer())]).toEqual([1, 2]);
     vi.restoreAllMocks();
   });
 
@@ -776,6 +834,30 @@ describe("createGlobeOsmOverlay's gain", () => {
     expect(make(0.55).uniforms.uOsmGain.value).toBe(0.55);
     expect(make(1).uniforms.uOsmGain.value).toBe(1);
     for (const bad of [0, -0.5, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => make(bad)).toThrow(RangeError);
+    }
+  });
+
+  // Why: the gain's mode is the caller's look choice too: flat (the map's
+  // contrasts kept) by default, the luma compression on request, and a
+  // mode that is neither is refused rather than read as one of them.
+  it("multiplies flat by default and compresses on request", () => {
+    const make = (gainMode?: string) =>
+      createGlobeOsmOverlay({
+        url: TEMPLATE,
+        attribution: ATTRIBUTION,
+        maxZoom: 19,
+        renderer: {} as THREE.WebGLRenderer,
+        gain: 0.55,
+        ...(gainMode === undefined
+          ? {}
+          : { gainMode: gainMode as OsmGainMode }),
+      });
+    expect(GLOBE_OSM.gainMode).toBe("flat");
+    expect(make().uniforms.uOsmFlat.value).toBe(1);
+    expect(make("flat").uniforms.uOsmFlat.value).toBe(1);
+    expect(make("compress").uniforms.uOsmFlat.value).toBe(0);
+    for (const bad of ["", "Flat", "multiply"]) {
       expect(() => make(bad)).toThrow(RangeError);
     }
   });
@@ -1036,6 +1118,7 @@ describe("the map's diagnostics", () => {
       failed: 0,
       givenUp: 0,
       unprocessed: 1,
+      bareUnderMap: 0,
     });
   });
 
@@ -1232,6 +1315,7 @@ describe("the map's diagnostics", () => {
       failed: 0,
       givenUp: 0,
       unprocessed: 0,
+      bareUnderMap: 0,
     };
     expect(osm.coverage()).toEqual(none);
     osm.attach(fakeTerrain(new Set([{}])));

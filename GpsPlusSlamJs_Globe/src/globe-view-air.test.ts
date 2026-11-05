@@ -303,7 +303,14 @@ describe("mountGlobeViewAir", () => {
           },
           render: ({ weight }) => fakes.log.push("clouds " + String(weight)),
           setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
-          state: () => ({ on: true, flat: 0.25, shellOn: true }),
+          state: () => ({
+            on: true,
+            flat: 0.25,
+            shellOn: true,
+            shellShadow: 0.3,
+            surfaceShadow: 0,
+          }),
+          shell: () => ({ drawn: 1, share: 1, weight: 0, slabWeight: 1 }),
           dispose: () => fakes.log.push("dispose clouds"),
         };
       },
@@ -326,7 +333,20 @@ describe("mountGlobeViewAir", () => {
     expect(fakes.patched.length).toBe(1);
     air.setClouds(false);
     expect(fakes.log.at(-1)).toBe("clouds off");
-    expect(air.state().clouds).toEqual({ on: true, flat: 0.25, shellOn: true });
+    // The plan and the shell's counters are the clouds' own, handed on.
+    expect(air.state().clouds).toEqual({
+      on: true,
+      flat: 0.25,
+      shellOn: true,
+      shellShadow: 0.3,
+      surfaceShadow: 0,
+    });
+    expect(air.cloudShell()).toEqual({
+      drawn: 1,
+      share: 1,
+      weight: 0,
+      slabWeight: 1,
+    });
     air.dispose();
     expect(fakes.log).toContain("dispose clouds");
   });

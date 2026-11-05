@@ -108,6 +108,7 @@ function setup(
     roadLiftM?: number;
     roadOffset?: number;
     heightsUrl?: string;
+    deepHeightsZoom?: number;
     three?: () => Promise<GlobeCityThree>;
   } = {},
 ) {
@@ -180,6 +181,20 @@ describe("createGlobeCity: the root and the options", () => {
     );
     expect(() => setup({ heightsUrl: MAPTERHORN })).not.toThrow();
   });
+
+  // Why: the deep zoom reaches a worker that reads it from the same source;
+  // one the heights cannot read is refused where the city is made, not
+  // answered later from inside the worker.
+  it("refuses a deep heights zoom that is not 1-15", () => {
+    for (const deepHeightsZoom of [0, 16, 13.5, Number.NaN]) {
+      expect(() => setup({ heightsUrl: MAPTERHORN, deepHeightsZoom })).toThrow(
+        RangeError,
+      );
+    }
+    expect(() =>
+      setup({ heightsUrl: MAPTERHORN, deepHeightsZoom: 14 }),
+    ).not.toThrow();
+  });
 });
 
 describe("createGlobeCity: load", () => {
@@ -203,6 +218,26 @@ describe("createGlobeCity: load", () => {
       },
       progress: 0,
     });
+  });
+
+  // Why: the relief draws its deepest zoom where the source has it, so the
+  // worker is told that zoom with each load and reads it where it can.
+  it("posts the relief's deep zoom with each load", () => {
+    const { city, workers } = setup({
+      heightsUrl: MAPTERHORN,
+      deepHeightsZoom: 14,
+    });
+    city.load(BERN, { zoom: 12 });
+    expect(workers[0]?.posted).toEqual([
+      {
+        kind: "load",
+        id: 1,
+        target: BERN,
+        zoom: 12,
+        deepZoom: 14,
+        heightsUrl: MAPTERHORN,
+      },
+    ]);
   });
 
   it("refuses a target that is not finite and a zoom that is not 1-15", () => {
@@ -331,6 +366,78 @@ describe("createGlobeCity: load", () => {
     city.load(ZURICH, { zoom: 12 });
     second.abort();
     expect(workers[0]?.posted).toHaveLength(4);
+  });
+
+  // Why: a view that hides its buildings must stop their download and
+  // their build, not only their drawing; a "city" reply the worker posted
+  // before the abort arrived must not be built either.
+  it("stops the running load on abort(): the worker is told, a late delivery draws nothing", async () => {
+    const { city, workers, three } = setup();
+    const handle = city.load(BERN, { zoom: 12 });
+    city.abort();
+    expect(workers[0]?.posted.at(-1)).toEqual({ kind: "abort", id: 1 });
+    expect(await handle.finished).toMatchObject({ outcome: "aborted" });
+    workers[0]?.reply(delivery(1));
+    await flush();
+    expect(three.asked).toHaveLength(0);
+    expect(city.root.children).toEqual([]);
+    expect(city.state()).toMatchObject({ phase: "idle", target: BERN });
+    expect(city.state().load?.outcome).toBe("aborted");
+    // Asked again, the place loads again (an aborted load is not reused).
+    city.load(BERN, { zoom: 12 });
+    expect(workers[0]?.posted.at(-1)).toMatchObject({ kind: "load", id: 2 });
+    city.abort();
+    city.abort(); // once
+    const aborts = workers[0]?.posted.filter(
+      (m) => (m as { kind: string }).kind === "abort",
+    );
+    expect(aborts).toHaveLength(2);
+  });
+
+  it("stops a load whose first pass settled but whose outer rings still load", async () => {
+    const { city, workers, three } = setup();
+    city.load(BERN, { zoom: 12 });
+    workers[0]?.reply(delivery(1));
+    await flush();
+    workers[0]?.reply({
+      kind: "settled",
+      id: 1,
+      outcome: "complete",
+      counts: COUNTS,
+    });
+    expect(three.asked).toHaveLength(1);
+    city.abort();
+    expect(workers[0]?.posted.at(-1)).toEqual({ kind: "abort", id: 1 });
+    workers[0]?.reply(delivery(1, { stage: "full" }));
+    await flush();
+    expect(three.asked).toHaveLength(1);
+    expect(city.state().load?.outcome).toBe("aborted");
+    expect(city.state().phase).toBe("ready"); // the drawn first pass stays
+  });
+
+  it("drops a delivery whose load was aborted while the three.js entry loaded", async () => {
+    const { city, workers, three } = setup();
+    city.load(BERN, { zoom: 12 });
+    workers[0]?.reply(delivery(1));
+    city.abort(); // before the entry's promise resolved
+    await flush();
+    expect(three.asked).toHaveLength(0);
+    expect(city.root.children).toEqual([]);
+  });
+
+  it("aborts nothing before a load, or after one ended", () => {
+    const { city, workers } = setup();
+    city.abort();
+    expect(workers).toHaveLength(0);
+    city.load(BERN, { zoom: 12 });
+    workers[0]?.reply({
+      kind: "finished",
+      id: 1,
+      outcome: "complete",
+      counts: COUNTS,
+    });
+    city.abort();
+    expect(workers[0]?.posted).toHaveLength(1);
   });
 });
 

@@ -47,7 +47,11 @@
     is loaded at most `times` times. (The lab restarted the count on the
     next frame that differed from the forgotten place, so a city that kept
     failing could be tried more often; fixed after the move.)
-  - Every frame reads `city.state()` once and the clock once, whatever
+  - An aborted load of the asked place (its state's `target` is that
+    place and its load's outcome `aborted`: a view hid its city) is
+    asked for again by the next frame that wants it; the abort was not a
+    failed build, so it spends no try.
+  - Every frame reads `city.state()` and the clock once, whatever
     the branch, as the lab did.
   - The fade follows the frame's load in the frame (the order the lab
     called them).

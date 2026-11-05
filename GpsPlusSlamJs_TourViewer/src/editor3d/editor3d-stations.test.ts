@@ -845,6 +845,8 @@ describe("createStationsLayer", () => {
     const names: string[] = [];
     for (const o of objects ?? []) o.traverse((c) => names.push(c.name));
     expect(names).toContain("found-radius");
+    // The globe's interface pass finds the pole by this name.
+    expect(names).toContain("pole");
     expect(layer.stationObjects("nowhere")).toBeNull();
     layer.dispose();
   });

@@ -39,6 +39,14 @@ out of the globe lab as a pure refactor; the lab imports it as
   turned back on.
   Drawn with the relief alone as the scene, its program compiles once more
   without the page's fog, on the first depth frame.
+- **The extras (the city) with one unlit depth-only material**
+  (`MeshBasicMaterial`, colour writes off), swapped onto every mesh under
+  them for the pass and given back after, material arrays (the trees)
+  too: their geometry is not displaced, and their own lit materials would
+  shade every pixel a second time each frame for a depth alone. What is
+  lost: the city's dithered fade and the globe editor's see-through are
+  not in the depth (a half-faded city ends the clouds' march whole). The
+  phone cost of the double draw was not measured.
 - **Its own near plane** (at most 10 m): the camera's is fitted to the
   ground (0.3 x the clearance), so with it everything nearer than that
   would be missing from the depth (the volume's deck was clipped that way,

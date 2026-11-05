@@ -63,10 +63,24 @@ const SETTINGS: GlobeViewSettings = Object.freeze({
   cloudWindMps: GLOBE_CLOUD_DRIFT_LAW.windMps,
 });
 
-/** The view's settings (the same object every call: the view reads them
- *  each frame). */
-export function globeEditorSettings(): GlobeViewSettings {
-  return SETTINGS;
+/**
+ * The view's settings, with the clouds' wind floor `windMps` (m/s at the
+ * equator; the drift law's own 10 without it). Without options the same
+ * object every call; a caller that passes options builds them once and
+ * hands the view that object (the view reads them each frame). RangeError
+ * for a wind that is not finite or below zero.
+ */
+export function globeEditorSettings(
+  options: { readonly windMps?: number } = {},
+): GlobeViewSettings {
+  const { windMps } = options;
+  if (windMps === undefined) return SETTINGS;
+  if (!Number.isFinite(windMps) || windMps < 0) {
+    throw new RangeError(
+      `the clouds' wind must be finite and >= 0, got ${String(windMps)}`,
+    );
+  }
+  return Object.freeze({ ...SETTINGS, cloudWindMps: windMps });
 }
 
 /** Milliseconds in a day and an hour. */

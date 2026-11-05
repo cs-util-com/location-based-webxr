@@ -2905,7 +2905,6 @@ function m5aRule(spec: string): M5aRule {
   };
 }
 
-/** The candidates the detect sweep left (see the results doc). */
 /** The smallest bias with a false `moved` for the recommended rule at
  *  reported accuracy 3 m, per noise model of {@link M5A_NOISES_WIDE}, as
  *  measured on 2026-10-01 (`m5a-bias`). */
@@ -2913,6 +2912,7 @@ const M5A_PINNED_FIRST_FA: readonly (number | string)[] = [
   25, 15, 22.5, 2.5, 0,
 ];
 
+/** The candidates the detect sweep left (see the results doc). */
 const M5A_RULES = (
   process.env.M5A_RULES ??
   "rigid/60/2/30,rigid/60/2/25,rigid/120/2/25,res20/60/0/30"

@@ -46,6 +46,14 @@ export const GLOBE_OSM = Object.freeze({
   rampMs: 300,
   /** How often tiles gated at load are looked at again (ms). */
   reevaluateMs: 500,
+  /**
+   * A look (`reevaluateMs`) is taken again at once when the camera moved
+   * this far from where it was taken (m), and the map's reach (the gate's,
+   * the hold's, `coverage`'s) is the fade's end widened by it: a tile in
+   * reach now was in reach where the look was taken. 25 m: the speed limit
+   * (`maxSpeedMps`) over one look.
+   */
+  lookSlackM: 25,
   /** At most this many tiles started per look. */
   reevaluateLimit: 8,
   /**
@@ -56,7 +64,9 @@ export const GLOBE_OSM = Object.freeze({
    * connection, a server refusing with 429) and stay at the last, so
    * doomed retries never fill the request ceiling; a retried tile that
    * gets its map starts them over. 5 s first: short enough that a creator
-   * who stops to look sees a dropped tile come back.
+   * who stops to look sees a dropped tile come back. Once any map request
+   * is answered (the server is back), the next retry waits the first step
+   * at most: a refusal that ended is not waited out at the 60 s step.
    */
   retryBackoffMs: Object.freeze([5_000, 10_000, 20_000, 60_000]),
   /**
@@ -86,6 +96,14 @@ export const GLOBE_OSM = Object.freeze({
    * 1 draws the map as the tile server made it; a caller tunes its look.
    */
   gain: 1,
+  /**
+   * How the gain darkens (`OsmGainMode`): "flat" multiplies the colour by
+   * it, which keeps the map's contrasts (a road and a name against the
+   * land read as on the tile server's map); "compress" compresses the
+   * luma toward it, which lowers them (a white road ends at the gain,
+   * a dark name keeps nearly its own luma).
+   */
+  gainMode: "flat",
   /** The overlay texture per relief tile (px, the plugin's default). */
   resolution: 256,
   /**
@@ -335,6 +353,9 @@ export function regionNearCamera(
   return camera.distanceTo(centre) - radius <= withinM;
 }
 
+/** How the map's gain darkens it (`GLOBE_OSM.gainMode`). */
+export type OsmGainMode = "flat" | "compress";
+
 /** The fade's uniforms (shared by every relief material). */
 export interface OsmFadeUniforms {
   uOsmFadeM: { value: number };
@@ -342,6 +363,8 @@ export interface OsmFadeUniforms {
   uOsmOn: { value: number };
   /** The map's darkening gain, in (0, 1] (`GLOBE_OSM.gain`). */
   uOsmGain: { value: number };
+  /** 1: the gain multiplies flat; 0: it compresses the luma. */
+  uOsmFlat: { value: number };
 }
 
 /** The fade's uniforms and the gain's luma compression (GLSL). */
@@ -350,6 +373,7 @@ const OSM_FADE_DECLARATIONS = [
   "uniform float uOsmFadeStart;",
   "uniform float uOsmOn;",
   "uniform float uOsmGain;",
+  "uniform float uOsmFlat;",
   "vec3 osmGain( vec3 c, float g ) {",
   "  float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );",
   "  return c * ( g / ( g + ( 1.0 - g ) * l ) );",
@@ -363,9 +387,10 @@ const LAYER_BLEND = "tint.rgba *= layerInfo[ i ].opacity * wOpacity;";
  * Patches the library's overlay layer blend in `shader` to fade every
  * layer out between `uOsmFadeStart x uOsmFadeM` and `uOsmFadeM` from the
  * camera, and to drop it with `uOsmOn` 0. Before the blend it darkens the
- * layer's colour by `uOsmGain`, compressing its luma L (Rec. 709 weights)
- * to L g / (g + (1 - g) L): white ends at g, a dark line keeps nearly its
- * luma, the hue stays (a flat multiply would blacken the dark lines too).
+ * layer's colour by `uOsmGain`: with `uOsmFlat` 1 a flat multiply (every
+ * contrast in the map kept), else compressing its luma L (Rec. 709
+ * weights) to L g / (g + (1 - g) L): white ends at g, a dark line keeps
+ * nearly its luma, the hue stays, and the map's contrasts are lowered.
  * Adds the uniforms. False, the shader untouched, where the blend line is
  * missing (a library change).
  */
@@ -382,7 +407,7 @@ export function patchOsmFade(
     )
     .replaceAll(
       LAYER_BLEND,
-      "tint.rgb = osmGain( tint.rgb, uOsmGain );\n" +
+      "tint.rgb = uOsmFlat > 0.5 ? tint.rgb * uOsmGain : osmGain( tint.rgb, uOsmGain );\n" +
         "tint.rgba *= layerInfo[ i ].opacity * wOpacity * uOsmOn * ( 1.0 - smoothstep( uOsmFadeStart * uOsmFadeM, uOsmFadeM, length( vViewPosition ) ) );",
     );
   return true;
@@ -423,6 +448,33 @@ const sleepFor = (ms: number, signal?: AbortSignal): Promise<void> =>
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 
+/** `work`, or an AbortError as soon as `signal` aborts (a body stream
+ *  of ours, not the network's, does not end on the abort by itself). */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => {
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    if (signal.aborted) {
+      aborted();
+      return;
+    }
+    signal.addEventListener("abort", aborted, { once: true });
+    work.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", aborted);
+    });
+  });
+}
+
+/** `uOsmFlat` for a gain mode: 1 flat, 0 compress; RangeError otherwise. */
+function flatOf(gainMode: OsmGainMode): number {
+  if (gainMode === "flat") return 1;
+  if (gainMode === "compress") return 0;
+  throw new RangeError(
+    `the map's gain mode must be "flat" or "compress", got ${String(gainMode)}`,
+  );
+}
+
 /** RangeError unless `giveUpRetries` is an integer >= 0 and `gain` in (0, 1]. */
 function checkMapOptions(giveUpRetries: number, gain: number): void {
   if (!(Number.isInteger(giveUpRetries) && giveUpRetries >= 0)) {
@@ -449,6 +501,14 @@ function checkKeep(keep: number): void {
 const isLoaded = (held: unknown): boolean =>
   held !== null && held !== undefined && !(held instanceof Promise);
 
+/** The statuses a Response must be made without a body for. */
+const NULL_BODY_STATUS: ReadonlySet<number> = new Set([204, 205, 304]);
+
+/** `res` again with the body read from it; a body-less status cannot
+ *  carry even an empty body. */
+const rebodied = (res: Response, body: ArrayBuffer): Response =>
+  new Response(NULL_BODY_STATUS.has(res.status) ? null : body, res);
+
 /**
  * The library's XYZ overlay behind a gate: the plugin's lock of a region
  * (which fetches) reaches the library only where `gate(range, level)`
@@ -466,6 +526,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly ceiling: RequestCeiling;
   private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   private readonly timeoutMs: number;
+  private readonly onAnswered: () => void;
   private readonly locked = new Map<string, number>();
   private gatedLocks = 0;
   private locks = 0;
@@ -487,11 +548,14 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     sleep = sleepFor,
     keep = GLOBE_OSM.keepRegions,
     timeoutMs = GLOBE_OSM.requestTimeoutMs,
+    onAnswered = () => {},
   }: {
     url: string;
     maxZoom: number;
     gate: (range: number[], level: number) => boolean;
     ceiling: RequestCeiling;
+    /** Called for each request answered with a success status. */
+    onAnswered?: () => void;
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
     /** Released textures kept in memory (regions). */
     keep?: number;
@@ -514,6 +578,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     }
     super({ url, levels: maxZoom + 1 });
     this.timeoutMs = timeoutMs;
+    this.onAnswered = onAnswered;
     this.keep = keep;
     this.gate = gate;
     this.ceiling = ceiling;
@@ -674,14 +739,20 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     // The time limit runs from here, the library's download queue included:
     // a request the queue drops for it is a failure too (a TimeoutError),
     // never an abort, which the plugin would leave neither failed nor
-    // drawn. It ends with the answer's headers; the body is the library's.
+    // drawn. It covers the body too: read here, inside the limit (a server
+    // that sends the headers and stalls would otherwise hold the slot
+    // while the library reads it), and handed on whole.
     const limit = new AbortController();
     const id = setTimeout(() => limit.abort(), this.timeoutMs);
     const signal = options.signal
       ? AbortSignal.any([options.signal, limit.signal])
       : limit.signal;
     try {
-      return await base.fetch.call(this, url, { ...options, signal });
+      const res = await base.fetch.call(this, url, { ...options, signal });
+      if (!(res instanceof Response)) return res;
+      const body = await untilAborted(res.arrayBuffer(), signal);
+      if (res.ok) this.onAnswered();
+      return rebodied(res, body);
     } catch (err) {
       if (limit.signal.aborted && !options.signal?.aborted) {
         throw new DOMException(
@@ -860,8 +931,8 @@ export interface OsmOverlayTerrain {
 
 /** The drawn relief tiles near the camera, by their map (`coverage`). */
 export interface OsmCoverage {
-  /** Drawn tiles that come within the fade's start of the camera, where
-   *  the map is drawn at full strength. */
+  /** Drawn tiles that come within the map's reach of the camera (the
+   *  fade's end and the look's slack: where the gate asks for the map). */
   readonly near: number;
   /** Of those, the ones with their map. */
   readonly withMap: number;
@@ -878,6 +949,9 @@ export interface OsmCoverage {
   readonly givenUp: number;
   /** Drawn tiles the plugin has not placed yet (no range). */
   readonly unprocessed: number;
+  /** Waiting tiles not given up whose parent has its map: drawn bare in
+   *  place of a mapped tile, which the hold (`mapReady`) exists to stop. */
+  readonly bareUnderMap: number;
 }
 
 /**
@@ -904,6 +978,7 @@ const NO_COVERAGE: OsmCoverage = Object.freeze({
   failed: 0,
   givenUp: 0,
   unprocessed: 0,
+  bareUnderMap: 0,
 });
 
 /** The pose `update` takes each frame. */
@@ -931,10 +1006,12 @@ const FADED = Symbol("globe-osm-fade");
  * for the band and the coarsest zoom; `keep` is the overlay's keep,
  * `timeoutMs` its request time limit, `giveUpRetries` the retries after
  * which the relief stops waiting for a tile's map (`mapReady`), `gain`
- * the map's darkening (`GLOBE_OSM.gain`, `patchOsmFade`).
+ * the map's darkening (`GLOBE_OSM.gain`, `patchOsmFade`), `gainMode` how
+ * (`GLOBE_OSM.gainMode`).
  * RangeError from `osmCredit`, `osmGateLimits` or the overlay for a bad
  * attribution, limit, url, keep or time limit, for `giveUpRetries`
- * that is not an integer >= 0, and for a `gain` outside (0, 1].
+ * that is not an integer >= 0, for a `gain` outside (0, 1] and for a
+ * `gainMode` that is neither "flat" nor "compress".
  */
 export function createGlobeOsmOverlay({
   url,
@@ -947,6 +1024,7 @@ export function createGlobeOsmOverlay({
   timeoutMs = GLOBE_OSM.requestTimeoutMs,
   giveUpRetries = GLOBE_OSM.giveUpRetries,
   gain = GLOBE_OSM.gain,
+  gainMode = GLOBE_OSM.gainMode,
 }: {
   url: string;
   attribution: string;
@@ -962,6 +1040,8 @@ export function createGlobeOsmOverlay({
   giveUpRetries?: number;
   /** The map's darkening gain, in (0, 1]. */
   gain?: number;
+  /** How the gain darkens ("flat" or "compress"). */
+  gainMode?: OsmGainMode;
 }) {
   if (!(Number.isFinite(fadeM) && fadeM > 0)) {
     throw new RangeError(
@@ -969,6 +1049,7 @@ export function createGlobeOsmOverlay({
     );
   }
   checkMapOptions(giveUpRetries, gain);
+  const flat = flatOf(gainMode);
   const limits = osmGateLimits(callerLimits, maxZoom);
   const credit = osmCredit(attribution);
   const uniforms: OsmFadeUniforms = {
@@ -976,6 +1057,7 @@ export function createGlobeOsmOverlay({
     uOsmFadeStart: { value: GLOBE_OSM.fadeStartShare },
     uOsmOn: { value: 0 },
     uOsmGain: { value: gain },
+    uOsmFlat: { value: flat },
   };
   const ceiling = createRequestCeiling(GLOBE_OSM.requestsPerMinute);
   let terrain: OsmOverlayTerrain | null = null;
@@ -999,8 +1081,12 @@ export function createGlobeOsmOverlay({
   const retriesOf = new WeakMap<TileOverlayInfo, number>();
   /** Retries since a retried tile last got its map. */
   let retryStreak = 0;
+  /** Whether a map request was answered since the last retry. */
+  let answeredSinceRetry = false;
   /** The tiles the last retry asked for again. */
   let retried: TileOverlayInfo[] = [];
+  /** The map's reach (m): the fade's end and the look's slack. */
+  const reach = () => uniforms.uOsmFadeM.value + GLOBE_OSM.lookSlackM;
   /** Whether a range (normalised) comes within `withinM` of the camera;
    *  false for one the projection cannot place. */
   const rangeNear = (range: number[], withinM: number): boolean => {
@@ -1026,7 +1112,7 @@ export function createGlobeOsmOverlay({
     if (!terrain || !active || level < limits.minZoom) return false;
     if (ceiling.waitMs() > 0) return false;
     // A range the projection cannot place is never asked for.
-    return rangeNear(range, uniforms.uOsmFadeM.value);
+    return rangeNear(range, reach());
   };
   const overlay = new GatedOsmOverlay({
     url,
@@ -1035,6 +1121,9 @@ export function createGlobeOsmOverlay({
     ceiling,
     keep,
     timeoutMs,
+    onAnswered: () => {
+      answeredSinceRetry = true;
+    },
   });
   const plugin = new ImageOverlayPlugin({
     renderer,
@@ -1081,17 +1170,20 @@ export function createGlobeOsmOverlay({
       ceilingFullMs += Math.max(0, pose.nowMs - lastNow);
     }
   };
-  /** The wait before the next retry (`retryBackoffMs` by the streak). */
+  /** The wait before the next retry (`retryBackoffMs` by the streak; the
+   *  first step at most once a request was answered since the last). */
   const retryWaitMs = (): number => {
     const waits = GLOBE_OSM.retryBackoffMs;
-    return waits[Math.min(retryStreak, waits.length - 1)]!;
+    const backoff = waits[Math.min(retryStreak, waits.length - 1)]!;
+    return answeredSinceRetry ? Math.min(backoff, waits[0]!) : backoff;
   };
   /**
    * The library never asks again for a tile whose request failed: once a
    * failed tile has waited `retryWaitMs`, its reset releases every failed
    * tile and locks it anew (through the gate and the ceiling). Each retry
    * lengthens the next wait; a retried tile that got its map (no longer
-   * failed, with its texture) starts the waits over. The reset clears the
+   * failed, with its texture) starts the waits over, and any answered
+   * request since the last retry cuts the next wait to the first step. The reset clears the
    * failed mark at once, so only the texture tells a success. The wait
    * stands still while the request ceiling is full: a retry then would be
    * turned away by the gate, not asked, and would count towards giving the
@@ -1120,6 +1212,7 @@ export function createGlobeOsmOverlay({
     failedWaitedMs = null;
     failedRetries++;
     retryStreak++;
+    answeredSinceRetry = false;
     retried = failed;
     for (const info of failed) {
       retriesOf.set(info, (retriesOf.get(info) ?? 0) + 1);
@@ -1146,30 +1239,34 @@ export function createGlobeOsmOverlay({
   /** How many times the relief asked `isTileReady` (the patched traversal
    *  only: 0 on a renderer without it). */
   let readinessAsks = 0;
-  /** The 500 ms look `mapReady`'s cache is keyed by. */
+  /** The look `mapReady`'s cache is keyed by: every `reevaluateMs`, or
+   *  at once when the camera moved `lookSlackM` from where it was taken. */
   let readyLook = 0;
   let lastLookAt = Number.NEGATIVE_INFINITY;
+  const lookFrom = new THREE.Vector3();
   /** Per tile: whether its map is wanted near the camera, at that look. */
   const nearCache = new WeakMap<object, { look: number; wanted: boolean }>();
-  /** Where the map is drawn at full strength (m), as `coverage` counts. */
-  const fullReach = () =>
-    uniforms.uOsmFadeStart.value * uniforms.uOsmFadeM.value;
   const wantedNear = (tile: object, range: number[]): boolean => {
     const cached = nearCache.get(tile);
     if (cached?.look === readyLook) return cached.wanted;
+    const level = base.calculateLevel.call(overlay, range);
+    // A tile the map has no content for (past its latitudes) never gets
+    // one: never held for it.
     const wanted =
-      base.calculateLevel.call(overlay, range) >= limits.minZoom &&
-      rangeNear(range, fullReach());
+      level >= limits.minZoom &&
+      base.hasContent.call(overlay, range, level) &&
+      rangeNear(range, reach());
     nearCache.set(tile, { look: readyLook, wanted });
     return wanted;
   };
   /**
    * Whether a relief tile may be drawn as far as its map goes: false only
-   * while the map is on, the tile is near the camera (where the map is at
-   * full strength), at the coarsest zoom or finer, and has no map yet that
-   * the map has not given up on. The patched traversal asks it of child
-   * tiles only, so a drawn parent stays in their place until they have it.
-   * The distance and zoom are looked at once per 500 ms look per tile.
+   * while the map is on, the tile is in the map's reach (where the gate
+   * asks for its map), at the coarsest zoom or finer, inside the map's
+   * content, and has no map yet that the map has not given up on. The
+   * patched traversal asks it of child tiles only, so a drawn parent stays
+   * in their place until they have it. The distance, zoom and content are
+   * looked at once per look per tile (`lookSlackM`).
    */
   const mapReady = (tile: object): boolean => {
     if (!active || !overlay.isReady) return true;
@@ -1183,14 +1280,27 @@ export function createGlobeOsmOverlay({
   /** A drawn tile's place in `coverage`. */
   const kindOf = (
     info: TileOverlayInfo,
-    reach: number,
+    withinM: number,
   ): "unprocessed" | "far" | "withMap" | "coarse" | "waiting" => {
     if (info.range === null) return "unprocessed";
-    if (!rangeNear(info.range, reach)) return "far";
+    if (!rangeNear(info.range, withinM)) return "far";
     if (info.target !== null) return "withMap";
     return base.calculateLevel.call(overlay, info.range) < limits.minZoom
       ? "coarse"
       : "waiting";
+  };
+  /** Whether a waiting tile is drawn bare where its parent had the map
+   *  (a tile given up is drawn bare by design). */
+  const bareUnderMapped = (
+    tile: object,
+    info: TileOverlayInfo,
+    tileInfo: Map<object, TileOverlayInfo>,
+  ): boolean => {
+    const parent = (tile as { parent?: object | null }).parent;
+    const parentInfo = parent ? tileInfo.get(parent) : undefined;
+    return (
+      parentInfo !== undefined && parentInfo.target !== null && !givenUp(info)
+    );
   };
   /**
    * The relief tiles drawn in the last update near the camera, by their
@@ -1203,15 +1313,18 @@ export function createGlobeOsmOverlay({
       plugin as unknown as OverlayPluginInternals
     ).overlayInfo.get(overlay)?.tileInfo;
     if (!drawn || !tileInfo || !overlay.isReady) return NO_COVERAGE;
-    const reach = fullReach();
+    const within = reach();
     const n = { unprocessed: 0, far: 0, withMap: 0, coarse: 0, waiting: 0 };
     const waitingInfos: TileOverlayInfo[] = [];
+    let bareUnderMap = 0;
     for (const tile of drawn) {
       const info = tileInfo.get(tile);
       if (!info) continue;
-      const kind = kindOf(info, reach);
+      const kind = kindOf(info, within);
       n[kind]++;
-      if (kind === "waiting") waitingInfos.push(info);
+      if (kind !== "waiting") continue;
+      waitingInfos.push(info);
+      if (bareUnderMapped(tile, info, tileInfo)) bareUnderMap++;
     }
     const failed = waitingInfos.filter((info) => info.failed).length;
     const givenUpCount = waitingInfos.filter(givenUp).length;
@@ -1223,7 +1336,21 @@ export function createGlobeOsmOverlay({
       failed,
       givenUp: givenUpCount,
       unprocessed: n.unprocessed,
+      bareUnderMap,
     };
+  };
+  /** A new look for the hold (`mapReady`) every `reevaluateMs`, or at
+   *  once past `lookSlackM` from the last look's camera. */
+  const retakeLook = (nowMs: number) => {
+    if (
+      nowMs - lastLookAt < GLOBE_OSM.reevaluateMs &&
+      camera.distanceTo(lookFrom) <= GLOBE_OSM.lookSlackM
+    ) {
+      return;
+    }
+    readyLook++;
+    lastLookAt = nowMs;
+    lookFrom.copy(camera);
   };
   return {
     credit,
@@ -1280,10 +1407,7 @@ export function createGlobeOsmOverlay({
       if (!terrain) return;
       // Every frame, on or off: `coverage` measures from it too.
       terrain.tiles.group.worldToLocal(camera.copy(pose.position));
-      if (pose.nowMs - lastLookAt >= GLOBE_OSM.reevaluateMs) {
-        readyLook++;
-        lastLookAt = pose.nowMs;
-      }
+      retakeLook(pose.nowMs);
       if (!active) return;
       if (pose.nowMs - lastLook < GLOBE_OSM.reevaluateMs) return;
       lastLook = pose.nowMs;

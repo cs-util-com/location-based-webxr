@@ -64,6 +64,22 @@ describe("globeEditorSettings", () => {
     expect(s.fovY).toBe(GLOBE_EDITOR_LOOK.fovYDeg);
     expect(globeEditorSettings()).toBe(s);
   });
+
+  // Why: the clouds' wind floor is the link's A/B knob (`cloudWind`); it
+  // must reach the view's settings and change nothing else, and a wind
+  // that is not a speed must not reach the drift law.
+  it("takes the clouds' wind floor and keeps everything else", () => {
+    const s = globeEditorSettings({ windMps: 40 });
+    expect(s.cloudWindMps).toBe(40);
+    expect({ ...s, cloudWindMps: 0 }).toEqual({
+      ...globeEditorSettings(),
+      cloudWindMps: 0,
+    });
+    expect(Object.isFrozen(s)).toBe(true);
+    for (const bad of [-1, Number.NaN, Infinity]) {
+      expect(() => globeEditorSettings({ windMps: bad })).toThrow(RangeError);
+    }
+  });
 });
 
 describe("globeHidden", () => {
