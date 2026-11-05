@@ -1,0 +1,4477 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Panel: Content Gallery</title>
+    <link rel="icon" href="data:," />
+    <!--
+  Throwaway UX prototype: the tour editor's station list and context panel,
+  direction "the content gallery". Adding content is visual: a station's panel
+  carries an "Add to this station" gallery of content tiles, each with a small
+  drawing of what a visitor will see; picking one asks where it should stand
+  in the view. Standalone page, no libraries, no network; the 3D view is a flat
+  canvas drawing, and every picture is drawn by the page itself. All data is
+  hard-coded sample data; nothing is saved. All icons and drawings are simple
+  original SVG paths made for this gallery.
+-->
+    <style>
+      :root {
+        --bg0: #1c1e22;
+        --bg1: #202227;
+        --bg2: #24272c;
+        --bg3: #2d3036;
+        --bg4: #383b42;
+        --line: #33363c;
+        --line2: #3e424a;
+        --text: #e6e6e6;
+        --muted: #9aa0a6;
+        --dim: #6b7079;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.13);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentText: #f3c47e;
+        --danger: #d97d79;
+        --dangerBg: rgba(217, 125, 121, 0.08);
+        --dangerLine: rgba(217, 125, 121, 0.38);
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --mono:
+          "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", ui-monospace,
+          Menlo, monospace;
+        --lw: 272px;
+        --rw: 322px;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 40px 3px minmax(0, 1fr) 24px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: var(--text);
+      }
+
+      /* top bar */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 10px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+        flex: 0 1 auto;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        border: 1px solid transparent;
+        background: transparent;
+        border-radius: 4px;
+        padding: 2px 5px;
+        cursor: pointer;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand .doc:hover {
+        color: var(--text);
+        border-color: var(--line2);
+        background: var(--bg2);
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+        color: var(--text);
+        flex: none;
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .tbtn.on {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+        color: var(--accentText);
+      }
+      .sep {
+        width: 1px;
+        height: 22px;
+        background: var(--line);
+        margin: 0 4px;
+        flex: none;
+      }
+      .spacer {
+        flex: 1;
+        min-width: 4px;
+      }
+      .unsaved {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0 6px 0 2px;
+        color: var(--accentText);
+        font-size: 11px;
+        white-space: nowrap;
+        flex: none;
+      }
+      .unsaved .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .menu-wrap {
+        position: relative;
+        display: flex;
+      }
+      .menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 60;
+        min-width: 220px;
+        padding: 4px;
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: rgba(32, 34, 39, 0.99);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+      }
+      .menu button {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 30px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+      }
+      .menu button:hover {
+        background: var(--bg3);
+      }
+      .menu button kbd {
+        margin-left: auto;
+      }
+      .menu hr {
+        border: 0;
+        height: 1px;
+        background: var(--line);
+        margin: 4px 6px;
+      }
+      .phoneonly {
+        display: none !important;
+      }
+
+      /* the loading bar under the top bar: it stays full after loading */
+      #load {
+        background: var(--accent);
+      }
+
+      /* viewport */
+      #vp {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #1b1d21;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+      }
+      #map.placing {
+        cursor: crosshair;
+      }
+      #map.dragging {
+        cursor: grabbing;
+      }
+
+      /* side panels: attached under the loading bar, running down to the bottom bar */
+      .panel {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg2);
+        min-height: 0;
+      }
+      #left {
+        left: 0;
+        width: var(--lw);
+        border-right: 1px solid var(--line);
+      }
+      #right {
+        right: 0;
+        width: var(--rw);
+        border-left: 1px solid var(--line);
+      }
+      .phead {
+        flex: none;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 5px 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .ttlh {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .sp {
+        flex: 1;
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .ib.add {
+        color: var(--accentText);
+      }
+      .pbody {
+        overflow: auto;
+        min-height: 0;
+        flex: 1;
+      }
+      .pbody::-webkit-scrollbar,
+      .rbody::-webkit-scrollbar {
+        width: 10px;
+      }
+      .pbody::-webkit-scrollbar-thumb,
+      .rbody::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--bg2);
+        border-radius: 6px;
+      }
+
+      /* the station list */
+      #tree {
+        padding: 4px 0 12px;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px 0 4px;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .row:hover {
+        background: var(--bg3);
+      }
+      .row.sel {
+        background: var(--accentBg);
+      }
+      .row.sel::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .row.ctx .num {
+        background: #4b5a6a;
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+        min-width: 0;
+      }
+      .row.sel .nm {
+        color: #fff;
+      }
+      .row .meta {
+        font: 10.5px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .row .lk {
+        color: var(--dim);
+        display: inline-flex;
+      }
+      .row .lk svg {
+        width: 13px;
+        height: 13px;
+      }
+      .tw {
+        width: 20px;
+        height: 20px;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        background: transparent;
+        border-radius: 3px;
+        color: var(--dim);
+        cursor: pointer;
+        padding: 0;
+      }
+      .tw:hover {
+        background: var(--bg4);
+        color: var(--text);
+      }
+      .tw svg {
+        width: 13px;
+        height: 13px;
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .num {
+        font: 600 10px var(--mono);
+        background: #3d4652;
+        color: #e6f0fa;
+        border-radius: 3px;
+        padding: 1px 5px;
+        flex: none;
+        min-width: 20px;
+        text-align: center;
+      }
+      .row.sel .num {
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .st.open > .strow {
+        font-weight: 600;
+      }
+      .kids {
+        padding: 2px 0 6px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 2px;
+      }
+      .kids .row {
+        height: 26px;
+        font-weight: 400;
+      }
+      .kids .l1 {
+        padding-left: 22px;
+      }
+      .kids .l2 {
+        padding-left: 42px;
+      }
+      .stpic {
+        height: 64px;
+        margin: 2px 10px 6px 30px;
+        border-radius: 5px;
+        background: #33363c center / cover no-repeat;
+        border: 1px solid var(--line2);
+        cursor: pointer;
+      }
+      .ic {
+        display: inline-flex;
+        color: var(--muted);
+        flex: none;
+      }
+      .ic svg {
+        width: 15px;
+        height: 15px;
+      }
+      .step {
+        font: 10px var(--mono);
+        color: var(--dim);
+        width: 14px;
+        text-align: right;
+        flex: none;
+      }
+      .empty {
+        color: var(--dim);
+        padding: 4px 10px 2px 30px;
+        font-size: 11.5px;
+      }
+      .addrow {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 4px 10px 2px 26px;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px dashed var(--line2);
+        border-radius: 4px;
+        background: transparent;
+        color: var(--accentText);
+        cursor: pointer;
+        font-size: 11.5px;
+        width: calc(100% - 36px);
+      }
+      .addrow:hover {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+      }
+      .addrow svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* the right panel: header, sub line, scrolling body */
+      .rhead {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 6px 2px 10px;
+      }
+      .hic {
+        display: inline-flex;
+        width: 24px;
+        height: 24px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 5px;
+        background: var(--bg3);
+        flex: none;
+      }
+      .hic .num {
+        font-size: 11px;
+      }
+      .namewrap {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 30px;
+        padding: 0 6px 0 4px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        cursor: text;
+      }
+      .namewrap:hover {
+        border-color: var(--line2);
+        background: var(--bg1);
+      }
+      .namewrap:focus-within {
+        border-color: var(--focus);
+        background: var(--bg1);
+      }
+      .namein {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        font:
+          600 14px "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: #f2f3f5;
+        outline: none;
+        padding: 1px 0;
+        text-overflow: ellipsis;
+        border-bottom: 1px dashed #5a5f68;
+      }
+      .namewrap:focus-within .namein {
+        border-bottom-color: transparent;
+      }
+      .namewrap .pen {
+        color: var(--dim);
+      }
+      .namewrap:hover .pen {
+        color: var(--accentText);
+      }
+      .namewrap .ncount {
+        font: 10px var(--mono);
+        color: var(--dim);
+        display: none;
+      }
+      .namewrap:focus-within .ncount {
+        display: inline;
+      }
+      .namewrap:focus-within .pen {
+        display: none;
+      }
+      .ncount.over {
+        color: var(--danger) !important;
+      }
+      .rsub {
+        flex: none;
+        padding: 0 12px 8px 44px;
+        color: var(--muted);
+        font-size: 11px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .rsub a {
+        color: var(--accentText);
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .rsub a:hover {
+        text-decoration: underline;
+      }
+      .rbody {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding-bottom: 10px;
+      }
+      .grab {
+        display: none;
+      }
+
+      /* sections: the whole header folds it */
+      .sec {
+        border-bottom: 1px solid var(--line);
+      }
+      .sech {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        height: 32px;
+        padding: 0 12px 0 10px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        text-align: left;
+      }
+      .sech:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .sech .lab {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .sech .sum {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .sech svg {
+        width: 13px;
+        height: 13px;
+        color: var(--dim);
+      }
+      .secb {
+        padding: 0 12px 12px;
+      }
+      .sec:not(.open) .secb {
+        display: none;
+      }
+      .flash {
+        animation: flash 1.1s ease-out;
+      }
+      @keyframes flash {
+        0% {
+          box-shadow: inset 0 0 0 2px var(--accent);
+        }
+        100% {
+          box-shadow: inset 0 0 0 2px transparent;
+        }
+      }
+
+      /* the "About this station" card */
+      .about {
+        margin: 10px 10px 8px;
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        background: var(--bg1);
+        overflow: hidden;
+      }
+      .about .sech {
+        height: 34px;
+      }
+      .about .sum {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .about .sum .mini {
+        width: 26px;
+        height: 16px;
+        border-radius: 2px;
+        background: #333 center / cover;
+        display: inline-block;
+        flex: none;
+      }
+      .about .secb {
+        padding: 0 10px 10px;
+      }
+      .fl {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 6px 0 4px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .fl b {
+        font-weight: 600;
+        color: var(--text);
+        font-size: 11.5px;
+      }
+      .fl .hint {
+        color: var(--dim);
+        font-size: 10.5px;
+        margin-left: auto;
+        text-align: right;
+      }
+
+      /* the station picture */
+      .pic {
+        position: relative;
+        border-radius: 6px;
+        aspect-ratio: 16 / 9;
+        width: 100%;
+      }
+      .pic.has {
+        background: #333 center / cover no-repeat;
+        border: 1px solid var(--line2);
+      }
+      .pic.has .picacts {
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        display: flex;
+        gap: 4px;
+      }
+      .pic.empty {
+        border: 1px dashed var(--line2);
+        background: repeating-linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.015) 0 8px,
+          transparent 8px 16px
+        );
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 10px;
+        text-align: center;
+      }
+      .pic.empty .pe-art {
+        color: var(--dim);
+      }
+      .pic.empty .pe-art svg {
+        width: 34px;
+        height: 26px;
+        stroke-width: 1.2;
+      }
+      .pe-t {
+        color: var(--text);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .pe-s {
+        color: var(--dim);
+        font-size: 11px;
+        max-width: 230px;
+      }
+      .pe-b {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .filepick {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-top: 6px;
+      }
+      .filepick button {
+        aspect-ratio: 16/10;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background: #333 center / cover;
+        cursor: pointer;
+        padding: 0;
+      }
+      .filepick button:hover {
+        border-color: var(--accent);
+      }
+
+      /* buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 12px;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background: var(--bg3);
+        color: var(--text);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn:hover:not(:disabled) {
+        background: var(--bg4);
+      }
+      .btn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .btn.sm {
+        height: 24px;
+        padding: 0 9px;
+        font-size: 11.5px;
+      }
+      .btn.sm svg {
+        width: 13px;
+        height: 13px;
+      }
+      .btn.pri {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #1c1c1c;
+        font-weight: 600;
+      }
+      .btn.pri:hover {
+        background: #f0b257;
+      }
+      .btn.dark {
+        background: rgba(20, 21, 24, 0.82);
+        border-color: rgba(255, 255, 255, 0.14);
+      }
+      .btn.danger {
+        background: transparent;
+        border-color: var(--dangerLine);
+        color: #f0aaa6;
+      }
+      .btn.danger:hover {
+        background: rgba(217, 125, 121, 0.14);
+      }
+      .btn.dangerfill {
+        background: #b9534e;
+        border-color: #b9534e;
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn.dangerfill:hover {
+        background: #c85f5a;
+      }
+      .btnrow {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+
+      /* the content gallery */
+      .galintro {
+        color: var(--dim);
+        font-size: 11px;
+        margin: -2px 0 8px;
+      }
+      .gal {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+      .tile {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        padding: 6px 8px 7px;
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        background: var(--bg1);
+        cursor: pointer;
+        text-align: left;
+        min-width: 0;
+      }
+      .tile:hover {
+        border-color: var(--accentLine);
+        background: #26282d;
+      }
+      .tile:hover .ill {
+        color: var(--accentText);
+      }
+      .tile.on {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+        background: var(--accentBg);
+      }
+      .tile .ill {
+        width: 100%;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        background: linear-gradient(180deg, #262a31, #1d2026);
+        border-radius: 4px;
+        margin-bottom: 4px;
+      }
+      .tile .ill svg {
+        width: 76px;
+        height: 44px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .tile .ill .a {
+        stroke: var(--accent);
+      }
+      .tile .ill .af {
+        fill: var(--accent);
+        stroke: none;
+      }
+      .tile .ill .g {
+        stroke: #4a4f58;
+      }
+      .tile .ill .gf {
+        fill: rgba(255, 255, 255, 0.06);
+        stroke: none;
+      }
+      .tile .tl {
+        font-weight: 600;
+        color: var(--text);
+        font-size: 12px;
+      }
+      .tile .tb {
+        color: var(--dim);
+        font-size: 10.8px;
+        line-height: 1.32;
+      }
+      .tile .tag {
+        margin-top: 4px;
+        padding: 0 6px;
+        border: 1px solid var(--line2);
+        border-radius: 999px;
+        font-size: 9.5px;
+        letter-spacing: 0.03em;
+        color: var(--muted);
+      }
+      .tile .tag.scr {
+        border-color: rgba(143, 209, 201, 0.4);
+        color: #a9d8d2;
+      }
+      input[type="number"]::-webkit-inner-spin-button,
+      input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type="number"] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      .tile.folder {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        border-style: dashed;
+      }
+      .tile.folder .ill {
+        width: 92px;
+        flex: none;
+        margin: 0;
+      }
+      .tile.folder .txt {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      /* fields */
+      .f {
+        display: grid;
+        grid-template-columns: 70px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        margin: 4px 0;
+      }
+      .f > label {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .numf {
+        display: flex;
+        align-items: center;
+        height: 24px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        min-width: 0;
+      }
+      .numf:focus-within {
+        border-color: var(--focus);
+      }
+      .numf input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        padding: 0 5px;
+        font: 11px var(--mono);
+        outline: none;
+      }
+      .numf .unit {
+        color: var(--dim);
+        font: 10.5px var(--mono);
+        padding-right: 6px;
+      }
+      .numf.ro {
+        background: transparent;
+        border-color: var(--line);
+      }
+      .numf.ro input {
+        color: var(--muted);
+      }
+      .numf.w70 {
+        width: 76px;
+        flex: none;
+      }
+      .ax {
+        font: 600 10px var(--mono);
+        padding: 0 5px;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        border-right: 1px solid var(--line2);
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .ax.u {
+        color: var(--ax-u);
+      }
+      .vec {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .inline {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+      }
+      .inline input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--accent);
+      }
+      .tfield {
+        height: 26px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        padding: 0 7px;
+        width: 100%;
+        outline: none;
+      }
+      .tfield:focus {
+        border-color: var(--focus);
+      }
+      textarea.tfield {
+        height: 56px;
+        padding: 5px 7px;
+        resize: vertical;
+        line-height: 1.4;
+      }
+      select.tfield {
+        padding: 0 4px;
+      }
+      .note {
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 4px 0 2px;
+      }
+      .switch {
+        position: relative;
+        width: 30px;
+        height: 17px;
+        border-radius: 9px;
+        border: 1px solid var(--line2);
+        background: var(--bg4);
+        cursor: pointer;
+        padding: 0;
+        flex: none;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #c9ccd2;
+        transition: left 0.15s;
+      }
+      .switch[aria-checked="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .switch[aria-checked="true"]::after {
+        left: 15px;
+        background: #1c1c1c;
+      }
+      .order {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .order .lbl {
+        color: var(--muted);
+        margin-right: auto;
+      }
+
+      /* segmented view picker */
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        padding: 3px;
+        border-radius: 6px;
+        background: var(--bg1);
+        border: 1px solid var(--line);
+      }
+      .seg button {
+        flex: 1 1 auto;
+        height: 24px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 11.5px;
+      }
+      .seg button:hover {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .seg button[aria-checked="true"] {
+        background: var(--accentBg);
+        color: var(--accentText);
+        box-shadow: inset 0 0 0 1px var(--accentLine);
+      }
+
+      /* light Markdown writer (bold, italic, links, lists) */
+      .mde {
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg1);
+      }
+      .mde:focus-within {
+        border-color: var(--focus);
+      }
+      .mdt {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 2px 3px;
+        border-bottom: 1px solid var(--line);
+      }
+      .mdt button {
+        height: 22px;
+        min-width: 24px;
+        padding: 0 5px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+      }
+      .mdt button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .mdt button.on {
+        color: var(--accentText);
+      }
+      .mdt svg {
+        width: 14px;
+        height: 14px;
+      }
+      .mdt .mdsw {
+        font: 600 9.5px var(--mono);
+        letter-spacing: 0.02em;
+      }
+      .mdc {
+        min-height: 48px;
+        max-height: 160px;
+        overflow: auto;
+        padding: 6px 8px;
+        outline: none;
+        line-height: 1.45;
+        word-wrap: break-word;
+      }
+      .mde.tall .mdc {
+        min-height: 120px;
+        max-height: 260px;
+      }
+      .mdc:empty::before {
+        content: attr(data-ph);
+        color: var(--dim);
+      }
+      .mdc a {
+        color: #8fbaf0;
+      }
+      .mdc ul,
+      .mdc ol {
+        margin: 2px 0;
+        padding-left: 18px;
+      }
+      .mdc h4 {
+        margin: 4px 0 2px;
+        font-size: 13px;
+        color: #fff;
+      }
+      .mdc p,
+      .mdc div {
+        margin: 0;
+      }
+      .mdsrc {
+        margin: 0;
+        padding: 6px 8px;
+        font: 11px/1.45 var(--mono);
+        color: var(--muted);
+        white-space: pre-wrap;
+        word-break: break-word;
+        min-height: 48px;
+      }
+      .mdf {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px 3px;
+        border-top: 1px solid var(--line);
+        font-size: 10.5px;
+        color: var(--dim);
+      }
+      .mdf .cnt {
+        margin-left: auto;
+        font-family: var(--mono);
+      }
+      .mdf .cnt.over {
+        color: var(--danger);
+      }
+      .mdl {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        border-bottom: 1px solid var(--line);
+      }
+      .mdl input {
+        flex: 1;
+        min-width: 0;
+      }
+      .descblock {
+        padding: 10px 12px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .descblock .fl {
+        margin-top: 0;
+      }
+
+      /* lists inside the item and story panels */
+      .lst {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .lrow {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        padding: 0 4px 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--bg1);
+        cursor: pointer;
+        min-width: 0;
+      }
+      .lrow:hover {
+        border-color: var(--line2);
+        background: var(--bg3);
+      }
+      .lrow .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .lrow .ib {
+        width: 22px;
+        height: 22px;
+      }
+      .lrow .ib svg {
+        width: 13px;
+        height: 13px;
+      }
+      .lrow .ib:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+      .lrow input.tfield {
+        height: 22px;
+      }
+      .filerow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border: 1px dashed var(--line2);
+        border-radius: 5px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      .filerow .fn {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .filerow.set {
+        border-style: solid;
+        color: var(--text);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .chip {
+        border: 1px solid var(--line2);
+        background: var(--bg1);
+        border-radius: 999px;
+        padding: 0 10px;
+        height: 24px;
+        cursor: pointer;
+        font-size: 11.5px;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .chip.on {
+        color: var(--accentText);
+        border-color: var(--accentLine);
+        background: var(--accentBg);
+      }
+      .chip.add {
+        color: var(--accentText);
+        border-style: dashed;
+      }
+      .pvshort {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        padding: 12px 10px 10px;
+        border-radius: 6px;
+        background: linear-gradient(
+          180deg,
+          #3a4656 0%,
+          #2b3440 60%,
+          #3b3a35 61%,
+          #2e2d29 100%
+        );
+      }
+      .pvshort .pinv {
+        width: 12px;
+        height: 34px;
+        flex: none;
+        position: relative;
+      }
+      .pvshort .pinv::before {
+        content: "";
+        position: absolute;
+        left: 1px;
+        top: 0;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .pvshort .pinv::after {
+        content: "";
+        position: absolute;
+        left: 5px;
+        top: 10px;
+        width: 2px;
+        height: 24px;
+        background: #d9dbe0;
+      }
+      .pvshort .bub {
+        background: rgba(250, 248, 244, 0.96);
+        color: #24272c;
+        border-radius: 6px;
+        padding: 5px 8px;
+        max-width: 220px;
+        margin-bottom: 18px;
+        font-size: 11px;
+        line-height: 1.35;
+        min-width: 0;
+      }
+      .pvshort .bub b {
+        display: block;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pvshort .bub span {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        color: #50545b;
+      }
+
+      /* the danger zone footer */
+      .danger {
+        margin: 16px 10px 4px;
+        border: 1px solid var(--dangerLine);
+        border-radius: 7px;
+        background: var(--dangerBg);
+      }
+      .dz-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 10px 0;
+        color: var(--danger);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .dz-h svg {
+        width: 13px;
+        height: 13px;
+      }
+      .dz-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 10px 9px;
+      }
+      .dz-row > div {
+        flex: 1;
+        min-width: 0;
+      }
+      .dz-row b {
+        font-weight: 600;
+      }
+      .dz-row .note {
+        margin: 1px 0 0;
+      }
+
+      /* map controls: compass and +/- in one row, bottom right, left of the right panel */
+      #mapCtl {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        z-index: 4;
+        display: flex;
+        gap: 6px;
+      }
+      #vp.has-right #mapCtl {
+        right: calc(var(--rw) + 12px);
+      }
+      .pill {
+        display: flex;
+        background: rgba(36, 39, 44, 0.96);
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        overflow: hidden;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+      }
+      .pill button {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        padding: 0;
+      }
+      .pill button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .pill button + button {
+        border-left: 1px solid var(--line2);
+      }
+
+      /* the placement step */
+      /* centred in the part of the view between the panels; wraps when narrow */
+      #placeBar {
+        position: absolute;
+        top: 10px;
+        left: calc(var(--lw) + 10px);
+        right: 10px;
+        width: fit-content;
+        margin: 0 auto;
+        z-index: 8;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 6px 6px 12px;
+        border: 1px solid var(--accentLine);
+        border-radius: 8px;
+        background: rgba(32, 34, 39, 0.97);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+      }
+      body.placing #notes {
+        display: none;
+      }
+      #vp.has-right #placeBar {
+        right: calc(var(--rw) + 10px);
+      }
+      #placeBar .pt {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #placeBar .pt b {
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #placeBar .pt span {
+        color: var(--dim);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #placeBar .pic16 {
+        color: var(--accent);
+        display: inline-flex;
+      }
+      #placeBar .btns {
+        display: flex;
+        gap: 4px;
+        flex: none;
+      }
+
+      /* notes, toast, modal */
+      #notes {
+        position: absolute;
+        top: 10px;
+        left: calc(var(--lw) + 10px);
+        z-index: 6;
+        width: 330px;
+        max-width: calc(100% - var(--lw) - 20px);
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        background: rgba(32, 34, 39, 0.95);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+        font-size: 11.5px;
+        color: var(--muted);
+        max-height: calc(100% - 70px);
+        overflow: auto;
+      }
+      #vp.has-right #notes {
+        max-width: calc(100% - var(--lw) - var(--rw) - 20px);
+      }
+      #notes summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--text);
+        font-weight: 600;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes summary svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentText);
+      }
+      #notes .nb {
+        padding: 0 12px 10px;
+      }
+      #notes p {
+        margin: 0 0 6px;
+        color: var(--text);
+      }
+      #notes ul {
+        margin: 0;
+        padding-left: 16px;
+      }
+      #notes li {
+        margin: 0 0 4px;
+      }
+      #notes b {
+        color: var(--text);
+        font-weight: 600;
+      }
+      /* centred between the panels, like the placement bar */
+      #toast {
+        position: absolute;
+        left: calc(var(--lw) + 10px);
+        right: 10px;
+        width: fit-content;
+        margin: 0 auto;
+        bottom: 58px;
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px 6px 12px;
+        border-radius: 5px;
+        background: rgba(36, 39, 44, 0.98);
+        border: 1px solid var(--line2);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+        max-width: calc(100% - 24px);
+      }
+      #vp.has-right #toast {
+        right: calc(var(--rw) + 10px);
+      }
+      #toast.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #toast .tm {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #toast button {
+        flex: none;
+      }
+      #modalBack {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        background: rgba(8, 9, 11, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      #modalBack.show {
+        display: flex;
+      }
+      #modal {
+        width: min(420px, 100%);
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+      #modal h2 {
+        margin: 0;
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #f0f1f3;
+        padding: 12px 14px 8px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #modal h2 svg {
+        color: var(--danger);
+      }
+      #modal .mb {
+        padding: 0 14px 6px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      #modal .mb b {
+        color: var(--text);
+      }
+      #modal .mf {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 14px 12px;
+      }
+
+      /* bottom bar: credits at the left, the selection's actions, the save state */
+      #sb {
+        display: flex;
+        align-items: center;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      #sb > div {
+        padding: 0 10px;
+        border-right: 1px solid var(--line);
+        height: 100%;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      #credits {
+        color: var(--dim);
+        font-size: 10px;
+      }
+      #sbActs {
+        gap: 2px;
+        padding: 0 4px !important;
+      }
+      #sbActs:empty {
+        display: none !important;
+      }
+      .sact {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .sact svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentText);
+      }
+      .sact:hover {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      #sbHint {
+        flex: 1;
+        min-width: 0;
+        display: block !important;
+        line-height: 23px;
+        text-overflow: ellipsis;
+      }
+      #sbSave {
+        border-right: 0 !important;
+      }
+
+      @media (max-width: 1100px) {
+        :root {
+          --lw: 236px;
+          --rw: 296px;
+        }
+        .brand b {
+          display: none;
+        }
+      }
+      @media (max-width: 900px) {
+        .tbtn .lbl {
+          display: none;
+        }
+        #credits {
+          display: none !important;
+        }
+      }
+      /* phone: the side panels become sheets */
+      @media (max-width: 700px) {
+        .phoneonly {
+          display: inline-flex !important;
+        }
+        .brand {
+          padding-right: 4px;
+          margin-right: 0;
+        }
+        .brand .doc {
+          max-width: 28vw;
+        }
+        #tb {
+          padding: 0 4px;
+          gap: 1px;
+        }
+        .tbtn {
+          padding: 0 6px;
+        }
+        .sep {
+          margin: 0 1px;
+        }
+        .unsaved .w {
+          display: none;
+        }
+        #left {
+          width: min(300px, 86vw);
+          transform: translateX(-102%);
+          transition: transform 0.2s;
+          z-index: 12;
+          box-shadow: 8px 0 24px rgba(0, 0, 0, 0.4);
+        }
+        body.leftOpen #left {
+          transform: none;
+        }
+        #right {
+          left: 0;
+          right: 0;
+          top: auto;
+          width: auto;
+          max-height: 64%;
+          height: 64%;
+          border-left: 0;
+          border-top: 1px solid var(--line2);
+          border-radius: 12px 12px 0 0;
+          box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+          z-index: 10;
+        }
+        .grab {
+          display: block;
+          flex: none;
+          width: 36px;
+          height: 4px;
+          border-radius: 2px;
+          background: var(--bg4);
+          margin: 6px auto 0;
+        }
+        #vp.has-right #mapCtl {
+          right: 12px;
+          bottom: calc(64% + 10px);
+        }
+        #notes {
+          left: 10px;
+          max-width: calc(100% - 20px) !important;
+          width: auto;
+          right: 10px;
+        }
+        body.placing #right,
+        body.placing #left {
+          display: none;
+        }
+        body.placing #mapCtl {
+          bottom: 12px !important;
+        }
+        #placeBar,
+        #vp.has-right #placeBar {
+          top: auto;
+          bottom: 60px;
+          left: 12px;
+          right: 12px;
+          width: auto;
+        }
+        #placeBar .btns {
+          width: 100%;
+          justify-content: flex-end;
+        }
+        #toast {
+          bottom: 12px;
+          left: 12px;
+        }
+        #vp.has-right #toast {
+          right: 12px;
+          bottom: calc(64% + 54px);
+        }
+        #sb #sbHint {
+          display: none !important;
+        }
+        .sact .lbl {
+          display: none;
+        }
+      }
+      @media (max-height: 460px) and (min-width: 701px) {
+        .rhead {
+          padding-top: 4px;
+        }
+        #notes {
+          max-height: calc(100% - 60px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="tb">
+      <div class="brand">
+        <svg class="i" viewBox="0 0 16 16" style="color: var(--accent)">
+          <path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z" />
+          <path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4" />
+        </svg>
+        <b>Tour Editor</b
+        ><button class="doc" id="tourTitle" title="The tour's name">
+          Old Town Walk
+        </button>
+      </div>
+      <button
+        class="tbtn phoneonly"
+        id="bStations"
+        title="Show the station list"
+      >
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M3 4h10M3 8h10M3 12h10" />
+        </svg>
+      </button>
+      <div class="menu-wrap">
+        <button
+          class="tbtn"
+          id="bFile"
+          aria-haspopup="menu"
+          aria-expanded="false"
+        >
+          File
+        </button>
+        <div class="menu" id="mFile" role="menu" hidden>
+          <button role="menuitem" data-menu="save">
+            Save<kbd>Ctrl+S</kbd>
+          </button>
+          <button role="menuitem" data-menu="open">Open a tour...</button>
+          <hr />
+          <button role="menuitem" data-menu="export">
+            Export for visitors...
+          </button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button
+          class="tbtn"
+          id="bView"
+          aria-haspopup="menu"
+          aria-expanded="false"
+        >
+          View
+        </button>
+        <div class="menu" id="mView" role="menu" hidden>
+          <button role="menuitem" data-menu="frame">
+            Frame the whole tour<kbd>Home</kbd>
+          </button>
+          <button role="menuitem" data-menu="notes">
+            Show the prototype notes
+          </button>
+        </div>
+      </div>
+      <span class="unsaved" id="unsaved" hidden title="Changes not saved yet"
+        ><span class="dot"></span><span class="w">Not saved</span></span
+      >
+      <span class="sep"></span>
+      <button class="tbtn" id="bUndo" title="Undo (Ctrl+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M5 7h5a3 3 0 010 6H7M5 7l2.5-2.5M5 7l2.5 2.5" /></svg
+        ><span class="lbl">Undo</span>
+      </button>
+      <button class="tbtn" id="bRedo" title="Redo (Ctrl+Shift+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M11 7H6a3 3 0 000 6h3M11 7L8.5 4.5M11 7L8.5 9.5" /></svg
+        ><span class="lbl">Redo</span>
+      </button>
+      <span class="spacer"></span>
+    </header>
+    <div id="load" aria-hidden="true"></div>
+    <main id="vp">
+      <canvas
+        id="map"
+        aria-label="3D view (a flat drawing in this prototype)"
+      ></canvas>
+      <aside id="left" class="panel" aria-label="Stations">
+        <div class="phead">
+          <span class="ttlh">Stations</span
+          ><span class="count" id="stCount"></span><span class="sp"></span>
+          <button
+            class="ib add"
+            id="bAddStation"
+            title="Add a station: click in the view where it should be"
+          >
+            <svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+          </button>
+          <button class="ib phoneonly" id="bCloseLeft" title="Close the list">
+            <svg class="i" viewBox="0 0 16 16">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+        <div class="pbody" id="tree"></div>
+      </aside>
+      <aside id="right" class="panel" aria-label="Selection" hidden></aside>
+      <details id="notes">
+        <summary>
+          <svg class="i" viewBox="0 0 16 16">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M8 7.5V11M8 5v.2" /></svg
+          >About this prototype: the content gallery
+        </summary>
+        <div class="nb">
+          <p>
+            Adding content is visual. A station's panel has an
+            <b>Add to this station</b> gallery: one tile per kind of content,
+            with a small drawing of what a visitor will see and one line about
+            it. Picking a tile asks where it should stand (click in the view),
+            or drops it at the station. A story is made the same way, as a
+            folder, and is then filled from the story's own gallery.
+          </p>
+          <ul>
+            <li>
+              <b>Radius</b> sits with the position under "Place and reach": both
+              answer where the station is and how close visitors must come, and
+              the ring is drawn in the view while you change it. The top of the
+              panel is kept for what visitors read: name, description, picture.
+            </li>
+            <li>
+              <b>Adding</b> lives in the panel of what you add to: the station's
+              gallery adds to the station, a story's gallery adds steps to the
+              story. "+ Add content" in an open list row leads to the same
+              gallery.
+            </li>
+            <li>
+              <b>Destroying</b> lives only in the "Danger zone" at the very end
+              of each panel, far from the gallery. A station or story asks once,
+              with its item count, and can be undone. Everyday actions
+              (Duplicate, Copy position) are in the bottom bar.
+            </li>
+            <li>
+              The panel follows the selection: station things, story things or
+              item things (Put on the ground, Align to station, Move to another
+              station), never mixed.
+            </li>
+          </ul>
+        </div>
+      </details>
+      <div id="placeBar" hidden></div>
+      <div id="mapCtl">
+        <div class="pill">
+          <button id="compass" title="Turn north up and frame the tour">
+            <svg width="20" height="20" viewBox="0 0 24 24">
+              <path d="M12 3 15 12H9z" fill="#e5483f" />
+              <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+            </svg>
+          </button>
+          <button id="zout" title="Zoom out">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            >
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <button id="zin" title="Zoom in">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="toast" role="status"><span class="tm"></span></div>
+    </main>
+    <footer id="sb">
+      <div id="credits">Map: a sample drawing</div>
+      <div id="sbActs"></div>
+      <div id="sbHint"></div>
+      <div id="sbSave">All changes saved</div>
+    </footer>
+    <div id="modalBack">
+      <div
+        id="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalTtl"
+      ></div>
+    </div>
+    <input type="file" id="fileIn" hidden />
+
+    <script>
+      "use strict";
+      /* ---------- icons ---------- */
+      const P = {
+        right: '<path d="M6 4l4 4-4 4"/>',
+        down: '<path d="M4 6l4 4 4-4"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        x: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        pen: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/>',
+        lock: '<rect x="4" y="7.5" width="8" height="6" rx="1"/><path d="M5.5 7.5V5.5a2.5 2.5 0 015 0v2"/>',
+        up: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+        dn: '<path d="M8 3v10M4 9l4 4 4-4"/>',
+        trash:
+          '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/>',
+        dup: '<rect x="2.5" y="2.5" width="8" height="8" rx="1"/><rect x="5.5" y="5.5" width="8" height="8" rx="1"/>',
+        target:
+          '<circle cx="8" cy="8" r="3"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
+        story:
+          '<path d="M2 4.5a1 1 0 011-1h3l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1z"/>',
+        short:
+          '<path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 00-9 0C3.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/>',
+        long: '<path d="M3 3h10M3 6h10M3 9h10M3 12h6"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 11l3.5-3.5 3 3 2-2 3.5 3.5"/><circle cx="10.5" cy="6" r="1"/>',
+        video:
+          '<rect x="2" y="4" width="9" height="8" rx="1"/><path d="M11 7l3-2v6l-3-2"/>',
+        audio:
+          '<path d="M3 6v4h2.5L9 13V3L5.5 6z"/><path d="M11 5.5a3.5 3.5 0 010 5M12.8 3.8a6 6 0 010 8.4"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+        character:
+          '<circle cx="8" cy="4.5" r="2.2"/><path d="M4 14v-2.5A3 3 0 017 8.5h2a3 3 0 013 3V14"/>',
+        page: '<rect x="4" y="2" width="8" height="12" rx="1.5"/><path d="M6 5.5h4M6 8h4M6 10.5h2.5"/>',
+        choice: '<path d="M8 14V9L4 4M8 9l4-5M3 6.5V3.5h3M13 6.5V3.5h-3"/>',
+        quiz: '<circle cx="8" cy="8" r="6"/><path d="M6.3 6.3a1.8 1.8 0 113 1.4c-.8.5-1.3.9-1.3 1.8M8 11.6v.2"/>',
+        link: '<path d="M7 9a2.5 2.5 0 003.5 0l2-2a2.5 2.5 0 00-3.5-3.5l-.7.7M9 7a2.5 2.5 0 00-3.5 0l-2 2A2.5 2.5 0 007 12.5l.7-.7"/>',
+        list: '<path d="M6 4h8M6 8h8M6 12h8M2.5 4h.5M2.5 8h.5M2.5 12h.5"/>',
+        ground: '<path d="M2 13h12M8 3v7M5 7l3 3 3-3"/>',
+        align: '<circle cx="8" cy="8" r="6"/><path d="M8 8l3.5-3.5M8 2v1.5"/>',
+        move: '<path d="M2 8h9M8 5l3 3-3 3M13.5 3v10"/>',
+        upload: '<path d="M8 11V3M5 6l3-3 3 3M3 11v2h10v-2"/>',
+        warn: '<path d="M8 2.5l6 11H2z"/><path d="M8 7v3M8 12v.2"/>',
+        heading: '<path d="M4 3v10M12 3v10M4 8h8"/>',
+        land: '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M1.5 11l4-4 3.5 3.5 2-2 3.5 3.5"/><circle cx="11" cy="5.8" r="1.2"/>',
+      };
+      const icon = (n, cls = "i") =>
+        `<svg class="${cls}" viewBox="0 0 16 16">${P[n] || ""}</svg>`;
+      const esc = (s) =>
+        String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+      /* ---------- what each kind of content is ---------- */
+      // where: 'world' kinds ask where they stand; 'screen' kinds are shown on the visitor's screen.
+      const TYPES = {
+        short: {
+          label: "Short text",
+          icon: "short",
+          where: "world",
+          cap: 160,
+          nameCap: 40,
+          color: "#e07a6e",
+          blurb: "A pin with a caption; a tap opens a few lines.",
+        },
+        long: {
+          label: "Long text",
+          icon: "long",
+          where: "world",
+          cap: 280,
+          color: "#d9c27a",
+          blurb: "A reading sign with a full text; can be narrated.",
+        },
+        picture: {
+          label: "Picture",
+          icon: "picture",
+          where: "world",
+          cap: 280,
+          color: "#c9a66b",
+          views: ["Plane in the world", "Framed", "Then and now"],
+          blurb: "A photo standing in the world, framed, or then-and-now.",
+        },
+        video: {
+          label: "Video",
+          icon: "video",
+          where: "world",
+          cap: 280,
+          color: "#7fb0d9",
+          views: ["Screen", "Porthole", "Window", "Cutout"],
+          blurb: "A screen in the world, a porthole, a window or a cutout.",
+        },
+        audio: {
+          label: "Audio",
+          icon: "audio",
+          where: "world",
+          cap: 280,
+          color: "#9fd18b",
+          views: ["Ambient zone", "Narration"],
+          blurb: "Sound that fills a zone, or a voice that tells.",
+        },
+        model: {
+          label: "3D model",
+          icon: "model",
+          where: "world",
+          cap: 280,
+          color: "#a3b1c2",
+          views: ["Full size", "Ghost", "Toy size"],
+          blurb: "A model at full size or toy size, with notes and cuts.",
+        },
+        character: {
+          label: "Character",
+          icon: "character",
+          where: "world",
+          cap: 280,
+          color: "#d89ad6",
+          blurb: "A guide figure who stands here and speaks.",
+        },
+        story: {
+          label: "Story",
+          icon: "story",
+          where: "world",
+          cap: 280,
+          color: "#e9a23b",
+          folder: true,
+          blurb:
+            "A folder of steps that play one after another: texts, pictures, choices, quizzes.",
+        },
+        page: {
+          label: "Text page",
+          icon: "page",
+          where: "screen",
+          cap: 280,
+          color: "#b9c2cf",
+          blurb: "A few lines on the visitor's screen, then on.",
+        },
+        choice: {
+          label: "Choice",
+          icon: "choice",
+          where: "screen",
+          cap: 160,
+          color: "#8fd1c9",
+          blurb: "The visitor picks one way; each leads on.",
+        },
+        quiz: {
+          label: "Quiz",
+          icon: "quiz",
+          where: "screen",
+          cap: 160,
+          color: "#d6a16f",
+          blurb: "A question with answers; the right one is praised.",
+        },
+      };
+      const STATION_TILES = [
+        "short",
+        "long",
+        "picture",
+        "video",
+        "audio",
+        "model",
+        "character",
+        "story",
+      ];
+      const STORY_TILES = [
+        "page",
+        "picture",
+        "video",
+        "audio",
+        "character",
+        "model",
+        "choice",
+        "quiz",
+      ];
+      const VIEW_NOTES = {
+        "Plane in the world":
+          "The picture stands upright in the world, like a sheet of glass.",
+        Framed: "A picture frame around it, as if it hung in a gallery.",
+        "Then and now":
+          "An old photo lined up with the real view; visitors slide between them.",
+        Screen: "A screen with play controls, floating in the world.",
+        Porthole: "A round medallion; a tap opens the video full screen.",
+        Window: "A window cut into a wall, with the video behind it.",
+        Cutout:
+          "The people in the video stand in the world, without a background.",
+        "Ambient zone": "Plays softly while the visitor is inside the zone.",
+        Narration:
+          "A voice that plays once, from the start, when the visitor arrives.",
+        "Full size": "The model stands at its real size where it once was.",
+        Ghost: "A faint see-through version over the real place.",
+        "Toy size": "A small model on a pedestal that visitors walk around.",
+      };
+
+      /* ---------- illustrations: what a visitor sees ---------- */
+      const ILL = {
+        short:
+          '<ellipse class="g" cx="30" cy="38" rx="16" ry="3"/><path d="M26 38V18"/><circle class="af" cx="26" cy="14" r="4"/><rect class="gf" x="34" y="7" width="30" height="17" rx="3"/><rect x="34" y="7" width="30" height="17" rx="3"/><path class="a" d="M38 13h16"/><path d="M38 18h20"/>',
+        long: '<ellipse class="g" cx="34" cy="39" rx="20" ry="3"/><rect class="gf" x="16" y="5" width="36" height="25" rx="2"/><rect x="16" y="5" width="36" height="25" rx="2"/><path class="a" d="M21 11h16"/><path d="M21 16h26M21 20h26M21 24h18M24 30v9M44 30v9"/><path class="a" d="M58 13a5 5 0 010 9M61 10a9 9 0 010 15"/>',
+        picture:
+          '<ellipse class="g" cx="38" cy="39" rx="20" ry="3"/><path d="M22 36l4-30 30 4-4 28z" class="gf"/><path d="M22 36l4-30 30 4-4 28z"/><path class="a" d="M24 31l8-9 7 6 5-4 9 7"/><circle class="af" cx="44" cy="14" r="2.6"/>',
+        video:
+          '<ellipse class="g" cx="38" cy="39" rx="20" ry="3"/><rect class="gf" x="16" y="6" width="44" height="26" rx="2"/><rect x="16" y="6" width="44" height="26" rx="2"/><path class="af" d="M34 13l10 6-10 6z"/><path d="M21 28h34" class="g"/><path class="a" d="M21 28h12"/>',
+        audio:
+          '<ellipse class="g" cx="38" cy="36" rx="30" ry="6"/><ellipse class="a" cx="38" cy="36" rx="20" ry="4" stroke-dasharray="3 3"/><ellipse cx="38" cy="36" rx="9" ry="2"/><path d="M36 12v18M36 12l9-3v4l-9 3"/><circle class="af" cx="33" cy="30" r="3"/>',
+        model:
+          '<ellipse class="g" cx="38" cy="39" rx="20" ry="3"/><path class="gf" d="M38 4l16 8v18l-16 8-16-8V12z"/><path d="M38 4l16 8v18l-16 8-16-8V12z"/><path d="M22 12l16 8 16-8M38 20v18"/><circle class="af" cx="47" cy="18" r="2.4"/><path class="a" d="M47 18l9-8h6"/>',
+        character:
+          '<ellipse class="g" cx="28" cy="39" rx="12" ry="3"/><circle cx="28" cy="10" r="5"/><path d="M19 38V27a8 8 0 018-8h2a8 8 0 018 8v11"/><path class="a" d="M42 6h22a3 3 0 013 3v8a3 3 0 01-3 3H50l-5 4v-4h-3a3 3 0 01-3-3V9a3 3 0 013-3z"/><path d="M45 11h15M45 15h10"/>',
+        story:
+          '<rect class="gf" x="10" y="16" width="22" height="18" rx="2"/><rect x="10" y="16" width="22" height="18" rx="2"/><rect x="28" y="11" width="22" height="18" rx="2" class="gf"/><rect x="28" y="11" width="22" height="18" rx="2"/><rect x="46" y="6" width="22" height="18" rx="2" class="gf"/><rect class="a" x="46" y="6" width="22" height="18" rx="2"/><path class="a" d="M14 39h50" stroke-dasharray="2 3"/><circle class="af" cx="14" cy="39" r="2"/><path class="g" d="M15 22h8M33 17h8M51 12h8"/>',
+        page: '<rect class="gf" x="26" y="3" width="24" height="38" rx="4"/><rect x="26" y="3" width="24" height="38" rx="4"/><rect class="a" x="29" y="20" width="18" height="15" rx="2"/><path d="M32 25h12M32 29h9"/>',
+        choice:
+          '<path d="M38 40V25"/><path class="a" d="M38 25L22 10M22 10v6M22 10h6"/><path d="M38 25l16-15M54 10v6M54 10h-6"/><rect class="gf" x="8" y="2" width="22" height="8" rx="2"/><rect class="gf" x="46" y="2" width="22" height="8" rx="2"/>',
+        quiz: '<rect class="gf" x="16" y="4" width="44" height="36" rx="3"/><rect x="16" y="4" width="44" height="36" rx="3"/><path d="M22 11h26"/><rect x="22" y="18" width="5" height="5" rx="1"/><path d="M31 20.5h20"/><rect class="a" x="22" y="27" width="5" height="5" rx="1"/><path class="a" d="M23 29.5l1.4 1.4 2.4-2.6M31 29.5h16"/>',
+      };
+
+      /* ---------- sample pictures, drawn by the page ---------- */
+      function makePic(kind, seed) {
+        const c = document.createElement("canvas");
+        c.width = 320;
+        c.height = 180;
+        const g = c.getContext("2d");
+        const sky = g.createLinearGradient(0, 0, 0, 180);
+        const skies = [
+          ["#7fa6c9", "#d9c8a8"],
+          ["#8fb0cf", "#e8d6b8"],
+          ["#5f7d9d", "#c7a98a"],
+          ["#9fb7c9", "#dfe3e0"],
+        ];
+        const s = skies[seed % skies.length];
+        sky.addColorStop(0, s[0]);
+        sky.addColorStop(1, s[1]);
+        g.fillStyle = sky;
+        g.fillRect(0, 0, 320, 180);
+        g.fillStyle = "#6d6a63";
+        g.fillRect(0, 128, 320, 52);
+        g.fillStyle = "#8a857a";
+        for (let i = 0; i < 9; i++)
+          g.fillRect(i * 38 - 10, 120 - ((i * 37) % 40), 34, 70);
+        g.fillStyle = "#4b4943";
+        if (kind === "column") {
+          g.fillRect(150, 30, 20, 100);
+          g.fillRect(138, 120, 44, 14);
+          g.beginPath();
+          g.arc(160, 26, 9, 0, 7);
+          g.fill();
+        }
+        if (kind === "gate") {
+          g.fillRect(100, 40, 120, 92);
+          g.fillStyle = s[1];
+          g.beginPath();
+          g.moveTo(135, 132);
+          g.lineTo(135, 85);
+          g.arc(160, 85, 25, Math.PI, 0);
+          g.lineTo(185, 132);
+          g.fill();
+          g.fillStyle = "#4b4943";
+          g.fillRect(96, 34, 128, 10);
+        }
+        if (kind === "tower") {
+          g.fillRect(140, 20, 40, 112);
+          g.beginPath();
+          g.moveTo(134, 22);
+          g.lineTo(160, -6);
+          g.lineTo(186, 22);
+          g.fill();
+          g.fillStyle = s[0];
+          g.fillRect(153, 40, 14, 18);
+        }
+        if (kind === "fountain") {
+          g.fillRect(110, 112, 100, 20);
+          g.fillRect(152, 70, 16, 44);
+          g.fillStyle = "#9fc2d8";
+          g.beginPath();
+          g.arc(160, 70, 20, Math.PI, 0);
+          g.fill();
+        }
+        if (kind === "street") {
+          g.beginPath();
+          g.moveTo(130, 180);
+          g.lineTo(150, 128);
+          g.lineTo(170, 128);
+          g.lineTo(200, 180);
+          g.fillStyle = "#57544e";
+          g.fill();
+        }
+        g.fillStyle = "rgba(255,240,210,.12)";
+        g.fillRect(0, 0, 320, 180);
+        return c.toDataURL("image/jpeg", 0.82);
+      }
+      const FILES = [
+        ["column", 0],
+        ["gate", 1],
+        ["tower", 2],
+        ["fountain", 3],
+        ["street", 1],
+        ["street", 2],
+        ["gate", 3],
+        ["column", 2],
+      ];
+      let FILE_PICS = [];
+
+      /* ---------- sample data ---------- */
+      let uid = 100;
+      const nid = (p) => p + ++uid;
+      function mkItem(type, name, desc, e, n, extra = {}) {
+        const T = TYPES[type];
+        return Object.assign(
+          {
+            id: nid("i"),
+            kind: "item",
+            type,
+            name,
+            desc: desc || "",
+            e: e || 0,
+            n: n || 0,
+            h: 0,
+            hd: 0,
+            size: type === "model" ? 6 : 1.6,
+            view: T.views ? T.views[0] : null,
+          },
+          extra,
+        );
+      }
+      function mkStory(name, desc, e, n, entries) {
+        return {
+          id: nid("y"),
+          kind: "story",
+          name,
+          desc: desc || "",
+          e: e || 0,
+          n: n || 0,
+          entries: entries || [],
+        };
+      }
+      let S;
+      function sampleTour() {
+        return {
+          stations: [
+            {
+              id: "s1",
+              name: "The Column",
+              desc: "Built in <b>1693</b> after the plague. Look for the <i>three saints</i> around its base.",
+              pic: "column",
+              radius: 25,
+              locked: false,
+              x: 0,
+              y: 0,
+              children: [
+                mkStory(
+                  "The Column's tale",
+                  "The stonemason tells how the column was raised, and asks the visitor to choose.",
+                  -10,
+                  -6,
+                  [
+                    mkItem(
+                      "page",
+                      "Look up",
+                      "Find the golden flame at the very top.",
+                    ),
+                    mkItem(
+                      "character",
+                      "The stonemason speaks",
+                      "He tells of the winter they carried the stone.",
+                      -8,
+                      -9,
+                    ),
+                    mkItem(
+                      "choice",
+                      "Which way did the crowd go?",
+                      "Two paths lead from the square.",
+                      0,
+                      0,
+                      { options: ["Down to the river", "Up to the church"] },
+                    ),
+                    mkItem("quiz", "How tall is it?", "", 0, 0, {
+                      answers: ["About 10 m", "About 21 m", "About 40 m"],
+                      right: 1,
+                    }),
+                  ],
+                ),
+                mkItem(
+                  "picture",
+                  "The square in 1890",
+                  "The column with the old market stalls.",
+                  9,
+                  5,
+                ),
+                mkItem(
+                  "short",
+                  "Who built it?",
+                  "A guild of <b>stonemasons</b> from the valley.",
+                  -7,
+                  8,
+                ),
+              ],
+            },
+            {
+              id: "s2",
+              name: "The old gate",
+              desc: "The last of the four town gates. The rest were pulled down in 1860.",
+              pic: "gate",
+              radius: 20,
+              locked: true,
+              x: 150,
+              y: 60,
+              children: [
+                mkItem("picture", "Gate before the fire", "", 6, 3, {
+                  view: "Then and now",
+                }),
+                mkItem(
+                  "short",
+                  "Mind the step",
+                  "The road was <i>lower</i> then; the old step is still here.",
+                  -4,
+                  5,
+                ),
+                mkItem(
+                  "model",
+                  "The gate as it was",
+                  "With its wooden bridge and tower roof.",
+                  0,
+                  -8,
+                  {
+                    view: "Ghost",
+                    notes: ["The drawbridge chains", "The guard room"],
+                    sections: ["Through the tower"],
+                  },
+                ),
+              ],
+            },
+            {
+              id: "s3",
+              name: "Market fountain and the old weighing house on the corner",
+              desc: "",
+              pic: null,
+              radius: 30,
+              locked: false,
+              x: 60,
+              y: -130,
+              children: [
+                mkStory("Water for the whole town", "", 5, 4, [
+                  mkItem(
+                    "page",
+                    "Before the pipes",
+                    "Every house fetched its water here.",
+                  ),
+                  mkItem("picture", "Washing day", "", 6, -3),
+                  mkItem("audio", "Splashing water", "", 0, 0, {
+                    view: "Ambient zone",
+                    zone: 12,
+                  }),
+                  mkItem("quiz", "Where did the water come from?", "", 0, 0, {
+                    answers: ["The river", "A spring in the hills"],
+                    right: 1,
+                  }),
+                ]),
+              ],
+            },
+            {
+              id: "s4",
+              name: "The bridge",
+              desc: "",
+              pic: null,
+              radius: 20,
+              locked: false,
+              x: -160,
+              y: -40,
+              children: [],
+            },
+            {
+              id: "s5",
+              name: "The tower",
+              desc: "From the top you see the whole walk again.",
+              pic: "tower",
+              radius: 35,
+              locked: false,
+              x: -60,
+              y: 150,
+              children: [
+                mkItem(
+                  "long",
+                  "Four hundred years of the tower",
+                  "The tower's story from its first stone to today.",
+                  4,
+                  6,
+                  {
+                    body: "<h4>The first stone</h4><div>It was laid in <b>1520</b>, on the old wall.</div><ul><li>Fire in 1610</li><li>New roof in 1702</li></ul>",
+                  },
+                ),
+                mkItem(
+                  "audio",
+                  "Bells",
+                  "The bells ring every quarter hour.",
+                  0,
+                  0,
+                  { view: "Ambient zone", zone: 25 },
+                ),
+              ],
+            },
+          ],
+        };
+      }
+
+      /* ---------- state ---------- */
+      let sel = null,
+        placing = null,
+        dirty = false,
+        editSnap = false,
+        filePickOpen = false;
+      const open = new Set(["s1"]);
+      const fold = {
+        about: true,
+        add: true,
+        place: true,
+        look: true,
+        size: false,
+        pos: true,
+        move: false,
+        entries: true,
+        addStory: true,
+        sstart: false,
+      };
+      const undoS = [],
+        redoS = [];
+      const $ = (id) => document.getElementById(id);
+      const right = $("right"),
+        tree = $("tree"),
+        vp = $("vp");
+
+      function find(id) {
+        if (!id) return null;
+        for (const st of S.stations) {
+          if (st.id === id) return { kind: "station", obj: st, st };
+          for (const c of st.children) {
+            if (c.id === id)
+              return {
+                kind: c.kind === "story" ? "story" : "item",
+                obj: c,
+                st,
+              };
+            if (c.kind === "story")
+              for (const e of c.entries)
+                if (e.id === id) return { kind: "entry", obj: e, st, story: c };
+          }
+        }
+        return null;
+      }
+      const stories = (st) => st.children.filter((c) => c.kind === "story");
+      const freeItems = (st) => st.children.filter((c) => c.kind !== "story");
+      const countItems = (st) =>
+        st.children.reduce(
+          (a, c) => a + (c.kind === "story" ? c.entries.length : 1),
+          0,
+        );
+
+      function snapshot() {
+        return JSON.stringify(S);
+      }
+      function push() {
+        undoS.push(snapshot());
+        if (undoS.length > 80) undoS.shift();
+        redoS.length = 0;
+        setDirty(true);
+      }
+      function setDirty(d) {
+        dirty = d;
+        $("unsaved").hidden = !d;
+        $("sbSave").textContent = d ? "Not saved" : "All changes saved";
+        updUndo();
+      }
+      function updUndo() {
+        $("bUndo").disabled = !undoS.length;
+        $("bRedo").disabled = !redoS.length;
+      }
+      function restore(json) {
+        S = JSON.parse(json);
+        if (sel && !find(sel)) sel = null;
+        renderAll();
+      }
+      function undo() {
+        if (!undoS.length) return;
+        redoS.push(snapshot());
+        restore(undoS.pop());
+        setDirty(true);
+        toast("Undone");
+      }
+      function redo() {
+        if (!redoS.length) return;
+        undoS.push(snapshot());
+        restore(redoS.pop());
+        setDirty(true);
+        toast("Redone");
+      }
+
+      /* ---------- the station list ---------- */
+      function renderTree() {
+        $("stCount").textContent = S.stations.length;
+        const sf = find(sel);
+        let h = "";
+        S.stations.forEach((st, i) => {
+          const isOpen = open.has(st.id),
+            n = countItems(st);
+          const ctx = sf && sf.st === st && sf.kind !== "station";
+          h += `<div class="st${isOpen ? " open" : ""}">`;
+          h +=
+            `<div class="row strow${sel === st.id ? " sel" : ""}${ctx ? " ctx" : ""}" data-sel="${st.id}" title="${esc(st.name)}">` +
+            `<button class="tw" data-tog="${st.id}" aria-expanded="${isOpen}" aria-label="${isOpen ? "Close" : "Open"} the station">${icon(isOpen ? "down" : "right")}</button>` +
+            `<span class="num">${i + 1}</span><span class="nm">${esc(st.name)}</span>` +
+            (st.locked
+              ? `<span class="lk" title="Position locked">${icon("lock")}</span>`
+              : "") +
+            `<span class="meta">${n || ""}</span></div>`;
+          if (isOpen) {
+            h += '<div class="kids">';
+            if (st.pic)
+              h += `<div class="stpic" data-sel="${st.id}" style="background-image:url('${picUrl(st.pic)}')" title="Station picture"></div>`;
+            for (const sy of stories(st)) {
+              const so = open.has(sy.id);
+              h +=
+                `<div class="row l1${sel === sy.id ? " sel" : ""}" data-sel="${sy.id}" title="${esc(sy.name)}"><button class="tw" data-tog="${sy.id}" aria-expanded="${so}" aria-label="${so ? "Close" : "Open"} the story">${icon(so ? "down" : "right")}</button>` +
+                `<span class="ic" style="color:${TYPES.story.color}">${icon("story")}</span><span class="nm">${esc(sy.name)}</span><span class="meta">${sy.entries.length}</span></div>`;
+              if (so) {
+                sy.entries.forEach((e, k) => {
+                  h +=
+                    `<div class="row l2${sel === e.id ? " sel" : ""}" data-sel="${e.id}" title="${esc(e.name)}"><span class="step">${k + 1}</span>` +
+                    `<span class="ic" style="color:${TYPES[e.type].color}">${icon(TYPES[e.type].icon)}</span><span class="nm">${esc(e.name)}</span></div>`;
+                });
+                if (!sy.entries.length)
+                  h +=
+                    '<div class="empty" style="padding-left:48px">No entries yet.</div>';
+              }
+            }
+            for (const it of freeItems(st)) {
+              h +=
+                `<div class="row l1${sel === it.id ? " sel" : ""}" data-sel="${it.id}" title="${esc(it.name)}"><span class="tw none"></span>` +
+                `<span class="ic" style="color:${TYPES[it.type].color}">${icon(TYPES[it.type].icon)}</span><span class="nm">${esc(it.name)}</span></div>`;
+            }
+            if (!st.children.length)
+              h += '<div class="empty">Nothing here yet.</div>';
+            h += `<button class="addrow" data-addto="${st.id}">${icon("plus")}Add content</button></div>`;
+          }
+          h += "</div>";
+        });
+        tree.innerHTML = h;
+      }
+      tree.addEventListener("click", (e) => {
+        const tog = e.target.closest("[data-tog]");
+        if (tog) {
+          const id = tog.dataset.tog;
+          open.has(id) ? open.delete(id) : open.add(id);
+          renderTree();
+          return;
+        }
+        const add = e.target.closest("[data-addto]");
+        if (add) {
+          fold.add = true;
+          select(add.dataset.addto);
+          requestAnimationFrame(() => flashSec("add"));
+          closeLeftOnPhone();
+          return;
+        }
+        const r = e.target.closest("[data-sel]");
+        if (r) {
+          select(r.dataset.sel);
+          closeLeftOnPhone();
+        }
+      });
+      function closeLeftOnPhone() {
+        if (isPhone()) document.body.classList.remove("leftOpen");
+      }
+      const isPhone = () => matchMedia("(max-width: 700px)").matches;
+
+      function select(id, opts = {}) {
+        sel = id;
+        filePickOpen = false;
+        const f = find(id);
+        if (f) {
+          open.add(f.st.id);
+          if (f.story) open.add(f.story.id);
+          if (f.kind === "story") open.add(f.obj.id);
+          if (opts.frame !== false) frameOn(f);
+        }
+        renderAll();
+      }
+
+      /* ---------- the right panel ---------- */
+      function header(badge, name, ph, cap) {
+        return (
+          `<div class="grab"></div><div class="rhead"><span class="hic">${badge}</span>` +
+          `<label class="namewrap" title="Click to rename"><input class="namein" id="nameIn" value="${esc(name)}" placeholder="${esc(ph)}" aria-label="Name" maxlength="${cap + 20}" data-cap="${cap}">` +
+          `<span class="ncount" id="nameCnt"></span><span class="pen">${icon("pen")}</span></label>` +
+          `<button class="ib" data-act="close" title="Close (Esc)">${icon("x")}</button></div>`
+        );
+      }
+      function sec(key, title, sum, body, extra = "") {
+        return (
+          `<section class="sec${fold[key] ? " open" : ""}${extra}" data-sec="${key}"><button class="sech" data-fold="${key}" aria-expanded="${!!fold[key]}">${icon(fold[key] ? "down" : "right")}` +
+          `<span class="lab">${title}</span><span class="sum">${sum || ""}</span></button><div class="secb">${body}</div></section>`
+        );
+      }
+      function md(key, html, cap, ph, opts = {}) {
+        return (
+          `<div class="mde${opts.tall ? " tall" : ""}" data-key="${key}" data-cap="${cap || 0}">` +
+          `<div class="mdt" role="toolbar" aria-label="Formatting">` +
+          (opts.head
+            ? `<button data-cmd="head" title="Heading">${icon("heading")}</button>`
+            : "") +
+          `<button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-cmd="italic" title="Italic (Ctrl+I)"><i style="font-family:Georgia,serif">I</i></button>` +
+          `<button data-cmd="link" title="Link (Ctrl+K)">${icon("link")}</button><button data-cmd="list" title="Bulleted list">${icon("list")}</button>` +
+          `<span class="sp"></span><button data-cmd="src" title="Show the Markdown that is stored"><span class="mdsw">MD</span></button></div>` +
+          `<div class="mdl" hidden><input class="tfield" placeholder="Paste a web address" aria-label="Link address"><button class="btn sm" data-cmd="linkok">Add link</button></div>` +
+          `<div class="mdc" contenteditable="true" data-ph="${esc(ph)}" role="textbox" aria-multiline="true">${html || ""}</div>` +
+          `<pre class="mdsrc" hidden></pre>` +
+          `<div class="mdf"><span>${cap ? "Counted on the text visitors see" : "Markdown is stored; no marks to learn"}</span><span class="cnt"></span></div></div>`
+        );
+      }
+      // A gallery whose tiles all stand in the world needs no tag; the story's
+      // gallery mixes world and screen entries, so its tiles say which.
+      function gallery(types, current) {
+        const mixed = new Set(types.map((t) => TYPES[t].where)).size > 1;
+        return `<div class="gal">${types
+          .map((t) => {
+            const T = TYPES[t],
+              on = current && current.type === t ? " on" : "";
+            if (T.folder)
+              return `<button class="tile folder${on}" data-add="${t}"><span class="ill"><svg viewBox="0 0 76 44">${ILL[t]}</svg></span><span class="txt"><span class="tl">${T.label} <span style="color:var(--dim);font-weight:400">(a folder)</span></span><span class="tb">${T.blurb}</span></span></button>`;
+            return `<button class="tile${on}" data-add="${t}"><span class="ill"><svg viewBox="0 0 76 44">${ILL[t]}</svg></span><span class="tl">${T.label}</span><span class="tb">${T.blurb}</span>${mixed ? `<span class="tag${T.where === "screen" ? " scr" : ""}">${T.where === "world" ? "In the world" : "On the screen"}</span>` : ""}</button>`;
+          })
+          .join("")}</div>`;
+      }
+      function danger(title, note, label) {
+        return (
+          `<div class="danger"><div class="dz-h">${icon("warn")}Danger zone</div><div class="dz-row"><div><b>${title}</b><div class="note">${note}</div></div>` +
+          `<button class="btn sm danger" data-act="delete">${icon("trash")}${label}</button></div></div>`
+        );
+      }
+      function num(fld, val, unit, ax, step = 0.1) {
+        return `<div class="numf">${ax ? `<span class="ax ${ax.toLowerCase()}">${ax}</span>` : ""}<input type="number" step="${step}" data-fld="${fld}" value="${val}" aria-label="${fld}">${unit ? `<span class="unit">${unit}</span>` : ""}</div>`;
+      }
+      function picUrl(p) {
+        if (!p) return "";
+        if (p.startsWith("data:") || p.startsWith("blob:")) return p;
+        const i = FILES.findIndex((f) => f[0] === p);
+        return FILE_PICS[i < 0 ? 0 : i];
+      }
+      function excerpt(html, n = 42) {
+        const d = document.createElement("div");
+        d.innerHTML = html || "";
+        const t = d.textContent.trim();
+        return t.length > n ? t.slice(0, n - 1) + "..." : t;
+      }
+      const latlon = (st) =>
+        `${(48.2082 + st.y / 111320).toFixed(5)}, ${(16.3738 + st.x / 74300).toFixed(5)}`;
+
+      function stationPanel(f) {
+        const st = f.obj,
+          i = S.stations.indexOf(st),
+          n = countItems(st);
+        let h = header(
+          `<span class="num">${i + 1}</span>`,
+          st.name,
+          "Name this station",
+          60,
+        );
+        h += `<div class="rsub">Station ${i + 1} of ${S.stations.length} &middot; ${plural(n, "item")}${stories(st).length ? ` &middot; ${plural(stories(st).length, "story")}`.replace("storys", "stories") : ""}</div><div class="rbody">`;
+        const picHtml = st.pic
+          ? `<div class="pic has" style="background-image:url('${picUrl(st.pic)}')"><div class="picacts"><button class="btn sm dark" data-pic="choose">Replace</button><button class="btn sm dark" data-pic="remove">Remove</button></div></div>`
+          : `<div class="pic empty"><span class="pe-art">${icon("land")}</span><div class="pe-t">No station picture yet</div><div class="pe-s">A photo of the spot helps visitors recognise it when they arrive.</div>` +
+            `<div class="pe-b"><button class="btn sm pri" data-pic="choose">Choose from tour files</button><button class="btn sm" data-pic="upload">${icon("upload")}Upload...</button></div></div>`;
+        const pick = filePickOpen
+          ? `<div class="filepick">${FILE_PICS.map((u, k) => `<button data-pickfile="${k}" style="background-image:url('${u}')" title="Tour file ${k + 1}"></button>`).join("")}</div>` +
+            `<div class="btnrow"><button class="btn sm" data-pic="upload">${icon("upload")}Upload from this computer...</button><button class="btn sm" data-pic="cancel">Cancel</button></div>`
+          : "";
+        const aboutSum = fold.about
+          ? ""
+          : `${st.pic ? `<i class="mini" style="background-image:url('${picUrl(st.pic)}')"></i>` : ""}${esc(excerpt(st.desc) || "No description yet")}`;
+        h +=
+          `<section class="sec about${fold.about ? " open" : ""}" data-sec="about"><button class="sech" data-fold="about" aria-expanded="${fold.about}">${icon(fold.about ? "down" : "right")}<span class="lab">About this station</span><span class="sum">${aboutSum}</span></button><div class="secb">` +
+          `<div class="fl"><b>Description</b><span class="hint">Visitors read it on the station's card</span></div>${md("desc", st.desc, 300, "What is this place? One or two sentences.")}` +
+          `<div class="fl" style="margin-top:10px"><b>Station picture</b><span class="hint">On the card and in the list</span></div>${picHtml}${pick}</div></section>`;
+        h += sec(
+          "add",
+          "Add to this station",
+          placing ? "placing..." : "8 kinds",
+          `<div class="galintro">Pick what visitors should find here. You then click in the view where it should stand.</div>${gallery(STATION_TILES, placing)}`,
+        );
+        h += sec(
+          "place",
+          "Place and reach",
+          `${st.radius} m${st.locked ? " &middot; locked" : ""}`,
+          `<div class="f"><label>Position</label><div class="numf ro"><input readonly value="${latlon(st)}" aria-label="Position"></div></div>` +
+            `<div class="f"><label>Locked</label><div class="inline"><button class="switch" role="switch" aria-checked="${st.locked}" data-act="lock" aria-label="Lock the position"></button><span class="note" style="margin:0">${st.locked ? "Dragging in the view will not move it." : "Drag the station in the view to move it."}</span></div></div>` +
+            `<div class="f"><label>Radius</label><div class="inline"><input type="range" min="5" max="100" step="1" value="${st.radius}" data-fld="radius" aria-label="Radius">` +
+            `<div class="numf w70"><input type="number" min="5" max="100" step="1" data-fld="radius" value="${st.radius}" aria-label="Radius in metres"><span class="unit">m</span></div></div></div>` +
+            `<div class="note">Visitors arrive at the station when they are this close. The ring in the view shows it.</div>` +
+            `<div class="order" style="margin-top:8px"><span class="lbl">Tour order: ${i + 1} of ${S.stations.length}</span><button class="btn sm" data-act="earlier" ${i === 0 ? "disabled" : ""}>${icon("up")}Earlier</button><button class="btn sm" data-act="later" ${i === S.stations.length - 1 ? "disabled" : ""}>${icon("dn")}Later</button></div>`,
+        );
+        h += danger(
+          "Delete this station",
+          n
+            ? `Removes it and its ${plural(n, "item")}. You can undo it.`
+            : "It is empty. You can undo it.",
+          "Delete...",
+        );
+        return h + "</div>";
+      }
+
+      function storyPanel(f) {
+        const sy = f.obj,
+          st = f.st,
+          i = S.stations.indexOf(st),
+          n = sy.entries.length;
+        let h = header(
+          `<span style="color:${TYPES.story.color}">${icon("story")}</span>`,
+          sy.name,
+          "Name this story",
+          60,
+        );
+        h += `<div class="rsub">Story in <a data-sel="${st.id}">${i + 1} ${esc(st.name)}</a> &middot; ${plural(n, "entry").replace("entrys", "entries")}, played in order</div><div class="rbody">`;
+        h += `<div class="descblock"><div class="fl"><b>Description</b><span class="hint">Shown before the story starts</span></div>${md("desc", sy.desc, 280, "What is this story about?")}</div>`;
+        const rows = n
+          ? `<div class="lst">${sy.entries
+              .map(
+                (e, k) =>
+                  `<div class="lrow" data-sel="${e.id}"><span class="step">${k + 1}</span><span class="ic" style="color:${TYPES[e.type].color}">${icon(TYPES[e.type].icon)}</span><span class="nm">${esc(e.name)}</span>` +
+                  `<button class="ib" data-mv="${e.id}" data-dir="-1" title="Earlier" ${k === 0 ? "disabled" : ""}>${icon("up")}</button><button class="ib" data-mv="${e.id}" data-dir="1" title="Later" ${k === n - 1 ? "disabled" : ""}>${icon("dn")}</button></div>`,
+              )
+              .join("")}</div>`
+          : `<div class="note" style="margin:0 0 2px">This story is empty. Pick its first entry below.</div>`;
+        h += sec(
+          "entries",
+          "Entries",
+          plural(n, "entry").replace("entrys", "entries"),
+          rows,
+        );
+        h += sec(
+          "addStory",
+          "Add to this story",
+          placing ? "placing..." : "appended at the end",
+          `<div class="galintro">Each entry plays after the one before. Entries in the world ask where they stand; entries on the screen are added at once.</div>${gallery(STORY_TILES, placing)}`,
+        );
+        h += sec(
+          "sstart",
+          "Where it starts",
+          `${fmt(sy.e)} E, ${fmt(sy.n)} N`,
+          `<div class="f"><label>Offset</label><div class="vec">${num("e", fmt(sy.e), "m", "E")}${num("n", fmt(sy.n), "m", "N")}</div></div><div class="note">The story's marker in the world, from the station's centre.</div>`,
+        );
+        h += danger(
+          "Delete this story",
+          n
+            ? `Removes the folder and its ${plural(n, "entry").replace("entrys", "entries")}. You can undo it.`
+            : "It is empty. You can undo it.",
+          "Delete...",
+        );
+        return h + "</div>";
+      }
+
+      function itemPanel(f) {
+        const it = f.obj,
+          T = TYPES[it.type],
+          st = f.st,
+          si = S.stations.indexOf(st);
+        let h = header(
+          `<span style="color:${T.color}">${icon(T.icon)}</span>`,
+          it.name,
+          it.type === "short" ? "Caption" : "Name",
+          T.nameCap || 80,
+        );
+        if (f.kind === "entry") {
+          const k = f.story.entries.indexOf(it);
+          h += `<div class="rsub">${T.label} &middot; entry ${k + 1} of ${f.story.entries.length} in <a data-sel="${f.story.id}">${esc(f.story.name)}</a></div>`;
+        } else
+          h += `<div class="rsub">${T.label} &middot; in <a data-sel="${st.id}">${si + 1} ${esc(st.name)}</a></div>`;
+        h += '<div class="rbody">';
+        const dl =
+          it.type === "short"
+            ? "Opens when a visitor taps the pin"
+            : it.type === "page"
+              ? "The words on the screen"
+              : "A line or two for visitors";
+        h += `<div class="descblock"><div class="fl"><b>Description</b><span class="hint">${dl}</span></div>${md("desc", it.desc, T.cap, it.type === "short" ? "What should visitors know?" : "Optional")}</div>`;
+        // what visitors see
+        let look = "";
+        if (T.views)
+          look += `<div class="seg" role="radiogroup" aria-label="View">${T.views.map((v) => `<button role="radio" aria-checked="${it.view === v}" data-view="${esc(v)}">${v}</button>`).join("")}</div><div class="note">${VIEW_NOTES[it.view] || ""}</div>`;
+        if (it.type === "short")
+          look += `<div class="pvshort" id="pvShort">${pvShort(it)}</div><div class="note">The pin stands in the world; the caption is always shown.</div>`;
+        if (it.type === "long")
+          look +=
+            `<div class="fl"><b>Text</b><span class="hint">Headings, bold, lists</span></div>${md("body", it.body, 0, "Write the full text here.", { tall: true, head: true })}` +
+            `<div class="fl" style="margin-top:10px"><b>Narration</b></div>${fileRow(it, "voice", "audio/*", "No voice recording. Visitors read the text on a sign.", "Import voice recording...")}`;
+        if (it.type === "picture")
+          look +=
+            `<div style="margin-top:8px">${fileRow(it, "file", "image/*", "No picture chosen", "Choose picture...")}</div>` +
+            (it.view === "Then and now"
+              ? `<div style="margin-top:4px">${fileRow(it, "file2", "image/*", 'No "now" photo yet', "Choose...")}</div>`
+              : "");
+        if (it.type === "video")
+          look += `<div style="margin-top:8px">${fileRow(it, "file", "video/*", "No video chosen", "Choose video...")}</div>`;
+        if (it.type === "audio")
+          look +=
+            `<div style="margin-top:8px">${fileRow(it, "file", "audio/*", "No sound chosen", "Choose sound...")}</div>` +
+            (it.view === "Ambient zone"
+              ? `<div class="f" style="margin-top:6px"><label>Zone</label>${num("zone", it.zone || 10, "m", "", 1)}</div>`
+              : "");
+        if (it.type === "model") {
+          look += `<div style="margin-top:8px">${fileRow(it, "file", ".glb,.gltf", "No model file chosen", "Choose model...")}</div>`;
+          look += `<div class="fl" style="margin-top:10px"><b>Notes on the model</b><span class="hint">Hotspots visitors can tap</span></div>${listEdit(it, "notes", "Add a note")}`;
+          look += `<div class="fl" style="margin-top:10px"><b>Cut-away sections</b><span class="hint">Look inside</span></div>${listEdit(it, "sections", "Add a section")}`;
+        }
+        if (it.type === "character") {
+          const frames = it.frames || [
+            "Standing",
+            "Waving",
+            "Pointing",
+            "Talking",
+          ];
+          look +=
+            `<div class="fl"><b>Frames and poses</b></div><div class="chips">${frames.map((p, k) => `<button class="chip${(it.pose || 0) === k ? " on" : ""}" data-pose="${k}">${esc(p)}</button>`).join("")}<button class="chip add" data-act="addframe">${icon("plus")}Add a frame</button></div>` +
+            `<div class="fl" style="margin-top:10px"><b>What it says</b></div><textarea class="tfield" data-fld="says" placeholder="The guide's words">${esc(it.says || "")}</textarea>`;
+        }
+        if (it.type === "choice")
+          look += `<div class="fl"><b>Ways to choose</b></div>${listEdit(it, "options", "Add a way")}`;
+        if (it.type === "quiz") {
+          const a = it.answers || [];
+          look +=
+            `<div class="fl"><b>Answers</b><span class="hint">Mark the right one</span></div><div class="lst">${a.map((x, k) => `<div class="lrow"><input type="radio" name="qright" data-right="${k}" ${it.right === k ? "checked" : ""} aria-label="Right answer"><input class="tfield" data-li="answers" data-k="${k}" value="${esc(x)}" placeholder="Answer ${k + 1}" aria-label="Answer ${k + 1}"><button class="ib" data-lidel="answers" data-k="${k}" title="Remove">${icon("x")}</button></div>`).join("")}</div>` +
+            `<button class="chip add" style="margin-top:5px" data-liadd="answers">${icon("plus")}Add an answer</button>`;
+        }
+        if (it.type === "page")
+          look += `<div class="note">Shown full width on the visitor's screen, with a "Next" button.</div>`;
+        const lookSum = it.view || (T.where === "screen" ? "on screen" : "");
+        if (look) h += sec("look", "How visitors see it", esc(lookSum), look);
+        if (T.where === "world") {
+          h += sec(
+            "size",
+            "Size",
+            `${fmt(it.size)} m`,
+            `<div class="f"><label>${it.type === "model" ? "Height" : "Size"}</label>${num("size", fmt(it.size), "m", "")}</div><div class="note">${it.type === "model" && it.view === "Toy size" ? "The toy is shown at this height on its pedestal." : "Its height in the world."}</div>`,
+          );
+          h += sec(
+            "pos",
+            "Position",
+            `${fmt(it.e)} E, ${fmt(it.n)} N`,
+            `<div class="f"><label>Offset</label><div class="vec">${num("e", fmt(it.e), "m", "E")}${num("n", fmt(it.n), "m", "N")}</div></div>` +
+              `<div class="f"><label>Height</label>${num("h", fmt(it.h), "m", "U")}</div>` +
+              `<div class="f"><label>Heading</label>${num("hd", Math.round(it.hd), "deg", "", 1)}</div>` +
+              `<div class="note">Offsets are measured from the station's centre.</div>` +
+              `<div class="btnrow"><button class="btn sm" data-act="ground">${icon("ground")}Put on the ground</button><button class="btn sm" data-act="align">${icon("align")}Align to station</button></div>`,
+          );
+        }
+        if (f.kind === "entry") {
+          const k = f.story.entries.indexOf(it),
+            n = f.story.entries.length;
+          h += sec(
+            "move",
+            "Order in the story",
+            `${k + 1} of ${n}`,
+            `<div class="order"><span class="lbl">Plays as entry ${k + 1} of ${n}</span><button class="btn sm" data-mv="${it.id}" data-dir="-1" ${k === 0 ? "disabled" : ""}>${icon("up")}Earlier</button><button class="btn sm" data-mv="${it.id}" data-dir="1" ${k === n - 1 ? "disabled" : ""}>${icon("dn")}Later</button></div>`,
+          );
+        } else {
+          const opts = S.stations
+            .map(
+              (s, k) =>
+                `<option value="${s.id}" ${s === st ? "selected" : ""}>${k + 1} ${esc(s.name)}</option>`,
+            )
+            .join("");
+          h += sec(
+            "move",
+            "Move to another station",
+            "",
+            `<div class="f"><label>Station</label><select class="tfield" id="moveTo">${opts}</select></div><div class="note">It keeps its offset from the station's centre.</div><div class="btnrow"><button class="btn sm" data-act="moveto">${icon("move")}Move it there</button></div>`,
+          );
+        }
+        h += danger(
+          `Delete this ${T.label === "3D model" ? T.label : T.label.toLowerCase()}`,
+          "You can undo it.",
+          "Delete",
+        );
+        return h + "</div>";
+      }
+      function pvShort(it) {
+        const d = document.createElement("div");
+        d.innerHTML = it.desc || "";
+        return `<span class="pinv"></span><div class="bub"><b>${esc(it.name || "Caption")}</b><span>${esc(d.textContent || "Tap to read more")}</span></div>`;
+      }
+      function fileRow(it, key, accept, empty, label) {
+        const v = it[key];
+        return `<div class="filerow${v ? " set" : ""}">${icon(key === "voice" ? "audio" : "upload")}<span class="fn">${esc(v || empty)}</span><button class="btn sm" data-file="${key}" data-accept="${accept}">${v ? "Replace..." : label}</button></div>`;
+      }
+      function listEdit(it, key, addLabel) {
+        const a = it[key] || [];
+        return (
+          `<div class="lst">${a.map((x, k) => `<div class="lrow"><input class="tfield" data-li="${key}" data-k="${k}" value="${esc(x)}" placeholder="${key === "options" ? "Way " + (k + 1) : "Name it"}" aria-label="${addLabel}"><button class="ib" data-lidel="${key}" data-k="${k}" title="Remove">${icon("x")}</button></div>`).join("")}</div>` +
+          `<button class="chip add" style="margin-top:5px" data-liadd="${key}">${icon("plus")}${addLabel}</button>`
+        );
+      }
+      const fmt = (v) => (Math.round((+v || 0) * 10) / 10).toString();
+
+      function renderPanel() {
+        const f = find(sel);
+        document.body.classList.toggle("rightOpen", !!f);
+        vp.classList.toggle("has-right", !!f);
+        if (!f) {
+          right.hidden = true;
+          right.innerHTML = "";
+          return;
+        }
+        const body = right.querySelector(".rbody"),
+          top = body ? body.scrollTop : 0,
+          same = right.dataset.for === sel;
+        right.hidden = false;
+        right.innerHTML =
+          f.kind === "station"
+            ? stationPanel(f)
+            : f.kind === "story"
+              ? storyPanel(f)
+              : itemPanel(f);
+        right.dataset.for = sel;
+        right.querySelectorAll(".mde").forEach(updCount);
+        updNameCount();
+        if (same) right.querySelector(".rbody").scrollTop = top;
+      }
+      function flashSec(key) {
+        const s = right.querySelector(`[data-sec="${key}"]`);
+        if (!s) return;
+        s.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        s.classList.remove("flash");
+        void s.offsetWidth;
+        s.classList.add("flash");
+      }
+
+      /* panel events, all delegated */
+      right.addEventListener("mousedown", (e) => {
+        if (e.target.closest(".mdt button[data-cmd]:not([data-cmd=linkok])"))
+          e.preventDefault();
+      });
+      right.addEventListener("click", (e) => {
+        const f = find(sel);
+        if (!f) return;
+        const t = e.target;
+        const fb = t.closest("[data-fold]");
+        if (fb) {
+          fold[fb.dataset.fold] = !fold[fb.dataset.fold];
+          renderPanel();
+          return;
+        }
+        const cmd = t.closest("[data-cmd]");
+        if (cmd) {
+          mdCommand(cmd);
+          return;
+        }
+        const add = t.closest("[data-add]");
+        if (add) {
+          startPlacing(add.dataset.add, f);
+          return;
+        }
+        const s = t.closest("a[data-sel], .lrow[data-sel]");
+        if (s && !t.closest("button")) {
+          select(s.dataset.sel);
+          return;
+        }
+        const mv = t.closest("[data-mv]");
+        if (mv) {
+          moveEntry(mv.dataset.mv, +mv.dataset.dir);
+          return;
+        }
+        const vw = t.closest("[data-view]");
+        if (vw) {
+          push();
+          f.obj.view = vw.dataset.view;
+          renderPanel();
+          return;
+        }
+        const pc = t.closest("[data-pic]");
+        if (pc) {
+          picAction(pc.dataset.pic, f.obj);
+          return;
+        }
+        const pf = t.closest("[data-pickfile]");
+        if (pf) {
+          push();
+          f.obj.pic = FILE_PICS[+pf.dataset.pickfile];
+          filePickOpen = false;
+          renderAll();
+          toast("Station picture set");
+          return;
+        }
+        const fl = t.closest("[data-file]");
+        if (fl) {
+          chooseFile(fl.dataset.accept, (file) => {
+            push();
+            f.obj[fl.dataset.file] = file.name;
+            renderPanel();
+            toast(`${file.name} added`);
+          });
+          return;
+        }
+        const po = t.closest("[data-pose]");
+        if (po) {
+          f.obj.pose = +po.dataset.pose;
+          renderPanel();
+          return;
+        }
+        const la = t.closest("[data-liadd]");
+        if (la) {
+          push();
+          const k = la.dataset.liadd;
+          (f.obj[k] = f.obj[k] || []).push("");
+          renderPanel();
+          const ins = right.querySelectorAll(`[data-li="${k}"]`);
+          ins[ins.length - 1]?.focus();
+          return;
+        }
+        const ld = t.closest("[data-lidel]");
+        if (ld) {
+          push();
+          f.obj[ld.dataset.lidel].splice(+ld.dataset.k, 1);
+          renderPanel();
+          return;
+        }
+        const a = t.closest("[data-act]");
+        if (!a) return;
+        const act = a.dataset.act,
+          o = f.obj;
+        if (act === "close") {
+          select(null);
+        } else if (act === "lock") {
+          push();
+          o.locked = !o.locked;
+          renderAll();
+          toast(o.locked ? "Position locked" : "Position unlocked");
+        } else if (act === "earlier" || act === "later") {
+          const i = S.stations.indexOf(o),
+            j = i + (act === "earlier" ? -1 : 1);
+          if (j < 0 || j >= S.stations.length) return;
+          push();
+          S.stations.splice(i, 1);
+          S.stations.splice(j, 0, o);
+          renderAll();
+          toast(`Now station ${j + 1}`);
+        } else if (act === "ground") {
+          push();
+          o.h = 0;
+          renderPanel();
+          toast("Put on the ground");
+        } else if (act === "align") {
+          push();
+          o.hd = ((Math.atan2(-o.e, -o.n) * 180) / Math.PI + 360) % 360;
+          renderPanel();
+          toast(`Turned to face the station (${Math.round(o.hd)} deg)`);
+        } else if (act === "moveto") {
+          const to = S.stations.find((s) => s.id === $("moveTo").value);
+          if (!to || to === f.st) {
+            toast("It is already in that station");
+            return;
+          }
+          push();
+          f.st.children.splice(f.st.children.indexOf(o), 1);
+          to.children.push(o);
+          select(o.id);
+          toast(`Moved to ${to.name}`);
+        } else if (act === "addframe") {
+          push();
+          o.frames = (
+            o.frames || ["Standing", "Waving", "Pointing", "Talking"]
+          ).concat(`Frame ${(o.frames || [0, 0, 0, 0]).length + 1}`);
+          renderPanel();
+        } else if (act === "delete") {
+          askDelete(f);
+        }
+      });
+      right.addEventListener("focusin", (e) => {
+        if (e.target.matches("input, textarea, .mdc")) editSnap = true;
+      });
+      right.addEventListener("input", (e) => {
+        const f = find(sel);
+        if (!f) return;
+        const t = e.target;
+        if (t.type === "range" || t.type === "number" || t.type === "radio")
+          return;
+        if (editSnap) {
+          push();
+          editSnap = false;
+        }
+        if (t.id === "nameIn") {
+          f.obj.name = t.value;
+          updNameCount();
+          renderTree();
+          if (f.obj.type === "short") {
+            const pv = $("pvShort");
+            if (pv) pv.innerHTML = pvShort(f.obj);
+          }
+        } else if (t.classList.contains("mdc")) {
+          const m = t.closest(".mde");
+          f.obj[m.dataset.key] = t.innerHTML;
+          updCount(m);
+          if (f.obj.type === "short") {
+            const pv = $("pvShort");
+            if (pv) pv.innerHTML = pvShort(f.obj);
+          }
+        } else if (t.dataset.li) {
+          f.obj[t.dataset.li][+t.dataset.k] = t.value;
+        } else if (t.dataset.fld === "says") f.obj.says = t.value;
+      });
+      right.addEventListener("change", (e) => {
+        const f = find(sel);
+        if (!f) return;
+        const t = e.target;
+        if (t.dataset.right != null) {
+          push();
+          f.obj.right = +t.dataset.right;
+          return;
+        }
+        const fld = t.dataset.fld;
+        if (!fld || fld === "says") return;
+        let v = parseFloat(t.value);
+        if (!Number.isFinite(v)) {
+          renderPanel();
+          toast("Please enter a number");
+          return;
+        }
+        if (fld === "radius") v = Math.min(100, Math.max(5, Math.round(v)));
+        if (fld === "size") v = Math.max(0.1, Math.min(200, v));
+        if (fld === "hd") v = ((v % 360) + 360) % 360;
+        if (fld === "zone") v = Math.max(1, Math.min(200, v));
+        if (fld === "e" || fld === "n") v = Math.max(-500, Math.min(500, v));
+        push();
+        f.obj[fld] = v;
+        renderPanel();
+        renderTree();
+      });
+      right.addEventListener("input", (e) => {
+        // the radius slider updates live
+        const t = e.target;
+        if (t.type !== "range") return;
+        const f = find(sel);
+        if (!f) return;
+        if (editSnap) {
+          push();
+          editSnap = false;
+        }
+        f.obj.radius = +t.value;
+        const n = right.querySelector("input[type=number][data-fld=radius]");
+        if (n) n.value = t.value;
+        const sum = right.querySelector("[data-sec=place] .sum");
+        if (sum)
+          sum.textContent = `${t.value} m${f.obj.locked ? " · locked" : ""}`;
+      });
+      right.addEventListener("keydown", (e) => {
+        if (e.target.id === "nameIn" && e.key === "Enter") {
+          e.target.blur();
+        }
+        if (
+          e.target.classList.contains("mdc") &&
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === "k"
+        ) {
+          e.preventDefault();
+          mdCommand(e.target.closest(".mde").querySelector("[data-cmd=link]"));
+        }
+        if (e.target.closest(".mdl") && e.key === "Enter") {
+          e.preventDefault();
+          mdCommand(
+            e.target.closest(".mde").querySelector("[data-cmd=linkok]"),
+          );
+        }
+      });
+      right.addEventListener("paste", (e) => {
+        if (!e.target.closest(".mdc")) return;
+        e.preventDefault();
+        document.execCommand(
+          "insertText",
+          false,
+          e.clipboardData.getData("text/plain"),
+        );
+      });
+      function updNameCount() {
+        const ni = $("nameIn"),
+          c = $("nameCnt");
+        if (!ni || !c) return;
+        const cap = +ni.dataset.cap;
+        c.textContent = `${ni.value.length}/${cap}`;
+        c.classList.toggle("over", ni.value.length > cap);
+      }
+
+      /* the light Markdown writer */
+      let savedRange = null;
+      function mdCommand(btn) {
+        const m = btn.closest(".mde"),
+          c = m.querySelector(".mdc"),
+          cmd = btn.dataset.cmd;
+        if (cmd === "src") {
+          const pre = m.querySelector(".mdsrc"),
+            show = pre.hidden;
+          pre.hidden = !show;
+          c.hidden = show;
+          btn.classList.toggle("on", show);
+          if (show) pre.textContent = toMd(c).trim() || "(empty)";
+          return;
+        }
+        if (c.hidden) return;
+        c.focus();
+        if (cmd === "bold" || cmd === "italic") document.execCommand(cmd);
+        else if (cmd === "list") document.execCommand("insertUnorderedList");
+        else if (cmd === "head")
+          document.execCommand("formatBlock", false, "h4");
+        else if (cmd === "link") {
+          const s = getSelection();
+          savedRange = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
+          const row = m.querySelector(".mdl");
+          row.hidden = false;
+          row.querySelector("input").focus();
+          return;
+        } else if (cmd === "linkok") {
+          const row = m.querySelector(".mdl"),
+            url = row.querySelector("input").value.trim();
+          row.hidden = true;
+          if (!/^(https?:\/\/|mailto:)/i.test(url)) {
+            c.focus();
+            if (url) toast("A link needs a web address starting with https://");
+            return;
+          }
+          c.focus();
+          const s = getSelection();
+          s.removeAllRanges();
+          if (savedRange) s.addRange(savedRange);
+          if (s.isCollapsed)
+            document.execCommand(
+              "insertHTML",
+              false,
+              `<a href="${esc(url)}">${esc(url)}</a>`,
+            );
+          else document.execCommand("createLink", false, url);
+        }
+        c.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      function updCount(m) {
+        const cap = +m.dataset.cap,
+          cnt = m.querySelector(".cnt"),
+          c = m.querySelector(".mdc");
+        const n = c.textContent.replace(/\s+/g, " ").trim().length;
+        cnt.textContent = cap
+          ? n > cap
+            ? `${n - cap} over the ${cap} limit`
+            : `${n} / ${cap}`
+          : `${n} characters`;
+        cnt.classList.toggle("over", cap > 0 && n > cap);
+      }
+      function toMd(node) {
+        let out = "";
+        node.childNodes.forEach((n) => {
+          if (n.nodeType === 3) {
+            out += n.textContent;
+            return;
+          }
+          if (n.nodeType !== 1) return;
+          const t = n.tagName,
+            inner = toMd(n);
+          if (t === "B" || t === "STRONG") out += `**${inner}**`;
+          else if (t === "I" || t === "EM") out += `*${inner}*`;
+          else if (t === "A")
+            out += `[${inner}](${n.getAttribute("href") || ""})`;
+          else if (t === "UL")
+            (n.querySelectorAll(":scope > li").forEach((li) => {
+              out += `\n- ${toMd(li).trim()}`;
+            }),
+              (out += "\n"));
+          else if (t === "OL")
+            (n.querySelectorAll(":scope > li").forEach((li, k) => {
+              out += `\n${k + 1}. ${toMd(li).trim()}`;
+            }),
+              (out += "\n"));
+          else if (t === "H4") out += `\n## ${inner}\n`;
+          else if (t === "BR") out += "\n";
+          else if (t === "DIV" || t === "P") out += `\n${inner}`;
+          else out += inner;
+        });
+        return out;
+      }
+
+      /* station picture */
+      function picAction(a, st) {
+        if (a === "choose") {
+          filePickOpen = true;
+          renderPanel();
+        } else if (a === "cancel") {
+          filePickOpen = false;
+          renderPanel();
+        } else if (a === "remove") {
+          push();
+          st.pic = null;
+          renderAll();
+          toast("Station picture removed", true);
+        } else if (a === "upload")
+          chooseFile("image/*", (file) => {
+            const r = new FileReader();
+            r.onload = () => {
+              push();
+              st.pic = String(r.result);
+              filePickOpen = false;
+              renderAll();
+              toast("Station picture set");
+            };
+            r.onerror = () => toast("That file could not be read");
+            r.readAsDataURL(file);
+          });
+      }
+      function chooseFile(accept, cb) {
+        const fi = $("fileIn");
+        fi.accept = accept || "";
+        fi.value = "";
+        fi.onchange = () => {
+          const file = fi.files && fi.files[0];
+          if (file) cb(file);
+        };
+        fi.click();
+      }
+
+      /* ---------- adding: pick a tile, then the placement step ---------- */
+      function startPlacing(type, f) {
+        const T = TYPES[type];
+        const target = f.kind === "story" ? f.obj : f.st;
+        if (f.kind === "story" && T.where === "screen") {
+          addContent(type, f.obj, f.st, null);
+          return;
+        }
+        placing = {
+          type,
+          targetId: target.id,
+          stationId: f.st.id,
+          isStory: f.kind === "story",
+        };
+        showPlaceBar();
+        renderPanel();
+        frameOn(f);
+      }
+      function startStation() {
+        placing = { type: "station" };
+        select(null, { frame: false });
+        showPlaceBar();
+        closeLeftOnPhone();
+      }
+      function showPlaceBar() {
+        document.body.classList.add("placing");
+        $("notes").open = false; // the notes must not hide the spot to click
+        $("map").classList.add("placing");
+        const p = placing,
+          bar = $("placeBar"),
+          T = TYPES[p.type];
+        let msg, sub, skip;
+        if (p.type === "station") {
+          msg = "Click in the view where the new station should be";
+          sub = "It is added at the end of the tour.";
+          skip = "Put it in the middle";
+        } else {
+          const st = S.stations.find((s) => s.id === p.stationId);
+          msg =
+            p.type === "story"
+              ? "Click where the story should begin"
+              : `Click where the new ${T.label.toLowerCase()} should stand`;
+          sub = `Near ${esc(st.name)}${p.isStory ? ", in its story" : ""}. Esc cancels.`;
+          skip = "Drop it at the station";
+        }
+        bar.innerHTML =
+          `<span class="pic16">${icon(p.type === "station" ? "target" : T.icon)}</span><span class="pt"><b>${msg}</b><span>${sub}</span></span>` +
+          `<span class="btns"><button class="btn sm pri" id="bSkip">${skip}</button><button class="btn sm" id="bCancelPlace">Cancel</button></span>`;
+        bar.hidden = false;
+        $("bSkip").onclick = () => commitPlace(null);
+        $("bCancelPlace").onclick = cancelPlacing;
+        renderBar();
+        needDraw = true;
+      }
+      function endPlacing() {
+        placing = null;
+        ghost = null;
+        $("placeBar").hidden = true;
+        document.body.classList.remove("placing");
+        $("map").classList.remove("placing");
+      }
+      function cancelPlacing() {
+        const back = placing && placing.targetId;
+        endPlacing();
+        if (back) select(back, { frame: false });
+        else renderAll();
+        toast("Nothing added");
+      }
+      function commitPlace(w) {
+        const p = placing;
+        if (!p) return;
+        endPlacing();
+        if (p.type === "station") {
+          push();
+          const c = w || [cam.x, cam.y];
+          const st = {
+            id: nid("s"),
+            name: "New station",
+            desc: "",
+            pic: null,
+            radius: 20,
+            locked: false,
+            x: c[0],
+            y: c[1],
+            children: [],
+          };
+          S.stations.push(st);
+          select(st.id);
+          focusName();
+          toast(`Station ${S.stations.length} added. Give it a name.`);
+          return;
+        }
+        const st = S.stations.find((s) => s.id === p.stationId);
+        if (!st) {
+          renderAll();
+          return;
+        }
+        const story = p.isStory
+          ? st.children.find((c) => c.id === p.targetId)
+          : null;
+        let off;
+        if (w) off = [w[0] - st.x, w[1] - st.y];
+        else {
+          const k = st.children.length + (story ? story.entries.length : 0);
+          const a = ((k * 67 + 30) * Math.PI) / 180;
+          off = [Math.sin(a) * 4, Math.cos(a) * 4];
+        }
+        addContent(p.type, story, st, off, !w);
+      }
+      function addContent(type, story, st, off, dropped) {
+        push();
+        const T = TYPES[type],
+          e = off ? off[0] : 0,
+          n = off ? off[1] : 0;
+        const base = {
+          short: "New short text",
+          long: "New long text",
+          picture: "New picture",
+          video: "New video",
+          audio: "New sound",
+          model: "New 3D model",
+          character: "New character",
+          story: "New story",
+          page: "New text page",
+          choice: "New choice",
+          quiz: "New quiz",
+        }[type];
+        let obj;
+        if (type === "story") {
+          obj = mkStory(base, "", e, n, []);
+          st.children.push(obj);
+          fold.entries = true;
+          fold.addStory = true;
+        } else {
+          const extra =
+            type === "choice"
+              ? { options: ["", ""] }
+              : type === "quiz"
+                ? { answers: ["", ""], right: 0 }
+                : type === "model"
+                  ? { notes: [], sections: [] }
+                  : {};
+          obj = mkItem(type, base, "", e, n, extra);
+          if (story) story.entries.push(obj);
+          else st.children.push(obj);
+        }
+        select(obj.id, { frame: false });
+        if (type === "story") {
+          requestAnimationFrame(() => flashSec("addStory"));
+        }
+        focusName();
+        const dist = Math.hypot(e, n);
+        const where =
+          T.where === "screen"
+            ? "shown on the screen"
+            : dropped
+              ? "dropped at the station"
+              : `${Math.round(dist)} m from the station`;
+        // the toast's own words end in a full stop; a warning may follow
+        const said = `${T.label} added to ${story ? story.name : st.name}, ${where}.`;
+        toast(
+          type === "story"
+            ? "Story folder made. Add its first entry below."
+            : said,
+          false,
+          dist > st.radius && T.where === "world" && !dropped
+            ? "It stands outside the station's ring."
+            : "",
+        );
+      }
+      function focusName() {
+        if (isPhone()) return;
+        requestAnimationFrame(() => {
+          const ni = $("nameIn");
+          if (ni) {
+            ni.focus();
+            ni.select();
+          }
+        });
+      }
+      function moveEntry(id, dir) {
+        const f = find(id);
+        if (!f || f.kind !== "entry") return;
+        const a = f.story.entries,
+          i = a.indexOf(f.obj),
+          j = i + dir;
+        if (j < 0 || j >= a.length) return;
+        push();
+        a.splice(i, 1);
+        a.splice(j, 0, f.obj);
+        renderAll();
+      }
+
+      /* ---------- deleting ---------- */
+      function askDelete(f) {
+        const o = f.obj;
+        if (f.kind === "item" || f.kind === "entry") {
+          doDelete(f);
+          return;
+        }
+        const n = f.kind === "station" ? countItems(o) : o.entries.length;
+        const what = f.kind === "station" ? "station" : "story";
+        const detail =
+          f.kind === "station"
+            ? n
+              ? `Its <b>${plural(n, "item")}</b> go with it${stories(o).length ? ` (${stories(o).length === 1 ? "1 story" : stories(o).length + " stories"} and ${plural(freeItems(o).length, "free item")})` : ""}.`
+              : "It is empty."
+            : n
+              ? `Its <b>${plural(n, "entry").replace("entrys", "entries")}</b> go with it.`
+              : "It is empty.";
+        showModal(
+          `${icon("warn")}<span id="modalTtl">Delete the ${what} "${esc(o.name)}"?</span>`,
+          `${detail} You can undo this with Ctrl+Z or the Undo in the message that follows.`,
+          n
+            ? `Delete ${what} and ${f.kind === "station" ? plural(n, "item") : plural(n, "entry").replace("entrys", "entries")}`
+            : `Delete ${what}`,
+          () => doDelete(f),
+        );
+      }
+      function doDelete(f) {
+        push();
+        const o = f.obj;
+        if (f.kind === "station") S.stations.splice(S.stations.indexOf(o), 1);
+        else if (f.kind === "entry")
+          f.story.entries.splice(f.story.entries.indexOf(o), 1);
+        else f.st.children.splice(f.st.children.indexOf(o), 1);
+        sel =
+          f.kind === "station"
+            ? null
+            : f.kind === "entry"
+              ? f.story.id
+              : f.st.id;
+        renderAll();
+        toast(`Deleted "${o.name}"`, true);
+      }
+      function showModal(title, body, okLabel, onOk) {
+        const m = $("modal");
+        m.innerHTML = `<h2>${title}</h2><div class="mb">${body}</div><div class="mf"><button class="btn" id="mCancel">Cancel</button><button class="btn dangerfill" id="mOk">${esc(okLabel)}</button></div>`;
+        $("modalBack").classList.add("show");
+        $("mCancel").focus();
+        $("mCancel").onclick = closeModal;
+        $("mOk").onclick = () => {
+          closeModal();
+          onOk();
+        };
+      }
+      function closeModal() {
+        $("modalBack").classList.remove("show");
+      }
+      $("modalBack").addEventListener("click", (e) => {
+        if (e.target.id === "modalBack") closeModal();
+      });
+
+      /* ---------- toast ---------- */
+      let toastT = 0;
+      function toast(msg, withUndo, extra) {
+        const t = $("toast");
+        t.innerHTML = `<span class="tm">${esc(msg)}${extra ? ` <span style="color:var(--accentText)">${esc(extra)}</span>` : ""}</span>${withUndo ? '<button class="btn sm" id="tUndo">Undo</button>' : ""}`;
+        if (withUndo)
+          $("tUndo").onclick = () => {
+            undo();
+            t.classList.remove("show");
+          };
+        t.classList.add("show");
+        clearTimeout(toastT);
+        toastT = setTimeout(
+          () => t.classList.remove("show"),
+          withUndo ? 6000 : 2800,
+        );
+      }
+
+      /* ---------- bottom bar ---------- */
+      function renderBar() {
+        const f = find(sel),
+          acts = $("sbActs"),
+          hint = $("sbHint");
+        acts.innerHTML = f
+          ? `<button class="sact" data-sb="dup" title="Duplicate (Ctrl+D)">${icon("dup")}<span class="lbl">Duplicate</span></button>` +
+            (f.kind === "entry" && TYPES[f.obj.type].where === "screen"
+              ? ""
+              : `<button class="sact" data-sb="copypos" title="Copy the position">${icon("target")}<span class="lbl">Copy position</span></button>`)
+          : "";
+        hint.textContent = placing
+          ? "Click in the view to place it, or use the button at the top."
+          : !f
+            ? "Select a station to see its panel."
+            : f.kind === "station"
+              ? "Station selected. Esc closes the panel."
+              : f.kind === "story"
+                ? "Story selected. Its entries play in order."
+                : `${TYPES[f.obj.type].label} selected. Esc closes the panel.`;
+      }
+      $("sbActs").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-sb]");
+        const f = find(sel);
+        if (!b || !f) return;
+        if (b.dataset.sb === "dup") duplicate(f);
+        else {
+          const o = f.obj,
+            txt =
+              f.kind === "station"
+                ? latlon(o)
+                : `${fmt(o.e)} m E, ${fmt(o.n)} m N from ${f.st.name}`;
+          try {
+            navigator.clipboard &&
+              navigator.clipboard.writeText(txt).catch(() => {});
+          } catch (_) {
+            /* clipboard is optional here */
+          }
+          toast(`Position copied: ${txt}`);
+        }
+      });
+      function cloneDeep(o) {
+        const c = JSON.parse(JSON.stringify(o));
+        const re = (x) => {
+          x.id = nid(x.id[0]);
+          (x.children || []).forEach(re);
+          (x.entries || []).forEach(re);
+        };
+        re(c);
+        return c;
+      }
+      function duplicate(f) {
+        push();
+        const c = cloneDeep(f.obj);
+        c.name = f.obj.name + " (copy)";
+        if (f.kind === "station") {
+          c.x += 25;
+          c.y -= 15;
+          S.stations.splice(S.stations.indexOf(f.obj) + 1, 0, c);
+        } else if (f.kind === "entry")
+          f.story.entries.splice(f.story.entries.indexOf(f.obj) + 1, 0, c);
+        else {
+          c.e += 2;
+          f.st.children.splice(f.st.children.indexOf(f.obj) + 1, 0, c);
+        }
+        select(c.id, { frame: false });
+        toast(`Duplicated "${f.obj.name}"`, true);
+      }
+
+      /* ---------- the view: a flat drawing standing in for the 3D map ---------- */
+      const cv = $("map"),
+        g = cv.getContext("2d");
+      let selLabel = null;
+      let W = 0,
+        H = 0,
+        DPR = 1,
+        needDraw = true,
+        ghost = null;
+      const cam = { x: 0, y: 0, s: 1.4, tx: 0, ty: 0, ts: 1.4 };
+      const TILT = 0.64;
+      function panelW(id) {
+        const el = $(id);
+        if (isPhone() || el.hidden) return 0;
+        return el.offsetWidth;
+      }
+      function viewCenter() {
+        // on a phone the selection's sheet covers the lower part of the view,
+        // except while placing, when the sheet steps aside
+        if (isPhone())
+          return [
+            W / 2,
+            document.body.classList.contains("rightOpen") && !placing
+              ? H * 0.2
+              : H * 0.42,
+          ];
+        const l = panelW("left"),
+          r = panelW("right");
+        return [l + (W - l - r) / 2, H * 0.55];
+      }
+      function w2s(x, y) {
+        const [cx, cy] = viewCenter();
+        return [cx + (x - cam.x) * cam.s, cy - (y - cam.y) * cam.s * TILT];
+      }
+      function s2w(px, py) {
+        const [cx, cy] = viewCenter();
+        return [(px - cx) / cam.s + cam.x, -(py - cy) / (cam.s * TILT) + cam.y];
+      }
+      function resize() {
+        DPR = Math.min(2, devicePixelRatio || 1);
+        W = vp.clientWidth;
+        H = vp.clientHeight;
+        cv.width = W * DPR;
+        cv.height = H * DPR;
+        needDraw = true;
+      }
+      function frameAll() {
+        const xs = S.stations.map((s) => s.x),
+          ys = S.stations.map((s) => s.y);
+        if (!xs.length) return;
+        const l = panelW("left"),
+          r = panelW("right"),
+          aw = Math.max(120, W - l - r - 80),
+          ah = Math.max(120, (isPhone() && find(sel) ? H * 0.3 : H) - 120);
+        cam.tx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        cam.ty = (Math.min(...ys) + Math.max(...ys)) / 2;
+        cam.ts = Math.max(
+          0.3,
+          Math.min(
+            aw / (Math.max(...xs) - Math.min(...xs) + 60),
+            ah / ((Math.max(...ys) - Math.min(...ys) + 60) * TILT),
+          ),
+        );
+      }
+      function frameOn(f) {
+        cam.tx = f.st.x;
+        cam.ty = f.st.y;
+        cam.ts = Math.max(cam.ts, isPhone() ? 3.2 : 4.2);
+      }
+      const STREETS = [
+        [
+          [-400, 20],
+          [-160, -40],
+          [0, -5],
+          [150, 60],
+          [400, 70],
+        ],
+        [
+          [-40, -320],
+          [-20, -130],
+          [0, 0],
+          [-60, 150],
+          [-80, 360],
+        ],
+        [
+          [160, -300],
+          [140, -80],
+          [150, 60],
+          [170, 320],
+        ],
+        [
+          [-400, -160],
+          [-160, -40],
+          [60, -130],
+          [400, -170],
+        ],
+        [
+          [-380, 220],
+          [-60, 150],
+          [120, 190],
+          [400, 230],
+        ],
+        [
+          [60, -130],
+          [90, -40],
+          [150, 60],
+        ],
+      ];
+      const RIVER = [
+        [-300, 380],
+        [-220, 160],
+        [-160, -40],
+        [-120, -200],
+        [-40, -380],
+      ];
+      const BLOCKS = (() => {
+        const b = [];
+        let s = 7;
+        const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+        for (let i = 0; i < 70; i++)
+          b.push([
+            r() * 760 - 380,
+            r() * 700 - 350,
+            14 + r() * 26,
+            10 + r() * 22,
+          ]);
+        return b;
+      })();
+      function line(pts, w, col) {
+        g.beginPath();
+        pts.forEach((p, k) => {
+          const [x, y] = w2s(p[0], p[1]);
+          k ? g.lineTo(x, y) : g.moveTo(x, y);
+        });
+        g.strokeStyle = col;
+        g.lineWidth = w;
+        g.lineCap = "round";
+        g.lineJoin = "round";
+        g.stroke();
+      }
+      function draw() {
+        g.setTransform(DPR, 0, 0, DPR, 0, 0);
+        const bg = g.createLinearGradient(0, 0, 0, H);
+        bg.addColorStop(0, "#15171a");
+        bg.addColorStop(0.18, "#1f2226");
+        bg.addColorStop(1, "#25282d");
+        g.fillStyle = bg;
+        g.fillRect(0, 0, W, H);
+        g.fillStyle = "rgba(255,255,255,.035)";
+        for (const b of BLOCKS) {
+          const [x, y] = w2s(b[0], b[1]);
+          g.fillRect(x, y, b[2] * cam.s, b[3] * cam.s * TILT);
+        }
+        line(RIVER, 22 * cam.s, "#1e2c38");
+        for (const s of STREETS) {
+          line(s, 9 * cam.s + 2, "#30343a");
+          line(s, 6 * cam.s, "#3a3e45");
+        }
+        const f = find(sel),
+          cur = f ? f.st : null;
+        // the walk between stations
+        g.setLineDash([4, 5]);
+        line(
+          S.stations.map((s) => [s.x, s.y]),
+          1.5,
+          "rgba(233,162,59,.35)",
+        );
+        g.setLineDash([]);
+        const pst =
+          placing && placing.stationId
+            ? S.stations.find((s) => s.id === placing.stationId)
+            : null;
+        S.stations.forEach((st, i) => {
+          const [x, y] = w2s(st.x, st.y),
+            isCur = st === cur || st === pst;
+          if (isCur) {
+            g.beginPath();
+            g.ellipse(
+              x,
+              y,
+              st.radius * cam.s,
+              st.radius * cam.s * TILT,
+              0,
+              0,
+              Math.PI * 2,
+            );
+            g.fillStyle = "rgba(233,162,59,.07)";
+            g.fill();
+            g.setLineDash([5, 4]);
+            g.strokeStyle = "rgba(233,162,59,.8)";
+            g.lineWidth = 1.3;
+            g.stroke();
+            g.setLineDash([]);
+          }
+          if (isCur || cam.s > 3) drawItems(st);
+          g.beginPath();
+          g.arc(x, y, 6, 0, Math.PI * 2);
+          g.fillStyle = sel === st.id ? "#e9a23b" : "#8db8e3";
+          g.fill();
+          g.lineWidth = 2;
+          g.strokeStyle = "#15171a";
+          g.stroke();
+          // its tag
+          g.font = "600 10px Consolas, monospace";
+          const nt = String(i + 1);
+          g.font = '11px "Segoe UI", system-ui, sans-serif';
+          let nm = st.name;
+          if (nm.length > 24) nm = nm.slice(0, 23) + "...";
+          const tw = g.measureText(nm).width,
+            bw = tw + 30,
+            bx = x - bw / 2,
+            by = y - 30;
+          g.fillStyle = "rgba(28,29,32,.9)";
+          g.strokeStyle = sel === st.id ? "#e9a23b" : "rgba(255,255,255,.1)";
+          g.lineWidth = 1;
+          rr(bx, by, bw, 18, 3);
+          g.fill();
+          g.stroke();
+          g.fillStyle = sel === st.id ? "#e9a23b" : "#3d5a78";
+          rr(bx + 3, by + 3, 18, 12, 2);
+          g.fill();
+          g.fillStyle = sel === st.id ? "#1c1c1c" : "#e6f0fa";
+          g.font = "600 9.5px Consolas, monospace";
+          g.textAlign = "center";
+          g.fillText(nt, bx + 12, by + 12.5);
+          g.textAlign = "left";
+          g.fillStyle = "#e6e8ec";
+          g.font = '11px "Segoe UI", system-ui, sans-serif';
+          g.fillText(nm, bx + 25, by + 13);
+        });
+        if (selLabel) {
+          g.font = '10.5px "Segoe UI", system-ui, sans-serif';
+          const tw = g.measureText(selLabel.nm).width;
+          g.fillStyle = "rgba(28,29,32,.92)";
+          rr(selLabel.x + 11, selLabel.y - 8, tw + 10, 16, 3);
+          g.fill();
+          g.fillStyle = "#f3c47e";
+          g.fillText(selLabel.nm, selLabel.x + 16, selLabel.y + 4);
+          selLabel = null;
+        }
+        if (placing && ghost) {
+          const [gx, gy] = w2s(ghost[0], ghost[1]);
+          if (pst) {
+            const [sx, sy] = w2s(pst.x, pst.y);
+            g.setLineDash([3, 4]);
+            g.beginPath();
+            g.moveTo(sx, sy);
+            g.lineTo(gx, gy);
+            g.strokeStyle = "rgba(233,162,59,.8)";
+            g.lineWidth = 1.2;
+            g.stroke();
+            g.setLineDash([]);
+            const d = Math.hypot(ghost[0] - pst.x, ghost[1] - pst.y);
+            g.font = "10.5px Consolas, monospace";
+            const txt = `${Math.round(d)} m${d > pst.radius ? " (outside the ring)" : ""}`;
+            g.fillStyle = "rgba(28,29,32,.92)";
+            const tw = g.measureText(txt).width;
+            rr(gx + 12, gy - 22, tw + 10, 16, 3);
+            g.fill();
+            g.fillStyle = d > pst.radius ? "#f3c47e" : "#d9dbe0";
+            g.fillText(txt, gx + 17, gy - 10.5);
+          }
+          g.beginPath();
+          g.arc(gx, gy, 9, 0, Math.PI * 2);
+          g.strokeStyle = "#e9a23b";
+          g.lineWidth = 2;
+          g.stroke();
+          g.beginPath();
+          g.arc(gx, gy, 3, 0, Math.PI * 2);
+          g.fillStyle = "#e9a23b";
+          g.fill();
+        }
+      }
+      function rr(x, y, w, h, r) {
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.arcTo(x + w, y, x + w, y + h, r);
+        g.arcTo(x + w, y + h, x, y + h, r);
+        g.arcTo(x, y + h, x, y, r);
+        g.arcTo(x, y, x + w, y, r);
+        g.closePath();
+      }
+      function worldThings(st) {
+        const out = [];
+        for (const c of st.children) {
+          out.push({
+            o: c,
+            x: st.x + c.e,
+            y: st.y + c.n,
+            type: c.kind === "story" ? "story" : c.type,
+          });
+          if (c.kind === "story")
+            c.entries.forEach((e) => {
+              if (TYPES[e.type].where === "world" && (e.e || e.n))
+                out.push({
+                  o: e,
+                  x: st.x + e.e,
+                  y: st.y + e.n,
+                  type: e.type,
+                  inStory: c,
+                });
+            });
+        }
+        return out;
+      }
+      function drawItems(st) {
+        const f = find(sel);
+        for (const t of worldThings(st)) {
+          const [x, y] = w2s(t.x, t.y),
+            isSel = sel === t.o.id,
+            inSelStory = f && f.kind === "story" && t.inStory === f.obj;
+          g.beginPath();
+          if (t.type === "story") rr(x - 5, y - 5, 10, 10, 2);
+          else g.arc(x, y, 4.2, 0, Math.PI * 2);
+          g.fillStyle = TYPES[t.type].color;
+          g.globalAlpha = t.inStory && !inSelStory && !isSel ? 0.45 : 1;
+          g.fill();
+          g.globalAlpha = 1;
+          g.lineWidth = 1.5;
+          g.strokeStyle = "#15171a";
+          g.stroke();
+          if (isSel || inSelStory) {
+            g.beginPath();
+            g.arc(x, y, 9, 0, Math.PI * 2);
+            g.strokeStyle = "#e9a23b";
+            g.lineWidth = 1.6;
+            g.stroke();
+          }
+          if (isSel) {
+            let nm = t.o.name;
+            if (nm.length > 26) nm = nm.slice(0, 25) + "...";
+            selLabel = { nm, x, y }; // drawn last, over the station tags
+          }
+        }
+      }
+      function tick() {
+        const k = 0.18,
+          dx = cam.tx - cam.x,
+          dy = cam.ty - cam.y,
+          ds = cam.ts - cam.s;
+        if (
+          Math.abs(dx) > 0.01 ||
+          Math.abs(dy) > 0.01 ||
+          Math.abs(ds) > 0.001
+        ) {
+          cam.x += dx * k;
+          cam.y += dy * k;
+          cam.s += ds * k;
+          needDraw = true;
+        }
+        if (needDraw) {
+          needDraw = false;
+          draw();
+        }
+        requestAnimationFrame(tick);
+      }
+      function hit(px, py) {
+        let best = null,
+          bd = 12;
+        for (const st of S.stations) {
+          const [x, y] = w2s(st.x, st.y);
+          const d = Math.hypot(px - x, py - y);
+          if (d < bd) {
+            bd = d;
+            best = { id: st.id, st };
+          }
+          const f = find(sel);
+          if ((f && f.st === st) || cam.s > 3)
+            for (const t of worldThings(st)) {
+              const [ix, iy] = w2s(t.x, t.y);
+              const di = Math.hypot(px - ix, py - iy);
+              if (di < bd - 2) {
+                bd = di;
+                best = { id: t.o.id };
+              }
+            }
+          // the tag above a station is clickable too
+          if (py > y - 31 && py < y - 11 && Math.abs(px - x) < 60 && !best)
+            best = { id: st.id, st };
+        }
+        return best;
+      }
+      let down = null;
+      cv.addEventListener("pointerdown", (e) => {
+        const r = cv.getBoundingClientRect(),
+          px = e.clientX - r.left,
+          py = e.clientY - r.top;
+        const h = placing ? null : hit(px, py);
+        down = { px, py, cx: cam.x, cy: cam.y, moved: false, h, snap: false };
+        cv.setPointerCapture(e.pointerId);
+      });
+      cv.addEventListener("pointermove", (e) => {
+        const r = cv.getBoundingClientRect(),
+          px = e.clientX - r.left,
+          py = e.clientY - r.top;
+        if (placing) {
+          ghost = s2w(px, py);
+          needDraw = true;
+        }
+        if (!down) return;
+        if (!down.moved && Math.hypot(px - down.px, py - down.py) > 4) {
+          down.moved = true;
+          if (down.h && down.h.st && down.h.st.locked)
+            toast(
+              "This station's position is locked. Unlock it under Place and reach.",
+            );
+        }
+        if (!down.moved) return;
+        const st = down.h && down.h.st;
+        if (st && !st.locked && !placing) {
+          if (!down.snap) {
+            push();
+            down.snap = true;
+            if (sel !== st.id) {
+              sel = st.id;
+              renderAll();
+            }
+          }
+          const w = s2w(px, py);
+          st.x = w[0];
+          st.y = w[1];
+          needDraw = true;
+          cv.classList.add("dragging");
+        } else if (!st) {
+          cam.x = cam.tx = down.cx - (px - down.px) / cam.s;
+          cam.y = cam.ty = down.cy + (py - down.py) / (cam.s * TILT);
+          needDraw = true;
+          cv.classList.add("dragging");
+        }
+      });
+      cv.addEventListener("pointerup", (e) => {
+        cv.classList.remove("dragging");
+        const d = down;
+        down = null;
+        if (!d) return;
+        if (d.snap) {
+          renderPanel();
+          return;
+        }
+        if (d.moved) return;
+        if (placing) {
+          const r = cv.getBoundingClientRect();
+          commitPlace(s2w(e.clientX - r.left, e.clientY - r.top));
+          return;
+        }
+        if (d.h) select(d.h.id, { frame: false });
+        else if (sel) select(null);
+      });
+      cv.addEventListener("pointerleave", () => {
+        if (placing) {
+          ghost = null;
+          needDraw = true;
+        }
+      });
+      cv.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          cam.ts = Math.max(
+            0.3,
+            Math.min(14, cam.ts * (e.deltaY < 0 ? 1.15 : 1 / 1.15)),
+          );
+        },
+        { passive: false },
+      );
+      $("zin").onclick = () => {
+        cam.ts = Math.min(14, cam.ts * 1.4);
+      };
+      $("zout").onclick = () => {
+        cam.ts = Math.max(0.3, cam.ts / 1.4);
+      };
+      $("compass").onclick = () => {
+        frameAll();
+        toast("North is up");
+      };
+
+      /* ---------- top bar and keys ---------- */
+      function toggleMenu(btn, menu) {
+        const show = menu.hidden;
+        document.querySelectorAll(".menu").forEach((m) => (m.hidden = true));
+        document
+          .querySelectorAll("[aria-haspopup]")
+          .forEach((b) => b.setAttribute("aria-expanded", "false"));
+        menu.hidden = !show;
+        btn.setAttribute("aria-expanded", String(show));
+      }
+      $("bFile").onclick = (e) => {
+        e.stopPropagation();
+        toggleMenu($("bFile"), $("mFile"));
+      };
+      $("bView").onclick = (e) => {
+        e.stopPropagation();
+        toggleMenu($("bView"), $("mView"));
+      };
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".menu-wrap"))
+          document.querySelectorAll(".menu").forEach((m) => (m.hidden = true));
+      });
+      document.querySelectorAll("[data-menu]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            b.closest(".menu").hidden = true;
+            const m = b.dataset.menu;
+            if (m === "save") save();
+            else if (m === "frame") frameAll();
+            else if (m === "notes") $("notes").open = true;
+            else toast("Not part of this prototype");
+          }),
+      );
+      function save() {
+        setDirty(false);
+        toast("Saved");
+      }
+      $("bUndo").onclick = undo;
+      $("bRedo").onclick = redo;
+      $("bAddStation").onclick = startStation;
+      $("bStations").onclick = () => document.body.classList.toggle("leftOpen");
+      $("bCloseLeft").onclick = () =>
+        document.body.classList.remove("leftOpen");
+      $("tourTitle").onclick = () =>
+        toast("The tour's details are not part of this prototype");
+      document.addEventListener("keydown", (e) => {
+        const typing = e.target.closest(
+          "input, textarea, select, [contenteditable=true]",
+        );
+        const k = e.key.toLowerCase(),
+          mod = e.ctrlKey || e.metaKey;
+        if (e.key === "Escape") {
+          if ($("modalBack").classList.contains("show")) {
+            closeModal();
+            return;
+          }
+          if (placing) {
+            cancelPlacing();
+            return;
+          }
+          if (typing) {
+            e.target.blur();
+            return;
+          }
+          if (sel) select(null);
+          return;
+        }
+        if (mod && k === "s") {
+          e.preventDefault();
+          save();
+          return;
+        }
+        if (typing) return;
+        if (mod && k === "z") {
+          e.preventDefault();
+          e.shiftKey ? redo() : undo();
+        } else if (mod && k === "y") {
+          e.preventDefault();
+          redo();
+        } else if (mod && k === "d") {
+          e.preventDefault();
+          const f = find(sel);
+          if (f) duplicate(f);
+        } else if (e.key === "Home") frameAll();
+      });
+
+      function renderAll() {
+        renderTree();
+        renderPanel();
+        renderBar();
+        updUndo();
+        needDraw = true;
+      }
+      addEventListener("resize", () => {
+        resize();
+      });
+
+      /* ---------- start ---------- */
+      FILE_PICS = FILES.map(([k, s]) => makePic(k, s));
+      S = sampleTour();
+      resize();
+      frameAll();
+      cam.x = cam.tx;
+      cam.y = cam.ty;
+      cam.s = cam.ts;
+      $("notes").open = innerWidth >= 1100 && innerHeight >= 600;
+      renderAll();
+      setDirty(false);
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

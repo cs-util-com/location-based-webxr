@@ -145,6 +145,54 @@ wired into its logic: every interaction is faked.
   2026-10-29. Each cuts the AI's four-pose picture in the browser (alpha, or a
   flood fill from the border on white), offers a steady body when the
   talking frames jitter, and draws its own sample pictures, good and broken.
+- `editor-panel-1-explorer/` ... `editor-panel-4-place-in-world/` - four
+  directions for the editor's station list, its context-sensitive right
+  panel and adding every content type (a file explorer, a content gallery,
+  tabs with a toolbar, placing in the view), each on the same sample tour
+  with story folders listed before free items and a light Markdown
+  description; made 2026-11-03.
+- `editor-bottom-panel-1-tabs/`, `editor-bottom-panel-2-status-drawer/` -
+  two directions for the editor's bottom bar and a collapsible panel for
+  problems, history, map loading and performance (one tabbed panel, or a
+  drawer per status item); made 2026-11-03.
+- `globe-look-1-glitter-haze/` ... `globe-look-4-relief-deck/` - four
+  directions for the globe seen over open sea with the sun low (sun glitter,
+  haze, cumulus clouds): the sea and the air alone, raymarched clouds, lit
+  puff clusters, a relief cloud deck. Each has the same three views
+  (`?view=10km|3km|30km`), `?sun=`, a `?tier=low|high` switch, a frame-time
+  readout and `window.lookStats()`, and notes with its own self-check;
+  made 2026-11-03.
+- `globe-look-1-glitter-haze-r2/` ... `globe-look-4-relief-deck-r2/`,
+  `globe-look-5-puffs-on-relief/`, `globe-look-6-raymarch-relief/` - the
+  second round: the first four with their visible faults fixed (clouds near
+  the camera, wobble, popping puffs, see-through bases), two combinations of
+  their cloud styles, a free camera on every page, and a frame meter that
+  reports frames per second, long frames, the GPU time where the browser
+  offers it, and a Measure button that renders each frame 1 to 8 times to
+  get the real cost of one frame on a display-capped screen; made
+  2026-11-04.
+- `globe-look-7-raymarch-lod/`, `globe-look-8-raymarch-living/`,
+  `globe-look-9-raymarch-sharp/` - the third round, all from the raymarched
+  clouds of round 2: a cloud resolution that follows the camera's distance
+  without a visible switch (`?lod=0|1`), a region-sized cloud field that
+  does not repeat and clouds that slowly change shape (`?field=tiled|random`,
+  `?evolve=0|1`, `?timescale=`), and full-resolution clouds rebuilt over
+  four frames with the camera's motion (`?method=base|new`). Each also has
+  denser clouds and a far sea that keeps its long waves in the cheap tier;
+  made 2026-11-04.
+- `globe-look-10-living-lod/`, `globe-look-11-no-slices/` - the fourth
+  round: the living cloud field combined with the distance scale, without
+  the slices, the far flicker and the small round clouds of round 3
+  (`?skip=live`, `?refdiv=` bring parts back), and a study of the slices
+  (`?deband=off|refine|fine|entry|strat`) with a banding measure per method.
+  Both pages' frame meters follow the display's refresh rate as it changes;
+  made 2026-11-04.
+- `globe-look-10-living-lod-r2/` - the fifth round, a copy of the living
+  clouds page: far clouds marched with longer steps so they stay until the
+  haze hides them (`?far=new|old`), the sun disc and halo hidden by the
+  cloud in front of it (`?sunfix=1|0`), and a medium quality setting
+  (`?tier=low|medium|high`, `?mset=a|b|c|d` for the candidates measured);
+  made 2026-11-04.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
