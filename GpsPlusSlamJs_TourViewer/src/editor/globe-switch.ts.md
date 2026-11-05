@@ -36,8 +36,10 @@ it. An old `globe=1` link keeps opening the globe.
   - `osmGain` - default 0.55, range 0.2-1: the street map's darkening
     gain (its luma compressed toward it, `patchOsmFade` in the Globe
     package), so the map's bright tiles do not show the fade's edge as a
-    pale disc; the link's value is its A/B switch. Measured by
-    `playwright-tests/editor3d-globe-osm-gain.spec.js` (2026-11-03, the
+    pale disc; the link's value is its A/B switch. Measured by a
+    browser spec since retired (its parsing is held by
+    `globe-switch.test.ts`, its effect by the Globe package's
+    `globe-osm-overlay.test.ts`) (2026-11-03, the
     map's land colour over the globe's imagery, the step at the fade's edge
     as the ratio of the mapped ground's luma to the bare ground's, 69 of
     255): gain 1 3.40, 0.7 3.00, 0.6 2.81, 0.55 2.71, 0.5 2.60, 0.45 2.48.

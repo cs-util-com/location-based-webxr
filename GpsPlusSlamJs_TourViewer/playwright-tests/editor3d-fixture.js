@@ -346,3 +346,15 @@ export async function noClouds(page) {
     /** @type {any} */ (window).__tourEditorClouds = { off: true };
   });
 }
+
+/**
+ * A screenshot for the check by eye, taken only with PLAYWRIGHT_CAPTURE=1:
+ * no assertion reads it, and in this software renderer each one waits on
+ * the globe's frames.
+ * @param {import("@playwright/test").Page | import("@playwright/test").Locator} target
+ * @param {string} path
+ */
+export async function capture(target, path) {
+  if (process.env.PLAYWRIGHT_CAPTURE !== "1") return;
+  await target.screenshot({ path });
+}

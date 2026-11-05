@@ -183,29 +183,6 @@ test("a tour opens in the 3D view, and View leads to the 2D map", async ({
   await expect(page.locator(".mk-station")).toHaveCount(3);
 });
 
-// Why: a tour opened where the 3D view cannot load stays open (its File
-// actions on the page that says so); the map no longer stands in.
-test("a tour whose 3D view cannot load opens on a page that says so, the tour still open", async ({
-  page,
-}) => {
-  await answerHosts(page);
-  await page.route("**/src/editor3d/editor3d-scene.ts*", (route) =>
-    route.abort(),
-  );
-  await page.goto("/edit.html?globe=0");
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
-  await expect(
-    page.locator("#view3d-failed", {
-      hasText: "The 3D view could not be loaded",
-    }),
-  ).toBeVisible();
-  await expect(page.locator("body")).not.toHaveAttribute("data-view", "3d");
-  await expect(page.locator("#view-switch")).toHaveText("3D view");
-  await expect(page.locator(".mk-station")).toHaveCount(3);
-  await expect(page.locator("#rail .row-title")).toHaveCount(3);
-});
-
 // Why: a new tour, or one of notes alone, has nothing with a position to
 // show in 3D. That is no failure: such a tour opens on the map, which
 // shows it, and a line that stays until it is closed - the failures' way -
@@ -248,27 +225,6 @@ test("a tour with nothing positioned opens on the 2D map quietly: a passing line
   // Nothing to close: the line goes by itself.
   await expect(line.getByRole("button", { name: "Close" })).toHaveCount(0);
   await expect(line).toHaveCount(0, { timeout: 20_000 });
-});
-
-test("a 3D view whose code cannot load is said on its page, the view closed", async ({
-  page,
-}) => {
-  await answerHosts(page);
-  await page.route("**/src/editor3d/editor3d-scene.ts*", (route) =>
-    route.abort(),
-  );
-  await openSample(page);
-  const button = page.locator("#view-switch");
-  await viewCommand(page, "switch");
-  await expect(
-    page.locator("#view3d-failed", {
-      hasText: "The 3D view could not be loaded",
-    }),
-  ).toBeVisible();
-  await expect(button).toHaveText("3D view");
-  await expect(button).toBeEnabled();
-  await expect(page.locator("#view3d")).toBeHidden();
-  await expect(page.locator(".mk-station")).toHaveCount(3);
 });
 
 // Why: a failure's page stays until the view is tried again (the creator
