@@ -14,6 +14,9 @@ import {
   gateCommands,
   cascadeCommands,
   cascadeTierBase,
+  MAIN_LINES,
+  firstMergeBase,
+  fastGateOptions,
   describeRun,
   FRAMEWORK_BUILD_IF_STALE,
 } from './select.mjs';
@@ -240,6 +243,26 @@ describe('gateCommands', () => {
     expect(cascadeTierBase({ env: {}, ref: null, mergeBase: () => null })).toBeNull();
   });
 
+  // Why: a clone whose GitHub remote is called `origin`, or one with only a
+  // local `main`, found no merge-base with a hardcoded `origin2/main`, and
+  // the cascade's browser tier silently ran only the @pr tests.
+  it('takes the merge-base with the first main line that has one, in order', () => {
+    expect(MAIN_LINES).toEqual(['origin2/main', 'origin/main', 'main']);
+    /** @type {string[]} */
+    const asked = [];
+    const only = (/** @type {string} */ line) => (/** @type {string} */ candidate) => {
+      asked.push(candidate);
+      return candidate === line ? 'mb-' + candidate : null;
+    };
+    expect(firstMergeBase(only('origin2/main'))).toBe('mb-origin2/main');
+    expect(asked).toEqual(['origin2/main']);
+    asked.length = 0;
+    expect(firstMergeBase(only('main'))).toBe('mb-main');
+    expect(asked).toEqual(['origin2/main', 'origin/main', 'main']);
+    expect(firstMergeBase(only('origin/main'))).toBe('mb-origin/main');
+    expect(firstMergeBase(() => null)).toBeNull();
+  });
+
   it('never puts the changed packages in skip mode', () => {
     // The inverse of the assertion above, stated separately because it is the
     // one that would break silently: a changed package running without its own
@@ -259,6 +282,68 @@ describe('gateCommands', () => {
     for (const name of ['a', 'b', 'c']) {
       expect(dependents.command).toContain(`--filter "...${name}"`);
       expect(dependents.command).toContain(`--filter "!${name}"`);
+    }
+  });
+});
+
+// Why this test matters: the related-only unit run is licensed for the
+// CHANGED packages of the per-commit fast gate and nothing else. The ref
+// reaches them only when the caller passes `relatedUnitEnv` (the fast gate
+// does, the milestone run does not), and the dependents get it cleared, so an
+// inherited value can never narrow a dependent's suite.
+describe('gateCommands: related unit tests in the fast gate', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+  const RELATED = 'GATE_UNIT_RELATED_REF';
+
+  it('hands the ref to the changed packages and clears it for the dependents', () => {
+    const commands = gateCommands(['gps-plus-slam-tour-viewer'], {
+      skipBrowserEnv: ENV,
+      relatedUnitEnv: RELATED,
+      ref: 'HEAD',
+    });
+    const changed = commands.find((c) => c.command.endsWith('--filter gps-plus-slam-tour-viewer test'));
+    const dependents = commands.find((c) => c.command.includes('"...gps-plus-slam-tour-viewer"'));
+    expect(changed?.env[RELATED]).toBe('HEAD');
+    expect(dependents?.env[RELATED]).toBe('');
+  });
+
+  it('never sets it without the option (the milestone run)', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' })) {
+      expect(command.env).not.toHaveProperty(RELATED);
+    }
+  });
+
+  it('never sets it without a ref', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, relatedUnitEnv: RELATED })) {
+      expect(command.env[RELATED] ?? '').toBe('');
+    }
+  });
+});
+
+// Why this test matters: the dependent trim (projects.mjs
+// DEPENDENT_TRIM_STAGES) is licensed for the DEPENDENTS of the per-commit fast
+// gate only. A changed package always runs its static checks, so it gets the
+// switch cleared, and without the option (the milestone run) nobody gets it.
+describe('gateCommands: dependent trim in the fast gate', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+  const TRIM = 'GATE_DEPENDENT_TRIM';
+
+  it('sets it for the dependents and clears it for the changed packages', () => {
+    const commands = gateCommands(['gps-plus-slam-app-framework'], {
+      skipBrowserEnv: ENV,
+      dependentTrimEnv: TRIM,
+      ref: 'HEAD',
+    });
+    const changed = commands.find((c) => c.command.endsWith('--filter gps-plus-slam-app-framework test'));
+    const dependents = commands.find((c) => c.command.includes('"...gps-plus-slam-app-framework"'));
+    expect(changed?.env[TRIM]).toBe('');
+    expect(dependents?.env[TRIM]).toBe('1');
+    expect(dependents?.env[ENV]).toBe('1');
+  });
+
+  it('never sets it without the option (the milestone run)', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' })) {
+      expect(command.env).not.toHaveProperty(TRIM);
     }
   });
 });
@@ -620,5 +705,19 @@ describe('gateCommands hands the diff ref to the changed packages only', () => {
     for (const c of cascadeCommands()) {
       expect(c.env).toEqual({});
     }
+  });
+});
+
+// Why: the related-only unit run and the dependents' trim belong to the
+// per-commit fast gate only. If the browser run of a milestone (no skip
+// switch) got them too, it would test a slice and pass for the full gate.
+describe('fastGateOptions', () => {
+  it('turns the related run and the trim on only with the skip switch set', () => {
+    expect(fastGateOptions({ GATE_SKIP_BROWSER_STAGES: '1' })).toEqual({
+      relatedUnitEnv: 'GATE_UNIT_RELATED_REF',
+      dependentTrimEnv: 'GATE_DEPENDENT_TRIM',
+    });
+    expect(fastGateOptions({})).toEqual({});
+    expect(fastGateOptions({ GATE_SKIP_BROWSER_STAGES: '' })).toEqual({});
   });
 });

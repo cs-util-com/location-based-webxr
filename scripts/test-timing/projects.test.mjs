@@ -23,6 +23,11 @@ import {
   resolveGateMode,
   gateBaseCommand,
   SKIP_BROWSER_ENV,
+  UNIT_RELATED_ENV,
+  RELATED_UNIT_SCRIPT,
+  DEPENDENT_TRIM_ENV,
+  DEPENDENT_TRIM_STAGES,
+  dependentTrimMode,
 } from './projects.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -349,6 +354,86 @@ describe('browser-stage exclusion (DEC-G2)', () => {
   });
 });
 
+// Why this test matters: a DEPENDENT in the per-commit gate is re-run only
+// because something it consumes changed, so a stage that reads nothing but the
+// dependent's own files cannot change its verdict and is skipped. Each trimmed
+// stage was checked for that (format, stylelint and jscpd list own paths;
+// depcruise is includeOnly src). check:cycles is NOT trimmed: dpdm walks into
+// the framework's dist (189 of the Recorder's 289 files). The Tour Viewer's
+// boundaries stage reads the editor kit's source, so it is kept, and builds,
+// lint, typecheck and unit tests are never trimmed.
+describe('dependent trim (per-commit gate, dependents only)', () => {
+  it('drops exactly the own-files stages, keeping builds, lint, cycles, typecheck and units', () => {
+    expect([...DEPENDENT_TRIM_STAGES]).toEqual(['format', 'lint:css', 'check:dup', 'check:boundaries']);
+    for (const project of PROJECTS) {
+      const kept = gateStages(project, { skipBrowser: true, dependentTrim: true });
+      for (const stage of project.stages) {
+        const expectKept =
+          !isBrowserStage(stage) &&
+          (!DEPENDENT_TRIM_STAGES.includes(stage.name) || stage.readsUpstreamSources === true);
+        expect(kept.includes(stage), `${project.name} ${stage.name}`).toBe(expectKept);
+      }
+    }
+  });
+
+  it('keeps the Tour Viewer boundaries stage, which reads the editor kit source', () => {
+    const names = gateStages(getProject('GpsPlusSlamJs_TourViewer'), {
+      skipBrowser: true,
+      dependentTrim: true,
+    }).map((s) => s.name);
+    expect(names).toContain('check:boundaries');
+    expect(names).toContain('check:cycles');
+    expect(names).not.toContain('format');
+    expect(names).toContain('build:osm');
+    expect(names).toContain('lint');
+    expect(names).toContain('test:unit');
+  });
+
+  it('the Tour Viewer depcruise config reaches outside its own src exactly where the flag says', () => {
+    for (const project of PROJECTS) {
+      const stage = project.stages.find((s) => s.name === 'check:boundaries');
+      if (!stage) continue;
+      const config = readFileSync(
+        path.join(WORKSPACE_ROOT, project.dir, 'config/.dependency-cruiser.cjs'),
+        'utf8'
+      );
+      const outside = /includeOnly:[^\n]*GpsPlusSlamJs_/.test(config);
+      expect(stage.readsUpstreamSources === true, project.name).toBe(outside);
+    }
+  });
+
+  it('is on only with the skip switch AND the trim switch set', () => {
+    expect(dependentTrimMode({})).toBe(false);
+    expect(dependentTrimMode({ [DEPENDENT_TRIM_ENV]: '1' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1', [DEPENDENT_TRIM_ENV]: '' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1', [DEPENDENT_TRIM_ENV]: '1' })).toBe(true);
+  });
+
+  it('is off by default', () => {
+    for (const project of PROJECTS) {
+      expect(gateStages(project, { skipBrowser: true })).toEqual(
+        project.stages.filter((s) => !isBrowserStage(s))
+      );
+    }
+  });
+});
+
+// Why this test matters: ESLint's multithreaded linting was measured on the
+// two largest lint stages (framework 33-42 s -> 26-29 s, Tour Viewer 46 s ->
+// 34 s, three runs each, 8 cores) and adopted there only; the other packages
+// were not measured and keep the single thread.
+describe('ESLint concurrency', () => {
+  it('runs the framework and Tour Viewer lint stages with --concurrency auto, and no other', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages.filter((s) => /(?:^|\s)eslint\s/.test(s.command))) {
+        const expected = ['GpsPlusSlamJs_AppFramework', 'GpsPlusSlamJs_TourViewer'].includes(project.name);
+        expect(stage.command.includes(' --concurrency auto'), `${project.name} ${stage.name}`).toBe(expected);
+      }
+    }
+  });
+});
+
 // Why this test matters: the mode is selected by an environment variable, and
 // the failure mode of getting it wrong is asymmetric — a run that silently
 // covers less than it claims. "Unset means full gate" is the safe direction and
@@ -444,6 +529,60 @@ describe('gateBaseCommand (fast per-commit command)', () => {
     expect(framework.fastGateCommand).toBe(
       framework.command.replace(' --coverage', '')
     );
+  });
+});
+
+// Why this test matters: in the per-commit fast gate a CHANGED package's
+// unit stage runs only the tests related to the change (the related-unit
+// wrapper). That trade is only acceptable because every other run stays
+// whole: a dependent (no ref), the milestone run and a package's own
+// `pnpm test` (no skip switch) and CI (the GitHub runner). Each of those
+// must get the canonical command, byte for byte.
+describe('gateBaseCommand (related unit tests in the fast gate only)', () => {
+  const FAST = { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: 'HEAD' };
+  const unitStages = PROJECTS.flatMap((project) =>
+    project.stages
+      .filter((stage) => stage.name === 'test:unit' && stage.counts === 'vitest')
+      .map((stage) => ({ project: project.name, stage }))
+  );
+
+  it('finds the vitest unit stages (so the checks are not vacuous)', () => {
+    expect(unitStages.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it.each(unitStages)('$project wraps its unit stage in the fast gate of a changed package', ({ stage }) => {
+    const base = stage.fastGateCommand ?? stage.command;
+    expect(gateBaseCommand(stage, FAST)).toBe(`node ${RELATED_UNIT_SCRIPT} ${base}`);
+  });
+
+  it.each(unitStages)('$project keeps its unit stage whole everywhere else', ({ stage }) => {
+    // A dependent: the skip switch, no ref.
+    expect(gateBaseCommand(stage, { [SKIP_BROWSER_ENV]: '1' })).not.toContain(RELATED_UNIT_SCRIPT);
+    expect(gateBaseCommand(stage, { [SKIP_BROWSER_ENV]: '1', [UNIT_RELATED_ENV]: '' })).not.toContain(
+      RELATED_UNIT_SCRIPT
+    );
+    // The milestone run and a package's own gate: no skip switch.
+    expect(gateBaseCommand(stage, { [UNIT_RELATED_ENV]: 'HEAD' })).toBe(stage.command);
+    // CI.
+    expect(gateBaseCommand(stage, { ...FAST, GITHUB_ACTIONS: 'true' })).not.toContain(
+      RELATED_UNIT_SCRIPT
+    );
+  });
+
+  it('wraps no other stage', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        if (stage.name === 'test:unit' && stage.counts === 'vitest') continue;
+        expect(gateBaseCommand(stage, FAST), `${project.name} ${stage.name}`).not.toContain(
+          RELATED_UNIT_SCRIPT
+        );
+      }
+    }
+  });
+
+  it('points at the wrapper that exists', () => {
+    expect(RELATED_UNIT_SCRIPT).toBe('../scripts/test-changed/related-unit.mjs');
+    expect(existsSync(path.join(WORKSPACE_ROOT, 'scripts/test-changed/related-unit.mjs'))).toBe(true);
   });
 });
 

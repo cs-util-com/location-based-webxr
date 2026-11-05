@@ -164,14 +164,15 @@ describe('the workflow stays inside the free plan and never hangs', () => {
 
   // GitHub keeps only ONE pending run per concurrency group, so pushes to
   // main must not share one: of three quick merges the middle one would lose
-  // its run. A pull request groups by its ref (a newer push cancels the old
-  // run, and a full-ci label run cancels the tier run before it); every
-  // other event gets a group of its own. No `github.workflow` in the group:
-  // in the label's call of this workflow it names the caller, and the two
-  // runs of one pull request would no longer share a group.
+  // its run. A pull request groups by its ref, so a newer push cancels the old
+  // run; every other event gets a group of its own. The group starts with
+  // `github.workflow`, which in the full-ci label's call of this workflow is
+  // the CALLING workflow's name: the label run gets a group of its own and no
+  // longer cancels the pull request's run, which left a cancelled check on
+  // the pull request.
   it('cancels a superseded pull request run on the same branch, and gives every push to main its own run', () => {
     expect(workflow.concurrency.group).toBe(
-      "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+      "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
     );
     expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
   });
@@ -213,7 +214,7 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
   // full-ci: a skipped job is a check of the same name on the same commit,
   // and a skipped "Dead code" would sit over the red one before it. So this
   // workflow does not listen to labels at all; ci-full-label.yml does, and
-  // calls it for full-ci only, in the pull request's concurrency group.
+  // calls it for full-ci only, in a concurrency group of its own.
   it('starts no job on any other label, and runs the whole workflow on full-ci', () => {
     const label = parse(readFileSync(join(ROOT, '.github/workflows/ci-full-label.yml'), 'utf8'));
     expect(label.on.pull_request.types).toEqual(['labeled']);
