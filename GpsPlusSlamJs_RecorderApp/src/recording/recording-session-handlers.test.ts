@@ -1629,7 +1629,7 @@ describe('handleStopRecording', () => {
   it('should still write session metadata when build info lookup fails', async () => {
     // Why: Build metadata is optional debug information. A lookup failure must
     // not skip session.json or break stop-recording cleanup.
-    mockGetBuildInfo.mockImplementation(() => {
+    mockGetBuildInfo.mockImplementationOnce(() => {
       throw new Error('Missing or invalid build metadata: __BUILD_COMMIT__');
     });
 
@@ -1741,7 +1741,6 @@ describe('handleBackDuringRecording', () => {
 
   it('should stop recording when user confirms', async () => {
     // Why: Confirmed back = stop recording flow
-    mockShowConfirmDialog.mockResolvedValueOnce(true);
     // Need a started recording for stop to work
     await handlers.handleStartRecording();
     vi.clearAllMocks();

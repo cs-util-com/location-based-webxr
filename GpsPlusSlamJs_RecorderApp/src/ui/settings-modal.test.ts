@@ -88,6 +88,148 @@ async function flush(): Promise<void> {
   await new Promise((r) => setTimeout(r, 0));
 }
 
+// Why this test matters: every control a recording option needs must exist in
+// the production HTML, or the option cannot be set on a device. One table
+// outside the DOM setup: each row used to rebuild the whole modal for nothing.
+describe('loadSettingsModalHtml (production HTML)', () => {
+  const REQUIRED: readonly (readonly [string, readonly string[]])[] = [
+    ['the modal container', ['id="settings-modal"', 'class="hidden']],
+    [
+      'the depth and image form elements',
+      [
+        'id="depth-enabled"',
+        'id="depth-interval"',
+        'id="depth-grid"',
+        'id="depth-rgb"',
+        'id="images-enabled"',
+        'id="images-motion-filter"',
+        'id="images-quality-filter"',
+        'id="images-blur-threshold"',
+        'id="images-min-luminance"',
+        'id="images-max-angular"',
+        'id="images-max-linear"',
+        'id="images-interval"',
+        'id="images-quality"',
+      ],
+    ],
+    [
+      'the control buttons',
+      [
+        'id="btn-settings-close"',
+        'id="btn-settings-save"',
+        'id="btn-settings-reset"',
+      ],
+    ],
+    [
+      'the value displays',
+      [
+        'id="depth-interval-value"',
+        'id="depth-grid-value"',
+        'id="images-interval-value"',
+        'id="images-quality-value"',
+        'id="images-resolution-divisor-value"',
+      ],
+    ],
+    ['the resolution divisor slider', ['id="images-resolution-divisor"']],
+    // occupancy.cellSizeM
+    [
+      'the occupancy voxel-size slider',
+      ['id="occupancy-cell-size"', 'id="occupancy-cell-size-value"'],
+    ],
+    // occupancy.minConfidence, the voxel noise filter
+    [
+      'the occupancy noise-filter slider',
+      ['id="occupancy-min-confidence"', 'id="occupancy-min-confidence-value"'],
+    ],
+    // occupancy.persistentOcclusion, the depth-only occluder
+    [
+      'the persistent mesh-occluder checkbox',
+      ['id="occupancy-persistent-occlusion"'],
+    ],
+    // occupancy.liveOcclusion, the second, independent checkbox
+    ['the live depth-occluder checkbox', ['id="occupancy-live-occlusion"']],
+    // occupancy.occluderDebugStyle picks which visible debug skin(s) render
+    // the persistent occluder mesh.
+    [
+      'the occluder debug-style selector with all five styles',
+      [
+        'id="occupancy-occluder-debug-style"',
+        'value="off"',
+        'value="matcap"',
+        'value="depth-shaded"',
+        'value="wireframe"',
+        'value="depth-shaded-wireframe"',
+      ],
+    ],
+    // occupancy.occluderMeshMode switches the persistent-occluder mesher so
+    // the surface-hugging meshers can be A/B-tested on-device.
+    [
+      'the occluder mesh-style selector with all three modes',
+      [
+        'id="occupancy-occluder-mesh-mode"',
+        'value="greedy"',
+        'value="corner-fit"',
+        'value="smooth"',
+      ],
+    ],
+    // frameTileDisplay.divisor, distinct from the capture resolution divisor
+    [
+      'the frame-tile display-resolution slider',
+      [
+        'id="frame-tile-display-divisor"',
+        'id="frame-tile-display-divisor-value"',
+      ],
+    ],
+    // The whole diagnostic set, so the app can be reduced on-device without
+    // code changes between runs.
+    [
+      'the AR crash isolation controls',
+      [
+        'AR Crash Isolation',
+        'id="ar-dom-overlay-enabled"',
+        'id="ar-camera-access-enabled"',
+        'id="ar-depth-sensing-enabled"',
+        'id="ar-css3d-enabled"',
+        'id="ar-camera-texture-enabled"',
+        'id="btn-ar-minimal-baseline"',
+      ],
+    ],
+    // One checkbox per live overlay plus the heading-up minimap preference,
+    // with the heading and note that say they are live-only. The perf stats
+    // toggle spells out its dependency: without the DOM overlay it cannot
+    // composite in AR.
+    [
+      'the live debug-overlay toggles',
+      [
+        'Show during recording (3D debug overlays)',
+        'id="viz-frame-tiles"',
+        'id="viz-occupancy-cubes"',
+        'id="viz-gps-alignment-markers"',
+        'id="viz-compass-cubes"',
+        'id="viz-heading-up-map"',
+        'id="viz-stats-overlay"',
+        'Stats need the DOM overlay',
+      ],
+    ],
+    // Lets users force a re-import of ref points from *.zip recordings when
+    // the OPFS cache goes stale (see main.ts handleClearRefPointCache).
+    [
+      'the Clear Reference Point Cache button',
+      ['id="btn-clear-refpoint-cache"', 'Clear Reference Point Cache'],
+    ],
+  ];
+
+  it('contains every required control', () => {
+    const html = loadSettingsModalHtml();
+    const missing = REQUIRED.flatMap(([what, needles]) =>
+      needles
+        .filter((needle) => !html.includes(needle))
+        .map((needle) => `${what}: ${needle}`)
+    );
+    expect(missing).toEqual([]);
+  });
+});
+
 describe('settings-modal', () => {
   beforeEach(() => {
     // Reset localStorage
@@ -105,148 +247,7 @@ describe('settings-modal', () => {
     document.body.innerHTML = loadSettingsTestFixture();
   });
 
-  describe('loadSettingsModalHtml (production HTML)', () => {
-    it('contains valid modal container', () => {
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="settings-modal"');
-      expect(html).toContain('class="hidden');
-    });
-
-    it('includes all required form elements', () => {
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="depth-enabled"');
-      expect(html).toContain('id="depth-interval"');
-      expect(html).toContain('id="depth-grid"');
-      expect(html).toContain('id="depth-rgb"');
-      expect(html).toContain('id="images-enabled"');
-      expect(html).toContain('id="images-motion-filter"');
-      expect(html).toContain('id="images-quality-filter"');
-      expect(html).toContain('id="images-blur-threshold"');
-      expect(html).toContain('id="images-min-luminance"');
-      expect(html).toContain('id="images-max-angular"');
-      expect(html).toContain('id="images-max-linear"');
-      expect(html).toContain('id="images-interval"');
-      expect(html).toContain('id="images-quality"');
-    });
-
-    it('includes control buttons', () => {
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="btn-settings-close"');
-      expect(html).toContain('id="btn-settings-save"');
-      expect(html).toContain('id="btn-settings-reset"');
-    });
-
-    it('includes value display elements', () => {
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="depth-interval-value"');
-      expect(html).toContain('id="depth-grid-value"');
-      expect(html).toContain('id="images-interval-value"');
-      expect(html).toContain('id="images-quality-value"');
-      expect(html).toContain('id="images-resolution-divisor-value"');
-    });
-
-    it('includes resolution divisor slider', () => {
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="images-resolution-divisor"');
-    });
-
-    it('includes the occupancy voxel-size slider and value display', () => {
-      // 2026-06-13 occupancy-grid-settings review, item 1: the voxel size
-      // (occupancy.cellSizeM) must be user-configurable from this modal.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-cell-size"');
-      expect(html).toContain('id="occupancy-cell-size-value"');
-    });
-
-    it('includes the occupancy noise-filter (min-confidence) slider and value display', () => {
-      // 2026-06-22 behind-surface-noise plan: the voxel noise filter
-      // (occupancy.minConfidence) must be user-tunable from this modal.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-min-confidence"');
-      expect(html).toContain('id="occupancy-min-confidence-value"');
-    });
-
-    it('includes the persistent mesh-occluder checkbox', () => {
-      // 2026-06-13 occupancy-mesh-options plan: the persistent depth-only
-      // occluder (occupancy.persistentOcclusion) must be toggleable here.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-persistent-occlusion"');
-    });
-
-    it('includes the live depth-occluder checkbox', () => {
-      // 2026-06-29 two-composable-occlusion-toggles: the live CPU-depth occluder
-      // (occupancy.liveOcclusion) is the second, independent checkbox.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-live-occlusion"');
-    });
-
-    it('includes the occluder debug-style selector with all five styles', () => {
-      // 2026-07-02 debug-viz-styles plan: a <select>
-      // (occupancy.occluderDebugStyle) replaced the former debug-viz checkbox —
-      // it picks which visible debug skin(s) render the persistent occluder
-      // mesh (matcap / depth-shaded / wireframe / both / off).
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-occluder-debug-style"');
-      expect(html).toContain('value="off"');
-      expect(html).toContain('value="matcap"');
-      expect(html).toContain('value="depth-shaded"');
-      expect(html).toContain('value="wireframe"');
-      expect(html).toContain('value="depth-shaded-wireframe"');
-    });
-
-    it('includes the occluder mesh-style selector with all three modes', () => {
-      // 2026-06-30 F2/F2b: a <select> (occupancy.occluderMeshMode) to switch the
-      // persistent-occluder mesher between blocky cubes, corner-fit cubes and
-      // surface nets so the surface-hugging meshers can be A/B-tested on-device.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="occupancy-occluder-mesh-mode"');
-      expect(html).toContain('value="greedy"');
-      expect(html).toContain('value="corner-fit"');
-      expect(html).toContain('value="smooth"');
-    });
-
-    it('includes the frame-tile display-resolution slider and value display', () => {
-      // D7-resolution, 2026-06-16 user feedback: the in-AR/replay tile display
-      // resolution (frameTileDisplay.divisor) must be user-configurable here,
-      // distinct from the capture resolution divisor.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="frame-tile-display-divisor"');
-      expect(html).toContain('id="frame-tile-display-divisor-value"');
-    });
-
-    it('includes AR crash isolation controls', () => {
-      // Why this test matters:
-      // The full Phase 1 diagnostic set must be present in production HTML so
-      // the app can be reduced on-device without code changes between runs.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('AR Crash Isolation');
-      expect(html).toContain('id="ar-dom-overlay-enabled"');
-      expect(html).toContain('id="ar-camera-access-enabled"');
-      expect(html).toContain('id="ar-depth-sensing-enabled"');
-      expect(html).toContain('id="ar-css3d-enabled"');
-      expect(html).toContain('id="ar-camera-texture-enabled"');
-      expect(html).toContain('id="btn-ar-minimal-baseline"');
-    });
-
-    it('includes the live debug-overlay toggles (Finding B) + heading-up map', () => {
-      // Why this test matters: the `visualization` group must be operable from
-      // the settings modal — one checkbox per live overlay (plus the heading-up
-      // minimap preference), with the DB-3 section heading + note so users know
-      // it is live-only.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('Show during recording (3D debug overlays)');
-      expect(html).toContain('id="viz-frame-tiles"');
-      expect(html).toContain('id="viz-occupancy-cubes"');
-      expect(html).toContain('id="viz-gps-alignment-markers"');
-      expect(html).toContain('id="viz-compass-cubes"');
-      expect(html).toContain('id="viz-heading-up-map"');
-      // Step 0 of the 2026-07-03 long-session fps plan: the perf stats
-      // toggle lives in the same section, with the dom-overlay dependency
-      // spelled out (with DOM overlay disabled it cannot composite in AR).
-      expect(html).toContain('id="viz-stats-overlay"');
-      expect(html).toContain('Stats need the DOM overlay');
-    });
-
+  describe('controls with their own formatting', () => {
     it('populates the stats-overlay checkbox from saved options and updates the working copy', () => {
       // Why this test matters: statsOverlay is the visualization group's one
       // OFF-by-default field — the round-trip must preserve an operator's
@@ -322,16 +323,6 @@ describe('settings-modal', () => {
       slider.dispatchEvent(new Event('input'));
       expect(getWorkingOptions()?.frameTileDisplay.maxTiles).toBe(0);
       expect(label?.textContent).toBe('unlimited');
-    });
-
-    it('includes "Clear Reference Point Cache" button', () => {
-      // Why this test matters:
-      // The cache reset button must be present in production HTML so users
-      // can force a re-import of ref points from *.zip recordings when the
-      // OPFS cache becomes stale. See main.ts handleClearRefPointCache.
-      const html = loadSettingsModalHtml();
-      expect(html).toContain('id="btn-clear-refpoint-cache"');
-      expect(html).toContain('Clear Reference Point Cache');
     });
   });
 
@@ -771,6 +762,8 @@ describe('settings-modal', () => {
   describe('getWorkingOptions', () => {
     beforeEach(() => {
       initSettingsModal();
+      // The module keeps its shown state across tests.
+      hideSettingsModal();
     });
 
     it('returns null when modal is not shown', () => {
