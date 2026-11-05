@@ -29,6 +29,11 @@ import {
   worldFromEcefAt,
   type EcefPose,
 } from "./globe-frame.js";
+import {
+  DEFAULT_GLOBE_GRADE,
+  applyGlobeGrade,
+  type GlobeGradeName,
+} from "./globe-grade.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import { createGlobeSky, type GlobeSky } from "./globe-sky.js";
 import { greenwichSiderealAngleRad } from "./globe-stars.js";
@@ -152,6 +157,8 @@ export interface GlobeViewOptions {
   readonly band?: boolean;
   readonly fill?: boolean;
   readonly seams?: GlobeViewSeams;
+  /** The colour grade, fixed for the view's life (default: the table's). */
+  readonly grade?: GlobeGradeName;
   /** Tests: the renderer, and the monotonic clock (`performance.now`). */
   readonly createRenderer?: (
     parameters: THREE.WebGLRendererParameters,
@@ -287,9 +294,9 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     stencil: options.stencil === true,
     reversedDepthBuffer: options.reversedDepth === true,
   });
-  // Neutral tone mapping (the look-dev default), no ambient light, a black
-  // sky; the frame clears once, then draws the sky pass, then the Earth.
-  renderer.toneMapping = THREE.NeutralToneMapping;
+  // The named grade, no ambient light, a black sky; the frame clears once,
+  // then draws the sky pass, then the Earth.
+  applyGlobeGrade(renderer, options.grade ?? DEFAULT_GLOBE_GRADE);
   renderer.autoClear = false;
   const sky = createGlobeSky();
   const sunWorld = new THREE.Vector3();

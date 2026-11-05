@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 
 import { expect, test } from "@playwright/test";
+import { ACESFilmicToneMapping, NeutralToneMapping } from "three";
 import {
   TextReader,
   TextWriter,
@@ -178,6 +179,37 @@ test("the plain editor link opens the sample tour on the globe @pr", async ({
       ),
     );
   }
+  expect(await rejections(page)).toEqual([]);
+});
+
+// Why this test matters: the units check the table and the wiring on a fake;
+// only this shows that the link's name reaches the renderer the real page
+// draws with. The clouds and the approach are off: only the grade is read.
+test("the link's grade reaches the renderer, and no name keeps the default", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await answerHosts(page, { globeAssets: "serve" });
+  await keepRejections(page);
+  await noApproach(page);
+  await noClouds(page);
+  const gradeOf = async (/** @type {string} */ link) => {
+    await page.goto(link);
+    await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+    await page.locator("#sample-btn").click();
+    await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+      timeout: 120_000,
+    });
+    return (await view3d(page)).globe.grade;
+  };
+  expect(await gradeOf("/edit.html?grade=aces")).toEqual({
+    toneMapping: ACESFilmicToneMapping,
+    exposure: 0.47,
+  });
+  expect(await gradeOf("/edit.html")).toEqual({
+    toneMapping: NeutralToneMapping,
+    exposure: 1,
+  });
   expect(await rejections(page)).toEqual([]);
 });
 

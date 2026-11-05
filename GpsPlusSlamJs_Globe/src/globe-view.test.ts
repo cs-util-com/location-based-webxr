@@ -23,6 +23,7 @@ import * as THREE from "three";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
+import type { GlobeGradeName } from "./globe-grade.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import {
   createGlobeView,
@@ -46,6 +47,7 @@ function fakeRenderer(log: string[]) {
   let ratio = 1;
   return {
     toneMapping: THREE.NoToneMapping as THREE.ToneMapping,
+    toneMappingExposure: 1,
     autoClear: true,
     setSize: (w: number, h: number) => log.push(`size ${w}x${h}`),
     setClearColor: (c: number) => log.push(`clearColor ${c.toString(16)}`),
@@ -146,6 +148,40 @@ describe("createGlobeView: dispose", () => {
     expect(globe).toHaveBeenCalledTimes(1);
     expect(log.filter((l) => l === "renderer dispose")).toHaveLength(1);
     expect(() => view.frame()).toThrow(/disposed/);
+  });
+});
+
+/**
+ * Why this test matters: the view is the one place the renderer's grade is
+ * set, so an app that names no grade must get the look from before the
+ * presets, and a named one must reach the renderer every pass draws through.
+ */
+describe("createGlobeView: the grade", () => {
+  const open = (grade?: GlobeGradeName) => {
+    const renderer = fakeRenderer([]);
+    const view = createGlobeView({
+      canvas: { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement,
+      fovYDeg: SETTINGS.fovY,
+      settings: () => SETTINGS,
+      solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+      mapLoader: stubLoader,
+      createRenderer: () => renderer as unknown as THREE.WebGLRenderer,
+      ...(grade === undefined ? {} : { grade }),
+    });
+    view.dispose();
+    return renderer;
+  };
+
+  it("is the default grade when none is named", () => {
+    const renderer = open();
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMappingExposure).toBe(1);
+  });
+
+  it("sets a named grade on the renderer", () => {
+    const renderer = open("aces");
+    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+    expect(renderer.toneMappingExposure).toBe(0.47);
   });
 });
 

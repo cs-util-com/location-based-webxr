@@ -94,7 +94,7 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
   - The blend: premultiplied in-scattered light plus what lies behind
     times the ray's transmittance (one grey value, the mean over R, G, B;
     a per-channel veil needs the ground's own shader). Rays into space keep
-    space (transmittance 1). The light is tone mapped (Neutral, as the
+    space (transmittance 1). The light is tone mapped (the view's grade, as the
     Earth) and sRGB-encoded before it is added over the already encoded
     Earth: an approximation (exact would be one HDR target for both),
     accepted for a look judged by eye; it is exact over black space and

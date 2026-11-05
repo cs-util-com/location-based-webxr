@@ -33,7 +33,10 @@ true ECEF place, so one placed anywhere shows where it is.
 - `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
   - `deps`: the same `Editor3dDeps` the OrbitControls view takes.
   - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
-    rule's thresholds).
+    rule's thresholds), and `grade`, the raw `?grade=` name judged here by
+    `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
+    and keeps the default). `view3d().globe.grade` reads the tone curve and
+    exposure back.
   - Resolves on the render loop's first tick with the same `Editor3dView`
     shape, so the shell, the view switch and the page's test hooks work
     unchanged.

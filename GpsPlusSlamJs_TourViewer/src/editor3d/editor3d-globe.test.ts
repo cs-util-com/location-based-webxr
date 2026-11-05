@@ -48,6 +48,7 @@ interface Pose {
 
 /** What the mocks below record and hand back; hoisted with them. */
 interface Fakes {
+  colourGrade: string | null;
   log: string[];
   manifest: unknown;
   gesture: string | null;
@@ -141,6 +142,7 @@ interface Fakes {
 }
 
 const fakes = vi.hoisted((): Fakes => ({
+  colourGrade: null,
   log: [],
   manifest: null,
   gesture: null,
@@ -296,8 +298,10 @@ vi.mock("gps-plus-slam-globe/view", async (importOriginal) => {
     createGlobeView: (options: {
       seams: Record<string, (...args: unknown[]) => unknown>;
       band?: boolean;
+      grade?: string;
     }) => {
       fakes.seams = options.seams;
+      fakes.colourGrade = options.grade ?? null;
       fakes.viewOptions = options;
       const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1e7);
       const group = new THREE.Group();
@@ -687,6 +691,24 @@ afterEach(() => {
 });
 
 describe("openGlobeEditor's wiring", () => {
+  // Why this test matters: the link's name is judged by the globe's own
+  // table, so a known one reaches the view as it is and a mistyped one
+  // opens the default look with a warning, never a dead view.
+  it("hands the link's grade to the view, an unknown one as the default", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch("?grade=aces"),
+    });
+    expect(fakes.colourGrade).toBe("aces");
+    open.dispose();
+    open = await openGlobeEditor(deps(), {
+      ...readGlobeSwitch("?grade=nope"),
+    });
+    expect(fakes.colourGrade).toBe("neutral");
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("nope"));
+    warn.mockRestore();
+  });
+
   it("holds the world frame still while a gesture runs", async () => {
     await openAt(0);
     const busy = () => fakes.seams?.gestureBusy?.();

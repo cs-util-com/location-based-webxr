@@ -23,7 +23,8 @@
     injected, a deliberate seam: the tests drive the sun with a fake that
     moves with the time, and the package's typecheck takes in only the
     framework's atmosphere modules, not its `geo/` ones); `stencil`, `reversedDepth` (the renderer's buffers); `mapLoader`,
-    `band`, `fill` (the surface's); `seams`; for tests `createRenderer` and
+    `band`, `fill` (the surface's); `seams`; `grade` (a name of
+    `GLOBE_GRADES`, `globe-grade.ts`; fixed for the view's life); for tests `createRenderer` and
     `monoNow`.
   - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`;
     `ecefCamera()` and `placeCameraEcef(position, quaternion)` (the one way a
@@ -81,7 +82,8 @@
   - The clouds' offset is summed per frame at the altitude's rate (never
     rate x time, which jumps at a change of height); `resetCloudDrift()`
     seeds the next frame at the far rate x the drift time.
-  - The renderer: antialiased, Neutral tone mapping, `autoClear` off.
+  - The renderer: antialiased, the named grade (`globe-grade.ts`; its
+    default is Neutral at exposure 1), `autoClear` off.
 - Examples:
 
   ```ts

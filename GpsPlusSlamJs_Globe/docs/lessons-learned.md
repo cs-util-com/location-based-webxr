@@ -51,3 +51,9 @@
   same clouds as with the drift off. The first drift smoke compared those
   two and measured a difference of 0.00. A pixel check of a drift needs an
   instant (or a rate) where the offset is known to be non-zero, logged.
+- **An exposure does not travel between tone curves or scenes.** A
+  prototype's `aces(col * 0.47)` (Narkowicz, plain gamma) is not three's
+  `ACESFilmicToneMapping` at 0.47 (Hill fit with matrices, exposure divided
+  by 0.6): three's is darker in the shadows, and the real globe's radiance
+  is not the prototype's either. At 0.47 the real clouds came out grey at
+  60 km. Compare a look on the real globe, never by copying the number.
