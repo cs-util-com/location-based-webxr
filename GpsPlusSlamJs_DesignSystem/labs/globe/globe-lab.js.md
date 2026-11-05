@@ -49,7 +49,11 @@
   reproduces a view. The one thing outside the hash is the colour grade,
   `?grade=<name>` in the query (`/globe/globe-grade.js`), read once at the
   start because a tone curve is compiled into the shaders: an unknown name
-  warns and keeps the default, and `state().grade` reads it back. Sections: Sun and time (the UTC hour of `#time=`,
+  warns and keeps the default, and `state().grade` reads it back. Two
+  different things share the word: `?grade=` is this tone curve, by name;
+  `#grade=` is the blue grade of the "Reference look" section, 0 to 1. A
+  `#grade=aces` is therefore not a tone curve: the number falls back to 0
+  and the page shows the default with no warning. Sections: Sun and time (the UTC hour of `#time=`,
   "Now" removes it, the clock speed `timeScale`, sun intensity), Surface (night lights, water roughness,
   cloud opacity, cloud drift), Sky (the pass on or off, the sun disc's
   apparent diameter, its glow), Camera and turn (field of view, the wait for a fix, the
