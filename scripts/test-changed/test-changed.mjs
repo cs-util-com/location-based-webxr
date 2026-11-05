@@ -71,6 +71,8 @@ import {
 import {
   cascadeCommands,
   cascadeTierBase,
+  firstMergeBase,
+  MAIN_LINES,
   describeRun,
   docOnlyDirs,
   gateCommands,
@@ -156,9 +158,6 @@ if (!dryRun) {
   });
 }
 
-/** The main line a branch is cut from, for the cascade's tier base. */
-const MAIN_LINE = 'origin2/main';
-
 /**
  * The cascade's tier base (select.mjs `cascadeTierBase`), said in the log.
  * @returns {string | null}
@@ -167,18 +166,19 @@ function tierBaseForCascade() {
   const base = cascadeTierBase({
     env: process.env,
     ref: refIdx !== -1 ? ref : null,
-    mergeBase: () => {
-      const found = spawnSync('git', ['merge-base', 'HEAD', MAIN_LINE], {
-        cwd: WORKSPACE_ROOT,
-        encoding: 'utf8',
-      });
-      return found.status === 0 ? found.stdout.trim() || null : null;
-    },
+    mergeBase: () =>
+      firstMergeBase((mainLine) => {
+        const found = spawnSync('git', ['merge-base', 'HEAD', mainLine], {
+          cwd: WORKSPACE_ROOT,
+          encoding: 'utf8',
+        });
+        return found.status === 0 ? found.stdout.trim() || null : null;
+      }),
   });
   console.log(
     base
       ? `test-changed: the browser tier runs every spec changed since ${base} whole`
-      : `test-changed: ⚠ no merge-base with ${MAIN_LINE}: the browser tier runs only the @pr tests, no changed spec whole`
+      : `test-changed: ⚠ no merge-base with any of ${MAIN_LINES.join(', ')}: the browser tier runs only the @pr tests, no changed spec whole`
   );
   return base;
 }

@@ -44,7 +44,7 @@
     reads to run every changed spec file whole. The full cascade and CI set
     no such ref, so no package is cut to the changed area; the cascade gives
     the tier its base as `E2E_TIER_BASE` instead (`cascadeTierBase` in
-    select.mjs: the `--ref`, else the merge-base with `origin2/main`), as CI
+    select.mjs: the `--ref`, else the merge-base with the first of `origin2/main`, `origin/main`, `main` that has one), as CI
     does with the pull request's base, so a changed spec runs whole there
     too.
   - In the per-commit fast gate (`GATE_SKIP_BROWSER_STAGES` set by the

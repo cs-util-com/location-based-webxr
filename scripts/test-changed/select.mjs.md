@@ -96,7 +96,7 @@ spec the branch changed still runs whole on the widest run; without it the
 cascade ran only the `@pr` tests. It is not `GATE_CHANGED_REF`, which would
 also cut each package's run to the changed area. `cascadeTierBase` picks
 it: an `E2E_TIER_BASE` already set (CI), else the run's `--ref`, else the
-merge-base with `origin2/main` (the gate's default diff base, `HEAD`, would
+merge-base with the first of `MAIN_LINES` (`origin2/main`, `origin/main`, `main`) that has one (`firstMergeBase`; the gate's default diff base, `HEAD`, would
 name only uncommitted specs); `null` when none is found, which the run
 says in its log.
 

@@ -14,6 +14,8 @@ import {
   gateCommands,
   cascadeCommands,
   cascadeTierBase,
+  MAIN_LINES,
+  firstMergeBase,
   describeRun,
   FRAMEWORK_BUILD_IF_STALE,
 } from './select.mjs';
@@ -238,6 +240,26 @@ describe('gateCommands', () => {
     expect(cascadeTierBase({ env: {}, ref: 'r1', mergeBase })).toBe('r1');
     expect(cascadeTierBase({ env: {}, ref: null, mergeBase })).toBe('mb');
     expect(cascadeTierBase({ env: {}, ref: null, mergeBase: () => null })).toBeNull();
+  });
+
+  // Why: a clone whose GitHub remote is called `origin`, or one with only a
+  // local `main`, found no merge-base with a hardcoded `origin2/main`, and
+  // the cascade's browser tier silently ran only the @pr tests.
+  it('takes the merge-base with the first main line that has one, in order', () => {
+    expect(MAIN_LINES).toEqual(['origin2/main', 'origin/main', 'main']);
+    /** @type {string[]} */
+    const asked = [];
+    const only = (/** @type {string} */ line) => (/** @type {string} */ candidate) => {
+      asked.push(candidate);
+      return candidate === line ? 'mb-' + candidate : null;
+    };
+    expect(firstMergeBase(only('origin2/main'))).toBe('mb-origin2/main');
+    expect(asked).toEqual(['origin2/main']);
+    asked.length = 0;
+    expect(firstMergeBase(only('main'))).toBe('mb-main');
+    expect(asked).toEqual(['origin2/main', 'origin/main', 'main']);
+    expect(firstMergeBase(only('origin/main'))).toBe('mb-origin/main');
+    expect(firstMergeBase(() => null)).toBeNull();
   });
 
   it('never puts the changed packages in skip mode', () => {

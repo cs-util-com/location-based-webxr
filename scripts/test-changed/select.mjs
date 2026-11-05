@@ -244,6 +244,27 @@ export function cascadeTierBase({ env, ref, mergeBase }) {
 }
 
 /**
+ * The main lines a branch may be cut from, in the order they are tried: the
+ * GitHub remote is `origin2` in some clones and `origin` in others, and a
+ * clone without either has a local `main`.
+ */
+export const MAIN_LINES = Object.freeze(['origin2/main', 'origin/main', 'main']);
+
+/**
+ * The merge-base with the first of `MAIN_LINES` that has one, or null.
+ *
+ * @param {(mainLine: string) => string | null} mergeBaseWith
+ * @returns {string | null}
+ */
+export function firstMergeBase(mergeBaseWith) {
+  for (const line of MAIN_LINES) {
+    const base = mergeBaseWith(line);
+    if (base) return base;
+  }
+  return null;
+}
+
+/**
  * The commands a `test:changed` run executes, in order.
  *
  * Pure so the SPLIT is testable. `selectPackages` above cannot compute the
