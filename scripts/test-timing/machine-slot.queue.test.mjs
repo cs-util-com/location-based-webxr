@@ -10,16 +10,20 @@
 // waiter running an older copy of the script (no ticket) that can never
 // cause a deadlock.
 
-import { existsSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { existsSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  DEFAULT_TIMEOUT_MS,
   HEARTBEAT_STALE_MS,
   OWNER_FILE,
   QUEUE_AGING_MS,
+  QUEUE_MAX_FAILURES,
+  TICKET_STALE_MS,
   acquireMachineSlot,
   describePlace,
   queueClassOf,
@@ -28,7 +32,9 @@ import {
   readQueue,
   readSlot,
   removeTicket,
+  stageQueueClass,
   stealSlot,
+  ticketCleanupOnExit,
   tryCreateSlot,
   writeTicket,
 } from './machine-slot.mjs';
@@ -101,8 +107,8 @@ describe('rankQueue', () => {
   it('ranks a run with no browser stage before a younger browser run', () => {
     const ranked = rankQueue(
       [
-        ticket({ token: 'b', queueClass: 'browser', enqueuedAt: T0 }),
-        ticket({ token: 'f', queueClass: 'fast', enqueuedAt: T0 + 60_000 }),
+        ticket({ token: 'b', queueClass: 'browser', enqueuedAt: T0, heartbeatMs: T0 + 120_000 }),
+        ticket({ token: 'f', queueClass: 'fast', enqueuedAt: T0 + 60_000, heartbeatMs: T0 + 120_000 }),
       ],
       T0 + 120_000
     );
@@ -120,28 +126,46 @@ describe('rankQueue', () => {
     expect(ranked.map((t) => t.token)).toEqual(['early', 'late']);
   });
 
-  it('ranks a browser run that has waited past the aging bound ahead of every run with no browser stage', () => {
+  // An aged browser run joins the runs with no browser stage in arrival
+  // order; it never passes one that queued BEFORE it. Ranking it ahead of
+  // every fast run let a browser run that queued at 23:10 and aged by 00:20
+  // pass a fast gate waiting since 23:05, which then timed out.
+  it('ranks a browser run that has waited past the aging bound among the runs with no browser stage, by arrival', () => {
     const now = T0 + QUEUE_AGING_MS;
     const at = (browserEnqueuedAt) =>
       rankQueue(
         [
-          ticket({ token: 'f', queueClass: 'fast', enqueuedAt: T0 - 1, heartbeatMs: now }),
+          ticket({ token: 'older-fast', queueClass: 'fast', enqueuedAt: T0 - 1, heartbeatMs: now }),
           ticket({ token: 'b', queueClass: 'browser', enqueuedAt: browserEnqueuedAt, heartbeatMs: now }),
+          ticket({ token: 'younger-fast', queueClass: 'fast', enqueuedAt: T0 + 1, heartbeatMs: now }),
         ],
         now
       ).map((t) => t.token);
-    expect(at(T0)).toEqual(['b', 'f']);
-    // One millisecond younger, it still waits behind the run with no browser.
-    expect(at(T0 + 1)).toEqual(['f', 'b']);
+    expect(at(T0)).toEqual(['older-fast', 'b', 'younger-fast']);
+    // One millisecond short of the bound, it waits behind both.
+    expect(at(T0 + 1)).toEqual(['older-fast', 'younger-fast', 'b']);
   });
 
   it('leaves out a ticket whose heartbeat is older than the staleness limit', () => {
-    const now = T0 + HEARTBEAT_STALE_MS + 1;
+    const now = T0 + TICKET_STALE_MS + 1;
     const ranked = rankQueue(
       [
         ticket({ token: 'dead', queueClass: 'fast', heartbeatMs: T0 }),
         ticket({ token: 'live', heartbeatMs: now }),
       ],
+      now
+    );
+    expect(ranked.map((t) => t.token)).toEqual(['live']);
+  });
+
+  // A killed waiter (TaskStop runs no exit handler) must not hold up a free
+  // slot for the slot's own 3 min: a ticket is refreshed every poll (5 s),
+  // so 60 s of silence means its waiter is gone.
+  it('treats a ticket silent for longer than the ticket window as dead, well before the slot window', () => {
+    expect(TICKET_STALE_MS).toBeLessThan(HEARTBEAT_STALE_MS);
+    const now = T0 + TICKET_STALE_MS + 1;
+    const ranked = rankQueue(
+      [ticket({ token: 'killed', heartbeatMs: T0 }), ticket({ token: 'live', heartbeatMs: now })],
       now
     );
     expect(ranked.map((t) => t.token)).toEqual(['live']);
@@ -176,6 +200,22 @@ describe('the place in the queue and the class of a run', () => {
     expect(describePlace(ranked, 'gone')).toBe('not in the queue');
   });
 
+  // A stage run runs its stage whatever GATE_SKIP_BROWSER_STAGES says, so
+  // its class comes from the stage alone: `test:e2e` with the variable set
+  // must still queue as a browser run.
+  it('classifies a stage run by its stage alone', () => {
+    expect(stageQueueClass({ name: 'test:e2e', command: 'playwright test' })).toBe('browser');
+    expect(stageQueueClass({ name: 'test:unit', command: 'vitest run' })).toBe('fast');
+    expect(stageQueueClass(undefined)).toBe('browser');
+  });
+
+  // The longest hold seen is 150 min (a browser run taken whole). An aged
+  // browser run can wait the aging bound plus one such hold before its turn;
+  // a queue timeout below that makes it give up just before it would start.
+  it('queues long enough for an aged browser run to get its turn behind the longest hold', () => {
+    expect(DEFAULT_TIMEOUT_MS).toBeGreaterThanOrEqual(QUEUE_AGING_MS + 150 * 60_000);
+  });
+
   it('classifies a run by whether it starts a browser', () => {
     expect(queueClassOf({ skipBrowser: true, runsBrowser: true })).toBe('fast');
     expect(queueClassOf({ skipBrowser: false, runsBrowser: false })).toBe('fast');
@@ -201,12 +241,30 @@ describe('tickets on disk', () => {
     writeTicket(queue, ticket({ token: 'dead' }), T0);
     writeFileSync(path.join(queue, 'junk.json'), '{ not json');
     writeFileSync(path.join(queue, 'notes.txt'), 'x');
-    expect(readQueue(queue, T0 + HEARTBEAT_STALE_MS + 1)).toEqual([]);
+    expect(readQueue(queue, T0 + TICKET_STALE_MS + 1)).toEqual([]);
     expect(existsSync(path.join(queue, 'dead.json'))).toBe(false);
   });
 
   it('reads a missing queue directory as an empty queue', () => {
     expect(readQueue(queueDirOf(freshDir()), T0)).toEqual([]);
+  });
+
+  // A signal kills a process without its 'exit' listeners, so a waiter
+  // stopped with Ctrl+C would leave its ticket behind. The cleanup handles
+  // the signals too, and exits 130 as the holder's own handler does.
+  it('removes the ticket on SIGINT and SIGTERM as well as on exit, and unregisters cleanly', () => {
+    for (const signal of ['SIGINT', 'SIGTERM', 'exit']) {
+      const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+      const cleanup = vi.fn();
+      ticketCleanupOnExit(cleanup, proc);
+      proc.emit(signal);
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      if (signal !== 'exit') expect(proc.exit).toHaveBeenCalledWith(130);
+    }
+    const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+    const unregister = ticketCleanupOnExit(vi.fn(), proc);
+    unregister();
+    expect(proc.listenerCount('SIGINT') + proc.listenerCount('SIGTERM') + proc.listenerCount('exit')).toBe(0);
   });
 });
 
@@ -249,7 +307,7 @@ describe('acquireMachineSlot with a queue', () => {
     const dir = freshDir();
     /** @type {string[]} */
     const order = [];
-    const clock = sharedClock(T0, holder(dir, T0 + 5 * 60_000));
+    const clock = sharedClock(T0, holder(dir, T0 + 60_000));
     const browserRun = waiter(dir, clock, 'browser run', 'browser', order);
     await tick();
     const fastRun = waiter(dir, clock, 'fast run', 'fast', order);
@@ -262,7 +320,7 @@ describe('acquireMachineSlot with a queue', () => {
     const dir = freshDir();
     /** @type {string[]} */
     const order = [];
-    const clock = sharedClock(T0, holder(dir, T0 + 5 * 60_000));
+    const clock = sharedClock(T0, holder(dir, T0 + 60_000));
     const first = waiter(dir, clock, 'first', 'browser', order);
     for (let i = 0; i < 3; i++) await tick();
     const second = waiter(dir, clock, 'second', 'browser', order);
@@ -311,7 +369,7 @@ describe('acquireMachineSlot with a queue', () => {
       log: () => {},
       heartbeat: noHeartbeat,
       timeoutMs: 60 * 60_000,
-      ...fakeClock(T0 + HEARTBEAT_STALE_MS + 1),
+      ...fakeClock(T0 + TICKET_STALE_MS + 1),
     });
     expect(slot.outcome).toBe('acquired');
     expect(existsSync(path.join(queue, 'crashed.json'))).toBe(false);
@@ -394,6 +452,46 @@ describe('acquireMachineSlot with a queue', () => {
     const queued = lines.find((l) => l.includes('QUEUED (not hung)'));
     expect(queued).toContain('2nd of 2 in the queue, behind "test:changed in C:/gps/wt-b"');
     expect(readQueue(queue, clock.now()).map((t) => t.token)).toEqual(['ahead']);
+  });
+
+  // Windows reports a transient EPERM when an indexer or virus scanner holds
+  // a file for a moment. One failed write must not drop the waiter out of
+  // the queue for good; only a run of consecutive failures does.
+  it('retries the queue after a transient file error and gives up only after several in a row', async () => {
+    const run = async (failingPolls) => {
+      const dir = freshDir();
+      const queue = queueDirOf(dir);
+      tryCreateSlot(dir, record({ token: 'holder' }));
+      setHeartbeat(dir, T0);
+      writeFileSync(queue, 'not a directory'); // every ticket write fails
+      let polls = 0;
+      let ticketSeen = false;
+      /** @type {string[]} */
+      const lines = [];
+      const clock = fakeClock(T0, (t) => {
+        setHeartbeat(dir, t);
+        polls += 1;
+        if (polls === failingPolls) rmSync(queue);
+        if (polls > failingPolls && readQueue(queue, t).length > 0) ticketSeen = true;
+      });
+      const slot = await acquireMachineSlot({
+        dir,
+        env: {},
+        command: 'fast run',
+        queueClass: 'fast',
+        log: (line) => lines.push(line),
+        listAncestors: () => [],
+        heartbeat: noHeartbeat,
+        timeoutMs: 2 * 60_000,
+        pollMs: 5_000,
+        ...clock,
+      });
+      expect(slot.outcome).toBe('timed-out');
+      return { ticketSeen, gaveUp: lines.filter((l) => l.includes('queue is unusable')).length };
+    };
+    expect(await run(1)).toEqual({ ticketSeen: true, gaveUp: 0 });
+    expect(await run(QUEUE_MAX_FAILURES - 1)).toEqual({ ticketSeen: true, gaveUp: 0 });
+    expect(await run(QUEUE_MAX_FAILURES + 1)).toEqual({ ticketSeen: false, gaveUp: 1 });
   });
 
   it('an uncontended run writes no ticket at all', async () => {

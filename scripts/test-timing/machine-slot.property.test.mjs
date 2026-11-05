@@ -17,6 +17,7 @@ import { MAX_LOCK_AGE_MS } from './gate-lock.mjs';
 import {
   HEARTBEAT_STALE_MS,
   QUEUE_AGING_MS,
+  TICKET_STALE_MS,
   decideMachineSlot,
   rankQueue,
 } from './machine-slot.mjs';
@@ -129,10 +130,11 @@ describe('machine slot invariants', () => {
 //      input order, so exactly one waiter is first.
 //   6. Dead tickets (no heartbeat past the limit) never rank.
 //   7. A run with no browser stage always beats a browser run younger than
-//      the aging bound.
+//      the aging bound, and no browser run ever passes an older run with no
+//      browser stage.
 //   8. Aging bounds every browser wait: in a simulated single slot fed a
 //      finite stream of arrivals, a browser run starts at most one hold after
-//      it ages, plus one hold per older browser run.
+//      it ages, plus one hold per older run of any class.
 describe('fair queue invariants', () => {
   const MIN = 60_000;
   const arbTicket = fc.record({
@@ -141,7 +143,7 @@ describe('fair queue invariants', () => {
     enqueuedAt: fc.integer({ min: 0, max: 600 * MIN }),
     queueClass: fc.constantFrom('fast', 'browser'),
     command: fc.constant('x'),
-    silent: fc.integer({ min: 0, max: 2 * HEARTBEAT_STALE_MS }),
+    silent: fc.integer({ min: 0, max: 2 * TICKET_STALE_MS }),
   });
   const NOW = 700 * MIN;
   /** @param {{ silent: number }} t */
@@ -168,7 +170,7 @@ describe('fair queue invariants', () => {
         const tickets = raw.map(withHeartbeat);
         const ranked = new Set(rankQueue(tickets, NOW).map((t) => t.token));
         for (const t of tickets) {
-          expect(ranked.has(t.token)).toBe(NOW - t.heartbeatMs <= HEARTBEAT_STALE_MS);
+          expect(ranked.has(t.token)).toBe(NOW - t.heartbeatMs <= TICKET_STALE_MS);
         }
       })
     );
@@ -183,6 +185,22 @@ describe('fair queue invariants', () => {
           for (const later of ranked.slice(0, i)) {
             if (later.queueClass === 'browser') {
               expect(NOW - later.enqueuedAt).toBeGreaterThanOrEqual(QUEUE_AGING_MS);
+            }
+          }
+        });
+      })
+    );
+  });
+
+  it('no browser run ever ranks ahead of an older run with no browser stage', () => {
+    fc.assert(
+      fc.property(arbQueue, (raw) => {
+        const ranked = rankQueue(raw.map(withHeartbeat), NOW);
+        ranked.forEach((t, i) => {
+          if (t.queueClass !== 'fast') return;
+          for (const ahead of ranked.slice(0, i)) {
+            if (ahead.queueClass === 'browser') {
+              expect(ahead.enqueuedAt).toBeLessThanOrEqual(t.enqueuedAt);
             }
           }
         });
@@ -219,10 +237,7 @@ describe('fair queue invariants', () => {
         }
         for (const b of arrivals.filter((a) => a.queueClass === 'browser')) {
           const older = arrivals.filter(
-            (a) =>
-              a.queueClass === 'browser' &&
-              a !== b &&
-              (a.at < b.at || (a.at === b.at && a.token < b.token))
+            (a) => a !== b && (a.at < b.at || (a.at === b.at && a.token < b.token))
           ).length;
           expect(started.get(b.token)).toBeLessThanOrEqual(
             b.at + QUEUE_AGING_MS + maxHold * (1 + older)

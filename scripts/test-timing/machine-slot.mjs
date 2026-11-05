@@ -57,6 +57,7 @@ import { pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
 import { MAX_LOCK_AGE_MS } from './gate-lock.mjs';
+import { isBrowserStage } from './projects.mjs';
 
 /** Env var carrying the holder's token down to the runs it spawns. */
 export const SLOT_HELD_ENV = 'GATE_MACHINE_SLOT_TOKEN';
@@ -93,12 +94,13 @@ export const HEARTBEAT_MS = 30_000;
 export const HEARTBEAT_STALE_MS = 3 * 60_000;
 
 /**
- * How long a run queues before giving up. Two hours: the longest holds that
- * take the slot whole are a full cascade (~23 min quiet) and OsmDemo's e2e
- * (~17-22 min), so a waiter behind two or three of them still gets through.
- * Override per run with `GATE_SLOT_TIMEOUT_MIN`.
+ * How long a run queues before giving up. Four hours: holds that take the
+ * slot whole reach about 2.5 h (a full browser run), and an aged browser run
+ * may wait the aging bound plus one such hold before its turn, so 2 h made
+ * it give up just before it would start. Override per run with
+ * `GATE_SLOT_TIMEOUT_MIN`.
  */
-export const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 /** How often a waiter looks again. Cheap: one stat and one small read. */
 export const DEFAULT_POLL_MS = 5_000;
@@ -245,14 +247,34 @@ export function stageRunTakesSlot({ stage, forwardedArgs, env }) {
 export const QUEUE_SUFFIX = '-queue';
 
 /**
- * A browser run that has queued this long ranks ahead of every run with no
- * browser stage. See the sidecar's "Thresholds": it must stay below the queue
- * timeout minus the longest such run (2 h - 25 min), or an aged browser run
- * times out before its turn; and it should stay well above the longest such
- * run, or one 2.5 h browser run again holds up the short gates queued behind
- * it, which is the defect the queue exists to remove.
+ * A browser run that has queued this long joins the runs with no browser
+ * stage, in arrival order, so younger ones no longer pass it. See the
+ * sidecar's "Thresholds": the aging bound plus the longest hold must stay
+ * below the queue timeout, or an aged browser run times out before its turn;
+ * and it should stay well above the short runs' holds (3-25 min), or a
+ * browser run that waited one of them passes the rest, which is the defect
+ * the queue exists to remove.
  */
 export const QUEUE_AGING_MS = 60 * 60_000;
+
+/**
+ * A ticket silent this long is dead. A waiter refreshes its ticket on every
+ * poll (5 s), but the first ancestor check can block its main thread for up
+ * to 30 s, so the window is twice that; the slot's own 3 min would let a
+ * killed waiter hold up a free slot for 3 min.
+ */
+export const TICKET_STALE_MS = 60_000;
+
+/**
+ * Consecutive failed ticket writes after which a waiter stops using the
+ * queue and races for the slot as an older copy does. Five polls are about
+ * 25 s: far longer than the moment an indexer or virus scanner holds a file
+ * on Windows (a transient EPERM), short enough that an unusable queue
+ * directory costs no more than a few failed writes before the waiter says so.
+ * While its writes fail the waiter races anyway, so the number only decides
+ * when it stops trying.
+ */
+export const QUEUE_MAX_FAILURES = 5;
 
 /**
  * @typedef {'fast' | 'browser'} QueueClass `fast`: a run that starts no
@@ -290,12 +312,25 @@ export function queueDirOf(dir) {
 }
 
 /**
+ * The class of a single stage run, from the stage alone: the stage runs
+ * whatever `GATE_SKIP_BROWSER_STAGES` says. An unknown stage is a browser
+ * run, the direction that never jumps the queue.
+ *
+ * @param {{ command: string } | undefined} stage
+ * @returns {QueueClass}
+ */
+export function stageQueueClass(stage) {
+  return stage !== undefined && !isBrowserStage(stage) ? 'fast' : 'browser';
+}
+
+/**
  * Pure ranking of the waiters: the live tickets, first-ranked first.
  *
  * - Dead tickets (no heartbeat for `staleMs`) and malformed ones never rank.
- * - Tier 0: browser runs that have waited `agingMs` or longer.
- * - Tier 1: runs with no browser stage.
- * - Tier 2: younger browser runs, and any unknown class (the direction that
+ * - Tier 0: runs with no browser stage, and browser runs that have waited
+ *   `agingMs` or longer. An aged browser run never passes a run with no
+ *   browser stage that queued before it.
+ * - Tier 1: younger browser runs, and any unknown class (the direction that
  *   never jumps the queue).
  * - Within a tier, first come first served; the token breaks a tie, so the
  *   order is total and exactly one waiter is first.
@@ -308,11 +343,11 @@ export function queueDirOf(dir) {
 export function rankQueue(
   tickets,
   now,
-  { agingMs = QUEUE_AGING_MS, staleMs = HEARTBEAT_STALE_MS } = {}
+  { agingMs = QUEUE_AGING_MS, staleMs = TICKET_STALE_MS } = {}
 ) {
   /** @param {QueueTicket} t */
   const tier = (t) =>
-    t.queueClass === 'fast' ? 1 : now - t.enqueuedAt >= agingMs ? 0 : 2;
+    t.queueClass === 'fast' || now - t.enqueuedAt >= agingMs ? 0 : 1;
   return tickets
     .filter(
       (t) =>
@@ -406,7 +441,7 @@ export function removeTicket(queueDir, token) {
  * @param {number} [staleMs]
  * @returns {QueueTicket[]} the live tickets, unranked
  */
-export function readQueue(queueDir, now, staleMs = HEARTBEAT_STALE_MS) {
+export function readQueue(queueDir, now, staleMs = TICKET_STALE_MS) {
   /** @type {string[]} */
   let names;
   try {
@@ -449,15 +484,34 @@ export function readQueue(queueDir, now, staleMs = HEARTBEAT_STALE_MS) {
 }
 
 /**
- * Removes the waiter's ticket if the process exits while it queues.
+ * Removes the waiter's ticket if the process ends while it queues: on exit,
+ * and on SIGINT / SIGTERM, which end a process without its exit listeners
+ * (it then exits 130, as a holder does). A hard kill runs nothing; the
+ * ticket's 60 s staleness covers that.
  *
  * @param {() => void} cleanup
+ * @param {Pick<NodeJS.Process, 'on' | 'off' | 'exit'>} [proc]
  * @returns {() => void} unregisters the cleanup
  */
-function onProcessExit(cleanup) {
-  process.once('exit', cleanup);
+export function ticketCleanupOnExit(cleanup, proc = process) {
+  let done = false;
+  const once = () => {
+    if (!done) {
+      done = true;
+      cleanup();
+    }
+  };
+  const onSignal = () => {
+    once();
+    proc.exit(130);
+  };
+  proc.on('exit', once);
+  proc.on('SIGINT', onSignal);
+  proc.on('SIGTERM', onSignal);
   return () => {
-    process.off('exit', cleanup);
+    proc.off('exit', once);
+    proc.off('SIGINT', onSignal);
+    proc.off('SIGTERM', onSignal);
   };
 }
 
@@ -667,7 +721,7 @@ export async function acquireMachineSlot({
   heartbeat = startHeartbeat,
   steal = stealSlot,
   queueClass = 'browser',
-  onExit = onProcessExit,
+  onExit = ticketCleanupOnExit,
 }) {
   const noop = () => {};
   if (dir === null) {
@@ -680,7 +734,7 @@ export async function acquireMachineSlot({
   /** @type {SlotDecision | null} */
   let lastDecision = null;
   const token = `${pid}-${start.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const queue = joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit });
+  const queue = joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit, log });
 
   for (;;) {
     const seen = readSlot(dir);
@@ -781,9 +835,10 @@ export async function acquireMachineSlot({
 }
 
 /**
- * One waiter's ticket in the queue. Every file-system error is swallowed and
- * turns the queue off for this waiter, which then races for `mkdir` as an
- * older copy of this script does: the queue may make a waiter wait its turn,
+ * One waiter's ticket in the queue. A file-system error is swallowed: on that
+ * poll the waiter races for `mkdir` as an older copy of this script does,
+ * and tries the queue again on the next. After `QUEUE_MAX_FAILURES` in a row
+ * it says so and stops trying. The queue may make a waiter wait its turn,
  * never wait forever.
  *
  * @param {object} input
@@ -795,11 +850,15 @@ export async function acquireMachineSlot({
  * @param {string} input.cwd
  * @param {() => number} input.now
  * @param {(cleanup: () => void) => () => void} input.onExit
+ * @param {(line: string) => void} input.log
  */
-function joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit }) {
+function joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit, log }) {
   const queueDir = queueDirOf(dir);
   /** @type {number | null} */
   let enqueuedAt = null;
+  const ticketFile = path.join(queueDir, `${token}.json`);
+  let written = false;
+  let failures = 0;
   let broken = false;
   let unregister = () => {};
 
@@ -824,10 +883,32 @@ function joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit 
         enqueuedAt = now();
         unregister = onExit(() => removeTicket(queueDir, token));
       }
-      writeTicket(queueDir, mine(), now());
+      const at = now();
+      if (written) {
+        // A refresh touches the mtime only: one call per poll instead of a
+        // write, a rename and a touch. A ticket cleaned meanwhile is rewritten.
+        try {
+          utimesSync(ticketFile, new Date(at), new Date(at));
+          failures = 0;
+          return true;
+        } catch {
+          written = false;
+        }
+      }
+      writeTicket(queueDir, mine(), at);
+      written = true;
+      failures = 0;
       return true;
-    } catch {
-      broken = true;
+    } catch (error) {
+      failures += 1;
+      if (failures >= QUEUE_MAX_FAILURES) {
+        broken = true;
+        log(
+          `machine slot: the queue is unusable (${failures} failed ticket writes in a row: ${
+            error instanceof Error ? error.message : String(error)
+          }); racing for the slot as before`
+        );
+      }
       return false;
     }
   };
@@ -864,6 +945,7 @@ function joinableQueue({ dir, token, pid, queueClass, command, cwd, now, onExit 
       }
       unregister();
       enqueuedAt = null;
+      written = false;
     },
   };
 }
@@ -1033,6 +1115,7 @@ export async function holdMachineSlotForProcess(
     env: proc.env,
     command,
     queueClass,
+    onExit: (cleanup) => ticketCleanupOnExit(cleanup, proc),
     log: (line) => console.error(line),
   });
   if (slot.outcome === 'timed-out') {
