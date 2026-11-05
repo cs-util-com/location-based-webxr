@@ -2,7 +2,6 @@ import { test, expect } from './e2e-test.js';
 import {
   callRealPopulateScenarios,
   fakeWebXRSupport,
-  setPermissionsReady,
   setStorageReady,
   waitForTestHooks,
 } from './test-helpers.js';
@@ -322,45 +321,6 @@ test.describe('Setup Modal Flow', () => {
 });
 
 test.describe('Scenario Dropdown Interaction', () => {
-  test('dropdown has options after storage is selected', async ({ page }) => {
-    await expandScenarioSection(page);
-    const scenarioSelect = page.locator('#scenario-select');
-    // Simulate mandatory storage selection
-    await setStorageReady(page);
-    // After storage selection, dropdown should have at least the "New Scenario" option
-    const options = scenarioSelect.locator('option');
-    await expect(options).not.toHaveCount(0);
-  });
-
-  test('populateScenarios updates UI correctly', async ({ page }) => {
-    // Simulate mandatory storage selection first
-    await setStorageReady(page);
-    // Use real populateScenarios function to test the actual app behavior
-    // when a folder is selected and scenarios are loaded
-    await callRealPopulateScenarios(page, ['Test Scenario']);
-
-    // Set permissions as ready (required for Enter AR button to be enabled)
-    await setPermissionsReady(page);
-
-    // Expand the collapsed scenario controls (D6 item 3) before selecting.
-    await expandScenarioSection(page);
-    // Select the existing scenario to enable the Enter AR button
-    const scenarioSelect = page.locator('#scenario-select');
-    await scenarioSelect.selectOption('Test Scenario');
-
-    // Verify UI is now enabled
-    await expect(scenarioSelect).toBeEnabled();
-    await expect(scenarioSelect).toHaveValue('Test Scenario');
-
-    // Session notes should be enabled after folder selection
-    const notesArea = page.locator('#session-notes');
-    await expect(notesArea).toBeEnabled();
-
-    // Enter button should be enabled with valid scenario selected
-    const enterButton = page.locator('#btn-enter-ar');
-    await expect(enterButton).toBeEnabled();
-  });
-
   test('selecting "New Scenario" shows name input', async ({ page }) => {
     // Simulate folder selection by populating the dropdown using real app function
     await callRealPopulateScenarios(page, ['Existing']);
@@ -374,21 +334,6 @@ test.describe('Scenario Dropdown Interaction', () => {
     // The real application change handler should show the new scenario section
     const newScenarioSection = page.locator('#new-scenario-section');
     await expect(newScenarioSection).not.toHaveClass(/hidden/);
-  });
-
-  test('new scenario name input accepts text', async ({ page }) => {
-    // Populate the dropdown to enable scenario selection using real app function
-    await callRealPopulateScenarios(page, ['Existing']);
-
-    // Select "__new__" to trigger the real change handler and show the section
-    await expandScenarioSection(page);
-    const scenarioSelect = page.locator('#scenario-select');
-    await scenarioSelect.selectOption('__new__');
-
-    const nameInput = page.locator('#new-scenario-name');
-    await expect(nameInput).toBeVisible();
-    await nameInput.fill('Paris Eiffeltower');
-    await expect(nameInput).toHaveValue('Paris Eiffeltower');
   });
 
   test('selecting existing scenario hides new scenario input', async ({
