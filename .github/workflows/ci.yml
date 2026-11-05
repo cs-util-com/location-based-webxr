@@ -30,11 +30,12 @@ permissions:
 # `main` are releases and every one of them runs to the end, so each gets a
 # group of its own: GitHub keeps only one PENDING run per group, and with one
 # group for `main` the middle of three quick merges would lose its run. The
-# full-ci label's run of a pull request shares the pull request's group, so it
-# cancels the tier run before it. The group names no `github.workflow`: in
-# that call it would name the calling workflow, a group of its own.
+# group starts with `github.workflow`, which in a called workflow is the
+# CALLING workflow's name: the full-ci label's run (ci-full-label.yml) gets a
+# group of its own and no longer cancels the pull request's run, which left a
+# cancelled check on the pull request.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

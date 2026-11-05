@@ -1,8 +1,8 @@
 /**
- * Why these tests matter: the tree (272 px) and the inspector (290 px)
+ * Why these tests matter: the tree (248 px) and the inspector (290 px)
  * both lie over the 3D scene. On a desktop they sit side by side; on a
  * tablet in portrait (820 px) or a 768 px window they would leave a strip
- * of about 200-260 px of scene between them, so there one dock is open at
+ * of about 230-280 px of scene between them, so there one dock is open at
  * a time: opening the inspector folds the tree to its header, and
  * unfolding the tree folds the inspector. On a phone the tree starts
  * folded. Whatever happens, a narrow window never shows both docks open.
@@ -43,8 +43,11 @@ describe("the breakpoint", () => {
     );
     const between = (widthPx: number) =>
       widthPx - TREE_DOCK_PX - INSPECTOR_DOCK_PX;
-    expect([768, 820, 900, 1024].map(between)).toEqual([206, 258, 338, 462]);
+    expect([768, 820, 900, 1024].map(between)).toEqual([230, 282, 362, 486]);
     expect(between(DOCKS_SIDE_BY_SIDE_PX - 1)).toBeLessThan(SCENE_FLOOR_PX);
+    // A narrower tree widens the floor: 900 px stays the first width
+    // with both docks open.
+    expect(DOCKS_SIDE_BY_SIDE_PX).toBe(900);
   });
 
   // The docks' widths against the stylesheet that draws them are the

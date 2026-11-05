@@ -227,7 +227,15 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).description)
     .toBe("Where the market\nmeets");
   expect(await revision(page)).toBe(start + 2);
-  await expect(field(page, "radius")).toBeFocused();
+  // A button is handed the focus too: the Place disclosure is next, and
+  // the radius is in it, first.
+  await expect(act(page, "position")).toBeFocused();
+  await expect(act(page, "position")).toContainText("Place");
+  await act(page, "position").press("Enter");
+  await expect(act(page, "position")).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator("#shell-inspector .pos .f").first().locator(".flabel, label"),
+  ).toHaveText("Radius");
 
   // The radius, typed with a comma, lowered under the pin: the pin stays
   // in the station, and a line says it stands outside the circle.
@@ -237,8 +245,6 @@ test("a station's name, description and radius typed in the inspector are one st
     .poll(async () => (await stationNow(page, "a")).foundRadiusM)
     .toBe(3.5);
   expect(await revision(page)).toBe(start + 3);
-  // A button is handed the focus too: the Position disclosure is next.
-  await expect(act(page, "position")).toBeFocused();
   await expect(page.locator("#shell-inspector .warn")).toHaveText(
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
@@ -288,6 +294,7 @@ test("a station's name, description and radius typed in the inspector are one st
   await expect(field(next, "description")).toHaveValue(
     "Where the market\nmeets",
   );
+  await act(next, "position").click();
   await expect(field(next, "radius")).toHaveValue("3.5");
 });
 
@@ -580,9 +587,10 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await expect.poll(() => revision(page)).toBe(before + 3);
   await expect(field(page, "heading")).toHaveValue("90.0");
 
-  // Add a pin: a new pin in b, selected and said; its words typed in the
-  // head.
-  await act(page, "add-pin").click();
+  // Add a pin (the row's "+"): a new pin in b, selected and said; its
+  // words typed in the head.
+  await page.locator('#tree-body .card[data-station="b"] .head .add').click();
+  await page.locator('#tree-add-menu [data-kind="pin"]').click();
   await expect(
     page.locator(".toast", { hasText: 'Added a pin to "Station B"' }),
   ).toBeVisible();
@@ -618,7 +626,8 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
       .editor()
       .editStation("a", { foundRadiusM: 24 }),
   );
-  await expect(field(page, "radius")).toHaveValue("24.0");
+  // Drawn again: the Place row says the new radius.
+  await expect(act(page, "position").locator(".sum")).toContainText("r 24 m");
   expect(await revision(page)).toBe(typedFrom + 1);
   await expect(field(page, "description")).toBeFocused();
   await expect(field(page, "description")).toHaveValue("By the foun");
@@ -629,7 +638,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
     .poll(async () => (await stationNow(page, "a")).description)
     .toBe("By the fountain");
   expect(await revision(page)).toBe(typedFrom + 2);
-  await expect(field(page, "radius")).toBeFocused();
+  await expect(act(page, "position")).toBeFocused();
   await page.locator("#studio-undo").click();
   await expect
     .poll(async () => (await stationNow(page, "a")).description ?? "")
@@ -684,15 +693,19 @@ async function expectInspectorLayout(page, size) {
   // (AU-2: the name is typed in its labelled field below).
   expect(l.title.x - (l.icon.x + l.icon.width), at).toBe(6);
   // The commands: 28 px rows, 6 px in from the dock's 1 px border, one
-  // under another.
-  expect(l.acts.length, at).toBe(3);
+  // under another - Delete last, after a 1 px separator 4 px from each.
+  expect(l.acts.length, at).toBe(2);
   let last = null;
   for (const b of l.acts) {
     expect(b.height, at).toBe(28);
     expect(b.x - dock.x, at).toBe(7);
-    if (last !== null) expect(b.y, at).toBe(last.y + last.height);
+    if (last !== null)
+      expect(b.y - (last.y + last.height), at).toBeCloseTo(9, 0);
     last = b;
   }
+  await expect(
+    page.locator("#inspector-body > .acts > .act").last(),
+  ).toHaveAttribute("data-act", "delete");
   // A field: its label 74 px, its box 6 px after, 24 px high (the
   // description three lines, 52 px, AU-2), inside the dock's 12 px
   // padding (and its left border: the dock is flush with the window's
@@ -724,8 +737,8 @@ async function expectInspectorLayout(page, size) {
     Math.abs(tag.y + tag.height / 2 - (thumb.y + thumb.height / 2)),
     at,
   ).toBeLessThanOrEqual(1);
-  // Position, open: the anchor, then the heading, then the height.
-  expect(l.positionRows, at).toEqual(["Anchor", "Heading", "Height"]);
+  // Place, open: the radius, then the anchor, the heading, the height.
+  expect(l.positionRows, at).toEqual(["Radius", "Anchor", "Heading", "Height"]);
 }
 
 /**

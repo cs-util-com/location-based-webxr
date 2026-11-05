@@ -3,9 +3,11 @@
  * Redo, Help), the Edit menu's Undo and Redo (where they fold at a
  * phone's width) and the View menu's Top view and Frame, the tree dock at
  * the left, the inspector dock at the right, the compass and the zoom
- * buttons at the bottom right, and the bottom bar's view line, hint and
- * debug readout. The page's own controls (the File menu, the view switch,
- * the save status) stay the page's.
+ * buttons at the bottom right, and the bottom bar's toggles with the
+ * bottom panel they open (`bottom-panel.ts`: the tour's problems, the
+ * edit history, the street map's loading and the view's frame times). The
+ * page's own controls (the File menu, the view switch, the save status)
+ * stay the page's.
  *
  * Everything it shows is drawn from the store - the tour from
  * `tourDocument`, the selection and the docks' and tree's folds from
@@ -98,9 +100,14 @@ import {
   focusControl,
   inspectorDrawing,
 } from "./shell-inspector.js";
+import { createBottomPanel } from "./bottom-panel.js";
 import { createShellPictures } from "./shell-pictures.js";
+import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
-import { buildTree, stationGroups } from "./tree-model.js";
+import { createTreeAddMenu, type AddKind } from "./tree-add-menu.js";
+import { createAddPalette, isPaletteKey } from "./add-palette.js";
+import { stationTitle } from "../../station-run.js";
+import { buildTree, stationGroups, type TreeModel } from "./tree-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
 import { createLongTextDock } from "../long-text/long-text-dock.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
@@ -132,6 +139,9 @@ type ShellView = Pick<
   | "turn"
   | "groundAt"
   | "origin"
+  | "mapTiles"
+  | "retryMap"
+  | "lastMapRetry"
 >;
 
 /** The page's station commands the tree and the bars give: each one undo
@@ -169,15 +179,17 @@ interface ShellEditCommands {
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
-  /** A pose or a size, as the 3D view's gestures write them. */
-  scene(edit: GestureEdit): void;
+  /** A pose or a size, as the 3D view's gestures write them: whether it
+   *  was written (false: refused, and the page said why). */
+  scene(edit: GestureEdit): boolean;
   /** Items' heights (the ground under each, or a typed height), as one
    *  step; their places and turns kept. */
   groundItems(
     items: readonly { readonly id: string; readonly alt: number }[],
   ): void;
-  /** A new pin in the station, at a free spot near its anchor. */
-  addPin(stationId: string): void;
+  /** A new item of `kind` in the station, at a free spot near its
+   *  anchor. */
+  addItem(stationId: string, kind: AddKind): void;
   /** A long text's narration as it stands (`EditorSession.narration`). */
   narration(
     itemId: string,
@@ -311,6 +323,15 @@ function characterChipEdit(
 /** A story character's chip: its kind, his block and the chip's value. */
 const CHARACTER_CHIP = /^character-(view|advance):(.+):([^:]+)$/;
 
+/** A field that writes text of several lines (a text area, an editable
+ *  element): its keys are its own, Ctrl+K among them. */
+function inWritingField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
 export function createEditorShell(deps: EditorShellDeps): EditorShell {
   const { store } = deps;
   const tree = {
@@ -318,22 +339,65 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     stationsHead: byId<HTMLButtonElement>("tree-stations"),
     fold: byId<HTMLButtonElement>("tree-fold"),
     add: byId<HTMLButtonElement>("tree-add"),
+    collapse: byId<HTMLButtonElement>("tree-collapse"),
+    search: byId<HTMLInputElement>("tree-search"),
     body: byId("tree-body"),
   };
+  // A row's "+" and an empty station's "Add content": one type menu.
+  const addMenu = createTreeAddMenu({
+    body: tree.body,
+    host: document.body,
+    choose: (id, kind) => {
+      addInPlace(id, kind);
+    },
+  });
+  // Ctrl+K: a kind and a place in one query.
+  const palette = createAddPalette({
+    host: document.body,
+    stations: () =>
+      (manifest()?.stations ?? []).map((station, index) => ({
+        id: station.id,
+        number: index + 1,
+        title: stationTitle(station, index + 1),
+      })),
+    selectedStation: () => selectedStationId(),
+    add: (what) => {
+      if (what.kind === "station") addStationAtCentre();
+      else addInPlace(what.stationId, what.kind);
+    },
+  });
+  /** Add to a station, unfolded first so the new row shows (and the
+   *  focus that follows it has a row to land on); a search runs no more,
+   *  as the new item's name would match none of its words. */
+  function addInPlace(id: string, kind: AddKind): void {
+    if (tree.search.value !== "") {
+      tree.search.value = "";
+      searchFolded.clear();
+      drawTreeNow();
+    }
+    store.dispatch(editorViewActions.stationFolded({ id, open: true }));
+    deps.edits.addItem(id, kind);
+  }
+  // The top bar's Add (the Edit menu's at a phone's width): the palette
+  // for a touch screen, with no keys.
+  for (const id of ["studio-add", "edit-add"]) {
+    byId<HTMLButtonElement>(id).addEventListener("click", () => {
+      palette.open();
+    });
+  }
+  /** The tree as last drawn, and the stations a search unfolded whose
+   *  arrow folded them since (`TreeInput.searchFolded`), for the tour
+   *  of `searchedTour` (its open count) the search was typed over. */
+  let drawnTree: TreeModel | null = null;
+  const searchFolded = new Set<string>();
+  let searchedTour = store.getState().tourDocument.generation;
   const inspector = {
     root: byId("shell-inspector"),
     head: byId("inspector-head"),
     body: byId("inspector-body"),
   };
   const bar = {
-    root: byId("shell-bar"),
-    view: byId("shell-view"),
     acts: byId("shell-acts"),
-    hint: byId("shell-hint"),
-    history: byId("shell-history"),
-    calls: byId("shell-calls"),
-    frame: byId("shell-frame"),
-    debug: byId<HTMLButtonElement>("shell-debug"),
   };
   const top = {
     undo: byId<HTMLButtonElement>("studio-undo"),
@@ -346,6 +410,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   const helpBox = byId("shell-help");
   const needle = byId<HTMLElement>("compass-needle");
+  /** The selection's hint, in the help (what a click there does). */
+  const helpHint = byId("shell-help-hint");
   for (const root of [byId("topbar"), byId("view3d")]) placeShellIcons(root);
 
   const pictures = createShellPictures({
@@ -389,6 +455,59 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   });
 
   let view: ShellView | null = null;
+  // When each history step was made: stamped on first sight by a
+  // subscription as long-lived as the page, so the steps made while the 2D
+  // map shows are timed too (the base the history opens from is not).
+  const stepTimes = new WeakMap<object, number>();
+  const stampSteps = () => {
+    const doc = store.getState().tourDocument;
+    const at = Date.now();
+    for (const step of [...doc.past, ...doc.future]) {
+      if (!stepTimes.has(step)) stepTimes.set(step, at);
+    }
+  };
+  stampSteps();
+  store.subscribe(stampSteps);
+  const panel = createBottomPanel({
+    panel: byId("shell-panel"),
+    toggles: byId("shell-toggles"),
+    box: viewBox,
+    choose: (selection) => {
+      deps.select(selection);
+      view?.flyTo(selection);
+    },
+    fix: (selection, fix) => {
+      deps.select(selection);
+      let written: boolean;
+      try {
+        written = deps.edits.scene(fix.edit(groundAt));
+      } catch (error) {
+        deps.say(
+          `Could not mend it: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return;
+      }
+      // Refused: the page has said why; announcing the mend would be false.
+      if (written) deps.say(fix.done);
+    },
+    map: {
+      tiles: (limit) => view?.mapTiles(limit) ?? [],
+      retry: () =>
+        view?.retryMap() ?? { tiles: 0, refused: "map-off", retry: 0 },
+      lastRetry: () => view?.lastMapRetry() ?? null,
+    },
+    stepTime: (step) => stepTimes.get(step),
+    step: (which) => {
+      deps.step(which);
+    },
+    storage: (() => {
+      try {
+        return window.localStorage;
+      } catch {
+        return null;
+      }
+    })(),
+  });
   let unsubscribe: (() => void) | null = null;
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
@@ -511,9 +630,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
             : `${verb} ${next.what} (${key})`;
       }
     }
-    bar.history.textContent = `History ${String(doc.past.length)} / ${String(
-      doc.past.length + doc.future.length,
-    )}`;
+    panel.history({
+      past: doc.past,
+      future: doc.future,
+      position: doc.position,
+      savedAt: doc.save.inPlaceAt,
+    });
   };
 
   /** The bottom bar's power actions for the selection; a draw keeps the
@@ -544,6 +666,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     }
   };
 
+  /** The tree drawn from the store and its search as they stand; a
+   *  search typed over another tour is emptied first. */
+  const drawTreeNow = () => {
+    const tour = manifest();
+    const { editorView: ui, tourDocument: doc } = state();
+    if (doc.generation !== searchedTour) {
+      searchedTour = doc.generation;
+      tree.search.value = "";
+      searchFolded.clear();
+    }
+    drawnTree = buildTree({
+      stations: tour?.stations ?? [],
+      assets: tour?.assets ?? [],
+      codes: deps.codes(),
+      view: ui,
+      layers: SHELL_LAYERS,
+      query: tree.search.value,
+      searchFolded: [...searchFolded],
+    });
+    drawTree(tree, drawnTree, ui.foldedDocks.tree, pictures);
+  };
+
   const draw = () => {
     const { tourDocument: doc, editorView: ui } = state();
     const busyAct = busy?.act ?? null;
@@ -561,27 +705,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const before = drawn?.ui ?? null;
     drawn = { doc, ui, positionOpen, busy: busyAct };
     const tour = manifest();
-    const codes = deps.codes();
-    if (docChanged || uiChanged) {
-      drawTree(
-        tree,
-        buildTree({
-          stations: tour?.stations ?? [],
-          assets: tour?.assets ?? [],
-          codes,
-          view: ui,
-          layers: SHELL_LAYERS,
-        }),
-        ui.foldedDocks.tree,
-        pictures,
-      );
-    }
+    if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
     drawInspectorNow(model);
     drawActs(model);
-    bar.hint.textContent = inspectorHint(model);
-    bar.root.classList.toggle("debug", ui.readout);
-    bar.debug.setAttribute("aria-pressed", String(ui.readout));
+    helpHint.textContent = inspectorHint(model);
+    panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
@@ -813,14 +942,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (view === null) return;
     const r = view.readout();
     needle.setAttribute("transform", `rotate(${String(-r.headingDeg)} 12 12)`);
-    bar.view.textContent =
-      r.top || r.tiltDeg < 1
-        ? "Top view"
-        : `3D view, tilt ${String(Math.round(r.tiltDeg))} deg`;
     // A checkbox item of the View menu.
     top.topView.setAttribute("aria-checked", String(r.top));
-    bar.calls.textContent = `${String(r.drawCalls)} draw calls`;
-    bar.frame.textContent = `${r.frameMs.toFixed(1)} ms / frame`;
+    panel.tick(r);
     // The ground loads while the view shows: what stands off it shows
     // once it has.
     drawInspectorNow(inspectorModel(state().editorView));
@@ -944,6 +1068,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // --- the tree's and the inspector's clicks ------------------------------
   tree.body.addEventListener("click", (event) => {
     const target = event.target as Element;
+    const adder = target.closest<HTMLElement>("[data-add], [data-fill]");
+    if (adder !== null) {
+      const id = adder.dataset["add"] ?? adder.dataset["fill"] ?? "";
+      const title =
+        adder.closest(".card")?.querySelector<HTMLElement>(".pick")?.title ??
+        "";
+      addMenu.openFor(adder, id, title);
+      return;
+    }
     const section = target.closest<HTMLElement>("[data-section]");
     if (section !== null) {
       const key = section.dataset["section"] as TreeSection;
@@ -972,6 +1105,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const unfold = target.closest<HTMLElement>("[data-unfold]");
     if (unfold !== null) {
       const id = unfold.dataset["unfold"] ?? "";
+      if (drawnTree?.cards.find((c) => c.id === id)?.searchOpened === true) {
+        // The search unfolded it: its fold is the search's.
+        if (!searchFolded.delete(id)) searchFolded.add(id);
+        drawTreeNow();
+        pictures.sweep();
+        return;
+      }
       const open = state().editorView.openStations.includes(id);
       store.dispatch(editorViewActions.stationFolded({ id, open: !open }));
       return;
@@ -1031,7 +1171,32 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }),
     );
   });
-  tree.add.addEventListener("click", () => {
+  // The search draws the tree again as it is typed; the field is the
+  // page's, never redrawn, so it keeps its focus and its text.
+  tree.search.addEventListener("input", () => {
+    searchFolded.clear();
+    drawTreeNow();
+    pictures.sweep();
+  });
+  tree.search.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || tree.search.value === "") return;
+    // Escape empties the search first; the shell's Escape (drop the
+    // selection) waits for the next press.
+    event.stopPropagation();
+    tree.search.value = "";
+    searchFolded.clear();
+    drawTreeNow();
+    pictures.sweep();
+  });
+  tree.collapse.addEventListener("click", () => {
+    creatorTouchesTree();
+    for (const id of state().editorView.openStations) {
+      store.dispatch(editorViewActions.stationFolded({ id, open: false }));
+    }
+  });
+  /** A new station at the centre of the view: the tree's "+" and the
+   *  palette's New station. */
+  function addStationAtCentre(): void {
     if (view === null) return;
     const place = view.centre();
     if (place === null) {
@@ -1039,6 +1204,26 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     deps.stations.add(place, "centre");
+  }
+  /** The station the selection is, or holds the selected item; null. */
+  function selectedStationId(): string | null {
+    const selected = state().editorView.selected;
+    if (selected === null) return null;
+    if (selected.startsWith(STATION_PREFIX)) {
+      return selected.slice(STATION_PREFIX.length);
+    }
+    return (
+      manifest()?.stations.find((s) => s.blocks.some((b) => b.id === selected))
+        ?.id ?? null
+    );
+  }
+  tree.add.addEventListener("click", addStationAtCentre);
+  // A search hides stations, so a drop would order the hidden ones
+  // unseen: its grips drag nothing (`shell-tree.ts`), and say why.
+  tree.body.addEventListener("pointerdown", (event) => {
+    if ((event.target as Element).closest(".grip.off") !== null) {
+      deps.say("Clear the search to change the order of the stations");
+    }
   });
   createTreeDrag({
     body: tree.body,
@@ -1094,9 +1279,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "split") deps.stations.split(selected);
     if (act === "ground" || act === "ground-items") void runGround(act);
     if (act !== undefined) modelAct(selected, act);
-    if (act === "add-pin" && selected.startsWith(STATION_PREFIX)) {
-      deps.edits.addPin(selected.slice(STATION_PREFIX.length));
-    }
     if (
       act?.startsWith("image:") === true &&
       selected.startsWith(STATION_PREFIX)
@@ -1192,11 +1374,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   byId("compass").addEventListener("click", () => view?.northUp());
   byId("zoom-in").addEventListener("click", () => view?.zoom(1));
   byId("zoom-out").addEventListener("click", () => view?.zoom(-1));
-  bar.debug.addEventListener("click", () => {
-    store.dispatch(
-      editorViewActions.readoutShown({ shown: !state().editorView.readout }),
-    );
-  });
 
   // --- while the view shows ------------------------------------------------
   const onKey = (event: KeyboardEvent) => {
@@ -1206,6 +1383,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (event.key === "Escape" && closeOpenMenu()) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      return;
+    }
+    // The palette is a layer over everything else, the help too.
+    if (event.key === "Escape" && palette.isOpen()) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      palette.close(true);
       return;
     }
     if (
@@ -1224,6 +1408,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (inMenu(event.target, event.key)) return;
     // A toolbar's and a radio group's arrows, Home and End are theirs.
     if (inComposite(event.target, event.key)) return;
+    // The bottom panel's keys (Ctrl+J, Ctrl+Shift+M, Escape inside it).
+    // Its Escape goes no further (the page would deselect on it).
+    if (!deps.dialogOpen() && panel.key(event)) {
+      event.stopPropagation();
+      return;
+    }
+    // Ctrl+K adds anything (`add-palette.ts`), from a line field too (the
+    // browser's own Ctrl+K never runs); in a text of several lines it is
+    // the field's (the long-text writer's Link key).
+    if (
+      isPaletteKey(event) &&
+      !inWritingField(event.target) &&
+      !deps.dialogOpen()
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      palette.open();
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -1307,6 +1510,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       document.removeEventListener("pointerdown", onOutside);
       window.removeEventListener("resize", onResize);
       showHelp(false);
+      addMenu.close(false);
+      palette.close(false);
+      panel.hide();
       ground.close();
       // Emptied before the pictures go: a later draw of the same selection
       // would otherwise be skipped and keep a card picture let go here.

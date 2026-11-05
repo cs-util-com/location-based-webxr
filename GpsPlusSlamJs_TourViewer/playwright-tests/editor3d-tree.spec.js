@@ -246,6 +246,136 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   await expect.poll(async () => (await order(page)).length).toBe(4);
 });
 
+test("a row's + adds a short or a long text in place, from the mouse and from the keyboard, each one step to undo", async ({
+  page,
+}) => {
+  // Why: the explorer adds where the creator is looking - the station's
+  // own row - and says what it added only once it is in the tour. The
+  // focus must come back to the row's "+" after the add redraws the tree,
+  // or a keyboard user is dropped out of it after every add; the type
+  // menu's Escape must stop there and keep the selection.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  /** @returns {Promise<any[]>} */
+  const gateBlocks = async () =>
+    (await tourNow(page)).stations.find(
+      (/** @type {any} */ s) => s.id === "gate",
+    ).blocks;
+  const before = (await gateBlocks()).length;
+  const start = await revision(page);
+  const gate = card(page, "gate");
+  const plus = gate.locator(".head .add");
+  const menu = page.locator("#tree-add-menu");
+
+  // The mouse: the "+" shows under the pointer and opens the type menu.
+  await gate.locator(".head").hover();
+  await plus.click();
+  await expect(menu).toBeVisible();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await expect(menu.locator('[data-kind="picture"]')).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await menu.locator('[data-kind="longText"]').click();
+  await expect(menu).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: 'Added a long text to "' }),
+  ).toBeVisible();
+  expect(await revision(page)).toBe(start + 1);
+  const blocks = await gateBlocks();
+  expect(blocks.length).toBe(before + 1);
+  const chosen = await selected(page);
+  const text = blocks.find((/** @type {any} */ b) => b.id === chosen);
+  expect(text?.kind).toBe("longText");
+  await expect(gate.locator(".head .add")).toBeFocused();
+  await expect(gate.locator(`.kid[data-select="${text.id}"]`)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // The keyboard: Enter on the "+", Escape back to it, then a short text.
+  await page.keyboard.press("Enter");
+  await expect(menu.locator('[data-kind="pin"]')).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(gate.locator(".head .add")).toBeFocused();
+  expect(await selected(page)).toBe(text.id);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator(".toast", { hasText: 'Added a pin to "' }),
+  ).toBeVisible();
+  expect(await revision(page)).toBe(start + 2);
+  expect((await gateBlocks()).length).toBe(before + 2);
+  await expect(gate.locator(".head .add")).toBeFocused();
+
+  // Each add is one step.
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await gateBlocks()).length).toBe(before + 1);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await gateBlocks()).length).toBe(before);
+});
+
+test("Ctrl+K adds a kind to a place named in one query, and leaves the long-text writer's Ctrl+K alone", async ({
+  page,
+}) => {
+  // Why: the palette is the keyboard's way to add anything anywhere; a
+  // query naming a kind and a station must add exactly that, said once
+  // it is in the tour. Chrome's own Ctrl+K must not run instead, and in a
+  // field the key stays the field's.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  const blocksOf = async (/** @type {string} */ id) =>
+    (await tourNow(page)).stations.find((/** @type {any} */ s) => s.id === id)
+      .blocks;
+  const before = (await blocksOf("steps")).length;
+  const start = await revision(page);
+  const palette = page.locator("#add-palette");
+  await page.locator("#tree-add").focus();
+  await page.keyboard.press("Control+k");
+  await expect(palette).toBeVisible();
+  await expect(page.locator("#add-palette-input")).toBeFocused();
+  await page.keyboard.type("long steps");
+  await expect(palette.locator('[role="option"]').first()).toContainText(
+    "Long text",
+  );
+  await page.keyboard.press("Enter");
+  await expect(palette).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: 'Added a long text to "' }),
+  ).toBeVisible();
+  expect(await revision(page)).toBe(start + 1);
+  expect((await blocksOf("steps")).length).toBe(before + 1);
+  // Escape closes it and keeps the selection.
+  const chosen = await selected(page);
+  await page.locator("#tree-add").focus();
+  await page.keyboard.press("Control+k");
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+  expect(await selected(page)).toBe(chosen);
+  // In the tree's search too (a line field has no Ctrl+K of its own):
+  // the palette, and the browser's own Ctrl+K never runs.
+  await page.locator("#tree-search").focus();
+  await page.keyboard.press("Control+k");
+  await expect(palette).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+  // The top bar's Add, for a screen with no keyboard.
+  await page.locator("#studio-add").click();
+  await expect(palette).toBeVisible();
+  await expect(page.locator("#add-palette-input")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+});
+
 test("New station here: a right click on the ground starts a station where it was pressed", async ({
   page,
 }) => {
@@ -467,6 +597,66 @@ test("a station copied with its photo is saved with a picture of its own, and op
   expect(await tourJson?.getData(new TextWriter())).toContain(copy);
 });
 
+test("a long text added in place is saved and opens again as it was made", async ({
+  page,
+  context,
+}) => {
+  // Why: the new long text must be one the file keeps - its kind, its
+  // title, its body and its station - and that the next open lists, or
+  // the add makes something a save loses.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await context.addInitScript(() => {
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showOpenFilePicker;
+    // @ts-expect-error - absent in this browser for the test.
+    delete window.showSaveFilePicker;
+  });
+  await answerHosts(page);
+  await page.goto("/edit.html?globe=0");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  const { zip } = await photoTour(page);
+  await openZip(page, zip, "one-photo.zip");
+  await expect(card(page, "fountain")).toBeVisible({ timeout: 60_000 });
+  await card(page, "fountain").locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="longText"]').click();
+  await expect(
+    page.locator(".toast", { hasText: 'Added a long text to "' }),
+  ).toBeVisible();
+  const made = await selected(page);
+
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const files = await entries(readFileSync(saved));
+  const written = JSON.parse(
+    new TextDecoder().decode(files.get("tour.json") ?? new Uint8Array()),
+  );
+  const block = written.stations[0].blocks.find(
+    (/** @type {any} */ b) => b.id === made,
+  );
+  expect(block).toMatchObject({
+    kind: "longText",
+    title: "New long text 1",
+    body: "Write the text here.",
+  });
+
+  const next = await context.newPage();
+  await next.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(next);
+  await next.goto("/edit.html?globe=0");
+  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openZip(next, readFileSync(saved), "one-photo.zip");
+  const again = card(next, "fountain");
+  await expect(again).toBeVisible({ timeout: 60_000 });
+  const fold = again.locator(".tw");
+  if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+  await expect(
+    again.locator(`[data-select="${made}"]`, { hasText: "New long text 1" }),
+  ).toBeVisible();
+});
+
 /**
  * The tree's head and a card's grip, and the bottom bar's actions, at one
  * window size: placed by the prototype's measures.
@@ -499,17 +689,50 @@ async function expectTreeControls(page, size) {
   expect(add.height, at).toBe(fold.height);
   expect(add.y, at).toBeGreaterThanOrEqual(head.y);
   expect(add.y + add.height, at).toBeLessThanOrEqual(head.y + head.height);
-  // A card's grip: in its row, left of its fold arrow, clear of the
-  // number badge.
+  // A card's grip: first in its row (4 px in), then its fold arrow 4 px
+  // after it, then the number badge, as the explorer's rows.
   const row = boxIn(l, "#tree-body .card > .head", 0);
   const grip = boxIn(l, "#tree-body .grip", 0);
   const tw = boxIn(l, "#tree-body .head .tw", 0);
   const n = boxIn(l, "#tree-body .head .n", 0);
-  expect(grip.x, at).toBeGreaterThanOrEqual(n.x + n.width);
+  expect(grip.x - row.x, at).toBe(4);
   expect(tw.x - (grip.x + grip.width), at).toBe(4);
+  expect(n.x, at).toBeGreaterThanOrEqual(tw.x + tw.width + 4);
   expect(grip.y, at).toBe(tw.y);
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
+  // The tree: 248 px wide on a desktop, 210 px at 1100 px or less, as the
+  // explorer's; its search 8 px in, to the dock's line.
+  const tree = await box(page.locator("#shell-tree"));
+  expect(tree.width, at).toBe(size.width > 1100 ? 248 : 210);
+  const search = await box(page.locator("#tree-search"));
+  expect(search.x - tree.x, at).toBe(8);
+  expect(tree.x + tree.width - (search.x + search.width), at).toBe(9);
+  // A row's "+": 22 px, 4 px from the row's right end, in its middle.
+  const plus = await box(page.locator("#tree-body .card > .head .add").first());
+  expect([plus.width, plus.height], at).toEqual([22, 22]);
+  expect(row.x + row.width - (plus.x + plus.width), at).toBe(4);
+  expect(
+    Math.abs(plus.y + plus.height / 2 - (row.y + row.height / 2)),
+    at,
+  ).toBeLessThanOrEqual(0.5);
+  // The keys' foot: at the tree's bottom, its keys outlined, not filled;
+  // none on a phone, where the space is the rows'.
+  const foot = page.locator("#tree-foot");
+  if (size.width <= 700) {
+    await expect(foot, at).toBeHidden();
+    return;
+  }
+  const f = await box(foot);
+  expect(f.y + f.height, at).toBeCloseTo(tree.y + tree.height, 0);
+  expect(f.x, at).toBe(tree.x);
+  expect(
+    await foot
+      .locator("kbd")
+      .first()
+      .evaluate((k) => getComputedStyle(k).backgroundColor),
+    at,
+  ).toBe("rgba(0, 0, 0, 0)");
 }
 
 /**
@@ -649,12 +872,16 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
   await card(page, "gate").locator(".pick").click();
   const del = page.locator('#inspector-body [data-act="delete"] kbd');
   await expect(del).toHaveText("Del");
-  expect(
-    await del.evaluate((k) => {
-      const s = getComputedStyle(k);
-      return { background: s.backgroundColor, border: s.borderTopWidth };
-    }),
-  ).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
+  // Polled: the inspector is drawn again whenever its model changes after
+  // the click, and a key read from a replaced draw has no style ("").
+  await expect
+    .poll(() =>
+      del.evaluate((k) => {
+        const s = getComputedStyle(k);
+        return { background: s.backgroundColor, border: s.borderTopWidth };
+      }),
+    )
+    .toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px" });
   await page.keyboard.press("Escape");
   for (const size of [
     { width: 1440, height: 900 },
@@ -671,24 +898,38 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
       await page.locator("#tree-fold").click();
     }
     await expectTreeControls(page, size);
-    // The bar's actions follow the view line, inside the bar, each a
-    // button with its words (shown, or its name where they fold away).
+    // The bar's actions follow the credits, inside the bar and left of
+    // the panel's toggles, each a button with its words (shown, or its
+    // name where they fold away).
     await card(page, "gate").locator(".pick").click();
     const acts = page.locator("#shell-acts .sact");
     await expect(acts).toHaveCount(2);
     const l = await layoutOf(page, [
       "#shell-bar",
-      "#shell-view",
+      "#view3d-credits",
+      "#shell-toggles",
+      "#shell-tree",
+      "#shell-inspector",
       "#shell-acts .sact",
       "#shell-acts .sact .lbl",
     ]);
+    // A station selected on a desktop: the tree keeps its width beside
+    // the inspector, which stands at the window's right edge.
+    if (size.width > 1100) {
+      const tree = boxIn(l, "#shell-tree");
+      const inspector = boxIn(l, "#shell-inspector");
+      expect(tree.width).toBe(248);
+      expect(inspector.x + inspector.width).toBe(size.width);
+      expect(inspector.x).toBeGreaterThanOrEqual(tree.x + tree.width);
+    }
     const bar = boxIn(l, "#shell-bar");
-    const view = boxIn(l, "#shell-view");
+    const credits = boxIn(l, "#view3d-credits");
+    const toggles = boxIn(l, "#shell-toggles");
     const first = boxIn(l, "#shell-acts .sact", 0);
-    expect(first.x).toBeGreaterThanOrEqual(view.x + view.width);
+    expect(first.x).toBeGreaterThanOrEqual(credits.x + credits.width);
     for (const [i] of (l["#shell-acts .sact"] ?? []).entries()) {
       const b = boxIn(l, "#shell-acts .sact", i);
-      expect(b.x + b.width).toBeLessThanOrEqual(bar.x + bar.width);
+      expect(b.x + b.width).toBeLessThanOrEqual(toggles.x);
       expect(b.y).toBeGreaterThanOrEqual(bar.y);
       expect(b.y + b.height).toBeLessThanOrEqual(bar.y + bar.height);
     }
@@ -788,6 +1029,8 @@ test("a folded station is one line, its number and name side by side; unfolded i
     ) {
       await page.locator("#tree-fold").click();
     }
+    // A phone's rows take a finger: 34 px, 28 px elsewhere.
+    const rowPx = size.width <= 700 ? 34 : 28;
     // The three rows read in one go (`layoutOf`): each read through
     // Playwright waits on the software-drawn 3D view.
     const ids = ["short", "long", "plain"];
@@ -797,7 +1040,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     const extras = (/** @type {string} */ id) =>
       [".pic", ".ds", ".kids"].map((p) => `${cardOf(id)} ${p}`).join(", ");
     const PARTS = [".head", ".head .n", ".head .nm", ".head .grip"];
-    PARTS.push(".head .tw", ".head .pick");
+    PARTS.push(".head .tw", ".head .pick", ".head .add");
     const rows = await layoutOf(
       page,
       ids.flatMap((id) => [
@@ -814,18 +1057,20 @@ test("a folded station is one line, its number and name side by side; unfolded i
       const grip = boxIn(rows, `${c} .head .grip`);
       const arrow = boxIn(rows, `${c} .head .tw`);
       const pick = boxIn(rows, `${c} .head .pick`);
-      expect(row.height, `${id} ${at}`).toBeCloseTo(28, 0);
-      // The row's frame: the button fills the row's height and its width
-      // up to the grip (4 px gap), the fold arrow sits at the row's right
-      // edge less its 5 px padding, centred on the row's middle. Without
-      // these the pieces could all move together and still pass the
-      // relative checks below.
-      expect(pick.height, `${id} ${at}`).toBeCloseTo(28, 0);
-      expect(pick.x + pick.width, `${id} ${at}`).toBeLessThanOrEqual(
-        grip.x - 4 + 0.5,
-      );
+      expect(row.height, `${id} ${at}`).toBeCloseTo(rowPx, 0);
+      // The row's frame, the explorer's: the grip 4 px in from the row's
+      // left, the fold arrow 4 px after it, centred on the row's middle;
+      // the button fills the row's height from 4 px after the arrow, and
+      // the row ends 4 px after its last piece (its "+"). Without these
+      // the pieces could all move together and still pass the relative
+      // checks below.
+      expect(grip.x - row.x, `${id} ${at}`).toBeCloseTo(4, 0);
+      expect(arrow.x - (grip.x + grip.width), `${id} ${at}`).toBeCloseTo(4, 0);
+      expect(pick.height, `${id} ${at}`).toBeCloseTo(rowPx, 0);
+      expect(pick.x - (arrow.x + arrow.width), `${id} ${at}`).toBeCloseTo(4, 0);
+      const last = boxIn(rows, `${c} .head .add`);
       expect(
-        Math.abs(row.x + row.width - (arrow.x + arrow.width) - 5),
+        Math.abs(row.x + row.width - (last.x + last.width) - 4),
         `${id} ${at}`,
       ).toBeLessThanOrEqual(1);
       expect(
@@ -839,7 +1084,9 @@ test("a folded station is one line, its number and name side by side; unfolded i
         `${id} ${at}`,
       ).toBeLessThanOrEqual(2);
       expect(nm.x, `${id} ${at}`).toBeGreaterThanOrEqual(n.x + n.width);
-      expect(nm.x + nm.width, `${id} ${at}`).toBeLessThanOrEqual(grip.x);
+      expect(nm.x + nm.width, `${id} ${at}`).toBeLessThanOrEqual(
+        pick.x + pick.width + 0.5,
+      );
       expect(nm.height, `${id} ${at}`).toBeLessThan(20);
     }
     // The long name is cut with an ellipsis, not wrapped; the row's
@@ -880,13 +1127,13 @@ test("a folded station is one line, its number and name side by side; unfolded i
     ).toBeGreaterThanOrEqual(27.5);
     // Unfolded, a station is no longer one compact line: its long name
     // wraps (on a phone a folded name gets about 115 px), the arrow still
-    // on the row's middle; folded again it is one 28 px line.
+    // on the row's middle; folded again it is one line.
     await card(page, "long").locator(".tw").click();
     const longHead = card(page, "long").locator(".head");
     const longName = await box(longHead.locator(".nm"));
     expect(longName.height, at).toBeGreaterThan(25);
     const longRow = await box(longHead);
-    expect(longRow.height, at).toBeGreaterThan(28);
+    expect(longRow.height, at).toBeGreaterThan(rowPx);
     const longArrow = await box(longHead.locator(".tw"));
     expect(
       Math.abs(
@@ -896,7 +1143,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     ).toBeLessThanOrEqual(1);
     await card(page, "long").locator(".tw").click();
     await expect(card(page, "long").locator(".kids")).toHaveCount(0);
-    expect((await box(longHead)).height, at).toBeCloseTo(28, 0);
+    expect((await box(longHead)).height, at).toBeCloseTo(rowPx, 0);
     await capture(page, test.info().outputPath(`rows-unfolded-${name}.png`));
     await card(page, "short").locator(".tw").click();
     await card(page, "plain").locator(".tw").click();

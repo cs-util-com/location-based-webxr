@@ -38,6 +38,9 @@ import { onGithubRunner } from "./stage-args.mjs";
  *   `gateBaseCommand`); CI, the milestone run and every recorded run keep
  *   `command`. The framework's unit stage drops `--coverage` this way
  *   (gate-speed plan 2026-10-04, G4).
+ * @property {boolean} [readsUpstreamSources] - true for a stage that reads
+ *   another workspace package's SOURCE files; a dependent then keeps it in the
+ *   per-commit gate (see `DEPENDENT_TRIM_STAGES`)
  * @property {boolean} [nestedGate] - true for a root cascade row that runs a
  *   whole package gate (`packageGateStage`). The stage watchdog does not
  *   watch it: its leaf stages are watched one level down, so a stall names
@@ -292,7 +295,9 @@ export const PROJECTS = [
       },
       {
         name: "lint",
-        command: "eslint . --config config/eslint.config.mjs --max-warnings 37",
+        // --concurrency auto: 33-42 s -> 26-29 s (projects.mjs.md).
+        command:
+          "eslint . --config config/eslint.config.mjs --max-warnings 37 --concurrency auto",
         counts: null,
       },
       {
@@ -620,7 +625,14 @@ export const PROJECTS = [
               command:
                 'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
             }
-          : stage.name === "test:e2e"
+          : stage.name === "lint"
+            ? // --concurrency auto: 46 s -> 34 s (projects.mjs.md).
+              { ...stage, command: `${stage.command} --concurrency auto` }
+            : stage.name === "check:boundaries"
+            ? // includeOnly reaches ../GpsPlusSlamJs_EditorKit/src: an editor
+              // kit change can break this package's boundary rules.
+              { ...stage, readsUpstreamSources: true }
+            : stage.name === "test:e2e"
             ? {
                 ...stage,
                 command:
@@ -775,12 +787,23 @@ export const PROJECTS = [
         // had against its own median. It is NOT a licence to grow into: the next
         // reader should read the two numbers above as the price of two rings and
         // ask whether a third is worth another quarter.
-        //        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
+        //
+        // RAISED 1300 -> 1700 (2026-11-03), AND THIS TIME IT IS SUITE GROWTH
+        // at an unchanged per-test cost. The 1300 s was set for 74 tests at
+        // ~1016 s; the suite now has 96 tests (+30 %). Measured holding the
+        // machine slot: 1332.5 s for 96 tests, ~13.9 s per test against
+        // ~13.7 s before (1016 / 74). Two contended runs read 1358.7 s and
+        // 1413 s. 1700 s is ~1330 s + 28 %, the same loose-alarm shape as the
+        // 1300 had against its ~1016 s. Raise it again only for the same
+        // reason (more tests at the same cost); a higher per-test time is the
+        // regrowth this alarm exists to report.
+        //
+        // LOCAL RUNS ONLY, since 2026-08-10: this is a same-machine median plus
         // 30 %, and CI records no median of its own, so enforcing it there
         // measured the runner and failed two all-green PRs. See the CI note in
         // `budget.mjs`.
         .map((stage) =>
-          stage.name === "test:e2e" ? { ...stage, budgetSeconds: 1300 } : stage,
+          stage.name === "test:e2e" ? { ...stage, budgetSeconds: 1700 } : stage,
         ),
     ],
   },
@@ -880,14 +903,63 @@ export function isBrowserStage(stage) {
  * the same failure: a green local gate type-checking against a stale dist.
  * `projects.test.mjs` pins that builds survive, for every project.
  *
+ * `dependentTrim` (the per-commit gate's dependents only, see
+ * `dependentTrimMode`) also drops `DEPENDENT_TRIM_STAGES`.
+ *
  * @param {ProjectConfig} project
- * @param {{ skipBrowser?: boolean }} [options]
+ * @param {{ skipBrowser?: boolean, dependentTrim?: boolean }} [options]
  * @returns {readonly StageConfig[]}
  */
-export function gateStages(project, { skipBrowser = false } = {}) {
-  return skipBrowser
-    ? project.stages.filter((stage) => !isBrowserStage(stage))
-    : project.stages;
+export function gateStages(
+  project,
+  { skipBrowser = false, dependentTrim = false } = {},
+) {
+  if (!skipBrowser && !dependentTrim) {
+    return project.stages;
+  }
+  return project.stages.filter(
+    (stage) =>
+      !(skipBrowser && isBrowserStage(stage)) &&
+      !(
+        dependentTrim &&
+        DEPENDENT_TRIM_STAGES.includes(stage.name) &&
+        stage.readsUpstreamSources !== true
+      ),
+  );
+}
+
+/**
+ * The stages a DEPENDENT skips in the per-commit gate. A dependent runs only
+ * because something it consumes changed, and each of these reads nothing but
+ * the dependent's own files, so its verdict cannot have changed: Prettier,
+ * stylelint and jscpd are given the package's own paths, and depcruise is
+ * `includeOnly` the package's `src` (a stage reaching another package's
+ * source says so with `readsUpstreamSources` and is kept). NOT here:
+ * `check:cycles`, because dpdm follows imports into the framework's dist; and
+ * builds, lint, typecheck and unit tests, which see what the dependent
+ * consumes. The changed packages, the milestone run, a package's own gate and
+ * CI run every stage.
+ */
+export const DEPENDENT_TRIM_STAGES = Object.freeze([
+  "format",
+  "lint:css",
+  "check:dup",
+  "check:boundaries",
+]);
+
+/** Env var that marks a gate run as a per-commit gate's dependent. */
+export const DEPENDENT_TRIM_ENV = "GATE_DEPENDENT_TRIM";
+
+/**
+ * Is this run a DEPENDENT of the per-commit gate (skip switch and trim switch
+ * both set, any non-empty value)? `gateCommands` sets the trim switch for the
+ * dependents and clears it for the changed packages.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+export function dependentTrimMode(env = {}) {
+  return resolveGateMode(env).skipBrowser && Boolean(env[DEPENDENT_TRIM_ENV]);
 }
 
 /**
@@ -895,6 +967,10 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * per-commit gate (`GATE_SKIP_BROWSER_STAGES` set) when it has one, else its
  * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
  * in `buildStageCommand`.
+ *
+ * IN THE PER-COMMIT GATE OF A CHANGED PACKAGE (`UNIT_RELATED_ENV` set too) a
+ * vitest unit stage runs through the related-unit wrapper, which runs only
+ * the tests related to the change; never on the runner.
  *
  * ON THE GITHUB RUNNER a Prettier stage CHECKS instead of writing. `--write` there rewrote the checkout and
  * exited 0, so a badly formatted PR was never red. Keyed on `GITHUB_ACTIONS`
@@ -907,14 +983,31 @@ export function gateStages(project, { skipBrowser = false } = {}) {
  * @returns {string}
  */
 export function gateBaseCommand(stage, env = {}) {
+  const { skipBrowser } = resolveGateMode(env);
   const command =
-    resolveGateMode(env).skipBrowser && stage.fastGateCommand
-      ? stage.fastGateCommand
-      : stage.command;
-  return onGithubRunner(env) && /(?:^|\s)prettier\s/.test(command)
-    ? command.replace(" --write ", " --check ")
+    skipBrowser && stage.fastGateCommand ? stage.fastGateCommand : stage.command;
+  if (onGithubRunner(env)) {
+    return /(?:^|\s)prettier\s/.test(command)
+      ? command.replace(" --write ", " --check ")
+      : command;
+  }
+  // A CHANGED package's unit stage in the per-commit gate: only the tests
+  // related to the change (scripts/test-changed/related-unit.mjs). The ref is
+  // set for the changed packages only (select.mjs `gateCommands`), so a
+  // dependent, the milestone run and a package's own gate run the suite.
+  return skipBrowser &&
+    Boolean(env[UNIT_RELATED_ENV]) &&
+    stage.name === "test:unit" &&
+    stage.counts === "vitest"
+    ? `node ${RELATED_UNIT_SCRIPT} ${command}`
     : command;
 }
+
+/** Env var with the diff base for a changed package's related unit run. */
+export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
+
+/** The related-unit wrapper, relative to a package directory. */
+export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
 export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";
