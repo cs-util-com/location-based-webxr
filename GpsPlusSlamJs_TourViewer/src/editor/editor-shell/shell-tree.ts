@@ -1,6 +1,9 @@
 /**
- * The 3D view's tree dock, drawn from its model (`tree-model.ts`): the
- * stations' story cards with their items, the codes and the layer chips.
+ * The 3D view's tree dock, drawn from its model (`tree-model.ts`) as a
+ * file explorer draws one: a row per station (its grip, its fold arrow,
+ * its number and name, a mark when it is unlocked, its count when
+ * folded), unfolded its picture, its story folders and its items, then
+ * the codes and the layer chips.
  * Everything from the tour is set as text, never as markup. Every control
  * is a button (a card's row, its fold arrow, an item's and a code's
  * row, a header, a chip), none inside another, so the tree works from the
@@ -13,13 +16,20 @@
  * - `data-section` - a section's header: the section it folds;
  * - `data-layer` - a chip: the layer it turns on or off;
  * - `data-drag` - a card's grip (no button): the station it drags
- *   (`tree-drag.ts`).
+ *   (`tree-drag.ts`); none while a search runs - the grip is `off`;
+ * - `data-add` - a card's "+", `data-fill` - its empty line's "Add
+ *   content": the station the type menu adds to (`tree-add-menu.ts`).
  *
  * @see shell-tree.ts.md
  */
 import type { ShellPictures } from "./shell-pictures.js";
 import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
-import type { TreeCard, TreeModel } from "./tree-model.js";
+import type {
+  TreeCard,
+  TreeChild,
+  TreeFolder,
+  TreeModel,
+} from "./tree-model.js";
 import type { TreeSection } from "../editor-view.js";
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -40,7 +50,7 @@ function button(className: string): HTMLButtonElement {
 }
 
 /** The data attributes a control of the tree is known by across draws. */
-const KEYS = ["select", "unfold", "section", "layer"] as const;
+const KEYS = ["select", "unfold", "section", "layer", "add", "fill"] as const;
 
 type ControlKey = (typeof KEYS)[number];
 
@@ -86,16 +96,51 @@ function sectionHeader(
   return head;
 }
 
-function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
+/** An item's row: its kind's icon and its name; `deep` inside a story
+ *  folder. */
+function childOf(child: TreeChild, deep: boolean): HTMLButtonElement {
+  const row = button(deep ? "kid deep" : "kid");
+  row.classList.toggle("sel", child.selected);
+  row.setAttribute("aria-pressed", String(child.selected));
+  row.dataset["select"] = child.id;
+  const icon = el("span", `ic ${child.kind}`);
+  icon.append(shellIcon(child.kind));
+  row.append(icon, el("span", "nm", child.title));
+  return row;
+}
+
+/** A story folder's row (no button: no command acts on it yet) and, when
+ *  it is open, its entries under it. */
+function folderOf(folder: TreeFolder): HTMLElement[] {
+  const row = el("div", "folder");
+  row.dataset["folder"] = folder.id;
+  const icon = el("span", "ic story");
+  icon.append(shellIcon("folder"));
+  row.append(
+    icon,
+    el("span", "nm", folder.title),
+    el("span", "meta", String(folder.children.length)),
+  );
+  return [
+    row,
+    ...(folder.open ? folder.children.map((c) => childOf(c, true)) : []),
+  ];
+}
+
+function cardOf(
+  card: TreeCard,
+  pictures: ShellPictures,
+  searching: boolean,
+): HTMLElement {
   const box = el("div", "card");
   box.classList.toggle("sel", card.selected);
   box.classList.toggle("ctx", card.context);
   // Unfolded, the station is no longer one compact line: its name wraps.
   box.classList.toggle("open", card.open);
   box.dataset["station"] = card.id;
-  // The station's one-line row: its button (the number chip, then the
-  // name beside it, cut with an ellipsis), the grip and the fold arrow
-  // beside it, never inside it.
+  // The station's one-line row: the grip and the fold arrow, its button
+  // (the number chip, then the name beside it, cut with an ellipsis),
+  // then its marks - none inside another.
   const head = el("div", "head");
   const pick = button("pick");
   pick.dataset["select"] = card.selection;
@@ -113,38 +158,60 @@ function cardOf(card: TreeCard, pictures: ShellPictures): HTMLElement {
   );
   // The grip a card is dragged by (`tree-drag.ts`): no button - the
   // inspector's Earlier and Later are the keyboard's way to reorder.
-  const grip = el("span", "grip");
-  grip.dataset["drag"] = card.id;
-  grip.title = "Drag to change its place in the tour";
+  // While a search hides stations it drags nothing: a drop would order
+  // the hidden ones unseen.
+  const grip = el("span", searching ? "grip off" : "grip");
+  if (searching) grip.title = "Clear the search to change the order";
+  else {
+    grip.dataset["drag"] = card.id;
+    grip.title = "Drag to change its place in the tour";
+  }
   grip.setAttribute("aria-hidden", "true");
   grip.append(shellIcon("grip"));
-  head.append(pick, grip, fold);
+  head.append(grip, fold, pick);
+  if (card.unlocked) {
+    // Every station starts locked: the row marks the one that is not.
+    const mark = el("span", "lockg");
+    mark.title = "Its position is unlocked: it can be moved";
+    mark.append(shellIcon("unlock"));
+    head.append(mark);
+  }
+  if (!card.open && card.count > 0) {
+    const count = el("span", "meta", String(card.count));
+    count.title = card.count === 1 ? "1 item" : `${String(card.count)} items`;
+    head.append(count);
+  }
+  // Its last piece: the "+" that adds in place (the type menu).
+  const add = button("ib add");
+  add.dataset["add"] = card.id;
+  add.title = `Add to "${card.title}"`;
+  add.setAttribute("aria-label", add.title);
+  add.setAttribute("aria-haspopup", "menu");
+  add.setAttribute("aria-expanded", "false");
+  add.append(shellIcon("plus"));
+  head.append(add);
   box.append(head);
   if (card.open) {
-    // Unfolded: its picture (only when it has one), its description and
-    // its items below the row.
+    // Unfolded: its picture (only when it has one), then its story
+    // folders and its free items below the row.
     if (card.imagePath !== null) {
       const pic = el("div", "pic");
       pic.setAttribute("aria-hidden", "true");
       pictures.show(pic, card.imagePath);
       box.append(pic);
     }
-    if (card.description !== null) {
-      box.append(el("div", "ds", card.description));
-    }
     const kids = el("div", "kids");
-    for (const child of card.children) {
-      const row = button("kid");
-      row.classList.toggle("sel", child.selected);
-      row.setAttribute("aria-pressed", String(child.selected));
-      row.dataset["select"] = child.id;
-      const icon = el("span", `ic ${child.kind}`);
-      icon.append(shellIcon(child.kind));
-      row.append(icon, el("span", "nm", child.title));
-      kids.append(row);
-    }
-    if (card.children.length === 0) {
-      kids.append(el("div", "kid empty", "No items yet."));
+    for (const folder of card.folders) kids.append(...folderOf(folder));
+    for (const child of card.children) kids.append(childOf(child, false));
+    if (card.folders.length === 0 && card.children.length === 0) {
+      const empty = el("div", "emptyrow", "Nothing here yet. ");
+      const fill = button("fill");
+      fill.dataset["fill"] = card.id;
+      fill.textContent = "Add content";
+      fill.setAttribute("aria-label", `Add content to "${card.title}"`);
+      fill.setAttribute("aria-haspopup", "menu");
+      empty.append(fill);
+      kids.append(empty);
     }
     box.append(kids);
   }
@@ -181,9 +248,13 @@ export function drawTree(
     tree.stationCount,
   );
   const parts: Node[] = [];
+  if (tree.query !== "" && tree.cards.length === 0 && tree.codes.length === 0) {
+    parts.push(el("div", "nomatch", `Nothing matches "${tree.query}".`));
+  }
   if (tree.sections.stations) {
     const cards = el("div", "cards");
-    for (const card of tree.cards) cards.append(cardOf(card, pictures));
+    for (const card of tree.cards)
+      cards.append(cardOf(card, pictures, tree.query !== ""));
     parts.push(cards);
   }
   const codesHead = el("div", "sec");

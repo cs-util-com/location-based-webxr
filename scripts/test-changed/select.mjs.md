@@ -31,7 +31,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv, dependentTrimEnv })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -60,6 +60,20 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 4. their dependents **minus themselves**
    (`--filter "...<name>" --filter "!<name>"`) with `skipBrowserEnv` set.
 
+`relatedUnitEnv` is passed by the per-commit fast gate only (the caller's
+skip switch is set). With a `ref`, the changed packages' command then also
+carries `<relatedUnitEnv>=<ref>`, so their vitest unit stages run only the
+tests related to the change
+([related-unit.mjs](related-unit.mjs.md)); the dependents' command carries it
+EMPTY, so an inherited value can never narrow a dependent's suite. Without
+the option (the milestone run) neither command carries it.
+
+`dependentTrimEnv`, also passed by the fast gate only, is set to `'1'` in the
+dependents' command, which then skip the checks that read only their own
+files (`DEPENDENT_TRIM_STAGES` in
+[projects.mjs](../test-timing/projects.mjs.md)), and cleared in the changed
+packages' command, which always run every static check.
+
 `selectPackages` cannot compute the dependent set — it maps paths to
 top-level directories and nothing more — so the closure comes from pnpm’s
 workspace graph at execution time. What is asserted here is therefore the
@@ -82,7 +96,7 @@ spec the branch changed still runs whole on the widest run; without it the
 cascade ran only the `@pr` tests. It is not `GATE_CHANGED_REF`, which would
 also cut each package's run to the changed area. `cascadeTierBase` picks
 it: an `E2E_TIER_BASE` already set (CI), else the run's `--ref`, else the
-merge-base with `origin2/main` (the gate's default diff base, `HEAD`, would
+merge-base with the first of `MAIN_LINES` (`origin2/main`, `origin/main`, `main`) that has one (`firstMergeBase`; the gate's default diff base, `HEAD`, would
 name only uncommitted specs); `null` when none is found, which the run
 says in its log.
 

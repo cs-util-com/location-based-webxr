@@ -80,6 +80,7 @@ import {
 } from "./editor-model.js";
 import { applySceneEdit } from "./scene-edits.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
+import { confirmPausingFrames } from "./browser-question.js";
 import {
   droppedDetailsLine,
   droppedStationFieldsLine,
@@ -169,7 +170,8 @@ import {
   createEditorShell,
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
-import { newPin } from "./new-pin.js";
+import { addNewItem } from "./new-pin.js";
+import type { AddKind } from "./editor-shell/tree-add-menu.js";
 import { reseatOf, type Reseat } from "./reseat-note.js";
 import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
@@ -1330,9 +1332,9 @@ async function duplicateSelection(id: string): Promise<void> {
 }
 
 /** A gesture of the 3D view written (`scene-edits.ts`): one step; a
- *  refusal is said. */
-function commitSceneEdit(edit: GestureEdit): void {
-  if (editor === null) return;
+ *  refusal is said. Whether it was written. */
+function commitSceneEdit(edit: GestureEdit): boolean {
+  if (editor === null) return false;
   endUndo();
   const before = store.getState().tourDocument;
   const outcome = applySceneEdit(editor, edit);
@@ -1340,13 +1342,14 @@ function commitSceneEdit(edit: GestureEdit): void {
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
-    return;
+    return false;
   }
   if (edit.kind === "item-pose") {
     const reseat = announceReseat(before, edit.id);
     if (reseat !== null) toast(reseat.said);
   }
   autosave.changed();
+  return true;
 }
 
 /** An item a write gave another station (`reseat-note.ts`): a station
@@ -1408,30 +1411,34 @@ async function writeNarrationEdit(
   return "written";
 }
 
-/** The 3D inspector's Add pin: a new pin in `stationId`, clear of its
- *  items and on the ground where that has loaded (`new-pin.ts`), selected
- *  and said; one step. */
-function addPinTo(stationId: string): void {
-  if (editor === null) return;
-  const station = manifestToWrite(store.getState().tourDocument)?.stations.find(
-    (s) => s.id === stationId,
-  );
-  if (station === undefined) return;
-  endUndo();
-  const pin = newPin({
-    station,
+/** The tree's add in place and the palette's: a new item of `kind` in
+ *  `stationId`, clear of its items and on the ground where that has
+ *  loaded (`new-pin.ts`), selected and said once it was placed, its
+ *  refusal (a gone station's too) toasted; one step. */
+function addItemTo(stationId: string, kind: AddKind): void {
+  const open = editor;
+  if (open === null) return;
+  const outcome = addNewItem({
+    stations: manifestToWrite(store.getState().tourDocument)?.stations ?? [],
+    stationId,
+    kind,
     id: newObjectId(),
     nowIso: new Date().toISOString(),
     groundAt: (place) => shown3d?.groundAt(place) ?? null,
+    place: (item) => {
+      endUndo();
+      const placed = open.place(item);
+      refresh();
+      return placed;
+    },
   });
-  const outcome = editor.place(pin);
-  refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
     return;
   }
-  select(pin.id);
-  toast(`Added a pin to "${stationTitleOf(stationId)}"`);
+  select(outcome.item.id);
+  const what = kind === "pin" ? "a pin" : "a long text";
+  toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
   autosave.changed();
 }
 
@@ -3323,7 +3330,7 @@ function openAnotherTour(): void {
   // tours, E2 plan review #12).
   if (
     unsavedWork() &&
-    !window.confirm(
+    !confirmPausingFrames(
       "Your changes are not saved yet. Open another tour anyway? They will be lost.",
     )
   ) {
@@ -3844,7 +3851,7 @@ const shell = createEditorShell({
     groundItems: (items) => {
       writeInspectorEdit((e) => e.groundItems(items));
     },
-    addPin: addPinTo,
+    addItem: addItemTo,
     narration: (id) =>
       editor === null
         ? Promise.resolve({
@@ -4051,7 +4058,7 @@ wireView3dFailedPage({
     reload: () => {
       if (
         unsavedWork() &&
-        !window.confirm(
+        !confirmPausingFrames(
           "Your changes are not saved yet. Reload the page anyway? Any change not yet in the editor's draft will be lost.",
         )
       ) {

@@ -22,14 +22,13 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
 
 /** The 3D view's shell at the start: every station folded, every section
- *  open, both docks unfolded, every layer shown, no debug readout. */
+ *  open, both docks unfolded, every layer shown. */
 const SHELL_START = {
   gesture: null,
   openStations: [],
   openSections: { stations: true, codes: true, layers: true },
   foldedDocks: { tree: false, inspector: false },
   hiddenLayers: [],
-  readout: false,
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
@@ -278,7 +277,7 @@ describe("the view switch's state", () => {
 });
 
 describe("the 3D view's shell state", () => {
-  // Why: the tree's folds, the docks, the layers and the readout are the
+  // Why: the tree's folds, the docks and the layers are the
   // page's chrome, read by every view of the page from one copy. Each
   // setter must change only what it names, a second unfold must not list
   // a station twice, and an id or a name nobody has must change nothing,
@@ -303,7 +302,7 @@ describe("the 3D view's shell state", () => {
     );
   });
 
-  it("sets a section, a dock, a layer and the readout each on its own", () => {
+  it("sets a section, a dock and a layer each on its own", () => {
     let state = reduce(
       initialEditorViewState,
       act.sectionFolded({ section: "codes", open: false }),
@@ -311,13 +310,11 @@ describe("the 3D view's shell state", () => {
     state = reduce(state, act.dockFolded({ dock: "tree", folded: true }));
     state = reduce(state, act.layerShown({ layer: "names", shown: false }));
     state = reduce(state, act.layerShown({ layer: "names", shown: false }));
-    state = reduce(state, act.readoutShown({ shown: true }));
     expect(state).toEqual({
       ...initialEditorViewState,
       openSections: { stations: true, codes: false, layers: true },
       foldedDocks: { tree: true, inspector: false },
       hiddenLayers: ["names"],
-      readout: true,
     });
     state = reduce(state, act.layerShown({ layer: "names", shown: true }));
     expect(state.hiddenLayers).toEqual([]);
@@ -336,13 +333,12 @@ describe("the 3D view's shell state", () => {
 
   // Why: a payload from a stale or malformed dispatch must not
   // write a value the shell would read as a fold or a layer state.
-  it("ignores a fold, a dock, a layer or a readout that is not a boolean", () => {
+  it("ignores a fold, a dock or a layer that is not a boolean", () => {
     const unread = [
       act.stationFolded({ id: "a", open: "yes" as never }),
       act.sectionFolded({ section: "codes", open: undefined as never }),
       act.dockFolded({ dock: "tree", folded: 1 as never }),
       act.layerShown({ layer: "names", shown: null as never }),
-      act.readoutShown({ shown: "true" as never }),
     ];
     expect(unread.reduce(reduce, initialEditorViewState)).toEqual(
       initialEditorViewState,

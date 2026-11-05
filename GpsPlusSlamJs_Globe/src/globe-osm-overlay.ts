@@ -73,12 +73,16 @@ export const GLOBE_OSM = Object.freeze({
    * After this many retries of a tile that failed again, the relief stops
    * waiting for its map (`mapReady`): its parent no longer stands in for
    * it, and it is drawn bare until a later retry brings the map. The
-   * retries themselves go on (`retryBackoffMs`). Counted in retries, not
-   * in time: a full request ceiling holds the retries back (they would be
+   * retries themselves go on (`retryBackoffMs`). Counted in timed
+   * retries (one asked for, `retryNow`, does not count), not in time: a full request ceiling holds the retries back (they would be
    * turned away, not asked), so a busy ceiling never gives a tile up. 3:
-   * a server failing every request gives up after about 35 s of waits
-   * (5 + 10 + 20 s) plus the requests' own time; swept 2026-11-03 over 2,
-   * 3 and 4 against a throttling fake server (globe-osm-map-ready.test.ts).
+   * a server failing every request gives a tile up after three waits plus
+   * the requests' own time. The waits run on from the retry streak the
+   * tile met: about 35 s (5 + 10 + 20 s) on a fresh streak, up to 180 s
+   * (60 s three times) once earlier retries had failed, and 5 s each
+   * whenever a request was answered since the last retry. Swept
+   * 2026-11-03 over 2, 3 and 4 against a throttling fake server
+   * (globe-osm-map-ready.test.ts).
    */
   giveUpRetries: 3,
   /**
@@ -539,6 +543,8 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
   private readonly kept = new Map<string, { range: number[]; level: number }>();
   private keep: number;
   private finestLevel: number | null = null;
+  /** How long each locked region's request took (ms), once it settled. */
+  private readonly lockTimes = new Map<string, number>();
 
   constructor({
     url,
@@ -646,7 +652,23 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
     }
     this.locked.set(k, (this.locked.get(k) ?? 0) + 1);
     this.locks++;
-    return base.lockTexture.call(this, range, l);
+    const started = performance.now();
+    const asked = base.lockTexture.call(this, range, l);
+    const settled = () => {
+      if (this.isLocked(range)) {
+        this.lockTimes.set(k, Math.round(performance.now() - started));
+      }
+    };
+    // A second handler, for the timing only: the caller still gets the
+    // request's own promise and its rejection.
+    void Promise.resolve(asked).then(settled, settled);
+    return asked;
+  }
+
+  /** How long a locked region's last request took (ms), or null while it
+   *  runs, for a region not locked, and for one served from the keep. */
+  lockMs(range: number[]): number | null {
+    return this.lockTimes.get(this.key(range)) ?? null;
   }
 
   releaseTexture(range: number[], level?: number): void {
@@ -660,6 +682,7 @@ export class GatedOsmOverlay extends XYZTilesOverlay {
       return;
     }
     this.locked.delete(k);
+    this.lockTimes.delete(k);
     if (this.keep > 0 && isLoaded(base.getTexture.call(this, range, l))) {
       this.kept.set(k, { range: [...range], level: l });
       this.trimKept();
@@ -970,6 +993,43 @@ export interface OsmMapLoad {
   readonly ceilingWaitS: number;
 }
 
+/** One drawn tile near the camera, as a loading table shows it
+ *  (`mapTiles`). */
+export interface OsmMapTile {
+  /** The map tile at the relief tile's centre: zoom/x/y. */
+  readonly key: string;
+  readonly status: "loaded" | "loading" | "waiting" | "failed";
+  /** Why it waits or what failed, "" when there is nothing to say. */
+  readonly note: string;
+  /** How long its request took (ms), null while it runs or unknown. */
+  readonly ms: number | null;
+}
+
+/** The tiles the last retry asked for again (`lastRetry`): which retry
+ *  it was, how many, and how many have their map now or failed again (the
+ *  rest still load). */
+export interface OsmRetryOutcome {
+  /** The retry's number, 1 for the first (timed or asked for): an
+   *  outcome answers an ask (`OsmRetryAsk.retry`) from that number up. */
+  readonly retry: number;
+  readonly tiles: number;
+  readonly loaded: number;
+  readonly failed: number;
+}
+
+/** What `retryNow` did: how many failed tiles it asks for again, or why
+ *  it asks for none, and the number of the retry that will answer it. */
+export interface OsmRetryAsk {
+  /** The failed tiles asked for again (0 when refused). */
+  readonly tiles: number;
+  /** Why none were asked for: no tile failed, or the map is off (it asks
+   *  for nothing until it is on); null when asked. */
+  readonly refused: "none-failed" | "map-off" | null;
+  /** The `OsmRetryOutcome.retry` from which an outcome answers this ask:
+   *  an outcome with a lower number is from before it. */
+  readonly retry: number;
+}
+
 const NO_COVERAGE: OsmCoverage = Object.freeze({
   near: 0,
   withMap: 0,
@@ -1083,8 +1143,12 @@ export function createGlobeOsmOverlay({
   let retryStreak = 0;
   /** Whether a map request was answered since the last retry. */
   let answeredSinceRetry = false;
-  /** The tiles the last retry asked for again. */
+  /** The tiles the last retry asked for again (cleared once one heals). */
   let retried: TileOverlayInfo[] = [];
+  /** The same, kept until the next retry: what `lastRetry` reports. */
+  let lastRetried: TileOverlayInfo[] | null = null;
+  /** A retry asked for now (`retryNow`), run at the next look. */
+  let retryAsked = false;
   /** The map's reach (m): the fade's end and the look's slack. */
   const reach = () => uniforms.uOsmFadeM.value + GLOBE_OSM.lookSlackM;
   /** Whether a range (normalised) comes within `withinM` of the camera;
@@ -1177,19 +1241,34 @@ export function createGlobeOsmOverlay({
     const backoff = waits[Math.min(retryStreak, waits.length - 1)]!;
     return answeredSinceRetry ? Math.min(backoff, waits[0]!) : backoff;
   };
+  /** Whether the failed tiles have waited out the backoff (the first sight
+   *  starts the wait; it stands still while the ceiling is full). */
+  const waitedOut = (sinceLook: number): boolean => {
+    if (failedWaitedMs === null) {
+      failedWaitedMs = 0;
+      return false;
+    }
+    if (ceiling.waitMs() > 0) return false;
+    failedWaitedMs += Math.max(0, sinceLook);
+    return failedWaitedMs >= retryWaitMs();
+  };
   /**
    * The library never asks again for a tile whose request failed: once a
    * failed tile has waited `retryWaitMs`, its reset releases every failed
    * tile and locks it anew (through the gate and the ceiling). Each retry
    * lengthens the next wait; a retried tile that got its map (no longer
    * failed, with its texture) starts the waits over, and any answered
-   * request since the last retry cuts the next wait to the first step. The reset clears the
-   * failed mark at once, so only the texture tells a success. The wait
-   * stands still while the request ceiling is full: a retry then would be
-   * turned away by the gate, not asked, and would count towards giving the
-   * tile up (`giveUpRetries`) without a request having failed.
+   * request since the last retry cuts the next wait to the first step.
+   * The reset clears the failed mark at once, so only the texture tells a
+   * success. The wait stands still while the request ceiling is full: a
+   * retry then would be turned away by the gate, not asked, and would count
+   * towards giving the tile up (`giveUpRetries`) without a request having
+   * failed.
+   *
+   * `now`: a retry asked for (`retryNow`) skips the first sight and the
+   * backoff, but still waits while the ceiling is full.
    */
-  const retryFailed = (nowMs: number) => {
+  const retryFailed = (nowMs: number, now: boolean) => {
     const internals = plugin as unknown as OverlayPluginInternals;
     const sinceLook = lastRetryLook === null ? 0 : nowMs - lastRetryLook;
     lastRetryLook = nowMs;
@@ -1200,22 +1279,23 @@ export function createGlobeOsmOverlay({
     const failed = failedTiles(internals, overlay);
     if (failed.length === 0) {
       failedWaitedMs = null;
+      retryAsked = false;
       return;
     }
-    if (failedWaitedMs === null) {
-      failedWaitedMs = 0;
-      return;
-    }
-    if (ceiling.waitMs() > 0) return;
-    failedWaitedMs += Math.max(0, sinceLook);
-    if (failedWaitedMs < retryWaitMs()) return;
+    if (!(now ? ceiling.waitMs() === 0 : waitedOut(sinceLook))) return;
     failedWaitedMs = null;
+    retryAsked = false;
     failedRetries++;
     retryStreak++;
     answeredSinceRetry = false;
     retried = failed;
-    for (const info of failed) {
-      retriesOf.set(info, (retriesOf.get(info) ?? 0) + 1);
+    lastRetried = failed;
+    // Only the timed retries count towards giving a tile up: one asked for
+    // is the person's click, not the server failing on its own clock.
+    if (!now) {
+      for (const info of failed) {
+        retriesOf.set(info, (retriesOf.get(info) ?? 0) + 1);
+      }
     }
     plugin.resetFailedOverlays();
   };
@@ -1288,6 +1368,32 @@ export function createGlobeOsmOverlay({
     return base.calculateLevel.call(overlay, info.range) < limits.minZoom
       ? "coarse"
       : "waiting";
+  };
+  /** A drawn tile's row of `mapTiles` (its range placed). */
+  const tileRow = (info: TileOverlayInfo): OsmMapTile => {
+    const range = info.range!;
+    const z = base.calculateLevel.call(overlay, range);
+    const n = 2 ** z;
+    const x = Math.floor(((range[0]! + range[2]!) / 2) * n);
+    // The normalised range counts up from the south, tile rows from the north.
+    const y = Math.floor((1 - (range[1]! + range[3]!) / 2) * n);
+    const key = `${String(z)}/${String(x)}/${String(y)}`;
+    const ms = overlay.lockMs(range);
+    if (info.target !== null) return { key, status: "loaded", note: "", ms };
+    if (info.failed) {
+      const note = givenUp(info)
+        ? "Request failed; drawn without its map"
+        : "Request failed; asked for again later";
+      return { key, status: "failed", note, ms };
+    }
+    if (overlay.isLocked(range)) {
+      return { key, status: "loading", note: "", ms: null };
+    }
+    const note =
+      ceiling.waitMs() > 0
+        ? "Waits for the map server's pause"
+        : "Waits its turn";
+    return { key, status: "waiting", note, ms: null };
   };
   /** Whether a waiting tile is drawn bare where its parent had the map
    *  (a tile given up is drawn bare by design). */
@@ -1425,7 +1531,61 @@ export function createGlobeOsmOverlay({
       // still cached with its rejected request (failing again at once) and
       // the reset's own lock would then hold it twice. The next look is
       // `reevaluateMs` away, after that frame.
-      retryFailed(pose.nowMs);
+      retryFailed(pose.nowMs, retryAsked);
+    },
+    /**
+     * Asks for the failed tiles again now, through the timed retry's own
+     * path (`retryFailed`): run at the next look, brought forward to the
+     * next `update`; it waits while the request ceiling is full, and is
+     * not counted towards giving a tile up. Refused (nothing asked) with
+     * the map off or no tile failed.
+     */
+    retryNow(): OsmRetryAsk {
+      const retry = failedRetries + 1;
+      if (!active) return { tiles: 0, refused: "map-off", retry };
+      const n = failedTiles(
+        plugin as unknown as OverlayPluginInternals,
+        overlay,
+      ).length;
+      if (n === 0) return { tiles: 0, refused: "none-failed", retry };
+      retryAsked = true;
+      lastLook = Number.NEGATIVE_INFINITY;
+      return { tiles: n, refused: null, retry };
+    },
+    /** What became of the tiles the last retry asked for, or null before
+     *  the first retry. */
+    lastRetry(): OsmRetryOutcome | null {
+      if (lastRetried === null) return null;
+      return {
+        retry: failedRetries,
+        tiles: lastRetried.length,
+        loaded: lastRetried.filter((i) => i.target !== null).length,
+        failed: lastRetried.filter((i) => i.failed).length,
+      };
+    },
+    /**
+     * The drawn tiles near the camera that use the map (`coverage`'s
+     * with-map and waiting ones), failed first, then loading, waiting and
+     * loaded, at most `limit` of them. Walks the tiles: for an interface
+     * showing them, not for each frame.
+     */
+    mapTiles(limit: number): OsmMapTile[] {
+      const drawn = terrain?.tiles.visibleTiles;
+      const tileInfo = (
+        plugin as unknown as OverlayPluginInternals
+      ).overlayInfo.get(overlay)?.tileInfo;
+      if (!drawn || !tileInfo || !overlay.isReady) return [];
+      const within = reach();
+      const rows: OsmMapTile[] = [];
+      for (const tile of drawn) {
+        const info = tileInfo.get(tile);
+        if (!info) continue;
+        const kind = kindOf(info, within);
+        if (kind === "withMap" || kind === "waiting") rows.push(tileRow(info));
+      }
+      const order = { failed: 0, loading: 1, waiting: 2, loaded: 3 };
+      rows.sort((a, b) => order[a.status] - order[b.status]);
+      return rows.slice(0, Math.max(0, Math.floor(limit)));
     },
     coverage,
     mapReady,

@@ -47,9 +47,15 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 - `photoSource(item)` - where a photo item's bytes are: its content path
   (`loadContentEntry` joins the tour's folder); null without a photo (E1
   review #1).
+- `matchesQuery(query, texts)` - (both sides folded to one Unicode form,
+  NFC, and lower case) whether the trimmed query is in one of
+  `texts`, case-insensitive; an empty query is in everything. The one
+  matching rule of the 2D rail's search and the 3D tree's
+  (`editor-shell/tree-model.ts`).
 - `filterItems(items, query)` - the rows whose title, meta or kind's
-  words contain the trimmed query, case-insensitive; all for an empty
-  query. The kind's words (module-private `KIND_SEARCH_WORDS`) are "note"
+  words contain the trimmed query (`matchesQuery`); all for an empty
+  query. The kind's words (`KIND_SEARCH_WORDS`, exported for the 3D
+  tree's search) are "note"
   for a pin and a photo (the search box says "Find a code or note") and
   the words the 3D editor once showed ("short text", "picture"), so an
   item whose own text names no kind is still found by them; the kind's

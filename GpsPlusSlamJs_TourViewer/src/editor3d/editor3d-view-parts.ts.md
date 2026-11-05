@@ -12,12 +12,15 @@
     (`{ antialias: true }` by default), or a `webgl` failure when the
     constructor throws or the context is null (the renderer is then
     disposed).
+  - `drawnCounts(renderer)` - `{ drawCalls, triangles }` of the last
+    frame (`renderer.info.render`): the one accessor both views' readouts
+    use, so a change to how they count lands in both.
 - Invariants & assumptions: no state; the DOM is the page's.
 - Examples:
   ```ts
   const renderer = createViewRenderer();
   throw viewFailure("empty", "the tour has nothing with a position");
   ```
-- Tests: through the views' e2e (`editor3d.spec.js`, `editor3d-globe.spec.js`:
+- Tests: `editor3d-view-parts.test.ts` (`drawnCounts`); through the views' e2e (`editor3d.spec.js`, `editor3d-globe.spec.js`:
   a failed open's reason); `createViewRenderer`'s refusal
   needs a browser without WebGL and is not covered by a unit test.

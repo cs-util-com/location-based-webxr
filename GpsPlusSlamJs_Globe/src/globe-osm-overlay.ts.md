@@ -97,7 +97,9 @@ level)`; a region counts as content only while locked; a release
     goes to `noteLockError(err)` (the re-evaluation's locks too): counted
     by its name, the last kept, the first of each name warned once in the
     console; an `AbortError` (the library dropping a region it no longer
-    needs) is not recorded.
+    needs) is not recorded. `lockMs(range)` is how long a locked
+    region's request took (ms; null while it runs, for a region not
+    locked and for one served from the keep).
     `isLocked`, `wanted`, `stats()` (`locks`, `gatedLocks`,
     `lockedRegions`, `releases`: textures given back to the library, which
     drops them, so a re-visit fetches again; `keep`, `keptRegions`,
@@ -127,7 +129,8 @@ message }` of the last, or null). RangeError
   - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
 limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
 overlay, plugin, uniforms, attach(terrain), setEnabled(on), setFadeM(m),
-update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
+update(pose), stats(), coverage(), mapLoad(), mapTiles(limit), retryNow(),
+lastRetry(), mapReady(tile) }` (`gain`
     the map's darkening, `uniforms.uOsmGain`; RangeError outside (0, 1];
     `gainMode` how, `uniforms.uOsmFlat`; RangeError unless "flat" or
     "compress"):
@@ -162,9 +165,16 @@ update(pose), stats(), coverage(), mapLoad(), mapReady(tile) }` (`gain`
       integer >= 0) is given up, and stays so through the later retries
       (each clears the failed mark while it runs) until it gets its map:
       its parent is then let go and the tile drawn bare, while the retries
-      go on asking for it. Retries are counted, not time: the retry wait
+      go on asking for it. Only the timed retries count: one asked for
+      (`retryNow`, the editor's Retry button) does not, so quick clicks
+      never give a tile up. Retries are counted, not time: the retry wait
       stands still while the request ceiling is full, so a full ceiling
       holds the parent however long it lasts and never gives a tile up.
+      How long a give-up takes follows the retry streak the tile met,
+      since the waits are shared by every failed tile: about 35 s of
+      waits (5 + 10 + 20 s) on a fresh streak, up to 180 s (60 s three
+      times) when earlier retries had already failed, 5 s a wait while
+      requests are being answered; plus the requests' own time.
     - `keep` (default `GLOBE_OSM.keepRegions`) is the overlay's keep;
       RangeError unless an integer >= 0.
     - `update({ position, aboveGroundM, speedMps, nowMs })` each frame:
@@ -241,6 +251,24 @@ ceilingWaitS }`: the street map's loading state for an interface to
       ceiling holds the next request (s, rounded up to tenths; 0 when it
       has room). Read from `coverage` and the ceiling, so it walks the
       tiles too: a few times a second at most.
+    - `mapTiles(limit)` -> `OsmMapTile[]` `{ key, status, note, ms }`: the
+      near tiles that use the map (with it or waiting for it), failed
+      first, then loading, waiting, loaded, at most `limit`. `key` is the
+      map tile at the relief tile's centre (zoom/x/y, rows from the
+      north); `ms` the request's time (`lockMs`). Walks the tiles.
+    - `retryNow()` asks for the failed tiles again through the timed
+      retry's own path: at the next look, brought forward to the next
+      `update`, after the re-evaluation, without waiting out the backoff
+      and NOT counted towards giving a tile up; it waits while the request
+      ceiling is full. Returns an `OsmRetryAsk` `{ tiles, refused, retry }`:
+      refused `"map-off"` (the map is not active now: nothing is asked,
+      so nothing runs later unasked) or `"none-failed"` with 0 tiles, else
+      null; `retry` is the number of the retry that answers it.
+      `lastRetry()` -> `OsmRetryOutcome` `{ retry, tiles, loaded, failed }`
+      (null before the first retry): which retry it was (1 for the first,
+      timed or asked) and what became of its tiles. It is kept until the
+      next retry runs, so a caller waiting for its own ask ignores an
+      outcome whose `retry` is below its ask's.
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
     `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
@@ -394,7 +422,13 @@ ceilingWaitS }`: the street map's loading state for an interface to
   and a guard on its private methods, the diagnostics (a texture dropped
   only with its last lock, the switches off and the frames with an
   unknown height, the time the ceiling was full while on, the drawn tiles
-  near the camera sorted by their map, the map's load (waiting, failed, the ceiling's wait), nothing read before attach or
+  near the camera sorted by their map, the map's load (waiting, failed,
+  the ceiling's wait), the near tiles' rows with their status and
+  `z/x/y` key (`mapTiles`), a retry now asking again at the next update
+  without the wait, refusing with no failed tile or the map off (and not
+  asking once the map comes on), asked retries not giving a tile up while
+  the timed ones do, the retry numbers of an ask and its outcome,
+  and what became of the last retry's tiles, nothing read before attach or
   readiness), the keep (a released texture kept and a re-lock served
   from it past the gate, the region released longest ago given back past
   the keep, a region loading or failed never kept, 0 keeping nothing and

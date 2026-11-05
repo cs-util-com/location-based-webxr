@@ -108,8 +108,8 @@
           ><span class="dot" aria-hidden="true"></span
           ><span class="lbl">Not saved</span></span
         >
-        <!-- At a phone's width the bar has no room for Undo and Redo in
-             words: they fold into this menu (editor-shell.css). -->
+        <!-- At a phone's width the bar has no room for Undo, Redo and Add
+             in words: they fold into this menu (editor-shell.css). -->
         <div class="menu-wrap studio" id="edit-menu-wrap">
           <button class="tbtn menu-btn" id="edit-menu-btn" type="button">
             <span class="lbl">Edit</span><i data-icon="down"></i>
@@ -132,6 +132,15 @@
               aria-keyshortcuts="Control+Shift+Z"
             >
               Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
+            </button>
+            <!-- The top bar's Add, folded in with Undo and Redo. -->
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-add"
+              aria-keyshortcuts="Control+K"
+            >
+              Add...<kbd aria-hidden="true">Ctrl K</kbd>
             </button>
           </div>
         </div>
@@ -230,6 +239,18 @@
       </div>
       <div class="topbar-spacer"></div>
       <div class="studio grp" id="studio-help-group">
+        <!-- Add anything (the palette, editor-shell.ts): the way in for
+             a touch screen, which has no Ctrl+K. -->
+        <button
+          class="tbtn"
+          id="studio-add"
+          type="button"
+          aria-keyshortcuts="Control+K"
+          title="Add a pin, a long text or a station"
+        >
+          <i data-icon="plus"></i><span class="lbl">Add...</span
+          ><kbd aria-hidden="true">Ctrl K</kbd>
+        </button>
         <button
           class="tbtn"
           id="studio-help"
@@ -296,6 +317,15 @@
           ></button>
           <span class="sp"></span>
           <button
+            class="ib"
+            id="tree-collapse"
+            type="button"
+            title="Fold every station"
+            aria-label="Fold every station"
+          >
+            <i data-icon="foldall"></i>
+          </button>
+          <button
             class="ib add"
             id="tree-add"
             type="button"
@@ -306,7 +336,23 @@
           </button>
           <button class="ib" id="tree-fold" type="button"></button>
         </div>
+        <div class="tsearch">
+          <input
+            id="tree-search"
+            type="search"
+            placeholder="Search the stations"
+            aria-label="Search the stations, their items and the codes"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
         <div class="dbody" id="tree-body"></div>
+        <div class="treefoot" id="tree-foot">
+          <span><kbd>Ctrl K</kbd> add</span>
+          <span><kbd>+</kbd> add here</span>
+          <span><kbd>Esc</kbd> deselect</span>
+          <span>Drag to reorder</span>
+        </div>
       </aside>
       <aside
         class="dock"
@@ -372,6 +418,10 @@
           </button>
         </div>
       </div>
+      <!-- The bottom panel (bottom-panel.ts): Problems, History, Map
+           loading and Performance, opened by the bottom bar's toggles;
+           between the docks, or under them with its span button. -->
+      <section id="shell-panel" aria-label="Panel" hidden></section>
       <div id="shell-help" role="note" aria-label="Keyboard and mouse">
         <span>Mouse</span
         ><span
@@ -396,6 +446,14 @@
         <span><kbd>Esc</kbd></span
         ><span>deselect</span> <span><kbd>Ctrl</kbd>+<kbd>Z</kbd></span
         ><span>undo, add <kbd>Shift</kbd> to redo</span>
+        <span><kbd>Ctrl</kbd>+<kbd>J</kbd></span
+        ><span
+          >the bottom panel open / closed, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd
+            >M</kbd
+          >
+          its problems</span
+        >
+        <span>Selected</span><span id="shell-help-hint"></span>
       </div>
       <!-- What a keyboard reorder did, said to a screen reader (the
            inspector's Earlier and Later). -->
@@ -415,34 +473,29 @@
       </div>
     </div>
 
-    <!-- The bottom bar (editor-shell.ts): the save status in both views;
-         in the 3D view also the view, a hint, and the debug readout behind
-         its toggle. Shown with the top bar, once a tour is open. -->
+    <!-- The bottom bar (editor-shell.ts): in the 3D view the credits, the
+         selection's actions and the bottom panel's toggles. The save
+         status is said to a screen reader only (the top bar's unsaved
+         mark shows it). Shown with the top bar, once a tour is open. -->
     <footer id="shell-bar" aria-label="The editor's status" hidden>
       <!-- The 3D view's credits (the relief's and the map's), small at the
            bar's left: never under a dock, after the docks in the Tab order,
            their panel opening upward. Empty on the map. -->
       <div class="view3d-credits" id="view3d-credits"></div>
-      <span id="save-status" role="status" aria-live="polite" data-state="clean"
+      <span
+        id="save-status"
+        class="said"
+        role="status"
+        aria-live="polite"
+        data-state="clean"
         >No changes</span
       >
       <span id="view-loading" role="status" aria-live="polite" hidden></span>
-      <div id="shell-view"></div>
-      <!-- The selection's power actions (bar-actions.ts), drawn by the
-           shell: Duplicate, Align to station, Copy position. -->
       <div id="shell-acts" role="group" aria-label="The selection"></div>
-      <div id="shell-hint"></div>
-      <div id="shell-history" class="mono dbg"></div>
-      <div id="shell-calls" class="mono dbg"></div>
-      <div id="shell-frame" class="mono dbg wide"></div>
-      <button
-        id="shell-debug"
-        type="button"
-        aria-pressed="false"
-        title="Show or hide the debug readout (history, draw calls, frame time)"
-      >
-        debug
-      </button>
+      <div class="grow"></div>
+      <!-- The bottom panel's toggles, a badge on each only when there is
+           something to see (bottom-panel.ts draws them). -->
+      <div id="shell-toggles" role="group" aria-label="Panels"></div>
     </footer>
 
     <!-- The debug layer (debug-capture-layer.ts): the walk's camera

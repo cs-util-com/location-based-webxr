@@ -14,7 +14,12 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   `#inspector-head`, `#inspector-body`); a null model hides the dock.
   Drawn again only when the model or the state changed (the last draw's
   inputs are remembered per dock), so a store change that is not the
-  inspector's - an autosave's status - leaves its controls alone. When it
+  inspector's - an autosave's status - leaves its controls alone. The
+  ground under the selection (`groundOffM`, a station's `offGround`)
+  loads and refines while the view shows and the shell draws 5 times a
+  second, so a change of only those updates "Put on the ground" and "Put
+  items on the ground" in place (their note and off state; a locked
+  station's and a running one's left as drawn) and rebuilds nothing. When it
   is drawn again, the control that had the focus (by its `data-act` or
   `data-field`) has it again, with any text typed and not yet committed;
   a control drawn disabled leaves the focus where it fell. A call made
@@ -46,15 +51,19 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     This departs from the Studio 3 prototype, which types the name in the
     head. Then its Card image as a group of picture buttons
     (`data-act="image:<id>"`, `aria-pressed` on the one shown), or a
-    line saying none can be chosen; its Radius to type, with what it does
-    (and how far out it starts loading) and, when items stand outside the
-    circle, a `.warn` line saying visitors see them only from inside it;
-    under "Position" its Anchor east and north from the 3D view's origin
-    and its Heading to type (read-only while locked), its height
+    line saying none can be chosen; under "Place" (its folded summary
+    `r 25 m  E .. N .. 30 deg`, the radius first) its Radius to type,
+    with what it does (and how far out it starts loading), then its
+    Anchor east and north from the 3D view's origin and its Heading to
+    type (read-only while locked), its height
     read-only, and "Put on the ground" (`data-act="ground"`, off while
     locked or on the ground, its note "x.x m up/down"), with a note
-    saying what the metres are from; a station whose position cannot be
-    read says so.
+    saying what the metres are from; when items stand outside the circle,
+    a `.warn` line under the Place row, shown folded or not (it asks for
+    a change), says visitors see them only from inside it; a station whose
+    position cannot be read has its Radius and that line in its fields,
+    and says so. The radius sits with the position because both say where
+    the station is felt; an item's disclosure stays "Position".
   - A station whose story shows blocks: under "In its story", a
     labelled list with a row per block, its kind and its name as text
     (`ul.story-blocks`, `data-block` its id), and a note that they are
@@ -114,7 +123,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   tour" and "Later in the tour", disabled at the tour's ends): the
   keyboard's way to reorder.
 - The selection's commands in words (`.acts`, the prototype's): a
-  station's "Add a pin" (`add-pin`), "Put items on the ground"
+  station's "Put items on the ground"
   (`ground-items`, its note "N off", off when none is) and "Delete
   station"; an item's "Move to a new station" (`split`), "Put on the
   ground" (`ground`, its note "x.x m up/down", off when on it) and
@@ -158,7 +167,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   commands' `data-act`. A code stays read-only (`<output>`s).
 - Text, never markup. Numbers are fixed to the decimals shown, "-0"
   shown as 0; a heading the file does not give shows as "-".
-- A station's Position row (`.posrow`) holds its disclosure and the lock button (`data-act="lock"`, `aria-pressed` true while locked, labelled to unlock or to lock). Items have no lock. A station without a position has no lock and no row: its "no position" note stands alone (a lock with nothing to keep still read as if it locked the note).
+- A station's Place row (`.posrow`) holds its disclosure and the lock button (`data-act="lock"`, `aria-pressed` true while locked, labelled to unlock or to lock). Items have no lock. A station without a position has no lock and no row: its "no position" note stands alone (a lock with nothing to keep still read as if it locked the note).
 
 ## Examples
 
@@ -177,7 +186,7 @@ frame, a code without a position, and the folded head. The page by
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
 
-`shell-inspector.test.ts` also covers the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
+`shell-inspector.test.ts` also covers the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
 It also covers a station's story blocks, listed by kind and name as
 text under "In its story" (no list without a story), a story

@@ -111,8 +111,16 @@ try {
   process.exit(2);
 }
 
-// A developer's `--project` picks the passes; each pass names its own.
-const named = namedProjects(forwarded, plan.PROJECTS);
+// A developer's `--project` picks the passes; each pass names its own. One
+// the plan does not know is a malformed command line: said, exit 2.
+/** @type {ReturnType<typeof namedProjects>} */
+let named;
+try {
+  named = namedProjects(forwarded, plan.PROJECTS);
+} catch (error) {
+  console.error(`run-projects.mjs: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(2);
+}
 const base = ['test', '--config', configFile, ...named.rest];
 const resultsDir = path.resolve(cwd, plan.RESULTS_DIR);
 /**

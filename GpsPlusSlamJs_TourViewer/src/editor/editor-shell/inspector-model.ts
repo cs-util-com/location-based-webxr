@@ -57,6 +57,7 @@ import {
   type BlockField,
 } from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
+import { outsideItems } from "./tour-problems.js";
 import { stationImagePath } from "./tree-model.js";
 
 /** Where something stands: as the 3D view frames it, and as the file
@@ -503,11 +504,7 @@ export function buildInspector(input: {
       ...cardImages(station, input.assets, ownedAssetIds({ stations })),
       foundRadiusM: station.foundRadiusM,
       activateRadiusM: station.activateRadiusM,
-      outside: worldBlocks(station).filter(
-        (i) =>
-          Math.hypot(i.pose.position[0], i.pose.position[2]) >
-          station.foundRadiusM,
-      ).length,
+      outside: outsideItems(station).length,
       offGround: offs.includes(null)
         ? null
         : offs.filter((m) => m !== null && Math.abs(m) > ON_GROUND_M).length,

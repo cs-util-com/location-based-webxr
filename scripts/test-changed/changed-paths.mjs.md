@@ -4,8 +4,9 @@
   package selection) and `scripts/e2e/run-projects.mjs` (the Tour Viewer's
   e2e area selection), so both read the same set.
 - Public API:
-  - `trackedPaths(ref, cwd)`: `git diff --name-only <ref>`, staged and
-    unstaged, repo-relative.
+  - `trackedPaths(ref, cwd)`: `git diff --name-only --no-renames <ref>`,
+    staged and unstaged, repo-relative; a moved file is listed under its old
+    AND its new name, so the old path counts as a deletion.
   - `untrackedPaths(cwd)`: the `??` entries of `git status --porcelain`.
   - `changedPaths(ref, cwd)`: both, tracked first.
   - All throw when git fails (an unknown ref, not a work tree): a failed
