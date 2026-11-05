@@ -13,7 +13,6 @@
 import { describe, expect, it } from "vitest";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
-import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { calcGpsCoords, webxrToNUE } from "gps-plus-slam-app-framework/core";
 import {

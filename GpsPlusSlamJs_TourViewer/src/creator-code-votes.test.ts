@@ -1575,6 +1575,7 @@ describe(
     it.runIf(SWEEP_OUT !== undefined)(
       "is the same whatever the stored position, over the sweep",
       async () => {
+        expect.hasAssertions();
         await fc.assert(
           fc.asyncProperty(
             fc.constantFrom(...SWEEP_WALKS_M),

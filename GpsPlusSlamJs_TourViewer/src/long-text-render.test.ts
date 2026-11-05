@@ -14,7 +14,6 @@ import { describe, expect, it, vi } from "vitest";
 import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
 import {
-  LONG_TEXT_ALLOWED,
   createLinkGuard,
   leaveArQuestion,
   renderLongText,
