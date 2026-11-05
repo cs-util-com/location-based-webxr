@@ -59,8 +59,6 @@ import {
 } from '../test-timing/machine-slot.mjs';
 import {
   SKIP_BROWSER_ENV,
-  UNIT_RELATED_ENV,
-  DEPENDENT_TRIM_ENV,
   resolveGateMode,
 } from '../test-timing/projects.mjs';
 import {
@@ -71,6 +69,7 @@ import {
 import {
   cascadeCommands,
   cascadeTierBase,
+  fastGateOptions,
   firstMergeBase,
   MAIN_LINES,
   describeRun,
@@ -282,12 +281,7 @@ const status = runInOrder(
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
     ref,
-    // The per-commit fast gate (the skip switch set by its caller): the
-    // changed packages' unit stages run only the tests related to the change,
-    // and the dependents skip the checks that read only their own files.
-    ...(resolveGateMode(process.env).skipBrowser
-      ? { relatedUnitEnv: UNIT_RELATED_ENV, dependentTrimEnv: DEPENDENT_TRIM_ENV }
-      : {}),
+    ...fastGateOptions(process.env),
   })
 );
 

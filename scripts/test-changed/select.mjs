@@ -25,6 +25,7 @@
 
 import { CHANGED_REF_ENV } from '../e2e/project-runs.mjs';
 import { TIER_BASE_ENV } from '../e2e/tier.mjs';
+import { DEPENDENT_TRIM_ENV, UNIT_RELATED_ENV, resolveGateMode } from '../test-timing/projects.mjs';
 
 /**
  * @typedef {{ mode: 'all', reason: string }
@@ -241,6 +242,22 @@ export function cascadeTierBase({ env, ref, mergeBase }) {
   if (env[TIER_BASE_ENV]) return /** @type {string} */ (env[TIER_BASE_ENV]);
   if (ref) return ref;
   return mergeBase();
+}
+
+/**
+ * The `gateCommands` options of the per-commit fast gate only (the skip
+ * switch set by its caller): the changed packages' unit stages run only the
+ * tests related to the change, and the dependents skip the checks that read
+ * only their own files. Empty for every other run, the milestone's browser
+ * run included.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ relatedUnitEnv?: string, dependentTrimEnv?: string }}
+ */
+export function fastGateOptions(env) {
+  return resolveGateMode(env).skipBrowser
+    ? { relatedUnitEnv: UNIT_RELATED_ENV, dependentTrimEnv: DEPENDENT_TRIM_ENV }
+    : {};
 }
 
 /**

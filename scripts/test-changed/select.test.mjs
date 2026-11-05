@@ -16,6 +16,7 @@ import {
   cascadeTierBase,
   MAIN_LINES,
   firstMergeBase,
+  fastGateOptions,
   describeRun,
   FRAMEWORK_BUILD_IF_STALE,
 } from './select.mjs';
@@ -704,5 +705,19 @@ describe('gateCommands hands the diff ref to the changed packages only', () => {
     for (const c of cascadeCommands()) {
       expect(c.env).toEqual({});
     }
+  });
+});
+
+// Why: the related-only unit run and the dependents' trim belong to the
+// per-commit fast gate only. If the browser run of a milestone (no skip
+// switch) got them too, it would test a slice and pass for the full gate.
+describe('fastGateOptions', () => {
+  it('turns the related run and the trim on only with the skip switch set', () => {
+    expect(fastGateOptions({ GATE_SKIP_BROWSER_STAGES: '1' })).toEqual({
+      relatedUnitEnv: 'GATE_UNIT_RELATED_REF',
+      dependentTrimEnv: 'GATE_DEPENDENT_TRIM',
+    });
+    expect(fastGateOptions({})).toEqual({});
+    expect(fastGateOptions({ GATE_SKIP_BROWSER_STAGES: '' })).toEqual({});
   });
 });
