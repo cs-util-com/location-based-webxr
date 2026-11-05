@@ -15,6 +15,7 @@
  */
 import type { ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 
+import { foldForSearch } from "../editor-model.js";
 import { ADD_CHOICES, type AddKind } from "./tree-add-menu.js";
 
 /** A station as the palette offers it. */
@@ -58,13 +59,8 @@ interface Candidate {
   readonly number: string | null;
 }
 
-/** Folded for matching: one Unicode form (NFC), lower case. */
-function fold(text: string): string {
-  return text.normalize("NFC").toLowerCase();
-}
-
 function wordsOf(text: string): string[] {
-  return fold(text).split(/\s+/).filter(Boolean);
+  return foldForSearch(text).split(/\s+/).filter(Boolean);
 }
 
 function candidates(
@@ -88,7 +84,7 @@ function candidates(
         atDefault: station.id === defaultId,
         kindWords: wordsOf(`${choice.label} ${choice.words}`),
         name: choice.label.toLowerCase(),
-        placeText: fold(place),
+        placeText: foldForSearch(place),
         number: String(station.number),
       });
     }

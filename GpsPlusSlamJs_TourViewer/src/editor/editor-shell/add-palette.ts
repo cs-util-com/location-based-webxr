@@ -8,9 +8,10 @@
  * further: the page's Escape would drop the selection), Tab closes it and
  * lets the focus move on.
  *
- * Ctrl+K opens it only where the key is no field's: in the long-text
- * writer it is the writer's Link key, and the shell asks `isPaletteKey`
- * outside a field only.
+ * Ctrl+K opens it wherever the key is no field's: in a line field too (it
+ * has no Ctrl+K of its own), not in a text of several lines or an editable
+ * element, where it is the field's (the long-text writer's Link key). The
+ * shell makes that choice before it asks `isPaletteKey`.
  *
  * @see add-palette.ts.md
  */

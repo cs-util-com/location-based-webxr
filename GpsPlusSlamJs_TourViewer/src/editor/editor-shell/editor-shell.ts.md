@@ -38,7 +38,7 @@ closed first and the focus back on that station's "+" after the add's
 redraw. Ctrl+K - anywhere but in a text area or an editable element
 (the long-text writer's Link key) and with no dialog open, the
 browser's own Ctrl+K prevented - and the top bar's Add (`#studio-add`,
-the way in for a touch screen; at a phone's width the Edit menu's `#edit-add`) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
+the way in for a touch screen; at a phone's width the Edit menu's `#edit-add`, which leaves the focus on the Edit button, as its menu closes) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
 place the selected station (or the station of the selected item) when
 the query names none, and its New station the head's "+" (a station at
 the centre of the view). Escape closes the palette before the help it
@@ -116,6 +116,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   open keeps that fold and does not restore the one from before the
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
+- `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
+  without it where it shows: the page calls it for every station it makes (the
+  search would hide the new one, its name matching nothing typed), and adding
+  to a station from the tree or the palette does the same.
 - `EditorShell.flush()` - writes the typing not yet in the tour (an
   inspector field being typed in, a long text's writer before its
   pause); the page calls it before a save.

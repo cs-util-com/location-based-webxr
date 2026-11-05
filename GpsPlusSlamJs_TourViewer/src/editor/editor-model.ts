@@ -191,7 +191,7 @@ export const KIND_SEARCH_WORDS: Readonly<Record<EditorItemKind, string>> = {
 };
 
 /** A text folded for the search: one Unicode form (NFC), lower case. */
-function foldForSearch(text: string): string {
+export function foldForSearch(text: string): string {
   return text.normalize("NFC").toLowerCase();
 }
 

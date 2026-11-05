@@ -65,3 +65,6 @@ typing and Enter (closed first, focus back), the arrows round, a click,
 no match, Escape not reaching the page, Tab and the backdrop, opening
 again empty; `isPaletteKey` with Ctrl and Cmd, a non-Latin layout, and
 not with Shift, Alt or another layout's letter at K's place.
+`playwright-tests/editor3d-add-palette.spec.js`: each side of the 520 px
+fold (the top bar's Add, the Edit menu's Add), adding from the keyboard,
+Escape giving the focus back, and a station added during a search.
