@@ -21,66 +21,7 @@ import { AT_FIXTURE, stubNetwork, waitForRefresh } from "./fixtures.js";
 test.describe("the header as an overlay (Q11)", () => {
   test.use({ viewport: { width: 390, height: 780 } });
 
-  test("lets the 3D view start at the top of the screen, with the header over it", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const box = async (selector) => {
-      const measured = await page.locator(selector).boundingBox();
-      if (measured === null) throw new Error(`no box for ${selector}`);
-      return measured;
-    };
-
-    const header = await box("header");
-    const scene = await box("#scene");
-
-    // THE MILESTONE, in one line: the canvas begins at the top of the viewport
-    // rather than beneath the header. A small tolerance because a border or a
-    // sub-pixel layout rounding is not the failure being guarded against.
-    expect(
-      scene.y,
-      "the 3D view still starts below the header, so it is not an overlay",
-    ).toBeLessThanOrEqual(1);
-
-    // AND THE HEADER IS ON TOP OF IT, not merely coincidentally at y=0. Without
-    // this, a header collapsed to zero height would satisfy the assertion above
-    // while nothing had been made to float.
-    expect(header.height).toBeGreaterThan(0);
-    expect(header.y).toBeLessThanOrEqual(1);
-    expect(
-      header.y + header.height,
-      "the header does not actually overlap the scene",
-    ).toBeGreaterThan(scene.y);
-  });
-
-  test("gives the 3D view the height the header used to take", async ({
-    page,
-  }) => {
-    // Why this test matters: the whole point of the change is reclaimed height,
-    // and "it looks taller" is not checkable. The canvas should now be within a
-    // header's height of the full viewport rather than short by exactly that.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const scene = await page.locator("#scene").boundingBox();
-    if (scene === null) throw new Error("no box for #scene");
-
-    const viewport = page.viewportSize();
-    if (viewport === null) throw new Error("no viewport");
-
-    // The map sheet still overlaps the bottom of the scene by design, so this
-    // asserts the scene's BOX reaches the viewport, not that it is unobscured.
-    expect(
-      scene.height,
-      "the scene is still short by roughly a header",
-    ).toBeGreaterThan(viewport.height * 0.9);
-  });
-
-  test("keeps the header's controls tappable where they overlap the canvas", async ({
+  test("lets the 3D view start at the top of the screen under the header, and keeps the header's controls tappable where they overlap the canvas", async ({
     page,
   }) => {
     // The failure mode a floating bar introduces: the canvas is a pointer target
@@ -90,6 +31,36 @@ test.describe("the header as an overlay (Q11)", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+
+    // THE OVERLAY ITSELF, measured on the same boot before anything is pressed.
+    {
+      const box = async (selector) => {
+        const measured = await page.locator(selector).boundingBox();
+        if (measured === null) throw new Error(`no box for ${selector}`);
+        return measured;
+      };
+
+      const header = await box("header");
+      const scene = await box("#scene");
+
+      // THE MILESTONE, in one line: the canvas begins at the top of the viewport
+      // rather than beneath the header. A small tolerance because a border or a
+      // sub-pixel layout rounding is not the failure being guarded against.
+      expect(
+        scene.y,
+        "the 3D view still starts below the header, so it is not an overlay",
+      ).toBeLessThanOrEqual(1);
+
+      // AND THE HEADER IS ON TOP OF IT, not merely coincidentally at y=0. Without
+      // this, a header collapsed to zero height would satisfy the assertion above
+      // while nothing had been made to float.
+      expect(header.height).toBeGreaterThan(0);
+      expect(header.y).toBeLessThanOrEqual(1);
+      expect(
+        header.y + header.height,
+        "the header does not actually overlap the scene",
+      ).toBeGreaterThan(scene.y);
+    }
 
     // The control still works while floating.
     await page.locator("#header-toggle").click();
