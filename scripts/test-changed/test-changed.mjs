@@ -57,6 +57,7 @@ import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import {
   SKIP_BROWSER_ENV,
   UNIT_RELATED_ENV,
+  DEPENDENT_TRIM_ENV,
   resolveGateMode,
 } from '../test-timing/projects.mjs';
 import {
@@ -245,9 +246,10 @@ const status = runInOrder(
     docOnlyNames,
     ref,
     // The per-commit fast gate (the skip switch set by its caller): the
-    // changed packages' unit stages run only the tests related to the change.
+    // changed packages' unit stages run only the tests related to the change,
+    // and the dependents skip the checks that read only their own files.
     ...(resolveGateMode(process.env).skipBrowser
-      ? { relatedUnitEnv: UNIT_RELATED_ENV }
+      ? { relatedUnitEnv: UNIT_RELATED_ENV, dependentTrimEnv: DEPENDENT_TRIM_ENV }
       : {}),
   })
 );
@@ -258,7 +260,7 @@ if (status === 0 && names.length > 0) {
       '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.\n' +
       '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.' +
       (resolveGateMode(process.env).skipBrowser
-        ? "\n  This fast gate ran only the changed packages' unit tests related to the change (the related-unit lines above)."
+        ? "\n  This fast gate ran only the changed packages' unit tests related to the change (the related-unit lines above),\n  and the dependents without the checks that read only their own files (format, lint:css, check:dup, check:boundaries)."
         : '')
   );
 }

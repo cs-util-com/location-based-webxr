@@ -27,6 +27,7 @@ import {
   stageOrder,
   gateStages,
   resolveGateMode,
+  dependentTrimMode,
   SKIP_BROWSER_ENV,
 } from './projects.mjs';
 import {
@@ -237,7 +238,8 @@ for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
 warnOnChainDrift();
 
 const { skipBrowser } = resolveGateMode(process.env);
-const stages = gateStages(project, { skipBrowser });
+const dependentTrim = dependentTrimMode(process.env);
+const stages = gateStages(project, { skipBrowser, dependentTrim });
 
 if (skipBrowser) {
   // NAMED, never silent. The repo's rule for a run that covers less than the
@@ -246,7 +248,7 @@ if (skipBrowser) {
     .filter((stage) => !stages.includes(stage))
     .map((stage) => stage.name);
   console.log(
-    `\n⏭ ${project.name}: ${SKIP_BROWSER_ENV} set — running ${stages.length} of ${project.stages.length} stages, skipping ${skipped.join(', ') || '(none)'}.\n   Dependent mode (DEC-G2): builds, static checks and unit tests only.`
+    `\n⏭ ${project.name}: ${SKIP_BROWSER_ENV} set — running ${stages.length} of ${project.stages.length} stages, skipping ${skipped.join(', ') || '(none)'}.\n   Dependent mode (DEC-G2): builds, static checks and unit tests only${dependentTrim ? ", without the checks that read only this package's own files (unchanged by a dependency)" : ''}.`
   );
 }
 

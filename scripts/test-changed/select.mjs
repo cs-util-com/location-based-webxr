@@ -242,6 +242,7 @@ export function cascadeCommands() {
  *   docOnlyNames?: readonly string[],
  *   ref?: string,
  *   relatedUnitEnv?: string,
+ *   dependentTrimEnv?: string,
  * }} options - `skipBrowserEnv` names the env var that puts a gate run in
  *   dependent mode; `rootChecks` are root scripts to run (`check:deadcode`);
  *   `docOnlyNames` are pnpm names of packages that run only `format`;
@@ -250,12 +251,15 @@ export function cascadeCommands() {
  *   `relatedUnitEnv`, passed by the per-commit fast gate only, names the env
  *   var that hands the same ref to the changed packages' unit stages, which
  *   then run only the tests related to the change (related-unit.mjs); the
- *   dependents get it cleared, so they always run their whole suite
+ *   dependents get it cleared, so they always run their whole suite;
+ *   `dependentTrimEnv`, also fast-gate only, is set to '1' for the dependents
+ *   (which then skip the checks that read only their own files, projects.mjs
+ *   DEPENDENT_TRIM_STAGES) and cleared for the changed packages
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
 export function gateCommands(
   names,
-  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv }
+  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv, dependentTrimEnv }
 ) {
   /** @type {{ command: string, env: Record<string, string> }[]} */
   const commands = [];
@@ -289,6 +293,8 @@ export function gateCommands(
     env: {
       ...(ref ? { [CHANGED_REF_ENV]: ref } : {}),
       ...(ref && relatedUnitEnv ? { [relatedUnitEnv]: ref } : {}),
+      // Cleared, so an inherited value can never trim a changed package.
+      ...(dependentTrimEnv ? { [dependentTrimEnv]: '' } : {}),
     },
   });
   // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
@@ -302,6 +308,7 @@ export function gateCommands(
     env: {
       [skipBrowserEnv]: '1',
       ...(relatedUnitEnv ? { [relatedUnitEnv]: '' } : {}),
+      ...(dependentTrimEnv ? { [dependentTrimEnv]: '1' } : {}),
     },
   });
   return commands;

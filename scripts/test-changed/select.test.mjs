@@ -252,6 +252,34 @@ describe('gateCommands: related unit tests in the fast gate', () => {
   });
 });
 
+// Why this test matters: the dependent trim (projects.mjs
+// DEPENDENT_TRIM_STAGES) is licensed for the DEPENDENTS of the per-commit fast
+// gate only. A changed package always runs its static checks, so it gets the
+// switch cleared, and without the option (the milestone run) nobody gets it.
+describe('gateCommands: dependent trim in the fast gate', () => {
+  const ENV = 'GATE_SKIP_BROWSER_STAGES';
+  const TRIM = 'GATE_DEPENDENT_TRIM';
+
+  it('sets it for the dependents and clears it for the changed packages', () => {
+    const commands = gateCommands(['gps-plus-slam-app-framework'], {
+      skipBrowserEnv: ENV,
+      dependentTrimEnv: TRIM,
+      ref: 'HEAD',
+    });
+    const changed = commands.find((c) => c.command.endsWith('--filter gps-plus-slam-app-framework test'));
+    const dependents = commands.find((c) => c.command.includes('"...gps-plus-slam-app-framework"'));
+    expect(changed?.env[TRIM]).toBe('');
+    expect(dependents?.env[TRIM]).toBe('1');
+    expect(dependents?.env[ENV]).toBe('1');
+  });
+
+  it('never sets it without the option (the milestone run)', () => {
+    for (const command of gateCommands(['a'], { skipBrowserEnv: ENV, ref: 'abc123' })) {
+      expect(command.env).not.toHaveProperty(TRIM);
+    }
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §8, "the lab smoke must run on a
 // globe-only commit"): the design system does not DEPEND on the globe
 // package, it SERVES it through its routes, so pnpm's graph never selects

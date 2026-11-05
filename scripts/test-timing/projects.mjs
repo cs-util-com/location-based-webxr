@@ -38,6 +38,9 @@ import { onGithubRunner } from "./stage-args.mjs";
  *   `gateBaseCommand`); CI, the milestone run and every recorded run keep
  *   `command`. The framework's unit stage drops `--coverage` this way
  *   (gate-speed plan 2026-10-04, G4).
+ * @property {boolean} [readsUpstreamSources] - true for a stage that reads
+ *   another workspace package's SOURCE files; a dependent then keeps it in the
+ *   per-commit gate (see `DEPENDENT_TRIM_STAGES`)
  * @property {boolean} [nestedGate] - true for a root cascade row that runs a
  *   whole package gate (`packageGateStage`). The stage watchdog does not
  *   watch it: its leaf stages are watched one level down, so a stall names
@@ -620,7 +623,11 @@ export const PROJECTS = [
               command:
                 'stylelint "src/landing/**/*.css" "**/*.html" --config config/stylelint.config.mjs --allow-empty-input',
             }
-          : stage.name === "test:e2e"
+          : stage.name === "check:boundaries"
+            ? // includeOnly reaches ../GpsPlusSlamJs_EditorKit/src: an editor
+              // kit change can break this package's boundary rules.
+              { ...stage, readsUpstreamSources: true }
+            : stage.name === "test:e2e"
             ? {
                 ...stage,
                 command:
@@ -880,14 +887,63 @@ export function isBrowserStage(stage) {
  * the same failure: a green local gate type-checking against a stale dist.
  * `projects.test.mjs` pins that builds survive, for every project.
  *
+ * `dependentTrim` (the per-commit gate's dependents only, see
+ * `dependentTrimMode`) also drops `DEPENDENT_TRIM_STAGES`.
+ *
  * @param {ProjectConfig} project
- * @param {{ skipBrowser?: boolean }} [options]
+ * @param {{ skipBrowser?: boolean, dependentTrim?: boolean }} [options]
  * @returns {readonly StageConfig[]}
  */
-export function gateStages(project, { skipBrowser = false } = {}) {
-  return skipBrowser
-    ? project.stages.filter((stage) => !isBrowserStage(stage))
-    : project.stages;
+export function gateStages(
+  project,
+  { skipBrowser = false, dependentTrim = false } = {},
+) {
+  if (!skipBrowser && !dependentTrim) {
+    return project.stages;
+  }
+  return project.stages.filter(
+    (stage) =>
+      !(skipBrowser && isBrowserStage(stage)) &&
+      !(
+        dependentTrim &&
+        DEPENDENT_TRIM_STAGES.includes(stage.name) &&
+        stage.readsUpstreamSources !== true
+      ),
+  );
+}
+
+/**
+ * The stages a DEPENDENT skips in the per-commit gate. A dependent runs only
+ * because something it consumes changed, and each of these reads nothing but
+ * the dependent's own files, so its verdict cannot have changed: Prettier,
+ * stylelint and jscpd are given the package's own paths, and depcruise is
+ * `includeOnly` the package's `src` (a stage reaching another package's
+ * source says so with `readsUpstreamSources` and is kept). NOT here:
+ * `check:cycles`, because dpdm follows imports into the framework's dist; and
+ * builds, lint, typecheck and unit tests, which see what the dependent
+ * consumes. The changed packages, the milestone run, a package's own gate and
+ * CI run every stage.
+ */
+export const DEPENDENT_TRIM_STAGES = Object.freeze([
+  "format",
+  "lint:css",
+  "check:dup",
+  "check:boundaries",
+]);
+
+/** Env var that marks a gate run as a per-commit gate's dependent. */
+export const DEPENDENT_TRIM_ENV = "GATE_DEPENDENT_TRIM";
+
+/**
+ * Is this run a DEPENDENT of the per-commit gate (skip switch and trim switch
+ * both set, any non-empty value)? `gateCommands` sets the trim switch for the
+ * dependents and clears it for the changed packages.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+export function dependentTrimMode(env = {}) {
+  return resolveGateMode(env).skipBrowser && Boolean(env[DEPENDENT_TRIM_ENV]);
 }
 
 /**

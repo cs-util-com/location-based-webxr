@@ -30,6 +30,11 @@
     on SIGINT/SIGTERM, and a stale one is reclaimed. `GATE_ALLOW_CONCURRENT=1`
     overrides, and says so. Added 2026-08-20 after three cascades were lost to
     concurrent runs whose failures all looked like flaky tests.
+  - **Dependent mode names what it skips.** With `GATE_SKIP_BROWSER_STAGES`
+    set it runs `gateStages(project, { skipBrowser, dependentTrim })` and
+    prints one line listing the skipped stages: the browser stages, and for a
+    per-commit dependent (`dependentTrimMode`, [projects.mjs](projects.mjs.md))
+    also the checks that read only the package's own files.
   - Fail-fast: a red stage stops the gate exactly like the old `&&` chain.
   - **A stalled stage (exit 124) is named as one**, beside its STALLED
     banner, so `GATE-RC=124` is never read as a plain red test: it is a

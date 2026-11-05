@@ -25,6 +25,9 @@ import {
   SKIP_BROWSER_ENV,
   UNIT_RELATED_ENV,
   RELATED_UNIT_SCRIPT,
+  DEPENDENT_TRIM_ENV,
+  DEPENDENT_TRIM_STAGES,
+  dependentTrimMode,
 } from './projects.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -347,6 +350,71 @@ describe('browser-stage exclusion (DEC-G2)', () => {
   it('leaves the full stage list untouched when the mode is off', () => {
     for (const project of PROJECTS) {
       expect(gateStages(project).map((s) => s.name)).toEqual(stageOrder(project));
+    }
+  });
+});
+
+// Why this test matters: a DEPENDENT in the per-commit gate is re-run only
+// because something it consumes changed, so a stage that reads nothing but the
+// dependent's own files cannot change its verdict and is skipped. Each trimmed
+// stage was checked for that (format, stylelint and jscpd list own paths;
+// depcruise is includeOnly src). check:cycles is NOT trimmed: dpdm walks into
+// the framework's dist (189 of the Recorder's 289 files). The Tour Viewer's
+// boundaries stage reads the editor kit's source, so it is kept, and builds,
+// lint, typecheck and unit tests are never trimmed.
+describe('dependent trim (per-commit gate, dependents only)', () => {
+  it('drops exactly the own-files stages, keeping builds, lint, cycles, typecheck and units', () => {
+    expect([...DEPENDENT_TRIM_STAGES]).toEqual(['format', 'lint:css', 'check:dup', 'check:boundaries']);
+    for (const project of PROJECTS) {
+      const kept = gateStages(project, { skipBrowser: true, dependentTrim: true });
+      for (const stage of project.stages) {
+        const expectKept =
+          !isBrowserStage(stage) &&
+          (!DEPENDENT_TRIM_STAGES.includes(stage.name) || stage.readsUpstreamSources === true);
+        expect(kept.includes(stage), `${project.name} ${stage.name}`).toBe(expectKept);
+      }
+    }
+  });
+
+  it('keeps the Tour Viewer boundaries stage, which reads the editor kit source', () => {
+    const names = gateStages(getProject('GpsPlusSlamJs_TourViewer'), {
+      skipBrowser: true,
+      dependentTrim: true,
+    }).map((s) => s.name);
+    expect(names).toContain('check:boundaries');
+    expect(names).toContain('check:cycles');
+    expect(names).not.toContain('format');
+    expect(names).toContain('build:osm');
+    expect(names).toContain('lint');
+    expect(names).toContain('test:unit');
+  });
+
+  it('the Tour Viewer depcruise config reaches outside its own src exactly where the flag says', () => {
+    for (const project of PROJECTS) {
+      const stage = project.stages.find((s) => s.name === 'check:boundaries');
+      if (!stage) continue;
+      const config = readFileSync(
+        path.join(WORKSPACE_ROOT, project.dir, 'config/.dependency-cruiser.cjs'),
+        'utf8'
+      );
+      const outside = /includeOnly:[^\n]*GpsPlusSlamJs_/.test(config);
+      expect(stage.readsUpstreamSources === true, project.name).toBe(outside);
+    }
+  });
+
+  it('is on only with the skip switch AND the trim switch set', () => {
+    expect(dependentTrimMode({})).toBe(false);
+    expect(dependentTrimMode({ [DEPENDENT_TRIM_ENV]: '1' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1', [DEPENDENT_TRIM_ENV]: '' })).toBe(false);
+    expect(dependentTrimMode({ [SKIP_BROWSER_ENV]: '1', [DEPENDENT_TRIM_ENV]: '1' })).toBe(true);
+  });
+
+  it('is off by default', () => {
+    for (const project of PROJECTS) {
+      expect(gateStages(project, { skipBrowser: true })).toEqual(
+        project.stages.filter((s) => !isBrowserStage(s))
+      );
     }
   });
 });

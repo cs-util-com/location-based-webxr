@@ -15,6 +15,22 @@
     lookup; `resolveProject` keys on cwd basename (root by path equality) and
     returns `undefined` for unknown dirs (callers fail loudly).
   - `getStage(project, name)`, `stageOrder(project)`.
+  - `gateStages(project, { skipBrowser, dependentTrim })` - the stages a gate
+    run executes. `skipBrowser` drops the browser stages (dependent mode);
+    `dependentTrim` also drops `DEPENDENT_TRIM_STAGES` (`format`,
+    `lint:css`, `check:dup`, `check:boundaries`) unless the stage is marked
+    `readsUpstreamSources`. `dependentTrimMode(env)` is true only with
+    `GATE_SKIP_BROWSER_STAGES` and `GATE_DEPENDENT_TRIM`
+    (`DEPENDENT_TRIM_ENV`) both set, which `gateCommands` does for the
+    dependents of the per-commit gate only.
+    - Why each trimmed stage cannot change a dependent's verdict (checked
+      2026-11-05): Prettier, stylelint and jscpd are given the package's own
+      paths; every app's depcruise config is `includeOnly: "src"`, except
+      the Tour Viewer's, which also includes the editor kit's source, so its
+      stage carries `readsUpstreamSources` and stays (pinned against the
+      config text). `check:cycles` stays: dpdm follows imports into the
+      framework's dist (189 of the Recorder's 289 files). Builds, lint,
+      typecheck and unit tests stay.
   - `gateBaseCommand(stage, env)` - the stage's `fastGateCommand` in the
     per-commit gate (`GATE_SKIP_BROWSER_STAGES` set), else its `command`.
     Only the framework's `test:unit` has one: it drops `--coverage`, which

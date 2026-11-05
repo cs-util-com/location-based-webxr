@@ -31,7 +31,7 @@
   `select.property.test.mjs` (never invents packages; any non-package path
   forces 'all'; order-insensitive). Run in the root repo-config gate.
 
-## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv })`
+## `gateCommands(names, { skipBrowserEnv, rootChecks, docOnlyNames, ref, relatedUnitEnv, dependentTrimEnv })`
 
 The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
@@ -68,6 +68,11 @@ tests related to the change
 EMPTY, so an inherited value can never narrow a dependent's suite. Without
 the option (the milestone run) neither command carries it.
 
+`dependentTrimEnv`, also passed by the fast gate only, is set to `'1'` in the
+dependents' command, which then skip the checks that read only their own
+files (`DEPENDENT_TRIM_STAGES` in
+[projects.mjs](../test-timing/projects.mjs.md)), and cleared in the changed
+packages' command, which always run every static check.
 
 `selectPackages` cannot compute the dependent set — it maps paths to
 top-level directories and nothing more — so the closure comes from pnpm’s
