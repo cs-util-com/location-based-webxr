@@ -25,6 +25,7 @@
 
 import { CHANGED_REF_ENV } from '../e2e/project-runs.mjs';
 import { TIER_BASE_ENV } from '../e2e/tier.mjs';
+import { DEPENDENT_TRIM_ENV, UNIT_RELATED_ENV, resolveGateMode } from '../test-timing/projects.mjs';
 
 /**
  * @typedef {{ mode: 'all', reason: string }
@@ -244,6 +245,43 @@ export function cascadeTierBase({ env, ref, mergeBase }) {
 }
 
 /**
+ * The `gateCommands` options of the per-commit fast gate only (the skip
+ * switch set by its caller): the changed packages' unit stages run only the
+ * tests related to the change, and the dependents skip the checks that read
+ * only their own files. Empty for every other run, the milestone's browser
+ * run included.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ relatedUnitEnv?: string, dependentTrimEnv?: string }}
+ */
+export function fastGateOptions(env) {
+  return resolveGateMode(env).skipBrowser
+    ? { relatedUnitEnv: UNIT_RELATED_ENV, dependentTrimEnv: DEPENDENT_TRIM_ENV }
+    : {};
+}
+
+/**
+ * The main lines a branch may be cut from, in the order they are tried: the
+ * GitHub remote is `origin2` in some clones and `origin` in others, and a
+ * clone without either has a local `main`.
+ */
+export const MAIN_LINES = Object.freeze(['origin2/main', 'origin/main', 'main']);
+
+/**
+ * The merge-base with the first of `MAIN_LINES` that has one, or null.
+ *
+ * @param {(mainLine: string) => string | null} mergeBaseWith
+ * @returns {string | null}
+ */
+export function firstMergeBase(mergeBaseWith) {
+  for (const line of MAIN_LINES) {
+    const base = mergeBaseWith(line);
+    if (base) return base;
+  }
+  return null;
+}
+
+/**
  * The commands a `test:changed` run executes, in order.
  *
  * Pure so the SPLIT is testable. `selectPackages` above cannot compute the
@@ -265,16 +303,25 @@ export function cascadeTierBase({ env, ref, mergeBase }) {
  *   rootChecks?: readonly string[],
  *   docOnlyNames?: readonly string[],
  *   ref?: string,
+ *   relatedUnitEnv?: string,
+ *   dependentTrimEnv?: string,
  * }} options - `skipBrowserEnv` names the env var that puts a gate run in
  *   dependent mode; `rootChecks` are root scripts to run (`check:deadcode`);
  *   `docOnlyNames` are pnpm names of packages that run only `format`;
  *   `ref` is the diff base, handed to the changed packages' full gates as
- *   CHANGED_REF_ENV (never to the dependents, which run no browser stage)
+ *   CHANGED_REF_ENV (never to the dependents, which run no browser stage);
+ *   `relatedUnitEnv`, passed by the per-commit fast gate only, names the env
+ *   var that hands the same ref to the changed packages' unit stages, which
+ *   then run only the tests related to the change (related-unit.mjs); the
+ *   dependents get it cleared, so they always run their whole suite;
+ *   `dependentTrimEnv`, also fast-gate only, is set to '1' for the dependents
+ *   (which then skip the checks that read only their own files, projects.mjs
+ *   DEPENDENT_TRIM_STAGES) and cleared for the changed packages
  * @returns {{ command: string, env: Record<string, string> }[]}
  */
 export function gateCommands(
   names,
-  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref }
+  { skipBrowserEnv, rootChecks = [], docOnlyNames = [], ref, relatedUnitEnv, dependentTrimEnv }
 ) {
   /** @type {{ command: string, env: Record<string, string> }[]} */
   const commands = [];
@@ -305,7 +352,12 @@ export function gateCommands(
   // actually edited.
   commands.push({
     command: `pnpm --workspace-concurrency=1 ${filters((n) => `--filter ${n}`)} test`,
-    env: ref ? { [CHANGED_REF_ENV]: ref } : {},
+    env: {
+      ...(ref ? { [CHANGED_REF_ENV]: ref } : {}),
+      ...(ref && relatedUnitEnv ? { [relatedUnitEnv]: ref } : {}),
+      // Cleared, so an inherited value can never trim a changed package.
+      ...(dependentTrimEnv ? { [dependentTrimEnv]: '' } : {}),
+    },
   });
   // Then dependents, WITHOUT the browser stages. `...X` is X plus dependents;
   // `!X` subtracts the ones that just ran in full. An empty result is a safe
@@ -315,7 +367,11 @@ export function gateCommands(
       filters((n) => `--filter "...${n}"`),
       filters((n) => `--filter "!${n}"`),
     ].join(' ')} test`,
-    env: { [skipBrowserEnv]: '1' },
+    env: {
+      [skipBrowserEnv]: '1',
+      ...(relatedUnitEnv ? { [relatedUnitEnv]: '' } : {}),
+      ...(dependentTrimEnv ? { [dependentTrimEnv]: '1' } : {}),
+    },
   });
   return commands;
 }

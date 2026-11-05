@@ -52,6 +52,7 @@ describe("edit.html's menu items", () => {
       "file-save": "Control+S",
       "edit-undo": "Control+Z",
       "edit-redo": "Control+Shift+Z",
+      "edit-add": "Control+K",
       "studio-top": "T",
       "studio-frame": "F",
     });

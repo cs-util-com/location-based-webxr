@@ -5,8 +5,7 @@
  * file picker's in-progress states, whether a save waits to be
  * delivered again, and the view switch: the map or the 3D view, and the
  * 3D view's load and why it last failed, the 3D view's shell: the
- * tree's folds, the docks' folds, the layers turned off and the debug
- * readout, the 3D view's gesture under way (its start and end only;
+ * tree's folds, the docks' folds and the layers turned off, the 3D view's gesture under way (its start and end only;
  * the drag's preview is the scene's), and which stations' poses are
  * unlocked (every station is locked until the creator unlocks it). The tour itself is `tourDocument`'s; this slice holds
  * what the page's chrome reads, so any view of the page (the map page,
@@ -143,8 +142,6 @@ export interface EditorViewState {
   readonly foldedDocks: Readonly<Record<ShellDock, boolean>>;
   /** The layers the creator turned off. */
   readonly hiddenLayers: readonly ShellLayer[];
-  /** The bottom bar's debug readout shows. */
-  readonly readout: boolean;
   /** The stations whose position, height and heading may be edited, by
    *  id: every other station is locked (`isStationLocked`). Per open
    *  tour, never saved: another open starts with every station locked. */
@@ -176,7 +173,6 @@ export const initialEditorViewState: EditorViewState = {
   openSections: { stations: true, codes: true, layers: true },
   foldedDocks: { tree: false, inspector: false },
   hiddenLayers: [],
-  readout: false,
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
@@ -340,9 +336,6 @@ const editorViewSlice = createSlice({
       const hidden = state.hiddenLayers.filter((l) => l !== layer);
       if (!shown) hidden.push(layer);
       state.hiddenLayers = hidden;
-    },
-    readoutShown(state, action: PayloadAction<{ shown: boolean }>) {
-      if (isFlag(action.payload.shown)) state.readout = action.payload.shown;
     },
     /** A station's pose locked or unlocked. */
     stationLocked(

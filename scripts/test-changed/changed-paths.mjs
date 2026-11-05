@@ -37,7 +37,9 @@ export function untrackedPaths(cwd) {
  * @throws when git fails (an unknown ref, not a work tree)
  */
 export function trackedPaths(ref, cwd) {
-  return gitLines(['diff', '--name-only', ref], cwd);
+  // Without rename detection a moved file is listed under its old name too,
+  // which a selection needs: the old path's importers are what break.
+  return gitLines(['diff', '--name-only', '--no-renames', ref], cwd);
 }
 
 /**

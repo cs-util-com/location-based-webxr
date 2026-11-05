@@ -57,7 +57,10 @@ import {
   holdMachineSlotForProcess,
   queueClassOf,
 } from '../test-timing/machine-slot.mjs';
-import { SKIP_BROWSER_ENV, resolveGateMode } from '../test-timing/projects.mjs';
+import {
+  SKIP_BROWSER_ENV,
+  resolveGateMode,
+} from '../test-timing/projects.mjs';
 import {
   STALL_EXIT,
   STALL_SUMMARY,
@@ -66,6 +69,9 @@ import {
 import {
   cascadeCommands,
   cascadeTierBase,
+  fastGateOptions,
+  firstMergeBase,
+  MAIN_LINES,
   describeRun,
   docOnlyDirs,
   gateCommands,
@@ -151,9 +157,6 @@ if (!dryRun) {
   });
 }
 
-/** The main line a branch is cut from, for the cascade's tier base. */
-const MAIN_LINE = 'origin2/main';
-
 /**
  * The cascade's tier base (select.mjs `cascadeTierBase`), said in the log.
  * @returns {string | null}
@@ -162,18 +165,19 @@ function tierBaseForCascade() {
   const base = cascadeTierBase({
     env: process.env,
     ref: refIdx !== -1 ? ref : null,
-    mergeBase: () => {
-      const found = spawnSync('git', ['merge-base', 'HEAD', MAIN_LINE], {
-        cwd: WORKSPACE_ROOT,
-        encoding: 'utf8',
-      });
-      return found.status === 0 ? found.stdout.trim() || null : null;
-    },
+    mergeBase: () =>
+      firstMergeBase((mainLine) => {
+        const found = spawnSync('git', ['merge-base', 'HEAD', mainLine], {
+          cwd: WORKSPACE_ROOT,
+          encoding: 'utf8',
+        });
+        return found.status === 0 ? found.stdout.trim() || null : null;
+      }),
   });
   console.log(
     base
       ? `test-changed: the browser tier runs every spec changed since ${base} whole`
-      : `test-changed: ⚠ no merge-base with ${MAIN_LINE}: the browser tier runs only the @pr tests, no changed spec whole`
+      : `test-changed: ⚠ no merge-base with any of ${MAIN_LINES.join(', ')}: the browser tier runs only the @pr tests, no changed spec whole`
   );
   return base;
 }
@@ -277,6 +281,7 @@ const status = runInOrder(
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
     ref,
+    ...fastGateOptions(process.env),
   })
 );
 
@@ -284,7 +289,10 @@ if (status === 0 && names.length > 0) {
   console.log(
     '\ntest-changed: ✔ commit gate green (DEC-G1) — changed packages in full, dependents without e2e.\n' +
       '  The whole-repo cascade runs once per session before the PR, and on every PR in CI.\n' +
-      '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.'
+      '  Browser stages ran the per-PR tier (the @pr tests and the changed specs) unless E2E_TIER=full.' +
+      (resolveGateMode(process.env).skipBrowser
+        ? "\n  This fast gate ran only the changed packages' unit tests related to the change (the related-unit lines above),\n  and the dependents without the checks that read only their own files (format, lint:css, check:dup, check:boundaries)."
+        : '')
   );
 }
 process.exit(status);

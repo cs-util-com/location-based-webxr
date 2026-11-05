@@ -74,5 +74,8 @@ export {
   type OsmCameraPose,
   type OsmGainMode,
   type OsmMapLoad,
+  type OsmMapTile,
+  type OsmRetryAsk,
+  type OsmRetryOutcome,
   type OsmOverlayTerrain,
 } from "./globe-osm-overlay.js";

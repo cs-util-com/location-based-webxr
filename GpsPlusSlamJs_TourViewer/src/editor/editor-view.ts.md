@@ -50,8 +50,7 @@ chrome reads, one copy for every view of the page.
     - `foldedDocks` - `ShellDock` (`tree`, `inspector`) to folded, none
       at start;
     - `hiddenLayers` - the `ShellLayer`s turned off (`codes`, `names`,
-      `walk`, `depth`, `buildings`), none at start;
-    - `readout` - the bottom bar's debug readout shows.
+      `walk`, `depth`, `buildings`), none at start.
 - `editorViewActions`:
   - `selected({ id })`;
   - `busyChanged({ busy })`, `doneBusyChanged({ busy })`,
@@ -67,7 +66,7 @@ chrome reads, one copy for every view of the page.
   - the shell's: `stationFolded({ id, open })` (an empty id ignored, no
     id twice), `sectionFolded({ section, open })`,
     `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
-    ignoring a key it does not know), `readoutShown({ shown })`; each of
+    ignoring a key it does not know); each of
     them ignores a flag that is not a boolean (`open`, `folded`,
     `shown`), as the drag guard ignores a spot nobody can draw;
   - the 3D view's (`editor3d-input.ts` dispatches them):
@@ -137,7 +136,7 @@ marker being dragged and only for a drawable spot (another marker's late
 event, NaN, Infinity and a drop after the drag ended all ignored); each
 flag set on its own, and `selected` keeping the line; the view switch's
 fields through each action, and late or doubled actions ignored; the
-shell's folds, layers and readout, with unknown keys, empty ids and
+shell's folds and layers, with unknown keys, empty ids and
 flags that are not booleans ignored; the unfolded stations emptied when
 another tour opens or the tour closes; the slice mounted
 beside the shared ones by `createTourViewerStore`, a colliding key

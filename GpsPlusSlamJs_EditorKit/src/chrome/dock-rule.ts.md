@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The 3D view's docks on a narrow window, pure. The tree (left, 272 px) and
+The 3D view's docks on a narrow window, pure. The tree (left, 248 px) and
 the inspector (right, 290 px) lie over the scene; from
 `DOCKS_SIDE_BY_SIDE_PX` up they sit side by side. Below it two open docks
 would leave less scene between them than `SCENE_FLOOR_PX`, so one is open
@@ -10,18 +10,23 @@ at a time. Below `TREE_STARTS_FOLDED_PX` (a phone) the tree also starts folded.
 
 ## Public API
 
-- `TREE_DOCK_PX` - 272 and `INSPECTOR_DOCK_PX` - 290, the docks' widths
+- `TREE_DOCK_PX` - 248 and `INSPECTOR_DOCK_PX` - 290, the docks' widths
   as the Tour Viewer's `editor-shell.css` draws them (its
   `editor-shell/dock-widths.test.ts` reads the CSS and holds the two to
   each other; the kit draws no CSS).
-- `SCENE_FLOOR_PX` - 338, the narrowest strip of scene left between two
+- `SCENE_FLOOR_PX` - 362, the narrowest strip of scene left between two
   open docks. It is a judgement, not a measurement: about a third of a
   landscape phone, which still shows a station and its surroundings. The
   strip two open docks leave is:
-  - 206 px at 768 (a tablet in portrait);
-  - 258 px at 820;
-  - 338 px at 900;
-  - 462 px at 1024.
+  - 230 px at 768 (a tablet in portrait);
+  - 282 px at 820;
+  - 362 px at 900;
+  - 486 px at 1024.
+
+  The tree narrows to 210 px from 1100 px down (the Tour Viewer's CSS),
+  so the real strip there is wider than the rule counts: it errs towards
+  folding a dock.
+
 - `DOCKS_SIDE_BY_SIDE_PX` - `TREE_DOCK_PX + INSPECTOR_DOCK_PX +
 SCENE_FLOOR_PX`, so 900; `TREE_STARTS_FOLDED_PX` - 700.
 - `DockChange` - `"opened" | "selected" | "resized" | "tree-unfolded" |

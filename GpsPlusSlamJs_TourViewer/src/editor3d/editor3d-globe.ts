@@ -117,6 +117,7 @@ import type {
   Editor3dStats,
   Editor3dView,
 } from "./editor3d-scene.js";
+import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
 import {
   createBillboard,
@@ -131,7 +132,11 @@ import {
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountEditorCity, type EditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
-import { createViewRenderer, viewFailure } from "./editor3d-view-parts.js";
+import {
+  createViewRenderer,
+  drawnCounts,
+  viewFailure,
+} from "./editor3d-view-parts.js";
 import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
@@ -388,7 +393,13 @@ export async function openGlobeEditor(
       canvas.remove();
     });
 
-    let viewportPx = Math.max(1, deps.container.clientHeight);
+    // The canvas, not the box: the bottom panel shortens it (pushes the
+    // view up); the box is the height before the view shows.
+    const canvasHeight = () =>
+      canvas.clientHeight > 0
+        ? canvas.clientHeight
+        : deps.container.clientHeight;
+    let viewportPx = Math.max(1, canvasHeight());
     // The air (the blue sky, the haze over the relief), mounted once the
     // view and its relief exist; the view's sky alone is black at noon.
     let air: GlobeViewAir | null = null;
@@ -772,7 +783,7 @@ export async function openGlobeEditor(
     };
 
     const resize = new ResizeObserver(() => {
-      viewportPx = Math.max(1, deps.container.clientHeight);
+      viewportPx = Math.max(1, canvasHeight());
       marks.resize(canvas.clientWidth, canvas.clientHeight);
       layer.group.traverse((o) => {
         if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
@@ -781,6 +792,7 @@ export async function openGlobeEditor(
       });
     });
     resize.observe(deps.container);
+    resize.observe(canvas);
     undo.push(() => {
       resize.disconnect();
     });
@@ -840,11 +852,12 @@ export async function openGlobeEditor(
     undo.push(() => {
       controls.dispose();
     });
-    /** The aspect the first frame will have: the box's, once laid out,
-     *  else the window's (the box is hidden until the view opens). */
+    /** The aspect the first frame will have: the canvas's (the box less
+     *  the bottom panel), once laid out, else the window's (the box is
+     *  hidden until the view opens). */
     const expectedAspect =
-      deps.container.clientWidth > 0 && deps.container.clientHeight > 0
-        ? deps.container.clientWidth / deps.container.clientHeight
+      canvas.clientWidth > 0 && canvas.clientHeight > 0
+        ? canvas.clientWidth / canvas.clientHeight
         : window.innerWidth / Math.max(1, window.innerHeight);
     /** Where the approach starts, from the Earth's centre (m). */
     const startCentreM =
@@ -875,8 +888,8 @@ export async function openGlobeEditor(
     let standing = 1;
     let frames = 0;
     let top = false;
-    const frameTimes: number[] = [];
-    let lastFrameAt: number | null = null;
+    const frameClock = createFrameClock();
+    undo.push(pauseWhenHidden(frameClock));
     const cameraTour = new THREE.Vector3();
     const look = new THREE.Vector3();
     const projected = new THREE.Vector3();
@@ -1073,11 +1086,7 @@ export async function openGlobeEditor(
     }
 
     function updateLayers(now: number): void {
-      if (lastFrameAt !== null) {
-        frameTimes.push(now - lastFrameAt);
-        if (frameTimes.length > 60) frameTimes.shift();
-      }
-      lastFrameAt = now;
+      frameClock.tick(now);
       // The ground's share on the relief by the camera's altitude (the
       // band's hand-over); the carrier the page reports and picks on is
       // the one holding most of it.
@@ -1461,6 +1470,8 @@ export async function openGlobeEditor(
     // the page is told.
     renderer.setAnimationLoop(() => {
       if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+        // Not drawn: the gap until the next drawn frame is no slow frame.
+        frameClock.pause();
         firstTick();
         return;
       }
@@ -1546,18 +1557,25 @@ export async function openGlobeEditor(
       },
       readout() {
         const pose = poseNow();
-        const mean =
-          frameTimes.length === 0
-            ? 0
-            : frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
         return {
           tiltDeg: 90 + pose.pitchDeg,
           headingDeg: pose.headingDeg,
           top,
+          ...drawnCounts(renderer),
+          // The whole frame's calls: the ground's update may draw before
+          // the scene's render.
           drawCalls: drawCalls?.calls() ?? 0,
-          frameMs: mean,
+          frameMs: frameClock.meanMs(),
+          worstFrameMs: frameClock.worstMs(),
+          slowFrames: frameClock.slowFrames(),
+          frameCount: frameClock.count(),
+          recentFrameMs: frameClock.recentMs(),
+          mapLoad: ground.osm.mapLoad(),
         };
       },
+      mapTiles: (limit) => ground.osm.mapTiles(limit),
+      retryMap: () => ground.osm.retryNow(),
+      lastMapRetry: () => ground.osm.lastRetry(),
       setLayers(hiddenLayers) {
         layer.setShown({
           names: !hiddenLayers.includes("names"),
@@ -1676,9 +1694,9 @@ export async function openGlobeEditor(
             // canvas: what the clouds' shadow and motion checks read.
             clouds: cloudStats(),
             // The last 60 frame intervals (ms), for a frame-time check.
-            frameTimesMs: [...frameTimes],
+            frameTimesMs: frameClock.recentMs(),
             // The last finished frame's draw calls, all passes and the main
-            // scene's render alone: the status bar's figure must hold at
+            // scene's render alone: the Performance tab's figure must hold at
             // least the scene's.
             drawCalls: {
               frame: lastFrameCalls,

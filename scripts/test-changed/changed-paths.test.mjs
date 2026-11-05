@@ -55,3 +55,29 @@ describe('changed-paths', () => {
     expect(() => trackedPaths('no-such-ref', repo)).toThrow();
   });
 });
+
+// Why: after `git mv` a diff with rename detection lists only the NEW name,
+// so the old path never reaches the selection: an unedited test that still
+// imports it would not be selected, and the deletion would not force the
+// full suite. Both names must be listed.
+describe('changed-paths: a rename', () => {
+  let moved = '';
+  /** @param {string[]} args */
+  const gitIn = (args) => execFileSync('git', args, { cwd: moved, encoding: 'utf8' });
+  beforeAll(() => {
+    moved = mkdtempSync(path.join(tmpdir(), 'changed-paths-mv-'));
+    gitIn(['init', '-q']);
+    gitIn(['config', 'user.email', 'test@example.invalid']);
+    gitIn(['config', 'user.name', 'test']);
+    writeFileSync(path.join(moved, 'old.ts'), 'export const a = 1;\n'.repeat(20));
+    gitIn(['add', '.']);
+    gitIn(['commit', '-q', '-m', 'base']);
+    gitIn(['mv', 'old.ts', 'new.ts']);
+  });
+  afterAll(() => {
+    rmSync(moved, { recursive: true, force: true });
+  });
+  it('lists the old and the new name of a moved file', () => {
+    expect(trackedPaths('HEAD', moved).sort()).toEqual(['new.ts', 'old.ts']);
+  });
+});
