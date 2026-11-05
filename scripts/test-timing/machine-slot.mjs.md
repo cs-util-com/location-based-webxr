@@ -3,7 +3,7 @@
 ## Purpose
 
 One machine-wide slot for every session's gates, sweeps and browser suites
-(gate-speed plan 2026-10-04, TS-3 / G1). A run that finds the slot taken
+(since 2026-10-04). A run that finds the slot taken
 QUEUES, saying so, until the holder is done. Liveness is a heartbeat, not a
 pid. The waiters queue in a fair order: runs that start no browser first,
 browser runs after them unless they have waited an hour.
@@ -86,7 +86,7 @@ do, the sessions' quiet flag stays the way to keep them apart.
 - `run-gate.mjs` (every `pnpm test`, root or package), at the outermost run.
 - `timed-stage.mjs` (every single stage run, including `pnpm run test:e2e`
   and filtered browser runs `pnpm run test:e2e <spec>`), **except a
-  filtered unit-test run** (`stageRunTakesSlot`, the peer session's change,
+  filtered unit-test run** (`stageRunTakesSlot`, a change made by another session,
   2026-10-04):
   - A vitest stage (`test:unit`, `test:repo-config`) with file arguments
     does NOT take the slot: a 1-5 s TDD step must not queue behind a browser

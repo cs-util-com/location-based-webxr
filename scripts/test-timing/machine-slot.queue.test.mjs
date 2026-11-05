@@ -261,6 +261,19 @@ describe('tickets on disk', () => {
       expect(cleanup).toHaveBeenCalledTimes(1);
       if (signal !== 'exit') expect(proc.exit).toHaveBeenCalledWith(130);
     }
+    // A cleanup that throws (EPERM while another process reads the queue)
+    // must not swallow the signal's exit code.
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      ticketCleanupOnExit(() => {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      }, proc);
+      proc.emit(signal);
+      expect(proc.exit).toHaveBeenCalledWith(130);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('EPERM'));
+      warn.mockRestore();
+    }
     const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
     const unregister = ticketCleanupOnExit(vi.fn(), proc);
     unregister();

@@ -137,15 +137,20 @@ describe('machine slot invariants', () => {
 //      it ages, plus one hold per older run of any class.
 describe('fair queue invariants', () => {
   const MIN = 60_000;
+  const NOW = 700 * MIN;
+  // Queued from two aging bounds ago up to now, so about half the browser
+  // tickets are younger than the bound: the case the ranking orders behind
+  // a run with no browser stage. (Queued 100 min or more before NOW, as
+  // before, every ticket had aged, and plain first-come-first-served passed
+  // every property.)
   const arbTicket = fc.record({
     token: fc.string({ minLength: 1, maxLength: 6 }),
     pid: fc.integer({ min: 1, max: 99 }),
-    enqueuedAt: fc.integer({ min: 0, max: 600 * MIN }),
+    enqueuedAt: fc.integer({ min: NOW - 2 * (QUEUE_AGING_MS / MIN) * MIN, max: NOW }),
     queueClass: fc.constantFrom('fast', 'browser'),
     command: fc.constant('x'),
     silent: fc.integer({ min: 0, max: 2 * TICKET_STALE_MS }),
   });
-  const NOW = 700 * MIN;
   /** @param {{ silent: number }} t */
   const withHeartbeat = ({ silent, ...t }) => ({ ...t, heartbeatMs: NOW - silent });
   const arbQueue = fc.uniqueArray(arbTicket, { selector: (t) => t.token, maxLength: 12 });

@@ -1,5 +1,5 @@
 // One machine-wide slot for every session's gates, sweeps and browser suites
-// (gate-speed plan 2026-10-04, TS-3 / G1).
+// (since 2026-10-04).
 //
 // The per-tree lock in gate-lock.mjs keeps two gates out of ONE working tree.
 // It cannot see a second worktree or a second session, and on the night of
@@ -12,7 +12,7 @@
 // we run on, so creating it IS the acquisition; `owner.json` inside records
 // who holds it (pid, start time, command, cwd) for the queue line.
 //
-// LIVENESS IS A HEARTBEAT, NOT A PID (milestone review R1). The holder touches
+// LIVENESS IS A HEARTBEAT, NOT A PID (a review finding). The holder touches
 // `owner.json` every HEARTBEAT_MS from a worker thread, and a slot whose
 // heartbeat is older than HEARTBEAT_STALE_MS is reclaimed whatever its pid
 // says. Windows reuses pids quickly, so a dead-pid check could keep a killed
@@ -209,7 +209,7 @@ export function describeHolder(holder, now) {
  *
  * Every stage run does, except a FILTERED unit-test run (a vitest stage with
  * file arguments): a TDD step of 1-5 s must not queue behind a browser run
- * that holds the slot for minutes (the peer session's change, 2026-10-04).
+ * that holds the slot for minutes (a change made by another session, 2026-10-04).
  * A filtered BROWSER run still takes it, since it starts Chromium. A long
  * sweep run as a filtered unit run opts in with `GATE_SLOT=take`.
  *
@@ -330,8 +330,9 @@ export function stageQueueClass(stage) {
  * - Tier 0: runs with no browser stage, and browser runs that have waited
  *   `agingMs` or longer. An aged browser run never passes a run with no
  *   browser stage that queued before it.
- * - Tier 1: younger browser runs, and any unknown class (the direction that
- *   never jumps the queue).
+ * - Tier 1: younger browser runs, and a ticket of any unknown class until
+ *   it has waited `agingMs` too (an unknown class ranks like a browser
+ *   run, the direction that never jumps the queue; once aged it is tier 0).
  * - Within a tier, first come first served; the token breaks a tie, so the
  *   order is total and exactly one waiter is first.
  *
@@ -487,7 +488,10 @@ export function readQueue(queueDir, now, staleMs = TICKET_STALE_MS) {
  * Removes the waiter's ticket if the process ends while it queues: on exit,
  * and on SIGINT / SIGTERM, which end a process without its exit listeners
  * (it then exits 130, as a holder does). A hard kill runs nothing; the
- * ticket's 60 s staleness covers that.
+ * ticket's 60 s staleness covers that. A cleanup that throws (an EPERM on
+ * Windows while another process reads the queue) is said and swallowed, so
+ * a signal still ends in exit 130; the ticket then goes stale like a
+ * killed waiter's.
  *
  * @param {() => void} cleanup
  * @param {Pick<NodeJS.Process, 'on' | 'off' | 'exit'>} [proc]
@@ -498,7 +502,13 @@ export function ticketCleanupOnExit(cleanup, proc = process) {
   const once = () => {
     if (!done) {
       done = true;
-      cleanup();
+      try {
+        cleanup();
+      } catch (error) {
+        console.warn(
+          `machine-slot: could not remove the queue ticket (${String(error)}); it goes stale in ${TICKET_STALE_MS / 1000} s`
+        );
+      }
     }
   };
   const onSignal = () => {
@@ -1096,7 +1106,7 @@ function releaseSlot(dir, token) {
  * - SIGINT / SIGTERM: exit 130 and nothing else. The release happens in the
  *   'exit' listener, AFTER the callers' own exit listeners that were
  *   prepended (run-gate.mjs frees its per-tree lock that way), so the inner
- *   lock is always freed before the outer slot (review R6).
+ *   lock is always freed before the outer slot (a review finding).
  *
  * @param {string} command
  * @param {object} [deps] injected for tests
