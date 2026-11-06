@@ -25,6 +25,17 @@ export const DEFAULT_STALL_MIN = 20;
 /** Default poll interval. The kill lands at most this long after the limit. */
 export const STALL_POLL_MS = 5_000;
 
+/** Overrides STALL_REPORT_GRACE_MS, in ms; tests shorten it. */
+export const STALL_REPORT_GRACE_ENV = 'GATE_STALL_REPORT_GRACE_MS';
+
+/**
+ * After a SIGINT to a browser stage's group, how long before the SIGTERM. A
+ * Playwright run writes its reports on SIGINT and exits without them on
+ * SIGTERM; a hung one needed about 1 s without a browser. A browser stage
+ * that was killed with no report despite this wait is what would raise it.
+ */
+export const STALL_REPORT_GRACE_MS = 60_000;
+
 /** After a SIGTERM to the group, how long before the SIGKILL. */
 export const STALL_KILL_GRACE_MS = 5_000;
 
@@ -81,6 +92,15 @@ export function stallLimitMs(stage, env, { filtered = false } = {}) {
 export function stallPollMs(env) {
   const value = Number(env[STALL_POLL_ENV]);
   return Number.isFinite(value) && value > 0 ? value : STALL_POLL_MS;
+}
+
+/**
+ * @param {Record<string, string | undefined>} env
+ * @returns {number} the wait for a browser stage's report, in ms
+ */
+export function stallReportGraceMs(env) {
+  const value = Number(env[STALL_REPORT_GRACE_ENV]);
+  return Number.isFinite(value) && value > 0 ? value : STALL_REPORT_GRACE_MS;
 }
 
 /**

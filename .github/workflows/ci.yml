@@ -120,12 +120,16 @@ jobs:
       matrix:
         # e2e_limit, in minutes per Playwright process, ends a hung browser run
         # as a red run that keeps its log and report: a job cancelled at its
-        # timeout keeps neither. Each is about twice the slowest of 8 green
-        # full runs (Run step, 2026-11-05: Tour page tests 13.2 min, Tour 3D
-        # 20.3, OsmDemo 30.3, the slowest design-system-and-apps package well
-        # under 20) and leaves at least 15 min of the job for setup (up to 10
-        # measured) and the upload. Raise one when a green process comes near
-        # it; a run that hits it with no hung test is what reverses the value.
+        # timeout keeps neither. A hang that prints nothing meets the stage
+        # watchdog first (20 min of silence), which interrupts Playwright so it
+        # still writes the report; this limit catches the run that keeps
+        # printing. Each is about twice the slowest of 8 green full runs (Run
+        # step, 2026-11-05): Tour page tests 25 of 13.2 min, Tour 3D 45 of 20.3,
+        # OsmDemo 55 of 30.3 (1.8 times), the design system 25 of 12.8, which
+        # also fits a test timing out on all 3 attempts (9 min). Each leaves 20
+        # min of the job for setup (up to 10.3 measured), earlier stages and
+        # the upload. A green process coming near its limit reverses the value.
+        # Two hung packages in design-system-and-apps can still outrun its job.
         include:
           # About 7 min (CI runs of 2026-11-04).
           - job: libraries
@@ -137,15 +141,17 @@ jobs:
           - job: design-system-and-apps
             scripts: test:design-system test:recorder test:starter test:example test:qr-demo test:landing test:physics test:wayfinding
             browsers: true
-            report: GpsPlusSlamJs_*/test-results*
-            e2e_limit: 20
+            report: |
+              GpsPlusSlamJs_*/test-results*
+              GpsPlusSlamJs_DesignSystem/3d/test-results/
+            e2e_limit: 25
             timeout: 50
           # About 33 min, the longest job until the Tour lanes are measured.
           - job: osm-demo
             scripts: test:osm-demo
             browsers: true
             report: GpsPlusSlamJs_OsmDemo/test-results/
-            e2e_limit: 60
+            e2e_limit: 55
             timeout: 75
           # The Tour Viewer's builds, static checks and unit tests, about 5 min.
           - job: tour-static-unit
@@ -166,7 +172,7 @@ jobs:
             lane: dom-1
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
-            e2e_limit: 30
+            e2e_limit: 25
             timeout: 45
           - job: tour-dom-2
             dir: GpsPlusSlamJs_TourViewer
@@ -174,7 +180,7 @@ jobs:
             lane: dom-2
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
-            e2e_limit: 30
+            e2e_limit: 25
             timeout: 45
           - job: tour-webgl-1
             dir: GpsPlusSlamJs_TourViewer

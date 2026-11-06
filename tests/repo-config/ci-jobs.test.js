@@ -211,8 +211,13 @@ describe('the timing tables of a run on main are an artifact, never a commit', (
 // used to leave nothing that says which test hung. Playwright's own limit ends
 // the run earlier, as a normal red: the log stays and the report step runs.
 describe('a hung browser run ends before its job does', () => {
-  /** Setup took up to 10 minutes in the 8 full runs measured, the upload about 1. */
-  const SETUP_AND_UPLOAD_MIN = 15;
+  /**
+   * What the job needs besides the Playwright run, as measured in 8 full runs:
+   * setup up to 10.3 min, the stages before the browser one up to 1.3 on
+   * OsmDemo, the upload about 1. The rest is spare, so setup above about 17
+   * min on OsmDemo is what reverses this.
+   */
+  const OUTSIDE_PLAYWRIGHT_MIN = 20;
 
   it("wires each job's limit into the environment Playwright reads", () => {
     expect(testJob.env.E2E_GLOBAL_TIMEOUT_MIN).toBe('${{ matrix.e2e_limit }}');
@@ -224,9 +229,17 @@ describe('a hung browser run ends before its job does', () => {
     for (const entry of browserJobs) {
       expect(Number.isInteger(entry.e2e_limit), entry.job).toBe(true);
       expect(entry.e2e_limit, entry.job).toBeGreaterThan(0);
-      expect(entry.e2e_limit, entry.job).toBeLessThanOrEqual(entry.timeout - SETUP_AND_UPLOAD_MIN);
+      expect(entry.e2e_limit, entry.job).toBeLessThanOrEqual(
+        entry.timeout - OUTSIDE_PLAYWRIGHT_MIN,
+      );
       expect(entry.report, entry.job).toBeTruthy();
     }
+  });
+
+  it("uploads the design system's own results, which sit a level deeper", () => {
+    const job = entries.find((e) => e.job === 'design-system-and-apps');
+    expect(job.report).toContain('GpsPlusSlamJs_DesignSystem/3d/test-results/');
+    expect(job.report).toContain('GpsPlusSlamJs_*/test-results*');
   });
 
   it('gives no limit to a job that starts no browser', () => {

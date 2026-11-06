@@ -59,6 +59,9 @@
     it (`scripts/e2e/browser-launch.mjs`), which moves Chromium's GPU work
     out of a process that raises itself. Opt in with
     `GATE_BROWSER_PRIORITY=below` (off by default). See `stage-priority.mjs.md`.
+  - **A stalled browser stage is interrupted first** (POSIX): a SIGINT, and up
+    to `STALL_REPORT_GRACE_MS` to end, so a silent hang leaves Playwright's
+    reports before the SIGTERM, which would leave none.
   - **The stage watchdog** ([stall-watch.mjs](stall-watch.mjs.md)): an
     unfiltered stage that prints nothing for `GATE_STALL_MIN` minutes
     (default 20) has its whole process tree killed and returns 124 with a

@@ -51,8 +51,8 @@ export default defineConfig({
     //
     // **THIS IS A DEADLOCK GUARD, NOT A PERFORMANCE GATE, and the distinction is
     // what makes the raise safe.** A test that gets slower is caught by the
-    // versioned `docs/test-timings.md`, which records per-stage medians and flags
-    // a regression as 🔺 whatever this number says. Nothing about a 30 s ceiling
+    // gitignored `docs/test-timings.md`, which records a checkout's per-stage
+    // medians and flags a regression as 🔺 whatever this number says. Nothing about a 30 s ceiling
     // makes a 3 s test acceptable; it makes a 3 s test's PASS reliable.
     testTimeout: 30_000,
     coverage: {

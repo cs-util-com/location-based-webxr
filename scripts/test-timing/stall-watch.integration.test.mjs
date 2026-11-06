@@ -86,6 +86,7 @@ function drive(stage, limitMin, pidFile = '', mode = '') {
       GITHUB_ACTIONS: 'true',
       GATE_STALL_MIN: limitMin,
       GATE_STALL_POLL_MS: '100',
+      GATE_STALL_REPORT_GRACE_MS: '500',
       GATE_SLOT_DIR: 'off',
     },
   });
@@ -161,6 +162,57 @@ describe('the stage watchdog, end to end', () => {
   // before it (the stage receives the SIGINT that was sent, not the exit
   // hook's SIGTERM), and a stage that traps the signal must still end, by
   // the SIGKILL after the grace.
+  it.skipIf(process.platform === 'win32')(
+    'interrupts a silent browser stage first, so it writes its report, and exits 124 (POSIX)',
+    async () => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
+      dirs.push(dir);
+      const pidFile = path.join(dir, 'grandchild.pid');
+      const { done } = drive('browser', '0.02', pidFile);
+      leftovers.push(await readPid(pidFile));
+      const { code, out } = await done;
+      expect(code).toBe(STALL_EXIT);
+      expect(readFileSync(`${pidFile}.report`, 'utf8')).toBe('written');
+      expect(out).toContain('✖ STALLED: stage "stall-fixture browser"');
+    },
+    30_000
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'still kills a browser stage that ignores the interrupt, after the wait (POSIX)',
+    async () => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
+      dirs.push(dir);
+      const pidFile = path.join(dir, 'grandchild.pid');
+      const { done } = drive('stubborn-browser', '0.02', pidFile);
+      const grandchild = await readPid(pidFile);
+      const stage = await readPid(`${pidFile}.stage`);
+      leftovers.push(grandchild, stage);
+      const { code } = await done;
+      expect(code).toBe(STALL_EXIT);
+      expect(readFileSync(`${pidFile}.signals`, 'utf8').trim().split('\n')).toEqual([
+        'SIGINT',
+        'SIGTERM',
+      ]);
+      expect(await gone(stage)).toBe(true);
+    },
+    30_000
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'kills any other silent stage without an interrupt (POSIX)',
+    async () => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
+      dirs.push(dir);
+      const pidFile = path.join(dir, 'grandchild.pid');
+      const { done } = drive('stubborn', '0.02', pidFile);
+      leftovers.push(await readPid(pidFile), await readPid(`${pidFile}.stage`));
+      expect((await done).code).toBe(STALL_EXIT);
+      expect(readFileSync(`${pidFile}.signals`, 'utf8').trim()).toBe('SIGTERM');
+    },
+    30_000
+  );
+
   it.skipIf(process.platform === 'win32')(
     'forwards a SIGINT to the gate to the detached stage group, then SIGKILLs a stage that ignores it (POSIX)',
     async () => {

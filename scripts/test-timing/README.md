@@ -34,8 +34,9 @@ every gate changed them, and any merge put open pull requests into conflict.
 
 - **A local gate** writes the table of each project it ran, in place. Everything
   that reads one reads it from there, so it sees this checkout's runs only, and
-  a fresh clone or worktree starts empty. The budgets are constants in
-  `projects.mjs` and need no table.
+  a fresh clone or worktree starts empty. So the slowdown flag (🔺) needs
+  earlier runs in the same checkout, and a fresh worktree's gate shows none. The
+  budgets are constants in `projects.mjs` and need no table.
 - **A pull request's CI run** records nothing.
 - **A run on `main`** sets `TIMING_RECORD_ON_RUNNER` and uploads each job's tables
   as the artifact `test-timings-<job>`, kept 90 days. Nothing writes them back to
