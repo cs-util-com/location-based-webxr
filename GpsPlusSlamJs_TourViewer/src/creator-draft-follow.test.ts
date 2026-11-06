@@ -112,10 +112,13 @@ function flush(): Promise<void> {
   return settle(() => [ops]);
 }
 
-async function wired(ns: ReturnType<typeof namespaces>) {
+async function wired(
+  ns: ReturnType<typeof namespaces>,
+  tour = tourOf([pin("a")]),
+) {
   const store = createTourViewerStore();
   const ctx = createTourViewerSession(store);
-  ctx.tourDocument.open(tourOf([pin("a")]));
+  ctx.tourDocument.open(tour);
   const draft = wireCreatorDraft({
     ctx,
     dom: {
@@ -302,5 +305,62 @@ describe("the phone draft's settings record", () => {
     const stored = ns.files(OLD).get(SETTINGS_KEY);
     expect(typeof stored).toBe("string");
     expect(parseSettingsRecord(stored as string)?.frames).toEqual([frame]);
+  });
+
+  // Why: the page re-states the created stations it read with every later
+  // write of the record, so a frame its read dropped was gone for good. A
+  // station's story may name the opened tour's assets; read without that
+  // tour, such a frame did not read.
+  it("reads the stored frames against the opened tour, so a later write keeps one naming its asset", async () => {
+    const frame = {
+      id: "s-new",
+      geo: { lat: 48.5205, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      blocks: [
+        {
+          id: "look",
+          kind: "picture",
+          view: "card",
+          image: "img1",
+          widthM: 1,
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+      steps: [
+        {
+          id: "s1",
+          action: { kind: "show", block: "look" },
+          advance: { mode: "tap" },
+        },
+      ],
+    };
+    const ns = namespaces();
+    const space = await ns.open(draftKeyForTour(OLD));
+    await space.put(
+      SETTINGS_KEY,
+      JSON.stringify({ needsNoGps: false, createdStations: [frame] }),
+    );
+    const { draft } = await wired(
+      ns,
+      tourOf([pin("a")], {
+        assets: [
+          {
+            id: "img1",
+            path: "content/img1.png",
+            kind: "image",
+            width: 1,
+            height: 1,
+          },
+        ],
+      }),
+    );
+    expect(await draft.saveSettings({ needsNoGps: true })).toBe(true);
+    await flush();
+    const stored = JSON.parse(ns.files(OLD).get(SETTINGS_KEY) as string) as {
+      createdStations?: { id: string }[];
+    };
+    expect(stored.createdStations?.map((f) => f.id)).toEqual(["s-new"]);
   });
 });

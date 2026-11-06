@@ -297,7 +297,8 @@ The tour document's settings record (`tour-document-draft.ts`: the
 setting, the details once set, every station's pose once one moved, the
 whole frames of the stations this page created) is one file, `settings`
 (`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
-(`editor/editor-draft.ts`), read by the same `parseSettingsRecord`. The
+(`editor/editor-draft.ts`), read by the same `parseSettingsRecord`, against
+the opened tour, whose assets and characters a stored frame may name. The
 document's listener writes it whole on each change, in its own queue. The
 phone reads its STATION POSES and its CREATED STATIONS back:
 
