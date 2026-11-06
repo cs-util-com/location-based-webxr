@@ -148,4 +148,4 @@ renderer.render(scene, camera);
   clean-up, and that other errors are not swallowed.
 - Pixels: OsmDemo's e2e suite (every lit-geometry and heat-ramp check runs
   under this sky); the sky's shaders themselves are checked by the look-dev
-  smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`).
+  smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)).

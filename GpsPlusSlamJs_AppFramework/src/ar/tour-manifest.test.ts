@@ -10,6 +10,8 @@
  * that says so (no migration).
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, expect, it } from 'vitest';
 
 import {

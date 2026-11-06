@@ -8,7 +8,7 @@
  * globe and load only by `import()`. One import from a lower entry into a
  * higher one would put the higher entry's weight on every page of the
  * lower, and the apps' guards (the Tour Viewer's
- * `editor-only-packages.test.ts`, `editor3d-lazy.test.ts`) would catch it
+ * `editor-only-packages.test.ts`, `app-bundle.test.ts`) would catch it
  * only in an app that happens to use that path. So every module's relative
  * AND package imports are read here: package names alone would let a
  * relative `../globe/` import through, and the kit's own name would let a

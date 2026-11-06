@@ -389,7 +389,7 @@ see-through), null without buildings.
 - `globe-editor-look.test.ts` (the pure rules), `editor3d-stations.test.ts`
   ("hides single stations and codes, and nothing hidden is picked"),
   `editor3d-terrain.test.ts` (the ECEF placement).
-- `../editor3d-lazy.test.ts`: the globe view is reached only by import()
+- `../app-bundle.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
 - `playwright-tests/editor3d-globe-start.spec.js`: the approach's first
   frames at least the fit from the Earth's centre, at the lab's intro

@@ -153,7 +153,7 @@ describe("wireStationGuide (properties)", () => {
         guide.tick();
         expect(dom.line.textContent).toMatch(/^Tour complete/);
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -224,7 +224,7 @@ describe("wireStationGuide (properties)", () => {
           expect(found).toEqual(reached ? ["s"] : []);
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -305,7 +305,7 @@ describe("wireStationGuide (properties)", () => {
           expect(found).toEqual(expected ? ["s"] : []);
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

@@ -135,9 +135,9 @@ toSun)` returning 1 (the cloud-shadow port's seat) and `skyLevel()`
   source; the sky level's floor, twilight and monotony; the light changing
   only below the floor, by the declared amount; the shader's sky level
   free of the visibility and fed the page's floor),
-  `terrain-sun.smoke.spec.mjs` (the page's sun within 1° of an independent
+  `terrain-sun.smoke.spec.mjs` (removed; in git history) (the page's sun within 1° of an independent
   estimate, and the Alps' lit faces swapping between a morning and an
-  evening sun) and `terrain-sky-fill.smoke.spec.mjs` (globe-albedo at the
+  evening sun) and `terrain-sky-fill.smoke.spec.mjs` (removed; in git history) (globe-albedo at the
   11° sun held to this reference at floors 0, 0.25, 0.5 and 1, the faces
   in shadow lighter at every step, and the day render unmoved between
   floors 0 and 0.8).

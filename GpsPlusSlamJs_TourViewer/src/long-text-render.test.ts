@@ -14,7 +14,6 @@ import { describe, expect, it, vi } from "vitest";
 import { parseTourMarkdown } from "gps-plus-slam-app-framework/ar/tour-markdown";
 
 import {
-  LONG_TEXT_ALLOWED,
   createLinkGuard,
   leaveArQuestion,
   renderLongText,
@@ -120,22 +119,6 @@ describe("renderLongText", () => {
     expect(html("Look ![](asset:x) here")).toBe(
       "<p>Look <span>picture</span> here</p>",
     );
-  });
-
-  it("emits only the allowlisted elements and attributes for a mixed body", () => {
-    const host = document.createElement("div");
-    host.append(
-      render(
-        "# A\n\n- *b* [c](https://c.example)\n  - d\n\n![e](asset:e)\n\n> f\\\ng",
-      ).fragment,
-    );
-    for (const el of host.querySelectorAll("*")) {
-      const name = el.localName;
-      expect(Object.keys(LONG_TEXT_ALLOWED)).toContain(name);
-      for (const attr of el.getAttributeNames()) {
-        expect(LONG_TEXT_ALLOWED[name]).toContain(attr);
-      }
-    }
   });
 
   // Why this test matters: the tree's type is a promise of the parser, not

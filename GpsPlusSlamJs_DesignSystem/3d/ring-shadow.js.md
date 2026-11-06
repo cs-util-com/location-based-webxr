@@ -108,7 +108,7 @@ THREE.ShaderChunk.lights_fragment_begin = withRingShadow(
   - three's fallback line kept;
   - idempotence;
   - the refusal of an unknown chunk.
-- `lookdev.smoke.spec.mjs`, "the dense city's far buildings cast shadows,
+- `lookdev.smoke.spec.mjs` (removed; in git history), "the dense city's far buildings cast shadows,
   past the sharp central map". At golden hour, ground around far lots at
   500, 1400 and 2300 m must darken. The share is logged at 10/20/40 levels
   and must be at least `RING_COVERAGE_MIN` at 20. The test also covers:

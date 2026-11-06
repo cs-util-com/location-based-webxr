@@ -7,6 +7,8 @@
  * downstream analysis harness.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, it, expect } from 'vitest';
 import { configureStore, type Action } from '@reduxjs/toolkit';
 import type { GpsPoint, Matrix4, Vector3, LatLong } from 'gps-plus-slam-js';

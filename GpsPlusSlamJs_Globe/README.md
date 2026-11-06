@@ -21,7 +21,7 @@ must keep:
 - one three in the bundle (pnpm links both packages' `three` to the same
   installed copy while their versions match, which the repo-config test
   `globe-three-version.test.js` checks for the framework): its
-  `src/globe-dependency.test.ts` builds an entry that imports the blocks;
+  `src/app-bundle.test.ts` builds an entry that imports the blocks;
 - every third-party package the build pulls in named in the consumer's
   `NOTICE` (3d-tiles-renderer is Apache-2.0, Copyright 2020 California
   Institute of Technology), and its licence file shipped with the app,
@@ -34,7 +34,7 @@ must keep:
   patch (section 4(b)): the bundled 3d-tiles-renderer is 0.5.3 with
   `patches/3d-tiles-renderer@0.5.3.patch` applied.
 
-The last two are the Tour Viewer's `src/third-party-licenses.test.ts`, for
+The last two are the Tour Viewer's `src/app-bundle.test.ts`, for
 every package the app bundles, the globe's included.
 
 ## The dependency exception (DEC-PRG-4)

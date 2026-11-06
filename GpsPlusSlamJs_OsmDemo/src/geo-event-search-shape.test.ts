@@ -142,6 +142,14 @@ const TIMES = Array.from(
   (_, i) => 1_700_000_000_000 + i * 15 * 60_000,
 );
 
+/**
+ * The six searches the shape test measures, spread over the same six hours:
+ * all 24 ran past the default test timeout on a loaded machine, and the two
+ * numbers it reports read the same from these six (max travel 23.8 m either
+ * way). The full 24 stay in the outcome test below.
+ */
+const SHAPE_TIMES = TIMES.filter((_, i) => i % 4 === 0);
+
 describe("the geo-event search's actual shape", () => {
   it("measures how many batches run, and how far climbs travel", async () => {
     const pipeline = new DemoPipeline({ source: gradedSource(), table: TABLE });
@@ -150,7 +158,7 @@ describe("the geo-event search's actual shape", () => {
     const batchesPerSearch: number[] = [];
     const travelled: number[] = [];
 
-    for (const time of TIMES) {
+    for (const time of SHAPE_TIMES) {
       const { event, stats } = await pipeline.geoEvent(AT, "battleArea", time);
       // `climbsStarted` counts one per candidate evaluated, summed across every
       // tile searched — so the batch count has to be divided by the tile count
@@ -171,8 +179,8 @@ describe("the geo-event search's actual shape", () => {
 
     // eslint-disable-next-line no-console -- the measurement IS the output
     console.log(
-      `[geo-event shape] searches=${TIMES.length} ` +
-        `round-1-only=${roundOneOnly}/${TIMES.length} ` +
+      `[geo-event shape] searches=${SHAPE_TIMES.length} ` +
+        `round-1-only=${roundOneOnly}/${SHAPE_TIMES.length} ` +
         `mean batches=${mean(batchesPerSearch).toFixed(2)} ` +
         `max batches=${Math.max(...batchesPerSearch)} | ` +
         `climbs=${travelled.length} mean travel=${mean(travelled).toFixed(1)} m ` +
@@ -183,7 +191,7 @@ describe("the geo-event search's actual shape", () => {
     // Loose bounds only. This test exists to REPORT the two numbers, not to
     // pin them — pinning a distribution before anyone has seen it is how a
     // measurement becomes an assertion of what someone hoped for.
-    expect(batchesPerSearch.length).toBe(TIMES.length);
+    expect(batchesPerSearch.length).toBe(SHAPE_TIMES.length);
     expect(travelled.length).toBeGreaterThan(0);
     expect(Math.max(...travelled)).toBeLessThan(60);
   });

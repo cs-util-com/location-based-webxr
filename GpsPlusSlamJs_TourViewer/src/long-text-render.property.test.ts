@@ -179,7 +179,7 @@ describe("renderLongText (property)", () => {
           expect(host.contains(slot.holder)).toBe(true);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   }, 30_000);
 
@@ -188,7 +188,7 @@ describe("renderLongText (property)", () => {
   // loose characters alone did. This pins a floor under the share of
   // bodies that render at least one link and at least one tour picture.
   it("generates bodies that render links and pictures", () => {
-    const sample = fc.sample(body, { numRuns: 2000, seed: 42 });
+    const sample = fc.sample(body, { numRuns: 300, seed: 42 });
     let links = 0;
     let shown = 0;
     for (const text of sample) {

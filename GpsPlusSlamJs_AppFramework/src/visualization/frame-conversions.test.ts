@@ -18,6 +18,8 @@
  * one. We default to `makeNonTrivialAlignment` (rigid, non-axis rotation +
  * translation) and keep identity only as an explicit degenerate corollary.
  */
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { nueToArLocal, worldNueToGps } from './frame-conversions.js';

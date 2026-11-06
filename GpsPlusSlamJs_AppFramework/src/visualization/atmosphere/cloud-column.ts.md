@@ -96,5 +96,5 @@ const t = cloudColumnTransmittanceToward(
   exponent, horizon and clear cases, and the single read at the crossing;
   the GLSL's constants, guard and absence of uniforms.
 - `cloud-slab.test.ts`: the moved column model, through the re-exports.
-- The look-dev smokes (`sun-clouds.smoke.spec.mjs`) check the GPU against
+- The look-dev smokes (`sun-clouds.smoke.spec.mjs` (removed; in git history)) check the GPU against
   these twins.

@@ -10,7 +10,7 @@ module, never inside one, so while the relief imported them from
 `globe-surface.ts`, a page drawing only the relief (the Tour Viewer's
 OrbitControls editor) shared that whole module, with the imagery factory,
 the cloud shell and the stars, with the page that draws the globe. The Tour
-Viewer's `editor3d-lazy.test.ts` holds the split ("holds the globe's
+Viewer's `app-bundle.test.ts` holds the split ("holds the globe's
 whole-Earth imagery only in the globe view's chunks").
 
 ## Public API

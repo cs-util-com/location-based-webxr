@@ -12,6 +12,9 @@ import {
   type DebugLayerDeps,
 } from "./debug-capture-layer";
 
+// The awaited work is promise callbacks: poll every 1 ms, not every 50.
+const POLL = { interval: 1 };
+
 /**
  * Why these tests matter: the desktop editor's debug layer shows the
  * walk's camera captures, which are debug data - never the tour's
@@ -281,7 +284,7 @@ describe("the debug camera capture layer", () => {
     const started = layer.start();
     await vi.waitFor(() => {
       expect(release).not.toBeNull();
-    });
+    }, POLL);
     layer.stop();
     release!();
     await started;
