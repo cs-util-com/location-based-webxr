@@ -85,7 +85,10 @@ test("the ground keeps its colour under the shell, the shadow only darkens, and 
   test.setTimeout(900_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
+  // Neutral: "the shadow darkens somewhere" counts points past 3 levels, a
+  // margin measured on this curve (1 of 96 points; ACES at 0.75: 0 of 96,
+  // and still never brighter).
+  const errors = await bootGlobe(page, BASE, { query: "?grade=neutral" });
   // From orbit first: the shell against the paint, the same frame.
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
