@@ -60,7 +60,7 @@ import {
   tourStories,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { blockBodyAssets } from "./long-text-body-assets.js";
+import { itemStoredAssets } from "./item-card.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -250,7 +250,7 @@ function withPictureAssets(
 ): TourAsset[] {
   const owned = ownedAssetIds(manifest);
   const named = new Set([
-    ...objects.flatMap((b) => blockAssetIds(b)),
+    ...objects.flatMap((b) => itemStoredAssets(b)),
     ...manifest.stations.flatMap(stepAssetIds),
   ]);
   const kept = manifest.assets.filter(
@@ -317,43 +317,6 @@ export function keepsItself(
   );
 }
 
-/** The assets `block` names: its media, a video's poster, a character's
- *  image and voice, the pictures a long text's body names (shown or not:
- *  inline, past the cap) and its narration's voice (the timing is an entry, not an asset). A new kind
- *  fails to compile here until it says which assets it keeps.
- *  `required`: only those the format requires the tour to carry, without
- *  the pictures a long text's body names (they may be missing; the
- *  visitor reads their alt text). */
-function blockAssetIds(
-  block: TourBlock | TourObject,
-  required = false,
-): readonly string[] {
-  switch (block.kind) {
-    case "shortText":
-      return [];
-    case "longText": {
-      const body = required ? [] : blockBodyAssets(block);
-      return block.narration === undefined
-        ? body
-        : [...body, block.narration.audio];
-    }
-    case "picture":
-      return [block.image];
-    case "video":
-      return block.poster === undefined
-        ? [block.video]
-        : [block.video, block.poster];
-    case "audio":
-      return [block.audio];
-    case "model":
-      return [block.asset];
-    case "character":
-      return block.voice === undefined
-        ? [block.image]
-        : [block.image, block.voice];
-  }
-}
-
 /** The assets a free block in its world view (an undo step's) keeps: a
  *  model its model file (a `.glb` is self-contained, the one asset it
  *  needs), a picture the tour's image it names, a pin none. A captured
@@ -362,7 +325,7 @@ function blockAssetIds(
  *  for an undo that brings the picture back. */
 export function objectAssetIds(object: TourObject): readonly string[] {
   if (isCapturedPhoto(object)) return [];
-  return blockAssetIds(object);
+  return itemStoredAssets(object);
 }
 
 /** The assets a station's story blocks name (a frame's: its free blocks
@@ -370,7 +333,7 @@ export function objectAssetIds(object: TourObject): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "children">,
 ): readonly string[] {
-  return tourStationStoryBlocks(station).flatMap((b) => blockAssetIds(b));
+  return tourStationStoryBlocks(station).flatMap((b) => itemStoredAssets(b));
 }
 
 /**
@@ -382,7 +345,9 @@ export function stepAssetIds(
 export function stepRequiredAssetIds(
   station: Pick<TourStation, "children">,
 ): readonly string[] {
-  return tourStationStoryBlocks(station).flatMap((b) => blockAssetIds(b, true));
+  return tourStationStoryBlocks(station).flatMap((b) =>
+    itemStoredAssets(b, true),
+  );
 }
 
 /**
@@ -393,7 +358,7 @@ export function stepRequiredAssetIds(
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...tourStationBlocks(station).flatMap((b) => blockAssetIds(b)),
+      ...tourStationBlocks(station).flatMap((b) => itemStoredAssets(b)),
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),

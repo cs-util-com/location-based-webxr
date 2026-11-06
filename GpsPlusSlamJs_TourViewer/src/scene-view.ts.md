@@ -8,6 +8,10 @@ the tap to continue, the timed advance, scene choices, and ONE story at a
 time. Plan:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
 
+What each kind shows, and which files it reads, lives in `item-card.ts`; this
+panel is its host: when a step starts and stops, the sound, the stage, the
+status line and what an end means.
+
 ## Public API
 
 - `createSceneView(deps): SceneView`
@@ -132,7 +136,7 @@ time. Plan:
   released, the wait starts again. One timer at a time: `armTimer` cancels
   any earlier one (a voice lost while its step renders arms it early).
 - **Video** (B2b step 3) plays in the card's `<video controls playsinline
-preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
+preload="metadata">` (`dom.video`, `ItemVideo`): the clip and its
   poster are read through `loadAsset` as object URLs of the step. The
   player shows only once its CLIP is here: a player without a clip has
   controls that do nothing. Until then (and for good when the clip cannot
@@ -141,7 +145,7 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   clip (the tap is the activation, so no autoplay rule applies), and the
   transcript stays below. A clip that cannot be read says "The video could
   not be loaded - the words are below." on the status line; one that loads
-  but does not decode (the player's `error`, wired through `SceneVideo`'s
+  but does not decode (the player's `error`, wired through `ItemVideo`'s
   `onerror`) says "The video could not be played here - the words are
   below." and ends the step's "a video plays" hold, so a tap on him plays
   his voice, as for a clip that cannot be read; a poster that
