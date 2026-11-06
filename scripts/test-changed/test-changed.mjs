@@ -23,6 +23,9 @@
 // Scope: `location-based-webxr` only. `GpsPlusSlamJs` and
 // `GpsPlusSlamJs_Investigation` have no equivalent and keep their own full gate.
 //
+// A COMMITTED MERGE HAS NOTHING TO DIFF against the default HEAD, so a clean
+// tree on one is refused (exit 2, select.mjs `cleanMergeRefusal`): name a --ref.
+//
 // Usage: pnpm run test:changed [--all] [--ref <git-ref>] [--dry-run]
 //   --all      run the full cascade (escape hatch, e.g. after a change to
 //              the sibling gps-plus-slam-js library consumed via a pnpm
@@ -69,6 +72,7 @@ import {
 import {
   cascadeCommands,
   cascadeTierBase,
+  cleanMergeRefusal,
   fastGateOptions,
   firstMergeBase,
   MAIN_LINES,
@@ -144,6 +148,45 @@ if (linkOverride) {
   );
 }
 
+/** @returns {string | null} the merge-base with the main line, if any */
+function mainMergeBase() {
+  return firstMergeBase((mainLine) => {
+    const found = spawnSync('git', ['merge-base', 'HEAD', mainLine], {
+      cwd: WORKSPACE_ROOT,
+      encoding: 'utf8',
+    });
+    return found.status === 0 ? found.stdout.trim() || null : null;
+  });
+}
+
+/** @returns {import('./select.mjs').Selection} what the tree asks for now */
+function currentSelection() {
+  return selectPackages({
+    trackedChanges: trackedPaths(ref, WORKSPACE_ROOT),
+    untracked: untrackedPaths(WORKSPACE_ROOT),
+    packageDirs: packageDirs(),
+  });
+}
+
+// Before the queue: a refused run must not wait hours for the slot first.
+if (!runAll && refIdx === -1) {
+  const [head = '', ...parents] = spawnSync(
+    'git',
+    ['rev-list', '--parents', '-n', '1', 'HEAD'],
+    { cwd: WORKSPACE_ROOT, encoding: 'utf8' }
+  ).stdout.trim().split(/\s+/);
+  const refusal = cleanMergeRefusal({
+    refGiven: false,
+    selection: currentSelection(),
+    headIsMerge: parents.length > 1,
+    headOnMain: parents.length > 1 && mainMergeBase() === head,
+  });
+  if (refusal !== null) {
+    console.error(refusal);
+    process.exit(2);
+  }
+}
+
 // The machine slot for the WHOLE run (machine-slot.mjs): every gate this
 // spawns inherits the token and re-enters, so another session cannot slip in
 // between the repo-config tests and the last dependent. A dry run takes nothing.
@@ -165,14 +208,7 @@ function tierBaseForCascade() {
   const base = cascadeTierBase({
     env: process.env,
     ref: refIdx !== -1 ? ref : null,
-    mergeBase: () =>
-      firstMergeBase((mainLine) => {
-        const found = spawnSync('git', ['merge-base', 'HEAD', mainLine], {
-          cwd: WORKSPACE_ROOT,
-          encoding: 'utf8',
-        });
-        return found.status === 0 ? found.stdout.trim() || null : null;
-      }),
+    mergeBase: mainMergeBase,
   });
   console.log(
     base
@@ -194,12 +230,7 @@ if (runAll) {
   process.exit(runInOrder(cascadeCommands({ tierBase: tierBaseForCascade() })));
 }
 
-const dirs = packageDirs();
-const selection = selectPackages({
-  trackedChanges: trackedPaths(ref, WORKSPACE_ROOT),
-  untracked: untrackedPaths(WORKSPACE_ROOT),
-  packageDirs: dirs,
-});
+const selection = currentSelection();
 
 if (selection.mode === 'all') {
   console.log(

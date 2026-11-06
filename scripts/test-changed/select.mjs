@@ -282,6 +282,29 @@ export function firstMergeBase(mergeBaseWith) {
 }
 
 /**
+ * Why the run refuses to start, or null. The default diff base is HEAD, so a
+ * merge that is already committed leaves nothing to diff: the run would be
+ * test:repo-config alone and exit 0, and whoever merged main and trusted it
+ * has checked no package. An ordinary commit is not refused (its gate ran
+ * before the commit), nor a merge commit already on main, which is where a
+ * fresh branch starts. A merge followed by further edits passes: the run
+ * sees those edits and has something to check, though not the merge.
+ *
+ * @param {{ refGiven: boolean, selection: Selection, headIsMerge: boolean, headOnMain: boolean }} input
+ * @returns {string | null}
+ */
+export function cleanMergeRefusal({ refGiven, selection, headIsMerge, headOnMain }) {
+  if (refGiven || !headIsMerge || headOnMain || selection.mode === 'all') return null;
+  const { packages, rootFiles = [], docsOnly = [] } = selection;
+  if (packages.length + rootFiles.length + docsOnly.length > 0) return null;
+  return (
+    'test-changed: ✖ HEAD is a merge commit and nothing is uncommitted, so this run would check no package.\n' +
+    '  Name the base: `--ref origin2/main` for what this branch changes on top of main,\n' +
+    '  `--ref HEAD~1` for what the merge brought in.'
+  );
+}
+
+/**
  * The commands a `test:changed` run executes, in order.
  *
  * Pure so the SPLIT is testable. `selectPackages` above cannot compute the

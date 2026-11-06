@@ -68,8 +68,11 @@ describe("settle", () => {
     vi.advanceTimersByTime(30);
     value = 1;
     await run.windows(4);
+    vi.advanceTimersByTime(20);
+    value = 2;
+    await run.windows(4);
 
-    // 69 ms after the start, but only 39 after the change.
+    // 59 ms after the first change, but only 39 after the last one.
     vi.advanceTimersByTime(39);
     await run.windows(4);
     expect(run.isFinished()).toBe(false);

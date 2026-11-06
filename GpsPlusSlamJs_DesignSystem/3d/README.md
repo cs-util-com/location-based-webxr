@@ -35,15 +35,16 @@ here is a copy: the atmosphere judged on this page is the code the apps run.
   stage: the page boots in its default look, compiles its cloud modes,
   shadows and tiers, and draws, with no console error.
 
-## The smoke test (removed; in git history)
+## The look measurements (removed; in git history)
 
-The measurement specs below (`lookdev.smoke.spec.mjs` and its siblings)
-were deleted once the page's look decisions were taken; restore them from
-git history before a look change on this page. What they asserted:
+The fast spec above still proves that the page's shaders compile and draw;
+nothing proves any longer what they draw. The measurement specs
+(`lookdev.smoke.spec.mjs` and its siblings) were deleted once the page's
+look decisions were taken; restore them from git history before a look
+change on this page.
 
-The only place the atmosphere's shaders are compiled, drawn and checked. A
-three.js shader error throws nothing and only logs, so the smoke asserts
-what three cannot hide:
+A three.js shader error throws nothing and only logs, so they asserted what
+three cannot hide:
 
 - every preset draws a non-uniform image with no console error;
 - at noon the high sky is bluer than the horizon;

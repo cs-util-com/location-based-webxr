@@ -28,7 +28,9 @@
   [--dry-run]`. `--all` = full-cascade escape hatch (mandatory after
   changing the link-overridden sibling library, which this repo's git cannot
   see). `--ref` = diff base (default `HEAD`). `--dry-run` prints the
-  decision only. Exit code = the underlying gate's exit code. A 124 is a
+  decision only. Exit code = the underlying gate's exit code, or 2 for a
+  refused run (a committed merge with nothing left to diff, or the library
+  link with no webxr change). A 124 is a
   stage the watchdog killed for silence, and is named as one beside its
   STALLED banner ([stall-watch.mjs](../test-timing/stall-watch.mjs.md)); a
   75 is a queue timeout. Neither is a red test.
@@ -88,6 +90,16 @@
     the line says the watch is off. After a stalled package gate it prints a
     one-line STALLED verdict whose reason (`STALL_SUMMARY`) names the limit
     by its source, never as a number of minutes.
+  - **A committed merge is refused, not passed.** The default base is HEAD,
+    so a merge that is already a commit leaves nothing to diff: the run would
+    be `test:repo-config` alone, exit 0, and no package checked. With no
+    `--ref`, nothing selected, HEAD a merge commit and HEAD not on main, it
+    exits 2 before taking the slot (`cleanMergeRefusal` in `select.mjs`) and
+    names the two bases: `--ref origin2/main` for what the branch changes on
+    top of main, `--ref HEAD~1` for what the merge brought in. The two select
+    different sets and neither contains the other, so the choice stays with
+    the caller. Not refused, and not checked either: a merge followed by
+    further edits, where the run sees only those edits.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,
@@ -99,6 +111,7 @@
   `check:deadcode` and the Tour Viewer gate with its dependents; edit only
   a Globe sidecar → repo-config and the Globe's `format`.
 - Tests: decision logic in `select.test.mjs` / `select.property.test.mjs`;
-  the watch line in `test-changed.test.mjs`;
+  the merge refusal in `select.test.mjs`; the watch line in
+  `test-changed.test.mjs`;
   the thin shell is verified by `--dry-run` runs against the live tree (see
   the speedup plan's Phase B acceptance).

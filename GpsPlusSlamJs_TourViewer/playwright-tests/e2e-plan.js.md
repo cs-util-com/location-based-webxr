@@ -82,10 +82,10 @@ cannot reach.
   s) and five short specs; lane 2 the rest. The 3D lanes (2,031 s of test
   time, the globe spec cut short by a red test, so about 2,120 s) at about
   490-570 s each: `editor3d-globe-start` (83 s) from lane 2 and
-  `editor3d-globe-buildings` (38 s, no longer waiting for the relief) from
-  lane 3 moved to lane 1, which stays the lightest by local seconds for its
-  clouds spec's CI retries. Local seconds are not CI minutes; rebalance
-  from the uploaded reports.
+  `editor3d-globe-buildings` (38 s in that run; its test waits for the
+  relief again since, so that figure is low) from lane 3 moved to lane 1,
+  the lightest by those seconds, for its clouds spec's CI retries. Local
+  seconds are not CI minutes; rebalance from the uploaded reports.
 
 ## Measurement (2026-11-01)
 
