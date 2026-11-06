@@ -1,6 +1,10 @@
 // @ts-check
 import { defineConfig, devices } from "@playwright/test";
-import { playwrightGrep, tierRetries } from "../../scripts/e2e/tier.mjs";
+import {
+  playwrightGrep,
+  tierGlobalTimeout,
+  tierRetries,
+} from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
 
@@ -37,6 +41,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // The per-PR tier (`@pr` tests) or the full set: scripts/e2e/tier.mjs.
+  globalTimeout: tierGlobalTimeout(process.env),
   retries: tierRetries(process.env),
   grep: playwrightGrep(import.meta.url),
   workers: process.env.CI ? 1 : 3,

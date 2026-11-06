@@ -6,8 +6,9 @@
 - Public API:
   - `decideRecording(argvRest, env)` → `{ record, extraArgs, reason }`
     - `argvRest`: `process.argv` after the stage name (a leading `--` separator forwarded by pnpm is stripped).
-    - `reason`: `'full-suite'` (record), `'filtered'` (extra args forwarded ⇒ never record), `'ci'` (on the GitHub runner, `env.GITHUB_ACTIONS` truthy ⇒ never record). A local gate's `CI=1` does NOT count: every local gate sets it, and keying on `CI` left the gates unrecorded from 2026-09-30 (when `CI=1` entered the commit gate) until 2026-11-01; the browser stages, which only gates run, have no rows after the end of September.
-  - `onGithubRunner(env)` → `true` when `env.GITHUB_ACTIONS` is truthy. Shared with `budget.mjs`, so the GitHub runner skips both the budget and the recording. The reverse does not hold: a local run that records nothing for another reason (forwarded args, a `fastGateCommand`, a narrowed run in `run-stage.mjs`) still has its budget checked.
+    - `reason`: `'full-suite'` (record), `'filtered'` (extra args forwarded ⇒ never record), `'ci'` (on the GitHub runner, `env.GITHUB_ACTIONS` truthy ⇒ no record unless `RECORD_ON_RUNNER_ENV` is set). A local gate's `CI=1` does NOT count: every local gate sets it, and keying on `CI` left the gates unrecorded from 2026-09-30 (when `CI=1` entered the commit gate) until 2026-11-01; the browser stages, which only gates run, have no rows after the end of September.
+  - `RECORD_ON_RUNNER_ENV` (`TIMING_RECORD_ON_RUNNER`): set by `ci.yml` on a run on `main`, the only run on the runner that records; its tables are uploaded as artifacts and never committed. A filtered run stays unrecorded there too.
+  - `onGithubRunner(env)` → `true` when `env.GITHUB_ACTIONS` is truthy. Shared with `budget.mjs`, so the GitHub runner skips the budget always and the recording unless asked. The reverse does not hold: a local run that records nothing for another reason (forwarded args, a `fastGateCommand`, a narrowed run in `run-stage.mjs`) still has its budget checked.
   - `appendArgs(command, extraArgs)` → command string with args appended; args containing whitespace/quotes are double-quoted, embedded `"` escaped.
   - `buildStageCommand(command, decision, filteredRunArgs = [])` → the full shell command for a run. Unfiltered runs (no forwarded args, including CI) return `command` byte-identical; filtered runs get `filteredRunArgs` inserted **before** the forwarded args.
 - Invariants & assumptions:
@@ -26,4 +27,4 @@
   ]);
   // filtered → 'vitest run --coverage --coverage.thresholds.lines=0 src/foo.test.ts'
   ```
-- Tests: [stage-args.test.mjs](stage-args.test.mjs) (examples), [stage-args.property.test.mjs](stage-args.property.test.mjs) (record ⟺ no extra args ∧ not the GitHub runner, whatever `CI` says; input immutability; appendArgs identity/prefix properties; buildStageCommand identity-when-unfiltered, neutralizer ordering, appendArgs reference model).
+- Tests: [stage-args.test.mjs](stage-args.test.mjs) (examples), [stage-args.property.test.mjs](stage-args.property.test.mjs) (record ⟺ no extra args ∧ not the GitHub runner, with the recording switch unset, whatever `CI` says; input immutability; appendArgs identity/prefix properties; buildStageCommand identity-when-unfiltered, neutralizer ordering, appendArgs reference model).

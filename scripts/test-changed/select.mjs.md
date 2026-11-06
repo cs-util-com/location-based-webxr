@@ -20,8 +20,9 @@
   - Untracked paths are supplied separately by the shell (`git diff` never
     lists them) and count exactly like tracked changes.
   - Generated `docs/test-timings.md` (root or one package level deep) is
-    ignored — every full gate rewrites those files, so they would otherwise
-    pin their package as permanently "changed".
+    ignored. Those files are gitignored now, but a branch that still tracks
+    them, or the commit that stopped tracking them, would otherwise pin their
+    package as "changed".
   - Paths are slash-normalized; empty strings are ignored; never invents a
     package name not present in `packageDirs`.
 - Examples: `selectPackages({ trackedChanges: ['GpsPlusSlamJs_RecorderApp/src/a.ts'],

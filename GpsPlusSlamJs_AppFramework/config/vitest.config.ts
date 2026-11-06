@@ -39,7 +39,7 @@ export default defineConfig({
     // suite.
     //
     // A deadlock guard, not a performance gate: slowdowns are caught by
-    // `docs/test-timings.md`, which flags them 🔺 whatever this number says.
+    // a checkout's gitignored `docs/test-timings.md`, which flags them 🔺 whatever this number says.
     testTimeout: 30_000,
     coverage: {
       provider: 'v8',

@@ -23,6 +23,17 @@ const project = {
       counts: null,
     },
     { name: 'talker', command: 'node talker-stage.mjs', counts: null },
+    // The trailing token is what makes a stage a browser stage.
+    {
+      name: 'browser',
+      command: `node silent-stage.mjs "${pidFile}" reporter playwright`,
+      counts: null,
+    },
+    {
+      name: 'stubborn-browser',
+      command: `node silent-stage.mjs "${pidFile}" stubborn playwright`,
+      counts: null,
+    },
   ],
 };
 

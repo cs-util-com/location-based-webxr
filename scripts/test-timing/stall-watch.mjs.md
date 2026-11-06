@@ -28,6 +28,12 @@
     only `off` switches the watch off.
 - `stallPollMs(env)` - `GATE_STALL_POLL_MS` when positive, else
   `STALL_POLL_MS` (5 s). Tests shorten it.
+- `stallReportGraceMs(env)` - `GATE_STALL_REPORT_GRACE_MS` when positive,
+  else `STALL_REPORT_GRACE_MS` (60 s): on POSIX a stalled browser stage
+  (`isBrowserStage`) gets a SIGINT first and this long to end, because a
+  Playwright run writes its reports and names the interrupted test on SIGINT
+  and leaves neither on SIGTERM. The verdict stays `STALLED`, exit 124. Windows
+  has no such signal to send, so a stage there is killed outright.
 - `silenceClock(limitMs, startMs)` - `heard(now)` on each chunk,
   `check(now)` -> `{ silentMs, stalled }`, `longest(now)`.
 - `shouldReportSilence(longestMs, limitMs)` / `silenceLine(...)` - the

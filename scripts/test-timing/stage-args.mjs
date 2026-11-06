@@ -1,5 +1,5 @@
 // Decides whether a stage run is a canonical full-suite run that may be
-// recorded in docs/test-timings.md. Canonical commands live in stages.mjs,
+// recorded in the gitignored docs/test-timings.md. Canonical commands live in stages.mjs,
 // so any forwarded CLI arg means the run is filtered and must not record —
 // timing rows only ever compare like-for-like full-suite runs.
 
@@ -11,6 +11,12 @@
  */
 
 /**
+ * Set by ci.yml on a run on `main`, the one run on the GitHub runner that
+ * records: its tables are the numbers that run uploads.
+ */
+export const RECORD_ON_RUNNER_ENV = 'TIMING_RECORD_ON_RUNNER';
+
+/**
  * Is this run on the GitHub Actions runner? Keyed on `GITHUB_ACTIONS`, NOT on
  * `CI`: every local gate sets `CI=1` (Playwright's CI mode: retries, one
  * worker, no reused dev server), so a `CI` check skipped every local run as
@@ -18,9 +24,9 @@
  * nothing, and the browser stages, which only gates run, have no rows after
  * the end of September 2026. The runner sets `GITHUB_ACTIONS=true`; an empty
  * value counts as unset. `budget.mjs` uses the same predicate, so the runner
- * skips both the budgets and the recording; a local run that records nothing
- * for another reason (a filtered, fast-command or narrowed run) still has its
- * budget checked.
+ * skips the budgets, and the recording too unless the run asks for it
+ * (`RECORD_ON_RUNNER_ENV`); a local run that records nothing for another reason
+ * (a filtered, fast-command or narrowed run) still has its budget checked.
  *
  * @param {Record<string, string | undefined>} env - process.env (or a stub)
  * @returns {boolean}
@@ -38,7 +44,7 @@ export function decideRecording(argvRest, env) {
   // pnpm forwards a literal "--" separator in some invocation styles; it is
   // not an argument for the wrapped command.
   const extraArgs = argvRest[0] === '--' ? argvRest.slice(1) : [...argvRest];
-  if (onGithubRunner(env)) {
+  if (onGithubRunner(env) && !env[RECORD_ON_RUNNER_ENV]) {
     return { record: false, extraArgs, reason: 'ci' };
   }
   if (extraArgs.length > 0) {

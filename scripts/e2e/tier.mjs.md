@@ -12,6 +12,13 @@
     `DEVELOPER_FILTER_ENV` (`E2E_DEVELOPER_FILTER`), `TIERS`.
   - `e2eTier(env)`: `"pr"` or `"full"`; throws `RangeError` on any other
     value, so a typo never picks a tier.
+  - `tierGlobalTimeout(env)`: the Playwright `globalTimeout` in milliseconds
+    from `E2E_GLOBAL_TIMEOUT_MIN` (`GLOBAL_TIMEOUT_ENV`), 0 when unset. Throws
+    `RangeError` on anything but a positive number. Each CI browser job sets
+    its value (`e2e_limit` in `ci.yml`, per Playwright process), so a hang ends
+    as a red run with its log and report instead of a cancelled job with
+    neither. It covers the Playwright run only: a hang in the steps before it
+    still runs into the job's limit.
   - `tierRetries(env, localRetries = 0)`: on CI 1 in the tier, 2 in the
     full set; locally the package's own count.
   - `tierGrep(env, wholeSpecs)`: `RegExp[]` for the tier (the tag, plus one

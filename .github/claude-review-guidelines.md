@@ -43,8 +43,7 @@ Duplicating them is noise:
 - Type errors, `strict` violations, or `noUncheckedIndexedAccess` narrowing —
   `tsc --noEmit` (`typecheck` and `typecheck:tests`) decides.
 - Unused exports and dead code — knip decides. Import cycles — the cycle check decides.
-- CLA signing (a bot handles it), commit-message format, generated `dist/` output,
-  and the auto-rewritten `docs/test-timings.md` files.
+- CLA signing (a bot handles it), commit-message format and generated `dist/` output.
 
 ## Tone
 

@@ -1,5 +1,5 @@
 // Why this test matters: the anonymization contract is "no raw hostname in
-// the versioned md, ever" — not just for the hostnames we thought of. The
+// the timing md, ever" — not just for the hostnames we thought of. The
 // properties pin that for ARBITRARY hostnames the hash prefix is always
 // 8 lowercase hex chars, and that the HOST SLOT of fingerprint and label
 // carries exactly that hash and nothing else. (A naive "output never

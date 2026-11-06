@@ -3,7 +3,8 @@
 // "stubborn" it also traps SIGINT and SIGTERM, recording each one it gets
 // (one name per line in "<pidFile>.signals") without exiting, like a worker
 // that ignores them: only a SIGKILL ends it then. Its own pid goes to
-// "<pidFile>.stage".
+// "<pidFile>.stage". With "reporter" it behaves like a Playwright run: a SIGINT
+// makes it write "<pidFile>.report" and end, and a SIGTERM ends it with neither.
 import { spawn } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 
@@ -12,6 +13,12 @@ if (mode === 'stubborn' && pidFile) {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => appendFileSync(`${pidFile}.signals`, `${signal}\n`));
   }
+}
+if (mode === 'reporter' && pidFile) {
+  process.on('SIGINT', () => {
+    writeFileSync(`${pidFile}.report`, 'written');
+    process.exit(130);
+  });
 }
 const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
   stdio: 'ignore',
