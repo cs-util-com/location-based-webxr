@@ -286,7 +286,18 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
   - It checks the ends, the floor, the arc bound below the bend, no climb
     from a low start, and that the camera moves backwards only to make
     room for the dive.
-  - It checks criteria (a) and (b) at 60 Hz.
+  - It checks criteria (a) and (b) at 60 Hz, from the shortest flight the
+    app plans a cruise for up (2 s, the replan's least; a first press takes
+    15 s), not from half a second.
+    - Why: the speed is measured between frames. A start over its own target
+      (a pin picked at the camera's own place) backs off, then turns into
+      the dive. In a flight under about 1.4 s (at 30 Hz, 2.3 s) that turn
+      fits inside one frame, and the measure reads the shortcut across it
+      as a dip of about a fifth. The path's own speed, in 16 steps per
+      frame, holds to about 1 % in every such case found.
+    - `flight-path.test.ts`, "from a point to itself", pins that case,
+      and the same reading at the default 15 s: a 4 Hz sample at tolerance
+      0.1, the example sweep's coarsest pair, which that flight is not in.
 - `src/test-utils/flight-speed.ts`: the shared criterion.
   - It uses the chord form for small angles. `angleTo` goes through acos,
     which reads anything under 9.5 cm on the Earth as 0.
