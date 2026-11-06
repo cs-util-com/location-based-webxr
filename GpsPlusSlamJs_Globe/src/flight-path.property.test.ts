@@ -85,10 +85,19 @@ const flight = flightOfAtLeast(500);
  * random (round-3 plan filed it; the owner chose this fix, 2026-10-14).
  *
  * It starts at the shortest flight the app plans a cruise for, the replan's
- * least: a first press takes 15 s. Below about 1.4 s a start over its own
- * target turns from its back-off into the dive within one 60 Hz frame, and
- * the speed, measured between two frames, reads the shortcut across that
- * turn as a dip of about a fifth; the path's own speed holds to about 1 %.
+ * least: a first press takes 15 s. A start over its own target can turn
+ * from its back-off into the dive within one frame, and the speed, measured
+ * between two frames, reads the shortcut across that turn as a dip of about
+ * a fifth; the path's own speed holds to about 1 %.
+ *
+ * This floor makes that case rare, it does not rule it out. The dip depends
+ * on where the frames fall on the turn, so on the flight's exact length. The
+ * worst flight found, from a place to itself, 12,468 m to 1,359 m, reads
+ * 0.79 at 2 s and 60 Hz, past this test's 0.8 (a tolerance of 0.21 passes
+ * it), and goes on reading under 0.8 at some lengths up to 2.13 s at 60 Hz
+ * and 4.18 s at 30 Hz. Drawn flights met it in 0 of 60,000 of 2 to 2.5 s;
+ * from a 0.5 s floor, in 49 of 59,133 of 0.5 to 1 s. Not one of 40,000
+ * flights from a place to itself, 2 to 8 s, failed at 60 Hz, 6 at 30 Hz.
  * That case is pinned in flight-path.test.ts, "from a point to itself".
  */
 const descent = flightOfAtLeast(FLIGHT_REPLAN.minDurationMs).filter(

@@ -291,10 +291,16 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
     15 s), not from half a second.
     - Why: the speed is measured between frames. A start over its own target
       (a pin picked at the camera's own place) backs off, then turns into
-      the dive. In a flight under about 1.4 s (at 30 Hz, 2.3 s) that turn
-      fits inside one frame, and the measure reads the shortcut across it
-      as a dip of about a fifth. The path's own speed, in 16 steps per
-      frame, holds to about 1 % in every such case found.
+      the dive. In a short flight that turn fits inside one frame, and the
+      measure reads the shortcut across it as a dip of about a fifth. The
+      path's own speed, in 16 steps per frame, holds to about 1 % in every
+      such case found.
+    - The floor makes this rare, it does not rule it out: the dip depends on
+      where the frames fall on the turn, so on the exact length. Worst found,
+      from a place to itself, 12,468 m to 1,359 m: 0.79 at 2 s and 60 Hz,
+      past the tolerance of 0.2 (0.21 passes it), under 0.8 at some lengths
+      up to 2.13 s at 60 Hz and 4.18 s at 30 Hz. Drawn flights met it in 0 of
+      60,000 of 2 to 2.5 s; from a 0.5 s floor, in 49 of 59,133 of 0.5 to 1 s.
     - `flight-path.test.ts`, "from a point to itself", pins that case,
       and the same reading at the default 15 s: a 4 Hz sample at tolerance
       0.1, the example sweep's coarsest pair, which that flight is not in.
