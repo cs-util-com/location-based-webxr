@@ -19,6 +19,7 @@
  */
 
 import {
+  isTourStory,
   tourStationChildIds,
   tourStationStoryBlocks,
   tourStories,
@@ -2185,10 +2186,16 @@ function withStoryBlock(
 ): StationFrame {
   return {
     ...frame,
-    children: tourStories(frame).map((story) => ({
-      ...story,
-      children: story.children.map((c) => (c.id === block.id ? block : c)),
-    })),
+    children: frame.children.map((child) =>
+      isTourStory(child)
+        ? {
+            ...child,
+            children: child.children.map((c) =>
+              c.id === block.id ? block : c,
+            ),
+          }
+        : child,
+    ),
   };
 }
 

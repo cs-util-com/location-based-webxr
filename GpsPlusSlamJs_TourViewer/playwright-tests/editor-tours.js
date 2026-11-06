@@ -118,7 +118,7 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               foundRadiusM: 5,
               hint: "arrow",
               children: [
-                storyOf(`${"hello"}-story`, [
+                storyOf("hello-story", [
                   told(textCard("hello", "At the gate", "Hello")),
                 ]),
               ],
@@ -138,7 +138,7 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               foundRadiusM: 5,
               hint: "arrow",
               children: [
-                storyOf(`${"a-well"}-story`, [
+                storyOf("a-well-story", [
                   told(textCard("a-well", "Old well", "A well")),
                 ]),
               ],
@@ -150,7 +150,7 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               foundRadiusM: 5,
               hint: "arrow",
               children: [
-                storyOf(`${"a-bench"}-story`, [
+                storyOf("a-bench-story", [
                   told(textCard("a-bench", "A bench", "A bench")),
                 ]),
               ],

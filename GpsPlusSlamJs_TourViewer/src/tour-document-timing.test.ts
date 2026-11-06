@@ -65,6 +65,60 @@ describe("historyTimingEntries: the read-along entries the undo history names", 
   });
 });
 
+describe("historyTimingEntries, a story's narrated text", () => {
+  // Why: a story block is no object of the document, so its timing is only
+  // found through the frames an undo step keeps; missing it, a save drops
+  // the read-along an undo then brings the text back without.
+  it("names the timing an undo step's story still shows", () => {
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    let state = reduce(
+      initialTourDocumentState,
+      act.opened({
+        manifest: tourOf([], {
+          assets: [{ id: "voice", path: "content/voice.mp3", kind: "audio" }],
+          stations: [
+            {
+              id: "mill",
+              title: "The mill",
+              geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+              activateRadiusM: 50,
+              foundRadiusM: 25,
+              hint: "arrow",
+              ...stationContent([
+                storyOf("told", [
+                  {
+                    id: "tale",
+                    kind: "longText",
+                    view: "card",
+                    title: "The tale",
+                    body: "It turned.",
+                    narration: {
+                      audio: "voice",
+                      timing: "timing/tale.json",
+                      synthetic: true,
+                    },
+                    pose: POSE,
+                  },
+                ]),
+              ]),
+            },
+          ],
+        }),
+      }),
+    );
+    expect(historyTimingEntries(state)).toEqual(new Set());
+    state = reduce(
+      state,
+      act.stationEdited({
+        stationId: "mill",
+        edit: { title: "The old mill" },
+        what: "the title",
+      }),
+    );
+    expect(historyTimingEntries(state)).toEqual(new Set(["timing/tale.json"]));
+  });
+});
+
 describe("a copied narrated text", () => {
   // Why: a timing entry is named by its block's own id
   // (`timing/<blockId>.json`), and the format refuses a narration naming

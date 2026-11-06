@@ -5,7 +5,8 @@
 What an item (a block of any of the seven kinds) shows in a card and which
 files it reads. The switch that used to live in `scene-view.ts`, behind a
 small host interface, so one place says what each kind does and a new kind
-fails to compile until it says so.
+fails to compile until it says so (and `item-contract.test.ts` fails until
+it has a row).
 
 ## Public API
 
@@ -62,7 +63,8 @@ const readAhead = block.kind === "video" ? [] : itemAssets(block, characters);
 `item-contract.test.ts`: a table over the seven kinds, plus the look that
 reads a frames sheet, through the real story panel: words at once, reads
 stay inside the declared list and inside what a write keeps, a late landing
-does nothing, no sound or object URL after a stop, a lost file keeps the
-words, one move on per end. Also a host with no stage, and the list itself
+does nothing, a stop while a picture is measured shows nothing, no sound or
+object URL after a stop, a lost file keeps the words, one move on per end. A
+row is required for every kind of `TOUR_BLOCK_VIEWS`. Also a host with no stage, and the list itself
 for each view. `scene-view.test.ts` covers the per-kind behaviour in depth
 and did not change when the switch moved here.

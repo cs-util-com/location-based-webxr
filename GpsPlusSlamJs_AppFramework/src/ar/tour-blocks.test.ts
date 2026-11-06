@@ -444,16 +444,13 @@ describe('views', () => {
     ).toThrow(/stands free in its station/);
   });
 
-  it("the floor view: the kind's own world view for a free block, card for a story block", () => {
-    expect(tourFloorView('shortText', 'free')).toBe('pin');
-    expect(tourFloorView('picture', 'free')).toBe('plane');
-    expect(tourFloorView('model', 'free')).toBe('placed');
-    expect(tourFloorView('longText', 'free')).toBe('reading');
+  it("the floor view: a free block's kind's own world view", () => {
+    expect(tourFloorView('shortText')).toBe('pin');
+    expect(tourFloorView('picture')).toBe('plane');
+    expect(tourFloorView('model')).toBe('placed');
+    expect(tourFloorView('longText')).toBe('reading');
     for (const kind of ['video', 'audio', 'character'] as const) {
-      expect(tourFloorView(kind, 'free')).toBeNull();
-    }
-    for (const kind of Object.keys(VALID) as TourBlock['kind'][]) {
-      expect(tourFloorView(kind, 'story')).toBe('card');
+      expect(tourFloorView(kind)).toBeNull();
     }
   });
 });

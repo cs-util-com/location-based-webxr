@@ -97,7 +97,7 @@ export interface TourStation {
 
 /** How the stations are read: the tour's (already validated) assets, the
  *  caller's `fail`, a newer minor (`lenient`), and who hears what was
- * *  left out (a station's description or card image, or a child, a block's
+ *  left out (a station's description or card image, or a child, a block's
  *  field or a way on a choice). */
 export interface TourStationsReadOptions {
   readonly assets: readonly TourAsset[];

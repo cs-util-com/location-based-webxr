@@ -22,10 +22,10 @@
  * fields, or widen a cap. Read from such a file, a block of an unknown
  * kind, naming an asset this reader does not have, or breaking a rule a
  * later minor may relax is skipped and reported, never failing the tour; a
- * block in an unknown view falls back to the kind's floor view
- * ({@link tourFloorView}): `card` for a story block, the kind's world view
- * for a free one, and a free block with no world view this reader draws is
- * skipped and reported. Structural faults (an id, a pose) fail at every
+ * block in an unknown view falls back to its floor view: `card` for a
+ * story block, the kind's world view for a free one
+ * ({@link tourFloorView}), and a free block with no world view this reader
+ * draws is skipped and reported. Structural faults (an id, a pose) fail at every
  * minor: no revision can make them valid.
  *
  * @see tour-blocks.ts.md
@@ -421,15 +421,12 @@ export function checkTourBlockText(
 }
 
 /**
- * The view a block falls back to when this reader does not know its own: a
- * story block's is `card`; a free block's is its kind's world view, or
- * null when this reader draws none for that kind (the block is skipped).
+ * The view a free block falls back to when this reader does not know its
+ * own: its kind's world view, or null when this reader draws none for that
+ * kind (the block is skipped). A story block's floor is `card`, which is
+ * also what its reader gives a block with no view at all.
  */
-export function tourFloorView(
-  kind: TourBlockKind,
-  placement: 'free' | 'story'
-): TourBlockView | null {
-  if (placement === 'story') return 'card';
+export function tourFloorView(kind: TourBlockKind): TourBlockView | null {
   return FREE_FLOOR[kind];
 }
 
@@ -1002,7 +999,7 @@ function freePlacement(read: TourBlockRead): TourBlock | string {
       ? block
       : `block "${block.id}" stands free in its station, so it must stand in the world (${[...TOUR_WORLD_VIEWS].join(', ')}), not in "${block.view}"`;
   }
-  const floor = tourFloorView(block.kind, 'free');
+  const floor = tourFloorView(block.kind);
   if (floor === null) {
     return `block "${block.id}" stands free in its station, and this version of the app draws no ${block.kind} in the world`;
   }

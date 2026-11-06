@@ -14,14 +14,16 @@ import {
   type ItemCardHost,
 } from "./item-card";
 import { createSceneView } from "./scene-view";
+import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 /**
  * Why these tests matter: what every kind of item owes whoever shows it. A
- * new kind added to the table must keep its words on screen, read nothing
- * it did not declare (a read past the list is a file a write prunes), leave
- * nothing behind when it stops, survive a lost file, and report its end
- * once. The table runs through the real story panel, so it describes what a
- * visitor gets rather than a stub's idea of it.
+ * kind must keep its words on screen, read nothing it did not declare (a
+ * read past the list is a file a write prunes), leave nothing behind when
+ * it stops, survive a lost file, and report its end once. The table runs
+ * through the real story panel, so it describes what a visitor gets rather
+ * than a stub's idea of it, and a kind the format gains fails here until it
+ * has a row.
  */
 
 const IMAGE = { kind: "image", width: 16, height: 9 } as const;
@@ -169,6 +171,7 @@ const flush = (): Promise<void> =>
 function panel(
   loadAsset: (path: string) => Promise<Blob> = (path) =>
     Promise.resolve(new Blob([path])),
+  checkPicture: () => Promise<string | null> = () => Promise.resolve(null),
 ) {
   const reads: string[] = [];
   const urls = { live: new Set<string>(), made: 0 };
@@ -224,7 +227,7 @@ function panel(
     },
     audio,
     stage,
-    checkPicture: () => Promise.resolve(null),
+    checkPicture,
     createChoiceButton: () => ({}) as unknown as Node,
     schedule: (fn) => {
       const timer = { fn, cancelled: false };
@@ -248,6 +251,47 @@ function panel(
   });
   return { view, dom, audio, stage, reads, urls, timers, voiceEnds };
 }
+
+describe("the table of kinds", () => {
+  // Why this test matters: the switches in item-card.ts stop a new kind at
+  // the compiler, but the contract below only binds a kind with a row. A
+  // kind the format gains must not pass this file by being absent from it.
+  it("has a row for every kind the format knows", () => {
+    expect(new Set(ITEMS.map((i) => i.fields.kind))).toEqual(
+      new Set(Object.keys(TOUR_BLOCK_VIEWS)),
+    );
+  });
+});
+
+describe.each(ITEMS.filter((i) => /picture|sheet/.test(i.name)))(
+  "the item contract, a picture being measured: $name",
+  (item) => {
+    // Why this test matters: measuring is a second wait after the read, so
+    // a guard on the read alone would show a stopped item's picture, over
+    // whatever the visitor moved on to.
+    it("shows no picture when it stopped while the picture was measured", async () => {
+      const measured: (() => void)[] = [];
+      const { view, dom, urls } = panel(undefined, () => {
+        return new Promise((resolve) => {
+          measured.push(() => {
+            resolve(null);
+          });
+        });
+      });
+      view.offer(stationOf(item.fields));
+      await flush();
+      expect(measured.length).toBeGreaterThan(0);
+      view.stopAll();
+      for (const done of measured) done();
+      await flush();
+      expect(urls.made).toBe(0);
+      expect(dom.image.src).toBe("");
+      expect(dom.portrait.src).toBe("");
+      expect(dom.image.hidden).toBe(true);
+      expect(dom.portrait.hidden).toBe(true);
+    });
+  },
+);
 
 describe.each(ITEMS)("the item contract: $name", (item) => {
   it("shows its words at once, before any file is read", () => {
