@@ -146,6 +146,11 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   through the new `edits.view(id, view)` (`editor.editBlockView`). The
   shell's generic field input skips its fields: only an input drawn under
   a field name (`data-field`) is written by the shell.
+- The inspector's station extras: `contents` folds Contents (kept across
+  selections), `add-content` opens the tree's type menu for the station,
+  `goto:<id>` selects and flies as a tree row does, and the radius slider
+  (`radius-slider.ts`) previews through `view.previewRadius` and is
+  cancelled when the selection goes or the shell hides.
 
 ## Invariants & assumptions
 

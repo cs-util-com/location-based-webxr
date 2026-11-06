@@ -101,6 +101,7 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
+import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
@@ -137,6 +138,7 @@ type ShellView = Pick<
   | "setLayers"
   | "centre"
   | "turn"
+  | "previewRadius"
   | "groundAt"
   | "origin"
   | "mapTiles"
@@ -514,6 +516,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** A station's Contents unfolded: kept from one station to the next. */
+  let contentsOpen = true;
   /** A ground command waiting for the ground: the inspector shows it in
    *  progress; a new selection or the view hidden calls it off. */
   let busy: {
@@ -525,6 +529,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     doc: TourDocumentState;
     ui: EditorViewState;
     positionOpen: boolean;
+    contentsOpen: boolean;
     busy: string | null;
   } | null = null;
 
@@ -567,6 +572,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       {
         folded: state().editorView.foldedDocks.inspector,
         positionOpen,
+        contentsOpen,
         busy: busy?.act ?? null,
         ...(writer === null ? {} : { longText: longText.state() }),
       },
@@ -698,6 +704,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       drawn.doc === doc &&
       drawn.ui === ui &&
       drawn.positionOpen === positionOpen &&
+      drawn.contentsOpen === contentsOpen &&
       drawn.busy === busyAct
     ) {
       return;
@@ -705,7 +712,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const docChanged = drawn?.doc !== doc;
     const uiChanged = drawn?.ui !== ui;
     const before = drawn?.ui ?? null;
-    drawn = { doc, ui, positionOpen, busy: busyAct };
+    drawn = { doc, ui, positionOpen, contentsOpen, busy: busyAct };
     const tour = manifest();
     if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
@@ -722,6 +729,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   // --- the inspector's fields and commands ---------------------------------
+
+  const radius = wireRadiusSlider({
+    root: inspector.root,
+    station: () => {
+      const model = inspectorModel(state().editorView);
+      const id = selectedStationId();
+      return model?.kind === "station" && id !== null
+        ? { id, radiusM: model.foundRadiusM }
+        : null;
+    },
+    preview: (id, radiusM) => view?.previewRadius(id, radiusM),
+    write: (id, foundRadiusM) => {
+      deps.edits.station(id, { foundRadiusM });
+    },
+  });
 
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
@@ -930,6 +952,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const was = lastSelected;
       lastSelected = selected;
       positionOpen = false;
+      radius.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -1280,8 +1303,30 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       positionOpen = !positionOpen;
       draw();
     }
+    if (act === "contents") {
+      contentsOpen = !contentsOpen;
+      draw();
+    }
     const { selected } = state().editorView;
     if (selected === null) return;
+    if (act === "add-content" && selected.startsWith(STATION_PREFIX)) {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      if (button !== null && model !== null) {
+        addMenu.openFor(
+          button,
+          selected.slice(STATION_PREFIX.length),
+          model.title,
+        );
+      }
+    }
+    if (act?.startsWith("goto:") === true) {
+      const item = act.slice("goto:".length);
+      deps.select(item);
+      view?.flyTo(item);
+    }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
@@ -1504,6 +1549,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         );
       }
       endUnfolding();
+      radius.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       longText.flush();

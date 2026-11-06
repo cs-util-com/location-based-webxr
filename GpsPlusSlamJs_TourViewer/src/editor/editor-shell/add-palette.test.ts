@@ -187,3 +187,76 @@ describe("isPaletteKey", () => {
     );
   });
 });
+
+describe("the palette's kind chips and marks", () => {
+  const texts = (rows: readonly HTMLElement[]) =>
+    rows.map((r) => r.querySelector(".pl")?.textContent);
+
+  // Why: the chips narrow by kind on a touch screen, where typing costs the
+  // most; a press must not take the focus from the field (the keyboard
+  // would drop), and a second press must give every kind back.
+  it("narrows the rows by a chip, the field keeping the focus", () => {
+    const { field, options } = opened();
+    const chips = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        "#add-palette .pfil .chip",
+      ),
+    ];
+    expect(chips.map((c) => c.textContent)).toEqual([
+      "Short text",
+      "Long text",
+      "Station",
+    ]);
+    const long = chips[1] as HTMLButtonElement;
+    const press = new Event("pointerdown", { bubbles: true, cancelable: true });
+    long.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
+    long.click();
+    expect(long.getAttribute("aria-pressed")).toBe("true");
+    expect(texts(options())).toEqual(["Long text"]);
+    expect(document.activeElement).toBe(field);
+    long.click();
+    expect(long.getAttribute("aria-pressed")).toBe("false");
+    expect(texts(options())).toEqual([
+      "Short text",
+      "Long text",
+      "New station",
+    ]);
+  });
+
+  it("starts each open with no chip on", () => {
+    const { palette, options } = opened();
+    document
+      .querySelector<HTMLButtonElement>('#add-palette .pfil [data-pf="pin"]')
+      ?.click();
+    palette.close(false);
+    palette.open();
+    expect(texts(options())).toEqual([
+      "Short text",
+      "Long text",
+      "New station",
+    ]);
+    expect(
+      document.querySelectorAll('#add-palette .chip[aria-pressed="true"]'),
+    ).toHaveLength(0);
+  });
+
+  // Why: the mark shows why a row is listed; a name comes from a file
+  // anyone can write, so it must arrive as text, never as markup.
+  it("marks the words found in a row, as text", () => {
+    const { field } = opened();
+    type(field, "gate");
+    expect(
+      [...document.querySelectorAll("#add-palette .pt mark")].map(
+        (m) => m.textContent,
+      ),
+    ).toContain("gate");
+    STATIONS.push({ id: "x", number: 3, title: "<b>gate</b>" });
+    try {
+      type(field, "gate");
+      expect(document.querySelector("#add-palette .pt b")).toBeNull();
+    } finally {
+      STATIONS.pop();
+    }
+  });
+});

@@ -105,6 +105,7 @@ function fakeView() {
     setLayers: vi.fn(),
     centre: () => ({ lat: 48.1371, lon: 11.5754, alt: 560 }),
     turn: vi.fn(() => true),
+    previewRadius: vi.fn(),
     groundAt: () => ground.m,
     origin: () => ({ lat: 48.1371, lng: 11.5754 }),
     mapTiles: vi.fn(() => [
@@ -1507,6 +1508,101 @@ describe("the bottom panel", () => {
     select("station:a");
     expect(hint()).not.toBe(none);
     expect(hint()).not.toBe("");
+    shell.hide();
+  });
+});
+
+describe("the inspector's station extras", () => {
+  const openStation = (store: ReturnType<typeof setUp>["store"]) => {
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+  };
+  const openPlace = () => {
+    document
+      .querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="position"]',
+      )
+      ?.click();
+  };
+
+  // Why: the ring is the 3D view's, the number the inspector's: the drag
+  // must reach both, and the tour only once, at the release.
+  it("follows the radius slider in the view and writes once", () => {
+    const { store, edits, shell, view } = setUp();
+    openStation(store);
+    openPlace();
+    const slider = document.querySelector<HTMLInputElement>(
+      "#shell-inspector input[type=range]",
+    ) as HTMLInputElement;
+    slider.value = "40";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", 40);
+    expect(edits.station).not.toHaveBeenCalled();
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(edits.station.mock.calls).toEqual([["a", { foundRadiusM: 40 }]]);
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", null);
+    shell.hide();
+  });
+
+  // Why: Escape during a drag drops the selection, and the slider with it;
+  // no release ever comes, so the ring must be given back here.
+  it("gives the ring back when the selection goes during a drag", () => {
+    const { store, select, edits, shell, view } = setUp();
+    openStation(store);
+    openPlace();
+    const slider = document.querySelector<HTMLInputElement>(
+      "#shell-inspector input[type=range]",
+    ) as HTMLInputElement;
+    slider.value = "40";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    select(null);
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", null);
+    expect(edits.station).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  // Why: a tap on a listed item is the tree's tap: selected and flown to.
+  it("selects and flies to an item of Contents", () => {
+    const { store, shell, view } = setUp();
+    openStation(store);
+    document
+      .querySelector<HTMLButtonElement>('#shell-inspector [data-act="goto:pa"]')
+      ?.click();
+    expect(store.getState().editorView.selected).toBe("pa");
+    expect(view.flyTo).toHaveBeenCalledWith("pa");
+    shell.hide();
+  });
+
+  it("folds Contents and keeps it folded for the next station", () => {
+    const { store, shell } = setUp();
+    openStation(store);
+    const contents = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="contents"]',
+      );
+    contents()?.click();
+    expect(contents()?.getAttribute("aria-expanded")).toBe("false");
+    store.dispatch(editorViewActions.selected({ id: "station:b" }));
+    expect(contents()?.getAttribute("aria-expanded")).toBe("false");
+    shell.hide();
+  });
+
+  // Why: the add menu is the tree's, so the button must open that one
+  // menu, for this station, and the choice must add there.
+  it("opens the type menu from Add content, adding to the station", () => {
+    const { store, edits, shell } = setUp();
+    openStation(store);
+    document
+      .querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="add-content"]',
+      )
+      ?.click();
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '#tree-add-menu [role="menuitem"]',
+      ),
+    ][0];
+    item?.click();
+    expect(edits.addItem).toHaveBeenCalledWith("a", "pin");
     shell.hide();
   });
 });

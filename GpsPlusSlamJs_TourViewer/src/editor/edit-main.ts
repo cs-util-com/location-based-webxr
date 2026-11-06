@@ -149,6 +149,7 @@ import {
   type NarrationChange,
 } from "./editor-session.js";
 import { waitForSaveSlot } from "gps-plus-slam-app-framework/storage/save-slot-wait";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
   bundleMatchesTour,
   debugBundleFileName,
@@ -202,6 +203,9 @@ import {
   type SaveTarget,
   type WritableFileHandle,
 } from "./save-target.js";
+
+// A vertical swipe that starts on a slider scrolls its panel (a phone).
+guardSlidersIn(document);
 
 /** The committed sample tour (`public/samples/`), beside this page. */
 const SAMPLE_URL = "samples/marienplatz-tour.zip";

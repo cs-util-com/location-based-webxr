@@ -161,6 +161,11 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   (`InspectorState.longText`). The writer sits between the narration's
   spot and Position; its fields are not drawn again under their names.
 
+- A station's Contents (`.contents`, `data-act="contents"`, open unless
+  `contentsOpen` is false): its items (`inspector-contents.ts`) and Add
+  content (`data-act="add-content"`). Its radius has a slider beside the
+  number (`radius-slider.ts`).
+
 ## Invariants & assumptions
 
 - Nothing here writes: the shell reads the typed fields and the

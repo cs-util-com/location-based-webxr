@@ -522,6 +522,25 @@ body[data-view="3d"] #view3d {
   font: 13px var(--s-sans);
 }
 
+#add-palette .pfil {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--s-line);
+}
+
+#add-palette .pfil .chip {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+#add-palette .pfil .chip svg.i {
+  width: 12px;
+  height: 12px;
+}
+
 #add-palette-list {
   max-height: min(360px, 55vh);
   overflow: auto;
@@ -563,6 +582,12 @@ body[data-view="3d"] #view3d {
   color: var(--s-dim);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#add-palette .pr mark {
+  background: transparent;
+  color: var(--s-accent-text);
+  font-weight: 600;
 }
 
 #add-palette .pempty {
@@ -1410,6 +1435,47 @@ button.thumb:focus-visible {
 
 .pos {
   padding: 2px 12px 10px;
+}
+
+/* A station's items under its Contents. */
+.contents {
+  padding: 2px 12px 10px;
+}
+
+.contents .kids {
+  margin: 2px 0 6px;
+  border: 1px solid var(--s-line);
+  border-radius: 4px;
+}
+
+.contents .kid {
+  height: 26px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.contents .kid .ic {
+  flex: none;
+}
+
+/* A slider and the number it moves, side by side. */
+.range {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.range input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--s-accent);
+}
+
+.range .num {
+  flex: none;
+  width: 74px;
 }
 
 /* A station's Position row: the disclosure and its lock side by side. */
