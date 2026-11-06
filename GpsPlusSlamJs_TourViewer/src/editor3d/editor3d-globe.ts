@@ -95,6 +95,7 @@ import {
   globeZoomOutLimitM,
   mountGlobeRelief,
   mountGlobeViewAir,
+  resolveGlobeGrade,
   SPEED_DUST_LOOK,
   type GlobeView,
   type GlobeViewAir,
@@ -333,6 +334,7 @@ export async function openGlobeEditor(
     | "cloudShadow"
     | "cloudWind"
     | "buildings"
+    | "grade"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -450,6 +452,7 @@ export async function openGlobeEditor(
       band: true,
       stencil: true,
       fill: true,
+      grade: resolveGlobeGrade(knobs.grade),
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {
@@ -1657,6 +1660,11 @@ export async function openGlobeEditor(
           })),
           globe: {
             carrier: relief ? "relief" : "globe",
+            // The grade as the renderer holds it, not as it was asked for.
+            grade: {
+              toneMapping: view.renderer.toneMapping,
+              exposure: view.renderer.toneMappingExposure,
+            },
             // What the hand-over waits for: the band's share and target,
             // the relief's view settled, and its tiles still loading (a
             // tile parses until its street map's texture is in).

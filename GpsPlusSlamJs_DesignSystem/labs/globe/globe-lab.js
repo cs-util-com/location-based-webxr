@@ -20,6 +20,7 @@ import {
   elementMapLoader,
 } from "/globe/globe-surface.js";
 import { createGlobeView, viewPoseEcef } from "/globe/globe-view.js";
+import { GLOBE_GRADE_PARAM, resolveGlobeGrade } from "/globe/globe-grade.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
   CLOUD_LIVE_NOISE,
@@ -1465,6 +1466,11 @@ async function start() {
     // A globe that fills the relief's gaps never discards (round-6 plan
     // G6-1): its program keeps the GPU's early stencil test.
     fill: fillAtStart,
+    // Fixed for the page's life, so it lives in the query, not in the hash
+    // the controls write.
+    grade: resolveGlobeGrade(
+      new URLSearchParams(location.search).get(GLOBE_GRADE_PARAM),
+    ),
     seams: {
       frameStart: (now) => hooks.frameStart(now),
       // The recorder's refresh calibration: no work while paused.
@@ -2674,6 +2680,10 @@ async function start() {
       ...globe.state(),
       ...flight.state(),
       appliedHash,
+      grade: {
+        toneMapping: renderer.toneMapping,
+        exposure: renderer.toneMappingExposure,
+      },
       centreLatLon: centreLatLon(),
       timeMs: view.sunNow(),
       clock: { ...params.clock, scale: view.clock().scale },

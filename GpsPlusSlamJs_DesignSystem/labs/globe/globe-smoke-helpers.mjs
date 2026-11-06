@@ -32,11 +32,13 @@ export function plainGlobe(hash) {
  * errors. `plain: false` loads the hash as given, so the page's own
  * defaults (the relief among them) apply. `routeCity: false` leaves the
  * city's data (Overpass, the height tiles) to the test's own routes.
+ * `query` goes before the hash (`?grade=neutral`: what is fixed for the
+ * page's life lives there, not in the hash).
  */
 export async function bootGlobe(
   page,
   hash,
-  { phase = "arrived", plain = true, routeCity = true } = {},
+  { phase = "arrived", plain = true, routeCity = true, query = "" } = {},
 ) {
   const errors = [];
   page.on("console", (m) => {
@@ -47,7 +49,7 @@ export async function bootGlobe(
   // unless the test routes the city itself (`routeCity: false`; page routes
   // win over context routes, and a worker's requests are the page's).
   if (routeCity) await routeCityData(page);
-  await page.goto(`/labs/globe/#${plain ? plainGlobe(hash) : hash}`);
+  await page.goto(`/labs/globe/${query}#${plain ? plainGlobe(hash) : hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
