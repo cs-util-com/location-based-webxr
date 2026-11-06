@@ -22,7 +22,11 @@ import {
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
 } from "./tour-document.js";
-import { stationContent, storyOf } from "./test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -52,7 +56,7 @@ describe("historyTimingEntries: the read-along entries the undo history names", 
     expect(historyTimingEntries(state)).toEqual(new Set(["timing/essay.json"]));
     const written = manifestToWrite(state);
     expect(
-      written?.stations.flatMap((s) => s.blocks).map((b) => b.id),
+      written?.stations.flatMap((s) => stationBlocks(s)).map((b) => b.id),
     ).not.toContain("essay");
     // The redo side counts too: undone, the deleting step is a future one
     // whose view has no essay, and the current view names it itself.
@@ -136,7 +140,7 @@ describe("a copied narrated text", () => {
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: { told: "told2" },
+        newItemIds: { "story-story": "story2-story", told: "told2" },
         createdAtIso: "2026-10-31T00:00:02.000Z",
         what: "the copy",
       }),
@@ -144,7 +148,7 @@ describe("a copied narrated text", () => {
     const written = manifestToWrite(state);
     if (written === null) throw new Error("nothing open");
     const told = written.stations
-      .flatMap((s) => s.blocks)
+      .flatMap((s) => stationBlocks(s))
       .filter((b) => b.kind === "longText")
       .map((b) => [b.id, b.narration?.timing]);
     expect(told).toEqual([

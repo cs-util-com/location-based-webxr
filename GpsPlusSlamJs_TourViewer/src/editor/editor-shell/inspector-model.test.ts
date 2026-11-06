@@ -176,11 +176,6 @@ describe("buildInspector", () => {
   // sees what the story carries though the 3D view draws none of it.
   it("lists the blocks the station's story shows, by kind and name", () => {
     const POSE: TourLocalPose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
-    const show = (id: string, block: string) => ({
-      id,
-      action: { kind: "show", block },
-      advance: { mode: "tap" },
-    });
     const storyStation = {
       ...STATIONS[1],
       ...stationContent([

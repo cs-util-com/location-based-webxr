@@ -569,7 +569,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       `${WRAP}tour.json`,
     );
     expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
-      version: 4,
+      version: 5,
       minor: 0,
     });
   });
@@ -1031,7 +1031,7 @@ describe("the finish writes no debug camera captures", () => {
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     const written = await writtenManifest(ctx);
-    expect(written).toMatchObject({ version: 4, minor: 0 });
+    expect(written).toMatchObject({ version: 5, minor: 0 });
     expect(written).not.toHaveProperty("captureSpots");
     // One station: the pin's. None for a frame.
     expect(parseTourManifest(written).stations).toHaveLength(1);

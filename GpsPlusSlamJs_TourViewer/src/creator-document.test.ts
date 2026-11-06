@@ -28,7 +28,10 @@ import {
 } from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tourOf, withCaption } from "./test-support/tour-of.js";
-import { stationContent } from "./test-support/station-content.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 function pin(id: string, lat = 48.52): TourPin {
   return {
@@ -746,10 +749,9 @@ describe("the creator's document: 'New station here' (D8)", () => {
     });
     // What the Finish writes is what the HUD says.
     const written = manifestToWrite(doc.state());
-    expect(written?.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
-      ["a"],
-      ["b"],
-    ]);
+    expect(
+      written?.stations.map((s) => stationBlocks(s).map((i) => i.id)),
+    ).toEqual([["a"], ["b"]]);
   });
 
   it("follows its caller, never the arm: the caller takes the arm when the item is committed", () => {

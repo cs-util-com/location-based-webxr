@@ -11,8 +11,8 @@
  *   no station. It writes the stations as they are, in their order, each
  *   object in the one it names (or, naming none, the one the tour holds
  *   it in), and refuses an object in no station of the tour.
- * - A station's blocks are written free blocks first (the objects, in
- *   their order), then its story blocks (in the station's order).
+ * - A station's children are written stories first (in the station's
+ *   order), then its free blocks (the objects, in their order).
  * - An object nobody moved keeps its local pose VERBATIM (its world pose
  *   reads back as the very numbers it has): a save never nudges a block,
  *   which D17's rigid station moves rely on.
@@ -24,7 +24,7 @@
  *   other asset stays while something names it.
  * - The walk's camera captures are debug data, never in a station.
  * - A station this write EMPTIED (it held free blocks, it holds none) goes
- *   when nothing else keeps it: no title, no story steps, no description,
+ *   when nothing else keeps it: no title, no story, no description,
  *   no card image that still names a picture (`keepsItself`). It existed
  *   for its elements (D20); left behind, the visitor's guide would still
  *   lead to it. An empty station the tour already had is left alone.
@@ -54,7 +54,11 @@ import {
   tourFreeBlocks,
   tourObjectBlock,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { tourShownBlockIds } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourStationBlocks,
+  tourStationStoryBlocks,
+  tourStories,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { blockBodyAssets } from "./long-text-body-assets.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
@@ -114,17 +118,8 @@ export function automaticStationFrame(
     activateRadiusM: AUTO_STATION_ACTIVATE_M,
     foundRadiusM: STATION_RADIUS_M,
     hint: "arrow",
-    blocks: [],
-    steps: [],
+    children: [],
   };
-}
-
-/** A station's STORY blocks: the ones a step of its story shows. */
-export function storyBlocksOf(
-  station: Pick<TourStation, "blocks" | "steps">,
-): TourBlock[] {
-  const shown = tourShownBlockIds(station.steps);
-  return station.blocks.filter((b) => shown.has(b.id));
 }
 
 /** A block standing in the world: a short text drawn as a pin, a picture,
@@ -139,7 +134,7 @@ export type WorldBlock = Extract<
 /** A station's free blocks (`tourFreeBlocks`) as the blocks in the world
  *  they are; the filter only names the kinds a reader already settled. */
 export function worldBlocks(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
 ): WorldBlock[] {
   return tourFreeBlocks(station).filter(
     (b): b is WorldBlock =>
@@ -166,7 +161,7 @@ export function isCapturedPhoto(
  * cover or a station's card image naming it names the photo.
  */
 export function ownedAssetIds(manifest: {
-  readonly stations: readonly Pick<TourStation, "blocks" | "steps">[];
+  readonly stations: readonly Pick<TourStation, "children">[];
 }): ReadonlySet<string> {
   return new Set(
     manifest.stations.flatMap((station) =>
@@ -232,7 +227,7 @@ export function withTourContent(
   }
   const filled = manifest.stations.map((station) => ({
     ...station,
-    blocks: [...(free.get(station.id) ?? []), ...storyBlocksOf(station)],
+    children: [...tourStories(station), ...(free.get(station.id) ?? [])],
   }));
   const imageAssets = imageAssetIds(manifest);
   return {
@@ -304,19 +299,19 @@ export function imageAssetIds(
 /**
  * Whether an EMPTY station carries the creator's own work, which keeps it
  * when its last free block leaves:
- * a title, story steps, a non-blank description, or a card image naming
+ * a title, a story, a non-blank description, or a card image naming
  * one of the tour's image assets (`imageAssets`). An image of the
  * station's own photo keeps nothing here: an emptied station holds no
  * photo, so the write drops that image (`station-image-gone`) and the
  * station is bare.
  */
 export function keepsItself(
-  station: Pick<TourStation, "title" | "steps" | "description" | "image">,
+  station: Pick<TourStation, "title" | "children" | "description" | "image">,
   imageAssets: ReadonlySet<string>,
 ): boolean {
   return (
     (station.title ?? "").trim() !== "" ||
-    station.steps.length > 0 ||
+    tourStories(station).length > 0 ||
     (station.description ?? "").trim() !== "" ||
     (station.image !== undefined && imageAssets.has(station.image))
   );
@@ -373,9 +368,9 @@ export function objectAssetIds(object: TourObject): readonly string[] {
 /** The assets a station's story blocks name (a frame's: its free blocks
  *  are objects). */
 export function stepAssetIds(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
 ): readonly string[] {
-  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b));
+  return tourStationStoryBlocks(station).flatMap((b) => blockAssetIds(b));
 }
 
 /**
@@ -385,9 +380,9 @@ export function stepAssetIds(
  * drafted frame against, so a body naming a lost picture keeps its station.
  */
 export function stepRequiredAssetIds(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
 ): readonly string[] {
-  return storyBlocksOf(station).flatMap((b) => blockAssetIds(b, true));
+  return tourStationStoryBlocks(station).flatMap((b) => blockAssetIds(b, true));
 }
 
 /**
@@ -398,7 +393,7 @@ export function stepRequiredAssetIds(
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...station.blocks.flatMap((b) => blockAssetIds(b)),
+      ...tourStationBlocks(station).flatMap((b) => blockAssetIds(b)),
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),

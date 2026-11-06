@@ -1,20 +1,18 @@
 /**
- * The STATIONS of `tour.json` version 4: each station a geo pose (position
- * and a rotation against north) with two radii, its BLOCKS - what it shows,
- * each at a local pose in the station's frame (`tour-blocks.ts`) - and its
- * STORY, the steps that show some of those blocks, ask choices and quizzes
- * (`tour-story.ts`). A block no step shows is free: it stands in the world
- * while its station is shown. A station may have no steps: an automatic
- * station only groups what was placed there, and finding it completes it.
- * Stations behave as pins: no code link, no code-only station.
+ * The STATIONS of `tour.json` version 5: each station a geo pose (position
+ * and a rotation against north) with two radii and its CHILDREN
+ * (`tour-story.ts`): free blocks (`tour-blocks.ts`), each at a local pose in
+ * the station's frame, standing in the world while the station is shown,
+ * and stories. A station may have no stories: an automatic station only
+ * groups what was placed there, and finding it completes it. Stations
+ * behave as pins: no code link, no code-only station.
  *
  * Every cross-reference resolves here: a block's media names an asset of
- * the right kind, a `show` a block of THIS station, a `goto` a step of this
- * station, and block ids are unique across the whole tour (asset ids are a
- * namespace of their own), so a renderer never meets a dangling id in the
- * middle of a walk. The walk is never branched by answers: a station's
- * `next` and a quiz's `route` are not part of the format (unknown fields,
- * ignored).
+ * the right kind, a `goto` a child of its story, and child ids are unique
+ * across the whole tour (asset ids are a namespace of their own), so a
+ * renderer never meets a dangling id in the middle of a walk. The walk is
+ * never branched by answers: a station's `next` and a quiz's `route` are
+ * not part of the format (unknown fields, ignored).
  *
  * Defensive by the rule of `tour-manifest.ts`: hand-editable external data,
  * every field checked at the boundary. Unknown fields are ignored, which is
@@ -23,8 +21,8 @@
  * class and no import of its parent (`check:cycles`).
  *
  * LENIENT for a NEWER MINOR: what this reader cannot show is skipped by the
- * block and story readers (see theirs), an unknown hint is the arrow; what
- * a renderer meets still resolves. At the reader's own minor or below the
+ * children reader (see its module), an unknown hint is the arrow; what a
+ * renderer meets still resolves. At the reader's own minor or below the
  * same value is a broken file and fails.
  *
  * @see tour-stations.ts.md
@@ -34,12 +32,7 @@ import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import type { TourAsset } from './tour-assets.js';
-import {
-  checkTourBlockIdsUnique,
-  type TourBlock,
-  type TourBlockDrop,
-  type TourBlocksReadOptions,
-} from './tour-blocks.js';
+import type { TourBlocksReadOptions } from './tour-blocks.js';
 import {
   checkTourDescription,
   TOUR_DESCRIPTION_MAX_CHARS,
@@ -53,7 +46,13 @@ import {
   tourTextOf,
   type TourFail,
 } from './tour-fields.js';
-import { parseTourStationContent, type TourStep } from './tour-story.js';
+import {
+  checkTourChildIdsUnique,
+  parseTourStationChildren,
+  type TourChildDrop,
+  type TourStationChild,
+  type TourStationChildrenRead,
+} from './tour-story.js';
 
 /**
  * A station's description or card image the reader left out, the tour
@@ -91,25 +90,22 @@ export interface TourStation {
   readonly foundRadiusM: number;
   /** The HUD's exact arrow plus distance (the only hint mode). */
   readonly hint: 'arrow';
-  /** What the station shows: its free blocks (no step shows them; they
-   *  stand in the world) and its story blocks (a `show` step names them),
-   *  in the file's order. */
-  readonly blocks: readonly TourBlock[];
-  /** The station's story; may be empty. */
-  readonly steps: readonly TourStep[];
+  /** What the station holds, in the file's order: its free blocks (they
+   *  stand in the world) and its stories. */
+  readonly children: readonly TourStationChild[];
 }
 
 /** How the stations are read: the tour's (already validated) assets, the
  *  caller's `fail`, a newer minor (`lenient`), and who hears what was
- *  left out (a station's description or card image, or a block or one of
- *  its fields). */
+ * *  left out (a station's description or card image, or a child, a block's
+ *  field or a way on a choice). */
 export interface TourStationsReadOptions {
   readonly assets: readonly TourAsset[];
   /** The tour's declared characters by id, which a character block names. */
   readonly characters?: TourBlocksReadOptions['characters'];
   readonly fail: TourFail;
   readonly lenient?: boolean;
-  readonly onDropped?: (drop: TourStationDrop | TourBlockDrop) => void;
+  readonly onDropped?: (drop: TourStationDrop | TourChildDrop) => void;
 }
 
 function parseRadii(
@@ -206,7 +202,7 @@ function parseStation(
   at: string,
   options: TourStationsReadOptions,
   images: ReadonlySet<string>
-): TourStation {
+): { readonly station: TourStation; readonly ids: readonly string[] } {
   const { fail } = options;
   const lenient = options.lenient === true;
   if (!isRecord(value)) return fail(`"${at}" must be an object`);
@@ -222,38 +218,44 @@ function parseStation(
     onDropped: options.onDropped,
   };
   const title = tourTextOf(value.title);
-  const content = parseTourStationContent(value, at, {
-    assets: options.assets,
-    ...(options.characters === undefined
-      ? {}
-      : { characters: options.characters }),
-    fail,
-    lenient,
-    ...(options.onDropped === undefined
-      ? {}
-      : { onDropped: options.onDropped }),
-  });
+  const content: TourStationChildrenRead = parseTourStationChildren(
+    value.children,
+    `${at}.children`,
+    {
+      assets: options.assets,
+      ...(options.characters === undefined
+        ? {}
+        : { characters: options.characters }),
+      fail,
+      lenient,
+      ...(options.onDropped === undefined
+        ? {}
+        : { onDropped: options.onDropped }),
+    }
+  );
   return {
-    id,
-    ...(title === undefined ? {} : { title }),
-    ...descriptionOf(value.description, ctx),
-    ...imageOf(value.image, images, ctx),
-    geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }),
-    ...parseRadii(value, at, fail),
-    hint: 'arrow',
-    blocks: content.blocks,
-    steps: content.steps,
+    ids: content.ids,
+    station: {
+      id,
+      ...(title === undefined ? {} : { title }),
+      ...descriptionOf(value.description, ctx),
+      ...imageOf(value.image, images, ctx),
+      geo: parseGeoPose(value.geo, { path: `${at}.geo`, fail }),
+      ...parseRadii(value, at, fail),
+      hint: 'arrow',
+      children: content.children,
+    },
   };
 }
 
 /**
  * Validate the tour's stations against its (already validated) assets.
- * Station ids are unique; block ids are unique across the tour; step ids
- * are unique per station; every reference resolves (see the module
- * comment). `lenient` (a newer minor) skips what this reader cannot show
- * instead of failing. `onDropped` hears each station description or card
- * image left out ({@link TourStationDrop}), and each block or block field
- * a reader left out (`TourBlockDrop`); none fails the tour.
+ * Station ids are unique; child ids are unique across the tour; every
+ * reference resolves (see the module comment). `lenient` (a newer minor)
+ * skips what this reader cannot show instead of failing. `onDropped` hears
+ * each station description or card image left out
+ * ({@link TourStationDrop}), and each child, block field or way on a choice
+ * a reader left out (`TourChildDrop`); none fails the tour.
  */
 export function parseTourStations(
   value: unknown,
@@ -261,14 +263,15 @@ export function parseTourStations(
 ): TourStation[] {
   const { fail } = options;
   const images = tourImageIds({ objects: [], assets: options.assets });
-  const stations = requireTourArray(value, 'stations', fail).map((s, i) =>
+  const read = requireTourArray(value, 'stations', fail).map((s, i) =>
     parseStation(s, `stations[${String(i)}]`, options, images)
   );
+  const stations = read.map((r) => r.station);
   assertUniqueTourIds(
     stations.map((s) => s.id),
     'station',
     fail
   );
-  checkTourBlockIdsUnique(stations, fail);
+  checkTourChildIdsUnique(read, fail);
   return stations;
 }

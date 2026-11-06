@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### ⚠️ Breaking changes
+
+- **`tour.json` version 5: stations hold children, stories hold their own**
+  (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,
+  `ar/tour-blocks`). A station holds one ordered list `children`: a free
+  block, or a story `{ id, kind: 'story', title, children }` holding its
+  blocks, choices and quizzes in the order a visitor meets them. A block
+  lives in one place, so being in a story is what shows it; a story block
+  carries its `advance`, and a choice's `goto` names a child of the same
+  story. Child ids are one namespace across the tour. Versions 1 to 4 are
+  refused with `TourManifestOlderFormatError`: no migration.
+  `TOUR_OBJECT_RECORD_FORMAT` is 5, so a draft record of format 4 reads as
+  older. Removed: `TourStation.blocks` and `.steps`, `TourStep`,
+  `TourStepAction`, `TourStationContent`, `parseTourStationContent`,
+  `tourShownBlockIds`, `checkTourBlockIdsUnique`.
+  `placeTourBlocks` loses its `shown` argument. Added:
+  `parseTourStationChildren`, `checkTourChildIdsUnique`, `tourStories`,
+  `tourStoryBlocks`, `tourStationStoryBlocks`, `tourStationBlocks`,
+  `tourStationChildIds`, `tourChildPlace`, the `tourChildren*` functions,
+  `tourFreeBlocks` and the types `TourStationChild`, `TourStory`,
+  `TourStoryChild`, `TourStoryBlock`, `TourChoice`, `TourQuizEntry`.
+  The test-utils export `tourStationContentArbitrary` is gone: use
+  `tourStationChildrenArbitrary`. Reading a station's blocks: `tourStationBlocks(station)`,
+  or `tourFreeBlocks(station)` for the ones standing in the world.
+
 ### Added
 
 - **`storage/save-target`** (deep import): saving a file in place.
@@ -35,8 +60,8 @@
   `createKeyedChain` (`run`, `exclusive`, `pendingKeys`). Moved from the
   Tour Viewer.
 
-- **A model's views, notes, sections and clip, `tour.json` version 4
-  minor 1** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
+- **A model's views, notes, sections and clip, part of `tour.json` version
+  5** (`ar/tour-blocks`, `ar/tour-manifest`). A model block gains
   four world views besides `placed` - `ghost`, `hotspots`, `cutaway`,
   `toy` (`TOUR_MODEL_WORLD_VIEWS`; every one needs `sizeM`) - and three
   optional fields: `animation` `{ name, autoplay }`, `annotations` (1-32
@@ -46,14 +71,8 @@
   exports: `TOUR_WORLD_VIEWS` (the one set of world views, for renderers),
   `TOUR_MODEL_NOTE_RULES`, `TOUR_MODEL_MAX_NOTES`,
   `TOUR_MODEL_SECTION_RULES`, `TOUR_MODEL_MAX_SECTIONS`,
-  `TOUR_MODEL_ANIMATION_RULES`, `TOUR_MODEL_SPACE_MAX`, `tourBlocksMinor`
-  and the types `TourModelWorldView`, `TourModelNote`, `TourModelSection`,
-  `TourModelAnimation`, `TourModelVector`. `TOUR_MANIFEST_MINOR` is 1, and
-  `serializeTourManifest` writes the lowest minor the tour needs: a tour
-  using none of this is still written at minor 0. A reader of minor 0
-  (1.31.0) opens a 4.1 tour leniently: a free model in a new view falls
-  back to `placed`, a story model to `card`, the new fields are ignored,
-  and that app will not save the tour. `TourModel['view']` widens from
+  `TOUR_MODEL_ANIMATION_RULES`, `TOUR_MODEL_SPACE_MAX` and the types `TourModelWorldView`, `TourModelNote`, `TourModelSection`,
+  `TourModelAnimation`, `TourModelVector`. `TourModel['view']` widens from
   `'placed'` to `TourModelWorldView`. A note's or a section's
   `normal` shorter than `TOUR_MODEL_MIN_DIRECTION_LENGTH` (1e-9, a policy floor) is a zero direction:
   it fails a file of the reader's own minor, and a lenient read of a newer
@@ -61,25 +80,22 @@
   `onDropped` as a field drop (`annotations[i]` / `sections[i]`).
 
 - **A tour's recurring characters, five story views and the advance
-  when the line ends, `tour.json` version 4 minor 2** (new `ar/tour-characters`;
+  when the line ends, part of `tour.json` version 5** (new `ar/tour-characters`;
   `ar/tour-blocks`, `ar/tour-story`, `ar/tour-manifest`). A tour may
   declare `characters` (`{ id, name, image }`, at most
   32), and a `character` block may name one by its new
   optional `character` field: the block then takes the declaration's name
   and image, and the writer keeps them inline too. A character block gains
   the story views `bubble`, `speak`, `two-stations`, `portrait` and
-  `popup` (`TOUR_CHARACTER_VIEWS`), and a story step the advance
+  `popup` (`TOUR_CHARACTER_VIEWS`), and a story block the advance
   `{ mode: 'lineEnd' }`. New exports: `parseTourCharacters`,
-  `TOUR_CHARACTER_VIEWS`, `tourStepsMinor` and the
+  `TOUR_CHARACTER_VIEWS` and the
   types `TourCharacter`, `TourCharacterDrop`, `TourCharacterView`;
   `TourManifest` gains an optional `characters`, `TourManifestDrop` a
-  character drop. `TOUR_MANIFEST_MINOR` is 2, and a tour using none of this
-  is still written at its lower minor. A reader of 1.31.0 opens a 4.2 tour
-  leniently: the character shows as a card with its name, caption and
-  voice, `lineEnd` advances on a tap, and that app will not save the tour.
+  character drop.
 
-- **A declared character's frames sheet** (`ar/tour-characters`, `tour.json`
-  version 4 minor 2). A declaration may name `frames`, an image asset
+- **A declared character's frames sheet** (`ar/tour-characters`, part of
+  `tour.json` version 5). A declaration may name `frames`, an image asset
   holding his four poses as one sheet: four equal cells in one row, left to
   right `idle`, `talk-a` (mouth half open), `talk-b` (mouth open) and
   `beckon` (an arm out to the viewer's right), on a transparent
@@ -92,16 +108,12 @@
   (`characters[i].frames`); a drop without `field` is the whole
   declaration.
 
-- **A long text on a reading stand, `tour.json` version 4 minor 3**
+- **A long text on a reading stand, part of `tour.json` version 5**
   (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
   `lectern`: a reading stand at the block's pose that keeps its facing,
-  free at its station or reached by a story step. `TOUR_WORLD_VIEWS` now
-  holds `lectern`, the new type `TourLectern` joins `TourObject` (a switch
-  over an object's `kind` gains a `longText` case), and
-  `TOUR_MANIFEST_MINOR` is 3; a tour without a lectern is still written at
-  its lower minor. A reader of 1.31.0 opens a 4.3 tour leniently: a free
-  lectern is left out and reported, a story one shows as its card, and
-  that app will not save the tour.
+  free at its station or a story's block. `TOUR_WORLD_VIEWS` now holds
+  `lectern`, and the new type `TourLectern` joins `TourObject` (a switch
+  over an object's `kind` gains a `longText` case).
 
 - **The sky's and the clouds' building blocks, the frame recorder and two
   small helpers are built subpaths**, for a typed globe that composes the
@@ -140,23 +152,19 @@
   - **`sensors/permission-state`** (deep import): the prompt-free
     Permissions-API query.
 
-- **A long text as a reading sign, `tour.json` version 4 minor 4**
+- **A long text as a reading sign, part of `tour.json` version 5**
   (`ar/tour-blocks`, `ar/tour-manifest`). A long text gains the world view
   `reading`: a short sign at the block's pose, turned toward the viewer,
-  that opens the whole text on a tap, free at its station or reached by a
-  story step. `TOUR_BLOCK_VIEWS.longText` is now `lectern`, `reading`,
+  that opens the whole text on a tap, free at its station or a story's
+  block. `TOUR_BLOCK_VIEWS.longText` is now `lectern`, `reading`,
   `card` and `TOUR_WORLD_VIEWS` holds `reading`; the new type
   `TourReadingSign` joins `TourObject` (a switch over an object's `view`
   gains a `reading` case); `tourFloorView('longText', 'free')` is now
   `'reading'` (it was `null`), so a free long text in a view this reader
   does not know falls back to the reading sign instead of being skipped.
-  `TOUR_MANIFEST_MINOR` is 4; a tour without a reading sign is still
-  written at its lower minor. A reader of 1.31.0 opens a 4.4 tour
-  leniently: a free reading sign is left out and reported, a story one
-  shows as its card, and that app will not save the tour.
 
-- **A long text read aloud, with a read-along track, `tour.json` version 4
-  minor 5** (`ar/tour-blocks`, `ar/tour-manifest`, new `ar/tour-timing`).
+- **A long text read aloud, with a read-along track, part of `tour.json`
+  version 5** (`ar/tour-blocks`, `ar/tour-manifest`, new `ar/tour-timing`).
   A long text gains an optional `narration` `{ audio, timing?,
 voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
   `timing` names the block's own new archive entry `timing/<blockId>.json`
@@ -171,11 +179,7 @@ voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
   (20 000) and `TOUR_TIMING_MAX_ANCHORS` (2 000), `TOUR_TIMING_FOLDER` and
   the `TourTiming*` types. A timing's wrong shape is an error; a timing
   that no longer fits its text (the text was edited, or it runs past the
-  voice) is stale, and a viewer shows the plain text. `TOUR_MANIFEST_MINOR`
-  is 5; a tour without narration is still written at its lower minor. A
-  reader of 1.31.0 opens a 4.5 tour leniently: the narration is ignored,
-  the text shows as it did at minor 4, and that app will not save the
-  tour.
+  voice) is stale, and a viewer shows the plain text.
 
 - **The parts of a long text shown as typed** (`ar/tour-markdown`):
   `diagnoseTourMarkdown(body, { assetExists? })` gives each part of a body

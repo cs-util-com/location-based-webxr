@@ -25,6 +25,7 @@ import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   deletedKey,
+  discardOlderFormatDraft,
   isOlderVersionDraft,
   META_KEY,
   objectKey,
@@ -712,7 +713,7 @@ describe("object records of an earlier format", () => {
         manifestToWrite(tourStore.getState().tourDocument)!,
       ),
     );
-    expect(finished).toMatchObject({ version: 4, minor: 0 });
+    expect(finished).toMatchObject({ version: 5, minor: 0 });
     const read = tourObjects(parseTourManifest(finished));
     expect(read.map((o) => [o.id, o.kind]).sort()).toEqual([
       ["f1", "picture"],
@@ -748,6 +749,44 @@ describe("isOlderVersionDraft: a meta this version wrote", () => {
     expect(await isOlderVersionDraft(store)).toBe(false);
     // The meta still reads as the draft's: the stamp is no field of it.
     expect((await readDraft(store))?.draft.tourUrl).toBe(META.tourUrl);
+  });
+});
+
+describe("discardOlderFormatDraft", () => {
+  // Why this matters: no reader for an older format exists, and a refusal
+  // never reaches two kinds of older draft: the sample's (its rebuilt file
+  // is never refused) and one holding only frames. Kept, such a draft would
+  // restore half: its object records read, its frames are dropped.
+  it("empties a draft whose meta is below this format, frames-only among them", async () => {
+    for (const format of [3, 4]) {
+      const store = memoryStore();
+      store.files.set(META_KEY, JSON.stringify({ ...META, format }));
+      store.files.set("settings.json", "{}");
+      expect(await discardOlderFormatDraft(store)).toBe(true);
+      expect([...store.files.keys()]).toEqual([]);
+    }
+  });
+
+  it("keeps a draft of this format, an unstamped one, one with no meta and one whose meta does not read", async () => {
+    const stamped = memoryStore();
+    await writeDraftMeta(stamped, META);
+    expect(await discardOlderFormatDraft(stamped)).toBe(false);
+    expect(stamped.files.has(META_KEY)).toBe(true);
+    const metaless = memoryStore();
+    metaless.files.set(objectKey("a"), "{}");
+    expect(await discardOlderFormatDraft(metaless)).toBe(false);
+    expect(metaless.files.size).toBe(1);
+    const unreadable = memoryStore();
+    unreadable.files.set(META_KEY, "not json");
+    expect(await discardOlderFormatDraft(unreadable)).toBe(false);
+    expect(unreadable.files.size).toBe(1);
+  });
+
+  it("says no when the store fails", async () => {
+    const store = memoryStore();
+    store.files.set(META_KEY, JSON.stringify(META));
+    store.clear = () => Promise.reject(new Error("quota"));
+    expect(await discardOlderFormatDraft(store)).toBe(false);
   });
 });
 

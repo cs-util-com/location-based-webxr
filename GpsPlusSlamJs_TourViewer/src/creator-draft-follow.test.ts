@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
+import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
@@ -142,6 +143,27 @@ async function wired(ns: ReturnType<typeof namespaces>) {
   await flush();
   return { ctx, draft };
 }
+
+describe("the phone's draft of an older format", () => {
+  // Why: the sample's key is stable and its rebuilt file is never refused,
+  // so a draft an older build left there is met only by this open. Its
+  // frames no longer read, so kept it would restore half a tour.
+  it("is gone when its tour opens, and the open starts a new one", async () => {
+    const ns = namespaces();
+    const files = new Map<string, Blob | string>([
+      [META_KEY, JSON.stringify({ format: 4, tourUrl: OLD })],
+      [objectKey("old"), JSON.stringify({ id: "old" })],
+      [SETTINGS_KEY, JSON.stringify({ stations: [] })],
+    ]);
+    ns.spaces.set(draftKeyForTour(OLD), files);
+    await wired(ns);
+    expect(files.has(objectKey("old"))).toBe(false);
+    expect(files.has(SETTINGS_KEY)).toBe(false);
+    expect(JSON.parse(files.get(META_KEY) as string)).toMatchObject({
+      format: TOUR_OBJECT_RECORD_FORMAT,
+    });
+  });
+});
 
 describe("the phone draft follows the saved file's key", () => {
   it("copies every file there, a photo's bytes among them, re-states the meta, and writes there from then on", async () => {

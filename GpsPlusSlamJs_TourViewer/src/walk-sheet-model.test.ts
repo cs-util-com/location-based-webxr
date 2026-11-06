@@ -33,12 +33,6 @@ import {
  * of the visitor, so every state of the peek and of a row is pinned here.
  */
 
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
-
 function station(id: string, title: string): TourStation {
   return {
     id,

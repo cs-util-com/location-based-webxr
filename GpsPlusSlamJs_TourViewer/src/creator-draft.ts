@@ -42,6 +42,7 @@ import {
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
+  discardOlderFormatDraft,
   isOlderVersionDraft,
   writeDraftVisit,
   type DraftCodes,
@@ -1054,6 +1055,10 @@ export function wireCreatorDraft(deps: {
     undecided = held;
     void (async () => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
+      if (stale()) return;
+      // Before this page can write to it: no write of this open goes with
+      // the draft.
+      if (store !== undefined) await discardOlderFormatDraft(store);
       if (stale()) return;
       draftStore = store;
       draftTourUrl = tourUrl;

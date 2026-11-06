@@ -75,7 +75,7 @@ export function tourOf(
 ): TourManifest {
   const listed = new Set((extra.assets ?? []).map((a) => a.id));
   return {
-    version: 4,
+    version: 5,
     minor: 0,
     order: "fixed",
     ...extra,

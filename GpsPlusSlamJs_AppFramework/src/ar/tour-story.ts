@@ -1,42 +1,32 @@
 /**
- * A station's STORY in `tour.json` version 4: the order of what a visitor
- * meets at a station and what they are asked. A step either SHOWS one of
- * the station's blocks (`tour-blocks.ts`), asks a CHOICE, or asks a QUIZ;
- * all content lives in the blocks. Read together with the station's
- * blocks ({@link parseTourStationContent}), because each decides the
- * other: a `show` step must name a block of this station, and a block no
- * step shows is free and must stand in the world.
+ * What a station holds in `tour.json` version 5: ONE ordered list of
+ * CHILDREN, each a free block (standing in the world) or a STORY, which
+ * holds its own ordered list of blocks, choices and quizzes. A block lives
+ * in exactly one place, so being inside a story is what shows it. Ids of
+ * blocks, stories, choices and quizzes are one namespace across the tour; a
+ * choice's `goto` names a child of its own story. The order of the file is
+ * kept as written: nothing assumes free blocks first.
  *
- * - `show`: names a block of THIS station. Naming another station's block,
- *   or none, fails the file. Two steps may show one block.
- * - `choice`: a prompt and at least two options; an option's `goto` names
- *   a step of this station, or is absent - then the scene continues at the
- *   next step. A `goto` naming no step fails the file.
+ * - a story block: any view of its kind, and an `advance`: how it moves on,
+ *   a tap (also when absent), by itself after some seconds, or by itself
+ *   when its line ends: its voice or sound has played, or, with none, its
+ *   words have had their time to be read (the viewer's rule).
+ * - `choice`: a prompt and at least two options; an option's `goto` names a
+ *   child of this story, or is absent - then the scene continues at the
+ *   next child. A `goto` naming nothing fails the file.
  * - `quiz`: question, points and answer. There is no `route` (the walk is
  *   not branched by answers); a `route` field is an unknown field and
  *   ignored.
- * - `advance`: how a step moves on - a tap (also when absent), by itself
- *   after some seconds, or (minor 2) by itself when its line ends: the
- *   step's voice or sound has played, or, with none, its words have had
- *   their time to be read (the viewer's rule).
+ * - a story's title is required, and a story may be empty: an editor needs
+ *   one while it is filled, and a visitor is offered only stories with
+ *   something to play.
  *
- * LENIENT for a NEWER MINOR (as `tour-blocks.ts`): a step of an unknown
- * kind, a quiz of an unknown answer type, and a `show` naming a block this
- * reader skipped are left out; a choice then keeps only the options whose
- * step is still there (an option with no `goto` always is), and a choice
- * left with fewer than two goes too - repeated, since that can strand
- * another. A block left free by a skipped step must still stand in the
- * world, or it is skipped and reported. So no `show` ever names a block the
- * reader left out. An unknown advance mode is a tap.
- *
- * VERSION 5, beside the version 4 reader and not yet wired into the
- * manifest: a station holds ONE ordered list of CHILDREN, each a free block
- * (standing in the world) or a STORY, which holds its own ordered list of
- * blocks, choices and quizzes ({@link parseTourStationChildren}). A block
- * lives in exactly one place, so being inside a story is what shows it: no
- * `show` step. Ids of blocks, stories, choices and quizzes are one
- * namespace; a choice's `goto` names a child of its own story. The order
- * of the file is kept as written: nothing assumes free blocks first.
+ * LENIENT for a NEWER MINOR (as `tour-blocks.ts`): a child of an unknown
+ * kind, a quiz of an unknown answer type and a block the reader skipped are
+ * left out and reported; a choice then keeps only the options whose child
+ * is still there (an option with no `goto` always is), and a choice left
+ * with fewer than two goes too - repeated, since that can strand another.
+ * An unknown advance mode is a tap.
  *
  * @see tour-story.ts.md
  */
@@ -45,7 +35,6 @@ import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import {
   checkTourBlockText,
   placeTourBlocks,
-  readTourBlocks,
   TOUR_BLOCK_VIEWS,
   tourBlockReader,
   type TourBlock,
@@ -72,8 +61,7 @@ export type TourStepAdvance =
 export interface TourChoiceOption {
   readonly id: string;
   readonly label: string;
-  /** Version 4: a step of this station; version 5: a child of the same
-   *  story. Absent: the next one. */
+  /** A child of the same story. Absent: the next one. */
   readonly goto?: string;
 }
 
@@ -115,59 +103,7 @@ export interface TourQuiz {
   readonly answer: TourQuizAnswer;
 }
 
-/** What a story step does. */
-export type TourStepAction =
-  | { readonly kind: 'show'; readonly block: string }
-  | {
-      readonly kind: 'choice';
-      readonly prompt: string;
-      readonly options: readonly TourChoiceOption[];
-    }
-  | ({ readonly kind: 'quiz' } & TourQuiz);
-
-/** A story step: what it does, and how it moves on. */
-export interface TourStep {
-  readonly id: string;
-  readonly action: TourStepAction;
-  readonly advance: TourStepAdvance;
-}
-
-/** A station's blocks and its story, read together. */
-export interface TourStationContent {
-  readonly blocks: readonly TourBlock[];
-  readonly steps: readonly TourStep[];
-}
-
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-
-/** Thrown inside a step's read when a lenient reader cannot show it;
- *  caught per step. Never escapes this module. */
-class SkippedStep extends Error {}
-
-interface StoryContext {
-  readonly fail: TourFail;
-  readonly lenient: boolean;
-  /** The ids of the blocks read. */
-  readonly blocks: ReadonlySet<string>;
-  /** Every block id the file names, the skipped ones included. */
-  readonly namedBlocks: ReadonlySet<string>;
-}
-
-/** The ids of the blocks `steps` show: a station's STORY blocks. Every
- *  other block of the station is free (it stands in the world). */
-export function tourShownBlockIds(
-  steps: readonly TourStep[]
-): ReadonlySet<string> {
-  return new Set(
-    steps.flatMap((s) => (s.action.kind === 'show' ? [s.action.block] : []))
-  );
-}
-
-/** The lowest minor `steps` need: 2 when one moves on when its line
- *  ends; 0 otherwise. */
-export function tourStepsMinor(steps: readonly TourStep[]): number {
-  return steps.some((s) => s.advance.mode === 'lineEnd') ? 2 : 0;
-}
 
 // --- quizzes ----------------------------------------------------------
 
@@ -284,7 +220,7 @@ function parseAnswer(
 
 /**
  * A quiz's question, points and answer. Null when a lenient reader does
- * not know the answer's type (a newer minor's): the step cannot be shown.
+ * not know the answer's type (a newer minor's): the child cannot be shown.
  */
 function parseQuiz(
   v: Record<string, unknown>,
@@ -305,10 +241,10 @@ function parseQuiz(
   };
 }
 
-// --- steps ------------------------------------------------------------
+// --- advances and choices ---------------------------------------------
 
-/** How a step advances: tap when absent; a newer minor's mode reads as
- *  tap for a lenient reader. */
+/** How a story block moves on: tap when absent; a newer minor's mode reads
+ *  as tap for a lenient reader. */
 function parseAdvance(
   value: unknown,
   at: string,
@@ -330,22 +266,6 @@ function parseAdvance(
   return { mode: 'auto', afterS: value.afterS };
 }
 
-function parseShow(
-  v: Record<string, unknown>,
-  at: string,
-  ctx: StoryContext
-): TourStepAction {
-  const block = v.block;
-  if (typeof block === 'string' && ctx.blocks.has(block)) {
-    return { kind: 'show', block };
-  }
-  // A block of this file the reader left out: the step goes with it.
-  if (ctx.lenient && typeof block === 'string' && ctx.namedBlocks.has(block)) {
-    throw new SkippedStep();
-  }
-  return ctx.fail(`"${at}.block" must name a block of this station`);
-}
-
 function parseOption(
   value: unknown,
   at: string,
@@ -361,13 +281,11 @@ function parseOption(
   };
 }
 
-type ChoiceAction = Extract<TourStepAction, { kind: 'choice' }>;
-
 function parseChoice(
   v: Record<string, unknown>,
   at: string,
   fail: TourFail
-): ChoiceAction {
+): Omit<TourChoice, 'id'> {
   const prompt = requireTourText(v.prompt, `${at}.prompt`, fail);
   const options = requireTourArray(v.options, `${at}.options`, fail).map(
     (o, i) => parseOption(o, `${at}.options[${String(i)}]`, fail)
@@ -382,156 +300,7 @@ function parseChoice(
   return { kind: 'choice', prompt, options };
 }
 
-function parseAction(
-  value: unknown,
-  at: string,
-  ctx: StoryContext
-): TourStepAction {
-  if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
-  switch (value.kind) {
-    case 'show':
-      return parseShow(value, at, ctx);
-    case 'choice':
-      return parseChoice(value, at, ctx.fail);
-    case 'quiz': {
-      const quiz = parseQuiz(value, at, ctx);
-      if (quiz === null) throw new SkippedStep();
-      return { kind: 'quiz', ...quiz };
-    }
-    default:
-      if (ctx.lenient) throw new SkippedStep();
-      return ctx.fail(`"${at}.kind" must be show, choice or quiz`);
-  }
-}
-
-/** A step read: its id either way (a choice may name a skipped step), its
- *  index in the file, and the step - null when a lenient reader cannot
- *  show it. */
-interface ReadStep {
-  readonly id: string;
-  readonly index: number;
-  readonly step: TourStep | null;
-}
-
-function parseStep(
-  value: unknown,
-  index: number,
-  at: string,
-  ctx: StoryContext
-): ReadStep {
-  if (!isRecord(value)) return ctx.fail(`"${at}" must be an object`);
-  const id = requireTourId(value.id, `${at}.id`, ctx.fail);
-  let action: TourStepAction;
-  try {
-    action = parseAction(value.action, `${at}.action`, ctx);
-  } catch (err) {
-    if (err instanceof SkippedStep) return { id, index, step: null };
-    throw err;
-  }
-  const advance = parseAdvance(value.advance, `${at}.advance`, ctx);
-  return { id, index, step: { id, action, advance } };
-}
-
-/** Every `goto` names a step of the station (the skipped ones included);
- *  a failure names the step by its index in the FILE. */
-function checkGotos(
-  read: readonly ReadStep[],
-  at: string,
-  fail: TourFail
-): void {
-  const stepIds = new Set(read.map((r) => r.id));
-  for (const { step, index } of read) {
-    if (step?.action.kind !== 'choice') continue;
-    step.action.options.forEach((option, o) => {
-      if (option.goto !== undefined && !stepIds.has(option.goto)) {
-        fail(
-          `"${at}[${String(index)}].action.options[${String(o)}].goto" must name a step of this station`
-        );
-      }
-    });
-  }
-}
-
-/**
- * After a lenient reader skipped steps: a choice keeps the options whose
- * step is still there (no `goto`: always), and a choice left with fewer
- * than two is skipped too - repeated, because skipping a choice can strand
- * another that jumped to it. Ends: every round removes something.
- */
-function withoutStrandedChoices(steps: readonly TourStep[]): TourStep[] {
-  let kept = [...steps];
-  for (;;) {
-    const ids = new Set(kept.map((s) => s.id));
-    let changed = false;
-    const next = kept.flatMap((step): TourStep[] => {
-      const { action } = step;
-      if (action.kind !== 'choice') return [step];
-      const options = action.options.filter(
-        (o) => o.goto === undefined || ids.has(o.goto)
-      );
-      if (options.length === action.options.length) return [step];
-      changed = true;
-      return options.length < 2
-        ? []
-        : [{ ...step, action: { ...action, options } }];
-    });
-    if (!changed) return next;
-    kept = next;
-  }
-}
-
-function readSteps(value: unknown, at: string, ctx: StoryContext): TourStep[] {
-  const read = requireTourArray(value, at, ctx.fail).map((s, i) =>
-    parseStep(s, i, `${at}[${String(i)}]`, ctx)
-  );
-  assertUniqueTourIds(
-    read.map((r) => r.id),
-    'step',
-    ctx.fail,
-    `${at}: `
-  );
-  checkGotos(read, at, ctx.fail);
-  const steps = read.flatMap((r) => (r.step === null ? [] : [r.step]));
-  return ctx.lenient ? withoutStrandedChoices(steps) : steps;
-}
-
-/** The ids a station content's blocks carry, skipped or not. */
-function namedBlockIds(value: unknown): Set<string> {
-  if (!Array.isArray(value)) return new Set();
-  return new Set(
-    (value as unknown[]).flatMap((b) =>
-      isRecord(b) && typeof b.id === 'string' ? [b.id] : []
-    )
-  );
-}
-
-/**
- * Read one station's `blocks` and `steps` (from the record `value`, at
- * `at`): every block checked (`tour-blocks.ts`), every step resolved, and
- * every block no step shows standing in the world. Throws through `fail`
- * naming the first violation; a lenient reader (a newer minor) skips what
- * it cannot show and reports each skipped block through `onDropped`.
- */
-export function parseTourStationContent(
-  value: unknown,
-  at: string,
-  options: TourBlocksReadOptions
-): TourStationContent {
-  const { fail } = options;
-  if (!isRecord(value)) return fail(`"${at}" must be an object`);
-  const lenient = options.lenient === true;
-  const read = readTourBlocks(value.blocks, `${at}.blocks`, options);
-  const steps = readSteps(value.steps, `${at}.steps`, {
-    fail,
-    lenient,
-    blocks: new Set(read.map((r) => r.block.id)),
-    namedBlocks: namedBlockIds(value.blocks),
-  });
-  const shown = tourShownBlockIds(steps);
-  return { blocks: placeTourBlocks(read, shown, options), steps };
-}
-
-// --- version 5: a station's children ----------------------------------
+// --- a station's children ----------------------------------------------
 
 /** The kinds a child may have besides the block kinds: a station's story,
  *  and a story's choice and quiz. Disjoint from `TourBlockKind`, so `kind`
@@ -592,6 +361,11 @@ export type TourChildDrop =
       readonly reason: string;
     };
 
+/** What holds children: a station, or a creator's frame of one. */
+export interface TourStationHolder {
+  readonly children: readonly TourStationChild[];
+}
+
 /** How the children reader reads: as the block reader, with its own
  *  report. */
 export interface TourChildrenReadOptions extends Omit<
@@ -643,7 +417,7 @@ function readFreeBlock(
 ): TourBlock | null {
   const read = ctx.readBlock(v, at);
   if (read === null) return null;
-  return placeTourBlocks([read], new Set(), ctx.options)[0] ?? null;
+  return placeTourBlocks([read], ctx.options)[0] ?? null;
 }
 
 /** A story block: any view of its kind (an unknown one reads as `card`,
@@ -927,4 +701,60 @@ export function checkTourChildIdsUnique(
     'child',
     fail
   );
+}
+
+/** A station's stories, in its order. */
+export function tourStories(
+  station: Pick<TourStationHolder, 'children'>
+): TourStory[] {
+  return tourChildrenStories(station.children);
+}
+
+/** A story's blocks, in its order. */
+export function tourStoryBlocks(story: TourStory): TourStoryBlock[] {
+  return tourStoryChildrenBlocks(story.children);
+}
+
+/** Every block of a station's stories, in document order. */
+export function tourStationStoryBlocks(
+  station: Pick<TourStationHolder, 'children'>
+): TourStoryBlock[] {
+  return tourStories(station).flatMap(tourStoryBlocks);
+}
+
+/** Every block of a station, free and in stories, each once, in document
+ *  order. */
+export function tourStationBlocks(
+  station: Pick<TourStationHolder, 'children'>
+): (TourBlock | TourStoryBlock)[] {
+  return tourChildrenBlocks(station.children);
+}
+
+/** Every id of a station's children, stories and the children of stories
+ *  included, in document order: one namespace across the tour. */
+export function tourStationChildIds(
+  station: Pick<TourStationHolder, 'children'>
+): string[] {
+  return station.children.flatMap((child) =>
+    isTourStory(child)
+      ? [child.id, ...child.children.map((c) => c.id)]
+      : [child.id]
+  );
+}
+
+/** Where a child of a tour stands. */
+export interface TourChildPlace<S> extends TourChildrenPlace {
+  readonly station: S;
+}
+
+/** The place of the child with `id` in `manifest`; null when none has it. */
+export function tourChildPlace<S extends TourStationHolder>(
+  manifest: { readonly stations: readonly S[] },
+  id: string
+): TourChildPlace<S> | null {
+  for (const station of manifest.stations) {
+    const place = tourChildrenPlace(station.children, id);
+    if (place !== null) return { ...place, station };
+  }
+  return null;
 }

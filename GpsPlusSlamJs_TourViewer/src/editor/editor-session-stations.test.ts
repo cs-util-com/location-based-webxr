@@ -9,6 +9,7 @@
  * real session, the real draft and the real save, and read the saved zip.
  */
 
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -264,7 +265,7 @@ describe("the editor session's station edits", () => {
     expect(editor.changeCount()).toBe(1);
     let tour = await savedTour((await editor.save({ keepScan: false })).blob);
     const block = () =>
-      tour.stations.flatMap((s) => s.blocks).find((b) => b.id === "m");
+      tour.stations.flatMap((s) => stationBlocks(s)).find((b) => b.id === "m");
     expect(block()).toMatchObject({
       view: "placed",
       annotations: [{ title: "Note 1", position: [0, 1, 0] }],
@@ -301,7 +302,7 @@ describe("the editor session's station edits", () => {
     const viewOf = async (id: string) => {
       const saved = await editor.save({ keepScan: false });
       const found = (await savedTour(saved.blob)).stations
-        .flatMap((s) => s.blocks)
+        .flatMap((s) => stationBlocks(s))
         .find((b) => b.id === id);
       return found?.kind === "model" ? found.view : undefined;
     };
@@ -332,26 +333,23 @@ describe("the editor session's station edits", () => {
   // first note overrode the view the creator had saved; deleting a model's
   // only note could likewise switch a saved hotspots model to placed.
   it("after a reopen, a first note or the last note's delete leaves a saved view as it is", async () => {
-    const { session, manifest } = await opened(
-      (m) =>
-        ({
-          ...m,
-          stations: m.stations.map((s) => ({
-            ...s,
-            ...editedBlocks(s, (b) =>
-              b.id === "m"
-                ? ({
-                    ...b,
-                    view: "hotspots",
-                    annotations: [
-                      { position: [0, 1, 0], normal: [0, 1, 0], title: "Door" },
-                    ],
-                  } as TourBlock)
-                : b,
-            ),
-          })),
-        }) as TourManifest,
-    );
+    const { session, manifest } = await opened((m) => ({
+      ...m,
+      stations: m.stations.map((s) => ({
+        ...s,
+        ...editedBlocks(s, (b) =>
+          b.id === "m"
+            ? ({
+                ...b,
+                view: "hotspots",
+                annotations: [
+                  { position: [0, 1, 0], normal: [0, 1, 0], title: "Door" },
+                ],
+              } as TourBlock)
+            : b,
+        ),
+      })),
+    }));
     const editor = createEditorSession({
       session,
       manifest,
@@ -377,7 +375,7 @@ describe("the editor session's station edits", () => {
       kind: "edited",
     });
     const tour = await savedTour((await again.save({ keepScan: false })).blob);
-    const blocks = tour.stations.flatMap((s) => s.blocks);
+    const blocks = tour.stations.flatMap((s) => stationBlocks(s));
     expect(blocks.find((b) => b.id === "n")).toMatchObject({
       view: "placed",
       annotations: [{ title: "Note 1" }],
@@ -451,8 +449,8 @@ describe("the editor session's station edits", () => {
     const tour = await savedTour(saved.blob);
     const stationId = copied.kind === "duplicated" ? copied.stationId : "";
     const copy = tour.stations.find((s) => s.id === stationId);
-    expect(copy?.blocks).toHaveLength(1);
-    const item = copy?.blocks[0];
+    expect(stationBlocks(copy!)).toHaveLength(1);
+    const item = stationBlocks(copy!)[0];
     expect(item?.kind).toBe("picture");
     const image = item?.kind === "picture" ? item.image : "";
     const path = tour.assets.find((a) => a.id === image)?.path ?? "";
@@ -460,7 +458,7 @@ describe("the editor session's station edits", () => {
     expect(path).not.toBe("content/f.jpg");
     expect(await entryText(saved.blob, path)).toBe("the picture of f");
     expect(
-      tour.stations.find((s) => s.id === stationIdOf("a"))?.blocks,
+      stationBlocks(tour.stations.find((s) => s.id === stationIdOf("a"))!),
     ).toHaveLength(2);
     await session.close();
   });
@@ -500,19 +498,17 @@ describe("the editor session's station edits", () => {
     const tour = await savedTour((await editor.save({ keepScan: false })).blob);
     const stationId = copied.kind === "duplicated" ? copied.stationId : "";
     const copy = tour.stations.find((s) => s.id === stationId);
-    const shown = copy?.steps.map((step) =>
-      step.action.kind === "show" ? step.action.block : "",
-    );
+    const shown = tourStationStoryBlocks(copy!).map((b) => b.id);
     expect(shown).toHaveLength(1);
-    expect(shown?.[0]).not.toBe("intro");
-    expect(copy?.blocks.find((b) => b.id === shown?.[0])).toMatchObject({
+    expect(shown[0]).not.toBe("intro");
+    expect(stationBlocks(copy!).find((b) => b.id === shown[0])).toMatchObject({
       kind: "shortText",
       caption: "Welcome",
     });
     expect(
-      tour.stations
-        .find((s) => s.id === stationIdOf("a"))
-        ?.blocks.some((b) => b.id === "intro"),
+      stationBlocks(tour.stations.find((s) => s.id === stationIdOf("a"))!).some(
+        (b) => b.id === "intro",
+      ),
     ).toBe(true);
     await session.close();
   });
@@ -531,7 +527,7 @@ describe("the editor session's station edits", () => {
     });
     const tour = () => manifestToWrite(store.getState().tourDocument);
     const stationOf = (id: string) =>
-      tour()?.stations.find((st) => st.blocks.some((i) => i.id === id));
+      tour()?.stations.find((st) => stationBlocks(st).some((i) => i.id === id));
     const before = tourObjectsOf(tour()).find((o) => o.id === "b")?.geo;
     const outcome = editor.moveToNewStation("b");
     expect(outcome).toMatchObject({ kind: "moved" });
@@ -648,7 +644,7 @@ describe("the station edits across a reload", () => {
     const after = await reloaded.save({ keepScan: false });
     expect((await savedTour(after.blob)).stations).toEqual(beforeTour.stations);
     for (const station of beforeTour.stations) {
-      for (const item of station.blocks) {
+      for (const item of stationBlocks(station)) {
         if (item.kind !== "picture") continue;
         const path = beforeTour.assets.find((a) => a.id === item.image)?.path;
         expect(await entryText(after.blob, path ?? "")).toBe(

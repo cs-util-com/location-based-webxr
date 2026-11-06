@@ -38,7 +38,11 @@ import {
   type StationStoryTextEdit,
   type TourDocumentState,
 } from "./tour-document.js";
-import { stationContent, storyOf } from "./test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 // Activates the library's gated math: the free block's place in the world
 // is read through it.
@@ -46,18 +50,12 @@ createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
-const show = (id: string, block: string) => ({
-  id,
-  action: { kind: "show", block },
-  advance: { mode: "tap" },
-});
-
 /** A station "gate" whose story shows a long text, Wendel (a declared
  *  character), Sir Kay (one written in the block), a short text, a video
  *  and an audio; a free short text "sign" stands in the world. */
 const OPENED: TourManifest = parseTourManifest({
   ...createEmptyTourManifest(),
-  minor: 2,
+  minor: 0,
   assets: [
     {
       id: "wendel",
@@ -179,7 +177,7 @@ function readBack(state: TourDocumentState): TourManifest {
 
 function blockOf(manifest: TourManifest, id: string): Record<string, unknown> {
   const gate = manifest.stations.find((s) => s.id === "gate");
-  const block = gate?.blocks.find((b) => b.id === id);
+  const block = stationBlocks(gate!).find((b) => b.id === id);
   if (block === undefined) throw new Error(`no block ${id}`);
   return block as unknown as Record<string, unknown>;
 }
@@ -320,7 +318,7 @@ describe("stationEdited: a text of a block the station's story shows", () => {
         const saved = readBack(state);
         const gate = saved.stations.find((s) => s.id === "gate");
         if (gate === undefined) return false;
-        for (const block of gate.blocks) {
+        for (const block of stationBlocks(gate)) {
           const rules = TOUR_BLOCK_TEXT_RULES[block.kind] as Readonly<
             Record<string, TourTextRule>
           >;

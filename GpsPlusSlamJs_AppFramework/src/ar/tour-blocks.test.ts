@@ -17,7 +17,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  checkTourBlockIdsUnique,
   checkTourBlockText,
   placeTourBlocks,
   readTourBlocks,
@@ -28,7 +27,6 @@ import {
   TOUR_MODEL_SPACE_MAX,
   TOUR_MODEL_WORLD_VIEWS,
   TOUR_WORLD_VIEWS,
-  tourBlocksMinor,
   tourFloorView,
   tourTextCount,
   type TourBlock,
@@ -121,8 +119,8 @@ interface ReadOptions {
   drops?: TourBlockDrop[];
 }
 
-/** Read and place `blocks` as one station's, every block shown by a step
- *  unless `shown` says otherwise. */
+/** Read and place `blocks` as one station's, every block in a story
+ *  unless `shown` says otherwise (`shown` names the blocks in a story). */
 function parse(blocks: unknown, options: ReadOptions = {}): TourBlock[] {
   const lenient = options.lenient === true;
   const onDropped = (drop: TourBlockDrop): void => {
@@ -134,8 +132,14 @@ function parse(blocks: unknown, options: ReadOptions = {}): TourBlock[] {
     lenient,
     onDropped,
   });
+  // A block in a story keeps its view; only a free one is placed.
   const shown = new Set(options.shown ?? read.map((r) => r.block.id));
-  return placeTourBlocks(read, shown, { fail, lenient, onDropped });
+  const inStory = read.filter((r) => shown.has(r.block.id));
+  const free = read.filter((r) => !shown.has(r.block.id));
+  return [
+    ...inStory.map((r) => r.block),
+    ...placeTourBlocks(free, { fail, lenient, onDropped }),
+  ];
 }
 
 function one(
@@ -390,16 +394,6 @@ describe('ids', () => {
       parse([VALID.shortText, { ...VALID.picture, id: 'b1' }])
     ).toThrow(/duplicate block id "b1"/);
   });
-
-  it('checkTourBlockIdsUnique refuses one block id in two stations', () => {
-    const blocks = parse([VALID.shortText]);
-    expect(() =>
-      checkTourBlockIdsUnique([{ blocks }, { blocks: [] }], fail)
-    ).not.toThrow();
-    expect(() =>
-      checkTourBlockIdsUnique([{ blocks }, { blocks }], fail)
-    ).toThrow(/duplicate block id "b1"/);
-  });
 });
 
 describe('views', () => {
@@ -434,7 +428,7 @@ describe('views', () => {
     );
   });
 
-  it('a free block (no step shows it) must stand in the world: pin, plane or placed', () => {
+  it('a free block must stand in the world: pin, plane or placed', () => {
     // Why: a free block in a card would have no moment to open, and a
     // staged figure lives only while a story runs.
     for (const kind of ['shortText', 'picture', 'model'] as const) {
@@ -442,12 +436,12 @@ describe('views', () => {
     }
     for (const kind of ['longText', 'video', 'audio', 'character'] as const) {
       expect(() => parse([VALID[kind]], { shown: [] })).toThrow(
-        /no step shows/
+        /stands free in its station/
       );
     }
     expect(() =>
       parse([{ ...VALID.shortText, view: 'card' }], { shown: [] })
-    ).toThrow(/no step shows/);
+    ).toThrow(/stands free in its station/);
   });
 
   it("the floor view: the kind's own world view for a free block, card for a story block", () => {
@@ -488,8 +482,7 @@ describe('a file of a newer minor (lenient)', () => {
   });
 
   it('a free long text in an unknown view stands as its reading sign', () => {
-    // Why: up to minor 3 a long text had no floor view and was skipped;
-    // from minor 4 the reading sign is its floor, so it is shown.
+    // Why: the reading sign is a long text's floor, so it is shown.
     const drops: TourBlockDrop[] = [];
     const blocks = parse([{ ...VALID.longText, view: 'captions' }], {
       lenient: true,
@@ -646,7 +639,7 @@ function model(
   return one('model', patch, options) as TourModelBlock | undefined;
 }
 
-describe("a model's views, notes, sections and clip (minor 1)", () => {
+describe("a model's views, notes, sections and clip", () => {
   it('every world view of a model stands free, and needs a size like placed', () => {
     // Why: each of these views draws the model at its pose and size in
     // the world; one without a size would have nothing to scale by.
@@ -904,47 +897,6 @@ describe("a model's views, notes, sections and clip (minor 1)", () => {
     ).toThrow(/annotations\[0\]" must be an object/);
     expect(() => model({ sections: [7] }, { lenient: true })).toThrow(
       /sections\[0\]" must be an object/
-    );
-  });
-});
-
-describe('tourBlocksMinor: the lowest minor a station needs', () => {
-  it('is 0 for a model placed, staged or in a card with none of the new fields', () => {
-    // Why: the writer marks a tour newer only when it must, so an older
-    // reader opens it fully instead of in its lenient mode.
-    expect(tourBlocksMinor(parse(Object.values(VALID)))).toBe(0);
-    expect(tourBlocksMinor(parse([{ ...VALID.model, view: 'card' }]))).toBe(0);
-    expect(
-      tourBlocksMinor(
-        parse([{ ...VALID.model, view: 'stage', sizeM: undefined }])
-      )
-    ).toBe(0);
-    expect(tourBlocksMinor([])).toBe(0);
-  });
-
-  it('is 1 for a model in a new view, or with a clip, notes or sections in any view', () => {
-    for (const view of ['ghost', 'hotspots', 'cutaway', 'toy']) {
-      expect(tourBlocksMinor(parse([{ ...VALID.model, view }]))).toBe(1);
-    }
-    const patches = [
-      { animation: { name: 'Swing', autoplay: true } },
-      { annotations: [NOTE] },
-      { sections: [SECTION] },
-    ];
-    for (const patch of patches) {
-      for (const view of ['placed', 'card']) {
-        const blocks = parse([
-          VALID.shortText,
-          { ...VALID.model, view, ...patch },
-        ]);
-        expect(tourBlocksMinor(blocks)).toBe(1);
-      }
-    }
-  });
-
-  it('an empty note list needs nothing new: it reads as absent', () => {
-    expect(tourBlocksMinor(parse([{ ...VALID.model, annotations: [] }]))).toBe(
-      0
     );
   });
 });

@@ -61,7 +61,11 @@ import {
 import type { EditorModel } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
 import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
-import { stationContent, storyOf } from "../test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "../test-support/station-content.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -320,7 +324,7 @@ describe("createEditorSession", () => {
     const gate = (await carried(saved.blob)).stations.find(
       (s) => s.id === "gate",
     );
-    expect(gate?.blocks[0]).toMatchObject({
+    expect(stationBlocks(gate!)[0]).toMatchObject({
       title: "The long siege",
       body: "In 1632 the gate held.",
     });
@@ -953,7 +957,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     expect(editor.changeCount()).toBe(1);
     const on = await editor.save({ keepScan: false });
     expect(await writtenJson(on.blob)).toMatchObject({
-      version: 4,
+      version: 5,
       minor: 0,
       needsNoGps: true,
     });
@@ -964,7 +968,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     const off = await editor.save({ keepScan: false });
     const json = await writtenJson(off.blob);
     expect(json).not.toHaveProperty("needsNoGps");
-    expect(json).toMatchObject({ version: 4, minor: 0 });
+    expect(json).toMatchObject({ version: 5, minor: 0 });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -996,7 +1000,7 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     editor.editText("a", "edited");
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      version: 4,
+      version: 5,
       minor: 0,
       needsNoGps: true,
     });
@@ -1209,7 +1213,7 @@ describe("createEditorSession, the tour details (W2)", () => {
     });
     const saved = await editor.save({ keepScan: false });
     expect(await writtenJson(saved.blob)).toMatchObject({
-      version: 4,
+      version: 5,
       minor: 0,
       title: "The castle",
       description: "Up and back.",
@@ -1689,8 +1693,8 @@ describe("createEditorSession, undo and redo (W2)", () => {
       (await editor.save({ keepScan: false })).blob,
     );
     expect(
-      (second.stations as { id: string; blocks: { id: string }[] }[]).map(
-        (s) => [s.id, s.blocks.map((i) => i.id)],
+      (second.stations as { id: string; children: { id: string }[] }[]).map(
+        (s) => [s.id, s.children.map((i) => i.id)],
       ),
     ).toEqual([
       [stationIdOf("a"), ["a"]],
@@ -2583,11 +2587,15 @@ describe("createEditorSession, the tour document (D29-D31)", () => {
       (await editor.save({ keepScan: false })).blob,
     );
     const written = (
-      json.stations as { id: string; geo: { lat: number }; blocks: unknown[] }[]
+      json.stations as {
+        id: string;
+        geo: { lat: number };
+        children: unknown[];
+      }[]
     ).find((s) => s.id === station.id)!;
     expect(written.geo.lat).toBeCloseTo(geo.lat, 12);
-    expect(written.blocks).toEqual(
-      JSON.parse(JSON.stringify(station.blocks)) as unknown[],
+    expect(written.children).toEqual(
+      JSON.parse(JSON.stringify(station.children)) as unknown[],
     );
     expect(editor.undo()).toMatchObject({ kind: "undone" });
     const back = await writtenJson(

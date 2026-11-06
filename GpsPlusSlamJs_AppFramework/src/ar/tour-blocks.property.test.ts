@@ -14,14 +14,12 @@ import { describe, expect, it } from 'vitest';
 import { parseTourAssets } from './tour-assets';
 import {
   readTourBlocks,
-  TOUR_BLOCK_VIEWS,
   TOUR_MODEL_MAX_NOTES,
   TOUR_MODEL_MAX_SECTIONS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_WORLD_VIEWS,
-  tourBlocksMinor,
 } from './tour-blocks';
 import {
   tourModelAnimationArbitrary,
@@ -161,7 +159,7 @@ describe('a placed model size (properties)', () => {
 });
 
 /**
- * Why these matter: a model's notes, sections and clip (minor 1) are lists
+ * Why these matter: a model's notes, sections and clip are lists
  * a creator grows freely, so their limits and the minor the writer stamps
  * must hold for every list, not only the examples in `tour-blocks.test.ts`.
  */
@@ -236,37 +234,6 @@ describe("a model's notes, sections and clip (properties)", () => {
         }
       ),
       { numRuns: 100 }
-    );
-  });
-
-  it('the minor a model needs is 1 exactly when it uses a new view or any new field', () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom(...TOUR_BLOCK_VIEWS.model),
-        fc.boolean(),
-        fc.boolean(),
-        fc.boolean(),
-        tourModelNoteArbitrary,
-        tourModelSectionArbitrary,
-        tourModelAnimationArbitrary,
-        (view, hasNote, hasSection, hasClip, note, section, animation) => {
-          const block = {
-            ...model(view === 'stage' ? undefined : 2),
-            view,
-            ...(hasNote ? { annotations: [note] } : {}),
-            ...(hasSection ? { sections: [section] } : {}),
-            ...(hasClip ? { animation } : {}),
-          };
-          if (view === 'stage') delete (block as { sizeM?: unknown }).sizeM;
-          const newView = !['placed', 'stage', 'card'].includes(view);
-          const expected = newView || hasNote || hasSection || hasClip ? 1 : 0;
-          const blocks = readTourBlocks([block], 'x', { assets, fail }).map(
-            (r) => r.block
-          );
-          expect(tourBlocksMinor(blocks)).toBe(expected);
-        }
-      ),
-      { numRuns: 300 }
     );
   });
 });

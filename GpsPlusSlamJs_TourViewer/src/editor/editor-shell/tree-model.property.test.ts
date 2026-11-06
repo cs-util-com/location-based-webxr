@@ -31,7 +31,10 @@ import {
   treeFoldOf,
   type TreeInput,
 } from "./tree-model.js";
-import { stationContent } from "../../test-support/station-content.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "../../test-support/station-content.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -133,7 +136,7 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       continue;
     }
     clock += s.gap;
-    const item = s.item ? target.blocks[0] : undefined;
+    const item = s.item ? stationBlocks(target)[0] : undefined;
     const id = item?.id ?? `station:${target.id}`;
     const click = treeClick({
       id,

@@ -1,3 +1,4 @@
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
@@ -493,7 +494,7 @@ describe("renderTourStation", () => {
   function stationAt(
     id: string,
     geo: TourStation["geo"],
-    items: TourStation["blocks"],
+    items: TourBlock[],
   ): TourStation {
     return {
       id,

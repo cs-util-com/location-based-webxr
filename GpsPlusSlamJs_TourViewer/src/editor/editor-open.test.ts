@@ -61,7 +61,7 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 4,
+          version: 5,
           minor: 0,
           stations: [],
           description: "Fine.",
@@ -137,7 +137,7 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 4,
+          version: 5,
           minor: 0,
           stations: [
             bare("k3f9", { title: "The old well", image: "gone" }),

@@ -35,11 +35,6 @@ import {
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const zero = { lat: 47.5, lon: 8.7 };
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 function station(id: string, north: number, east: number): TourStation {
   const geo = calcGpsCoords(zero, [north, 0, east]);

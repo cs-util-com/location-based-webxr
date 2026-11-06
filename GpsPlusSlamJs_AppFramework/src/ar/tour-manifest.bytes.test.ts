@@ -3,9 +3,9 @@
  * compared byte for byte (a signature covers the exact bytes, and a tour
  * re-saved unchanged must not look edited). Reshaping the reader's
  * in-memory model must therefore never change one byte the writer
- * produces. The fixture holds generated version 4 manifests (blocks of
- * every kind, free and shown, steps of every kind, and the tour's and the
- * stations' own fields; texts cut to 600 characters, which keeps the
+ * produces. The fixture holds generated version 5 manifests (blocks of
+ * every kind, free and in stories, choices and quizzes, and the tour's and
+ * the stations' own fields; texts cut to 600 characters, which keeps the
  * fixture small) with the SHA-256 of what the writer produced for
  * each when it was recorded; this asserts the writer still produces
  * exactly those bytes (that a written file reads back and writes again
@@ -31,7 +31,7 @@ interface GoldenCase {
 
 const golden = JSON.parse(
   readFileSync(
-    new URL('./fixtures/tour-v4-writer-golden.json', import.meta.url),
+    new URL('./fixtures/tour-v5-writer-golden.json', import.meta.url),
     'utf8'
   )
 ) as { cases: GoldenCase[] };
@@ -39,7 +39,7 @@ const golden = JSON.parse(
 const sha256 = (text: string) =>
   createHash('sha256').update(text).digest('hex');
 
-describe('the version 4 writer, byte for byte', () => {
+describe('the version 5 writer, byte for byte', () => {
   it('writes every recorded manifest exactly as it was recorded', () => {
     expect(golden.cases.length).toBeGreaterThanOrEqual(20);
     for (const c of golden.cases) {

@@ -43,7 +43,11 @@ import {
   withWorldObjects,
 } from "./test-support/tour-of.js";
 import { withTourContent } from "./tour-content.js";
-import { stationContent, storyOf } from "./test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -588,9 +592,9 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
     const saved = withTourContent(manifestOf([pin("a")]), {
       objects: [pin("a"), seated(near, stationIdOf("a"))],
     });
-    expect(saved.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
-      ["a", "near"],
-    ]);
+    expect(
+      saved.stations.map((s) => stationBlocks(s).map((i) => i.id)),
+    ).toEqual([["a", "near"]]);
     const placed = { object: near };
     const out = pendingAfterRebuild(
       { placed: [placed], deleted: [] },
@@ -773,7 +777,7 @@ describe("a long text's media survive a Finish", () => {
     const written = await zipManifest(result!.blob);
     expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race", "voice"]);
     const essay = written.stations
-      .flatMap((s) => s.blocks)
+      .flatMap((s) => stationBlocks(s))
       .find((b) => b.id === "essay");
     expect(essay?.kind === "longText" ? essay.narration : null).toEqual(
       narration,

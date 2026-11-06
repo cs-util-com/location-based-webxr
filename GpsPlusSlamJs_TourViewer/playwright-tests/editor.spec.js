@@ -2502,7 +2502,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // reader does not announce the warning again.
   expect(await line?.evaluate((node) => node.isConnected)).toBe(true);
   expect(await savedManifest(page, "nogps.zip")).toMatchObject({
-    version: 4,
+    version: 5,
     minor: 0,
     needsNoGps: true,
   });
@@ -2527,7 +2527,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await expect(next.locator("#save-status")).toHaveText("Saved to nogps.zip");
   const off = await savedManifest(next, "nogps.zip");
   expect(off).not.toHaveProperty("needsNoGps");
-  expect(off).toMatchObject({ version: 4, minor: 0 });
+  expect(off).toMatchObject({ version: 5, minor: 0 });
 });
 
 test("a changed needs-no-GPS setting survives a closed tab, and Restore brings it back", async ({
@@ -2607,7 +2607,7 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   );
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
-    version: 4,
+    version: 5,
     minor: 0,
     title: "Castle walk",
     description: "Up to the castle and back.",

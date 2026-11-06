@@ -55,6 +55,7 @@
  * @see editor-draft.ts.md
  */
 
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type {
   TourManifest,
@@ -89,6 +90,7 @@ import {
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
+  discardOlderFormatDraft,
   isOlderVersionDraft,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
@@ -198,7 +200,7 @@ function changedFrames(
       (f) =>
         !theirs.has(f.id) &&
         (f.title !== undefined ||
-          f.steps.length > 0 ||
+          tourStories(f).length > 0 ||
           f.description !== undefined ||
           f.image !== undefined),
     )
@@ -771,6 +773,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       made.lock = lock;
       const store = await deps.openStore(key).catch(() => undefined);
       if (store === undefined) made.refused = "storage";
+      // Inside the space's own promise: every write of it waits for this.
+      else await discardOlderFormatDraft(store);
       return store;
     })();
     return made;

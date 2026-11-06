@@ -37,6 +37,7 @@
  * elsewhere (the guide's store).
  */
 
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TourOrder,
   TourStation,
@@ -268,7 +269,9 @@ export function walkRoute(
 ): WalkRoute {
   return stations.map((s) => ({
     id: s.id,
-    stepless: s.steps.length === 0 && !stationHasCard(s, assets),
+    stepless:
+      tourStories(s).every((story) => story.children.length === 0) &&
+      !stationHasCard(s, assets),
   }));
 }
 

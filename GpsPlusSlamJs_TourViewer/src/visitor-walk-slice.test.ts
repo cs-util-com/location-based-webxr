@@ -54,12 +54,6 @@ import {
  * is exactly their sequence.
  */
 
-const step = {
-  id: "t",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
-
 function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   return {
     id,

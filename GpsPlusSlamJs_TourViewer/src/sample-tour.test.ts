@@ -1,3 +1,4 @@
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -64,7 +65,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     const json = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     // Written at version 4: an older build refuses it with "update the
     // app" rather than misreading it.
-    expect(json).toMatchObject({ version: 4, minor: 0 });
+    expect(json).toMatchObject({ version: 5, minor: 0 });
     const manifest = parseTourManifest(json);
     expect(manifest.order).toBe("fixed");
     expect(manifest.stations.map((s) => s.id)).toEqual([
@@ -74,7 +75,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     ]);
     for (const station of manifest.stations) {
       expect(station.geo).toBeDefined();
-      expect(station.steps.length).toBeGreaterThan(0);
+      expect(tourStories(station).length).toBeGreaterThan(0);
     }
   });
 
@@ -166,16 +167,17 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // change to the reader's in-memory model (a renamed field, a reshaped
     // type) must not change one written byte; this pins the writer's
     // output for a real tour, beside the generated ones in the framework.
-    // Re-recorded when the tour moved to format 4 (its script writes it
+    // Re-recorded when the tour moved to format 5 (its script writes it
     // through this writer, so the file is the writer's own bytes).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
-    expect(written.length).toBe(5354);
+    expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
+    expect(written.length).toBe(5439);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "c6399b32d9dc36776231c1f158c4848e4b072e07259e9ee521c324c23c8aeefe",
+      "6673809cf381f4c0892b882fc334da856445aa9a26c92246aa7aaace60e18101",
     );
   });
 });

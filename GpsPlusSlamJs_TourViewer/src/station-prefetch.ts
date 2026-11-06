@@ -28,6 +28,7 @@
  *   dropped when the tour closes or another opens.
  */
 
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TourAsset,
   TourBlock,
@@ -106,15 +107,12 @@ export async function decodeFigure<T>(
  *  G2 follow-up 9): drawn with the station, they would otherwise be read
  *  from the archive on arrival. Free pictures are read on their own. */
 export function stationAssetIds(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
   characters: ReadonlyMap<string, TourCharacter> = new Map(),
 ): string[] {
-  const blocks = new Map(station.blocks.map((b) => [b.id, b]));
-  const ids = station.steps.flatMap((step): readonly string[] => {
-    if (step.action.kind !== "show") return [];
-    const block = blocks.get(step.action.block);
-    return block === undefined ? [] : storyAssetIds(block, characters);
-  });
+  const ids = tourStationStoryBlocks(station).flatMap((block) =>
+    storyAssetIds(block, characters),
+  );
   const models = tourFreeBlocks(station).flatMap((b) =>
     b.kind === "model" ? [b.asset] : [],
   );

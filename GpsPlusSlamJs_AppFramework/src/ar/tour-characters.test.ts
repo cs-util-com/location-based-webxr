@@ -1,20 +1,12 @@
 /**
  * Why this test matters: a recurring character is declared ONCE for the
  * tour (`characters`) and appears at several stations as a story block in
- * one of five views, its step moving on by itself when the line ends. All
- * of it is an additive minor (2): the writer keeps the block's inline name
- * and image, so an app that reads only an older minor still shows him by
- * name and words, and it must never refuse the tour. The last block of
- * tests opens the file with the reader the framework actually released
- * (1.31.0, minor 0), not with a simulation of one.
+ * one of five views, moving on by itself when the line ends. The writer
+ * keeps the block's inline name and image in step with the declaration, so
+ * one rename reaches every station.
  */
 
 import { describe, expect, it } from 'vitest';
-
-import {
-  parseTourManifest as parseReleased,
-  serializeTourManifest as serializeReleased,
-} from 'tour-reader-1-31/ar/tour-manifest';
 
 import {
   TOUR_CHARACTER_FRAMES,
@@ -30,6 +22,7 @@ import {
   type TourManifest,
   type TourManifestDrop,
 } from './tour-manifest';
+import { tourStationStoryBlocks } from './tour-story';
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 const GEO = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
@@ -65,19 +58,30 @@ function station(
     geo: GEO,
     activateRadiusM: 25,
     foundRadiusM: 4,
-    blocks,
-    steps: blocks.map((b, i) => ({
-      id: `s${String(i)}`,
-      action: { kind: 'show', block: (b as { id: string }).id },
-      ...(advance === undefined ? {} : { advance }),
-    })),
+    children:
+      blocks.length === 0
+        ? []
+        : [
+            {
+              id: `${id}-story`,
+              kind: 'story',
+              title: id,
+              children: blocks.map((b) => ({
+                ...(b as object),
+                ...(advance === undefined ? {} : { advance }),
+              })),
+            },
+          ],
   };
 }
 
+/** The first story block of the first station. */
+const firstBlock = (manifest: TourManifest) =>
+  tourStationStoryBlocks(manifest.stations[0]!)[0];
+
 function tour(extra: Record<string, unknown> = {}) {
   return {
-    version: 4,
-    minor: 2,
+    version: 5,
     assets: ASSETS,
     characters: [WENDEL],
     stations: [station('gate', [figure({ character: 'wendel' })])],
@@ -103,11 +107,10 @@ describe('the characters declaration', () => {
     }
   });
 
-  it('a manifest built in code with no characters left is written at the minor its blocks need', () => {
-    // Why: a tour that needs nothing of minor 2 must not be stamped 4.2,
-    // or a writer of minor 1 refuses to save it again. A page may hand the
-    // writer a manifest whose characters it emptied (never parsed); the
-    // writer reads it through the parser first, which drops an empty list.
+  it('a manifest built in code with no characters left is written without the list', () => {
+    // Why: a page may hand the writer a manifest whose characters it
+    // emptied (never parsed); the writer reads it through the parser
+    // first, which drops an empty list.
     const built = {
       ...createEmptyTourManifest(),
       characters: [],
@@ -296,16 +299,16 @@ describe("a character block's reference to the declaration", () => {
         characters: [{ ...WENDEL, name: 'Wendel the Elder', image: 'wendel2' }],
       })
     );
-    const block = manifest.stations[0]?.blocks[0];
+    const block = firstBlock(manifest);
     expect(block).toMatchObject({
       character: 'wendel',
       name: 'Wendel the Elder',
       image: 'wendel2',
     });
     const written = JSON.parse(serializeTourManifest(manifest)) as {
-      stations: { blocks: Record<string, unknown>[] }[];
+      stations: { children: { children: Record<string, unknown>[] }[] }[];
     };
-    expect(written.stations[0]?.blocks[0]).toMatchObject({
+    expect(written.stations[0]?.children[0]?.children[0]).toMatchObject({
       name: 'Wendel the Elder',
       image: 'wendel2',
       character: 'wendel',
@@ -329,7 +332,9 @@ describe("a character block's reference to the declaration", () => {
       parseTourManifest(
         tour({ stations: [station('gate', [figure({ character: 'ada' })])] })
       )
-    ).toThrow(/"stations\[0\]\.blocks\[0\]\.character" must name a character/);
+    ).toThrow(
+      /"stations\[0\]\.children\[0\]\.children\[0\]\.character" must name a character/
+    );
   });
 
   it('a newer minor drops just the reference, keeping the block with its inline name and image', () => {
@@ -341,7 +346,7 @@ describe("a character block's reference to the declaration", () => {
       }),
       { onDropped: (drop) => drops.push(drop) }
     );
-    const block = manifest.stations[0]?.blocks[0];
+    const block = firstBlock(manifest);
     expect(block).toMatchObject({ name: 'Wendel', image: 'wendel' });
     expect(block).not.toHaveProperty('character');
     expect(drops).toEqual([
@@ -369,15 +374,15 @@ describe("the character's five views and the line's end", () => {
     const manifest = parseTourManifest(
       tour({ stations: [station('gate', [figure({ view })])] })
     );
-    expect(manifest.stations[0]?.blocks[0]?.view).toBe(view);
+    expect(firstBlock(manifest)?.view).toBe(view);
   });
 
   it.each(TOUR_CHARACTER_VIEWS)(
-    'refuses a free block in %s: he speaks only as a step',
+    'refuses a free block in %s: he speaks only in a story',
     (view) => {
-      const free = { ...station('gate', []), blocks: [figure({ view })] };
+      const free = { ...station('gate', []), children: [figure({ view })] };
       expect(() => parseTourManifest(tour({ stations: [free] }))).toThrow(
-        /no step shows block "w1"/
+        /block "w1" stands free in its station/
       );
     }
   );
@@ -388,9 +393,7 @@ describe("the character's five views and the line's end", () => {
         stations: [station('gate', [figure()], { mode: 'lineEnd' })],
       })
     );
-    expect(manifest.stations[0]?.steps[0]?.advance).toEqual({
-      mode: 'lineEnd',
-    });
+    expect(firstBlock(manifest)?.advance).toEqual({ mode: 'lineEnd' });
     expect(() =>
       parseTourManifest(
         tour({ stations: [station('gate', [figure()], { mode: 'wave' })] })
@@ -399,48 +402,8 @@ describe("the character's five views and the line's end", () => {
   });
 });
 
-describe('the minor the writer writes', () => {
-  const minorOf = (data: unknown): number =>
-    (
-      JSON.parse(serializeTourManifest(parseTourManifest(data))) as {
-        minor: number;
-      }
-    ).minor;
-  const plain = figure({ view: 'stage' });
-
-  it('is 2 when anything of the character uses minor 2, and lower once nothing does', () => {
-    expect(TOUR_MANIFEST_MINOR).toBeGreaterThanOrEqual(2);
-    const without = { characters: undefined };
-    expect(
-      minorOf(tour({ ...without, stations: [station('g', [plain])] }))
-    ).toBe(0);
-    expect(minorOf(tour({ stations: [station('g', [plain])] }))).toBe(2);
-    for (const view of TOUR_CHARACTER_VIEWS) {
-      expect(
-        minorOf(
-          tour({ ...without, stations: [station('g', [figure({ view })])] })
-        )
-      ).toBe(2);
-    }
-    expect(
-      minorOf(
-        tour({
-          ...without,
-          stations: [station('g', [plain], { mode: 'lineEnd' })],
-        })
-      )
-    ).toBe(2);
-    expect(
-      minorOf(
-        tour({
-          ...without,
-          stations: [station('g', [plain], { mode: 'auto', afterS: 3 })],
-        })
-      )
-    ).toBe(0);
-  });
-
-  it('a written minor-2 tour is a fixed point: read and written again, the same bytes', () => {
+describe('what the writer writes', () => {
+  it('a written tour is a fixed point: read and written again, the same bytes', () => {
     const data = tour({
       stations: [
         station(
@@ -463,53 +426,6 @@ describe('the minor the writer writes', () => {
     const once = serializeTourManifest(parseTourManifest(data));
     expect(serializeTourManifest(parseTourManifest(JSON.parse(once)))).toBe(
       once
-    );
-  });
-});
-
-describe('the released reader (framework 1.31.0, minor 0) opens a minor-2 tour', () => {
-  // Why: "additive" is a promise to readers already on phones. This is
-  // the published package's own parser, installed as a dev dependency.
-  const written = JSON.parse(
-    serializeTourManifest(
-      parseTourManifest(
-        tour({
-          stations: [
-            station(
-              'gate',
-              [
-                figure({
-                  character: 'wendel',
-                  view: 'two-stations',
-                  voice: 'voice',
-                }),
-              ],
-              { mode: 'lineEnd' }
-            ),
-          ],
-        })
-      )
-    )
-  ) as unknown;
-
-  it('shows him as a card with his inline name, image and words, and taps on instead of waiting for the line', () => {
-    const old = parseReleased(written);
-    const block = old.stations[0]?.blocks[0];
-    expect(block).toMatchObject({
-      kind: 'character',
-      view: 'card',
-      name: 'Wendel',
-      image: 'wendel',
-      caption: 'Welcome to the old gate. Follow me to the well.',
-      voice: 'voice',
-    });
-    expect(old.stations[0]?.steps[0]?.advance).toEqual({ mode: 'tap' });
-    expect(old).not.toHaveProperty('characters');
-  });
-
-  it('refuses to write it back, instead of dropping what it cannot read', () => {
-    expect(() => serializeReleased(parseReleased(written))).toThrow(
-      /made with a newer version of the app/
     );
   });
 });

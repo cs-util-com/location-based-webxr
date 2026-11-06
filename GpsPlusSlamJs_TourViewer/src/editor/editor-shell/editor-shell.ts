@@ -37,6 +37,7 @@
  *
  * @see editor-shell.ts.md
  */
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
@@ -992,8 +993,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const stations = manifest()?.stations ?? [];
     const stationId = selected.startsWith(STATION_PREFIX)
       ? selected.slice(STATION_PREFIX.length)
-      : (stations.find((s) => s.blocks.some((i) => i.id === selected))?.id ??
-        null);
+      : (stations.find((s) =>
+          tourStationBlocks(s).some((i) => i.id === selected),
+        )?.id ?? null);
     const index = stations.findIndex((s) => s.id === stationId);
     deps.stations.remove(selected);
     const picks = [
@@ -1221,8 +1223,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return selected.slice(STATION_PREFIX.length);
     }
     return (
-      manifest()?.stations.find((s) => s.blocks.some((b) => b.id === selected))
-        ?.id ?? null
+      manifest()?.stations.find((s) =>
+        tourStationBlocks(s).some((b) => b.id === selected),
+      )?.id ?? null
     );
   }
   tree.add.addEventListener("click", addStationAtCentre);

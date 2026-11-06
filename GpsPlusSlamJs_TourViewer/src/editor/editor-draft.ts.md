@@ -115,7 +115,8 @@ editor's own namespace, one tab at a time. Design:
     draft was there (its meta); false for none, a held lock, or no
     persistence; never rejects. The emptied directory itself stays.
     Only a draft PROVED to be an older version's is
-    emptied (`isOlderVersionDraft`): a refused older copy and the current
+    emptied (`isOlderVersionDraft`; a draft of an older format goes at open,
+    `discardOlderFormatDraft` in `makeSpace`): a refused older copy and the current
     copy of the same tour share the tour id, so the draft under the key may
     be the current copy's unsaved work. A draft holding a record this
     version reads, or nothing that decides it (no object records, or one

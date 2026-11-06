@@ -5,6 +5,7 @@
  * world, or a free block counted twice would each show the visitor
  * something the creator did not make.
  */
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 import type {
   TourBlock,
@@ -63,19 +64,17 @@ describe("shown-blocks", () => {
     expect(isWorldBlock(card("c"))).toBe(false);
   });
 
-  it("names the world block a show step reaches, none for a card or a choice", () => {
+  it("names the world block a story reaches, none for a card or a choice", () => {
     const s = station([pin("p"), card("c")], ["p", "c"]);
-    expect(worldBlockReachedBy(s, s.steps[0]!)?.id).toBe("p");
-    expect(worldBlockReachedBy(s, s.steps[1]!)).toBeNull();
+    const [first, second] = tourStationStoryBlocks(s);
+    expect(worldBlockReachedBy(first!)?.id).toBe("p");
+    expect(worldBlockReachedBy(second!)).toBeNull();
     expect(
-      worldBlockReachedBy(s, {
+      worldBlockReachedBy({
         id: "q",
-        action: {
-          kind: "choice",
-          prompt: "?",
-          options: [{ id: "a", label: "A" }],
-        },
-        advance: { mode: "tap" },
+        kind: "choice",
+        prompt: "?",
+        options: [{ id: "a", label: "A" }],
       }),
     ).toBeNull();
   });

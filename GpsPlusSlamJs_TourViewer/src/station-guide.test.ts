@@ -75,11 +75,6 @@ const CODE: PositionPrecision = {
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const zero = { lat: 47.5, lon: 8.7 };
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 /** A station `north`/`east` metres from the zero. */
 function station(

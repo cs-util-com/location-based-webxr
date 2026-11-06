@@ -32,6 +32,7 @@ import {
 import {
   playableStory,
   stationContent,
+  storyOf,
 } from "./test-support/station-content.js";
 
 // The core's geodesy needs an activated store (the framework's factory).
@@ -584,17 +585,18 @@ describe("the station guide on the page's store", () => {
           station(`s${String(i)}`, north, east, {
             // One choice whose only option loops back to itself: it never
             // ends on its own.
-            steps: [
-              {
-                id: "ask",
-                action: {
+            ...stationContent([
+              storyOf(`s${String(i)}-story`, [
+                {
+                  id: `s${String(i)}-ask`,
                   kind: "choice",
                   prompt: "Again?",
-                  options: [{ id: "yes", label: "Yes", goto: "ask" }],
+                  options: [
+                    { id: "yes", label: "Yes", goto: `s${String(i)}-ask` },
+                  ],
                 },
-                advance: { mode: "tap" },
-              },
-            ],
+              ]),
+            ]),
           }),
         );
         const page = onThePage(stations, order, {

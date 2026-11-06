@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Tour Viewer's write path for a version 4 tour (tour editor plan
+The Tour Viewer's write path for a version 5 tour (tour editor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-17-1816-tour-editor-3d-and-desktop-entry-plan.md`,
 W3, D20, D21). The pages place, move and compare a WORLD view: every pin
 (a short text in its `pin` view), photo (a picture in its `plane` view)
@@ -27,11 +27,9 @@ camera captures are debug data, never in a station (an earlier file's
   saved file compares this one (the authoring draft's `hostedObjects`).
 - `automaticStationFrame(id, at)`: a new automatic station's frame
   (below), the one the tour document's station rule starts.
-- `storyBlocksOf(station)`: a station's story blocks, the ones a step
-  shows (what a frame of the tour document holds inline).
 - `WorldBlock`, `worldBlocks(station)`: a station's free blocks
-  (`tourFreeBlocks`, the ones no step shows) as the short texts,
-  pictures, long texts (on their reading stands, minor 3) and models
+  (`tourFreeBlocks`, the ones outside its stories) as the short texts,
+  pictures, long texts (on their reading stands) and models
   standing in the world they are.
 - `isCapturedPhoto(object)`: a picture whose image asset carries its own
   id (`content/<id>.jpg`, minted with it) - what a creator page takes with
@@ -66,7 +64,7 @@ camera captures are debug data, never in a station (an earlier file's
   counted, every Finish dropped their assets and deleted their files.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY
   station carries the creator's own work, which keeps it when its last
-  item leaves: a title, story steps, a non-blank description (a blank one
+  item leaves: a title, a story, a non-blank description (a blank one
   is none, as the reader reads it, and as a blank title), or a card image naming
   one of `imageAssets`. The one rule both this write (`withTourContent`) and the tour
   document (`withoutEmptied`) ask.
@@ -111,7 +109,7 @@ camera captures are debug data, never in a station (an earlier file's
   field).
 - An object missing from `objects` leaves its station. A station this
   write EMPTIED (it held free blocks and holds none now) goes when nothing else
-  keeps it: nothing of its own (`keepsItself`: no title, no steps, no non-blank
+  keeps it: nothing of its own (`keepsItself`: no title, no story, no non-blank
   description, no card image naming an image asset). A station names no
   other (a station's `next` and a quiz's routes left the format), so no
   other station keeps it either. It existed for its

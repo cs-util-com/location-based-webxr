@@ -9,6 +9,11 @@
  * is tested at its edges and just outside them.
  */
 
+import {
+  tourStationStoryBlocks,
+  tourStories,
+  type TourChoice,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
@@ -34,7 +39,11 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
-import { stationContent, storyOf } from "./test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 const AT = { lat: 48.52, lon: 9.05, alt: 400 };
 
@@ -194,6 +203,13 @@ function expectOneStep(
     documentObjects(before).map((o) => o.object),
   );
 }
+
+/** New ids for the whole story of the story station. */
+const STORY_COPY_IDS = {
+  "story-story": "story-story2",
+  look: "look2",
+  q1: "q2",
+};
 
 describe("stationEdited: a station's title, radius, description and card image", () => {
   it("sets a trimmed title as one step that counts as a change; a blank one removes it", () => {
@@ -625,36 +641,97 @@ describe("stationDuplicated", () => {
     expectOneStep(before, after);
   });
 
-  // Why: block ids are unique across the tour (format 4), so a copied
-  // story carries its blocks under new ids and its steps show those; a copy
-  // under the old ids is a tour the format refuses.
-  it("copies a story station's steps and blocks under new block ids, and refuses a taken id or a block left without one", () => {
+  // Why: child ids are unique across the tour, so a copied story carries
+  // itself and its children under new ids; a copy under the old ids is a
+  // tour the format refuses.
+  // Why: a goto names a child by id. A copy whose choice still pointed at
+  // the original's child would send a visitor nowhere: the format refuses
+  // a goto outside its story.
+  it("points a copied story's gotos at the copy's children", () => {
+    const station = OPENED.stations.find((s) => s.id === "story")!;
+    const line = {
+      id: "line",
+      kind: "shortText",
+      view: "card",
+      caption: "Hello",
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    } as const;
+    const ask: TourChoice = {
+      id: "ask",
+      kind: "choice",
+      prompt: "On?",
+      options: [
+        { id: "yes", label: "Yes", goto: "line" },
+        { id: "no", label: "No" },
+      ],
+    };
+    const after = reduce(
+      open({
+        ...OPENED,
+        stations: OPENED.stations.map((s) =>
+          s === station
+            ? { ...s, ...stationContent([storyOf("told", [ask, line])]) }
+            : s,
+        ),
+      }),
+      act.stationDuplicated({
+        stationId: "story",
+        newStationId: "story2",
+        newItemIds: { told: "told2", ask: "ask2", line: "line2" },
+        createdAtIso: "2026-10-22T00:00:00.000Z",
+        what: "duplicate",
+      }),
+    );
+    const copy = tourStories(frameOf(after, "story2"))[0]!;
+    expect(copy.children[0]).toMatchObject({
+      id: "ask2",
+      options: [{ goto: "line2" }, { id: "no" }],
+    });
+    readBack(after);
+  });
+
+  it("copies a story station's story and blocks under new ids, and refuses a taken id or a child left without one", () => {
     const state = open();
     const after = reduce(
       state,
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: { look: "look2" },
+        newItemIds: STORY_COPY_IDS,
         createdAtIso: "2026-10-22T00:00:00.000Z",
         what: "duplicate",
       }),
     );
     expect(frameOf(after, "story2")).toMatchObject({
       title: "The story copy",
-      steps: frameOf(state, "story").steps.map((step) =>
-        step.action.kind === "show"
-          ? { ...step, action: { kind: "show", block: "look2" } }
-          : step,
-      ),
-      blocks: [{ ...frameOf(state, "story").blocks[0], id: "look2" }],
+      children: [
+        {
+          id: "story-story2",
+          children: [
+            {
+              ...tourStationStoryBlocks(frameOf(state, "story"))[0],
+              id: "look2",
+            },
+            { id: "q2", kind: "quiz" },
+          ],
+        },
+      ],
     });
-    expect(frameOf(after, "story").blocks.map((b) => b.id)).toEqual(["look"]);
+    expect(stationBlocks(frameOf(after, "story")).map((b) => b.id)).toEqual([
+      "look",
+    ]);
     readBack(after);
     for (const bad of [
       { newStationId: "story3", newItemIds: {} },
-      { newStationId: "story4", newItemIds: { look: "a" } },
-      { newStationId: "story5", newItemIds: { look: "img1" } },
+      { newStationId: "story6", newItemIds: { look: "look2" } },
+      {
+        newStationId: "story4",
+        newItemIds: { ...STORY_COPY_IDS, look: "a" },
+      },
+      {
+        newStationId: "story5",
+        newItemIds: { ...STORY_COPY_IDS, look: "img1" },
+      },
     ]) {
       expect(
         reduce(
@@ -979,7 +1056,7 @@ describe("stationDuplicated, the copy's title and card image", () => {
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: { look: "look2" },
+        newItemIds: STORY_COPY_IDS,
         createdAtIso: "2026-10-22T00:00:00.000Z",
         what: "duplicate",
       }),

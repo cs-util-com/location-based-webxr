@@ -104,7 +104,7 @@ describe("the visitor's overlay and the tour's blocks", () => {
   // across the tour), so the sheet reads every station's blocks.
   it("maps every station's blocks by id, none without a tour", () => {
     expect(tourBlocksById(null).size).toBe(0);
-    const station = (id: string, blocks: TourBlock[]) => ({ id, blocks });
+    const station = (id: string, children: TourBlock[]) => ({ id, children });
     const map = tourBlocksById({
       stations: [station("a", [pin("x", "X.")]), station("b", [pin("y")])],
     });

@@ -32,7 +32,11 @@ import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
-import { stationContent, storyOf } from "../../test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "../../test-support/station-content.js";
 
 /** How often the tour to write is rebuilt (`manifestToWrite`): the
  *  readout's tick must not pay for it with nothing to show. */
@@ -955,7 +959,7 @@ function withModel(
                 ],
               },
             ]),
-          } as unknown as TourStation,
+          },
         ],
       },
     }),
@@ -1113,7 +1117,7 @@ describe("a story character's chips", () => {
           },
         ]),
       ]),
-    } as unknown as TourStation;
+    };
     set.store.dispatch(
       tourDocumentActions.opened({
         manifest: {
@@ -1314,7 +1318,7 @@ describe("a save while typing", () => {
                   pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
                 },
               ]),
-            } as unknown as TourStation,
+            },
           ],
         },
       }),
@@ -1364,7 +1368,7 @@ describe("the long text's preview", () => {
                 essay("stand", "lectern"),
                 essay("card", "card"),
               ]),
-            } as unknown as TourStation,
+            },
           ],
         },
       }),
@@ -1421,12 +1425,12 @@ describe("the bottom panel", () => {
               ...far,
               ...stationContent([
                 {
-                  ...(far.blocks[0] as object),
+                  ...(stationBlocks(far)[0] as object),
                   id: "far",
                   pose: { position: [40, 1.5, 0], rotation: [0, 0, 0, 1] },
                 } as unknown as TourBlock,
               ]),
-            } as unknown as TourStation,
+            },
           ],
         },
       }),

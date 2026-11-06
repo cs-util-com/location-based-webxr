@@ -88,7 +88,7 @@ describe("moveStationsWithCode (D17)", () => {
     expect(out.moved).toEqual(["near"]);
     const [moved] = out.stations;
     // The very same items: nothing of them was rewritten.
-    expect(moved!.blocks).toBe(near.blocks);
+    expect(moved!.children).toBe(near.children);
     expect(moved!.geo).toEqual(moveWithCode(near.geo, code, improved));
     expect({ ...moved, geo: near.geo }).toEqual(near);
     // Every item stands where the code's correction puts it.

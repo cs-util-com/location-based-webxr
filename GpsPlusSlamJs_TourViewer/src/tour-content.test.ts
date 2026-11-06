@@ -47,6 +47,7 @@ import {
   editedBlocks,
   stationContent,
   storyOf,
+  stationBlocks,
 } from "./test-support/station-content.js";
 
 // The core's geodesy runs only under an activated licence.
@@ -95,7 +96,7 @@ function pin(id: string, n: number, e: number, label = id): TourPin {
 }
 
 function tour(stations: TourStation[]): TourManifest {
-  return { version: 4, minor: 0, order: "fixed", assets: [], stations };
+  return { version: 5, minor: 0, order: "fixed", assets: [], stations };
 }
 
 /** `object` naming the station `id`, as the tour document seats it. */
@@ -127,9 +128,9 @@ describe("withTourContent", () => {
     const next = withTourContent(base, {
       objects: [withCaption(a!, "renamed"), moved],
     });
-    const items = next.stations[0]!.blocks;
+    const items = stationBlocks(next.stations[0]!);
     expect(items[0]).toMatchObject({ caption: "renamed" });
-    expect(items[0]!.pose).toBe(base.stations[0]!.blocks[0]!.pose);
+    expect(items[0]!.pose).toBe(stationBlocks(base.stations[0]!)[0]!.pose);
     expect(items[1]!.pose).toEqual(
       localPoseOf(moved.geo, base.stations[0]!.geo),
     );
@@ -151,12 +152,12 @@ describe("withTourContent", () => {
         ],
       },
     );
-    expect(next.stations.map((s) => [s.id, s.blocks.map((i) => i.id)])).toEqual(
-      [
-        ["gate", ["near-well"]],
-        ["well", ["lone"]],
-      ],
-    );
+    expect(
+      next.stations.map((s) => [s.id, stationBlocks(s).map((i) => i.id)]),
+    ).toEqual([
+      ["gate", ["near-well"]],
+      ["well", ["lone"]],
+    ]);
   });
 
   it("an object keeps the station the tour holds it in when it names none", () => {
@@ -165,7 +166,7 @@ describe("withTourContent", () => {
     });
     const { station: _station, ...unnamed } = tourObjects(base)[0]!;
     const next = withTourContent(base, { objects: [unnamed] });
-    expect(next.stations[0]!.blocks.map((i) => i.id)).toEqual(["a"]);
+    expect(stationBlocks(next.stations[0]!).map((i) => i.id)).toEqual(["a"]);
   });
 
   // Why this test matters: an object that reaches the writer in no station
@@ -205,9 +206,9 @@ describe("withTourContent", () => {
     const next = withTourContent(base, {
       objects: tourObjects(base).filter((o) => o.id !== "a"),
     });
-    expect(next.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
-      ["b"],
-    ]);
+    expect(next.stations.map((s) => stationBlocks(s).map((i) => i.id))).toEqual(
+      [["b"]],
+    );
   });
 
   it("a station emptied by this write goes when it carries nothing else; a titled or storied one stays", () => {

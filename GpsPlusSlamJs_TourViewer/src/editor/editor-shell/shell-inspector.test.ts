@@ -1057,7 +1057,7 @@ describe("drawInspector", () => {
             ]),
           }
         : s,
-    ) as unknown as TourStation[];
+    );
     drawInspector(
       dock,
       buildInspector({

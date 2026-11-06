@@ -162,11 +162,6 @@ function passByRate(
 const JUDGED_RAW_ACCURACIES = [3, 5, 8, 12, 20, 25, 30, 40, 60, 100, 200, 500];
 const JUDGED_RADII = [5, STATION_RADIUS_M];
 const CODE_ACCURACIES = [1, 3, 5];
-const JUDGED_STEP = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 function judgedStation(foundRadiusM: number): TourStation {
   return {

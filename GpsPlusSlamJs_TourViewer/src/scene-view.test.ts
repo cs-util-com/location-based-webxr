@@ -3,8 +3,11 @@ import type {
   TourAsset,
   TourBlock,
   TourStation,
-  TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  type TourStepAdvance,
+  type TourStoryChild,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import { createSceneView, type SceneViewDom } from "./scene-view";
@@ -70,44 +73,43 @@ type BlockFields = TourBlock extends infer B
     : never
   : never;
 
-/** Every block a step of these tests shows, by its id: `station` holds
- *  the ones its steps show. */
-const shownBlocks = new Map<string, TourBlock>();
+/** A story child as these tests write it: a spread of a block union with
+ *  another `advance` loses its kind for the compiler, not for the view. */
+type Step = { readonly id: string; readonly [field: string]: unknown };
 
 /** A tap step showing a new block of `fields`. */
-function showing(id: string, fields: BlockFields): TourStep {
-  const blockId = `${id}-${String(shownBlocks.size)}`;
-  shownBlocks.set(blockId, {
-    ...fields,
-    id: blockId,
-    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-  });
+function showing(id: string, fields: BlockFields): Step {
   return {
+    ...fields,
     id,
-    action: { kind: "show", block: blockId },
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     advance: { mode: "tap" },
   };
 }
 
 /** A tap step showing a text in the scene card. */
-const tap = (id: string, text: string): TourStep =>
+const tap = (id: string, text: string): Step =>
   showing(id, { kind: "longText", view: "card", title: id, body: text });
 
-function station(id: string, steps: TourStep[], title?: string): TourStation {
-  const blocks = steps.flatMap((s) => {
-    const block =
-      s.action.kind === "show" ? shownBlocks.get(s.action.block) : undefined;
-    return block === undefined ? [] : [block];
-  });
+function station(id: string, steps: Step[], title?: string): TourStation {
   return {
     id,
     ...(title === undefined ? {} : { title }),
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks,
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps,
+    children:
+      steps.length === 0
+        ? []
+        : [
+            {
+              id: `${id}-story`,
+              kind: "story",
+              title: "A story",
+              children: steps as unknown as TourStoryChild[],
+            },
+          ],
   };
 }
 
@@ -753,15 +755,12 @@ describe("createSceneView", () => {
       station("s", [
         {
           id: "c",
-          action: {
-            kind: "choice",
-            prompt: "Enter?",
-            options: [
-              { id: "y", label: "Yes", goto: "in" },
-              { id: "n", label: "No", goto: "out" },
-            ],
-          },
-          advance: { mode: "tap" },
+          kind: "choice",
+          prompt: "Enter?",
+          options: [
+            { id: "y", label: "Yes", goto: "in" },
+            { id: "n", label: "No", goto: "out" },
+          ],
         },
         tap("in", "Inside"),
         tap("out", "Outside"),
@@ -1026,8 +1025,7 @@ describe("a story's world blocks (B2b)", () => {
       asset: "arch",
       sizeM: 2,
     });
-    const blockOf = (step: TourStep) =>
-      step.action.kind === "show" ? step.action.block : "";
+    const blockOf = (step: Step) => step.id;
     h.view.offer(
       station("s", [
         sign,
@@ -1035,15 +1033,12 @@ describe("a story's world blocks (B2b)", () => {
         figure,
         {
           id: "c",
-          action: {
-            kind: "choice",
-            prompt: "Which?",
-            options: [
-              { id: "p", label: "Picture", goto: "plane" },
-              { id: "m", label: "Model", goto: "arch" },
-            ],
-          },
-          advance: { mode: "tap" },
+          kind: "choice",
+          prompt: "Which?",
+          options: [
+            { id: "p", label: "Picture", goto: "plane" },
+            { id: "m", label: "Model", goto: "arch" },
+          ],
         },
         plane,
         arch,
@@ -1135,12 +1130,9 @@ describe("the story card's dots and its redraw", () => {
         tap("a", "One"),
         {
           id: "c",
-          action: {
-            kind: "choice",
-            prompt: "Which?",
-            options: [{ id: "x", label: "X", goto: "a" }],
-          },
-          advance: { mode: "tap" },
+          kind: "choice",
+          prompt: "Which?",
+          options: [{ id: "x", label: "X", goto: "a" }],
         },
       ]),
     );
@@ -1175,9 +1167,9 @@ describe("a character's story views and the advance when the line ends", () => {
       | "portrait"
       | "popup"
       | "card",
-    advance: TourStep["advance"],
+    advance: TourStepAdvance,
     voice = true,
-  ): TourStep {
+  ): Step {
     return {
       ...showing(id, {
         kind: "character",
@@ -1764,7 +1756,7 @@ describe("a character's story views and the advance when the line ends", () => {
 });
 
 describe("a lineEnd step on a video", () => {
-  function clip(advance: TourStep["advance"]): TourStep {
+  function clip(advance: TourStepAdvance): Step {
     return {
       ...showing("v", {
         kind: "video",

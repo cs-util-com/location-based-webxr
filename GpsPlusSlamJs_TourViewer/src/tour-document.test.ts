@@ -50,7 +50,11 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import { stationIdOf, tourOf, withCaption } from "./test-support/tour-of.js";
-import { stationContent, storyOf } from "./test-support/station-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 function pin(id: string, label = `pin ${id}`, lat = 48.52): TourPin {
   return {
@@ -340,7 +344,7 @@ describe("tour document: a station's frame (D17)", () => {
     const written = manifestToWrite(state)!;
     const moved = written.stations.find((s) => s.id === station)!;
     expect(moved.geo.lat).toBeCloseTo(was.geo.lat + 0.0001, 12);
-    expect(moved.blocks[0]!.pose).toEqual(was.blocks[0]!.pose);
+    expect(stationBlocks(moved)[0]!.pose).toEqual(stationBlocks(was)[0]!.pose);
     state = reduce(state, act.undone());
     expect(state.stations).toEqual(framesOf(OPENED));
     expect(changeCount(state)).toBe(0);
@@ -412,8 +416,8 @@ describe("tour document: a station's frame (D17)", () => {
     expect(state.stations).toEqual(framesOf(OPENED));
     const written = manifestToWrite(state)!;
     expect(
-      written.stations.find((s) => s.id === station)!.blocks[0]!.pose,
-    ).toEqual(was.blocks[0]!.pose);
+      stationBlocks(written.stations.find((s) => s.id === station)!)[0]!.pose,
+    ).toEqual(stationBlocks(was)[0]!.pose);
   });
 
   it("refuses nothing for an unknown station, and changes nothing", () => {
@@ -584,7 +588,7 @@ function stationAt(
 /** A tour of `stations` (no objects yet): one pin each keeps them from
  *  being automatic empties nobody placed into. */
 function tourWith(...stations: TourStation[]): TourDocumentState {
-  return open({ version: 4, minor: 0, order: "fixed", assets: [], stations });
+  return open({ version: 5, minor: 0, order: "fixed", assets: [], stations });
 }
 
 function pinAt(id: string, geo: TourObject["geo"]): TourPin {
@@ -690,7 +694,7 @@ describe("tour document: every object belongs to a station", () => {
     ]);
     expect(stationOf(state, "p")).toBe("fresh");
     const written = manifestToWrite(state)!;
-    expect(written.stations[1]!.blocks.map((i) => i.id)).toEqual(["p"]);
+    expect(stationBlocks(written.stations[1]!).map((i) => i.id)).toEqual(["p"]);
   });
 
   it("'New station here' starts its own station even within another's radius", () => {
@@ -1660,14 +1664,16 @@ describe("tour document: a placed 3D model rides along unchanged", () => {
       }),
     );
     const written = manifestToWrite(state)!;
-    const item = written.stations.find((s) => s.id === station)!.blocks[0]!;
-    expect(item).toEqual(was.blocks[0]);
-    // The file the save writes carries it in format 4.0, readable again.
+    const item = stationBlocks(
+      written.stations.find((s) => s.id === station)!,
+    )[0]!;
+    expect(item).toEqual(stationBlocks(was)[0]);
+    // The file the save writes carries it in format 5.0, readable again.
     const json = JSON.parse(serializeTourManifest(written)) as {
       version: number;
       minor: number;
     };
-    expect([json.version, json.minor]).toEqual([4, 0]);
+    expect([json.version, json.minor]).toEqual([5, 0]);
     const saved = save(state);
     expect(objectOf(saved, "m")).toMatchObject({
       kind: "model",

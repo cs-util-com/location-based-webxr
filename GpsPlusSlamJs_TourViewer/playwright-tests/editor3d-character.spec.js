@@ -23,6 +23,7 @@ import {
   openZip,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
+import { stationBlocks, storyOf, told } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: a character of a station's story is set in the
@@ -49,7 +50,6 @@ const N_M = 45.68;
 async function characterTour() {
   const manifest = {
     ...createEmptyTourManifest(),
-    minor: 2,
     title: "Wendel's gate",
     tourId: "0123456789abcdef0123456789abcdef",
     assets: [
@@ -75,24 +75,19 @@ async function characterTour() {
         activateRadiusM: 50,
         foundRadiusM: 25,
         hint: "arrow",
-        blocks: [
-          {
-            id: "w1",
-            kind: "character",
-            view: "speak",
-            character: "wendel",
-            name: "Wendel",
-            image: "wendel",
-            caption: "Good day, traveller!",
-            pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
-          },
-        ],
-        steps: [
-          {
-            id: "s1",
-            action: { kind: "show", block: "w1" },
-            advance: { mode: "tap" },
-          },
+        children: [
+          storyOf("wendel-story", [
+            told({
+              id: "w1",
+              kind: "character",
+              view: "speak",
+              character: "wendel",
+              name: "Wendel",
+              image: "wendel",
+              caption: "Good day, traveller!",
+              pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+            }),
+          ]),
         ],
       },
     ],
@@ -209,7 +204,7 @@ test("a story character's view, advance and facing set in the station's inspecto
   // The view: one step, the chip pressed after the inspector's draw.
   await chip(page, "character-view:w1:two-stations").click();
   await expect
-    .poll(async () => (await gateNow(page)).blocks[0].view)
+    .poll(async () => stationBlocks(await gateNow(page))[0].view)
     .toBe("two-stations");
   expect(await revision(page)).toBe(start + 1);
   await expect(chip(page, "character-view:w1:two-stations")).toHaveAttribute(
@@ -223,7 +218,7 @@ test("a story character's view, advance and facing set in the station's inspecto
   // How his step moves on.
   await chip(page, "character-advance:w1:lineEnd").click();
   await expect
-    .poll(async () => (await gateNow(page)).steps[0].advance)
+    .poll(async () => stationBlocks(await gateNow(page))[0].advance)
     .toEqual({ mode: "lineEnd" });
   expect(await revision(page)).toBe(start + 2);
 
@@ -240,7 +235,9 @@ test("a story character's view, advance and facing set in the station's inspecto
   await expect(
     wendel(page).locator('[data-field="character-facing:w1"]'),
   ).toHaveValue("90");
-  expect((await gateNow(page)).steps[0].advance).toEqual({ mode: "lineEnd" });
+  expect(stationBlocks(await gateNow(page))[0].advance).toEqual({
+    mode: "lineEnd",
+  });
   await page.locator("#studio-redo").click();
   await expect(
     wendel(page).locator('[data-field="character-facing:w1"]'),
@@ -253,7 +250,7 @@ test("a story character's view, advance and facing set in the station's inspecto
   const { readFileSync } = await import("node:fs");
   const zip = readFileSync(saved);
   const gate = (await savedTour(zip)).stations[0];
-  expect(gate.blocks[0]).toMatchObject({
+  expect(stationBlocks(gate)[0]).toMatchObject({
     id: "w1",
     view: "two-stations",
     character: "wendel",
@@ -263,12 +260,12 @@ test("a story character's view, advance and facing set in the station's inspecto
   // turn's SIGN included - north is the opposite quarter turn, whose
   // components have the same sizes. Read as y*w, which a quaternion's
   // other sign (-q, the same turn) leaves alone: -1/2 south, +1/2 north.
-  const [x, y, z, w] = gate.blocks[0].pose.rotation;
+  const [x, y, z, w] = stationBlocks(gate)[0].pose.rotation;
   expect([x, z]).toEqual([0, 0]);
   expect(Math.abs(y)).toBeCloseTo(Math.SQRT1_2, 6);
   expect(Math.abs(w)).toBeCloseTo(Math.SQRT1_2, 6);
   expect(y * w).toBeCloseTo(-0.5, 6);
-  expect(gate.steps[0].advance).toEqual({ mode: "lineEnd" });
+  expect(stationBlocks(gate)[0].advance).toEqual({ mode: "lineEnd" });
 
   const next = await context.newPage();
   await openAndSelect(next, zip);

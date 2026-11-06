@@ -18,14 +18,18 @@ import type {
   TourAsset,
   TourBlock,
   TourStation,
-  TourStep,
-  TourStepAction,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  isTourStoryBlock,
+  type TourStoryBlock,
+  type TourStoryChild,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
   createScenePlayer,
   isPlayableInK4,
   playableStepCount,
+  playedStory,
   type ScenePlayer,
 } from "./scene-player.js";
 import {
@@ -126,7 +130,7 @@ export interface SceneViewDeps {
   readonly dom: SceneViewDom;
   /** The tour's media by asset id (`content/<id>.<ext>`). */
   readonly assets: ReadonlyMap<string, TourAsset>;
-  /** The tour's declared characters by id (minor 2): a story view of one
+  /** The tour's declared characters by id: a story view of one
    *  with a frames sheet stands from the sheet. None when absent. */
   readonly characters?: ReadonlyMap<string, TourCharacter>;
   loadAsset(path: string): Promise<Blob>;
@@ -208,6 +212,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   const { dom } = deps;
   let story: {
     station: TourStation;
+    children: readonly TourStoryChild[];
     player: ScenePlayer;
     count: number | null;
   } | null = null;
@@ -450,7 +455,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** A `lineEnd` step's wait changed (its voice ended or was lost). */
   function rearmLineEnd(): void {
     const step = story?.player.current() ?? null;
-    if (step === null || step.advance.mode !== "lineEnd") return;
+    if (
+      step === null ||
+      !isTourStoryBlock(step) ||
+      step.advance.mode !== "lineEnd"
+    ) {
+      return;
+    }
     cancelTimer?.();
     cancelTimer = null;
     armTimer(step);
@@ -478,8 +489,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     portrait.hidden = false;
   }
 
-  /** Show one `show` step's block, as the step kinds of earlier versions
-   *  showed it: its words at once, its media as they load. A `stage`
+  /** Show one story block: its words at once, its media as they load. A `stage`
    *  figure or model stands at the station (with its voice); every other view shows in
    *  the card; a world view (pin, plane, placed model) also stands in the
    *  station's world from this step on (`onBlockShown`, B2b). */
@@ -521,7 +531,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       }
       case "character": {
         dom.text.textContent = block.caption;
-        // A story view (format 4.2) stands as a character look; `stage`
+        // A story view stands as a character look; `stage`
         // as the plain cut-out; `card` only in the card.
         const view = block.view;
         const look = isStageCharacterView(view)
@@ -577,7 +587,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         }
         // A story view's voice plays on a tap on him (the prototype's
         // rule; `characterTapped`), the bubble view's never; the stage
-        // and card views play it with the step, as 4.0 did.
+        // and card views play it with the step.
         if (look !== undefined) {
           tapTarget = { view: look.view, voice: block.voice };
         } else {
@@ -675,63 +685,49 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     }
   }
 
-  /** Show one step's action: a block, or a choice's buttons. */
-  function showAction(station: TourStation, action: TourStepAction): void {
-    switch (action.kind) {
-      case "show": {
-        const block = station.blocks.find((b) => b.id === action.block);
-        // The reader resolved every `show`: none names a missing block.
-        if (block !== undefined) showBlock(station, block);
-        return;
-      }
-      case "choice":
-        dom.text.textContent = action.prompt;
-        dom.choices.replaceChildren(
-          ...action.options.map((option) =>
-            deps.createChoiceButton(option.label, () => {
-              if (story !== null) render(story.player.choose(option.id));
-            }),
-          ),
-        );
-        return;
-      case "quiz":
-        // Unreachable: the player skips quizzes until K5.
-        return;
+  /** Show one child of the story: a block, or a choice's buttons. The
+   *  player skips quizzes until K5. */
+  function showChild(station: TourStation, child: TourStoryChild): void {
+    if (isTourStoryBlock(child)) {
+      showBlock(station, child);
+      return;
     }
+    if (child.kind !== "choice") return;
+    dom.text.textContent = child.prompt;
+    dom.choices.replaceChildren(
+      ...child.options.map((option) =>
+        deps.createChoiceButton(option.label, () => {
+          if (story !== null) render(story.player.choose(option.id));
+        }),
+      ),
+    );
   }
 
-  /** The block a step shows, or null for a choice or a quiz. */
-  function shownBlock(station: TourStation, step: TourStep): TourBlock | null {
-    const { action } = step;
-    if (action.kind !== "show") return null;
-    return station.blocks.find((b) => b.id === action.block) ?? null;
-  }
-
-  function render(step: TourStep | null): void {
+  function render(step: TourStoryChild | null): void {
     releaseStep();
     if (story === null) return;
     if (step === null) {
       endStory();
       return;
     }
-    const block = shownBlock(story.station, step);
+    const block = isTourStoryBlock(step) ? step : null;
     dom.speaker.hidden = block?.kind !== "character";
     dom.speaker.textContent = block?.kind === "character" ? block.name : "";
-    dom.continueButton.hidden = step.action.kind === "choice";
-    const reached = worldBlockReachedBy(story.station, step);
+    dom.continueButton.hidden = step.kind === "choice";
+    const reached = worldBlockReachedBy(step);
     if (reached !== null) deps.onBlockShown?.(story.station.id, reached.id);
-    showAction(story.station, step.action);
+    showChild(story.station, step);
     armTimer(step);
     deps.onChange?.();
   }
 
   /** An auto step's timer, from its full length; a `lineEnd` step's
    *  once its voice is out of the way (`lineEndMs`); none while held. */
-  function armTimer(step: TourStep): void {
+  function armTimer(step: TourStoryChild): void {
     // One timer: a voice lost while its step renders arms it early.
     cancelTimer?.();
     cancelTimer = null;
-    if (held || step.action.kind === "choice") return;
+    if (held || !isTourStoryBlock(step)) return;
     const ms = timerMs(step);
     if (ms === null) return;
     cancelTimer = deps.schedule(() => {
@@ -742,7 +738,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   /** The step's own timer (ms), or null for none (a tap step, a voice
    *  still playing). */
-  function timerMs(step: TourStep): number | null {
+  function timerMs(step: TourStoryBlock): number | null {
     switch (step.advance.mode) {
       case "auto":
         return step.advance.afterS * 1000;
@@ -757,10 +753,12 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     held = false;
     sheetFailure = null;
     clearStage();
+    const children = playedStory(station)?.children ?? [];
     story = {
       station,
-      player: createScenePlayer(station.steps),
-      count: playableStepCount(station.steps),
+      children,
+      player: createScenePlayer(children),
+      count: playableStepCount(children),
     };
     dom.panel.hidden = false;
     dom.title.textContent = stationTitle(station);
@@ -938,11 +936,11 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     progress() {
       const step = story?.player.current() ?? null;
       if (story === null || story.count === null || step === null) return null;
-      const playable = story.station.steps.filter(isPlayableInK4);
+      const playable = story.children.filter(isPlayableInK4);
       return {
         index: playable.indexOf(step),
         count: story.count,
-        autoMs: held ? null : timerMs(step),
+        autoMs: held || !isTourStoryBlock(step) ? null : timerMs(step),
       };
     },
     holdStep(hold) {

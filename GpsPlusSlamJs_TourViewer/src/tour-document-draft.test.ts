@@ -452,6 +452,26 @@ describe("followDocument, the stations this page created", () => {
     });
   });
 
+  // Why: `children` is required, so a frame an older format wrote is
+  // dropped. Read as a station with no children, it would empty a station
+  // when the record is restored.
+  it("drops a frame of the older shape, never reading it as empty", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    const { children: _children, ...frame } = record.createdStations![0]!;
+    expect(
+      parseSettingsRecord(
+        JSON.stringify({
+          ...record,
+          createdStations: [{ ...frame, blocks: [], steps: [] }],
+        }),
+      ),
+    ).toEqual({ needsNoGps: false });
+  });
+
   it("a record whose created frames do not read keeps the rest", () => {
     const started = writesFor(
       opened,

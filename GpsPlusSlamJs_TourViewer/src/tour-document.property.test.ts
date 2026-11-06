@@ -8,6 +8,7 @@
  * rebuild writes into the zip.
  */
 
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
@@ -43,7 +44,10 @@ import {
   settingsRecord,
   settingsRecordText,
 } from "./tour-document-draft.js";
-import { stationContent } from "./test-support/station-content.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 function pin(id: string, lat: number): TourPin {
   return {
@@ -1121,7 +1125,7 @@ function emptyAutomatic(state: TourDocumentState): string[] {
       (s) =>
         !named.has(s.id) &&
         (s.title ?? "").trim() === "" &&
-        s.steps.length === 0 &&
+        tourStories(s).length === 0 &&
         (s.description ?? "").trim() === "" &&
         !(s.image !== undefined && imageAssets.has(s.image)),
     )
@@ -1167,7 +1171,7 @@ function openedWithKeepers(keepers: readonly string[]): TourDocumentState {
       const keeper = keepers[i];
       if (keeper === "description") return { ...s, description: "Kept." };
       if (keeper === "asset") return { ...s, image: "art" };
-      if (keeper === "own") return { ...s, image: s.blocks[0]!.id };
+      if (keeper === "own") return { ...s, image: stationBlocks(s)[0]!.id };
       return s;
     }),
   };
@@ -1333,7 +1337,7 @@ describe("tour document (properties): every object belongs to a station", () => 
         km,
         (radius, n1, e1, n2, e2) => {
           const manifest: TourManifest = {
-            version: 4,
+            version: 5,
             minor: 0,
             order: "fixed",
             assets: [],

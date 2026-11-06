@@ -4,19 +4,20 @@
  * stories; a story holds its blocks, choices and quizzes in the order a
  * visitor meets them, so being in a story is what shows a block.
  *
- * This is the only file that knows how that list is stored on a station,
- * and `stationBlocks` the only one that reads it back.
+ * `stationBlocks` reads every block of a station back, wherever it sits.
  */
 
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type {
-  TourChoice,
-  TourQuizEntry,
-  TourStationChild,
-  TourStepAdvance,
-  TourStory,
-  TourStoryBlock,
+import {
+  isTourStory,
+  isTourStoryBlock,
+  tourStationBlocks,
+  type TourChoice,
+  type TourQuizEntry,
+  type TourStationChild,
+  type TourStepAdvance,
+  type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 /** A story's child as a test writes it: a block's advance is a tap unless
@@ -43,9 +44,7 @@ export function storyOf(
     kind: "story",
     title,
     children: children.map((child): TourStory["children"][number] =>
-      isChoiceOrQuiz(child)
-        ? child
-        : ({ advance: { mode: "tap" }, ...child } as TourStoryBlock),
+      isChoiceOrQuiz(child) ? child : { advance: { mode: "tap" }, ...child },
     ),
   };
 }
@@ -64,57 +63,46 @@ export function playableStory(id: string): TourStory {
   ]);
 }
 
-const isStory = (child: TourStationChild): child is TourStory =>
-  child.kind === "story";
-
 /** The fields of a station holding `children`. */
 export function stationContent(
   children: readonly TourStationChild[],
-): Pick<TourStation, "blocks" | "steps"> {
-  const stories = children.filter(isStory);
-  if (stories.length > 1) throw new Error("this version plays one story");
-  const blocks: TourBlock[] = [];
-  const steps: TourStation["steps"][number][] = [];
-  for (const child of children) {
-    if (!isStory(child)) blocks.push(child);
-  }
-  for (const child of stories[0]?.children ?? []) {
-    if (child.kind === "choice" || child.kind === "quiz") {
-      const { id, ...action } = child;
-      steps.push({ id, action, advance: { mode: "tap" } });
-    } else {
-      const { advance, ...block } = child;
-      blocks.push(block as TourBlock);
-      steps.push({
-        id: block.id,
-        action: { kind: "show", block: block.id },
-        advance,
-      });
-    }
-  }
-  return { blocks, steps };
+): Pick<TourStation, "children"> {
+  return { children };
 }
 
 /** The content of `station` with `edit` applied to every block, free and in
  *  stories, keeping where each one sits. */
 export function editedBlocks(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
   edit: (block: TourBlock) => TourBlock,
-): Pick<TourStation, "blocks" | "steps"> {
-  return { blocks: station.blocks.map(edit), steps: station.steps };
+): Pick<TourStation, "children"> {
+  return {
+    children: station.children.map((child) =>
+      isTourStory(child)
+        ? {
+            ...child,
+            children: child.children.map((kid) =>
+              isTourStoryBlock(kid)
+                ? { ...edit(kid), advance: kid.advance }
+                : kid,
+            ),
+          }
+        : edit(child),
+    ),
+  };
 }
 
 /** The content of `station` with `blocks` added as free blocks. */
 export function withFreeBlocks(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
   blocks: readonly TourBlock[],
-): Pick<TourStation, "blocks" | "steps"> {
-  return { blocks: [...station.blocks, ...blocks], steps: station.steps };
+): Pick<TourStation, "children"> {
+  return { children: [...station.children, ...blocks] };
 }
 
 /** Every block of `station`, free and in stories. */
-export function stationBlocks(station: {
-  readonly blocks: readonly TourBlock[];
-}): readonly TourBlock[] {
-  return station.blocks;
+export function stationBlocks(
+  station: Pick<TourStation, "children">,
+): readonly TourBlock[] {
+  return tourStationBlocks(station);
 }

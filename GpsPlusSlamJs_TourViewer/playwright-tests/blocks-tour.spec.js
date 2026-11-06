@@ -168,7 +168,7 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
   );
   const saved = await savedTour(page);
 
-  expect(saved.json).toMatchObject({ version: 4, minor: 0 });
+  expect(saved.json).toMatchObject({ version: 5, minor: 0 });
   const byId = Object.fromEntries(
     saved.world.objects.map((/** @type {any} */ o) => [o.id, o]),
   );
@@ -194,17 +194,19 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
     asset: "arch",
     sizeM: 2,
   });
-  // The story stays as it was: its blocks and the steps that show them.
+  // The story stays as it was: its blocks and its choice, in their order.
   const gate = saved.json.stations.find(
     (/** @type {any} */ s) => s.id === "gate",
   );
-  expect(gate.steps.map((/** @type {any} */ s) => s.id)).toEqual([
-    "knight",
+  const story = gate.children.find(
+    (/** @type {any} */ c) => c.kind === "story",
+  );
+  expect(story.children.map((/** @type {any} */ c) => c.id)).toEqual([
+    "sir-kay",
     "ask",
-    "farewell",
-    "welcome",
+    "farewell-text",
+    "welcome-text",
   ]);
-  expect(gate.blocks.map((/** @type {any} */ b) => b.id)).toContain("sir-kay");
   // Every asset the blocks name is listed, and its file rides along.
   expect(saved.json.assets.map((/** @type {any} */ a) => a.id).sort()).toEqual([
     "arch",

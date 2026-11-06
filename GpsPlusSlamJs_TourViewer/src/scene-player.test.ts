@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type { TourStep } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourChoice,
+  TourQuizEntry,
+  TourStoryChild,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
   createScenePlayer,
   isPlayableInK4,
   playableStepCount,
+  playedStory,
 } from "./scene-player";
+import { playableStory, storyOf } from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the scene player is the castle knight's whole
@@ -16,38 +22,52 @@ import {
  * each break the story in front of the visitor.
  */
 
-const text = (id: string, auto?: number): TourStep => ({
+const text = (id: string, auto?: number): TourStoryChild => ({
   id,
-  action: { kind: "show", block: `b-${id}` },
+  kind: "shortText",
+  view: "card",
+  caption: id,
+  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
   advance:
     auto === undefined ? { mode: "tap" } : { mode: "auto", afterS: auto },
 });
 const choice = (
   id: string,
   options: [string, string | undefined][],
-): TourStep => ({
+): TourChoice => ({
   id,
-  action: {
-    kind: "choice",
-    prompt: "Which way?",
-    options: options.map(([oid, go]) =>
-      go === undefined
-        ? { id: oid, label: oid }
-        : { id: oid, label: oid, goto: go },
-    ),
-  },
-  advance: { mode: "tap" },
+  kind: "choice",
+  prompt: "Which way?",
+  options: options.map(([oid, go]) =>
+    go === undefined
+      ? { id: oid, label: oid }
+      : { id: oid, label: oid, goto: go },
+  ),
 });
-const quiz: TourStep = {
+const quiz: TourQuizEntry = {
   id: "q",
-  action: {
-    kind: "quiz",
-    question: "How old?",
-    points: 1,
-    answer: { type: "number", value: 800, tolerance: 50 },
-  },
-  advance: { mode: "tap" },
+  kind: "quiz",
+  question: "How old?",
+  points: 1,
+  answer: { type: "number", value: 800, tolerance: 50 },
 };
+
+describe("playedStory", () => {
+  // Why: until a station offers its stories, a visitor plays one. A story
+  // of nothing playable must not stand in front of the one that has a
+  // scene, or a hand-made file would show him an empty panel.
+  it("is the station's first story with something to play, none without one", () => {
+    const empty = storyOf("empty", []);
+    const quizzes = storyOf("quizzes", [quiz]);
+    const told = playableStory("told");
+    const later = playableStory("later");
+    expect(playedStory({ children: [empty, quizzes, told, later] })?.id).toBe(
+      "told",
+    );
+    expect(playedStory({ children: [empty, quizzes] })).toBeNull();
+    expect(playedStory({ children: [] })).toBeNull();
+  });
+});
 
 describe("createScenePlayer", () => {
   it("plays the steps in order and ends after the last", () => {
@@ -138,7 +158,7 @@ describe("createScenePlayer", () => {
           )
             shown.push(s.id);
           const expected = steps
-            .filter((s) => s.action.kind !== "quiz")
+            .filter((s) => s.kind !== "quiz")
             .map((s) => s.id);
           expect(shown).toEqual(expected.slice(0, taps + 1));
           expect(taps + 1 < expected.length || p.ended()).toBe(true);
@@ -150,13 +170,13 @@ describe("createScenePlayer", () => {
 
 describe("createScenePlayer along any choice path (property)", () => {
   // Why this test matters: a story's choices pick the path, so the blocks
-  // a visitor sees are the ones its show steps name along the path the
-  // answers chose - in order, each show step once per visit, quizzes
-  // skipped. An independent walk over the step list (the oracle below)
+  // a visitor sees are the story's own along the path the answers chose -
+  // in order, each once per visit, quizzes skipped. An independent walk
+  // over the story's children (the oracle below)
   // must agree with the player for every scene and every answer sequence.
-  type Kind = "show" | "quiz" | "choice";
+  type Kind = "block" | "quiz" | "choice";
   const sceneArb = fc
-    .array(fc.constantFrom<Kind>("show", "quiz", "choice"), {
+    .array(fc.constantFrom<Kind>("block", "quiz", "choice"), {
       minLength: 1,
       maxLength: 8,
     })
@@ -170,9 +190,9 @@ describe("createScenePlayer along any choice path (property)", () => {
           { minLength: kinds.length, maxLength: kinds.length },
         )
         .map((gotos) =>
-          kinds.map((kind, i): TourStep => {
+          kinds.map((kind, i): TourStoryChild => {
             const id = "s" + String(i);
-            if (kind === "show") return text(id);
+            if (kind === "block") return text(id);
             if (kind === "quiz") return { ...quiz, id };
             const [a, b] = gotos[i]!;
             return choice(id, [
@@ -186,13 +206,13 @@ describe("createScenePlayer along any choice path (property)", () => {
   /** The ids the player should show for the answers in picks, at most
    *  limit moves. */
   function oracle(
-    steps: readonly TourStep[],
+    steps: readonly TourStoryChild[],
     picks: readonly boolean[],
     limit: number,
   ): string[] {
     const playableAt = (from: number): number => {
       let i = from;
-      while (i < steps.length && steps[i]!.action.kind === "quiz") i += 1;
+      while (i < steps.length && steps[i]!.kind === "quiz") i += 1;
       return i;
     };
     const seen: string[] = [];
@@ -200,11 +220,11 @@ describe("createScenePlayer along any choice path (property)", () => {
     for (let move = 0; i < steps.length && move <= limit; move += 1) {
       const step = steps[i]!;
       seen.push(step.id);
-      if (step.action.kind !== "choice") {
+      if (step.kind !== "choice") {
         i = playableAt(i + 1);
         continue;
       }
-      const option = step.action.options[picks[move % picks.length]! ? 1 : 0]!;
+      const option = step.options[picks[move % picks.length]! ? 1 : 0]!;
       i = playableAt(
         option.goto === undefined
           ? i + 1
@@ -230,7 +250,7 @@ describe("createScenePlayer along any choice path (property)", () => {
           ) {
             seen.push(s.id);
             s =
-              s.action.kind === "choice"
+              s.kind === "choice"
                 ? p.choose(picks[move % picks.length]! ? "y" : "x")
                 : p.next();
           }

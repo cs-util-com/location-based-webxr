@@ -64,7 +64,7 @@ function withPin(north: number, east = 0): TourDocumentState {
     initialTourDocumentState,
     act.opened({
       manifest: {
-        version: 4,
+        version: 5,
         minor: 0,
         order: "fixed",
         assets: [],

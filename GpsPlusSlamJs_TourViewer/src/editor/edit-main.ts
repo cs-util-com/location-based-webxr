@@ -26,6 +26,7 @@
  * @see edit-main.ts.md
  */
 
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import {
   downloadZip,
   requestPersistentStorage,
@@ -978,7 +979,10 @@ function renderTourName(): void {
 function stillInTour(id: string): boolean {
   if (model?.items.some((i) => i.id === id) === true) return true;
   const tour = manifestToWrite(store.getState().tourDocument);
-  return tour?.stations.some((s) => s.blocks.some((b) => b.id === id)) ?? false;
+  return (
+    tour?.stations.some((s) => tourStationBlocks(s).some((b) => b.id === id)) ??
+    false
+  );
 }
 
 /** After an edit: the rail, the markers, the card and the status follow. */

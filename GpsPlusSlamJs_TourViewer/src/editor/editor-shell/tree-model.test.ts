@@ -7,6 +7,7 @@
  * that station, or an image of the tour, else its first photo); and a
  * layer the view cannot show has no chip.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -30,7 +31,7 @@ const AT = "2026-10-22T10:00:00Z";
 function station(
   id: string,
   extra: Partial<TourStation> = {},
-  items: TourStation["blocks"] = [],
+  items: TourBlock[] = [],
 ): TourStation {
   return {
     id,

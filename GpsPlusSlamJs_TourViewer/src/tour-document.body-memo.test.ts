@@ -38,7 +38,7 @@ const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
 const OPENED: TourManifest = parseTourManifest({
   ...createEmptyTourManifest(),
-  minor: 2,
+  minor: 0,
   stations: [
     {
       id: "gate",

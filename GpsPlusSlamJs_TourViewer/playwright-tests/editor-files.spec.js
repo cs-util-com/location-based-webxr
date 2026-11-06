@@ -17,6 +17,7 @@ import {
   saveAndRead,
   wrappedTour,
 } from "./editor-tours.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: what the editor keeps of a creator's work - the
@@ -114,7 +115,7 @@ function captionOf(page, id) {
     // @ts-expect-error - the editor's dev-only test hook.
     const manifest = window.__tourEditor.manifest();
     const block = manifest.stations
-      .flatMap((/** @type {{ blocks: any[] }} */ s) => s.blocks)
+      .flatMap((/** @type {any} */ s) => stationBlocks(s))
       .find((/** @type {{ id: string }} */ b) => b.id === blockId);
     return block === undefined ? undefined : block.caption;
   }, id);
@@ -134,7 +135,7 @@ function placeOf(page, id) {
     // @ts-expect-error - the editor's dev-only test hook.
     const manifest = window.__tourEditor.manifest();
     for (const station of manifest.stations) {
-      const block = station.blocks.find(
+      const block = stationBlocks(station).find(
         (/** @type {{ id: string }} */ b) => b.id === blockId,
       );
       if (block !== undefined) {

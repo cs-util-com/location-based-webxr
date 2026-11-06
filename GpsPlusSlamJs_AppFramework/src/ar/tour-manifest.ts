@@ -2,21 +2,22 @@
  * The tour manifest (`tour.json`): what a creator placed in a tour, as
  * records a visitor's viewer renders.
  *
- * VERSION 4 (a MAJOR): a tour is media ASSETS (`tour-assets.ts`) and
+ * VERSION 5 (a MAJOR): a tour is media ASSETS (`tour-assets.ts`) and
  * STATIONS (`tour-stations.ts`). A station carries the exact geo pose -
  * latitude, longitude, absolute altitude and a rotation against north -
- * and its BLOCKS (`tour-blocks.ts`) carry LOCAL poses relative to it, so a
- * station moves rigidly with all it holds. A block is one thing a station
- * shows - a short text, a long text, a picture, a video, a sound, a 3D
- * model, a character - in a VIEW the creator chose; a station's STORY
- * (`tour-story.ts`) shows some of its blocks step by step, and the others
- * are FREE: they stand in the world (a pin, a picture's plane, a placed
- * model) while the station is shown. Every media file is an asset, a
- * captured photo's too (its bytes stay at `content/<id>.<ext>`), and block
- * and asset ids are separate namespaces: every reference says which kind
- * it names. `tour-station-pose.ts` converts local poses to geo poses and
- * back and gives the WORLD VIEW (`tourObjects`): every free block with its
- * geo pose, which the viewer places and a creator's drafts hold.
+ * and its CHILDREN (`tour-story.ts`): FREE blocks and STORIES. A block
+ * (`tour-blocks.ts`) is one thing a station shows - a short text, a long
+ * text, a picture, a video, a sound, a 3D model, a character - in a VIEW the
+ * creator chose, at a LOCAL pose relative to the station, so a station moves
+ * rigidly with all it holds. A free block stands in the world (a pin, a
+ * picture's plane, a placed model) while the station is shown; a story
+ * shows its own blocks one after the other, with choices and quizzes among
+ * them. Every media file is an asset, a captured photo's too (its bytes
+ * stay at `content/<id>.<ext>`), and child and asset ids are separate
+ * namespaces: every reference says which kind it names.
+ * `tour-station-pose.ts` converts local poses to geo poses and back and
+ * gives the WORLD VIEW (`tourObjects`): every free block with its geo pose,
+ * which the viewer places and a creator's drafts hold.
  *
  * Defensive by the same rule as `qr/qr-level.ts`: the file is external,
  * hand-editable data, every field is validated at the boundary, and the
@@ -24,37 +25,20 @@
  * loud here instead of producing a file a visitor cannot open.
  *
  * VERSION POLICY:
- * - `version` is the format's major number. Version 4 is the only one this
- *   reader opens. Versions 1, 2 and 3 are NOT migrated: they are refused
- *   with a message saying the tour is in an older format and has to be
- *   made again ({@link TourManifestOlderFormatError}, so a page can also
- *   remove what it kept for that tour). A version above 4 is refused with
- *   a message naming the newer format, never guessed at ("update the app").
- * - `minor` (default 0) counts ADDITIVE revisions of version 4. A reader
+ * - `version` is the format's major number. Version 5 is the only one this
+ *   reader opens. Versions 1 to 4 are NOT migrated: they are refused with a
+ *   message saying the tour is in an older format and has to be made again
+ *   ({@link TourManifestOlderFormatError}, so a page can also remove what it
+ *   kept for that tour). A version above 5 is refused with a message naming
+ *   the newer format, never guessed at ("update the app").
+ * - `minor` (default 0) counts ADDITIVE revisions of version 5. A reader
  *   opens a tour of any minor and ignores the fields it does not know -
  *   unknown fields are ignored at every minor, so a typo in a hand-edited
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
  *   version cannot read. The writer writes the LOWEST minor the tour needs
- *   (`tourBlocksMinor`), so a tour an older reader can open fully is never
- *   marked newer than it is. Minor 1 added a model's world views besides
- *   `placed` (`ghost`, `hotspots`, `cutaway`, `toy`) and its `animation`,
- *   `annotations` (notes) and `sections`. Minor 2 added the recurring
- *   character: the tour's `characters` declaration (`tour-characters.ts`),
- *   a character block's `character` reference (its inline `name` and
- *   `image` are still written, in step with the declaration, so an older
- *   reader shows him by name), his story views `bubble`, `speak`,
- *   `two-stations`, `portrait` and `popup`, and the advance mode
- *   `lineEnd` (an older reader taps on instead). Minor 3 added a long
- *   text's world view `lectern`, a reading stand at its pose (an older
- *   reader leaves a free one out and shows a story one as its card). Minor 4
- *   added a long text's world view `reading`, a short sign that opens the
- *   whole text on a tap, and made it the long text's floor view (an older
- *   reader treats it as minor 3 treated `lectern`). Minor 5 added a long
- *   text's `narration` (its voice asset, credit, `synthetic` and length)
- *   and its read-along entry `timing/<blockId>.json` (`tour-timing.ts`);
- *   an older reader shows the text and ignores the narration. A reader of
- *   this version accepts all of them in a file of any minor.
+ *   (`tourManifestMinor`), so a tour an older reader can open fully is
+ *   never marked newer than it is.
  * - A newer minor may also add VALUES to a closed list: a block kind or
  *   view, an order, an advance mode, an asset's media type. Read from a
  *   file of a newer minor, an unknown value degrades - the block or step
@@ -95,7 +79,6 @@ import {
 import {
   placeTourBlocks,
   readTourBlocks,
-  tourBlocksMinor,
   type TourBlockDrop,
   type TourLongTextBlock,
   type TourModelBlock,
@@ -117,7 +100,7 @@ import {
   type TourStation,
   type TourStationDrop,
 } from './tour-stations.js';
-import { tourStepsMinor } from './tour-story.js';
+import type { TourChildDrop } from './tour-story.js';
 
 export type { TourAsset, TourAssetKind } from './tour-assets.js';
 export type {
@@ -151,20 +134,25 @@ export type {
   TourStationDrop,
 } from './tour-stations.js';
 export type {
+  TourChildDrop,
+  TourChoice,
   TourChoiceOption,
   TourQuiz,
   TourQuizAnswer,
+  TourQuizEntry,
   TourQuizOption,
-  TourStep,
-  TourStepAction,
+  TourStationChild,
   TourStepAdvance,
+  TourStory,
+  TourStoryBlock,
+  TourStoryChild,
 } from './tour-story.js';
 
 /** The manifest's format (major) version this module reads and writes. */
-export const TOUR_MANIFEST_VERSION = 4;
+export const TOUR_MANIFEST_VERSION = 5;
 
-/** The newest additive revision of version 4 this module knows. */
-export const TOUR_MANIFEST_MINOR = 5;
+/** The newest additive revision of version 5 this module knows. */
+export const TOUR_MANIFEST_MINOR = 0;
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -197,12 +185,12 @@ export type TourModel = InWorld<TourModelBlock> & {
   readonly view: TourModelWorldView;
   readonly sizeM: number;
 };
-/** Minor 3: a long text in the world, drawn as a reading stand that
+/** A long text in the world, drawn as a reading stand that
  *  keeps its pose (it does not turn to the visitor). */
 export type TourLectern = InWorld<TourLongTextBlock> & {
   readonly view: 'lectern';
 };
-/** Minor 4: a long text in the world, drawn as a short sign that opens
+/** A long text in the world, drawn as a short sign that opens
  *  the whole text on a tap. */
 export type TourReadingSign = InWorld<TourLongTextBlock> & {
   readonly view: 'reading';
@@ -213,7 +201,7 @@ export type TourObjectKind = TourObject['kind'];
 
 /** The draft record's format: what `tourObjectRecord` writes and
  *  `parseTourObject` reads (a record of another format reads as none). */
-export const TOUR_OBJECT_RECORD_FORMAT = 4;
+export const TOUR_OBJECT_RECORD_FORMAT = 5;
 
 /**
  * A world-view object as a creator's on-device draft stores it: its block
@@ -251,10 +239,10 @@ export interface TourManifest extends TourDetails {
   order: TourOrder;
   /** Media files named by their own ids. */
   assets: TourAsset[];
-  /** Minor 2: the tour's recurring characters, which character blocks
+  /** The tour's recurring characters, which character blocks
    *  name; absent when there are none. */
   characters?: TourCharacter[];
-  /** The stations, each with its blocks and its story. */
+  /** The stations, each with its free blocks and its stories. */
   stations: TourStation[];
   /**
    * The tour's printed codes place it on their own, so a viewer never asks
@@ -267,10 +255,10 @@ export interface TourManifest extends TourDetails {
 /** What a reader left out without failing the tour: a tour detail
  *  (`tour-details.ts`), a station's description or card image
  *  (`tour-stations.ts`; the kind that carries `station`, the station's
- *  id), or a block or one of its fields (`tour-blocks.ts`; the kind that
- *  carries `block`). A drop with no `cause` is not one a writer accepts. */
+ *  id), or a child, a block's field or a way on a choice (`tour-story.ts`).
+ *  A drop with no `cause` is not one a writer accepts. */
 export type TourManifestDrop =
-  TourDetailsDrop | TourStationDrop | TourBlockDrop | TourCharacterDrop;
+  TourDetailsDrop | TourStationDrop | TourChildDrop | TourCharacterDrop;
 
 /** How a reader or writer reports what it left out. The tour's details, a
  *  station's description and card image, and a block's optional texts are
@@ -293,7 +281,7 @@ export class TourManifestValidationError extends Error {
 
 /**
  * Thrown for a tour in an older format this reader no longer opens
- * (versions 1 to 3): a page that kept something for that tour (a creator's
+ * (versions 1 to 4): a page that kept something for that tour (a creator's
  * unsaved draft) can remove it, and say so, by this type.
  */
 export class TourManifestOlderFormatError extends TourManifestValidationError {
@@ -382,8 +370,8 @@ export function parseTourObject(value: unknown, at = 'object'): TourObject {
     onDropped: (drop: TourBlockDrop) => fail(drop.reason),
   };
   const read = readTourBlocks([{ ...block, pose: IDENTITY_POSE }], at, options);
-  // Shown by no step: it must stand in the world.
-  const [placed] = placeTourBlocks(read, new Set(), options);
+  // A world object is free: it must stand in the world.
+  const [placed] = placeTourBlocks(read, options);
   if (placed === undefined) return fail(`"${at}.block" must be a block`);
   const geo = parseGeoPose(value.geo, { path: `${at}.geo`, fail });
   const station = recordStation(value.station, at);
@@ -423,11 +411,15 @@ export function tourObjectRecord(object: TourObject): TourObjectRecord {
   };
 }
 
-/** The format version, checked: 4; an older or a newer one is named. */
+/** The format version, checked: 5; an older or a newer one is named. */
 function checkFormatVersion(value: unknown): void {
   if (value === TOUR_MANIFEST_VERSION) return;
-  if (value === 1 || value === 2 || value === 3) {
-    throw new TourManifestOlderFormatError(value);
+  if (
+    Number.isSafeInteger(value) &&
+    (value as number) >= 1 &&
+    (value as number) < TOUR_MANIFEST_VERSION
+  ) {
+    throw new TourManifestOlderFormatError(value as number);
   }
   if (
     Number.isSafeInteger(value) &&
@@ -516,7 +508,7 @@ function titleAndDetailsOf(
 /**
  * Validate an already-parsed value as a {@link TourManifest}. Throws
  * {@link TourManifestValidationError} naming the first violation (a
- * {@link TourManifestOlderFormatError} for versions 1 to 3).
+ * {@link TourManifestOlderFormatError} for versions 1 to 4).
  */
 export function parseTourManifest(
   data: unknown,
@@ -616,12 +608,8 @@ export function serializeTourManifest(
   );
 }
 
-/** The lowest minor a tour needs: what its blocks, its steps and its
- *  character declarations use. */
-function tourManifestMinor(manifest: TourManifest): number {
-  return Math.max(
-    tourBlocksMinor(manifest.stations.flatMap((s) => s.blocks)),
-    tourStepsMinor(manifest.stations.flatMap((s) => s.steps)),
-    manifest.characters === undefined ? 0 : 2
-  );
+/** The lowest minor a tour needs: version 5 has no later revision yet. A
+ *  minor that adds to the format says here which tours need it. */
+function tourManifestMinor(_manifest: TourManifest): number {
+  return 0;
 }

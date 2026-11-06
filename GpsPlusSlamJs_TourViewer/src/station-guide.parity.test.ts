@@ -97,12 +97,6 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
  *  any fix in these streams, so mixing it in would show. */
 const VOTE_ACCURACY_M = 0.5;
 
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
-
 function station(
   id: string,
   north: number,

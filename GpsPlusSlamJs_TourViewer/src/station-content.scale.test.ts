@@ -7,7 +7,10 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { renderTourStation } from "./content-placement.js";
 import { createStationContent, type ContentPart } from "./station-content.js";
-import { stationContent } from "./test-support/station-content.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 /**
  * Why this test matters (visitor plan 2026-10-18-2349 §3, M2): the point of
@@ -97,7 +100,7 @@ function harness() {
     const part: ContentPart = {
       render: (parent, alive) =>
         renderTourStation(station, {
-          assets: station.blocks.flatMap((b) =>
+          assets: stationBlocks(station).flatMap((b) =>
             b.kind === "picture"
               ? [
                   {

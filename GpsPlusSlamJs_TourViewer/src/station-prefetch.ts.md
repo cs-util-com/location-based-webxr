@@ -31,7 +31,7 @@ far the visitor is from each offered station. Plan:
   - `heldBytes()`; `sync()` - drop everything now if the tour changed or
     closed (every other call checks too).
 - `stationAssetIds(station, characters?)` - the asset ids a story reads: the blocks
-  its `show` steps name, in step order, once each (pictures, sounds,
+  of the story it plays, in their order, once each (pictures, sounds,
   voices; a character's figure in every view but the card - a story view
   of a declared character with a frames sheet (`characters`, by id;
   `deps.characters`) reads the sheet instead, the portrait view the sheet

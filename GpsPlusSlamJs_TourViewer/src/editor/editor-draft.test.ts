@@ -38,7 +38,7 @@ import {
 import type { EditorLock } from "./save-target.js";
 import { captionOf, tourOf } from "../test-support/tour-of.js";
 import { hostedObjects } from "../authoring-draft.js";
-import { parseSettingsRecord } from "../tour-document-draft.js";
+import { parseSettingsRecord, SETTINGS_KEY } from "../tour-document-draft.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
@@ -226,6 +226,26 @@ const K2 = "local-file:00000000000000000000000000000002";
  * restored into. The refusal deletes that draft, and only that file's,
  * under the draft's lock: a tab still editing it keeps it.
  */
+describe("a draft of an older format when its file opens", () => {
+  // Why: a file of this format keeps opening under a key an older build
+  // wrote to (the sample's is stable, a tour id survives a rebuild). Its
+  // draft holds records of a shape nothing reads any more: offered, it
+  // would restore half a tour.
+  it("is gone before anything is offered, and the open starts a new one", async () => {
+    const b = browser();
+    const store = (await b.open(editorDraftKey(K1)))!;
+    await store.put(META_KEY, JSON.stringify({ format: 4, tourUrl: K1 }));
+    await store.put(objectKey("old"), JSON.stringify({ id: "old" }));
+    await store.put(SETTINGS_KEY, JSON.stringify({ stations: [] }));
+    const opened = await draftIn(b).open(K1, tour(pin("a")));
+    expect(opened.backedUp).toBe(true);
+    expect(opened.offer).toBeNull();
+    const left = b.spaces.get(editorDraftKey(K1))!;
+    expect(left.has(objectKey("old"))).toBe(false);
+    expect(left.has(SETTINGS_KEY)).toBe(false);
+  });
+});
+
 describe("a refused older file's draft", () => {
   // A refused file is keyed by its own tour id; a bare content key is
   // shared by every tour on the same recording (see the last test).

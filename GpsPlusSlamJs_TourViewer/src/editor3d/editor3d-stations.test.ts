@@ -41,7 +41,10 @@ import {
 import { isInterfacePart } from "./globe-interface-pass.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
-import { stationContent } from "../test-support/station-content.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "../test-support/station-content.js";
 
 // The geodesy is licence-gated; the store's construction activates it (the
 // page's own store does at boot).
@@ -97,7 +100,7 @@ function manifest(
   assets: TourManifest["assets"] = [],
 ): TourManifest {
   const photos = stations.flatMap((s) =>
-    s.blocks.flatMap((b) =>
+    stationBlocks(s).flatMap((b) =>
       b.kind === "picture"
         ? [
             {
@@ -110,7 +113,7 @@ function manifest(
     ),
   );
   return {
-    version: 4,
+    version: 5,
     minor: 0,
     order: "fixed",
     assets: [...assets, ...photos],

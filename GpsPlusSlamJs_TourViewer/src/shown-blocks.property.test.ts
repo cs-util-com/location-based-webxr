@@ -12,10 +12,12 @@
  * real reducer, as on the page: "once each" and "never leaves" are the
  * reducer's rules, and a list the test kept itself could not break them.
  */
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import {
   stationContent,
   storyOf,
   type StoryChildInput,
+  stationBlocks,
 } from "./test-support/station-content.js";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -23,7 +25,6 @@ import type {
   TourAsset,
   TourBlock,
   TourStation,
-  TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
@@ -211,13 +212,11 @@ describe("a story's world (property)", () => {
           continueButton: { hidden: false },
           playNext: { hidden: true, textContent: "" },
         };
-        const blocks = new Map(station.blocks.map((b) => [b.id, b]));
+        const blocks = new Map(stationBlocks(station).map((b) => [b.id, b]));
         const shownByStep = new Set(
-          station.steps.flatMap((s) =>
-            s.action.kind === "show" ? [s.action.block] : [],
-          ),
+          tourStationStoryBlocks(station).map((b) => b.id),
         );
-        const freeWorld = station.blocks
+        const freeWorld = stationBlocks(station)
           .filter((b) => WORLD.has(b.view) && !shownByStep.has(b.id))
           .map((b) => b.id);
         const view = createSceneView({

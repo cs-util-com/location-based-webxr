@@ -31,7 +31,7 @@ time. Plan:
 
 ## Invariants & assumptions
 
-- **A `show` step shows the block it names, by its view.** A block in its
+- **A story's block shows by its view.** A block in its
   `stage` view (a character or a model) stands at the station, as the
   character and model steps of earlier versions did; every other block
   shows in the card: a short text's caption, a long text's plain text P
@@ -39,8 +39,8 @@ time. Plan:
   an audio's transcript
   with its sound, a model's title, a character's caption with its voice
   (a character in the card plays its voice, but no figure stands). A
-  block's world view (a pin, a plane, a placed model) is drawn with its
-  station's free blocks (`content-placement.ts`), never by a step.
+  block's world view (a pin, a plane, a placed model) stands in the world
+  (`content-placement.ts`, `onBlockShown` below); the card holds its words.
 - **A declared character's frames sheet:** a story view of a block whose
   `character` names a declaration with `frames` stands from the sheet (the
   look gets `sheet: true` and slices it); the `portrait` view's round
@@ -52,7 +52,7 @@ time. Plan:
   until the next story starts or everything stops (`stopAll`). The `stage` view and a declaration without
   `frames` use the `image` as before.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
-  `portrait`, `popup`; tour format 4.2) goes to the stage with a look
+  `portrait`, `popup`) goes to the stage with a look
   spec `{ view, name, line, voiced, pose }` (the line is the caption;
   `voiced` is false in the bubble view, which has no voice), which the stage
   draws as a character look (`scene-stage.ts`, `character-look.ts`). The
@@ -118,7 +118,7 @@ time. Plan:
   its sound stopped when the step changes.
 - **Auto steps** advance on `schedule(afterS x 1000)`; a tap first cancels
   the timer. A choice never auto-advances.
-- **`lineEnd` steps** (format 4.2) advance when the step's voice or sound
+- **`lineEnd` steps** advance when the step's voice or sound
   ends, after a 600 ms tail; never while it plays. With no voice, or one
   that cannot be read or played, or a story view's voice nobody tapped,
   the words' reading time stands in; a tap that starts the voice holds the
@@ -216,14 +216,14 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   start" and "a hold set with no story is dropped when the next story
   starts" in `scene-view.test.ts`.
 
-## World blocks a step reaches (B2b)
+## World blocks a story reaches (B2b)
 
 - `sayFailure?(text)`: a failure the hidden panel cannot show (his voice,
   tapped after his story, could not be read or played); the app shows it
   in the walk's toast (`visitor-stations.ts` `sayFailureInToast`).
   Absent: not said.
 - `onBlockShown?(stationId, blockId)`: called from the step's render when
-  a `show` step reaches a block with a world view (`worldBlockReachedBy`),
+  the story reaches a block with a world view (`worldBlockReachedBy`),
   after a tap, a timer or a choice alike. The card still shows its words;
   the app keeps the block standing in the world from then on. Never for a
   card or a stage block.
