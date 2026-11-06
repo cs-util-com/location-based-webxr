@@ -117,7 +117,7 @@ export function told(block, fields = {}) {
  * @param {object[]} children
  */
 export function storyOf(id, children) {
-  return { id, kind: "story", children };
+  return { id, kind: "story", title: "A story", children };
 }
 
 /**
