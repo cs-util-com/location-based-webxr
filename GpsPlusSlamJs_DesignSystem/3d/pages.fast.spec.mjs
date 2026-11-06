@@ -192,6 +192,12 @@ test.describe("the look-dev page", () => {
 const GLOBE_BOOT_HASH =
   "relief=1&reliefHeights=synthetic&bandShare=0.5&perf=1&spinMs=0&turnMs=0&stars=0&milkyWay=0";
 
+/** three's tone curves, as the lab's `state().grade` reports them. */
+const ACES = { toneMapping: 4, exposure: 0.75 };
+const NEUTRAL = { toneMapping: 7, exposure: 1 };
+const toneCurve = (page) =>
+  page.evaluate(() => window.__globeLab.state().grade);
+
 /**
  * The globe lab, opened once for its two tests, ten frames drawn. On
  * SwiftShader a frame of this page takes about 1-2 s, so one test doing
@@ -224,6 +230,7 @@ test.describe("the globe lab", () => {
       () => window.__globeLab.state().relief?.visibleTiles ?? null,
     );
     console.log(`globe lab: relief tiles visible ${relief}`);
+    expect(await toneCurve(page)).toEqual(ACES);
     await expect(page.getByRole("button", { name: /run/i })).toBeVisible();
     expect(problems).toEqual([]);
     const stdev = await drawnStdev(page);
@@ -267,6 +274,31 @@ test.describe("the globe lab", () => {
     expect(changed.thickness).toBe(1);
     expect(problems).toEqual([]);
   });
+});
+
+// Why this test matters: the library's tests cover the names, and only this
+// proves the lab hands the query's name to the renderer. Every pixel check of
+// the lab rests on that link, and none of them runs per PR. `grade` means two
+// things on this page: the query's tone curve, fixed for the page's life, and
+// the hash's blue grade, which must not move it.
+test("the globe lab's query picks the tone curve and the hash's grade leaves it @pr", async ({
+  page,
+}) => {
+  const problems = await watch(page);
+  const hash = "relief=0&cityWarm=0&spinMs=0&turnMs=0&stars=0&milkyWay=0";
+  await page.goto(`/labs/globe/?grade=neutral#${hash}`);
+  await ready(page, "__globeLab");
+  expect(await toneCurve(page)).toEqual(NEUTRAL);
+  const graded = `${hash}&grade=1`;
+  await page.evaluate((h) => {
+    location.hash = h;
+  }, graded);
+  await page.waitForFunction(
+    (h) => window.__globeLab.state().appliedHash === h,
+    graded,
+  );
+  expect(await toneCurve(page)).toEqual(NEUTRAL);
+  expect(problems).toEqual([]);
 });
 
 test("the globe-terrain carrier lab opens and draws without errors @pr", async ({

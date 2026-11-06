@@ -38,12 +38,6 @@ const NIGHT =
 const STARS =
   "at=0,-178.14&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&milkyWay=0&atmo=0&sunGlow=0&space=0";
 
-/** three's tone curves, as `state().grade` reports them. */
-const ACES = { toneMapping: 4, exposure: 0.75 };
-const NEUTRAL = { toneMapping: 7, exposure: 1 };
-const toneCurve = (page) =>
-  page.evaluate(() => window.__globeLab.state().grade);
-
 const SWEEP = [0.5, 1, 2];
 /** "value vs floor: x0.5 ok x1 ok x2 NO" for a value that must exceed it. */
 const verdict = (value, floor) =>
@@ -77,15 +71,11 @@ test("every look but navy space is off by default; the grade and the cloud shadi
     space: 0.1,
     starGlow: 0,
   });
-  // No `?grade=`: the library's default tone curve.
-  expect(await toneCurve(page)).toEqual(ACES);
   const grid = gridAround([0.5, 0.5], 0.2, 9);
   const off = await read(page, grid);
   // 1. The blue grade: the day side bluer against red.
   await applyHash(page, `${DAY}&grade=1`);
   const graded = await read(page, grid);
-  // The hash's `grade` is this blue grade; it never moves the tone curve.
-  expect(await toneCurve(page)).toEqual(ACES);
   const blueShift =
     mean(graded, 2) - mean(graded, 0) - (mean(off, 2) - mean(off, 0));
   // 2. The cloud shading: the clouds' pixels change, cloud-free ones stay.
@@ -144,13 +134,11 @@ test("navy space: a corner of the frame is black off and navy on", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  // The query's `grade` reaches the renderer (space ignores the tone curve,
-  // so this view's readings do not depend on it).
+  // Read on the curve its floors were set on.
   const errors = await bootGlobe(page, `${DAY}&space=0`, {
     query: "?grade=neutral",
   });
   await loaded(page);
-  expect(await toneCurve(page)).toEqual(NEUTRAL);
   const [cornerOff] = await read(page, [[0.03, 0.05]]);
   await applyHash(page, DAY);
   const [cornerDefault] = await read(page, [[0.03, 0.05]]);
