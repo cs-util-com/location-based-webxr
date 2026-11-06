@@ -5,8 +5,9 @@ import { test, expect } from "./e2e-test.js";
 // real browser exercises the WebGL boot, the anime.js scrub, and the DOM
 // wiring together. A headless smoke run of exactly this shape caught two
 // real visual defects during initial implementation. The suite stays
-// small on purpose: boot + scroll integrity, fallback floor, theme
-// persistence, demo links, reduced motion.
+// small on purpose: boot + scroll integrity, fallback floor, navigation and
+// theme persistence, phones, reduced motion. The links are static markup and
+// are read from the file in src/index-html.test.ts.
 
 /** Must match src/chapters.ts (CHAPTERS order). */
 const CHAPTER_IDS = [
@@ -41,7 +42,7 @@ function collectErrors(page) {
   return errors;
 }
 
-test("boots and activates every chapter while scrolling, with zero errors @pr", async ({
+test("boots with a canvas or the static floor, the snippet open, every chapter activating, the QR handoff, and zero errors @pr", async ({
   page,
 }) => {
   const errors = collectErrors(page);
@@ -49,6 +50,34 @@ test("boots and activates every chapter while scrolling, with zero errors @pr", 
   for (const id of CHAPTER_IDS) {
     await expect(page.locator(`#chapter-${id}`)).toBeAttached();
   }
+  // A GPU under pressure can lose the WebGL context at ANY moment and the
+  // page then flips to the static floor (and back on restore) — so assert
+  // that the page is in ONE of the two consistent states, re-evaluating
+  // the floor flag inside the retry loop instead of racing it once.
+  await expect(async () => {
+    const usesFloor = await page.evaluate(() =>
+      document.body.classList.contains("no-webgl"),
+    );
+    if (usesFloor) {
+      // No WebGL right now: canvas layer hidden, copy fully readable —
+      // that IS correct behavior, not a bug.
+      await expect(page.locator("#scene-root")).toBeHidden({ timeout: 500 });
+      await expect(page.locator("#chapter-hero .hero-content")).toBeVisible({
+        timeout: 500,
+      });
+    } else {
+      const canvas = page.locator("#scene-root canvas");
+      await expect(canvas).toBeVisible({ timeout: 500 });
+      const box = await canvas.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThan(0);
+      expect(box?.height ?? 0).toBeGreaterThan(0);
+    }
+  }).toPass({ timeout: 15000 });
+  // The snippet is a <details> expander: desktop-class viewports get it open
+  // at boot (the developer hook stays one glance away), phones keep it
+  // collapsed (see the mobile suite).
+  await expect(page.locator("#hero-snippet")).toHaveAttribute("open", "");
+  await expect(page.locator("#hero-snippet pre")).toBeVisible();
   for (const id of CHAPTER_IDS) {
     await page.locator(`#chapter-${id}`).scrollIntoViewIfNeeded();
     // The active class is set by the scroll state machine; expect() polls,
@@ -58,6 +87,13 @@ test("boots and activates every chapter while scrolling, with zero errors @pr", 
     const content = id === "hero" ? ".hero-content" : ".copy";
     await expect(page.locator(`#chapter-${id} ${content}`)).toBeVisible();
   }
+  // Headless desktop chromium reports no navigator.xr and the default context
+  // is a fine-pointer 1280px viewport: exactly the device class the QR handoff
+  // in the last chapter targets.
+  await expect(page.locator("#qr-handoff svg")).toBeVisible();
+  await expect(page.locator("#qr-handoff .qr-caption")).toHaveText(
+    "Scan to try on your phone",
+  );
   // The hero veil must have fully lifted this far into the story (R4).
   expect(
     await page.evaluate(() =>
@@ -84,53 +120,6 @@ test("boots and activates every chapter while scrolling, with zero errors @pr", 
   expect(errors).toEqual([]);
 });
 
-test("renders the 3D canvas, or engages the static-DOM floor cleanly @pr", async ({
-  page,
-}) => {
-  await page.goto("/");
-  // A GPU under pressure can lose the WebGL context at ANY moment and the
-  // page then flips to the static floor (and back on restore) — so assert
-  // that the page is in ONE of the two consistent states, re-evaluating
-  // the floor flag inside the retry loop instead of racing it once.
-  await expect(async () => {
-    const usesFloor = await page.evaluate(() =>
-      document.body.classList.contains("no-webgl"),
-    );
-    if (usesFloor) {
-      // No WebGL right now: canvas layer hidden, copy fully readable —
-      // that IS correct behavior, not a bug.
-      await expect(page.locator("#scene-root")).toBeHidden({ timeout: 500 });
-      await expect(page.locator("#chapter-hero .hero-content")).toBeVisible({
-        timeout: 500,
-      });
-    } else {
-      const canvas = page.locator("#scene-root canvas");
-      await expect(canvas).toBeVisible({ timeout: 500 });
-      const box = await canvas.boundingBox();
-      expect(box?.width ?? 0).toBeGreaterThan(0);
-      expect(box?.height ?? 0).toBeGreaterThan(0);
-    }
-  }).toPass({ timeout: 15000 });
-});
-
-test("palette button cycles the palette and the choice persists across reload", async ({
-  page,
-}) => {
-  await page.goto("/");
-  const initial = await page.evaluate(
-    () => document.documentElement.dataset.theme,
-  );
-  await page.locator("#theme-toggle").click();
-  // Cycled to the NEXT palette (round-2 R19: five ids, not a toggle).
-  await expect(page.locator(`html[data-theme="${initial}"]`)).toHaveCount(0);
-  const cycled = await page.evaluate(
-    () => document.documentElement.dataset.theme,
-  );
-  await page.reload();
-  // The FOUC guard must restore the persisted choice before/at first paint.
-  await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
-});
-
 test("a ?qr= launch forwards to the tour viewer with the payload intact @pr", async ({
   page,
 }) => {
@@ -148,92 +137,27 @@ test("a ?qr= launch forwards to the tour viewer with the payload intact @pr", as
   await page.waitForURL(/\/tour\/\?qr=https%3A%2F%2Fexample\.com%2Ftour\.zip/);
 });
 
-test("all eight demo apps stay launchable from the demos hub @pr", async ({
+test("the dot rail and the jump link navigate the story, and the palette persists across a reload", async ({
   page,
 }) => {
   await page.goto("/");
-  // Keep in sync with requiredDemoLinks in scripts/build-site.mjs (the
-  // deploy-time guard); this e2e re-checks the same set in the LIVE page.
-  // (/osm/ had been missing from this list since that card was added —
-  // PR #357 review.)
-  for (const href of [
-    "/starter/",
-    "/minimal/",
-    "/qr-demo/",
-    "/recorder/",
-    "/physics/",
-    "/wayfinding/",
-    "/osm/",
-    "/tour/",
-  ]) {
-    const card = page.locator(`a.demo-card[href="${href}"]`);
-    await expect(card).toBeAttached();
-    // Round-10 R10-1: demo apps open in a NEW TAB as well — every
-    // outbound click keeps the landing alive in the background.
-    await expect(card).toHaveAttribute("target", "_blank");
-    await expect(card).toHaveAttribute("rel", /noopener/);
-    // Every card carries a title and a description, and no description
-    // makes the retired claim: "Desktop only, no AR needed" survived on the
-    // OSM card for weeks after that demo gained AR entry (owner taste
-    // round 2026-09-04) — the deploy guard and this loop only ever checked
-    // the hrefs, so a stale sentence had nothing to fail.
-    await expect(card.locator("strong")).not.toHaveText("");
-    await expect(card.locator("small")).not.toHaveText("");
-    await expect(card).not.toContainText("Desktop only");
-  }
-  // The two cards the taste round renamed: the OSM demo is named for the
-  // data it scores, not for a term ("affordance") a visitor has to look up;
-  // the tour viewer is a demo of the entry story, not a template to fork.
-  await expect(page.locator('a.demo-card[href="/osm/"] strong')).toHaveText(
-    "OpenStreetMap Demo",
-  );
-  await expect(page.locator('a.demo-card[href="/tour/"] strong')).toHaveText(
-    "Tour Viewer Demo",
-  );
-  // Round-9 R9-4: ONE primary CTA carrying the GitHub mark (the separate
-  // "Open source on GitHub" badge duplicated it and was removed), and
-  // every external link opens a NEW TAB — the landing must stay open.
-  const primary = page.locator(
-    'a.btn-primary[href="https://github.com/cs-util-com/location-based-webxr"]',
-  );
-  await expect(primary).toBeAttached();
-  await expect(primary).toHaveAttribute("target", "_blank");
-  await expect(primary.locator("svg")).toBeAttached();
-  await expect(page.locator("a.github-badge")).toHaveCount(0);
-  for (const external of await page.locator('a[href^="https://"]').all()) {
-    await expect(external).toHaveAttribute("target", "_blank");
-    await expect(external).toHaveAttribute("rel", /noopener/);
-  }
-});
+  // Seven dots, one per chapter: a click scrolls to the chapter and the
+  // active dot moves.
+  await expect(page.locator("#chapter-dots button")).toHaveCount(7);
+  await page.locator('#chapter-dots button[data-index="6"]').click();
+  await expect(page.locator("#chapter-cta.active")).toBeAttached();
+  await expect(
+    page.locator('#chapter-dots button[data-index="6"].active'),
+  ).toBeAttached();
 
-test("FAQ accordions exist and open natively", async ({ page }) => {
-  // The FAQ (v2 B6) is native <details> — no JS involved. Round-14
-  // R14-21: four expanders + the license row, which is now a LINK that
-  // opens the repo LICENSE in a new tab (looks like a row, doesn't
-  // expand).
-  await page.goto("/");
-  await expect(page.locator(".faq details")).toHaveCount(4);
-  const first = page.locator(".faq details").first();
-  await first.locator("summary").click();
-  await expect(first).toHaveAttribute("open", "");
-  await expect(first.locator("p")).toBeVisible();
-
-  const license = page.locator(".faq .faq-link");
-  await expect(license).toHaveAttribute(
-    "href",
-    "https://github.com/cs-util-com/location-based-webxr/blob/main/LICENSE",
-  );
-  await expect(license).toHaveAttribute("target", "_blank");
-  await expect(license).toHaveAttribute("rel", /noopener/);
-});
-
-test("jump-to-demos stops at the demos hub, not the page bottom", async ({
-  page,
-}) => {
-  // Round-10 R10-2: the hero link used to scroll to scroller.scrollHeight
-  // — the absolute bottom, which since the FAQ landed is the FAQ, not
-  // the demos. It must stop at the CTA chapter's top instead.
-  await page.goto("/");
+  // The hero link used to scroll to scroller.scrollHeight: the absolute
+  // bottom, which since the FAQ landed is the FAQ, not the demos. It must
+  // stop at the CTA chapter's top instead.
+  await page.evaluate(() => {
+    const story = document.getElementById("story");
+    if (story) story.scrollTop = 0;
+  });
+  await expect(page.locator("#chapter-hero.active")).toBeAttached();
   await page.locator("#jump-demos").click();
   await expect(page.locator("#chapter-cta h2")).toBeInViewport();
   const atBottom = await page.evaluate(() => {
@@ -244,52 +168,34 @@ test("jump-to-demos stops at the demos hub, not the page bottom", async ({
     return story.scrollTop >= story.scrollHeight - story.clientHeight - 50;
   });
   expect(atBottom).toBe(false);
-});
 
-test("hero code snippet starts expanded on desktop", async ({ page }) => {
-  // Round-9 R9-5: the snippet is a <details> expander — desktop-class
-  // viewports get it open at boot (the developer hook stays one glance
-  // away), phones keep it collapsed (see the mobile suite).
-  await page.goto("/");
-  await expect(page.locator("#hero-snippet")).toHaveAttribute("open", "");
-  await expect(page.locator("#hero-snippet pre")).toBeVisible();
-});
-
-test("chapter dot rail navigates the story", async ({ page }) => {
-  // v3 F6: seven dots (one per chapter, labels from chapters.ts as
-  // aria-labels), click scrolls to the chapter and the active dot moves.
-  await page.goto("/");
-  await expect(page.locator("#chapter-dots button")).toHaveCount(7);
-  await page.locator('#chapter-dots button[data-index="6"]').click();
-  await expect(page.locator("#chapter-cta.active")).toBeAttached();
-  await expect(
-    page.locator('#chapter-dots button[data-index="6"].active'),
-  ).toBeAttached();
-});
-
-test("desktop without WebXR gets the QR handoff in the CTA", async ({
-  page,
-}) => {
-  // Headless desktop chromium reports no navigator.xr and the default
-  // context is a fine-pointer 1280px viewport — exactly the device class
-  // the QR handoff (v2 B2) targets.
-  await page.goto("/");
-  await page.locator("#chapter-cta").scrollIntoViewIfNeeded();
-  await expect(page.locator("#qr-handoff svg")).toBeVisible();
-  await expect(page.locator("#qr-handoff .qr-caption")).toHaveText(
-    "Scan to try on your phone",
+  // Last, because the reload resets the page. Cycles to the NEXT palette
+  // (five ids, not a toggle).
+  const initial = await page.evaluate(
+    () => document.documentElement.dataset.theme,
   );
+  await page.locator("#theme-toggle").click();
+  await expect(page.locator(`html[data-theme="${initial}"]`)).toHaveCount(0);
+  const cycled = await page.evaluate(
+    () => document.documentElement.dataset.theme,
+  );
+  await page.reload();
+  // The FOUC guard must restore the persisted choice before/at first paint.
+  await expect(page.locator(`html[data-theme="${cycled}"]`)).toBeAttached();
 });
 
 // Most real users open the landing page on a phone (round-2 request):
 // pin that BOTH mobile orientations boot, show every chapter readable,
 // and keep the document non-scrolling — with touch + mobile emulation on.
-for (const [orientation, viewport] of [
-  ["portrait", { width: 412, height: 915 }],
-  ["landscape", { width: 915, height: 412 }],
+// Portrait also runs with reduced motion, so one boot holds the promise that
+// every chapter stays readable without errors when the scrub is off; the
+// desktop test and landscape keep the motion on.
+for (const [orientation, viewport, reducedMotion] of [
+  ["portrait", { width: 412, height: 915 }, "reduce"],
+  ["landscape", { width: 915, height: 412 }, "no-preference"],
 ]) {
   test.describe(`mobile ${orientation}`, () => {
-    test.use({ viewport, isMobile: true, hasTouch: true });
+    test.use({ viewport, isMobile: true, hasTouch: true, reducedMotion });
 
     test(`shows every chapter readable on a phone (${orientation})${orientation === "portrait" ? " @pr" : ""}`, async ({
       page,
@@ -316,20 +222,3 @@ for (const [orientation, viewport] of [
     });
   });
 }
-
-test.describe("reduced motion", () => {
-  test.use({ reducedMotion: "reduce" });
-
-  test("still presents every chapter readable, without errors @pr", async ({
-    page,
-  }) => {
-    const errors = collectErrors(page);
-    await page.goto("/");
-    for (const id of CHAPTER_IDS) {
-      await page.locator(`#chapter-${id}`).scrollIntoViewIfNeeded();
-      const content = id === "hero" ? ".hero-content" : ".copy";
-      await expect(page.locator(`#chapter-${id} ${content}`)).toBeVisible();
-    }
-    expect(errors).toEqual([]);
-  });
-});

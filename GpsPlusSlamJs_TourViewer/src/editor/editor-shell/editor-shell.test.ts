@@ -603,9 +603,9 @@ describe("the tree's search and its Fold every station", () => {
     shell.hide();
   });
 
-  // Why: every way the page makes a station ends in this call: a new
-  // station is selected and said, and its name matches nothing typed, so
-  // a search left running would hide it. On the 2D map the tree is not
+  // Why: every way the page makes a station ends in this call, a copied
+  // item's too: what is new is selected and said, and its name matches
+  // nothing typed, so a search left running would hide it. On the 2D map the tree is not
   // drawn, so the search is emptied for the next time it shows.
   it("is emptied at the page's word, drawn if the tree shows", () => {
     const { shell } = setUp();

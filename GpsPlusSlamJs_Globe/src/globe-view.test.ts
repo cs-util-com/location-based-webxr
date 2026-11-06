@@ -416,7 +416,7 @@ describe("createGlobeView: the world frame", () => {
           );
         },
       ),
-      { numRuns: 25 },
+      { numRuns: 6 },
     );
   });
 

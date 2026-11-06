@@ -116,8 +116,6 @@ function demoPlanFor(position: LatLng) {
 
 const PLACES: readonly (readonly [string, LatLng])[] = [
   ["Cologne", { lat: 50.9413, lng: 6.9583 }],
-  ["the Alps box", { lat: 46.56, lng: 9.14 }],
-  ["Quito, near the equator", { lat: -0.1807, lng: -78.4678 }],
   ["Reykjavik, far north", { lat: 64.1466, lng: -21.9426 }],
   ["Sydney, southern hemisphere", { lat: -33.8688, lng: 151.2093 }],
   ["New York, the globe's fallback", { lat: 40.7128, lng: -74.006 }],

@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { CANDIDATES_PER_BATCH, SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 import type { OsmDataSource, OsmFeature } from "gps-plus-slam-osm";
 import { parseRuleTable } from "gps-plus-slam-osm";
 
 import { DemoPipeline } from "./demo-pipeline.js";
 
 /**
- * WHY THIS TEST MATTERS — it measures the two assumptions the geo-event
- * diagnosis rests on, and neither had ever been counted.
+ * WHY THIS FILE MATTERS — it holds the executable statement of an open defect,
+ * skipped below. The fixture is shaped by the two assumptions the geo-event
+ * diagnosis rests on. A test that printed those two numbers lived here until
+ * they had been read; it pinned neither, so it is gone.
  *
  * The reported defect is that an event never lands on the Tower of London even
  * though `battleArea` scores very high there. The proposed explanation is that
@@ -141,61 +143,6 @@ const TIMES = Array.from(
   { length: 24 },
   (_, i) => 1_700_000_000_000 + i * 15 * 60_000,
 );
-
-/**
- * The six searches the shape test measures, spread over the same six hours:
- * all 24 ran past the default test timeout on a loaded machine, and the two
- * numbers it reports read the same from these six (max travel 23.8 m either
- * way). The full 24 stay in the outcome test below.
- */
-const SHAPE_TIMES = TIMES.filter((_, i) => i % 4 === 0);
-
-describe("the geo-event search's actual shape", () => {
-  it("measures how many batches run, and how far climbs travel", async () => {
-    const pipeline = new DemoPipeline({ source: gradedSource(), table: TABLE });
-    await pipeline.update(AT, "battleArea", undefined, SCORE_DISK_MAX_RADIUS);
-
-    const batchesPerSearch: number[] = [];
-    const travelled: number[] = [];
-
-    for (const time of SHAPE_TIMES) {
-      const { event, stats } = await pipeline.geoEvent(AT, "battleArea", time);
-      // `climbsStarted` counts one per candidate evaluated, summed across every
-      // tile searched — so the batch count has to be divided by the tile count
-      // too. Measured rather than assumed: this search reaches TWO tiles from
-      // the demo's own position, and dividing by the batch size alone (the
-      // first version of this test) would have reported exactly double.
-      expect(event.tilesSearched).toBeGreaterThan(0);
-      batchesPerSearch.push(
-        stats.climbsStarted / (CANDIDATES_PER_BATCH * event.tilesSearched),
-      );
-      for (const pick of event.picks) {
-        travelled.push(metresBetween(pick.candidate, pick.position));
-      }
-    }
-
-    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-    const roundOneOnly = batchesPerSearch.filter((n) => n <= 1).length;
-
-    // eslint-disable-next-line no-console -- the measurement IS the output
-    console.log(
-      `[geo-event shape] searches=${SHAPE_TIMES.length} ` +
-        `round-1-only=${roundOneOnly}/${SHAPE_TIMES.length} ` +
-        `mean batches=${mean(batchesPerSearch).toFixed(2)} ` +
-        `max batches=${Math.max(...batchesPerSearch)} | ` +
-        `climbs=${travelled.length} mean travel=${mean(travelled).toFixed(1)} m ` +
-        `max travel=${Math.max(...travelled).toFixed(1)} m ` +
-        `(ceiling ~35 m)`,
-    );
-
-    // Loose bounds only. This test exists to REPORT the two numbers, not to
-    // pin them — pinning a distribution before anyone has seen it is how a
-    // measurement becomes an assertion of what someone hoped for.
-    expect(batchesPerSearch.length).toBe(SHAPE_TIMES.length);
-    expect(travelled.length).toBeGreaterThan(0);
-    expect(Math.max(...travelled)).toBeLessThan(60);
-  });
-});
 
 /** Where the graded field's one big peak sits — the ground an event SHOULD find. */
 const PEAK = { lat: AT.lat + 0.003, lng: AT.lng + 0.003 };

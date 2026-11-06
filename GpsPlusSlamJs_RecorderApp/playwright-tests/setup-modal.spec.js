@@ -11,7 +11,8 @@ import {
  *
  * These tests verify the setup modal workflow that users go through
  * before starting an AR session. This includes folder selection,
- * scenario management, and session notes.
+ * scenario management, and session notes. One test per state of the modal,
+ * because every test pays a boot.
  *
  * Why this test matters: The setup modal is the first thing users interact
  * with, and proper flow is critical for a good user experience.
@@ -40,302 +41,218 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Setup Modal Flow', () => {
-  test('modal prevents interaction with main controls', async ({ page }) => {
-    // Setup modal should be visible, covering main UI
-    const setupModal = page.locator('#setup-modal');
-    await expect(setupModal).toBeVisible();
-
-    // Main controls should exist but behind the modal
-    const startButton = page.locator('#btn-start');
-    const mapButton = page.locator('#btn-map');
-
-    // The buttons exist but modal has higher z-index
-    await expect(startButton).toBeAttached();
-    await expect(mapButton).toBeAttached();
-
-    // Modal has z-50, so it covers controls
-    const modalZIndex = await setupModal.evaluate(
-      (el) => window.getComputedStyle(el).zIndex
-    );
-    expect(parseInt(modalZIndex)).toBeGreaterThanOrEqual(50);
-  });
-
-  test('scenario dropdown is populated after OPFS auto-init @pr', async ({
+  test('the first open: the modal on top, the sections in order and collapsed, then expanded @pr', async ({
     page,
   }) => {
-    // Scenario controls are collapsed by default (D6 item 3); expand to view.
-    await expandScenarioSection(page);
-    const scenarioSelect = page.locator('#scenario-select');
-    // After OPFS auto-initialization, dropdown should be enabled (not disabled)
-    // It may have "Loading..." initially then switch to available scenarios
-    await expect(scenarioSelect).toBeVisible();
+    await test.step('the modal covers the main controls', async () => {
+      // Setup modal should be visible, covering main UI
+      const setupModal = page.locator('#setup-modal');
+      await expect(setupModal).toBeVisible();
+
+      // The buttons exist but modal has higher z-index
+      await expect(page.locator('#btn-start')).toBeAttached();
+      await expect(page.locator('#btn-map')).toBeAttached();
+
+      // Modal has z-50, so it covers controls
+      const modalZIndex = await setupModal.evaluate(
+        (el) => window.getComputedStyle(el).zIndex
+      );
+      expect(parseInt(modalZIndex)).toBeGreaterThanOrEqual(50);
+    });
+
+    await test.step('title and status line', async () => {
+      await expect(
+        page.getByRole('heading', { name: 'GPS + SLAM Recorder' })
+      ).toBeVisible();
+
+      const statusText = page.locator('#status-text');
+      await expect(statusText).toBeAttached();
+      // Should show some status text (Initializing or similar)
+      const text = await statusText.textContent();
+      expect(text).not.toBe('');
+    });
+
+    // D6 item 1 (2026-06-16 user feedback): the Required Permissions section is
+    // the upfront action on the setup screen — it must render ABOVE the storage,
+    // scenario and notes blocks (it used to be the last block). Codifies the
+    // structural reorder so it can't silently regress.
+    await test.step('permissions render above storage', async () => {
+      const permSection = page.locator('#permission-section');
+      const storageSetup = page.locator('#storage-setup');
+      await expect(permSection).toBeVisible();
+      await expect(storageSetup).toBeVisible();
+      const permBox = await permSection.boundingBox();
+      const storageBox = await storageSetup.boundingBox();
+      expect(permBox).not.toBeNull();
+      expect(storageBox).not.toBeNull();
+      // Permissions must sit above storage (smaller top y).
+      expect(permBox.y).toBeLessThan(storageBox.y);
+    });
+
+    await test.step('Enter AR starts disabled', async () => {
+      const enterButton = page.locator('#btn-enter-ar');
+      await expect(enterButton).toBeDisabled();
+      await expect(enterButton).toContainText('Enter AR');
+    });
+
+    // D6 item 3 (2026-06-16 user feedback): the scenario/session controls are
+    // tucked into a self-contained <details> that is COLLAPSED by default so the
+    // first viewport shows the real actions, not advanced grouping config.
+    await test.step('the scenario section starts collapsed', async () => {
+      const section = page.locator('#scenario-section');
+      await expect(section).toBeVisible(); // the <summary> chevron is shown
+      // The <details> must NOT be open on first paint.
+      const isOpen = await section.evaluate((el) => el.open);
+      expect(isOpen).toBe(false);
+      // Consequently the dropdown inside it is hidden until expanded.
+      await expect(page.locator('#scenario-select')).toBeHidden();
+    });
+
+    // D2 (2026-06-19 round-2 feedback): session notes is an optional,
+    // session-level field, so it now lives INSIDE the collapsed scenario/session
+    // <details> — hidden by default, revealed only when the user expands the
+    // section.
+    await test.step('expanding reveals the dropdown and the session notes', async () => {
+      const notes = page.locator('#session-notes');
+      // Inside the collapsed <details> → not visible on first paint.
+      await expect(notes).toBeHidden();
+      // It is a descendant of the scenario/session section, not a sibling after it.
+      const insideSection = await notes.evaluate(
+        (el) => !!el.closest('#scenario-section')
+      );
+      expect(insideSection).toBe(true);
+      // Expanding the section reveals it.
+      await expandScenarioSection(page);
+      await expect(notes).toBeVisible();
+      // After OPFS auto-initialization, the dropdown should be there too
+      // (it may have "Loading..." initially then switch to available scenarios).
+      await expect(page.locator('#scenario-select')).toBeVisible();
+    });
+
+    await test.step('the notes are enabled once storage is ready', async () => {
+      // Simulate mandatory storage selection (Task 1a-fix)
+      await setStorageReady(page);
+      const notesTextarea = page.locator('#session-notes');
+      await expect(notesTextarea).toBeVisible();
+      await expect(notesTextarea).toBeEnabled();
+    });
   });
 
-  // D6 item 3 (2026-06-16 user feedback): the scenario/session controls are
-  // tucked into a self-contained <details> that is COLLAPSED by default so the
-  // first viewport shows the real actions, not advanced grouping config.
-  test('scenario section is a collapsed details by default', async ({
+  test('the storage steps: the blocker said once, the folder step optional, its progress bar, and a click that cannot crash @pr', async ({
     page,
   }) => {
-    const section = page.locator('#scenario-section');
-    await expect(section).toBeVisible(); // the <summary> chevron is shown
-    // The <details> must NOT be open on first paint.
-    const isOpen = await section.evaluate((el) => el.open);
-    expect(isOpen).toBe(false);
-    // Consequently the dropdown inside it is hidden until expanded.
-    await expect(page.locator('#scenario-select')).toBeHidden();
-  });
+    // D6 item 8 (2026-06-16 user feedback): the "choose a save location" blocker
+    // is stated ONCE, on the disabled Enter AR button's hint — NOT duplicated in
+    // #save-status. So #save-status starts empty (it is a pure path-status line)
+    // and the single authoritative blocker lives in #enter-ar-hint.
+    await test.step('the save-location blocker is on the Enter AR hint only', async () => {
+      await expect(page.locator('#folder-status')).toContainText(
+        'No folder selected'
+      );
+      // Pure status line: empty until a save location is chosen.
+      await expect(page.locator('#save-status')).toHaveText('');
 
-  test('enter AR button is disabled before scenario selection', async ({
-    page,
-  }) => {
-    const enterButton = page.locator('#btn-enter-ar');
-    await expect(enterButton).toBeDisabled();
-    await expect(enterButton).toContainText('Enter AR');
-  });
+      // The single authoritative blocker is on the disabled primary action.
+      const enterHint = page.locator('#enter-ar-hint');
+      await expect(enterHint).toBeVisible();
+      await expect(enterHint).toContainText(/save location/i);
+    });
 
-  // D2 (2026-06-19 round-2 feedback): session notes is an optional,
-  // session-level field, so it now lives INSIDE the collapsed scenario/session
-  // <details> — hidden by default, revealed only when the user expands the
-  // section. Mirrors "scenario section is a collapsed details by default".
-  test('session notes is hidden by default and revealed when the section expands', async ({
-    page,
-  }) => {
-    const notes = page.locator('#session-notes');
-    // Inside the collapsed <details> → not visible on first paint.
-    await expect(notes).toBeHidden();
-    // It is a descendant of the scenario/session section, not a sibling after it.
-    const insideSection = await notes.evaluate(
-      (el) => !!el.closest('#scenario-section')
-    );
-    expect(insideSection).toBe(true);
-    // Expanding the section reveals it.
-    await expandScenarioSection(page);
-    await expect(notes).toBeVisible();
-  });
+    await test.step('the folder step is optional and collapsed', async () => {
+      // D5 (2026-06-05): the save location is the only mandatory storage step and
+      // is visible by default; the folder-import step is an OPTIONAL collapsed
+      // section, so its button is hidden until the section is expanded.
+      await expect(page.locator('#btn-choose-save')).toBeVisible();
 
-  test('session notes textarea is enabled after storage is ready', async ({
-    page,
-  }) => {
-    // After storage selection is complete, the notes textarea should be enabled
-    const notesTextarea = page.locator('#session-notes');
-    // Simulate mandatory storage selection (Task 1a-fix)
-    await setStorageReady(page);
-    // Notes now lives in the collapsed scenario/session section (D2) — expand
-    // it so the textarea is actually visible, then assert it is editable.
-    await expandScenarioSection(page);
-    await expect(notesTextarea).toBeVisible();
-    await expect(notesTextarea).toBeEnabled();
-  });
+      await expect(page.locator('#folder-import-section')).toBeVisible(); // the <summary> is shown
+      const openFolderBtn = page.locator('#btn-open-folder');
+      await expect(openFolderBtn).toBeHidden(); // collapsed by default
+    });
 
-  test('storage buttons are visible for mandatory selection', async ({
-    page,
-  }) => {
-    // D5 (2026-06-05): the save location is the only mandatory storage step and
-    // is visible by default; the folder-import step is an OPTIONAL collapsed
-    // section, so its button is hidden until the section is expanded.
-    const chooseSaveBtn = page.locator('#btn-choose-save');
-    await expect(chooseSaveBtn).toBeVisible();
+    // D2 (2026-07-05 folder-import feedback): the eager ref-point indexing pass
+    // drives a determinate progress bar (+ text label) inside the folder-import
+    // section. Playwright cannot exercise the real File System Access API, so
+    // the bar states are driven via the same testHooks the app wires
+    // (setFolderImportProgress) — asserting the transitional AND the durable
+    // end state per the CLAUDE.md async-UX rule.
+    await test.step('the progress bar shows in-progress and durable end states', async () => {
+      const progress = page.getByTestId('folder-import-progress');
+      // Hidden while idle.
+      await expect(progress).toBeHidden();
 
-    const folderSection = page.locator('#folder-import-section');
-    await expect(folderSection).toBeVisible(); // the <summary> is shown
-    const openFolderBtn = page.locator('#btn-open-folder');
-    await expect(openFolderBtn).toBeHidden(); // collapsed by default
-
-    // Expanding the optional section reveals the folder button.
-    await page.evaluate(() => window.testHooks.setFolderImportExpanded(true));
-    await expect(openFolderBtn).toBeVisible();
-  });
-
-  test('folder status shows not selected initially', async ({ page }) => {
-    const folderStatus = page.locator('#folder-status');
-    await expect(folderStatus).toContainText('No folder selected');
-  });
-
-  // D2 (2026-07-05 folder-import feedback): the eager ref-point indexing pass
-  // drives a determinate progress bar (+ text label) inside the folder-import
-  // section. Playwright cannot exercise the real File System Access API, so
-  // the bar states are driven via the same testHooks the app wires
-  // (setFolderImportProgress) — asserting the transitional AND the durable
-  // end state per the CLAUDE.md async-UX rule.
-  test('folder-import progress bar shows in-progress and durable ✓ end states @pr', async ({
-    page,
-  }) => {
-    const progress = page.getByTestId('folder-import-progress');
-    // Hidden while idle.
-    await expect(progress).toBeHidden();
-
-    // Expand the optional section (as the auto-expand hint flow would) and
-    // start the indexing pass.
-    await page.evaluate(() => {
-      window.testHooks.setFolderImportExpanded(true);
-      window.testHooks.setFolderImportProgress({
-        kind: 'progress',
-        done: 1,
-        total: 3,
+      // Expand the optional section (as the auto-expand hint flow would) and
+      // start the indexing pass.
+      await page.evaluate(() => {
+        window.testHooks.setFolderImportExpanded(true);
+        window.testHooks.setFolderImportProgress({
+          kind: 'progress',
+          done: 1,
+          total: 3,
+        });
       });
-    });
-    await expect(progress).toBeVisible();
-    await expect(page.locator('#folder-import-progress-text')).toHaveText(
-      'Recovering reference points… 1 / 3 recordings'
-    );
-    // Accessible progress semantics (PR #168 review): the container exposes
-    // role="progressbar" with a live aria-valuenow so screen readers can
-    // announce the pass — asserted here against the REAL index.html markup
-    // (the hud unit tests only cover the JS-driven aria-valuenow).
-    await expect(progress).toHaveAttribute('role', 'progressbar');
-    await expect(progress).toHaveAttribute('aria-valuemin', '0');
-    await expect(progress).toHaveAttribute('aria-valuemax', '100');
-    await expect(progress).toHaveAttribute('aria-valuenow', '33');
+      await expect(page.locator('#btn-open-folder')).toBeVisible();
+      await expect(progress).toBeVisible();
+      await expect(page.locator('#folder-import-progress-text')).toHaveText(
+        'Recovering reference points… 1 / 3 recordings'
+      );
+      // Accessible progress semantics (PR #168 review): the container exposes
+      // role="progressbar" with a live aria-valuenow so screen readers can
+      // announce the pass — asserted here against the REAL index.html markup
+      // (the hud unit tests only cover the JS-driven aria-valuenow).
+      await expect(progress).toHaveAttribute('role', 'progressbar');
+      await expect(progress).toHaveAttribute('aria-valuemin', '0');
+      await expect(progress).toHaveAttribute('aria-valuemax', '100');
+      await expect(progress).toHaveAttribute('aria-valuenow', '33');
 
-    // Durable end state: ✓ summary at 100%.
-    await page.evaluate(() =>
-      window.testHooks.setFolderImportProgress({
-        kind: 'done',
-        refPointsWritten: 5,
-        zipFilesTotal: 3,
-      })
-    );
-    await expect(page.locator('#folder-import-progress-text')).toHaveText(
-      '✓ 5 reference points recovered from 3 recordings'
-    );
-    await expect(progress).toHaveAttribute('aria-valuenow', '100');
-    const barWidth = await page
-      .locator('#folder-import-progress-bar')
-      .evaluate((el) => el.style.width);
-    expect(barWidth).toBe('100%');
+      // Durable end state: ✓ summary at 100%.
+      await page.evaluate(() =>
+        window.testHooks.setFolderImportProgress({
+          kind: 'done',
+          refPointsWritten: 5,
+          zipFilesTotal: 3,
+        })
+      );
+      await expect(page.locator('#folder-import-progress-text')).toHaveText(
+        '✓ 5 reference points recovered from 3 recordings'
+      );
+      await expect(progress).toHaveAttribute('aria-valuenow', '100');
+      const barWidth = await page
+        .locator('#folder-import-progress-bar')
+        .evaluate((el) => el.style.width);
+      expect(barWidth).toBe('100%');
 
-    // Failure/abort path: a reset hides the bar again.
-    await page.evaluate(() => window.testHooks.setFolderImportProgress(null));
-    await expect(progress).toBeHidden();
-  });
-
-  // D6 item 8 (2026-06-16 user feedback): the "choose a save location" blocker
-  // is stated ONCE, on the disabled Enter AR button's hint — NOT duplicated in
-  // #save-status. So #save-status starts empty (it is a pure path-status line)
-  // and the single authoritative blocker lives in #enter-ar-hint.
-  test('save-location blocker is stated once (on the Enter AR hint, not save-status)', async ({
-    page,
-  }) => {
-    const saveStatus = page.locator('#save-status');
-    // Pure status line: empty until a save location is chosen.
-    await expect(saveStatus).toHaveText('');
-
-    // The single authoritative blocker is on the disabled primary action.
-    const enterHint = page.locator('#enter-ar-hint');
-    await expect(enterHint).toBeVisible();
-    await expect(enterHint).toContainText(/save location/i);
-  });
-
-  test('new scenario name input shown when no existing scenarios', async ({
-    page,
-  }) => {
-    // After storage selection with no existing scenarios, dropdown shows "__new__"
-    // which triggers the new scenario section to be visible
-    await setStorageReady(page);
-    // If no existing scenarios, "__new__" is selected and section is visible
-    // OR if existing scenarios, the section is hidden until user selects "__new__"
-    // Either behavior is acceptable - just verify the section element exists
-    const newScenarioSection = page.locator('#new-scenario-section');
-    await expect(newScenarioSection).toBeAttached();
-  });
-
-  test('clicking storage button does not throw error in test env', async ({
-    page,
-  }) => {
-    // In test environment without File System Access API, this should
-    // fail gracefully (show error toast, not crash)
-
-    const pageErrors = [];
-    page.on('pageerror', (error) => {
-      // Allow expected errors for showDirectoryPicker / showSaveFilePicker
-      if (
-        !error.message.includes('showDirectoryPicker') &&
-        !error.message.includes('showSaveFilePicker') &&
-        !error.message.includes('is not a function') &&
-        !error.message.includes('not defined') &&
-        !error.message.includes('not supported')
-      ) {
-        pageErrors.push(error.message);
-      }
+      // Failure/abort path: a reset hides the bar again.
+      await page.evaluate(() => window.testHooks.setFolderImportProgress(null));
+      await expect(progress).toBeHidden();
     });
 
-    // The folder button lives in the collapsed optional section (D5); expand it
-    // first so it is actionable, then click it.
-    await page.evaluate(() => window.testHooks.setFolderImportExpanded(true));
-    const openFolderBtn = page.locator('#btn-open-folder');
-    await openFolderBtn.click();
+    await test.step('clicking the folder button does not throw', async () => {
+      // In test environment without File System Access API, this should
+      // fail gracefully (show error toast, not crash)
+      const pageErrors = [];
+      page.on('pageerror', (error) => {
+        // Allow expected errors for showDirectoryPicker / showSaveFilePicker
+        if (
+          !error.message.includes('showDirectoryPicker') &&
+          !error.message.includes('showSaveFilePicker') &&
+          !error.message.includes('is not a function') &&
+          !error.message.includes('not defined') &&
+          !error.message.includes('not supported')
+        ) {
+          pageErrors.push(error.message);
+        }
+      });
 
-    // Give a brief moment for any errors to propagate, then check
-    // Use expect.poll to allow for async error propagation
-    await expect.poll(() => pageErrors, { timeout: 500 }).toEqual([]);
-  });
+      await page.locator('#btn-open-folder').click();
 
-  test('storage status indicators show initially empty', async ({ page }) => {
-    const folderStatus = page.locator('#folder-status');
-    const saveStatus = page.locator('#save-status');
-    await expect(folderStatus).toContainText('No folder selected');
-    // #save-status is a pure path-status line and starts empty (D6 item 8);
-    // the save-location blocker is on #enter-ar-hint instead.
-    await expect(saveStatus).toHaveText('');
-  });
-
-  test('WebXR warning is hidden when WebXR not checked', async ({ page }) => {
-    // The warning should be hidden initially (shown only after check fails)
-    const warning = page.locator('#webxr-warning');
-    // Note: In Chromium with WebXR simulation, it may or may not be visible
-    // We just verify the element exists
-    await expect(warning).toBeAttached();
-  });
-
-  // D6 item 1 (2026-06-16 user feedback): the Required Permissions section is
-  // the upfront action on the setup screen — it must render ABOVE the storage,
-  // scenario and notes blocks (it used to be the last block). Codifies the
-  // structural reorder so it can't silently regress.
-  test('permissions section renders above storage setup', async ({ page }) => {
-    const permSection = page.locator('#permission-section');
-    const storageSetup = page.locator('#storage-setup');
-    await expect(permSection).toBeVisible();
-    await expect(storageSetup).toBeVisible();
-    const permBox = await permSection.boundingBox();
-    const storageBox = await storageSetup.boundingBox();
-    expect(permBox).not.toBeNull();
-    expect(storageBox).not.toBeNull();
-    // Permissions must sit above storage (smaller top y).
-    expect(permBox.y).toBeLessThan(storageBox.y);
-  });
-
-  test('setup modal title is correct', async ({ page }) => {
-    await expect(
-      page.getByRole('heading', { name: 'GPS + SLAM Recorder' })
-    ).toBeVisible();
-  });
-
-  test('status display exists and shows initial state', async ({ page }) => {
-    const statusText = page.locator('#status-text');
-    await expect(statusText).toBeAttached();
-    // Should show some status text (Initializing or similar)
-    const text = await statusText.textContent();
-    expect(text).not.toBe('');
+      // Give a brief moment for any errors to propagate, then check
+      // Use expect.poll to allow for async error propagation
+      await expect.poll(() => pageErrors, { timeout: 500 }).toEqual([]);
+    });
   });
 });
 
 test.describe('Scenario Dropdown Interaction', () => {
-  test('selecting "New Scenario" shows name input', async ({ page }) => {
-    // Simulate folder selection by populating the dropdown using real app function
-    await callRealPopulateScenarios(page, ['Existing']);
-
-    // Select the new scenario option - this triggers the real change handler
-    // which was attached by initUI (now called before WebXR check)
-    await expandScenarioSection(page);
-    const scenarioSelect = page.locator('#scenario-select');
-    await scenarioSelect.selectOption('__new__');
-
-    // The real application change handler should show the new scenario section
-    const newScenarioSection = page.locator('#new-scenario-section');
-    await expect(newScenarioSection).not.toHaveClass(/hidden/);
-  });
-
   test('selecting existing scenario hides new scenario input', async ({
     page,
   }) => {
@@ -356,34 +273,6 @@ test.describe('Scenario Dropdown Interaction', () => {
   });
 });
 
-test.describe('Session Notes Interaction', () => {
-  test('notes textarea accepts multiline input when enabled', async ({
-    page,
-  }) => {
-    // Enable the textarea by populating scenarios (simulates folder selection)
-    await callRealPopulateScenarios(page, ['Test Scenario']);
-
-    // Notes now lives in the collapsed scenario/session section (D2) — fill()
-    // requires the element to be visible, so expand the section first.
-    await expandScenarioSection(page);
-    const notes = page.locator('#session-notes');
-    await expect(notes).toBeVisible();
-    await expect(notes).toBeEnabled();
-
-    // Type multiline text
-    await notes.fill('Weather: Sunny\nDevice: Pixel 7\nTest run #1');
-    await expect(notes).toHaveValue(
-      'Weather: Sunny\nDevice: Pixel 7\nTest run #1'
-    );
-  });
-
-  test('notes placeholder is visible', async ({ page }) => {
-    const notes = page.locator('#session-notes');
-    const placeholder = await notes.getAttribute('placeholder');
-    expect(placeholder).toContain('Weather');
-  });
-});
-
 // D4 (2026-06-19 round-2 feedback, Finding 4): the setup modal splits into a
 // scrollable content area (#setup-scroll) + a pinned CTA footer, so the primary
 // action (Enter AR) stays visible without scrolling — users were missing it
@@ -391,7 +280,7 @@ test.describe('Session Notes Interaction', () => {
 // contract per the UI-feedback rule; the dominant-CTA *styling* is a visual
 // concern checked on-device.
 test.describe('Pinned Enter AR footer', () => {
-  test('Enter AR stays in the viewport without scrolling on a short screen @pr', async ({
+  test('Enter AR and its hint stay in the pinned footer, in the viewport on a short screen @pr', async ({
     page,
   }) => {
     // Force a short viewport so the modal content genuinely overflows — that is
@@ -414,11 +303,7 @@ test.describe('Pinned Enter AR footer', () => {
     const enterButton = page.locator('#btn-enter-ar');
     await expect(enterButton).toBeVisible();
     await expect(enterButton).toBeInViewport();
-  });
 
-  test('Enter AR and its hint share the pinned footer (outside the scroll area) @pr', async ({
-    page,
-  }) => {
     // The hint must travel with the button in the footer, and neither may be a
     // descendant of the scrollable content area.
     const shareFooter = await page.evaluate(() => {

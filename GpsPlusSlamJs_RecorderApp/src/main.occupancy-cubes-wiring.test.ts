@@ -405,6 +405,7 @@ describe('Occupancy-grid cube wiring in live AR', () => {
     resetMainState();
     vi.clearAllMocks();
     occupancyGridDisposers.length = 0;
+    setRecordingOptionsForTesting(vi.mocked(loadRecordingOptions)());
 
     document.body.innerHTML = `
       <div id="app"></div>
@@ -735,6 +736,7 @@ describe('Live CPU-depth occluder wiring in live AR', () => {
     resetMainState();
     vi.clearAllMocks();
     liveOccluderFrameCallbacks.length = 0;
+    setRecordingOptionsForTesting(vi.mocked(loadRecordingOptions)());
     document.body.innerHTML = `
       <div id="app"></div>
       <div id="setup-modal"><h1 id="setup-title">Recorder</h1></div>

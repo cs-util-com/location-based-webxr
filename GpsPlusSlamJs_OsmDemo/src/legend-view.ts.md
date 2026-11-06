@@ -37,4 +37,4 @@ Covered end to end by `playwright-tests/`:
 - _"reports the scale it is drawing with, as a legend"_ — the legend is visible, has swatches, labels both ends with numbers, and carries `describeScale`'s sentence in its `title`.
 - _"switching category redraws the grid"_ — `.legend-category` shows the newly selected category (W2). This is the assertion that makes a redraw visible to a person rather than only to a tooltip.
 
-The model behind it is unit- and property-tested in `legend-model.{test,property.test}.ts`; this file has no logic of its own worth a separate unit test.
+The model behind it is unit- and property-tested in `legend-model.{test,property.test}.ts`; `legend-view.test.ts` holds the one branch this file owns, the empty sentence replacing the ramp.

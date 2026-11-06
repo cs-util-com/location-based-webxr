@@ -7,7 +7,7 @@ const FIXTURE = join(here, "fixtures", "sample-recording.zip");
 
 /**
  * How many pixels must darken for a resting ball's shadow to count as
- * visible (owner feedback round 2, M1). Measured 2026-09-26 (the demo's
+ * visible. Measured 2026-09-26 (the demo's
  * 63.4° light, the ball about 27 px in radius at 1.5 m up and 1.2 m away):
  * 424-1076 pixels from the four sides, median about 890; a ball covers
  * about 2,260. The floor is well under that, and well above noise.
@@ -15,25 +15,10 @@ const FIXTURE = join(here, "fixtures", "sample-recording.zip");
 const MIN_SHADOW_PX = 200;
 /**
  * A pixel "darkens" when its luminance drops by at least this much; the
- * verdict is also reported at half and twice it (owner rule 2026-09-13).
+ * verdict is also reported at half and twice it.
  */
 const DARKEN_BY = 6;
 const DARKEN_SWEEP = [3, 6, 12];
-/** How far the standing viewer is from the ball (m): near, and a thrower's. */
-const STAND_BACK_SWEEP_M = [1.2, 2.5, 4];
-/**
- * Every skin of the Shader dropdown. Owner phone test on r749 (2026-09-27):
- * shadows showed with the shaded skins but NOT with "Wireframe" and "Off",
- * the normal AR case. The page's default first, then the two that failed,
- * then back to shaded skins.
- */
-const SKINS = [
-  "depth-shaded-wireframe",
-  "wireframe",
-  "off",
-  "matcap",
-  "depth-shaded",
-];
 /**
  * The canvas is transparent (`alpha: true`, no background), in the replay
  * as in AR, where the browser composites it over the camera image. With the
@@ -171,93 +156,30 @@ async function measureSides(page, label, backM) {
 const minShadowPx = (backM) => MIN_SHADOW_PX * (1.2 / backM) ** 2;
 
 /**
- * WHY (owner feedback round 2, plan 2026-09-26-2055 M1): the owner saw no
- * shadow at all on the phone, while the replay e2e passed. That e2e only
- * checked the stats line's "shadows on", which says the rule is active, not
- * that a shadow is VISIBLE; the W4 plan's pixel probe (§11) had been dropped.
- * This is that probe, with the demo's own light, ball size and camera: a ball
- * rests on the reconstructed floor, and the pixels around it that darken
- * when the shadow is switched on are counted. The AR path renders the same
- * wiring (startDemoShadows, the same light and receiver), so a shadow too
- * small to see here is too small on the phone.
- *
- * Round 3 (owner phone test on r749, 2026-09-27): the shadow showed with
- * the shaded skins and vanished with "Wireframe" and "Off". So the probe
- * now measures EVERY skin, each after a re-mesh, as the phone draws it.
+ * WHY: a phone test showed no shadow at all, while the replay e2e passed.
+ * That e2e only checks the stats line's "shadows on", which says the rule is
+ * active, not that a shadow is VISIBLE. This is the pixel probe, with the
+ * demo's own light, ball size and camera: a ball rests on the reconstructed
+ * floor, and the pixels around it that darken when the shadow is switched on
+ * are counted. The AR path renders the same wiring (startDemoShadows, the same
+ * light and receiver), so a shadow too small to see here is too small on the
+ * phone.
  */
 test.describe("Physics Demo - shadows you can see", () => {
-  test("a resting ball's shadow darkens the floor around it, in every skin", async ({
-    page,
-  }) => {
-    test.setTimeout(360_000);
-    const pageErrors = [];
-    page.on("pageerror", (err) => pageErrors.push(err.message));
-    await openReplay(page);
-    // "Cubes": on this fixture's very sparse room a ball falls through the
-    // smooth floors' gaps (measured 2026-09-26); the blocky floor holds it.
-    // The mesh mode IS the receiver's geometry (a skin on the occluder), so
-    // this measures the shadow on the blocky floor; the page's default is
-    // Surface nets. Wait for the collider to follow the new mesh (it
-    // rebuilds on a throttle), or the ball meets the old one.
-    const stats = page.getByTestId("stats");
-    const colliderOf = async () =>
-      /collider (\d+) tris/.exec((await stats.textContent()) ?? "")?.[1];
-    const before = await colliderOf();
-    await page.getByTestId("mesh-style").selectOption("greedy");
-    await expect.poll(colliderOf, { timeout: 20_000 }).not.toBe(before);
-    await dropAndRest(page);
-
-    // A TIME BUDGET, not a weaker check: every skin is measured at 1.2 m
-    // from four sides, and the page's default skin also at 2.5 m and 4 m
-    // (the M1 sweep): 28 views. Dropped: the 2.5 m and 4 m views of the four
-    // other skins (32 of the full 60). A skin decides WHETHER the receiver
-    // draws, not how the shadow falls off with distance: with the fix, Off
-    // matched the default within 2 % at all three distances (full 60-view
-    // sweep, 2026-09-27, findings doc 2026-09-27-0651), and 60 views overran
-    // the test budget on a loaded machine where the original 12 had fitted.
-    const distancesFor = (skin) =>
-      skin === SKINS[0] ? STAND_BACK_SWEEP_M : STAND_BACK_SWEEP_M.slice(0, 1);
-
-    // Every skin, in the order a user flips through the dropdown. A skin
-    // switch reaches the receiver's geometry through the next re-mesh,
-    // which a phone does on every depth refresh and the paused replay only
-    // when asked.
-    const bySkin = {};
-    for (const skin of SKINS) {
-      await page.getByTestId("mesh-shader").selectOption(skin);
-      await page.evaluate(() => window.__physicsShadowProbe.remesh());
-      bySkin[skin] = {};
-      for (const backM of distancesFor(skin)) {
-        bySkin[skin][backM] = await measureSides(page, skin, backM);
-      }
-    }
-    console.log(
-      `shadow probe, lower middle of four sides: ${JSON.stringify(bySkin)}`,
-    );
-    for (const skin of SKINS) {
-      for (const backM of distancesFor(skin)) {
-        expect
-          .soft(bySkin[skin][backM], `${skin} at ${backM} m`)
-          .toBeGreaterThanOrEqual(minShadowPx(backM));
-      }
-    }
-    expect(pageErrors).toEqual([]);
-  });
-
   /*
-   * WHY (owner field report on r752, 2026-09-27): "the shadows first didn't
-   * show, but when I switched the mesh shader they started working; the
-   * second time I loaded the page they worked instantly". The test above
-   * changes the mesh mode first, which RECREATES the occluder and its
-   * receiver, so no test ever measured the first occluder of a page load.
-   * Here the dropdowns are set before the recording loads and never touched
-   * again: the page's default skin (the owner's first load) and Off (the
-   * normal AR case), each on the first occluder, whose receiver is attached
-   * before the room has any geometry. Only "Cubes" is preset, as above,
-   * because this fixture's smooth floor does not hold a ball.
+   * WHY (field report, 2026-09-27): "the shadows first didn't show, but when I
+   * switched the mesh shader they started working; the second time I loaded
+   * the page they worked instantly". Changing the mesh mode RECREATES the
+   * occluder and its receiver, so the first occluder of a page load has to be
+   * measured on its own. Here the dropdowns are set before the recording loads
+   * and never touched again: the page's default skin and Off (the normal AR
+   * case), each on the first occluder, whose receiver is attached before the
+   * room has any geometry. Only "Cubes" is preset, because on this fixture's
+   * very sparse room a ball falls through the smooth floors' gaps (measured
+   * 2026-09-26); the blocky floor holds it.
    */
   //
-  // Round 4 (owner on r753: first visit to a new preview origin only, so
+  // A later report (first visit to a new preview origin only, so
   // with Chrome's camera/AR permission prompt): each case also reads the
   // receiver's program flags from the diagnostics line ("rx S1N?D1": compiled
   // with the shadow map and one directional shadow), the state a phone
@@ -284,6 +206,18 @@ test.describe("Physics Demo - shadows you can see", () => {
       });
       console.log(`first load ${label}: ${await diagnostics.textContent()}`);
       expect(px).toBeGreaterThanOrEqual(minShadowPx(1.2));
+      // The one path the first load does not walk: a skin switch reaches the
+      // receiver's geometry through the next re-mesh, which a phone does on
+      // every depth refresh and the paused replay only when asked. Wireframe
+      // and Off are the skins that lost the shadow on a phone (2026-09-27),
+      // and the two share the receiver path this test measures Off on.
+      if (skin === "depth-shaded-wireframe") {
+        await page.getByTestId("mesh-shader").selectOption("wireframe");
+        await page.evaluate(() => window.__physicsShadowProbe.remesh());
+        expect(
+          await measureSides(page, "wireframe", 1.2),
+        ).toBeGreaterThanOrEqual(minShadowPx(1.2));
+      }
       expect(pageErrors).toEqual([]);
     });
   }

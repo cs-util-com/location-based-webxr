@@ -117,9 +117,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   approach. Deliberately no flag for it: "stays as you left it" is the
   rule, and after a takeover the folded tree is what they left.
 - `EditorShell.clearSearch()` - empties the tree's search, and draws the tree
-  without it where it shows: the page calls it for every station it makes (the
-  search would hide the new one, its name matching nothing typed), and adding
-  to a station from the tree or the palette does the same.
+  without it where it shows: the page calls it for every station it makes and
+  for an item it copies (the search would hide the new one, its name matching
+  nothing typed), and adding to a station from the tree or the palette does the
+  same.
 - `EditorShell.flush()` - writes the typing not yet in the tour (an
   inspector field being typed in, a long text's writer before its
   pause); the page calls it before a save.

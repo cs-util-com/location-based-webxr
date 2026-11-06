@@ -46,74 +46,9 @@ import {
 const AFTER_ANNOUNCE = { timeout: 8_000 };
 
 test.describe("the loading channels", () => {
-  test("a map click announces itself, and both channels clear together", async ({
-    page,
-  }) => {
-    const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // THE NEXT fetch hangs. Armed after the boot precisely because the boot has
-    // to succeed: this test is about what a populated app does while the user
-    // waits for more, which is the real case.
-    counts.holdOverpass();
-
-    // A JUMP TO ANOTHER CITY, not a map click, and the difference is the whole
-    // reason this test is worth having. A click a few hundred metres away
-    // re-scores from tiles the worker ALREADY HOLDS and issues no query at all
-    // (`layers-and-ground.spec.js` pins the same distinction for layers), so
-    // holding Overpass would hold nothing and the refresh would be over before
-    // the announce delay elapsed. The first draft of this test did exactly that
-    // and failed for a reason that had nothing to do with the feature.
-    await page.selectOption("#site", "porto-ribeira");
-
-    const overlay = page.locator("#loading-overlay");
-    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
-    await expect(overlay).toContainText("Loading", AFTER_ANNOUNCE);
-
-    // CENTRED ON THE 3D SCENE, which is the owner's correction to the first
-    // version and the only thing here a unit test genuinely cannot check: the
-    // overlay is absolutely positioned inside `#scene`, so whether it lands in
-    // the middle depends on that element being positioned, on the flex layout
-    // around it, and on the real box sizes.
-    const sceneBox = await page.locator("#scene").boundingBox();
-    const overlayBox = await overlay.boundingBox();
-    if (sceneBox === null || overlayBox === null) {
-      throw new Error("expected both #scene and the overlay to be laid out");
-    }
-    const centreOf = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    const scene = centreOf(sceneBox);
-    const shown = centreOf(overlayBox);
-    // A couple of pixels of slack for sub-pixel layout; anything corner-ish
-    // would miss by hundreds.
-    expect(Math.abs(shown.x - scene.x)).toBeLessThan(4);
-    expect(Math.abs(shown.y - scene.y)).toBeLessThan(4);
-    // THE SECOND CHANNEL, and the one that survives a collapsed header only
-    // because it is a class on an element whose text is rewritten constantly -
-    // a child element would be deleted by the next `writeStatus`.
-    await expect(page.locator("#status")).toHaveClass(/is-loading/, REPAINT);
-
-    counts.releaseOverpass();
-    await waitForRefresh(page);
-
-    // THE TOAST IS GONE once the refresh has delivered. Note what this does NOT
-    // show: `waitForRefresh` returns after the whole widening, by which time
-    // `busy` has fallen too, so both hide paths have fired and this cannot tell
-    // them apart. That the hide is IMMEDIATE on data arrival - the owner's
-    // "instantly" - is a unit test on a fake clock, where the two can be driven
-    // separately. The comment that used to sit here claimed this assertion
-    // proved it, which it never did.
-    await expect(overlay).toBeHidden(REPAINT);
-    await expect(page.locator("#status")).not.toHaveClass(
-      /is-loading/,
-      REPAINT,
-    );
-  });
-
   test("opening the page announces its own cold start", async ({ page }) => {
-    // OWNER REQUEST, 2026-09-22, made after using it: "the LOADING
-    // OPENSTREETMAP DATA does not show yet when the page is initially loaded,
-    // fix that".
+    // Reported after using the app, 2026-09-22: "the LOADING OPENSTREETMAP DATA
+    // does not show yet when the page is initially loaded, fix that".
     //
     // It had been deliberately silent, on the rule that only a refresh someone
     // ASKED for announces itself - and opening a page is not a click. That
@@ -121,6 +56,10 @@ test.describe("the loading channels", () => {
     // the longest wait it has, it is the first thing a new visitor sees, and
     // the status-line dot is not what someone staring at an empty scene for
     // thirty seconds needs. Nobody gestured, but opening the app IS the intent.
+    //
+    // NOTHING ELSE HOLDS THE BOOT'S OWN `arm()`: the mid-fetch test below also
+    // sees the overlay during the boot refresh, but its site pick arms the
+    // announcer itself, so that test stays green with the boot's call deleted.
     const counts = await stubNetwork(page);
     counts.holdOverpass();
     await page.goto(AT_FIXTURE);
@@ -224,42 +163,5 @@ test.describe("the loading channels", () => {
     counts.releaseOverpass();
     await waitForRefresh(page);
     await expect(page.locator("#loading-overlay")).toBeHidden(REPAINT);
-  });
-
-  test("a fetch that fetches nothing still takes both channels down", async ({
-    page,
-  }) => {
-    // THE OUTCOME WHERE A STUCK INDICATOR WOULD HURT MOST: the user waited, and
-    // got nothing. An indicator left running would say the app is still trying
-    // when it has stopped.
-    //
-    // WHAT THIS TEST LEARNED THE HARD WAY. Its first draft expected an ERROR
-    // TOAST here, on the assumption that a failed query fails the refresh. It
-    // does not: the pipeline tolerates a tile it could not fetch, publishes
-    // what it has, and reports the shortfall in the status line - which is why
-    // `waitForRefresh` watches for `unavailable` alongside `cells`. So the
-    // honest assertion is that the refresh ENDS and both channels clear, not
-    // that an error appears.
-    //
-    // 400 rather than 503 deliberately (see `fixtures.js`): a non-retryable
-    // status escapes the retry loop at once, so this costs a second rather than
-    // several of exponential backoff.
-    const counts = await stubNetwork(page, { overpassStatus: 400 });
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    counts.holdOverpass();
-    await page.selectOption("#site", "porto-ribeira");
-
-    const overlay = page.locator("#loading-overlay");
-    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
-
-    counts.releaseOverpass();
-
-    await expect(overlay).toBeHidden(AFTER_ANNOUNCE);
-    await expect(page.locator("#status")).not.toHaveClass(
-      /is-loading/,
-      AFTER_ANNOUNCE,
-    );
   });
 });

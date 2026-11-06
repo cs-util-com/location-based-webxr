@@ -15,11 +15,15 @@ import {
   countNonSkyPixels,
   stubNetwork,
   waitForRefresh,
+  walkByMapClick,
   REPAINT,
 } from "./fixtures.js";
 
 test.describe("the layer toggles", () => {
-  test("switch geometry, draw plates, and clear the grid in both views", async ({
+  // ONE BOOT for the switches, the underground layer, the ground picker and the
+  // scene frame. The walks come late because a move cannot be undone, and the
+  // picker's default is read before anything changes the mode.
+  test("switch geometry, draw plates, clear the grid, show the underground, hold one frame across a walk, and 'No ground' stays empty sky", async ({
     page,
   }) => {
     const counts = await stubNetwork(page);
@@ -201,110 +205,155 @@ test.describe("the layer toggles", () => {
       if (box === null) throw new Error("no canvas box");
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await expect(page.locator("#details")).toBeHidden();
+
+      // Back to the boot state, so the steps below start from what a user has.
+      await page.getByRole("checkbox", { name: "areas" }).check();
+      await page.locator("#layer-plates").uncheck();
     });
-  });
-});
 
-/**
- * W11 / DEC-R3-3 — the ground picker, including the state that hides the ground.
- */
-test.describe("the ground mode picker", () => {
-  test("offers the right modes, and 'No ground' really draws none", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await test.step("the underground layer draws the excluded features in both views, and nothing when off", async () => {
+      // The layer exists so a human can judge WHICH features `isBelowSurface`
+      // removes: 13.3 % of corpus features leave the scores and the mesh with
+      // nothing said, the corpus test bounds the share, and only an eye on real
+      // ground catches the mirror bug, where too eager a predicate deletes real
+      // walkable ground and nothing looks broken because there is simply less map.
+      //
+      // BOTH VIEWS, because they answer different questions: the map says WHERE
+      // the excluded ground is, the 3D view says what SHAPE it was. The cells
+      // layer has already taught, twice, that a layer can be registered, wired
+      // and still draw nothing.
+      const drawn = page.locator("#map path.underground-feature");
 
-    // THE PICKER-CONTENTS STEP RUNS FIRST because it asserts the DEFAULT
-    // selection, and the step below changes it. Fusing does not get to reorder
-    // an assertion about an initial state to after something has moved it.
-    await test.step("offers the height ramp on both strategies and on neither without ground", async () => {
-      // WHAT THIS REPLACES, and why the replacement is a stronger claim. It used to
-      // assert that the `terrainDebug` SWITCH was disabled under `No ground`
-      // (DEC-R3-17) — a runtime guard against offering a control that does nothing.
-      // W6 folds the ramp into the ground mode, so the guard is now structural:
-      // there is no `none-ramp` entry to choose. Asserting the picker's contents
-      // tests the property directly instead of testing the guard that used to
-      // approximate it.
+      // OFF FIRST, and this is the direction that actually broke before: a layer
+      // whose data arrives regardless draws itself before anyone asks.
+      await expect(page.locator("#layer-underground")).not.toBeChecked();
+      await expect(drawn).toHaveCount(0);
+
+      // The count is reported even with the layer off — that is the point of it.
+      await expect(page.locator("#status")).toContainText(/\d+ underground/);
+
+      // THE FULL DATA URL, not its length. A base64 PNG length is a coarse hash
+      // — a scene that gained a few thin lines can encode to the same byte count
+      // — so comparing lengths is the one assertion here that could stop biting
+      // without failing. Every other canvas comparison in this file (584, 1410,
+      // 2214, 2907, 3028, 3293, 3353) compares the whole string.
+      const sceneBefore = await page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+
+      await page.locator("#layer-underground").check();
+
+      // 2D: the outlines appear. Present rather than visible, because an excluded
+      // feature can sit outside the viewport exactly as a geo-event can.
+      await expect(drawn).not.toHaveCount(0, { timeout: 30000 });
+
+      // 3D: the picture changes. Asserted as a CHANGE rather than a colour,
+      // because what matters is that the scene incorporated the layer at all —
+      // and the fixture's ground decides where the lines land.
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() => {
+              const el = document.querySelector("#scene canvas");
+              return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+            }),
+          { timeout: 30000 },
+        )
+        .not.toBe(sceneBefore);
+
+      // AND BACK OFF, which is the half a redraw-only implementation passes and a
+      // draw-once one fails.
+      await page.locator("#layer-underground").uncheck();
+      await expect(drawn).toHaveCount(0, { timeout: 30000 });
+    });
+
+    await test.step("keeps ONE frame across a walk while the ground follows the user", async () => {
+      // WHY THIS TEST MATTERS, AND WHY IT IS NOT A SCREENSHOT DIFF. "The scene
+      // does not jump" needs a machine-readable definition. A canvas comparison
+      // cannot supply one here: the user has moved, so the picture MUST change,
+      // and an identical-pixels assertion would only pass for a scene that had
+      // stopped drawing. What must not change is the FRAME those pixels are
+      // expressed in — every published vertex is relative to it, so if it holds
+      // across a step then nothing moved underneath the user.
+      //
+      // The counterweight is in the same assertion: the sampled ground window has
+      // to FOLLOW the user, or the frame standing still is bought by the terrain
+      // ceasing to cover where they are standing — at which point
+      // `surfaceHeight`'s per-axis clamp extrudes the edge profile outward as
+      // stripes that look like terrain and are not (finding R2-9).
+      //
+      // This is the regression the whole of round 5 exists for, and the one the
+      // unit tests can only assert a piece of each: the frame is decided in
+      // `scene-anchor.ts`, sampled in `terrain-window.ts`, threaded through
+      // `heightfield.ts` and drawn by `building-view.ts`. Only the running app
+      // proves the four agree.
+      const scene = page.locator("#scene");
+      const frameOrigin = () => scene.getAttribute("data-frame-origin");
+      const groundCentre = () => scene.getAttribute("data-ground-centre");
+
+      await expect.poll(groundCentre, REPAINT).not.toBe(null);
+      const originAtStart = await frameOrigin();
+      const centreAtStart = await groundCentre();
+      expect(originAtStart).not.toBeNull();
+      // The scene opens anchored where the user is, so the window starts on top
+      // of the frame origin. Without this the "it moved" assertion below could be
+      // satisfied by a window that was never there in the first place.
+      expect(centreAtStart).toBe("0,0");
+
+      // A MAP CLICK, which is how this demo simulates a walk — well inside the
+      // 5 km re-anchor threshold, so it is travel rather than a discontinuity.
+      // Near the corner of the map so the move is a few hundred metres, which is
+      // far more than a rounding difference and far less than the threshold.
+      //
+      // THROUGH THE HELPER, because a bare click here is not reliably a walk:
+      // region polygons stop propagation, and which geography sits under a fixed
+      // pixel moves with the map's size. The helper picks a spot that is provably
+      // outside every region at run time. See `walkByMapClick`.
+      await walkByMapClick(page);
+      await waitForRefresh(page);
+      await expect.poll(groundCentre, REPAINT).not.toBe(centreAtStart);
+
+      // THE FRAME IS UNCHANGED. Not "close to": the anchor is a held value, so any
+      // difference at all means something re-derived it from the position.
+      expect(await frameOrigin()).toBe(originAtStart);
+
+      // AND THE GROUND MOVED WITH THE USER. Parsed rather than merely compared,
+      // so a window that jumped to some unrelated place would not pass for one
+      // that followed a click a few hundred metres away.
+      const moved = (await groundCentre()) ?? "";
+      const [dx, dy] = moved.split(",").map(Number);
+      expect(Number.isFinite(dx) && Number.isFinite(dy)).toBe(true);
+      expect(Math.hypot(dx ?? 0, dy ?? 0)).toBeGreaterThan(20);
+      expect(Math.hypot(dx ?? 0, dy ?? 0)).toBeLessThan(5000);
+    });
+
+    /** The canvas as a string; a full data URL, never its length. */
+    const shot = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("#scene canvas");
+        return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
+      });
+
+    await test.step("'No ground' changes the picture and leaves the buildings", async () => {
+      // WHY THIS STEP MATTERS. `No ground` is a way to look at the OSM ground
+      // areas without the terrain over them, and it fails silently: a mode
+      // switch that cleared the whole scene would look like a blanking bug, and
+      // a mode that did nothing would look like a decorative picker.
       const picker = page.locator("#ground-mode");
-      // SEVEN since §2 (DEC-R6-16): a third appearance — the slope treatment —
-      // across two displacement strategies, plus "none".
-      await expect(picker.locator("option")).toHaveCount(7);
-      // Every strategy keeps every appearance, which is what keeps the CPU-vs-GPU
-      // A/B reachable whichever appearance is chosen (DEC-R3-3).
-      for (const value of [
-        "cpu",
-        "cpu-slope",
-        "cpu-ramp",
-        "gpu",
-        "gpu-slope",
-        "gpu-ramp",
-        "none",
-      ]) {
-        await expect(picker.locator(`option[value="${value}"]`)).toHaveCount(1);
-      }
-      // ...and no combination of "no ground" with an appearance exists to be
-      // chosen, which is DEC-R3-17 held structurally rather than by a guard.
-      await expect(picker.locator('option[value="none-ramp"]')).toHaveCount(0);
-      await expect(picker.locator('option[value="none-slope"]')).toHaveCount(0);
-
-      // SLOPE is the default since DEC-R6-5, reversing DEC-R5-4 — see
-      // `ground-mode.ts` for the measurement behind the reversal.
       await expect(picker).toHaveValue("cpu-slope");
-
-      await picker.selectOption("gpu-ramp");
-      await expect(page.locator("#status")).toContainText(/ground gpu \d/);
-    });
-
-    await test.step("draws nothing as ground on 'No ground', and comes back", async () => {
-      // WHY THIS TEST MATTERS. `No ground` is the state the round-3 notes asked
-      // for — a way to look at the OSM ground areas without the terrain over them
-      // — and the way it fails is silently: a mode switch that cleared the whole
-      // scene would look exactly like the blanking bug W2 fixed, and a mode that
-      // did nothing would look like the picker was decorative.
-      const shot = () =>
-        page.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          if (!(el instanceof HTMLCanvasElement)) return "";
-          return el.toDataURL();
-        });
-
-      // Taken here rather than at boot: the step above left the picker on
-      // `gpu-ramp`, and the claim is "switching to none changes the picture",
-      // which has to be measured from whatever ground is actually drawn now.
       const withGround = await shot();
-      await page.locator("#ground-mode").selectOption("none");
+      await picker.selectOption("none");
       await expect.poll(shot, REPAINT).not.toBe(withGround);
-
-      // The mesh layers are untouched — the buildings are still there.
+      await expect(page.locator("#status")).toContainText(/ground none/);
       await expect(page.locator("#status")).toContainText(/\d+ volumes/);
-
-      await page.locator("#ground-mode").selectOption("cpu");
-      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
     });
-  });
-});
 
-/**
- * "No ground" must MEAN no ground — including after the user moves.
- *
- * Reported after the round-3 deploy: with `No ground` selected and the camera
- * under the scene, "there was still some additional ground layer rendered".
- * Measured from below with every layer switched off, nothing but the sky
- * remains — so the terrain plane is genuinely gone and what is visible from
- * underneath is the affordance grid, which is `DoubleSide` and traces the
- * terrain surface. These tests pin the half that could regress silently.
- */
-test.describe("No ground", () => {
-  test("is empty sky with the layers off, and survives a position change", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    await page.locator("#ground-mode").selectOption("none");
-
+    // "No ground" must MEAN no ground, including after the user moves. Reported
+    // with the camera under the scene as "there was still some additional ground
+    // layer rendered"; measured from below with every layer off, only the sky
+    // remains, and what is visible underneath is the DoubleSide affordance grid.
+    // These steps pin the half that could regress silently.
     // THE SKY STEP RUNS FIRST, and the order is the fusion's own rule rather
     // than taste: it is fully reversible (seven switches back on), while the step
     // below MOVES THE USER, which reloads the terrain and cannot be undone. An
@@ -358,11 +407,6 @@ test.describe("No ground", () => {
       // a future caller rebuilt the plane — the ground would come back on the next
       // click with the picker still saying "No ground". A control that silently
       // stops applying is the shape of half of this round's findings.
-      const shot = () =>
-        page.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-        });
       await expect.poll(shot, REPAINT).not.toBe("");
       const withoutGround = await shot();
 
@@ -384,75 +428,10 @@ test.describe("No ground", () => {
       // cells moved with the user, so this is not a pixel comparison — the status
       // line's own mode readout is the honest assertion here.)
       expect(withoutGround).not.toBe("");
+
+      // And it comes back: the picker is not a one-way door.
+      await page.locator("#ground-mode").selectOption("cpu");
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
     });
-  });
-});
-
-test.describe("the underground layer", () => {
-  /**
-   * WHY THESE TESTS MATTER.
-   *
-   * `isBelowSurface` removes 13.3 % of corpus features from the scores and from
-   * the mesh and says nothing. This layer exists so a human can judge WHICH
-   * features — the corpus test bounds the share, and only an eye on real ground
-   * catches the mirror bug, where too eager a predicate deletes real walkable
-   * ground and nothing looks broken because there is simply less map.
-   *
-   * BOTH VIEWS, because they answer different questions: the map says WHERE the
-   * excluded ground is, the 3D view says what SHAPE it was. And the cells layer
-   * has already taught, twice, that a layer can be registered, wired and still
-   * draw nothing.
-   */
-  test("draws the excluded features in both views, and nothing when off", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    const drawn = page.locator("#map path.underground-feature");
-
-    // OFF FIRST, and this is the direction that actually broke before: a layer
-    // whose data arrives regardless draws itself before anyone asks.
-    await expect(page.locator("#layer-underground")).not.toBeChecked();
-    await expect(drawn).toHaveCount(0);
-
-    // The count is reported even with the layer off — that is the point of it.
-    await expect(page.locator("#status")).toContainText(/\d+ underground/);
-
-    // THE FULL DATA URL, not its length. A base64 PNG length is a coarse hash
-    // — a scene that gained a few thin lines can encode to the same byte count
-    // — so comparing lengths is the one assertion here that could stop biting
-    // without failing. Every other canvas comparison in this file (584, 1410,
-    // 2214, 2907, 3028, 3293, 3353) compares the whole string.
-    const sceneBefore = await page.evaluate(() => {
-      const el = document.querySelector("#scene canvas");
-      return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-    });
-
-    await page.locator("#layer-underground").check();
-
-    // 2D: the outlines appear. Present rather than visible, because an excluded
-    // feature can sit outside the viewport exactly as a geo-event can.
-    await expect(drawn).not.toHaveCount(0, { timeout: 30000 });
-
-    // 3D: the picture changes. Asserted as a CHANGE rather than a colour,
-    // because what matters is that the scene incorporated the layer at all —
-    // and the fixture's ground decides where the lines land.
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const el = document.querySelector("#scene canvas");
-            return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-          }),
-        { timeout: 30000 },
-      )
-      .not.toBe(sceneBefore);
-
-    // AND BACK OFF, which is the half a redraw-only implementation passes and a
-    // draw-once one fails.
-    await page.locator("#layer-underground").uncheck();
-    await expect(drawn).toHaveCount(0, { timeout: 30000 });
   });
 });

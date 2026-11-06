@@ -492,7 +492,6 @@ describe('handleReplaySessionSelect', () => {
     await handlers.handleReplayScenarioChange('S');
 
     mockLoadGpsPathFromBlob.mockResolvedValueOnce([]);
-    mockCreatePreviewMap.mockReturnValueOnce(null);
 
     await handlers.handleReplaySessionSelect(0);
 

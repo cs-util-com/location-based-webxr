@@ -95,11 +95,14 @@
     be `test:repo-config` alone, exit 0, and no package checked. With no
     `--ref`, nothing selected, HEAD a merge commit and HEAD not on main, it
     exits 2 before taking the slot (`cleanMergeRefusal` in `select.mjs`) and
-    names the two bases: `--ref origin2/main` for what the branch changes on
-    top of main, `--ref HEAD~1` for what the merge brought in. The two select
-    different sets and neither contains the other, so the choice stays with
-    the caller. Not refused, and not checked either: a merge followed by
-    further edits, where the run sees only those edits.
+    names the ways out: `--ref` with this clone's main line for what the
+    branch changes on top of main, `--ref HEAD~1` for what the merge brought
+    in, `--all` for the whole cascade. The two bases select different sets
+    and neither contains the other, so the choice stays with the caller. Not
+    refused, and not checked either: a merge followed by further edits, where
+    the run sees only those edits. A `--dry-run` is not refused: it is how to
+    ask what the gate would do. The head is read only from a `git` that
+    succeeded; a failed read counts as no merge.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,

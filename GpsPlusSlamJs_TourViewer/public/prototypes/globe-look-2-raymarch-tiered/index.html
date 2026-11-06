@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raymarched cumulus, tiered</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1424; color: #eef3fa;
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hud { position: fixed; left: 8px; top: 8px; padding: 6px 8px; border-radius: 8px;
+    background: rgba(8, 16, 30, 0.6); font: 11.5px/1.35 ui-monospace, Consolas, monospace;
+    white-space: pre; pointer-events: none; max-width: calc(100vw - 16px); box-sizing: border-box; }
+  #bar { position: fixed; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom));
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; pointer-events: none; }
+  #bar button { pointer-events: auto; font: inherit; color: #eef3fa; background: rgba(8, 16, 30, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; padding: 7px 13px; cursor: pointer; }
+  #bar button[aria-pressed="true"] { background: rgba(240, 246, 255, 0.92); color: #0b1424; border-color: transparent; }
+  #bar .sep { width: 10px; }
+  #notes { position: fixed; right: 8px; top: 8px; max-width: min(400px, calc(100vw - 16px)); box-sizing: border-box;
+    background: rgba(8, 16, 30, 0.78); border-radius: 8px; padding: 6px 10px; }
+  #notes summary { cursor: pointer; font-weight: 600; }
+  #notes[open] { max-height: calc(100vh - 90px); overflow: auto; }
+  #notes p, #notes li { margin: 6px 0; font-size: 12.5px; }
+  #notes ul { padding-left: 18px; margin: 4px 0; }
+  #msg { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; font-size: 15px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="msg">Preparing cloud noise...</div>
+<div id="hud"></div>
+<details id="notes">
+  <summary>Notes</summary>
+  <p><b>Technique.</b> A spherical cloud shell (bases 1.25 km, tops up to 3.05 km) is raymarched in its own low-resolution pass.
+  Density = a baked 2D weather map (clustered cumulus domes with gaps, small clouds between) thresholding a tiling 3D
+  Perlin-Worley shape noise, a height gradient that gives flat bases and rounded tops, and Worley erosion detail.
+  Lighting: a short light march toward the sun (Beer), a two-lobe phase function with multiple-scattering octaves
+  (bright backlit rims), a powder term (dark edges facing away), and a blue sky ambient on the shadow sides.
+  Distance-proportional steps start at a blue-noise offset that changes every frame; the result is reprojected
+  (camera and wind) and accumulated, then upsampled into a full-resolution pass that draws the sky, a
+  Beckmann sun-glitter sea with mip-filtered sparkles and cloud shadows, two-component haze, and the sun.</p>
+  <p><b>Tiers.</b></p>
+  <ul>
+    <li><b>low</b>: canvas at 0.75 of CSS pixels (dpr capped at 1), clouds at 0.5 of that (one quarter of the pixels),
+      up to 32 primary steps (about 18 across the slab), 2 light steps, no erosion detail, 2 scattering octaves, 1 shadow sample on the sea,
+      longer history (blend 0.1).</li>
+    <li><b>high</b>: canvas at device pixels (capped at 1.5), clouds at 0.5, up to 80 primary steps (about 48 across the slab), 5 light steps,
+      erosion detail near the camera, 3 octaves, 2 shadow samples, blend 0.18.</li>
+  </ul>
+  <p><b>Measured</b> (headless Chromium, SwiftShader software WebGL, on a fully loaded desktop CPU, so only the ratios mean anything; median / p95 ms over 2 s; the live readout shows your device):</p>
+  <ul>
+    <li>1440x900 high: 10 km 2850 / 2850, 3 km 3917 / 3917, 30 km 2033 / 2033.</li>
+    <li>1440x900 low: 10 km 867 / 1067, 3 km 767 / 1267, 30 km 533 / 1167 (about 3-5x cheaper than high).</li>
+    <li>390x844 high: 10 km 33 / 383, 3 km 17 / 300, 30 km 383 / 450.</li>
+    <li>390x844 low: 17 / 250, 17 / 150, 17 / 150 (the median sits on the 60 Hz frame cadence).</li>
+    <li>Noise bake at load: 0.5-1.5 s on the main thread.</li>
+  </ul>
+  <p><b>Self-check against the reference.</b></p>
+  <ul id="selfcheck"></ul>
+</details>
+<div id="bar"></div>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- parameters ----------
+const qs = new URLSearchParams(location.search);
+const coarse = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
+let tierName = qs.get('tier') === 'high' || qs.get('tier') === 'low' ? qs.get('tier') : (coarse ? 'low' : 'high');
+let viewName = ['10km', '3km', '30km'].includes(qs.get('view')) ? qs.get('view') : '10km';
+const sunParam = parseFloat(qs.get('sun'));
+const sunDeg = Number.isFinite(sunParam) ? Math.min(80, Math.max(-1, sunParam)) : 10;
+
+const TIERS = {
+  low: { pr: Math.min(devicePixelRatio || 1, 1) * 0.75, cloudScale: 0.5, defines: { MAXIT: 32, SEGN: 18, LSTEPS: 2, DETAIL: 0, MSOCT: 2, KSTEP: '0.075', TOFF: '1.5', DTMIN: '0.06', SHSAMP: 1 }, blend: 0.1 },
+  high: { pr: Math.min(devicePixelRatio || 1, 1.5), cloudScale: 0.5, defines: { MAXIT: 80, SEGN: 48, LSTEPS: 5, DETAIL: 1, MSOCT: 3, KSTEP: '0.03', TOFF: '1.0', DTMIN: '0.03', SHSAMP: 2 }, blend: 0.18 },
+};
+const VIEWS = {
+  '10km': { alt: 10, yaw: 0, horizonFrac: 0.30 },
+  '3km': { alt: 3.0, yaw: 28, horizonFrac: 0.36 },
+  '30km': { alt: 30, yaw: 0, horizonFrac: 0.36 },
+};
+const R_E = 6371;
+
+// ---------- seeded randomness ----------
+function mulberry(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function ihash(x, y, z, s) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(z | 0, 1440662683) ^ Math.imul(s | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296;
+}
+const wrap = (i, n) => ((i % n) + n) % n;
+const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+const lerp = (a, b, t) => a + (b - a) * t;
+const GR = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+// Per-(period, seed) tables so the inner loops never hash: gradient indices for Perlin,
+// feature points for Worley. Tables are tiny (period^3 entries).
+const GX = new Float32Array(GR.map((g) => g[0])), GY = new Float32Array(GR.map((g) => g[1])), GZ = new Float32Array(GR.map((g) => g[2]));
+const gradCache = new Map(), featCache = new Map();
+function gradTable(P, s) {
+  const key = P * 100000 + s; let t = gradCache.get(key); if (t) return t;
+  t = new Uint8Array(P * P * P); for (let k = 0; k < P; k++) for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) t[i + P * (j + P * k)] = Math.floor(ihash(i, j, k, s) * 12);
+  gradCache.set(key, t); return t;
+}
+function featTable(N, s) {
+  const key = N * 100000 + s; let t = featCache.get(key); if (t) return t;
+  t = new Float32Array(N * N * N * 3);
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const o = 3 * (i + N * (j + N * k)); t[o] = ihash(i, j, k, s); t[o + 1] = ihash(i, j, k, s + 1); t[o + 2] = ihash(i, j, k, s + 2); }
+  featCache.set(key, t); return t;
+}
+// Tiling gradient noise with integer period P (coordinates in lattice units).
+function perlin3(x, y, z, P, s) {
+  const G = gradTable(P, s);
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi, u = fade(xf), v = fade(yf), w = fade(zf);
+  const x0 = wrap(xi, P), x1 = (x0 + 1) % P, y0 = wrap(yi, P) * P, y1 = ((wrap(yi, P) + 1) % P) * P, z0 = wrap(zi, P) * P * P, z1 = ((wrap(zi, P) + 1) % P) * P * P;
+  const g = (idx, dx, dy, dz) => { const q = G[idx]; return GX[q] * dx + GY[q] * dy + GZ[q] * dz; };
+  const a = lerp(g(x0 + y0 + z0, xf, yf, zf), g(x1 + y0 + z0, xf - 1, yf, zf), u);
+  const b = lerp(g(x0 + y1 + z0, xf, yf - 1, zf), g(x1 + y1 + z0, xf - 1, yf - 1, zf), u);
+  const c = lerp(g(x0 + y0 + z1, xf, yf, zf - 1), g(x1 + y0 + z1, xf - 1, yf, zf - 1), u);
+  const d = lerp(g(x0 + y1 + z1, xf, yf - 1, zf - 1), g(x1 + y1 + z1, xf - 1, yf - 1, zf - 1), u);
+  return lerp(lerp(a, b, v), lerp(c, d, v), w);
+}
+// Tiling Worley (F1) on the unit cube with N cells per side; returns distance in cell units.
+function worley3(x, y, z, N, s) {
+  const F = featTable(N, s);
+  const px = x * N, py = y * N, pz = z * N;
+  const cx = Math.floor(px), cy = Math.floor(py), cz = Math.floor(pz);
+  let md = 9;
+  for (let dz = -1; dz <= 1; dz++) { const Z = cz + dz, wz = wrap(Z, N);
+    for (let dy = -1; dy <= 1; dy++) { const Y = cy + dy, wy = wrap(Y, N);
+      for (let dx = -1; dx <= 1; dx++) {
+        const X = cx + dx, o = 3 * (wrap(X, N) + N * (wy + N * wz));
+        const fx = X + F[o] - px, fy = Y + F[o + 1] - py, fz = Z + F[o + 2] - pz;
+        const d = fx * fx + fy * fy + fz * fz; if (d < md) md = d;
+      } } }
+  return Math.sqrt(md);
+}
+function normalize01(arr) {
+  let lo = Infinity, hi = -Infinity; for (const v of arr) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const k = 1 / Math.max(1e-6, hi - lo); for (let i = 0; i < arr.length; i++) arr[i] = (arr[i] - lo) * k; return arr;
+}
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const remap = (v, a, b, c, d) => c + ((v - a) / (b - a)) * (d - c);
+
+// ---------- bakes ----------
+function bakeShape(N) { // Perlin-Worley base shape, 0..1
+  const out = new Float32Array(N * N * N);
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = i / N, y = j / N, z = k / N;
+    let p = 0, amp = 1, tot = 0;
+    for (let o = 0, f = 4; o < 3; o++, f *= 2) { p += perlin3(x * f, y * f, z * f, f, 11 + o) * amp; tot += amp; amp *= 0.5; }
+    p = clamp01(p / tot * 0.9 + 0.5);
+    const w1 = clamp01(1 - worley3(x, y, z, 4, 101)), w2 = clamp01(1 - worley3(x, y, z, 8, 201));
+    const pw = clamp01(remap(p, -(1 - w1), 1, 0, 1));
+    const wf = w1 * 0.35 + w2 * 0.65;
+    out[i + N * (j + N * k)] = clamp01(remap(pw, -(1 - wf) * 0.9, 1, 0, 1));
+  }
+  return normalize01(out);
+}
+function bakeDetail(N) { // Worley fbm (billowy) 0..1
+  const out = new Float32Array(N * N * N);
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = i / N, y = j / N, z = k / N;
+    out[i + N * (j + N * k)] = (1 - worley3(x, y, z, 4, 401)) * 0.625 + (1 - worley3(x, y, z, 8, 501)) * 0.25 + (1 - worley3(x, y, z, 16, 601)) * 0.125;
+  }
+  return normalize01(out);
+}
+// Weather map: R = cumulus coverage domes (clusters of big cells plus scattered small ones),
+// G = coverage-weighted height potential of the overlapping cells, B = smooth large-scale fbm used at a much larger scale.
+function bakeWeather(S) {
+  const data = new Uint8Array(S * S * 4);
+  const fbm2 = (x, y, P, oct, s) => { let v = 0, a = 1, t = 0; for (let o = 0; o < oct; o++) { v += perlin3(x * P * (1 << o), y * P * (1 << o), 0.5, P * (1 << o), s + o) * a; t += a; a *= 0.5; } return clamp01(v / t * 0.95 + 0.5); };
+  const layers = [
+    { N: 9, rmin: 0.5, rmax: 0.9, smin: 0.8, smax: 1.0, hmin: 0.70, hmax: 1.0, prob: 1.0, mask: 1.0, s: 1000 },
+    { N: 22, rmin: 0.3, rmax: 0.65, smin: 0.6, smax: 0.95, hmin: 0.45, hmax: 0.85, prob: 0.75, mask: 0.9, s: 2000 },
+    { N: 48, rmin: 0.1, rmax: 0.36, smin: 0.35, smax: 0.75, hmin: 0.2, hmax: 0.5, prob: 0.06, mask: 0.6, s: 3000 },
+  ];
+  for (const L of layers) { // per-cell parameters
+    L.cells = [];
+    for (let j = 0; j < L.N; j++) for (let i = 0; i < L.N; i++) {
+      const h = (k) => ihash(i, j, k, L.s);
+      const px = (i + 0.15 + 0.7 * h(0)) / L.N, py = (j + 0.15 + 0.7 * h(1)) / L.N;
+      const m = fbm2(px, py, 3, 3, 77); // cluster mask
+      const maskF = lerp(1, Math.pow(clamp01((m - 0.42) / 0.2), 1.5), L.mask);
+      const alive = h(2) < L.prob;
+      L.cells.push({ px, py, r: lerp(L.rmin, L.rmax, h(3)) / L.N, s: alive ? lerp(L.smin, L.smax, h(4)) * maskF : 0, hh: lerp(L.hmin, L.hmax, h(5)) });
+    }
+  }
+  // the large-scale channel is smooth, so it is computed on a coarse grid and interpolated
+  const BS = 128, big = new Float32Array(BS * BS);
+  for (let y = 0; y < BS; y++) for (let x = 0; x < BS; x++) big[x + BS * y] = fbm2(x / BS, y / BS, 4, 3, 555);
+  const bigAt = (u, v) => { const fx = u * BS - 0.5, fy = v * BS - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const g = (i, j) => big[wrap(i, BS) + BS * wrap(j, BS)];
+    return lerp(lerp(g(x0, y0), g(x0 + 1, y0), tx), lerp(g(x0, y0 + 1), g(x0 + 1, y0 + 1), tx), ty); };
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = (x + 0.5) / S, v = (y + 0.5) / S;
+    let cov = 0, hsum = 0, wsum = 0;
+    for (const L of layers) {
+      const ci = Math.floor(u * L.N), cj = Math.floor(v * L.N);
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const I = ci + di, J = cj + dj, c = L.cells[wrap(I, L.N) + L.N * wrap(J, L.N)];
+        if (c.s <= 0) continue;
+        // cell centre unwrapped next to the current pixel so domes tile across the edge
+        const dx = u - (c.px + (I - wrap(I, L.N)) / L.N), dy = v - (c.py + (J - wrap(J, L.N)) / L.N);
+        const d = Math.sqrt(dx * dx + dy * dy) / c.r; if (d >= 1) continue;
+        const dome = c.s * (1 - d * d);
+        cov = 1 - (1 - cov) * (1 - dome);
+        hsum += dome * dome * c.hh; wsum += dome * dome; // smooth, coverage-weighted height (no steps between cells)
+      }
+    }
+    const o = (x + S * y) * 4;
+    data[o] = Math.round(clamp01(cov) * 255); data[o + 1] = Math.round((wsum > 0 ? hsum / wsum : 0.5) * 255);
+    data[o + 2] = Math.round(bigAt(u, v) * 255); data[o + 3] = 255;
+  }
+  return data;
+}
+// Wave slope map from a sum of tiling directional sines; RG = slope x/z (scaled), B unused.
+function bakeWaves(S) {
+  const rnd = mulberry(42), W = [];
+  for (let n = 0; n < 34; n++) {
+    const k = 2 + Math.floor(Math.pow(rnd(), 1.6) * 34), ang = (rnd() - 0.5) * 2.2 + 0.35;
+    const kx = Math.round(Math.cos(ang) * k), ky = Math.round(Math.sin(ang) * k);
+    if (kx === 0 && ky === 0) continue;
+    const kk = Math.hypot(kx, ky); W.push({ kx, ky, a: Math.pow(kk, -1.25), ph: rnd() * 6.2832 });
+  }
+  const sx = new Float32Array(S * S), sy = new Float32Array(S * S); let var2 = 0;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let gx = 0, gy = 0; const u = x / S, v = y / S;
+    for (const w of W) { const c = Math.cos(6.2832 * (w.kx * u + w.ky * v) + w.ph) * w.a; gx += c * w.kx; gy += c * w.ky; }
+    sx[x + S * y] = gx; sy[x + S * y] = gy; var2 += gx * gx + gy * gy;
+  }
+  const sd = Math.sqrt(var2 / (S * S * 2)), data = new Uint8Array(S * S * 4);
+  for (let i = 0; i < S * S; i++) {
+    data[i * 4] = Math.round(clamp01(0.5 + sx[i] / sd / 6) * 255); data[i * 4 + 1] = Math.round(clamp01(0.5 + sy[i] / sd / 6) * 255);
+    data[i * 4 + 2] = 128; data[i * 4 + 3] = 255;
+  }
+  return data; // decode: slope = (tex*2-1)*3 standard deviations
+}
+// Sparkle map: u^10 so that mip averaging keeps a mean of 1/11 (shader multiplies by 11).
+function bakeSpark(S) {
+  const rnd = mulberry(9), data = new Uint16Array(S * S);
+  for (let i = 0; i < S * S; i++) data[i] = THREE.DataUtils.toHalfFloat(Math.pow(rnd(), 10));
+  return data;
+}
+// Blue noise ranks by void filling on a torus with a Gaussian energy kernel.
+function bakeBlue(S) {
+  const n = S * S, E = new Float32Array(n), rank = new Int32Array(n).fill(-1), rnd = mulberry(5), R = 6, sig2 = 2 * 1.9 * 1.9;
+  const ker = []; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) ker.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / sig2)]);
+  for (let i = 0; i < n; i++) E[i] = rnd() * 1e-4;
+  for (let r = 0; r < n; r++) {
+    let bi = -1, be = Infinity; for (let i = 0; i < n; i++) if (rank[i] < 0 && E[i] < be) { be = E[i]; bi = i; }
+    rank[bi] = r; const bx = bi % S, by = (bi / S) | 0;
+    for (const [dx, dy, w] of ker) E[wrap(bx + dx, S) + S * wrap(by + dy, S)] += w;
+  }
+  const data = new Uint8Array(n); for (let i = 0; i < n; i++) data[i] = Math.floor((rank[i] / n) * 256); return data;
+}
+
+// ---------- shaders ----------
+const VERT = /* glsl */`
+in vec3 position; out vec2 vUv;
+void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+const COMMON = /* glsl */`
+precision highp float; precision highp sampler3D; precision highp sampler2D;
+const float R_E = 6371.0;
+const vec3 EC = vec3(0.0, -R_E, 0.0);
+const float CB = 1.25, CT = 3.05;
+const float WKM = 46.0, SKM = 3.8, DKM = 0.85;
+float gDetailFade = 1.0; // erosion fades with distance so the fine texture never aliases into stripes
+const float SIGMA = 55.0;
+uniform vec3 uCamPos, uCamR, uCamU, uCamF, uSun, uUp, uSunCol, uAmbTop, uAmbBot;
+uniform vec2 uTan, uWind, uOrigin;
+uniform float uTime, uCamAlt, uDip, uPixAng;
+uniform sampler2D uWeather; uniform sampler3D uShape, uDetail;
+
+vec3 rayDir(vec2 uv) { vec2 n = uv * 2.0 - 1.0; return normalize(uCamF + n.x * uTan.x * uCamR + n.y * uTan.y * uCamU); }
+// Ray-sphere with the precision-friendly discriminant (r - dp)(r + dp).
+vec2 sph(vec3 o, vec3 d, float r) {
+  vec3 oc = o - EC; float b = dot(oc, d); float dp = length(oc - b * d);
+  float h = (r - dp) * (r + dp); if (h < 0.0) return vec2(1e9, -1e9); h = sqrt(h); return vec2(-b - h, -b + h);
+}
+float altOf(vec3 p) { return length(p - EC) - R_E; }
+float remap(float v, float a, float b, float c, float d) { return c + (v - a) / (b - a) * (d - c); }
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.5663706 * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5)); }
+// Two-lobe phase: strong forward lobe (silver lining toward the sun) plus a weak back lobe.
+float phase2(float c, float k) { return mix(hg(c, -0.2 * k), hg(c, 0.82 * k), 0.6); }
+
+// Coverage from the weather map: per-cell domes, modulated by a much larger-scale field so the
+// tile does not repeat visibly from 30 km.
+float coverage(vec2 q, float lod, out float hpot) {
+  vec4 w = textureLod(uWeather, q / WKM, lod);
+  float big = textureLod(uWeather, q / 690.0 + vec2(0.31, 0.73), 0.0).b;
+  hpot = w.g;
+  return w.r * smoothstep(0.0, 0.45, big) * 1.25;
+}
+// Cloud density at p (0..1 scaled). lite = skip erosion (light march, shadows, far samples).
+float density(vec3 p, float lod, bool lite) {
+  float alt = altOf(p); float hf = (alt - CB) / (CT - CB);
+  if (hf < 0.0 || hf > 1.0) return 0.0;
+  vec2 q = p.xz + uOrigin - uWind * uTime;
+  float hpot; float cov = coverage(q, lod, hpot);
+  if (cov < 0.03) return 0.0;
+  // Height gradient: flat base (fast ramp), dome tops whose height follows coverage and the cell's height potential.
+  if (hf > clamp(cov * 1.15, 0.0, 1.0) * mix(0.5, 1.0, hpot)) return 0.0;
+  vec3 sp = vec3(q.x, alt * 1.3 - uTime * 0.0015, q.y) / SKM;
+  float s = textureLod(uShape, sp, 0.0).r;
+  // the shape noise also modulates the dome height, so saturated coverage gives lumpy tops, not mesas
+  float top = clamp(cov * 1.15, 0.0, 1.0) * mix(0.5, 1.0, hpot) * mix(0.62, 1.0, s);
+  float hp = smoothstep(0.0, 0.045, hf) * smoothstep(top, top * 0.4, hf);
+  if (hp <= 0.0) return 0.0;
+  // the coverage dome is the macro shape; the shape noise erodes its surface into billows
+  float base = cov * hp;
+  float d = remap(base, (1.0 - s) * 0.58, 1.0, 0.0, 1.0);
+  if (d <= 0.0) return 0.0;
+#if DETAIL
+  if (!lite) {
+    float dn = textureLod(uDetail, vec3(q.x, alt - uTime * 0.004, q.y) / DKM, 0.0).r;
+    float er = mix(1.0 - dn, dn, clamp(hf * 3.0, 0.0, 1.0)); // wispy near the base, billowy higher up
+    d = remap(d, er * 0.42 * gDetailFade, 1.0, 0.0, 1.0);
+  }
+#endif
+  return clamp(d, 0.0, 1.0);
+}
+
+// Haze: Rayleigh-like (blue, scale height 8 km) plus Mie-like (warm forward lobe, scale height 1.6 km).
+float segOD(float h0, float h1, float t, float H) {
+  float dh = h1 - h0; float a = exp(-max(h0, 0.0) / H);
+  if (abs(dh) < 1e-3) return t * a;
+  return t * H * (a - exp(-max(h1, 0.0) / H)) / dh;
+}
+vec3 mieCol(vec3 d) { float c = dot(d, uSun); return uSunCol * (0.07 + 0.55 * hg(c, 0.7)) * vec3(1.0, 0.9, 0.72) + uAmbTop * 0.7; }
+vec3 rayCol(vec3 d) { float c = dot(d, uSun); return vec3(0.25, 0.30, 0.42) * 0.8 * (1.0 + 0.4 * c * c) + uSunCol * 0.01; }
+void haze(vec3 d, float t, out vec3 T, out vec3 L) {
+  vec3 pm = uCamPos + d * (0.5 * t); float hm = altOf(pm); float he = altOf(uCamPos + d * t);
+  float odR = 0.0075 * (segOD(uCamAlt, hm, 0.5 * t, 8.0) + segOD(hm, he, 0.5 * t, 8.0));
+  float odM = 0.06 * (segOD(uCamAlt, hm, 0.5 * t, 2.4) + segOD(hm, he, 0.5 * t, 2.4));
+  vec3 ext = odR * vec3(0.55, 1.0, 1.85) + vec3(odM);
+  T = exp(-ext);
+  float mr = odM / max(odM + odR, 1e-6);
+  L = (1.0 - T) * mix(rayCol(d), mieCol(d), mr);
+}
+vec3 skyCol(vec3 d) {
+  float e = asin(clamp(dot(d, uUp), -1.0, 1.0)) + uDip; // elevation above the apparent horizon
+  float cs = dot(d, uSun);
+  vec3 zen = vec3(0.018, 0.055, 0.30), mid = vec3(0.06, 0.16, 0.52);
+  vec3 c = mix(mid, zen, pow(clamp(e / 1.3, 0.0, 1.0), 0.55));
+  // horizon band blends into what a very long haze path would give
+  float hb = exp(-max(e, 0.0) * 16.0);
+  vec3 far = mix(rayCol(d), mieCol(d), 0.5);
+  c = mix(c, far, hb * 0.95);
+  c += uSunCol * 0.018 * hg(cs, 0.8);
+  return c;
+}`;
+
+const CLOUD_FRAG = /* glsl */`
+in vec2 vUv;
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+uniform sampler2D uBlue, uHistC, uHistD;
+uniform vec2 uCloudRes, uJit, uPTan;
+uniform vec3 uPCamPos, uPCamR, uPCamU, uPCamF;
+uniform float uFrame, uDt, uBlend, uReset, uTMax;
+
+const float LSL[5] = float[5](0.07, 0.16, 0.32, 0.6, 1.1);
+const float LSL2[2] = float[2](0.18, 0.7);
+
+float lightOD(vec3 p, float lod) {
+  float od = 0.0; float t = 0.0;
+#if LSTEPS == 2
+  for (int i = 0; i < 2; i++) { float l = LSL2[i]; t += l * 0.5; od += density(p + uSun * t, lod + 1.0, true) * l; t += l * 0.5; }
+#else
+  for (int i = 0; i < LSTEPS; i++) { float l = LSL[i]; t += l * 0.5; od += density(p + uSun * t, lod + 1.0, true) * l; t += l * 0.5; }
+#endif
+  return od * SIGMA;
+}
+
+void main() {
+  vec2 uvj = vUv + uJit / uCloudRes;
+  vec3 d = rayDir(uvj);
+  vec2 o = sph(uCamPos, d, R_E + CT), ib = sph(uCamPos, d, R_E + CB);
+  bool hitIn = ib.x <= ib.y && ib.x > 0.0;
+  float t0 = 0.0, t1 = -1.0;
+  if (uCamAlt > CT) { if (o.x <= o.y && o.y > 0.0) { t0 = max(o.x, 0.0); t1 = hitIn ? ib.x : o.y; } }
+  else if (uCamAlt > CB) { t0 = 0.0; t1 = hitIn ? ib.x : o.y; }
+  else { t0 = max(ib.y, 0.0); t1 = o.y; }
+  t1 = min(t1, uTMax);
+
+  vec3 col = vec3(0.0); float T = 1.0; float tw = 0.0, ws = 0.0;
+  float depth = uTMax;
+  if (t1 > t0) {
+    float cs = dot(d, uSun);
+    float powMix = smoothstep(0.15, 0.95, cs); // little powder darkening when looking into the sun
+    float bn = fract(texture(uBlue, gl_FragCoord.xy / 64.0).r + uFrame * 0.6180339);
+    // step = the finer of (slab segment / SEGN) and (distance * KSTEP): steep rays resolve the thin slab,
+    // grazing rays still reach far before MAXIT runs out
+    float segDt = (t1 - t0) / float(SEGN);
+    float dt = max(DTMIN, min(segDt, (t0 + TOFF) * KSTEP));
+    float t = t0 + dt * bn;
+    for (int i = 0; i < MAXIT; i++) {
+      if (t > t1 || T < 0.015) break;
+      dt = max(DTMIN, min(segDt, (t + TOFF) * KSTEP));
+      vec3 p = uCamPos + d * t;
+      gDetailFade = 1.0 - smoothstep(9.0, 32.0, t);
+      float lod = clamp(log2(max(t * uPixAng * 2.0 / (WKM / 512.0), 1.0)), 0.0, 6.0);
+      float far = t > 28.0 ? 1.0 : 0.0;
+      float den = density(p, lod, far > 0.5);
+      if (den > 0.002) {
+        den *= smoothstep(uTMax, uTMax * 0.55, t);
+        float od = lightOD(p, lod);
+        float lt = 0.0, a = 1.0, b = 1.0, k = 1.0;
+        for (int m = 0; m < MSOCT; m++) { lt += a * phase2(cs, k) * exp(-od * b); a *= 0.5; b *= 0.5; k *= 0.5; }
+        lt *= 12.566;
+        float powder = 1.0 - exp(-den * SIGMA * 0.2);
+        lt *= mix(powder, 1.0, powMix * 0.85 + 0.15);
+        float hf = clamp((altOf(p) - CB) / (CT - CB), 0.0, 1.0);
+        vec3 amb = mix(uAmbBot, uAmbTop, smoothstep(0.0, 1.0, hf)) * (0.45 + 0.55 * hf);
+        vec3 S = uSunCol * lt + amb;
+        float se = den * SIGMA;
+        float tr = exp(-se * dt);
+        col += T * S * (1.0 - tr);
+        tw += T * (1.0 - tr) * t; ws += T * (1.0 - tr);
+        T *= tr;
+      } else {
+        dt *= 1.4; // empty-space skip outside the coverage
+      }
+      t += dt;
+    }
+    // Far impostor: where the march ran out of steps before the slab ended, one coverage lookup on a
+    // mid-layer sphere stands in for the distant clouds (they are a few pixels tall and hazed anyway).
+    if (t < t1 && T > 0.02) {
+      vec2 m = sph(uCamPos, d, R_E + CB + (CT - CB) * 0.3);
+      float tm = m.x > t ? m.x : (m.y > t ? m.y : 1e9);
+      if (tm < uTMax) {
+        vec2 q = (uCamPos + d * tm).xz + uOrigin - uWind * uTime; float hpot;
+        float cov = coverage(q, 4.0, hpot);
+        float a = smoothstep(0.1, 0.5, cov) * 0.92 * smoothstep(uTMax, uTMax * 0.55, tm);
+        vec3 S = uSunCol * (0.55 + 6.0 * hg(cs, 0.6)) * 0.5 + uAmbTop * 0.9;
+        col += T * a * S; tw += T * a * tm; ws += T * a; T *= 1.0 - a;
+      }
+    }
+    if (ws > 1e-4) depth = tw / ws;
+  }
+  vec4 cur = vec4(col, T);
+
+  // Temporal reprojection: the cloud matter seen here was at wp - wind*dt one frame ago.
+  vec3 wp = uCamPos + d * depth;
+  vec3 pp = wp - vec3(uWind.x, 0.0, uWind.y) * uDt;
+  vec3 v = pp - uPCamPos; float z = dot(v, uPCamF);
+  vec2 puv = vec2(dot(v, uPCamR) / (z * uPTan.x), dot(v, uPCamU) / (z * uPTan.y)) * 0.5 + 0.5;
+  float a = uBlend;
+  if (uReset > 0.5 || z <= 0.0 || puv.x < 0.0 || puv.y < 0.0 || puv.x > 1.0 || puv.y > 1.0) a = 1.0;
+  vec4 hc = texture(uHistC, puv); float hd = texture(uHistD, puv).r;
+  // reject history that disagrees in depth, or that holds cloud where this frame sees clear air
+  bool rej = abs(hd - depth) > 0.25 * depth + 0.3 || (cur.a > 0.97 && hc.a < 0.85);
+  if (rej) a = max(a, 0.6);
+  o0 = mix(hc, cur, a);
+  o1 = vec4(rej ? depth : mix(hd, depth, a), 0.0, 0.0, 1.0);
+}`;
+
+const COMP_FRAG = /* glsl */`
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uCloudC, uCloudD, uWaveN, uSpark, uBlue;
+uniform vec2 uRes, uSunUV, uAspect;
+uniform float uSunVis, uExposure;
+const float GHK[4] = float[4](0.55, 1.25, 1.7, 2.3);
+const float GHR[4] = float[4](0.025, 0.06, 0.03, 0.11);
+
+float cloudShadow(vec3 P, vec3 up) {
+  float mu = max(dot(up, uSun), 0.03); float od = 0.0;
+#if SHSAMP == 1
+  { float h = CB + (CT - CB) * 0.25; od += density(P + uSun * (h / mu), 0.0, true) * 1.6; }
+#else
+  for (int k = 0; k < 2; k++) { float h = CB + (CT - CB) * (0.12 + 0.3 * float(k)); od += density(P + uSun * (h / mu), 0.0, true) * 0.9; }
+#endif
+  return mix(1.0, exp(-od * SIGMA * 0.12), 0.82);
+}
+
+vec3 sea(vec3 P, vec3 d, float t, vec2 q, vec2 qdx, vec2 qdy) {
+  vec3 up = normalize(P - EC);
+  vec3 tx = normalize(cross(up, vec3(0.0, 0.0, 1.0))); vec3 tz = cross(tx, up);
+  mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+  vec2 u1 = q / 0.42 + uTime * vec2(0.010, 0.003), u2 = rot * q / 0.13 + uTime * vec2(-0.006, 0.013);
+  vec2 s1 = (textureGrad(uWaveN, u1, qdx / 0.42, qdy / 0.42).xy * 2.0 - 1.0) * 3.0;
+  vec2 s2 = (textureGrad(uWaveN, u2, rot * qdx / 0.13, rot * qdy / 0.13).xy * 2.0 - 1.0) * 3.0;
+  vec2 slope = (s1 * 0.75 + s2 * 0.6) * 0.11;
+  vec3 n = normalize(up - tx * slope.x - tz * slope.y);
+  vec3 v = -d; vec3 L = uSun;
+  float NoV = max(dot(n, v), 0.02);
+  vec3 h = normalize(L + v);
+  float NoH = max(dot(n, h), 1e-3);
+  float fp = t * uPixAng / max(abs(dot(d, up)), 0.04);
+  float s2v = 0.04 + 0.025 * smoothstep(0.02, 0.6, fp); // slope variance (wind sea) plus what the mip filter removed
+  float c2 = NoH * NoH; float tan2 = (1.0 - c2) / c2;
+  float D = exp(-tan2 / s2v) / (3.14159 * s2v * c2 * c2);
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+  float spec = D * F / (4.0 * NoV) * smoothstep(-0.03, 0.04, dot(up, L));
+  // Sparkles: mean-one noise, sharp where a pixel covers few texels, smooth once the mip averages it.
+  vec2 k1 = q / 0.9 + uTime * vec2(0.0035, 0.0011), k2 = rot * q / 0.7 - uTime * vec2(0.0012, 0.003);
+  float sp = textureGrad(uSpark, k1, qdx / 0.9, qdy / 0.9).r * 11.0 * textureGrad(uSpark, k2, rot * qdx / 0.7, rot * qdy / 0.7).r * 11.0;
+  spec *= mix(1.0, sp, 0.92);
+  float sh = cloudShadow(P, up);
+  vec3 R = reflect(-v, n); R = normalize(R + up * max(0.0, -dot(R, up) + 0.01));
+  float Fv = 0.02 + 0.98 * pow(1.0 - NoV, 5.0);
+  vec3 body = vec3(0.004, 0.014, 0.026) * (uAmbTop * 2.0 + uSunCol * max(dot(up, L), 0.0) * 0.5 * sh);
+  vec3 refl = skyCol(R) * mix(0.75, 1.0, sh);
+  return body * (1.0 - Fv) + refl * Fv + uSunCol * spec * sh * 0.6;
+}
+
+vec3 aces(vec3 x) { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+void main() {
+  vec3 d = rayDir(vUv);
+  vec2 g = sph(uCamPos, d, R_E);
+  bool seaHit = g.x <= g.y && g.x > 0.0;
+  float tS = seaHit ? g.x : 0.0;
+  vec3 P = uCamPos + d * tS;
+  vec2 q = P.xz; vec2 qdx = dFdx(q), qdy = dFdy(q);
+  vec3 col;
+  if (seaHit) {
+    col = sea(P, d, tS, q, qdx, qdy);
+    vec3 Th, Lh; haze(d, tS, Th, Lh); col = col * Th + Lh;
+  } else {
+    col = skyCol(d);
+    float ang = acos(clamp(dot(d, uSun), -1.0, 1.0));
+    col += uSunCol * (60.0 * smoothstep(0.0062, 0.0048, ang) + 0.5 * exp(-ang * 110.0) + 0.04 * exp(-ang * 18.0));
+  }
+  vec4 c = texture(uCloudC, vUv); float cd = texture(uCloudD, vUv).r;
+  vec3 Tc, Lc; haze(d, cd, Tc, Lc);
+  col = col * c.a + c.rgb * Tc + Lc * (1.0 - c.a);
+
+  // Sun rays, halo and faint lens ghosts in screen space.
+  if (uSunVis > 0.0) {
+    float occ = texture(uCloudC, uSunUV).a;
+    vec2 sv = (vUv - uSunUV) * uAspect; float r = length(sv); float an = atan(sv.y, sv.x);
+    float streak = pow(0.5 + 0.5 * sin(an * 23.0 + 1.3) * sin(an * 37.0 - 0.7), 7.0) + 0.6 * pow(0.5 + 0.5 * sin(an * 11.0 + 2.1), 12.0);
+    col += uSunCol * occ * uSunVis * (streak * 0.011 * exp(-r * 8.0) + 0.02 * exp(-r * 12.0));
+    vec2 axis = vec2(0.5) - uSunUV;
+    for (int i = 0; i < 4; i++) {
+      float k = GHK[i]; float rad = GHR[i];
+      vec2 gp = uSunUV + axis * k; float gr = length((vUv - gp) * uAspect);
+      float disc = smoothstep(rad, rad * 0.6, gr) * (i == 3 ? 0.0 : 1.0);
+      float ring = i == 3 ? exp(-pow((gr - rad) / (rad * 0.06), 2.0)) : 0.0;
+      vec3 hue = 0.5 + 0.5 * cos(6.2832 * (gr / rad * 1.6 + vec3(0.0, 0.33, 0.67)));
+      col += (vec3(0.9, 0.95, 1.0) * disc * 0.010 + hue * ring * 0.016) * uSunCol * occ * uSunVis;
+    }
+  }
+  col = aces(col * uExposure);
+  col = pow(col, vec3(1.0 / 2.2));
+  col += (texture(uBlue, gl_FragCoord.xy / 64.0).r - 0.5) / 255.0;
+  fragColor = vec4(col, 1.0);
+}`;
+
+// ---------- setup ----------
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+renderer.autoClear = false;
+const msg = document.getElementById('msg');
+
+function tex3D(data, N) {
+  const u8 = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) u8[i] = Math.round(data[i] * 255);
+  const t = new THREE.Data3DTexture(u8, N, N, N);
+  t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.minFilter = t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.needsUpdate = true; return t;
+}
+function tex2D(data, S, opts) {
+  const t = new THREE.DataTexture(data, S, S, opts.format || THREE.RGBAFormat, opts.type || THREE.UnsignedByteType);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = opts.mag ?? THREE.LinearFilter;
+  t.minFilter = opts.min ?? THREE.LinearMipmapLinearFilter; t.generateMipmaps = opts.mips ?? true;
+  t.anisotropy = opts.aniso || 1; t.unpackAlignment = 1; t.needsUpdate = true; return t;
+}
+
+let textures = null;
+function bakeAll() {
+  const t0 = performance.now();
+  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  textures = {
+    shape: tex3D(bakeShape(64), 64),
+    detail: tex3D(bakeDetail(32), 32),
+    weather: tex2D((weatherData = bakeWeather(512)), 512, {}),
+    waves: tex2D(bakeWaves(256), 256, { aniso }),
+    spark: tex2D(bakeSpark(256), 256, { format: THREE.RedFormat, type: THREE.HalfFloatType, aniso }),
+    blue: tex2D(bakeBlue(64), 64, { format: THREE.RedFormat, min: THREE.NearestFilter, mag: THREE.NearestFilter, mips: false }),
+  };
+  return performance.now() - t0;
+}
+
+const tri = new THREE.BufferGeometry();
+tri.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const cloudScene = new THREE.Scene(), compScene = new THREE.Scene();
+const cloudMesh = new THREE.Mesh(tri), compMesh = new THREE.Mesh(tri);
+cloudMesh.frustumCulled = compMesh.frustumCulled = false;
+cloudScene.add(cloudMesh); compScene.add(compMesh);
+
+const shared = {
+  uCamPos: { value: new THREE.Vector3() }, uCamR: { value: new THREE.Vector3() }, uCamU: { value: new THREE.Vector3() }, uCamF: { value: new THREE.Vector3() },
+  uSun: { value: new THREE.Vector3() }, uUp: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
+  uAmbTop: { value: new THREE.Vector3() }, uAmbBot: { value: new THREE.Vector3() },
+  uTan: { value: new THREE.Vector2() }, uWind: { value: new THREE.Vector2(0.045, 0.012) }, uOrigin: { value: new THREE.Vector2() },
+  uTime: { value: 0 }, uCamAlt: { value: 10 }, uDip: { value: 0 }, uPixAng: { value: 0.001 },
+  uWeather: { value: null }, uShape: { value: null }, uDetail: { value: null },
+};
+const cloudU = {
+  uBlue: { value: null }, uHistC: { value: null }, uHistD: { value: null },
+  uCloudRes: { value: new THREE.Vector2() }, uJit: { value: new THREE.Vector2() }, uPTan: { value: new THREE.Vector2() },
+  uPCamPos: { value: new THREE.Vector3() }, uPCamR: { value: new THREE.Vector3() }, uPCamU: { value: new THREE.Vector3() }, uPCamF: { value: new THREE.Vector3() },
+  uFrame: { value: 0 }, uDt: { value: 0 }, uBlend: { value: 0.15 }, uReset: { value: 1 }, uTMax: { value: 160 },
+};
+const compU = {
+  uCloudC: { value: null }, uCloudD: { value: null }, uWaveN: { value: null }, uSpark: { value: null }, uBlue: { value: null },
+  uRes: { value: new THREE.Vector2() }, uSunUV: { value: new THREE.Vector2() }, uAspect: { value: new THREE.Vector2(1, 1) },
+  uSunVis: { value: 0 }, uExposure: { value: 0.75 },
+};
+
+let tier, rtA, rtB, cloudMat, compMat;
+function buildTier() {
+  tier = TIERS[tierName];
+  cloudMat?.dispose(); compMat?.dispose();
+  const defs = { ...tier.defines };
+  cloudMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, defines: defs, vertexShader: VERT, fragmentShader: COMMON + CLOUD_FRAG,
+    uniforms: { ...shared, ...cloudU }, depthTest: false, depthWrite: false });
+  compMat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, defines: defs, vertexShader: VERT, fragmentShader: COMMON + COMP_FRAG,
+    uniforms: { ...shared, ...compU }, depthTest: false, depthWrite: false });
+  cloudMesh.material = cloudMat; compMesh.material = compMat;
+  cloudU.uBlend.value = tier.blend;
+  resize();
+}
+
+function makeRT(w, h) {
+  const rt = new THREE.WebGLRenderTarget(w, h, { count: 2, type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false });
+  for (const t of rt.textures) { t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.generateMipmaps = false; }
+  return rt;
+}
+let W = 1, H = 1, cw = 1, ch = 1;
+function resize() {
+  renderer.setPixelRatio(tier.pr);
+  renderer.setSize(innerWidth, innerHeight, false);
+  W = Math.max(1, Math.round(innerWidth * tier.pr)); H = Math.max(1, Math.round(innerHeight * tier.pr));
+  cw = Math.max(1, Math.round(W * tier.cloudScale)); ch = Math.max(1, Math.round(H * tier.cloudScale));
+  rtA?.dispose(); rtB?.dispose(); rtA = makeRT(cw, ch); rtB = makeRT(cw, ch);
+  cloudU.uCloudRes.value.set(cw, ch); compU.uRes.value.set(W, H);
+  compU.uAspect.value.set(W / H, 1);
+  setCamera();
+  cloudU.uReset.value = 1;
+}
+
+// ---------- camera and sun ----------
+const D2R = Math.PI / 180;
+const prevCam = { pos: new THREE.Vector3(), R: new THREE.Vector3(), U: new THREE.Vector3(), F: new THREE.Vector3(), tan: new THREE.Vector2() };
+function setCamera() {
+  const v = VIEWS[viewName], aspect = W / H;
+  const vfov = Math.min(100 * D2R, Math.max(60 * D2R, 2 * Math.atan(Math.tan(29 * D2R) / aspect)));
+  const tanV = Math.tan(vfov / 2), tanH = tanV * aspect;
+  const dip = Math.acos(R_E / (R_E + v.alt));
+  const yh = 1 - 2 * v.horizonFrac;
+  const pitch = -(dip + Math.atan(yh * tanV));
+  const yaw = v.yaw * D2R;
+  const F = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
+  const Rr = new THREE.Vector3().crossVectors(F, new THREE.Vector3(0, 1, 0)).normalize();
+  const U = new THREE.Vector3().crossVectors(Rr, F).normalize();
+  shared.uCamPos.value.set(0, v.alt, 0); shared.uCamF.value.copy(F); shared.uCamR.value.copy(Rr); shared.uCamU.value.copy(U);
+  shared.uTan.value.set(tanH, tanV); shared.uCamAlt.value = v.alt; shared.uDip.value = dip;
+  shared.uPixAng.value = (2 * tanV) / H;
+  shared.uOrigin.value.copy(pickOrigin(v, F));
+  cloudU.uTMax.value = v.alt > 20 ? 260 : v.alt > 5 ? 170 : 110;
+  // sun: azimuth straight ahead of the 10 km camera (-z), elevation above the astronomical horizon
+  const e = sunDeg * D2R; const S = new THREE.Vector3(0, Math.sin(e), -Math.cos(e));
+  shared.uSun.value.copy(S);
+  // sun colour: Kasten-Young airmass with a mild extinction so the light stays yellow-white at 10 degrees
+  const am = 1 / (Math.sin(Math.max(e, 0)) + 0.50572 * Math.pow(Math.max(sunDeg, 0) + 6.07995, -1.6364));
+  const tint = [Math.exp(-am * 0.012), Math.exp(-am * 0.03), Math.exp(-am * 0.07)];
+  const I = 2.3 * Math.min(1, Math.max(0.05, (sunDeg + 2) / 6));
+  shared.uSunCol.value.set(tint[0] * I, tint[1] * I, tint[2] * I);
+  shared.uAmbTop.value.set(0.19, 0.29, 0.52).multiplyScalar(Math.min(1, Math.max(0.2, (sunDeg + 4) / 14)));
+  shared.uAmbBot.value.set(0.05, 0.08, 0.12);
+  // sun on screen
+  const z = S.dot(F);
+  if (z > 0) { compU.uSunUV.value.set(0.5 + 0.5 * S.dot(Rr) / (z * tanH), 0.5 + 0.5 * S.dot(U) / (z * tanV)); compU.uSunVis.value = 1; }
+  else compU.uSunVis.value = 0;
+  const su = compU.uSunUV.value; if (su.x < -0.3 || su.x > 1.3 || su.y < -0.3 || su.y > 1.3) compU.uSunVis.value = 0;
+  cloudU.uReset.value = 1;
+}
+
+// Weather-map origin per view: the demonstration places the camera over a well-filled patch of the
+// (procedural, endless) cloud field instead of wherever (0, 0) happens to fall. Mirrors the shader's coverage().
+let weatherData = null;
+const originCache = {};
+function covJS(x, z) {
+  const S = 512, WKM = 46, sm = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const i = wrap(Math.floor((x / WKM) * S), S), j = wrap(Math.floor((z / WKM) * S), S);
+  const bi = wrap(Math.floor((x / 690 + 0.31) * S), S), bj = wrap(Math.floor((z / 690 + 0.73) * S), S);
+  return (weatherData[(i + S * j) * 4] / 255) * sm(0, 0.45, weatherData[(bi + S * bj) * 4 + 2] / 255) * 1.25;
+}
+function pickOrigin(v, F) {
+  if (originCache[viewName]) return originCache[viewName];
+  const fx = F.x / Math.hypot(F.x, F.z), fz = F.z / Math.hypot(F.x, F.z);
+  const near = v.alt * 0.9 + 2, far = v.alt * 3 + 6, rnd = mulberry(3);
+  const pts = []; for (let k = 0; k < 60; k++) { const d = near + (far - near) * rnd(), a = (rnd() - 0.5) * 1.1; pts.push([d * (fx * Math.cos(a) - fz * Math.sin(a)), d * (fz * Math.cos(a) + fx * Math.sin(a))]); }
+  let best = [0, 0], bestS = -1;
+  for (let gx = -20; gx <= 20; gx++) for (let gz = -20; gz <= 20; gz++) {
+    const ox = gx * 13, oz = gz * 13; let s = 0, c = 0;
+    for (const [px, pz] of pts) { s += Math.min(1, covJS(ox + px, oz + pz)); c++; }
+    s /= c; const score = s - 2.5 * Math.max(0, s - 0.6);
+    if (score > bestS) { bestS = score; best = [ox, oz]; }
+  }
+  return (originCache[viewName] = new THREE.Vector2(best[0], best[1]));
+}
+
+// ---------- stats ----------
+const samples = []; let frames = 0, lastT = 0;
+function stats() {
+  const ds = samples.map((s) => s.dt).sort((a, b) => a - b);
+  const pick = (p) => ds.length ? ds[Math.min(ds.length - 1, Math.floor(p * ds.length))] : 0;
+  return { tier: tierName, view: viewName, medianMs: +pick(0.5).toFixed(2), p95Ms: +pick(0.95).toFixed(2), frames, dpr: +renderer.getPixelRatio().toFixed(3), renderScale: tier.cloudScale };
+}
+window.lookStats = stats;
+const hud = document.getElementById('hud'); let hudT = 0;
+function updHud(now) {
+  if (now - hudT < 250) return; hudT = now; const s = stats();
+  hud.textContent = `tier ${s.tier}  view ${s.view}  sun ${sunDeg} deg\nframe median ${s.medianMs.toFixed(1)} ms  p95 ${s.p95Ms.toFixed(1)} ms\ncanvas ${W}x${H} (x${s.dpr})  clouds ${cw}x${ch} (x${s.renderScale})`;
+}
+
+// ---------- UI ----------
+const bar = document.getElementById('bar');
+function button(label, pressed, fn) { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', pressed); b.onclick = fn; bar.appendChild(b); return b; }
+function setParam(k, v) { const u = new URL(location.href); u.searchParams.set(k, v); history.replaceState(null, '', u); }
+function buildBar() {
+  bar.textContent = '';
+  for (const v of ['10km', '3km', '30km']) button(v.replace('km', ' km'), v === viewName, () => { viewName = v; setParam('view', v); setCamera(); samples.length = 0; buildBar(); });
+  const sep = document.createElement('span'); sep.className = 'sep'; bar.appendChild(sep);
+  for (const t of ['low', 'high']) button('tier ' + t, t === tierName, () => { tierName = t; setParam('tier', t); buildTier(); samples.length = 0; buildBar(); });
+}
+
+// ---------- loop ----------
+const R2 = [0.7548776662466927, 0.5698402909980532];
+let prevTime = 0, simTime = 0, lastNow = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (lastT) { samples.push({ t: now, dt: now - lastT }); while (samples.length && now - samples[0].t > 2000) samples.shift(); }
+  lastT = now; frames++;
+  // simulation time advances at most 50 ms per frame, so a stalled or very slow device sees slow
+  // motion instead of jumps that the temporal accumulation would smear
+  simTime += Math.min(0.05, Math.max(0, (now - (lastNow || now)) / 1000)); lastNow = now;
+  const time = simTime;
+  shared.uTime.value = time;
+  cloudU.uDt.value = cloudU.uReset.value > 0.5 ? 0 : time - prevTime; prevTime = time;
+  cloudU.uFrame.value = frames % 4096;
+  cloudU.uJit.value.set(((frames * R2[0]) % 1) - 0.5, ((frames * R2[1]) % 1) - 0.5);
+  cloudU.uHistC.value = rtB.textures[0]; cloudU.uHistD.value = rtB.textures[1];
+  renderer.setRenderTarget(rtA); renderer.render(cloudScene, quadCam);
+  cloudU.uReset.value = 0;
+  // the previous-camera uniforms equal the current ones (static camera per view); kept as real inputs for a moving globe camera
+  cloudU.uPCamPos.value.copy(shared.uCamPos.value); cloudU.uPCamR.value.copy(shared.uCamR.value);
+  cloudU.uPCamU.value.copy(shared.uCamU.value); cloudU.uPCamF.value.copy(shared.uCamF.value); cloudU.uPTan.value.copy(shared.uTan.value);
+  compU.uCloudC.value = rtA.textures[0]; compU.uCloudD.value = rtA.textures[1];
+  renderer.setRenderTarget(null); renderer.render(compScene, quadCam);
+  [rtA, rtB] = [rtB, rtA];
+  updHud(now);
+}
+
+function fillNotes() {
+  const items = [
+    "Too many small clouds are scattered evenly between the clusters, reading as dots; the reference has fewer, wispier ones. A cluster-edge mask on the small cells fixes it (tuning only, no runtime cost).",
+    "Near tops are softer than the reference: erosion fades out beyond about 10-30 km so it does not alias into stripes, and tier low has none. Crisper cauliflower needs a mip-mapped detail volume and about twice the primary steps (roughly 2x the cloud pass).",
+    "At tier low the quarter-pixel cloud buffer is upsampled bilinearly, so hard cloud edges show stair steps (most visible at 3 km on a phone). A depth-aware upsample costs one or two extra fetches per pixel.",
+    "Beyond the march a 2D coverage impostor stands in for far clouds; they flatten and do not dissolve into the horizon band as softly, and the warm band toward the sun is whiter and thinner than the reference. A proper sky-view and aerial-perspective LUT pair would fix both for two small passes.",
+    "Cloud shadows on the sea come from one or two density lookups along the sun ray, not from the march, so they match the clouds only roughly; a small top-down shadow map per frame would make them exact.",
+    "No light shafts through gaps; the sun rays and lens ghosts are screen-space decoration. Shafts need a radial blur of the cloud transmittance at quarter resolution.",
+    "The camera is static per view, so reprojection only compensates the wind. A moving globe camera will ghost somewhat without a neighbourhood clamp, and simulation time is capped at 50 ms per frame (slow devices see slow motion, not jumps).",
+    "The noise bake (0.5-1.5 s on a desktop) runs on the main thread; on a low-end phone expect several seconds. Move it to a worker or bake on the GPU.",
+  ];
+  document.getElementById('selfcheck').innerHTML = items.map((s) => `<li>${s}</li>`).join('');
+}
+
+function init() {
+  msg.textContent = 'Preparing cloud noise...';
+  requestAnimationFrame(() => setTimeout(() => {
+    const bakeMs = bakeAll();
+    shared.uWeather.value = textures.weather; shared.uShape.value = textures.shape; shared.uDetail.value = textures.detail;
+    cloudU.uBlue.value = compU.uBlue.value = textures.blue; compU.uWaveN.value = textures.waves; compU.uSpark.value = textures.spark;
+    buildTier(); buildBar(); fillNotes();
+    window.__bakeMs = bakeMs;
+    msg.remove();
+    addEventListener('resize', () => { resize(); samples.length = 0; });
+    requestAnimationFrame(frame);
+  }, 0));
+}
+init();
+</script>
+</body>
+</html>

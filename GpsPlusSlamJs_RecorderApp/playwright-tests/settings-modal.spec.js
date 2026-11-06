@@ -14,30 +14,21 @@ import { fakeWebXRSupport } from './test-helpers.js';
  */
 
 test.describe('Settings Modal', () => {
-  test.beforeEach(async ({ page }) => {
+  test('opens over the setup modal, shows its defaults, closes, and saved options survive a reload', async ({
+    page,
+  }) => {
     // Fake WebXR so app stays in recording mode (Playwright has no WebXR)
     await fakeWebXRSupport(page);
     // Note: Playwright creates a fresh browser context per test, so
     // localStorage is already empty — no need for addInitScript to clear it.
     await page.goto('/');
     // Wait for settings button to be visible (indicates app initialized)
-    await page.locator('#btn-settings').waitFor({ state: 'visible' });
-  });
+    const settingsButton = page.locator('#btn-settings');
+    await settingsButton.waitFor({ state: 'visible' });
+    const settingsModal = page.locator('#settings-modal');
 
-  test.describe('Modal Visibility', () => {
-    test('settings button is visible in setup modal', async ({ page }) => {
-      const settingsButton = page.locator('#btn-settings');
-      await expect(settingsButton).toBeVisible();
-    });
-
-    test('settings modal is hidden by default', async ({ page }) => {
-      const settingsModal = page.locator('#settings-modal');
+    await test.step('hidden by default, opens from its button', async () => {
       await expect(settingsModal).toHaveClass(/hidden/);
-    });
-
-    test('clicking settings button opens modal', async ({ page }) => {
-      const settingsButton = page.locator('#btn-settings');
-      const settingsModal = page.locator('#settings-modal');
 
       await settingsButton.click();
 
@@ -45,113 +36,33 @@ test.describe('Settings Modal', () => {
       await expect(settingsModal).toBeVisible();
     });
 
-    test('clicking close button hides modal', async ({ page }) => {
-      const settingsButton = page.locator('#btn-settings');
-      const closeButton = page.locator('#btn-settings-close');
-      const settingsModal = page.locator('#settings-modal');
-
-      await settingsButton.click();
-      await expect(settingsModal).toBeVisible();
-
-      await closeButton.click();
-      await expect(settingsModal).toHaveClass(/hidden/);
-    });
-
-    test('settings modal has higher z-index than setup modal', async ({
-      page,
-    }) => {
-      const settingsButton = page.locator('#btn-settings');
-      await settingsButton.click();
-
-      const settingsModal = page.locator('#settings-modal');
-      const setupModal = page.locator('#setup-modal');
-
+    await test.step('lies above the setup modal', async () => {
       const settingsZIndex = await settingsModal.evaluate(
         (el) => window.getComputedStyle(el).zIndex
       );
-      const setupZIndex = await setupModal.evaluate(
-        (el) => window.getComputedStyle(el).zIndex
-      );
+      const setupZIndex = await page
+        .locator('#setup-modal')
+        .evaluate((el) => window.getComputedStyle(el).zIndex);
 
       expect(parseInt(settingsZIndex)).toBeGreaterThan(parseInt(setupZIndex));
     });
-  });
 
-  test.describe('Form Elements', () => {
-    test.beforeEach(async ({ page }) => {
-      // Open settings modal
-      await page.locator('#btn-settings').click();
-      await page.locator('#settings-modal').waitFor({ state: 'visible' });
-    });
-
-    test('depth enabled checkbox is checked by default', async ({ page }) => {
-      const checkbox = page.locator('#depth-enabled');
-      await expect(checkbox).toBeChecked();
-    });
-
-    test('images enabled checkbox is checked by default', async ({ page }) => {
-      const checkbox = page.locator('#images-enabled');
-      await expect(checkbox).toBeChecked();
-    });
-
-    test('depth interval slider shows default value', async ({ page }) => {
-      const valueDisplay = page.locator('#depth-interval-value');
+    await test.step('the defaults', async () => {
+      await expect(page.locator('#depth-enabled')).toBeChecked();
+      await expect(page.locator('#images-enabled')).toBeChecked();
       // 0.2s since the 2026-07-16 evening on-device framerate/mesh trade-off
       // passes; equals the framework DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS.
-      await expect(valueDisplay).toHaveText('0.2s');
-    });
-
-    test('depth grid slider shows default value', async ({ page }) => {
-      const valueDisplay = page.locator('#depth-grid-value');
+      await expect(page.locator('#depth-interval-value')).toHaveText('0.2s');
       // 24×24 since the 2026-07-16 evening on-device framerate/mesh
       // trade-off pass (the sweep-derived 64 hurt the framerate); equals the
       // framework DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE shared with the
       // PhysicsDemo.
-      await expect(valueDisplay).toHaveText('24×24');
+      await expect(page.locator('#depth-grid-value')).toHaveText('24×24');
+      await expect(page.locator('#images-interval-value')).toHaveText('2.0s');
+      await expect(page.locator('#images-quality-value')).toHaveText('70%');
     });
 
-    test('images interval slider shows default value', async ({ page }) => {
-      const valueDisplay = page.locator('#images-interval-value');
-      await expect(valueDisplay).toHaveText('2.0s');
-    });
-
-    test('images quality slider shows default value', async ({ page }) => {
-      const valueDisplay = page.locator('#images-quality-value');
-      await expect(valueDisplay).toHaveText('70%');
-    });
-  });
-
-  test.describe('Persistence', () => {
-    test('saved options persist after page reload', async ({ page }) => {
-      // Open settings and modify
-      await page.locator('#btn-settings').click();
-      await page.locator('#depth-enabled').uncheck();
-      await page.locator('#images-quality').fill('0.5');
-      await page.locator('#images-quality').dispatchEvent('input');
-      await page.locator('#btn-settings-save').click();
-
-      // Reload page
-      await page.reload();
-      // Wait for settings button to be visible (indicates app initialized)
-      await page.locator('#btn-settings').waitFor({ state: 'visible' });
-
-      // Open settings again
-      await page.locator('#btn-settings').click();
-      await page.locator('#settings-modal').waitFor({ state: 'visible' });
-
-      // Verify values persisted
-      const depthEnabled = page.locator('#depth-enabled');
-      const qualityDisplay = page.locator('#images-quality-value');
-
-      await expect(depthEnabled).not.toBeChecked();
-      await expect(qualityDisplay).toHaveText('50%');
-    });
-  });
-
-  test.describe('Accessibility', () => {
-    test('all form controls are keyboard accessible', async ({ page }) => {
-      await page.locator('#btn-settings').click();
-
+    await test.step('every control is keyboard accessible', async () => {
       // Tab through elements
       const focusableElements = [
         '#btn-settings-close',
@@ -171,6 +82,33 @@ test.describe('Settings Modal', () => {
         // Element should be focusable (may not be the active element due to order)
         await expect(element).toBeEnabled();
       }
+    });
+
+    await test.step('the close button hides it', async () => {
+      await page.locator('#btn-settings-close').click();
+      await expect(settingsModal).toHaveClass(/hidden/);
+    });
+
+    await test.step('saved options persist after a reload', async () => {
+      // Open settings and modify
+      await settingsButton.click();
+      await page.locator('#depth-enabled').uncheck();
+      await page.locator('#images-quality').fill('0.5');
+      await page.locator('#images-quality').dispatchEvent('input');
+      await page.locator('#btn-settings-save').click();
+
+      // Reload page
+      await page.reload();
+      // Wait for settings button to be visible (indicates app initialized)
+      await settingsButton.waitFor({ state: 'visible' });
+
+      // Open settings again
+      await settingsButton.click();
+      await settingsModal.waitFor({ state: 'visible' });
+
+      // Verify values persisted
+      await expect(page.locator('#depth-enabled')).not.toBeChecked();
+      await expect(page.locator('#images-quality-value')).toHaveText('50%');
     });
   });
 });
