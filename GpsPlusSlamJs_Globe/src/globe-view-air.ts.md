@@ -54,7 +54,11 @@
     would end at the ellipsoid, under the relief, and the veil over high
     ground would be far too thick; so `atmoGround` 0 and the space pass
     fades out entirely below the edge. The old clouds (`clouds=old`, a
-    failed bake) take that path too, as they always did.
+    failed bake) take that path too, as they always did, and so does the
+    clouds switch off: below the edge the veil is a full-canvas march
+    (about 0.65 s of a 1 s frame in a software renderer), and off is the
+    cheap view. The price: the switch changes the ground's colour below
+    80 km, by a mean of 7 to 37 of 255 depending on the height.
   - **Why the veil stays:** the haze's strength follows the observer's
     height, so at 40 km it is nearly nothing and cannot replace the veil.
     With the veil fading out, a descent turned blue to olive and lost

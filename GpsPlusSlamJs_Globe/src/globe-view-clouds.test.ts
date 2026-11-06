@@ -409,8 +409,7 @@ describe("createGlobeViewClouds", () => {
 
   // Why: the layer switch: off, the slab and the shell are turned off at
   // the next frame and nothing of them is drawn; on again, they come back.
-  // The depth stays: the space pass's veil over the ground ends at it, so
-  // the switch must not change the ground's colour below the hand-over.
+  // The depth stays: the shell's rays end at it while the sky shows.
   it("turns the heavy clouds off and on again", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
@@ -537,6 +536,10 @@ describe("createCloudsParts", () => {
       frame();
       expect(clouds.nearLive()).toBe(true);
       expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
+      clouds.setOn(false);
+      expect(clouds.nearLive()).toBe(false);
+      clouds.setOn(true);
+      expect(clouds.nearLive()).toBe(true);
       worker.onerror?.({ message: "no" } as ErrorEvent);
       await vi.waitFor(() => expect(clouds.nearLive()).toBe(false));
       frame();

@@ -41,7 +41,8 @@ export const CLOUD_GOVERNOR = Object.freeze({
   worthwhile: 0.15,
   /** How much of a frame reaches the average. */
   smoothing: 0.1,
-  /** A gap this long says nothing of the device (ms). */
+  /** One frame this long says nothing of the device (ms); two in a row do:
+   *  a device this slow is the one the step-down is for. */
   gapMs: 250,
 });
 
@@ -65,6 +66,7 @@ export function createGlobeCloudGovernor(
   let fastFor = 0;
   /** The average when the pixels began to fall. */
   let slowAt = 0;
+  let gapBefore = false;
   let resting = false;
 
   const stepDown = () => {
@@ -84,7 +86,11 @@ export function createGlobeCloudGovernor(
 
   return {
     frame(ms) {
-      if (!auto || !(ms > 0) || ms > G.gapMs) return;
+      if (!auto || !(ms > 0)) return;
+      const gap = ms > G.gapMs;
+      const alone = gap && !gapBefore;
+      gapBefore = gap;
+      if (alone) return;
       average = average === 0 ? ms : average + (ms - average) * G.smoothing;
       const seconds = ms / 1000;
       slowFor = average > G.slowMs ? slowFor + seconds : 0;

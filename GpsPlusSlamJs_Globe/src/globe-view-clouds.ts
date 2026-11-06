@@ -186,8 +186,8 @@ export interface GlobeViewClouds {
   sceneDepth(): CloudsParts["sceneDepth"];
   /** The heavy clouds on (the default) or off. */
   setOn(on: boolean): void;
-  /** Whether the near clouds are drawn or on their way: false on the old
-   *  clouds, by choice or after a failed bake. */
+  /** Whether the near clouds are drawn or on their way: false with the
+   *  clouds off and on the old clouds, by choice or after a failed bake. */
   nearLive(): boolean;
   /** Whether they are on, and the last plan's flat share and shell, the
    *  shell's own ground shadow and the surface's (`uCloudShadow`). */
@@ -390,20 +390,20 @@ export function createGlobeViewClouds(
   const clouds = createGlobeCloudStep({ cloudVolume, shellVolume, near });
   const appKnobs = knobsWith(options);
   let on = true;
-  let nearLive = near !== null;
+  let nearFine = near !== null;
   /** The knobs for the switch and the near clouds now: without them the
    *  old clouds, with the cover they always had. */
   const chooseKnobs = (): GlobeViewCloudKnobs =>
     Object.freeze({
       ...appKnobs,
       cloudVolume: on ? appKnobs.cloudVolume : 0,
-      cloudNear: nearLive ? 1 : 0,
+      cloudNear: nearFine ? 1 : 0,
     });
   let knobs = chooseKnobs();
   const nearDriver =
     near !== null && options.near
       ? startNearClouds(view, sceneDepth, near, options.near, () => {
-          nearLive = false;
+          nearFine = false;
           knobs = chooseKnobs();
         })
       : null;
@@ -477,7 +477,7 @@ export function createGlobeViewClouds(
       on = next;
       knobs = chooseKnobs();
     },
-    nearLive: () => nearLive,
+    nearLive: () => on && nearFine,
     state: () => ({
       on: knobs.cloudVolume !== 0,
       ...last,

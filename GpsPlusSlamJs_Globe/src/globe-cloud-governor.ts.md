@@ -11,7 +11,7 @@ Purpose: the near clouds' step-down: a device too slow for its tier first draws 
 
 - The pixel scale falls by `step` per `slowS` seconds of a smoothed frame time over `slowMs`, down to `minPixelScale`. Then the tier falls to low, the scale starts over at 1 and low gets `settleS` seconds to prove itself.
 - The scale comes back one step per `fastS` of frames under `fastMs`, much slower than it falls, so it does not hunt. The tier never comes back: a device that needed low once will again.
-- A frame longer than `gapMs` is a gap (a background tab, a collection), not a verdict.
+- One frame longer than `gapMs` is a gap (a background tab, a collection), not a verdict; two in a row count, or a software renderer at seconds a frame would never step down.
 - It only changes the clouds, not the canvas's pixel ratio or the sea's waves: those are fixed for a view's life.
 - The view only feeds it while the near clouds draw, so a slow frame at orbit does not count against them.
 - **A cap is not a slow device.** A display limited to 30 Hz, or a saving mode, reads over `slowMs` for ever. The step-down therefore tests itself: when the fewest pixels saved less than `worthwhile` (15 %) of the frame time since the pixels began to fall, the pixels were not the cost, all of them come back and it rests for the view's life. A capped screen spends about 10 s on fewer pixels, once per view.

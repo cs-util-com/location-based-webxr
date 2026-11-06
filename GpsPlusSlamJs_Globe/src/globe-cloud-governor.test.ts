@@ -112,6 +112,16 @@ describe("createGlobeCloudGovernor", () => {
     expect(governor.state().tier).toBe("low");
   });
 
+  // Why this test matters: software rendering takes seconds a frame; read as
+  // one gap after another it never stepped down, and the page starved.
+  it("steps down on frames of seconds, in a row", () => {
+    const governor = createGlobeCloudGovernor("high");
+    runOnPixels(governor, 2600, 40);
+    expect(governor.state().pixelScale).toBeLessThan(1);
+    runOnPixels(governor, 2600, 60);
+    expect(governor.state().tier).toBe("low");
+  });
+
   it("does nothing when a choice was made", () => {
     const governor = createGlobeCloudGovernor("high", { auto: false });
     run(governor, 100, 300);
