@@ -34,6 +34,7 @@ import {
   planFlight,
   type FlightPath,
 } from "./flight-path.js";
+import { FLIGHT_REPLAN } from "./flight-replan.js";
 import { bendAltitudeM, travelLawDeg } from "./flight-travel.js";
 import {
   criterionWindow,
@@ -763,6 +764,76 @@ describe("never stops in between (measured on the camera)", () => {
     const from = { lat: BERN.lat + 0.001, lng: BERN.lng };
     const path = fly(from, 100, { landingM: 12 * KM });
     expect(judge(path)).toEqual([]);
+  });
+
+  // WHY: a pin picked at the camera's own place is a flight from a point to
+  // itself: it backs off one landing, then dives. The cruise property met it
+  // at half a second, on about one run in 230, and read a dip. These pin what
+  // that dip is, and why the property starts at the shortest flight the app
+  // plans a cruise for instead of half a second.
+  describe("from a point to itself", () => {
+    const place = { lat: 0, lng: 0 };
+    const flyToItself = (durationMs: number) =>
+      planFlight(
+        WGS84_ELLIPSOID,
+        startAt(place, 16_119.431983455557),
+        orbitPose(WGS84_ELLIPSOID, place),
+        { landingM: 2_263.3017625394277, durationMs },
+      );
+    /** The speeds over the cruise, at `hz`. */
+    const cruiseSpeeds = (path: FlightPath, hz: number) => {
+      const cruise = path.cruise;
+      if (!cruise) throw new Error("no cruise");
+      return windowBetween(
+        speedSamples(cameraPoint(path), path.durationMs, hz, R),
+        cruise.fromMs,
+        cruise.toMs,
+      ).map((s) => s.v);
+    };
+
+    // The counterexample itself. Between two frames the speed reads 20 % low
+    // once, across the turn from the back-off into the dive; measured along
+    // the path, in 16 steps per frame, it holds to 1 %. So this is one
+    // frame's shortcut across a turn, not a stall: the camera covers the same
+    // path in that frame, and only changes direction in it.
+    it("at half a second reads a dip between frames that the path does not have", () => {
+      const path = flyToItself(509);
+      const betweenFrames = cruiseSpeeds(path, 60);
+      expect(betweenFrames.length).toBeGreaterThanOrEqual(10);
+      expect(noStopAndGo(betweenFrames, 0.2)).toBe(false);
+      const steps = 16;
+      const fine = cruiseSpeeds(path, 60 * steps);
+      const alongPath: number[] = [];
+      for (let i = 0; i + steps <= fine.length; i += steps) {
+        const frame = fine.slice(i, i + steps);
+        alongPath.push(frame.reduce((a, b) => a + b, 0) / steps);
+      }
+      expect(Math.min(...alongPath)).toBeGreaterThanOrEqual(
+        0.99 * Math.max(...alongPath),
+      );
+    });
+
+    // The same flight at the lengths the app flies: the replan's least and
+    // the press's default. A frame is then far shorter than the turn.
+    it("holds the criterion at the lengths the app flies", () => {
+      for (const durationMs of [
+        FLIGHT_REPLAN.minDurationMs,
+        FLIGHT_PATH.durationMs,
+      ]) {
+        const vs = cruiseSpeeds(flyToItself(durationMs), 60);
+        expect(noStall(vs, 0.5), `${durationMs} ms`).toBe(true);
+        expect(noStopAndGo(vs, 0.2), `${durationMs} ms`).toBe(true);
+      }
+    });
+
+    // The same shortcut, the only reading left at the press's default length:
+    // a 4 Hz sample is 250 ms long, wide enough to span the turn at the
+    // tightest tolerance. No display runs at 4 Hz.
+    it("holds every frame rate and tolerance at the press's default length, but 4 Hz at 0.1", () => {
+      expect(judge(flyToItself(FLIGHT_PATH.durationMs))).toEqual([
+        "4 Hz (b) 0.1",
+      ]);
+    });
   });
 
   // The positive control (cold review finding 3): today's dive on the

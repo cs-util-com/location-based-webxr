@@ -798,6 +798,10 @@ describe('handleMarkRefPoint — full flow', () => {
     mockListRefPointIds.mockResolvedValue([]);
     mockShowRefPointPicker.mockResolvedValue({ id: 'bench', isNew: true });
     mockExtractOdomPosition.mockReturnValue([1, 2, 3] as Vector3);
+    // Sticky defaults: tests below override these two with mockReturnValue,
+    // which vi.clearAllMocks() leaves in place.
+    mockCalcGpsCoords.mockReturnValue({ lat: 49.123, lon: 8.456 });
+    mockFusedGpsFromOdom.mockReturnValue({ lat: 49.123, lon: 8.456 });
     mockExtractOdomRotation.mockReturnValue([0, 0, 0, 1] as Quaternion);
 
     handlers = createRefPointHandlers(

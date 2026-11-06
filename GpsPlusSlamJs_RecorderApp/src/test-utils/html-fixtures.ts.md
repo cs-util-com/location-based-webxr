@@ -6,16 +6,14 @@ Loads HTML fragments from `index.html` to ensure tests use the exact same markup
 
 ## Public API
 
-| Function                  | Parameters     | Returns  | Description                                        |
-| ------------------------- | -------------- | -------- | -------------------------------------------------- |
-| `extractElementById`      | `elementId`    | `string` | Extract an element's outer HTML by its ID          |
-| `extractElementsById`     | `elementIds[]` | `string` | Extract multiple elements and concatenate HTML     |
-| `loadSettingsModalHtml`   | -              | `string` | Convenience: load settings-modal element           |
-| `loadSettingsButtonHtml`  | -              | `string` | Convenience: load btn-settings element             |
-| `loadSettingsTestFixture` | -              | `string` | Load full fixture for settings modal tests         |
-| `loadFullIndexHtml`       | -              | `string` | Load full index.html as raw string                 |
-| `loadAppCss`              | -              | `string` | Load styles/app.css as raw string                  |
-| `clearHtmlCache`          | -              | `void`   | Clear cached HTML and CSS (for testing the loader) |
+| Function                  | Parameters  | Returns  | Description                                |
+| ------------------------- | ----------- | -------- | ------------------------------------------ |
+| `extractElementById`      | `elementId` | `string` | Extract an element's outer HTML by its ID  |
+| `loadSettingsModalHtml`   | -           | `string` | Convenience: load settings-modal element   |
+| `loadSettingsButtonHtml`  | -           | `string` | Convenience: load btn-settings element     |
+| `loadSettingsTestFixture` | -           | `string` | Load full fixture for settings modal tests |
+| `loadFullIndexHtml`       | -           | `string` | Load full index.html as raw string         |
+| `loadAppCss`              | -           | `string` | Load styles/app.css as raw string          |
 
 ## Invariants & Assumptions
 
@@ -40,17 +38,10 @@ beforeEach(() => {
 ### Extracting Custom Elements
 
 ```typescript
-import {
-  extractElementById,
-  extractElementsById,
-} from '../test-utils/html-fixtures';
+import { extractElementById } from '../test-utils/html-fixtures';
 
 // Single element
 const modal = extractElementById('setup-modal');
-
-// Multiple elements
-const html = extractElementsById(['settings-modal', 'setup-modal']);
-document.body.innerHTML = html;
 ```
 
 ### Full Settings Test Fixture
@@ -66,9 +57,6 @@ beforeEach(() => {
 
 ## Tests
 
-See `html-fixtures.test.ts` for coverage of:
-
-- Element extraction by ID
-- Nested element handling
-- Error cases (missing elements)
-- Cache behavior
+The loader has no tests of its own: a broken loader fails every suite that
+consumes it. `html-fixtures.test.ts` uses it to hold the production invariants
+of `index.html` and `app.css` (z-index, tap targets, safe-area padding).

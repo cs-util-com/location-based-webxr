@@ -288,19 +288,21 @@ export function firstMergeBase(mergeBaseWith) {
  * has checked no package. An ordinary commit is not refused (its gate ran
  * before the commit), nor a merge commit already on main, which is where a
  * fresh branch starts. A merge followed by further edits passes: the run
- * sees those edits and has something to check, though not the merge.
+ * sees those edits and has something to check, though not the merge. Nor a
+ * dry run: it checks nothing, and it is how to ask what the gate would do.
  *
- * @param {{ refGiven: boolean, selection: Selection, headIsMerge: boolean, headOnMain: boolean }} input
+ * @param {{ refGiven: boolean, dryRun?: boolean, selection: Selection, headIsMerge: boolean, headOnMain: boolean }} input
  * @returns {string | null}
  */
-export function cleanMergeRefusal({ refGiven, selection, headIsMerge, headOnMain }) {
-  if (refGiven || !headIsMerge || headOnMain || selection.mode === 'all') return null;
+export function cleanMergeRefusal({ refGiven, dryRun = false, selection, headIsMerge, headOnMain }) {
+  if (refGiven || dryRun || !headIsMerge || headOnMain || selection.mode === 'all') return null;
   const { packages, rootFiles = [], docsOnly = [] } = selection;
   if (packages.length + rootFiles.length + docsOnly.length > 0) return null;
   return (
     'test-changed: ✖ HEAD is a merge commit and nothing is uncommitted, so this run would check no package.\n' +
-    '  Name the base: `--ref origin2/main` for what this branch changes on top of main,\n' +
-    '  `--ref HEAD~1` for what the merge brought in.'
+    `  Name the base: \`--ref <main>\`, the first of ${MAIN_LINES.join(', ')} this clone has,\n` +
+    '  for what this branch changes on top of main, `--ref HEAD~1` for what the merge brought in,\n' +
+    '  or `--all` for the whole cascade.'
   );
 }
 

@@ -17,6 +17,11 @@ const FIXTURE = join(here, "fixtures", "sample-recording.zip");
  * by the headless real-Rapier unit tests; this pins the whole browser pipeline
  * (replay engine → depth → grid → occlusion mesh → collider → spawn) end to end.
  * The live-AR path stays device-only (no navigator.xr in Playwright).
+ *
+ * The same boot holds the app's baseline health: no console errors, the static
+ * mode-entry UI, and, because Playwright's Chromium has no `navigator.xr`, the
+ * desktop-replay path offered honestly (recording input present, "Start AR"
+ * hidden) instead of a crash on an AR assumption.
  */
 test.describe("Physics Demo — desktop replay end-to-end", () => {
   test("reconstructs the mesh from a real recording and spawns bouncing balls @pr", async ({
@@ -25,8 +30,33 @@ test.describe("Physics Demo — desktop replay end-to-end", () => {
     test.setTimeout(120_000);
     const pageErrors = [];
     page.on("pageerror", (err) => pageErrors.push(err.message));
+    const bootErrors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") bootErrors.push(msg.text());
+    });
 
     await page.goto("/");
+
+    // Static mode-entry UI renders.
+    await expect(page.getByTestId("mode-screen")).toBeVisible();
+    await expect(page.getByTestId("recording-input")).toBeVisible();
+
+    // No WebXR in Playwright → the mode screen shows the desktop path ONLY: the
+    // recording file-row is visible and "Start AR" is hidden (either-or entry).
+    await expect(page.getByTestId("file-row")).toBeVisible();
+    await expect(page.getByTestId("start-ar-button")).toBeHidden();
+    // Replay controls are not shown until a recording is loaded.
+    await expect(page.getByTestId("replay-panel")).toBeHidden();
+
+    // The always-on perf panel (FPS/MS/MB) mounts unconditionally — Stats.js
+    // renders one <canvas> per metric (3 with Chrome's performance.memory).
+    await expect(page.locator(".perf-stats-overlay")).toBeAttached();
+    await expect(
+      page.locator(".perf-stats-overlay canvas").first(),
+    ).toBeAttached();
+    expect(bootErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+
     await page.getByTestId("recording-input").setInputFiles(FIXTURE);
 
     // The replay session starts → the controls appear.

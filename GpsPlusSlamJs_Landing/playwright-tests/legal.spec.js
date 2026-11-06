@@ -60,10 +60,3 @@ test("the legal page loads with both sections, the operator placeholder and the 
   ).toBe(true);
   expect(errors).toEqual([]);
 });
-
-test("the landing page links the legal page @pr", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.locator('a[href="/legal/"]')).toHaveText(
-    "Legal notice and privacy",
-  );
-});

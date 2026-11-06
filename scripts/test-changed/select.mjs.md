@@ -193,9 +193,9 @@ the gate tooling (21) and `package.json` (9).
   doc-only packages' `run --if-present format`, each root check, the changed
   packages' full gates (with `GATE_CHANGED_REF` when `ref` is given), their
   dependents without browser stages.
-- `cleanMergeRefusal({ refGiven, selection, headIsMerge, headOnMain })` is why
-  the run refuses to start, or null: a committed merge with nothing selected
-  and no `--ref`. See `test-changed.mjs.md`.
+- `cleanMergeRefusal({ refGiven, dryRun, selection, headIsMerge, headOnMain })`
+  is why the run refuses to start, or null: a committed merge with nothing
+  selected, no `--ref` and no `--dry-run`. See `test-changed.mjs.md`.
 - `describeRun` prints ONE line naming what was seen and everything that
   runs, e.g. `test-changed: vs HEAD - changed GpsPlusSlamJs_TourViewer; root
   files (1): tests/repo-config/x.test.js => runs: the framework build if

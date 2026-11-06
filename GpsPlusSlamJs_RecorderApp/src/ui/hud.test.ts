@@ -1034,6 +1034,16 @@ describe('updateGpsInfo', () => {
     initUI(createMockCallbacks());
   });
 
+  // Why this test matters: the readout starts hidden, so a value written into
+  // it without revealing it never reaches the user.
+  it('reveals the GPS readout', () => {
+    updateGpsInfo(5.5);
+
+    expect(
+      document.getElementById('gps-info')?.classList.contains('hidden')
+    ).toBe(false);
+  });
+
   /**
    * Why this test matters:
    * Verifies GPS accuracy is displayed with correct formatting.
@@ -1092,6 +1102,10 @@ describe('updateArInfo', () => {
 
     const arTracking = document.getElementById('ar-tracking');
     expect(arTracking?.textContent).toBe('Tracking');
+    // It starts hidden, so the text alone would never reach the user.
+    expect(
+      document.getElementById('ar-info')?.classList.contains('hidden')
+    ).toBe(false);
   });
 });
 
@@ -1661,6 +1675,24 @@ describe('hideRecordingControls', () => {
  * and return to its idle state for the next recording. This is the feedback
  * that removes the double-tap which caused Sentry issue 7319627943.
  */
+describe('showRecordingControls', () => {
+  // Why this test matters: this swap is what tells the operator a recording is
+  // running, and Stop is the only way to end it.
+  it('swaps Start for Stop and the ref point button, and shows the indicator', () => {
+    setupMinimalDOM();
+    initUI(createMockCallbacks());
+    const hidden = (id: string): boolean | undefined =>
+      document.getElementById(id)?.classList.contains('hidden');
+
+    showRecordingControls();
+
+    expect(hidden('btn-start')).toBe(true);
+    expect(hidden('btn-stop')).toBe(false);
+    expect(hidden('btn-ref-point')).toBe(false);
+    expect(hidden('recording-indicator')).toBe(false);
+  });
+});
+
 describe('setStopButtonBusy', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

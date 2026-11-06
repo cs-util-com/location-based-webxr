@@ -671,7 +671,7 @@ describe('GpsEventVisualizer', () => {
 
   describe('getRawMarkerWorldSizes (§3c bbox diagnostic)', () => {
     /**
-     * Why these tests matter: the rec31 accuracy-ellipsoid Playwright spec
+     * Why these tests matter: a test of accuracy-ellipsoid scaling
      * relies on this accessor to read back the world-space size of each
      * raw-GPS marker via `THREE.Box3.setFromObject`. Bounding-box math is
      * the real invariant we want to test (pixel diffs are brittle).

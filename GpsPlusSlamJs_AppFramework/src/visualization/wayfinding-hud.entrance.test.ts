@@ -553,6 +553,51 @@ describe('circleEntrance — reduced motion and lifecycle', () => {
     hud.dispose();
   });
 
+  describe('without the option, the OS setting decides', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    const firstFrame = () => {
+      const contexts = injectContexts();
+      const { hud } = makeHud([onScreenFar()]);
+      hud.update(1 / 90);
+      const stats = hud.entranceStats();
+      const dashOffset = scratchOf(contexts, 0).lineDashOffset;
+      hud.dispose();
+      return { animating: stats.animating, dashOffset };
+    };
+
+    // Why this test matters: it is the only reach into the read of the
+    // user's setting; a phone with reduced motion on must get the settled
+    // marker without the app passing anything.
+    it('reduced motion in the OS shows the complete marker on the first frame', () => {
+      const matchMedia = vi.fn().mockReturnValue({ matches: true });
+      vi.stubGlobal('matchMedia', matchMedia);
+      expect(firstFrame()).toEqual({ animating: 0, dashOffset: 0 });
+      expect(matchMedia).toHaveBeenCalledWith(
+        '(prefers-reduced-motion: reduce)'
+      );
+    });
+
+    it('no preference in the OS animates', () => {
+      vi.stubGlobal('matchMedia', () => ({ matches: false }));
+      expect(firstFrame()).toEqual({
+        animating: 1,
+        dashOffset: DIAMOND_ENTRANCE.dashLength,
+      });
+    });
+
+    // jsdom and workers have no matchMedia: the read must not throw.
+    it('without matchMedia the entrance animates', () => {
+      vi.stubGlobal('matchMedia', undefined);
+      expect(firstFrame()).toEqual({
+        animating: 1,
+        dashOffset: DIAMOND_ENTRANCE.dashLength,
+      });
+    });
+  });
+
   it('the marker canvases are allocated on the first entrance, not per target up front', () => {
     // Why (PR #425 review): a marker is two 256 px canvases (~512 KB) and
     // the HUD documents no target-count bound — 50 waypoints would be

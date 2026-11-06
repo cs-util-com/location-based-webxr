@@ -31,7 +31,7 @@ Visualizes GPS events as 3D markers during recording and replay. Shows three typ
 - `clearAll(): void` — remove all markers (including snapshots), reset counters/zero-ref, and restore visibility to the default (visible).
 - `getCounts(): { raw, fused, snapshots }` — get marker counts including alignment snapshots.
 - `setSceneSource(source: GpsMarkerSceneSource | null): void` — point the visualizer at a non-live scene graph (desktop replay, offline e2e fixture); `null` restores the live-session default (`webxr-session`'s `getScene`/`getArWorldGroup`). Introduced by the 2026-07-11 webxr-session surface-reduction plan, step 2 — replay used to inject its scene into the webxr-session singleton (the deleted Risk R1 `setScene`/`setArWorldGroup` exports) so this visualizer would find it; now the replay orchestrator points the visualizer at the replay scene explicitly and restores the default on dispose. Not reset by `clearAll()` — the overriding owner restores it.
-- `getRawMarkerWorldSizes(): Array<{ x, y, z }>` — diagnostic accessor returning the world-space bounding-box size (`THREE.Box3.setFromObject`) of each raw-GPS marker in insertion order. Used by the §3c Playwright spec to verify accuracy-ellipsoid scaling.
+- `getRawMarkerWorldSizes(): Array<{ x, y, z }>` — diagnostic accessor returning the world-space bounding-box size (`THREE.Box3.setFromObject`) of each raw-GPS marker in insertion order. Used to verify accuracy-ellipsoid scaling in tests.
 
 ### Exported Singleton
 

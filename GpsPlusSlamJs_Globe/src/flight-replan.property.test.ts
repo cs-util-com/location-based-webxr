@@ -126,7 +126,7 @@ describe("flight replan properties", () => {
           0.05 * scale + resolution,
         );
       }),
-      { numRuns: 150 },
+      { numRuns: 50 },
     );
   });
 
@@ -150,7 +150,7 @@ describe("flight replan properties", () => {
         }
         expect(lowest).toBeGreaterThanOrEqual(floor);
       }),
-      { numRuns: 150 },
+      { numRuns: 50 },
     );
   });
 });

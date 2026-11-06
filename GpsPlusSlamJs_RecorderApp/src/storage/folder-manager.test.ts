@@ -205,6 +205,11 @@ describe('createFolderManager', () => {
       scenarioSessions: new Map(),
       scenarioNames: [],
     });
+    vi.mocked(indexRefPointDefinitionsFromFolder).mockResolvedValue({
+      definitionsByScenario: new Map(),
+      zipFilesScanned: 0,
+      errors: [],
+    });
   });
 
   // ========================================================================
@@ -720,6 +725,7 @@ describe('createFolderManager', () => {
     it('should show error when scenario handle is null', async () => {
       // Why: Failed scenario load must inform the user
       vi.mocked(setCurrentScenario).mockResolvedValue(null);
+      vi.mocked(getReadFolderHandle).mockReturnValue(null); // no folder to recover from
       const { manager, deps } = createFolderManagerWithDefaults();
 
       await manager.handleScenarioChange('BadScenario');
