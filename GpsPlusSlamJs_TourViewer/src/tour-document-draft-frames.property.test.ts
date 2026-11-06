@@ -7,8 +7,8 @@
  * open. These pin the round trip over EVERY field a frame can hold.
  *
  * The generators are typed by `everyField`: a field added to a station, a
- * block, a step or an answer and not generated here fails
- * `typecheck:tests`, so a new field cannot slip past this round trip.
+ * story, a block, a choice, a quiz or an answer and not generated here
+ * fails `typecheck:tests`, so a new field cannot slip past this round trip.
  */
 
 import fc from "fast-check";
@@ -21,6 +21,7 @@ import {
   type TourBlockKind,
   type TourCharacter,
   type TourCharacterBlock,
+  type TourChoice,
   type TourChoiceOption,
   type TourLocalPose,
   type TourLongTextBlock,
@@ -33,11 +34,13 @@ import {
   type TourNarration,
   type TourPictureBlock,
   type TourQuizAnswer,
+  type TourQuizEntry,
   type TourQuizOption,
   type TourShortTextBlock,
-  type TourStep,
-  type TourStepAction,
   type TourStepAdvance,
+  type TourStory,
+  type TourStoryBlock,
+  type TourStoryChild,
   type TourVideoBlock,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -65,7 +68,7 @@ const GUIDE: TourCharacter = {
 
 /** A tour declaring a character, with an asset of every kind. */
 const TOUR: TourManifest = parseTourManifest({
-  version: 4,
+  version: 5,
   order: "fixed",
   assets: [
     { id: "guide-png", path: "content/guide-png.png" },
@@ -93,23 +96,24 @@ const WITH_CHARACTER = {
   activateRadiusM: 50,
   foundRadiusM: 25,
   hint: "arrow",
-  blocks: [
+  children: [
     {
-      id: "says",
-      kind: "character",
-      view: "bubble",
-      name: GUIDE.name,
-      image: GUIDE.image,
-      character: GUIDE.id,
-      caption: "Follow me.",
-      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-    },
-  ],
-  steps: [
-    {
-      id: "s1",
-      action: { kind: "show", block: "says" },
-      advance: { mode: "lineEnd" },
+      id: "tale",
+      kind: "story",
+      title: "The tale",
+      children: [
+        {
+          id: "says",
+          kind: "character",
+          view: "bubble",
+          name: GUIDE.name,
+          image: GUIDE.image,
+          character: GUIDE.id,
+          caption: "Follow me.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          advance: { mode: "lineEnd" },
+        },
+      ],
     },
   ],
 };
@@ -166,7 +170,7 @@ describe("a draft of a tour that declares a character", () => {
       act.stationDuplicated({
         stationId: "story",
         newStationId: "copy",
-        newItemIds: { says: "says2" },
+        newItemIds: { tale: "tale2", says: "says2" },
         createdAtIso: "2026-11-06T00:00:00.000Z",
         what: "copy",
       }),
@@ -185,7 +189,7 @@ describe("a draft of a tour that declares a character", () => {
     const copy = OPENED.stations[0]!;
     const text = settingsRecordText({
       needsNoGps: true,
-      frames: [copy, { ...copy, id: "plain", blocks: [], steps: [] }],
+      frames: [copy, { ...copy, id: "plain", children: [] }],
     });
     const { characters: _gone, ...without } = OPENED;
     const record = parseSettingsRecord(text, without);
@@ -412,30 +416,32 @@ const ANSWERS: Record<TourQuizAnswer["type"], fc.Arbitrary<TourQuizAnswer>> = {
   }),
 };
 
-/** An action of every kind but `show`, which `content` gives each block;
- *  `Record` makes a new kind a compile error. */
-const actions = (
-  stepIds: readonly string[],
+/** A choice or a quiz; `Record` makes a new kind of child a compile error. */
+const WAITS = (
+  id: string,
+  childIds: readonly string[],
 ): Record<
-  Exclude<TourStepAction["kind"], "show">,
-  fc.Arbitrary<TourStepAction>
+  Exclude<TourStoryChild["kind"], TourBlockKind>,
+  fc.Arbitrary<TourStoryChild>
 > => ({
   choice: optionIds.chain((ids) =>
-    everyField<Extract<TourStepAction, { kind: "choice" }>>({
+    everyField<TourChoice>({
+      id: fc.constant(id),
       kind: fc.constant("choice"),
       prompt: words,
       options: fc.tuple(
-        ...ids.map((id) =>
+        ...ids.map((option) =>
           everyField<TourChoiceOption>({
-            id: fc.constant(id),
+            id: fc.constant(option),
             label: words,
-            goto: maybe(fc.constantFrom(...stepIds)),
+            goto: maybe(fc.constantFrom(...childIds)),
           }),
         ),
       ),
     }),
   ),
-  quiz: everyField<Extract<TourStepAction, { kind: "quiz" }>>({
+  quiz: everyField<TourQuizEntry>({
+    id: fc.constant(id),
     kind: fc.constant("quiz"),
     question: words,
     points: fc.nat({ max: 100 }),
@@ -443,45 +449,55 @@ const actions = (
   }),
 });
 
-const step = (id: string, action: fc.Arbitrary<TourStepAction>) =>
-  everyField<TourStep>({ id: fc.constant(id), action, advance });
+/** A block of a story: any block, and how it moves on. */
+const storyBlock = (kind: TourBlockKind, id: string) =>
+  fc
+    .tuple(
+      BLOCKS[kind](id),
+      everyField<Omit<TourStoryBlock, keyof TourBlock>>({ advance }),
+    )
+    .map(([block, own]): TourStoryBlock => ({ ...block, ...own }));
 
-type FrameContent = Pick<StationFrame, "blocks" | "steps">;
-
-/** A station's story: the blocks (each shown by a step, or a reader takes
- *  it for a free one) and some steps that show nothing. */
-const content: fc.Arbitrary<FrameContent> = fc
-  .record({
-    kinds: fc.array(fc.constantFrom(...KINDS), { maxLength: 7 }),
-    others: fc.integer({ min: 1, max: 3 }),
-  })
-  .chain(({ kinds, others }) => {
-    const shows = kinds.map((_, i) => `show${String(i)}`);
-    const rest = Array.from({ length: others }, (_, i) => `q${String(i)}`);
-    const moves = Object.values(actions([...shows, ...rest]));
-    return fc.record({
-      blocks: fc.tuple(
-        ...kinds.map((kind, i) => BLOCKS[kind](`b${String(i)}`)),
-      ),
-      steps: fc.tuple(
-        ...shows.map((id, i) =>
-          step(
-            id,
-            fc.constant<TourStepAction>({
-              kind: "show",
-              block: `b${String(i)}`,
+/** A story of `id`: its blocks, choices and quizzes in any order (the
+ *  file's order is the story's), or none: a story may be empty. */
+const story = (id: string): fc.Arbitrary<TourStory> =>
+  fc
+    .record({
+      kinds: fc.array(fc.constantFrom(...KINDS), { maxLength: 7 }),
+      others: fc.integer({ min: 0, max: 3 }),
+    })
+    .chain(({ kinds, others }) => {
+      const blockIds = kinds.map((_, i) => `${id}-b${String(i)}`);
+      const rest = Array.from(
+        { length: others },
+        (_, i) => `${id}-w${String(i)}`,
+      );
+      const childIds = [...blockIds, ...rest];
+      return everyField<TourStory>({
+        id: fc.constant(id),
+        kind: fc.constant("story"),
+        title: words,
+        children: fc
+          .tuple(
+            ...kinds.map((kind, i) => storyBlock(kind, blockIds[i] as string)),
+            ...rest.map((wait) =>
+              fc.oneof(...Object.values(WAITS(wait, childIds))),
+            ),
+          )
+          .chain((children) =>
+            fc.shuffledSubarray<TourStoryChild>(children, {
+              minLength: children.length,
             }),
           ),
-        ),
-        ...rest.map((id) => step(id, fc.oneof(...moves))),
-      ),
+      });
     });
-  });
 
 const frame: fc.Arbitrary<StationFrame> = fc
   .record({
-    story: content,
-    rest: everyField<Omit<StationFrame, keyof FrameContent>>({
+    stories: fc
+      .subarray(["one", "two", "three"])
+      .chain((ids) => fc.tuple(...ids.map(story))),
+    rest: everyField<Omit<StationFrame, "children">>({
       id: fc.constant("station"),
       title: maybe(words),
       description: maybe(words),
@@ -493,10 +509,10 @@ const frame: fc.Arbitrary<StationFrame> = fc
       hint: fc.constant("arrow"),
     }),
   })
-  .map(({ story, rest }) => ({ ...rest, ...story }));
+  .map(({ stories, rest }) => ({ ...rest, children: stories }));
 
 describe("a stored frame reads back whole", () => {
-  it("every field of a station, its blocks and its steps survives the record", () => {
+  it("every field of a station, its stories and their children survives the record", () => {
     fc.assert(
       fc.property(frame, (stored) => {
         const text = settingsRecordText({
@@ -513,5 +529,7 @@ describe("a stored frame reads back whole", () => {
       }),
       { numRuns: 300 },
     );
-  });
+    // Well under a second alone; a machine shared with other gates ran it
+    // past the default 5 s.
+  }, 120_000);
 });

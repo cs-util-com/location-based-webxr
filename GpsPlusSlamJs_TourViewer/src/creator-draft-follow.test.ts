@@ -318,21 +318,22 @@ describe("the phone draft's settings record", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
+      children: [
         {
-          id: "look",
-          kind: "picture",
-          view: "card",
-          image: "img1",
-          widthM: 1,
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "look" },
-          advance: { mode: "tap" },
+          id: "tale",
+          kind: "story",
+          title: "The tale",
+          children: [
+            {
+              id: "look",
+              kind: "picture",
+              view: "card",
+              image: "img1",
+              widthM: 1,
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              advance: { mode: "tap" },
+            },
+          ],
         },
       ],
     };
