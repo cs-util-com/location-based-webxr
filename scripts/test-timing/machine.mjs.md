@@ -2,7 +2,7 @@
 
 # machine.mjs — anonymized machine identity for timing recordings
 
-- Purpose: pure builders for the machine fingerprint and human-readable label stored in the versioned `docs/test-timings.md`. The raw hostname must never appear there (privacy leak, [followups §4](../../docs/2026-07-02-0253-test-timing-implementation-followups.md)) — both builders replace it with the first 8 hex chars of its sha256.
+- Purpose: pure builders for the machine fingerprint and human-readable label stored in `docs/test-timings.md`, which a run on main publishes as an artifact. The raw hostname must never appear there (privacy leak, [followups §4](../../docs/2026-07-02-0253-test-timing-implementation-followups.md)) — both builders replace it with the first 8 hex chars of its sha256.
 - Public API:
   - `anonymizeHostname(hostname)` → 8 lowercase hex chars (`sha256(hostname).slice(0, 8)`). Deterministic, so same-machine history comparison keeps working across runs.
   - `machineFingerprint(hostname, cpuModel, cores)` → `host-hash|cpu-slug|cores` (plan §5; the cpu slug is `[^a-zA-Z0-9]+`→`-`, trimmed, max 40 chars).

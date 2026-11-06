@@ -178,6 +178,80 @@ describe('the workflow stays inside the free plan and never hangs', () => {
   });
 });
 
+// Why: a run on main is the only run that may produce timing numbers, and no
+// run may write them back: a commit from CI onto main is what the gitignored
+// tables exist to avoid.
+describe('the timing tables of a run on main are an artifact, never a commit', () => {
+  const upload = testJob.steps.find((s) => s.name === 'Upload the timing tables');
+
+  it('asks for recording on main only', () => {
+    expect(testJob.env.TIMING_RECORD_ON_RUNNER).toBe(
+      "${{ github.ref == 'refs/heads/main' && '1' || '' }}",
+    );
+  });
+
+  it('uploads the tables of the root and of every package, per job', () => {
+    expect(upload, 'the upload step').toBeDefined();
+    expect(upload.if).toContain("env.TIMING_RECORD_ON_RUNNER == '1'");
+    expect(upload.with.name).toBe('test-timings-${{ matrix.job }}');
+    expect(upload.with.path).toContain('docs/test-timings.md');
+    expect(upload.with.path).toContain('GpsPlusSlamJs_*/docs/test-timings.md');
+    // A job whose stages all ran as a tier records nothing: not a failure.
+    expect(upload.with['if-no-files-found']).toBe('ignore');
+  });
+
+  it('gives the workflow no way to write to the repository', () => {
+    const text = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+    expect(text).not.toMatch(/git\s+push/);
+    expect(workflow.permissions).toEqual({ contents: 'read' });
+  });
+});
+
+// Why: a job cancelled at its time limit keeps no log, so a hung browser run
+// used to leave nothing that says which test hung. Playwright's own limit ends
+// the run earlier, as a normal red: the log stays and the report step runs.
+describe('a hung browser run ends before its job does', () => {
+  /**
+   * What the job needs besides the Playwright run, as measured in 8 full runs:
+   * setup up to 10.3 min, the stages before the browser one up to 1.3 on
+   * OsmDemo, the upload about 1. The rest is spare, so setup above about 17
+   * min on OsmDemo is what reverses this.
+   */
+  const OUTSIDE_PLAYWRIGHT_MIN = 20;
+
+  it("wires each job's limit into the environment Playwright reads", () => {
+    expect(testJob.env.E2E_GLOBAL_TIMEOUT_MIN).toBe('${{ matrix.e2e_limit }}');
+  });
+
+  it('gives every browser job a limit that leaves time for setup and upload, and a report', () => {
+    const browserJobs = entries.filter((e) => e.browsers);
+    expect(browserJobs.length).toBeGreaterThanOrEqual(7);
+    for (const entry of browserJobs) {
+      expect(Number.isInteger(entry.e2e_limit), entry.job).toBe(true);
+      expect(entry.e2e_limit, entry.job).toBeGreaterThan(0);
+      expect(entry.e2e_limit, entry.job).toBeLessThanOrEqual(
+        entry.timeout - OUTSIDE_PLAYWRIGHT_MIN,
+      );
+      expect(entry.report, entry.job).toBeTruthy();
+    }
+  });
+
+  it("uploads the design system's own results, which sit a level deeper", () => {
+    const job = entries.find((e) => e.job === 'design-system-and-apps');
+    expect(job.report).toContain('GpsPlusSlamJs_DesignSystem/3d/test-results/');
+    expect(job.report).toContain('GpsPlusSlamJs_*/test-results*');
+  });
+
+  it('gives no limit to a job that starts no browser', () => {
+    expect(entries.filter((e) => !e.browsers && e.e2e_limit !== undefined)).toEqual([]);
+  });
+
+  it('uploads the report after a red run', () => {
+    const report = testJob.steps.find((s) => s.name === 'Upload Playwright report');
+    expect(report.if).toContain('!cancelled()');
+  });
+});
+
 // Why: the per-PR tier runs the `@pr` tests only, so the full set is safe
 // only while something still runs it. Each trigger below is one of those
 // somethings, and each fails silently when it goes: CI stays green while
@@ -204,10 +278,32 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     expect(tierExpr.trim().endsWith("|| 'pr' }}")).toBe(true);
   });
 
-  it("gives the tier the pull request's base, and fetches that commit", () => {
-    expect(testJob.env.E2E_TIER_BASE).toBe('${{ github.event.pull_request.base.sha }}');
+  // Why: a branch without a pull request runs its browser checks by dispatch,
+  // and that run is only worth its jobs when it selects what the pull request
+  // would: without a base the tier silently drops the changed specs.
+  it("gives the tier the pull request's base, or a dispatch's, and fetches that commit", () => {
+    expect(testJob.env.E2E_TIER_BASE).toBe(
+      '${{ github.event.pull_request.base.sha || inputs.base }}',
+    );
+    const input = workflow.on.workflow_dispatch.inputs.base;
+    expect(input.type).toBe('string');
+    expect(input.required).toBeFalsy();
+    expect(input.default).toBe('');
     const fetch = testJob.steps.find((s) => String(s.run ?? '').includes('git fetch'));
-    expect(fetch?.run).toContain('"$E2E_TIER_BASE"');
+    expect(fetch?.run).toContain('"$base"');
+    expect(fetch?.if).toContain("env.E2E_TIER_BASE != ''");
+    expect(fetch?.if).toContain("github.event_name == 'workflow_dispatch' && inputs.tier == 'pr'");
+  });
+
+  it("defaults a dispatch's base to the merge base with main, read from the API", () => {
+    // The checkout is shallow, so git itself cannot answer this here.
+    const fetch = testJob.steps.find((s) => String(s.run ?? '').includes('git fetch'));
+    expect(fetch?.run).toContain('compare/main...$GITHUB_SHA');
+    expect(fetch?.run).toContain('.merge_base_commit.sha');
+    expect(fetch?.env?.GH_TOKEN).toBe('${{ github.token }}');
+    // A commit, whatever the input named: the tier diffs against one.
+    expect(fetch?.run).toContain('git rev-parse FETCH_HEAD');
+    expect(fetch?.run).toContain('$GITHUB_ENV');
   });
 
   // A label added to a pull request must start no CI job unless it is

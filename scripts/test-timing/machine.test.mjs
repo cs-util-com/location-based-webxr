@@ -1,5 +1,6 @@
-// Why this test matters: docs/test-timings.md is versioned, so whatever the
-// fingerprint/label builders emit ends up in git forever. The raw hostname
+// Why this test matters: a run on main publishes docs/test-timings.md as an
+// artifact and years of it are in the git history, so whatever the
+// fingerprint/label builders emit is public. The raw hostname
 // must never appear there (privacy leak, followups doc §4) — only its short
 // sha256 prefix — while cpu model and core count stay readable. These tests
 // pin the exact hash-prefix format so the one-time history migration

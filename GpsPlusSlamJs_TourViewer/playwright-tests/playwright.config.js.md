@@ -24,8 +24,8 @@ readiness.
   GitHub runner. A direct `playwright test --config ...` (headed, UI, a
   developer's own run) runs both projects together at `workers` (1 on CI,
   3 locally), as before the split.
-- **The browser tier** (`grep`, `retries`): `playwrightGrep` and
-  `tierRetries` from [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md).
+- **The browser tier** (`grep`, `retries`, `globalTimeout`): `playwrightGrep`,
+  `tierGlobalTimeout` and `tierRetries` from [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md).
   By default the run selects the `@pr` tests plus every changed spec file;
   `E2E_TIER=full` selects every test. A developer's own file filter or grep
   is never narrowed. On CI, 1 retry in the tier and 2 in the full set.

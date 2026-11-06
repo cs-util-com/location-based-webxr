@@ -229,7 +229,8 @@ pnpm run test:example
 
 Every full gate run rewrites the generated `docs/test-timings.md` of the
 project(s) it ran (per package and at the root) with per-stage wall-clock
-history — commit that churn alongside your change; never hand-edit it (see
+history. Those files are gitignored, so a gate changes nothing in `git status`;
+a run on `main` uploads its tables as artifacts (see
 [`scripts/test-timing/README.md`](scripts/test-timing/README.md)).
 
 ## Contributing

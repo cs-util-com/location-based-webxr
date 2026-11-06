@@ -8,7 +8,8 @@
 
 - Purpose: runs one configured stage of one project — spawns the canonical
   command through a shell, measures wall-clock, injects/parses JSON test
-  reporters, and atomically rewrites that project's `docs/test-timings.md`.
+  reporters, and atomically rewrites that project's gitignored
+  `docs/test-timings.md`.
 - Public API:
   - `runStage(project, stageName, forwardedArgs) → Promise<StageResult>`
     (`{ exitCode, durationMs, tests, recorded }`). Unknown stage → exit 1.
@@ -25,9 +26,10 @@
 - Invariants & assumptions:
   - Recording NEVER fails the gate: all timing errors are warnings; the
     spawned command's exit code is returned untouched.
-  - Records only full-suite runs off the GitHub runner (`decideRecording`):
-    any forwarded arg or `GITHUB_ACTIONS` ⇒ run executes but is not
-    recorded (a local `CI=1` is recorded). A run on a stage's per-commit
+  - Records only full-suite runs off the GitHub runner, or on it when a run
+    on `main` sets `TIMING_RECORD_ON_RUNNER` (`decideRecording`): any
+    forwarded arg or `GITHUB_ACTIONS` ⇒ run executes but is not recorded (a
+    local `CI=1` is recorded). A run on a stage's per-commit
     `fastGateCommand` (`gateBaseCommand` in `projects.mjs`) is not
     recorded either: its duration is not comparable with the canonical
     command's history (gate-speed plan 2026-10-04, G4). Nor is a run of a
@@ -57,6 +59,9 @@
     it (`scripts/e2e/browser-launch.mjs`), which moves Chromium's GPU work
     out of a process that raises itself. Opt in with
     `GATE_BROWSER_PRIORITY=below` (off by default). See `stage-priority.mjs.md`.
+  - **A stalled browser stage is interrupted first** (POSIX): a SIGINT, and up
+    to `STALL_REPORT_GRACE_MS` to end, so a silent hang leaves Playwright's
+    reports before the SIGTERM, which would leave none.
   - **The stage watchdog** ([stall-watch.mjs](stall-watch.mjs.md)): an
     unfiltered stage that prints nothing for `GATE_STALL_MIN` minutes
     (default 20) has its whole process tree killed and returns 124 with a

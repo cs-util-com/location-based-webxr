@@ -42,6 +42,16 @@ describe('decideRecording', () => {
     });
   });
 
+  // Why: the timing tables come from runs on main only, so the runner records
+  // when ci.yml asks for it there and in no other run. A filtered run is not
+  // the suite on any machine.
+  it('records on the GitHub runner only when the run asks for it', () => {
+    const env = { GITHUB_ACTIONS: 'true', TIMING_RECORD_ON_RUNNER: '1' };
+    expect(decideRecording([], env).record).toBe(true);
+    expect(decideRecording(['src/a.test.ts'], env).record).toBe(false);
+    expect(decideRecording([], { ...env, TIMING_RECORD_ON_RUNNER: '' }).record).toBe(false);
+  });
+
   it('never records on the GitHub runner, even for full-suite runs', () => {
     expect(decideRecording([], { GITHUB_ACTIONS: 'true', CI: 'true' })).toEqual({
       record: false,

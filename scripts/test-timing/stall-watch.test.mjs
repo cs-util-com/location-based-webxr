@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  STALL_REPORT_GRACE_MS,
   DEFAULT_STALL_MIN,
   STALL_EXIT,
   STALL_POLL_MS,
@@ -20,6 +21,7 @@ import {
   stallLimitMs,
   stallMessage,
   stallPollMs,
+  stallReportGraceMs,
   watchLine,
 } from './stall-watch.mjs';
 
@@ -71,6 +73,17 @@ describe('stallPollMs', () => {
     expect(stallPollMs({ GATE_STALL_POLL_MS: '200' })).toBe(200);
     expect(stallPollMs({ GATE_STALL_POLL_MS: '0' })).toBe(STALL_POLL_MS);
     expect(stallPollMs({ GATE_STALL_POLL_MS: 'x' })).toBe(STALL_POLL_MS);
+  });
+});
+
+// Why: a Playwright run writes its report on SIGINT and not on SIGTERM, so
+// this wait is what stands between a hang and a kill that leaves no report.
+describe('stallReportGraceMs', () => {
+  it('reads a positive override, and falls back on anything else', () => {
+    expect(stallReportGraceMs({})).toBe(STALL_REPORT_GRACE_MS);
+    expect(stallReportGraceMs({ GATE_STALL_REPORT_GRACE_MS: '200' })).toBe(200);
+    expect(stallReportGraceMs({ GATE_STALL_REPORT_GRACE_MS: '0' })).toBe(STALL_REPORT_GRACE_MS);
+    expect(stallReportGraceMs({ GATE_STALL_REPORT_GRACE_MS: 'x' })).toBe(STALL_REPORT_GRACE_MS);
   });
 });
 

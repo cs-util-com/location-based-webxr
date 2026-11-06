@@ -1,7 +1,7 @@
 // The impure engine shared by timed-stage.mjs and run-gate.mjs: spawns a
 // stage's canonical command through a shell, measures wall-clock, extracts
 // test counts from injected JSON reporters, and updates the owning project's
-// docs/test-timings.md atomically. Any error in the recording path is caught
+// gitignored docs/test-timings.md atomically. Any error in the recording path is caught
 // and reported as a warning — the underlying command's exit code is always
 // what the caller gets (recording must never break the gate).
 //
@@ -42,8 +42,15 @@ import {
   stallLimitMs,
   stallMessage,
   stallPollMs,
+  stallReportGraceMs,
 } from './stall-watch.mjs';
-import { gateBaseCommand, getStage, resolveGateMode, stageOrder } from './projects.mjs';
+import {
+  gateBaseCommand,
+  getStage,
+  isBrowserStage,
+  resolveGateMode,
+  stageOrder,
+} from './projects.mjs';
 import {
   LOWERED_MARKER_ENV,
   spawnAtPriority,
@@ -242,9 +249,11 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *   group would orphan.
  *
  * @param {number | undefined} pid
+ * @param {number} [reportGraceMs] - POSIX: a SIGINT first and this long to end,
+ *   for a browser stage, which writes its reports on SIGINT only
  * @returns {Promise<{ killed: true } | { killed: false, error: string }>}
  */
-async function killStageTree(pid) {
+async function killStageTree(pid, reportGraceMs = 0) {
   if (pid === undefined) return { killed: false, error: 'no pid' };
   if (process.platform === 'win32') {
     try {
@@ -255,6 +264,18 @@ async function killStageTree(pid) {
     } catch (error) {
       return { killed: false, error: String(error) };
     }
+  }
+  if (reportGraceMs > 0) {
+    console.error('test-timing: interrupting the stalled browser run, so it writes its report');
+    try {
+      process.kill(-pid, 'SIGINT');
+    } catch (error) {
+      return { killed: false, error: String(error) };
+    }
+    for (let waited = 0; waited < reportGraceMs && groupAlive(pid); waited += 100) {
+      await delay(100);
+    }
+    if (!groupAlive(pid)) return { killed: true };
   }
   try {
     process.kill(-pid, 'SIGTERM');
@@ -277,7 +298,7 @@ async function killStageTree(pid) {
 }
 
 /**
- * @typedef {{ stageName: string, limitMs: number, pollMs: number, longestMs?: number }} StageWatch
+ * @typedef {{ stageName: string, limitMs: number, pollMs: number, reportGraceMs: number, longestMs?: number }} StageWatch
  */
 
 /**
@@ -354,7 +375,7 @@ function execShell(command, cwd, env, priority, watch = null) {
         const { silentMs, stalled } = silence.check(Date.now());
         if (!stalled || stall !== null) return;
         if (timer) clearInterval(timer);
-        stall = killStageTree(child.pid).then((kill) => {
+        stall = killStageTree(child.pid, watch.reportGraceMs).then((kill) => {
           console.error(stallMessage(watch.stageName, silentMs, kill));
           // A failed kill may never produce an `exit`: do not wait for one.
           // A landed kill produces it at once; the cap only bounds the wait,
@@ -581,6 +602,9 @@ export async function runStage(project, stageName, forwardedArgs) {
           stageName: `${project.name} ${stageName}`,
           limitMs,
           pollMs: stallPollMs(process.env),
+          reportGraceMs: isBrowserStage({ command: baseCommand })
+            ? stallReportGraceMs(process.env)
+            : 0,
         };
   const start = performance.now();
   const exitCode = await execShell(

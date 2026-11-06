@@ -9,6 +9,15 @@ name: CI
 # ci-full-label.yml (`workflow_call`); this file listens to no label itself, so
 # any other label starts no job here. tests/repo-config/ci-jobs.test.js holds
 # the triggers and the tier choice.
+#
+# A branch without a pull request runs the same jobs by dispatch:
+# `gh workflow run ci.yml --ref <branch> -f tier=pr [-f base=<commit or branch>]`
+# selects what its pull request would, against the merge base with main unless
+# `base` says otherwise, and tests the branch's head where a pull request tests
+# the merge commit. `pnpm run ci:summary <branch>` prints the result in one line.
+#
+# A run on `main` records the timing tables and uploads them as artifacts;
+# nothing in this workflow writes to the repository (scripts/test-timing/README.md).
 on:
   push:
     branches: [main]
@@ -22,6 +31,10 @@ on:
         type: choice
         options: [full, pr]
         default: full
+      base:
+        description: "Commit or branch the pr tier compares against (default: the merge base with main)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -92,13 +105,31 @@ jobs:
       # The full set on a dispatch (its input) and on a pull request labelled
       # full-ci; the per-PR tier otherwise, a push to main included.
       E2E_TIER: ${{ github.event_name == 'workflow_dispatch' && inputs.tier || contains(github.event.pull_request.labels.*.name, 'full-ci') && 'full' || 'pr' }}
-      # A pull request's base: the tier runs every spec file the branch
-      # changed against it whole. Empty outside a pull request.
-      E2E_TIER_BASE: ${{ github.event.pull_request.base.sha }}
+      # The base the tier compares against: it runs every spec file the branch
+      # changed whole. A pull request's base or a dispatch's input; the fetch
+      # step below resolves this to a commit, and fills it in for a dispatch
+      # of the pr tier without an input. Empty on a push to main.
+      E2E_TIER_BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
       GATE_SKIP_BROWSER_STAGES: ${{ matrix.skip_browser }}
+      # Minutes one Playwright process may run; see the matrix.
+      E2E_GLOBAL_TIMEOUT_MIN: ${{ matrix.e2e_limit }}
+      # Only a run on main writes timing tables on the runner.
+      TIMING_RECORD_ON_RUNNER: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
     strategy:
       fail-fast: false
       matrix:
+        # e2e_limit, in minutes per Playwright process, ends a hung browser run
+        # as a red run that keeps its log and report: a job cancelled at its
+        # timeout keeps neither. A hang that prints nothing meets the stage
+        # watchdog first (20 min of silence), which interrupts Playwright so it
+        # still writes the report; this limit catches the run that keeps
+        # printing. Each is about twice the slowest of 8 green full runs (Run
+        # step, 2026-11-05): Tour page tests 25 of 13.2 min, Tour 3D 45 of 20.3,
+        # OsmDemo 55 of 30.3 (1.8 times), the design system 25 of 12.8, which
+        # also fits a test timing out on all 3 attempts (9 min). Each leaves 20
+        # min of the job for setup (up to 10.3 measured), earlier stages and
+        # the upload. A green process coming near its limit reverses the value.
+        # Two hung packages in design-system-and-apps can still outrun its job.
         include:
           # About 7 min (CI runs of 2026-11-04).
           - job: libraries
@@ -110,12 +141,17 @@ jobs:
           - job: design-system-and-apps
             scripts: test:design-system test:recorder test:starter test:example test:qr-demo test:landing test:physics test:wayfinding
             browsers: true
-            report: GpsPlusSlamJs_RecorderApp/test-results/
+            report: |
+              GpsPlusSlamJs_*/test-results*
+              GpsPlusSlamJs_DesignSystem/3d/test-results/
+            e2e_limit: 25
             timeout: 50
           # About 33 min, the longest job until the Tour lanes are measured.
           - job: osm-demo
             scripts: test:osm-demo
             browsers: true
+            report: GpsPlusSlamJs_OsmDemo/test-results/
+            e2e_limit: 55
             timeout: 75
           # The Tour Viewer's builds, static checks and unit tests, about 5 min.
           - job: tour-static-unit
@@ -136,6 +172,7 @@ jobs:
             lane: dom-1
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 25
             timeout: 45
           - job: tour-dom-2
             dir: GpsPlusSlamJs_TourViewer
@@ -143,6 +180,7 @@ jobs:
             lane: dom-2
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 25
             timeout: 45
           - job: tour-webgl-1
             dir: GpsPlusSlamJs_TourViewer
@@ -150,6 +188,7 @@ jobs:
             lane: webgl-1
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 45
             timeout: 75
           - job: tour-webgl-2
             dir: GpsPlusSlamJs_TourViewer
@@ -157,6 +196,7 @@ jobs:
             lane: webgl-2
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 45
             timeout: 75
           - job: tour-webgl-3
             dir: GpsPlusSlamJs_TourViewer
@@ -164,6 +204,7 @@ jobs:
             lane: webgl-3
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 45
             timeout: 75
           - job: tour-webgl-4
             dir: GpsPlusSlamJs_TourViewer
@@ -171,6 +212,7 @@ jobs:
             lane: webgl-4
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 45
             timeout: 75
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -190,11 +232,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The checkout holds only the merge commit; the tier diffs against the
-      # base commit's tree, so that one commit is fetched too.
-      - name: Fetch the pull request's base
-        if: ${{ env.E2E_TIER_BASE != '' }}
-        run: git fetch --no-tags --depth=1 origin "$E2E_TIER_BASE"
+      # The checkout holds one commit; the tier diffs against the base commit's
+      # tree, so that one commit is fetched too. The API answers the merge base
+      # because a shallow checkout cannot.
+      - name: Fetch the tier's base
+        if: ${{ env.E2E_TIER_BASE != '' || (github.event_name == 'workflow_dispatch' && inputs.tier == 'pr') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="$E2E_TIER_BASE"
+          if [ -z "$base" ]; then
+            base=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .merge_base_commit.sha)
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          echo "E2E_TIER_BASE=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
 
       # Recorder + example resolve `gps-plus-slam-app-framework` via the
       # package's `exports` -> `./dist/...`, so the framework must be built
@@ -228,6 +279,19 @@ jobs:
           name: playwright-report-${{ matrix.job }}
           path: ${{ matrix.report }}
           retention-days: 14
+
+      # `gh run download <run> --pattern 'test-timings-*'` fetches them. A
+      # stage narrowed to the tier records nothing, so a job may have none.
+      - name: Upload the timing tables
+        if: ${{ !cancelled() && env.TIMING_RECORD_ON_RUNNER == '1' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-timings-${{ matrix.job }}
+          path: |
+            docs/test-timings.md
+            GpsPlusSlamJs_*/docs/test-timings.md
+          if-no-files-found: ignore
+          retention-days: 90
 
   # One result for the whole run, with a stable name for a branch rule or a
   # reader: red unless every job concluded "success", so a cancelled,

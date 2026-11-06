@@ -18,12 +18,39 @@ multi-package layout: `chain-guard.mjs` (wrapper path accepts `../scripts/…`),
 additions with no upstream yet: `stall-watch.mjs` (the stage watchdog),
 `wait-gate.mjs` (the one background wait on a detached gate) and
 `fast-check-time-limit.mjs` (every vitest run's fast-check time limit).
+`stage-args.mjs` differs from upstream in where it records (below).
 
 What it does (same as upstream): wraps each test-gate stage, measures
 wall-clock, extracts exact test counts from injected JSON reporters, and
 maintains one generated `docs/test-timings.md` **per package** (plus one at
 the workspace root for the whole cascade). Recording never fails a gate,
-skips the GitHub runner (`GITHUB_ACTIONS`, not a local `CI=1`) and filtered runs, and only compares same-machine history.
+skips filtered runs and, except on `main`, the GitHub runner (`GITHUB_ACTIONS`,
+not a local `CI=1`), and only compares same-machine history.
+
+## Where the numbers live
+
+The tables are gitignored here, unlike upstream: while they were versioned,
+every gate changed them, and any merge put open pull requests into conflict.
+
+- **A local gate** writes the table of each project it ran, in place. Everything
+  that reads one reads it from there, so it sees this checkout's runs only, and
+  a fresh clone or worktree starts empty. So the slowdown flag (🔺) needs
+  earlier runs in the same checkout, and a fresh worktree's gate shows none. The
+  budgets are constants in `projects.mjs` and need no table.
+- **A pull request's CI run** records nothing.
+- **A run on `main`** sets `TIMING_RECORD_ON_RUNNER` and uploads each job's tables
+  as the artifact `test-timings-<job>`, kept 90 days. Nothing writes them back to
+  the repository:
+  `gh run download <run id> --pattern 'test-timings-*'`.
+  - A push to `main` runs the browser tier, and a tier run records no browser
+    stage. `gh workflow run ci.yml --ref main -f tier=full` gives those rows too;
+    in such a run the Playwright stages print the `list` reporter, so the log
+    names every test, and the JSON goes to the counts rather than the report
+    upload.
+  - An artifact holds one run. The runner's machine can differ between runs, so
+    compare medians of several, and read older numbers from the git history.
+- **The budget alarm** runs on local gates only, against a stage's ceiling, so a
+  browser suite that no longer runs on a laptop is no longer checked by it.
 
 These modules' own tests run in the root repo-config gate
 (`pnpm run test:repo-config`), wired via the root `vitest.config.js` include.

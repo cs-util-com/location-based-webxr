@@ -35,6 +35,12 @@ const RESOLVED_ENV = 'E2E_TIER_RESOLVED';
 export const TIERS = /** @type {const} */ (['pr', 'full']);
 
 /**
+ * Minutes one Playwright process may run. Set per job by ci.yml, unset
+ * elsewhere: a laptop under load has no comparable number.
+ */
+export const GLOBAL_TIMEOUT_ENV = 'E2E_GLOBAL_TIMEOUT_MIN';
+
+/**
  * The tier a run selects.
  *
  * @param {Record<string, string | undefined>} env
@@ -46,6 +52,26 @@ export function e2eTier(env) {
   if (raw === undefined || raw === '') return 'pr';
   if (raw === 'pr' || raw === 'full') return raw;
   throw new RangeError(`${TIER_ENV} must be "pr" or "full", got "${raw}"`);
+}
+
+/**
+ * The Playwright `globalTimeout` in milliseconds, 0 (no limit) when none is
+ * set. It ends a hung run as a normal red before the job's own limit cancels
+ * the job, because a cancelled job keeps no log and uploads no report.
+ *
+ * @param {Record<string, string | undefined>} env
+ * @returns {number}
+ * @throws {RangeError} on anything but a positive number of minutes, so a typo
+ * never switches the limit off
+ */
+export function tierGlobalTimeout(env) {
+  const raw = env[GLOBAL_TIMEOUT_ENV];
+  if (raw === undefined || raw === '') return 0;
+  const minutes = Number(raw);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    throw new RangeError(`${GLOBAL_TIMEOUT_ENV} must be a positive number, got "${raw}"`);
+  }
+  return Math.round(minutes * 60_000);
 }
 
 /**

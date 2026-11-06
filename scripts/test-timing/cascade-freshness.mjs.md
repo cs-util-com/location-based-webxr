@@ -22,10 +22,12 @@ no new bookkeeping.
 
 ## Invariants & assumptions
 
+- **It reads this checkout's gitignored `docs/test-timings.md`**, so a cascade
+  run in another worktree or on CI does not count.
+
 - **Markdown-only changes since the cascade are EXEMPT**, and this is
   load-bearing rather than a convenience. A session ends with doc commits — the
-  summary, the decision doc — and `push-and-branch` itself auto-commits the
-  `docs/test-timings.md` churn the cascade produced. Without the exemption the
+  summary, the decision doc. Without the exemption the
   check would fail every session, and a check that always fails is one that
   always gets bypassed.
   - The exemption is **all-or-nothing**: one non-markdown file among fifty
@@ -37,8 +39,7 @@ no new bookkeeping.
 - **A cascade run on a DIRTY tree records the parent commit's SHA**, so
   committing afterwards reads as stale. That is correct, not a false positive:
   nothing then proves the committed state was gated as a whole. The natural
-  order — commit, then cascade, then push — makes the SHA match, and the
-  timings churn that follows is markdown.
+  order — commit, then cascade, then push — makes the SHA match.
 - **It never runs a gate itself**, matching `push-and-branch`'s own constraint
   that it must not create commits for un-gated work. It only reads.
 - Failure to read the artefact is treated as **stale**, not as fresh: the safe
