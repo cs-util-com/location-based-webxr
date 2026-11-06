@@ -142,6 +142,9 @@ describe("createAddPalette", () => {
     const { palette, field, box } = opened();
     key(field, "Tab");
     expect(box.hidden).toBe(true);
+    // Back where it was opened, so the Tab moves on from there: the palette
+    // is the page's last element and has nothing after it.
+    expect(document.activeElement).toBe(start);
     palette.open();
     document
       .getElementById("add-palette-back")
