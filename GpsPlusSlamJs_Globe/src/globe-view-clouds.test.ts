@@ -355,8 +355,9 @@ describe("createGlobeViewClouds", () => {
   });
 
   // Why: the layer switch: off, the slab and the shell are turned off at
-  // the next frame and nothing of them (nor the depth) is drawn; on again,
-  // they come back.
+  // the next frame and nothing of them is drawn; on again, they come back.
+  // The depth stays: the space pass's veil over the ground ends at it, so
+  // the switch must not change the ground's colour below the hand-over.
   it("turns the heavy clouds off and on again", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
@@ -367,13 +368,20 @@ describe("createGlobeViewClouds", () => {
     expect(clouds.state()).toMatchObject({ on: false, shellOn: false });
     expect(fakes.log).toContain("slab off");
     expect(fakes.log).toContain("shell off");
-    expect(fakes.log).not.toContain("depth");
+    expect(fakes.log).toContain("depth");
     expect(fakes.log).not.toContain("slab");
     clouds.setOn(true);
     clouds.step({ observerKm: 10, shareClouds: () => 1 });
     clouds.render({ weight: 1 });
     expect(clouds.state().on).toBe(true);
     expect(fakes.log).toContain("slab");
+  });
+
+  // Why: the air ends its veil at this same depth, so one pass serves both.
+  it("hands out the depth it draws", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    expect(clouds.sceneDepth()).toBe(fakes.parts.sceneDepth);
   });
 
   // Why: a page's shadow check must tell a shell that was never drawn

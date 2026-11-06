@@ -176,7 +176,7 @@ describe("createGlobeView: the grade", () => {
   it("is the default grade when none is named", () => {
     const renderer = open();
     expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.75);
+    expect(renderer.toneMappingExposure).toBe(0.47);
   });
 
   it("sets a named grade on the renderer", () => {

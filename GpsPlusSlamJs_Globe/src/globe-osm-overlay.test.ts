@@ -56,6 +56,31 @@ describe("GLOBE_OSM", () => {
   });
 });
 
+describe("createGlobeOsmOverlay's fade start", () => {
+  // Why: a map brighter than the ground beneath it arrives as a band in a
+  // descent, and how wide that band is, is this share. The editor's far map
+  // needs a wider one than the near map's, so it is an option.
+  const make = (fadeStartShare?: number) =>
+    createGlobeOsmOverlay({
+      url: TEMPLATE,
+      attribution: ATTRIBUTION,
+      maxZoom: 19,
+      renderer: {} as THREE.WebGLRenderer,
+      ...(fadeStartShare === undefined ? {} : { fadeStartShare }),
+    });
+
+  it("defaults to the near map's share and takes another", () => {
+    expect(make().uniforms.uOsmFadeStart.value).toBe(GLOBE_OSM.fadeStartShare);
+    expect(make(0.2).uniforms.uOsmFadeStart.value).toBe(0.2);
+  });
+
+  it("refuses a share that leaves no fade", () => {
+    for (const share of [-0.1, 1, 1.5, Number.NaN]) {
+      expect(() => make(share), String(share)).toThrow(RangeError);
+    }
+  });
+});
+
 describe("osmCredit", () => {
   // Why: the OSM tile usage policy asks for a LINK to the copyright page;
   // the globe's credits line renders text and a link, never markup.

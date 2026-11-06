@@ -697,14 +697,14 @@ describe("openGlobeEditor's wiring", () => {
   it("hands the link's grade to the view, an unknown one as the default", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     open = await openGlobeEditor(deps(), {
-      ...readGlobeSwitch("?grade=aces"),
+      ...readGlobeSwitch("?grade=agx"),
     });
-    expect(fakes.colourGrade).toBe("aces");
+    expect(fakes.colourGrade).toBe("agx");
     open.dispose();
     open = await openGlobeEditor(deps(), {
       ...readGlobeSwitch("?grade=nope"),
     });
-    expect(fakes.colourGrade).toBe("aces-bright");
+    expect(fakes.colourGrade).toBe("aces");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("nope"));
     warn.mockRestore();
   });

@@ -127,7 +127,7 @@ message }` of the last, or null). RangeError
     the gate would have let through beyond the limit (the next look's
     backlog).
   - `createGlobeOsmOverlay({ url, attribution, maxZoom, renderer, fadeM?,
-limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
+fadeStartShare?, limits?, keep?, timeoutMs?, giveUpRetries?, gain?, gainMode? })` -> `{ credit, limits,
 overlay, plugin, uniforms, attach(terrain), setEnabled(on), setFadeM(m),
 update(pose), stats(), coverage(), mapLoad(), mapTiles(limit), retryNow(),
 lastRetry(), mapReady(tile) }` (`gain`

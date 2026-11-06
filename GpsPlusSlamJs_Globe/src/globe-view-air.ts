@@ -17,11 +17,11 @@
  * sky), and `haze(tiles)` once per relief it draws.
  *
  * The lab's defaults, but one: the space pass's veil over the ground
- * fades with its sky under the ground sky (the lab's `atmoGround=0`). The
- * lab ends that veil's rays at the drawn relief through a depth pass of
- * its own; without one they end at the ellipsoid, under the relief, and
- * over high ground the veil would be far too thick. Below the edge the
- * haze carries the ground.
+ * stays below the edge (the lab's `atmoGround=1`) only where the clouds
+ * draw a scene depth to end its rays at. Without a depth they end at the
+ * ellipsoid, under the relief, and over high ground the veil would be far
+ * too thick, so a page without clouds fades it with its sky
+ * (`atmoGround=0`) and the haze carries the ground.
  *
  * @see globe-view-air.ts.md
  */
@@ -184,7 +184,8 @@ export function mountGlobeViewAir(
     hazeScale: 1,
     atmoRamp: 1,
     atmoThickness: GLOBE_ATMOSPHERE.thickness,
-    atmoGround: 0,
+    // The veil stays over the ground where its rays can end at the relief.
+    atmoGround: clouds === null ? 0 : 1,
     atmoSteps: defaultAtmosphereSteps(options.coarsePointer),
     atmoStrength: GLOBE_ATMOSPHERE.strength,
   };
@@ -235,7 +236,7 @@ export function mountGlobeViewAir(
         drawn: true,
         worldFromEcef: view.globe.tiles.group.matrixWorld,
         sunEcef: view.globe.surfaceUniforms.uSunEcef.value,
-        sceneDepth: null,
+        sceneDepth: clouds?.sceneDepth() ?? null,
       });
     },
     haze(tiles) {

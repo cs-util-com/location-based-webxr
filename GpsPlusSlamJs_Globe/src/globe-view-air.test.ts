@@ -19,7 +19,11 @@ import type { GlobeAtmosphere } from "./globe-atmosphere.js";
 import type { GlobeGroundSky } from "./globe-ground-sky.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
 import { mountGlobeViewAir } from "./globe-view-air.js";
-import { GLOBE_VIEW_CLOUDS } from "./globe-view-clouds.js";
+import type { GlobeSceneDepth } from "./globe-scene-depth.js";
+import {
+  GLOBE_VIEW_CLOUDS,
+  type GlobeViewClouds,
+} from "./globe-view-clouds.js";
 
 /** The frames the air hands its drawers (the drawers' own types). */
 type SpaceFrame = Parameters<GlobeAtmosphere["render"]>[1];
@@ -183,11 +187,11 @@ describe("mountGlobeViewAir", () => {
     expect(fakes.updates[0]?.framed).toBe(false);
   });
 
-  // Why: below the hand-over the space pass has no scene depth here, so its
-  // veil over the ground would end at the ellipsoid, under the relief:
-  // its ground share fades with its sky share, and at full weight it draws
-  // nothing; above the edge it draws the halo in full.
-  it("fades the space pass's sky and ground under the ground sky", () => {
+  // Why: without the clouds there is no scene depth, so the veil over the
+  // ground would end at the ellipsoid, under the relief: its ground share
+  // fades with its sky share, and at full weight it draws nothing; above
+  // the edge it draws the halo in full.
+  it("fades the space pass's sky and ground under the ground sky without a depth", () => {
     const low = fakeDrawers({ weight: 1, exposure: 3.5 });
     const view = fakeView(2);
     const air = mountGlobeViewAir(view, {
@@ -211,6 +215,34 @@ describe("mountGlobeViewAir", () => {
     far.step();
     far.afterScene();
     expect(high.renders[0]).toMatchObject({ skyShare: 1, groundShare: 1 });
+  });
+
+  // Why: the veil over the ground is what the globe's blue is made of. Faded
+  // out over the hand-over, the ground went from blue to olive and lost
+  // nearly half its light between 80 and 40 km (measured on the editor,
+  // luma 60 to 35): with the depth of the clouds its rays end at the relief
+  // and it stays, as in the lab.
+  it("keeps the veil over the ground, ending at the clouds' depth", () => {
+    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
+    const depth = { fresh: true } as unknown as GlobeSceneDepth;
+    const air = mountGlobeViewAir(fakeView(2), {
+      coarsePointer: false,
+      drawers: () => fakes.drawers,
+      clouds: () =>
+        ({
+          step: () => undefined,
+          render: () => undefined,
+          sceneDepth: () => depth,
+        }) as unknown as GlobeViewClouds,
+    });
+    air.step();
+    air.afterScene();
+    expect(fakes.renders[0]).toMatchObject({
+      skyShare: 0,
+      groundShare: 1,
+      sceneDepth: depth,
+      sceneDepthWeight: 1,
+    });
   });
 
   // Why: the space pass's march is the expensive part; a touch screen gets
@@ -302,6 +334,7 @@ describe("mountGlobeViewAir", () => {
             });
           },
           render: ({ weight }) => fakes.log.push("clouds " + String(weight)),
+          sceneDepth: () => ({ fresh: false }) as unknown as GlobeSceneDepth,
           setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
           state: () => ({
             on: true,

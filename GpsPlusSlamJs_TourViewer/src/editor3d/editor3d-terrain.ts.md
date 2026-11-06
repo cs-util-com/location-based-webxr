@@ -13,6 +13,7 @@ near the camera under the editor's own gate, and the credits both need.
   speed limits open (only an unknown height keeps the map off).
 - `EDITOR_OSM_FADE_M` - 2400 (the map faded out, and how far it is asked
   for).
+- `EDITOR_OSM_FADE_START_SHARE` - 0.2 (the fade starts at 480 m).
 - The map's keep of released regions (not exported), by device class
   (`reliefDeviceClass`): 64 on a phone and on a desktop (see below),
   passed to `createGlobeOsmOverlay`.

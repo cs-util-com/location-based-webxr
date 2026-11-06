@@ -5,14 +5,14 @@
 One table of tone curve plus exposure, so the globe's look is a named
 choice rather than a value fixed inside `globe-view.ts`. Pages pick a name
 by link (`?grade=<name>`); a page that names none gets the default,
-`aces-bright`, chosen by comparing the presets on the real globe.
+`aces`, the look prototype's grade.
 `?grade=neutral` keeps the earlier look reachable.
 
 ## Public API
 
 - `GLOBE_GRADES`: frozen table, name to `{ toneMapping, exposure }`.
 - `GlobeGradeName`: the table's keys.
-- `DEFAULT_GLOBE_GRADE`: `"aces-bright"`.
+- `DEFAULT_GLOBE_GRADE`: `"aces"`.
 - `GLOBE_GRADE_PARAM`: `"grade"`, the link's parameter.
 - `resolveGlobeGrade(name, warn = console.warn)`: the name to use. `null`
   (nothing in the link) is the default, silently; an unknown name is the

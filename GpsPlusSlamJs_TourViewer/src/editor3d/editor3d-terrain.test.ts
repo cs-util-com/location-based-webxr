@@ -21,6 +21,7 @@ import {
   DESKTOP_MIN_WIDTH_PX,
   EDITOR_MESH_LEVEL,
   EDITOR_OSM_FADE_M,
+  EDITOR_OSM_FADE_START_SHARE,
   EDITOR_OSM_LIMITS,
   createEditorTerrain,
   reliefDeviceClass,
@@ -45,6 +46,7 @@ describe("the editor's map gate", () => {
       onBelowSpeedMps: Number.POSITIVE_INFINITY,
     });
     expect(EDITOR_OSM_FADE_M).toBe(2400);
+    expect(EDITOR_OSM_FADE_START_SHARE).toBe(0.2);
     expect(EDITOR_MESH_LEVEL).toBe(17);
     expect(osmGateLimits(EDITOR_OSM_LIMITS, OSM_TILE_MAX_ZOOM)).toEqual(
       EDITOR_OSM_LIMITS,
@@ -163,6 +165,9 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.stats().enabled).toBe(true);
     expect(ground.osm.limits).toEqual(EDITOR_OSM_LIMITS);
     expect(ground.osm.uniforms.uOsmFadeM.value).toBe(EDITOR_OSM_FADE_M);
+    expect(ground.osm.uniforms.uOsmFadeStart.value).toBe(
+      EDITOR_OSM_FADE_START_SHARE,
+    );
     const frame = worldFromEcefAt(
       ground.terrain.tiles.ellipsoid,
       { lat: 48.137393, lng: 11.575493 },
