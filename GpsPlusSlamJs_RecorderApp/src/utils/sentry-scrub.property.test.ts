@@ -97,6 +97,12 @@ const reportFragment = fc.oneof(
     .map(([host, rest]) => `https://${host}/${rest}`),
   labelledName,
   fc
+    .tuple(
+      fc.stringMatching(/^[A-Za-z0-9_-]{25,40}$/),
+      fc.constantFrom("'", ')', ']', ',', ';')
+    )
+    .map(([id, end]) => `https://${OWN}/files/${id}${end}`),
+  fc
     .tuple(foreignHost, labelledName)
     .map(([host, name]) => `https://${host}/${name}?k=v`),
   fc
@@ -234,6 +240,36 @@ describe('scrubText properties', () => {
           const out = scrubText(`https://example.org/${segment}/s?k=v`, OWN);
           expect(out).toMatch(HOST_ONLY);
           expect(scrubText(`/t?${segment}&k=v`, OWN)).toBe(`/t?${REDACTED}`);
+        }
+      )
+    );
+  });
+
+  it("never keeps an id of this site, whatever follows it", () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Za-z0-9_-]{25,44}$/),
+        fc.constantFrom('', "'", ')', ']', ',', ';', ':1:2)', '/x', '?k=v'),
+        (id, end) => {
+          const link = `https://${OWN}/files/${id}${end}`;
+          expect(scrubText(`see ${link}`, OWN)).not.toContain(id);
+          expect(scrubText(`GET /files/${id}${end} 200`, OWN)).not.toContain(id);
+        }
+      )
+    );
+  });
+
+  it('never keeps a number of a pair behind a label', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('lat=', 'lon: ', 'latLng: ', 'origin_lat='),
+        coordinate(90),
+        coordinate(180),
+        pairSeparator,
+        (key, lat, lon, sep) => {
+          expect(scrubText(`${key}${lat}${sep}${lon}`, OWN)).toBe(
+            `${key}${REDACTED}`
+          );
         }
       )
     );

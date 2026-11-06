@@ -55,7 +55,7 @@ const ABSOLUTE_URL = new RegExp(
 );
 
 /** What a link with no scheme of its own can follow. */
-const LINK_LEAD = String.raw`(^|[\s"'(=])`;
+const LINK_LEAD = String.raw`(^|[\s"'(=[])`;
 
 /** `www.example.org/x` and `//cdn.example.org/x`: a host with no scheme. */
 const BARE_HOST_URL = new RegExp(
@@ -72,8 +72,13 @@ const RELATIVE_URL = new RegExp(
   'g'
 );
 
+/**
+ * Ends at anything that is not part of a name, not only at `/`: a closing
+ * `'`, `)` or `]` stays inside a link (see `URL_STOP`). A dot continues the
+ * name, which is what keeps a long hashed asset name.
+ */
 const ID_SEGMENT = new RegExp(
-  String.raw`\/[A-Za-z0-9_-]{${ID_SEGMENT_MIN_LENGTH},}(?=\/|$)`,
+  String.raw`\/[A-Za-z0-9_-]{${ID_SEGMENT_MIN_LENGTH},}(?![A-Za-z0-9_.-])`,
   'g'
 );
 
@@ -201,9 +206,9 @@ function scrubLink(
 export function scrubText(text: string, ownHost: string | undefined): string {
   const own = ownHost?.toLowerCase();
   // Coordinates go BEFORE links, so the link rules see a link's final text,
-  // markers included, and read it the same way on a second pass.
-  const scrubbed = scrubLabelled(text)
-    .replace(COORDINATE_PAIR, REDACTED)
+  // markers included, and read it the same way on a second pass. Pairs go
+  // before labels: a label takes one number, and `lat=48.1,11.57` holds two.
+  const scrubbed = scrubLabelled(text.replace(COORDINATE_PAIR, REDACTED))
     .replace(
       ABSOLUTE_URL,
       (_match, scheme: string, authority: string, rest: string) =>
@@ -243,10 +248,10 @@ function isPlainObject(value: object): value is Record<string, unknown> {
  *
  * Arrays and plain objects are copied (cycles are kept as cycles); numbers,
  * booleans and other objects are passed through untouched, so event ids,
- * timestamps and status codes survive, except that a number or string under a
- * coordinate's field name (`lat`, `originLon`) is replaced by
- * {@link REDACTED}. A subtree deeper than {@link MAX_DEPTH} is replaced too.
- * The input is never changed.
+ * timestamps and status codes survive, except that whatever a coordinate's
+ * field name (`lat`, `latLng`) holds is replaced by {@link REDACTED}, unless it
+ * is empty. A subtree deeper than {@link MAX_DEPTH} is replaced too. The input
+ * is never changed.
  */
 export function scrubDeep<T>(value: T, ownHost: string | undefined): T {
   const copies = new WeakMap<object, unknown>();
@@ -255,9 +260,9 @@ export function scrubDeep<T>(value: T, ownHost: string | undefined): T {
     const out: Record<string, unknown> = {};
     copies.set(node, out);
     for (const [key, item] of Object.entries(node)) {
-      const isValue = typeof item === 'number' || typeof item === 'string';
+      const isEmpty = item === null || item === undefined;
       out[key] =
-        isValue && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
+        !isEmpty && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
     }
     return out;
   };

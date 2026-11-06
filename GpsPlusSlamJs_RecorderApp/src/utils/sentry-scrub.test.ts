@@ -326,6 +326,48 @@ describe('scrubText', () => {
     );
   });
 
+  // Why this test matters: a closing quote or bracket is part of the link
+  // (URLs may hold them), so an id right in front of one must still count as
+  // a whole path segment. This is how an error message quotes a failed link.
+  it.each(["'", ')', ']', ',', ';'])(
+    'removes an id of this site in front of %s',
+    (end) => {
+      expect(
+        scrubText(`Failed https://gps.csutil.com/files/${DRIVE_ID}${end}`, OWN)
+      ).toBe(`Failed https://gps.csutil.com/files/${REDACTED}${end}`);
+      expect(scrubText(`GET /files/${DRIVE_ID}${end} 200`, OWN)).toBe(
+        `GET /files/${REDACTED}${end} 200`
+      );
+    }
+  );
+
+  it('removes a quoted id, and one in a stack frame, as the app writes them', () => {
+    expect(
+      scrubText(`Failed to load 'https://gps.csutil.com/files/${DRIVE_ID}'`, OWN)
+    ).toBe(`Failed to load 'https://gps.csutil.com/files/${REDACTED}'`);
+    expect(
+      scrubText(`at load (https://gps.csutil.com/files/${DRIVE_ID})`, OWN)
+    ).toBe(`at load (https://gps.csutil.com/files/${REDACTED})`);
+  });
+
+  it('keeps a long hashed asset name, which has a dot behind it', () => {
+    const asset = `https://gps.csutil.com/assets/index-${'a'.repeat(30)}.js`;
+    expect(scrubText(asset, OWN)).toBe(asset);
+  });
+
+  it('removes both numbers of a pair behind a label', () => {
+    expect(scrubText('lat=48.137154,11.576124', OWN)).toBe(`lat=${REDACTED}`);
+    expect(scrubText('latLng: 48.1371, 11.5761', OWN)).toBe(
+      `latLng: ${REDACTED}`
+    );
+  });
+
+  it('reads a host with no scheme in square brackets as a link', () => {
+    expect(scrubText('[www.example.org/x?q=Hauptstrasse+12]', OWN)).toBe(
+      `[www.example.org/${REDACTED}`
+    );
+  });
+
   it('removes an id from a relative link with no query', () => {
     expect(scrubText(`GET /files/${DRIVE_ID} 200`, OWN)).toBe(
       `GET /files/${REDACTED} 200`
@@ -361,6 +403,27 @@ describe('scrubText', () => {
 });
 
 describe('scrubDeep', () => {
+  it('removes everything under a coordinate key, an array or an object too', () => {
+    // A position is often held as `[lat, lon]` or `{ value }`: the field name
+    // is what says so, whatever shape the value has.
+    expect(
+      scrubDeep(
+        {
+          latLng: [48.137154, 11.576124],
+          lat: { value: 48.137154 },
+          lon: undefined,
+          name: { value: 1 },
+        },
+        OWN
+      )
+    ).toEqual({
+      latLng: REDACTED,
+      lat: REDACTED,
+      lon: undefined,
+      name: { value: 1 },
+    });
+  });
+
   it('removes a coordinate held as a number under a labelled key', () => {
     // An object the app logs, or an error's own fields, carry numbers rather
     // than text, and the text rules never see those.

@@ -48,7 +48,8 @@ dependency on the SDK, so its rules are tested on their own.
   - a string that is nothing but a query or a fragment (`?id=...`,
     `#station-2`; the SDK's `http.query` and `http.fragment` span
     attributes) becomes `[redacted]`.
-  - Order: coordinates first, then links, then the query-only rule. A
+  - Order: coordinate pairs, then labels (a label takes one number, and
+    `lat=48.1,11.57` holds two), then links, then the query-only rule. A
     `[redacted]` does not end a link: a coordinate removed from inside a link
     stays part of it, so its path and query after the marker go too
     (`?lat=48.1&key=abc`) and every pass reads the same link. The query-only
@@ -57,14 +58,17 @@ dependency on the SDK, so its rules are tested on their own.
 - `scrubDeep(value, ownHost): T` - a copy of `value` with every string
   scrubbed. Arrays and plain objects are copied, cycles kept as cycles;
   numbers, booleans and other objects pass through, so event ids,
-  timestamps and status codes survive. A number or string under a field
-  named like a coordinate (`lat`, `originLon`, by the same rules as the text)
-  becomes `[redacted]`: the SDK serialises a rejected plain object into the
-  event, and the text rules never see a number. The input is never changed.
+  timestamps and status codes survive. Whatever a field named like a
+  coordinate holds (`lat`, `latLng`, by the same rules as the text) becomes
+  `[redacted]`, a whole array or object included, unless it is null or
+  undefined: the SDK serialises a rejected plain object into the event, and
+  the text rules never see a number. The input is never changed.
 
 ## Parameters and why these values
 
-- `ID_SEGMENT_MIN_LENGTH = 25`: cloud-drive file ids are 25 to 44
+- `ID_SEGMENT_MIN_LENGTH = 25` (a segment ends at any character that is not
+  part of a name, so an id in front of `'`, `)` or `,` goes; a dot continues
+  the name): cloud-drive file ids are 25 to 44
   characters of `[A-Za-z0-9_-]`; the app's hashed asset names are short and
   carry a dot. A lower value (say 16) would start eating ordinary path
   words joined by hyphens; a higher one (say 40) would let shorter drive ids
@@ -109,8 +113,8 @@ dependency on the SDK, so its rules are tested on their own.
   they go.
 - A label with an encoded separator (`lat%3D48.1`) is not recognised outside
   a link; inside one it goes with the query.
-- Object keys are not scrubbed, and numbers in an array (`[48.1371, 11.5761]`)
-  pass, having no field name to read.
+- Object keys are not scrubbed, and numbers in an array under any other field
+  name (`position: [48.1371, 11.5761]`) pass, having no name to read.
 
 ## Examples
 
