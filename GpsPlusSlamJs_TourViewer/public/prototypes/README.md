@@ -201,6 +201,14 @@ wired into its logic: every interaction is faked.
   `?pr=tier`, `?grade=aces-bright|aces|neutral|agx`
   (the globe's own colour presets, default `aces-bright`), `?gradeexp=`. The meter
   and the Measure button are for measuring on a phone; made 2026-11-05.
+- `world-items-1-real-objects/` ... `world-items-3-tap-a-card/` - three
+  directions for video, audio and a character standing free in the world:
+  real objects in the place, a quiet marker that starts when you are near,
+  and a card that a tap opens on the screen; made 2026-11-06.
+- `editor-import-1-drop-into-scene/` and `editor-import-2-tour-library/` -
+  two directions for bringing pictures and 3D models into the desktop
+  editor: straight onto the place, or a checked library shelf first; the
+  size limits on both pages are guesses; made 2026-11-06.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
   script), each with the same sample station, every edit on an in-memory
