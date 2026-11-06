@@ -171,14 +171,14 @@ Module map: `src/main.ts` is the composition root; `mode.ts` (the split),
 The workspace's globe package (`gps-plus-slam-globe`) is a dependency, for
 the 3D editor's building blocks (`import ... from
 "gps-plus-slam-globe/editor"`; nothing in the app imports it yet).
-`src/globe-dependency.test.ts` builds those blocks with Vite and fails if
+`src/app-bundle.test.ts` builds those blocks with Vite and fails if
 the build holds two copies of three.
 
 The app ships the licence of every third-party package it bundles,
 verbatim, in `public/third-party-licenses/` (copied into the site as
 `third-party-licenses/`): `<name>-LICENSE.txt`, and `<name>-NOTICE.txt`
 for a package that has a NOTICE, the name being the npm name with `@`
-dropped and `/` written as `-`. `src/third-party-licenses.test.ts` derives
+dropped and `/` written as `-`. `src/app-bundle.test.ts` derives
 the list from the module ids of two builds (the app's own, and an entry
 importing the globe's editor blocks; `src/test-support/bundled-packages.ts`),
 never from `package.json`, and fails when a bundled package has no licence

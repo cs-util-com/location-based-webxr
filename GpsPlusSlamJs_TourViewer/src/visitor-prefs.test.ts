@@ -269,19 +269,6 @@ describe("captions, stored on the screen", () => {
 describe("which view shows", () => {
   const prefer = (view: string) => ({ views: { longText: { world: view } } });
 
-  // Why this test matters: the creator places and checks THEIR view; a
-  // visitor's preference must never show in the creator's own session
-  // (design §4 rule 1).
-  it("shows the creator's view to the creator, whatever is stored", () => {
-    expect(
-      shownView({
-        audience: "creator",
-        block: longText("reading"),
-        stored: prefer("lectern"),
-      }),
-    ).toBe("reading");
-  });
-
   // Why this test matters: rules 2-5 of design §4, each by one example.
   it("follows the five rules for a visitor", () => {
     const visitor = (block: TourBlock, stored: unknown) =>

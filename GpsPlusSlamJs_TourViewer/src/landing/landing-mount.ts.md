@@ -62,7 +62,7 @@ film's still are static in `index.html` and show without this module.
 
 - The only `src/landing/` modules in the main page's static graph are this
   one and `landing-skip.ts` (`card-play.ts` and `clamp01.ts` are allowed
-  there too, and today ride in the cards' chunk); `editor3d-lazy.test.ts`
+  there too, and today ride in the cards' chunk); `app-bundle.test.ts`
   asserts it on the built bundle.
 - `src/landing/` must not import the editor (`landing-not-to-editor` in
   `config/.dependency-cruiser.cjs`).
@@ -75,7 +75,7 @@ film's still are static in `index.html` and show without this module.
   the use cases, the film, and a shared helper), gzipped as the unminified
   test build writes it, measured 61.7 kB on 2026-10-26 (the film's chunk
   35.0 kB, the cards' 11.4, the use cases' 14.1, the shared drawn code
-  1.2); the budget in `editor3d-lazy.test.ts` is 74 kB (about a fifth of
+  1.2); the budget in `app-bundle.test.ts` is 74 kB (about a fifth of
   headroom). It counts JavaScript only and bounds it from above: minified,
   as shipped, the same chunks are 43.8 kB (the film 24.4). Not counted:
   the chunks' CSS (minified: film 3.4 kB, cards 3.7, use cases 0.9), the

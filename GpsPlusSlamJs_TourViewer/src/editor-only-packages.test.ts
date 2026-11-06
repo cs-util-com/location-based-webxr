@@ -19,7 +19,7 @@
  * editor's. And the editor's page (`src/editor/`) reaches the kit's
  * `./scene` and `./globe` only through `import()`: they bring three and
  * the globe, which the map page must not wait for
- * (`editor3d-lazy.test.ts` holds the bundle).
+ * (`app-bundle.test.ts` holds the bundle).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";

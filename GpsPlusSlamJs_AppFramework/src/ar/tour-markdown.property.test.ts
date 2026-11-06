@@ -697,13 +697,19 @@ const subsetBody = blocksAt(0, false).map((blocks) => ({
 
 // ---------------------------------------------------------------------------
 
+// Run counts. The defects these properties found are pinned as plain cases in
+// tour-markdown.test.ts and the golden corpus. A flanking rule broken on
+// purpose was caught over 24 seeds by run 30 and run 283 at worst in the two
+// properties at 500, but only 21 of 24 seeds by run 3000 in the short wild
+// body property, so that one keeps 3000. The other two at 3000 caught none of
+// the seeded defects and cost under 0.5 s.
 describe('tour markdown (properties)', () => {
   it('reads every generated body inside the subset as the CommonMark reference does', () => {
     fc.assert(
       fc.property(subsetBody, ({ body }) => {
         expect(ourTree(body)).toEqual(referenceTree(body));
       }),
-      { numRuns: 3000 }
+      { numRuns: 500 }
     );
   });
 
@@ -783,7 +789,7 @@ describe('tour markdown (properties)', () => {
           plainTextOf(parseTourMarkdown(renderBlocks(b).join('\n'))).text;
         expect(plain(withoutFormatting(blocks))).toBe(plain(blocks));
       }),
-      { numRuns: 1500 }
+      { numRuns: 500 }
     );
   });
 

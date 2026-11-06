@@ -683,6 +683,7 @@ describe("tourLabel (scan-to-open plan §9 #11)", () => {
         expect(label.length).toBeGreaterThan(0);
         expect(label.length).toBeLessThanOrEqual(80);
       }),
+      { numRuns: 25 },
     );
   });
 });

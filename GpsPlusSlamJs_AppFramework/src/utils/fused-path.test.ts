@@ -11,9 +11,11 @@
  * transforms AR odometry positions (local coordinates) into ENU meters, which
  * can then be converted to GPS lat/lng for Leaflet visualization.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, it, expect } from 'vitest';
 import {
   computeFusedPath,

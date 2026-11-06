@@ -7,7 +7,7 @@
  * verify the canonical shared definitions exist, are structurally correct, and satisfy
  * the Leaflet-convention (lng, not lon) contract. See code-review Finding #3.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
 import { describe, it, expect, expectTypeOf } from 'vitest';

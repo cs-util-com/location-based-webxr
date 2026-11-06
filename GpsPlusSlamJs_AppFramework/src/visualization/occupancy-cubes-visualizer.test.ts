@@ -1,5 +1,5 @@
 /**
- * @vitest-environment jsdom
+ * @vitest-environment node
  *
  * Tests for `OccupancyCubesVisualizer` (occupancy-grid port plan Iter 5;
  * AR-space reparenting fix Iter 7).

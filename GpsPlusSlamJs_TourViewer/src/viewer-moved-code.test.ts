@@ -375,6 +375,10 @@ describe(
       const v = scannedAndWalked();
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
       expect(v.votesStored()).toBeGreaterThan(0);
+      expect(v.ctx.viewerVotedLocks).toBeGreaterThan(0);
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        true,
+      );
       // While the votes hold, the alignment puts the poster at its SAVED
       // spot: about the 40 m move off.
       const offs: number[] = [];
@@ -401,6 +405,53 @@ describe(
       expect(
         v.arStore.getState().gpsData?.alignmentOverrides ?? null,
       ).toBeNull();
+      // The veto is logged once, with the detector's inputs and the
+      // recovery.
+      const ignored = v.logged.filter(
+        (a) => a.type === "tourViewing/codeIgnored",
+      );
+      expect(ignored).toHaveLength(1);
+      const action = ignored[0]!;
+      if (action.type !== "tourViewing/codeIgnored") throw new Error();
+      const payload = action.payload;
+      expect(payload).toMatchObject({ text: TEXT, levelId: LEVEL_ID });
+      expect(payload.evidence).toMatchObject({
+        decidedBy: "position",
+        settled: true,
+        turnChecked: true,
+        deviceAccuracyMedianM: 4,
+      });
+      expect(payload.evidence.magnitudeM).toBeGreaterThan(35);
+      expect(payload.recovery.refedFixes).toBeGreaterThan(60);
+      expect(payload.recovery.batches).toBe(1);
+      // Why: the veto takes every vote back, but the page
+      // kept its count of voted locks, so every reader of "a code lined the
+      // tour up" kept believing it on what was a GPS-only alignment again:
+      // the stations trusted it whatever the raw accuracy, and the status
+      // line said "Tour placed." instead of naming the moved code.
+      expect(v.ctx.viewerVotedLocks).toBe(0);
+      expect(v.ctx.viewerLockedText).toBeNull();
+      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
+        false,
+      );
+      expect(
+        visitorStatus({
+          ...v.statusInput(),
+          content: { kind: "placed", count: 1, skipped: 0 },
+        }),
+      ).toEqual({
+        state: "placed-gps",
+        text: "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
+      });
+      // Why: the veto sets the voted count back to
+      // 0, and "a code in view with no vote yet" is when the line shows the
+      // code-measuring hint, so the ignored code still in view read "Code
+      // measured - placing the tour." The page withholds the hint of an
+      // evaluation whose text IS the ignored code (`ar-entry.ts`), never of
+      // another code. That only works if the pipeline records the ignored
+      // code by its scanned text, the key its evaluations carry
+      // (`onEvaluated(result, ms, text)`) - pinned here on the real veto.
+      expect(v.ctx.viewerIgnoredText).toBe(TEXT);
     });
 
     it("ignores the code's later locks for the rest of the tour: no fused pose, no vote, no keep-alive, and the gate and line say so", () => {
@@ -422,28 +473,6 @@ describe(
       expect(line).not.toMatch(/Relocaliz|Point the phone|Scan the code again/);
       // The short gate pass is folded into the plain line, not said twice.
       expect(line).not.toContain("Code ignored - placing the tour by GPS.");
-    });
-
-    it("logs the veto once with the detector's inputs and the recovery", () => {
-      const v = scannedAndWalked();
-      v.walk(1, 80);
-      const ignored = v.logged.filter(
-        (a) => a.type === "tourViewing/codeIgnored",
-      );
-      expect(ignored).toHaveLength(1);
-      const action = ignored[0]!;
-      if (action.type !== "tourViewing/codeIgnored") throw new Error();
-      const payload = action.payload;
-      expect(payload).toMatchObject({ text: TEXT, levelId: LEVEL_ID });
-      expect(payload.evidence).toMatchObject({
-        decidedBy: "position",
-        settled: true,
-        turnChecked: true,
-        deviceAccuracyMedianM: 4,
-      });
-      expect(payload.evidence.magnitudeM).toBeGreaterThan(35);
-      expect(payload.recovery.refedFixes).toBeGreaterThan(60);
-      expect(payload.recovery.batches).toBe(1);
     });
 
     // Why (§7j #13): the veto is per tour per page session - an AR exit and
@@ -552,69 +581,6 @@ describe(
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
 
-    // Why (M5c review M1): the gate records which code passed it. Code B
-    // passed it; code A, scanned later and found moved, must not flip B's
-    // pass to "Code ignored".
-    it("leaves the gate with the code that passed it when another code is vetoed", () => {
-      const v = viewer(LEVEL, true);
-      v.walk(0, 0);
-      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
-        v.lock(T0 + 500 + i * 10, "B");
-      }
-      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
-      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
-        v.lock(T0 + 1000 + i * 100);
-      }
-      v.walk(1, 75);
-      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
-      expect(v.ctx.ignoredCodes.has(LEVEL_ID_B)).toBe(false);
-      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
-    });
-
-    // Why (r881 review M1): the veto takes every vote back, but the page
-    // kept its count of voted locks, so every reader of "a code lined the
-    // tour up" kept believing it on what was a GPS-only alignment again:
-    // the stations trusted it whatever the raw accuracy, and the status
-    // line said "Tour placed." instead of naming the moved code.
-    it("the veto forgets the voted locks: the stations stop trusting the alignment and the line names the moved code", () => {
-      const v = scannedAndWalked();
-      expect(v.ctx.viewerVotedLocks).toBeGreaterThan(0);
-      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
-        true,
-      );
-      v.walk(1, 75);
-      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
-      expect(v.ctx.viewerVotedLocks).toBe(0);
-      expect(v.ctx.viewerLockedText).toBeNull();
-      expect(stationAlignmentSignals(v.ctx, v.arStore).codeLinedUp()).toBe(
-        false,
-      );
-      expect(
-        visitorStatus({
-          ...v.statusInput(),
-          content: { kind: "placed", count: 1, skipped: 0 },
-        }),
-      ).toEqual({
-        state: "placed-gps",
-        text: "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
-      });
-    });
-
-    // Why (r881 re-review L-F, L1): the veto sets the voted count back to
-    // 0, and "a code in view with no vote yet" is when the line shows the
-    // code-measuring hint, so the ignored code still in view read "Code
-    // measured - placing the tour." The page withholds the hint of an
-    // evaluation whose text IS the ignored code (`ar-entry.ts`), never of
-    // another code. That only works if the pipeline records the ignored
-    // code by its scanned text, the key its evaluations carry
-    // (`onEvaluated(result, ms, text)`) - pinned here on the real veto.
-    it("after the veto the ignored code is recorded by its scanned text, the key its evaluations carry", () => {
-      const v = scannedAndWalked();
-      v.walk(1, 75);
-      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
-      expect(v.ctx.viewerIgnoredText).toBe(TEXT);
-    });
-
     // Why (r881 review M1): code B passed the gate and keeps it, but the
     // veto of code A took B's votes back too. The placement trigger's
     // "a code placed the tour" must not hold on B's spent count: until a
@@ -629,6 +595,7 @@ describe(
         v.lock(T0 + 500 + i * 10, "B");
       }
       expect(codePlacedTour(v.ctx)).toBe(true);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
       for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
         v.lock(T0 + 1000 + i * 100);
       }
@@ -638,6 +605,8 @@ describe(
         s += 1;
       }
       expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      // The gate stays with B, the code that passed it.
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID_B)).toBe(false);
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
       expect(codePlacedTour(v.ctx)).toBe(false);
       // B's next lock votes again: code-placed once more.
@@ -757,21 +726,19 @@ describe(
       expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
       endQrPipeline(v.ctx);
       v.enter();
-      v.lock(T0 + 76_000);
-      for (let s = 77; s <= 460; s += 1) {
-        const a = (2 * Math.PI * s) / 60;
-        v.fixAt(
-          s,
-          PHYSICAL[0] + 25 * Math.cos(a),
-          PHYSICAL[1] + 25 * Math.sin(a),
-          {},
-          [0, -MOVE_EAST_M],
+      const checkOf = () =>
+        (v.ctx.movedCodeChecks?.snapshot() ?? []).filter(
+          (c) => c.levelId === LEVEL_ID,
         );
-      }
-      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(false);
-      expect(
-        v.logged.filter((a) => a.type === "tourViewing/codeRestored"),
-      ).toHaveLength(1);
+      expect(checkOf()).toEqual([]);
+      v.lock(T0 + 76_000);
+      // A probation check: it starts vetoed, so it can only lift the veto.
+      // The lift itself is pinned by the test above (composed) and by
+      // `moved-code-check.test.ts` (the rule).
+      expect(checkOf()).toEqual([
+        expect.objectContaining({ liftsAtSpreadM: expect.any(Number) }),
+      ]);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
     });
 
     // Why (QR-first plan 2026-10-14-0445 §7 #9): a code scanned before any

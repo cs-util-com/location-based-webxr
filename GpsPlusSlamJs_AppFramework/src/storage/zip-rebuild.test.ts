@@ -83,7 +83,11 @@ describe('rebuildZipWithEntries', () => {
     const out = await rebuildZipWithEntries(input, [
       { path: 'tour.json', data: '{}' },
     ]);
-    expect((await entryBytes(out)).get('images/big.jpg')).toEqual(BIG);
+    // Buffer.equals, not toEqual: a deep equality over 1.2 million elements
+    // costs seconds; the length check keeps a failure readable.
+    const big = (await entryBytes(out)).get('images/big.jpg');
+    expect(big?.length).toBe(BIG.length);
+    expect(Buffer.from(big!).equals(Buffer.from(BIG))).toBe(true);
   });
 
   it('replaces an entry that already exists at the same path, once', async () => {

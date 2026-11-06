@@ -17,7 +17,7 @@
  *   - heading is undefined (null) before the first alignment solve, with no
  *     rotation yet, and when the camera points near-vertically.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
 import { describe, it, expect } from 'vitest';

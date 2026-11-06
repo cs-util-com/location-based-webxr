@@ -6,7 +6,7 @@
  * the panel, on every demo page. The fix is ONE framework module,
  * `utils/slider-scroll-guard`, installed once per page with
  * `guardSlidersIn(document)`. Only the look-dev page proves it in a browser
- * (`GpsPlusSlamJs_DesignSystem/3d/slider-touch.smoke.spec.mjs`); this is the
+ * (`GpsPlusSlamJs_DesignSystem/3d/slider-touch.smoke.spec.mjs` (removed; in git history)); this is the
  * cheap check that holds every other page to it, so a new page with a slider
  * cannot forget it.
  *

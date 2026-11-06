@@ -11,6 +11,8 @@
  * mirroring the real alignment matrix whose scale ≈ 1.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import * as THREE from 'three';

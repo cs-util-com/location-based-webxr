@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   calcGpsCoords,
   GPS_POINT_SOURCE_DEVICE,
@@ -24,6 +24,13 @@ import { visitorPosition } from "./visitor-position";
  * says "arrived" where the station is not found), and a single code vote's
  * fixed accuracy must never make a phone in an urban canyon look precise.
  */
+
+// calcGpsCoords needs the library licence, which creating a store activates;
+// without this a test that reaches it before any store is built fails
+// whenever the order of the tests changes.
+beforeAll(() => {
+  createSlamAppStore({ storageBackend: new NullStorageBackend() });
+});
 
 const zero = { lat: 47.5, lon: 8.7 };
 

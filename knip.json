@@ -231,7 +231,6 @@
       "entry": ["config/stylelint.config.mjs", "config/eslint.config.mjs"],
       "project": ["*.mjs", "config/*.mjs"],
       "ignoreUnresolved": [
-        "/3d/water-metrics.mjs",
         "/globe/sky-level.js",
         "/fw/visualization/atmosphere/cloud-live-noise.js",
         "/globe/globe-cloud-shell-volume.js",

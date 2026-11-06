@@ -16,5 +16,5 @@
   - A nearer shown label is never fainter than a farther one.
 - Tests: `label-rule.test.mjs` (fixed cases, the owner's default
   distances, and a 200-trial sweep over K, the fades and the distances);
-  `../lookdev-tidy.smoke.spec.mjs` (on the page: a label from 100 m, none
+  `../lookdev-tidy.smoke.spec.mjs` (removed; in git history) (on the page: a label from 100 m, none
   past 140 m, and K capping the catalog view).

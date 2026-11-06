@@ -339,23 +339,25 @@ describe("the walk's rules over random walks", () => {
           expect(h.dom.line.textContent).toMatch(/^Tour complete/);
         },
       ),
-      { numRuns: 600 },
+      { numRuns: 150 },
     );
     // Not vacuous: the no-guess condition was reached and checked often.
     // The count depends on the random walks. With a code among the
     // precisions it ends the condition at once. Only an any-order tour
     // reaches it, and since the tour orders are fixed and any, half the
-    // tours are; 600 walks reach it 278 to 462 times over 24 seeds (mean
-    // 359, sd 47), six deviations above the floor (2026-10-27). It guards
-    // against the condition never or rarely being reached, not against a
-    // number.
-    expect(r2Checks).toBeGreaterThan(60);
+    // tours are; 150 walks reach it 38 to 123 times over 24 seeds
+    // (2026-11-05; 600 walks reached it 278 to 462 times, 2026-10-27). It
+    // guards against the condition never or rarely being reached, not
+    // against a number.
+    expect(r2Checks).toBeGreaterThan(15);
     // 600 random walks: 3.0 s on an idle machine, 6.6 s in a loaded
     // gate run, 13.4 s alone under load (2026-10-26) and 3 to 9 s alone
     // over the 24 seeds above, past the default 5 s. The time out is for
     // a hang, not for a slow machine.
   }, 30_000);
 
+  // At 100 runs: a found station's end tap that does nothing on the fourth
+  // station was caught over 24 seeds by run 66 at worst (about 1 run in 20).
   // "No order can deadlock", re-stated over the story card and the no-guess rule's three tap paths: "Can't get
   // there?" then the armed row's confirm, "Can't get there?" then a row in
   // the chooser, and a row's Skip then its confirm - each two taps; a
@@ -430,7 +432,7 @@ describe("the walk's rules over random walks", () => {
           expect(taps).toBeLessThanOrEqual(2 * stations.length + 1);
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

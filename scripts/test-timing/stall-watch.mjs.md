@@ -85,6 +85,12 @@
   says the watch is off); and under `CI=1`
   it cannot name the FILE, only the stage.
 
+- **The clock runs from the spawn to the exit, so a stage's start-up and its
+  shutdown count as silence.** It has to: a stage wedged before its first
+  print, or after its last, must still be killed.
+  Twenty minutes dwarf any start-up, but a test's tiny limit does not: under
+  a browser run the first print of a Node stage took up to 6.2 s.
+
 ## Examples
 
 ```bash
@@ -107,4 +113,8 @@ GATE_SLOT=take GATE_STALL_MIN=40 pnpm run test:unit src/x   # opt a filtered run
   grandchild gone afterwards (Windows locally, Linux in CI); and a caller
   that ends without `process.exit` is not held for the 10 s exit cap after
   the verdict (only a POSIX run can fail that one: on Windows the kill is
-  synchronous and the cap is always armed before the stage's exit).
+  synchronous and the cap is always armed before the stage's exit);
+  a talking stage that outlives its limit is not killed (a limit of 10 s
+  against a run of 12 s; a limit under the machine's first-print time, about
+  6 s at the worst load measured, fails it falsely, and an output path that
+  no longer reaches the clock fails it truly).

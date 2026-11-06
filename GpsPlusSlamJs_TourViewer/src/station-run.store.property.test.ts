@@ -292,11 +292,13 @@ describe("the station run, held in its closure and through the walk's store", ()
           }
         });
       }),
-      { numRuns: 500 },
+      { numRuns: 125 },
     );
     // Not vacuous: every kind of event and an undone skip were compared.
+    // At 125 runs the rarest kind was seen 46 to 89 times over 24 seeds
+    // (2026-11-05).
     for (const [kind, count] of Object.entries(seen)) {
-      expect(count, kind).toBeGreaterThan(50);
+      expect(count, kind).toBeGreaterThan(12);
     }
   }, 120_000);
 });

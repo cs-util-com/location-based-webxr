@@ -7,7 +7,9 @@
  * at any precision the scrubber claims to catch (one number with 3 to 8
  * decimals) never survives, a labelled coordinate never keeps its value, a
  * link to another host never keeps its path (not even after a `{n}`
- * placeholder), scrubbing twice changes nothing more than scrubbing once
+ * placeholder, and not when its host or path reads like a labelled number:
+ * those shapes are generated on purpose, because a random host hits one only
+ * once in very many runs), scrubbing twice changes nothing more than scrubbing once
  * (Sentry may run the breadcrumb and the event hook over the same text), and
  * text with nothing to scrub comes back unchanged.
  */
@@ -41,7 +43,42 @@ const coordinate = (max: number, minDecimals = 3, maxDecimals = 8) =>
       return `${whole}.${digits}`;
     });
 
-const pairSeparator = fc.constantFrom(', ', ',', ' ');
+const pairSeparator = fc.constantFrom(', ', ',', ' ', ';');
+
+const label = fc.constantFrom(
+  'lat',
+  'lon',
+  'lng',
+  'latitude',
+  'longitude',
+  'Lat',
+  'LON',
+  'originLat'
+);
+
+/** A name that reads like a labelled number: `lon5`, `cdn-lat1a`, `a0lng0`. */
+const labelledName = fc
+  .tuple(
+    fc.constantFrom('', 'a', 'a0', 'cdn-', 'sa', 'x_', '7'),
+    label,
+    fc.nat({ max: 999 }),
+    fc.constantFrom('', 'a', '-1', '0b', '-x')
+  )
+  .map((parts) => parts.join(''));
+
+/** A host of such a name, with or without a subdomain under it and a port. */
+const labelledHost = fc
+  .tuple(
+    labelledName,
+    fc.constantFrom('.example.org', '.tiles.example.org', '.aa'),
+    fc.constantFrom('', ':8080')
+  )
+  .map((parts) => parts.join(''));
+
+const foreignHost = fc.oneof(fc.domain(), labelledHost);
+
+/** A link reduced to its host, however much of the host a label cost it. */
+const HOST_ONLY = /^https:\/\/[^/?#]*\/\[redacted\]$/;
 
 /**
  * Pieces of the text an error report really carries: links to this site and
@@ -56,8 +93,21 @@ const reportFragment = fc.oneof(
   fc.constantFrom(' ', ',', '"', "'", '=', ':', '?', '#', '/', '{n}', '[', ']'),
   fc.constant(REDACTED),
   fc
-    .tuple(fc.domain(), fc.stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,30}$/))
+    .tuple(foreignHost, fc.stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,30}$/))
     .map(([host, rest]) => `https://${host}/${rest}`),
+  labelledName,
+  fc
+    .tuple(
+      fc.stringMatching(/^[A-Za-z0-9_-]{25,40}$/),
+      fc.constantFrom("'", ')', ']', ',', ';')
+    )
+    .map(([id, end]) => `https://${OWN}/files/${id}${end}`),
+  fc
+    .tuple(foreignHost, labelledName)
+    .map(([host, name]) => `https://${host}/${name}?k=v`),
+  fc
+    .tuple(labelledName, labelledName)
+    .map(([name, other]) => `/api/${name}?${other}=1&k=v`),
   fc
     .stringMatching(/^[A-Za-z0-9_/{}.?#=-]{0,40}$/)
     .map((rest) => `https://${OWN}/${rest}`),
@@ -76,7 +126,14 @@ const reportFragment = fc.oneof(
         'lon: ',
         '"latitude":',
         'originLat=',
-        'start_lng:'
+        'start_lng:',
+        'lat',
+        'lon',
+        'lat1=',
+        'latDeg=',
+        'originLonDeg:',
+        'long=',
+        "lat: '"
       ),
       coordinate(180, 0)
     )
@@ -141,15 +198,80 @@ describe('scrubText properties', () => {
   it("never keeps the path of another host's link", () => {
     fc.assert(
       fc.property(
-        fc.domain().filter((d) => d !== OWN),
-        fc.stringMatching(/^[A-Za-z0-9_-]{1,30}$/),
+        foreignHost.filter((d) => d !== OWN),
+        fc.oneof(fc.stringMatching(/^[A-Za-z0-9_-]{1,30}$/), labelledName),
         fc.constantFrom('/x/', '/x/{n}/', '/{n}/', '/x/{n}-'),
         (host, segment, path) => {
           const out = scrubText(
             `see https://${host}${path}${segment}?k=v`,
             OWN
           );
-          expect(out).toBe(`see https://${host}/${REDACTED}`);
+          expect(out.slice('see '.length)).toMatch(HOST_ONLY);
+        }
+      )
+    );
+  });
+
+  it("never keeps what follows a coordinate in a link's query", () => {
+    fc.assert(
+      fc.property(
+        foreignHost.filter((d) => d !== OWN),
+        fc.constantFrom('lat=', 'lon=', 'originLat=', 'latitude:'),
+        coordinate(180, 0),
+        (host, key, value) => {
+          const tail = `?${key}${value}&key=abc`;
+          expect(scrubText(`https://${host}/t${tail}`, OWN)).toMatch(HOST_ONLY);
+          expect(scrubText(`https://${OWN}/t${tail}`, OWN)).toBe(
+            `https://${OWN}/t?${REDACTED}`
+          );
+          expect(scrubText(`GET /t${tail} 200`, OWN)).toBe(
+            `GET /t?${REDACTED} 200`
+          );
+        }
+      )
+    );
+  });
+
+  it('never keeps the path of a link with URL punctuation in it', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Za-z0-9_()[\]'{}.,;!*~-]{1,30}$/),
+        (segment) => {
+          const out = scrubText(`https://example.org/${segment}/s?k=v`, OWN);
+          expect(out).toMatch(HOST_ONLY);
+          expect(scrubText(`/t?${segment}&k=v`, OWN)).toBe(`/t?${REDACTED}`);
+        }
+      )
+    );
+  });
+
+  it('never keeps an id of this site, whatever follows it', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Za-z0-9_-]{25,44}$/),
+        fc.constantFrom('', "'", ')', ']', ',', ';', ':1:2)', '/x', '?k=v'),
+        (id, end) => {
+          const link = `https://${OWN}/files/${id}${end}`;
+          expect(scrubText(`see ${link}`, OWN)).not.toContain(id);
+          expect(scrubText(`GET /files/${id}${end} 200`, OWN)).not.toContain(
+            id
+          );
+        }
+      )
+    );
+  });
+
+  it('never keeps a number of a pair behind a label', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('lat=', 'lon: ', 'latLng: ', 'origin_lat='),
+        coordinate(90),
+        coordinate(180),
+        pairSeparator,
+        (key, lat, lon, sep) => {
+          expect(scrubText(`${key}${lat}${sep}${lon}`, OWN)).toBe(
+            `${key}${REDACTED}`
+          );
         }
       )
     );
