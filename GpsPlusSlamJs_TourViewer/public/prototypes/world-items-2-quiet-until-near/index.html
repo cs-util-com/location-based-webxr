@@ -1,0 +1,2918 @@
+<!doctype html>
+<!-- Prototype: free-standing video, audio and character items, direction 2, quiet until near. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Quiet until near</title>
+    <style>
+      :root {
+        --ink: #fff;
+        --ink-dim: #a9adba;
+        --paper: #232838;
+        --deep: #161a26;
+        --surface: rgb(20 24 36 / 0.74);
+        --accent: #f2971f;
+        --ink-on-accent: #000;
+        --ring: #c9cdd8;
+        --font:
+          "Corbel", "Noto Sans", ui-rounded, "Segoe UI", "Roboto", system-ui,
+          sans-serif;
+        --radius: 14px;
+        --radius-s: 10px;
+        --tap: 44px;
+        --ease-out: cubic-bezier(0, 0, 0.2, 1);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: var(--deep);
+        color: var(--ink);
+        font: 500 14px/1.35 var(--font);
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-font-smoothing: antialiased;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        border: 0;
+        background: none;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      /* frame: the phone view, and next to it the pretend walk */
+      .app {
+        height: 100vh;
+        height: 100dvh;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 332px;
+      }
+      .stage {
+        position: relative;
+        overflow: hidden;
+        background: #b9d6e6;
+        min-height: 0;
+        min-width: 0;
+      }
+      #view {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+        transition: opacity 0.16s;
+      }
+      #view.blink {
+        opacity: 0.2;
+      }
+      .nogl {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        text-align: center;
+        background: var(--paper);
+      }
+
+      /* markers in the world */
+      .marks {
+        position: absolute;
+        z-index: 1;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .mk {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 56px;
+        height: 56px;
+        margin: -28px 0 0 -28px;
+        pointer-events: auto;
+        display: block;
+        padding: 0;
+        will-change: transform;
+        transition: opacity 0.4s;
+      }
+      .mk.off {
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .marks.busy .mk:not(.lead) {
+        opacity: 0.62;
+      }
+      .dial {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: var(--size, 24px);
+        height: var(--size, 24px);
+        transition:
+          width 0.25s,
+          height 0.25s;
+        border-radius: 50%;
+        background: var(--surface);
+        box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+        color: #fff;
+      }
+      .dial > svg {
+        position: absolute;
+      }
+      .dial .ringbox {
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .dial .glyph,
+      .dial .done {
+        inset: 20%;
+        width: 60%;
+        height: 60%;
+      }
+      .dial .done {
+        display: none;
+      }
+      .dial circle {
+        fill: none;
+        stroke-width: 3.4;
+        transform: rotate(-90deg);
+        transform-origin: 50% 50%;
+      }
+      .dial .track {
+        stroke: rgb(255 255 255 / 0.22);
+      }
+      .dial .prog {
+        stroke: var(--accent);
+        stroke-linecap: round;
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+      }
+      .mk[data-st="left"] .prog,
+      .mk[data-st="stopped"] .prog {
+        stroke: var(--ring);
+      }
+      .mk[data-st="finished"] .glyph {
+        display: none;
+      }
+      .mk[data-st="finished"] .done {
+        display: block;
+      }
+      .mk[data-st="finished"] .dial {
+        background: rgb(20 24 36 / 0.52);
+      }
+      .mk[data-st="finished"] .prog {
+        stroke-dashoffset: 100 !important;
+      }
+      .mk[data-st="playing"] .dial {
+        background: var(--accent);
+        color: var(--ink-on-accent);
+      }
+      .mk[data-st="playing"] .track {
+        stroke: rgb(0 0 0 / 0.2);
+      }
+      .mk[data-st="playing"] .prog {
+        stroke: #000;
+      }
+      .lbl {
+        position: absolute;
+        left: 50%;
+        top: calc(50% + var(--size, 24px) / 2 + 5px);
+        width: max-content;
+        max-width: var(--lw, 236px);
+        transform: translateX(calc(-50% + var(--lx, 0px)));
+        padding: 4px 9px;
+        border-radius: var(--radius-s);
+        background: var(--surface);
+        font-size: 13px;
+        line-height: 1.3;
+        text-align: center;
+        color: #fff;
+        opacity: 0;
+        transition: opacity 0.35s;
+        pointer-events: none;
+      }
+      .lbl.show {
+        opacity: 1;
+      }
+      .mk.up .lbl {
+        top: auto;
+        bottom: calc(50% + var(--size, 24px) / 2 + 5px);
+      }
+
+      /* the one switch on the phone view */
+      .autosw {
+        position: absolute;
+        z-index: 6;
+        top: calc(10px + env(safe-area-inset-top));
+        left: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: var(--tap);
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--surface);
+        font-size: 13px;
+      }
+      .autosw i {
+        display: block;
+        width: 30px;
+        height: 18px;
+        border-radius: 9px;
+        background: rgb(255 255 255 / 0.28);
+        position: relative;
+        transition: background 0.25s;
+      }
+      .autosw i::after {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 0.25s var(--ease-out);
+      }
+      .autosw[aria-checked="true"] i {
+        background: var(--accent);
+      }
+      .autosw[aria-checked="true"] i::after {
+        transform: translateX(12px);
+      }
+
+      /* hint for something out of view */
+      .edge {
+        position: absolute;
+        z-index: 5;
+        top: 40%;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 190px;
+        padding: 7px 10px;
+        border-radius: var(--radius-s);
+        background: var(--surface);
+        font-size: 13px;
+      }
+      .edge.l {
+        left: 8px;
+      }
+      .edge.r {
+        right: 8px;
+        flex-direction: row-reverse;
+      }
+      .edge svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+
+      .toast {
+        position: absolute;
+        z-index: 7;
+        left: 50%;
+        top: calc(62px + env(safe-area-inset-top));
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: calc(100% - 28px);
+        padding: 8px 12px;
+        border-radius: var(--radius);
+        background: rgb(255 255 255 / 0.94);
+        color: #14161e;
+        font-size: 14px;
+        text-align: center;
+      }
+
+      /* the now-playing strip: exists only while there is something to stop */
+      .now {
+        position: absolute;
+        z-index: 6;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: calc(10px + env(safe-area-inset-bottom));
+        width: min(calc(100% - 20px), 430px);
+        border-radius: var(--radius);
+        background: rgb(22 26 38 / 0.88);
+        overflow: hidden;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 4px 6px 4px 12px;
+      }
+      .row + .row {
+        min-height: 48px;
+        border-top: 1px solid rgb(255 255 255 / 0.1);
+      }
+      .row > svg {
+        flex: none;
+        width: 20px;
+        height: 20px;
+      }
+      .tt {
+        flex: 1;
+        min-width: 0;
+      }
+      .tt b {
+        display: block;
+        font-weight: 500;
+        font-size: 15px;
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tt small {
+        display: block;
+        font-size: 12.5px;
+        line-height: 1.25;
+        color: var(--ink-dim);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .bars {
+        flex: none;
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 16px;
+      }
+      .bars span {
+        width: 3px;
+        height: 100%;
+        background: var(--accent);
+        transform-origin: bottom;
+        animation: bar 1.1s ease-in-out infinite;
+      }
+      .bars span:nth-child(2) {
+        animation-delay: -0.35s;
+      }
+      .bars span:nth-child(3) {
+        animation-delay: -0.7s;
+      }
+      .now.idle .bars {
+        display: none;
+      }
+      @keyframes bar {
+        0%,
+        100% {
+          transform: scaleY(0.3);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+      .btn {
+        flex: none;
+        min-height: var(--tap);
+        min-width: 64px;
+        padding: 0 14px;
+        border-radius: var(--radius-s);
+        background: rgb(255 255 255 / 0.14);
+        font-size: 14px;
+      }
+      .btn:active {
+        background: rgb(255 255 255 / 0.26);
+      }
+      .btn.main {
+        background: var(--accent);
+        color: var(--ink-on-accent);
+      }
+      .bar {
+        height: 3px;
+        background: rgb(255 255 255 / 0.12);
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+      }
+
+      /* the pretend walk: only on this page, plain on purpose */
+      .dock {
+        background: var(--deep);
+        padding: 12px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        min-width: 0;
+        overflow: auto;
+      }
+      .head {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        justify-content: space-between;
+      }
+      .try {
+        font-size: 15px;
+        line-height: 1.3;
+      }
+      .link {
+        flex: none;
+        min-height: 32px;
+        padding: 0 2px;
+        color: var(--ink-dim);
+        font-size: 13px;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      #map {
+        display: block;
+        justify-self: center;
+        height: 44vh;
+        aspect-ratio: 60/70;
+        border-radius: var(--radius);
+        touch-action: none;
+        cursor: crosshair;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .m-ring {
+        fill: none;
+        stroke: rgb(255 255 255 / 0.5);
+        stroke-width: 0.3;
+      }
+      .m-ring.outer {
+        stroke-dasharray: 1 1;
+        stroke: rgb(255 255 255 / 0.3);
+      }
+      .m-spot {
+        color: #fff;
+      }
+      .m-spot circle {
+        fill: var(--deep);
+        stroke: #fff;
+        stroke-width: 0.35;
+      }
+      .m-spot[data-st="playing"] {
+        color: #000;
+      }
+      .m-spot[data-st="playing"] circle {
+        fill: var(--accent);
+        stroke: #000;
+      }
+      .m-spot[data-st="finished"] circle {
+        fill: rgb(40 44 60 / 0.6);
+      }
+      #you {
+        pointer-events: none;
+      }
+      #youPulse {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 0.5;
+        animation: youp 1.8s var(--ease-out) infinite;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      @keyframes youp {
+        from {
+          transform: scale(0.6);
+          opacity: 0.9;
+        }
+        to {
+          transform: scale(1.8);
+          opacity: 0;
+        }
+      }
+      .board {
+        display: grid;
+        grid-template-columns: 30px repeat(5, minmax(0, 1fr));
+        align-items: center;
+      }
+      .board .hd {
+        font-size: 11.5px;
+        line-height: 1.15;
+        color: var(--ink-dim);
+        text-align: center;
+        align-self: end;
+        padding-bottom: 3px;
+      }
+      .board .hd .s {
+        display: none;
+      }
+      .board svg {
+        width: 20px;
+        height: 20px;
+        color: #fff;
+      }
+      .cell {
+        height: 36px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .cell i {
+        display: block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1.5px solid rgb(255 255 255 / 0.38);
+        transition:
+          background 0.2s,
+          transform 0.2s,
+          border-color 0.2s;
+      }
+      .cell:hover i {
+        border-color: #fff;
+      }
+      .cell.on i {
+        background: #fff;
+        border-color: #fff;
+        transform: scale(1.35);
+      }
+      .cell.on.play i {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .acts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .acts .btn {
+        padding: 0 6px;
+        min-width: 0;
+      }
+      .acts .btn[aria-pressed="true"] {
+        background: var(--accent);
+        color: #000;
+      }
+
+      dialog {
+        margin: auto;
+        max-width: min(440px, calc(100vw - 28px));
+        max-height: calc(100dvh - 28px);
+        border: 0;
+        border-radius: var(--radius);
+        background: var(--paper);
+        color: var(--ink);
+        padding: 16px 18px;
+      }
+      dialog::backdrop {
+        background: rgb(10 12 18 / 0.5);
+      }
+      dialog h2 {
+        font-size: 17px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      dialog ul {
+        padding-left: 18px;
+        display: grid;
+        gap: 6px;
+        font-size: 14.5px;
+      }
+      dialog p {
+        font-size: 13.5px;
+        color: var(--ink-dim);
+        margin-top: 10px;
+      }
+      dialog form {
+        margin-top: 12px;
+        text-align: right;
+      }
+
+      /* phone upright: the walk sits below the view */
+      @media (max-aspect-ratio: 1/1) {
+        .app {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: minmax(0, 1fr) auto;
+        }
+        .dock {
+          grid-template-columns: 136px minmax(0, 1fr);
+          column-gap: 12px;
+          row-gap: 4px;
+          padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
+          overflow: visible;
+        }
+        .head {
+          grid-column: 1/-1;
+          align-items: center;
+        }
+        .try {
+          font-size: 14px;
+        }
+        #map {
+          grid-row: 2/4;
+          width: 136px;
+          height: auto;
+        }
+        .board {
+          grid-template-columns: 24px repeat(5, minmax(0, 1fr));
+        }
+        .board .hd {
+          font-size: 11px;
+        }
+        .board .hd .s {
+          display: inline;
+        }
+        .board .hd .l {
+          display: none;
+        }
+        .cell {
+          height: 30px;
+        }
+        .acts {
+          align-self: end;
+        }
+      }
+      /* phone on its side: a narrow column */
+      @media (min-aspect-ratio: 1/1) and (max-height: 520px) {
+        .app {
+          grid-template-columns: minmax(0, 1fr) 230px;
+        }
+        .dock {
+          padding: 6px 10px;
+          gap: 5px;
+        }
+        .try {
+          font-size: 12.5px;
+          line-height: 1.2;
+        }
+        .head {
+          align-items: center;
+        }
+        #map {
+          height: 150px;
+        }
+        .board {
+          grid-template-columns: 24px repeat(5, minmax(0, 1fr));
+        }
+        .board .hd {
+          font-size: 10.5px;
+          padding-bottom: 1px;
+        }
+        .board .hd .s {
+          display: inline;
+        }
+        .board .hd .l {
+          display: none;
+        }
+        .cell {
+          height: 25px;
+        }
+        .acts .btn {
+          min-height: 38px;
+          font-size: 13px;
+        }
+        .now {
+          left: 10px;
+          transform: none;
+          width: min(calc(100% - 20px), 390px);
+          bottom: 8px;
+        }
+        .row {
+          min-height: 44px;
+        }
+        .row + .row {
+          min-height: 42px;
+        }
+        .autosw {
+          font-size: 12px;
+          min-height: 38px;
+          top: 6px;
+          left: 6px;
+        }
+        .toast {
+          top: 6px;
+          left: auto;
+          right: 6px;
+          transform: none;
+          max-width: calc(100% - 156px);
+          font-size: 13px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bars span,
+        #youPulse {
+          animation: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="g-film" viewBox="0 0 24 24">
+        <rect
+          x="3"
+          y="5"
+          width="18"
+          height="14"
+          rx="2.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        />
+        <path d="M10 8.8l5.8 3.2-5.8 3.2z" fill="currentColor" />
+      </symbol>
+      <symbol id="g-sound" viewBox="0 0 24 24">
+        <path d="M3.5 9.5v5H7l5 4V5.5l-5 4z" fill="currentColor" />
+        <path
+          d="M15 9.2a4 4 0 010 5.6M17.8 6.5a8 8 0 010 11"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="g-guide" viewBox="0 0 24 24">
+        <circle cx="12" cy="7.8" r="4.2" fill="currentColor" />
+        <path
+          d="M4 21c.7-4.7 3.9-7 8-7s7.3 2.3 8 7z"
+          fill="currentColor"
+        />
+      </symbol>
+      <symbol id="g-done" viewBox="0 0 24 24">
+        <path
+          d="M5 12.5l4.5 4.5L19 7.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="g-left" viewBox="0 0 24 24">
+        <path
+          d="M14.5 5l-7 7 7 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="g-right" viewBox="0 0 24 24">
+        <path
+          d="M9.5 5l7 7-7 7"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+    </svg>
+
+    <div class="app">
+      <main class="stage" id="stage" aria-label="View through the phone">
+        <canvas
+          id="view"
+          aria-label="A small park, seen through the phone"
+        ></canvas>
+        <div class="marks" id="marks"></div>
+        <button class="autosw" id="autoSw" role="switch" aria-checked="true">
+          <i></i><span>Starts by itself</span>
+        </button>
+        <div class="edge" id="edge" hidden></div>
+        <div class="toast" id="toast" role="status" hidden></div>
+        <section class="now" id="now" aria-label="Now playing" hidden>
+          <div class="row">
+            <svg id="nowGlyph"><use href="#g-film" /></svg>
+            <div class="tt">
+              <b id="nowTitle"></b><small id="nowSub"></small>
+            </div>
+            <div class="bars" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <button class="btn" id="nowBtn">Stop</button>
+          </div>
+          <div class="row" id="nextRow" hidden>
+            <svg id="nextGlyph"><use href="#g-sound" /></svg>
+            <div class="tt">
+              <small>Next, when this ends</small><b id="nextTitle"></b>
+            </div>
+            <button class="btn" id="nextBtn">Play now</button>
+          </div>
+          <div class="bar"><i id="nowBar"></i></div>
+        </section>
+        <div class="sr" id="say" aria-live="polite"></div>
+      </main>
+
+      <aside class="dock" aria-label="Pretend walk">
+        <div class="head">
+          <p class="try">
+            Drag the dot on the map to walk. Nothing needs a tap.
+          </p>
+          <button class="link" id="rulesBtn">Rules</button>
+        </div>
+        <svg
+          id="map"
+          viewBox="-30 -34 60 70"
+          role="application"
+          aria-label="Map of the park. Drag to walk."
+        ></svg>
+        <div class="board" id="board"></div>
+        <div class="acts">
+          <button class="btn" id="walkBtn" aria-pressed="false">
+            Walk for me
+          </button>
+          <button class="btn" id="betweenBtn">Between two</button>
+        </div>
+      </aside>
+    </div>
+
+    <dialog id="rules">
+      <h2 tabindex="-1" autofocus>How a free-standing item behaves here</h2>
+      <ul>
+        <li>From afar: one small marker that says what kind of thing waits.</li>
+        <li>From 13 m: the thing itself shows, without sound.</li>
+        <li>
+          At 6 m: after a moment it begins. A ring shows the moment, and a tap
+          skips it. A film or a character waits until you look its way.
+        </li>
+        <li>
+          Walking away: from 9 m it fades, at 13 m it pauses. Come back and it
+          continues.
+        </li>
+        <li>
+          Finished things stay quiet until tapped. They never start twice by
+          themselves.
+        </li>
+        <li>
+          One sound at a time. What began first keeps the sound. The other waits
+          as Next, until the first ends or you are clearly at the other one, 4 m
+          closer to it.
+        </li>
+        <li>
+          Stop means quiet: nothing starts by itself until you have walked 8 m
+          on.
+        </li>
+        <li>
+          The item only knows Play, Pause and Ended. Here nearness presses Play.
+          In a story, a step would.
+        </li>
+      </ul>
+      <p>
+        The park stands in for the camera picture. The map and the dots beside
+        it exist only on this page.
+      </p>
+      <form method="dialog"><button class="btn main">Close</button></form>
+    </dialog>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ---------- helpers ---------- */
+      const $ = (s, r = document) => r.querySelector(s);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const sstep = (a, b, v) => {
+        const t = clamp((v - a) / (b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const near0 = (v, t, step) =>
+        v < t ? Math.min(t, v + step) : Math.max(t, v - step);
+      const fmt = (s) => {
+        s = Math.max(0, Math.floor(s));
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+      };
+      const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+      const hyp = Math.hypot;
+      const calmMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const seeded = (n) => {
+        let s = n;
+        return () => (s = (s * 16807) % 2147483647) / 2147483647;
+      };
+
+      /* All distances in metres. These are the values the whole direction rests on. */
+      const NEAR = {
+        notice: 24,
+        preview: 13,
+        start: 6,
+        leaveFrom: 9,
+        leaveTo: 13,
+        dwell: 1.5,
+        handover: 4,
+        quietWalk: 8,
+        facing: 1.4,
+        tapReach: 9,
+      };
+
+      /* ---------- the shared sound engine (a first tap is what lets a browser play sound) ---------- */
+      const AU = { ctx: null, out: null };
+      function unlockSound() {
+        if (AU.ctx) {
+          if (AU.ctx.state === "suspended") AU.ctx.resume();
+          return;
+        }
+        const C = window.AudioContext || window.webkitAudioContext;
+        if (!C) return;
+        try {
+          AU.ctx = new C();
+          AU.out = AU.ctx.createGain();
+          AU.out.gain.value = 0.85;
+          AU.out.connect(AU.ctx.destination);
+          for (const s of spots) s.item.wire(AU.ctx, AU.out);
+        } catch {
+          AU.ctx = null;
+        }
+      }
+
+      /* ---------- an item plays, pauses and reports its end. It does not know who pressed Play:
+   here nearness does, in a story a step would call the same play(). ---------- */
+      class Item {
+        constructor(def) {
+          Object.assign(this, def);
+          this.t = 0;
+          this.playing = false;
+          this.ended = false;
+          this.cursor = 0;
+          this.onEnded = null;
+          this.group = new THREE.Group();
+          this.vol = null;
+          this.events = this.events || [];
+        }
+        wire(ctx, out) {
+          this.ctx = ctx;
+          this.vol = ctx.createGain();
+          this.vol.gain.value = 0;
+          this.pan = ctx.createStereoPanner
+            ? ctx.createStereoPanner()
+            : ctx.createGain();
+          this.vol.connect(this.pan).connect(out);
+        }
+        resumeAt(t) {
+          return Math.max(0, t - 1.5);
+        }
+        play() {
+          if (this.ended || this.t >= this.duration) {
+            this.t = 0;
+            this.ended = false;
+          } else if (this.t > 0) this.t = this.resumeAt(this.t);
+          this.cursor = this.events.findIndex((e) => e.t >= this.t);
+          if (this.cursor < 0) this.cursor = this.events.length;
+          this.playing = true;
+        }
+        pause() {
+          this.playing = false;
+          this.setVolume(0);
+        }
+        rewind() {
+          this.t = 0;
+          this.ended = false;
+          this.cursor = 0;
+        }
+        setVolume(v) {
+          if (this.vol)
+            this.vol.gain.setTargetAtTime(v, this.ctx.currentTime, 0.04);
+        }
+        setPan(p) {
+          if (this.pan && this.pan.pan)
+            this.pan.pan.setTargetAtTime(p, this.ctx.currentTime, 0.08);
+        }
+        tick(dt) {
+          if (!this.playing) return;
+          this.t += dt;
+          if (this.ctx) {
+            while (
+              this.cursor < this.events.length &&
+              this.events[this.cursor].t < this.t + 0.14
+            ) {
+              const e = this.events[this.cursor++];
+              this.fire(e, this.ctx.currentTime + Math.max(0, e.t - this.t));
+            }
+          }
+          if (this.t >= this.duration) {
+            this.t = this.duration;
+            this.playing = false;
+            this.ended = true;
+            if (this.onEnded) this.onEnded();
+          }
+        }
+        fire() {}
+        caption() {
+          return "";
+        }
+        /* mode: 'preview' silent foretaste, 'playing', 'still' held frame, 'ended' last moment */
+        frame() {}
+        setShow() {}
+      }
+
+      /* a film: a procedural clip on a canvas, music box tones */
+      class Film extends Item {
+        constructor(def) {
+          const chords = [
+            [261.6, 329.6, 392],
+            [392, 493.9, 587.3],
+            [220, 261.6, 329.6],
+            [349.2, 440, 523.3],
+          ];
+          const events = [];
+          for (let i = 0; i < 40; i++) {
+            const ch = chords[Math.floor(i / 5) % 4];
+            events.push({
+              t: 0.2 + i * 0.44,
+              f: ch[i % 3] * (i % 5 === 4 ? 2 : 1),
+              g: i % 5 === 0 ? 0.3 : 0.2,
+            });
+          }
+          super({ ...def, events });
+          const c = document.createElement("canvas");
+          c.width = 480;
+          c.height = 270;
+          this.cv = c;
+          this.x = c.getContext("2d");
+          this.tex = new THREE.CanvasTexture(c);
+          this.tex.colorSpace = THREE.SRGBColorSpace;
+          this.screen = new THREE.MeshBasicMaterial({
+            map: this.tex,
+            transparent: true,
+            side: THREE.DoubleSide,
+          });
+          this.body = new THREE.MeshLambertMaterial({
+            color: 0x20242f,
+            transparent: true,
+          });
+          const W = 2.7,
+            H = (W * 9) / 16,
+            y = 1.75;
+          const scr = new THREE.Mesh(
+            new THREE.PlaneGeometry(W, H),
+            this.screen,
+          );
+          scr.position.set(0, y, 0.031);
+          const back = new THREE.Mesh(
+            new THREE.BoxGeometry(W + 0.1, H + 0.1, 0.05),
+            this.body,
+          );
+          back.position.set(0, y, 0);
+          const legA = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, y - H / 2, 8),
+            this.body,
+          );
+          legA.position.set(-W * 0.32, (y - H / 2) / 2, -0.03);
+          const legB = legA.clone();
+          legB.position.x = W * 0.32;
+          this.group.add(scr, back, legA, legB);
+          this.lastDraw = -1;
+          this.seeds = seeded(7);
+          this.foliage = Array.from({ length: 46 }, () => ({
+            a: this.seeds() * 6.28,
+            r: Math.sqrt(this.seeds()),
+            s: 9 + this.seeds() * 15,
+            m: this.seeds(),
+          }));
+          this.fall = Array.from({ length: 34 }, () => ({
+            x: this.seeds(),
+            v: 0.5 + this.seeds(),
+            p: this.seeds(),
+          }));
+          this.drawClip(0.6, "preview");
+        }
+        fire(e, when) {
+          const c = this.ctx;
+          for (const [mul, g] of [
+            [1, e.g],
+            [2, e.g * 0.25],
+          ]) {
+            const o = c.createOscillator(),
+              a = c.createGain();
+            o.type = "sine";
+            o.frequency.value = e.f * mul;
+            a.gain.setValueAtTime(0, when);
+            a.gain.linearRampToValueAtTime(g, when + 0.008);
+            a.gain.exponentialRampToValueAtTime(0.001, when + 1.5);
+            o.connect(a).connect(this.vol);
+            o.start(when);
+            o.stop(when + 1.6);
+          }
+        }
+        drawScene(x, s, t, alpha) {
+          const W = 480,
+            H = 270,
+            P = [
+              {
+                sky: ["#bfe3f2", "#eef7e8"],
+                gr: "#8cc06a",
+                leaf: ["#a9dc76", "#84c760"],
+                n: 0.55,
+              },
+              {
+                sky: ["#6fb7ea", "#d9f0f7"],
+                gr: "#69a84f",
+                leaf: ["#3f8f3c", "#2f7a35"],
+                n: 1,
+              },
+              {
+                sky: ["#f0bf85", "#f8e8c8"],
+                gr: "#b49a50",
+                leaf: ["#e08a2e", "#c8552a"],
+                n: 0.7,
+              },
+              {
+                sky: ["#a7b6c7", "#e6ebf0"],
+                gr: "#eef2f5",
+                leaf: ["#c9d1da", "#b8c2cc"],
+                n: 0,
+              },
+            ][s];
+          x.globalAlpha = alpha;
+          const g = x.createLinearGradient(0, 0, 0, 200);
+          g.addColorStop(0, P.sky[0]);
+          g.addColorStop(1, P.sky[1]);
+          x.fillStyle = g;
+          x.fillRect(0, 0, W, H);
+          const sunP = (t % 4.5) / 4.5;
+          x.fillStyle =
+            s === 3 ? "rgba(255,255,255,.7)" : "rgba(255,240,190,.95)";
+          x.beginPath();
+          x.arc(
+            70 + sunP * 340,
+            90 - Math.sin(sunP * Math.PI) * 62,
+            20,
+            0,
+            6.3,
+          );
+          x.fill();
+          x.fillStyle = P.gr;
+          x.fillRect(0, 196, W, 74);
+          x.fillStyle = "rgba(0,0,0,.12)";
+          x.beginPath();
+          x.ellipse(240, 204, 120, 12, 0, 0, 6.3);
+          x.fill();
+          x.fillStyle = "#5a4332";
+          x.beginPath();
+          x.moveTo(228, 204);
+          x.quadraticCurveTo(236, 150, 226, 96);
+          x.lineTo(254, 96);
+          x.quadraticCurveTo(244, 150, 254, 204);
+          x.fill();
+          x.strokeStyle = "#5a4332";
+          x.lineCap = "round";
+          x.lineWidth = 7;
+          for (const [dx, dy] of [
+            [-58, -52],
+            [62, -46],
+            [-26, -74],
+            [30, -78],
+          ]) {
+            x.beginPath();
+            x.moveTo(240, 112);
+            x.quadraticCurveTo(
+              240 + dx * 0.4,
+              100 + dy * 0.3,
+              240 + dx,
+              96 + dy,
+            );
+            x.stroke();
+          }
+          for (const f of this.foliage) {
+            if (f.m > P.n) continue;
+            x.fillStyle = P.leaf[f.s > 15 ? 1 : 0];
+            x.beginPath();
+            x.arc(
+              240 + Math.cos(f.a) * f.r * 104,
+              66 + Math.sin(f.a) * f.r * 56,
+              f.s,
+              0,
+              6.3,
+            );
+            x.fill();
+          }
+          if (s >= 2) {
+            x.fillStyle = s === 2 ? "#d9772b" : "#fff";
+            for (const f of this.fall) {
+              const y = ((t * 26 * f.v + f.p * 240) % 214) - 10;
+              const px = f.x * W + Math.sin(t * 1.3 + f.p * 9) * 12;
+              x.beginPath();
+              x.arc(px, y, s === 2 ? 3 : 2.4, 0, 6.3);
+              x.fill();
+            }
+          }
+          x.globalAlpha = 1;
+        }
+        drawClip(t, mode) {
+          const x = this.x,
+            W = 480,
+            H = 270,
+            d = this.duration;
+          const u = clamp(t / d, 0, 0.9999) * 4,
+            s = Math.floor(u),
+            f = u - s;
+          this.drawScene(x, s, t, 1);
+          if (f > 0.8 && s < 3) this.drawScene(x, s + 1, t, (f - 0.8) / 0.2);
+          if (mode === "playing" || mode === "ended") {
+            x.fillStyle = "rgba(0,0,0,.52)";
+            x.fillRect(0, 226, W, 44);
+            x.fillStyle = "#fff";
+            x.font = '500 21px "Noto Sans",Corbel,"Segoe UI",sans-serif';
+            x.textAlign = "center";
+            x.fillText(
+              [
+                "Spring: the lime opens its first leaves",
+                "Summer: shade for the whole bench",
+                "Autumn: a thousand small yellow letters",
+                "Winter: the branches draw the sky",
+              ][s],
+              W / 2,
+              255,
+            );
+          } else {
+            x.fillStyle = "rgba(14,18,28,.42)";
+            x.fillRect(0, 0, W, H);
+            if (mode === "still") {
+              x.fillStyle = "#fff";
+              x.fillRect(W / 2 - 22, H / 2 - 26, 15, 52);
+              x.fillRect(W / 2 + 7, H / 2 - 26, 15, 52);
+            } else {
+              x.strokeStyle = "#fff";
+              x.lineWidth = 3;
+              x.fillStyle = "#fff";
+              x.beginPath();
+              x.moveTo(432, 26);
+              x.lineTo(442, 26);
+              x.lineTo(454, 16);
+              x.lineTo(454, 48);
+              x.lineTo(442, 38);
+              x.lineTo(432, 38);
+              x.closePath();
+              x.fill();
+              x.beginPath();
+              x.moveTo(462, 22);
+              x.lineTo(474, 42);
+              x.moveTo(474, 22);
+              x.lineTo(462, 42);
+              x.stroke();
+            }
+          }
+          this.tex.needsUpdate = true;
+        }
+        setShow(p) {
+          this.group.visible = p > 0.01;
+          this.screen.opacity = p;
+          this.body.opacity = p;
+          this.group.scale.setScalar(0.82 + 0.18 * p);
+        }
+        frame(now, mode) {
+          if (!this.group.visible || now - this.lastDraw < 90) return;
+          this.lastDraw = now;
+          const t = mode === "preview" ? ((now / 1000) % 3.2) + 0.4 : this.t;
+          this.drawClip(t, mode);
+        }
+      }
+
+      /* an audio piece: water and a pad as a bed, birds and a bell on top */
+      class Sound extends Item {
+        constructor(def) {
+          const r = seeded(21),
+            events = [];
+          for (const start of [2.1, 5.6, 9.2, 11.7]) {
+            const n = 3 + Math.floor(r() * 3);
+            for (let i = 0; i < n; i++)
+              events.push({
+                t: start + i * 0.17,
+                k: "bird",
+                f: 2300 + r() * 1200,
+              });
+          }
+          events.push(
+            { t: 13.6, k: "bell", f: 523 },
+            { t: 14.8, k: "bell", f: 392 },
+          );
+          events.sort((a, b) => a.t - b.t);
+          super({ ...def, events });
+          const mat = () =>
+            new THREE.MeshBasicMaterial({
+              color: 0xffffff,
+              transparent: true,
+              opacity: 0,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+            });
+          this.rings = [0, 1, 2].map(() => {
+            const m = new THREE.Mesh(
+              new THREE.RingGeometry(0.94, 1, 72),
+              mat(),
+            );
+            m.rotation.x = -Math.PI / 2;
+            m.position.y = 0.04;
+            this.group.add(m);
+            return m;
+          });
+          this.stemMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.0,
+          });
+          const stem = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.012, 0.012, 1.45, 6),
+            this.stemMat,
+          );
+          stem.position.y = 0.72;
+          this.group.add(stem);
+          this.show = 0;
+        }
+        wire(ctx, out) {
+          super.wire(ctx, out);
+          const len = ctx.sampleRate * 2,
+            buf = ctx.createBuffer(1, len, ctx.sampleRate),
+            d = buf.getChannelData(0);
+          for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.5;
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          const bp = ctx.createBiquadFilter();
+          bp.type = "bandpass";
+          bp.frequency.value = 650;
+          bp.Q.value = 0.5;
+          const g = ctx.createGain();
+          g.gain.value = 0.16;
+          const lfo = ctx.createOscillator(),
+            lg = ctx.createGain();
+          lfo.frequency.value = 0.21;
+          lg.gain.value = 0.05;
+          lfo.connect(lg).connect(g.gain);
+          lfo.start();
+          src.connect(bp).connect(g).connect(this.vol);
+          src.start();
+          for (const f of [146.8, 220.3]) {
+            const o = ctx.createOscillator(),
+              a = ctx.createGain();
+            o.frequency.value = f;
+            a.gain.value = 0.04;
+            o.connect(a).connect(this.vol);
+            o.start();
+          }
+        }
+        fire(e, when) {
+          const c = this.ctx,
+            o = c.createOscillator(),
+            a = c.createGain();
+          if (e.k === "bird") {
+            o.frequency.setValueAtTime(e.f, when);
+            o.frequency.exponentialRampToValueAtTime(e.f * 1.35, when + 0.06);
+            o.frequency.exponentialRampToValueAtTime(e.f * 0.9, when + 0.12);
+            a.gain.setValueAtTime(0, when);
+            a.gain.linearRampToValueAtTime(0.09, when + 0.02);
+            a.gain.linearRampToValueAtTime(0, when + 0.13);
+            o.connect(a).connect(this.vol);
+            o.start(when);
+            o.stop(when + 0.15);
+          } else {
+            o.frequency.value = e.f;
+            a.gain.setValueAtTime(0.16, when);
+            a.gain.exponentialRampToValueAtTime(0.001, when + 2.4);
+            o.connect(a).connect(this.vol);
+            o.start(when);
+            o.stop(when + 2.5);
+          }
+        }
+        caption() {
+          const t = this.t;
+          return t < 2
+            ? "Water at the reeds"
+            : t < 9
+              ? "A blackbird, far off"
+              : t < 13.4
+                ? "A second bird answers"
+                : "The morning bell, over the water";
+        }
+        setShow(p) {
+          this.show = p;
+          this.group.visible = p > 0.01;
+          this.stemMat.opacity = 0.3 * p;
+        }
+        frame(now, mode) {
+          if (!this.group.visible) return;
+          const live = mode === "playing";
+          const col = live ? 0xf2971f : 0xffffff,
+            speed = live ? 0.42 : 0.2,
+            reach = live ? 7.5 : 4.5;
+          this.rings.forEach((m, i) => {
+            const ph = calmMotion
+              ? (i + 1) / 3.4
+              : ((now / 1000) * speed + i / 3) % 1;
+            m.scale.setScalar(0.5 + ph * reach);
+            m.material.color.setHex(col);
+            m.material.opacity =
+              (live ? 0.75 : 0.4) *
+              this.show *
+              (1 - ph) *
+              (mode === "still" ? 0.4 : 1);
+          });
+        }
+      }
+
+      /* a character: a flat cut-out figure with a few poses, like the tour's guide characters */
+      class Guide extends Item {
+        constructor(def) {
+          const r = seeded(99),
+            lines = def.lines,
+            starts = [];
+          let t = 0.3;
+          const events = [];
+          const SYL = 0.2;
+          for (const line of lines) {
+            const n = Math.round(line.replace(/[^a-z ]/gi, "").length / 3.1);
+            starts.push({ t, end: t + n * SYL, text: line });
+            for (let i = 0; i < n; i++)
+              events.push({
+                t: t + i * SYL,
+                f: 175 + r() * 50,
+                v: Math.floor(r() * 4),
+                last: i === n - 1,
+              });
+            t += n * SYL + 0.75;
+          }
+          super({ ...def, events, duration: t, spans: starts });
+          this.tex = ["idle", "talk", "wide", "wave"].map((p) =>
+            this.drawPose(p),
+          );
+          this.mat = new THREE.MeshBasicMaterial({
+            map: this.tex[0],
+            transparent: true,
+            alphaTest: 0.4,
+            side: THREE.DoubleSide,
+          });
+          this.fig = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.95, 1.9),
+            this.mat,
+          );
+          this.fig.position.y = 0.95;
+          this.shadowMat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.25,
+          });
+          const sh = new THREE.Mesh(
+            new THREE.CircleGeometry(0.42, 32),
+            this.shadowMat,
+          );
+          sh.rotation.x = -Math.PI / 2;
+          sh.position.y = 0.03;
+          sh.scale.y = 0.55;
+          this.group.add(sh, this.fig);
+          this.waveUntil = 0;
+          this.wasPreview = false;
+          this.shown = 0;
+        }
+        resumeAt(t) {
+          const sp = this.spans.filter((s) => s.t <= t).pop();
+          return sp ? sp.t : 0;
+        }
+        fire(e, when) {
+          const c = this.ctx,
+            o = c.createOscillator(),
+            a = c.createGain();
+          const F = [
+            [730, 1090],
+            [530, 1840],
+            [300, 2200],
+            [570, 840],
+          ][e.v];
+          o.type = "sawtooth";
+          o.frequency.setValueAtTime(e.f, when);
+          o.frequency.linearRampToValueAtTime(
+            e.f * (e.last ? 0.8 : 1.04),
+            when + 0.17,
+          );
+          a.gain.setValueAtTime(0, when);
+          a.gain.linearRampToValueAtTime(0.4, when + 0.03);
+          a.gain.linearRampToValueAtTime(0, when + 0.18);
+          for (const fr of F) {
+            const b = c.createBiquadFilter();
+            b.type = "bandpass";
+            b.frequency.value = fr;
+            b.Q.value = 7;
+            o.connect(b).connect(a);
+          }
+          a.connect(this.vol);
+          o.start(when);
+          o.stop(when + 0.2);
+        }
+        caption() {
+          const s = this.spans.find(
+            (p) => this.t >= p.t - 0.2 && this.t < p.end + 0.7,
+          );
+          return s ? s.text : "";
+        }
+        mouthOpen() {
+          const s = this.spans.find((p) => this.t >= p.t && this.t < p.end);
+          if (!s) return 0;
+          const k = Math.sin((this.t - s.t) * 15.7);
+          return k > 0.35 ? 2 : k > -0.3 ? 1 : 0;
+        }
+        drawPose(pose) {
+          const c = document.createElement("canvas");
+          c.width = 256;
+          c.height = 512;
+          const x = c.getContext("2d"),
+            R = (cx, y, w, h, r, f) => {
+              x.fillStyle = f;
+              x.beginPath();
+              x.roundRect(cx - w / 2, y, w, h, r);
+              x.fill();
+            };
+          R(102, 462, 42, 40, 12, "#3a2c22");
+          R(154, 462, 42, 40, 12, "#3a2c22");
+          R(104, 320, 40, 150, 12, "#4c5a6e");
+          R(152, 320, 40, 150, 12, "#4c5a6e");
+          R(128, 158, 124, 188, 34, "#3e6f5c");
+          R(128, 218, 84, 150, 16, "#d9c79a");
+          x.fillStyle = "#c0ab79";
+          x.fillRect(100, 262, 56, 36);
+          x.lineCap = "round";
+          x.lineWidth = 32;
+          x.strokeStyle = "#3e6f5c";
+          x.beginPath();
+          x.moveTo(72, 188);
+          x.quadraticCurveTo(50, 250, 62, 312);
+          x.stroke();
+          if (pose === "wave") {
+            x.beginPath();
+            x.moveTo(186, 190);
+            x.quadraticCurveTo(226, 170, 222, 96);
+            x.stroke();
+          } else {
+            x.beginPath();
+            x.moveTo(184, 188);
+            x.quadraticCurveTo(206, 250, 194, 312);
+            x.stroke();
+          }
+          x.fillStyle = "#d8a884";
+          x.beginPath();
+          x.arc(62, 322, 16, 0, 6.3);
+          x.fill();
+          x.beginPath();
+          pose === "wave"
+            ? x.arc(222, 84, 17, 0, 6.3)
+            : x.arc(194, 322, 16, 0, 6.3);
+          x.fill();
+          R(128, 130, 34, 40, 10, "#c79874");
+          x.fillStyle = "#d8a884";
+          x.beginPath();
+          x.ellipse(128, 96, 50, 54, 0, 0, 6.3);
+          x.fill();
+          x.fillStyle = "#6a4a35";
+          x.beginPath();
+          x.ellipse(128, 62, 54, 30, 0, Math.PI, 0);
+          x.fill();
+          x.fillStyle = "#e0c06a";
+          x.beginPath();
+          x.ellipse(128, 58, 92, 18, 0, 0, 6.3);
+          x.fill();
+          x.beginPath();
+          x.ellipse(128, 44, 52, 34, 0, Math.PI, 0);
+          x.fill();
+          x.fillStyle = "#f2971f";
+          x.fillRect(77, 40, 102, 10);
+          x.fillStyle = "#22262f";
+          x.beginPath();
+          x.arc(108, 94, 5.5, 0, 6.3);
+          x.arc(148, 94, 5.5, 0, 6.3);
+          x.fill();
+          x.strokeStyle = "#7d4a38";
+          x.lineWidth = 4;
+          x.fillStyle = "#6d2f2a";
+          if (pose === "idle") {
+            x.beginPath();
+            x.arc(128, 116, 15, 0.25, Math.PI - 0.25);
+            x.stroke();
+          } else if (pose === "wave") {
+            x.beginPath();
+            x.arc(128, 114, 18, 0.1, Math.PI - 0.1);
+            x.closePath();
+            x.fill();
+          } else {
+            x.beginPath();
+            x.ellipse(
+              128,
+              122,
+              pose === "wide" ? 13 : 11,
+              pose === "wide" ? 12 : 6,
+              0,
+              0,
+              6.3,
+            );
+            x.fill();
+          }
+          const t = new THREE.CanvasTexture(c);
+          t.colorSpace = THREE.SRGBColorSpace;
+          return t;
+        }
+        setShow(p) {
+          this.shown = p;
+          this.group.visible = p > 0.01;
+          this.mat.opacity = p;
+          this.mat.alphaTest = p > 0.9 ? 0.4 : 0.02;
+          this.shadowMat.opacity = 0.25 * p;
+        }
+        frame(now, mode) {
+          if (!this.group.visible) return;
+          const preview = mode === "preview";
+          if (preview && !this.wasPreview) this.waveUntil = now + 1700;
+          this.wasPreview = preview;
+          let pose = 0;
+          if (mode === "playing") pose = [0, 1, 2][this.mouthOpen()];
+          else if (mode === "ended" || now < this.waveUntil) pose = 3;
+          if (this.mat.map !== this.tex[pose]) {
+            this.mat.map = this.tex[pose];
+            this.mat.needsUpdate = true;
+          }
+          this.fig.position.y =
+            0.95 + (calmMotion ? 0 : Math.sin(now / 900) * 0.006);
+          this.group.rotation.y = Math.atan2(
+            V.x - this.group.position.x,
+            V.z - this.group.position.z,
+          );
+        }
+      }
+
+      /* ---------- the scene: a small park, standing in for the camera picture ---------- */
+      const stage = $("#stage"),
+        viewCanvas = $("#view");
+      const V = {
+        x: 0,
+        z: 30,
+        yaw: 0,
+        target: null,
+        speed: 5,
+        assist: true,
+        moveYaw: null,
+      };
+      let renderer = null;
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 260);
+      camera.rotation.order = "YXZ";
+      camera.rotation.x = -0.05;
+
+      const PARK = {
+        trees: [
+          [-14.5, -5, 9.5],
+          [-21, 10, 7],
+          [-16, 23, 6.5],
+          [15, 19, 7],
+          [19, 6, 6],
+          [21, -15, 7],
+          [-15, -20, 8],
+          [-7, -31, 6],
+          [-23, -9, 6],
+          [14, 31, 5.5],
+          [-12, 33, 6],
+          [23, -31, 6],
+        ],
+        pond: { x: 11, z: -8, rx: 7, rz: 4.6 },
+      };
+      const GROUND = 3072;
+      function worldToGround(x) {
+        return ((x + 60) / 120) * GROUND;
+      }
+      function groundTexture() {
+        const c = document.createElement("canvas");
+        c.width = c.height = GROUND;
+        const g = c.getContext("2d"),
+          r = seeded(5),
+          P = worldToGround,
+          S = GROUND / 120;
+        g.fillStyle = "#6f9a58";
+        g.fillRect(0, 0, GROUND, GROUND);
+        for (let i = 0; i < 900; i++) {
+          g.fillStyle =
+            r() > 0.5 ? "rgba(92,134,70,.26)" : "rgba(142,176,94,.2)";
+          g.beginPath();
+          g.ellipse(
+            r() * GROUND,
+            r() * GROUND,
+            20 + r() * 80,
+            14 + r() * 50,
+            r() * 3,
+            0,
+            6.3,
+          );
+          g.fill();
+        }
+        for (let i = 0; i < 42000; i++) {
+          g.strokeStyle =
+            r() > 0.5 ? "rgba(60,96,46,.34)" : "rgba(164,194,110,.3)";
+          const x = r() * GROUND,
+            y = r() * GROUND;
+          g.lineWidth = 1.5;
+          g.beginPath();
+          g.moveTo(x, y);
+          g.lineTo(x + r() * 6 - 3, y - 5 - r() * 5);
+          g.stroke();
+        }
+        const path = () => {
+          g.beginPath();
+          g.moveTo(P(0), P(44));
+          g.bezierCurveTo(P(4), P(24), P(-5), P(14), P(-2), P(5));
+          g.bezierCurveTo(P(0.5), P(-4), P(-3), P(-13), P(3), P(-20));
+          g.bezierCurveTo(P(6), P(-24), P(12), P(-23), P(17), P(-22));
+          g.moveTo(P(-2), P(5));
+          g.bezierCurveTo(P(6), P(5), P(19), P(1), P(27), P(-4));
+        };
+        for (const [w, col] of [
+          [3.7, "#8e8468"],
+          [3.2, "#cdbf9d"],
+        ]) {
+          g.strokeStyle = col;
+          g.lineWidth = w * S;
+          g.lineCap = "round";
+          path();
+          g.stroke();
+        }
+        g.fillStyle = "rgba(38,58,34,.28)";
+        for (const [x, z, h] of PARK.trees) {
+          g.beginPath();
+          g.ellipse(
+            P(x + 0.8),
+            P(z + 0.6),
+            h * 0.5 * S,
+            h * 0.42 * S,
+            0,
+            0,
+            6.3,
+          );
+          g.fill();
+        }
+        const p = PARK.pond;
+        g.fillStyle = "#8b8a64";
+        g.beginPath();
+        g.ellipse(
+          P(p.x),
+          P(p.z),
+          (p.rx + 0.7) * S,
+          (p.rz + 0.7) * S,
+          0,
+          0,
+          6.3,
+        );
+        g.fill();
+        for (let i = 0; i < 700; i++) {
+          const a = r() * 6.3,
+            k = 0.82 + r() * 0.24;
+          g.fillStyle = ["#d86b79", "#e8b64c", "#f3e9dc", "#b65aa0"][i % 4];
+          g.beginPath();
+          g.arc(
+            P(13 + Math.cos(a) * 4.5 * k),
+            P(-29 + Math.sin(a) * 2.3 * k),
+            2.6,
+            0,
+            6.3,
+          );
+          g.fill();
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 8;
+        return t;
+      }
+      function buildPark() {
+        const c = document.createElement("canvas");
+        c.width = 2;
+        c.height = 256;
+        const g = c.getContext("2d"),
+          sky = g.createLinearGradient(0, 0, 0, 256);
+        sky.addColorStop(0, "#6aa9d8");
+        sky.addColorStop(0.44, "#cfe6ee");
+        sky.addColorStop(0.56, "#dfeee8");
+        sky.addColorStop(1, "#dfeee8");
+        g.fillStyle = sky;
+        g.fillRect(0, 0, 2, 256);
+        const skyT = new THREE.CanvasTexture(c);
+        skyT.colorSpace = THREE.SRGBColorSpace;
+        scene.background = skyT;
+        scene.fog = new THREE.Fog(0xd9e9e4, 42, 150);
+        scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x6c7f4e, 2.3));
+        const sun = new THREE.DirectionalLight(0xfff3df, 1.7);
+        sun.position.set(-30, 60, 25);
+        scene.add(sun);
+
+        const ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(120, 120),
+          new THREE.MeshLambertMaterial({ map: groundTexture() }),
+        );
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+        const out = new THREE.Mesh(
+          new THREE.RingGeometry(59, 240, 4, 1, Math.PI / 4),
+          new THREE.MeshLambertMaterial({ color: 0x74a05c }),
+        );
+        out.rotation.x = -Math.PI / 2;
+        out.position.y = -0.02;
+        scene.add(out);
+
+        const p = PARK.pond;
+        const water = new THREE.Mesh(
+          new THREE.CircleGeometry(1, 48),
+          new THREE.MeshStandardMaterial({
+            color: 0x6fa9c0,
+            roughness: 0.25,
+            metalness: 0.1,
+          }),
+        );
+        water.rotation.x = -Math.PI / 2;
+        water.position.set(p.x, 0.03, p.z);
+        water.scale.set(p.rx, p.rz, 1);
+        scene.add(water);
+
+        const r = seeded(3),
+          trunks = [],
+          blobs = [];
+        const tree = (x, z, h) => {
+          trunks.push([x, z, h]);
+          const n = 3 + Math.floor(r() * 2);
+          for (let i = 0; i < n; i++)
+            blobs.push([
+              x + (r() - 0.5) * h * 0.34,
+              h * (0.62 + r() * 0.26),
+              z + (r() - 0.5) * h * 0.34,
+              h * (0.28 + r() * 0.1),
+              r(),
+            ]);
+        };
+        PARK.trees.forEach(([x, z, h]) => tree(x, z, h));
+        for (let i = 0; i < 72; i++) {
+          const a = (i / 72) * 6.283 + r() * 0.05,
+            R = 50 + r() * 16;
+          tree(Math.cos(a) * R, Math.sin(a) * R, 9 + r() * 5);
+        }
+        const trunkM = new THREE.InstancedMesh(
+          new THREE.CylinderGeometry(0.16, 0.26, 1, 7),
+          new THREE.MeshLambertMaterial({ color: 0x5f4a38 }),
+          trunks.length,
+        );
+        const blobM = new THREE.InstancedMesh(
+          new THREE.IcosahedronGeometry(1, 1),
+          new THREE.MeshLambertMaterial({ flatShading: true }),
+          blobs.length,
+        );
+        const m = new THREE.Matrix4(),
+          col = new THREE.Color();
+        trunks.forEach(([x, z, h], i) => {
+          m.makeScale(h / 8, h * 0.72, h / 8).setPosition(x, h * 0.36, z);
+          trunkM.setMatrixAt(i, m);
+        });
+        blobs.forEach(([x, y, z, s, k], i) => {
+          m.makeScale(s, s * 0.86, s).setPosition(x, y, z);
+          blobM.setMatrixAt(i, m);
+          blobM.setColorAt(i, col.setHSL(0.27 + k * 0.05, 0.36, 0.3 + k * 0.1));
+        });
+        scene.add(trunkM, blobM);
+
+        const wood = new THREE.MeshLambertMaterial({ color: 0x7a5a3e }),
+          iron = new THREE.MeshLambertMaterial({ color: 0x2f3338 });
+        const bench = new THREE.Group();
+        for (let i = 0; i < 3; i++) {
+          const b = new THREE.Mesh(
+            new THREE.BoxGeometry(1.8, 0.05, 0.13),
+            wood,
+          );
+          b.position.set(0, 0.46, -0.2 + i * 0.17);
+          bench.add(b);
+        }
+        const bk = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.34, 0.05), wood);
+        bk.position.set(0, 0.74, -0.26);
+        bench.add(bk);
+        for (const sx of [-0.8, 0.8]) {
+          const l = new THREE.Mesh(
+            new THREE.BoxGeometry(0.06, 0.46, 0.46),
+            iron,
+          );
+          l.position.set(sx, 0.23, -0.04);
+          bench.add(l);
+        }
+        bench.position.set(-3, 0, -6);
+        scene.add(bench);
+        for (const [x, z] of [
+          [4, 12],
+          [-7, -13],
+          [3, -28],
+        ]) {
+          const post = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.05, 0.08, 3.6, 8),
+            iron,
+          );
+          post.position.set(x, 1.8, z);
+          const lamp = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2, 12, 10),
+            new THREE.MeshLambertMaterial({
+              color: 0xf6efd9,
+              emissive: 0x554f3a,
+            }),
+          );
+          lamp.position.set(x, 3.7, z);
+          scene.add(post, lamp);
+        }
+        const hedge = new THREE.MeshLambertMaterial({ color: 0x4a6e42 });
+        for (const [x, z, w, d] of [
+          [-30, 2, 1, 76],
+          [30, 2, 1, 76],
+          [-13, 40, 30, 1],
+          [13, 40, 30, 1],
+          [0, -36, 62, 1],
+        ]) {
+          const h = new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), hedge);
+          h.position.set(x, 0.55, z);
+          scene.add(h);
+        }
+      }
+
+      /* ---------- a spot: one item standing free in the world. It holds everything nearness needs,
+   and the item holds nothing of it. ---------- */
+      const spots = [];
+      function addSpot(item, o) {
+        const s = {
+          item,
+          st: "far",
+          d: 99,
+          dwell: 0,
+          gain: 0,
+          show: 0,
+          endHold: 0,
+          held: false,
+          forced: false,
+          releasing: false,
+          firm: false,
+          closeFor: 0,
+          ...o,
+        };
+        item.group.position.set(s.x, 0, s.z);
+        if (o.turn != null) item.group.rotation.y = o.turn;
+        scene.add(item.group);
+        item.setShow(0);
+        const b = document.createElement("button");
+        b.className = "mk";
+        b.dataset.st = "far";
+        b.dataset.kind = s.kind;
+        b.innerHTML = `<span class="dial"><svg class="ringbox" viewBox="0 0 48 48"><circle class="track" cx="24" cy="24" r="22"/><circle class="prog" cx="24" cy="24" r="22" pathLength="100"/></svg><svg class="glyph"><use href="#g-${s.kind}"/></svg><svg class="done"><use href="#g-done"/></svg></span><span class="lbl"></span>`;
+        b.setAttribute("aria-label", s.title);
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          unlockSound();
+          tapSpot(s);
+        });
+        $("#marks").append(b);
+        s.mk = b;
+        s.lbl = $(".lbl", b);
+        s.ring = $(".prog", b);
+        s.lblText = "";
+        spots.push(s);
+        return s;
+      }
+
+      /* ---------- nearness: the only part that knows about distance ---------- */
+      const voice = { holder: null, blockUntil: 0 };
+      let autoStart = true,
+        quietAt = null,
+        now = 0,
+        maxAudible = 0;
+      const idle = (s) =>
+        s.item.t > 0 ? "left" : s.d < NEAR.notice ? "near" : "far";
+      const bearing = (s) => Math.atan2(-(s.x - V.x), -(s.z - V.z));
+
+      function begin(s) {
+        s.forced = false;
+        s.releasing = false;
+        s.gain = 0;
+        s.closeFor = 0;
+        s.st = "playing";
+        voice.holder = s;
+        s.item.onEnded = () => {
+          s.st = "finished";
+          s.endHold = 2.4;
+          s.gain = 0;
+          s.firm = false;
+          voice.holder = null;
+          voice.blockUntil = now + 1.5;
+          announce(`${s.short} finished`);
+        };
+        s.item.play();
+        announce(`${s.title} begins`);
+      }
+      function halt(s, next) {
+        s.item.pause();
+        s.gain = 0;
+        s.st = next;
+        s.releasing = false;
+        s.firm = false;
+        if (voice.holder === s) {
+          voice.holder = null;
+          voice.blockUntil = now + 0.35;
+        }
+      }
+      function stepSpot(s, dt) {
+        s.d = hyp(V.x - s.x, V.z - s.z);
+        const facing = Math.abs(angDiff(bearing(s), V.yaw)) < NEAR.facing;
+        const mayStart = autoStart && !quietAt;
+        s.held = false;
+        switch (s.st) {
+          case "far":
+          case "near":
+          case "left":
+            s.st = idle(s);
+            if (s.d < NEAR.start && mayStart) {
+              if (s.needsView && !facing) s.held = true;
+              else {
+                s.st = "starting";
+                s.dwell = 0;
+              }
+            }
+            break;
+          case "starting":
+            if (s.d > NEAR.start + 1 || !mayStart) {
+              s.st = idle(s);
+              break;
+            }
+            s.dwell += dt;
+            if (s.dwell >= NEAR.dwell) s.st = "waiting";
+            break;
+          case "waiting":
+            if (!s.forced && (s.d > NEAR.leaveFrom || !mayStart))
+              s.st = idle(s);
+            break;
+          case "playing":
+            if (s.d >= NEAR.leaveTo) {
+              halt(s, "left");
+              announce(`${s.short} paused, you walked away`);
+            }
+            break;
+          case "stopped":
+            if (s.d > NEAR.leaveTo) s.st = idle(s);
+            break;
+        }
+        let target = 0,
+          rate = 3;
+        if (s.st === "playing") {
+          target = s.releasing
+            ? 0
+            : 1 - sstep(NEAR.leaveFrom, NEAR.leaveTo, s.d);
+          rate = s.releasing ? 2.4 : target > s.gain ? 0.8 : 3;
+        }
+        s.gain = near0(s.gain, target, rate * dt);
+        if (s.releasing && s.gain <= 0.01)
+          halt(s, s.d < NEAR.leaveTo ? "left" : idle(s));
+        s.item.setVolume(s.gain);
+        s.item.setPan(Math.sin(angDiff(V.yaw, bearing(s))) * 0.75);
+      }
+      function stepVoice(dt) {
+        const waiters = spots.filter((s) => s.st === "waiting");
+        const o = voice.holder;
+        if (o) {
+          if (o.releasing) return;
+          const forced = waiters.find((s) => s.forced);
+          if (forced) {
+            o.releasing = true;
+            return;
+          }
+          const closer =
+            !o.firm && waiters.find((s) => s.d + NEAR.handover < o.d);
+          o.closeFor = closer ? o.closeFor + dt : 0;
+          if (o.closeFor >= 1) o.releasing = true;
+          return;
+        }
+        if (now < voice.blockUntil || !waiters.length) return;
+        const next =
+          waiters.find((s) => s.forced) ||
+          waiters.reduce((a, b) => (b.d < a.d ? b : a));
+        const tapped = next.forced;
+        begin(next);
+        next.firm = tapped;
+      }
+      function stepQuiet() {
+        if (quietAt && hyp(V.x - quietAt.x, V.z - quietAt.z) > NEAR.quietWalk)
+          quietAt = null;
+      }
+
+      /* every tap goes through here: a tap always wins over nearness */
+      function tapSpot(s) {
+        stopWalk();
+        switch (s.st) {
+          case "playing":
+            stopSpot(s);
+            break;
+          case "starting":
+            s.st = "stopped";
+            toast(`${s.short} skipped. Tap it to play.`);
+            break;
+          case "waiting":
+            s.forced = true;
+            break;
+          default:
+            if (s.d > NEAR.tapReach) {
+              toast(
+                `${s.short} is ${Math.round(s.d)} m away. Walk a little closer.`,
+              );
+              break;
+            }
+            if (s.st === "finished") s.item.rewind();
+            s.st = "waiting";
+            s.forced = true;
+        }
+      }
+      function stopSpot(s) {
+        halt(s, "stopped");
+        quietAt = { x: V.x, z: V.z };
+        for (const o of spots)
+          if (o.st === "waiting" || o.st === "starting") {
+            o.forced = false;
+            o.st = idle(o);
+          }
+        toast("Stopped. Nothing starts by itself until you walk on.");
+      }
+
+      /* ---------- what the visitor sees of a spot ---------- */
+      const vec = new THREE.Vector3();
+      function labelFor(s) {
+        const it = s.item;
+        switch (s.st) {
+          case "near":
+          case "left": {
+            const hold = !autoStart || quietAt;
+            if (s.d < NEAR.tapReach && hold)
+              return it.t > 0
+                ? `Tap to continue at ${fmt(it.t)}`
+                : "Tap to play";
+            if (s.held) return "Look this way";
+            if (s.st === "left")
+              return s.d < 22 ? `Continues at ${fmt(it.t)}` : "";
+            return s.d < 19 ? `${s.title}, ${fmt(it.duration)}` : "";
+          }
+          case "starting":
+            return "Begins now. Tap to skip";
+          case "waiting":
+            return voice.holder
+              ? `Next, after ${voice.holder.short}`
+              : "Begins now";
+          case "playing":
+            if (s.d > NEAR.leaveFrom) return "Fading as you walk away";
+            return it.caption();
+          case "stopped":
+            return "Stopped. Tap to play";
+          case "finished":
+            return s.d < NEAR.tapReach - 1 ? `${s.doneWord}. Tap to play again` : "";
+          default:
+            return "";
+        }
+      }
+      function placeMarks() {
+        const W = stage.clientWidth,
+          H = stage.clientHeight;
+        const busy = !!voice.holder;
+        $("#marks").classList.toggle("busy", busy);
+        const lw = Math.min(236, W * 0.66);
+        for (const s of spots) {
+          const it = s.item;
+          const y = lerp(1.75, s.top, s.show);
+          vec.set(s.x, y, s.z).project(camera);
+          const inFront =
+            vec.z < 1 && Math.abs(angDiff(bearing(s), V.yaw)) < Math.PI / 2;
+          const sx = ((vec.x + 1) / 2) * W,
+            sy = ((1 - vec.y) / 2) * H;
+          const onScreen = inFront && sx > -20 && sx < W + 20;
+          s.onScreen = inFront && sx > 8 && sx < W - 8;
+          s.mk.classList.toggle("off", !onScreen);
+          s.mk.classList.toggle("lead", voice.holder === s);
+          if (!onScreen) continue;
+          const my = clamp(sy, 62, H - 34);
+          s.mk.style.transform = `translate3d(${sx.toFixed(1)}px,${my.toFixed(1)}px,0)`;
+          s.mk.style.zIndex = String(1000 - Math.round(s.d * 4));
+          s.mk.dataset.st = s.st;
+          const p = sstep(NEAR.notice, NEAR.start, s.d);
+          const grow = sstep(NEAR.notice, NEAR.preview, s.d);
+          const size =
+            s.st === "finished"
+              ? lerp(20, 28, p)
+              : s.st === "playing"
+                ? 34
+                : lerp(lerp(24, 46, grow), s.st === "starting" || s.st === "waiting" ? 44 : 34, s.show);
+          s.mk.style.setProperty("--size", size.toFixed(1) + "px");
+          s.mk.classList.toggle("up", s.show > 0.5 && s.upLabel);
+          let ring = 0;
+          if (s.st === "starting") ring = s.dwell / NEAR.dwell;
+          else if (s.st === "playing" || s.st === "left" || s.st === "stopped")
+            ring = it.t / it.duration;
+          s.ring.style.strokeDashoffset = String(100 - clamp(ring, 0, 1) * 100);
+          const text = labelFor(s);
+          if (text !== s.lblText) {
+            if (text) s.lbl.textContent = text;
+            s.lbl.classList.toggle("show", !!text);
+            s.lblText = text;
+          }
+          s.mk.style.setProperty("--lw", lw + "px");
+          if (text) {
+            const half = Math.min(lw, s.lbl.offsetWidth) / 2 + 6;
+            s.mk.style.setProperty(
+              "--lx",
+              (clamp(sx, half, W - half) - sx).toFixed(1) + "px",
+            );
+          }
+        }
+      }
+      function updateEdge() {
+        const o = voice.holder;
+        const held = spots.find((s) => s.held);
+        const s = o && !o.onScreen ? o : held && !held.onScreen ? held : null;
+        const e = $("#edge");
+        if (!s) {
+          e.hidden = true;
+          e.dataset.k = "";
+          return;
+        }
+        const side = angDiff(V.yaw, bearing(s)) > 0 ? "r" : "l";
+        const key = s.short + side + (s === o ? "a" : "b");
+        if (e.dataset.k !== key) {
+          e.dataset.k = key;
+          e.className = "edge " + side;
+          e.innerHTML = `<svg><use href="#g-${side === "r" ? "right" : "left"}"/></svg><span>${s === o ? `${s.short} is playing here` : `Turn to start ${s.short.toLowerCase()}`}</span>`;
+        }
+        e.hidden = false;
+      }
+      const nowEl = $("#now");
+      function setText(el, t) {
+        if (el.textContent !== t) el.textContent = t;
+      }
+      function updateNow() {
+        const s =
+          voice.holder ||
+          spots.find(
+            (p) => p.st === "stopped" && p.item.t > 0 && p.d < NEAR.leaveTo,
+          );
+        if (!s) {
+          nowEl.hidden = true;
+          nowEl.dataset.k = "";
+          return;
+        }
+        nowEl.hidden = false;
+        if (nowEl.dataset.k !== s.kind) {
+          nowEl.dataset.k = s.kind;
+          $("#nowGlyph use").setAttribute("href", "#g-" + s.kind);
+        }
+        const playing = s.st === "playing";
+        nowEl.classList.toggle("idle", !playing);
+        setText($("#nowTitle"), s.title);
+        setText(
+          $("#nowSub"),
+          playing
+            ? s.d > NEAR.leaveFrom
+              ? "Fading as you walk away"
+              : `${fmt(s.item.t)} of ${fmt(s.item.duration)}`
+            : `Stopped at ${fmt(s.item.t)}`,
+        );
+        setText($("#nowBtn"), playing ? "Stop" : "Play");
+        $("#nowBtn").classList.toggle("main", !playing);
+        $("#nowBar").style.width =
+          ((s.item.t / s.item.duration) * 100).toFixed(1) + "%";
+        const next = voice.holder && spots.find((p) => p.st === "waiting");
+        $("#nextRow").hidden = !next;
+        if (next) {
+          setText($("#nextTitle"), next.title);
+          $("#nextGlyph use").setAttribute("href", "#g-" + next.kind);
+        }
+      }
+      $("#nowBtn").addEventListener("click", () => {
+        unlockSound();
+        stopWalk();
+        const s = voice.holder || spots.find((p) => p.st === "stopped");
+        if (!s) return;
+        if (s.st === "playing") stopSpot(s);
+        else {
+          s.st = "waiting";
+          s.forced = true;
+        }
+      });
+      $("#nextBtn").addEventListener("click", () => {
+        const n = spots.find((p) => p.st === "waiting");
+        if (n) {
+          stopWalk();
+          n.forced = true;
+        }
+      });
+
+      let toastT = 0;
+      function toast(t) {
+        const e = $("#toast");
+        e.textContent = t;
+        e.hidden = false;
+        toastT = now + 3.2;
+      }
+      function announce(t) {
+        $("#say").textContent = t;
+      }
+
+      /* ---------- the map and the state dots: only on this page ---------- */
+      const NS = "http://www.w3.org/2000/svg",
+        mapEl = $("#map");
+      const mk = (n, a = {}, p = mapEl) => {
+        const e = document.createElementNS(NS, n);
+        for (const k in a) e.setAttribute(k, a[k]);
+        p.append(e);
+        return e;
+      };
+      function buildMap() {
+        mk("rect", { x: -30, y: -34, width: 60, height: 70, fill: "#55764e" });
+        const walks =
+          "M0 44C4 24-5 14-2 5C.5-4-3-13 3-20C6-24 12-23 17-22M-2 5C6 5 19 1 27-4";
+        mk("path", {
+          d: walks,
+          fill: "none",
+          stroke: "#cdbf9d",
+          "stroke-width": 2.2,
+          "stroke-linecap": "round",
+        });
+        const p = PARK.pond;
+        mk("ellipse", {
+          cx: p.x,
+          cy: p.z,
+          rx: p.rx,
+          ry: p.rz,
+          fill: "#6fa9c0",
+        });
+        for (const [x, z, h] of PARK.trees)
+          mk("circle", { cx: x, cy: z, r: h * 0.3, fill: "#3e5e39" });
+        for (const s of spots) {
+          s.mapRing = mk("circle", {
+            cx: s.x,
+            cy: s.z,
+            r: NEAR.start,
+            class: "m-ring",
+          });
+          s.mapOuter = mk("circle", {
+            cx: s.x,
+            cy: s.z,
+            r: NEAR.leaveTo,
+            class: "m-ring outer",
+          });
+        }
+        for (const s of spots) {
+          const g = mk("g", {
+            class: "m-spot",
+            transform: `translate(${s.x} ${s.z})`,
+          });
+          mk("circle", { r: 2.8 }, g);
+          const u = mk(
+            "use",
+            { href: "#g-" + s.kind, x: -2, y: -2, width: 4, height: 4 },
+            g,
+          );
+          s.mapDot = g;
+          s.mapUse = u;
+        }
+        const you = mk("g", { id: "you" });
+        mk(
+          "path",
+          {
+            id: "youCone",
+            d: "M0 0L-5.5 -11A12 12 0 0 1 5.5 -11Z",
+            fill: "rgb(255 255 255 / .28)",
+          },
+          you,
+        );
+        mk("circle", { id: "youPulse", r: 2.6 }, you);
+        mk(
+          "circle",
+          { r: 1.7, fill: "#f2971f", stroke: "#fff", "stroke-width": 0.6 },
+          you,
+        );
+      }
+      const youEl = () => $("#you");
+      function updateMap() {
+        youEl().setAttribute(
+          "transform",
+          `translate(${V.x.toFixed(2)} ${V.z.toFixed(2)}) rotate(${((-V.yaw * 180) / Math.PI).toFixed(1)})`,
+        );
+        for (const s of spots) {
+          s.mapDot.dataset.st = s.st;
+          const h = s.st === "finished" ? "#g-done" : "#g-" + s.kind;
+          if (s.mapUse.getAttribute("href") !== h)
+            s.mapUse.setAttribute("href", h);
+        }
+      }
+      const COLS = [
+        ["Far", "Far"],
+        ["Near", "Approaching"],
+        ["Play", "Playing"],
+        ["Away", "Walked away"],
+        ["Done", "Finished"],
+      ];
+      const KEYS = ["far", "approaching", "playing", "away", "finished"];
+      function buildBoard() {
+        const b = $("#board");
+        b.append(document.createElement("span"));
+        for (const [sh, lg] of COLS) {
+          const h = document.createElement("span");
+          h.className = "hd";
+          h.innerHTML = `<span class="s">${sh}</span><span class="l">${lg}</span>`;
+          b.append(h);
+        }
+        for (const s of spots) {
+          const g = document.createElementNS(NS, "svg");
+          g.innerHTML = `<title>${s.title}</title><use href="#g-${s.kind}"/>`;
+          b.append(g);
+          s.cells = KEYS.map((key, i) => {
+            const c = document.createElement("button");
+            c.className = "cell" + (key === "playing" ? " play" : "");
+            c.setAttribute(
+              "aria-label",
+              `Show ${s.title}: ${COLS[i][1].toLowerCase()}`,
+            );
+            c.innerHTML = "<i></i>";
+            c.addEventListener("click", () => {
+              unlockSound();
+              showState(s, key);
+            });
+            b.append(c);
+            return c;
+          });
+        }
+      }
+      function colOf(s) {
+        if (s.st === "finished") return 4;
+        if (s.st === "playing") return s.d > NEAR.leaveFrom ? 3 : 2;
+        if (s.st === "left") return 3;
+        if (s.st === "far") return 0;
+        return 1;
+      }
+      function updateBoard() {
+        for (const s of spots) {
+          const c = colOf(s);
+          s.cells.forEach((e, i) => e.classList.toggle("on", i === c));
+        }
+      }
+
+      /* ---------- pretend walking ---------- */
+      function setTargetFrom(e) {
+        const r = mapEl.getBoundingClientRect();
+        V.target = {
+          x: clamp(-30 + ((e.clientX - r.left) / r.width) * 60, -29, 29),
+          z: clamp(-34 + ((e.clientY - r.top) / r.height) * 70, -33, 35),
+        };
+        V.speed = 5;
+        V.assist = true;
+      }
+      let mapDrag = false;
+      mapEl.addEventListener("pointerdown", (e) => {
+        unlockSound();
+        stopWalk();
+        mapEl.setPointerCapture(e.pointerId);
+        mapDrag = true;
+        setTargetFrom(e);
+        const p = $("#youPulse");
+        if (p) p.remove();
+        e.preventDefault();
+      });
+      mapEl.addEventListener("pointermove", (e) => {
+        if (mapDrag) setTargetFrom(e);
+      });
+      for (const n of ["pointerup", "pointercancel"])
+        mapEl.addEventListener(n, () => {
+          mapDrag = false;
+        });
+
+      let viewDrag = null;
+      viewCanvas.addEventListener("pointerdown", (e) => {
+        unlockSound();
+        stopWalk();
+        viewCanvas.setPointerCapture(e.pointerId);
+        viewDrag = { x: e.clientX, y: e.clientY };
+        V.assist = false;
+        V.target = null;
+      });
+      viewCanvas.addEventListener("pointermove", (e) => {
+        if (!viewDrag) return;
+        V.yaw += (e.clientX - viewDrag.x) * 0.005;
+        moveBy(-(e.clientY - viewDrag.y) * -0.03);
+        viewDrag = { x: e.clientX, y: e.clientY };
+      });
+      for (const n of ["pointerup", "pointercancel"])
+        viewCanvas.addEventListener(n, () => {
+          viewDrag = null;
+        });
+      function moveBy(m) {
+        V.x = clamp(V.x - Math.sin(V.yaw) * m, -29, 29);
+        V.z = clamp(V.z - Math.cos(V.yaw) * m, -33, 35);
+      }
+      const keys = new Set();
+      const KEYMAP = {
+        ArrowUp: "f",
+        KeyW: "f",
+        ArrowDown: "b",
+        KeyS: "b",
+        ArrowLeft: "l",
+        KeyA: "l",
+        ArrowRight: "r",
+        KeyD: "r",
+      };
+      addEventListener("keydown", (e) => {
+        const k = KEYMAP[e.code];
+        if (k && !$("#rules").open) {
+          keys.add(k);
+          unlockSound();
+          stopWalk();
+          V.assist = false;
+          V.target = null;
+          e.preventDefault();
+        }
+      });
+      addEventListener("keyup", (e) => {
+        const k = KEYMAP[e.code];
+        if (k) keys.delete(k);
+      });
+
+      function stepWalker(dt) {
+        if (keys.size) {
+          if (keys.has("l")) V.yaw += 1.6 * dt;
+          if (keys.has("r")) V.yaw -= 1.6 * dt;
+          if (keys.has("f")) moveBy(3 * dt);
+          if (keys.has("b")) moveBy(-3 * dt);
+        }
+        if (V.target) {
+          const dx = V.target.x - V.x,
+            dz = V.target.z - V.z,
+            L = hyp(dx, dz);
+          if (L < 0.03) {
+            V.target = null;
+            V.moveYaw = null;
+          } else {
+            const st = Math.min(L, V.speed * dt);
+            V.x += (dx / L) * st;
+            V.z += (dz / L) * st;
+            V.moveYaw = Math.atan2(-dx, -dz);
+          }
+        }
+        if (V.assist) {
+          const live = spots
+            .filter((s) => s.st !== "finished" && s.d < 18)
+            .sort((a, b) => a.d - b.d);
+          const focus =
+            voice.holder ||
+            spots.find((s) => s.st === "starting" || s.st === "waiting") ||
+            live[0];
+          const aim = focus ? bearing(focus) : V.moveYaw;
+          if (aim != null)
+            V.yaw += angDiff(aim, V.yaw) * (1 - Math.exp(-dt * 3.2));
+        }
+        camera.position.set(V.x, 1.6, V.z);
+        camera.rotation.y = V.yaw;
+      }
+
+      function resetAll() {
+        for (const s of spots) {
+          s.item.pause();
+          s.item.rewind();
+          s.st = "far";
+          s.gain = 0;
+          s.forced = false;
+          s.releasing = false;
+          s.firm = false;
+          s.endHold = 0;
+          s.closeFor = 0;
+        }
+        voice.holder = null;
+        voice.blockUntil = 0;
+        quietAt = null;
+      }
+      function jumpTo(x, z, lookAt) {
+        V.x = x;
+        V.z = z;
+        V.target = null;
+        V.assist = true;
+        if (lookAt) V.yaw = Math.atan2(-(lookAt.x - x), -(lookAt.z - z));
+        viewCanvas.classList.add("blink");
+        setTimeout(() => viewCanvas.classList.remove("blink"), 180);
+      }
+      /* the row of dots: puts you where that item is in that state */
+      function showState(s, key) {
+        stopWalk();
+        resetAll();
+        const dist = {
+          far: 28,
+          approaching: 10.5,
+          playing: 4.4,
+          away: 15,
+          finished: 7,
+        }[key];
+        jumpTo(s.x + s.ap[0] * dist, s.z + s.ap[1] * dist, s);
+        const it = s.item;
+        if (key === "playing") {
+          it.t = it.duration * 0.22;
+          begin(s);
+          s.gain = 0.9;
+        }
+        if (key === "away") {
+          it.t = it.duration * 0.45;
+          s.st = "left";
+        }
+        if (key === "finished") {
+          it.t = it.duration;
+          it.ended = true;
+          s.st = "finished";
+          s.show = 0;
+          it.setShow(0);
+        }
+        $("#youPulse")?.remove();
+      }
+      function standBetween() {
+        stopWalk();
+        resetAll();
+        const [a, b] = [film, sound];
+        jumpTo(-2.7, 2.5, a);
+        a.item.t = a.item.duration * 0.15;
+        begin(a);
+        a.gain = 0.9;
+        b.st = "waiting";
+        $("#youPulse")?.remove();
+      }
+
+      /* the scripted walk behind "Walk for me" */
+      let script = null;
+      const ROUTE = () => [
+        { to: [-6.5, 4.2], wait: 6 },
+        { to: [-2.7, 2.5], wait: 4.5 },
+        { to: [3.6, 1.4], until: () => sound.st === "finished", wait: 2 },
+        { to: [7, -21], wait: 9.5 },
+        { to: [-4, -8], wait: 2.5 },
+      ];
+      function startWalk() {
+        resetAll();
+        jumpTo(0, 30);
+        V.yaw = 0;
+        V.speed = 3.6;
+        script = { i: 0, route: ROUTE(), wait: 0, armed: false };
+        V.target = { x: script.route[0].to[0], z: script.route[0].to[1] };
+        $("#walkBtn").setAttribute("aria-pressed", "true");
+        $("#walkBtn").textContent = "Stop walking";
+        $("#youPulse")?.remove();
+      }
+      function stopWalk() {
+        if (!script) return;
+        script = null;
+        V.target = null;
+        V.speed = 5;
+        $("#walkBtn").setAttribute("aria-pressed", "false");
+        $("#walkBtn").textContent = "Walk for me";
+      }
+      function stepScript(dt) {
+        if (!script) return;
+        const leg = script.route[script.i];
+        if (V.target) return;
+        if (leg.until && !leg.until()) return;
+        script.wait += dt;
+        if (script.wait < leg.wait) return;
+        script.i++;
+        script.wait = 0;
+        const next = script.route[script.i];
+        if (!next) {
+          stopWalk();
+          return;
+        }
+        V.speed = 3.6;
+        V.target = { x: next.to[0], z: next.to[1] };
+      }
+      $("#walkBtn").addEventListener("click", () => {
+        unlockSound();
+        if (script) stopWalk();
+        else startWalk();
+      });
+      $("#betweenBtn").addEventListener("click", () => {
+        unlockSound();
+        standBetween();
+      });
+      $("#rulesBtn").addEventListener("click", () => $("#rules").showModal());
+      $("#autoSw").addEventListener("click", (e) => {
+        unlockSound();
+        autoStart = !autoStart;
+        e.currentTarget.setAttribute("aria-checked", String(autoStart));
+        toast(
+          autoStart
+            ? "Things begin as you reach them."
+            : "Things show as you reach them, and play on a tap.",
+        );
+      });
+
+      /* ---------- frame loop ---------- */
+      function stepShow(s, dt) {
+        const it = s.item;
+        if (s.endHold > 0) s.endHold -= dt;
+        const want =
+          s.st === "finished"
+            ? +(s.endHold > 0)
+            : s.st === "playing"
+              ? 1 - 0.7 * sstep(NEAR.leaveFrom, NEAR.leaveTo, s.d)
+              : +(s.d < NEAR.preview);
+        s.show = near0(s.show, want, dt * 1.6);
+        it.setShow(s.show);
+        const mode =
+          s.st === "playing"
+            ? "playing"
+            : s.st === "finished"
+              ? "ended"
+              : s.st === "near" || s.st === "starting" || s.st === "waiting"
+                ? "preview"
+                : "still";
+        it.frame(performance.now(), mode);
+      }
+      function resize() {
+        const w = stage.clientWidth,
+          h = stage.clientHeight;
+        if (!w || !h || !renderer) return;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.fov = w < h ? 62 : 46;
+        camera.updateProjectionMatrix();
+      }
+      let last = performance.now();
+      function loop(t) {
+        requestAnimationFrame(loop);
+        const dt = Math.min(0.25, (t - last) / 1000);
+        last = t;
+        now += dt;
+        stepWalker(dt);
+        stepQuiet();
+        for (const s of spots) {
+          s.item.tick(dt);
+          stepSpot(s, dt);
+          stepShow(s, dt);
+        }
+        stepVoice(dt);
+        stepScript(dt);
+        camera.updateMatrixWorld();
+        placeMarks();
+        updateEdge();
+        updateNow();
+        updateMap();
+        updateBoard();
+        maxAudible = Math.max(
+          maxAudible,
+          spots.filter((s) => s.item.playing && s.gain > 0.005).length,
+        );
+        if (toastT && now > toastT) {
+          toastT = 0;
+          $("#toast").hidden = true;
+        }
+        renderer.render(scene, camera);
+      }
+
+      /* ---------- start ---------- */
+      let film, sound, guide;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas: viewCanvas,
+          antialias: true,
+        });
+        renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      } catch {
+        const m = document.createElement("div");
+        m.className = "nogl";
+        m.textContent =
+          "This page needs 3D graphics, which this browser does not offer.";
+        stage.append(m);
+      }
+      buildPark();
+      film = addSpot(new Film({ duration: 18 }), {
+        kind: "film",
+        title: "Four seasons of the lime",
+        short: "The film",
+        doneWord: "Seen",
+        x: -8,
+        z: 0,
+        top: 3.05,
+        turn: Math.atan2(6, 10),
+        needsView: true,
+        upLabel: true,
+        ap: [0.22, 0.97],
+      });
+      sound = addSpot(new Sound({ duration: 17 }), {
+        kind: "sound",
+        title: "Morning at the pond",
+        short: "The pond",
+        doneWord: "Heard",
+        x: 2,
+        z: -1,
+        top: 1.6,
+        needsView: false,
+        upLabel: false,
+        ap: [0.6, 0.8],
+      });
+      guide = addSpot(
+        new Guide({
+          lines: [
+            "Oh, hello. You found the quiet corner of the park.",
+            "I planted these roses the spring the pond froze.",
+            "Stand a while. The bees come back when it is still.",
+            "Go on then. The gate is the other way.",
+          ],
+        }),
+        {
+          kind: "guide",
+          title: "Mira, the gardener",
+          short: "Mira",
+          doneWord: "Heard",
+          x: 9,
+          z: -25,
+          top: 2.55,
+          needsView: true,
+          upLabel: true,
+          ap: [-0.93, 0.36],
+        },
+      );
+      buildMap();
+      buildBoard();
+      if (renderer) {
+        new ResizeObserver(resize).observe(stage);
+        resize();
+        requestAnimationFrame(loop);
+      }
+
+      /* drives the page in checks */
+      window.__worldItems = {
+        state: () => ({
+          x: V.x,
+          z: V.z,
+          yaw: V.yaw,
+          holder: voice.holder?.kind ?? null,
+          audible: spots.filter((s) => s.item.playing && s.gain > 0.005).length,
+          maxAudible,
+          quiet: !!quietAt,
+          items: spots.map((s) => ({
+            kind: s.kind,
+            st: s.st,
+            d: +s.d.toFixed(2),
+            t: +s.item.t.toFixed(2),
+            gain: +s.gain.toFixed(3),
+            show: +s.show.toFixed(2),
+          })),
+        }),
+        walkTo: (x, z, speed = 5) => {
+          stopWalk();
+          V.target = { x, z };
+          V.speed = speed;
+          V.assist = true;
+        },
+        jump: (x, z) => {
+          stopWalk();
+          V.x = x;
+          V.z = z;
+          V.target = null;
+          V.assist = true;
+        },
+        show: (kind, key) =>
+          showState(
+            spots.find((s) => s.kind === kind),
+            key,
+          ),
+        between: standBetween,
+        tap: (kind) => tapSpot(spots.find((s) => s.kind === kind)),
+        stop: () => $("#nowBtn").click(),
+        face: (yaw) => {
+          V.assist = false;
+          V.yaw = yaw;
+        },
+        clip: () => film.item.cv.toDataURL("image/png"),
+        resetMax: () => {
+          maxAudible = 0;
+        },
+      };
+    </script>
+  </body>
+</html>

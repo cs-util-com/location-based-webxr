@@ -1,0 +1,2989 @@
+<!doctype html>
+<!-- World items 1: real objects. A film, a piece of music and a person standing free in a park. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>World items: real objects</title>
+    <style>
+      :root {
+        --bg0: #18191c;
+        --bg1: #1f2023;
+        --bg2: #26282c;
+        --line: #313338;
+        --text: #d9dbe0;
+        --muted: #a3a7b0;
+        --accent: #f2971f;
+        --accent-ink: #2a1a05;
+        --glass: rgb(20 24 36 / 0.62);
+        --font:
+          Corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+        --gutter: 16px;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: var(--bg0);
+        color: var(--text);
+        font: 400 16px/1.45 var(--font);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      #gl {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: grab;
+      }
+      #gl.dragging {
+        cursor: grabbing;
+      }
+
+      /* The only chrome in the walk stands in for the visitor's legs: one line and one way out to the states. */
+      .top {
+        position: fixed;
+        z-index: 5;
+        top: calc(10px + env(safe-area-inset-top));
+        left: calc(var(--gutter) + env(safe-area-inset-left));
+        right: calc(var(--gutter) + env(safe-area-inset-right));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        pointer-events: none;
+      }
+      .hint {
+        min-width: 0;
+        padding: 9px 13px;
+        border-radius: 999px;
+        background: var(--glass);
+        color: #fff;
+        font-size: 14px;
+        line-height: 1.2;
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+      }
+      .btn {
+        min-height: 44px;
+        padding: 0 15px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--bg2);
+        color: #fff;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .btn:focus-visible {
+        outline: 2px solid #5b9cf0;
+        outline-offset: 2px;
+      }
+      .top .btn {
+        pointer-events: auto;
+        flex: none;
+        background: var(--glass);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+        border-radius: 999px;
+        font-size: 14px;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      #legs {
+        position: fixed;
+        z-index: 4;
+        width: 84px;
+        height: 84px;
+        margin: -42px 0 0 -42px;
+        border-radius: 50%;
+        border: 2px solid rgb(255 255 255 / 0.55);
+        background: rgb(0 0 0 / 0.12);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      #legs.on {
+        opacity: 1;
+      }
+      #legs i {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 30px;
+        height: 30px;
+        margin: -15px 0 0 -15px;
+        border-radius: 50%;
+        background: rgb(255 255 255 / 0.75);
+      }
+
+      /* Opening card: the tap that AR's own start button gives a real visit, which is what lets sound play. */
+      #gate {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        padding: var(--gutter);
+        background: linear-gradient(rgb(16 18 22 / 0.28), rgb(16 18 22 / 0.62));
+        overflow: auto;
+      }
+      .card {
+        width: min(420px, 100%);
+        padding: 20px;
+        border-radius: 14px;
+        background: rgb(24 25 28 / 0.94);
+        box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
+      }
+      .card h1 {
+        font-size: 22px;
+        line-height: 1.2;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 8px;
+      }
+      .card p {
+        color: var(--text);
+        margin-bottom: 6px;
+      }
+      .card p.small {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .card .acts {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .card .acts .btn {
+        flex: 1 1 150px;
+      }
+
+      /* The states: every live view of all three things, and the notes. */
+      #sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        background: var(--bg0);
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: calc(12px + env(safe-area-inset-top))
+          calc(var(--gutter) + env(safe-area-inset-right))
+          calc(28px + env(safe-area-inset-bottom))
+          calc(var(--gutter) + env(safe-area-inset-left));
+      }
+      .sheet-in {
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      .sheet-head {
+        position: sticky;
+        top: -12px;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 0 10px;
+        background: var(--bg0);
+      }
+      .sheet-head h2 {
+        font-size: 20px;
+        line-height: 1.2;
+        font-weight: 700;
+        color: #fff;
+      }
+      .sheet-head div {
+        display: flex;
+        gap: 8px;
+        flex: none;
+      }
+      .rule {
+        color: var(--text);
+        max-width: 68ch;
+        margin-bottom: 14px;
+      }
+      .item-row {
+        margin-bottom: 16px;
+      }
+      .item-row h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .item-row .starts {
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 8px;
+        max-width: 80ch;
+      }
+      .item-row .starts b {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .row {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(146px, 1fr);
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scrollbar-width: thin;
+      }
+      .shot {
+        display: block;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: var(--bg1);
+        border-radius: 10px;
+        overflow: hidden;
+        text-align: left;
+      }
+      .shot:hover {
+        background: var(--bg2);
+      }
+      .shot:focus-visible {
+        outline: 2px solid #5b9cf0;
+        outline-offset: -2px;
+      }
+      .shot canvas {
+        display: block;
+        width: 100%;
+        aspect-ratio: 3/2;
+        background: var(--bg2);
+      }
+      .shot span {
+        display: block;
+        padding: 6px 9px 9px;
+        font-size: 13.5px;
+        line-height: 1.3;
+        color: var(--text);
+      }
+      .shot b {
+        display: block;
+        color: #fff;
+        font-weight: 600;
+      }
+      details {
+        margin-top: 6px;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+      }
+      summary {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        color: #fff;
+        font-weight: 600;
+      }
+      .notes {
+        max-width: 72ch;
+        font-size: 15px;
+      }
+      .notes h4 {
+        margin: 12px 0 2px;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .notes ul {
+        padding-left: 18px;
+      }
+      .notes li {
+        margin: 3px 0;
+      }
+      @media (max-height: 440px) {
+        .hint {
+          font-size: 13px;
+          padding: 7px 11px;
+        }
+        .card {
+          padding: 14px 16px;
+        }
+        .card h1 {
+          font-size: 19px;
+          margin-bottom: 4px;
+        }
+        .card .acts {
+          margin-top: 8px;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas
+      id="gl"
+      tabindex="0"
+      aria-label="A small park seen through a phone. Drag to walk, or use the arrow keys. Tap a thing to touch it."
+    ></canvas>
+    <div id="legs"><i></i></div>
+    <div class="top">
+      <p class="hint" id="hint">Drag to walk. Go close, or tap a thing.</p>
+      <button class="btn" id="openSheet">All states</button>
+    </div>
+    <p class="sr" aria-live="polite" id="live"></p>
+
+    <section id="gate" aria-label="Start">
+      <div class="card">
+        <h1>The Pond Walk</h1>
+        <p>
+          A film, a piece of music and a person stand in this park. None of them
+          has a button.
+        </p>
+        <p class="small">
+          Sound on, headphones if you have them: you will hear things before you
+          reach them.
+        </p>
+        <div class="acts">
+          <button class="btn primary" id="walkIn">Walk in</button>
+          <button class="btn" id="walkAuto">Walk for me</button>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="sheet"
+      hidden
+      role="dialog"
+      aria-label="All states of the three things"
+    >
+      <div class="sheet-in">
+        <div class="sheet-head">
+          <h2>What a visitor sees</h2>
+          <div>
+            <button class="btn" id="sheetAuto">Walk for me</button>
+            <button class="btn primary" id="closeSheet">
+              Back to the park
+            </button>
+          </div>
+        </div>
+        <p class="rule">
+          One rule for all three: go close and it starts, walk off and it waits,
+          tap it to stop it or go again. These are the live scene. Tap a picture
+          to stand there.
+        </p>
+        <div id="rows"></div>
+        <details>
+          <summary>How this is decided</summary>
+          <div class="notes">
+            <h4>What starts each one</h4>
+            <ul>
+              <li>
+                <b>The film</b> starts when you stand in front of it, within 10
+                m. From behind the sheet it stays dark: nobody wants a film from
+                the back. The lamp warms from 16 m, so the start is announced.
+              </li>
+              <li>
+                <b>The music</b> starts at 16 m, far before you arrive, at about
+                a twentieth of full loudness and muffled. It is meant to pull
+                you over by ear. A piece that needs its first words heard should
+                not use this: it would get a shorter distance.
+              </li>
+              <li>
+                <b>The person</b> turns to you at 12 m and lifts a hand, but
+                only speaks at 5 m, a distance where people speak to each other.
+                She writes what she says on her slate.
+              </li>
+            </ul>
+            <h4>The same rule after the start</h4>
+            <ul>
+              <li>
+                Walking off holds the item at 13 m, 19 m and 8 m. Coming back
+                carries on where it stopped. The person repeats the line she was
+                in.
+              </li>
+              <li>
+                A finished thing stays finished: passing it again does not start
+                it. A tap does.
+              </li>
+              <li>
+                A tap on a playing thing stops it, and that stop wins: it stays
+                stopped until tapped again, even when you stand next to it.
+                Tapping works up to 12 m.
+              </li>
+            </ul>
+            <h4>The item does not know where it stands</h4>
+            <p>
+              Each of the three only knows four moves: run, hold, carry on,
+              start over. A separate starter watches the visitor and calls those
+              moves. In a story, a step would call the same moves and no starter
+              would be attached; the sheet, the gramophone and the person would
+              not change. How close the visitor is does reach the item, but only
+              for how it looks and sounds: a lamp warming, a head turning.
+            </p>
+            <h4>What is faked</h4>
+            <ul>
+              <li>
+                The park stands in for the camera image, and dragging stands in
+                for walking at about twice a walking pace.
+              </li>
+              <li>
+                The film is drawn on a canvas, the music and the voice are
+                tones, and the words on the slate replace the speech you would
+                hear. A projection this visible in daylight is not physics, but
+                a screen in AR is drawn, so it can be.
+              </li>
+              <li>
+                The distance model is a plain fall-off with a muffled top end
+                and left-right panning, and it never passes through walls or
+                trees.
+              </li>
+              <li>
+                While the person speaks, the other two sounds drop to a third. A
+                real object would not do that; here, her words matter more than
+                the rule.
+              </li>
+            </ul>
+            <h4>Where it is weak</h4>
+            <ul>
+              <li>
+                Without sound the gramophone has little to say from far away: a
+                turning record is not visible at 16 m.
+              </li>
+              <li>
+                GPS can be several metres off. With a 10 m start and a 13 m
+                hold, an error of 3 m can start and stop the film while the
+                visitor stands still. That needs a wider gap between the two distances, or a position from a code.
+              </li>
+              <li>
+                Nothing tells a visitor that a tap restarts a finished thing,
+                apart from a pulsing pilot light on the projector.
+              </li>
+              <li>
+                The slate is easy to read at 3 m and hard at 6 m. That is the
+                point of it and also its cost for anyone who cannot go close.
+              </li>
+              <li>
+                Two visitors at one sheet each see their own film at their own
+                time. Nothing here is shared.
+              </li>
+              <li>
+                Other values would change the feel: at 20 m the music would
+                start out of sight, and at 8 m it would be just a button you
+                walk into.
+              </li>
+            </ul>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ------------------------------------------------------------ helpers ------ */
+      const $ = (id) => document.getElementById(id);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const smooth = (a, b, v) => {
+        const t = clamp((v - a) / (b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const damp = (cur, target, k, dt) =>
+        lerp(cur, target, 1 - Math.exp(-k * dt));
+      const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+      const dampAngle = (cur, target, k, dt) =>
+        cur + wrapPi(target - cur) * (1 - Math.exp(-k * dt));
+      function seeded(s) {
+        return () => {
+          s |= 0;
+          s = (s + 0x6d2b79f5) | 0;
+          let t = Math.imul(s ^ (s >>> 15), 1 | s);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const mat = (color, roughness = 0.85, metalness = 0, extra = {}) =>
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness,
+          metalness,
+          ...extra,
+        });
+      function shadowed(mesh, cast = true, receive = true) {
+        mesh.castShadow = cast;
+        mesh.receiveShadow = receive;
+        return mesh;
+      }
+
+      /* ------------------------------------------------------------ sound ------- */
+      /* Each thing has one bus: its tones go through a hold switch, then the ear (loudness by distance, a muffled top end, left-right pan). */
+      const audio = {
+        ctx: null,
+        master: null,
+        start() {
+          if (this.ctx) {
+            this.ctx.resume();
+            return;
+          }
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          this.ctx = new AC();
+          this.master = this.ctx.createGain();
+          this.master.gain.value = 0.9;
+          const comp = this.ctx.createDynamicsCompressor();
+          this.master.connect(comp).connect(this.ctx.destination);
+          for (const it of items) it.bus = this.bus(it.colour);
+          film.startNoise();
+          music.startNoise();
+          for (const it of items) it.syncBus();
+        },
+        bus(colour) {
+          const c = this.ctx;
+          const input = c.createGain();
+          const play = c.createGain();
+          play.gain.value = 0;
+          const ear = c.createGain();
+          ear.gain.value = 0;
+          const lp = c.createBiquadFilter();
+          lp.type = "lowpass";
+          lp.frequency.value = 2000;
+          const pan = c.createStereoPanner
+            ? c.createStereoPanner()
+            : c.createGain();
+          if (colour) {
+            const bp = c.createBiquadFilter();
+            bp.type = "bandpass";
+            bp.frequency.value = colour.f;
+            bp.Q.value = colour.q;
+            /* the band-pass eats most of the level, so it is made up here */
+            const makeUp = c.createGain();
+            makeUp.gain.value = 4;
+            input.connect(bp).connect(makeUp).connect(play);
+          } else input.connect(play);
+          play.connect(ear).connect(lp).connect(pan).connect(this.master);
+          return { input, play, ear, lp, pan };
+        },
+        tone(bus, when, f, dur, type, peak, glide) {
+          const c = this.ctx,
+            o = c.createOscillator(),
+            g = c.createGain();
+          o.type = type;
+          o.frequency.setValueAtTime(f, when);
+          if (glide) o.frequency.linearRampToValueAtTime(f * glide, when + dur);
+          g.gain.setValueAtTime(0.0001, when);
+          g.gain.linearRampToValueAtTime(
+            peak,
+            when + Math.min(0.015, dur * 0.2),
+          );
+          g.gain.exponentialRampToValueAtTime(0.0006, when + dur);
+          o.connect(g).connect(bus.input);
+          o.start(when);
+          o.stop(when + dur + 0.05);
+        },
+        loop(bus, seconds, fill, level) {
+          const c = this.ctx,
+            buf = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate),
+            d = buf.getChannelData(0);
+          fill(d, c.sampleRate);
+          const s = c.createBufferSource();
+          s.buffer = buf;
+          s.loop = true;
+          const g = c.createGain();
+          g.gain.value = level;
+          s.connect(g).connect(bus.input);
+          s.start();
+        },
+      };
+      /* Loudness at a distance, shared by all three: falls with distance, reaches zero at the edge of hearing. */
+      const earGain = (d, edge) =>
+        Math.pow(2 / Math.max(d, 2), 1.15) * smooth(edge, edge * 0.7, d);
+
+      const note = (semi) => 261.63 * Math.pow(2, semi / 12);
+      function tuneEvents(seed, bars, beatsPerBar, beat, degrees, type) {
+        const r = seeded(seed),
+          out = [];
+        let idx = 3;
+        for (let b = 0; b < bars; b++) {
+          const t0 = b * beatsPerBar * beat,
+            root = [0, -3, 5, -5][(b >> 1) % 4];
+          out.push({
+            t: t0,
+            f: note(root - 12),
+            dur: beat * 1.5,
+            type: "triangle",
+            peak: 0.2,
+          });
+          for (let k = 1; k < beatsPerBar; k++)
+            out.push({
+              t: t0 + k * beat,
+              f: note(root + 4),
+              dur: beat * 0.7,
+              type: "triangle",
+              peak: 0.08,
+            });
+          let pos = 0;
+          while (pos < beatsPerBar) {
+            const len = r() < 0.55 ? 1 : r() < 0.6 ? 0.5 : 2;
+            idx = clamp(
+              idx + Math.round((r() - 0.5) * 4),
+              0,
+              degrees.length - 1,
+            );
+            if (r() > 0.1)
+              out.push({
+                t: t0 + pos * beat,
+                f: note(degrees[idx] + 12),
+                dur: beat * len * 1.2,
+                type,
+                peak: 0.17,
+              });
+            pos += len;
+          }
+        }
+        return out.sort((a, b) => a.t - b.t);
+      }
+
+      /* ------------------------------------------------------------ the item ---- */
+      /* An item knows four moves and how it looks and sounds. It does not know who calls the moves. */
+      class WorldItem {
+        constructor(id, name, duration) {
+          Object.assign(this, {
+            id,
+            name,
+            duration,
+            state: "waiting",
+            t: 0,
+            events: [],
+            cursor: 0,
+            bus: null,
+            v: {},
+          });
+        }
+        run() {
+          if (this.state === "waiting" || this.state === "finished") {
+            this.t = 0;
+            this.go("playing");
+          }
+        }
+        hold() {
+          if (this.state === "playing") this.go("held");
+        }
+        carryOn() {
+          if (this.state === "held") this.go("playing");
+        }
+        go(state) {
+          this.state = state;
+          this.seek();
+          this.syncBus();
+          say(this, state);
+        }
+        seek() {
+          this.cursor = this.events.findIndex((e) => e.t >= this.t);
+          if (this.cursor < 0) this.cursor = this.events.length;
+        }
+        syncBus() {
+          if (this.bus)
+            this.bus.play.gain.setTargetAtTime(
+              this.state === "playing" ? 1 : 0,
+              audio.ctx.currentTime,
+              0.05,
+            );
+        }
+        advance(dt) {
+          if (this.state !== "playing") return;
+          this.t += dt;
+          if (audio.ctx && audio.ctx.state === "running" && this.bus) {
+            while (
+              this.cursor < this.events.length &&
+              this.events[this.cursor].t < this.t + 0.25
+            ) {
+              const e = this.events[this.cursor++];
+              audio.tone(
+                this.bus,
+                audio.ctx.currentTime + Math.max(0, e.t - this.t),
+                e.f,
+                e.dur,
+                e.type,
+                e.peak,
+                e.glide,
+              );
+            }
+          }
+          if (this.t >= this.duration) {
+            this.t = this.duration;
+            this.go("finished");
+          }
+        }
+        /* The look of a moment, kept apart from the running state so the states page can borrow it. */
+        saveLook() {
+          return { state: this.state, t: this.t, v: { ...this.v } };
+        }
+        loadLook(s) {
+          this.state = s.state;
+          this.t = s.t;
+          Object.assign(this.v, s.v);
+        }
+      }
+
+      /* A starter is not part of the item: it watches the visitor and calls the item's moves. A story step would call the same moves. */
+      function nearStarter(item, { startM, holdM, inFront = () => true }) {
+        let byHand = false;
+        return {
+          item,
+          see(v) {
+            if (byHand) return;
+            const d = Math.hypot(v.x - item.x, v.z - item.z);
+            const inReach = d <= startM && inFront(v);
+            if (item.state === "waiting" && inReach) item.run();
+            else if (item.state === "playing" && d > holdM) item.hold();
+            else if (item.state === "held" && inReach) item.carryOn();
+          },
+          touch() {
+            if (item.state === "playing") {
+              item.hold();
+              byHand = true;
+            } else if (item.state === "held") {
+              item.carryOn();
+              byHand = false;
+            } else {
+              item.run();
+              byHand = false;
+            }
+          },
+          clear() {
+            byHand = false;
+          },
+        };
+      }
+
+      /* ------------------------------------------------------------ renderer ---- */
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas: $("gl"),
+          antialias: true,
+        });
+      } catch {
+        $("gate").querySelector(".card").innerHTML =
+          "<h1>The Pond Walk</h1><p>This page needs WebGL, which this browser did not give it.</p>";
+        throw new Error("WebGL unavailable");
+      }
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.95;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0xcdbfa8, 34, 110);
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 320);
+      const SUN = new THREE.Vector3(-0.66, 0.4, 0.62).normalize();
+      scene.add(new THREE.HemisphereLight(0xcfe0ee, 0x5d6a3c, 1.25));
+      const sunLight = new THREE.DirectionalLight(0xffe2b8, 2.6);
+      sunLight.position.copy(SUN).multiplyScalar(70);
+      sunLight.castShadow = true;
+      sunLight.shadow.mapSize.set(2048, 2048);
+      Object.assign(sunLight.shadow.camera, {
+        left: -48,
+        right: 48,
+        top: 48,
+        bottom: -48,
+        near: 5,
+        far: 150,
+      });
+      sunLight.shadow.bias = -0.0006;
+      sunLight.shadow.normalBias = 0.04;
+      scene.add(sunLight);
+
+      /* ------------------------------------------------------------ the park ---- */
+      const POND = { x: -1, z: 7, rx: 6.5, rz: 4.5 };
+      const inPond = (x, z, m = 0) =>
+        ((x - POND.x) / (POND.rx + m)) ** 2 +
+          ((z - POND.z) / (POND.rz + m)) ** 2 <
+        1;
+      const solids = [];
+
+      (function sky() {
+        const m = new THREE.ShaderMaterial({
+          side: THREE.BackSide,
+          depthWrite: false,
+          fog: false,
+          toneMapped: false,
+          uniforms: { sun: { value: SUN } },
+          vertexShader:
+            "varying vec3 d; void main(){ d = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }",
+          fragmentShader: `varying vec3 d; uniform vec3 sun;
+      void main(){ vec3 n = normalize(d); float h = clamp(n.y, 0., 1.);
+        vec3 c = mix(vec3(.93,.83,.69), vec3(.56,.72,.86), pow(h, .55));
+        c = mix(c, vec3(.37,.55,.76), smoothstep(.25, .9, h));
+        float s = max(dot(n, sun), 0.);
+        c += vec3(1.,.72,.4) * (pow(s, 8.) * .28 + pow(s, 400.) * .9);
+        gl_FragColor = vec4(c, 1.); }`,
+        });
+        scene.add(new THREE.Mesh(new THREE.SphereGeometry(280, 24, 14), m));
+      })();
+
+      (function ground() {
+        const S = 2048,
+          W = 160,
+          c = document.createElement("canvas");
+        c.width = c.height = S;
+        const g = c.getContext("2d"),
+          r = seeded(7);
+        const px = (m) => ((m + W / 2) / W) * S,
+          sc = S / W;
+        g.fillStyle = "#6b8144";
+        g.fillRect(0, 0, S, S);
+        for (let i = 0; i < 9000; i++) {
+          const big = i < 900,
+            rad = big ? 16 + r() * 60 : 1 + r() * 5;
+          g.fillStyle = `hsla(${70 + r() * 34},${28 + r() * 24}%,${big ? 30 + r() * 16 : 24 + r() * 28}%,${big ? 0.1 : 0.4})`;
+          g.beginPath();
+          g.arc(r() * S, r() * S, rad, 0, 7);
+          g.fill();
+        }
+        const trace = (pts) => {
+          g.beginPath();
+          g.moveTo(px(pts[0][0]), px(pts[0][1]));
+          for (let i = 1; i < pts.length - 1; i++) {
+            const [a, b] = pts[i],
+              [c2, d] = pts[i + 1];
+            g.quadraticCurveTo(px(a), px(b), px((a + c2) / 2), px((b + d) / 2));
+          }
+          const last = pts[pts.length - 1];
+          g.lineTo(px(last[0]), px(last[1]));
+        };
+        const ring = (widen) => {
+          g.beginPath();
+          g.ellipse(
+            px(POND.x),
+            px(POND.z),
+            (POND.rx + widen) * sc,
+            (POND.rz + widen) * sc,
+            0,
+            0,
+            7,
+          );
+        };
+        const branches = [
+          [
+            [0, 80],
+            [0.5, 30],
+            [-0.5, 18],
+            [1, 13],
+          ],
+          [
+            [-9, 2],
+            [-8, -1],
+            [-6, -4],
+            [-4.5, -6],
+          ],
+          [
+            [-1, -2],
+            [-1, -6],
+            [1.5, -10],
+            [3, -13],
+          ],
+          [
+            [9, 7],
+            [9.4, 7.6],
+            [9.8, 8],
+          ],
+          [
+            [3, -13],
+            [-8, -22],
+            [-30, -30],
+          ],
+          [
+            [9, 3],
+            [20, -2],
+            [44, -6],
+          ],
+        ];
+        const stroke = (style, w) => {
+          g.strokeStyle = style;
+          g.lineWidth = w * sc;
+          g.lineCap = "round";
+          g.lineJoin = "round";
+          ring(4.5);
+          g.stroke();
+          for (const b of branches) {
+            trace(b);
+            g.stroke();
+          }
+        };
+        stroke("rgba(52,60,30,.5)", 3.1);
+        stroke("#b5a27f", 2.5);
+        for (let i = 0; i < 40000; i++) {
+          const x = r() * S,
+            y = r() * S;
+          g.fillStyle = `rgba(${r() < 0.5 ? "70,60,40" : "225,214,190"},${0.05 + r() * 0.12})`;
+          g.fillRect(x, y, 1 + r() * 2, 1 + r() * 2);
+        }
+        /* the worn patches that say "people stop here" */
+        for (const [x, z, a] of [
+          [10, 8, 2.8],
+          [3, -15, 3],
+          [-9.2, -3.8, 2.6],
+        ]) {
+          const rg = g.createRadialGradient(
+            px(x),
+            px(z),
+            0,
+            px(x),
+            px(z),
+            a * sc * 1.3,
+          );
+          rg.addColorStop(0, "rgba(160,140,100,.75)");
+          rg.addColorStop(1, "rgba(160,140,100,0)");
+          g.fillStyle = rg;
+          g.beginPath();
+          g.arc(px(x), px(z), a * sc * 1.3, 0, 7);
+          g.fill();
+        }
+        g.fillStyle = "#4b4a33";
+        ring(0.7);
+        g.fill();
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const m = shadowed(
+          new THREE.Mesh(
+            new THREE.PlaneGeometry(W, W),
+            mat(0xffffff, 1, 0, { map: tex }),
+          ),
+          false,
+        );
+        m.rotation.x = -Math.PI / 2;
+        scene.add(m);
+
+        /* A fine repeating grain over the big painted ground, so the ground stays sharp at the visitor's feet. */
+        const dc = document.createElement("canvas");
+        dc.width = dc.height = 256;
+        const dg = dc.getContext("2d");
+        dg.fillStyle = "#fff";
+        dg.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 5200; i++) {
+          const a = 0.05 + r() * 0.22;
+          dg.fillStyle = r() < 0.72 ? `rgba(30,34,16,${a})` : `rgba(120,120,80,${a})`;
+          dg.fillRect(r() * 256, r() * 256, 1 + r() * 2.4, 1 + r() * 5);
+        }
+        const dt = new THREE.CanvasTexture(dc);
+        dt.wrapS = dt.wrapT = THREE.RepeatWrapping;
+        dt.repeat.set(W / 2.4, W / 2.4);
+        dt.colorSpace = THREE.SRGBColorSpace;
+        dt.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const over = new THREE.Mesh(
+          new THREE.PlaneGeometry(W, W),
+          new THREE.MeshBasicMaterial({
+            map: dt,
+            transparent: true,
+            blending: THREE.MultiplyBlending,
+            premultipliedAlpha: true,
+            depthWrite: false,
+            toneMapped: false,
+            fog: false,
+          }),
+        );
+        over.rotation.x = -Math.PI / 2;
+        over.position.y = 0.012;
+        scene.add(over);
+      })();
+
+      const pondMat = new THREE.ShaderMaterial({
+        fog: false,
+        toneMapped: false,
+        uniforms: { t: { value: 0 }, sun: { value: SUN } },
+        vertexShader:
+          "varying vec3 w; void main(){ vec4 p = modelMatrix * vec4(position,1.); w = p.xyz; gl_Position = projectionMatrix * viewMatrix * p; }",
+        fragmentShader: `varying vec3 w; uniform float t; uniform vec3 sun;
+    void main(){ vec3 V = normalize(cameraPosition - w);
+      vec3 N = normalize(vec3(sin(w.x*3.1+t)*.02 + sin(w.z*5.3-t*1.3)*.015, 1., cos(w.z*2.7+t*.8)*.02 + cos(w.x*4.7+t)*.015));
+      float f = pow(1. - max(dot(V,N),0.), 2.5);
+      vec3 c = mix(vec3(.13,.22,.2), vec3(.74,.76,.72), .22 + .72*f);
+      vec3 R = reflect(-V,N); c += vec3(1.,.8,.55) * pow(max(dot(R,sun),0.), 160.) * .9;
+      gl_FragColor = vec4(c, 1.); }`,
+      });
+      {
+        const p = new THREE.Mesh(new THREE.CircleGeometry(1, 56), pondMat);
+        p.rotation.x = -Math.PI / 2;
+        p.scale.set(POND.rx, POND.rz, 1);
+        p.position.set(POND.x, 0.03, POND.z);
+        scene.add(p);
+      }
+
+      (function trees() {
+        const r = seeded(21),
+          spots = [
+            [15.5, 11.5, 1.35],
+            [17, 2, 1.1],
+            [-19, 6, 1.25],
+            [-17, -12, 1.2],
+            [13, -13, 1.25],
+            [-8, -17, 1.05],
+            [11, 22, 1.05],
+            [-11, 21, 1.2],
+            [7, -24, 1.2],
+          ];
+        const free = (x, z) =>
+          !inPond(x, z, 7) &&
+          Math.abs(x) + Math.abs(z) > 20 &&
+          !(Math.abs(x) < 4 && z > 8) &&
+          !spots.some((s) => Math.hypot(s[0] - x, s[1] - z) < 6);
+        for (let i = 0; i < 300 && spots.length < 62; i++) {
+          const a = r() * 6.283,
+            d = 24 + r() * 44,
+            x = Math.cos(a) * d,
+            z = Math.sin(a) * d;
+          if (free(x, z)) spots.push([x, z, 0.9 + r() * 0.75]);
+        }
+        const trunks = new THREE.InstancedMesh(
+          new THREE.CylinderGeometry(0.17, 0.3, 3, 7),
+          mat(0x54402f, 0.95),
+          spots.length,
+        );
+        const blobs = new THREE.InstancedMesh(
+          new THREE.IcosahedronGeometry(1, 1),
+          mat(0xffffff, 0.9, 0, { flatShading: true }),
+          spots.length * 4,
+        );
+        const M = new THREE.Matrix4(),
+          q = new THREE.Quaternion(),
+          e = new THREE.Euler(),
+          col = new THREE.Color();
+        spots.forEach(([x, z, s], i) => {
+          M.compose(
+            new THREE.Vector3(x, 1.5 * s, z),
+            q.identity(),
+            new THREE.Vector3(s, s, s),
+          );
+          trunks.setMatrixAt(i, M);
+          if (Math.hypot(x, z) < 26) solids.push({ x, z, r: 0.6 * s });
+          for (let k = 0; k < 4; k++) {
+            const a = r() * 6.283,
+              off = k === 0 ? 0 : 1.15 * s,
+              sc = (k === 0 ? 2.3 : 1.45 + r() * 0.5) * s;
+            e.set(r() * 3, r() * 3, 0);
+            q.setFromEuler(e);
+            M.compose(
+              new THREE.Vector3(
+                x + Math.cos(a) * off,
+                (k === 0 ? 4.5 : 3.6 + r()) * s,
+                z + Math.sin(a) * off,
+              ),
+              q,
+              new THREE.Vector3(sc, sc * 0.86, sc),
+            );
+            blobs.setMatrixAt(i * 4 + k, M);
+            blobs.setColorAt(
+              i * 4 + k,
+              col.setHSL(
+                0.21 + r() * 0.07,
+                0.34 + r() * 0.14,
+                0.27 + r() * 0.1,
+              ),
+            );
+          }
+        });
+        shadowed(trunks);
+        shadowed(blobs);
+        scene.add(trunks, blobs);
+
+        /* Grass tufts and reeds: nothing here is an item, they are there so walking has parallax. */
+        const blades = new THREE.ConeGeometry(0.035, 0.3, 3).toNonIndexed();
+        const bladeSrc = blades.attributes.position.array,
+          tuftPos = [];
+        for (let k = 0; k < 5; k++) {
+          const lean = k * 1.257,
+            cl = Math.cos(lean),
+            sl = Math.sin(lean);
+          for (let i = 0; i < bladeSrc.length; i += 3) {
+            const y = bladeSrc[i + 1] + 0.15,
+              bend = y * 0.55;
+            tuftPos.push(
+              bladeSrc[i] + cl * (0.04 + bend),
+              y - 0.14,
+              bladeSrc[i + 2] + sl * (0.04 + bend),
+            );
+          }
+        }
+        const tuftGeo = new THREE.BufferGeometry();
+        tuftGeo.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(tuftPos, 3),
+        );
+        tuftGeo.computeVertexNormals();
+        const tuft = new THREE.InstancedMesh(
+          tuftGeo,
+          mat(0xffffff, 1, 0, { side: THREE.DoubleSide }),
+          900,
+        );
+        let n = 0;
+        for (let i = 0; i < 6000 && n < 900; i++) {
+          const x = (r() - 0.5) * 70,
+            z = (r() - 0.5) * 70;
+          const reed = i % 7 === 0;
+          const px = reed ? POND.x + Math.cos(i) * (POND.rx + 0.15) : x,
+            pz = reed ? POND.z + Math.sin(i) * (POND.rz + 0.15) : z;
+          if (
+            !reed &&
+            ((inPond(x, z, 6.2) && !inPond(x, z, 2)) ||
+              inPond(x, z, 1) ||
+              (Math.abs(x) < 2 && z > 10))
+          )
+            continue;
+          const s = reed ? 2.2 + r() * 2 : 0.55 + r() * 0.8;
+          M.compose(
+            new THREE.Vector3(px, 0.14 * s, pz),
+            q.identity(),
+            new THREE.Vector3(reed ? 0.8 : s * 1.3, s, reed ? 0.8 : s * 1.3),
+          );
+          tuft.setMatrixAt(n, M);
+          tuft.setColorAt(
+            n,
+            col.setHSL(0.21 + r() * 0.05, 0.38, reed ? 0.17 : 0.13 + r() * 0.07),
+          );
+          n++;
+        }
+        tuft.count = n;
+        scene.add(tuft);
+
+        const wood = mat(0x6a4a30, 0.8),
+          iron = mat(0x24262a, 0.6, 0.3);
+        const bench = (x, z, yaw) => {
+          const b = new THREE.Group();
+          b.position.set(x, 0, z);
+          b.rotation.y = yaw;
+          const part = (w, h, d, px, py, pz, m = wood) => {
+            const o = shadowed(
+              new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m),
+            );
+            o.position.set(px, py, pz);
+            b.add(o);
+            return o;
+          };
+          part(1.7, 0.05, 0.45, 0, 0.44, 0);
+          part(1.7, 0.32, 0.04, 0, 0.72, -0.21);
+          part(0.05, 0.44, 0.4, -0.75, 0.22, 0, iron);
+          part(0.05, 0.44, 0.4, 0.75, 0.22, 0, iron);
+          scene.add(b);
+          solids.push({ x, z, r: 1 });
+        };
+        bench(13.2, 4.6, -1.15);
+        bench(-3.6, -17.4, 0.75);
+        for (const [x, z] of [
+          [6.5, 13.5],
+          [-8.5, 11.5],
+          [8.2, -3.2],
+          [-4, -9.5],
+        ]) {
+          const p = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.05, 0.08, 3.2, 8),
+              iron,
+            ),
+          );
+          p.position.set(x, 1.6, z);
+          const l = new THREE.Mesh(
+            new THREE.SphereGeometry(0.17, 12, 10),
+            mat(0xf4e6c8, 0.4),
+          );
+          l.position.set(x, 3.3, z);
+          scene.add(p, l);
+          solids.push({ x, z, r: 0.35 });
+        }
+      })();
+
+      /* ------------------------------------------------------------ the film ---- */
+      const FW = 640,
+        FH = 372;
+      const filmCanvas = document.createElement("canvas");
+      filmCanvas.width = FW;
+      filmCanvas.height = FH;
+      const fg = filmCanvas.getContext("2d");
+      const filmTex = new THREE.CanvasTexture(filmCanvas);
+      filmTex.colorSpace = THREE.SRGBColorSpace;
+      filmTex.generateMipmaps = false;
+      filmTex.minFilter = THREE.LinearFilter;
+      const grain = (() => {
+        const c = document.createElement("canvas");
+        c.width = c.height = 160;
+        const g = c.getContext("2d"),
+          d = g.createImageData(160, 160),
+          r = seeded(3);
+        for (let i = 0; i < d.data.length; i += 4) {
+          const v = r() * 255;
+          d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+          d.data[i + 3] = 34;
+        }
+        g.putImageData(d, 0, 0);
+        return c;
+      })();
+      const FILM_CARDS = [
+        {
+          from: 0,
+          to: 4,
+          big: "The Digging of the Pond",
+          small: "Mill Meadow, the first summer",
+        },
+        {
+          from: 11,
+          to: 14,
+          big: "Forty people.",
+          small: "One dry summer. Spades.",
+        },
+        {
+          from: 21,
+          to: 24,
+          big: "Then the rain came,",
+          small: "and it stayed.",
+        },
+        {
+          from: 30,
+          to: 32.5,
+          big: "The End",
+          small: "You are standing on the far bank",
+        },
+      ];
+      function digger(x, y, s, phase) {
+        const a = Math.sin(phase);
+        fg.save();
+        fg.translate(x, y);
+        fg.scale(s, s);
+        fg.lineCap = "round";
+        fg.lineWidth = 7;
+        fg.beginPath();
+        const lean = 0.35 + a * 0.3;
+        const hx = Math.sin(lean) * 42,
+          hy = -Math.cos(lean) * 42 - 34;
+        fg.moveTo(-8, 0);
+        fg.lineTo(0, -34);
+        fg.lineTo(8, 0);
+        fg.moveTo(0, -34);
+        fg.lineTo(hx, hy);
+        fg.stroke();
+        fg.beginPath();
+        fg.arc(hx + 3, hy - 9, 8.5, 0, 7);
+        fg.fill();
+        fg.lineWidth = 4;
+        fg.beginPath();
+        fg.moveTo(hx, hy + 6);
+        fg.lineTo(hx + 18, hy + 24 + a * 8);
+        fg.moveTo(hx + 8, hy + 2 + a * 4);
+        fg.lineTo(hx + 38, hy + 42 + a * 16);
+        fg.stroke();
+        fg.restore();
+      }
+      function paintFilm(t, dim) {
+        const R = seeded(Math.floor(t * 15) + 1);
+        const ink = "#2b2118",
+          paper = "#d6c6a1";
+        fg.setTransform(1, 0, 0, 1, R() * 2 - 1, R() * 1.4 - 0.7);
+        fg.fillStyle = paper;
+        fg.fillRect(-4, -4, FW + 8, FH + 8);
+        const card = FILM_CARDS.find((c) => t >= c.from && t < c.to);
+        fg.fillStyle = ink;
+        fg.strokeStyle = ink;
+        if (card) {
+          fg.fillStyle = "#231a12";
+          fg.fillRect(-4, -4, FW + 8, FH + 8);
+          fg.strokeStyle = paper;
+          fg.lineWidth = 3;
+          fg.strokeRect(26, 24, FW - 52, FH - 48);
+          fg.fillStyle = paper;
+          fg.textAlign = "center";
+          fg.textBaseline = "middle";
+          fg.font = '700 52px Georgia,"Noto Serif",serif';
+          fg.fillText(card.big, FW / 2, FH / 2 - 26, FW - 90);
+          fg.font = 'italic 34px Georgia,"Noto Serif",serif';
+          fg.fillText(card.small, FW / 2, FH / 2 + 38, FW - 90);
+        } else if (t < 11) {
+          /* the meadow and the pit */
+          const pit = 40 + (t - 4) * 8;
+          fg.fillStyle = "#b6a585";
+          fg.fillRect(-4, 170, FW + 8, 220);
+          fg.fillStyle = "#6a5a44";
+          fg.beginPath();
+          fg.moveTo(-4, 196);
+          fg.quadraticCurveTo(320, 196 + pit * 2, 644, 196);
+          fg.lineTo(644, 380);
+          fg.lineTo(-4, 380);
+          fg.fill();
+          fg.fillStyle = ink;
+          for (let i = 0; i < 5; i++)
+            digger(
+              90 + i * 118,
+              214 + pit * (1 - Math.abs(i - 2) / 3) * 0.9,
+              1.05,
+              t * 4.2 + i * 1.3,
+            );
+          fg.fillStyle = "#8c7a5c";
+          fg.beginPath();
+          fg.arc(120, 96, 30, 0, 7);
+          fg.fill();
+        } else if (t < 21) {
+          /* the water rising */
+          const lv = 300 - (t - 14) * 18;
+          fg.fillStyle = "#b6a585";
+          fg.fillRect(-4, 150, FW + 8, 240);
+          fg.fillStyle = "#7b6d55";
+          fg.beginPath();
+          fg.moveTo(-4, 170);
+          fg.quadraticCurveTo(320, 330, 644, 170);
+          fg.lineTo(644, 380);
+          fg.lineTo(-4, 380);
+          fg.fill();
+          fg.fillStyle = "#4b4235";
+          fg.beginPath();
+          for (let x = -4; x <= 644; x += 16)
+            fg.lineTo(x, lv + Math.sin(x * 0.03 + t * 2) * 3);
+          fg.lineTo(644, 380);
+          fg.lineTo(-4, 380);
+          fg.fill();
+          fg.strokeStyle = paper;
+          fg.globalAlpha = 0.5;
+          fg.lineWidth = 2;
+          for (let i = 0; i < 26; i++) {
+            const x = (i * 47 + t * 14) % FW,
+              y = ((i * 83 + t * 120) % 160) + lv - 170;
+            if (y < lv) {
+              fg.beginPath();
+              fg.moveTo(x, y);
+              fg.lineTo(x - 3, y + 14);
+              fg.stroke();
+            }
+          }
+          fg.globalAlpha = 1;
+        } else {
+          /* the first boat */
+          fg.fillStyle = "#b6a585";
+          fg.fillRect(-4, 150, FW + 8, 60);
+          fg.fillStyle = "#4b4235";
+          fg.fillRect(-4, 200, FW + 8, 190);
+          fg.fillStyle = "#7b6d55";
+          for (let i = 0; i < 7; i++)
+            fg.fillRect((i * 97 + t * 8) % FW, 228 + i * 21, 80, 3);
+          const x = -80 + (t - 24) * 118,
+            y = 246 + Math.sin(t * 2) * 3;
+          fg.fillStyle = ink;
+          fg.beginPath();
+          fg.moveTo(x - 74, y);
+          fg.quadraticCurveTo(x, y + 44, x + 74, y);
+          fg.fill();
+          fg.fillRect(x - 8, y - 46, 14, 48);
+          fg.beginPath();
+          fg.arc(x, y - 58, 13, 0, 7);
+          fg.fill();
+          fg.lineWidth = 5;
+          fg.strokeStyle = ink;
+          fg.beginPath();
+          const o = Math.sin(t * 3) * 22;
+          fg.moveTo(x, y - 30);
+          fg.lineTo(x - 54 + o, y + 28);
+          fg.stroke();
+        }
+        /* age: grain, scratches, a soft dark edge */
+        fg.setTransform(1, 0, 0, 1, 0, 0);
+        fg.globalAlpha = 1;
+        fg.drawImage(grain, -R() * 100, -R() * 100, FW + 200, FH + 200);
+        fg.fillStyle = "rgba(250,240,220,.3)";
+        for (let i = 0; i < 3; i++)
+          if (R() < 0.5) fg.fillRect(R() * FW, 0, 1 + R(), FH);
+        const v = fg.createRadialGradient(
+          FW / 2,
+          FH / 2,
+          FH * 0.42,
+          FW / 2,
+          FH / 2,
+          FW * 0.62,
+        );
+        v.addColorStop(0, "rgba(0,0,0,0)");
+        v.addColorStop(1, "rgba(0,0,0,.5)");
+        fg.fillStyle = v;
+        fg.fillRect(0, 0, FW, FH);
+        fg.fillStyle = `rgba(0,0,0,${dim + (REDUCED ? 0 : R() * 0.07)})`;
+        fg.fillRect(0, 0, FW, FH);
+        filmTex.needsUpdate = true;
+      }
+      function paintBlank(warm) {
+        fg.setTransform(1, 0, 0, 1, 0, 0);
+        const a = Math.round(lerp(168, 214, warm)),
+          b = Math.round(lerp(166, 202, warm)),
+          c = Math.round(lerp(154, 172, warm));
+        fg.fillStyle = `rgb(${a},${b},${c})`;
+        fg.fillRect(0, 0, FW, FH);
+        if (warm > 0.02) {
+          const v = fg.createRadialGradient(
+            FW / 2,
+            FH / 2,
+            30,
+            FW / 2,
+            FH / 2,
+            FW * 0.6,
+          );
+          v.addColorStop(0, `rgba(255,236,190,${0.5 * warm})`);
+          v.addColorStop(1, "rgba(255,236,190,0)");
+          fg.fillStyle = v;
+          fg.fillRect(0, 0, FW, FH);
+        }
+        filmTex.needsUpdate = true;
+      }
+
+      class Film extends WorldItem {
+        constructor() {
+          super("film", "The film", 32.5);
+          this.x = -13;
+          this.z = -5;
+          this.n = new THREE.Vector2(10, 3).normalize();
+          this.colour = { f: 1000, q: 0.35 };
+          this.events = tuneEvents(
+            11,
+            16,
+            3,
+            0.68,
+            [0, 2, 4, 7, 9, 12, 14],
+            "triangle",
+          );
+          Object.assign(this.v, {
+            lamp: 0,
+            reel: 0,
+            reelSpeed: 0,
+            warm: 0,
+            key: "",
+          });
+          this.build();
+        }
+        build() {
+          const g = (this.group = new THREE.Group());
+          g.position.set(this.x, 0, this.z);
+          g.rotation.y = Math.atan2(this.n.x, this.n.y);
+          const wood = mat(0x4e3a29, 0.8),
+            iron = mat(0x43484e, 0.55, 0.2);
+          const W = 3.7,
+            H = 2.15,
+            base = 0.72;
+          this.W = W;
+          this.H = H;
+          this.base = base;
+          const screen = new THREE.Mesh(
+            new THREE.PlaneGeometry(W, H),
+            new THREE.MeshBasicMaterial({ map: filmTex, toneMapped: false }),
+          );
+          screen.position.set(0, base + H / 2, 0.015);
+          const backSide = new THREE.Mesh(
+            new THREE.PlaneGeometry(W, H),
+            new THREE.MeshBasicMaterial({
+              map: filmTex,
+              toneMapped: false,
+              color: 0x777066,
+              side: THREE.BackSide,
+            }),
+          );
+          /* Seen through the cloth, so the picture reads mirrored from behind. */
+          backSide.position.set(0, base + H / 2, -0.015);
+          const shade = shadowed(
+            new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.01), mat(0xbdb7a8, 1)),
+            true,
+            false,
+          );
+          shade.position.set(0, base + H / 2, 0);
+          g.add(screen, backSide, shade);
+          for (const s of [-1, 1]) {
+            const p = shadowed(
+              new THREE.Mesh(
+                new THREE.BoxGeometry(0.13, base + H + 0.34, 0.13),
+                wood,
+              ),
+            );
+            p.position.set(s * (W / 2 + 0.07), (base + H + 0.34) / 2, 0);
+            g.add(p);
+          }
+          for (const y of [base + H + 0.07, base - 0.05]) {
+            const b = shadowed(
+              new THREE.Mesh(new THREE.BoxGeometry(W + 0.2, 0.09, 0.09), wood),
+            );
+            b.position.set(0, y, 0);
+            g.add(b);
+          }
+          /* A painted plank with the title: the only words on the object, readable from a few metres. */
+          const pc = document.createElement("canvas");
+          pc.width = 768;
+          pc.height = 96;
+          const pg = pc.getContext("2d");
+          pg.fillStyle = "#3b2c1f";
+          pg.fillRect(0, 0, 768, 96);
+          pg.fillStyle = "#e6d6b2";
+          pg.font = '700 52px Georgia,"Noto Serif",serif';
+          pg.textAlign = "center";
+          pg.textBaseline = "middle";
+          pg.fillText("The Digging of the Pond", 384, 50);
+          const plankTex = new THREE.CanvasTexture(pc);
+          plankTex.colorSpace = THREE.SRGBColorSpace;
+          plankTex.anisotropy = 8;
+          const plank = new THREE.Mesh(
+            new THREE.PlaneGeometry(2.4, 0.3),
+            mat(0xffffff, 0.8, 0, { map: plankTex }),
+          );
+          plank.position.set(0, 0.46, 0.06);
+          g.add(plank);
+
+          const pj = (this.projector = new THREE.Group());
+          /* Off to one side and aimed back at the sheet, so it never stands between the visitor and the picture. */
+          pj.position.set(2.3, 0, 5);
+          pj.rotation.y = Math.atan2(-2.3, -5);
+          for (let i = 0; i < 3; i++) {
+            const a = i * 2.094 + 0.5,
+              leg = shadowed(
+                new THREE.Mesh(
+                  new THREE.CylinderGeometry(0.018, 0.03, 1.2, 6),
+                  iron,
+                ),
+              );
+            leg.position.set(Math.cos(a) * 0.2, 0.56, Math.sin(a) * 0.2);
+            leg.rotation.set(Math.sin(a) * 0.36, 0, -Math.cos(a) * 0.36);
+            pj.add(leg);
+          }
+          const box = shadowed(
+            new THREE.Mesh(
+              new THREE.BoxGeometry(0.3, 0.3, 0.46),
+              mat(0x626970, 0.5, 0.2),
+            ),
+          );
+          box.position.y = 1.24;
+          pj.add(box);
+          const lens = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.07, 0.085, 0.16, 12),
+              iron,
+            ),
+          );
+          lens.rotation.x = Math.PI / 2;
+          lens.position.set(0, 1.24, 0.3);
+          pj.add(lens);
+          this.reels = [];
+          for (const z of [-0.18, 0.18]) {
+            const hub = new THREE.Group();
+            hub.position.set(0, 1.56, z);
+            const disc = shadowed(
+              new THREE.Mesh(
+                new THREE.CylinderGeometry(0.19, 0.19, 0.035, 18),
+                mat(0x8d9096, 0.4, 0.5),
+              ),
+            );
+            disc.rotation.z = Math.PI / 2;
+            hub.add(disc);
+            for (let i = 0; i < 3; i++) {
+              const hole = new THREE.Mesh(
+                new THREE.BoxGeometry(0.04, 0.27, 0.05),
+                iron,
+              );
+              hole.rotation.x = i * 1.047;
+              hub.add(hole);
+            }
+            pj.add(hub);
+            this.reels.push(hub);
+          }
+          this.pilot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.03, 10, 8),
+            new THREE.MeshStandardMaterial({
+              color: 0x2a1a08,
+              emissive: 0xffa640,
+              emissiveIntensity: 1,
+            }),
+          );
+          this.pilot.position.set(0.16, 1.3, 0.1);
+          pj.add(this.pilot);
+          this.tail = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.035, 0.5),
+            new THREE.MeshStandardMaterial({
+              color: 0x17161a,
+              side: THREE.DoubleSide,
+              roughness: 0.3,
+            }),
+          );
+          this.tail.position.set(0, 1.3, -0.3);
+          this.tail.geometry.translate(0, -0.25, 0);
+          pj.add(this.tail);
+          g.add(pj);
+
+          /* The beam: a four-sided fan of light from the lens to the sheet, faint at the sheet end. */
+          const lensP = [2.14, 1.24, 4.65],
+            c = [
+              [-W / 2, base],
+              [W / 2, base],
+              [W / 2, base + H],
+              [-W / 2, base + H],
+            ];
+          const pos = [],
+            col = [];
+          for (let i = 0; i < 4; i++) {
+            const [ax, ay] = c[i],
+              [bx, by] = c[(i + 1) % 4];
+            pos.push(...lensP, ax, ay, 0.03, bx, by, 0.03);
+            col.push(1, 0.9, 0.7, 0.16, 0.14, 0.1, 0.16, 0.14, 0.1);
+          }
+          const bg = new THREE.BufferGeometry();
+          bg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+          bg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+          this.beam = new THREE.Mesh(
+            bg,
+            new THREE.MeshBasicMaterial({
+              vertexColors: true,
+              transparent: true,
+              opacity: 0,
+              blending: THREE.AdditiveBlending,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+              fog: false,
+              toneMapped: false,
+            }),
+          );
+          g.add(this.beam);
+          scene.add(g);
+
+          const nx = new THREE.Vector2(this.n.y, -this.n.x);
+          for (const s of [-1.5, 0, 1.5])
+            solids.push({
+              x: this.x + nx.x * s,
+              z: this.z + nx.y * s,
+              r: 0.55,
+            });
+          solids.push({
+            x: this.x + this.n.x * 5 + nx.x * 2.3,
+            z: this.z + this.n.y * 5 + nx.y * 2.3,
+            r: 0.55,
+          });
+          this.hit = g;
+        }
+        inFront(v) {
+          const dx = v.x - this.x,
+            dz = v.z - this.z,
+            d = Math.hypot(dx, dz) || 1;
+          return (
+            (dx * this.n.x + dz * this.n.y) / d >=
+            Math.cos((65 * Math.PI) / 180)
+          );
+        }
+        startNoise() {
+          /* the projector's clatter, part of the film's own sound */
+          audio.loop(
+            this.bus,
+            1,
+            (d, sr) => {
+              for (let i = 0; i < d.length; i++) {
+                const beat = ((i / sr) * 18) % 1;
+                d[i] =
+                  (Math.random() * 2 - 1) * (0.22 + (beat < 0.1 ? 0.9 : 0));
+              }
+            },
+            0.05,
+          );
+        }
+        animate(dt, vis, now) {
+          const v = this.v,
+            d = Math.hypot(vis.x - this.x, vis.z - this.z);
+          const presence = smooth(16, 10, d) * (this.inFront(vis) ? 1 : 0);
+          const lampTo =
+            this.state === "playing"
+              ? 1
+              : this.state === "held"
+                ? 0.28
+                : this.state === "waiting"
+                  ? 0.34 * presence
+                  : 0;
+          v.lamp = damp(v.lamp, lampTo, 3.5, dt);
+          v.warm = damp(v.warm, this.state === "waiting" ? presence : 0, 3, dt);
+          v.reelSpeed = damp(
+            v.reelSpeed,
+            this.state === "playing" ? 5 : 0,
+            2.4,
+            dt,
+          );
+          v.reel += v.reelSpeed * Math.min(dt, 0.1);
+          this.reels.forEach((r) => {
+            r.rotation.z = 0;
+            r.rotation.x = v.reel;
+          });
+          this.beam.material.opacity =
+            v.lamp *
+            v.lamp *
+            (REDUCED ? 0.26 : 0.24 + 0.04 * Math.sin(now * 0.041));
+          const done = this.state === "finished";
+          this.tail.visible = done;
+          if (done) this.tail.rotation.x = Math.sin(now * 0.004) * 0.25 - 0.1;
+          this.pilot.material.emissiveIntensity = done
+            ? 2.2 + Math.sin(now * 0.004) * 2
+            : this.state === "waiting"
+              ? 0.9 + 3 * v.warm
+              : 4;
+          const key =
+            this.state === "playing"
+              ? "p" + Math.floor(this.t * 15)
+              : this.state === "held"
+                ? "h" + Math.floor(this.t * 15)
+                : "b" + Math.round(v.warm * 24);
+          if (key !== v.key) {
+            v.key = key;
+            if (this.state === "playing" || this.state === "held")
+              paintFilm(this.t, this.state === "held" ? 0.52 : 0);
+            else paintBlank(v.warm);
+          }
+        }
+      }
+
+      /* ------------------------------------------------------- the gramophone ---- */
+      class Record extends WorldItem {
+        constructor() {
+          super("music", "The music", 36);
+          this.x = 11;
+          this.z = 8;
+          this.colour = { f: 1400, q: 0.65 };
+          this.events = tuneEvents(
+            40,
+            14,
+            4,
+            0.64,
+            [0, 2, 4, 5, 7, 9, 11, 12],
+            "square",
+          ).map((e) => ({ ...e, peak: e.peak * 0.8 }));
+          Object.assign(this.v, {
+            spin: 0,
+            angle: -0.75,
+            lift: 0,
+            turned: 0,
+            mote: 0,
+          });
+          this.build();
+        }
+        build() {
+          const g = (this.group = new THREE.Group());
+          g.position.set(this.x, 0, this.z);
+          g.rotation.y = -Math.PI / 2 - 0.15;
+          const stone = mat(0x9a9587, 0.95),
+            oak = mat(0x5b3b24, 0.5),
+            brass = mat(0xc9a049, 0.34, 0.45, { side: THREE.DoubleSide });
+          const plinth = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.42, 0.56, 0.86, 16),
+              stone,
+            ),
+          );
+          plinth.position.y = 0.43;
+          g.add(plinth);
+          const box = shadowed(
+            new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.26, 0.72), oak),
+          );
+          box.position.y = 0.99;
+          g.add(box);
+          this.disc = new THREE.Group();
+          this.disc.position.set(0, 1.135, 0);
+          const vinyl = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.31, 0.31, 0.02, 32),
+              mat(0x121214, 0.28),
+            ),
+          );
+          const label = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.1, 0.1, 0.024, 24),
+            mat(0xd8782b, 0.6),
+          );
+          const mark = new THREE.Mesh(
+            new THREE.BoxGeometry(0.1, 0.026, 0.024),
+            mat(0xf5ead0, 0.6),
+          );
+          mark.position.x = 0.05;
+          this.disc.add(vinyl, label, mark);
+          g.add(this.disc);
+
+          /* the flare: the thing you see from afar, big enough to read at 16 m */
+          const pts = [];
+          for (let i = 0; i <= 18; i++) {
+            const s = i / 18;
+            pts.push(
+              new THREE.Vector2(0.035 + 0.46 * s * s * s + 0.05 * s, s * 1.08),
+            );
+          }
+          const flare = (this.flare = shadowed(
+            new THREE.Mesh(new THREE.LatheGeometry(pts, 28), brass),
+          ));
+          /* Up and away over the back corner: the turning record, which carries the state, stays in view. */
+          flare.position.set(-0.3, 1.12, -0.3);
+          flare.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(-0.6, 0.76, 0.25).normalize(),
+          );
+          g.add(flare);
+          const neck = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.04, 0.04, 0.16, 10),
+              brass,
+            ),
+          );
+          neck.position.set(-0.3, 1.16, -0.3);
+          g.add(neck);
+
+          /* the arm: on its rest (waiting), on the record (playing), up (held), left in the last groove (finished) */
+          this.arm = new THREE.Group();
+          this.arm.position.set(0.3, 1.2, -0.3);
+          const rod = shadowed(
+            new THREE.Mesh(
+              new THREE.CylinderGeometry(0.014, 0.018, 0.55, 8),
+              mat(0xd9dcdf, 0.3, 0.6),
+            ),
+          );
+          rod.rotation.x = Math.PI / 2;
+          rod.position.z = 0.27;
+          this.arm.add(rod);
+          const head = new THREE.Mesh(
+            new THREE.BoxGeometry(0.05, 0.03, 0.08),
+            mat(0xd9dcdf, 0.3, 0.6),
+          );
+          head.position.set(0, -0.015, 0.54);
+          this.arm.add(head);
+          g.add(this.arm);
+          const post = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, 0.09, 10),
+            mat(0xd9dcdf, 0.3, 0.6),
+          );
+          post.position.set(0.3, 1.16, -0.3);
+          g.add(post);
+          scene.add(g);
+          solids.push({ x: this.x, z: this.z, r: 1.05 });
+
+          /* Motes lifting out of the flare: the one silent sign that something is playing. */
+          const N = 26,
+            mp = new Float32Array(N * 3);
+          this.moteGeo = new THREE.BufferGeometry();
+          this.moteGeo.setAttribute(
+            "position",
+            new THREE.BufferAttribute(mp, 3),
+          );
+          this.motes = new THREE.Points(
+            this.moteGeo,
+            new THREE.PointsMaterial({
+              color: 0xffc66e,
+              size: 0.09,
+              map: (() => {
+                const c = document.createElement("canvas");
+                c.width = c.height = 32;
+                const d = c.getContext("2d"),
+                  rg = d.createRadialGradient(16, 16, 1, 16, 16, 15);
+                rg.addColorStop(0, "rgba(255,255,255,1)");
+                rg.addColorStop(0.45, "rgba(255,255,255,.55)");
+                rg.addColorStop(1, "rgba(255,255,255,0)");
+                d.fillStyle = rg;
+                d.fillRect(0, 0, 32, 32);
+                return new THREE.CanvasTexture(c);
+              })(),
+              transparent: true,
+              opacity: 0,
+              depthWrite: false,
+              fog: false,
+              toneMapped: false,
+            }),
+          );
+          this.motes.frustumCulled = false;
+          this.motes.position.copy(g.position);
+          scene.add(this.motes);
+          this.hit = g;
+        }
+        startNoise() {
+          audio.loop(
+            this.bus,
+            2,
+            (d) => {
+              for (let i = 0; i < d.length; i++)
+                d[i] =
+                  (Math.random() * 2 - 1) * 0.06 +
+                  (Math.random() < 0.0009 ? (Math.random() * 2 - 1) * 1.4 : 0);
+            },
+            0.5,
+          );
+        }
+        animate(dt, vis, now) {
+          const v = this.v,
+            playing = this.state === "playing";
+          v.spin = damp(v.spin, playing ? 3.45 : 0, 1.8, dt);
+          v.turned += v.spin * Math.min(dt, 0.1);
+          this.disc.rotation.y = v.turned;
+          const groove = lerp(0.06, 0.52, this.t / this.duration);
+          const angleTo = this.state === "waiting" ? -0.5 : groove;
+          v.angle = damp(v.angle, angleTo, 3, dt);
+          v.lift = damp(v.lift, this.state === "held" ? 0.2 : 0, 6, dt);
+          this.arm.rotation.set(-v.lift, -v.angle - 0.42, 0, "YXZ");
+          this.flare.scale.setScalar(
+            1 + (playing ? 0.012 * Math.sin(now * 0.021) : 0),
+          );
+          /* motes */
+          const P = this.moteGeo.attributes.position;
+          const side = -Math.PI / 2 - 0.15,
+            cs = Math.cos(side),
+            sn = Math.sin(side);
+          for (let i = 0; i < P.count; i++) {
+            const k = (now * 0.00028 + i * 0.137) % 1,
+              a = i * 2.4;
+            const lx = -0.95 + Math.cos(a) * (0.16 + k * 0.45),
+              lz = -0.04 + Math.sin(a) * (0.16 + k * 0.45);
+            P.setXYZ(
+              i,
+              lx * cs + lz * sn,
+              1.95 + k * 1.3 + Math.sin(a + now * 0.002) * 0.05,
+              -lx * sn + lz * cs,
+            );
+          }
+          P.needsUpdate = true;
+          this.motes.material.opacity = (v.spin / 3.45) * 0.85;
+        }
+      }
+
+      /* ------------------------------------------------------------ the person -- */
+      const LINES = [
+        { from: 0.4, to: 4.2, text: "There you are. I look after this pond." },
+        { from: 4.8, to: 8.8, text: "My grandmother dug it, with a spade." },
+        {
+          from: 9.4,
+          to: 13.6,
+          text: "Hear the music? The band played here on Sundays.",
+        },
+        { from: 14.2, to: 18.4, text: "Go and find the sheet by the water." },
+      ];
+      class Person extends WorldItem {
+        constructor() {
+          super("person", "Ida", 19);
+          this.x = 3;
+          this.z = -15;
+          this.colour = { f: 1250, q: 0.8 };
+          const r = seeded(77);
+          for (const l of LINES) {
+            let t = l.from;
+            while (t < l.to - 0.15) {
+              const dur = 0.11 + r() * 0.13,
+                up = r();
+              this.events.push({
+                t,
+                f: 195 + up * 70,
+                dur,
+                type: "sawtooth",
+                peak: 0.3,
+                glide: 0.86 + r() * 0.22,
+              });
+              t += dur + (r() < 0.2 ? 0.14 : 0.02);
+            }
+          }
+          Object.assign(this.v, {
+            yaw: 2.65,
+            head: 0,
+            notice: 0,
+            noticing: false,
+            wave: 0,
+            waveT: 0,
+            slate: 0,
+            work: 1,
+            mouth: 0,
+            forceWave: false,
+            line: -2,
+          });
+          this.build();
+        }
+        build() {
+          const root = (this.group = new THREE.Group());
+          root.position.set(this.x, 0, this.z);
+          const body = (this.body = new THREE.Group());
+          root.add(body);
+          const coat = mat(0x2f5a4d, 0.9),
+            trousers = mat(0x3a3a40, 0.9),
+            boot = mat(0x241b14, 0.6),
+            skin = mat(0xc99a75, 0.65),
+            hatM = mat(0xc9a86a, 0.85),
+            scarf = mat(0xc4562e, 0.85);
+          const add = (parent, geo, m, x, y, z) => {
+            const o = shadowed(new THREE.Mesh(geo, m));
+            o.position.set(x, y, z);
+            parent.add(o);
+            return o;
+          };
+          for (const s of [-1, 1]) {
+            add(
+              root,
+              new THREE.CylinderGeometry(0.075, 0.07, 0.62, 10),
+              trousers,
+              s * 0.1,
+              0.33,
+              0,
+            );
+            add(
+              root,
+              new THREE.BoxGeometry(0.12, 0.09, 0.26),
+              boot,
+              s * 0.1,
+              0.05,
+              0.05,
+            );
+          }
+          const pts = [
+            [0.3, 0.52],
+            [0.26, 0.8],
+            [0.2, 1.1],
+            [0.22, 1.28],
+            [0.15, 1.38],
+            [0.07, 1.42],
+          ].map(([r, y]) => new THREE.Vector2(r, y));
+          add(body, new THREE.LatheGeometry(pts, 18), coat, 0, 0, 0);
+          add(
+            body,
+            new THREE.TorusGeometry(0.11, 0.05, 8, 18),
+            scarf,
+            0,
+            1.4,
+            0,
+          ).rotation.x = Math.PI / 2;
+          const head = (this.head = new THREE.Group());
+          head.position.set(0, 1.55, 0);
+          body.add(head);
+          add(head, new THREE.SphereGeometry(0.135, 18, 14), skin, 0, 0, 0);
+          add(
+            head,
+            new THREE.SphereGeometry(0.025, 8, 6),
+            skin,
+            0,
+            -0.01,
+            0.135,
+          );
+          for (const s of [-1, 1])
+            add(
+              head,
+              new THREE.SphereGeometry(0.016, 8, 6),
+              mat(0x17120e, 0.4),
+              s * 0.052,
+              0.025,
+              0.118,
+            );
+          this.mouth = add(
+            head,
+            new THREE.SphereGeometry(0.038, 10, 8),
+            mat(0x4a1f1a, 0.7),
+            0,
+            -0.07,
+            0.112,
+          );
+          this.mouth.castShadow = false;
+          add(
+            head,
+            new THREE.SphereGeometry(0.15, 14, 10),
+            mat(0x6f6a64, 0.9),
+            0,
+            0.03,
+            -0.045,
+          );
+          add(
+            head,
+            new THREE.CylinderGeometry(0.34, 0.36, 0.022, 26),
+            hatM,
+            0,
+            0.1,
+            0,
+          );
+          add(
+            head,
+            new THREE.CylinderGeometry(0.13, 0.15, 0.13, 20),
+            hatM,
+            0,
+            0.16,
+            0,
+          );
+          add(
+            head,
+            new THREE.CylinderGeometry(0.152, 0.152, 0.035, 20),
+            scarf,
+            0,
+            0.125,
+            0,
+          );
+          const arm = (side) => {
+            const a = new THREE.Group();
+            a.position.set(side * 0.21, 1.31, 0);
+            body.add(a);
+            add(
+              a,
+              new THREE.CapsuleGeometry(0.058, 0.46, 4, 10),
+              coat,
+              0,
+              -0.27,
+              0,
+            );
+            add(a, new THREE.SphereGeometry(0.058, 10, 8), skin, 0, -0.56, 0);
+            return a;
+          };
+          this.armL = arm(1);
+          this.armR = arm(-1);
+          /* the rake: a shaft from the left hand down to the ground ahead */
+          const rake = (this.rake = new THREE.Group());
+          rake.position.set(0, -0.56, 0);
+          this.armL.add(rake);
+          add(
+            rake,
+            new THREE.CylinderGeometry(0.014, 0.014, 1.6, 8),
+            mat(0x8b6a43, 0.7),
+            0,
+            -0.55,
+            0,
+          );
+          add(
+            rake,
+            new THREE.BoxGeometry(0.46, 0.03, 0.04),
+            mat(0x2b2d31, 0.5, 0.4),
+            0,
+            -1.34,
+            0,
+          );
+          /* the slate: hangs at the hip on a cord, she lifts it to chest height to say a line */
+          const sc = (this.slateCanvas = document.createElement("canvas"));
+          sc.width = 1024;
+          sc.height = 660;
+          this.slateTex = new THREE.CanvasTexture(sc);
+          this.slateTex.colorSpace = THREE.SRGBColorSpace;
+          this.slateTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+          const sl = (this.slate = new THREE.Group());
+          body.add(sl);
+          const face = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.02, 0.66),
+            new THREE.MeshBasicMaterial({
+              map: this.slateTex,
+              toneMapped: false,
+            }),
+          );
+          face.position.z = 0.012;
+          const back = shadowed(
+            new THREE.Mesh(
+              new THREE.BoxGeometry(1.06, 0.7, 0.02),
+              mat(0x5e4029, 0.8),
+            ),
+          );
+          sl.add(back, face);
+          this.paintSlate(LINES[0].text, true);
+          scene.add(root);
+          solids.push({ x: this.x, z: this.z, r: 1.15 });
+          this.hit = root;
+        }
+        paintSlate(text, blank) {
+          const g = this.slateCanvas.getContext("2d"),
+            W = 1024,
+            H = 660;
+          g.fillStyle = "#23282a";
+          g.fillRect(0, 0, W, H);
+          const r = seeded(text.length + 9);
+          g.globalAlpha = 0.05;
+          g.fillStyle = "#fff";
+          for (let i = 0; i < 40; i++) {
+            g.save();
+            g.translate(r() * W, r() * H);
+            g.rotate(r() - 0.5);
+            g.fillRect(-130, -22, 260, 44);
+            g.restore();
+          }
+          g.globalAlpha = 1;
+          if (!blank) {
+            let size = 118,
+              lines;
+            for (; size >= 66; size -= 6) {
+              g.font = `700 ${size}px "Segoe Print","Noteworthy","Chalkboard SE",Corbel,"Noto Sans",sans-serif`;
+              lines = [];
+              let cur = "";
+              for (const w of text.split(" ")) {
+                const next = cur ? cur + " " + w : w;
+                if (g.measureText(next).width > W - 110) {
+                  lines.push(cur);
+                  cur = w;
+                } else cur = next;
+              }
+              lines.push(cur);
+              if (lines.length * size * 1.22 < H - 70) break;
+            }
+            g.fillStyle = "#f2efe6";
+            g.textAlign = "center";
+            g.textBaseline = "middle";
+            const top = H / 2 - (lines.length - 1) * size * 0.61;
+            lines.forEach((l, i) =>
+              g.fillText(l, W / 2, top + i * size * 1.22),
+            );
+            g.fillStyle = "#23282a";
+            for (let i = 0; i < 2600; i++)
+              g.fillRect(r() * W, r() * H, 1 + r() * 3, 1 + r() * 2);
+          }
+          this.slateTex.needsUpdate = true;
+        }
+        lineAt(t) {
+          let i = -1;
+          LINES.forEach((l, k) => {
+            if (t >= l.from) i = k;
+          });
+          return i;
+        }
+        /* She picks up the line she was in, never the middle of a sentence. */
+        carryOn() {
+          if (this.state !== "held") return;
+          const i = this.lineAt(this.t);
+          if (i >= 0) this.t = LINES[i].from;
+          this.go("playing");
+        }
+        animate(dt, vis, now) {
+          const v = this.v,
+            d = Math.hypot(vis.x - this.x, vis.z - this.z);
+          const was = v.noticing;
+          v.noticing = was ? d < 15 : d < 12;
+          if (v.noticing && !was) v.waveT = 2.2;
+          v.waveT = Math.max(0, v.waveT - dt);
+          const faceYou = Math.atan2(vis.x - this.x, vis.z - this.z),
+            workYaw = 2.65;
+          const engaged =
+            this.state === "playing" ||
+            this.state === "held" ||
+            (this.state === "waiting" && v.noticing);
+          v.yaw = dampAngle(v.yaw, engaged ? faceYou : workYaw, 2.6, dt);
+          this.group.rotation.y = v.yaw;
+          v.notice = damp(v.notice, v.noticing ? 1 : 0, 3, dt);
+          const toYou = wrapPi(faceYou - v.yaw);
+          v.head = damp(
+            v.head,
+            v.noticing ? clamp(toYou, -1.1, 1.1) : 0,
+            5,
+            dt,
+          );
+          this.head.rotation.y = v.head;
+
+          const work =
+            this.state === "finished" ||
+            (this.state === "waiting" && !v.noticing)
+              ? 1
+              : 0;
+          v.work = damp(v.work, work, 3.5, dt);
+          v.wave = damp(
+            v.wave,
+            (v.waveT > 0 || v.forceWave) && this.state === "waiting" ? 1 : 0,
+            6,
+            dt,
+          );
+          const slateTo =
+            this.state === "playing" ? 1 : this.state === "held" ? 0.3 : 0;
+          v.slate = damp(v.slate, slateTo, 5, dt);
+
+          /* pose */
+          const rakeBeat = Math.sin(now * 0.0024);
+          this.body.rotation.x =
+            v.work * (0.2 + rakeBeat * 0.05) +
+            (this.state === "held" ? 0.03 : 0);
+          this.armL.rotation.x = lerp(-0.12, -0.72 + rakeBeat * 0.3, v.work);
+          this.armL.rotation.z = 0.12;
+          this.rake.rotation.x = lerp(0.1, 0.05 - rakeBeat * 0.14, v.work);
+                    this.armR.rotation.set(
+            lerp(
+              lerp(-0.1, -0.9 + rakeBeat * 0.3, v.work),
+              -0.62,
+              v.slate,
+            ),
+            0,
+            lerp(0, -2.5 + Math.sin(now * 0.012) * 0.28, v.wave),
+          );
+          this.slate.position.set(
+            lerp(-0.26, 0, v.slate),
+            lerp(0.82, 1.08, v.slate),
+            lerp(0.25, 0.4, v.slate),
+          );
+          this.slate.rotation.set(
+            lerp(0.15, -0.06, v.slate),
+            lerp(-0.5, 0, v.slate),
+            lerp(0.12, 0, v.slate),
+          );
+          const s = lerp(0.42, 1, v.slate);
+          this.slate.scale.setScalar(s);
+
+          /* mouth and chalk */
+          let open = 0;
+          if (this.state === "playing") {
+            for (const e of this.events)
+              if (this.t >= e.t && this.t < e.t + e.dur) {
+                open = 1;
+                break;
+              }
+          }
+          v.mouth = damp(v.mouth, open, 22, dt);
+          this.mouth.scale.set(1, lerp(0.22, 1.1, v.mouth), 0.7);
+          const line =
+            this.state === "finished"
+              ? LINES.length - 1
+              : this.state === "waiting"
+                ? -1
+                : this.lineAt(this.t);
+          if (line !== v.line) {
+            v.line = line;
+            if (line < 0) this.paintSlate("", true);
+            else this.paintSlate(LINES[line].text, false);
+          }
+        }
+      }
+
+      /* ------------------------------------------------------------ the world --- */
+      const film = new Film(),
+        music = new Record(),
+        person = new Person();
+      const items = [music, film, person];
+      const SPEECH = {
+        playing: "started",
+        held: "is waiting",
+        finished: "has finished",
+      };
+      function say(it, state) {
+        if (booted && SPEECH[state])
+          $("live").textContent = `${it.name} ${SPEECH[state]}.`;
+      }
+      let booted = false;
+
+      const starters = {
+        film: nearStarter(film, {
+          startM: 10,
+          holdM: 13,
+          inFront: (v) => film.inFront(v),
+        }),
+        music: nearStarter(music, { startM: 16, holdM: 19 }),
+        person: nearStarter(person, { startM: 5, holdM: 8 }),
+      };
+
+      const visitor = { x: 1.2, z: 25, yaw: 0.2, speed: 0, turn: 0, stride: 0 };
+      const keys = new Set();
+      const drag = {
+        on: false,
+        id: null,
+        x0: 0,
+        y0: 0,
+        x: 0,
+        y: 0,
+        moved: false,
+        t0: 0,
+      };
+      const EAR = { film: 15, music: 19, person: 9 };
+      const levels = { film: 0, music: 0, person: 0 };
+      let auto = null;
+      const ROUTE = [
+        { to: [7.2, 15] },
+        { to: [7.8, 8.2], look: music, wait: 8 },
+        { to: [7, 0] },
+        { to: [-5.2, -3.4], look: film, wait: 11 },
+        { to: [-1.5, -8] },
+        { to: [2.6, -11.6], look: person, wait: 20 },
+      ];
+
+      function push() {
+        const d = Math.hypot(visitor.x, visitor.z);
+        if (d > 46) {
+          visitor.x *= 46 / d;
+          visitor.z *= 46 / d;
+        }
+        if (inPond(visitor.x, visitor.z, 0.6)) {
+          const a = Math.atan2(
+            (visitor.z - POND.z) / (POND.rz + 0.6),
+            (visitor.x - POND.x) / (POND.rx + 0.6),
+          );
+          visitor.x = POND.x + Math.cos(a) * (POND.rx + 0.61);
+          visitor.z = POND.z + Math.sin(a) * (POND.rz + 0.61);
+        }
+        for (const s of solids) {
+          const dx = visitor.x - s.x,
+            dz = visitor.z - s.z,
+            dd = Math.hypot(dx, dz);
+          if (dd < s.r && dd > 1e-3) {
+            visitor.x = s.x + (dx / dd) * s.r;
+            visitor.z = s.z + (dz / dd) * s.r;
+          }
+        }
+      }
+      function walk(dt) {
+        let f = 0,
+          t = 0;
+        if (drag.on) {
+          const dx = drag.x - drag.x0,
+            dy = drag.y - drag.y0;
+          if (Math.abs(dy) > 6) f = clamp(-dy / 72, -1, 1);
+          if (Math.abs(dx) > 6) t = clamp(dx / 96, -1, 1);
+        }
+        if (keys.has("ArrowUp") || keys.has("w")) f = 1;
+        if (keys.has("ArrowDown") || keys.has("s")) f = -0.7;
+        if (keys.has("ArrowLeft") || keys.has("a")) t = -1;
+        if (keys.has("ArrowRight") || keys.has("d")) t = 1;
+        if (auto) {
+          const step = ROUTE[auto.i];
+          if (!step) {
+            stopAuto();
+          } else if (auto.wait > 0) {
+            auto.wait -= dt;
+            const it = step.look;
+            const want = Math.atan2(it.x - visitor.x, -(it.z - visitor.z));
+            visitor.yaw = dampAngle(visitor.yaw, want, 2.2, dt);
+            if (auto.wait <= 0) auto.i++;
+          } else {
+            const [tx, tz] = step.to,
+              dx = tx - visitor.x,
+              dz = tz - visitor.z,
+              dd = Math.hypot(dx, dz);
+            if (dd < 0.5) {
+              if (step.wait) auto.wait = step.wait;
+              else auto.i++;
+            } else {
+              const want = Math.atan2(dx, -dz);
+              visitor.yaw = dampAngle(visitor.yaw, want, 2.4, dt);
+              f = Math.max(0.2, Math.cos(wrapPi(want - visitor.yaw))) * 0.8;
+            }
+          }
+        }
+        visitor.speed = damp(visitor.speed, f * 3.2, 7, dt);
+        visitor.turn = damp(visitor.turn, t * 1.45, 9, dt);
+        visitor.yaw += visitor.turn * dt;
+        visitor.x += Math.sin(visitor.yaw) * visitor.speed * dt;
+        visitor.z -= Math.cos(visitor.yaw) * visitor.speed * dt;
+        visitor.stride += Math.abs(visitor.speed) * dt * 3.4;
+        push();
+      }
+      function setCamera(now) {
+        const bob = REDUCED
+          ? 0
+          : Math.sin(visitor.stride) *
+            0.025 *
+            clamp(Math.abs(visitor.speed), 0, 1);
+        const sway = REDUCED ? 0 : Math.sin(now * 0.0007) * 0.006;
+        camera.position.set(visitor.x, 1.55 + bob, visitor.z);
+        camera.rotation.set(
+          0.02 + sway,
+          -visitor.yaw,
+          Math.sin(now * 0.00053) * (REDUCED ? 0 : 0.004),
+          "YXZ",
+        );
+      }
+      function ears() {
+        const ducked =
+          person.state === "playing" &&
+          Math.hypot(visitor.x - person.x, visitor.z - person.z) < 9
+            ? 0.34
+            : 1;
+        for (const it of items) {
+          const dx = it.x - visitor.x,
+            dz = it.z - visitor.z,
+            d = Math.hypot(dx, dz);
+          let g = earGain(d, EAR[it.id]) * (it === person ? 1.5 : ducked);
+          /* from behind the sheet the film is muffled too */
+          if (it === film && !film.inFront(visitor)) g *= 0.45;
+          levels[it.id] = it.state === "playing" ? g : 0;
+          if (!it.bus) continue;
+          const rel = wrapPi(Math.atan2(dx, -dz) - visitor.yaw),
+            now = audio.ctx.currentTime;
+          it.bus.ear.gain.setTargetAtTime(g, now, 0.08);
+          if (it.bus.pan.pan)
+            it.bus.pan.pan.setTargetAtTime(Math.sin(rel) * 0.85, now, 0.08);
+          const open = clamp(1 - d / EAR[it.id], 0, 1);
+          it.bus.lp.frequency.setTargetAtTime(
+            lerp(650, 9000, open * open) * (Math.abs(rel) > 1.9 ? 0.6 : 1),
+            now,
+            0.1,
+          );
+        }
+      }
+
+      let last = performance.now(),
+        paused = false,
+        waking = false;
+      function frame(now) {
+        requestAnimationFrame(frame);
+        if (paused) {
+          last = now;
+          return;
+        }
+        const dt = Math.min((now - last) / 1000, 0.1);
+        last = now;
+        if (booted) {
+          walk(dt);
+          for (const k of Object.keys(starters)) starters[k].see(visitor);
+          for (const it of items) it.advance(dt);
+          ears();
+        }
+        for (const it of items) it.animate(dt, visitor, now);
+        pondMat.uniforms.t.value = now * 0.001;
+        setCamera(now);
+        renderer.render(scene, camera);
+      }
+      function resize() {
+        const w = innerWidth,
+          h = innerHeight,
+          aspect = w / h;
+        renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+        renderer.setSize(w, h, false);
+        camera.aspect = aspect;
+        camera.fov = aspect < 1 ? 66 : aspect > 1.9 ? 44 : 52;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      /* ------------------------------------------------------------ the hands --- */
+      const gl = $("gl"),
+        ray = new THREE.Raycaster(),
+        ndc = new THREE.Vector2();
+      const TAP_REACH = 12;
+      function tap(x, y) {
+        ndc.set((x / innerWidth) * 2 - 1, -((y / innerHeight) * 2 - 1));
+        ray.setFromCamera(ndc, camera);
+        let best = null,
+          bestD = Infinity;
+        for (const it of items) {
+          const hits = ray.intersectObject(it.hit, true);
+          if (hits.length && hits[0].distance < bestD) {
+            best = it;
+            bestD = hits[0].distance;
+          }
+        }
+        if (
+          best &&
+          Math.hypot(visitor.x - best.x, visitor.z - best.z) <= TAP_REACH
+        )
+          starters[best.id].touch();
+      }
+      gl.addEventListener("pointerdown", (e) => {
+        if (!booted || drag.on) return;
+        gl.setPointerCapture(e.pointerId);
+        Object.assign(drag, {
+          on: true,
+          id: e.pointerId,
+          x0: e.clientX,
+          y0: e.clientY,
+          x: e.clientX,
+          y: e.clientY,
+          moved: false,
+          t0: performance.now(),
+        });
+        const l = $("legs");
+        l.style.left = e.clientX + "px";
+        l.style.top = e.clientY + "px";
+      });
+      gl.addEventListener("pointermove", (e) => {
+        if (!drag.on || e.pointerId !== drag.id) return;
+        drag.x = e.clientX;
+        drag.y = e.clientY;
+        if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) > 9 && !drag.moved) {
+          drag.moved = true;
+          gl.classList.add("dragging");
+          $("legs").classList.add("on");
+          if (auto) stopAuto();
+        }
+        const dx = clamp(drag.x - drag.x0, -36, 36),
+          dy = clamp(drag.y - drag.y0, -36, 36);
+        $("legs").firstElementChild.style.transform =
+          `translate(${dx}px,${dy}px)`;
+      });
+      function endDrag(e) {
+        if (!drag.on || e.pointerId !== drag.id) return;
+        const wasTap = !drag.moved && performance.now() - drag.t0 < 450;
+        drag.on = false;
+        gl.classList.remove("dragging");
+        $("legs").classList.remove("on");
+        $("legs").firstElementChild.style.transform = "";
+        if (wasTap && e.type === "pointerup") tap(e.clientX, e.clientY);
+      }
+      gl.addEventListener("pointerup", endDrag);
+      gl.addEventListener("pointercancel", endDrag);
+      addEventListener("keydown", (e) => {
+        if (!booted || !$("sheet").hidden) {
+          if (e.key === "Escape") closeSheet();
+          return;
+        }
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key))
+          e.preventDefault();
+        keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      });
+      addEventListener("keyup", (e) =>
+        keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key),
+      );
+      addEventListener("blur", () => {
+        keys.clear();
+      });
+
+      function startAuto() {
+        auto = { i: 0, wait: 0 };
+        $("hint").textContent = "Walking for you. Drag to take over.";
+      }
+      function stopAuto() {
+        auto = null;
+        $("hint").textContent = "Drag to walk. Go close, or tap a thing.";
+      }
+      function enter(walkForMe) {
+        audio.start();
+        booted = true;
+        $("gate").hidden = true;
+        gl.focus({ preventScroll: true });
+        if (walkForMe) startAuto();
+      }
+      $("walkIn").onclick = () => enter(false);
+      $("walkAuto").onclick = () => enter(true);
+
+      /* ------------------------------------------------------------ all states -- */
+      const front = (d, side = 0) => {
+        const n = film.n;
+        return [film.x + n.x * d + n.y * side, film.z + n.y * d - n.x * side];
+      };
+      const SHOTS = [
+        {
+          item: film,
+          title: "The film",
+          starts:
+            "<b>Starts:</b> stand in front of it, within 10 m. From behind it stays dark.",
+          looks: [
+            {
+              name: "Far away",
+              text: "A blank sheet and a projector. Nothing moves.",
+              at: front(21, -1.5),
+              state: "waiting",
+            },
+            {
+              name: "Near",
+              text: "From 16 m the lamp warms and the sheet brightens.",
+              at: front(12.5, -1.2),
+              state: "waiting",
+            },
+            {
+              name: "Playing",
+              text: "The film runs, its sound comes from the sheet.",
+              at: front(8, -0.8),
+              state: "playing",
+              t: 17,
+            },
+            {
+              name: "Stopped",
+              text: "Past 13 m, or a tap: the picture holds and dims.",
+              at: front(14, -1),
+              state: "held",
+              t: 8,
+            },
+            {
+              name: "Finished",
+              text: "Blank again, the film tail loose. A tap runs it again.",
+              at: front(8.5, 0.5),
+              state: "finished",
+              t: film.duration,
+            },
+          ],
+        },
+        {
+          item: music,
+          title: "The music",
+          starts:
+            "<b>Starts:</b> by itself at 16 m, faint and muffled, so you find it by ear.",
+          looks: [
+            {
+              name: "Far away",
+              text: "Silent. The arm is on its rest.",
+              at: [3.2, 26.5],
+              state: "waiting",
+            },
+            {
+              name: "Near",
+              text: "At 16 m the needle drops. Thin, far off.",
+              at: [6, 22.6],
+              state: "playing",
+              t: 2,
+            },
+            {
+              name: "Playing",
+              text: "At 3 m: full sound, the record turning.",
+              at: [8, 7.1],
+              state: "playing",
+              t: 15,
+            },
+            {
+              name: "Stopped",
+              text: "Past 19 m, or a tap: the arm lifts, the record slows.",
+              at: [7.8, 9],
+              state: "held",
+              t: 15,
+              byHand: true,
+            },
+            {
+              name: "Finished",
+              text: "The arm stays in the last groove. A tap plays it again.",
+              at: [8.2, 6.9],
+              state: "finished",
+              t: music.duration,
+            },
+          ],
+        },
+        {
+          item: person,
+          title: "Ida, who keeps the pond",
+          starts:
+            "<b>Starts:</b> she turns to you at 12 m and speaks at 5 m. Her words are chalk on her slate.",
+          looks: [
+            {
+              name: "Far away",
+              text: "She rakes and does not look up.",
+              at: [-2.6, 2],
+              state: "waiting",
+            },
+            {
+              name: "Near",
+              text: "At 12 m she turns to you and lifts a hand.",
+              at: [0.6, -6],
+              state: "waiting",
+              wave: true,
+            },
+            {
+              name: "Playing",
+              text: "At 5 m she speaks. Closer, you can read the slate.",
+              at: [2.2, -11.3],
+              state: "playing",
+              t: 5.6,
+            },
+            {
+              name: "Stopped",
+              text: "Past 8 m, or a tap: she lowers the slate and waits.",
+              at: [0.8, -7.8],
+              state: "held",
+              t: 5.6,
+            },
+            {
+              name: "Finished",
+              text: "Back to raking. A tap and she says it again.",
+              at: [1.6, -10],
+              state: "finished",
+              t: person.duration,
+            },
+          ],
+        },
+      ];
+      function buildRows() {
+        const root = $("rows");
+        SHOTS.forEach((row) => {
+          const sec = document.createElement("section");
+          sec.className = "item-row";
+          sec.innerHTML = `<h3>${row.title}</h3><p class="starts">${row.starts}</p><div class="row"></div>`;
+          const list = sec.querySelector(".row");
+          row.looks.forEach((look) => {
+            const b = document.createElement("button");
+            b.className = "shot";
+            b.type = "button";
+            b.setAttribute(
+              "aria-label",
+              `${row.title}, ${look.name}: ${look.text} Stand there.`,
+            );
+            const c = document.createElement("canvas");
+            c.width = 360;
+            c.height = 240;
+            look.canvas = c;
+            const s = document.createElement("span");
+            s.innerHTML = `<b>${look.name}</b>${look.text}`;
+            b.append(c, s);
+            b.onclick = () => standThere(row.item, look);
+            list.append(b);
+          });
+          root.append(sec);
+        });
+      }
+      buildRows();
+      function faceItem(it, x, z) {
+        return Math.atan2(it.x - x, -(it.z - z));
+      }
+      function setLook(it, look) {
+        it.state = look.state;
+        it.t = look.t || 0;
+        it.v.forceWave = !!look.wave;
+        if (it === person) {
+          it.v.waveT = 0;
+          it.v.noticing = false;
+        }
+      }
+      /* Each picture borrows the real scene for one render: stand there, put the item in that state, draw, put everything back. */
+      function drawShot(row, look) {
+        const it = row.item,
+          saved = it.saveLook(),
+          now = performance.now();
+        const yaw = faceItem(it, look.at[0], look.at[1]);
+        const pose = { x: look.at[0], z: look.at[1] };
+        setLook(it, look);
+        it.animate(12, pose, now);
+        camera.position.set(pose.x, 1.55, pose.z);
+        camera.rotation.set(0.02, -yaw, 0, "YXZ");
+        camera.aspect = 1.5;
+        camera.fov = 44;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(1);
+        renderer.setSize(360, 240, false);
+        renderer.render(scene, camera);
+        look.canvas.getContext("2d").drawImage(gl, 0, 0, 360, 240);
+        it.loadLook(saved);
+        it.v.key = "";
+        it.v.line = -2;
+        it.v.forceWave = false;
+      }
+      let shotsDone = false,
+        shotsBusy = null;
+      function drawAllShots() {
+        if (shotsDone) return Promise.resolve();
+        if (shotsBusy) return shotsBusy;
+        const queue = SHOTS.flatMap((row) =>
+          row.looks.map((look) => [row, look]),
+        );
+        shotsBusy = new Promise((done) => {
+          const next = () => {
+            const job = queue.shift();
+            if (!job) {
+              resize();
+              for (const it of items)
+                it.animate(12, visitor, performance.now());
+              shotsDone = true;
+              shotsBusy = null;
+              done();
+              return;
+            }
+            drawShot(job[0], job[1]);
+            setTimeout(next, 0);
+          };
+          setTimeout(next, 30);
+        });
+        return shotsBusy;
+      }
+      function openSheet() {
+        paused = true;
+        if (audio.ctx) audio.ctx.suspend();
+        $("sheet").hidden = false;
+        $("closeSheet").focus({ preventScroll: true });
+        return drawAllShots();
+      }
+      function closeSheet() {
+        if ($("sheet").hidden) return;
+        $("sheet").hidden = true;
+        paused = false;
+        resize();
+        if (booted) audio.start();
+        gl.focus({ preventScroll: true });
+      }
+      function ensureEntered() {
+        if (!booted) enter(false);
+      }
+      function standThere(it, look) {
+        ensureEntered();
+        stopAuto();
+        visitor.x = look.at[0];
+        visitor.z = look.at[1];
+        visitor.yaw = faceItem(it, look.at[0], look.at[1]);
+        visitor.speed = 0;
+        visitor.turn = 0;
+        starters[it.id].clear();
+        setLook(it, look);
+        it.v.forceWave = false;
+        it.v.key = "";
+        it.seek();
+        it.syncBus();
+        /* Standing next to it, only a tap can have stopped it: two touches leave it stopped by hand. */
+        if (look.byHand) {
+          starters[it.id].touch();
+          starters[it.id].touch();
+        }
+        closeSheet();
+      }
+      $("openSheet").onclick = openSheet;
+      $("closeSheet").onclick = closeSheet;
+      $("sheetAuto").onclick = () => {
+        ensureEntered();
+        visitor.x = 1.2;
+        visitor.z = 25;
+        visitor.yaw = 0.2;
+        for (const it of items) {
+          it.state = "waiting";
+          it.t = 0;
+          it.v.key = "";
+          it.seek();
+          it.syncBus();
+          starters[it.id].clear();
+        }
+        closeSheet();
+        startAuto();
+      };
+
+      /* For checks only: nothing on the page uses this. */
+      window.__worldItems = {
+        enter,
+        openSheet,
+        closeSheet,
+        states: () =>
+          Object.fromEntries(
+            items.map((it) => [
+              it.id,
+              { state: it.state, t: +it.t.toFixed(2) },
+            ]),
+          ),
+        levels: () => ({ ...levels }),
+        visitor: () => ({ x: visitor.x, z: visitor.z, yaw: visitor.yaw }),
+        teleport(x, z, faceId) {
+          const it = items.find((i) => i.id === faceId);
+          visitor.x = x;
+          visitor.z = z;
+          if (it) visitor.yaw = faceItem(it, x, z);
+          visitor.speed = 0;
+        },
+        tapItem(id) {
+          starters[id].touch();
+        },
+        shots: () => SHOTS.flatMap((r) => r.looks).length,
+        bus(id) {
+          const it = items.find((i) => i.id === id);
+          if (!it || !it.bus) return null;
+          return { ctx: audio.ctx.state, time: +audio.ctx.currentTime.toFixed(2), play: +it.bus.play.gain.value.toFixed(3), ear: +it.bus.ear.gain.value.toFixed(3), lp: Math.round(it.bus.lp.frequency.value) };
+        },
+        peak() {
+          if (!audio.ctx) return null;
+          if (!audio.meter) {
+            audio.meter = audio.ctx.createAnalyser();
+            audio.meter.fftSize = 32768;
+            audio.master.connect(audio.meter);
+          }
+          const b = new Float32Array(32768);
+          audio.meter.getFloatTimeDomainData(b);
+          let top = 0;
+          for (const x of b) top = Math.max(top, Math.abs(x));
+          return +top.toFixed(4);
+        },
+      };
+
+      setCamera(performance.now());
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
