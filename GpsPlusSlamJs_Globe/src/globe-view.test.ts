@@ -433,6 +433,12 @@ describe("createGlobeView: the clouds' drift", () => {
     expect(after - before).toBeCloseTo(0.1, 6);
     const change = cloudLifeClock(after, CLOUD_LIFE_SPEED).phase - lifeBefore;
     expect(Math.abs(change)).toBeCloseTo((0.1 * 30) / 900, 6);
+    // One frame at 60 Hz: 0.00056 of a cycle, not the 0.556 of the millisecond
+    // clock.
+    const frame = cloudLifeClock(after + 1 / 60, CLOUD_LIFE_SPEED).phase;
+    expect(
+      Math.abs(frame - cloudLifeClock(after, CLOUD_LIFE_SPEED).phase),
+    ).toBeLessThan(0.001);
   });
 
   // Why: a pinned link with `cloudDrift=0` must hold the clouds still, and
