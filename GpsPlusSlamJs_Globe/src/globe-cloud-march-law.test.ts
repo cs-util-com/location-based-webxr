@@ -4,12 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_LIFE_PERIOD_S,
   CLOUD_MARCH_LAYER,
+  CLOUD_SHELL_LIFT,
   cloudDistanceKm,
   cloudFilterReference,
   cloudHazeReachKm,
   cloudLawAt,
   cloudLifeClock,
   cloudMarchAt,
+  cloudShellCoverLift,
   cloudTargetSize,
   cloudViewSettings,
 } from "./globe-cloud-march-law.js";
@@ -22,6 +24,41 @@ describe("cloudDistanceKm", () => {
     expect(cloudDistanceKm(10)).toBeCloseTo(10 - CLOUD_MARCH_LAYER.topKm);
     expect(cloudDistanceKm(0.1)).toBeCloseTo(CLOUD_MARCH_LAYER.baseKm - 0.1);
     expect(cloudDistanceKm(2)).toBe(0);
+  });
+});
+
+describe("cloudShellCoverLift", () => {
+  // Why this test matters: the shell draws less cover than the map's grey
+  // where the near clouds take over, so the hand-over would thin out; the
+  // lift holds through the whole hand-over and is gone before the orbit.
+  it("is whole through the hand-over and gone at its top", () => {
+    const { gain, fullToKm, oneAtKm } = CLOUD_SHELL_LIFT;
+    expect(gain).toBeGreaterThan(1);
+    expect(cloudShellCoverLift(0)).toBe(gain);
+    expect(cloudShellCoverLift(fullToKm)).toBe(gain);
+    expect(cloudShellCoverLift(oneAtKm)).toBe(1);
+    expect(cloudShellCoverLift(36_000)).toBe(1);
+  });
+
+  it("falls without a step between them", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1000, noNaN: true }),
+        fc.double({ min: 0.1, max: 5, noNaN: true }),
+        (km, stepKm) => {
+          const here = cloudShellCoverLift(km);
+          const above = cloudShellCoverLift(km + stepKm);
+          expect(above).toBeLessThanOrEqual(here);
+          expect(above).toBeGreaterThanOrEqual(1);
+          expect(here - above).toBeLessThan(0.05 * stepKm + 1e-9);
+        },
+      ),
+    );
+    expect(cloudShellCoverLift(135)).toBeGreaterThan(1);
+  });
+
+  it("reads a broken height as no lift", () => {
+    expect(cloudShellCoverLift(Number.NaN)).toBe(1);
   });
 });
 

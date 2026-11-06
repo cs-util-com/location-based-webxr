@@ -13,6 +13,7 @@ Purpose: the near clouds' laws, pure: the march's settings at a quality, a tier'
 - `cloudTargetSize(...)`: the allocation: the largest the tier can ask for, so a frame never reallocates.
 - `cloudViewSettings(...)`: one frame's settings from the tier, the distance, the pixel scale and the canvas.
 - `cloudHazeReachKm(...)`: where the haze has eaten every cloud, so the march can end.
+- `CLOUD_SHELL_LIFT`, `cloudShellCoverLift(altitudeKm)`: the shell's cover factor around the hand-over: whole up to 70 km, gone at 200 km.
 - `cloudLifeClock(...)`: the life clock from the view's drift time.
 
 ## Invariants

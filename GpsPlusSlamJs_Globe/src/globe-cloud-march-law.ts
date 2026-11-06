@@ -279,6 +279,27 @@ export function cloudHazeReachKm(
 }
 
 /**
+ * The lift of the shell's cover around the near clouds' hand-over: the shell
+ * draws less cover than the map's grey there, so without it the clouds would
+ * thin out at the hand-over. `gain` holds up to `fullToKm` and is gone at
+ * `oneAtKm`.
+ */
+export const CLOUD_SHELL_LIFT = Object.freeze({
+  gain: 1.3,
+  fullToKm: 70,
+  oneAtKm: 200,
+});
+
+/** The shell's cover factor at `altitudeKm`; 1 for a broken height. */
+export function cloudShellCoverLift(
+  altitudeKm: number,
+  { gain, fullToKm, oneAtKm } = CLOUD_SHELL_LIFT,
+): number {
+  if (Number.isNaN(altitudeKm)) return 1;
+  return lerp(gain, 1, smooth01((altitudeKm - fullToKm) / (oneAtKm - fullToKm)));
+}
+
+/**
  * The life cycle at `timeS` and `speed`: its phase in cycles and the rise
  * of the shape and erosion noise (km), wrapped to their tiles' periods.
  */

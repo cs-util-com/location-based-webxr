@@ -19,6 +19,7 @@ import type {
 } from "./globe-cloud-march-pass.js";
 
 import { flatCloudShare } from "./globe-cloud-flat-fade.js";
+import { cloudShellCoverLift } from "./globe-cloud-march-law.js";
 import type { GlobeCloudShell } from "./globe-cloud-shell.js";
 import {
   type CloudShellNoiseCascade,
@@ -333,7 +334,10 @@ function shellFrame(
     stations: cloudShellStationsFromKnobs(p),
     target: frame.target,
     deckKm: frame.deck.heightM() / 1000,
-    cover: p.cloudVolumeCover,
+    cover:
+      p.cloudNear === 1
+        ? p.cloudVolumeCover * cloudShellCoverLift(altitudeKm)
+        : p.cloudVolumeCover,
     cascade: cloudShellCascadeFromKnobs(altitudeKm, p),
     highLayer: {
       on: p.cloudHigh === 1,

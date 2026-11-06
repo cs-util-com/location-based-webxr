@@ -1665,7 +1665,7 @@ async function start() {
   // The clouds frame by frame (globe-cloud-step.ts): who draws them at the
   // camera's altitude, the two volumes' update and their drawing.
   const near =
-    shellVolume && params.cloudNear === 1
+    shellVolume && readHashParams().cloudNear === 1
       ? createGlobeCloudMarch(renderer, {
           ellipsoid: globe.tiles.ellipsoid,
           surfaceUniforms: globe.surfaceUniforms,

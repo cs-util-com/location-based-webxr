@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { flatCloudShare } from "./globe-cloud-flat-fade.js";
+import { CLOUD_SHELL_LIFT } from "./globe-cloud-march-law.js";
 import {
   CLOUD_HIGH_LAYER,
   CLOUD_SHELL_VOLUME,
@@ -549,6 +550,27 @@ describe("createGlobeCloudStep: render", () => {
       expect(shareAt(60)).toBeCloseTo(0.5);
       expect(shareAt(45)).toBe(1);
       expect(shareAt(0.1)).toBe(1);
+    });
+
+    // Why this test matters: the shell thins where the near clouds take
+    // over; the lift belongs to the new clouds, and the old clouds keep the
+    // cover they always had.
+    it("lifts the shell's cover at the hand-over, only with the near clouds", () => {
+      const coverAt = (over: Partial<GlobeCloudKnobs>, km: number) => {
+        const log: unknown[][] = [];
+        const step = make(log);
+        const p = { ...nearKnobs, ...over };
+        step.plan(p, { cameraAltM: km * 1000, framed: true });
+        step.updateVolumes(p, volumesFrame(log, { cameraAltM: km * 1000 }));
+        const frame = log.find(([what]) => what === "shell.update")?.[1];
+        return (frame as { cover: number }).cover;
+      };
+      expect(coverAt({}, 60)).toBe(CLOUD_SHELL_LIFT.gain);
+      expect(coverAt({ cloudVolumeCover: 0.5 }, 60)).toBe(
+        0.5 * CLOUD_SHELL_LIFT.gain,
+      );
+      expect(coverAt({}, CLOUD_SHELL_LIFT.oneAtKm)).toBe(1);
+      expect(coverAt({ cloudNear: 0 }, 60)).toBe(1);
     });
 
     // Why this test matters: the bakes arrive seconds after the view; until
