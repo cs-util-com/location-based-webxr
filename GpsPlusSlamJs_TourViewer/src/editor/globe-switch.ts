@@ -156,6 +156,11 @@ export const GLOBE_SWITCH = Object.freeze({
    */
   grade: Object.freeze({ param: "grade" }),
   /**
+   * The globe's quality tier by name (`GLOBE_QUALITIES` in the Globe
+   * package, judged there); none named: by the pointer.
+   */
+  quality: Object.freeze({ param: "quality" }),
+  /**
    * The OSM buildings (and trees and roads) at the tour: 1 on, 0 off (a
    * developer's knob: no city worker is made, nothing is asked of
    * Overpass, and a frame-time comparison's other half).
@@ -194,6 +199,8 @@ export interface GlobeSwitch {
   readonly buildings: number;
   /** The colour grade's name as the link wrote it; null: none named. */
   readonly grade: string | null;
+  /** The quality tier's name as the link wrote it; null: none named. */
+  readonly quality: string | null;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -242,5 +249,6 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     cloudWind: knob(params, GLOBE_SWITCH.cloudWind),
     buildings: Math.round(knob(params, GLOBE_SWITCH.buildings)),
     grade: params.get(GLOBE_SWITCH.grade.param),
+    quality: params.get(GLOBE_SWITCH.quality.param),
   };
 }

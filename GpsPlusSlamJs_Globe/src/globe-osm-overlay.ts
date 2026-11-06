@@ -395,7 +395,8 @@ const LAYER_BLEND = "tint.rgba *= layerInfo[ i ].opacity * wOpacity;";
  * contrast in the map kept), else compressing its luma L (Rec. 709
  * weights) to L g / (g + (1 - g) L): white ends at g, a dark line keeps
  * nearly its luma, the hue stays, and the map's contrasts are lowered.
- * Adds the uniforms. False, the shader untouched, where the blend line is
+ * With the sea compiled it records how much map a pixel shows, so the sea
+ * stays under it. Adds the uniforms. False, the shader untouched, where the blend line is
  * missing (a library change).
  */
 export function patchOsmFade(
@@ -412,7 +413,8 @@ export function patchOsmFade(
     .replaceAll(
       LAYER_BLEND,
       "tint.rgb = uOsmFlat > 0.5 ? tint.rgb * uOsmGain : osmGain( tint.rgb, uOsmGain );\n" +
-        "tint.rgba *= layerInfo[ i ].opacity * wOpacity * uOsmOn * ( 1.0 - smoothstep( uOsmFadeStart * uOsmFadeM, uOsmFadeM, length( vViewPosition ) ) );",
+        "tint.rgba *= layerInfo[ i ].opacity * wOpacity * uOsmOn * ( 1.0 - smoothstep( uOsmFadeStart * uOsmFadeM, uOsmFadeM, length( vViewPosition ) ) );\n" +
+        "#ifdef GLOBE_SEA\nglobeMapShare = max( globeMapShare, tint.a );\n#endif",
     );
   return true;
 }

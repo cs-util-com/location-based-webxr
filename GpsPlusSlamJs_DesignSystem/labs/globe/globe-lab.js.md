@@ -107,6 +107,8 @@
   first view, round-2 plan DEC-FR2-3; 0 from the camera as placed; the
   pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
+  `sea` (1; 0 keeps the flat glint, fixed for the page's life: compiled),
+  `?quality=` (the tier, by `resolveGlobeQuality` and the pointer),
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
   default 0.375 by the owner's choice, DEC-G6-5, now the FAR rate; in
   real time while `time=` holds the hour, round-5 plan C1), and the drift

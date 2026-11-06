@@ -16,6 +16,8 @@ it. An old `globe=1` link keeps opening the globe.
 
 - `GLOBE_SWITCH` - `param` `"globe"`; the knobs (`GlobeSwitchKnob`:
   `param`, `fallback`, `min`, `max`):
+  - `quality` - `quality`, no default here: the quality tier as the link
+    wrote it, judged by `resolveGlobeQuality` in the editor's globe.
   - `grade` - `grade`, no default here: the colour grade's name, handed on
     as the link wrote it (`grade: string | null` in `GlobeSwitch`). This
     module carries none of the globe's code, so the Globe package's

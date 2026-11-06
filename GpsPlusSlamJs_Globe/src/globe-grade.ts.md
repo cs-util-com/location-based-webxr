@@ -31,11 +31,12 @@ Chosen by looking at the real globe at street level, 300 m, 3 km and 60 km.
 
 - `neutral`: Neutral at 1. The look before the presets, bright and
   saturated.
-- `aces`: ACES at 0.47, the exposure of the look prototype's page. On the
-  real globe it is the darkest: clouds turn grey at 60 km and near ground
-  goes dark.
-- `aces-bright`: ACES at 0.75, the default. Keeps the filmic shoulder and
-  contrast while whites stay white: the step between `neutral` and `aces`.
+- `aces`: ACES at 0.47, the exposure of the look prototype's page, the
+  default since the new clouds and sea were chosen to replace the old look.
+  It is the darkest preset: clouds turn grey at 60 km and near ground goes
+  dark, which is the prototype's look.
+- `aces-bright`: ACES at 0.75. Keeps the filmic shoulder and contrast
+  while whites stay white: the step between `neutral` and `aces`.
 - `agx`: AgX at 1. The other direction: flat, soft and desaturated, with
   the most detail left in cloud tops and shadows.
 

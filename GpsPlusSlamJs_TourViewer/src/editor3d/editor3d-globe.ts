@@ -96,6 +96,7 @@ import {
   mountGlobeRelief,
   mountGlobeViewAir,
   resolveGlobeGrade,
+  resolveGlobeQuality,
   SPEED_DUST_LOOK,
   type GlobeView,
   type GlobeViewAir,
@@ -335,6 +336,7 @@ export async function openGlobeEditor(
     | "cloudWind"
     | "buildings"
     | "grade"
+    | "quality"
   >,
 ): Promise<Editor3dView> {
   const state = deps.store.getState();
@@ -453,6 +455,10 @@ export async function openGlobeEditor(
       stencil: true,
       fill: true,
       grade: resolveGlobeGrade(knobs.grade),
+      quality: resolveGlobeQuality(
+        knobs.quality,
+        window.matchMedia?.("(pointer: coarse)").matches === true,
+      ),
       createRenderer: (parameters) => createViewRenderer(parameters),
       seams: {
         driveCamera: () => {

@@ -404,6 +404,9 @@ ceilingWaitS }`: the street map's loading state for an interface to
   showCredit(osm.credit);
   ```
 
+- With the sea compiled (`GLOBE_SEA`) the fade also writes the map's alpha to
+  `globeMapShare`, and the sea stays under the drawn map by that share.
+
 - Tests: `globe-osm-overlay.test.ts` (the plan's limits, the credit from
   the framework's text, the active rule and unknowns, the hysteresis
   (both edges, the band kept, a property over paths that the state

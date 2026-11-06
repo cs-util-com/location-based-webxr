@@ -422,6 +422,28 @@ describe("patchOsmFade", () => {
     expect(shader.uniforms.uOsmFadeM).toBe(uniforms.uOsmFadeM);
   });
 
+  // Why: over water the sea is drawn last, so without the map's own share
+  // it would paint over the streets of a harbour.
+  it("tells a compiled sea how much map a pixel shows", () => {
+    const chunk = "tint.rgba *= layerInfo[ i ].opacity * wOpacity;";
+    const shader = {
+      uniforms: {} as Record<string, unknown>,
+      fragmentShader: `#include <common>\nvoid main() {\n${chunk}\n}`,
+    };
+    patchOsmFade(shader, {
+      uOsmFadeM: { value: 300 },
+      uOsmOn: { value: 1 },
+      uOsmFadeStart: { value: 0.7 },
+      uOsmGain: { value: 0.55 },
+      uOsmFlat: { value: 0 },
+    });
+    const glsl = shader.fragmentShader;
+    expect(glsl).toContain("globeMapShare = max( globeMapShare, tint.a );");
+    expect(glsl.indexOf("#ifdef GLOBE_SEA")).toBeGreaterThan(
+      glsl.indexOf("uOsmOn * ("),
+    );
+  });
+
   // Why: the street map's tiles are far brighter than the relief's
   // imagery, so the fade's edge showed as a pale disc. The gain darkens the
   // map before it is blended: it compresses the map's luma toward the gain

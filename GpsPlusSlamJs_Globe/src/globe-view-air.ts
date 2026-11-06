@@ -43,6 +43,7 @@ import {
   type GlobeGroundSky,
 } from "./globe-ground-sky.js";
 import { createGlobeHaze, type GlobeHaze } from "./globe-haze.js";
+import type { GlobeSea } from "./globe-sea.js";
 import { GLOBE_SKY_HAND_OVER } from "./globe-sky-hand-over.js";
 import {
   GLOBE_VIEW_CLOUDS,
@@ -68,6 +69,8 @@ interface AirView {
     /** The cloud shell, its height set here when no heavy clouds do. */
     readonly cloudShell: { setHeightM(heightM: number): void };
   };
+  /** The sea, given the ground sky's tables to reflect. */
+  readonly sea?: Pick<GlobeSea, "setSky"> | null;
   ecefCamera(): { readonly position: THREE.Vector3 };
   frameTarget(): unknown;
 }
@@ -214,6 +217,7 @@ export function mountGlobeViewAir(
         cameraEcef: [position.x, position.y, position.z],
         framed: view.frameTarget() !== null,
       });
+      view.sea?.setSky(groundSky.atmosphere?.sharedUniforms ?? null);
       const shareClouds = frame.shareClouds ?? (() => 0);
       // The clouds between the hand-over and the sun's ease (the volumes
       // update with the frame's previous sun, as in the lab); without

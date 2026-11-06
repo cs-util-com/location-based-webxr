@@ -63,6 +63,17 @@ near the camera under the editor's own gate, and the credits both need.
   below about 1300 m loses the farthest view. The speed limits are open:
   an orbiting camera jumps across the place, and the map would blank in a
   turn.
+- **The fade is wide because the map is brighter than the ground.** With
+  the map's gain 0.55 it reads about 2.4 times as bright as the imagery
+  around it (mean luma of the picture's lower part 47 against 114, noon,
+  tilt 55). Measured 2026-11-06 on a descent over the sample tour: with
+  the near map's share 0.7 that whole step fell inside 700 m of height
+  (2.3 to 1.6 km above the sea, 1.75 to 1.05 km above the ground), and it
+  was the strongest colour change of the whole flight from orbit. At 0.4 it
+  spreads over 2.0 to 1.1 km, at 0.2 over 1.9 to 0.87 km above the sea, which
+  is 2.7 times slower in a flight that slows with height. Below 480 m
+  from the camera nothing changes, and the farthest view still draws the
+  map, weaker (about 80 % at 860 m). Lowering the gain instead (0.3: luma 80) shrinks the step but pales the map everywhere, so the gain stayed.
 - **The far map reaches 2400 m at z14** (one zoom coarser than the near
   map's z15; it faded out at 1600 m before). Measured 2026-10-26 with the
   same script and fakes as the height limit below (150 m hills, a GPU,

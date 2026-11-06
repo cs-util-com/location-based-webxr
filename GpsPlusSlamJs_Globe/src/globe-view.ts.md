@@ -112,3 +112,10 @@
   and along the approach path). The browser check is the lab's smokes and the
   reference-view screenshots
   (`GpsPlusSlamJs_DesignSystem/labs/globe/globe-reference-shots.smoke.spec.mjs`).
+
+- The sea: `options.sea` (default on; `false`: none compiled, `view.sea`
+  null), its waves from `GLOBE_QUALITIES[quality].sea`, stepped each frame
+  right after the camera is placed. It stays off until it is handed a sky:
+  `mountGlobeViewAir` does that, a page with its own air (the lab) calls
+  `view.sea?.setSky(...)` itself. Without a named `quality` the view takes
+  the fine pointer's tier, so a page that may run on a phone names one.

@@ -177,6 +177,24 @@ describe("mountGlobeViewAir", () => {
 
   // Why: with the world in ECEF "up" means nothing to a flat sky; the
   // ground sky is told so and stays out.
+  // Why: the sea reflects the production sky, and it is this module that
+  // holds it; without this hand-over the sea stays off in every app.
+  it("hands the ground sky's tables to the view's sea", () => {
+    const fakes = fakeDrawers();
+    const skies: unknown[] = [];
+    const atmosphere = { sharedUniforms: { atmSkyViewLut: {} } };
+    (fakes.drawers.groundSky as { atmosphere: unknown }).atmosphere =
+      atmosphere;
+    const air = mountGlobeViewAir(
+      Object.assign(fakeView(2), {
+        sea: { setSky: (sky: unknown) => skies.push(sky) },
+      }),
+      { coarsePointer: false, drawers: () => fakes.drawers },
+    );
+    air.step();
+    expect(skies).toEqual([atmosphere.sharedUniforms]);
+  });
+
   it("tells the ground sky when the view has no local frame", () => {
     const fakes = fakeDrawers({ weight: 0, exposure: 5 });
     const air = mountGlobeViewAir(fakeView(2, false), {

@@ -65,3 +65,7 @@ createGlobeView({ canvas, quality });
 - `globe-quality.test.ts`: the table's values and order, the resolver, the
   cap.
 - `globe-view.test.ts`: the view holds the tier it was made with.
+
+- Read by `createGlobeView` (the sea's wave count and shortest wave), which
+  takes a tier by name, and by the lab and the tour editor, which resolve it
+  from `?quality=` and the pointer.

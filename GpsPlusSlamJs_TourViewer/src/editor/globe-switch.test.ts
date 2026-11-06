@@ -15,6 +15,13 @@ import { GLOBE_SWITCH, readGlobeSwitch } from "./globe-switch.js";
 describe("readGlobeSwitch", () => {
   // Why this test matters: the name stays raw here because this module must
   // not load the globe's code; the globe's own table judges it (and warns).
+  // Why: the tier is judged in the Globe package, behind the lazy import.
+  it("hands the link's quality on as written", () => {
+    expect(readGlobeSwitch("?quality=low").quality).toBe("low");
+    expect(readGlobeSwitch("?quality=nope").quality).toBe("nope");
+    expect(readGlobeSwitch("?globe=1").quality).toBeNull();
+  });
+
   it("hands the link's grade on as written", () => {
     expect(readGlobeSwitch("?grade=aces").grade).toBe("aces");
     expect(readGlobeSwitch("?grade=nope").grade).toBe("nope");
@@ -37,6 +44,7 @@ describe("readGlobeSwitch", () => {
       cloudWind: GLOBE_SWITCH.cloudWind.fallback,
       buildings: 1,
       grade: null,
+      quality: null,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });

@@ -91,3 +91,6 @@
   flat share of 1 without clouds). The drawing itself is
   checked in a browser by the Tour Viewer's `editor3d-globe.spec.js` (the
   sky's colour at noon and at midnight) and the lab's own smokes.
+
+- The sea: each step hands `groundSky.atmosphere`'s tables to `view.sea`
+  (null while the ground sky has none, which keeps the flat glint).
