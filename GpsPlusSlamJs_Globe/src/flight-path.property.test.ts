@@ -16,7 +16,8 @@
  *   target: a start already nearer than that, a climb over the target,
  *   rightly moves away from the target itself);
  * - over the cruise the camera's speed never stalls or dips between two
- *   faster stretches (criteria (a) and (b)) at 60 Hz.
+ *   faster stretches (criteria (a) and (b)) at 60 Hz, for flights of a
+ *   length the app flies (see `descent`).
  */
 
 import fc from "fast-check";
@@ -33,6 +34,7 @@ import {
   flightCamera,
   planFlight,
 } from "./flight-path.js";
+import { FLIGHT_REPLAN } from "./flight-replan.js";
 import { FLIGHT_TRAVEL, bendAltitudeM } from "./flight-travel.js";
 import {
   noStall,
@@ -64,13 +66,16 @@ const logUniform = (min: number, max: number) =>
     .double({ min: Math.log(min), max: Math.log(max), noNaN: true })
     .map(Math.exp);
 
-const flight = fc.record({
-  from: place,
-  to: place,
-  startM: logUniform(100, 60_000_000),
-  landingM: logUniform(1_000, 100_000),
-  durationMs: fc.integer({ min: 500, max: 60_000 }),
-});
+const flightOfAtLeast = (minDurationMs: number) =>
+  fc.record({
+    from: place,
+    to: place,
+    startM: logUniform(100, 60_000_000),
+    landingM: logUniform(1_000, 100_000),
+    durationMs: fc.integer({ min: minDurationMs, max: 60_000 }),
+  });
+
+const flight = flightOfAtLeast(500);
 
 /**
  * A flight that comes DOWN to its landing, as every real one does (the pin
@@ -78,8 +83,17 @@ const flight = fc.record({
  * judges a descent's pace; drawn from `flight`, it met a 0.5 s climb from
  * 100 m to a 27 km landing about once in four runs and broke gates at
  * random (round-3 plan filed it; the owner chose this fix, 2026-10-14).
+ *
+ * It starts at the shortest flight the app plans a cruise for, the replan's
+ * least: a first press takes 15 s. Below about 1.4 s a start over its own
+ * target turns from its back-off into the dive within one 60 Hz frame, and
+ * the speed, measured between two frames, reads the shortcut across that
+ * turn as a dip of about a fifth; the path's own speed holds to about 1 %.
+ * That case is pinned in flight-path.test.ts, "from a point to itself".
  */
-const descent = flight.filter((f) => f.startM > f.landingM);
+const descent = flightOfAtLeast(FLIGHT_REPLAN.minDurationMs).filter(
+  (f) => f.startM > f.landingM,
+);
 
 interface Flight {
   readonly from: { lat: number; lng: number };
