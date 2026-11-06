@@ -212,15 +212,15 @@ describe('the timing tables of a run on main are an artifact, never a commit', (
 // the run earlier, as a normal red: the log stays and the report step runs.
 describe('a hung browser run ends before its job does', () => {
   /**
-   * What the job needs besides the Playwright run: setup up to 11.7 min
-   * measured, the stages before the browser one up to 1.3 on OsmDemo, the
-   * upload about 1. The rest is spare, so setup above about 17 min on OsmDemo
-   * is what reverses this. A blocked worker takes that spare too (see
-   * BLOCKED_WORKER_MIN): together with one, setup above about 12.7 min does.
+   * What the job needs besides the Playwright run: setup up to SETUP_MIN, the
+   * stages before the browser one up to 1.3 on OsmDemo, the upload about 1.
+   * That leaves about 2 min spare, so a browser install at its limit still
+   * ends with a report. A blocked worker (see BLOCKED_WORKER_MIN) in the same
+   * run does not: the two together need setup under about 17 min.
    */
-  const OUTSIDE_PLAYWRIGHT_MIN = 20;
-  /** Slowest setup measured, and the upload. */
-  const SETUP_MIN = 11.7;
+  const OUTSIDE_PLAYWRIGHT_MIN = 25;
+  /** The browser install at its step limit, and about a minute for the rest. */
+  const SETUP_MIN = 21;
   const UPLOAD_MIN = 1;
   /**
    * Playwright waits this long for a worker that no longer answers before it
@@ -272,14 +272,17 @@ describe('a hung browser run ends before its job does', () => {
   });
 
   // Why: the job's limit is the slowest way to find a hung installer, and it
-  // cancels the job with no log (one install sat for 75 min). 9.8 min is the
-  // slowest of 190 green Playwright installs; one above 15 reverses the limit.
+  // cancels the job with no log (one install sat for 75 min). The browser
+  // install is mostly apt: 20 s on a good mirror, but over 15 min on a slow one
+  // (15.8 min green), and 15 min failed a job that was only slow. A green one
+  // above 20 reverses that limit. It is not cut and retried: a slow fetch is
+  // not a stall, and killing apt can leave dpkg interrupted.
   it('stops a hung install at a step limit, well before the job limit', () => {
     const installs = testJob.steps.filter((s) => /\binstall\b/.test(String(s.run ?? '')));
-    expect(installs.map((s) => s.name)).toEqual(['Install dependencies', 'Install Playwright browsers']);
-    for (const step of installs) {
-      expect(step['timeout-minutes'], step.name).toBe(15);
-    }
+    expect(installs.map((s) => [s.name, s['timeout-minutes']])).toEqual([
+      ['Install dependencies', 15],
+      ['Install Playwright browsers', 20],
+    ]);
   });
 
   // Why: a run keeps a report only where its config writes one, and the design

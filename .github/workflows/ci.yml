@@ -126,9 +126,9 @@ jobs:
         # the run that keeps printing. Each is about twice the slowest of 8 green full runs (Run
         # step, 2026-11-05): Tour page tests 25 of 13.2 min, Tour 3D 45 of 20.3,
         # OsmDemo 55 of 30.3 (1.8 times), the design system 25 of 12.8, which
-        # also fits a test timing out on all 3 attempts (9 min). Each leaves 20
-        # min of the job for setup (up to 11.7 measured), earlier stages and
-        # the upload; a worker that stopped answering takes up to 5 of those,
+        # also fits a test timing out on all 3 attempts (9 min). Each leaves 25
+        # min of the job for setup (20 of them the browser install's limit),
+        # earlier stages and the upload; a worker that stopped answering takes up to 5 of those,
         # which is Playwright's wait before it force-kills one. A green process
         # coming near its limit reverses the value. A job of several packages
         # has its own sum in ci-jobs.test.js: one hang fits, two can outrun it.
@@ -154,7 +154,7 @@ jobs:
             browsers: true
             report: GpsPlusSlamJs_OsmDemo/test-results/
             e2e_limit: 55
-            timeout: 75
+            timeout: 80
           # The Tour Viewer's builds, static checks and unit tests, about 5 min.
           - job: tour-static-unit
             scripts: test:tour
@@ -175,7 +175,7 @@ jobs:
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
             e2e_limit: 25
-            timeout: 45
+            timeout: 50
           - job: tour-dom-2
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e
@@ -183,7 +183,7 @@ jobs:
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
             e2e_limit: 25
-            timeout: 45
+            timeout: 50
           - job: tour-webgl-1
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e
@@ -256,10 +256,12 @@ jobs:
       - name: Build AppFramework
         run: pnpm run build:framework
 
-      # A step limit, because a job limit cancels the job with no log.
+      # A step limit, because a job limit cancels the job with no log. Above
+      # the first install's, because apt can fetch at 30 kB/s from a slow
+      # mirror for over 15 min and still finish.
       - name: Install Playwright browsers
         if: ${{ matrix.browsers }}
-        timeout-minutes: 15
+        timeout-minutes: 20
         working-directory: GpsPlusSlamJs_RecorderApp
         run: pnpm exec playwright install --with-deps chromium
 
