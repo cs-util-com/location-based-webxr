@@ -10,8 +10,8 @@ import "../test-route-loader.mjs";
 
 /**
  * The design system's page specs (its `test:e2e` stage): the fast check that
- * every page boots and draws, and the look-dev and lab measurements (the two
- * tiers below).
+ * every page boots and draws, and the measurements of the globe labs
+ * (`labs/globe*`, the two tiers below).
  *
  * Port 5198 is allocated in docs/dev-server-ports.md (aux range). The server
  * is NEVER reused: `pnpm run serve` for a phone round listens on 4173 on all
