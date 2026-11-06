@@ -212,12 +212,31 @@ describe('the timing tables of a run on main are an artifact, never a commit', (
 // the run earlier, as a normal red: the log stays and the report step runs.
 describe('a hung browser run ends before its job does', () => {
   /**
-   * What the job needs besides the Playwright run, as measured in 8 full runs:
-   * setup up to 10.3 min, the stages before the browser one up to 1.3 on
-   * OsmDemo, the upload about 1. The rest is spare, so setup above about 17
-   * min on OsmDemo is what reverses this.
+   * What the job needs besides the Playwright run: setup up to 11.7 min
+   * measured, the stages before the browser one up to 1.3 on OsmDemo, the
+   * upload about 1. The rest is spare, so setup above about 17 min on OsmDemo
+   * is what reverses this. A blocked worker takes that spare too (see
+   * BLOCKED_WORKER_MIN): together with one, setup above about 12.7 min does.
    */
   const OUTSIDE_PLAYWRIGHT_MIN = 20;
+  /** Slowest setup measured, and the upload. */
+  const SETUP_MIN = 11.7;
+  const UPLOAD_MIN = 1;
+  /**
+   * Playwright waits this long for a worker that no longer answers before it
+   * force-kills it and ends the run (PWTEST_CHILD_PROCESS_TIMEOUT, default).
+   */
+  const BLOCKED_WORKER_MIN = 5;
+  /**
+   * Jobs that run several browser packages one after the other. The limit is
+   * per Playwright process, so a hang in the fastest package costs the most:
+   * every other package still runs its normal length, and that one takes the
+   * limit in place of its own. Run step, 15 full runs of 2026-11-05/06: slowest
+   * 20.9 min; the Starter or the QR demo, whole gates, about 0.4 min.
+   */
+  const MANY_BROWSER_PACKAGES = {
+    'design-system-and-apps': { slowestRunMin: 20.9, fastestPackageMin: 0.4 },
+  };
 
   it("wires each job's limit into the environment Playwright reads", () => {
     expect(testJob.env.E2E_GLOBAL_TIMEOUT_MIN).toBe('${{ matrix.e2e_limit }}');
@@ -234,6 +253,40 @@ describe('a hung browser run ends before its job does', () => {
       );
       expect(entry.report, entry.job).toBeTruthy();
     }
+  });
+
+  // Why: `e2e_limit` alone cannot say whether one hang leaves a report in a job
+  // of many packages. At a job limit of 50 the sum is 63.2 min, so the hang was
+  // cancelled with no report; at 75 a green run step above about 32.7 min
+  // reverses this. Two hung packages in one job still outrun it, which is
+  // accepted: the first report is the one that names the problem.
+  it('leaves room for one hang in the fastest package of a job with several', () => {
+    const many = entries.filter((e) => e.browsers && scriptList(e).length > 1);
+    expect(many.map((e) => e.job).sort()).toEqual(Object.keys(MANY_BROWSER_PACKAGES).sort());
+    for (const entry of many) {
+      const { slowestRunMin, fastestPackageMin } = MANY_BROWSER_PACKAGES[entry.job];
+      const budget =
+        SETUP_MIN + (slowestRunMin - fastestPackageMin) + entry.e2e_limit + BLOCKED_WORKER_MIN + UPLOAD_MIN;
+      expect(budget, entry.job).toBeLessThanOrEqual(entry.timeout);
+    }
+  });
+
+  // Why: the job's limit is the slowest way to find a hung installer, and it
+  // cancels the job with no log (one install sat for 75 min). 9.8 min is the
+  // slowest of 190 green Playwright installs; one above 15 reverses the limit.
+  it('stops a hung install at a step limit, well before the job limit', () => {
+    const installs = testJob.steps.filter((s) => /\binstall\b/.test(String(s.run ?? '')));
+    expect(installs.map((s) => s.name)).toEqual(['Install dependencies', 'Install Playwright browsers']);
+    for (const step of installs) {
+      expect(step['timeout-minutes'], step.name).toBe(15);
+    }
+  });
+
+  // Why: a run keeps a report only where its config writes one, and the design
+  // system's wrote a list to the log alone.
+  it('has the design system write the JSON report the job uploads', () => {
+    const config = readFileSync(join(ROOT, 'GpsPlusSlamJs_DesignSystem/3d/playwright.config.mjs'), 'utf8');
+    expect(config).toContain('["json", { outputFile: "../test-results/results.json" }]');
   });
 
   it("uploads the design system's own results, which sit a level deeper", () => {

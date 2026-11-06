@@ -31,10 +31,13 @@ export const STALL_REPORT_GRACE_ENV = 'GATE_STALL_REPORT_GRACE_MS';
 /**
  * After a SIGINT to a browser stage's group, how long before the SIGTERM. A
  * Playwright run writes its reports on SIGINT and exits without them on
- * SIGTERM; a hung one needed about 1 s without a browser. A browser stage
- * that was killed with no report despite this wait is what would raise it.
+ * SIGTERM; a hung one needed about 1 s without a browser. A worker that no
+ * longer answers is the case that sets this value: Playwright waits 5 min for
+ * it before force-killing it and writing the report, so 5.5 min. The wait ends
+ * as soon as the run exits, so only such a run pays it. A browser stage killed
+ * with no report despite this wait is what would raise it.
  */
-export const STALL_REPORT_GRACE_MS = 60_000;
+export const STALL_REPORT_GRACE_MS = 330_000;
 
 /** After a SIGTERM to the group, how long before the SIGKILL. */
 export const STALL_KILL_GRACE_MS = 5_000;

@@ -370,26 +370,29 @@ describe('a hung run under the limit, in Playwright itself', () => {
       'test("not reached", () => {});\n',
   );
 
+  // The limit counts from the start of the run, worker start included: at 6 s
+  // and at 15 s a loaded machine reached it before the test began, and nothing
+  // had hung.
   it('fails, says why, and reports the test that hung', () => {
     const run = spawnSync(
       process.execPath,
       [cli, 'test', '--config', path.join(dir, 'pw.config.mjs')],
       {
         cwd: dir,
-        env: { ...process.env, CI: '1', [TIER_ENV]: 'full', [GLOBAL_TIMEOUT_ENV]: '0.1' },
+        env: { ...process.env, CI: '1', [TIER_ENV]: 'full', [GLOBAL_TIMEOUT_ENV]: '0.5' },
         encoding: 'utf8',
-        timeout: 50_000,
+        timeout: 80_000,
       },
     );
     expect(run.status).toBe(1);
-    expect(`${run.stdout}${run.stderr}`).toContain('Timed out waiting 6s');
+    expect(`${run.stdout}${run.stderr}`).toContain('Timed out waiting 30s');
     const report = JSON.parse(readFileSync(path.join(dir, 'results.json'), 'utf8'));
-    expect(report.errors[0].message).toContain('Timed out waiting 6s');
+    expect(report.errors[0].message).toContain('Timed out waiting 30s');
     const [hung, unreached] = report.suites[0].specs;
     expect(hung.title).toBe('never ends');
     expect(hung.tests[0].results[0].workerIndex).toBe(0);
     expect(unreached.tests[0].results).toEqual([]);
-  }, 60_000);
+  }, 100_000);
 });
 
 describe('an empty tier selection fails in Playwright itself', () => {

@@ -21,8 +21,9 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   items on the ground" in place (their note and off state; a locked
   station's and a running one's left as drawn) and rebuilds nothing. When it
   is drawn again, the control that had the focus (by its `data-act` or
-  `data-field`) has it again, with any text typed and not yet committed;
-  a control drawn disabled leaves the focus where it fell. A call made
+  `data-field`) has it again, with its selection and any text typed and not
+  yet committed (a selection left behind would put the next key before the
+  old text instead of over it); a control drawn disabled leaves the focus where it fell. A call made
   while a draw of the same dock runs (from a `focusout` the draw itself
   caused) is not run: the draw in progress finishes alone. The shell
   draws a null model when it is hidden, before it lets the pictures go.

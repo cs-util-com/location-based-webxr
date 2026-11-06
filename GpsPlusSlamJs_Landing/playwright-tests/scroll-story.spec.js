@@ -187,17 +187,18 @@ test("the dot rail and the jump link navigate the story, and the palette persist
 // Most real users open the landing page on a phone (round-2 request):
 // pin that BOTH mobile orientations boot, show every chapter readable,
 // and keep the document non-scrolling — with touch + mobile emulation on.
-// Portrait also runs with reduced motion, so one boot holds the promise that
-// every chapter stays readable without errors when the scrub is off; the
-// desktop test and landscape keep the motion on.
+// Portrait runs twice: with reduced motion, so one boot holds the promise that
+// every chapter stays readable without errors when the scrub is off, and with
+// the motion on, as most phones open it.
 for (const [orientation, viewport, reducedMotion] of [
   ["portrait", { width: 412, height: 915 }, "reduce"],
+  ["portrait", { width: 412, height: 915 }, "no-preference"],
   ["landscape", { width: 915, height: 412 }, "no-preference"],
 ]) {
-  test.describe(`mobile ${orientation}`, () => {
+  test.describe(`mobile ${orientation}, motion ${reducedMotion}`, () => {
     test.use({ viewport, isMobile: true, hasTouch: true, reducedMotion });
 
-    test(`shows every chapter readable on a phone (${orientation})${orientation === "portrait" ? " @pr" : ""}`, async ({
+    test(`shows every chapter readable on a phone (${orientation})${reducedMotion === "reduce" ? " @pr" : ""}`, async ({
       page,
     }) => {
       const errors = collectErrors(page);

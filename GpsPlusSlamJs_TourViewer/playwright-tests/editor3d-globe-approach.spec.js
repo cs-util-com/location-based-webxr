@@ -155,9 +155,14 @@ async function expectLineAt(page, sizes) {
     await page.setViewportSize({ width, height });
     await expect(approach).toBeVisible();
     // The line: the window's full width, right under the menu bar, 3 px,
-    // filling in the accent colour; no tab under it.
+    // filling in the accent colour; no tab under it. Its limit is for one
+    // read: on CI the page's thread is busy so long that a read alone took
+    // over the default 5 s, and the box was never wrong.
     await expect
-      .poll(() => box(approach.locator(".approach-track")), { message: at })
+      .poll(() => box(approach.locator(".approach-track")), {
+        message: at,
+        timeout: 30_000,
+      })
       .toEqual({ x: 0, y: TOP_PX, width, height: LINE_PX });
     await expect(approach.locator(".approach-fill")).toHaveCSS(
       "background-color",

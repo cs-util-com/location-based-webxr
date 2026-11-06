@@ -9,7 +9,7 @@ import { waitForTestHooksSubset } from './test-helpers.js';
  * be unit-tested (the repo covers Leaflet views with e2e). These tests assert
  * the D3a layout contract (full-bleed map + floating overlays — NOT a split or
  * a modal) and the core interactions: name search filters the tour list, a tile
- * selection narrows the list to that tile's tours, and picking a tour invokes
+ * selection lists that tile's tours, and picking a tour invokes
  * single-tour playback (D3). The pure tile/filter logic is unit-tested
  * separately in src/ui/map-browser-index.test.ts.
  *
@@ -96,7 +96,7 @@ test.describe('Map-Centric Recording Browser', () => {
       await expect(tourItems).toHaveCount(2);
     });
 
-    await test.step('selecting a tile narrows the list', async () => {
+    await test.step('selecting a tile lists its tours, and Show all clears it', async () => {
       const tiles = await page.evaluate(() =>
         window.__mapBrowserInstance.getRenderedTiles()
       );

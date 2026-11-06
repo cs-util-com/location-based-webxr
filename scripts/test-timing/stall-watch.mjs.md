@@ -29,7 +29,8 @@
 - `stallPollMs(env)` - `GATE_STALL_POLL_MS` when positive, else
   `STALL_POLL_MS` (5 s). Tests shorten it.
 - `stallReportGraceMs(env)` - `GATE_STALL_REPORT_GRACE_MS` when positive,
-  else `STALL_REPORT_GRACE_MS` (60 s): on POSIX a stalled browser stage
+  else `STALL_REPORT_GRACE_MS` (5.5 min, past Playwright's 5 min wait for a
+  worker that no longer answers; the wait ends when the run exits): on POSIX a stalled browser stage
   (`isBrowserStage`) gets a SIGINT first and this long to end, because a
   Playwright run writes its reports and names the interrupted test on SIGINT
   and leaves neither on SIGTERM. The verdict stays `STALLED`, exit 124. Windows
@@ -121,6 +122,8 @@ GATE_SLOT=take GATE_STALL_MIN=40 pnpm run test:unit src/x   # opt a filtered run
   the verdict (only a POSIX run can fail that one: on Windows the kill is
   synchronous and the cap is always armed before the stage's exit);
   a talking stage that outlives its limit is not killed (a limit of 10 s
-  against a run of 12 s; a limit under the machine's first-print time, about
-  6 s at the worst load measured, fails it falsely, and an output path that
-  no longer reaches the clock fails it truly).
+  against a run of 12 s, which held 21 of 21 under 16 CPU burners on the 8
+  threads, a run taking 13.1 s at most; a limit under the machine's first-print
+  time, 6.2 s at the worst load measured and over 10 s nowhere yet, fails it
+  falsely, and a stdout path that
+  no longer reaches the clock fails it truly; stderr has no such test).
