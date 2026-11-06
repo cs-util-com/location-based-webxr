@@ -85,8 +85,9 @@
   says the watch is off); and under `CI=1`
   it cannot name the FILE, only the stage.
 
-- **The clock starts at the spawn, so a stage's start-up counts as silence.**
-  It has to: a stage wedged before its first print must still be killed.
+- **The clock runs from the spawn to the exit, so a stage's start-up and its
+  shutdown count as silence.** It has to: a stage wedged before its first
+  print, or after its last, must still be killed.
   Twenty minutes dwarf any start-up, but a test's tiny limit does not: under
   a browser run the first print of a Node stage took up to 6.2 s.
 
