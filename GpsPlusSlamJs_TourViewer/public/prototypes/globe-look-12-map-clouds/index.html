@@ -1068,13 +1068,13 @@ uniform float uCB, uCT;    // the march's slab, km
 uniform float uPhase;      // the shape change's lifecycle phase, cycles (from JS, wrapped)
 uniform vec2 uBillow;      // the rise of the shape and detail noise, km (from JS, wrapped to their periods)
 uniform sampler2D uWeather, uDomes, uRegion; uniform sampler3D uShape, uDetail;
+uniform vec3 uDeck;        // the deck's coverage level, its relief's swing, 1 or 0 (the deck on or off)
 #if FIELD == 2
 uniform sampler2D uMap;    // the NASA cloud map: grey level = share of the place that is cloud
 uniform mat3 uEcef;        // the camera-local frame (x east, y up, z south) to the Earth frame (z north)
 uniform float uFlatGrey;   // test hook: >= 0 replaces the map by one grey level (the calibration)
 uniform float uRcT[9];     // the coverage law, grey 0 .. 1 in eight steps
 uniform float uOvT[9];     // the closed deck's share at each grey, in the same steps
-uniform vec3 uDeck;        // the deck's coverage level, its relief's swing, 1 or 0 (the deck on or off)
 // The globe's arcsine: a GPU's built-in one has an error near 7e-5 rad (0.45 km on the map).
 float mapAsin(float x) {
   float a = min(abs(x), 1.0);
