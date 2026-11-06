@@ -272,14 +272,31 @@ describe('a hung browser run ends before its job does', () => {
   });
 
   // Why: the job's limit is the slowest way to find a hung installer, and it
-  // cancels the job with no log (one install sat for 75 min). 9.8 min is the
-  // slowest of 190 green Playwright installs; one above 15 reverses the limit.
+  // cancels the job with no log (one install sat for 75 min). The step limit
+  // stays the last resort: a stalled try is cut far sooner, see the next test.
   it('stops a hung install at a step limit, well before the job limit', () => {
     const installs = testJob.steps.filter((s) => /\binstall\b/.test(String(s.run ?? '')));
     expect(installs.map((s) => s.name)).toEqual(['Install dependencies', 'Install Playwright browsers']);
     for (const step of installs) {
       expect(step['timeout-minutes'], step.name).toBe(15);
     }
+  });
+
+  // Why: apt stalls on a bad mirror. Three runs of 24 browser installs took 16
+  // to 42 s, four took 442 to over 900 s, and the one that hit the step limit
+  // failed its job. So a try is cut and started again. 120 s holds while a
+  // healthy install stays under it; three tries cost at most 6 min, which fits
+  // the step limit. timeout must run under sudo: from outside it cannot signal
+  // the root apt, which would keep its lock and fail every later try.
+  it('cuts a stalled apt run and tries again instead of waiting for the step limit', () => {
+    const step = testJob.steps.find((s) => s.name === 'Install Playwright browsers');
+    const run = String(step.run);
+    const TRY = `sudo env "PATH=$PATH" timeout -k 5 120 pnpm exec playwright install-deps chromium && break`;
+    expect(run).toContain('for attempt in 1 2 3; do');
+    expect(run).toContain(TRY);
+    expect(run).toContain(`[ "$attempt" -lt 3 ] || exit 1`);
+    expect(run).toMatch(/^pnpm exec playwright install chromium$/m);
+    expect(run).not.toContain('--with-deps');
   });
 
   // Why: a run keeps a report only where its config writes one, and the design

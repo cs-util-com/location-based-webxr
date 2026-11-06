@@ -256,12 +256,20 @@ jobs:
       - name: Build AppFramework
         run: pnpm run build:framework
 
-      # A step limit, because a job limit cancels the job with no log.
+      # A step limit, because a job limit cancels the job with no log. Inside it
+      # a stalled apt run is cut and started again: a healthy one takes under a
+      # minute, a stalled one up to 16. timeout runs under sudo because from
+      # outside it cannot signal the root apt, which would keep its lock.
       - name: Install Playwright browsers
         if: ${{ matrix.browsers }}
         timeout-minutes: 15
         working-directory: GpsPlusSlamJs_RecorderApp
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            sudo env "PATH=$PATH" timeout -k 5 120 pnpm exec playwright install-deps chromium && break
+            [ "$attempt" -lt 3 ] || exit 1
+          done
+          pnpm exec playwright install chromium
 
       # Every script runs even after a red one, so one job reports every
       # package it holds; the job fails if any of them failed.
