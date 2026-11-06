@@ -18,6 +18,7 @@ import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
 import { parseSettingsRecord, SETTINGS_KEY } from "./tour-document-draft.js";
+import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
   createTourViewerSession,
@@ -39,6 +40,9 @@ function pin(id: string, label = id): TourPin {
   };
 }
 
+/** Every open, write and removal of any namespace: what `flush` watches. */
+let ops = 0;
+
 /** One browser's namespaces: strings and blobs, as the real store holds. */
 function namespaces(options: { unreadable?: string } = {}) {
   const spaces = new Map<string, Map<string, Blob | string>>();
@@ -46,6 +50,7 @@ function namespaces(options: { unreadable?: string } = {}) {
   /** Called once per put, before it lands: a test may write meanwhile. */
   let beforePut: ((key: string) => Promise<void>) | null = null;
   const open = (key: string): Promise<DraftFileStore> => {
+    ops += 1;
     opened.push(key);
     const files = spaces.get(key) ?? new Map<string, Blob | string>();
     spaces.set(key, files);
@@ -53,9 +58,11 @@ function namespaces(options: { unreadable?: string } = {}) {
       put: async (k, data) => {
         if (beforePut !== null) await beforePut(k);
         files.set(k, data as Blob | string);
+        ops += 1;
         return true;
       },
       remove: (k) => {
+        ops += 1;
         files.delete(k);
         return Promise.resolve();
       },
@@ -71,6 +78,7 @@ function namespaces(options: { unreadable?: string } = {}) {
       },
       keys: () => Promise.resolve([...files.keys()]),
       clear: () => {
+        ops += 1;
         files.clear();
         return Promise.resolve();
       },
@@ -97,8 +105,9 @@ function element() {
   };
 }
 
-async function flush(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) await new Promise((r) => setTimeout(r, 0));
+/** Until the draft's writes have stopped. */
+function flush(): Promise<void> {
+  return settle(() => [ops]);
 }
 
 async function wired(ns: ReturnType<typeof namespaces>) {

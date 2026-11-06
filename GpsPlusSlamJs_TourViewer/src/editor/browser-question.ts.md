@@ -15,7 +15,7 @@
     and the event; the next frame after the answer starts the clock
     again, and a frame drawn later is timed as usual.
   - It lives in `src/editor/`, not beside the clock: the edit page loads
-    none of `src/editor3d/` before its `import()` (`editor3d-lazy.test.ts`),
+    none of `src/editor3d/` before its `import()` (`app-bundle.test.ts`),
     and it asks before the 3D view may ever be loaded. With no clock
     listening the event goes nowhere.
 - Example:

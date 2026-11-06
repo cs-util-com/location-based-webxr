@@ -93,5 +93,5 @@ atmosphere.configure({
 - `atmosphere-glsl.test.ts`, `cloud-slab.test.ts`, `sky-atmosphere.test.ts`:
   where the sky, the dome and the slab use it, and the uniforms that switch
   it.
-- `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs`: on the GPU,
+- `GpsPlusSlamJs_DesignSystem/3d/sun-clouds.smoke.spec.mjs` (removed; in git history): on the GPU,
   against the no-effect baseline at the same pixels.

@@ -183,7 +183,7 @@ ao.sync(composer, false); // kept, disabled
   every construction whatever `Math.random` returns, equals three's own
   `_generateNoise` fed the same seeded generator, follows a new seed on the
   live pass, and the generator's sequence is fixed per seed.
-- `ambient-occlusion.smoke.spec.mjs` (the page, SwiftShader): the crease
+- `ambient-occlusion.smoke.spec.mjs` (removed; in git history) (the page, SwiftShader): the crease
   darkens, open ground, the sky and clouds, the ridge foot and the dense
   city past the fade stay within their tolerances (the far city over three
   noise seeds, the shipped one first; `AO_SEED_SWEEP=1` runs six, the sweep

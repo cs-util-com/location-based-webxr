@@ -121,7 +121,7 @@ new THREE.ShaderMaterial({
 - `sky-atmosphere.test.ts`: every uniform the sky, the bake and the slab
   declare is supplied by the material.
 - Compilation, drawing and GPU/CPU parity: the look-dev smoke
-  (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`), the only place a
+  (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)), the only place a
   GPU exists.
 
 ## Import path

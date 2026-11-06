@@ -507,7 +507,8 @@ describe("tour document (properties)", () => {
   });
 
   it("any sequence of edits, recorded in the draft and restored after a reload, gives back the same document", () => {
-    // Why: the draft is the only copy of unsaved work across a reload. Its
+    // 100 runs: a draft that drops its hand-made stations was caught over 24
+    // seeds by run 8 at worst. Why: the draft is the only copy of unsaved work across a reload. Its
     // records (the objects', the deletions, the settings record with the
     // stations whole) must bring back exactly the document they were
     // written from, whatever mix of object and station edits made it.
@@ -527,7 +528,7 @@ describe("tour document (properties)", () => {
         const state = ops.reduce(apply, opened);
         expect(reloadDrift(state)).toBeNull();
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -1311,7 +1312,8 @@ describe("tour document (properties): every object belongs to a station", () => 
   });
 
   it("whatever a station's found radius, a placed and then moved object stands within the format's reach of its station, where it was moved", () => {
-    // Why: a found radius has no upper bound (a hand-edited file may carry
+    // 100 runs: a reach check at twice the format's bound was caught over 24
+    // seeds by run 30 at worst. Why: a found radius has no upper bound (a hand-edited file may carry
     // 50 km), while the format keeps an item within 10 km of its station
     // per axis. Seated by the radius alone, an object stood beyond that
     // reach and every later save failed; a move inside such a radius was
@@ -1375,7 +1377,7 @@ describe("tour document (properties): every object belongs to a station", () => 
           }
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

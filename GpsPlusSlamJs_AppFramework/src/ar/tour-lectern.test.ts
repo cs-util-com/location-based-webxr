@@ -9,6 +9,8 @@
  * shows as the card it always was - and refuses to write it back.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, expect, it } from 'vitest';
 
 import {

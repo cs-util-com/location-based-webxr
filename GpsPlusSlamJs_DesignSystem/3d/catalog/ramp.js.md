@@ -24,5 +24,5 @@
   - `category: "standard"`, so the city's varied materials
     (`../city-materials.js`) may pick these entries too.
 - Tests: `catalog.test.mjs` (the old values, one contiguous run starting a
-  row); `../lookdev-tidy.smoke.spec.mjs` (one row on screen at the
+  row); `../lookdev-tidy.smoke.spec.mjs` (removed; in git history) (one row on screen at the
   catalog's pitch and height, labelled, gone with the catalog).

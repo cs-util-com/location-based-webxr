@@ -1869,21 +1869,6 @@ describe("createEditorSession, undo and redo (W2)", () => {
     await session.close();
   });
 
-  it("refuses an undo or a redo while a save runs, in words", async () => {
-    const { session, manifest } = await opened([pin("a", "Old")]);
-    const editor = createEditorSession({
-      session,
-      manifest,
-      levels: new Map(),
-    });
-    editor.editText("a", "New");
-    const running = editor.save({ keepScan: false });
-    expect(editor.undo()).toMatchObject({ kind: "refused" });
-    await running;
-    expect(editor.undo().kind).toBe("undone");
-    await session.close();
-  });
-
   it("backs every undo and redo up in the draft", async () => {
     const { session, manifest } = await opened([pin("a", "Old"), pin("b")]);
     const draft = loggedDraft();

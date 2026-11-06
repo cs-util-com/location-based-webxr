@@ -3,10 +3,11 @@ import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   test: {
-    // Same setup as the test config: activates the gps-plus-slam-js license
-    // so benched code paths (e.g. calcGpsCoords) don't throw on
-    // assertLicenseActive(). Tinybench swallows per-iteration errors, so a
-    // missing setup surfaces as empty samples, not a failed run.
+    // Activates the gps-plus-slam-js license so benched code paths (e.g.
+    // calcGpsCoords) don't throw on assertLicenseActive(). Unit tests import
+    // it themselves; benches cannot go without it here, because Tinybench
+    // swallows per-iteration errors, so a missing setup surfaces as empty
+    // samples, not a failed run (tests/repo-config/framework-licence-setup).
     setupFiles: [
       fileURLToPath(new URL('../src/test-setup.ts', import.meta.url)),
     ],

@@ -221,7 +221,7 @@ guardSlidersIn(document);
 - Gesture simulation lives in
   [`../test-utils/pointer-gestures.ts`](../test-utils/pointer-gestures.ts)
   (jsdom has neither `PointerEvent` nor native range-input behaviour).
-- In a browser: `GpsPlusSlamJs_DesignSystem/3d/slider-touch.smoke.spec.mjs`
+- In a browser: `GpsPlusSlamJs_DesignSystem/3d/slider-touch.smoke.spec.mjs` (removed; in git history)
   drives CDP touch events on the look-dev plate (headless Chromium with touch
   emulation, not a phone).
 - Consumer-level coverage: the recorder's `settings-modal.test.ts`; the root

@@ -75,5 +75,5 @@
   const { createGlobeView } = await import("gps-plus-slam-globe/view");
   ```
 - Tests: none of its own (re-exports); the blocks' own tests, and the Tour
-  Viewer's `editor-only-packages.test.ts` and `editor3d-lazy.test.ts` for
+  Viewer's `editor-only-packages.test.ts` and `app-bundle.test.ts` for
   how an app may reach it.

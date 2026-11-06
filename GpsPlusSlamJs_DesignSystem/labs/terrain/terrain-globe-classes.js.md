@@ -91,7 +91,7 @@ detail, shares }`: the footprint drift (CIE76 between the fine albedo's
   sends water to the flat posts; the sweep on a synthetic region, its
   drift held to a brute-force footprint mean, NaN with n 0 when no
   footprint is wholly on land) and
-  `terrain-globe-classes.smoke.spec.mjs` (C2 at real Alps pixels against
+  `terrain-globe-classes.smoke.spec.mjs` (removed; in git history) (C2 at real Alps pixels against
   its reference; the region's per-class colours against the prototypes;
   a lake in the mask; the class-threshold sweep on the Alps and the Blue
   Ridge, logged).

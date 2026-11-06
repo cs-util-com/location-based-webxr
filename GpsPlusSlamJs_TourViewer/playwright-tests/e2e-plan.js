@@ -24,25 +24,26 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  * - area `editor`: only the desktop editor (`edit.html`); `viewer`: only the
  *   other pages (the visitor's and the phone creator's page, the check
  *   pages); `both`: the spec opens the editor and another page.
- * - lane (webgl specs only, 1 to 4): the CI job that runs the spec (see
- *   `LANES`). Balanced by the CI minutes of runs 41761594716 and 41820703091
- *   (2026-11-04), each lane about 22-30 min before the globe buildings and
- *   clouds specs (see the sidecar for the totals since);
- *   rebalance from the uploaded JSON report's per-test durations.
+ * - lane (1 or 2 for a dom spec, 1 to 4 for a webgl spec): the CI job that
+ *   runs the spec (see `LANES`). Balanced by the per-spec seconds of a local
+ *   full run of 2026-11-05 (see the sidecar), each dom lane about half of the
+ *   dom project and each webgl lane about a quarter of the 3D specs, lane 1
+ *   lighter for its clouds spec's CI retries; rebalance from the uploaded
+ *   JSON report's per-test durations.
  *
- * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane?: 1 | 2 | 3 | 4 }>>}
+ * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane: 1 | 2 | 3 | 4 }>>}
  */
 export const SPECS = {
-  "ar-layout.spec.js": { project: "dom", area: "viewer" },
-  "ar-mode.spec.js": { project: "dom", area: "viewer" },
+  "ar-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "ar-mode.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "blocks-tour.spec.js": { project: "webgl", area: "both", lane: 4 },
   "character-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
-  "code-auto-move.spec.js": { project: "dom", area: "viewer" },
-  "creator-indoor.spec.js": { project: "dom", area: "viewer" },
-  "creator-stations.spec.js": { project: "dom", area: "viewer" },
-  "editor-entry.spec.js": { project: "dom", area: "editor" },
-  "editor-files.spec.js": { project: "dom", area: "editor" },
-  "editor.spec.js": { project: "dom", area: "editor" },
+  "code-auto-move.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "creator-indoor.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "creator-stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
+  "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
+  "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-globe-approach.spec.js": {
@@ -53,7 +54,7 @@ export const SPECS = {
   "editor3d-globe-buildings.spec.js": {
     project: "webgl",
     area: "editor",
-    lane: 3,
+    lane: 1,
   },
   "editor3d-globe-clouds.spec.js": {
     project: "webgl",
@@ -70,7 +71,7 @@ export const SPECS = {
     area: "editor",
     lane: 2,
   },
-  "editor3d-globe-start.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-globe-start.spec.js": { project: "webgl", area: "editor", lane: 1 },
   "editor3d-globe.spec.js": { project: "webgl", area: "editor", lane: 1 },
   "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-long-text.spec.js": { project: "webgl", area: "editor", lane: 3 },
@@ -79,35 +80,35 @@ export const SPECS = {
   "editor3d-shell.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
-  "file-access-check.spec.js": { project: "dom", area: "viewer" },
+  "file-access-check.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "landing-film.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing.spec.js": { project: "webgl", area: "viewer", lane: 4 },
-  "launch-and-errors.spec.js": { project: "dom", area: "viewer" },
+  "launch-and-errors.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "lectern-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "legal.spec.js": { project: "webgl", area: "both", lane: 4 },
-  "long-text-check.spec.js": { project: "dom", area: "viewer" },
+  "long-text-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "model-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
-  "narration-check.spec.js": { project: "dom", area: "viewer" },
-  "object-editing.spec.js": { project: "dom", area: "viewer" },
+  "narration-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "object-editing.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "older-format.spec.js": { project: "webgl", area: "both", lane: 4 },
-  "open-file.spec.js": { project: "dom", area: "viewer" },
-  "sample-tour.spec.js": { project: "dom", area: "viewer" },
-  "setup-flow.spec.js": { project: "dom", area: "viewer" },
-  "stations.spec.js": { project: "dom", area: "viewer" },
+  "open-file.spec.js": { project: "dom", area: "viewer", lane: 1 },
+  "sample-tour.spec.js": { project: "dom", area: "viewer", lane: 1 },
+  "setup-flow.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "story-blocks-frame-time.spec.js": {
     project: "webgl",
     area: "viewer",
     lane: 4,
   },
-  "story-blocks.spec.js": { project: "dom", area: "viewer" },
-  "streaming.spec.js": { project: "dom", area: "viewer" },
-  "summary.spec.js": { project: "dom", area: "viewer" },
-  "view-switch.spec.js": { project: "dom", area: "viewer" },
-  "visitor-start.spec.js": { project: "dom", area: "viewer" },
-  "visitor-walk-layout.spec.js": { project: "dom", area: "viewer" },
-  "visitor-walk-radar.spec.js": { project: "dom", area: "viewer" },
-  "visitor-walk.spec.js": { project: "dom", area: "viewer" },
-  "way-in.spec.js": { project: "dom", area: "both" },
+  "story-blocks.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "streaming.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "summary.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "view-switch.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "visitor-start.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "visitor-walk-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "visitor-walk-radar.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "visitor-walk.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "way-in.spec.js": { project: "dom", area: "both", lane: 1 },
 };
 
 /**
@@ -122,13 +123,16 @@ export function specsOf(project) {
 
 /**
  * The CI lanes, one GitHub job each, chosen by the `E2E_LANE` environment
- * variable (`scripts/e2e/project-runs.mjs`, `laneSpecs`): `dom` is the whole
- * DOM project, `webgl-N` the WebGL specs whose `lane` is N. Not Playwright's
+ * variable (`scripts/e2e/project-runs.mjs`, `laneSpecs`): `dom-N` the DOM
+ * specs whose `lane` is N, `webgl-N` the WebGL specs whose `lane` is N
+ * (the DOM project runs at one worker on CI, so two jobs halve its wall
+ * clock). Not Playwright's
  * `--shard`, which cuts the alphabetical list and would put every
  * `editor3d-globe-*` spec in one shard.
  */
 export const LANES = /** @type {const} */ ([
-  "dom",
+  "dom-1",
+  "dom-2",
   "webgl-1",
   "webgl-2",
   "webgl-3",
@@ -143,15 +147,15 @@ export const LANES = /** @type {const} */ ([
  * @throws {RangeError} on a lane `LANES` does not name
  */
 export function specsOfLane(lane) {
-  if (lane === "dom") return specsOf("dom");
-  const match = /^webgl-([1-4])$/.exec(lane);
-  if (!match) {
+  if (!(/** @type {readonly string[]} */ (LANES).includes(lane))) {
     throw new RangeError(
       `unknown e2e lane "${lane}"; known: ${LANES.join(", ")}`,
     );
   }
-  const n = Number(match[1]);
-  return specsOf("webgl").filter((name) => SPECS[name].lane === n);
+  const [project, n] = lane.split("-");
+  return specsOf(/** @type {"dom" | "webgl"} */ (project)).filter(
+    (name) => SPECS[name].lane === Number(n),
+  );
 }
 
 /**

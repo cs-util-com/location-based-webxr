@@ -8,8 +8,9 @@
  * stations' own fields; texts cut to 600 characters, which keeps the
  * fixture small) with the SHA-256 of what the writer produced for
  * each when it was recorded; this asserts the writer still produces
- * exactly those bytes, and that a written file reads back and writes
- * again unchanged.
+ * exactly those bytes (that a written file reads back and writes again
+ * unchanged is a claim of the manifest property in
+ * tour-manifest.property.test.ts).
  *
  * Re-record the fixture only for a change that is MEANT to change the
  * written bytes, and say so in the change and in its `recordedWith`.
@@ -18,10 +19,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { tourManifestArbitrary } from '../test-utils/tour-arbitraries';
 import { parseTourManifest, serializeTourManifest } from './tour-manifest';
 
 interface GoldenCase {
@@ -70,25 +69,5 @@ describe('the version 4 writer, byte for byte', () => {
     );
     expect(stations.some((s) => 'description' in s)).toBe(true);
     expect(stations.some((s) => 'image' in s)).toBe(true);
-  });
-
-  it('a written file is a fixed point: read and written again, the same bytes', () => {
-    fc.assert(
-      fc.property(tourManifestArbitrary(), (record) => {
-        const written = serializeTourManifest(parseTourManifest(record));
-        // Every step is written under its one key.
-        const file = JSON.parse(written) as {
-          stations: { steps: Record<string, unknown>[] }[];
-        };
-        const steps = file.stations.flatMap((s) => s.steps);
-        expect(steps.filter((s) => !('action' in s) || 'block' in s)).toEqual(
-          []
-        );
-        expect(
-          serializeTourManifest(parseTourManifest(JSON.parse(written)))
-        ).toBe(written);
-      }),
-      { numRuns: 150 }
-    );
   });
 });

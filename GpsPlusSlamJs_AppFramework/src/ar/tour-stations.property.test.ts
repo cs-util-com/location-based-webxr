@@ -85,119 +85,155 @@ function injectUnknown(data: StationJson[], pick: number): void {
   sites[pick % sites.length]!();
 }
 
-describe('unknown values of a newer minor (properties)', () => {
-  // Why this matters: a file of a newer minor may use any value a later
-  // app adds to a closed list. With the lenient flag the parse must never
-  // fail on one, and every reference that survives must still resolve -
-  // the renderer's promise that it never meets a dangling id. Without the
-  // flag (this reader's own minor) the same file is refused.
+// One generation for the four claims (each used to draw its own 150-200
+// station sets); each claim works on its own deep copy. The two claims that
+// need a site (a media field, a choice step) skip a run without one and
+// count the runs they checked, so the merged property cannot quietly test
+// nothing (the old fc.pre discarded the whole run instead).
+const RUNS = 200;
+/** Each conditional claim must have checked at least this many of RUNS. */
+const MIN_CHECKED = 50;
+
+describe('tour stations (properties)', () => {
+  // Why the newer-minor claim matters: a file of a newer minor may use any
+  // value a later app adds to a closed list. With the lenient flag the parse
+  // must never fail on one, and every reference that survives must still
+  // resolve - the renderer's promise that it never meets a dangling id.
+  // Without the flag (this reader's own minor) the same file is refused.
   const assetsWithUnknown = [
     ...ASSETS,
     { id: 'splat', path: 'content/splat.splat' },
   ];
-  it('lenient: never fails, and what survives resolves; strict: refused', () => {
-    fc.assert(
-      fc.property(stations, fc.nat(), (data, pick) => {
-        const copy = JSON.parse(JSON.stringify(data)) as StationJson[];
-        injectUnknown(copy, pick);
-        const assets = parseTourAssets(assetsWithUnknown, {
-          fail,
-          lenient: true,
-        });
-        expect(assets.map((a) => a.id)).not.toContain('splat');
-        const parsed = parseTourStations(copy, { assets, fail, lenient: true });
-        const assetIds = new Set(assets.map((a) => a.id));
-        for (const station of parsed) {
-          expect(station.hint).toBe('arrow');
-          const stepIds = new Set(station.steps.map((s) => s.id));
-          const blockIds = new Set(station.blocks.map((b) => b.id));
-          const shown = tourShownBlockIds(station.steps);
-          expect(
-            station.steps.every((s) => ['tap', 'auto'].includes(s.advance.mode))
-          ).toBe(true);
-          expect([...shown].every((id) => blockIds.has(id))).toBe(true);
-          for (const block of station.blocks) {
-            const refs = MEDIA_FIELDS.flatMap((f) => {
-              const v = (block as unknown as Json)[f];
-              return typeof v === 'string' ? [v] : [];
-            });
-            expect(refs.every((r) => assetIds.has(r))).toBe(true);
-            // A block no step shows stands in the world.
-            expect(
-              shown.has(block.id) || TOUR_WORLD_VIEWS.has(block.view)
-            ).toBe(true);
-          }
-          for (const step of station.steps) {
-            if (step.action.kind !== 'choice') continue;
-            expect(step.action.options.length).toBeGreaterThanOrEqual(2);
-            expect(
-              step.action.options.every(
-                (o) => o.goto === undefined || stepIds.has(o.goto)
-              )
-            ).toBe(true);
-          }
-        }
-        expect(() => parseAll(copy)).toThrow(Invalid);
-      }),
-      { numRuns: 200 }
-    );
-  });
-});
-
-describe('tour stations (properties)', () => {
-  it('every well-formed station set survives a JSON round trip unchanged', () => {
-    fc.assert(
-      fc.property(stations, (data) => {
-        const parsed = parseAll(data);
-        expect(parseAll(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
-      }),
-      { numRuns: 150 }
-    );
-  });
-
-  it('breaking any one asset reference is refused', () => {
-    fc.assert(
-      fc.property(stations, fc.nat(), (data, pick) => {
-        const copy = JSON.parse(JSON.stringify(data)) as StationJson[];
-        const sites = copy.flatMap((s) =>
-          s.blocks.flatMap((block) =>
-            MEDIA_FIELDS.filter((f) => typeof block[f] === 'string').map(
-              (f) => () => {
-                block[f] = 'missing';
-              }
-            )
-          )
-        );
-        fc.pre(sites.length > 0);
-        sites[pick % sites.length]!();
-        expect(() => parseAll(copy)).toThrow(Invalid);
-      }),
-      { numRuns: 150 }
-    );
-  });
-
-  it('a choice jumping to a step that does not exist is refused', () => {
+  it('round trip unchanged; an unknown value of a newer minor: lenient never fails and what survives resolves, strict refuses; any one broken asset reference or choice target is refused', () => {
+    let assetBreaks = 0;
+    let choiceBreaks = 0;
     fc.assert(
       fc.property(
         stations,
+        fc.nat(),
         fc.stringMatching(/^[a-z]{3,8}$/),
-        (data, ghost) => {
-          const copy = JSON.parse(JSON.stringify(data)) as StationJson[];
-          const station = copy.find((s) =>
-            s.steps.some((st) => (st.action as Json).kind === 'choice')
-          );
-          fc.pre(station !== undefined);
-          fc.pre(!station.steps.some((st) => st.id === ghost));
-          const choice = station.steps.find(
-            (st) => (st.action as Json).kind === 'choice'
-          )!.action as { options: { goto?: string }[] };
-          choice.options[0]!.goto = ghost;
-          expect(() => parseAll(copy)).toThrow(
-            /must name a step of this station/
-          );
+        (data, pick, ghost) => {
+          const copyOf = () =>
+            JSON.parse(JSON.stringify(data)) as StationJson[];
+
+          // Every well-formed station set survives a JSON round trip.
+          const parsedOnce = parseAll(data);
+          expect(
+            parseAll(JSON.parse(JSON.stringify(parsedOnce))),
+            'a JSON round trip changes nothing'
+          ).toEqual(parsedOnce);
+
+          // Unknown values of a newer minor.
+          const copy = copyOf();
+          injectUnknown(copy, pick);
+          const assets = parseTourAssets(assetsWithUnknown, {
+            fail,
+            lenient: true,
+          });
+          expect(assets.map((a) => a.id)).not.toContain('splat');
+          const parsed = parseTourStations(copy, {
+            assets,
+            fail,
+            lenient: true,
+          });
+          const assetIds = new Set(assets.map((a) => a.id));
+          for (const station of parsed) {
+            expect(station.hint).toBe('arrow');
+            const stepIds = new Set(station.steps.map((s) => s.id));
+            const blockIds = new Set(station.blocks.map((b) => b.id));
+            const shown = tourShownBlockIds(station.steps);
+            expect(
+              station.steps.every((s) =>
+                ['tap', 'auto'].includes(s.advance.mode)
+              )
+            ).toBe(true);
+            expect([...shown].every((id) => blockIds.has(id))).toBe(true);
+            for (const block of station.blocks) {
+              const refs = MEDIA_FIELDS.flatMap((f) => {
+                const v = (block as unknown as Json)[f];
+                return typeof v === 'string' ? [v] : [];
+              });
+              expect(refs.every((r) => assetIds.has(r))).toBe(true);
+              // A block no step shows stands in the world.
+              expect(
+                shown.has(block.id) || TOUR_WORLD_VIEWS.has(block.view)
+              ).toBe(true);
+            }
+            for (const step of station.steps) {
+              if (step.action.kind !== 'choice') continue;
+              expect(step.action.options.length).toBeGreaterThanOrEqual(2);
+              expect(
+                step.action.options.every(
+                  (o) => o.goto === undefined || stepIds.has(o.goto)
+                )
+              ).toBe(true);
+            }
+          }
+          expect(() => parseAll(copy), 'strict refuses').toThrow(Invalid);
+
+          // Breaking any one asset reference, or a choice target, is refused.
+          assetBreaks += Number(refusesABrokenAsset(data, pick));
+          choiceBreaks += Number(refusesAChoiceToNoStep(data, ghost));
         }
       ),
-      { numRuns: 150 }
+      { numRuns: RUNS }
+    );
+    expect(
+      assetBreaks,
+      'runs with an asset reference to break'
+    ).toBeGreaterThanOrEqual(MIN_CHECKED);
+    expect(choiceBreaks, 'runs with a choice to break').toBeGreaterThanOrEqual(
+      MIN_CHECKED
     );
   });
 });
+
+/**
+ * Breaks one asset reference of a copy of `data` and expects the parse to
+ * refuse it; false (nothing checked) when no block has a media field.
+ */
+function refusesABrokenAsset(
+  data: readonly StationJson[],
+  pick: number
+): boolean {
+  const broken = JSON.parse(JSON.stringify(data)) as StationJson[];
+  const sites = broken.flatMap((s) =>
+    s.blocks.flatMap((block) =>
+      MEDIA_FIELDS.filter((f) => typeof block[f] === 'string').map(
+        (f) => () => {
+          block[f] = 'missing';
+        }
+      )
+    )
+  );
+  if (sites.length === 0) return false;
+  sites[pick % sites.length]!();
+  expect(() => parseAll(broken), 'a broken asset reference').toThrow(Invalid);
+  return true;
+}
+
+/**
+ * Points the first choice of a copy of `data` at the step `ghost` and
+ * expects the parse to refuse it; false (nothing checked) when no station
+ * has a choice or `ghost` happens to name one of its steps.
+ */
+function refusesAChoiceToNoStep(
+  data: readonly StationJson[],
+  ghost: string
+): boolean {
+  const jumped = JSON.parse(JSON.stringify(data)) as StationJson[];
+  const station = jumped.find((s) =>
+    s.steps.some((st) => (st.action as Json).kind === 'choice')
+  );
+  if (station === undefined || station.steps.some((st) => st.id === ghost)) {
+    return false;
+  }
+  const choice = station.steps.find(
+    (st) => (st.action as Json).kind === 'choice'
+  )!.action as { options: { goto?: string }[] };
+  choice.options[0]!.goto = ghost;
+  expect(() => parseAll(jumped), 'a choice to no step').toThrow(
+    /must name a step of this station/
+  );
+  return true;
+}

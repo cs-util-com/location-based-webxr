@@ -17,6 +17,8 @@
  *
  * See GpsPlusSlamJs_Docs/docs/2026-06-28-0751-subscriber-dispatch-persistence-ordering-plan.md
  */
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { describe, it, expect } from 'vitest';
 import {
   configureStore,

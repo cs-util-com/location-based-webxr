@@ -19,7 +19,7 @@
     a vertical swipe that starts on a slider scrolls the plate instead of
     editing it (owner report 2026-09-30). Held to it by the root
     `tests/repo-config/slider-pages-load-the-guard.test.js`; proven in a
-    browser by `slider-touch.smoke.spec.mjs`.
+    browser by `slider-touch.smoke.spec.mjs` (removed; in git history).
 - Invariants & assumptions:
   - The stored choice (`"open"` or `"collapsed"`) wins over the width; with
     none, a narrow screen starts folded and a wide one open.
@@ -33,7 +33,7 @@
     visible at the test viewport (1280x800).
 - Example: `initPanel(document, { storage: null, narrow: true })` starts
   folded and remembers nothing.
-- Tests: `lookdev.smoke.spec.mjs`:
+- Tests: `lookdev.smoke.spec.mjs` (removed; in git history):
   - "the control plate collapses from its header and per section, and
     remembers it": the header state, a section folding, the reload, the error
     box outside the body, and the plate not scrolling;

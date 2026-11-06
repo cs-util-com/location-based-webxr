@@ -11,7 +11,7 @@
  * format's cap counts bytes).
  */
 import { parseTourTimingText } from "gps-plus-slam-app-framework/ar/tour-timing";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
@@ -20,6 +20,7 @@ import {
   type NarrationSection,
   type NarrationSectionDeps,
 } from "./narration-section.js";
+import { settle } from "../../test-support/settle.js";
 
 const BODY = "The mill turned all day. The miller slept at night.";
 const VTT = [
@@ -88,6 +89,7 @@ function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
       return new Promise((resolve) => {
         gate = {
           release: (outcome) => {
+            gate = null;
             resolve(apply(outcome));
           },
         };
@@ -106,9 +108,25 @@ const btn = (act: string) =>
   section.node.querySelector<HTMLButtonElement>(`[data-ln="${act}"]`);
 const file = (text: string, name: string) => new File([text], name);
 /** Let the awaited reads and file reads run. */
-async function flush(): Promise<void> {
-  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+async function quiet(): Promise<void> {
+  await settle(() => [
+    section.node.innerHTML,
+    said.length,
+    shown.length,
+    edits.length,
+  ]);
   await section.settled();
+}
+/** Run a started action to its end, or to the edit a test holds. Its text
+ *  hash runs on the thread pool, where no fingerprint sees it and nothing
+ *  but the action's own state says it is still running, however long the
+ *  hash takes. */
+async function flush(): Promise<void> {
+  await vi.waitUntil(
+    () => section.node.getAttribute("aria-busy") !== "true" || gate !== null,
+    { timeout: 4000, interval: 2 },
+  );
+  await quiet();
 }
 
 beforeEach(async () => {
@@ -346,7 +364,7 @@ describe("the timing", () => {
         };
       });
     const done = section.takeFiles([slow]);
-    await flush();
+    await quiet();
     section.update({ blockId: "other", body: BODY, key: "1" });
     release?.();
     await done;

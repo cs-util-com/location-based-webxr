@@ -26,4 +26,4 @@
 - Examples: `pnpm run shoot:3d -- --preset=golden --view=sun` → two PNGs
   per tone map. (Baseline shots of OsmDemo's old sky were retired with it
   in M3.)
-- Tests: none (tool). The same page is gated by `3d/lookdev.smoke.spec.mjs`.
+- Tests: none (tool). The same page is gated by `3d/lookdev.smoke.spec.mjs` (removed; in git history).

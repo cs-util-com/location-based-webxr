@@ -10,7 +10,7 @@
  * the map mesh and compass cubes stay flat/world-oriented regardless of
  * camera rotation, orbit controls, or alignment matrix changes.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';

@@ -14,6 +14,8 @@
  * alignment - not the lerped group matrix, not a later alignment - and must
  * never touch the object while it waits, so the placed object stays rigid.
  */
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fc from 'fast-check';
 import * as THREE from 'three';

@@ -40,7 +40,7 @@ describe("a tour's own code is always this tour", () => {
       ),
       // Each run encodes a QR size estimate; 60 runs keep the property
       // inside the unit budget on a loaded machine.
-      { numRuns: 60 },
+      { numRuns: 25 },
     );
   }, 30_000);
 

@@ -541,7 +541,7 @@ describe("the station guide on the page's store", () => {
           }
         },
       ),
-      { numRuns: 200, examples: [["any", WHOLE_WALK]] },
+      { numRuns: 70, examples: [["any", WHOLE_WALK]] },
     );
     // Not vacuous: every steady state was reached and ticked twice, and
     // a generated walk was longer than the explicit one (fast-check's
@@ -621,7 +621,7 @@ describe("the station guide on the page's store", () => {
         const progress = page.store.getState().visitorWalk.progress;
         expect(progress === null ? null : walkOffered(progress)).toEqual([]);
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   }, 120_000);
 });

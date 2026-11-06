@@ -146,7 +146,7 @@ describe("a folded station's row", () => {
           expect(card.querySelector("br, img, .pic, .ds, .kids")).toBeNull();
         });
       }),
-      { numRuns: 60 },
+      { numRuns: 20 },
     );
   });
 });

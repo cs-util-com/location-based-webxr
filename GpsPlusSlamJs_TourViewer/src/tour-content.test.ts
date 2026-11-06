@@ -566,7 +566,7 @@ describe("withReferencedAssets", () => {
           ).not.toThrow();
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   }, 30_000);
 

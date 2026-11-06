@@ -5,7 +5,7 @@
   rig over a synthetic room, drawn over a stand-in camera image, with every
   probe pixel judged against the analytic oracle
   (`GpsPlusSlamJs_AppFramework/src/test-utils/shadow-oracle.ts`). It is both
-  the test bench (`ar-shadows.smoke.spec.mjs`) and a page to look at on a
+  the test bench (`ar-shadows.smoke.spec.mjs` (removed; in git history)) and a page to look at on a
   phone (`/lookdev/labs/ar-shadows/` on a PR preview).
 - The scene:
   - an 8 × 8 m room meshed at 10 cm and loaded through `applyMeshData`: a
@@ -65,7 +65,9 @@ fallback, mutation, showRoom })`: rebuilds the occluder and the rig.
     shadow" (A7) judges real floor pixels.
   - Everything is swept: the margin over 2-8 texels, the sun over four
     elevations (owner rule 2026-09-13).
-- Tests: `ar-shadows.smoke.spec.mjs` (stage `test:e2e`), claims A1-A10 of
-  the plan's M2, swept over margins 2-8 texels, suns 20-80 degrees and
-  maps R 5/10 m × N 512-2048. Measured 2026-09-26: zero violations at
-  2 texels everywhere; the spec asserts at 3.
+- Tests: `3d/pages.fast.spec.mjs` (stage `test:e2e`) opens the lab and
+  checks that it draws. The measurements were in
+  `ar-shadows.smoke.spec.mjs` (removed; in git history; restore it before a
+  change to the shadows): claims A1-A10 of the plan's M2, swept over margins
+  2-8 texels, suns 20-80 degrees and maps R 5/10 m × N 512-2048. Measured
+  2026-09-26: zero violations at 2 texels everywhere; the spec asserted at 3.

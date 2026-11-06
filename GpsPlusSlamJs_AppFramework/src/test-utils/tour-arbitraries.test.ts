@@ -6,8 +6,8 @@
  * every property that uses it while they all stay green. This pins what
  * the generators claim: exact counts in the reader's own unit, the
  * boundaries actually reached, the hostile spellings actually produced,
- * ids at their limit and colliding across namespaces, and version 4
- * manifests the reader accepts.
+ * and ids at their limit and colliding across namespaces. (Version 4
+ * manifests the reader accepts: ar/tour-manifest.property.test.ts.)
  */
 
 import fc from 'fast-check';
@@ -16,17 +16,12 @@ import { describe, expect, it } from 'vitest';
 import {
   checkTourBlockText,
   TOUR_BLOCK_TEXT_RULES,
-  TOUR_WORLD_VIEWS,
   tourTextCount,
   type TourTextRule,
 } from '../ar/tour-blocks';
-import { parseTourManifest } from '../ar/tour-manifest';
-import { tourObjects } from '../ar/tour-station-pose';
 import {
   TOUR_ARBITRARY_ASSETS,
-  TOUR_FREE_VIEWS,
   tourIdArbitrary,
-  tourManifestArbitrary,
   tourTextArbitrary,
 } from './tour-arbitraries';
 
@@ -112,54 +107,6 @@ describe('tourIdArbitrary', () => {
   });
 });
 
-describe('tourManifestArbitrary', () => {
-  it('builds version 4 manifests the reader accepts, with blocks of every kind, steps of every kind and free blocks', () => {
-    const kinds = new Set<string>();
-    const steps = new Set<string>();
-    let free = 0;
-    fc.assert(
-      fc.property(tourManifestArbitrary(), (record) => {
-        const manifest = parseTourManifest(JSON.parse(JSON.stringify(record)));
-        for (const station of manifest.stations) {
-          for (const block of station.blocks) kinds.add(block.kind);
-          for (const step of station.steps) steps.add(step.action.kind);
-        }
-        free += tourObjects(manifest).length;
-      }),
-      { numRuns: 200, seed: 9 }
-    );
-    expect([...kinds].sort()).toEqual(
-      [
-        'audio',
-        'character',
-        'longText',
-        'model',
-        'picture',
-        'shortText',
-        'video',
-      ].sort()
-    );
-    expect([...steps].sort()).toEqual(['choice', 'quiz', 'show']);
-    expect(free).toBeGreaterThan(0);
-  });
-
-  // Why this test matters: a world view the format gains but the free-block
-  // generator never writes is a view no manifest property ever round-trips
-  // (a long text's lectern and reading sign went untested that way). The
-  // generator's free views must be exactly the format's world views, and
-  // the manifests must actually stand each one in the world.
-  it('stands a free block in every world view of the format', () => {
-    expect(new Set(Object.values(TOUR_FREE_VIEWS).flat())).toEqual(
-      TOUR_WORLD_VIEWS
-    );
-    const views = new Set<string>();
-    fc.assert(
-      fc.property(tourManifestArbitrary(), (record) => {
-        const manifest = parseTourManifest(JSON.parse(JSON.stringify(record)));
-        for (const object of tourObjects(manifest)) views.add(object.view);
-      }),
-      { numRuns: 300, seed: 9 }
-    );
-    expect(views).toEqual(TOUR_WORLD_VIEWS);
-  });
-});
+// What the manifest generator reaches (every block kind, step kind, free
+// blocks and world view) is collected by the one manifest property in
+// ar/tour-manifest.property.test.ts, over the same manifests it checks.

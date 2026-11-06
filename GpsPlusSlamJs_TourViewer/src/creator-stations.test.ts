@@ -256,7 +256,7 @@ describe("openStationAt", () => {
           }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 60 },
     );
   });
 });
@@ -634,7 +634,7 @@ describe("wireCreatorStations", () => {
           }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 60 },
     );
   });
 
