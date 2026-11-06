@@ -403,6 +403,34 @@ function guardedQuizzes(
       return costs && seen.steps.has(ref) && !warned.has(ref);
     }).length;
 }
+/**
+ * A quiz guarded by its own step, in the property's examples: fast-check
+ * runs these before its draws. The draws alone meet this cause about 4.6
+ * times in 1000 tours and not at all at 9 of 1000 seeds, and the check below
+ * went red on chance. Every other cause is met over 90 times a run, so a miss is
+ * out of reach for them, and they stay on the draws.
+ */
+const QUIZ_GUARDED: TourGame = {
+  labels: [],
+  counters: [{ id: 'x', name: 'x', keep: 'round', start: 1, floor: 0 }],
+  stations: [
+    {
+      id: 's0',
+      steps: [
+        {
+          id: 'q',
+          kind: 'quiz',
+          requires: [{ counter: 'x', atLeast: 1 }],
+          outcomes: {
+            correct: [{ add: 'x', by: -1 }],
+            wrong: [{ add: 'x', by: -1 }],
+          },
+        },
+      ],
+    },
+  ],
+};
+
 /** The causes a run of the property must meet at least once each. */
 const GUARDED_CAUSES = [
   'unreachable:label-never-set',
@@ -435,11 +463,19 @@ describe('tour game check - against an exhaustive walk search', () => {
         count('quiz-guarded-by-its-step', guardedQuizzes(game, findings, seen));
         expect(violations(findings, seen)).toEqual([]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 1000, examples: [[QUIZ_GUARDED]] }
     );
     expect(
       GUARDED_CAUSES.filter((cause) => (met.get(cause) ?? 0) === 0)
     ).toEqual([]);
+  });
+
+  // Why: the example is all that holds the rarest cause, so it must stay one.
+  it('meets a quiz guarded by its own step in its example', () => {
+    const findings = checkTourGame(QUIZ_GUARDED);
+    expect(
+      guardedQuizzes(QUIZ_GUARDED, findings, exhaustive(QUIZ_GUARDED))
+    ).toBe(1);
   });
 
   // The rules end a scene on a goto naming no step; a walk that instead
