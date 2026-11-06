@@ -145,10 +145,10 @@ describe('the stage watchdog, end to end', () => {
     // 10 s limit; the fixture prints every 250 ms for 12 s, so it outlives
     // the limit and only its talking can save it. The clock runs from the
     // spawn to the exit, so the limit must also cover the wait for the first
-    // print and the one after the last: with a browser run, this suite and
-    // more beside it the first print took up to 6.2 s, while the worst gap
-    // between prints was 1.3 s. A 2 s limit lost 44 of 156 such runs: 41 before
-    // the first print, 3 after the last.
+    // print: with a browser run, this suite and more beside it that took up
+    // to 6.2 s, while the worst gap between prints was 1.3 s. A 2 s limit lost
+    // 44 of 156 such runs: 41 had not printed by then, and 3 had printed in
+    // time and stalled for a reason these runs did not show.
     const { done } = drive('talker', '0.1667');
     const { code, out } = await done;
     expect(out).not.toContain('STALLED');
