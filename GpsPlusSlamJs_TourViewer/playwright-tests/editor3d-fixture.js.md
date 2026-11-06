@@ -9,8 +9,9 @@ stats.
 
 ## Public API
 
-- `answerHosts(page, { globeAssets })` - a flat Terrarium relief at
-  `SQUARE_GROUND_M` (515.5 m, the sample square's ground) for Mapterhorn, a
+- `answerHosts(page, { globeAssets, overpass, groundM })` - a flat Terrarium
+  relief at `groundM` (by default `SQUARE_GROUND_M`, 515.5 m, the sample
+  square's ground) for Mapterhorn, a
   plain tile for OpenStreetMap, and the globe's whole-Earth imagery refused
   (or, with `globeAssets: "serve"`, answered by the dev server's
   `/globe-assets/` route, for the editor on the globe view); returns

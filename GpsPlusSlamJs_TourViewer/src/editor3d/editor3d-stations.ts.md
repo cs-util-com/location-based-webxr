@@ -196,6 +196,11 @@ printed size, focalPxOf(view))` times its printed size: `CODE_SCREEN_PX`
 - **Names the globe's interface pass reads** (`globe-interface-pass.ts`):
   the ring `found-radius` and the billboard's pole `pole`; renaming
   either lets the clouds' shadow darken it.
+- **The found-radius ring has no depth test** and is drawn at
+  `RING_RENDER_ORDER` (20), under the gizmo (21 and up): flat on the
+  station's level it cannot follow a slope, and the relief above that level
+  hid it. So it shows through a building or a hill, as the labels do. The
+  visitor's ring (`station-ring.ts`) is not this one and keeps its depth test.
 - **The found-radius circle** is the selected station's ring: amber (the
   gizmo's colour, its radius dots sit on it) while the station itself is
   selected, a lighter blue while an item in it is, else blue.
@@ -251,4 +256,6 @@ the larger of its printed size and `CODE_SCREEN_PX` on screen, growing
 with distance, shrinking as the view tilts up). Real drawing and real
 ground: `playwright-tests/editor3d.spec.js`; the code measured on the
 canvas at four window sizes (12 px; the sweep's three sizes are
-above): `playwright-tests/editor3d-edit.spec.js`.
+above): `playwright-tests/editor3d-edit.spec.js`. The found radius over a
+relief standing above its station:
+`playwright-tests/editor3d-station-ring.spec.js`.

@@ -440,6 +440,24 @@ describe("the Ctrl+K palette", () => {
     shell.hide();
   });
 
+  // Why: the palette gives the focus back where it found it, and the Edit
+  // menu's Add closes as the palette opens: with the item hidden the
+  // focus fell to the page, so a keyboard lost its place on Escape.
+  it("gives the focus back to the Edit button, not to the item its menu hides", () => {
+    const { shell } = setUp();
+    const item = document.getElementById("edit-add");
+    item?.focus();
+    item?.click();
+    expect(document.activeElement).toBe(input());
+    input().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("edit-menu-btn"),
+    );
+    shell.hide();
+  });
+
   // Why: the palette opened over the help is the topmost layer, so
   // Escape closes it first - the help goes on the next Escape.
   it("closes on Escape before the help it was opened over", () => {
@@ -583,6 +601,22 @@ describe("the tree's search and its Fold every station", () => {
     expect(field.value).toBe("");
     expect(listed()).toEqual(["a", "b"]);
     shell.hide();
+  });
+
+  // Why: every way the page makes a station ends in this call: a new
+  // station is selected and said, and its name matches nothing typed, so
+  // a search left running would hide it. On the 2D map the tree is not
+  // drawn, so the search is emptied for the next time it shows.
+  it("is emptied at the page's word, drawn if the tree shows", () => {
+    const { shell } = setUp();
+    const field = search("pin b");
+    shell.clearSearch();
+    expect(field.value).toBe("");
+    expect(listed()).toEqual(["a", "b"]);
+    search("pin b");
+    shell.hide();
+    shell.clearSearch();
+    expect(field.value).toBe("");
   });
 
   // Why: an unfolded station lists all its items; with several unfolded
