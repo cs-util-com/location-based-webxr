@@ -23,6 +23,7 @@ import * as THREE from "three";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
+import { CLOUD_LIFE_SPEED, cloudLifeClock } from "./globe-cloud-march-law.js";
 import type { GlobeGradeName } from "./globe-grade.js";
 import type { GlobeQualityName } from "./globe-quality.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
@@ -417,6 +418,30 @@ describe("createGlobeView: the clouds' drift", () => {
     view.frame();
     expect(view.globe.surfaceUniforms.uCloudLonOffset.value).toBe(first);
     expect(view.state().cloudDriftRate).toBe(0);
+  });
+
+  // Why: the near clouds' life cycle reads this clock. In milliseconds it
+  // runs a thousand times too fast: the clouds race between frames, which a
+  // still screenshot never shows. Pinned at the check page's rate, 30 times
+  // real time over a 900 s life.
+  it("gives the near clouds' clock in seconds", () => {
+    const { view, advance } = makeView({ cloudDrift: 0.01 });
+    const before = view.driftTimeS();
+    const lifeBefore = cloudLifeClock(before, CLOUD_LIFE_SPEED).phase;
+    advance(100);
+    const after = view.driftTimeS();
+    expect(after - before).toBeCloseTo(0.1, 6);
+    const change = cloudLifeClock(after, CLOUD_LIFE_SPEED).phase - lifeBefore;
+    expect(Math.abs(change)).toBeCloseTo((0.1 * 30) / 900, 6);
+  });
+
+  // Why: a pinned link with `cloudDrift=0` must hold the clouds still, and
+  // the near clouds change shape by this clock.
+  it("holds the near clouds' clock with no drift", () => {
+    const { view, advance } = makeView({ cloudDrift: 0 });
+    const first = view.driftTimeS();
+    advance(5000);
+    expect(view.driftTimeS()).toBe(first);
   });
 
   // Why: the drift is summed per frame at the altitude's rate (a product

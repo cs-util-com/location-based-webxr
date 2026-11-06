@@ -20,7 +20,7 @@ Purpose: the near clouds' laws, pure: the march's settings at a quality, a tier'
 
 - Every limit becomes a uniform: the scale changes per frame without a new shader or target.
 - The field's filter follows the law's reference, not the pixels: a step-down costs sharpness, never the clouds' shape.
-- The life clock reads the drift clock, so a held time holds the clouds too. It does not read `sceneMs`.
+- The life clock reads the view's drift clock, in seconds: it keeps running while the hour is held, like the wind, and `cloudDrift=0` stops it. It does not read `sceneMs`.
 
 ## Example
 

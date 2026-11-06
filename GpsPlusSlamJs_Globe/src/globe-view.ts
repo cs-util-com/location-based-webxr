@@ -585,7 +585,10 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     },
     clock: theClock,
     sceneMs: () => theClock().timeAt(monoNow()),
-    driftTimeS: () => theClock().driftTimeAt(monoNow()),
+    driftTimeS: () =>
+      settings().cloudDrift === 0
+        ? 0
+        : theClock().driftTimeAt(monoNow()) / 1000,
     resetCloudDrift() {
       cloudDrift.offset = null;
     },
