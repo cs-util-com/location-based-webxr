@@ -15,7 +15,10 @@
  * - stations' contents: free and story blocks, shows, choices whose
  *   options jump or continue, quizzes of every answer type;
  * - whole version 4 manifests of one to four stations, block ids unique
- *   across the tour.
+ *   across the tour;
+ * - version 5 children lists: stories (titled, possibly empty, holding
+ *   blocks in any view, choices jumping back or forward inside the story,
+ *   and quizzes) and free blocks in a world view, in a shuffled order.
  *
  * `fast-check` is NOT bundled into the built file (`neverBundle` in
  * `config/tsdown.config.ts`): it is imported as a bare specifier and
@@ -45,6 +48,7 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
+import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
 
 /** The assets every generated block names: one or two of each kind, with
  *  ids the block id generator also produces (they may collide). */
@@ -531,6 +535,122 @@ export function tourStationContentArbitrary(
       }));
       return { blocks: [...bs], steps };
     });
+  });
+}
+
+// --- version 5: a station's children ----------------------------------
+
+/** How a story block moves on: every mode this reader knows. */
+const storyAdvanceArbitrary = fc.oneof(
+  advanceArbitrary,
+  fc.constant({ mode: 'lineEnd' })
+);
+
+/** Sizes of a generated children list (swept by the properties). */
+export interface TourStationChildrenSize {
+  readonly maxStories?: number;
+  readonly maxFreeBlocks?: number;
+  readonly maxStoryChildren?: number;
+}
+
+type StoryChildKind = 'block' | 'choice' | 'quiz';
+
+interface ChildrenPlan {
+  /** Each story's children kinds, in order. */
+  readonly stories: readonly (readonly StoryChildKind[])[];
+  readonly freeBlocks: number;
+  /** Indices into stories-then-free-blocks: the station's order. */
+  readonly order: readonly number[];
+  /** One id per story, free block and story child, all unique. */
+  readonly ids: readonly string[];
+}
+
+function childrenPlan(
+  size: TourStationChildrenSize
+): fc.Arbitrary<ChildrenPlan> {
+  return fc
+    .record({
+      stories: fc.array(
+        fc.array(fc.constantFrom<StoryChildKind>('block', 'choice', 'quiz'), {
+          maxLength: size.maxStoryChildren ?? 5,
+        }),
+        { maxLength: size.maxStories ?? 4 }
+      ),
+      freeBlocks: fc.integer({ min: 0, max: size.maxFreeBlocks ?? 4 }),
+    })
+    .chain(({ stories, freeBlocks }) => {
+      const top = stories.length + freeBlocks;
+      const count = top + stories.reduce((n, s) => n + s.length, 0);
+      return fc
+        .record({
+          order: fc.shuffledSubarray(
+            Array.from({ length: top }, (_, i) => i),
+            { minLength: top, maxLength: top }
+          ),
+          ids: fc.uniqueArray(tourIdArbitrary, {
+            minLength: count,
+            maxLength: count,
+          }),
+        })
+        .map(({ order, ids }) => ({ stories, freeBlocks, order, ids }));
+    });
+}
+
+function storyChildArbitrary(
+  kind: StoryChildKind,
+  id: string,
+  storyIds: readonly string[]
+): fc.Arbitrary<Record<string, unknown>> {
+  if (kind === 'quiz') return quizActionArbitrary.map((q) => ({ id, ...q }));
+  if (kind === 'choice') {
+    return fc
+      .array(fc.option(fc.nat(), { nil: null }), { minLength: 2, maxLength: 4 })
+      .map((gotos) => ({ id, ...choiceAction(storyIds, gotos) }));
+  }
+  return fc
+    .tuple(tourBlockArbitrary(id, 'story'), storyAdvanceArbitrary)
+    .map(([block, advance]) => ({ ...block, advance }));
+}
+
+/**
+ * A valid version 5 children list as JSON records: stories (titled, each
+ * with its own blocks in any view, choices whose options jump to a child
+ * of the same story, back or forward, or continue, and quizzes; possibly
+ * empty) and free blocks in a world view, in a shuffled order, so free
+ * blocks may come before, between or after the stories. Every id in the
+ * list is unique.
+ */
+export function tourStationChildrenArbitrary(
+  size: TourStationChildrenSize = {}
+): fc.Arbitrary<Record<string, unknown>[]> {
+  return childrenPlan(size).chain((plan) => {
+    let next = 0;
+    const take = (): string => plan.ids[next++]!;
+    const stories = plan.stories.map((kinds) => {
+      const id = take();
+      const childIds = kinds.map(take);
+      return fc
+        .record({
+          title: tourTextArbitrary(TOUR_STORY_TITLE_RULE),
+          children: fc.tuple(
+            ...kinds.map((kind, i) =>
+              storyChildArbitrary(kind, childIds[i]!, childIds)
+            )
+          ),
+        })
+        .map(({ title, children }) => ({
+          id,
+          kind: 'story',
+          title,
+          children: [...children],
+        }));
+    });
+    const free = Array.from({ length: plan.freeBlocks }, () =>
+      tourBlockArbitrary(take(), 'free')
+    );
+    return fc
+      .tuple(...stories, ...free)
+      .map((top) => plan.order.map((i) => top[i]!));
   });
 }
 

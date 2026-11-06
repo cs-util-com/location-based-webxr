@@ -30,6 +30,13 @@ reason; no production module imports it.
   `{ blocks, steps }` record: free and story blocks, one `show` per story
   block, choices (options jumping to a step or continuing) and quizzes of
   every answer type, in a shuffled order.
+- `tourStationChildrenArbitrary({ maxStories?, maxFreeBlocks?,
+maxStoryChildren? })` - a valid version 5 children list (defaults 4, 4,
+  5): titled stories (possibly empty) of blocks in any view with an
+  advance of every mode, choices whose options jump back or forward to a
+  child of the same story or continue, and quizzes of every answer type;
+  free blocks in a world view; stories and free blocks in a shuffled
+  order; every id in the list unique.
 - `tourManifestArbitrary(size?)` - a valid version 4 `tour.json` record
   of one to four stations, each with a generated content (the size as for
   `tourStationContentArbitrary`), block ids unique across the tour (a
@@ -66,7 +73,9 @@ fc.assert(
   actually produced, surrogate pairs counted twice in UTF-16, ids at 64
   characters and colliding with asset ids, version 4 manifests accepted by
   the reader with blocks of every kind, steps of every kind and free
-  blocks.
+  blocks; version 5 children lists accepted by the reader, reaching no
+  story and four, an empty story, a free block after a story, every child
+  kind and gotos back and forward.
 - `tour-arbitraries.bundle.test.ts` - builds this entry with the package's
   own build settings and asserts it imports `fast-check` by name and
   carries none of its code.
