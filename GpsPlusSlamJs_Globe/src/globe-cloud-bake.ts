@@ -9,10 +9,10 @@
  * @see globe-cloud-bake.ts.md
  */
 
+import { clamp01, lerp } from "./globe-ease.js";
+
 const wrap = (i: number, n: number) => ((i % n) + n) % n;
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const remap = (v: number, a: number, b: number, c: number, d: number) =>
   c + ((v - a) / (b - a)) * (d - c);
 

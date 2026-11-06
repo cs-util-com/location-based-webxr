@@ -7,17 +7,11 @@
  *
  * @see globe-cloud-march-law.ts.md
  */
+import { lerp, smoothstep } from "./globe-ease.js";
 import type { GlobeQuality } from "./globe-quality.js";
 
 type GlobeCloudQuality = GlobeQuality["clouds"];
 type GlobeCloudLaw = GlobeCloudQuality["law"];
-
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const smooth01 = (x: number) => {
-  const t = clamp01(x);
-  return t * t * (3 - 2 * t);
-};
 
 /** The layer the march crosses (km over the sea). */
 export const CLOUD_MARCH_LAYER = Object.freeze({ baseKm: 1.1, topKm: 3.3 });
@@ -86,8 +80,8 @@ export function cloudMarchAt(q: number): CloudMarch {
     minStepKm: g(0.07, 0.025),
     lightSteps: lerp(1, 5, q),
     scatterOctaves: lerp(2, 3, q),
-    detail: smooth01((q - 0.35) / 0.4),
-    shadowDetail: smooth01((q - 0.5) / 0.4),
+    detail: smoothstep((q - 0.35) / 0.4),
+    shadowDetail: smoothstep((q - 0.5) / 0.4),
   };
 }
 
@@ -123,7 +117,7 @@ export function cloudLawAt(
     const a = Math.log(near.distanceKm);
     const b = Math.log(far.distanceKm);
     if (ld <= b) {
-      const u = smooth01((ld - a) / (b - a));
+      const u = smoothstep((ld - a) / (b - a));
       return {
         march: lerp(near.march, far.march, u),
         pixelsPerCss: lerp(near.pixelsPerCss, far.pixelsPerCss, u),
@@ -296,7 +290,11 @@ export function cloudShellCoverLift(
   { gain, fullToKm, oneAtKm } = CLOUD_SHELL_LIFT,
 ): number {
   if (Number.isNaN(altitudeKm)) return 1;
-  return lerp(gain, 1, smooth01((altitudeKm - fullToKm) / (oneAtKm - fullToKm)));
+  return lerp(
+    gain,
+    1,
+    smoothstep((altitudeKm - fullToKm) / (oneAtKm - fullToKm)),
+  );
 }
 
 /**
