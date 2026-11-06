@@ -1079,7 +1079,10 @@ export function wireCreatorDraft(deps: {
       const storedSettings = await draftWrites.run(
         settingsChainKey(tourUrl),
         async () => {
-          const read = parseSettingsRecord(await store.getText(SETTINGS_KEY));
+          const read = parseSettingsRecord(
+            await store.getText(SETTINGS_KEY),
+            opened ?? undefined,
+          );
           // Into this open's own holder: only its writes read it.
           const openedPoses = (opened?.stations ?? []).map(({ id, geo }) => ({
             id,
