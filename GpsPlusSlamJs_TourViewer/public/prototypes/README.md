@@ -198,7 +198,8 @@ wired into its logic: every interaction is faked.
   latitude and longitude, and a closed deck for overcast places. The life
   cycle runs at 30 times real time. `?place=front|clear|cirrus|highlat` or
   `?lat=&lon=`, `?view=3km|10km|30km|60km`, `?tier=low|medium|high`,
-  `?pr=tier`, `?grade=aces|neutral|t-neutral80`, `?gradeexp=`. The meter
+  `?pr=tier`, `?grade=aces-bright|aces|neutral|agx`
+  (the globe's own colour presets, default `aces-bright`), `?gradeexp=`. The meter
   and the Measure button are for measuring on a phone; made 2026-11-05.
 - `story-editor-1-step-cards/` ... `story-editor-3-inline-script/` - three
   directions for the story editor (step cards, a flow graph, an inline
