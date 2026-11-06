@@ -13,7 +13,10 @@
  */
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import type { CloudBakeWorker } from "./globe-cloud-bake-worker-core.js";
+import { GLOBE_QUALITIES } from "./globe-quality.js";
 
 import {
   CLOUD_HIGH_LAYER,
@@ -124,6 +127,42 @@ function fakeParts() {
     depthDrawn,
     depthExtra,
     slabExtra,
+  };
+}
+
+/** A near pass that records what it is told. */
+function fakeNear() {
+  const frames: { pixelScale: number; timeS: number; quality: unknown }[] = [];
+  const near = {
+    ready: false,
+    bakes: [] as unknown[],
+    disposed: 0,
+    setBakes(bakes: unknown) {
+      this.bakes.push(bakes);
+      this.ready = true;
+    },
+    render(frame: { pixelScale: number; timeS: number; quality: unknown }) {
+      frames.push(frame);
+      return true;
+    },
+    texture: new THREE.Texture(),
+    shadowTexture: new THREE.Texture(),
+    uv: new THREE.Vector2(1, 1),
+    resolution: new THREE.Vector2(10, 10),
+    dispose() {
+      this.disposed += 1;
+    },
+  };
+  return { near, frames };
+}
+
+/** A worker that answers when told to. */
+function fakeWorker() {
+  return {
+    onmessage: null as CloudBakeWorker["onmessage"],
+    onerror: null as CloudBakeWorker["onerror"],
+    postMessage() {},
+    terminate() {},
   };
 }
 
@@ -438,5 +477,107 @@ describe("createCloudsParts", () => {
         spacePass: {} as never,
       }),
     ).toBeNull();
+  });
+
+  describe("with the near clouds", () => {
+    const set = (altitudeM: number) => {
+      const view = fakeView(altitudeM);
+      const fakes = fakeParts();
+      const { near, frames } = fakeNear();
+      const worker = fakeWorker();
+      const warned: string[] = [];
+      const clouds = createGlobeViewClouds(
+        view,
+        {
+          ...fakes.parts,
+          near: near as unknown as NonNullable<CloudsParts["near"]>,
+        },
+        {
+          near: {
+            createWorker: () => worker,
+            warn: (message) => warned.push(message),
+          },
+        },
+      );
+      clouds.patch(reliefTiles());
+      const frame = () => {
+        clouds.step({ observerKm: altitudeM / 1000, shareClouds: () => 1 });
+        clouds.render({ weight: 0 });
+      };
+      return { clouds, fakes, near, frames, worker, frame, warned };
+    };
+    const bakes = { shape: new Uint8Array(1) };
+
+    // Why this test matters: until the worker answers the page must show
+    // its old clouds; after it the new ones, with no reload.
+    it("draws the old clouds until the bakes arrive", async () => {
+      const { near, frames, worker, frame, fakes } = set(5_000);
+      frame();
+      expect(frames).toHaveLength(0);
+      expect(fakes.log).toContain("slab");
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.bakes).toEqual([bakes]));
+      fakes.log.length = 0;
+      frame();
+      expect(frames).toHaveLength(1);
+      expect(fakes.log).not.toContain("slab");
+    });
+
+    // Why this test matters: the worker's file missing from a bundle is a
+    // page with old clouds and a line in the console, not a broken page.
+    it("stays on the old clouds when the worker fails", async () => {
+      const { frames, worker, frame, warned } = set(5_000);
+      worker.onerror?.({ message: "not found" } as ErrorEvent);
+      await vi.waitFor(() => expect(warned).toHaveLength(1));
+      frame();
+      expect(frames).toHaveLength(0);
+    });
+
+    // Why this test matters: the near clouds end at the relief at every
+    // height they draw, also where the ground sky's share says nothing.
+    it("draws the relief's depth for them whatever the sky's share", async () => {
+      const { near, worker, frame, fakes } = set(5_000);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      frame();
+      expect(fakes.log).toContain("depth");
+    });
+
+    it("draws on the view's tier and its drift clock", async () => {
+      const view = Object.assign(fakeView(5_000), {
+        quality: "medium" as const,
+        driftTimeS: () => 42,
+      });
+      const fakes = fakeParts();
+      const { near, frames } = fakeNear();
+      const worker = fakeWorker();
+      const clouds = createGlobeViewClouds(
+        view,
+        {
+          ...fakes.parts,
+          near: near as unknown as NonNullable<CloudsParts["near"]>,
+        },
+        { near: { createWorker: () => worker } },
+      );
+      clouds.patch(reliefTiles());
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      clouds.step({ observerKm: 5, shareClouds: () => 1 });
+      clouds.render({ weight: 1 });
+      expect(frames[0]?.timeS).toBe(42);
+      expect(frames[0]?.quality).toBe(GLOBE_QUALITIES.medium.clouds);
+      expect(clouds.state().near).toMatchObject({
+        share: 1,
+        tier: "medium",
+        pixelScale: 1,
+      });
+    });
+
+    it("frees the near pass with the rest", () => {
+      const { clouds, near } = set(5_000);
+      clouds.dispose();
+      clouds.dispose();
+      expect(near.disposed).toBe(1);
+    });
   });
 });

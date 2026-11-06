@@ -76,3 +76,7 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
   none without the option; the switch off and on; dispose once; null without the ground sky.
   The drawing is checked in a browser by the Tour Viewer's
   `editor3d-globe.spec.js` (the switch) and the lab's own smokes.
+
+## The near clouds
+
+With `near: { createWorker, autoQuality?, warn?, nowMs? }` in the options, `createGlobeCloudMarch` joins the parts and `GLOBE_VIEW_CLOUDS.cloudNear` is honoured. The bakes are asked of a worker when the clouds are made; until they arrive, or if they fail (reported once), the old clouds draw. The tier starts at `view.quality` and `autoQuality: false` holds it. `state().near` gives the share, pixel scale and tier, null without them. The life clock is `view.driftTimeS()`. The governor is fed only on frames where they draw.

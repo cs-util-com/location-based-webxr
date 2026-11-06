@@ -212,6 +212,8 @@ export interface GlobeView {
   /** (Re)starts the clock; the clouds keep their offset. */
   startClock(setting: GlobeClockSetting): void;
   clock(): GlobeClock;
+  /** The clock the clouds' drift reads now (s). */
+  driftTimeS(): number;
   /** The scene's instant now (epoch ms). */
   sceneMs(): number;
   /** The next frame seeds the clouds where rate x time puts them. */
@@ -551,6 +553,7 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     },
     clock: theClock,
     sceneMs: () => theClock().timeAt(monoNow()),
+    driftTimeS: () => theClock().driftTimeAt(monoNow()),
     resetCloudDrift() {
       cloudDrift.offset = null;
     },

@@ -487,7 +487,27 @@ uniform float uShadowOn;
 uniform sampler2D tHigh;
 uniform float uHighOn;
 uniform float uHighInFront;
+// The near clouds: drawn into a share of their target, read through a tent
+// of four taps (one cloud pixel per canvas pixel would show the march's
+// grain), mixed with the old clouds by one weight, never stacked.
+uniform sampler2D tNear;
+uniform sampler2D tNearShadow;
+uniform float uNearWeight;
+uniform float uNearShadowOn;
+uniform float uShadowWeight;
+uniform vec2 uNearUv;
+uniform vec2 uNearRes;
+uniform float uNearTap;
 varying vec2 vUv;
+vec4 nearTap( vec2 c ) {
+  vec2 h = 0.5 / uNearRes;
+  return texture2D( tNear, clamp( c, h, uNearUv - h ) );
+}
+vec4 nearAt( vec2 uv ) {
+  vec2 c = uv * uNearUv;
+  vec2 o = uNearTap / uNearRes;
+  return 0.25 * ( nearTap( c + o ) + nearTap( c - o ) + nearTap( c + vec2( o.x, -o.y ) ) + nearTap( c + vec2( -o.x, o.y ) ) );
+}
 void main() {
   vec4 shell = texture2D( tShell, vUv );
   vec4 c = uShellWeight * shell;
@@ -501,6 +521,7 @@ void main() {
     float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
     c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
   }
+  if ( uNearWeight > 0.0 ) c = ( 1.0 - uNearWeight ) * c + uNearWeight * nearAt( vUv );
   // The ground shadow under both clouds (the cloud-shadows plan M1): in the
   // shell's own alpha the slab's per-pixel share took it with the shell's
   // clouds, and below the slab's ceiling the ground lost its shadows (an
@@ -508,7 +529,11 @@ void main() {
   // 5 km, measured). Black, under the mix.
   if ( uShadowOn > 0.5 ) {
     c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * texture2D( tShadow, vUv ).a;
+    c.a += ( 1.0 - c.a ) * uShadowWeight * texture2D( tShadow, vUv ).a;
+  }
+  if ( uNearShadowOn > 0.5 ) {
+    c.a = min( c.a, 1.0 );
+    c.a += ( 1.0 - c.a ) * uNearWeight * texture2D( tNearShadow, vUv * uNearUv ).a;
   }
   if ( uHighOn > 0.5 ) {
     // Premultiplied over (twin of cloudLayerOver), its order by height.
@@ -703,6 +728,26 @@ interface CloudShellVolumeRenderOptions {
   disc?: CloudShellSlabDisc | null;
   /** How much of the slab's flat deck the shell takes (C4; default 1). */
   flatten?: number;
+  /** The near clouds, or null (default). */
+  near?: CloudShellNearMix | null;
+}
+
+/** The near clouds as the composite mixes them. */
+export interface CloudShellNearMix {
+  /** Premultiplied radiance, opacity in alpha. */
+  texture: THREE.Texture;
+  /** Their ground shadow, in alpha. */
+  shadowTexture: THREE.Texture;
+  /** The share of the textures this frame drew. */
+  uv: THREE.Vector2;
+  /** The size of the textures (pixels). */
+  resolution: THREE.Vector2;
+  /** The tent's reach (cloud pixels). */
+  tapPixels: number;
+  /** Their share, 0-1. At 1 the shell's own deck and shadow are not drawn. */
+  weight: number;
+  /** Their shadow was drawn this frame. */
+  shadow: boolean;
 }
 
 /** Which of the pass's targets `alphaGrid` reads. */
@@ -930,6 +975,14 @@ export function createGlobeCloudShellVolume(
     tHigh: { value: highTarget.texture },
     uHighOn: { value: 0 },
     uHighInFront: { value: 0 },
+    tNear: { value: null as THREE.Texture | null },
+    tNearShadow: { value: null as THREE.Texture | null },
+    uNearWeight: { value: 0 },
+    uNearShadowOn: { value: 0 },
+    uShadowWeight: { value: 1 },
+    uNearUv: { value: new THREE.Vector2(1, 1) },
+    uNearRes: { value: new THREE.Vector2(1, 1) },
+    uNearTap: { value: 0.5 },
   };
   const composite = new THREE.ShaderMaterial({
     uniforms: compositeUniforms,
@@ -1172,19 +1225,22 @@ export function createGlobeCloudShellVolume(
   /**
    * The march into its target (the shadow 0), the shadow alone into its
    * own, the high layer into its own; each cleared to alpha 0, the clear
-   * colour and the render target put back.
+   * colour and the render target put back. With `deck` false only the high
+   * layer: the near clouds draw the whole deck.
    */
-  const marchTargets = () => {
+  const marchTargets = (deck: boolean) => {
     const previous = renderer.getRenderTarget();
     renderer.getClearColor(clearColour);
     const clearAlpha = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
-    renderer.setRenderTarget(target);
-    renderer.clear(true, false, false);
     uniforms.uShadow.value = 0;
-    renderer.render(march.scene, quadCamera);
+    if (deck) {
+      renderer.setRenderTarget(target);
+      renderer.clear(true, false, false);
+      renderer.render(march.scene, quadCamera);
+    }
     // The shadow alone, one column per pixel, into its own target.
-    if (shadowStrength > 0) {
+    if (deck && shadowStrength > 0) {
       renderer.setRenderTarget(shadowTarget);
       renderer.clear(true, false, false);
       uniforms.uShadow.value = shadowStrength;
@@ -1205,22 +1261,63 @@ export function createGlobeCloudShellVolume(
   /** On, framed and weighing something this frame. */
   const drawable = () => enabled && framed && (weight > 0 || slabWeight > 0);
 
-  /** The composite's switches and weights, then the mix over the frame. */
-  const drawComposite = (slabTexture: THREE.Texture | null) => {
+  /** The composite's switches for the shell's own layers. */
+  const applyShellSwitches = (nearWeight: number) => {
+    const deck = nearWeight < 1;
     // The high layer at full strength wherever the shell draws (not handed
     // to the slab), in front of the clouds from above its middle and
     // behind them from below (premultiplied over, cloudLayerOver).
     compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
     compositeUniforms.uShadowOn.value =
-      shadowStrength > 0 && shellIn > 0 ? 1 : 0;
+      deck && shadowStrength > 0 && shellIn > 0 ? 1 : 0;
     compositeUniforms.uHighInFront.value =
       high !== null && cameraKm > high.altitudeKm ? 1 : 0;
     // The shell's own fade-in; the composite weighs it per pixel by what
     // the slab draws (`cloudShellPixelWeight`).
-    compositeUniforms.uShellWeight.value = shellIn;
+    compositeUniforms.uShellWeight.value = deck ? shellIn : 0;
+    compositeUniforms.uShadowWeight.value = 1 - nearWeight;
+  };
+
+  /** The near clouds' share of the composite. */
+  const applyNearMix = (near: CloudShellNearMix | null, nearWeight: number) => {
+    compositeUniforms.uNearWeight.value = nearWeight;
+    compositeUniforms.uNearShadowOn.value =
+      near?.shadow === true && nearWeight > 0 ? 1 : 0;
+    if (near === null) return;
+    compositeUniforms.tNear.value = near.texture;
+    compositeUniforms.tNearShadow.value = near.shadowTexture;
+    compositeUniforms.uNearUv.value = near.uv;
+    compositeUniforms.uNearRes.value = near.resolution;
+    compositeUniforms.uNearTap.value = near.tapPixels;
+  };
+
+  /** The composite's switches and weights, then the mix over the frame. */
+  const drawComposite = (
+    slabTexture: THREE.Texture | null,
+    near: CloudShellNearMix | null,
+  ) => {
+    const nearWeight = near?.weight ?? 0;
+    applyShellSwitches(nearWeight);
+    applyNearMix(near, nearWeight);
     compositeUniforms.tSlab.value = slabTexture;
     compositeUniforms.uSlabWeight.value = slabTexture === null ? 0 : slabWeight;
     renderer.render(compositeQuad.scene, quadCamera);
+  };
+
+  /** The depth, the view and the disc of one render call. */
+  const applyRenderOptions = (
+    camera: THREE.PerspectiveCamera,
+    options: Parameters<GlobeCloudShellVolume["render"]>[1],
+  ) => {
+    const { slabTexture = null, disc = null, flatten = 1 } = options;
+    applySceneDepth(options.sceneDepthWeight ?? 0);
+    applyView(
+      camera,
+      options.worldFromEcef,
+      options.sunEcef,
+      options.sunIntensity,
+    );
+    applyDisc(camera, slabTexture, disc, flatten);
   };
 
   return {
@@ -1252,22 +1349,16 @@ export function createGlobeCloudShellVolume(
       if (!drawable()) return false;
       const lut = atmosphere.transmittance();
       if (lut === null) return false;
-      const { slabTexture = null, disc = null, flatten = 1 } = options;
+      const slabTexture = options.slabTexture ?? null;
+      const near = options.near ?? null;
       uniforms.atmTransmittanceLut.value = lut;
       const { h } = fitTargets();
-      applySceneDepth(options.sceneDepthWeight ?? 0);
-      applyView(
-        camera,
-        options.worldFromEcef,
-        options.sunEcef,
-        options.sunIntensity,
-      );
-      applyDisc(camera, slabTexture, disc, flatten);
+      applyRenderOptions(camera, options);
       // Radians a pixel of the march's target (km of footprint per km).
       uniforms.uPixelAngle.value =
         2 / ((camera.projectionMatrix.elements[5] ?? 1) * h);
-      if (shellIn > 0) marchTargets();
-      drawComposite(slabTexture);
+      if (shellIn > 0) marchTargets((near?.weight ?? 0) < 1);
+      drawComposite(slabTexture, near);
       drawn += 1;
       return true;
     },

@@ -14,6 +14,10 @@
  *   materials would shade every pixel a second time a frame for a depth
  *   alone. Their dithered fade and any discard of their own are not in
  *   the depth.
+ * - **The relief whole, whatever the band's share**: the cross-fade drops
+ *   relief pixels in a fine dither, and a hole in the depth reads "no
+ *   ground", so a reader would flip between the relief and the sea's sphere
+ *   pixel by pixel. The share is 1 for the pass and given back after it.
  * - **Its own near plane** (at most 10 m): the camera's is fitted to the
  *   ground (0.3 x the clearance), and a pass that ends at the depth must see
  *   everything nearer than that too. A reader reconstructs a point through
@@ -54,9 +58,48 @@ export interface GlobeSceneDepth {
   dispose(): void;
 }
 
+/** Turns the colour writes under `root` off; returns the materials it changed. */
+function muteColour(root: THREE.Object3D): THREE.Material[] {
+  const written: THREE.Material[] = [];
+  root.traverse((o) => {
+    // A mesh's single material only, as the lab did (an array's
+    // `colorWrite` is undefined).
+    const material = (o as Partial<THREE.Mesh>).isMesh
+      ? (o as THREE.Mesh).material
+      : undefined;
+    if (
+      material !== undefined &&
+      !Array.isArray(material) &&
+      material.colorWrite
+    ) {
+      material.colorWrite = false;
+      written.push(material);
+    }
+  });
+  return written;
+}
+
+/** Runs `draw` with the band's share at 1, then gives the share back. */
+function drawWhole(fade: { value: number } | undefined, draw: () => void) {
+  if (fade === undefined) {
+    draw();
+    return;
+  }
+  const share = fade.value;
+  fade.value = 1;
+  draw();
+  fade.value = share;
+}
+
+export interface GlobeSceneDepthOptions {
+  /** The band's `uCarrierShare`, for a page whose relief fades by it. */
+  readonly carrierShare?: { value: number };
+}
+
 /** The scene depth for `renderer`, sized to its drawing buffer. */
 export function createGlobeSceneDepth(
   renderer: THREE.WebGLRenderer,
+  options: GlobeSceneDepthOptions = {},
 ): GlobeSceneDepth {
   const texture = new THREE.DepthTexture(1, 1);
   const target = new THREE.WebGLRenderTarget(1, 1, {
@@ -82,7 +125,6 @@ export function createGlobeSceneDepth(
       camera.near = Math.min(viewCamera.near, SCENE_DEPTH_NEAR_M);
       camera.updateProjectionMatrix();
       const drawn = [relief, ...extra];
-      const written: THREE.Material[] = [];
       const swapped: [THREE.Mesh, THREE.Mesh["material"]][] = [];
       for (const root of extra) {
         root.traverse((o) => {
@@ -92,27 +134,15 @@ export function createGlobeSceneDepth(
           m.material = depthOnly;
         });
       }
-      relief.traverse((o) => {
-        // A mesh's single material only, as the lab did (an array's
-        // `colorWrite` is undefined).
-        const material = (o as Partial<THREE.Mesh>).isMesh
-          ? (o as THREE.Mesh).material
-          : undefined;
-        if (
-          material !== undefined &&
-          !Array.isArray(material) &&
-          material.colorWrite
-        ) {
-          material.colorWrite = false;
-          written.push(material);
-        }
-      });
+      const written = muteColour(relief);
       const previous = renderer.getRenderTarget();
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
       renderer.setRenderTarget(target);
       renderer.clear(false, true, false);
-      for (const root of drawn) renderer.render(root, camera);
+      drawWhole(options.carrierShare, () => {
+        for (const root of drawn) renderer.render(root, camera);
+      });
       for (const m of written) m.colorWrite = true;
       for (const [m, material] of swapped) m.material = material;
       renderer.setRenderTarget(previous);

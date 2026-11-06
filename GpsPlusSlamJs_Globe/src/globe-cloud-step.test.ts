@@ -32,6 +32,7 @@ import {
   createGlobeCloudStep,
 } from "./globe-cloud-step.js";
 import type { GlobeCloudVolume } from "./globe-cloud-volume-pass.js";
+import { GLOBE_QUALITIES } from "./globe-quality.js";
 
 /** The lab's defaults with the shell on and the live noise. */
 const knobs = (over: Partial<GlobeCloudKnobs> = {}): GlobeCloudKnobs => ({
@@ -501,6 +502,110 @@ describe("createGlobeCloudStep: render", () => {
       ],
     ]);
     expect((log[1]?.[1] as { slabTexture: unknown }).slabTexture).toBe(texture);
+  });
+
+  describe("with the near clouds", () => {
+    const fakeNear = (log: unknown[][], ready = true) => ({
+      ready,
+      render: (frame: unknown) => {
+        log.push(["near.render", frame]);
+        return true;
+      },
+      texture: new THREE.Texture(),
+      shadowTexture: new THREE.Texture(),
+      uv: new THREE.Vector2(1, 1),
+      resolution: new THREE.Vector2(10, 10),
+    });
+    const nearKnobs = knobs({
+      cloudNear: 1,
+      cloudNearCeilingKm: 70,
+      cloudNearFadeKm: 20,
+    });
+    const nearFrame = {
+      ...renderFrame,
+      near: {
+        timeS: 5,
+        quality: GLOBE_QUALITIES.high.clouds,
+        pixelScale: 0.8,
+        sceneDepth: null,
+      },
+    };
+    const make = (log: unknown[][], ready = true) =>
+      createGlobeCloudStep({
+        cloudVolume: fakeSlab(log, { share: 1, radiusM: 9000 }).volume,
+        shellVolume: fakeShell(log, { share: 1, slabWeight: 0.5 }),
+        near: fakeNear(log, ready),
+      });
+
+    // Why this test matters: the hand-over at about 60 km, not at the old
+    // slab's ceiling, which drives the shell's stations and must not move.
+    it("takes over from its own ceiling, whole below the fade", () => {
+      const step = make([]);
+      const shareAt = (km: number) => {
+        step.plan(nearKnobs, { cameraAltM: km * 1000, framed: true });
+        return step.nearShare;
+      };
+      expect(shareAt(80)).toBe(0);
+      expect(shareAt(60)).toBeCloseTo(0.5);
+      expect(shareAt(45)).toBe(1);
+      expect(shareAt(0.1)).toBe(1);
+    });
+
+    // Why this test matters: the bakes arrive seconds after the view; until
+    // then the old clouds must draw, or the sky is empty.
+    it("leaves everything to the old clouds until it is ready", () => {
+      const log: unknown[][] = [];
+      const step = make(log, false);
+      step.plan(nearKnobs, { cameraAltM: 10_000, framed: true });
+      expect(step.nearShare).toBe(0);
+      step.render(camera, nearFrame);
+      expect(log.map((l) => l[0])).toEqual(["slab.render", "shell.render"]);
+    });
+
+    it("draws nothing of its own with the knob off", () => {
+      const step = make([]);
+      step.plan(knobs(), { cameraAltM: 10_000, framed: true });
+      expect(step.nearShare).toBe(0);
+    });
+
+    // Why this test matters: the mix rule. The slab is not drawn, and the
+    // shell gets no slab to weigh, so nothing old fills the new clouds' gaps.
+    it("draws instead of the slab and hands the shell its mix", () => {
+      const log: unknown[][] = [];
+      const step = make(log);
+      step.plan(nearKnobs, { cameraAltM: 60_000, framed: true });
+      step.render(camera, nearFrame);
+      expect(log.map((l) => l[0])).toEqual(["near.render", "shell.render"]);
+      expect(log[0]?.[1]).toMatchObject({
+        camera,
+        worldFromEcef: renderFrame.worldFromEcef,
+        sunEcef: renderFrame.sunEcef,
+        timeS: 5,
+        pixelScale: 0.8,
+        shadow: nearKnobs.cloudShellShadow,
+      });
+      const options = log[1]?.[1] as {
+        slabTexture: unknown;
+        disc: unknown;
+        flatten: number;
+        near: { weight: number; tapPixels: number };
+      };
+      expect(options.slabTexture).toBeNull();
+      expect(options.disc).toBeNull();
+      expect(options.flatten).toBe(0);
+      expect(options.near.weight).toBeCloseTo(0.5);
+      expect(options.near.tapPixels).toBe(
+        GLOBE_QUALITIES.high.clouds.tapPixels,
+      );
+    });
+
+    it("keeps to the old path above its ceiling", () => {
+      const log: unknown[][] = [];
+      const step = make(log);
+      step.plan(nearKnobs, { cameraAltM: 200_000, framed: true });
+      step.render(camera, nearFrame);
+      expect(log.map((l) => l[0])).toEqual(["slab.render", "shell.render"]);
+    });
   });
 
   it("hands the shell no slab texture when the slab drew nothing", () => {

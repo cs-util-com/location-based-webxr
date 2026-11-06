@@ -169,6 +169,26 @@ describe("createGlobeSceneDepth", () => {
 
   // The callers draw the depth once a frame: `fresh` says it is drawn,
   // `beginFrame` says it is not, and the frames are counted.
+  it("draws the relief whole while the band's dither would drop its pixels, and gives the share back", () => {
+    // Why: the band's cross-fade drops relief pixels in a fine dither. In the
+    // depth those holes read "no ground", so a pass that ends at the depth
+    // alternates between the relief and the sea's sphere pixel by pixel: the
+    // near clouds' shadow came out as a dark stipple over the whole ground
+    // around 3.5 km. A share left at 1 would blank the globe in the next frame.
+    const { renderer, raw } = fakeRenderer();
+    const carrierShare = { value: 0.4 };
+    const seen: number[] = [];
+    const render = raw.render;
+    raw.render = (scene, camera) => {
+      seen.push(carrierShare.value);
+      render(scene, camera);
+    };
+    const depth = createGlobeSceneDepth(renderer, { carrierShare });
+    depth.render(new THREE.PerspectiveCamera(), mesh());
+    expect(seen).toEqual([1]);
+    expect(carrierShare.value).toBe(0.4);
+  });
+
   it("tracks whether this frame's depth is drawn", () => {
     const { renderer } = fakeRenderer();
     const depth = createGlobeSceneDepth(renderer);

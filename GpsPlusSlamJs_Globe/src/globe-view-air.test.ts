@@ -309,6 +309,7 @@ describe("mountGlobeViewAir", () => {
             shellOn: true,
             shellShadow: 0.3,
             surfaceShadow: 0,
+            near: null,
           }),
           shell: () => ({ drawn: 1, share: 1, weight: 0, slabWeight: 1 }),
           dispose: () => fakes.log.push("dispose clouds"),
@@ -336,6 +337,7 @@ describe("mountGlobeViewAir", () => {
     // The plan and the shell's counters are the clouds' own, handed on.
     expect(air.state().clouds).toEqual({
       on: true,
+      near: null,
       flat: 0.25,
       shellOn: true,
       shellShadow: 0.3,

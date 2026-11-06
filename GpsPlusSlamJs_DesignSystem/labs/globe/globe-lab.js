@@ -133,6 +133,9 @@ import { createGlobeHaze } from "/globe/globe-haze.js";
 import { createGlobeCloudVolume } from "/globe/globe-cloud-volume-pass.js";
 import { createGlobeCloudShellVolume } from "/globe/globe-cloud-shell-volume-pass.js";
 import { createGlobeCloudStep } from "/globe/globe-cloud-step.js";
+import { requestCloudBakes } from "/globe/globe-cloud-bake-worker-core.js";
+import { createGlobeCloudMarch } from "/globe/globe-cloud-march-pass.js";
+import { GLOBE_QUALITIES, GLOBE_QUALITY_NAMES } from "/globe/globe-quality.js";
 import { createGlobeSceneDepth } from "/globe/globe-scene-depth.js";
 import { createGlobeCity } from "/globe/globe-city.js";
 import { createGlobeCityStep } from "/globe/globe-city-step.js";
@@ -633,6 +636,12 @@ const PARAMS = {
   // The shell's deck flat where the slab draws (round-5 C4; 0 the sphere's
   // everywhere, for the A/B and the smoke's control).
   cloudShellFlat: { fallback: 1, min: 0, max: 1 },
+  // The near clouds (globe-cloud-march-pass.ts): 1 in place of the slab below
+  // their ceiling, on the tier by index, 0 low to 2 high.
+  cloudNear: { fallback: 0, min: 0, max: 1 },
+  cloudNearCeilingKm: { fallback: 70, min: 1, max: 400 },
+  cloudNearFadeKm: { fallback: 20, min: 0.1, max: 100 },
+  cloudNearTier: { fallback: 2, min: 0, max: 2 },
   cloudShellCell: {
     fallback: CLOUD_SHELL_VOLUME.stations[0].cellScale,
     min: 1,
@@ -1655,7 +1664,24 @@ async function start() {
     : null;
   // The clouds frame by frame (globe-cloud-step.ts): who draws them at the
   // camera's altitude, the two volumes' update and their drawing.
-  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume });
+  const near =
+    shellVolume && params.cloudNear === 1
+      ? createGlobeCloudMarch(renderer, {
+          ellipsoid: globe.tiles.ellipsoid,
+          surfaceUniforms: globe.surfaceUniforms,
+        })
+      : null;
+  if (near) {
+    requestCloudBakes(
+      new Worker("/w/labs/globe/globe-cloud-bake-worker.js", {
+        type: "module",
+      }),
+    ).then(
+      (bakes) => near.setBakes(bakes),
+      (error) => console.warn("the near clouds stay off:", error),
+    );
+  }
+  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume, near });
   // The haze (F2b; globe-haze.ts): one fog for the whole page, the relief's
   // tiles patched last, after their own hooks and the stencil writer.
   const haze = createGlobeHaze(scene, {
@@ -2434,8 +2460,9 @@ async function start() {
     sceneDepth?.beginFrame();
     if (
       sceneDepth &&
-      air.weight() > 0 &&
-      (costMode === null ? params.atmo !== 0 : costMode === "on")
+      (clouds.nearShare > 0 ||
+        (air.weight() > 0 &&
+          (costMode === null ? params.atmo !== 0 : costMode === "on")))
     ) {
       sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
     }
@@ -2450,6 +2477,13 @@ async function start() {
         sunIntensity: globe.sun.intensity,
         sceneDepthWeight: air.weight(),
         flatten: params.cloudShellFlat,
+        near: {
+          timeS: view.driftTimeS(),
+          quality:
+            GLOBE_QUALITIES[GLOBE_QUALITY_NAMES[params.cloudNearTier]].clouds,
+          pixelScale: 1,
+          sceneDepth: sceneDepth?.fresh ? sceneDepth : null,
+        },
       });
     }
     // The air over the Earth and the sky, lit by the same sun (or, while
@@ -3478,6 +3512,11 @@ void main() {
      * weights in the mix (R4d's seam and descent smokes; debug, slow).
      */
     cloudShellAlphaGrid: (nx, ny) => clouds.alphaGrid(nx, ny),
+    /** The near clouds now: ready, their share and what they draw at. */
+    cloudNearState: () =>
+      near
+        ? { ready: near.ready, share: clouds.nearShare, ...near.state() }
+        : null,
     /**
      * The cost probe of the spherical volume (R4d): `n` of its passes (the
      * march and the mix) after one frame, then one pixel read; the wall

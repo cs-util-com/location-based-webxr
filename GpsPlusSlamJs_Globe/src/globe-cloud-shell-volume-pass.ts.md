@@ -176,6 +176,10 @@ radiusM }` from its state, the centre null on the camera, where its flat
   150 km the chart stays on the frame target (finding 7); the under-cloud
   light's edge at the terminator (finding 8); no depth-aware upsample.
 
+## The near clouds in the composite
+
+`render(camera, { near })` takes a `CloudShellNearMix`. The composite is the one place the old and the new clouds meet: `c = (1 - w) * c + w * near`, by one weight, never stacked, read through a four-tap tent inside the share the frame drew. The two shadows mix the same way, so a shadow does not double at the hand-over. At `weight` 1 the shell's own deck and its shadow are not marched, which saves their cost; the high layer stays.
+
 ## Tests
 
 - `globe-cloud-shell-volume-pass.test.ts` (Node, the real framework sky

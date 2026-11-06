@@ -32,7 +32,7 @@
     pose is read and written, through the frame); `frameTarget()`,
     `setFrameTarget(target | null)`, `recentreFrame()`; `placeView(view)`;
     `earthCentreWorld()`; `fitDistance()` and `refit()`; `startClock(setting)`,
-    `clock()`, `sceneMs()`, `resetCloudDrift()`, `sunNow()`; `frame()`;
+    `clock()`, `sceneMs()`, `driftTimeS()` (the clock the clouds drift by, s), `resetCloudDrift()`, `sunNow()`; `frame()`;
     `state()` (`frameAt`, `frameRecentres`, `siderealAngleRad`,
     `cloudDriftRate`, `cloudLonOffsetRad`: the clouds' longitude offset as
     last drawn, rad in [0, 2 pi), what a motion check reads); `dispose()` (the surface out of the scene and

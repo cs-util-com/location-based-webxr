@@ -41,6 +41,7 @@ export { mountGlobeViewAir, type GlobeViewAir } from "./globe-view-air.js";
 // The relief under the globe's surface: the band between the two carriers.
 export { mountGlobeRelief } from "./globe-relief-mount.js";
 export { GLOBE_VIEW_CLOUDS, globeViewClouds } from "./globe-view-clouds.js";
+export { CLOUD_MARCH_LAYER } from "./globe-cloud-march-law.js";
 // The city (OSM's buildings, trees and roads) in the globe's scene, built
 // in an app's worker (`./city-worker`), and its per-frame step.
 export {

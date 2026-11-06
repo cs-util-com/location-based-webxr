@@ -33,6 +33,8 @@ interface GlobeCloudQuality {
   readonly maxPixelsPerCss: number;
   /** How many sub-steps the march's refined entry crosses in. */
   readonly entrySubSteps: number;
+  /** The upsampling tent's reach (cloud pixels, diagonal). */
+  readonly tapPixels: number;
 }
 
 export interface GlobeQuality {
@@ -53,6 +55,7 @@ export const GLOBE_QUALITIES = Object.freeze({
       ]),
       maxPixelsPerCss: 0.75,
       entrySubSteps: 2,
+      tapPixels: 0.5,
     }),
   }),
   medium: Object.freeze({
@@ -65,6 +68,7 @@ export const GLOBE_QUALITIES = Object.freeze({
       ]),
       maxPixelsPerCss: 1,
       entrySubSteps: 4,
+      tapPixels: 0.5,
     }),
   }),
   high: Object.freeze({
@@ -78,6 +82,7 @@ export const GLOBE_QUALITIES = Object.freeze({
       ]),
       maxPixelsPerCss: 1.5,
       entrySubSteps: 4,
+      tapPixels: 0.45,
     }),
   }),
 } satisfies Record<string, GlobeQuality>);

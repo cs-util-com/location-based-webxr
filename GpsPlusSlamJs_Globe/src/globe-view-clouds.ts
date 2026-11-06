@@ -18,10 +18,28 @@
  * `setOn(false)` turns the slab off, and with it the shell (the lab's
  * `cloudVolume=0`): the flat layer then only weakens near the ground.
  *
+ * With `near` the near clouds (`globe-cloud-march-pass.ts`) replace the
+ * slab below their own ceiling, at about 60 km of camera height, as soon as
+ * their bakes are back from the worker; until then, and if that fails, the
+ * old clouds draw. Their tier and pixels are the step-down's
+ * (`globe-cloud-governor.ts`).
+ *
  * @see globe-view-clouds.ts.md
  */
 import * as THREE from "three";
 
+import {
+  type CloudBakeWorker,
+  requestCloudBakes,
+} from "./globe-cloud-bake-worker-core.js";
+import {
+  createGlobeCloudGovernor,
+  type GlobeCloudGovernor,
+} from "./globe-cloud-governor.js";
+import {
+  createGlobeCloudMarch,
+  type GlobeCloudMarch,
+} from "./globe-cloud-march-pass.js";
 import {
   createGlobeCloudShellVolume,
   type GlobeCloudShellVolume,
@@ -40,6 +58,7 @@ import {
 } from "./globe-cloud-volume-pass.js";
 import type { GlobeAtmosphere } from "./globe-atmosphere.js";
 import type { GlobeGroundSky } from "./globe-ground-sky.js";
+import { GLOBE_QUALITIES, type GlobeQualityName } from "./globe-quality.js";
 import {
   createGlobeSceneDepth,
   type GlobeSceneDepth,
@@ -100,6 +119,10 @@ export const GLOBE_VIEW_CLOUDS = Object.freeze({
   cloudShadow: 0.6,
   /** How much of the slab's flat deck the shell takes (the lab's). */
   cloudShellFlat: 1,
+  /** The near clouds where a page has them, gone at 70 km, whole at 50. */
+  cloudNear: 1,
+  cloudNearCeilingKm: 70,
+  cloudNearFadeKm: 20,
 } as const satisfies GlobeViewCloudKnobs);
 
 /** What the clouds read and write of the view (a `GlobeView` is one). */
@@ -112,14 +135,20 @@ export interface CloudsView {
   };
   ecefCamera(): { readonly position: THREE.Vector3 };
   frameTarget(): LatLng | null;
+  /** The tier the near clouds start on (absent: high). */
+  readonly quality?: GlobeQualityName;
+  /** The clock the map drifts by (s); the near clouds' life follows it. */
+  driftTimeS?(): number;
 }
 
 /** The three parts the clouds drive (tests pass fakes). */
 export interface CloudsParts {
   readonly sceneDepth: Pick<GlobeSceneDepth, "beginFrame" | "render"> &
-    Partial<Pick<GlobeSceneDepth, "dispose">>;
+    Partial<Pick<GlobeSceneDepth, "dispose" | "fresh" | "texture" | "camera">>;
   readonly cloudVolume: GlobeCloudVolume;
   readonly shellVolume: GlobeCloudShellVolume;
+  /** The near clouds; absent without `near` in the options. */
+  readonly near?: GlobeCloudMarch | null;
 }
 
 /** The relief's tiles, as the slab's shadow patches them. */
@@ -161,6 +190,12 @@ export interface GlobeViewClouds {
     shellOn: boolean;
     shellShadow: number;
     surfaceShadow: number;
+    /** The near clouds now: their share, pixels and tier; null without. */
+    near: {
+      share: number;
+      pixelScale: number;
+      tier: GlobeQualityName;
+    } | null;
   };
   /** The shell's frames drawn and its share and weights now (its
    *  `state()`; no GPU read-back): what a shadow check reads to tell an
@@ -189,10 +224,13 @@ export type CloudsFactory = (drawers: CloudsDrawers) => GlobeViewClouds | null;
 export function createCloudsParts(
   view: CloudsView,
   { groundSky, spacePass }: CloudsDrawers,
+  withNear = false,
 ): CloudsParts | null {
   const { atmosphere } = groundSky;
   if (!groundSky.supported || atmosphere === null) return null;
-  const sceneDepth = createGlobeSceneDepth(view.renderer);
+  const sceneDepth = createGlobeSceneDepth(view.renderer, {
+    carrierShare: view.globe.surfaceUniforms.uCarrierShare,
+  });
   const cloudVolume = createGlobeCloudVolume(view.renderer, {
     atmosphere,
     skyScene: groundSky.scene,
@@ -206,7 +244,13 @@ export function createCloudsParts(
     atmosphere: spacePass,
     sceneDepth,
   });
-  return { sceneDepth, cloudVolume, shellVolume };
+  const near = withNear
+    ? createGlobeCloudMarch(view.renderer, {
+        ellipsoid: view.globe.tiles.ellipsoid,
+        surfaceUniforms: view.globe.surfaceUniforms,
+      })
+    : null;
+  return { sceneDepth, cloudVolume, shellVolume, near };
 }
 
 /**
@@ -219,12 +263,20 @@ export function globeViewClouds(
   options: GlobeViewCloudsOptions = {},
 ): CloudsFactory {
   return (drawers) => {
-    const parts = createCloudsParts(view, drawers);
+    const parts = createCloudsParts(view, drawers, Boolean(options.near));
     return parts ? createGlobeViewClouds(view, parts, options) : null;
   };
 }
 
 const NO_EXTRA: readonly THREE.Object3D[] = Object.freeze([]);
+
+/** Bakes in a worker of `createWorker` and hands the tiles to `use`. */
+async function requestWhenBaked(
+  createWorker: () => CloudBakeWorker,
+  use: (bakes: Awaited<ReturnType<typeof requestCloudBakes>>) => void,
+): Promise<void> {
+  use(await requestCloudBakes(createWorker()));
+}
 
 /** What an app may tune of the view's clouds. */
 export interface GlobeViewCloudsOptions {
@@ -242,6 +294,20 @@ export interface GlobeViewCloudsOptions {
    * rays end at a building rather than passing through it. Absent: none.
    */
   readonly extra?: () => readonly THREE.Object3D[];
+  /**
+   * The near clouds, with the worker that bakes their tiles. Absent: the
+   * slab, as without them.
+   */
+  readonly near?: {
+    /** A worker over `gps-plus-slam-globe/cloud-bake-worker`. */
+    readonly createWorker: () => CloudBakeWorker;
+    /** Whether a slow device may step down (default true). */
+    readonly autoQuality?: boolean;
+    /** The report of a failed bake (default `console.warn`). */
+    readonly warn?: (message: string) => void;
+    /** Tests: the clock the frames are timed by (ms). */
+    readonly nowMs?: () => number;
+  };
 }
 
 /**
@@ -260,6 +326,48 @@ function knobsWith({ shadow }: GlobeViewCloudsOptions): GlobeViewCloudKnobs {
   });
 }
 
+/** Asks for the near clouds' bakes; their step-down and each frame's reading. */
+function startNearClouds(
+  view: CloudsView,
+  sceneDepth: CloudsParts["sceneDepth"],
+  near: NonNullable<CloudsParts["near"]>,
+  options: NonNullable<GlobeViewCloudsOptions["near"]>,
+) {
+  const governor: GlobeCloudGovernor = createGlobeCloudGovernor(
+    view.quality ?? "high",
+    { auto: options.autoQuality ?? true },
+  );
+  const nowMs = options.nowMs ?? (() => performance.now());
+  let lastFrameMs: number | null = null;
+  // eslint-disable-next-line no-console -- the one report of a failed bake
+  const warn = options.warn ?? console.warn;
+  requestWhenBaked(options.createWorker, (bakes) => {
+    near.setBakes(bakes);
+  }).catch((error: unknown) => {
+    warn(`the near clouds stay off: ${String(error)}`);
+  });
+  return {
+    /** What the near clouds draw by this frame; the step-down's reading. */
+    frame() {
+      const now = nowMs();
+      if (lastFrameMs !== null) governor.frame(now - lastFrameMs);
+      lastFrameMs = now;
+      const { pixelScale, tier } = governor.state();
+      const { fresh, texture, camera } = sceneDepth;
+      return {
+        timeS: view.driftTimeS?.() ?? now / 1000,
+        quality: GLOBE_QUALITIES[tier].clouds,
+        pixelScale,
+        sceneDepth:
+          fresh === true && texture !== undefined && camera !== undefined
+            ? { texture, camera }
+            : null,
+      };
+    },
+    state: () => governor.state(),
+  };
+}
+
 /** The clouds for `view` over `parts`; see the module's comment. */
 export function createGlobeViewClouds(
   view: CloudsView,
@@ -267,7 +375,12 @@ export function createGlobeViewClouds(
   options: GlobeViewCloudsOptions = {},
 ): GlobeViewClouds {
   const { sceneDepth, cloudVolume, shellVolume } = parts;
-  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume });
+  const near = options.near ? (parts.near ?? null) : null;
+  const clouds = createGlobeCloudStep({ cloudVolume, shellVolume, near });
+  const nearDriver =
+    near !== null && options.near
+      ? startNearClouds(view, sceneDepth, near, options.near)
+      : null;
   const onKnobs = knobsWith(options);
   const offKnobs: GlobeViewCloudKnobs = Object.freeze({
     ...onKnobs,
@@ -325,7 +438,8 @@ export function createGlobeViewClouds(
       // The relief's depth while the ground sky shows (the shell's rays end
       // at it by that weight); the slab draws it itself when only it needs it.
       const extra = extraOf();
-      if (weight > 0) sceneDepth.render(camera, relief, extra);
+      const nearOn = clouds.nearShare > 0;
+      if (weight > 0 || nearOn) sceneDepth.render(camera, relief, extra);
       clouds.render(camera, {
         relief,
         extra,
@@ -334,12 +448,20 @@ export function createGlobeViewClouds(
         sunIntensity: globe.sun.intensity,
         sceneDepthWeight: weight,
         flatten: knobs.cloudShellFlat,
+        ...(nearOn && nearDriver !== null ? { near: nearDriver.frame() } : {}),
       });
     },
     setOn(on) {
       knobs = on ? onKnobs : offKnobs;
     },
-    state: () => ({ on: knobs.cloudVolume !== 0, ...last }),
+    state: () => ({
+      on: knobs.cloudVolume !== 0,
+      ...last,
+      near:
+        nearDriver === null
+          ? null
+          : { share: clouds.nearShare, ...nearDriver.state() },
+    }),
     shell() {
       const { drawn, share, weight, slabWeight } = shellVolume.state();
       return { drawn, share, weight, slabWeight };
@@ -347,9 +469,9 @@ export function createGlobeViewClouds(
     dispose() {
       if (disposed) return;
       disposed = true;
-      for (const part of [shellVolume, cloudVolume, sceneDepth]) {
+      for (const part of [near, shellVolume, cloudVolume, sceneDepth]) {
         try {
-          part.dispose?.();
+          part?.dispose?.();
         } catch {
           // One part that fails to free leaves the others to run.
         }

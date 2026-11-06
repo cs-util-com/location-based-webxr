@@ -51,6 +51,10 @@ fine-pointer tier) and shows it as `view.quality`.
 - The pointer test is the page's (`matchMedia("(pointer: coarse)")`), so this
   module has no browser dependency.
 
+## The cloud numbers' reader
+
+`tapPixels` is the upsampling tent's reach in cloud pixels, read by the shell's composite.
+
 ## Example
 
 ```ts

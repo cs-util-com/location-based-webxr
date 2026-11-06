@@ -1230,3 +1230,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   crossing, on and off.
 - The memory and download table: `pnpm run measure:globe`
   (`measure-globe.mjs`), not a test.
+
+## The near clouds
+
+`#cloudNear=1` draws `GpsPlusSlamJs_Globe/src/globe-cloud-march-pass.ts` in place of the slab below `cloudNearCeilingKm` (default 70, whole at `70 - cloudNearFadeKm`), on the tier `cloudNearTier` (0 low, 1 medium, 2 high), with the shell on (`cloudShell` and the map). Off by default, so the lab's cloud checks read what they always read; the tour editor has them on. The bakes come from `globe-cloud-bake-worker.js`; `cloudNearState()` on the lab's hooks says whether they arrived and what is drawn.
