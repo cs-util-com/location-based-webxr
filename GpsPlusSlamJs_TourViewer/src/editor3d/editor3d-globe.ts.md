@@ -33,7 +33,10 @@ true ECEF place, so one placed anywhere shows where it is.
 - `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
   - `deps`: the same `Editor3dDeps` the OrbitControls view takes.
   - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
-    rule's thresholds).
+    rule's thresholds), and `grade`, the raw `?grade=` name judged here by
+    `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
+    and keeps the default). `view3d().globe.grade` reads the tone curve and
+    exposure back.
   - Resolves on the render loop's first tick with the same `Editor3dView`
     shape, so the shell, the view switch and the page's test hooks work
     unchanged.
@@ -386,7 +389,7 @@ see-through), null without buildings.
 - `globe-editor-look.test.ts` (the pure rules), `editor3d-stations.test.ts`
   ("hides single stations and codes, and nothing hidden is picked"),
   `editor3d-terrain.test.ts` (the ECEF placement).
-- `../editor3d-lazy.test.ts`: the globe view is reached only by import()
+- `../app-bundle.test.ts`: the globe view is reached only by import()
   from the editor's page, and only its chunks hold the globe's imagery.
 - `playwright-tests/editor3d-globe-start.spec.js`: the approach's first
   frames at least the fit from the Earth's centre, at the lab's intro

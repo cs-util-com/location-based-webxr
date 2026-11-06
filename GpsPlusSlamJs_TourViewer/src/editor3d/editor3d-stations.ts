@@ -6,7 +6,8 @@
  * items as the phone does (`renderTourStation`: pins as labels, photos as
  * planes, long texts on their reading stands when the page gives
  * `makeLectern`), their placed models at the format's size (`modelScale`), their
- * found radius as a ring and a pole up to the billboard. Every code with a
+ * found radius as a ring (over the ground: `ringOf`) and a pole up to the
+ * billboard. Every code with a
  * position is a square of its printed size, facing as printed.
  *
  * The morph (`standing`, 0 looking straight down to 1 tilted up): photos
@@ -222,6 +223,11 @@ function pickOf(object: THREE.Object3D | null): string | null {
   return null;
 }
 
+/** The found-radius ring's place in the draw order: after everything drawn
+ *  in the scene's default order, before the gizmo (its lowest part is 21),
+ *  whose dots sit on it. */
+export const RING_RENDER_ORDER = 20;
+
 const RING_COLOUR = 0x6fa8dc;
 /** The selected station's circle (the gizmo's amber: its dots sit on it). */
 const RING_SELECTED = 0xe9a23b;
@@ -369,6 +375,11 @@ export function codeQuaternionNue(geo: QrGeoPose): THREE.Quaternion {
   );
 }
 
+/**
+ * A found radius's ring, flat on the station's level. Flat, it cannot follow
+ * a sloped ground, so no depth test: the relief above the station's height
+ * would hide it. Like the labels, it shows through a building or a hill.
+ */
 function ringOf(radiusM: number): THREE.Mesh {
   const width = Math.min(0.45, radiusM / 4);
   const geometry = new THREE.RingGeometry(radiusM - width, radiusM, 96);
@@ -380,11 +391,13 @@ function ringOf(radiusM: number): THREE.Mesh {
       color: RING_COLOUR,
       transparent: true,
       opacity: 0.85,
+      depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     }),
   );
   ring.name = "found-radius";
+  ring.renderOrder = RING_RENDER_ORDER;
   return ring;
 }
 

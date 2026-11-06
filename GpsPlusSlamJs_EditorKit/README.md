@@ -47,7 +47,7 @@ pages that may load them:
 - `src/editor-only-packages.test.ts` - by specifier: no module outside the
   editors names any entry but `./touch`, and none outside the 3D view
   names `./scene` or `./globe` statically;
-- `src/editor3d-lazy.test.ts` - in the production bundle: the visitor's
+- `src/app-bundle.test.ts` - in the production bundle: the visitor's
   pages reach no kit module but `touch`, and the editor's page loads of
   the kit only `chrome` and `touch` before an `import()`;
 - `config/.dependency-cruiser.cjs` (`viewer-not-to-kit-editor`) - the

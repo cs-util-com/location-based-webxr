@@ -175,7 +175,10 @@ test("a tile that fails to load leaves its parent drawn, and says so", async ({
   page.on("console", (m) => {
     if (m.type() === "error") consoleErrors.push(m.text());
   });
-  await page.goto(FIXED_VIEW);
+  // Neutral: a hole is told from the sea by exact black, and the default
+  // curve takes the deep sea to exact black as well (1 of 81 probes here, a
+  // sea probe), so on it this count would stop meaning a hole.
+  await page.goto(FIXED_VIEW.replace("/#", "/?grade=neutral#"));
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
   });

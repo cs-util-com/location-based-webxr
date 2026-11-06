@@ -53,7 +53,7 @@ near the camera under the editor's own gate, and the credits both need.
   view (`editor3d-globe.ts`, behind its lazy import) passes the globe's
   (`createGlobeImagery()` and `globe.template` from
   `gps-plus-slam-globe/view`), so its relief has the globe's ground and
-  look; this module itself never imports `./view`, and `editor3d-lazy.test.ts` checks the build holds no
+  look; this module itself never imports `./view`, and `app-bundle.test.ts` checks the build holds no
   imagery factory and no `globe-assets` folder.
 - **The gate was measured** on the sample tour's square (start view, top
   view, farthest zoom): with the flight's limits (off above 200 m, a 300 m

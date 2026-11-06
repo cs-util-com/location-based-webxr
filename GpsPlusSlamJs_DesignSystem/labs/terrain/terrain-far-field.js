@@ -12,7 +12,8 @@
  *   grid over the drawn region in the lab's ENU frame (`farFieldGrid`), so
  *   the shader reads it by position, like every other texture of the lab.
  * - WHAT "MATCHES THE GLOBE" MEANS (finding 12): the imagery texel through
- *   the globe's tone mapping (three's Neutral, exposure 1) under the
+ *   tone mapping the globe had when this was matched (three's Neutral,
+ *   exposure 1; today the globe's `?grade=neutral`, not its default) under the
  *   globe's sun (`GLOBE_SUN`, the diffuse term of its
  *   MeshStandardMaterial; its small GGX specular is not modelled), which is
  *   what the globe draws for ground lit straight from above. `farColour` is that reference; the shader uses three's own

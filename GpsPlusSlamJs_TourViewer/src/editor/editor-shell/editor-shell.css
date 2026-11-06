@@ -2525,6 +2525,11 @@ body[data-view="3d"] #view3d .view3d-canvas {
   touch-action: none;
 }
 
+/* While a search runs it drags nothing, and a press says why. */
+.head .grip.off {
+  cursor: not-allowed;
+}
+
 .head:hover .grip,
 .card.sel .head .grip,
 .card.dragging .head .grip {
@@ -2783,13 +2788,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * mark shown) in a wide face (Verdana, with DejaVu Sans' metrics), would
  * no longer hold every control with the tour's name at its floor (96, 56,
  * 40 and 20 px; `editor3d-shell.spec.js`, FOLD_STEPS). The bar's least
- * width, worked out from its parts' measured widths: 747 px unfolded, 687
- * after the first step, 454 after the second, 394 after the third (378
- * with a 40 px name) and 301 after the last.
+ * width, measured with the name at its floor: 747 px unfolded, 686 after
+ * the first step, 475 after the second, 359 after the third (343 with a
+ * 40 px name) and 266 after the last (246 with a 20 px name).
  * - 820 px: the unsaved mark keeps its dot (its words are its title, and
  *   the save status a screen reader hears);
  * - 720 px: the buttons drop their icons, keeping words;
- * - 520 px: Undo and Redo fold into the Edit menu;
+ * - 520 px: Undo, Redo and Add fold into the Edit menu;
  * - 400 px: the menus' carets go and the groups close up. */
 #edit-menu-wrap {
   display: none;

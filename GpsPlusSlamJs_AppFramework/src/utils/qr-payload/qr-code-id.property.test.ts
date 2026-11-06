@@ -26,29 +26,22 @@ function oracleId(text: string): string {
 }
 
 describe('qrCodeId properties', () => {
-  it('agrees with an independent SHA-256 for any text', async () => {
+  it('agrees with an independent SHA-256 for any text, as a filename-safe id of fixed length', async () => {
     // Why this test matters: the unit test pins a handful of realistic
     // strings. This one covers the input space the unit test cannot -
     // lone surrogates, control characters, very long payloads - where a
     // hand-rolled UTF-8 encoding would diverge from a standard one.
+    // The id is also interpolated straight into `qr/<id>.json`: anything
+    // outside lowercase hex would produce an entry the archive reader's
+    // pattern rejects, and the level would go missing with no error raised
+    // anywhere. Agreeing with the hex oracle implies it; the pattern keeps
+    // that rule's own failure message.
+    const filenameSafe = new RegExp(`^[0-9a-f]{${QR_CODE_ID_LENGTH}}$`);
     await fc.assert(
       fc.asyncProperty(arbText, async (text) => {
-        expect(await qrCodeId(text)).toBe(oracleId(text));
-      }),
-      { numRuns: 200 }
-    );
-  });
-
-  it('always yields a filename-safe id of fixed length', async () => {
-    // Why this test matters: the id is interpolated straight into
-    // `qr/<id>.json`. Anything outside lowercase hex would produce an entry
-    // the archive reader's pattern rejects, and the level would go missing
-    // with no error raised anywhere.
-    await fc.assert(
-      fc.asyncProperty(arbText, async (text) => {
-        expect(await qrCodeId(text)).toMatch(
-          new RegExp(`^[0-9a-f]{${QR_CODE_ID_LENGTH}}$`)
-        );
+        const id = await qrCodeId(text);
+        expect(id, 'a filename-safe id of fixed length').toMatch(filenameSafe);
+        expect(id).toBe(oracleId(text));
       }),
       { numRuns: 200 }
     );

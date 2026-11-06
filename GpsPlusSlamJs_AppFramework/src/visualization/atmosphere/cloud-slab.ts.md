@@ -161,7 +161,11 @@ it only in `cloudMode: 'slab'`.
   slice drew contour layers where a cloud top crossed a slice (the owner's
   report); measured at 8 steps the new march has 4-23x less layer bias than
   the old one from above at steep views; at 16 it stays within 1.15x of the
-  old 16 from below and inside (W2 M1 notes).
+  old 16 from below and inside (W2 M1 notes). The gate holds these claims on
+  eight of the 31 measured poses (four of the ten from above, four of the 21
+  from below and inside). Whoever changes the march or the slab shader runs
+  all 31: `CLOUD_SLAB_FULL_GRID=1 pnpm run test:unit
+src/visualization/atmosphere/cloud-slab.test.ts` in the framework.
 - **A static per-pixel jitter** (interleaved gradient noise) moves the
   INTERIOR nodes inside their steps; the entry and the exit never move, so
   the segments always tile the interval and a uniform column's opacity is

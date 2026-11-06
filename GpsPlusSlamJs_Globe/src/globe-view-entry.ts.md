@@ -60,6 +60,8 @@
     (`globe-credits.ts`), and `GIBS_ACKNOWLEDGEMENT`
     (`globe-sources.ts`), the sentence GIBS asks to be shown in full
     wherever its imagery is.
+  - `resolveGlobeGrade` (`globe-grade.ts`): the colour grade a link names,
+    judged here so an app's first load carries none of the globe's code.
   - Only what an app's production code uses: a name only a test needs
     lives under `./test-utils/*` (`viewPoseEcef` and `WGS84_ELLIPSOID` in
     `./test-utils/view-pose`), because knip reads this entry as public and
@@ -75,5 +77,5 @@
   const { createGlobeView } = await import("gps-plus-slam-globe/view");
   ```
 - Tests: none of its own (re-exports); the blocks' own tests, and the Tour
-  Viewer's `editor-only-packages.test.ts` and `editor3d-lazy.test.ts` for
+  Viewer's `editor-only-packages.test.ts` and `app-bundle.test.ts` for
   how an app may reach it.

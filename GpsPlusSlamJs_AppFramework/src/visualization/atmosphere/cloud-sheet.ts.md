@@ -118,7 +118,7 @@ sky.configure({ sunDirection, cloudCover: 0.5, cloudMode: 'sheet' });
 - `sky-atmosphere.test.ts`: the mode switch (see that sidecar).
 - `atmosphere-glsl.test.ts`: the sheet's shader defines only `atm`-prefixed
   functions.
-- The look-dev smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs`)
+- The look-dev smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history))
   is the only GPU check:
   - covering the city from above;
   - the ground hiding the sheet;

@@ -16,6 +16,11 @@ it. An old `globe=1` link keeps opening the globe.
 
 - `GLOBE_SWITCH` - `param` `"globe"`; the knobs (`GlobeSwitchKnob`:
   `param`, `fallback`, `min`, `max`):
+  - `grade` - `grade`, no default here: the colour grade's name, handed on
+    as the link wrote it (`grade: string | null` in `GlobeSwitch`). This
+    module carries none of the globe's code, so the Globe package's
+    `resolveGlobeGrade` judges the name when the view opens: an unknown
+    one is the default with a console warning;
   - `hidePx` - `globeHidePx`, default 3, range 0.5-200: an object hides
     below this size on screen (CSS px);
   - `crowdPx` - `globeCrowdPx`, default 24, range 0-500: a station pin

@@ -252,6 +252,9 @@ export interface EditorShell {
   /** The scene's ground menu at `point` (px in the view), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
+  /** Empties the tree's search: something the page just made is shown,
+   *  and its name would match none of the words typed. */
+  clearSearch(): void;
 }
 
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
@@ -370,21 +373,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  focus that follows it has a row to land on); a search runs no more,
    *  as the new item's name would match none of its words. */
   function addInPlace(id: string, kind: AddKind): void {
-    if (tree.search.value !== "") {
-      tree.search.value = "";
-      searchFolded.clear();
-      drawTreeNow();
-    }
+    clearSearch();
     store.dispatch(editorViewActions.stationFolded({ id, open: true }));
     deps.edits.addItem(id, kind);
   }
   // The top bar's Add (the Edit menu's at a phone's width): the palette
   // for a touch screen, with no keys.
-  for (const id of ["studio-add", "edit-add"]) {
-    byId<HTMLButtonElement>(id).addEventListener("click", () => {
-      palette.open();
-    });
-  }
+  byId("studio-add").addEventListener("click", () => {
+    palette.open();
+  });
+  byId("edit-add").addEventListener("click", () => {
+    // Its menu closes under it, so the palette goes back to the menu's button.
+    byId("edit-menu-btn").focus();
+    palette.open();
+  });
   /** The tree as last drawn, and the stations a search unfolded whose
    *  arrow folded them since (`TreeInput.searchFolded`), for the tour
    *  of `searchedTour` (its open count) the search was typed over. */
@@ -1183,10 +1185,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // Escape empties the search first; the shell's Escape (drop the
     // selection) waits for the next press.
     event.stopPropagation();
-    tree.search.value = "";
-    searchFolded.clear();
-    drawTreeNow();
-    pictures.sweep();
+    clearSearch();
   });
   tree.collapse.addEventListener("click", () => {
     creatorTouchesTree();
@@ -1194,6 +1193,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       store.dispatch(editorViewActions.stationFolded({ id, open: false }));
     }
   });
+  /** The search emptied, and the tree drawn without it where it shows. */
+  function clearSearch(): void {
+    if (tree.search.value === "") return;
+    tree.search.value = "";
+    searchFolded.clear();
+    if (view === null) return;
+    drawTreeNow();
+    pictures.sweep();
+  }
   /** A new station at the centre of the view: the tree's "+" and the
    *  palette's New station. */
   function addStationAtCentre(): void {
@@ -1451,6 +1459,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   return {
+    clearSearch,
     show(next, options) {
       view = next;
       drawn = null;

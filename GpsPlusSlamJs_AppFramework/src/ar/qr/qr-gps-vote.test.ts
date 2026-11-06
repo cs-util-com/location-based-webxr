@@ -9,6 +9,8 @@
  * the alignment the wrong way on a real device.
  */
 
+// Activates the core library's licence before any module under test loads.
+import '../../test-setup';
 import { describe, it, expect } from 'vitest';
 import type { Quaternion } from 'gps-plus-slam-js';
 import {

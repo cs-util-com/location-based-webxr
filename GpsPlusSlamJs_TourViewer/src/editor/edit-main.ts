@@ -1321,13 +1321,13 @@ async function duplicateSelection(id: string): Promise<void> {
     toast(outcome.reason);
     return;
   }
-  if ("stationId" in outcome) unlockMade(outcome.stationId);
-  select(
-    "stationId" in outcome
-      ? `${STATION_PREFIX}${outcome.stationId}`
-      : outcome.id,
-  );
-  toast(`Duplicated ${item?.title ?? "the note"}`);
+  const said = `Duplicated ${item?.title ?? "the note"}`;
+  if ("stationId" in outcome) {
+    showNewStation(outcome.stationId, () => said);
+    return;
+  }
+  select(outcome.id);
+  toast(said);
   autosave.changed();
 }
 
@@ -1462,8 +1462,10 @@ function stationTitleOf(stationId: string): string {
     : stationTitle(station, index + 1);
 }
 
-/** A station the page made: unlocked, selected, its card unfolded, said. */
+/** A station the page made: in the list (no search hides it), unlocked,
+ *  selected, its card unfolded, said. */
 function showNewStation(stationId: string, said: (title: string) => string) {
+  shell.clearSearch();
   unlockMade(stationId);
   refresh();
   select(`${STATION_PREFIX}${stationId}`);

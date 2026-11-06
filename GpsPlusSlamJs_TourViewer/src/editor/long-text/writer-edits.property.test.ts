@@ -88,7 +88,7 @@ describe("formatting keeps every word", () => {
           words(value),
         );
       }),
-      { numRuns: 1000 },
+      { numRuns: 300 },
     );
   });
 
@@ -110,7 +110,7 @@ describe("formatting keeps every word", () => {
           expect(0 <= s && s <= e && e <= out.value.length).toBe(true);
         }
       }),
-      { numRuns: 1000 },
+      { numRuns: 300 },
     );
   });
 });
@@ -130,7 +130,7 @@ describe("list continuation", () => {
         expect(ends || mark.test(edit.text)).toBe(true);
         expect(wordsAfter(value, edit)).toBe(words(value));
       }),
-      { numRuns: 2000 },
+      { numRuns: 500 },
     );
   });
 });

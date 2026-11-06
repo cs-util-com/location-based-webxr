@@ -26,15 +26,20 @@ export const SQUARE_GROUND_M = 515.5;
  * buildings are answered too, for their worker (`answerCityData`):
  * Overpass with `overpass` (an Overpass JSON
  * object, every tile the same; no buildings by default), the heights
- * with the same flat ground. Nothing leaves the machine.
+ * with the same flat ground. `groundM` stands that ground at another
+ * height (m). Nothing leaves the machine.
  * @param {import("@playwright/test").Page} page
- * @param {{ globeAssets?: "refuse" | "serve", overpass?: object }} [options]
+ * @param {{ globeAssets?: "refuse" | "serve", overpass?: object, groundM?: number }} [options]
  */
 export async function answerHosts(
   page,
-  { globeAssets = "refuse", overpass = NO_BUILDINGS } = {},
+  {
+    globeAssets = "refuse",
+    overpass = NO_BUILDINGS,
+    groundM = SQUARE_GROUND_M,
+  } = {},
 ) {
-  const flat = terrariumPng(512, 512, () => SQUARE_GROUND_M);
+  const flat = terrariumPng(512, 512, () => groundM);
   await answerCityData(page, flat, overpass);
   await page.route("https://tiles.mapterhorn.com/**", (route) => {
     if (!/\/\d+\/\d+\/\d+\.webp/.test(route.request().url())) {
@@ -347,6 +352,11 @@ export async function noClouds(page) {
   });
 }
 
+/** Whether this run takes the screenshots for the check by eye
+ *  (PLAYWRIGHT_CAPTURE=1): a test may skip the resizes that only serve
+ *  them. */
+export const capturing = process.env.PLAYWRIGHT_CAPTURE === "1";
+
 /**
  * A screenshot for the check by eye, taken only with PLAYWRIGHT_CAPTURE=1:
  * no assertion reads it, and in this software renderer each one waits on
@@ -355,6 +365,95 @@ export async function noClouds(page) {
  * @param {string} path
  */
 export async function capture(target, path) {
-  if (process.env.PLAYWRIGHT_CAPTURE !== "1") return;
+  if (!capturing) return;
   await target.screenshot({ path });
+}
+
+/** @typedef {{ x: number, y: number, width: number, height: number }} Box */
+/** @typedef {{ box: Box | null, shown: boolean, styles: Record<string, string> }} LaidOut */
+
+/**
+ * Every element each selector matches - its box, whether it is shown, and
+ * the named computed styles - read in ONE round trip to the page. Each
+ * read through Playwright waits on a main thread busy drawing the 3D view
+ * in software, so a layout check of a few dozen boxes cost seconds per
+ * size when read one by one; read here, the checks then run in the test
+ * on the data. A box is null without a layout box (Playwright's
+ * `boundingBox` null); `shown` is Playwright's `isVisible` (a non-empty
+ * box, not `visibility: hidden`). It reads one moment: where a value
+ * eases in, poll this read rather than assert it once.
+ * @param {import("@playwright/test").Page} page
+ * @param {string[]} selectors
+ * @param {string[]} [styles] computed style properties, in CSS spelling
+ * @returns {Promise<Record<string, LaidOut[]>>}
+ */
+export function layoutOf(page, selectors, styles = []) {
+  return page.evaluate(([sels, props]) => {
+    /** @type {Record<string, any[]>} */
+    const out = {};
+    for (const selector of sels) {
+      out[selector] = [...document.querySelectorAll(selector)].map((el) => {
+        const r = el.getBoundingClientRect();
+        const box =
+          el.getClientRects().length === 0
+            ? null
+            : { x: r.x, y: r.y, width: r.width, height: r.height };
+        const css = getComputedStyle(el);
+        return {
+          box,
+          shown:
+            box !== null &&
+            r.width > 0 &&
+            r.height > 0 &&
+            css.visibility !== "hidden",
+          styles: Object.fromEntries(
+            props.map((p) => [p, css.getPropertyValue(p)]),
+          ),
+        };
+      });
+    }
+    return out;
+  }, /** @type {const} */ ([selectors, styles]));
+}
+
+/**
+ * The box of a selector's `index`th match in a `layoutOf` read, or a throw
+ * naming it when it is missing or not laid out. Without an index the
+ * selector must match exactly one element, as a Playwright locator's
+ * `boundingBox` requires.
+ * @param {Record<string, LaidOut[]>} layout
+ * @param {string} selector
+ * @param {number} [index]
+ * @returns {Box}
+ */
+export function boxIn(layout, selector, index) {
+  const all = layout[selector] ?? [];
+  if (index === undefined && all.length !== 1) {
+    throw new Error(`${String(all.length)} matches, not one: ${selector}`);
+  }
+  const b = all[index ?? 0]?.box ?? null;
+  if (b === null) throw new Error(`no box: ${selector} [${String(index)}]`);
+  return b;
+}
+
+/**
+ * Whether a selector's `index`th match is shown in a `layoutOf` read.
+ * @param {Record<string, LaidOut[]>} layout
+ * @param {string} selector
+ * @param {number} [index]
+ */
+export function shownIn(layout, selector, index = 0) {
+  return layout[selector]?.[index]?.shown === true;
+}
+
+/**
+ * A computed style (one `layoutOf` was asked for) of a selector's
+ * `index`th match, or "" when it is missing.
+ * @param {Record<string, LaidOut[]>} layout
+ * @param {string} selector
+ * @param {string} property
+ * @param {number} [index]
+ */
+export function styleIn(layout, selector, property, index = 0) {
+  return layout[selector]?.[index]?.styles[property] ?? "";
 }

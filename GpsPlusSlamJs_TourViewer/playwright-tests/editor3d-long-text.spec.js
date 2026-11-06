@@ -7,6 +7,8 @@ import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 import {
   GLOBE_VIEW,
   answerHosts,
+  boxIn,
+  layoutOf,
   noApproach,
   noClouds,
   openZip,
@@ -14,7 +16,7 @@ import {
 
 /**
  * Why these tests matter: a long text is written in the 3D view's
- * inspector, as the owner chose from the "in the inspector" prototype
+ * inspector, as chosen from the "in the inspector" prototype
  * (`public/prototypes/longtext-editor-1-in-the-inspector/`): a view
  * picker, a toolbar over a plain text area, the parts a visitor sees as
  * typed underlined and counted, and a phone over the 3D view showing the
@@ -24,7 +26,8 @@ import {
  * zeroes paragraph and list margins, so a port can lose every gap and
  * still pass a test that asks whether things are visible. The layout test
  * pins positions and gaps from the prototype's CSS numbers (not from the
- * code under test) at three desktop sizes.
+ * code under test) at three desktop sizes, on the same open as the
+ * writing.
  */
 
 test.describe.configure({ mode: "default" });
@@ -102,11 +105,22 @@ function sheet(page) {
   return page.frameLocator('[data-testid="long-text-preview"] iframe');
 }
 
-test("a long text is written in the inspector: one save per pause, the preview follows, the view is picked, and a part shown as typed is made plain", async ({
+test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768, and a long text is written in the inspector: one save per pause, the preview follows, the view is picked, and a part shown as typed is made plain", async ({
   page,
 }) => {
   test.setTimeout(BUDGET_MS);
   await openEssay(page);
+  // The layout first, on the text as it opened: the writing below makes
+  // the inspector wider and changes the view, which the layout's measures
+  // are not about.
+  for (const size of SIZES) {
+    await page.setViewportSize(size);
+    await expectSettled(page, size);
+    await expectWriterLayout(page, size);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expectSettled(page, { width: 1440, height: 900 });
+
   const area = page.getByTestId("long-text-writer");
   await expect(area).toHaveValue(
     "The gate was built in 1400.\n\nIt was rebuilt later.",
@@ -209,46 +223,85 @@ test("a long text is written in the inspector: one save per pause, the preview f
 });
 
 /**
- * The writer's boxes at one window size, by the prototype's measures.
+ * The inspector eased to its width and the preview laid out beside it.
+ * The inspector eases to its width, and the preview lays itself out from a
+ * resize observer once it has, so both are polled. Under the globe one
+ * read can take longer than the default 5 s poll on a software-WebGL
+ * runner (measured: the read after the first resize timed out there), so
+ * the poll waits up to POLL_MS.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ */
+async function expectSettled(page, size) {
+  const inspector = "#shell-inspector";
+  const preview = '[data-testid="long-text-preview"]';
+  const settled = async () => {
+    const l = await layoutOf(page, [inspector, preview]);
+    const d = l[inspector]?.[0]?.box;
+    const p = l[preview]?.[0]?.box;
+    if (!d || !p) return null;
+    return { width: d.width, gap: Math.round(d.x - (p.x + p.width)) };
+  };
+  await expect
+    .poll(settled, { timeout: POLL_MS })
+    .toEqual({ width: size.width <= 1100 ? 340 : 360, gap: 14 });
+}
+
+/**
+ * The writer's boxes at one window size, by the prototype's measures, read
+ * in one go (`layoutOf`).
  * @param {import("@playwright/test").Page} page
  * @param {{ width: number, height: number }} size
  */
 async function expectWriterLayout(page, size) {
   const at = `at ${String(size.width)}x${String(size.height)}`;
-  const box = async (/** @type {import("@playwright/test").Locator} */ l) => {
-    const b = await l.boundingBox();
-    if (b === null) throw new Error(`not shown ${at}`);
-    return b;
-  };
-  const dock = await box(page.locator("#shell-inspector"));
+  const WRITER = '[data-testid="long-text-writer"]';
+  const PREVIEW = '[data-testid="long-text-preview"]';
+  const l = await layoutOf(page, [
+    "#shell-inspector",
+    ".lw-seg3",
+    ".lw-seg3 button",
+    ".lw-tools .lw-wb",
+    ".lw-wsec > .lw-slab",
+    ".lw-writer",
+    WRITER,
+    ".lw-mirror",
+    ".lw-wsec",
+    ".lw-stat",
+    "#view3d",
+    PREVIEW,
+    "#shell-tree",
+    ".lw-phone",
+  ]);
+  const box = (/** @type {string} */ s, /** @type {number=} */ i) =>
+    boxIn(l, s, i);
+  const dock = box("#shell-inspector");
   // 360 px wide, 340 px at a window of 1100 px or less.
   expect(dock.width, at).toBe(size.width <= 1100 ? 340 : 360);
   expect(dock.x + dock.width, at).toBeLessThanOrEqual(size.width);
   // The view picker: three equal segments, 26 px high, 2 px inside the
   // group's padding and its 1 px border.
-  const group = await box(page.locator(".lw-seg3"));
-  const segs = await page.locator(".lw-seg3 button").all();
-  expect(segs.length, at).toBe(3);
-  const s0 = await box(segs[0]);
-  const s2 = await box(segs[2]);
+  const group = box(".lw-seg3");
+  expect(l[".lw-seg3 button"]?.length, at).toBe(3);
+  const s0 = box(".lw-seg3 button", 0);
+  const s2 = box(".lw-seg3 button", 2);
   expect(s0.height, at).toBe(26);
   expect(s0.x - group.x, at).toBe(3);
   expect(Math.abs(s0.width - s2.width), at).toBeLessThanOrEqual(1);
   // The toolbar: 24 px buttons, 1 px apart, under the "Text" line.
-  const tools = await page.locator(".lw-tools .lw-wb").all();
-  expect(tools.length, at).toBe(11);
-  const b0 = await box(tools[0]);
-  const b1 = await box(tools[1]);
+  expect(l[".lw-tools .lw-wb"]?.length, at).toBe(11);
+  const b0 = box(".lw-tools .lw-wb", 0);
+  const b1 = box(".lw-tools .lw-wb", 1);
   expect([b0.width, b0.height], at).toEqual([24, 24]);
   expect(b1.x - (b0.x + b0.width), at).toBe(1);
-  const slab = await box(page.locator(".lw-wsec > .lw-slab"));
+  const slab = box(".lw-wsec > .lw-slab");
   expect(b0.y - (slab.y + slab.height), at).toBe(3);
   // The writer 5 px under the toolbar, as wide as its section, the mirror
   // exactly under the text area (the caret stays on its letter).
-  const writer = await box(page.locator(".lw-writer"));
+  const writer = box(".lw-writer");
   expect(writer.y - (b0.y + b0.height), at).toBe(5);
-  const area = await box(page.getByTestId("long-text-writer"));
-  const mirror = await box(page.locator(".lw-mirror"));
+  const area = box(WRITER);
+  const mirror = box(".lw-mirror");
   expect([mirror.x, mirror.y, mirror.width], at).toEqual([
     area.x,
     area.y,
@@ -262,47 +315,50 @@ async function expectWriterLayout(page, size) {
   // rest. The docks hang from the line (`--s-dock-top` in
   // `editor-shell.css`), which comes off the height, so it is read from
   // the page rather than assumed.
-  const allowed = await page
-    .locator("#shell-inspector")
-    .evaluate(
-      (e) =>
-        (e.parentElement?.clientHeight ?? 0) -
-        (Number.parseFloat(getComputedStyle(e).top) || 0),
+  const { allowed, fit } = await page.evaluate(() => {
+    const e = /** @type {HTMLElement} */ (
+      document.querySelector("#shell-inspector")
     );
-  expect(Math.abs(dock.height - allowed), at).toBeLessThanOrEqual(1);
-  const fit = await page.locator("#shell-inspector .dbody").evaluate((b) => {
+    const b = /** @type {HTMLElement} */ (
+      document.querySelector("#shell-inspector .dbody")
+    );
     const last = b.lastElementChild;
     const pad = Number.parseFloat(getComputedStyle(b).paddingBottom) || 0;
     return {
-      overflow: b.scrollHeight - b.clientHeight,
-      slack:
-        b.getBoundingClientRect().bottom -
-        pad -
-        (last?.getBoundingClientRect().bottom ?? 0),
+      allowed:
+        (e.parentElement?.clientHeight ?? 0) -
+        (Number.parseFloat(getComputedStyle(e).top) || 0),
+      fit: {
+        overflow: b.scrollHeight - b.clientHeight,
+        slack:
+          b.getBoundingClientRect().bottom -
+          pad -
+          (last?.getBoundingClientRect().bottom ?? 0),
+      },
     };
   });
+  expect(Math.abs(dock.height - allowed), at).toBeLessThanOrEqual(1);
   if (size.height >= 900) expect(fit.overflow, at).toBeLessThanOrEqual(1);
   if (fit.overflow > 1) {
-    const wsec = await box(page.locator(".lw-wsec"));
-    expect(Math.round(wsec.height), at).toBe(280);
+    expect(Math.round(box(".lw-wsec").height), at).toBe(280);
   } else {
     expect(Math.abs(fit.slack), at).toBeLessThanOrEqual(1);
   }
   expect(writer.height, at).toBeGreaterThanOrEqual(150);
   // The stat line under the writer, inside the dock.
-  const stat = await box(page.locator(".lw-stat"));
+  const stat = box(".lw-stat");
   expect(stat.y, at).toBeGreaterThanOrEqual(writer.y + writer.height);
   expect(stat.y + stat.height, at).toBeLessThanOrEqual(dock.y + dock.height);
   // The preview: 14 px left of the dock, 10 px under the 3D view's top,
   // clear of the tree, the phone in the 390:844 shape and at most 760 px
   // high.
-  const view = await box(page.locator("#view3d"));
-  const pv = await box(page.getByTestId("long-text-preview"));
+  const view = box("#view3d");
+  const pv = box(PREVIEW);
   expect(Math.round(dock.x - (pv.x + pv.width)), at).toBe(14);
   expect(Math.round(pv.y - view.y), at).toBe(10);
-  const tree = await box(page.locator("#shell-tree"));
+  const tree = box("#shell-tree");
   expect(pv.x, at).toBeGreaterThanOrEqual(tree.x + tree.width + 10 - 0.5);
-  const phone = await box(page.locator(".lw-phone"));
+  const phone = box(".lw-phone");
   expect(Math.abs(phone.width / phone.height - 390 / 844), at).toBeLessThan(
     0.01,
   );
@@ -337,39 +393,4 @@ test("words typed just before Ctrl+S are in the saved tour @pr", async ({
     (/** @type {any} */ b) => b.id === "gate-essay",
   );
   expect(essay.body).toMatch(/ Saved at once\.$/);
-});
-
-test("the writer and the preview sit in place at 1440x900, 1280x720 and 1024x768", async ({
-  page,
-}) => {
-  test.setTimeout(BUDGET_MS);
-  await openEssay(page);
-  for (const size of SIZES) {
-    await page.setViewportSize(size);
-    // The inspector eases to its width, and the preview lays itself out
-    // from a resize observer once it has. Under the globe one bounding-box
-    // read can take longer than the default 5 s poll on a software-WebGL
-    // runner (measured: the read after the first resize timed out there),
-    // so both polls wait up to POLL_MS.
-    await expect
-      .poll(
-        async () =>
-          (await page.locator("#shell-inspector").boundingBox())?.width ?? 0,
-        { timeout: POLL_MS },
-      )
-      .toBe(size.width <= 1100 ? 340 : 360);
-    await expect
-      .poll(
-        async () => {
-          const d = await page.locator("#shell-inspector").boundingBox();
-          const p = await page.getByTestId("long-text-preview").boundingBox();
-          return d !== null && p !== null
-            ? Math.round(d.x - (p.x + p.width))
-            : -1;
-        },
-        { timeout: POLL_MS },
-      )
-      .toBe(14);
-    await expectWriterLayout(page, size);
-  }
 });

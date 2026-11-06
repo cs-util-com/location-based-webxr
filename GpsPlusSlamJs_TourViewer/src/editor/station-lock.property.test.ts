@@ -274,7 +274,9 @@ describe("the station lock", () => {
           }
         },
       ),
-      { numRuns: 150 },
+      // 25 kept: at 10 and at 20, six of six seeds caught a seeded lock that
+      // held only for untitled stations.
+      { numRuns: 25 },
     );
     await session.close();
   });

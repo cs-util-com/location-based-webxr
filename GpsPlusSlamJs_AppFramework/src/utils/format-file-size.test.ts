@@ -6,7 +6,7 @@
  * human-readable file sizes. This utility formats byte counts into
  * KB/MB/GB strings for display.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
 import { formatFileSize } from './format-file-size.js';

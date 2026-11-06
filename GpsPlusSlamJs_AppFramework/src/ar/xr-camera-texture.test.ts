@@ -12,7 +12,7 @@
  * getCameraTexture() which internally does the same thing but uses the proper
  * ExternalTexture type that Three.js's WebGL backend natively supports.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {

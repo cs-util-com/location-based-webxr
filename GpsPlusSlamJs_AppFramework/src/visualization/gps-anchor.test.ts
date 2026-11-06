@@ -16,6 +16,8 @@
  * Sub-step 2 of the GpsAnchor port plan
  * (../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md).
  */
+// Activates the core library's licence before any module under test loads.
+import '../test-setup';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createGpsAnchor, type GpsAnchorSamplePoint } from './gps-anchor.js';

@@ -124,7 +124,7 @@ rays.configure({ samples: 64 }); // the sweep's handle
   targets with no depth test or write, additive colour with the alpha
   kept, autoClear restored, no draw at fade 0, the last-pass refusal, the
   odd-swap refusal).
-- `god-rays.smoke.spec.mjs` (the page, SwiftShader): the rays against
+- `god-rays.smoke.spec.mjs` (removed; in git history) (the page, SwiftShader): the rays against
   their own off baseline at the same pixels (a partly covered sun gains
   light in a band, less far out, nothing darker), the same with the AO
   on (the desktop default: the rays still only add), sky only (a wall in

@@ -150,6 +150,12 @@ export const GLOBE_SWITCH = Object.freeze({
     max: 1_000,
   }) satisfies GlobeSwitchKnob,
   /**
+   * The globe's colour grade by name (`GLOBE_GRADES` in the Globe package,
+   * which judges the name: this module carries none of the globe's code).
+   * Absent, the package's default.
+   */
+  grade: Object.freeze({ param: "grade" }),
+  /**
    * The OSM buildings (and trees and roads) at the tour: 1 on, 0 off (a
    * developer's knob: no city worker is made, nothing is asked of
    * Overpass, and a frame-time comparison's other half).
@@ -186,6 +192,8 @@ export interface GlobeSwitch {
   readonly cloudWind: number;
   /** The OSM buildings at the tour: 1 on, 0 off. */
   readonly buildings: number;
+  /** The colour grade's name as the link wrote it; null: none named. */
+  readonly grade: string | null;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -233,5 +241,6 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     cloudShadow: knob(params, GLOBE_SWITCH.cloudShadow),
     cloudWind: knob(params, GLOBE_SWITCH.cloudWind),
     buildings: Math.round(knob(params, GLOBE_SWITCH.buildings)),
+    grade: params.get(GLOBE_SWITCH.grade.param),
   };
 }

@@ -1061,6 +1061,14 @@ describe("left-behind settle fixture: the conventions are sound", () => {
 const DEFAULT_SEEDS = [401, 402, 403, 404, 405];
 
 /**
+ * Three of them, for a cell whose every seed sits well clear of its bounds
+ * (each kept seed more than 20 % from every bound, measured 2026-11-05 at
+ * 401-405; the median of three keeps the verdict of five). A cell with a
+ * seed nearer a bound keeps all five.
+ */
+const CLEAR_SEEDS = [401, 402, 403];
+
+/**
  * Meander seeds (500 m, 2 % / 2 deg per 100 m) whose correction the bound
  * refuses when judged through the drifted END alignment: 8 of seeds
  * 401-460 (405, 413, 420, 423, 427, 438, 449, 458; a one-off search with
@@ -1125,7 +1133,7 @@ describe("the shipped settle keeps notes and codes left behind (D33)", () => {
       } as const;
       const shipped: number[] = [];
       const latest: number[] = [];
-      for (const seed of DEFAULT_SEEDS) {
+      for (const seed of CLEAR_SEEDS) {
         const visit = runVisit({ seed, drift, leave });
         const stored = storedTrueLevel(visit);
         // Sighted at every look before the pin and at the end look: the
@@ -1261,7 +1269,7 @@ describe("the shipped settle keeps a note's relation to its code near a code eve
       const drift = { yawDegPer100m: 1, transPct: 1 };
       const shipped: number[] = [];
       const byTime: number[] = [];
-      for (const seed of DEFAULT_SEEDS) {
+      for (const seed of CLEAR_SEEDS) {
         const visit = runVisit({
           seed,
           drift,

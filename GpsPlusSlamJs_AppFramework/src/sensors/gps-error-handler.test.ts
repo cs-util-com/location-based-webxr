@@ -8,7 +8,7 @@
  * instead of only being logged to console. These tests verify that
  * proper error messages are generated for each GPS error type.
  *
- * @vitest-environment jsdom
+ * @vitest-environment node
  */
 
 import { describe, it, expect, vi } from 'vitest';

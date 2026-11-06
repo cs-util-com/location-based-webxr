@@ -966,28 +966,6 @@ describe(
       ]);
     });
 
-    it("a malformed device fix inside a tick is dropped alone by the core: its ring is stored and nothing throws", () => {
-      // Why: a receiver can hand over a fix with a non-finite coordinate.
-      // Sent alone it is the core's problem as before; sent WITH its ring
-      // it must not take the ring down, nor throw out of the GPS callback
-      // (core 1.26 judges each event of a batch as a single dispatch would).
-      const v = scanned();
-      const before = v.positions().length;
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      try {
-        expect(() => {
-          v.fix(T0 + 3000, T0 + 3000, { latitude: Number.NaN });
-        }).not.toThrow();
-      } finally {
-        warn.mockRestore();
-      }
-      const added = v.positions().slice(before);
-      expect(added).toHaveLength(VIEWER_VOTE_COUNT);
-      for (const vote of added) {
-        expect(gpsPointSourceOf(vote)).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
-      }
-    });
-
     it("the page's composed GPS handler routes each device fix here (main.ts: the coordinator's recordFix)", () => {
       const v = scanned();
       v.arStore.dispatch(

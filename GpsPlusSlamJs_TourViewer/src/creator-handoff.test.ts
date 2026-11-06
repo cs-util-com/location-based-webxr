@@ -17,6 +17,7 @@ import {
 import { FINISH_LABELS } from "./qr-author-mode.js";
 import { hostReplaceText } from "./tour-host.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
+import { settle } from "./test-support/settle.js";
 
 function el() {
   const handlers = new Map<string, () => void>();
@@ -30,10 +31,14 @@ function el() {
   };
 }
 
-async function flush(): Promise<void> {
-  for (let i = 0; i < 10; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
+/** The page the last `wired` built: what `flush` watches. */
+let shown: Record<string, ReturnType<typeof el>> = {};
+
+/** Until the hand-off's awaited save has stopped changing the page. */
+function flush(): Promise<void> {
+  return settle(() =>
+    Object.values(shown).flatMap((e) => [e.textContent, e.hidden, e.disabled]),
+  );
 }
 
 function wired(
@@ -62,6 +67,7 @@ function wired(
     uploadYes: el(),
     uploadNo: el(),
   };
+  shown = dom;
   const handoff = wireCreatorHandoff({
     ctx,
     seams: { downloadZip: () => Promise.resolve(outcome.delivered) },

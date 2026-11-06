@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 
 import { playwrightGrep } from '../e2e/tier.mjs';
 import {
+  cleanMergeRefusal,
   selectPackages,
   gateCommands,
   cascadeCommands,
@@ -719,5 +720,42 @@ describe('fastGateOptions', () => {
     });
     expect(fastGateOptions({})).toEqual({});
     expect(fastGateOptions({ GATE_SKIP_BROWSER_STAGES: '' })).toEqual({});
+  });
+});
+
+// Why: the default diff base is HEAD, so a merge that is already committed
+// leaves nothing to diff. The gate then ran test:repo-config alone and exited
+// 0, and a builder who merged main and trusted it had checked no package.
+describe('cleanMergeRefusal', () => {
+  const nothing = { mode: 'packages', packages: [] };
+  const merge = { refGiven: false, selection: nothing, headIsMerge: true, headOnMain: false };
+
+  it('refuses a committed merge with nothing left to diff, and names the way out', () => {
+    expect(cleanMergeRefusal(merge)).toMatch(/--ref HEAD~1/);
+    expect(cleanMergeRefusal(merge)).toContain('--ref origin2/main');
+  });
+
+  it('lets an explicit --ref through: the caller chose the base', () => {
+    expect(cleanMergeRefusal({ ...merge, refGiven: true })).toBeNull();
+  });
+
+  it('lets an ordinary commit through: its gate ran before the commit', () => {
+    expect(cleanMergeRefusal({ ...merge, headIsMerge: false })).toBeNull();
+  });
+
+  // A fresh branch off main sits on main's own merge commit: nothing was merged here.
+  it('lets a merge commit that is already on main through', () => {
+    expect(cleanMergeRefusal({ ...merge, headOnMain: true })).toBeNull();
+  });
+
+  it('lets a run through that has something to check', () => {
+    for (const selection of [
+      { mode: 'all', reason: 'package.json' },
+      { mode: 'packages', packages: ['GpsPlusSlamJs_Osm'] },
+      { mode: 'packages', packages: [], rootFiles: ['README.md'] },
+      { mode: 'packages', packages: [], docsOnly: ['GpsPlusSlamJs_Osm/README.md'] },
+    ]) {
+      expect(cleanMergeRefusal({ ...merge, selection })).toBeNull();
+    }
   });
 });

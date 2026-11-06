@@ -35,7 +35,7 @@ the add.
 - The focus stays in the field: the arrows move the active row (round at
   either end), a press on a row does not take the focus (its click adds).
 - Escape closes it and goes no further (the page's Escape would drop the
-  selection); Tab closes it and lets the focus move on; a press on the
+  selection); Tab closes it with the focus back and lets it move on from there; a press on the
   backdrop closes it with the focus back.
 - It closes before it adds: the add redraws the tree, and the focus must
   already be back where it was.
@@ -65,3 +65,6 @@ typing and Enter (closed first, focus back), the arrows round, a click,
 no match, Escape not reaching the page, Tab and the backdrop, opening
 again empty; `isPaletteKey` with Ctrl and Cmd, a non-Latin layout, and
 not with Shift, Alt or another layout's letter at K's place.
+`playwright-tests/editor3d-add-palette.spec.js`: each side of the 520 px
+fold (the top bar's Add, the Edit menu's Add), adding from the keyboard,
+Escape giving the focus back, and a station added during a search.

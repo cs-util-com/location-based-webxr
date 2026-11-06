@@ -25,6 +25,9 @@ import {
 } from "./done-dialog.js";
 import { TOUR_HOSTS } from "../tour-host.js";
 
+// The awaited work is promise callbacks: poll every 1 ms, not every 50.
+const POLL = { interval: 1 };
+
 const IN_PLACE: DoneFacts = {
   saved: { kind: "in-place", name: "castle.zip" },
   host: "drive",
@@ -306,7 +309,7 @@ describe("wireDoneDialog", () => {
       expect(dom.moveStatus.textContent).toBe(
         "The debug data is in castle-debug.zip - keep that file.",
       );
-    });
+    }, POLL);
     expect(dom.saveDebugButton.disabled).toBe(false);
     expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.again);
     expect(dom.close.disabled).toBe(false);
@@ -341,7 +344,7 @@ describe("wireDoneDialog", () => {
       dom.saveDebugButton.fire("click");
       await vi.waitFor(() => {
         expect(dom.moveStatus.textContent).toBe(said);
-      });
+      }, POLL);
       expect(dom.saveDebugButton.disabled).toBe(false);
       expect(dom.saveDebugButton.textContent).toBe(SAVE_DEBUG_LABELS.idle);
       expect(dom.close.disabled).toBe(false);
@@ -398,7 +401,7 @@ describe("wireDoneDialog", () => {
     });
     await vi.waitFor(() => {
       expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
-    });
+    }, POLL);
     expect(dom.moveStatus.textContent).toMatch(
       /The debug data is in castle-debug\.zip/,
     );
@@ -417,7 +420,7 @@ describe("wireDoneDialog", () => {
     dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(dom.moveStatus.textContent).toBe("The photos need it.");
-    });
+    }, POLL);
     expect(dom.moveButton.disabled).toBe(false);
     expect(dom.moveButton.textContent).toBe(MOVE_LABELS.idle);
     expect(dom.moveButton.hidden).toBe(false);
@@ -429,14 +432,14 @@ describe("wireDoneDialog", () => {
     cancelled.dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(cancelled.dom.moveStatus.textContent).toMatch(/Nothing was moved/);
-    });
+    }, POLL);
     expect(cancelled.dom.moveButton.disabled).toBe(false);
     const thrown = wire(() => Promise.reject(new Error("disk full")));
     thrown.dialog.open(IN_PLACE);
     thrown.dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(thrown.dom.moveStatus.textContent).toMatch(/disk full/);
-    });
+    }, POLL);
     expect(thrown.dom.moveButton.disabled).toBe(false);
     expect(thrown.dom.moveButton.textContent).toBe(MOVE_LABELS.idle);
   });
@@ -463,7 +466,7 @@ describe("wireDoneDialog", () => {
     finish({ kind: "cancelled" });
     await vi.waitFor(() => {
       expect(dom.close.disabled).toBe(false);
-    });
+    }, POLL);
     dialog.close();
     expect(dialog.isOpen()).toBe(false);
     // A tour that is gone closes it, move or not.
@@ -498,7 +501,7 @@ describe("wireDoneDialog", () => {
     dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
-    });
+    }, POLL);
     expect(dom.moveStatus.textContent).toMatch(
       /downloaded as castle-debug\.zip/,
     );
@@ -510,7 +513,7 @@ describe("wireDoneDialog", () => {
     expect(deps.moveWalk).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => {
       expect(dom.moveStatus.textContent).toMatch(/no longer carries it/);
-    });
+    }, POLL);
     // Closed before the second click, the next open starts over.
     const again = wire(() =>
       Promise.resolve({ kind: "downloaded", walkName: "w.zip", confirm }),
@@ -519,7 +522,7 @@ describe("wireDoneDialog", () => {
     again.dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(again.dom.moveButton.textContent).toBe(MOVE_LABELS.confirm);
-    });
+    }, POLL);
     again.dialog.close();
     again.dialog.open(IN_PLACE);
     expect(again.dom.moveButton.textContent).toBe(MOVE_LABELS.idle);
@@ -551,7 +554,7 @@ describe("wireDoneDialog", () => {
     dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(dom.moveButton.textContent).toBe(MOVE_LABELS.download);
-    });
+    }, POLL);
     expect(dom.moveStatus.textContent).toMatch(/castle-debug\.zip/);
     expect(dom.moveStatus.textContent).toMatch(/keep that file/);
     expect(dom.moveStatus.textContent).toMatch(/still carries it/);
@@ -561,7 +564,7 @@ describe("wireDoneDialog", () => {
     expect(deps.moveWalk).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => {
       expect(dom.moveStatus.textContent).toMatch(/no longer carries it/);
-    });
+    }, POLL);
   });
 
   it("after a move, its first line and steps follow where the changes are now", async () => {
@@ -584,7 +587,7 @@ describe("wireDoneDialog", () => {
     dom.moveButton.fire("click");
     await vi.waitFor(() => {
       expect(dom.where.textContent).toMatch(/downloaded as castle \(1\)\.zip/);
-    });
+    }, POLL);
     expect(dom.update.textContent).toContain("castle (1).zip");
     // The walk's words go; its section stays to say where the walk went.
     expect(dom.walkText.hidden).toBe(true);

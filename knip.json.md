@@ -112,15 +112,12 @@ entirely after confirming they were only transitively pulled in.
     local publishing run. Without the matching `project` glob, knip does not
     look inside the directory at all and reported `marked` — the build-time
     markdown renderer — as an unused devDependency.
-- **GpsPlusSlamJs_DesignSystem** - **`ignoreUnresolved: ["/3d/water-metrics.mjs"]`**,
-  for the same reason as OsmDemo's entry below: the water-polish smoke
-  imports the page's own metrics module inside `page.evaluate`
-  (`await import("/3d/water-metrics.mjs")`), a URL the dev server resolves
-  from the page root, not a path relative to the spec. A rename or move
-  makes that import 404 and the smoke fail at once, so the ignore hides
-  nothing; it is an exact string, so a second such import must be added on
-  purpose. Found by the root dead-code check before the r759 publish.
-  The page paths `/globe/sky-level.js` (the terrain lab's sun test),
+- **GpsPlusSlamJs_DesignSystem** - **`ignoreUnresolved`** for page paths,
+  for the same reason as OsmDemo's entry below: a spec or lab test imports
+  a module by the URL the dev server resolves from the page root, not by a
+  path relative to the file. Each is an exact string, so a second such
+  import must be added on purpose. (The first, `/3d/water-metrics.mjs`,
+  went with the water-polish smoke.) The page paths `/globe/sky-level.js` (the terrain lab's sun test),
   `/fw/visualization/atmosphere/cloud-live-noise.js` and
   `/globe/globe-cloud-shell-volume.js` (the spherical cloud volume's field
   test) and `/globe/globe-sources.js` (its smoke, the cloud map's file)
