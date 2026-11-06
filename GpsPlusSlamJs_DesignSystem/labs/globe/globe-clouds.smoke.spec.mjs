@@ -78,82 +78,103 @@ async function readAt(page, hash, grid, { hideShell = false } = {}) {
   );
 }
 
-test("the ground keeps its colour under the shell, the shadow only darkens, and the orbit look holds", async ({
-  page,
-  context,
-}) => {
-  test.setTimeout(900_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  // Neutral: "the shadow darkens somewhere" counts points past 3 levels, a
-  // margin measured on this curve (1 of 96 points; ACES at 0.75: 0 of 96,
-  // and still never brighter).
-  const errors = await bootGlobe(page, BASE, { query: "?grade=neutral" });
-  // From orbit first: the shell against the paint, the same frame.
-  await page.waitForFunction(
-    () => window.__globeLab.state().pendingTiles === 0,
-    null,
-    { timeout: 300_000 },
-  );
-  const orbitGrid = holdGrid();
-  const orbitShell = await readAt(page, `${BASE}&cloudShell=1`, orbitGrid);
-  const orbitPaint = await readAt(page, `${BASE}&cloudShell=0`, orbitGrid);
-  const orbit = compare(orbitShell, orbitPaint);
-  const cost = await page.evaluate(async () => {
-    const lab = window.__globeLab;
-    const rounds = [];
-    for (const shell of [1, 0, 1, 0]) {
-      const h = `${location.hash.slice(1).replace(/&cloudShell=\d/, "")}&cloudShell=${shell}`;
-      location.hash = h;
-      await new Promise((r) => requestAnimationFrame(r));
-      rounds.push({ shell, ms: lab.timeFrames(5) / 5 });
-    }
-    return rounds;
-  });
-  // Then the hold over the relief.
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && (s.relief?.share ?? 0) >= 1 && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: 300_000 },
-  );
-  const grid = holdGrid();
-  const clear = await readAt(page, `${BASE}&cloudShell=0&cloudOpacity=0`, grid);
-  const painted = await readAt(page, `${BASE}&cloudShell=0`, grid);
-  const under = await readAt(page, `${BASE}&cloudShell=1&cloudShadow=0`, grid, {
-    hideShell: true,
-  });
-  const shaded = await readAt(
+/**
+ * Both tone curves, each with the deepest darkening it must reach (8-bit
+ * luminance): ACES at 0.75 compresses the same shadow, so one floor cannot
+ * serve both. Measured over 96 points: Neutral 3.50 (past 1/2/3 levels:
+ * 14/2/1), the default 3.00 (16/5/0).
+ */
+const CURVES = [
+  { name: "neutral", query: "?grade=neutral", shadowFloor: 3 },
+  { name: "default", query: "", shadowFloor: 2 },
+];
+
+for (const { name, query, shadowFloor } of CURVES)
+  test(`the ground keeps its colour under the shell, the shadow only darkens, and the orbit look holds (${name} curve)`, async ({
     page,
-    `${BASE}&cloudShell=1&cloudShadow=0.6`,
-    grid,
-    {
-      hideShell: true,
-    },
-  );
-  const keep = compare(under, clear);
-  const paint = compare(painted, clear);
-  const lum = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
-  const darker = under.map((p, i) => lum(p) - lum(shaded[i]));
-  const brighter = Math.max(0, ...darker.map((v) => -v));
-  const darkened = darker.filter((v) => v > 3).length;
-  console.log(
-    `cloud shell: under the hidden shell vs cloud-free mean ${keep.mean.toFixed(2)} p95 ${keep.p95}; painted vs cloud-free mean ${paint.mean.toFixed(2)} p95 ${paint.p95}; shadow 0.6 darkens ${darkened} of ${grid.length} points, brightens at most ${brighter.toFixed(2)}; orbit shell vs paint mean ${orbit.mean.toFixed(2)} p95 ${orbit.p95}; frame ms ${cost.map((r) => `${r.shell ? "shell" : "paint"} ${r.ms.toFixed(0)}`).join(", ")}`,
-  );
-  expect(errors).toEqual([]);
-  // No paint left: the ground under the shell is the cloud-free ground
-  // (summed channels, 8-bit; rendering noise reads 0-2).
-  expect(keep.mean).toBeLessThanOrEqual(2);
-  // The positive control: the paint does change the ground.
-  expect(paint.mean).toBeGreaterThan(keep.mean + 10);
-  // The shadow only darkens, and somewhere it does.
-  expect(brighter).toBeLessThanOrEqual(1);
-  expect(darkened).toBeGreaterThan(0);
-  // From orbit the clouds are the paint, with the shell switch on or off.
-  expect(orbit.mean).toBeLessThanOrEqual(2);
-});
+    context,
+  }) => {
+    test.setTimeout(900_000);
+    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+    await context.setGeolocation(TARGET);
+    const errors = await bootGlobe(page, BASE, { query });
+    // From orbit first: the shell against the paint, the same frame.
+    await page.waitForFunction(
+      () => window.__globeLab.state().pendingTiles === 0,
+      null,
+      { timeout: 300_000 },
+    );
+    const orbitGrid = holdGrid();
+    const orbitShell = await readAt(page, `${BASE}&cloudShell=1`, orbitGrid);
+    const orbitPaint = await readAt(page, `${BASE}&cloudShell=0`, orbitGrid);
+    const orbit = compare(orbitShell, orbitPaint);
+    const cost = await page.evaluate(async () => {
+      const lab = window.__globeLab;
+      const rounds = [];
+      for (const shell of [1, 0, 1, 0]) {
+        const h = `${location.hash.slice(1).replace(/&cloudShell=\d/, "")}&cloudShell=${shell}`;
+        location.hash = h;
+        await new Promise((r) => requestAnimationFrame(r));
+        rounds.push({ shell, ms: lab.timeFrames(5) / 5 });
+      }
+      return rounds;
+    });
+    // Then the hold over the relief.
+    await page.locator("#globe-pin").click();
+    await page.waitForFunction(
+      () => {
+        const s = window.__globeLab.state();
+        return (
+          s.phase === "landed" &&
+          (s.relief?.share ?? 0) >= 1 &&
+          s.relief?.settled
+        );
+      },
+      null,
+      { timeout: 300_000 },
+    );
+    const grid = holdGrid();
+    const clear = await readAt(
+      page,
+      `${BASE}&cloudShell=0&cloudOpacity=0`,
+      grid,
+    );
+    const painted = await readAt(page, `${BASE}&cloudShell=0`, grid);
+    const under = await readAt(
+      page,
+      `${BASE}&cloudShell=1&cloudShadow=0`,
+      grid,
+      {
+        hideShell: true,
+      },
+    );
+    const shaded = await readAt(
+      page,
+      `${BASE}&cloudShell=1&cloudShadow=0.6`,
+      grid,
+      {
+        hideShell: true,
+      },
+    );
+    const keep = compare(under, clear);
+    const paint = compare(painted, clear);
+    const lum = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+    const darker = under.map((p, i) => lum(p) - lum(shaded[i]));
+    const brighter = Math.max(0, ...darker.map((v) => -v));
+    const darkest = Math.max(...darker);
+    const past = (level) => darker.filter((v) => v > level).length;
+    console.log(
+      `cloud shell: under the hidden shell vs cloud-free mean ${keep.mean.toFixed(2)} p95 ${keep.p95}; painted vs cloud-free mean ${paint.mean.toFixed(2)} p95 ${paint.p95}; shadow 0.6 darkens at most ${darkest.toFixed(2)} (floor ${shadowFloor}), of ${grid.length} points past 1/2/3 levels ${past(1)}/${past(2)}/${past(3)}, brightens at most ${brighter.toFixed(2)}; orbit shell vs paint mean ${orbit.mean.toFixed(2)} p95 ${orbit.p95}; frame ms ${cost.map((r) => `${r.shell ? "shell" : "paint"} ${r.ms.toFixed(0)}`).join(", ")}`,
+    );
+    expect(errors).toEqual([]);
+    // No paint left: the ground under the shell is the cloud-free ground
+    // (summed channels, 8-bit; rendering noise reads 0-2).
+    expect(keep.mean).toBeLessThanOrEqual(2);
+    // The positive control: the paint does change the ground.
+    expect(paint.mean).toBeGreaterThan(keep.mean + 10);
+    // The shadow only darkens, and somewhere it does.
+    expect(brighter).toBeLessThanOrEqual(1);
+    expect(darkest).toBeGreaterThan(shadowFloor);
+    // From orbit the clouds are the paint, with the shell switch on or off.
+    expect(orbit.mean).toBeLessThanOrEqual(2);
+  });
