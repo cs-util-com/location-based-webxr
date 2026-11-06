@@ -28,6 +28,7 @@ import {
 } from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tourOf, withCaption } from "./test-support/tour-of.js";
+import { stationContent } from "./test-support/station-content.js";
 
 function pin(id: string, lat = 48.52): TourPin {
   return {
@@ -673,8 +674,7 @@ describe("the creator's document: the tour's name (plan W2, §23 #8)", () => {
             activateRadiusM: 50,
             foundRadiusM: 25,
             hint: "arrow",
-            steps: [],
-            blocks: [],
+            ...stationContent([]),
           },
         ],
       }),

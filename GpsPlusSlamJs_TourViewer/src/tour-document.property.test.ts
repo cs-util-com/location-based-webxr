@@ -43,6 +43,7 @@ import {
   settingsRecord,
   settingsRecordText,
 } from "./tour-document-draft.js";
+import { stationContent } from "./test-support/station-content.js";
 
 function pin(id: string, lat: number): TourPin {
   return {
@@ -96,8 +97,7 @@ const WITH_CAPTURES: TourManifest = parseTourManifest({
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      steps: [],
-      blocks: [],
+      ...stationContent([]),
     },
   ],
   captureSpots: {
@@ -1344,8 +1344,7 @@ describe("tour document (properties): every object belongs to a station", () => 
                 activateRadiusM: radius,
                 foundRadiusM: radius,
                 hint: "arrow",
-                steps: [],
-                blocks: [],
+                ...stationContent([]),
               },
             ],
           };

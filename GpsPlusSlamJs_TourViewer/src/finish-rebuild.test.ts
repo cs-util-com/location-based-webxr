@@ -43,6 +43,7 @@ import {
   withWorldObjects,
 } from "./test-support/tour-of.js";
 import { withTourContent } from "./tour-content.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -89,8 +90,7 @@ const HERE: TourStation = {
   activateRadiusM: 50,
   foundRadiusM: 25,
   hint: "arrow",
-  steps: [],
-  blocks: [],
+  ...stationContent([]),
 };
 
 /** An empty tour with `HERE`. */
@@ -459,23 +459,19 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
   it("writes the step's asset and the cover, and leaves out a stray asset's entry", async () => {
     const told: TourStation = {
       ...HERE,
-      blocks: [
-        {
-          id: "look-picture",
-          kind: "picture",
-          view: "card",
-          image: "used",
-          widthM: 1,
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "look",
-          action: { kind: "show", block: "look-picture" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "look-picture",
+            kind: "picture",
+            view: "card",
+            image: "used",
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     };
     const manifest = tourOf([], {
       stations: [told],

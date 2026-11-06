@@ -20,6 +20,7 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "./test-support/tour-of.js";
 import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
+import { stationContent } from "./test-support/station-content.js";
 
 const M_PER_DEG = 111_320;
 
@@ -119,8 +120,9 @@ describe("moveStationsWithCode (property, D17)", () => {
           activateRadiusM: 50,
           foundRadiusM: 25,
           hint: "arrow",
-          steps: [],
-          blocks: s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
+          ...stationContent(
+            s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
+          ),
         }));
         const claimed = new Set(t.claimFirst ? ["s0"] : []);
         const out = moveStationsWithCode(stations, {

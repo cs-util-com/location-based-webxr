@@ -22,6 +22,7 @@ import {
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
 } from "./tour-document.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -108,28 +109,24 @@ describe("a copied narrated text", () => {
           activateRadiusM: 50,
           foundRadiusM: 25,
           hint: "arrow",
-          steps: [
-            {
-              id: "s1",
-              action: { kind: "show", block: "told" },
-              advance: { mode: "tap" },
-            },
-          ],
-          blocks: [
-            {
-              id: "told",
-              kind: "longText",
-              view: "reading",
-              title: "Told",
-              body: "Once.",
-              narration: {
-                audio: "voice",
-                timing: "timing/told.json",
-                synthetic: false,
+          ...stationContent([
+            storyOf("story-story", [
+              {
+                id: "told",
+                kind: "longText",
+                view: "reading",
+                title: "Told",
+                body: "Once.",
+                narration: {
+                  audio: "voice",
+                  timing: "timing/told.json",
+                  synthetic: false,
+                },
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                advance: { mode: "tap" },
               },
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
+            ]),
+          ]),
         },
       ],
     });

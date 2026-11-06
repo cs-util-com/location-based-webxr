@@ -38,6 +38,10 @@ import {
   blockShown,
   selectShownBlocks,
 } from "./visitor-walk-slice";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the visitor's walk - the run's statuses, the last skip, the note
@@ -61,11 +65,11 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
     id,
     title: id.toUpperCase(),
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: [],
+    ...stationContent([playableStory(`${id}-story`)]),
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [step],
+
     ...extra,
   };
 }
@@ -170,7 +174,10 @@ describe("visitorWalkReducer", () => {
   });
 
   it("a station without steps is done the moment it is found, and the order moves on", () => {
-    const state = started("fixed", [station("a", { steps: [] }), station("b")]);
+    const state = started("fixed", [
+      station("a", stationContent([])),
+      station("b"),
+    ]);
     const next = visitorWalkReducer(
       state,
       walkStepped({ kind: "found", id: "a" }),
@@ -372,7 +379,7 @@ describe("the sheet", () => {
         walkStarted({
           order: "any",
           route: walkRoute(
-            [station("a", { steps: [] }), station("b")],
+            [station("a", stationContent([])), station("b")],
             new Set(),
           ),
         }),

@@ -24,6 +24,10 @@ import {
   POSITION_PRECISION_CEILING_M,
   type PositionPrecision,
 } from "gps-plus-slam-app-framework/state/position-precision";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the station run is the tour's whole game state on
@@ -45,11 +49,11 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: [],
+    ...stationContent([playableStory(`${id}-story`)]),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [step],
+
     ...extra,
   };
 }
@@ -210,7 +214,7 @@ describe("createStationRun: states", () => {
   it("a station whose every step was left out (a newer minor) is done the moment it is found", () => {
     const run = createStationRun({
       assets: new Set(),
-      stations: [station("a", { steps: [] }), station("b")],
+      stations: [station("a", stationContent([])), station("b")],
       order: "fixed",
       nowMs: 0,
     });
@@ -563,7 +567,7 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   it("a stepless station is still done the moment it is found, and as the last one it waits too", () => {
     const run = createStationRun({
       assets: new Set(),
-      stations: [station("a"), station("b", { steps: [] })],
+      stations: [station("a"), station("b", stationContent([]))],
       order: "fixed",
       nowMs: 0,
     });
@@ -581,9 +585,12 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   it("a station with no story but a card waits for its card to be read", () => {
     const route = walkRoute(
       [
-        station("words", { steps: [], description: "The main gate." }),
-        station("picture", { steps: [], image: "knight" }),
-        station("bare", { steps: [], description: "" }),
+        station("words", {
+          ...stationContent([]),
+          description: "The main gate.",
+        }),
+        station("picture", { ...stationContent([]), image: "knight" }),
+        station("bare", { ...stationContent([]), description: "" }),
       ],
       new Set(["knight"]),
     );
@@ -600,7 +607,7 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
   // no card, so the walk must not wait for one: it is stepless, done when
   // found, by the same rule the card uses (`stationHasCard`).
   it("a station whose card picture names a missing asset has no card to wait for", () => {
-    const lost = station("lost", { steps: [], image: "gone" });
+    const lost = station("lost", { ...stationContent([]), image: "gone" });
     const assets = new Set(["knight"]);
     expect(stationHasCard(lost, assets)).toBe(false);
     expect(stationHasCard({ image: "knight" }, assets)).toBe(true);

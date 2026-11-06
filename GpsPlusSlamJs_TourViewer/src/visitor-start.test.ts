@@ -19,6 +19,10 @@ import type {
 
 import { tourOf } from "./test-support/tour-of.js";
 import { visitorStartView, wireVisitorStart } from "./visitor-start.js";
+import {
+  stationBlocks,
+  stationContent,
+} from "./test-support/station-content.js";
 
 const GEO: TourStation["geo"] = {
   lat: 47,
@@ -74,8 +78,7 @@ function emptyStations(count: number): TourStation[] {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   }));
 }
 
@@ -123,7 +126,12 @@ describe("visitorStartView", () => {
     const [only] = shared.stations;
     const both = {
       ...shared,
-      stations: [{ ...only!, blocks: [...only!.blocks, ...only!.blocks] }],
+      stations: [
+        {
+          ...only!,
+          ...stationContent([...stationBlocks(only!), ...stationBlocks(only!)]),
+        },
+      ],
     };
     expect(visitorStartView(both).subline).toBe("1 place to discover");
   });

@@ -22,6 +22,7 @@ import {
   treeFoldOf,
   type TreeInput,
 } from "./tree-model.js";
+import { stationContent } from "../../test-support/station-content.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 const AT = "2026-10-22T10:00:00Z";
@@ -37,8 +38,7 @@ function station(
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: items,
+    ...stationContent(items),
     ...extra,
   };
 }

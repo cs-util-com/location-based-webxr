@@ -68,6 +68,7 @@ import {
 import { documentObjects, selectTourDocument } from "./tour-document.js";
 import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
+import { stationContent } from "./test-support/station-content.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -1316,8 +1317,7 @@ describe("the parity contract: an earlier file carrying debug camera captures", 
         activateRadiusM: 50,
         foundRadiusM: 25,
         hint: "arrow",
-        steps: [],
-        blocks: [],
+        ...stationContent([]),
       },
     ],
     captureSpots: {

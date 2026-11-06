@@ -19,6 +19,7 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "./test-support/tour-of.js";
 import { moveWithCode } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
+import { stationContent } from "./test-support/station-content.js";
 
 const M_PER_DEG = 111_320;
 const code: QrGeoPose = {
@@ -68,8 +69,7 @@ function station(
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: items,
+    ...stationContent(items),
   };
 }
 
@@ -88,7 +88,7 @@ describe("moveStationsWithCode (D17)", () => {
     expect(out.moved).toEqual(["near"]);
     const [moved] = out.stations;
     // The very same items: nothing of them was rewritten.
-    expect(moved!.blocks).toBe(items);
+    expect(moved!.blocks).toBe(near.blocks);
     expect(moved!.geo).toEqual(moveWithCode(near.geo, code, improved));
     expect({ ...moved, geo: near.geo }).toEqual(near);
     // Every item stands where the code's correction puts it.

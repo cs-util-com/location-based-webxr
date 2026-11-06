@@ -41,6 +41,7 @@ import {
 import { isInterfacePart } from "./globe-interface-pass.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
+import { stationContent } from "../test-support/station-content.js";
 
 // The geodesy is licence-gated; the store's construction activates it (the
 // page's own store does at boot).
@@ -85,8 +86,7 @@ function station(
     activateRadiusM: 30,
     foundRadiusM: 8,
     hint: "arrow",
-    steps: [],
-    blocks: items,
+    ...stationContent(items),
   };
 }
 

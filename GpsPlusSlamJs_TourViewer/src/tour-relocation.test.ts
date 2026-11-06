@@ -16,6 +16,7 @@ import {
   relocationRequested,
   type RelocationTarget,
 } from "./tour-relocation";
+import { stationContent } from "./test-support/station-content.js";
 
 // Why these tests matter: the sample tour sits at a public place (owner
 // decision S-D9: no private location in the public repository), and a
@@ -35,11 +36,10 @@ function geoStation(
   return {
     id,
     geo: { lat, lon, alt, headingDeg: 90 },
-    blocks: [],
+    ...stationContent([]),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [],
   };
 }
 

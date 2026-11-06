@@ -8,6 +8,7 @@
  * problem lists nothing, which is what the empty state and the hidden
  * badge rest on.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +17,7 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { outsideItems, problemCounts, tourProblems } from "./tour-problems.js";
+import { stationContent } from "../../test-support/station-content.js";
 
 const AT = "2026-11-04T00:00:00.000Z";
 
@@ -47,8 +49,7 @@ function station(
     activateRadiusM: 50,
     foundRadiusM,
     hint: "arrow",
-    steps: [],
-    blocks,
+    ...stationContent(blocks as readonly TourBlock[]),
   } as unknown as TourStation;
 }
 

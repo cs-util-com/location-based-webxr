@@ -33,6 +33,7 @@ import {
 } from "./tour-document.js";
 import { tourOf } from "./test-support/tour-of.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 function pin(id: string, label = `pin ${id}`): TourPin {
   return {
@@ -426,16 +427,11 @@ describe("followDocument, the stations this page created", () => {
       answer: { type: "number", value: 1, tolerance: 0 },
     } as const;
     // A's quiz sends a right answer to B.
+    const routed = { id: "q", ...quiz, route: { correct: "b" } };
     const a = {
       ...frame,
       id: "a",
-      steps: [
-        {
-          id: "q",
-          action: { ...quiz, route: { correct: "b" } },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([storyOf("a-story", [routed])]),
     };
     // C goes on to B.
     const c = { ...frame, id: "c", next: "b" };
@@ -449,7 +445,7 @@ describe("followDocument, the stations this page created", () => {
         {
           ...frame,
           id: "a",
-          steps: [{ id: "q", action: quiz, advance: { mode: "tap" } }],
+          ...stationContent([storyOf("a-story", [{ id: "q", ...quiz }])]),
         },
         { ...frame, id: "c" },
       ],
@@ -556,26 +552,22 @@ describe("settingsRecordText", () => {
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow" as const,
-    blocks: [
-      {
-        id: "welcome",
-        kind: "longText" as const,
-        view: "card" as const,
-        title: "Gate",
-        body: "Welcome",
-        pose: {
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0, 1] as [number, number, number, number],
+    ...stationContent([
+      storyOf("gate-story", [
+        {
+          id: "welcome",
+          kind: "longText" as const,
+          view: "card" as const,
+          title: "Gate",
+          body: "Welcome",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+          advance: { mode: "tap" as const },
         },
-      },
-    ],
-    steps: [
-      {
-        id: "s1",
-        action: { kind: "show" as const, block: "welcome" },
-        advance: { mode: "tap" as const },
-      },
-    ],
+      ]),
+    ]),
   };
 
   it("stores a frame with its story blocks and steps, and reads it back as the frame it was", () => {

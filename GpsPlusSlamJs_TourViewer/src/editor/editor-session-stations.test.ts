@@ -9,6 +9,7 @@
  * real session, the real draft and the real save, and read the saved zip.
  */
 
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   parseTourManifest,
@@ -31,6 +32,12 @@ import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 import type { EditorLock } from "./save-target.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
+import {
+  editedBlocks,
+  stationContent,
+  stationBlocks,
+  storyOf,
+} from "../test-support/station-content.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -331,15 +338,15 @@ describe("the editor session's station edits", () => {
           ...m,
           stations: m.stations.map((s) => ({
             ...s,
-            blocks: s.blocks.map((b) =>
+            ...editedBlocks(s, (b) =>
               b.id === "m"
-                ? {
+                ? ({
                     ...b,
                     view: "hotspots",
                     annotations: [
                       { position: [0, 1, 0], normal: [0, 1, 0], title: "Door" },
                     ],
-                  }
+                  } as TourBlock)
                 : b,
             ),
           })),
@@ -467,23 +474,18 @@ describe("the editor session's station edits", () => {
         s.id === stationIdOf("a")
           ? {
               ...s,
-              steps: [
-                {
-                  id: "s1",
-                  action: { kind: "show", block: "intro" },
-                  advance: { mode: "tap" },
-                },
-              ],
-              blocks: [
-                ...s.blocks,
-                {
-                  id: "intro",
-                  kind: "shortText",
-                  view: "card",
-                  caption: "Welcome",
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-                },
-              ],
+              ...stationContent([
+                storyOf("welcome", [
+                  {
+                    id: "intro",
+                    kind: "shortText",
+                    view: "card",
+                    caption: "Welcome",
+                    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  },
+                ]),
+                ...stationBlocks(s),
+              ]),
             }
           : s,
       ),

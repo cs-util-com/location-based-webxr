@@ -39,6 +39,7 @@ import type { EditorLock } from "./save-target.js";
 import { captionOf, tourOf } from "../test-support/tour-of.js";
 import { hostedObjects } from "../authoring-draft.js";
 import { parseSettingsRecord } from "../tour-document-draft.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
@@ -1668,8 +1669,7 @@ describe("createEditorDraft, the stations the page created", () => {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow" as const,
-    blocks: [],
-    steps: [],
+    ...stationContent([]),
   });
   const movedA = (): TourObject => ({
     ...pin("a"),
@@ -1687,25 +1687,21 @@ describe("createEditorDraft, the stations the page created", () => {
     await draft.open(K1, tour(pin("a")));
     const story = {
       ...frame("s-new"),
-      blocks: [
-        {
-          id: "hello-text",
-          kind: "shortText" as const,
-          view: "card" as const,
-          caption: "Hello there.",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("story-101", [
+          {
+            id: "hello-text",
+            kind: "shortText" as const,
+            view: "card" as const,
+            caption: "Hello there.",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+            advance: { mode: "tap" as const },
           },
-        },
-      ],
-      steps: [
-        {
-          id: "hello",
-          action: { kind: "show" as const, block: "hello-text" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+        ]),
+      ]),
     };
     void draft.saveSettings({ needsNoGps: false, frames: [story] });
     await draft.idle();
@@ -1768,7 +1764,10 @@ describe("createEditorDraft, the stations the page created", () => {
     await first.idle();
     const carried: TourManifest = {
       ...opened,
-      stations: [...opened.stations, { ...frame("s-new"), blocks: [] }],
+      stations: [
+        ...opened.stations,
+        { ...frame("s-new"), ...stationContent([]) },
+      ],
     };
     first.writes().landed(carried, K1);
     await first.idle();

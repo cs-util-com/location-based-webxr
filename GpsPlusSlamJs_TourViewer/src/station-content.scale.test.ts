@@ -7,6 +7,7 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { renderTourStation } from "./content-placement.js";
 import { createStationContent, type ContentPart } from "./station-content.js";
+import { stationContent } from "./test-support/station-content.js";
 
 /**
  * Why this test matters (visitor plan 2026-10-18-2349 §3, M2): the point of
@@ -43,8 +44,7 @@ function tourOf(count: number): TourStation[] {
       activateRadiusM: 50,
       foundRadiusM: 10,
       hint: "arrow",
-      steps: [],
-      blocks: [
+      ...stationContent([
         {
           id: `p${String(i)}a`,
           kind: "shortText",
@@ -79,7 +79,7 @@ function tourOf(count: number): TourStation[] {
           createdAtIso: NOW,
           pose: pose(4),
         },
-      ],
+      ]),
     } satisfies TourStation;
   });
 }

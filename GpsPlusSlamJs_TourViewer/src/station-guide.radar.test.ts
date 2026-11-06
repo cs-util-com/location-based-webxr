@@ -21,6 +21,10 @@ import {
   trackingLostSet,
 } from "./visitor-guide-slice";
 import type { VisitorPosition } from "./visitor-position";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -35,14 +39,8 @@ function station(id: string, north: number, east: number): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [
-      {
-        id: "s",
-        action: { kind: "show", block: "hi" },
-        advance: { mode: "tap" },
-      },
-    ],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 

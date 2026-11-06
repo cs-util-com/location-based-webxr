@@ -34,6 +34,7 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const AT = { lat: 48.52, lon: 9.05, alt: 400 };
 
@@ -107,15 +108,19 @@ const OPENED: TourManifest = parseTourManifest(
               activateRadiusM: 50,
               foundRadiusM: 25,
               hint: "arrow",
-              steps: [
-                {
-                  id: "s1",
-                  action: { kind: "show", block: "look" },
-                  advance: { mode: "tap" },
-                },
-                {
-                  id: "q1",
-                  action: {
+              ...stationContent([
+                storyOf("story-story", [
+                  {
+                    id: "look",
+                    kind: "picture",
+                    view: "card",
+                    image: "img1",
+                    widthM: 1,
+                    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                    advance: { mode: "tap" },
+                  },
+                  {
+                    id: "q1",
                     kind: "quiz",
                     question: "Which way?",
                     points: 1,
@@ -128,19 +133,8 @@ const OPENED: TourManifest = parseTourManifest(
                       correct: "o1",
                     },
                   },
-                  advance: { mode: "tap" },
-                },
-              ],
-              blocks: [
-                {
-                  id: "look",
-                  kind: "picture",
-                  view: "card",
-                  image: "img1",
-                  widthM: 1,
-                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-                },
-              ],
+                ]),
+              ]),
             },
           ],
         },
@@ -1012,8 +1006,7 @@ describe("a bare empty station of the opened file", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
-      steps: [],
-      blocks: [],
+      ...stationContent([]),
     };
     const withBare: TourManifest = parseTourManifest(
       JSON.parse(

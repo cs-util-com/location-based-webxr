@@ -18,6 +18,7 @@ import {
   reachedWorldBlocks,
   worldBlockReachedBy,
 } from "./shown-blocks.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const POSE = {
   position: [0, 0, 0] as [number, number, number],
@@ -38,11 +39,6 @@ const card = (id: string): TourBlock => ({
   body: id,
   pose: POSE,
 });
-const show = (id: string, block: string) => ({
-  id,
-  action: { kind: "show" as const, block },
-  advance: { mode: "tap" as const },
-});
 
 function station(blocks: TourBlock[], shown: string[]): TourStation {
   return {
@@ -51,8 +47,13 @@ function station(blocks: TourBlock[], shown: string[]): TourStation {
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    blocks,
-    steps: shown.map((b) => show(`step-${b}`, b)),
+    ...stationContent([
+      storyOf(
+        "story",
+        shown.flatMap((id) => blocks.filter((b) => b.id === id)),
+      ),
+      ...blocks.filter((b) => !shown.includes(b.id)),
+    ]),
   };
 }
 

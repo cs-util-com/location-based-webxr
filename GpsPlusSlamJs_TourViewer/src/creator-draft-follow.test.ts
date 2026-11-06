@@ -25,6 +25,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { createVisitLog } from "./visit-log.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const OLD = "local-file:00000000000000000000000000000001";
 const NEW = "local-file:tour:0123456789abcdef0123456789abcdef";
@@ -256,25 +257,21 @@ describe("the phone draft's settings record", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
-      blocks: [
-        {
-          id: "hello-text",
-          kind: "shortText" as const,
-          view: "card" as const,
-          caption: "Hello there.",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("s-new-story", [
+          {
+            id: "hello-text",
+            kind: "shortText" as const,
+            view: "card" as const,
+            caption: "Hello there.",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+            advance: { mode: "tap" as const },
           },
-        },
-      ],
-      steps: [
-        {
-          id: "hello",
-          action: { kind: "show" as const, block: "hello-text" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+        ]),
+      ]),
     };
     expect(
       await draft.saveSettings({ needsNoGps: false, frames: [frame] }),

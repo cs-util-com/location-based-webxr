@@ -61,6 +61,7 @@ import {
 import type { EditorModel } from "./editor-model.js";
 import { openTourForEditing } from "./editor-open.js";
 import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
+import { stationContent, storyOf } from "../test-support/station-content.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -277,23 +278,19 @@ describe("createEditorSession", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText" as const,
-          view: "card" as const,
-          title: "The siege",
-          body: "In 1632 the gate held.",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show" as const, block: "intro" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "intro",
+            kind: "longText" as const,
+            view: "card" as const,
+            title: "The siege",
+            body: "In 1632 the gate held.",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" as const },
+          },
+        ]),
+      ]),
     } as unknown as TourManifest["stations"][number];
     const { session, manifest } = await opened([pin("a", "Old")], {
       stations: [story],
@@ -1091,25 +1088,21 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
           id: "s1",
           title: "The column",
           geo: { lat: 48.52, lon: 9.05, alt: 340, headingDeg: 0 },
-          blocks: [
-            {
-              id: "hi-text",
-              kind: "shortText",
-              view: "card",
-              caption: "Hello",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
+          ...stationContent([
+            storyOf("s1-story", [
+              {
+                id: "hi-text",
+                kind: "shortText",
+                view: "card",
+                caption: "Hello",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                advance: { mode: "tap" },
+              },
+            ]),
+          ]),
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
-          steps: [
-            {
-              id: "hi",
-              action: { kind: "show", block: "hi-text" },
-              advance: { mode: "tap" },
-            },
-          ],
         },
       ],
     });

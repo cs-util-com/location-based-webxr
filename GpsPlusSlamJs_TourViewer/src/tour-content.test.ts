@@ -43,6 +43,11 @@ import {
   withTourContent,
 } from "./tour-content.js";
 import { withCaption } from "./test-support/tour-of.js";
+import {
+  editedBlocks,
+  stationContent,
+  storyOf,
+} from "./test-support/station-content.js";
 
 // The core's geodesy runs only under an activated licence.
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -74,8 +79,7 @@ function station(id: string, n: number, e: number): TourStation {
     activateRadiusM: 40,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 
@@ -218,25 +222,21 @@ describe("withTourContent", () => {
     const titled = { ...station("titled", 100, 0), title: "Old well" };
     const storied: TourStation = {
       ...station("storied", 200, 0),
-      blocks: [
-        {
-          id: "hi",
-          kind: "shortText",
-          view: "card",
-          caption: "Hi",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "hi",
+            kind: "shortText",
+            view: "card",
+            caption: "Hi",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+            advance: { mode: "tap" },
           },
-        },
-      ],
-      steps: [
-        {
-          id: "t",
-          action: { kind: "show", block: "hi" },
-          advance: { mode: "tap" },
-        },
-      ],
+        ]),
+      ]),
     };
     const stations = [
       station("auto", 0, 0),
@@ -386,19 +386,19 @@ describe("withReferencedAssets", () => {
   ): TourStation {
     return {
       ...station(id, north, 0),
-      blocks: fields.map((f, i) => ({
-        ...f,
-        id: `${id}-b${String(i)}`,
-        pose: {
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0, 1] as [number, number, number, number],
-        },
-      })),
-      steps: fields.map((_f, i) => ({
-        id: `${id}-s${String(i)}`,
-        action: { kind: "show", block: `${id}-b${String(i)}` },
-        advance: { mode: "tap" },
-      })),
+      ...stationContent([
+        storyOf(
+          `${id}-story`,
+          fields.map((f, i) => ({
+            ...f,
+            id: `${id}-b${String(i)}`,
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+          })),
+        ),
+      ]),
     };
   }
   /** A tour with every asset and one station telling `blocks`. */
@@ -615,24 +615,20 @@ describe("asStored", () => {
 describe("stepRequiredAssetIds", () => {
   it("keeps a long text's narration voice and drops the pictures its body names", () => {
     const station = {
-      blocks: [
-        {
-          id: "words",
-          kind: "longText",
-          view: "reading",
-          title: "Words",
-          body: "See ![gate](asset:gone) here.\n\n![wall](asset:wall)",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-          narration: { audio: "voice", synthetic: false },
-        },
-      ] as TourBlock[],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show" as const, block: "words" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-101", [
+          {
+            id: "words",
+            kind: "longText",
+            view: "reading",
+            title: "Words",
+            body: "See ![gate](asset:gone) here.\n\n![wall](asset:wall)",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            narration: { audio: "voice", synthetic: false },
+            advance: { mode: "tap" as const },
+          },
+        ]),
+      ]),
     };
     expect([...stepAssetIds(station)].sort()).toEqual([
       "gone",
@@ -654,7 +650,7 @@ describe("stepRequiredAssetIds", () => {
           // names no picture: the body's pictures are all it leaves out.
           const plainBodies = {
             ...station,
-            blocks: station.blocks.map((b) =>
+            ...editedBlocks(station, (b) =>
               b.kind === "longText" ? { ...b, body: "Plain words." } : b,
             ),
           };

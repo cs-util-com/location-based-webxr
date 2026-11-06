@@ -72,6 +72,10 @@ import { positionPrecision } from "gps-plus-slam-app-framework/state/position-pr
 import { stationBands } from "./station-bands";
 import { STATION_RADIUS_M } from "./station-assign";
 import { createStationRun } from "./station-run";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 const NOISE = {
   fused: { wanderFrac: 0.25, whiteFrac: 0.15, tauS: 60 },
@@ -172,8 +176,8 @@ function judgedStation(foundRadiusM: number): TourStation {
     activateRadiusM: foundRadiusM * 4,
     foundRadiusM,
     hint: "arrow",
-    steps: [JUDGED_STEP],
-    blocks: [],
+
+    ...stationContent([playableStory("st-story")]),
   };
 }
 

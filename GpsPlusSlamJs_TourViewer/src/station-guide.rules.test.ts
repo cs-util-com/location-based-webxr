@@ -17,6 +17,10 @@ import { selectHeadingPending, trackingLostSet } from "./visitor-guide-slice";
 import type { VisitorPosition } from "./visitor-position";
 import type { WalkFocusCue } from "./walk-focus-cues";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the walk's rules as the guide applies them. With no
@@ -46,8 +50,8 @@ function station(id: string, north: number, east: number): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 
@@ -755,7 +759,7 @@ describe("leaving the last station is judged by its own distance, not by presenc
       ...station(id, north, east),
       activateRadiusM: 50,
       foundRadiusM: 25,
-      steps: [],
+      ...stationContent([]),
     };
   }
   const pair = (spacingM: number): StationTour => ({

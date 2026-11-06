@@ -12,6 +12,11 @@
  * real reducer, as on the page: "once each" and "never leaves" are the
  * reducer's rules, and a list the test kept itself could not break them.
  */
+import {
+  stationContent,
+  storyOf,
+  type StoryChildInput,
+} from "./test-support/station-content.js";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type {
@@ -115,23 +120,20 @@ const arbStation = fc
   })
   .map(({ shapes, shownMask, choiceAt }): TourStation => {
     const blocks = shapes.map((shape, i) => blockOf(`b${String(i)}`, shape));
-    const steps: TourStep[] = blocks
-      .filter((_b, i) => shownMask[i] === true)
-      .map((b) => ({
-        id: `s-${b.id}`,
-        action: { kind: "show", block: b.id },
-        advance: { mode: "tap" },
-      }));
-    if (choiceAt !== undefined && steps.length > 0) {
-      const options = steps.map((s, i) => ({
+    const told = blocks.filter((_b, i) => shownMask[i] === true);
+    const free = blocks.filter((_b, i) => shownMask[i] !== true);
+    const children: StoryChildInput[] = [...told];
+    if (choiceAt !== undefined && told.length > 0) {
+      const options = told.map((b, i) => ({
         id: `o${String(i)}`,
-        label: s.id,
-        goto: s.id,
+        label: b.id,
+        goto: b.id,
       }));
-      steps.splice(Math.min(choiceAt, steps.length), 0, {
+      children.splice(Math.min(choiceAt, told.length), 0, {
         id: "choice",
-        action: { kind: "choice", prompt: "?", options },
-        advance: { mode: "tap" },
+        kind: "choice",
+        prompt: "?",
+        options,
       });
     }
     return {
@@ -140,8 +142,7 @@ const arbStation = fc
       activateRadiusM: 20,
       foundRadiusM: 5,
       hint: "arrow",
-      blocks,
-      steps,
+      ...stationContent([storyOf("st-story", children), ...free]),
     };
   });
 

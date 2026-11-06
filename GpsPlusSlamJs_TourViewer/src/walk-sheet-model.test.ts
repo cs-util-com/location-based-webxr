@@ -19,6 +19,10 @@ import {
   WALK_SEGMENT_LIMIT,
   type WalkSheetInput,
 } from "./walk-sheet-model";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the sheet is what the visitor reads of the walk
@@ -43,8 +47,8 @@ function station(id: string, title: string): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 

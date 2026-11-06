@@ -11,6 +11,7 @@
  * sequence of such edits and reads every save back through the format's
  * own parser.
  */
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import fc from "fast-check";
 import {
   TOUR_BLOCK_TEXT_RULES,
@@ -37,12 +38,13 @@ import {
   type StationStoryTextEdit,
   type TourDocumentState,
 } from "./tour-document.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 // Activates the library's gated math: the free block's place in the world
 // is read through it.
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
-const POSE = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
+const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
 const show = (id: string, block: string) => ({
   id,
@@ -83,58 +85,60 @@ const OPENED: TourManifest = parseTourManifest({
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632 the gate held.",
-          pose: POSE,
-        },
-        {
-          id: "w1",
-          kind: "character",
-          view: "speak",
-          character: "wendel",
-          name: "Wendel",
-          image: "wendel",
-          caption: "Good day, traveller!",
-          pose: POSE,
-        },
-        {
-          id: "k1",
-          kind: "character",
-          view: "speak",
-          name: "Sir Kay",
-          image: "kay",
-          caption: "Hold the gate.",
-          pose: POSE,
-        },
-        {
-          id: "note",
-          kind: "shortText",
-          view: "card",
-          caption: "Look up",
-          pose: POSE,
-        },
-        {
-          id: "clip",
-          kind: "video",
-          view: "card",
-          video: "film",
-          transcript: "Horses.",
-          pose: POSE,
-        },
-        {
-          id: "ring",
-          kind: "audio",
-          view: "card",
-          audio: "bell",
-          title: "The bell",
-          transcript: "Dong.",
-          pose: POSE,
-        },
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632 the gate held.",
+            pose: POSE,
+          },
+          {
+            id: "w1",
+            kind: "character",
+            view: "speak",
+            character: "wendel",
+            name: "Wendel",
+            image: "wendel",
+            caption: "Good day, traveller!",
+            pose: POSE,
+          },
+          {
+            id: "k1",
+            kind: "character",
+            view: "speak",
+            name: "Sir Kay",
+            image: "kay",
+            caption: "Hold the gate.",
+            pose: POSE,
+          },
+          {
+            id: "note",
+            kind: "shortText",
+            view: "card",
+            caption: "Look up",
+            pose: POSE,
+          },
+          {
+            id: "clip",
+            kind: "video",
+            view: "card",
+            video: "film",
+            transcript: "Horses.",
+            pose: POSE,
+          },
+          {
+            id: "ring",
+            kind: "audio",
+            view: "card",
+            audio: "bell",
+            title: "The bell",
+            transcript: "Dong.",
+            pose: POSE,
+          },
+        ]),
         {
           id: "sign",
           kind: "shortText",
@@ -142,15 +146,7 @@ const OPENED: TourManifest = parseTourManifest({
           caption: "Gate",
           pose: POSE,
         },
-      ],
-      steps: [
-        show("s1", "intro"),
-        show("s2", "w1"),
-        show("s3", "k1"),
-        show("s4", "note"),
-        show("s5", "clip"),
-        show("s6", "ring"),
-      ],
+      ]),
     },
   ],
 });

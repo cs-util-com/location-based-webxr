@@ -6,6 +6,7 @@
  * and anything the format would refuse must change nothing (a refused
  * value written would make every later save fail).
  */
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 import {
   createEmptyTourManifest,
@@ -25,8 +26,9 @@ import {
   type StationCharacterEdit,
   type TourDocumentState,
 } from "./tour-document.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
-const POSE = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
+const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
 /** A station "gate" whose story shows a long text, then Wendel (a
  *  declared character) in the speak view, each moving on by a tap. */
@@ -51,38 +53,30 @@ const OPENED: TourManifest = parseTourManifest({
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632 the gate held.",
-          pose: POSE,
-        },
-        {
-          id: "w1",
-          kind: "character",
-          view: "speak",
-          character: "wendel",
-          name: "Wendel",
-          image: "wendel",
-          caption: "Good day, traveller!",
-          pose: POSE,
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "intro" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "s2",
-          action: { kind: "show", block: "w1" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632 the gate held.",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+          {
+            id: "w1",
+            kind: "character",
+            view: "speak",
+            character: "wendel",
+            name: "Wendel",
+            image: "wendel",
+            caption: "Good day, traveller!",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     },
   ],
 });

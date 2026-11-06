@@ -50,6 +50,7 @@ import {
   type TourDocumentState,
 } from "./tour-document.js";
 import { stationIdOf, tourOf, withCaption } from "./test-support/tour-of.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 function pin(id: string, label = `pin ${id}`, lat = 48.52): TourPin {
   return {
@@ -204,8 +205,7 @@ describe("tour document: the open", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      steps: [],
-      blocks: [],
+      ...stationContent([]),
     });
     const state = open(parseTourManifest(fileJson));
     const ids = [stationIdOf("a"), "walk-1"];
@@ -576,8 +576,7 @@ function stationAt(
     activateRadiusM: 50,
     foundRadiusM: radiusM,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
     ...extra,
   };
 }
@@ -683,8 +682,7 @@ describe("tour document: every object belongs to a station", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      steps: [],
-      blocks: [],
+      ...stationContent([]),
     });
     expect(manifestNow(state)!.stations.map((s) => s.id)).toEqual([
       "s",
@@ -851,22 +849,18 @@ describe("tour document: every object belongs to a station", () => {
         "a step",
         tourWith(
           stationAt("k", 0, 25, {
-            blocks: [
-              {
-                id: "hi",
-                kind: "shortText",
-                view: "card",
-                caption: "Hi",
-                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-              },
-            ],
-            steps: [
-              {
-                id: "x",
-                action: { kind: "show", block: "hi" },
-                advance: { mode: "tap" },
-              },
-            ],
+            ...stationContent([
+              storyOf("story-1", [
+                {
+                  id: "hi",
+                  kind: "shortText",
+                  view: "card",
+                  caption: "Hi",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ]),
+            ]),
           }),
         ),
       ],

@@ -9,6 +9,7 @@
  * or a code stands is said as the 3D view frames it: metres east and
  * north of the tour's centre, its height and its heading.
  */
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -27,6 +28,11 @@ import {
   inspectorHint,
   ON_GROUND_M,
 } from "./inspector-model.js";
+import {
+  stationContent,
+  storyOf,
+  withFreeBlocks,
+} from "../../test-support/station-content.js";
 
 const AT = "2026-10-22T10:00:00Z";
 
@@ -45,8 +51,7 @@ const STATIONS: TourStation[] = [
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    ...stationContent([
       {
         id: "pin-1",
         kind: "shortText",
@@ -64,7 +69,7 @@ const STATIONS: TourStation[] = [
         createdAtIso: AT,
         pose: { position: [0, 0, 0], rotation: turn(-90) },
       },
-    ],
+    ]),
   } as unknown as TourStation,
   {
     id: "b",
@@ -72,8 +77,7 @@ const STATIONS: TourStation[] = [
     activateRadiusM: 60,
     foundRadiusM: 30,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   } as unknown as TourStation,
 ];
 
@@ -171,7 +175,7 @@ describe("buildInspector", () => {
   // each by its kind and its name, in the station's order, so the creator
   // sees what the story carries though the 3D view draws none of it.
   it("lists the blocks the station's story shows, by kind and name", () => {
-    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+    const POSE: TourLocalPose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
     const show = (id: string, block: string) => ({
       id,
       action: { kind: "show", block },
@@ -179,25 +183,26 @@ describe("buildInspector", () => {
     });
     const storyStation = {
       ...STATIONS[1],
-      steps: [show("s1", "intro"), show("s2", "guard")],
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632...",
-          pose: POSE,
-        },
-        {
-          id: "guard",
-          kind: "character",
-          view: "stage",
-          name: "",
-          image: "cut",
-          caption: "Halt!",
-          pose: POSE,
-        },
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632...",
+            pose: POSE,
+          },
+          {
+            id: "guard",
+            kind: "character",
+            view: "stage",
+            name: "",
+            image: "cut",
+            caption: "Halt!",
+            pose: POSE,
+          },
+        ]),
         {
           id: "unused",
           kind: "video",
@@ -206,7 +211,7 @@ describe("buildInspector", () => {
           transcript: "x",
           pose: POSE,
         },
-      ],
+      ]),
     } as unknown as TourStation;
     const model = buildInspector({
       selected: "station:b",
@@ -246,27 +251,26 @@ describe("buildInspector", () => {
   // them as the file holds them: the view of the block, the advance of the
   // step that shows him, the heading his rest rotation faces.
   it("reads a story character's view, how his step moves on and his facing", () => {
-    const POSE = { position: [2, 0, 0], rotation: facingRotation(200) };
+    const POSE: TourLocalPose = {
+      position: [2, 0, 0],
+      rotation: facingRotation(200)!,
+    };
     const storyStation = {
       ...STATIONS[1],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "wendel" },
-          advance: { mode: "lineEnd" },
-        },
-      ],
-      blocks: [
-        {
-          id: "wendel",
-          kind: "character",
-          view: "two-stations",
-          name: "Wendel",
-          image: "cut",
-          caption: "Follow me",
-          pose: POSE,
-        },
-      ],
+      ...stationContent([
+        storyOf("story-2", [
+          {
+            id: "wendel",
+            kind: "character",
+            view: "two-stations",
+            name: "Wendel",
+            image: "cut",
+            caption: "Follow me",
+            pose: POSE,
+            advance: { mode: "lineEnd" },
+          },
+        ]),
+      ]),
     } as unknown as TourStation;
     const model = buildInspector({
       selected: "station:b",
@@ -400,7 +404,7 @@ describe("inspectorHint", () => {
   it("shows a reading stand as a text, with no resize dot", () => {
     const stand = {
       ...STATIONS[1],
-      blocks: [
+      ...stationContent([
         {
           id: "stand-1",
           kind: "longText",
@@ -410,7 +414,7 @@ describe("inspectorHint", () => {
           createdAtIso: AT,
           pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
         },
-      ],
+      ]),
     } as unknown as TourStation;
     const model = buildInspector({
       selected: "stand-1",
@@ -480,8 +484,7 @@ describe("buildInspector: the values the inspector edits", () => {
     activateRadiusM: 20,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    ...stationContent([
       {
         id: "photo-1",
         kind: "picture",
@@ -500,7 +503,7 @@ describe("buildInspector: the values the inspector edits", () => {
         createdAtIso: AT,
         pose: { position: [12, 0, 0], rotation: [0, 0, 0, 1] },
       },
-    ],
+    ]),
   } as unknown as TourStation;
   /** The photo's own image asset: a captured photo's file. */
   const PHOTO_ASSET = {
@@ -585,8 +588,7 @@ describe("buildInspector: the values the inspector edits", () => {
     const station = {
       ...PHOTO_STATION,
       image: undefined,
-      blocks: [
-        ...PHOTO_STATION.blocks,
+      ...withFreeBlocks(PHOTO_STATION, [
         {
           id: "view-1",
           kind: "picture",
@@ -597,7 +599,7 @@ describe("buildInspector: the values the inspector edits", () => {
           createdAtIso: AT,
           pose: { position: [1, 1.5, 1], rotation: [0, 0, 0, 1] },
         },
-      ],
+      ]),
     } as unknown as TourStation;
     const built = buildInspector({
       selected: "station:p",
