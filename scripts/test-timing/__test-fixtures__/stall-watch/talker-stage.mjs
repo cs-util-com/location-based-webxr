@@ -1,6 +1,7 @@
-// Test fixture: a slow stage that keeps talking, every 250 ms for 5 s,
-// and then succeeds. A silence limit longer than its gaps must never fire.
-let left = 20;
+// Test fixture: a slow stage that keeps talking, every 250 ms for 12 s,
+// and then succeeds. A silence limit longer than its gaps must never fire,
+// and one shorter than its whole run shows that talking is what prevents it.
+let left = 48;
 const timer = setInterval(() => {
   process.stdout.write('.');
   left -= 1;
