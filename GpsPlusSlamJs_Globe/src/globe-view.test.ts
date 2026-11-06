@@ -24,6 +24,7 @@ import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
 import type { GlobeGradeName } from "./globe-grade.js";
+import type { GlobeQualityName } from "./globe-quality.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import {
   createGlobeView,
@@ -182,6 +183,35 @@ describe("createGlobeView: the grade", () => {
     const renderer = open("neutral");
     expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
     expect(renderer.toneMappingExposure).toBe(1);
+  });
+});
+
+/**
+ * Why this test matters: the quality name is what the sea and the near
+ * clouds read off the view, so the view must hold the name it was made with
+ * and a page that names none must get the fine-pointer tier.
+ */
+describe("createGlobeView: the quality", () => {
+  const open = (quality?: GlobeQualityName) => {
+    const view = createGlobeView({
+      canvas: { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement,
+      fovYDeg: SETTINGS.fovY,
+      settings: () => SETTINGS,
+      solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+      mapLoader: stubLoader,
+      createRenderer: () => fakeRenderer([]) as unknown as THREE.WebGLRenderer,
+      ...(quality === undefined ? {} : { quality }),
+    });
+    view.dispose();
+    return view.quality;
+  };
+
+  it("is the fine-pointer tier when none is named", () => {
+    expect(open()).toBe("high");
+  });
+
+  it("holds a named tier", () => {
+    expect(open("medium")).toBe("medium");
   });
 });
 

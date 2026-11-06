@@ -35,6 +35,7 @@ import {
   type GlobeGradeName,
 } from "./globe-grade.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
+import { resolveGlobeQuality, type GlobeQualityName } from "./globe-quality.js";
 import { createGlobeSky, type GlobeSky } from "./globe-sky.js";
 import { greenwichSiderealAngleRad } from "./globe-stars.js";
 import { sunDirectionEcef } from "./globe-sun.js";
@@ -159,6 +160,8 @@ export interface GlobeViewOptions {
   readonly seams?: GlobeViewSeams;
   /** The colour grade, fixed for the view's life (default: the table's). */
   readonly grade?: GlobeGradeName;
+  /** The quality tier, fixed for the view's life (default: a fine pointer's). */
+  readonly quality?: GlobeQualityName;
   /** Tests: the renderer, and the monotonic clock (`performance.now`). */
   readonly createRenderer?: (
     parameters: THREE.WebGLRendererParameters,
@@ -186,6 +189,8 @@ export interface GlobeView {
   readonly globe: GlobeSurface;
   /** The ellipsoid's equatorial radius (m). */
   readonly radius: number;
+  /** The quality tier the view was made with. */
+  readonly quality: GlobeQualityName;
   /** The camera's pose in ECEF, through the frame. */
   ecefCamera(): EcefPose;
   /** Places the camera at an ECEF pose, through the frame. */
@@ -522,6 +527,7 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     sky,
     globe,
     radius,
+    quality: options.quality ?? resolveGlobeQuality(null, false),
     ecefCamera,
     placeCameraEcef,
     frameTarget: () => worldFrame.target,

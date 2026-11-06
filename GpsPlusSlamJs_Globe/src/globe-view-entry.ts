@@ -23,6 +23,13 @@ export { GLOBE_CLOUD_DRIFT_LAW } from "./globe-cloud-drift.js";
 export { GLOBE_CLOUD_DRIFT_DEG_PER_S } from "./globe-surface-material.js";
 // The colour grade a link names: judged here, behind the app's lazy import.
 export { resolveGlobeGrade } from "./globe-grade.js";
+// The quality tier, as the grade: named by a link, judged here.
+export {
+  GLOBE_QUALITY_PARAM,
+  globeQualityPixelRatio,
+  resolveGlobeQuality,
+  type GlobeQualityName,
+} from "./globe-quality.js";
 export { creditsFor } from "./globe-credits.js";
 // The whole-Earth imagery, for a relief that draws the globe's own ground
 // under the camera (one overlay per carrier: each keeps its own textures).

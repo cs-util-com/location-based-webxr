@@ -24,9 +24,10 @@
     moves with the time, and the package's typecheck takes in only the
     framework's atmosphere modules, not its `geo/` ones); `stencil`, `reversedDepth` (the renderer's buffers); `mapLoader`,
     `band`, `fill` (the surface's); `seams`; `grade` (a name of
-    `GLOBE_GRADES`, `globe-grade.ts`; fixed for the view's life); for tests `createRenderer` and
+    `GLOBE_GRADES`, `globe-grade.ts`; fixed for the view's life); `quality` (a name of `GLOBE_QUALITIES`,
+    `globe-quality.ts`; fixed for the view's life, `high` when not named); for tests `createRenderer` and
     `monoNow`.
-  - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`;
+  - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`, `quality`;
     `ecefCamera()` and `placeCameraEcef(position, quaternion)` (the one way a
     pose is read and written, through the frame); `frameTarget()`,
     `setFrameTarget(target | null)`, `recentreFrame()`; `placeView(view)`;

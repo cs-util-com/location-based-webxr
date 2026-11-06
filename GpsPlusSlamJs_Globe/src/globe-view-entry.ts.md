@@ -62,6 +62,8 @@
     wherever its imagery is.
   - `resolveGlobeGrade` (`globe-grade.ts`): the colour grade a link names,
     judged here so an app's first load carries none of the globe's code.
+  - `resolveGlobeQuality`, `globeQualityPixelRatio`, `GLOBE_QUALITY_PARAM`,
+    `GlobeQualityName` (`globe-quality.ts`): the quality tier, likewise.
   - Only what an app's production code uses: a name only a test needs
     lives under `./test-utils/*` (`viewPoseEcef` and `WGS84_ELLIPSOID` in
     `./test-utils/view-pose`), because knip reads this entry as public and
