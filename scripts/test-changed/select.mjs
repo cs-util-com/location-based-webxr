@@ -13,9 +13,10 @@
 //   classes in ROOT_NARROW, whose every reader is a root stage (see there).
 // - Untracked files count as changes (git diff never lists them; the shell
 //   passes them separately).
-// - Generated docs/test-timings.md files (root or per-package) NEVER count:
-//   every full gate rewrites them, so they are near-permanently dirty and
-//   would otherwise pin their package (or the whole cascade) as "changed".
+// - Generated docs/test-timings.md files (root or per-package) NEVER count.
+//   They are gitignored now, but a branch that still tracks them, or the
+//   commit that stopped tracking them, would otherwise pin their package (or
+//   the whole cascade) as "changed".
 // - A changed package's full gate gets the diff ref (CHANGED_REF_ENV), so a
 //   stage that can narrow itself to what changed (the Tour Viewer's e2e,
 //   scripts/e2e/run-projects.mjs) can; nothing else reads it.

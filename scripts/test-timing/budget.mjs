@@ -21,7 +21,9 @@
  * HOW TO SET ONE, because a bad threshold is worse than none:
  *
  * - Derive it from the stage's recorded **median**, never from a single run.
- *   `docs/test-timings.md` carries the history.
+ *   A checkout's gitignored `docs/test-timings.md` carries its own runs; older
+ *   numbers are in the git history of that file, newer ones in the artifacts
+ *   of runs on main.
  * - Leave it LOOSE — roughly +30 %. This suite is contention-bound and its own
  *   config records a 21x inflation of identical work under load, so a tight
  *   ceiling becomes one more load-dependent failure in a suite whose flakiness

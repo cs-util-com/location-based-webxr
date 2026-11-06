@@ -1,5 +1,5 @@
 // Pure machine-identity builders for the timing recordings. The fingerprint
-// and label end up in the versioned docs/test-timings.md, so the raw
+// and label end up in docs/test-timings.md and in the public artifacts of runs on main, so the raw
 // hostname must never appear in them — only a short sha256 prefix
 // (pseudonymization: a common hostname is still dictionary-guessable from
 // the hash, but it no longer reads as plain text in the repo). CPU model

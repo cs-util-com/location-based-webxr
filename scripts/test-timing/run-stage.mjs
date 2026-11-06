@@ -1,7 +1,7 @@
 // The impure engine shared by timed-stage.mjs and run-gate.mjs: spawns a
 // stage's canonical command through a shell, measures wall-clock, extracts
 // test counts from injected JSON reporters, and updates the owning project's
-// docs/test-timings.md atomically. Any error in the recording path is caught
+// gitignored docs/test-timings.md atomically. Any error in the recording path is caught
 // and reported as a warning — the underlying command's exit code is always
 // what the caller gets (recording must never break the gate).
 //
