@@ -293,6 +293,7 @@ export function createGlobeCloudMarch(
   let weather: CloudWeatherFrame | null = null;
   let disposed = false;
   let compiled = false;
+  let compiling: Promise<void> | null = null;
   let drawn = 0;
   let canvasPixelsPerCloudPixel = 1;
   let reachAtKm = -1;
@@ -443,16 +444,19 @@ export function createGlobeCloudMarch(
   };
 
   /** Compiles both shaders off the frame that first draws them; a browser
-   *  that fails the wait compiles on that frame instead. */
+   *  that fails the wait compiles on that frame instead. Until it is over
+   *  the materials stay: three polls their programs by a timer, and one
+   *  freed under it throws there. */
   const compile = () => {
     quad.material = shadowMaterial;
     const shadow = renderer.compileAsync(scene, quadCamera);
     quad.material = material;
     const clouds = renderer.compileAsync(scene, quadCamera);
-    void Promise.all([shadow, clouds])
+    compiling = Promise.all([shadow, clouds])
       .catch(() => undefined)
       .then(() => {
         compiled = true;
+        compiling = null;
       });
   };
 
@@ -518,8 +522,12 @@ export function createGlobeCloudMarch(
       }
       target.dispose();
       shadowTarget.dispose();
-      material.dispose();
-      shadowMaterial.dispose();
+      const freeMaterials = () => {
+        material.dispose();
+        shadowMaterial.dispose();
+      };
+      if (compiling === null) freeMaterials();
+      else void compiling.then(freeMaterials);
       geometry.dispose();
     },
   };

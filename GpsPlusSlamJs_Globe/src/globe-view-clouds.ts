@@ -21,8 +21,8 @@
  * With `near` the near clouds (`globe-cloud-march-pass.ts`) replace the
  * slab below their own ceiling, at about 60 km of camera height, as soon as
  * their bakes are back from the worker; until then, and if that fails, the
- * old clouds draw. Their tier and pixels are the step-down's
- * (`globe-cloud-governor.ts`).
+ * old clouds draw, with the cover they always had. Their tier and pixels are
+ * the step-down's (`globe-cloud-governor.ts`).
  *
  * @see globe-view-clouds.ts.md
  */
@@ -391,13 +391,14 @@ export function createGlobeViewClouds(
   const appKnobs = knobsWith(options);
   let on = true;
   let nearFine = near !== null;
-  /** The knobs for the switch and the near clouds now: without them the
+  const nearDraws = () => nearFine && near?.ready === true;
+  /** The knobs for the switch and the near clouds now: until they draw the
    *  old clouds, with the cover they always had. */
   const chooseKnobs = (): GlobeViewCloudKnobs =>
     Object.freeze({
       ...appKnobs,
       cloudVolume: on ? appKnobs.cloudVolume : 0,
-      cloudNear: nearFine ? 1 : 0,
+      cloudNear: nearDraws() ? 1 : 0,
     });
   let knobs = chooseKnobs();
   const nearDriver =
@@ -420,6 +421,7 @@ export function createGlobeViewClouds(
     },
     step({ observerKm, shareClouds }) {
       if (disposed) return;
+      if (nearDraws() !== (knobs.cloudNear === 1)) knobs = chooseKnobs();
       const { globe, camera } = view;
       globe.cloudShell.setHeightM(knobs.cloudShellKm * 1000);
       const cameraAltM = globe.tiles.ellipsoid.getPositionElevation(
@@ -455,11 +457,15 @@ export function createGlobeViewClouds(
       const { globe, camera } = view;
       sceneDepth.beginFrame();
       // The relief's depth while the ground sky shows (the shell's rays end
-      // at it by that weight, and the air's veil, so it is drawn with the
-      // clouds off too); the slab draws it itself when only it needs it.
+      // at it by that weight, and the air's veil); the slab draws it itself
+      // when only it needs it. With the clouds off the one reader left is
+      // the veil, which is gone once the ground sky is whole.
       const extra = extraOf();
       const nearOn = clouds.nearShare > 0;
-      if (weight > 0 || nearOn) sceneDepth.render(camera, relief, extra);
+      const read = knobs.cloudVolume === 0 ? weight < 1 : true;
+      if (read && (weight > 0 || nearOn)) {
+        sceneDepth.render(camera, relief, extra);
+      }
       if (knobs.cloudVolume === 0) return;
       clouds.render(camera, {
         relief,

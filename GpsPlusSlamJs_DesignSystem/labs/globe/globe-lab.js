@@ -2494,7 +2494,8 @@ async function start() {
         near: {
           timeS: view.driftTimeS(),
           quality:
-            GLOBE_QUALITIES[GLOBE_QUALITY_NAMES[params.cloudNearTier]].clouds,
+            GLOBE_QUALITIES[GLOBE_QUALITY_NAMES[Math.round(params.cloudNearTier)]]
+              .clouds,
           pixelScale: 1,
           sceneDepth: sceneDepth?.fresh ? sceneDepth : null,
         },

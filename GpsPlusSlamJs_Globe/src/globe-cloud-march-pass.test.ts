@@ -131,6 +131,31 @@ describe("createGlobeCloudMarch: the shader's first compile", () => {
     await vi.waitFor(() => expect(march.ready).toBe(true));
   });
 
+  // Why this test matters: three polls the programs by a timer, and a
+  // material freed under it throws there, where nothing can catch it: a
+  // view closed while the shader compiles.
+  it("frees its materials only after the compile", async () => {
+    const { march, renderer } = make();
+    let finish = () => {};
+    const compiled = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const freed: string[] = [];
+    const compile = vi.fn((scene: THREE.Scene) => {
+      const quad = scene.children[0] as THREE.Mesh;
+      (quad.material as THREE.Material).addEventListener("dispose", () =>
+        freed.push("material"),
+      );
+      return compiled;
+    });
+    (renderer as unknown as { compileAsync: unknown }).compileAsync = compile;
+    march.setBakes(fakeBakes());
+    march.dispose();
+    expect(freed).toEqual([]);
+    finish();
+    await vi.waitFor(() => expect(freed).toHaveLength(2));
+  });
+
   // Why this test matters: a browser that fails the wait can still compile
   // on the first draw; the new clouds must not stay off for that.
   it("is ready after a failed compile too", async () => {

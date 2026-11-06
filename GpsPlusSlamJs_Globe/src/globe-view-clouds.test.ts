@@ -409,7 +409,8 @@ describe("createGlobeViewClouds", () => {
 
   // Why: the layer switch: off, the slab and the shell are turned off at
   // the next frame and nothing of them is drawn; on again, they come back.
-  // The depth stays: the shell's rays end at it while the sky shows.
+  // The depth goes with them where nothing reads it: with the ground sky
+  // whole the veil over the ground is gone too (the next test).
   it("turns the heavy clouds off and on again", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
@@ -420,13 +421,26 @@ describe("createGlobeViewClouds", () => {
     expect(clouds.state()).toMatchObject({ on: false, shellOn: false });
     expect(fakes.log).toContain("slab off");
     expect(fakes.log).toContain("shell off");
-    expect(fakes.log).toContain("depth");
+    expect(fakes.log).not.toContain("depth");
     expect(fakes.log).not.toContain("slab");
     clouds.setOn(true);
     clouds.step({ observerKm: 10, shareClouds: () => 1 });
     clouds.render({ weight: 1 });
     expect(clouds.state().on).toBe(true);
     expect(fakes.log).toContain("slab");
+  });
+
+  // Why this test matters: a whole depth pass a frame for no reader is the
+  // price of the switch that is meant to save frame time; in the hand-over
+  // the fading veil still ends at the relief, as it always has.
+  it("draws the depth with the clouds off only in the hand-over", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(70_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.setOn(false);
+    clouds.step({ observerKm: 70, shareClouds: () => 1 });
+    clouds.render({ weight: 0.5 });
+    expect(fakes.log).toContain("depth");
   });
 
   // Why: the air ends its veil at this same depth, so one pass serves both.
@@ -535,7 +549,6 @@ describe("createCloudsParts", () => {
       const { clouds, fakes, worker, frame } = set(60_000);
       frame();
       expect(clouds.nearLive()).toBe(true);
-      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
       clouds.setOn(false);
       expect(clouds.nearLive()).toBe(false);
       clouds.setOn(true);
@@ -544,6 +557,19 @@ describe("createCloudsParts", () => {
       await vi.waitFor(() => expect(clouds.nearLive()).toBe(false));
       frame();
       expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    });
+
+    // Why this test matters: the lift makes up for what the near clouds take
+    // over at the hand-over. Until they draw, the old clouds do, and a lifted
+    // cover is a cover nobody measured for them.
+    it("lifts the shell's cover only once the bakes are in", async () => {
+      const { fakes, near, worker, frame } = set(60_000);
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
     });
 
     // Why this test matters: a view closed during the bake must not leave
