@@ -22,6 +22,19 @@ function run(
   for (let t = 0; t < seconds * 1000; t += ms) governor.frame(ms);
 }
 
+/** `seconds` of frames as long as `ms` at all pixels and shorter with fewer. */
+function runOnPixels(
+  governor: ReturnType<typeof createGlobeCloudGovernor>,
+  ms: number,
+  seconds: number,
+) {
+  for (let t = 0; t < seconds * 1000;) {
+    const frame = ms * governor.state().pixelScale;
+    governor.frame(frame);
+    t += frame;
+  }
+}
+
 describe("createGlobeCloudGovernor", () => {
   it("leaves a fast device alone", () => {
     const governor = createGlobeCloudGovernor("high");
@@ -33,26 +46,44 @@ describe("createGlobeCloudGovernor", () => {
   // first, low only as the last resort.
   it("lowers the pixels first and steps to low last", () => {
     const governor = createGlobeCloudGovernor("high");
-    run(governor, 40, 3);
+    runOnPixels(governor, 100, 3);
     expect(governor.state().tier).toBe("high");
     expect(governor.state().pixelScale).toBeLessThan(1);
-    run(governor, 40, 3 * CLOUD_GOVERNOR.steps);
+    runOnPixels(governor, 100, 3 * CLOUD_GOVERNOR.steps);
     expect(governor.state().tier).toBe("low");
   });
 
   it("restores the pixels on the low tier, which starts cheaper", () => {
     const governor = createGlobeCloudGovernor("medium");
-    run(governor, 40, 3 * (CLOUD_GOVERNOR.steps + 2));
+    runOnPixels(governor, 100, 3 * (CLOUD_GOVERNOR.steps + 2));
     expect(governor.state()).toEqual({ tier: "low", pixelScale: 1 });
   });
 
   it("stops at low with the fewest pixels", () => {
     const governor = createGlobeCloudGovernor("low");
-    run(governor, 100, 300);
+    runOnPixels(governor, 100, 300);
     expect(governor.state()).toEqual({
       tier: "low",
       pixelScale: CLOUD_GOVERNOR.minPixelScale,
     });
+  });
+
+  // Why this test matters: a 30 Hz screen or a saving mode reads as slow, and
+  // no number of pixels makes it faster: all of them come back and it stays.
+  it("gives everything back on a capped screen, once", () => {
+    const governor = createGlobeCloudGovernor("high");
+    run(governor, 33.3, 3 * (CLOUD_GOVERNOR.steps + 2));
+    expect(governor.state()).toEqual({ pixelScale: 1, tier: "high" });
+    run(governor, 33.3, 120);
+    expect(governor.state()).toEqual({ pixelScale: 1, tier: "high" });
+  });
+
+  it("keeps stepping down when the pixels helped at 30 Hz", () => {
+    const governor = createGlobeCloudGovernor("high");
+    run(governor, 33.3, 3);
+    expect(governor.state().pixelScale).toBeLessThan(1);
+    run(governor, 25, 3 * (CLOUD_GOVERNOR.steps + 2));
+    expect(governor.state().tier).toBe("low");
   });
 
   // Why this test matters: a tab in the background or a garbage collection
@@ -76,7 +107,7 @@ describe("createGlobeCloudGovernor", () => {
     expect(governor.state().pixelScale).toBe(lowered);
     run(governor, 10, 60);
     expect(governor.state().pixelScale).toBe(1);
-    run(governor, 40, 3 * (CLOUD_GOVERNOR.steps + 1));
+    runOnPixels(governor, 100, 3 * (CLOUD_GOVERNOR.steps + 1));
     run(governor, 10, 600);
     expect(governor.state().tier).toBe("low");
   });

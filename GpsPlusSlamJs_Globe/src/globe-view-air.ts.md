@@ -46,13 +46,15 @@
     and strength from `GLOBE_ATMOSPHERE`, its samples by the pointer
     (`defaultAtmosphereSteps`), the haze's scale 1, the shell's ramp on,
     the space view's exposure the globe sun's intensity at the mount.
-  - The ground's veil follows the depth. With the clouds, `atmoGround` 1
-    and `sceneDepth` their `sceneDepth()`, so the veil's rays end at the
-    drawn relief as in the lab, with one depth pass per frame, drawn even
-    while the cloud volumes are switched off. Without clouds there is no
-    depth, the rays would end at the ellipsoid, under the relief, and the
-    veil over high ground would be far too thick; so `atmoGround` 0 and
-    the space pass fades out entirely below the edge.
+  - The ground's veil follows the near clouds, read each frame
+    (`clouds.nearLive()`). With them, `atmoGround` 1 and `sceneDepth`
+    their `sceneDepth()`, so the veil's rays end at the drawn relief as in
+    the lab, with one depth pass per frame, drawn even while the cloud
+    volumes are switched off. Without clouds there is no depth, the rays
+    would end at the ellipsoid, under the relief, and the veil over high
+    ground would be far too thick; so `atmoGround` 0 and the space pass
+    fades out entirely below the edge. The old clouds (`clouds=old`, a
+    failed bake) take that path too, as they always did.
   - **Why the veil stays:** the haze's strength follows the observer's
     height, so at 40 km it is nearly nothing and cannot replace the veil.
     With the veil fading out, a descent turned blue to olive and lost

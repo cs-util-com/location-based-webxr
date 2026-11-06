@@ -9,6 +9,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  globeQualityChoiceToast,
   GLOBE_QUALITY_CHOICE,
   globeQualityChoiceLabel,
   nextGlobeQualityChoice,
@@ -87,6 +88,25 @@ describe("globeQualityChoiceLabel", () => {
     expect(globeQualityChoiceLabel("low")).toBe("Quality: Low");
     expect(globeQualityChoiceLabel("medium")).toBe("Quality: Medium");
     expect(globeQualityChoiceLabel("high")).toBe("Quality: High");
+  });
+});
+
+describe("globeQualityChoiceToast", () => {
+  // Why this test matters: with `quality=` in the link the choice does not
+  // apply, and the toast must not say it does.
+  it("says what the next open will do", () => {
+    expect(globeQualityChoiceToast("High", true, null)).toBe(
+      "High applies the next time the 3D view opens",
+    );
+    expect(globeQualityChoiceToast("High", false, null)).toBe(
+      "High applies until this page closes",
+    );
+    expect(globeQualityChoiceToast("High", true, "low")).toBe(
+      "High saved; the link overrides it",
+    );
+    expect(globeQualityChoiceToast("High", false, "low")).toBe(
+      "High kept until this page closes; the link overrides it",
+    );
   });
 });
 

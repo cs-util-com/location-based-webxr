@@ -185,6 +185,7 @@ import type {
 } from "../editor3d/editor3d-scene.js";
 import {
   globeQualityChoiceLabel,
+  globeQualityChoiceToast,
   nextGlobeQualityChoice,
   qualityToOpenWith,
   readGlobeQualityChoice,
@@ -3933,11 +3934,7 @@ qualitySwitch.addEventListener("click", () => {
   const label = globeQualityChoiceLabel(qualityChoice);
   qualitySwitch.textContent = label;
   const kept = writeGlobeQualityChoice(browserStorage(), qualityChoice);
-  toast(
-    kept
-      ? `${label} applies the next time the 3D view opens`
-      : `${label} applies until this page closes`,
-  );
+  toast(globeQualityChoiceToast(label, kept, globeSwitch.quality));
 });
 // In the dev server an e2e may set `window.__tourEditorClouds` (an init
 // script) to `{ off: true }`: Clouds starts unticked, as if a creator had

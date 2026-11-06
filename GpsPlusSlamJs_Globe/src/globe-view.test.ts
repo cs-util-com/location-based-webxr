@@ -407,6 +407,24 @@ describe("createGlobeView: the frame", () => {
   });
 });
 
+describe("createGlobeView: the sea's clock", () => {
+  // Why: the editor holds the hour, and a sea on the scene's clock stands
+  // still under it; the waves run on the drift clock, real time at most.
+  it("keeps the waves moving while the hour is held", () => {
+    const { view, advance } = makeView();
+    const times: number[] = [];
+    const step = view.sea!.step.bind(view.sea);
+    view.sea!.step = (frame) => {
+      times.push(frame.timeS);
+      step(frame);
+    };
+    view.frame();
+    advance(5000);
+    view.frame();
+    expect(times[1]! - times[0]!).toBeCloseTo(5, 6);
+  });
+});
+
 describe("createGlobeView: the clouds' drift", () => {
   // Why: a pinned link with `cloudDrift=0` must hold the clouds still,
   // or two screenshots of one view differ.

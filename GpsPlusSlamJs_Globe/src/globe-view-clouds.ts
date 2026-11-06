@@ -119,7 +119,8 @@ export const GLOBE_VIEW_CLOUDS = Object.freeze({
   cloudShadow: 0.6,
   /** How much of the slab's flat deck the shell takes (the lab's). */
   cloudShellFlat: 1,
-  /** The near clouds where a page has them, gone at 70 km, whole at 50. */
+  /** The near clouds where a page has them and their bake did not fail,
+   *  gone at 70 km, whole at 50. */
   cloudNear: 1,
   cloudNearCeilingKm: 70,
   cloudNearFadeKm: 20,
@@ -185,6 +186,9 @@ export interface GlobeViewClouds {
   sceneDepth(): CloudsParts["sceneDepth"];
   /** The heavy clouds on (the default) or off. */
   setOn(on: boolean): void;
+  /** Whether the near clouds are drawn or on their way: false on the old
+   *  clouds, by choice or after a failed bake. */
+  nearLive(): boolean;
   /** Whether they are on, and the last plan's flat share and shell, the
    *  shell's own ground shadow and the surface's (`uCloudShadow`). */
   state(): {
@@ -273,14 +277,6 @@ export function globeViewClouds(
 
 const NO_EXTRA: readonly THREE.Object3D[] = Object.freeze([]);
 
-/** Bakes in a worker of `createWorker` and hands the tiles to `use`. */
-async function requestWhenBaked(
-  createWorker: () => CloudBakeWorker,
-  use: (bakes: Awaited<ReturnType<typeof requestCloudBakes>>) => void,
-): Promise<void> {
-  use(await requestCloudBakes(createWorker()));
-}
-
 /** What an app may tune of the view's clouds. */
 export interface GlobeViewCloudsOptions {
   /**
@@ -335,6 +331,7 @@ function startNearClouds(
   sceneDepth: CloudsParts["sceneDepth"],
   near: NonNullable<CloudsParts["near"]>,
   options: NonNullable<GlobeViewCloudsOptions["near"]>,
+  failed: () => void,
 ) {
   const governor: GlobeCloudGovernor = createGlobeCloudGovernor(
     view.quality ?? "high",
@@ -344,10 +341,17 @@ function startNearClouds(
   let lastFrameMs: number | null = null;
   // eslint-disable-next-line no-console -- the one report of a failed bake
   const warn = options.warn ?? console.warn;
-  requestWhenBaked(options.createWorker, (bakes) => {
-    near.setBakes(bakes);
-  }).catch((error: unknown) => {
+  let worker: CloudBakeWorker | null = null;
+  let closed = false;
+  const bake = async () => {
+    worker = options.createWorker();
+    const bakes = await requestCloudBakes(worker);
+    if (!closed) near.setBakes(bakes);
+  };
+  bake().catch((error: unknown) => {
+    if (closed) return;
     warn(`the near clouds stay off: ${String(error)}`);
+    failed();
   });
   return {
     /** What the near clouds draw by this frame; the step-down's reading. */
@@ -368,6 +372,10 @@ function startNearClouds(
       };
     },
     state: () => governor.state(),
+    dispose() {
+      closed = true;
+      worker?.terminate();
+    },
   };
 }
 
@@ -380,16 +388,25 @@ export function createGlobeViewClouds(
   const { sceneDepth, cloudVolume, shellVolume } = parts;
   const near = options.near ? (parts.near ?? null) : null;
   const clouds = createGlobeCloudStep({ cloudVolume, shellVolume, near });
+  const appKnobs = knobsWith(options);
+  let on = true;
+  let nearLive = near !== null;
+  /** The knobs for the switch and the near clouds now: without them the
+   *  old clouds, with the cover they always had. */
+  const chooseKnobs = (): GlobeViewCloudKnobs =>
+    Object.freeze({
+      ...appKnobs,
+      cloudVolume: on ? appKnobs.cloudVolume : 0,
+      cloudNear: nearLive ? 1 : 0,
+    });
+  let knobs = chooseKnobs();
   const nearDriver =
     near !== null && options.near
-      ? startNearClouds(view, sceneDepth, near, options.near)
+      ? startNearClouds(view, sceneDepth, near, options.near, () => {
+          nearLive = false;
+          knobs = chooseKnobs();
+        })
       : null;
-  const onKnobs = knobsWith(options);
-  const offKnobs: GlobeViewCloudKnobs = Object.freeze({
-    ...onKnobs,
-    cloudVolume: 0,
-  });
-  let knobs: GlobeViewCloudKnobs = onKnobs;
   const extraOf = options.extra ?? (() => NO_EXTRA);
   let relief: THREE.Object3D | null = null;
   let last = { flat: 1, shellOn: false, shellShadow: 0, surfaceShadow: 0 };
@@ -456,9 +473,11 @@ export function createGlobeViewClouds(
       });
     },
     sceneDepth: () => sceneDepth,
-    setOn(on) {
-      knobs = on ? onKnobs : offKnobs;
+    setOn(next) {
+      on = next;
+      knobs = chooseKnobs();
     },
+    nearLive: () => nearLive,
     state: () => ({
       on: knobs.cloudVolume !== 0,
       ...last,
@@ -474,6 +493,7 @@ export function createGlobeViewClouds(
     dispose() {
       if (disposed) return;
       disposed = true;
+      nearDriver?.dispose();
       for (const part of [near, shellVolume, cloudVolume, sceneDepth]) {
         try {
           part?.dispose?.();

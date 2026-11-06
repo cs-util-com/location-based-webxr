@@ -47,6 +47,7 @@ interface Draw {
   kind: "march" | "composite";
   into: THREE.WebGLRenderTarget | null;
   uniforms: Uniforms;
+  fragmentShader: string;
   snapshot: Record<string, unknown>;
 }
 
@@ -121,7 +122,13 @@ const fakeRenderer = () => {
         uniforms.uCells?.value as THREE.Vector2 | undefined
       )?.toArray();
       snapshot.uBasis = uniforms.uBasis?.value;
-      draws.push({ kind, into: target, uniforms, snapshot });
+      draws.push({
+        kind,
+        into: target,
+        uniforms,
+        fragmentShader: material.fragmentShader,
+        snapshot,
+      });
       log.push(`render ${kind} into ${target ? "a target" : "the canvas"}`);
     },
     readRenderTargetPixels: (
@@ -570,6 +577,11 @@ describe("createGlobeCloudShellVolume", () => {
       shell.render(camera(), { ...renderOptions, near: mix });
       const composite = drawAt(draws, -1);
       expect(composite.uniforms.tNear?.value).toBe(mix.texture);
+      // Why: the target is drawn only up to the frame's share; a tap past
+      // its edge reads the last, larger frame's shadow.
+      expect(composite.fragmentShader).toContain(
+        "texture2D( tNearShadow, clamp(",
+      );
       expect(composite.uniforms.tNearShadow?.value).toBe(mix.shadowTexture);
       expect(composite.uniforms.uNearUv?.value).toBe(mix.uv);
       expect(composite.uniforms.uNearRes?.value).toBe(mix.resolution);

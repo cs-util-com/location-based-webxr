@@ -240,6 +240,24 @@ describe("mountGlobeViewAir", () => {
   // nearly half its light between 80 and 40 km (measured on the editor,
   // luma 60 to 35): with the depth of the clouds its rays end at the relief
   // and it stays, as in the lab.
+  it("fades the veil with its sky on the old clouds, as they always did", () => {
+    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
+    const air = mountGlobeViewAir(fakeView(2), {
+      coarsePointer: false,
+      drawers: () => fakes.drawers,
+      clouds: () =>
+        ({
+          step: () => undefined,
+          render: () => undefined,
+          sceneDepth: () => null,
+          nearLive: () => false,
+        }) as unknown as GlobeViewClouds,
+    });
+    air.step();
+    air.afterScene();
+    expect(fakes.renders[0]).toMatchObject({ groundShare: 0 });
+  });
+
   it("keeps the veil over the ground, ending at the clouds' depth", () => {
     const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
     const depth = { fresh: true } as unknown as GlobeSceneDepth;
@@ -251,6 +269,7 @@ describe("mountGlobeViewAir", () => {
           step: () => undefined,
           render: () => undefined,
           sceneDepth: () => depth,
+          nearLive: () => true,
         }) as unknown as GlobeViewClouds,
     });
     air.step();
@@ -354,6 +373,7 @@ describe("mountGlobeViewAir", () => {
           render: ({ weight }) => fakes.log.push("clouds " + String(weight)),
           sceneDepth: () => ({ fresh: false }) as unknown as GlobeSceneDepth,
           setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
+          nearLive: () => false,
           state: () => ({
             on: true,
             flat: 0.25,

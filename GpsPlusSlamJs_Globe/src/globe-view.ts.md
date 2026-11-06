@@ -114,7 +114,8 @@
   (`GpsPlusSlamJs_DesignSystem/labs/globe/globe-reference-shots.smoke.spec.mjs`).
 
 - The sea: `options.sea` (default on; `false`: none compiled, `view.sea`
-  null), its waves from `GLOBE_QUALITIES[quality].sea`, stepped each frame
+  null), its waves from `GLOBE_QUALITIES[quality].sea`, on the drift clock
+  (they move while a page holds the hour), stepped each frame
   right after the camera is placed. It stays off until it is handed a sky:
   `mountGlobeViewAir` does that, a page with its own air (the lab) calls
   `view.sea?.setSky(...)` itself. Without a named `quality` the view takes

@@ -292,6 +292,7 @@ export function createGlobeCloudMarch(
   let textures: ReturnType<typeof bakedTextures> | null = null;
   let weather: CloudWeatherFrame | null = null;
   let disposed = false;
+  let compiled = false;
   let drawn = 0;
   let canvasPixelsPerCloudPixel = 1;
   let reachAtKm = -1;
@@ -441,8 +442,25 @@ export function createGlobeCloudMarch(
     );
   };
 
+  /** Compiles both shaders off the frame that first draws them; a browser
+   *  that fails the wait compiles on that frame instead. */
+  const compile = () => {
+    quad.material = shadowMaterial;
+    const shadow = renderer.compileAsync(scene, quadCamera);
+    quad.material = material;
+    const clouds = renderer.compileAsync(scene, quadCamera);
+    void Promise.all([shadow, clouds])
+      .catch(() => undefined)
+      .then(() => {
+        compiled = true;
+      });
+  };
+
   const ready = () =>
-    !disposed && textures !== null && surfaceUniforms.uClouds.value !== null;
+    !disposed &&
+    compiled &&
+    textures !== null &&
+    surfaceUniforms.uClouds.value !== null;
 
   return {
     get ready() {
@@ -458,6 +476,7 @@ export function createGlobeCloudMarch(
       uniforms.uBlue.value = textures.blue;
       uniforms.uLifeGain.value = bakes.lifeGain;
       uniforms.uDnMean.value = bakes.detailMean;
+      compile();
     },
     render(frame) {
       if (!ready()) return false;

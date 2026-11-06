@@ -84,6 +84,20 @@ function fakeWorker() {
 }
 
 describe("requestCloudBakes", () => {
+  // Why this test matters: a script that fails to load gives an empty
+  // message, which would reach the page as a bare "Error".
+  it("names the failure", async () => {
+    const worker = {
+      onmessage: null as CloudBakeWorker["onmessage"],
+      onerror: null as CloudBakeWorker["onerror"],
+      postMessage() {},
+      terminate() {},
+    };
+    const asked = requestCloudBakes(worker);
+    worker.onerror?.({ message: "" } as ErrorEvent);
+    await expect(asked).rejects.toThrow("the cloud bake worker did not run");
+  });
+
   it("asks the worker, resolves its tiles and ends it", async () => {
     const worker = fakeWorker();
     const bakes = fakeBakes();

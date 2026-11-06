@@ -66,7 +66,8 @@ function fakeView(altitudeM: number, framed = true) {
 function fakeParts() {
   const log: string[] = [];
   const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
-  const shellFrames: { altitudeKm: number; shadow: number }[] = [];
+  const shellFrames: { altitudeKm: number; shadow: number; cover: number }[] =
+    [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
   const depthExtra: unknown[] = [];
@@ -103,7 +104,7 @@ function fakeParts() {
     shellVolume: {
       setEnabled: (on: boolean) => log.push(`shell ${on ? "on" : "off"}`),
       setResolution() {},
-      update(frame: { altitudeKm: number; shadow: number }) {
+      update(frame: { altitudeKm: number; shadow: number; cover: number }) {
         shellFrames.push(frame);
       },
       render: () => log.push("shell"),
@@ -170,6 +171,19 @@ function fakeWorker() {
 const reliefTiles = () => ({
   group: new THREE.Group(),
   addEventListener() {},
+});
+
+describe("createGlobeViewClouds without the near clouds", () => {
+  // Why this test matters: `clouds=old` must be the old path, with the
+  // cover it always had.
+  it("does not lift the shell's cover", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(60_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 60, shareClouds: () => 1 });
+    expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    expect(clouds.nearLive()).toBe(false);
+  });
 });
 
 describe("GLOBE_VIEW_CLOUDS", () => {
@@ -515,6 +529,34 @@ describe("createCloudsParts", () => {
       return { clouds, fakes, near, frames, worker, frame, warned };
     };
     const bakes = { shape: new Uint8Array(1) };
+
+    // Why this test matters: the old clouds are the way back and the
+    // fallback; the lift and the veil belong to the new ones alone.
+    it("leaves the old clouds' cover alone after a failed bake", async () => {
+      const { clouds, fakes, worker, frame } = set(60_000);
+      frame();
+      expect(clouds.nearLive()).toBe(true);
+      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
+      worker.onerror?.({ message: "no" } as ErrorEvent);
+      await vi.waitFor(() => expect(clouds.nearLive()).toBe(false));
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    });
+
+    // Why this test matters: a view closed during the bake must not leave
+    // a worker baking for nothing, or hand textures to a freed pass.
+    it("stops the worker when the view closes", async () => {
+      const { clouds, near, worker } = set(5_000);
+      let stopped = 0;
+      worker.terminate = () => {
+        stopped += 1;
+      };
+      clouds.dispose();
+      expect(stopped).toBe(1);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await Promise.resolve();
+      expect(near.ready).toBe(false);
+    });
 
     // Why this test matters: until the worker answers the page must show
     // its old clouds; after it the new ones, with no reload.

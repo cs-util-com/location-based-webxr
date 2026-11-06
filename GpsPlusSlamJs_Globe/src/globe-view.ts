@@ -525,7 +525,7 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
       position,
       quaternion,
       altitudeKm: globe.tiles.ellipsoid.getPositionElevation(position) / 1000,
-      timeS: theClock().timeAt(frameAt) / 1000,
+      timeS: theClock().driftTimeAt(frameAt) / 1000,
       pixelRad:
         (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
         Math.max(1, canvas.height),

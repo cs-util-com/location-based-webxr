@@ -533,7 +533,7 @@ void main() {
   }
   if ( uNearShadowOn > 0.5 ) {
     c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * uNearWeight * texture2D( tNearShadow, vUv * uNearUv ).a;
+    c.a += ( 1.0 - c.a ) * uNearWeight * texture2D( tNearShadow, clamp( vUv * uNearUv, 0.5 / uNearRes, uNearUv - 0.5 / uNearRes ) ).a;
   }
   if ( uHighOn > 0.5 ) {
     // Premultiplied over (twin of cloudLayerOver), its order by height.

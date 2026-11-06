@@ -87,8 +87,11 @@ function drawWhole(fade: { value: number } | undefined, draw: () => void) {
   }
   const share = fade.value;
   fade.value = 1;
-  draw();
-  fade.value = share;
+  try {
+    draw();
+  } finally {
+    fade.value = share;
+  }
 }
 
 export interface GlobeSceneDepthOptions {
@@ -140,13 +143,16 @@ export function createGlobeSceneDepth(
       renderer.autoClear = false;
       renderer.setRenderTarget(target);
       renderer.clear(false, true, false);
-      drawWhole(options.carrierShare, () => {
-        for (const root of drawn) renderer.render(root, camera);
-      });
-      for (const m of written) m.colorWrite = true;
-      for (const [m, material] of swapped) m.material = material;
-      renderer.setRenderTarget(previous);
-      renderer.autoClear = autoClear;
+      try {
+        drawWhole(options.carrierShare, () => {
+          for (const root of drawn) renderer.render(root, camera);
+        });
+      } finally {
+        for (const m of written) m.colorWrite = true;
+        for (const [m, material] of swapped) m.material = material;
+        renderer.setRenderTarget(previous);
+        renderer.autoClear = autoClear;
+      }
       frames += 1;
       fresh = true;
     },

@@ -167,6 +167,24 @@ describe("createGlobeSceneDepth", () => {
     expect(depth.state().near).toBe(0.5);
   });
 
+  // Why this test matters: a lost context throws in the draw, and a share
+  // left at 1 stops the cross-fade for the rest of the view's life.
+  it("gives the band's share back when the draw throws", () => {
+    const carrierShare = { value: 0.4 };
+    const { renderer, raw, current, outside } = fakeRenderer();
+    raw.render = () => {
+      throw new Error("lost");
+    };
+    const depth = createGlobeSceneDepth(renderer, { carrierShare });
+    const written = mesh();
+    expect(() => {
+      depth.render(new THREE.PerspectiveCamera(), written);
+    }).toThrow("lost");
+    expect(carrierShare.value).toBe(0.4);
+    expect((written.material as THREE.Material).colorWrite).toBe(true);
+    expect(current()).toBe(outside);
+  });
+
   // The callers draw the depth once a frame: `fresh` says it is drawn,
   // `beginFrame` says it is not, and the frames are counted.
   it("draws the relief whole while the band's dither would drop its pixels, and gives the share back", () => {

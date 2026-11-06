@@ -10,7 +10,7 @@
  */
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CLOUD_BAKE_SIZES, type CloudBakes } from "./globe-cloud-bake.js";
 import {
@@ -45,6 +45,7 @@ function fakeRenderer() {
     render: () => {
       draws.push(target);
     },
+    compileAsync: () => Promise.resolve(),
   };
   return { renderer: renderer as unknown as THREE.WebGLRenderer, draws };
 }
@@ -83,7 +84,7 @@ function make(lonOffset = 0) {
     ellipsoid: WGS84_ELLIPSOID,
     surfaceUniforms,
   });
-  return { march, draws, surfaceUniforms };
+  return { march, draws, surfaceUniforms, renderer };
 }
 
 const frameAt = (
@@ -111,24 +112,55 @@ function mapUvUnder(march: GlobeCloudMarch): [number, number] {
   return [Math.atan2(n.y, n.x), Math.asin(n.z)];
 }
 
+describe("createGlobeCloudMarch: the shader's first compile", () => {
+  // Why this test matters: a compile on the frame that first draws is a
+  // long stall in the middle of a flight; until it is done the old clouds
+  // draw.
+  it("is ready only once its shaders are compiled", async () => {
+    let finish = () => {};
+    const compiled = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const { march, renderer } = make();
+    const compile = vi.fn(() => compiled);
+    (renderer as unknown as { compileAsync: unknown }).compileAsync = compile;
+    march.setBakes(fakeBakes());
+    expect(compile).toHaveBeenCalledTimes(2);
+    expect(march.ready).toBe(false);
+    finish();
+    await vi.waitFor(() => expect(march.ready).toBe(true));
+  });
+
+  // Why this test matters: a browser that fails the wait can still compile
+  // on the first draw; the new clouds must not stay off for that.
+  it("is ready after a failed compile too", async () => {
+    const { march, renderer } = make();
+    (renderer as unknown as { compileAsync: unknown }).compileAsync = () =>
+      Promise.reject(new Error("no"));
+    march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
+  });
+});
+
 describe("createGlobeCloudMarch", () => {
   // Why this test matters: the textures come from a worker, seconds after
   // the view; the pass must say it has nothing to draw until then, so the
   // clouds it replaces keep drawing.
-  it("draws nothing before the bakes arrive", () => {
+  it("draws nothing before the bakes arrive", async () => {
     const { march, draws } = make();
     expect(march.ready).toBe(false);
     expect(march.render(frameAt(cameraOver(53, 10, 20_000)))).toBe(false);
     expect(draws).toHaveLength(0);
     march.setBakes(fakeBakes());
-    expect(march.ready).toBe(true);
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     expect(march.render(frameAt(cameraOver(53, 10, 20_000)))).toBe(true);
     expect(draws).toHaveLength(1);
   });
 
-  it("does not draw without the map", () => {
+  it("does not draw without the map", async () => {
     const { march, surfaceUniforms } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     (surfaceUniforms.uClouds as { value: THREE.Texture | null }).value = null;
     expect(march.ready).toBe(false);
   });
@@ -137,11 +169,12 @@ describe("createGlobeCloudMarch", () => {
   // the same clouds; the shell reads the map by the ellipsoid's normal, not
   // by the march's sphere (0.19 degrees apart at 45 N, 20 km), and shifted
   // by the drift. At 60 km the two must agree or the hand-over slides.
-  it("reads the map where the shell reads it, drift included", () => {
+  it("reads the map where the shell reads it, drift included", async () => {
     for (const offset of [0, 0.4]) {
       for (const lat of [-70, -30, 0, 45, 78]) {
         const { march } = make(offset);
         march.setBakes(fakeBakes());
+        await vi.waitFor(() => expect(march.ready).toBe(true));
         march.render(frameAt(cameraOver(lat, 10, 30_000)));
         const [lon, latRead] = mapUvUnder(march);
         expect(lon).toBeCloseTo(10 * toRad - offset, 4);
@@ -150,18 +183,20 @@ describe("createGlobeCloudMarch", () => {
     }
   });
 
-  it("puts the camera at its height over the sphere", () => {
+  it("puts the camera at its height over the sphere", async () => {
     const { march } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     march.render(frameAt(cameraOver(53, 10, 20_000)));
     expect(march.uniforms().uH.value).toBeCloseTo(20, 0);
   });
 
   // Why this test matters: the march's y is up at the camera; a view axis
   // in the wrong frame draws the clouds overhead when looking down.
-  it("gives the view's axes in the march's frame", () => {
+  it("gives the view's axes in the march's frame", async () => {
     const { march } = make(0.4);
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     march.render(frameAt(cameraOver(53, 10, 20_000)));
     expect(march.uniforms().uFwd.value.y).toBeCloseTo(-1, 2);
     expect(march.uniforms().uRight.value.length()).toBeCloseTo(1, 6);
@@ -170,9 +205,10 @@ describe("createGlobeCloudMarch", () => {
   // Why this test matters: the target is allocated once; the scale moves a
   // share of it each frame. A reallocation per frame would be a hitch per
   // frame through every descent.
-  it("draws a share of one target as the distance changes", () => {
+  it("draws a share of one target as the distance changes", async () => {
     const { march } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     const sizes = new Set<number>();
     const shares = new Set<number>();
     for (const km of [40, 12, 6, 4, 2, 0.5]) {
@@ -187,9 +223,10 @@ describe("createGlobeCloudMarch", () => {
   // Why this test matters: the wind must not slide the clouds relative to
   // the map: the drift is the camera moving over the map, so a growing
   // offset must move the weather position with it, in the camera's frame.
-  it("moves through the weather as the map drifts", () => {
+  it("moves through the weather as the map drifts", async () => {
     const { march, surfaceUniforms } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     const camera = cameraOver(0, 10, 10_000);
     march.render(frameAt(camera));
     const start = march.uniforms().uQ0.value.clone();
@@ -201,9 +238,10 @@ describe("createGlobeCloudMarch", () => {
 
   // Why this test matters: the sun set is a long, finite path, not a NaN
   // over half the Earth.
-  it("is dark and finite on the night side", () => {
+  it("is dark and finite on the night side", async () => {
     const { march } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     const camera = cameraOver(0, 10, 2_000);
     march.render(frameAt(camera, { sunEcef: new THREE.Vector3(-1, 0, 0) }));
     const u = march.uniforms();
@@ -213,9 +251,10 @@ describe("createGlobeCloudMarch", () => {
 
   // Why this test matters: the haze ends the march. Its reach is what
   // decides a ray's budget, at every height from the street to the top.
-  it("ends the march where the haze has closed", () => {
+  it("ends the march where the haze has closed", async () => {
     const { march } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     for (const km of [0.3, 3, 20, 60]) {
       march.render(frameAt(cameraOver(53, 10, km * 1000)));
       const u = march.uniforms();
@@ -224,9 +263,10 @@ describe("createGlobeCloudMarch", () => {
     }
   });
 
-  it("takes the layer and the tier's refinement", () => {
+  it("takes the layer and the tier's refinement", async () => {
     const { march } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     march.render(
       frameAt(cameraOver(53, 10, 20_000), {
         quality: GLOBE_QUALITIES.low.clouds,
@@ -238,9 +278,10 @@ describe("createGlobeCloudMarch", () => {
     expect(u.uRefDiv.value).toBe(2);
   });
 
-  it("draws the shadow only when asked", () => {
+  it("draws the shadow only when asked", async () => {
     const { march, draws } = make();
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     march.render(frameAt(cameraOver(53, 10, 5_000)));
     expect(draws).toHaveLength(1);
     march.render(frameAt(cameraOver(53, 10, 5_000), { shadow: 0.5 }));
@@ -248,7 +289,7 @@ describe("createGlobeCloudMarch", () => {
     expect(new Set(draws).size).toBe(2);
   });
 
-  it("leaves the render target as it found it", () => {
+  it("leaves the render target as it found it", async () => {
     const { renderer } = fakeRenderer();
     const held = new THREE.WebGLRenderTarget(1, 1);
     renderer.setRenderTarget(held);
@@ -260,6 +301,7 @@ describe("createGlobeCloudMarch", () => {
       },
     });
     march.setBakes(fakeBakes());
+    await vi.waitFor(() => expect(march.ready).toBe(true));
     march.render(frameAt(cameraOver(53, 10, 5_000)));
     expect(renderer.getRenderTarget()).toBe(held);
   });

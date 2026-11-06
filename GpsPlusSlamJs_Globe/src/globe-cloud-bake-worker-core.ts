@@ -74,7 +74,7 @@ export function requestCloudBakes(
     };
     worker.onerror = (event) => {
       worker.terminate();
-      reject(new Error(event.message ?? "the cloud bake worker did not run"));
+      reject(new Error(event.message || "the cloud bake worker did not run"));
     };
     worker.postMessage({ kind: "bake" });
   });

@@ -67,6 +67,23 @@ export function globeQualityChoiceLabel(choice: GlobeQualityChoice): string {
   return `Quality: ${WORDS[choice]}`;
 }
 
+/** What the toast says of a choice, `kept` by the browser or not; a link
+ *  naming a tier (`link`) wins at the next open. */
+export function globeQualityChoiceToast(
+  label: string,
+  kept: boolean,
+  link: string | null,
+): string {
+  if (link !== null) {
+    return kept
+      ? `${label} saved; the link overrides it`
+      : `${label} kept until this page closes; the link overrides it`;
+  }
+  return kept
+    ? `${label} applies the next time the 3D view opens`
+    : `${label} applies until this page closes`;
+}
+
 /** The tier's name to open with: the link's, else the choice's, else none. */
 export function qualityToOpenWith(
   link: string | null,

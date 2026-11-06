@@ -11,6 +11,11 @@
  * longer gives pixels back, never the tier: a device that needed low once
  * will again, and a tier that flips is what a hunt looks like.
  *
+ * Frame times alone cannot tell a slow device from a capped one (a 30 Hz
+ * screen, a saving mode), so the step-down is its own test: when the fewest
+ * pixels bought less than `worthwhile`, the pixels were not the cost, all of
+ * them come back and it rests for the view's life.
+ *
  * @see globe-cloud-governor.ts.md
  */
 import type { GlobeQualityName } from "./globe-quality.js";
@@ -32,6 +37,8 @@ export const CLOUD_GOVERNOR = Object.freeze({
   minPixelScale: 0.5,
   /** The steps from 1 to the lowest. */
   steps: 5,
+  /** The share of the frame time the fewest pixels must save. */
+  worthwhile: 0.15,
   /** How much of a frame reaches the average. */
   smoothing: 0.1,
   /** A gap this long says nothing of the device (ms). */
@@ -56,10 +63,18 @@ export function createGlobeCloudGovernor(
   let average = 0;
   let slowFor = 0;
   let fastFor = 0;
+  /** The average when the pixels began to fall. */
+  let slowAt = 0;
+  let resting = false;
 
   const stepDown = () => {
+    if (resting) return;
+    if (scaleSteps === 0) slowAt = average;
     if (scaleSteps < G.steps) {
       scaleSteps += 1;
+    } else if (average > slowAt * (1 - G.worthwhile)) {
+      scaleSteps = 0;
+      resting = true;
     } else if (current !== "low") {
       current = "low";
       scaleSteps = 0;
