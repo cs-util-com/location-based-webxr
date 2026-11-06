@@ -997,6 +997,37 @@ describe("drawInspector", () => {
     expect(input("description")?.defaultValue).toBe("");
   });
 
+  // Why: a field selected and not yet typed in has nothing to carry over,
+  // so a redraw put the caret at its start: the next keys landed before
+  // the old text ("The old wellPin a") instead of replacing it.
+  it("keeps the selection in a field not typed in through a redraw", () => {
+    const drawAt = (foundRadiusM: number) => {
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: `station:${STATIONS[0]?.id ?? ""}`,
+          stations: STATIONS.map((s, i) =>
+            i === 0 ? { ...s, description: "Old words", foundRadiusM } : s,
+          ),
+          assets: [],
+          codes: CODES,
+        }),
+        { folded: false, positionOpen: false },
+        pictures,
+      );
+    };
+    drawAt(11);
+    const description = input("description");
+    description?.focus();
+    description?.setSelectionRange(0, "Old words".length);
+    drawAt(12);
+    const again = input("description");
+    expect(again).not.toBe(description);
+    expect(document.activeElement).toBe(again);
+    expect(again?.value).toBe("Old words");
+    expect([again?.selectionStart, again?.selectionEnd]).toEqual([0, 9]);
+  });
+
   // Why: a draw takes the focused field out of the page, and Chromium
   // fires its focusout in the middle of the draw; the shell's commit then
   // dispatched, and the store's change drew the inspector again INSIDE the

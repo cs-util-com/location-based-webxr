@@ -212,12 +212,31 @@ describe('the timing tables of a run on main are an artifact, never a commit', (
 // the run earlier, as a normal red: the log stays and the report step runs.
 describe('a hung browser run ends before its job does', () => {
   /**
-   * What the job needs besides the Playwright run, as measured in 8 full runs:
-   * setup up to 10.3 min, the stages before the browser one up to 1.3 on
-   * OsmDemo, the upload about 1. The rest is spare, so setup above about 17
-   * min on OsmDemo is what reverses this.
+   * What the job needs besides the Playwright run: setup up to SETUP_MIN, the
+   * stages before the browser one up to 1.3 on OsmDemo, the upload about 1.
+   * That leaves about 2 min spare, so a browser install at its limit still
+   * ends with a report. A blocked worker (see BLOCKED_WORKER_MIN) in the same
+   * run does not: the two together need setup under about 17 min.
    */
-  const OUTSIDE_PLAYWRIGHT_MIN = 20;
+  const OUTSIDE_PLAYWRIGHT_MIN = 25;
+  /** The browser install at its step limit, and about a minute for the rest. */
+  const SETUP_MIN = 21;
+  const UPLOAD_MIN = 1;
+  /**
+   * Playwright waits this long for a worker that no longer answers before it
+   * force-kills it and ends the run (PWTEST_CHILD_PROCESS_TIMEOUT, default).
+   */
+  const BLOCKED_WORKER_MIN = 5;
+  /**
+   * Jobs that run several browser packages one after the other. The limit is
+   * per Playwright process, so a hang in the fastest package costs the most:
+   * every other package still runs its normal length, and that one takes the
+   * limit in place of its own. Run step, 15 full runs of 2026-11-05/06: slowest
+   * 20.9 min; the Starter or the QR demo, whole gates, about 0.4 min.
+   */
+  const MANY_BROWSER_PACKAGES = {
+    'design-system-and-apps': { slowestRunMin: 20.9, fastestPackageMin: 0.4 },
+  };
 
   it("wires each job's limit into the environment Playwright reads", () => {
     expect(testJob.env.E2E_GLOBAL_TIMEOUT_MIN).toBe('${{ matrix.e2e_limit }}');
@@ -234,6 +253,43 @@ describe('a hung browser run ends before its job does', () => {
       );
       expect(entry.report, entry.job).toBeTruthy();
     }
+  });
+
+  // Why: `e2e_limit` alone cannot say whether one hang leaves a report in a job
+  // of many packages. At a job limit of 50 the sum is 63.2 min, so the hang was
+  // cancelled with no report; at 75 a green run step above about 32.7 min
+  // reverses this. Two hung packages in one job still outrun it, which is
+  // accepted: the first report is the one that names the problem.
+  it('leaves room for one hang in the fastest package of a job with several', () => {
+    const many = entries.filter((e) => e.browsers && scriptList(e).length > 1);
+    expect(many.map((e) => e.job).sort()).toEqual(Object.keys(MANY_BROWSER_PACKAGES).sort());
+    for (const entry of many) {
+      const { slowestRunMin, fastestPackageMin } = MANY_BROWSER_PACKAGES[entry.job];
+      const budget =
+        SETUP_MIN + (slowestRunMin - fastestPackageMin) + entry.e2e_limit + BLOCKED_WORKER_MIN + UPLOAD_MIN;
+      expect(budget, entry.job).toBeLessThanOrEqual(entry.timeout);
+    }
+  });
+
+  // Why: the job's limit is the slowest way to find a hung installer, and it
+  // cancels the job with no log (one install sat for 75 min). The browser
+  // install is mostly apt: 20 s on a good mirror, but over 15 min on a slow one
+  // (15.8 min green), and 15 min failed a job that was only slow. A green one
+  // above 20 reverses that limit. It is not cut and retried: a slow fetch is
+  // not a stall, and killing apt can leave dpkg interrupted.
+  it('stops a hung install at a step limit, well before the job limit', () => {
+    const installs = testJob.steps.filter((s) => /\binstall\b/.test(String(s.run ?? '')));
+    expect(installs.map((s) => [s.name, s['timeout-minutes']])).toEqual([
+      ['Install dependencies', 15],
+      ['Install Playwright browsers', 20],
+    ]);
+  });
+
+  // Why: a run keeps a report only where its config writes one, and the design
+  // system's wrote a list to the log alone.
+  it('has the design system write the JSON report the job uploads', () => {
+    const config = readFileSync(join(ROOT, 'GpsPlusSlamJs_DesignSystem/3d/playwright.config.mjs'), 'utf8');
+    expect(config).toContain('["json", { outputFile: "../test-results/results.json" }]');
   });
 
   it("uploads the design system's own results, which sit a level deeper", () => {

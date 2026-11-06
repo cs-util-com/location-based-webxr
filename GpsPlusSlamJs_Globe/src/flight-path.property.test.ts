@@ -95,7 +95,7 @@ const flight = flightOfAtLeast(500);
  * worst flight found, from a place to itself, 12,468 m to 1,359 m, reads
  * 0.79 at 2 s and 60 Hz, past this test's 0.8 (a tolerance of 0.21 passes
  * it), and goes on reading under 0.8 at some lengths up to 2.13 s at 60 Hz
- * and 4.18 s at 30 Hz. Drawn flights met it in 0 of 60,000 of 2 to 2.5 s;
+ * and 4.14 s at 30 Hz. Drawn flights met it in 0 of 60,000 of 2 to 2.5 s;
  * from a 0.5 s floor, in 49 of 59,133 of 0.5 to 1 s. Not one of 40,000
  * flights from a place to itself, 2 to 8 s, failed at 60 Hz, 6 at 30 Hz.
  * That case is pinned in flight-path.test.ts, "from a point to itself".

@@ -51,8 +51,8 @@ height over tilted ground, measured with the stack's own ruler
 (`calcRelativeCoordsInMeters`); the altitude kept where the ground is
 unknown; refusals. `pose-edits.property.test.ts`: n nudges and n back
 within 1 mm (steps 0.1 and 1 m; ground amplitude 0, 10, 100 m; n 1-200;
-latitude -80..80); a full turn in 1, 5 and 15-degree steps returns the
-rotation within 1e-9 and the heading within rounding, for heading-only,
+latitude -80..80, evenly spread); a full turn in 1, 5 and 15-degree steps returns the
+rotation within the same bound as a chord, and the heading within rounding, for heading-only,
 upright, tilted and near-vertical poses. The heading is judged as its error
 times the length of the x axis's shadow on the ground (bound
 `(4 steps + 32) EPS` rad, derived in the test), because a heading read near

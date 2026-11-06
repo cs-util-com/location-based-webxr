@@ -14,8 +14,10 @@ import {
  * the same anchor on another device (decision F1). The copy-link button is the
  * only async-UX affordance in the app that has a real success/failure label
  * flip and a timed revert. These tests pin both outcomes plus the revert,
- * under a fake clock so nothing waits out the 2 s (`REVERT_MS` follows
- * `main.ts`; a shorter fast-forward here fails, it cannot pass by accident).
+ * under a clock paused once the anchor is saved, so nothing waits out the 2 s
+ * and a slow machine cannot revert the label before it is read (`REVERT_MS`
+ * follows `main.ts`; a shorter fast-forward here fails, it cannot pass by
+ * accident).
  *
  * The clipboard *contents* are asserted as a soft, secondary check (clipboard
  * access is environment-sensitive); the label flip is the primary contract.
@@ -32,6 +34,7 @@ async function placeAndSave(page) {
   await pushGpsFix(page, SAMPLE_FIX);
   await page.getByTestId("place-button").click();
   await expect(page.getByTestId("place-button")).toHaveText("Saved ✓");
+  await page.clock.pauseAt(Date.now() + 60_000);
 }
 
 test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
@@ -44,6 +47,18 @@ test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
   }) => {
     await installAnchorStarterFakes(page);
     await placeAndSave(page);
+
+    // The second click below changes no text, so nothing on the page says when
+    // it is done and its timer is set; this count does. It rises before the
+    // app's own continuation can be observed, in the same task.
+    await page.evaluate(() => {
+      const write = navigator.clipboard.writeText.bind(navigator.clipboard);
+      window.__copies = 0;
+      navigator.clipboard.writeText = (text) =>
+        write(text).finally(() => {
+          window.__copies += 1;
+        });
+    });
 
     const copyButton = page.getByTestId("copy-link-button");
     await expect(copyButton).toBeVisible();
@@ -63,6 +78,7 @@ test.describe("Anchor starter — Tier 1 copy-link sharing", () => {
     // Regression: a second click used to capture the transient "Link copied ✓"
     // as the idle label, locking the button to it permanently after the timer.
     await copyButton.click();
+    await expect.poll(() => page.evaluate(() => window.__copies)).toBe(2);
     await expect(copyButton).toHaveText("Link copied ✓");
 
     // The single (latest) timer must restore the idle affordance, not lock it.

@@ -101,22 +101,6 @@ test.describe('Permission Verification', () => {
       await expect(fileStorageStatus).toContainText('Ready', { timeout: 5000 });
     });
 
-    await test.step('File Storage is granted with a writable folder', async () => {
-      // Why this test matters: User Feedback Issue #1 - After successful folder
-      // selection with verified write access, status should show granted.
-      await page.evaluate(() => {
-        window.testHooks.updatePermissionStatus({
-          webxr: { supported: true, granted: true },
-          geolocation: { supported: true, granted: true },
-          camera: { supported: true, granted: true },
-          orientation: { supported: true, granted: true },
-          fileSystem: { supported: true, granted: true },
-          allMandatoryReady: true,
-        });
-      });
-      await expect(fileStorageStatus).toContainText('Ready');
-    });
-
     await test.step('File Storage is denied when the folder is read-only', async () => {
       // Why this test matters: User Feedback Issue #1 - When write verification
       // fails (read-only folder), we need to show a clear error message.
@@ -140,6 +124,24 @@ test.describe('Permission Verification', () => {
       const permError = page.locator('#permission-error');
       await expect(permError).toBeVisible();
       await expect(permError).toContainText('read-only');
+    });
+
+    await test.step('File Storage is granted with a writable folder', async () => {
+      // Why this test matters: User Feedback Issue #1 - After successful folder
+      // selection with verified write access, status should show granted.
+      // After the denied step, or the Ready of the step before it would pass
+      // this without the update doing anything.
+      await page.evaluate(() => {
+        window.testHooks.updatePermissionStatus({
+          webxr: { supported: true, granted: true },
+          geolocation: { supported: true, granted: true },
+          camera: { supported: true, granted: true },
+          orientation: { supported: true, granted: true },
+          fileSystem: { supported: true, granted: true },
+          allMandatoryReady: true,
+        });
+      });
+      await expect(fileStorageStatus).toContainText('Ready');
     });
 
     await test.step('WebXR is pending while depth is not yet granted', async () => {

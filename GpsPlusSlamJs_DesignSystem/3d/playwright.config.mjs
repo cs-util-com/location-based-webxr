@@ -15,7 +15,7 @@ import "../test-route-loader.mjs";
 /**
  * The design system's page specs (its `test:e2e` stage): the fast check that
  * every page boots and draws, and the measurements of the globe labs
- * (`labs/globe*`, the two tiers below).
+ * (the only labs with a `*.smoke.spec.mjs` left; the two tiers below).
  *
  * Port 5198 is allocated in docs/dev-server-ports.md (aux range). The server
  * is NEVER reused: `pnpm run serve` for a phone round listens on 4173 on all
@@ -64,7 +64,11 @@ export default defineConfig({
   // A cold SwiftShader boot plus the CPU parity oracle (a few million
   // scattering evaluations) is slow by design, not by defect.
   timeout: 180_000,
-  reporter: [["list"]],
+  // On CI also a JSON report, which the job uploads: it is what is left of a
+  // run that hung, and the list keeps printing bytes for the stage watchdog.
+  reporter: process.env.CI
+    ? [["list"], ["json", { outputFile: "../test-results/results.json" }]]
+    : [["list"]],
   use: {
     ...devices["Desktop Chrome"],
     baseURL: `http://127.0.0.1:${PORT}`,

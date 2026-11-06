@@ -14,7 +14,6 @@
 import type { RefPointPickerResult } from './ui/ref-point-picker';
 import type { FolderImportProgressState } from './ui/hud';
 import type { PermissionCheckResult } from 'gps-plus-slam-app-framework/sensors/permission-checker';
-import type { TrackingQualityReport } from 'gps-plus-slam-app-framework';
 import type { SessionSummaryData } from './ui/session-summary';
 import type { RecordingCoverage } from './ui/recording-index';
 
@@ -38,10 +37,7 @@ declare global {
       hideSetupModal: () => void;
       validateEnterButton: () => void;
       showRecordingControls: () => void;
-      hideRecordingControls: () => void;
       showSessionSummary: (data: SessionSummaryData) => void;
-      updateGpsInfo: (accuracy: number) => void;
-      updateArInfo: (tracking: string) => void;
       updatePermissionStatus: (result: PermissionCheckResult) => void;
       setPermissionsReady: (ready: boolean) => void;
       /**
@@ -54,40 +50,6 @@ declare global {
         message: string,
         options?: { duration?: number; severity?: 'info' | 'warning' | 'error' }
       ) => void;
-      // Log panel hooks (Issue #5)
-      showLogPanel: () => void;
-      hideLogPanel: () => void;
-      toggleLogPanel: () => void;
-      logInfo: (tag: string, message: string) => void;
-      logWarn: (tag: string, message: string) => void;
-      logError: (tag: string, message: string) => void;
-      // GPS event visualization hooks
-      getGpsEventVisualizerCounts: () => { raw: number; fused: number };
-      setGpsEventVisualizerZeroRef: (lat: number, lng: number) => void;
-      clearGpsEventVisualizer: () => void;
-      /**
-       * §3c — Replay-mode diagnostic. Adds a GPS event with optional 1σ
-       * accuracy to the visualizer. Creates a module-local offline scene +
-       * arWorldGroup in e2e-hooks and points the visualizer at it via
-       * `gpsEventVisualizer.setSceneSource` (live scene wins when present),
-       * so the visualizer can run without an active WebXR session.
-       */
-      addGpsEventForTest: (
-        gpsCoords: [number, number, number],
-        odomPosition: [number, number, number],
-        accuracy?: { horizontal?: number; vertical?: number }
-      ) => void;
-      /**
-       * §3c — Reads back the world-space bounding-box size of each raw-GPS
-       * marker via `THREE.Box3.setFromObject` in insertion order.
-       */
-      getRawGpsMarkerWorldSizes: () => Array<{
-        x: number;
-        y: number;
-        z: number;
-      }>;
-      // Tracking quality indicator hook
-      updateTrackingQuality: (report: TrackingQualityReport) => void;
       // Mandatory storage selection hooks (Task 1a-fix)
       setFolderImportExpanded: (expanded: boolean, hint?: string) => void;
       /** Folder-import indexing progress bar (D2, 2026-07-05). */

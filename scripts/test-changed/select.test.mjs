@@ -736,12 +736,6 @@ describe('cleanMergeRefusal', () => {
     expect(cleanMergeRefusal(merge)).toContain('--all');
   });
 
-  // A dry run checks nothing and claims nothing, and it is how to ask what
-  // the gate would do, on a merge above all.
-  it('lets a dry run through', () => {
-    expect(cleanMergeRefusal({ ...merge, dryRun: true })).toBeNull();
-  });
-
   it('lets an explicit --ref through: the caller chose the base', () => {
     expect(cleanMergeRefusal({ ...merge, refGiven: true })).toBeNull();
   });

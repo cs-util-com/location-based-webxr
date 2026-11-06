@@ -26,7 +26,7 @@ interface Anchor {
 }
 
 const attribute = (attrs: string, name: string): string | undefined =>
-  new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1];
+  new RegExp(`(?<![\\w-])${name}="([^"]*)"`).exec(attrs)?.[1];
 
 const anchors: Anchor[] = [
   ...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/g),
