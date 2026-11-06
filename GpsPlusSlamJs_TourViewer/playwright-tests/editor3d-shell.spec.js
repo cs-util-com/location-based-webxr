@@ -363,7 +363,8 @@ function card(page, name) {
 test("the shell's layout at a phone, a phone in landscape, a tablet and a desktop", async ({
   page,
 }) => {
-  test.setTimeout(150_000);
+  // About 52 s on CI, 144 s at worst under load.
+  test.setTimeout(240_000);
   await useWideFont(page);
   // A phone: the tree starts folded; opening it and selecting a station
   // opens the inspector and folds the tree again.
@@ -493,9 +494,15 @@ async function expectPanel(page, size, heightPx) {
   const panel = await box(page.locator("#shell-panel"));
   expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
   expect(panel.height, at).toBeCloseTo(heightPx, 0);
-  // It pushes the view up: the view's canvas ends at its top.
-  const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
-  expect(canvas.y + canvas.height, at).toBeCloseTo(panel.y, 0);
+  // It pushes the view up: the view's canvas ends at its top. Polled: the
+  // canvas takes its size from a ResizeObserver, a callback after the layout
+  // the panel's box is read from, which a busy page delays.
+  await expect
+    .poll(async () => {
+      const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
+      return Math.abs(canvas.y + canvas.height - panel.y);
+    }, at)
+    .toBeLessThan(0.5);
   const head = await box(page.locator("#shell-panel .bp-head"));
   expect(head.height, at).toBe(30);
   expect(head.y, at).toBeCloseTo(panel.y + 1, 0);

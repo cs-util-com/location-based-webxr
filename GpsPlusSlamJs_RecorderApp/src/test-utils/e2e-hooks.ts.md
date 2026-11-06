@@ -14,7 +14,6 @@ The Playwright `window.testHooks` surface plus the map-browser fixture builders,
 - Loaded ONLY via the guarded dynamic import at the bottom of `main.ts` (`import.meta.env.DEV && !VITEST`), so the module never reaches production bundles or the unit-test module graph. Playwright's `waitForTestHooks` polls for the hooks, so the async install is invisible to specs.
 - The map-browser fixtures write Playwright-visible state to `window.__mapBrowserPlayed` / `__mapBrowserInstance` / `__mapBrowserBackfillCalls` / `__releaseBackfill` (typed in `src/global.d.ts`).
 - `fixtureToRecordingCoverage` fabricates `RecordingCoverage` entries with a dummy `FileSystemFileHandle` — fixture tours are never opened as files.
-- **Offline scene fixture (`addGpsEventForTest`, §3c):** the hook keeps a module-level offline `THREE.Scene` + `arWorldGroup` (lazily created, reused across calls) and points `gpsEventVisualizer` at them via `setSceneSource` with a live-scene-first fallback (`getScene() ?? offlineScene`). It no longer injects the offline scene into the webxr-session singleton — those setters were deleted (2026-07-11 surface-reduction step 2). The source is re-asserted on every call so a replay session's own override/reset can't strand later fixture events.
 
 ## Examples
 

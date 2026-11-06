@@ -155,7 +155,7 @@ describe("the preference function's promises", () => {
               set.members.includes(shown);
         expect(holds, `${who} ${b.view} shows ${shown}`).toBe(true);
       }),
-      { numRuns: 300 },
+      { numRuns: 1000 },
     );
   });
 
@@ -169,7 +169,7 @@ describe("the preference function's promises", () => {
         preferredView(s, b.kind, "world");
         expect(s).toEqual(before);
       }),
-      { numRuns: 300 },
+      { numRuns: 1000 },
     );
   });
 

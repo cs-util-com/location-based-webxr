@@ -100,8 +100,9 @@
     in, `--all` for the whole cascade. The two bases select different sets
     and neither contains the other, so the choice stays with the caller. Not
     refused, and not checked either: a merge followed by further edits, where
-    the run sees only those edits. A `--dry-run` is not refused: it is how to
-    ask what the gate would do. The head is read only from a `git` that
+    the run sees only those edits. A `--dry-run` prints the same refusal and
+    exits 0, so it says what the gate would do; that wiring has no test (it
+    takes a merge commit as the head of this repository). The head is read only from a `git` that
     succeeded; a failed read counts as no merge.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.

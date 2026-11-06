@@ -79,6 +79,14 @@ describe('stallPollMs', () => {
 // Why: a Playwright run writes its report on SIGINT and not on SIGTERM, so
 // this wait is what stands between a hang and a kill that leaves no report.
 describe('stallReportGraceMs', () => {
+  // Why: on SIGINT Playwright waits 5 minutes for a worker that no longer
+  // answers before it force-kills it and writes the report. A grace under that
+  // loses the report in exactly the run a report is wanted for. Reversed if a
+  // Playwright upgrade moves that wait (PWTEST_CHILD_PROCESS_TIMEOUT's default).
+  it('outlasts the wait for a blocked Playwright worker', () => {
+    expect(STALL_REPORT_GRACE_MS).toBeGreaterThan(5 * 60_000);
+  });
+
   it('reads a positive override, and falls back on anything else', () => {
     expect(stallReportGraceMs({})).toBe(STALL_REPORT_GRACE_MS);
     expect(stallReportGraceMs({ GATE_STALL_REPORT_GRACE_MS: '200' })).toBe(200);

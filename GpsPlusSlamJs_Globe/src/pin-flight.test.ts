@@ -729,7 +729,7 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
   };
   it("starts at its pace and never dips in the high stretch, whatever the data", () => {
     const failures: string[] = [];
-    for (const startKm of [65_000]) {
+    for (const startKm of [65_000, 10_100]) {
       for (const [name, profile] of Object.entries(profiles)) {
         for (const dataS of [2, 10, 30, 60, 90]) {
           const pin = pressPin(
@@ -765,7 +765,7 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
   // is released by the cap itself (DEC-CF-5).
   it("never waits at the gate, whatever the data takes", () => {
     const failures: string[] = [];
-    for (const startKm of [65_000]) {
+    for (const startKm of [65_000, 10_100]) {
       for (const [name, profile] of Object.entries(profiles)) {
         // 2-60 s is the claim; 90 s is past the cap.
         for (const dataS of [2, 10, 30, 60, 90]) {

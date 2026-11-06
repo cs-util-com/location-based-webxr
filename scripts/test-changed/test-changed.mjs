@@ -25,7 +25,8 @@
 //
 // A COMMITTED MERGE HAS NOTHING TO DIFF against the default HEAD, so a clean
 // tree on one is refused (exit 2, select.mjs `cleanMergeRefusal`): name a
-// --ref, or --all. A --dry-run is let through, to say what the run would do.
+// --ref, or --all. A --dry-run prints that refusal and exits 0: it says what
+// the run would do.
 //
 // Usage: pnpm run test:changed [--all] [--ref <git-ref>] [--dry-run]
 //   --all      run the full cascade (escape hatch, e.g. after a change to
@@ -180,14 +181,13 @@ if (!runAll && refIdx === -1) {
     headLine.status === 0 ? headLine.stdout.trim().split(/\s+/) : [];
   const refusal = cleanMergeRefusal({
     refGiven: false,
-    dryRun,
     selection: currentSelection(),
     headIsMerge: parents.length > 1,
     headOnMain: parents.length > 1 && mainMergeBase() === head,
   });
   if (refusal !== null) {
     console.error(refusal);
-    process.exit(2);
+    process.exit(dryRun ? 0 : 2);
   }
 }
 

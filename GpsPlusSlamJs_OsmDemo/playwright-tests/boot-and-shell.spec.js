@@ -244,11 +244,10 @@ test.describe("the demo boots", () => {
       // a gradient with no units.
       await expect(legend.locator(".legend-min")).toHaveText("1");
       await expect(legend.locator(".legend-max")).not.toBeEmpty();
-      // WHAT THE DATA REACHES, beside the fixed ramp (DEC-H7). Asserted here
-      // because nothing else could: `legend-view.ts` has no unit test, so until
-      // this line deleting the readout entirely stayed green — while
-      // `heat-colours.ts.md` justifies saturating 10–14 % of `walkable` on the
-      // grounds that "the legend compensates, and has to" (r513 review).
+      // WHAT THE DATA REACHES, beside the fixed ramp. Asserted on the page too,
+      // beside `legend-view.test.ts`: `heat-colours.ts.md` justifies saturating
+      // 10-14 % of `walkable` on the grounds that "the legend compensates, and
+      // has to", so the readout has to reach the screen.
       //
       // On the TEXT, not on an `aria-label`: a span with no role is
       // `role="generic"`, where ARIA prohibits an accessible name, so the
@@ -485,7 +484,7 @@ test.describe("the location picker", () => {
     });
     for (const url of tilesAfter.splice(0)) tilesBefore.add(url);
 
-    await test.step("clears the old city the moment a new one is DECLARED, and announces the load centred on the scene (DEC-R12-6)", async () => {
+    await test.step("clears the old city the moment a new one is DECLARED, and announces the load centred on the scene", async () => {
       // WHY THIS TEST MATTERS. The eighth testing session jumped New York ->
       // London, watched the height profile switch immediately, and watched New
       // York's buildings and cells stay on screen for the 20-30 s the Overpass
@@ -581,7 +580,7 @@ test.describe("the location picker", () => {
       );
     });
 
-    await test.step("writes the place into the URL, so a reload comes back to it (DEC-R12-5)", async () => {
+    await test.step("writes the place into the URL, so a reload comes back to it", async () => {
       // WHY THIS TEST MATTERS. The read side has parsed `?lat=&lng=` and `?site=`
       // since round 4 and nothing ever wrote them, so the session's jump to London
       // survived exactly until a reload. The ask was for a link that can be pasted
@@ -626,7 +625,7 @@ test.describe("the location picker", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await test.step("dragging the 2D map carries the 3D camera with it (DEC-L4)", async () => {
+    await test.step("dragging the 2D map carries the 3D camera with it", async () => {
       // WHY THIS TEST MATTERS: the seventeenth session asked for the two views to
       // agree — "wenn man in der 2d Karte die Karte verschiebt, die Kamera in der
       // 3d Szene an die gleiche Stelle springt" — and this is the wiring that
@@ -677,7 +676,7 @@ test.describe("the location picker", () => {
         .toBeGreaterThan(first);
     });
 
-    await test.step("zooming the 2D map still KEEPS the 3D camera's target (DEC-L4)", async () => {
+    await test.step("zooming the 2D map still KEEPS the 3D camera's target", async () => {
       // WHY THIS TEST MATTERS, and it is a regression guard rather than a new
       // feature: `zoomend` dollies the camera without moving its target, on
       // purpose — the two views' targets diverge all the time (a map click
