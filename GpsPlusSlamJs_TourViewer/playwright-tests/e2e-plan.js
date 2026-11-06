@@ -44,6 +44,7 @@ export const SPECS = {
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
+  "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-globe-approach.spec.js": {
@@ -78,6 +79,11 @@ export const SPECS = {
   "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-narration.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-shell.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-station-ring.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 3,
+  },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "file-access-check.spec.js": { project: "dom", area: "viewer", lane: 1 },

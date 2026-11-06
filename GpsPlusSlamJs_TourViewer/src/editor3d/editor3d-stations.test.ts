@@ -31,12 +31,14 @@ import {
   CODE_FLAT_GAP_M,
   CODE_SCREEN_PX,
   DEFAULT_CODE_SIZE_M,
+  RING_RENDER_ORDER,
   codeGrowth,
   focalPxOf,
   codeQuaternionNue,
   createStationsLayer,
   type StationsLayerDeps,
 } from "./editor3d-stations.js";
+import { isInterfacePart } from "./globe-interface-pass.js";
 import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 
@@ -848,6 +850,24 @@ describe("createStationsLayer", () => {
     // The globe's interface pass finds the pole by this name.
     expect(names).toContain("pole");
     expect(layer.stationObjects("nowhere")).toBeNull();
+    layer.dispose();
+  });
+
+  // Why: the ring lies flat at the station's height, so on a slope the
+  // relief above that height covered it (seen on a phone). A flat ring
+  // cannot follow a slope, so it is drawn over the ground, and as an
+  // overlay it is also what the globe's interface pass lifts.
+  it("draws the found radius over the ground, whatever the relief's height", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    layer.setTour(manifest([station("a", 0, 0)]), new Map());
+    layer.update(view(0, 0, null));
+    const ring = layer.group.getObjectByName("found-radius") as THREE.Mesh;
+    const material = ring.material as THREE.MeshBasicMaterial;
+    expect(material.depthTest).toBe(false);
+    expect(material.depthWrite).toBe(false);
+    expect(ring.renderOrder).toBe(RING_RENDER_ORDER);
+    expect(isInterfacePart(ring)).toBe(true);
     layer.dispose();
   });
 
