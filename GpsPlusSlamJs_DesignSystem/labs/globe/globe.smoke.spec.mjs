@@ -642,6 +642,8 @@ test("every control on the plate writes the hash and applies", async ({
       "maxKm",
       "milkyWay",
       "nightGain",
+      "osm",
+      "osmFadeM",
       "pixelRatio",
       "sky",
       "spinMs",
