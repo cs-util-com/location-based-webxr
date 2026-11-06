@@ -23,6 +23,11 @@
  * operation counter, the store's state object, the rendered markup): a
  * step it cannot see is covered by `quietMs` at most. A test that needs
  * such a step to have happened waits for its result, not for this.
+ *
+ * Real timers only: under `vi.useFakeTimers()` a window's `setImmediate`
+ * and `setTimeout(0)` never fire, so the wait hangs past `timeoutMs`
+ * without its message (the bound is only read between windows) until the
+ * test times out. Faking `performance` alone is fine.
  */
 const QUIET_MS = 25;
 /** Under vitest's 5 s test timeout, so this file's message is the one read. */
