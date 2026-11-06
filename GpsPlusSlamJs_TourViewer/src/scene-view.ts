@@ -5,7 +5,8 @@
  * and ONE story at a time: a station found while another story plays waits
  * behind a "Play" button, and tapping that button stops the story playing
  * (the community PR idea of "a new tap stops the previous one", K-D4: the
- * idea, not the implementation).
+ * idea, not the implementation). A station with several playable stories
+ * opens on a picker of their titles (`story-choice.ts`).
  *
  * Owns no AR: what a step shows at the station (a cut-out character, a 3D
  * model) goes to the caller's `stage`; the sound goes to the caller's
@@ -20,6 +21,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   isTourStoryBlock,
+  type TourStory,
   type TourStoryBlock,
   type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
@@ -28,9 +30,13 @@ import {
   createScenePlayer,
   isPlayableInK4,
   playableStepCount,
-  playedStory,
   type ScenePlayer,
 } from "./scene-player.js";
+import {
+  createStoryChoices,
+  storyPickLabel,
+  type StoryPicker,
+} from "./story-choice.js";
 import {
   showItemCard,
   type ItemCardHost,
@@ -127,13 +133,17 @@ export interface SceneViewDeps {
   checkPicture(blob: Blob): Promise<string | null>;
   /** A choice button; the view wires nothing else into it. */
   createChoiceButton(label: string, onClick: () => void): Node;
+  /** Moves the focus to a button of `createChoiceButton`: the picker's
+   *  first story when it opens. None: left where it is. */
+  focusChoice?(button: Node): void;
   /** A one-shot clock (an auto step): returns the cancel. */
   schedule(fn: () => void, ms: number): () => void;
   readonly objectUrls: {
     create(blob: Blob): string;
     revoke(url: string): void;
   };
-  /** A story played to its end: the station is done. */
+  /** The station is done: its one story played to its end, or the last
+   *  unplayed of several, or the visitor left its picker. */
   onStoryEnd(stationId: string): void;
   /** The story started, moved to another step, ended or stopped, or the
    *  queue changed: what the sheet draws of it (`progress`) may differ. */
@@ -177,14 +187,15 @@ export interface SceneView {
   /** End this station's story now (the guide's "End this story", K4
    *  review R9): the playing one stops and the next queued one starts, a
    *  queued one leaves the queue; its end is reported either way, also for
-   *  a station the panel does not hold. */
+   *  a station the panel does not hold. With a story of its picker left
+   *  unplayed the picker comes back instead, and nothing is reported. */
   end(stationId: string): void;
   /** No story any more (the session ended, the tour closed). */
   stopAll(): void;
-  /** The station whose story plays, or null. */
+  /** The station whose panel is open (its story, card or picker), or null. */
   playing(): string | null;
-  /** Where the story playing is; null with none, or for a scene with a
-   *  choice (no fixed number of steps). */
+  /** Where the story playing is; null with none (a picker shows no dots),
+   *  or for a scene with a choice (no fixed number of steps). */
   progress(): StoryProgress | null;
   /** Hold the step while the visitor is asked whether to end the story:
    *  an auto step's timer stops (its `autoMs`
@@ -195,13 +206,17 @@ export interface SceneView {
 
 export function createSceneView(deps: SceneViewDeps): SceneView {
   const { dom } = deps;
+  /** The station's turn. Its `played` story, or null: its card or its
+   *  picker, over an empty player, so Continue and `end` finish it. */
   let story: {
     station: TourStation;
+    played: TourStory | null;
     children: readonly TourStoryChild[];
     player: ScenePlayer;
     count: number | null;
   } | null = null;
   const queue: TourStation[] = [];
+  const choices = createStoryChoices();
   /** Bumped per rendered step: a load that lands later is dropped. */
   let renderToken = 0;
   let cancelTimer: (() => void) | null = null;
@@ -593,35 +608,78 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     }
   }
 
-  function start(station: TourStation): void {
+  /** The station's turn, with `played` as its story; its player. */
+  function takeTurn(
+    station: TourStation,
+    played: TourStory | null,
+  ): ScenePlayer {
     held = false;
     sheetFailure = null;
-    clearStage();
-    const children = playedStory(station)?.children ?? [];
+    const children = played?.children ?? [];
+    const player = createScenePlayer(children);
     story = {
       station,
+      played,
       children,
-      player: createScenePlayer(children),
+      player,
       count: playableStepCount(children),
     };
+    return player;
+  }
+
+  function start(station: TourStation): void {
+    clearStage();
+    const panel = choices.panelOf(station, hasCard(station));
+    const player = takeTurn(
+      station,
+      panel.show === "story" ? panel.story : null,
+    );
     dom.panel.hidden = false;
     dom.title.textContent = stationTitle(station);
     showDescription(station.description ?? "");
     showStationImage(station);
     renderQueue();
-    const first = story.player.current();
-    if (first === null && hasCard(station)) {
+    if (panel.show === "picker") {
+      showPicker(panel);
+    } else if (panel.show === "card") {
       // No story, but a card to read: it stays until Continue, which ends
       // it (the player's `next()` of an empty story is its end).
-      releaseStep();
-      dom.speaker.hidden = true;
-      dom.speaker.textContent = "";
-      dom.text.textContent = "";
-      dom.continueButton.hidden = false;
+      showCard("");
       deps.onChange?.();
-      return;
+    } else {
+      render(player.current());
     }
-    render(first);
+  }
+
+  /** A turn with no story: the station's name, its card and `words`, and
+   *  Continue. */
+  function showCard(words: string): void {
+    releaseStep();
+    dom.speaker.hidden = true;
+    dom.speaker.textContent = "";
+    dom.text.textContent = words;
+    dom.continueButton.hidden = false;
+  }
+
+  /** The station's stories to tap, on a turn with no story. */
+  function showPicker(picker: StoryPicker): void {
+    showCard("Choose a story");
+    const buttons = picker.picks.map((pick) =>
+      deps.createChoiceButton(storyPickLabel(pick), () => {
+        playPicked(pick.story);
+      }),
+    );
+    dom.choices.replaceChildren(...buttons);
+    deps.onChange?.();
+    const first = buttons[0];
+    if (first !== undefined) deps.focusChoice?.(first);
+  }
+
+  /** The tapped story plays under the station's name, which stays. */
+  function playPicked(picked: TourStory): void {
+    if (story === null) return;
+    clearStage();
+    render(takeTurn(story.station, picked).current());
   }
 
   /** A station has something to read without a story (`stationHasCard`,
@@ -693,10 +751,21 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     // his station is left); anything else leaves with it.
     if (deps.stage.release === undefined) clearStage();
     else deps.stage.release();
+    if (ended !== null && ended.played !== null) {
+      const back = choices.storyEnded(ended.station, ended.played.id);
+      if (back !== null) {
+        takeTurn(ended.station, null);
+        showPicker(back);
+        return;
+      }
+    }
     dom.panel.hidden = true;
     showDescription("");
     hideStationImage();
-    if (ended !== null) deps.onStoryEnd(ended.station.id);
+    if (ended !== null) {
+      choices.forget(ended.station);
+      deps.onStoryEnd(ended.station.id);
+    }
     const next = queue.shift();
     if (next !== undefined) start(next);
     else renderQueue();
@@ -761,11 +830,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         queue.splice(at, 1);
         renderQueue();
       }
+      choices.forget({ id: stationId });
       deps.onStoryEnd(stationId);
     },
     stopAll() {
       queue.length = 0;
       story = null;
+      choices.clear();
       // The debug readout names nothing of a tour that is gone.
       sheetFailure = null;
       releaseStep();

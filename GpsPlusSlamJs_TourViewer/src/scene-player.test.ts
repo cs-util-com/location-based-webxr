@@ -10,9 +10,7 @@ import {
   createScenePlayer,
   isPlayableInK4,
   playableStepCount,
-  playedStory,
 } from "./scene-player";
-import { playableStory, storyOf } from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the scene player is the castle knight's whole
@@ -51,23 +49,6 @@ const quiz: TourQuizEntry = {
   points: 1,
   answer: { type: "number", value: 800, tolerance: 50 },
 };
-
-describe("playedStory", () => {
-  // Why: until a station offers its stories, a visitor plays one. A story
-  // of nothing playable must not stand in front of the one that has a
-  // scene, or a hand-made file would show him an empty panel.
-  it("is the station's first story with something to play, none without one", () => {
-    const empty = storyOf("empty", []);
-    const quizzes = storyOf("quizzes", [quiz]);
-    const told = playableStory("told");
-    const later = playableStory("later");
-    expect(playedStory({ children: [empty, quizzes, told, later] })?.id).toBe(
-      "told",
-    );
-    expect(playedStory({ children: [empty, quizzes] })).toBeNull();
-    expect(playedStory({ children: [] })).toBeNull();
-  });
-});
 
 describe("createScenePlayer", () => {
   it("plays the steps in order and ends after the last", () => {

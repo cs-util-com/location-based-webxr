@@ -180,7 +180,9 @@ hooks.tickStations = stations.tick;
   `skipTapped`, `rowTapped`, `cancelAsk`, `storyEnded`, the stop's `stopAll` and
   `endSession`); `request()` inside one defers the draw to the end of the
   outermost call, once, and outside any call draws at once. A call that
-  throws still draws (try/finally). Tests: `visitor-stations.test.ts`
+  throws still draws (try/finally). `after(run)` runs work behind that draw
+  (a sheet opening with it takes the focus only then), and at once outside
+  a call. Tests: `visitor-stations.test.ts`
   "createCallGuard".
 - `progressKept()` - the open tour has a walk with progress: the
   progress's stations are the open tour's (a closed tour's walk stays in

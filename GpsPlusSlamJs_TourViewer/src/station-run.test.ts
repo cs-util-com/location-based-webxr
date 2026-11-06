@@ -27,6 +27,7 @@ import {
 import {
   playableStory,
   stationContent,
+  storyOf,
 } from "./test-support/station-content.js";
 
 /**
@@ -556,6 +557,25 @@ describe("finishing the tour: done is progress, finished is the visitor's", () =
     doneByVisit(run, "a");
     expect(run.isFinished()).toBe(false);
     expect(run.finishWait()).toBe("a");
+  });
+
+  // Why: a quiz is not played yet, so a story of quizzes alone shows nothing,
+  // and a walk waiting on it would wait for a panel that closes at once.
+  it("counts a station of quizzes alone as stepless", () => {
+    const quizzes = storyOf("quizzes", [
+      {
+        id: "q",
+        kind: "quiz",
+        question: "How old?",
+        points: 1,
+        answer: { type: "number", value: 800, tolerance: 50 },
+      },
+    ]);
+    const route = walkRoute(
+      [{ ...station("s"), children: [quizzes] }],
+      new Set(),
+    );
+    expect(route.map((r) => r.stepless)).toEqual([true]);
   });
 
   it("a stepless station is still done the moment it is found, and as the last one it waits too", () => {

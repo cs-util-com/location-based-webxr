@@ -12,10 +12,6 @@ an auto block. Plan:
 
 ## Public API
 
-- `playedStory(station): TourStory | null` - the story a visitor plays at
-  the station: its first with something to play, or null. A station plays
-  one story until the story picker exists; a file with two keeps the
-  second for then.
 - `createScenePlayer(children): ScenePlayer`
   - `current()` - the child showing, null once ended;
   - `next()` - continue (a tap or the timer); a choice is not continued,
@@ -44,7 +40,6 @@ an auto block. Plan:
 ## Examples
 
 ```ts
-const story = playedStory(station);
 const player = createScenePlayer(story?.children ?? []);
 player.current(); // the first playable child
 player.choose("left"); // on a choice: its target

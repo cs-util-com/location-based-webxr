@@ -26,11 +26,11 @@ status line and what an end means.
     the queue; `onStoryEnd(stationId)` is reported either way, also for a
     station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
-  - `playing()` - the station whose story plays.
+  - `playing()` - the station whose panel is open: its story, card or picker.
 - Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
-  `createChoiceButton(label, onClick)`, `schedule(fn, ms)`, `objectUrls`,
+  `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
   `onStoryEnd(stationId)`.
 
 ## Invariants & assumptions
@@ -167,6 +167,21 @@ preload="metadata">` (`dom.video`, `ItemVideo`): the clip and its
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.
 
+- **A station with several playable stories** opens on a picker
+  (`story-choice.ts` holds the rule): the station's name, description and card
+  picture as for a story, the line "Choose a story" in `dom.text` (the panel is
+  the live region), the titles as buttons of `createChoiceButton`, Continue. The
+  focus moves to the first story each time the picker opens (`focusChoice`,
+  asked for after `onChange`, because a page may only open the panel then).
+  A tap plays that story under the same name and picture; at its end, or on
+  `end`, the picker returns with it marked while a story is unplayed. Continue
+  in the picker, `end` while the picker shows and the end of the last unplayed
+  story end the station. One playable story starts directly and no title
+  shows. Technically a picker is a turn with no story, like a card: an empty
+  player, so `progress()` is null and `holdStep` has nothing to hold, and a
+  re-queued station shows its picker again on its turn. A figure stays for the
+  picker (`stage.release`) and goes when the next story starts.
+
 ## Examples
 
 ```ts
@@ -194,7 +209,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 ## Progress and change
 
 - `SceneViewDeps.onChange?()` - called after every render of a step, at
-  a story's end and on `stopAll()`, so the sheet's story card (its dots,
+  a story's end, when a picker opens and on `stopAll()`, so the sheet's story card (its dots,
   the peek in its place) follows without polling.
 - `SceneView.progress(): StoryProgress | null` -
   `{ index, count, autoMs }` of the story playing: the step shown, the

@@ -115,9 +115,10 @@ export function told(block, fields = {}) {
  * visitor meets them).
  * @param {string} id
  * @param {object[]} children
+ * @param {string} [title]
  */
-export function storyOf(id, children) {
-  return { id, kind: "story", title: "A story", children };
+export function storyOf(id, children, title = "A story") {
+  return { id, kind: "story", title, children };
 }
 
 /**

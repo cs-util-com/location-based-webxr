@@ -10,26 +10,11 @@
  * show, so a visitor meets the rest of the scene instead of a dead end.
  */
 
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  tourStories,
-  type TourStory,
-  type TourStoryChild,
-} from "gps-plus-slam-app-framework/ar/tour-story";
+import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
 /** Whether this build shows the child (quizzes arrive with K5). */
 export function isPlayableInK4(child: TourStoryChild): boolean {
   return child.kind !== "quiz";
-}
-
-/** The story a visitor plays at `station`: its first with something to
- *  play, or null. A station plays one story until the story picker exists. */
-export function playedStory(
-  station: Pick<TourStation, "children">,
-): TourStory | null {
-  return (
-    tourStories(station).find((s) => s.children.some(isPlayableInK4)) ?? null
-  );
 }
 
 /**

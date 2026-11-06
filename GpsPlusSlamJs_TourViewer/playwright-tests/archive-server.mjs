@@ -54,6 +54,8 @@
  * - `/ranges-ok/storyless-tour.zip` - the stations tour whose gate has no
  *   story, as a station made on the phone: only its name, its description
  *   and its card picture (the knight).
+ * - `/ranges-ok/two-stories-tour.zip` - the stations tour whose gate holds
+ *   two stories, one with a title of 67 characters, beside its free pin.
  * - `/ranges-ok/story-count-<5|20|50>.zip` - the stations tour whose gate
  *   story first shows that many pins and pictures in the world, one per
  *   step (the opt-in frame-time spec).
@@ -246,6 +248,7 @@ async function buildStationsZip({
   worldBlocks = false,
   storyBlocks = false,
   storyless = false,
+  twoStories = false,
   storyCount = 0,
   longText = null,
   title = "E2E castle",
@@ -413,7 +416,7 @@ async function buildStationsZip({
           {
             id: "gate",
             title: "The gate",
-            ...(storyBlocks || storyless
+            ...(storyBlocks || storyless || twoStories
               ? { description: "The castle's main gate, built in 1400." }
               : {}),
             ...(storyless ? { image: "knight" } : {}),
@@ -424,7 +427,37 @@ async function buildStationsZip({
             children: [
               // The gate's story: a storyless station has none (a block in
               // no story must stand in the world).
-              ...(storyless
+              ...(twoStories
+                ? [
+                    storyOf(
+                      "gate-arch-story",
+                      [
+                        told(
+                          textCard(
+                            "arch-text",
+                            "The arch",
+                            "Built in 1400 and rebuilt twice.",
+                          ),
+                        ),
+                      ],
+                      "The arch",
+                    ),
+                    storyOf(
+                      "gate-guard-story",
+                      [
+                        told(
+                          textCard(
+                            "guard-text",
+                            "The guard",
+                            "Sixty years, and never a day off.",
+                          ),
+                        ),
+                      ],
+                      "The guard who has stood at this gate for more than sixty long years",
+                    ),
+                  ]
+                : []),
+              ...(storyless || twoStories
                 ? []
                 : [
                     storyOf("gate-story", [
@@ -934,6 +967,7 @@ const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
 const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
 const storylessZipBytes = await buildStationsZip({ storyless: true });
+const twoStoriesZipBytes = await buildStationsZip({ twoStories: true });
 /** Two tours, each with a long text at its gate (the visitor's view
  *  preference holds across tours). */
 const longTextZips = {
@@ -1164,6 +1198,16 @@ createServer((req, res) => {
       "ranges-ok",
       storylessZipBytes,
       '"e2e-storyless-v1"',
+    );
+    return;
+  }
+  if (url.pathname === "/ranges-ok/two-stories-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      twoStoriesZipBytes,
+      '"e2e-two-stories-v1"',
     );
     return;
   }

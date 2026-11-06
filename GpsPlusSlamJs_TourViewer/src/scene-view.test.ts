@@ -11,6 +11,10 @@ import {
 
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import { createSceneView, type SceneViewDom } from "./scene-view";
+import {
+  storyOf,
+  type StoryChildInput,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the story panel is what the visitor came for. It
@@ -65,6 +69,219 @@ function fakeDom() {
   };
   return { dom, lastChoices: () => choices.at(-1) ?? [] };
 }
+
+/** Steps as a story's children: `Step` leaves the fields open. */
+const steps = (...list: Step[]): StoryChildInput[] =>
+  list as unknown as StoryChildInput[];
+
+describe("a station with several stories", () => {
+  const firstCard = (id: string): StoryChildInput[] =>
+    steps(tap(`${id}-a1`, "First story"));
+
+  /** A station of two stories, one card each unless `second` says more. */
+  const twoStories = (
+    second: Step[] = [tap("b1", "Second story")],
+    id = "gate",
+  ): TourStation => ({
+    ...station(id, [], "The gate"),
+    description: "An old gate.",
+    children: [
+      storyOf(`${id}-first`, firstCard(id), "The arch"),
+      storyOf(`${id}-second`, steps(...second), "The guard"),
+    ],
+  });
+  const labels = (h: ReturnType<typeof harness>): string[] =>
+    h.lastChoices().map((c) => c.label);
+
+  it("offers the titles under the station's name, with Continue and no story playing", () => {
+    // Why: the picker is the station's panel, so its name and description
+    // stand as for a story, and a visitor who wants none can walk on.
+    const h = harness();
+    h.view.offer(twoStories());
+    expect(h.dom.panel.hidden).toBe(false);
+    expect(h.dom.title.textContent).toBe("The gate");
+    expect(h.dom.description.textContent).toBe("An old gate.");
+    expect(h.dom.text.textContent).toBe("Choose a story");
+    expect(labels(h)).toEqual(["The arch", "The guard"]);
+    expect(h.dom.continueButton.hidden).toBe(false);
+    expect(h.view.playing()).toBe("gate");
+    expect(h.ended).toEqual([]);
+  });
+
+  it("moves the focus to the first story each time the picker opens", () => {
+    // Why: the buttons appear under a keyboard or a screen reader's cursor
+    // that was on something now gone.
+    const h = harness();
+    h.view.offer(twoStories());
+    expect(h.focused.map((b) => b.label)).toEqual(["The arch"]);
+    h.lastChoices()[1]!.click();
+    h.view.continueTapped();
+    expect(h.focused.map((b) => b.label)).toEqual(["The arch", "The arch"]);
+  });
+
+  it("plays the story tapped, its buttons gone, and returns with it marked", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[1]!.click();
+    expect(h.dom.text.textContent).toBe("Second story");
+    expect(h.lastChoices()).toEqual([]);
+    expect(h.dom.title.textContent).toBe("The gate");
+    h.view.continueTapped();
+    expect(h.ended).toEqual([]);
+    expect(h.dom.panel.hidden).toBe(false);
+    expect(h.dom.text.textContent).toBe("Choose a story");
+    expect(labels(h)).toEqual(["The arch", "✓ The guard"]);
+  });
+
+  it("ends the station once, with the last unplayed story", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    h.lastChoices()[1]!.click();
+    h.view.continueTapped();
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.dom.panel.hidden).toBe(true);
+    expect(h.view.playing()).toBeNull();
+  });
+
+  it("ends the station on Continue in the picker, with stories unplayed", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    h.view.continueTapped();
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.dom.panel.hidden).toBe(true);
+  });
+
+  it("offers Continue again after a story that ended on a choice", () => {
+    // Why: a choice hides Continue, and a story may end by its answer. The
+    // picker would then have no way to leave the station.
+    const h = harness();
+    h.view.offer(
+      twoStories([
+        {
+          id: "ask",
+          kind: "choice",
+          prompt: "Enter?",
+          options: [
+            { id: "y", label: "Yes", goto: "ask" },
+            { id: "n", label: "No" },
+          ],
+        },
+      ]),
+    );
+    h.lastChoices()[1]!.click();
+    expect(h.dom.continueButton.hidden).toBe(true);
+    h.lastChoices()[1]!.click();
+    expect(h.dom.text.textContent).toBe("Choose a story");
+    expect(h.dom.continueButton.hidden).toBe(false);
+  });
+
+  it("leaves the card picture alone on the way back to the picker", async () => {
+    // Why: it stands over the whole station; freeing it between two
+    // stories would flash and read the picture again.
+    const h = harness();
+    h.view.offer({ ...twoStories(), image: "knight" });
+    await settle();
+    expect(h.dom.stationImage.hidden).toBe(false);
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    expect(h.dom.stationImage.hidden).toBe(false);
+    expect(h.urls.revoked).toEqual([]);
+  });
+
+  it("End this story returns to the picker while another is unplayed, else ends the station", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[0]!.click();
+    h.view.end("gate");
+    expect(h.ended).toEqual([]);
+    expect(labels(h)).toEqual(["✓ The arch", "The guard"]);
+    h.lastChoices()[1]!.click();
+    h.view.end("gate");
+    expect(h.ended).toEqual(["gate"]);
+  });
+
+  it("ends the station on an end while the picker shows", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.view.end("gate");
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.view.playing()).toBeNull();
+  });
+
+  it("shows the picker with its marks when a re-queued station's turn comes", () => {
+    // Why: "Play" stops a station to play another. Coming back must not
+    // lose what the visitor already saw, nor restart a story unasked.
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    h.lastChoices()[1]!.click();
+    h.view.offer(station("well", [tap("w", "A well")]));
+    h.view.playNextNow();
+    expect(h.dom.text.textContent).toBe("A well");
+    h.view.continueTapped();
+    expect(h.ended).toEqual(["well"]);
+    expect(h.view.playing()).toBe("gate");
+    expect(labels(h)).toEqual(["✓ The arch", "The guard"]);
+  });
+
+  it("has no dots and no step to hold while the picker shows", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    expect(h.view.progress()).toBeNull();
+    h.view.holdStep(true);
+    h.view.holdStep(false);
+    expect(h.timers).toEqual([]);
+    expect(labels(h)).toEqual(["The arch", "The guard"]);
+  });
+
+  it("starts unmarked on a revisit, and after everything stopped", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    h.view.continueTapped();
+    h.view.offer(twoStories());
+    expect(labels(h)).toEqual(["The arch", "The guard"]);
+    h.lastChoices()[0]!.click();
+    h.view.continueTapped();
+    h.view.stopAll();
+    h.view.offer(twoStories());
+    expect(labels(h)).toEqual(["The arch", "The guard"]);
+  });
+
+  it("clears the stage for a story tapped, and lets a figure stay for the picker", () => {
+    // Why: a character stays in the world after his story; the next story
+    // is what takes the stage from him.
+    const h = harness();
+    h.view.offer(twoStories());
+    h.stage.clear.mockClear();
+    h.lastChoices()[0]!.click();
+    expect(h.stage.clear).toHaveBeenCalledTimes(1);
+    h.view.continueTapped();
+    expect(h.stage.release).toHaveBeenCalledTimes(1);
+    expect(h.stage.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a single playable story directly, naming no title", () => {
+    const h = harness();
+    h.view.offer({
+      ...twoStories(),
+      children: [
+        storyOf("empty", [], "Nothing here"),
+        storyOf("told", steps(tap("t", "The only one")), "Its title"),
+      ],
+    });
+    expect(h.dom.text.textContent).toBe("The only one");
+    expect(h.lastChoices()).toEqual([]);
+    h.view.continueTapped();
+    expect(h.ended).toEqual(["gate"]);
+  });
+});
 
 /** A block's own fields: what a step of these tests shows. */
 type BlockFields = TourBlock extends infer B
@@ -171,6 +388,7 @@ function harness(
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const ended: string[] = [];
   const changes = { count: 0 };
+  const focused: { label: string }[] = [];
   const urls = { created: [] as string[], revoked: [] as string[] };
   const audio = {
     play: vi.fn(overrides.play ?? (() => Promise.resolve())),
@@ -202,6 +420,9 @@ function harness(
     stage,
     checkPicture: overrides.checkPicture ?? (() => Promise.resolve(null)),
     createChoiceButton: (label, click) => ({ label, click }) as unknown as Node,
+    focusChoice: (button) => {
+      focused.push(button as unknown as { label: string });
+    },
     schedule: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
       timers.push(t);
@@ -235,7 +456,18 @@ function harness(
       ? {}
       : { sayFailure: overrides.sayFailure }),
   });
-  return { view, dom, timers, ended, urls, audio, stage, lastChoices, changes };
+  return {
+    view,
+    dom,
+    timers,
+    ended,
+    urls,
+    audio,
+    stage,
+    lastChoices,
+    changes,
+    focused,
+  };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));

@@ -376,6 +376,13 @@ export function wireVisitorStations(deps: {
       button.addEventListener("click", onClick);
       return button;
     },
+    // The sheet holding the panel opens with the render, and a hidden
+    // element takes no focus.
+    focusChoice: (button) => {
+      calls.after(() => {
+        (button as HTMLElement).focus();
+      });
+    },
     schedule: deps.schedule,
     objectUrls,
     onStoryEnd: (stationId) => {
@@ -922,13 +929,16 @@ export function walkDebugLines(
  * once; outside any call it renders at once. A story's `onChange` fires
  * from inside a guide call (a find starts the story), where the guide's
  * view is half made and its walk batch has not reached the store yet.
+ * `after` runs its work behind that render, at once outside any call.
  */
 export function createCallGuard(render: () => void): {
   during(call: () => void): void;
   request(): void;
+  after(run: () => void): void;
 } {
   let depth = 0;
   let pending = false;
+  const waiting: (() => void)[] = [];
   return {
     during(call) {
       depth += 1;
@@ -936,15 +946,22 @@ export function createCallGuard(render: () => void): {
         call();
       } finally {
         depth -= 1;
-        if (depth === 0 && pending) {
-          pending = false;
-          render();
+        if (depth === 0) {
+          if (pending) {
+            pending = false;
+            render();
+          }
+          for (const run of waiting.splice(0)) run();
         }
       }
     },
     request() {
       if (depth > 0) pending = true;
       else render();
+    },
+    after(run) {
+      if (depth > 0) waiting.push(run);
+      else run();
     },
   };
 }
