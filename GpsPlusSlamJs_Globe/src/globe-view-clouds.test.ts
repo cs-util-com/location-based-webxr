@@ -13,7 +13,10 @@
  */
 import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import type { CloudBakeWorker } from "./globe-cloud-bake-worker-core.js";
+import { GLOBE_QUALITIES } from "./globe-quality.js";
 
 import {
   CLOUD_HIGH_LAYER,
@@ -63,7 +66,8 @@ function fakeView(altitudeM: number, framed = true) {
 function fakeParts() {
   const log: string[] = [];
   const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
-  const shellFrames: { altitudeKm: number; shadow: number }[] = [];
+  const shellFrames: { altitudeKm: number; shadow: number; cover: number }[] =
+    [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
   const depthExtra: unknown[] = [];
@@ -100,7 +104,7 @@ function fakeParts() {
     shellVolume: {
       setEnabled: (on: boolean) => log.push(`shell ${on ? "on" : "off"}`),
       setResolution() {},
-      update(frame: { altitudeKm: number; shadow: number }) {
+      update(frame: { altitudeKm: number; shadow: number; cover: number }) {
         shellFrames.push(frame);
       },
       render: () => log.push("shell"),
@@ -127,10 +131,59 @@ function fakeParts() {
   };
 }
 
+/** A near pass that records what it is told. */
+function fakeNear() {
+  const frames: { pixelScale: number; timeS: number; quality: unknown }[] = [];
+  const near = {
+    ready: false,
+    bakes: [] as unknown[],
+    disposed: 0,
+    setBakes(bakes: unknown) {
+      this.bakes.push(bakes);
+      this.ready = true;
+    },
+    render(frame: { pixelScale: number; timeS: number; quality: unknown }) {
+      frames.push(frame);
+      return true;
+    },
+    texture: new THREE.Texture(),
+    shadowTexture: new THREE.Texture(),
+    uv: new THREE.Vector2(1, 1),
+    resolution: new THREE.Vector2(10, 10),
+    dispose() {
+      this.disposed += 1;
+    },
+  };
+  return { near, frames };
+}
+
+/** A worker that answers when told to. */
+function fakeWorker() {
+  return {
+    onmessage: null as CloudBakeWorker["onmessage"],
+    onerror: null as CloudBakeWorker["onerror"],
+    postMessage() {},
+    terminate() {},
+  };
+}
+
 /** Relief tiles as the slab's shadow patches them. */
 const reliefTiles = () => ({
   group: new THREE.Group(),
   addEventListener() {},
+});
+
+describe("createGlobeViewClouds without the near clouds", () => {
+  // Why this test matters: `clouds=old` must be the old path, with the
+  // cover it always had.
+  it("does not lift the shell's cover", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(60_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 60, shareClouds: () => 1 });
+    expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    expect(clouds.nearLive()).toBe(false);
+  });
 });
 
 describe("GLOBE_VIEW_CLOUDS", () => {
@@ -355,8 +408,8 @@ describe("createGlobeViewClouds", () => {
   });
 
   // Why: the layer switch: off, the slab and the shell are turned off at
-  // the next frame and nothing of them (nor the depth) is drawn; on again,
-  // they come back.
+  // the next frame and nothing of them is drawn; on again, they come back.
+  // The depth stays: the shell's rays end at it while the sky shows.
   it("turns the heavy clouds off and on again", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
@@ -367,13 +420,20 @@ describe("createGlobeViewClouds", () => {
     expect(clouds.state()).toMatchObject({ on: false, shellOn: false });
     expect(fakes.log).toContain("slab off");
     expect(fakes.log).toContain("shell off");
-    expect(fakes.log).not.toContain("depth");
+    expect(fakes.log).toContain("depth");
     expect(fakes.log).not.toContain("slab");
     clouds.setOn(true);
     clouds.step({ observerKm: 10, shareClouds: () => 1 });
     clouds.render({ weight: 1 });
     expect(clouds.state().on).toBe(true);
     expect(fakes.log).toContain("slab");
+  });
+
+  // Why: the air ends its veil at this same depth, so one pass serves both.
+  it("hands out the depth it draws", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    expect(clouds.sceneDepth()).toBe(fakes.parts.sceneDepth);
   });
 
   // Why: a page's shadow check must tell a shell that was never drawn
@@ -438,5 +498,139 @@ describe("createCloudsParts", () => {
         spacePass: {} as never,
       }),
     ).toBeNull();
+  });
+
+  describe("with the near clouds", () => {
+    const set = (altitudeM: number) => {
+      const view = fakeView(altitudeM);
+      const fakes = fakeParts();
+      const { near, frames } = fakeNear();
+      const worker = fakeWorker();
+      const warned: string[] = [];
+      const clouds = createGlobeViewClouds(
+        view,
+        {
+          ...fakes.parts,
+          near: near as unknown as NonNullable<CloudsParts["near"]>,
+        },
+        {
+          near: {
+            createWorker: () => worker,
+            warn: (message) => warned.push(message),
+          },
+        },
+      );
+      clouds.patch(reliefTiles());
+      const frame = () => {
+        clouds.step({ observerKm: altitudeM / 1000, shareClouds: () => 1 });
+        clouds.render({ weight: 0 });
+      };
+      return { clouds, fakes, near, frames, worker, frame, warned };
+    };
+    const bakes = { shape: new Uint8Array(1) };
+
+    // Why this test matters: the old clouds are the way back and the
+    // fallback; the lift and the veil belong to the new ones alone.
+    it("leaves the old clouds' cover alone after a failed bake", async () => {
+      const { clouds, fakes, worker, frame } = set(60_000);
+      frame();
+      expect(clouds.nearLive()).toBe(true);
+      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
+      clouds.setOn(false);
+      expect(clouds.nearLive()).toBe(false);
+      clouds.setOn(true);
+      expect(clouds.nearLive()).toBe(true);
+      worker.onerror?.({ message: "no" } as ErrorEvent);
+      await vi.waitFor(() => expect(clouds.nearLive()).toBe(false));
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    });
+
+    // Why this test matters: a view closed during the bake must not leave
+    // a worker baking for nothing, or hand textures to a freed pass.
+    it("stops the worker when the view closes", async () => {
+      const { clouds, near, worker } = set(5_000);
+      let stopped = 0;
+      worker.terminate = () => {
+        stopped += 1;
+      };
+      clouds.dispose();
+      expect(stopped).toBe(1);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await Promise.resolve();
+      expect(near.ready).toBe(false);
+    });
+
+    // Why this test matters: until the worker answers the page must show
+    // its old clouds; after it the new ones, with no reload.
+    it("draws the old clouds until the bakes arrive", async () => {
+      const { near, frames, worker, frame, fakes } = set(5_000);
+      frame();
+      expect(frames).toHaveLength(0);
+      expect(fakes.log).toContain("slab");
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.bakes).toEqual([bakes]));
+      fakes.log.length = 0;
+      frame();
+      expect(frames).toHaveLength(1);
+      expect(fakes.log).not.toContain("slab");
+    });
+
+    // Why this test matters: the worker's file missing from a bundle is a
+    // page with old clouds and a line in the console, not a broken page.
+    it("stays on the old clouds when the worker fails", async () => {
+      const { frames, worker, frame, warned } = set(5_000);
+      worker.onerror?.({ message: "not found" } as ErrorEvent);
+      await vi.waitFor(() => expect(warned).toHaveLength(1));
+      frame();
+      expect(frames).toHaveLength(0);
+    });
+
+    // Why this test matters: the near clouds end at the relief at every
+    // height they draw, also where the ground sky's share says nothing.
+    it("draws the relief's depth for them whatever the sky's share", async () => {
+      const { near, worker, frame, fakes } = set(5_000);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      frame();
+      expect(fakes.log).toContain("depth");
+    });
+
+    it("draws on the view's tier and its drift clock", async () => {
+      const view = Object.assign(fakeView(5_000), {
+        quality: "medium" as const,
+        driftTimeS: () => 42,
+      });
+      const fakes = fakeParts();
+      const { near, frames } = fakeNear();
+      const worker = fakeWorker();
+      const clouds = createGlobeViewClouds(
+        view,
+        {
+          ...fakes.parts,
+          near: near as unknown as NonNullable<CloudsParts["near"]>,
+        },
+        { near: { createWorker: () => worker } },
+      );
+      clouds.patch(reliefTiles());
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      clouds.step({ observerKm: 5, shareClouds: () => 1 });
+      clouds.render({ weight: 1 });
+      expect(frames[0]?.timeS).toBe(42);
+      expect(frames[0]?.quality).toBe(GLOBE_QUALITIES.medium.clouds);
+      expect(clouds.state().near).toMatchObject({
+        share: 1,
+        tier: "medium",
+        pixelScale: 1,
+      });
+    });
+
+    it("frees the near pass with the rest", () => {
+      const { clouds, near } = set(5_000);
+      clouds.dispose();
+      clouds.dispose();
+      expect(near.disposed).toBe(1);
+    });
   });
 });

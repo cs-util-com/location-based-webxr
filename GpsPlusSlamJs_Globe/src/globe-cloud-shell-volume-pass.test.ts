@@ -47,6 +47,7 @@ interface Draw {
   kind: "march" | "composite";
   into: THREE.WebGLRenderTarget | null;
   uniforms: Uniforms;
+  fragmentShader: string;
   snapshot: Record<string, unknown>;
 }
 
@@ -69,6 +70,9 @@ const COMPOSITE_KEYS = [
   "uShadowOn",
   "uHighOn",
   "uHighInFront",
+  "uNearWeight",
+  "uNearShadowOn",
+  "uShadowWeight",
 ] as const;
 
 /** A float-capable renderer that records draws, clears and clear colours. */
@@ -118,7 +122,13 @@ const fakeRenderer = () => {
         uniforms.uCells?.value as THREE.Vector2 | undefined
       )?.toArray();
       snapshot.uBasis = uniforms.uBasis?.value;
-      draws.push({ kind, into: target, uniforms, snapshot });
+      draws.push({
+        kind,
+        into: target,
+        uniforms,
+        fragmentShader: material.fragmentShader,
+        snapshot,
+      });
       log.push(`render ${kind} into ${target ? "a target" : "the canvas"}`);
     },
     readRenderTargetPixels: (
@@ -543,6 +553,91 @@ describe("createGlobeCloudShellVolume", () => {
     shell.render(camera(), renderOptions);
     expect(drawAt(draws, -1).snapshot.uHighInFront).toBe(0);
     expect(shell.state().high?.shadow).toBe(0);
+  });
+
+  describe("with the near clouds", () => {
+    const near = (weight: number, shadow = true) => ({
+      texture: new THREE.Texture(),
+      shadowTexture: new THREE.Texture(),
+      uv: new THREE.Vector2(0.5, 0.25),
+      resolution: new THREE.Vector2(100, 50),
+      tapPixels: 0.45,
+      weight,
+      shadow,
+    });
+
+    // Why this test matters: the mix is the hand-over. Stacked, the two
+    // clouds would double the cover in the band; mixed by one weight the
+    // opacity stays.
+    it("hands the composite their texture, share and tent", () => {
+      const { shell, draws } = setUp();
+      shell.setEnabled(true);
+      shell.update(frameAt({ shares: { shellIn: 1, shell: 1, slab: 0 } }));
+      const mix = near(0.25);
+      shell.render(camera(), { ...renderOptions, near: mix });
+      const composite = drawAt(draws, -1);
+      expect(composite.uniforms.tNear?.value).toBe(mix.texture);
+      // Why: the target is drawn only up to the frame's share; a tap past
+      // its edge reads the last, larger frame's shadow.
+      expect(composite.fragmentShader).toContain(
+        "texture2D( tNearShadow, clamp(",
+      );
+      expect(composite.uniforms.tNearShadow?.value).toBe(mix.shadowTexture);
+      expect(composite.uniforms.uNearUv?.value).toBe(mix.uv);
+      expect(composite.uniforms.uNearRes?.value).toBe(mix.resolution);
+      expect(composite.uniforms.uNearTap?.value).toBe(0.45);
+      expect(composite.snapshot).toMatchObject({
+        uNearWeight: 0.25,
+        uNearShadowOn: 1,
+        uShadowWeight: 0.75,
+      });
+    });
+
+    // Why this test matters: the reason for the rule. Left in, the old
+    // shell fills the new clouds' gaps at street level; and its march is
+    // the frame's cost for nothing once its weight is 0.
+    it("skips the old deck and its shadow once the near clouds are whole", () => {
+      const { shell, draws } = setUp();
+      shell.setEnabled(true);
+      shell.update(
+        frameAt({
+          shares: { shellIn: 1, shell: 1, slab: 0 },
+          shadow: 0.5,
+          highLayer: {
+            on: true,
+            altitudeKm: 9,
+            cellScale: 2,
+            cover: 0.5,
+            noiseShare: 0.5,
+            shadow: 0.5,
+          },
+        }),
+      );
+      shell.render(camera(), { ...renderOptions, near: near(1) });
+      const marches = draws.filter((d) => d.kind === "march");
+      expect(marches).toHaveLength(1);
+      expect(marches[0]?.snapshot.uThickness).toBe(
+        CLOUD_HIGH_LAYER.thicknessScale,
+      );
+      expect(drawAt(draws, -1).snapshot).toMatchObject({
+        uShellWeight: 0,
+        uShadowOn: 0,
+        uHighOn: 1,
+        uNearWeight: 1,
+      });
+    });
+
+    it("draws no near clouds without them", () => {
+      const { shell, draws } = setUp();
+      shell.setEnabled(true);
+      shell.update(frameAt());
+      shell.render(camera(), renderOptions);
+      expect(drawAt(draws, -1).snapshot).toMatchObject({
+        uNearWeight: 0,
+        uNearShadowOn: 0,
+        uShadowWeight: 1,
+      });
+    });
   });
 
   it("weighs the slab in the composite only with its texture, and eases the flat deck in", () => {

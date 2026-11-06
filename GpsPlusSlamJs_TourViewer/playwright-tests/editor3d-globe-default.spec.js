@@ -172,7 +172,7 @@ test("the link's grade reaches the renderer, and no name keeps the default", asy
   });
   expect(await gradeOf("/edit.html")).toEqual({
     toneMapping: ACESFilmicToneMapping,
-    exposure: 0.75,
+    exposure: 0.47,
   });
   expect(await rejections(page)).toEqual([]);
 });

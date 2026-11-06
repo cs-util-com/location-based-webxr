@@ -23,7 +23,9 @@ import * as THREE from "three";
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
+import { CLOUD_LIFE_SPEED, cloudLifeClock } from "./globe-cloud-march-law.js";
 import type { GlobeGradeName } from "./globe-grade.js";
+import type { GlobeQualityName } from "./globe-quality.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 import {
   createGlobeView,
@@ -175,13 +177,74 @@ describe("createGlobeView: the grade", () => {
   it("is the default grade when none is named", () => {
     const renderer = open();
     expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.75);
+    expect(renderer.toneMappingExposure).toBe(0.47);
   });
 
   it("sets a named grade on the renderer", () => {
     const renderer = open("neutral");
     expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
     expect(renderer.toneMappingExposure).toBe(1);
+  });
+});
+
+/**
+ * Why this test matters: the quality name is what the sea and the near
+ * clouds read off the view, so the view must hold the name it was made with
+ * and a page that names none must get the fine-pointer tier.
+ */
+describe("createGlobeView: the sea", () => {
+  const open = (options: { sea?: boolean; quality?: GlobeQualityName }) =>
+    createGlobeView({
+      canvas: { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement,
+      fovYDeg: SETTINGS.fovY,
+      settings: () => SETTINGS,
+      solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+      mapLoader: stubLoader,
+      createRenderer: () => fakeRenderer([]) as unknown as THREE.WebGLRenderer,
+      ...options,
+    });
+
+  // Why: the sea is the globe's default look; a caller without a sky (or a
+  // page that compares) must be able to do without it.
+  it("is there by default and off on request", () => {
+    expect(open({}).sea?.state()).toMatchObject({
+      on: true,
+      octaves: 8,
+      shortestWaveM: 8,
+    });
+    expect(open({ sea: false }).sea).toBeNull();
+  });
+
+  // Why: the quality's wave count is what a phone is spared.
+  it("takes its waves from the quality", () => {
+    expect(open({ quality: "low" }).sea?.state()).toMatchObject({
+      octaves: 6,
+      shortestWaveM: 32,
+    });
+  });
+});
+
+describe("createGlobeView: the quality", () => {
+  const open = (quality?: GlobeQualityName) => {
+    const view = createGlobeView({
+      canvas: { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement,
+      fovYDeg: SETTINGS.fovY,
+      settings: () => SETTINGS,
+      solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+      mapLoader: stubLoader,
+      createRenderer: () => fakeRenderer([]) as unknown as THREE.WebGLRenderer,
+      ...(quality === undefined ? {} : { quality }),
+    });
+    view.dispose();
+    return view.quality;
+  };
+
+  it("is the fine-pointer tier when none is named", () => {
+    expect(open()).toBe("high");
+  });
+
+  it("holds a named tier", () => {
+    expect(open("medium")).toBe("medium");
   });
 });
 
@@ -344,6 +407,24 @@ describe("createGlobeView: the frame", () => {
   });
 });
 
+describe("createGlobeView: the sea's clock", () => {
+  // Why: the editor holds the hour, and a sea on the scene's clock stands
+  // still under it; the waves run on the drift clock, real time at most.
+  it("keeps the waves moving while the hour is held", () => {
+    const { view, advance } = makeView();
+    const times: number[] = [];
+    const step = view.sea!.step.bind(view.sea);
+    view.sea!.step = (frame) => {
+      times.push(frame.timeS);
+      step(frame);
+    };
+    view.frame();
+    advance(5000);
+    view.frame();
+    expect(times[1]! - times[0]!).toBeCloseTo(5, 6);
+  });
+});
+
 describe("createGlobeView: the clouds' drift", () => {
   // Why: a pinned link with `cloudDrift=0` must hold the clouds still,
   // or two screenshots of one view differ.
@@ -355,6 +436,36 @@ describe("createGlobeView: the clouds' drift", () => {
     view.frame();
     expect(view.globe.surfaceUniforms.uCloudLonOffset.value).toBe(first);
     expect(view.state().cloudDriftRate).toBe(0);
+  });
+
+  // Why: the near clouds' life cycle reads this clock. In milliseconds it
+  // runs a thousand times too fast: the clouds race between frames, which a
+  // still screenshot never shows. Pinned at the check page's rate, 30 times
+  // real time over a 900 s life.
+  it("gives the near clouds' clock in seconds", () => {
+    const { view, advance } = makeView({ cloudDrift: 0.01 });
+    const before = view.driftTimeS();
+    const lifeBefore = cloudLifeClock(before, CLOUD_LIFE_SPEED).phase;
+    advance(100);
+    const after = view.driftTimeS();
+    expect(after - before).toBeCloseTo(0.1, 6);
+    const change = cloudLifeClock(after, CLOUD_LIFE_SPEED).phase - lifeBefore;
+    expect(Math.abs(change)).toBeCloseTo((0.1 * 30) / 900, 6);
+    // One frame at 60 Hz: 0.00056 of a cycle, not the 0.556 of the millisecond
+    // clock.
+    const frame = cloudLifeClock(after + 1 / 60, CLOUD_LIFE_SPEED).phase;
+    expect(
+      Math.abs(frame - cloudLifeClock(after, CLOUD_LIFE_SPEED).phase),
+    ).toBeLessThan(0.001);
+  });
+
+  // Why: a pinned link with `cloudDrift=0` must hold the clouds still, and
+  // the near clouds change shape by this clock.
+  it("holds the near clouds' clock with no drift", () => {
+    const { view, advance } = makeView({ cloudDrift: 0 });
+    const first = view.driftTimeS();
+    advance(5000);
+    expect(view.driftTimeS()).toBe(first);
   });
 
   // Why: the drift is summed per frame at the altitude's rate (a product

@@ -24,14 +24,15 @@
     moves with the time, and the package's typecheck takes in only the
     framework's atmosphere modules, not its `geo/` ones); `stencil`, `reversedDepth` (the renderer's buffers); `mapLoader`,
     `band`, `fill` (the surface's); `seams`; `grade` (a name of
-    `GLOBE_GRADES`, `globe-grade.ts`; fixed for the view's life); for tests `createRenderer` and
+    `GLOBE_GRADES`, `globe-grade.ts`; fixed for the view's life); `quality` (a name of `GLOBE_QUALITIES`,
+    `globe-quality.ts`; fixed for the view's life, `high` when not named); for tests `createRenderer` and
     `monoNow`.
-  - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`;
+  - The view: `renderer`, `scene`, `camera`, `sky`, `globe`, `radius`, `quality`;
     `ecefCamera()` and `placeCameraEcef(position, quaternion)` (the one way a
     pose is read and written, through the frame); `frameTarget()`,
     `setFrameTarget(target | null)`, `recentreFrame()`; `placeView(view)`;
     `earthCentreWorld()`; `fitDistance()` and `refit()`; `startClock(setting)`,
-    `clock()`, `sceneMs()`, `resetCloudDrift()`, `sunNow()`; `frame()`;
+    `clock()`, `sceneMs()`, `driftTimeS()` (the clock the near clouds change by, in seconds; held at 0 with `cloudDrift=0`), `resetCloudDrift()`, `sunNow()`; `frame()`;
     `state()` (`frameAt`, `frameRecentres`, `siderealAngleRad`,
     `cloudDriftRate`, `cloudLonOffsetRad`: the clouds' longitude offset as
     last drawn, rad in [0, 2 pi), what a motion check reads); `dispose()` (the surface out of the scene and
@@ -83,7 +84,7 @@
     rate x time, which jumps at a change of height); `resetCloudDrift()`
     seeds the next frame at the far rate x the drift time.
   - The renderer: antialiased, the named grade (`globe-grade.ts`; its
-    default is ACES at exposure 0.75), `autoClear` off.
+    default is ACES at exposure 0.47), `autoClear` off.
 - Examples:
 
   ```ts
@@ -111,3 +112,11 @@
   and along the approach path). The browser check is the lab's smokes and the
   reference-view screenshots
   (`GpsPlusSlamJs_DesignSystem/labs/globe/globe-reference-shots.smoke.spec.mjs`).
+
+- The sea: `options.sea` (default on; `false`: none compiled, `view.sea`
+  null), its waves from `GLOBE_QUALITIES[quality].sea`, on the drift clock
+  (they move while a page holds the hour), stepped each frame
+  right after the camera is placed. It stays off until it is handed a sky:
+  `mountGlobeViewAir` does that, a page with its own air (the lab) calls
+  `view.sea?.setSky(...)` itself. Without a named `quality` the view takes
+  the fine pointer's tier, so a page that may run on a phone names one.

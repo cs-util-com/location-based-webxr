@@ -11,6 +11,7 @@
   clamped to [0, 1]. `globe-camera.ts` re-exports it, so its existing
   importers are unchanged. One copy per package (the duplicate-helper
   guard's `perPackage` rule).
+- Also `clamp01(v)` and `lerp(a, b, t)`, once for the package.
 - Invariants: no imports, ever; `sky-level.test.ts` walks the sky level's
   relative imports and fails on any bare one.
 - Tests: `globe-camera.test.ts` (the curve itself, through the re-export)

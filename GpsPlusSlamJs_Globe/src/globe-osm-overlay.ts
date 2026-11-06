@@ -395,7 +395,8 @@ const LAYER_BLEND = "tint.rgba *= layerInfo[ i ].opacity * wOpacity;";
  * contrast in the map kept), else compressing its luma L (Rec. 709
  * weights) to L g / (g + (1 - g) L): white ends at g, a dark line keeps
  * nearly its luma, the hue stays, and the map's contrasts are lowered.
- * Adds the uniforms. False, the shader untouched, where the blend line is
+ * With the sea compiled it records how much map a pixel shows, so the sea
+ * stays under it. Adds the uniforms. False, the shader untouched, where the blend line is
  * missing (a library change).
  */
 export function patchOsmFade(
@@ -412,7 +413,8 @@ export function patchOsmFade(
     .replaceAll(
       LAYER_BLEND,
       "tint.rgb = uOsmFlat > 0.5 ? tint.rgb * uOsmGain : osmGain( tint.rgb, uOsmGain );\n" +
-        "tint.rgba *= layerInfo[ i ].opacity * wOpacity * uOsmOn * ( 1.0 - smoothstep( uOsmFadeStart * uOsmFadeM, uOsmFadeM, length( vViewPosition ) ) );",
+        "tint.rgba *= layerInfo[ i ].opacity * wOpacity * uOsmOn * ( 1.0 - smoothstep( uOsmFadeStart * uOsmFadeM, uOsmFadeM, length( vViewPosition ) ) );\n" +
+        "#ifdef GLOBE_SEA\nglobeMapShare = max( globeMapShare, tint.a );\n#endif",
     );
   return true;
 }
@@ -477,6 +479,20 @@ function flatOf(gainMode: OsmGainMode): number {
   throw new RangeError(
     `the map's gain mode must be "flat" or "compress", got ${String(gainMode)}`,
   );
+}
+
+/** Refuses a fade that could not be drawn; throws RangeError. */
+function checkFadeOptions(fadeM: number, fadeStartShare: number): void {
+  if (!(Number.isFinite(fadeM) && fadeM > 0)) {
+    throw new RangeError(
+      `the fade distance must be finite and > 0, got ${fadeM}`,
+    );
+  }
+  if (!(fadeStartShare >= 0 && fadeStartShare < 1)) {
+    throw new RangeError(
+      `the fade start's share must be in [0, 1), got ${fadeStartShare}`,
+    );
+  }
 }
 
 /** RangeError unless `giveUpRetries` is an integer >= 0 and `gain` in (0, 1]. */
@@ -1079,6 +1095,7 @@ export function createGlobeOsmOverlay({
   maxZoom,
   renderer,
   fadeM = GLOBE_OSM.fadeM,
+  fadeStartShare = GLOBE_OSM.fadeStartShare,
   limits: callerLimits = {},
   keep = GLOBE_OSM.keepRegions,
   timeoutMs = GLOBE_OSM.requestTimeoutMs,
@@ -1091,6 +1108,8 @@ export function createGlobeOsmOverlay({
   maxZoom: number;
   renderer: THREE.WebGLRenderer;
   fadeM?: number;
+  /** Where the fade starts, as a share of `fadeM`, in [0, 1). */
+  fadeStartShare?: number;
   limits?: Partial<OsmGateLimits>;
   /** Released map regions kept in memory (`GatedOsmOverlay`'s keep). */
   keep?: number;
@@ -1103,18 +1122,14 @@ export function createGlobeOsmOverlay({
   /** How the gain darkens ("flat" or "compress"). */
   gainMode?: OsmGainMode;
 }) {
-  if (!(Number.isFinite(fadeM) && fadeM > 0)) {
-    throw new RangeError(
-      `the fade distance must be finite and > 0, got ${fadeM}`,
-    );
-  }
+  checkFadeOptions(fadeM, fadeStartShare);
   checkMapOptions(giveUpRetries, gain);
   const flat = flatOf(gainMode);
   const limits = osmGateLimits(callerLimits, maxZoom);
   const credit = osmCredit(attribution);
   const uniforms: OsmFadeUniforms = {
     uOsmFadeM: { value: fadeM },
-    uOsmFadeStart: { value: GLOBE_OSM.fadeStartShare },
+    uOsmFadeStart: { value: fadeStartShare },
     uOsmOn: { value: 0 },
     uOsmGain: { value: gain },
     uOsmFlat: { value: flat },

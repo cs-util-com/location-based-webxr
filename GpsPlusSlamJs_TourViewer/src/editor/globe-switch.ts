@@ -156,6 +156,16 @@ export const GLOBE_SWITCH = Object.freeze({
    */
   grade: Object.freeze({ param: "grade" }),
   /**
+   * The clouds near the ground: the way back to the old ones is `clouds=old`,
+   * exactly; anything else keeps the new ones.
+   */
+  clouds: Object.freeze({ param: "clouds", old: "old" }),
+  /**
+   * The quality tier by name (`GLOBE_QUALITIES` in the Globe package, which
+   * judges it). Absent, the View menu's choice, else the device's default.
+   */
+  quality: Object.freeze({ param: "quality" }),
+  /**
    * The OSM buildings (and trees and roads) at the tour: 1 on, 0 off (a
    * developer's knob: no city worker is made, nothing is asked of
    * Overpass, and a frame-time comparison's other half).
@@ -194,6 +204,10 @@ export interface GlobeSwitch {
   readonly buildings: number;
   /** The colour grade's name as the link wrote it; null: none named. */
   readonly grade: string | null;
+  /** Which clouds draw near the ground. */
+  readonly clouds: "new" | "old";
+  /** The quality tier's name; null: none named, the device's default. */
+  readonly quality: string | null;
 }
 
 /** The knob's value in the link, or null when absent or not in range. */
@@ -242,5 +256,10 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     cloudWind: knob(params, GLOBE_SWITCH.cloudWind),
     buildings: Math.round(knob(params, GLOBE_SWITCH.buildings)),
     grade: params.get(GLOBE_SWITCH.grade.param),
+    clouds:
+      params.get(GLOBE_SWITCH.clouds.param) === GLOBE_SWITCH.clouds.old
+        ? "old"
+        : "new",
+    quality: params.get(GLOBE_SWITCH.quality.param),
   };
 }

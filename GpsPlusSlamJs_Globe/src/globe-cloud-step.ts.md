@@ -73,6 +73,10 @@ sunIntensity, sceneDepthWeight, flatten })`: the slab over the Earth
 - The shell is told it is off whenever `plan` gave no shares, so a frame
   that leaves the shell's band never draws it from an older law.
 
+## The near clouds
+
+With `near` in the options and `cloudNear: 1` in the knobs, `plan` computes their share (`nearShare`) from the camera's height over `cloudNearCeilingKm` and `cloudNearFadeKm`: 0 until they are ready, without a shell or without a finite height. While the share is above 0 and the frame carries `near`, the slab is not drawn at all: the near clouds draw and the shell's composite mixes them with what is above, so nothing old fills their gaps. The slab's `update` keeps running, since the noise anchor hangs on it. Their shadow takes `cloudShellShadow`.
+
 ## Tests
 
 `globe-cloud-step.test.ts`, recording fakes of the slab, the shell and

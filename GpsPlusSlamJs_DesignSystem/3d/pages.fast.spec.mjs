@@ -193,7 +193,7 @@ const GLOBE_BOOT_HASH =
   "relief=1&reliefHeights=synthetic&bandShare=0.5&perf=1&spinMs=0&turnMs=0&stars=0&milkyWay=0";
 
 /** three's tone curves, as the lab's `state().grade` reports them. */
-const ACES = { toneMapping: 4, exposure: 0.75 };
+const ACES = { toneMapping: 4, exposure: 0.47 };
 const NEUTRAL = { toneMapping: 7, exposure: 1 };
 const toneCurve = (page) =>
   page.evaluate(() => window.__globeLab.state().grade);
