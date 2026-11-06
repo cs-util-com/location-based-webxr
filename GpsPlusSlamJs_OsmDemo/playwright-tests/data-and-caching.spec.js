@@ -133,16 +133,6 @@ test.describe("a superseded refresh", () => {
     //
     // Move the camera off its default pose first, or "the camera did not move"
     // is satisfied by a camera that was reset TO the pose it was already in.
-    const canvas = page.locator("#scene canvas");
-    const box = await canvas.boundingBox();
-    if (box === null) throw new Error("no canvas box");
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 - 200, box.y + box.height / 2, {
-      steps: 17,
-    });
-    await page.mouse.up();
-
     /** The camera as the app reports it, once it has stopped changing. */
     const settledCamera = async () => {
       const read = () => {
@@ -166,6 +156,25 @@ test.describe("a superseded refresh", () => {
         .toBeGreaterThanOrEqual(3);
       return previous;
     };
+    const canvas = page.locator("#scene canvas");
+    const box = await canvas.boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    const drag = async () => {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(
+        box.x + box.width / 2 - 200,
+        box.y + box.height / 2,
+        { steps: 17 },
+      );
+      await page.mouse.up();
+    };
+    // Twice: the URL holds no camera until the first change, and the second
+    // drag is the one measured below.
+    await drag();
+    const cameraStart = await settledCamera();
+    await drag();
+
     const cells = page.locator("#map path.affordance-cell");
     await cells.first().click();
     await expect(page.locator("#details")).toBeVisible();
@@ -208,16 +217,28 @@ test.describe("a superseded refresh", () => {
     //
     // THE DISTANCE IS EXACT, THE TARGET NEARLY. The view repaints on demand, so
     // the drag's damping is only finished off by the refresh's own repaints:
-    // the target creeps 0.00002-0.00005° (about 4 m) in a passing run. The
-    // tolerance is about 11 m, and the drag above is about 60 m, so a reset to
-    // the pose before the drag is well outside it. A reset within 11 m of
-    // where the drag ended would pass.
+    // the target creeps 0.00002-0.00005 degrees (about 4 m) in a passing run.
+    // So the target is judged against the drag itself: the drag must be large
+    // enough to see (about 60 m, 0.0005 degrees; under 0.0003 a reset could not
+    // be told from the creep), and the target must stay nearer to where the
+    // drag ended than half the drag. A reset to the pose before it is a whole
+    // drag away. A partial reset of under half would pass.
     const cameraAfter = await settledCamera();
+    const [latStart, lngStart] = cameraStart.split(",");
     const [latBefore, lngBefore, distanceBefore] = cameraBefore.split(",");
     const [latAfter, lngAfter, distanceAfter] = cameraAfter.split(",");
+    const dragged = Math.hypot(
+      Number(latBefore) - Number(latStart),
+      Number(lngBefore) - Number(lngStart),
+    );
+    expect(dragged).toBeGreaterThan(3e-4);
     expect(distanceAfter).toBe(distanceBefore);
-    expect(Math.abs(Number(latAfter) - Number(latBefore))).toBeLessThan(1e-4);
-    expect(Math.abs(Number(lngAfter) - Number(lngBefore))).toBeLessThan(1e-4);
+    expect(
+      Math.hypot(
+        Number(latAfter) - Number(latBefore),
+        Number(lngAfter) - Number(lngBefore),
+      ),
+    ).toBeLessThan(dragged / 2);
   });
 });
 

@@ -299,7 +299,7 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
       where the frames fall on the turn, so on the exact length. Worst found,
       from a place to itself, 12,468 m to 1,359 m: 0.79 at 2 s and 60 Hz,
       past the tolerance of 0.2 (0.21 passes it), under 0.8 at some lengths
-      up to 2.13 s at 60 Hz and 4.18 s at 30 Hz. Drawn flights met it in 0 of
+      up to 2.13 s at 60 Hz and 4.14 s at 30 Hz. Drawn flights met it in 0 of
       60,000 of 2 to 2.5 s; from a 0.5 s floor, in 49 of 59,133 of 0.5 to 1 s.
     - `flight-path.test.ts`, "from a point to itself", pins that case,
       and the same reading at the default 15 s: a 4 Hz sample at tolerance

@@ -177,7 +177,7 @@ const EXPECTED = {
     'playwright-tests/legal.spec.js: the legal page loads with both sections, the operator placeholder and the claims held to the code',
     'playwright-tests/scroll-story.spec.js: boots with a canvas or the static floor, the snippet open, every chapter activating, the QR handoff, and zero errors',
     'playwright-tests/scroll-story.spec.js: a ?qr= launch forwards to the tour viewer with the payload intact',
-    'playwright-tests/scroll-story.spec.js: shows every chapter readable on a phone (${orientation}) [if orientation === "portrait"]',
+    'playwright-tests/scroll-story.spec.js: shows every chapter readable on a phone (${orientation}) [if reducedMotion === "reduce"]',
   ],
   GpsPlusSlamJs_OsmDemo: [
     'playwright-tests/boot-and-shell.spec.js: loads the rule table, draws a basemap, reports its scale, says when it is still widening, on a clean console and a real worker, the views filling the row',

@@ -6,8 +6,9 @@ import { parseRuleTable } from "gps-plus-slam-osm";
 import { DemoPipeline } from "./demo-pipeline.js";
 
 /**
- * WHY THIS FILE MATTERS — it holds the executable statement of an open defect,
- * skipped below. The fixture is shaped by the two assumptions the geo-event
+ * WHY THIS FILE MATTERS: it holds the statement of an open defect, written to
+ * run once the search is wired. Until then nothing here runs: the one test is
+ * skipped below, and a green run of this file says nothing. The fixture is shaped by the two assumptions the geo-event
  * diagnosis rests on. A test that printed those two numbers lived here until
  * they had been read; it pinned neither, so it is gone.
  *
