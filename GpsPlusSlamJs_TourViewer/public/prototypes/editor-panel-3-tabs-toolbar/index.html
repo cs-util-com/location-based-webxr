@@ -1,0 +1,4196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor Panel - Tabs and Toolbar</title>
+    <meta
+      name="description"
+      content="Throwaway prototype: the tour editor's context panel as a fixed header, a context action toolbar and tabs; content is added from the station's Content tab."
+    />
+    <!--
+  Throwaway prototype: the tour editor's station list and context panel,
+  direction "tabs plus a context toolbar". The right panel has a fixed header
+  (type icon, the name editable in place, a kind label, a foldable card with
+  the description and the station picture), a row of icon actions that apply
+  to the selection only (destructive ones at the far right, red, separated),
+  then tabs. Content is added in the station's Content tab with an Add split
+  button. Everything is in memory, hard-coded sample data ("Old Town Walk"),
+  original drawings, no libraries, no network, nothing saved. Not wired into
+  the app.
+-->
+    <style>
+      :root {
+        --bg0: #1c1e22;
+        --bg1: #24272c;
+        --bg2: #2b2e34;
+        --bg3: #33363c;
+        --bg4: #3d4047;
+        --line: #33363c;
+        --line2: #3f434a;
+        --text: #e6e6e6;
+        --muted: #9aa0a6;
+        --dim: #6c727a;
+        --accent: #e9a23b;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --accentInk: #f3c47e;
+        --danger: #e0716c;
+        --dangerBg: rgba(224, 113, 108, 0.13);
+        --focus: #5b9cf0;
+        --ax-e: #e0575b;
+        --ax-n: #4f8fe8;
+        --ax-u: #67bb57;
+        --mono:
+          "Cascadia Mono", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+        --left-w: 264px;
+        --right-w: 312px;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        overflow: hidden;
+      }
+      body {
+        display: grid;
+        grid-template-rows: 40px 3px minmax(0, 1fr) 24px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      svg.i {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+
+      /* ---- top bar ---- */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding-right: 8px;
+        margin-right: 2px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+      }
+      .brand .doc {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .menu {
+        position: relative;
+      }
+      .mbtn {
+        height: 26px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+      }
+      .mbtn:hover,
+      .menu.open .mbtn {
+        background: var(--bg3);
+      }
+      .drop {
+        position: absolute;
+        top: 30px;
+        left: 0;
+        z-index: 60;
+        min-width: 210px;
+        padding: 4px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+        display: none;
+      }
+      .menu.open .drop {
+        display: block;
+      }
+      .mi {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        height: 28px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+      }
+      .mi:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .mi:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .mi kbd {
+        margin-left: auto;
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .mi.danger {
+        color: var(--danger);
+      }
+      .msep {
+        height: 1px;
+        background: var(--line);
+        margin: 4px 2px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      #dirty {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        height: 22px;
+        padding: 0 9px;
+        border-radius: 11px;
+        border: 1px solid var(--accentLine);
+        color: var(--accentInk);
+        font-size: 11px;
+        white-space: nowrap;
+        background: var(--accentBg);
+        cursor: pointer;
+      }
+      #dirty i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      body.dirty #dirty {
+        display: inline-flex;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tbtn:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      #bStations {
+        display: none;
+      }
+      #loadbar {
+        background: var(--accent);
+      }
+
+      /* ---- main ---- */
+      #main {
+        position: relative;
+        display: flex;
+        min-height: 0;
+        min-width: 0;
+      }
+      .panel {
+        background: var(--bg1);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: none;
+      }
+      #left {
+        width: var(--left-w);
+        border-right: 1px solid var(--line);
+      }
+      #right {
+        width: var(--right-w);
+        border-left: 1px solid var(--line);
+      }
+      #right[hidden] {
+        display: none;
+      }
+      #map {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+      }
+      #map canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* ---- left: station list ---- */
+      .lhead {
+        flex: none;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 6px 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .lhead .ttl {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .lhead .count {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .ib {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        background: transparent;
+        border-radius: 4px;
+        color: var(--muted);
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .ib:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .addSt {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 8px 0 6px;
+        border: 1px solid var(--accentLine);
+        border-radius: 4px;
+        background: var(--accentBg);
+        color: var(--accentInk);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .addSt:hover {
+        background: rgba(233, 162, 59, 0.24);
+      }
+      .lbody {
+        overflow: auto;
+        min-height: 0;
+        flex: 1;
+        padding: 4px 0 10px;
+      }
+      .scroll::-webkit-scrollbar {
+        width: 10px;
+      }
+      .scroll::-webkit-scrollbar-thumb {
+        background: var(--bg4);
+        border: 3px solid var(--bg1);
+        border-radius: 6px;
+      }
+      .trow {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 8px 0 4px;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .trow:hover {
+        background: var(--bg2);
+      }
+      .trow.sel {
+        background: var(--accentBg);
+      }
+      .trow.sel::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .trow.ctx:not(.sel) .nm {
+        color: #fff;
+      }
+      .tw {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 20px;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+        padding: 0;
+        border-radius: 3px;
+        flex: none;
+      }
+      .tw:hover {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .tw svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .tw.open svg {
+        transform: rotate(90deg);
+      }
+      .tw.none {
+        visibility: hidden;
+      }
+      .num {
+        font: 600 10px var(--mono);
+        min-width: 18px;
+        text-align: center;
+        background: #3a4656;
+        color: #e6f0fa;
+        border-radius: 3px;
+        padding: 1px 3px;
+        flex: none;
+      }
+      .trow.sel .num {
+        background: var(--accent);
+        color: #1c1c1c;
+      }
+      .nm {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sum {
+        flex: none;
+        font-size: 10.5px;
+        color: var(--dim);
+        max-width: 46%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lockg {
+        color: var(--dim);
+        display: inline-flex;
+      }
+      .lockg svg {
+        width: 12px;
+        height: 12px;
+      }
+      .ic {
+        display: inline-flex;
+        color: var(--muted);
+        flex: none;
+      }
+      .ic svg {
+        width: 14px;
+        height: 14px;
+      }
+      .t-short {
+        color: #e07a6e;
+      }
+      .t-long {
+        color: #d9c38c;
+      }
+      .t-picture {
+        color: #c9a66b;
+      }
+      .t-video {
+        color: #8fb8e8;
+      }
+      .t-audio {
+        color: #7fc7b0;
+      }
+      .t-model {
+        color: #a3b1c2;
+      }
+      .t-character {
+        color: #d79ad0;
+      }
+      .t-story {
+        color: var(--accentInk);
+      }
+      .t-text {
+        color: #cfd3da;
+      }
+      .t-choice {
+        color: #9bb0f0;
+      }
+      .t-quiz {
+        color: #b4d27a;
+      }
+      .kids {
+        position: relative;
+      }
+      .kids .trow {
+        padding-left: 24px;
+      }
+      .kids .kids .trow {
+        padding-left: 42px;
+      }
+      .kids .kids .trow .enum {
+        font: 10px var(--mono);
+        color: var(--dim);
+        min-width: 14px;
+        text-align: right;
+        flex: none;
+      }
+      .banner {
+        margin: 3px 8px 4px 28px;
+        height: 52px;
+        border-radius: 5px;
+        background: #33363c center / cover no-repeat;
+        border: 1px solid var(--line2);
+      }
+      .tempty {
+        padding: 3px 10px 6px 44px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .tempty button {
+        border: 0;
+        background: transparent;
+        color: var(--accentInk);
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline dotted;
+      }
+
+      /* ---- right: context panel ---- */
+      .phead {
+        flex: none;
+        padding: 8px 6px 0 10px;
+      }
+      .prow1 {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+      .ticon {
+        width: 28px;
+        height: 28px;
+        flex: none;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        background: var(--bg3);
+      }
+      .ticon svg {
+        width: 16px;
+        height: 16px;
+      }
+      .nameBtn {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 6px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: text;
+        text-align: left;
+      }
+      .nameBtn:hover {
+        border-color: var(--line2);
+        background: var(--bg2);
+      }
+      .nameBtn .t {
+        font:
+          600 14px "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: #f2f2f2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border-bottom: 1px dotted var(--dim);
+      }
+      .nameBtn .pen {
+        color: var(--dim);
+        display: inline-flex;
+        flex: none;
+      }
+      .nameBtn:hover .pen {
+        color: var(--accentInk);
+      }
+      .nameIn {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        border: 1px solid var(--focus);
+        border-radius: 4px;
+        background: var(--bg2);
+        color: #f2f2f2;
+        font:
+          600 14px "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 0 6px;
+        outline: none;
+      }
+      .capc {
+        font: 10px var(--mono);
+        color: var(--dim);
+        flex: none;
+      }
+      .capc.over {
+        color: var(--danger);
+      }
+      .prow2 {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0 0 35px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .prow2 .kind {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .crumb {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 0;
+        cursor: pointer;
+        text-decoration: underline dotted;
+      }
+      .crumb:hover {
+        color: var(--accentInk);
+      }
+      .fold {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+        font-size: 11px;
+        padding: 2px 4px;
+        border-radius: 3px;
+        flex: none;
+      }
+      .fold:hover {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .fold svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .fold.open svg {
+        transform: rotate(90deg);
+      }
+      .card {
+        padding: 7px 4px 2px 0;
+      }
+      .card[hidden] {
+        display: none;
+      }
+
+      /* the station picture */
+      .pic {
+        position: relative;
+        height: 92px;
+        border-radius: 6px;
+        border: 1px solid var(--line2);
+        background: #2f3237 center / cover no-repeat;
+        margin-bottom: 7px;
+        overflow: hidden;
+      }
+      .pic .pacts {
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        display: flex;
+        gap: 4px;
+      }
+      .pic .pacts button {
+        height: 22px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 3px;
+        background: rgba(20, 21, 24, 0.78);
+        color: #eee;
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .pic .pacts button:hover {
+        background: rgba(50, 52, 58, 0.95);
+      }
+      .pic .plab {
+        position: absolute;
+        left: 6px;
+        top: 5px;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #eee;
+        background: rgba(20, 21, 24, 0.6);
+        padding: 1px 5px;
+        border-radius: 3px;
+      }
+      .picEmpty {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 64px;
+        padding: 0 10px;
+        border: 1px dashed var(--line2);
+        border-radius: 6px;
+        margin-bottom: 7px;
+        color: var(--muted);
+      }
+      .picEmpty svg {
+        width: 30px;
+        height: 30px;
+        color: var(--dim);
+        stroke-width: 1.2;
+      }
+      .picEmpty .pe-t {
+        flex: 1;
+        min-width: 0;
+        line-height: 1.3;
+      }
+      .picEmpty .pe-t b {
+        display: block;
+        color: var(--text);
+        font-weight: 500;
+      }
+      .picEmpty .pe-t span {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .sbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        padding: 0 9px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg2);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .sbtn:hover {
+        background: var(--bg3);
+      }
+      .sbtn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* the light Markdown writer */
+      .md {
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+      .md:focus-within {
+        border-color: var(--focus);
+      }
+      .mdbar {
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 2px 3px;
+        border-bottom: 1px solid var(--line);
+      }
+      .mdbar button {
+        width: 24px;
+        height: 22px;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 0;
+        display: grid;
+        place-items: center;
+      }
+      .mdbar button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .mdbar button svg {
+        width: 14px;
+        height: 14px;
+      }
+      .mdbar .cnt {
+        margin-left: auto;
+        padding-right: 4px;
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .mdbar .cnt.over {
+        color: var(--danger);
+      }
+      .md textarea {
+        display: block;
+        width: 100%;
+        min-height: 48px;
+        resize: vertical;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font:
+          12px/1.45 "Segoe UI",
+          system-ui,
+          sans-serif;
+        padding: 5px 7px;
+        outline: none;
+      }
+      .md.tall textarea {
+        min-height: 130px;
+      }
+      .md .over-note {
+        padding: 0 7px 4px;
+        color: var(--danger);
+        font-size: 11px;
+      }
+
+      /* the context toolbar */
+      .tbar {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 5px 6px;
+        margin-top: 7px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--bg0);
+      }
+      .tbar .sep {
+        width: 1px;
+        height: 18px;
+        background: var(--line2);
+        margin: 0 4px;
+        flex: none;
+      }
+      .tbar .gap {
+        flex: 1;
+      }
+      .ab {
+        position: relative;
+        width: 30px;
+        height: 28px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        flex: none;
+      }
+      .ab svg {
+        color: var(--accentInk);
+      }
+      .ab:hover:not(:disabled) {
+        background: var(--bg3);
+      }
+      .ab:disabled {
+        cursor: default;
+      }
+      .ab:disabled svg {
+        color: var(--dim);
+        opacity: 0.6;
+      }
+      .ab.on {
+        background: var(--accentBg);
+        border-color: var(--accentLine);
+      }
+      .ab.danger svg {
+        color: var(--danger);
+      }
+      .ab.danger:hover:not(:disabled) {
+        background: var(--dangerBg);
+        border-color: rgba(224, 113, 108, 0.45);
+      }
+      .ab[data-tip]:hover::after,
+      .ab[data-tip]:focus-visible::after {
+        content: attr(data-tip);
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 40;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: #0f1012;
+        border: 1px solid var(--line2);
+        color: var(--text);
+        font-size: 11px;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .ab.tipL[data-tip]:hover::after,
+      .ab.tipL[data-tip]:focus-visible::after {
+        left: 0;
+        transform: none;
+      }
+      .ab.tipR[data-tip]:hover::after,
+      .ab.tipR[data-tip]:focus-visible::after {
+        left: auto;
+        right: 0;
+        transform: none;
+      }
+      .ab.danger[data-tip]:hover::after {
+        color: #f3b0ac;
+      }
+      #tipLine {
+        display: none;
+      }
+
+      /* tabs */
+      .tabs {
+        flex: none;
+        display: flex;
+        gap: 2px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tab {
+        position: relative;
+        height: 32px;
+        padding: 0 11px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .tab:hover {
+        color: var(--text);
+      }
+      .tab.on {
+        color: #fff;
+      }
+      .tab.on::after {
+        content: "";
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        bottom: -1px;
+        height: 2px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .tab .badge {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+      .pbody {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 8px 10px 16px;
+      }
+
+      /* forms */
+      .sec {
+        margin: 4px 0 12px;
+      }
+      .sech {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 2px 0 6px;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .sech .sp {
+        flex: 1;
+      }
+      .f {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        align-items: center;
+        gap: 6px;
+        min-height: 26px;
+        margin: 3px 0;
+      }
+      .f > label {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .nf {
+        display: flex;
+        align-items: center;
+        height: 24px;
+        background: var(--bg2);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        min-width: 0;
+      }
+      .nf:focus-within {
+        border-color: var(--focus);
+      }
+      .nf input {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        padding: 0 4px;
+        font: 11px var(--mono);
+        outline: none;
+      }
+      .nf .unit {
+        color: var(--dim);
+        font: 10.5px var(--mono);
+        padding-right: 6px;
+      }
+      .nf.ro {
+        background: transparent;
+        border-color: var(--line);
+      }
+      .nf.ro input {
+        color: var(--muted);
+      }
+      .ax {
+        font: 600 10px var(--mono);
+        padding: 0 5px;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        border-right: 1px solid var(--line2);
+      }
+      .ax.e {
+        color: var(--ax-e);
+      }
+      .ax.n {
+        color: var(--ax-n);
+      }
+      .ax.u {
+        color: var(--ax-u);
+      }
+      .vec {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .tfield {
+        height: 24px;
+        background: var(--bg2);
+        border: 1px solid var(--line2);
+        border-radius: 3px;
+        color: var(--text);
+        padding: 0 7px;
+        width: 100%;
+        outline: none;
+        font: inherit;
+      }
+      .tfield:focus {
+        border-color: var(--focus);
+      }
+      .note {
+        color: var(--dim);
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 3px 0 2px;
+      }
+      .warn {
+        color: #e9b86b;
+        font-size: 11px;
+        line-height: 1.45;
+        margin: 4px 0 2px;
+      }
+      .slider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .slider input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--accent);
+      }
+      .chk {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 24px;
+        cursor: pointer;
+      }
+      .chk input {
+        accent-color: var(--accent);
+        margin: 0;
+      }
+      .link {
+        border: 0;
+        background: transparent;
+        color: var(--accentInk);
+        cursor: pointer;
+        padding: 0;
+        text-decoration: underline dotted;
+        font: inherit;
+      }
+      .filebox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border: 1px solid var(--line2);
+        border-radius: 5px;
+        background: var(--bg2);
+      }
+      .filebox .thumb {
+        width: 56px;
+        height: 38px;
+        border-radius: 4px;
+        background: #3a3d44 center / cover no-repeat;
+        flex: none;
+        display: grid;
+        place-items: center;
+        color: var(--dim);
+      }
+      .filebox .fn {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .filebox .fn small {
+        display: block;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .minilist {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .mrow {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 4px 0 7px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--bg2);
+        min-width: 0;
+      }
+      .mrow .nm {
+        font-size: 12px;
+      }
+      .mrow .x {
+        width: 20px;
+        height: 20px;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+        border-radius: 3px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .mrow .x:hover {
+        color: var(--danger);
+        background: var(--dangerBg);
+      }
+      .mrow .x svg {
+        width: 12px;
+        height: 12px;
+      }
+      .mrow input.tfield {
+        height: 22px;
+        border-color: transparent;
+        background: transparent;
+        padding: 0 2px;
+      }
+      .mrow input.tfield:focus {
+        border-color: var(--focus);
+      }
+      .mrow .ok {
+        accent-color: var(--accent);
+      }
+      .addrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 4px;
+        border: 0;
+        background: transparent;
+        color: var(--accentInk);
+        cursor: pointer;
+        padding: 2px 0;
+      }
+      .addrow svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* view cards (Look tab) */
+      .views {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+      .vcard {
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg2);
+        padding: 6px;
+        cursor: pointer;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 0;
+      }
+      .vcard:hover {
+        border-color: #5a5e66;
+      }
+      .vcard.on {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .vcard .art {
+        height: 46px;
+        border-radius: 4px;
+        background: linear-gradient(
+          180deg,
+          #3a4a5c 0%,
+          #2c3440 62%,
+          #3b3a33 62%,
+          #34332e 100%
+        );
+        position: relative;
+        overflow: hidden;
+      }
+      .vcard .art i {
+        position: absolute;
+        display: block;
+      }
+      .vcard b {
+        font-weight: 500;
+        font-size: 12px;
+      }
+      .vcard span {
+        color: var(--dim);
+        font-size: 10.5px;
+        line-height: 1.3;
+      }
+
+      /* Content tab: the ordered list and the Add split button */
+      .chead {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 8px;
+      }
+      .chead .sp {
+        flex: 1;
+      }
+      .split {
+        position: relative;
+        display: inline-flex;
+        flex: none;
+      }
+      .split .main,
+      .split .more {
+        height: 26px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #1c1c1c;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 600;
+      }
+      .split .main {
+        padding: 0 9px 0 7px;
+        border-radius: 4px 0 0 4px;
+      }
+      .split .more {
+        width: 24px;
+        justify-content: center;
+        padding: 0;
+        border-radius: 0 4px 4px 0;
+        border-left: 1px solid rgba(0, 0, 0, 0.25);
+      }
+      .split .main:hover,
+      .split .more:hover {
+        background: #f0b257;
+      }
+      .split svg {
+        width: 14px;
+        height: 14px;
+        color: #1c1c1c;
+      }
+      .clist {
+        display: flex;
+        flex-direction: column;
+      }
+      .cgrp {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 8px 0 4px;
+        display: flex;
+        gap: 6px;
+      }
+      .cgrp:first-child {
+        margin-top: 0;
+      }
+      .crow {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 30px;
+        padding: 0 6px 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--bg2);
+        cursor: pointer;
+        min-width: 0;
+        margin-bottom: 3px;
+      }
+      .crow:hover {
+        border-color: #545861;
+      }
+      .crow .typ {
+        font-size: 10.5px;
+        color: var(--dim);
+        flex: none;
+      }
+      .crow.new {
+        animation: flash 1.4s ease-out;
+      }
+      @keyframes flash {
+        0% {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 2px var(--accentLine);
+        }
+        100% {
+        }
+      }
+      .trow.new {
+        animation: flashbg 1.4s ease-out;
+      }
+      @keyframes flashbg {
+        0% {
+          background: rgba(233, 162, 59, 0.35);
+        }
+        100% {
+        }
+      }
+      .story {
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        background: var(--bg1);
+        margin-bottom: 6px;
+        overflow: visible;
+      }
+      .story > .crow {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        border-radius: 6px 6px 0 0;
+        background: rgba(233, 162, 59, 0.06);
+        margin: 0;
+      }
+      .seq {
+        padding: 4px 6px 6px 8px;
+      }
+      .ent {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        height: 28px;
+        padding: 0 6px;
+        border-radius: 4px;
+        cursor: pointer;
+        min-width: 0;
+      }
+      .ent:hover {
+        background: var(--bg3);
+      }
+      .ent .en {
+        font: 600 10px var(--mono);
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--bg3);
+        color: var(--muted);
+        flex: none;
+      }
+      .ent .typ {
+        font-size: 10.5px;
+        color: var(--dim);
+        flex: none;
+      }
+      .slot {
+        position: relative;
+        height: 8px;
+        margin: 0 4px;
+      }
+      .slot button {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1px solid var(--accentLine);
+        background: var(--bg1);
+        color: var(--accentInk);
+        display: grid;
+        place-items: center;
+        padding: 0;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.12s;
+        z-index: 2;
+      }
+      .slot button svg {
+        width: 11px;
+        height: 11px;
+      }
+      .slot::before {
+        content: "";
+        position: absolute;
+        left: 22px;
+        right: 4px;
+        top: 50%;
+        height: 1px;
+        background: var(--accentLine);
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .slot:hover button,
+      .slot:hover::before,
+      .slot button:focus-visible,
+      .slot.keep button,
+      .slot.keep::before {
+        opacity: 1;
+      }
+      .slot.end {
+        height: 26px;
+      }
+      .slot.end button {
+        opacity: 1;
+        position: static;
+        transform: none;
+        width: auto;
+        height: 22px;
+        border-radius: 4px;
+        padding: 0 8px;
+        display: inline-flex;
+        gap: 4px;
+        margin-left: 22px;
+        font-size: 11px;
+      }
+      .slot.end::before {
+        display: none;
+      }
+      @media (hover: none) {
+        .slot button,
+        .slot::before {
+          opacity: 1;
+        }
+        .slot {
+          height: 20px;
+        }
+      }
+      .cempty {
+        border: 1px dashed var(--line2);
+        border-radius: 6px;
+        padding: 14px 12px;
+        color: var(--muted);
+        text-align: center;
+        line-height: 1.5;
+      }
+      .cempty b {
+        display: block;
+        color: var(--text);
+        font-weight: 500;
+        margin-bottom: 2px;
+      }
+      .quick {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      .quick button {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 12px;
+        background: var(--bg2);
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .quick button:hover {
+        border-color: var(--accentLine);
+      }
+      .quick svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      /* popovers (add menu, move menu) */
+      .pop {
+        position: fixed;
+        z-index: 70;
+        min-width: 236px;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100vh - 16px);
+        overflow: auto;
+        padding: 4px;
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+      }
+      .pop h4 {
+        margin: 2px 8px 4px;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .pi {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        min-height: 34px;
+        padding: 3px 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+      .pi:hover,
+      .pi:focus-visible {
+        background: var(--bg3);
+        outline: none;
+      }
+      .pi .ic svg {
+        width: 16px;
+        height: 16px;
+      }
+      .pi .pt {
+        min-width: 0;
+        line-height: 1.25;
+      }
+      .pi .pt b {
+        display: block;
+        font-weight: 500;
+      }
+      .pi .pt span {
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .pi .last {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--accentInk);
+        flex: none;
+      }
+
+      /* map overlays */
+      #mapCtl {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        z-index: 4;
+        display: flex;
+        gap: 6px;
+      }
+      .pill {
+        display: flex;
+        background: rgba(36, 39, 44, 0.94);
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .pill button {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        padding: 0;
+      }
+      .pill button:hover {
+        background: var(--bg3);
+        color: var(--text);
+      }
+      .pill button + button {
+        border-left: 1px solid var(--line2);
+      }
+      #notes {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        z-index: 5;
+        width: min(360px, calc(100% - 20px));
+        background: rgba(28, 30, 34, 0.95);
+        border: 1px solid var(--line2);
+        border-radius: 7px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+      }
+      #notes summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        font-weight: 600;
+        color: var(--accentInk);
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes summary svg {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      #notes[open] summary svg {
+        transform: rotate(90deg);
+      }
+      #notes .nb {
+        padding: 0 12px 10px;
+        color: var(--muted);
+        line-height: 1.5;
+        max-height: min(52vh, 420px);
+        overflow: auto;
+      }
+      #notes .nb p {
+        margin: 0 0 6px;
+      }
+      #notes .nb b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      #notes ul {
+        margin: 0 0 6px;
+        padding-left: 16px;
+      }
+      #toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 8px 6px 12px;
+        border-radius: 6px;
+        background: rgba(30, 31, 34, 0.97);
+        border: 1px solid var(--line2);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+        max-width: calc(100% - 24px);
+        white-space: nowrap;
+      }
+      #toast.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #toast span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #toast button {
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid var(--accentLine);
+        border-radius: 4px;
+        background: var(--accentBg);
+        color: var(--accentInk);
+        cursor: pointer;
+        flex: none;
+      }
+
+      /* bottom bar */
+      #sb {
+        display: flex;
+        align-items: center;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+      }
+      #sb > div {
+        padding: 0 10px;
+        border-right: 1px solid var(--line);
+        height: 100%;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      #sbCred {
+        font-size: 10px;
+        color: var(--dim);
+      }
+      #sbActs {
+        gap: 2px;
+        padding: 0 4px !important;
+      }
+      #sbActs:empty {
+        display: none !important;
+      }
+      .sact {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+        color: var(--text);
+      }
+      .sact svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentInk);
+      }
+      .sact:hover {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      #sbHint {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block !important;
+        line-height: 23px;
+        border-right: 0 !important;
+      }
+
+      /* confirm dialog */
+      #modalBack {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(8, 9, 11, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      #modalBack.show {
+        display: flex;
+      }
+      #modal {
+        width: min(400px, 100%);
+        background: var(--bg1);
+        border: 1px solid var(--line2);
+        border-radius: 8px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+      #modal h2 {
+        margin: 0;
+        font-size: 13.5px;
+        font-weight: 600;
+        padding: 12px 14px 8px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      #modal h2 svg {
+        color: var(--danger);
+      }
+      #modal p {
+        margin: 0;
+        padding: 0 14px 4px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      #modal .mf {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 14px;
+      }
+      .btn {
+        height: 28px;
+        padding: 0 14px;
+        border-radius: 4px;
+        border: 1px solid var(--line2);
+        background: var(--bg2);
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--bg3);
+      }
+      .btn.del {
+        background: #b9504b;
+        border-color: #b9504b;
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn.del:hover {
+        background: #cc5c56;
+      }
+
+      /* ---- narrower desktop ---- */
+      @media (max-width: 1100px) {
+        :root {
+          --left-w: 232px;
+          --right-w: 292px;
+        }
+      }
+      @media (max-width: 900px) {
+        :root {
+          --left-w: 214px;
+          --right-w: 280px;
+        }
+        .brand b {
+          display: none;
+        }
+        .tbtn .lbl {
+          display: none;
+        }
+        #sbHint {
+          display: none !important;
+        }
+        #notes {
+          width: min(300px, calc(100% - 20px));
+        }
+      }
+      /* ---- phone: both panels become sheets over the map ---- */
+      @media (max-width: 700px) {
+        #bStations {
+          display: inline-flex;
+        }
+        .mbtn {
+          padding: 0 6px;
+        }
+        #menuHelp {
+          display: none;
+        }
+        .brand .doc {
+          max-width: 28vw;
+        }
+        #left {
+          position: absolute;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 20;
+          width: min(320px, 88vw);
+          transform: translateX(-102%);
+          transition: transform 0.18s;
+          box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
+        }
+        body.leftOpen #left {
+          transform: none;
+        }
+        #right {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: auto;
+          max-height: 64%;
+          z-index: 15;
+          border-left: 0;
+          border-top: 1px solid var(--line2);
+          border-radius: 10px 10px 0 0;
+          box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+        }
+        #right::before {
+          content: "";
+          display: block;
+          width: 36px;
+          height: 4px;
+          border-radius: 2px;
+          background: var(--bg4);
+          margin: 6px auto 0;
+          flex: none;
+        }
+        #mapCtl {
+          top: 10px;
+          bottom: auto;
+          right: 10px;
+        }
+        #notes {
+          top: 54px;
+        }
+        #sbCred {
+          display: none !important;
+        }
+        .ab {
+          width: 34px;
+          height: 32px;
+        }
+        #tipLine {
+          display: block;
+          min-height: 16px;
+          padding: 3px 10px 0;
+          font-size: 11px;
+          color: var(--muted);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="tb">
+      <button class="tbtn" id="bStations" title="Show the stations">
+        <i data-icon="list"></i>
+      </button>
+      <div class="brand">
+        <i data-icon="model" style="color: var(--accent)"></i><b>Tour Editor</b
+        ><span class="doc">Old Town Walk</span>
+      </div>
+      <div class="menu" id="menuFile">
+        <button class="mbtn">File</button>
+        <div class="drop">
+          <button class="mi" data-cmd="save">Save<kbd>Ctrl+S</kbd></button>
+          <button class="mi" disabled>Export tour file...</button>
+        </div>
+      </div>
+      <div class="menu" id="menuEdit">
+        <button class="mbtn">Edit</button>
+        <div class="drop">
+          <button class="mi" data-cmd="undo">Undo<kbd>Ctrl+Z</kbd></button>
+          <button class="mi" data-cmd="redo">Redo<kbd>Ctrl+Y</kbd></button>
+          <div class="msep"></div>
+          <button class="mi" data-cmd="dup">Duplicate</button>
+          <button class="mi" data-cmd="copypos">Copy position</button>
+          <div class="msep"></div>
+          <button class="mi danger" data-cmd="del">Delete...</button>
+        </div>
+      </div>
+      <div class="menu" id="menuView">
+        <button class="mbtn">View</button>
+        <div class="drop">
+          <button class="mi" data-cmd="rings">Show arrival rings</button>
+          <button class="mi" data-cmd="foldall">Fold all stations</button>
+          <button class="mi" data-cmd="notes">About this prototype</button>
+        </div>
+      </div>
+      <div class="menu" id="menuHelp">
+        <button class="mbtn">Help</button>
+        <div class="drop">
+          <button class="mi" data-cmd="notes">About this prototype</button>
+        </div>
+      </div>
+      <span class="spacer"></span>
+      <span
+        id="dirty"
+        title="There are changes that are not saved yet. Click to save."
+        ><i></i>Not saved</span
+      >
+      <button class="tbtn" id="bUndo" title="Undo (Ctrl+Z)">
+        <i data-icon="undo"></i><span class="lbl">Undo</span>
+      </button>
+      <button class="tbtn" id="bRedo" title="Redo (Ctrl+Y)">
+        <i data-icon="redo"></i><span class="lbl">Redo</span>
+      </button>
+    </header>
+    <div id="loadbar"></div>
+
+    <main id="main">
+      <aside class="panel" id="left" aria-label="Stations">
+        <div class="lhead">
+          <span class="ttl">Stations</span
+          ><span class="count" id="stCount"></span><span class="spacer"></span>
+          <button
+            class="addSt"
+            id="bAddStation"
+            title="Add a station in the middle of the map"
+          >
+            <i data-icon="plus"></i>Station
+          </button>
+        </div>
+        <div class="lbody scroll" id="tree"></div>
+      </aside>
+
+      <section id="map">
+        <canvas id="cv"></canvas>
+        <details id="notes" open>
+          <summary>
+            <i data-icon="chev"></i>About this prototype: tabs plus a context
+            toolbar
+          </summary>
+          <div class="nb">
+            <p>
+              <b>Idea.</b> The right panel always has the same three layers: a
+              fixed header (what it is and its name, editable in place), one row
+              of icon actions for exactly this selection, then tabs for the
+              rest. Nothing a station does is ever shown for an item, and the
+              other way round.
+            </p>
+            <ul>
+              <li>
+                <b>Adding</b> lives in the station's Content tab: an Add split
+                button (the last used type, plus a menu of every type), and a
+                "+" between story entries to insert one exactly there. The list
+                there mirrors the left tree: stories first, free items below.
+              </li>
+              <li>
+                <b>Separation.</b> Adding is never in the toolbar. The toolbar
+                holds changes; destructive actions sit alone at its far right,
+                in red, after a divider. Station and story deletes ask once,
+                with the count, and can be undone.
+              </li>
+              <li>
+                <b>Radius</b> went to the Place tab, next to the position and
+                the lock: it is a distance on the ground, drawn as a ring on the
+                map while Place is open, so it is set where you look at it. The
+                Details tab only links to it.
+              </li>
+              <li>
+                <b>Card.</b> The name, the description and the station picture
+                are what a visitor reads first, so they sit at the top in the
+                fixed header, foldable with "Card".
+              </li>
+            </ul>
+            <p>
+              Fake data, nothing saved. The Details tab's arrival settings are
+              placeholders.
+            </p>
+          </div>
+        </details>
+        <div id="mapCtl">
+          <div class="pill">
+            <button id="compass" title="Turn north up">
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path d="M12 3 15 12H9z" fill="#e5483f" />
+                <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+              </svg>
+            </button>
+          </div>
+          <div class="pill">
+            <button id="zin" title="Zoom in">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                fill="none"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg></button
+            ><button id="zout" title="Zoom out">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                fill="none"
+              >
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="toast">
+          <span id="toastTxt"></span><button id="toastUndo">Undo</button>
+        </div>
+      </section>
+
+      <aside class="panel" id="right" hidden aria-label="Selection"></aside>
+    </main>
+
+    <footer id="sb">
+      <div id="sbCred">Map: sample drawing, no real data</div>
+      <div id="sbActs"></div>
+      <div id="sbHint"></div>
+    </footer>
+
+    <div id="modalBack">
+      <div
+        id="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mTtl"
+      ></div>
+    </div>
+
+    <script>
+      "use strict";
+      // ------------------------------------------------------------------ utilities
+      const $ = (q, r = document) => r.querySelector(q);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      let _id = 100;
+      const uid = (p) => p + ++_id;
+
+      const ICON = {
+        plus: '<path d="M8 3v10M3 8h10"/>',
+        chev: '<path d="M6 4l4 4-4 4"/>',
+        caret: '<path d="M4.5 6.5L8 10l3.5-3.5"/>',
+        list: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
+        short:
+          '<rect x="2.5" y="2.5" width="11" height="5" rx="1"/><path d="M8 7.5v6.5"/>',
+        long: '<rect x="3" y="1.8" width="10" height="12.4" rx="1"/><path d="M5.3 5h5.4M5.3 7.5h5.4M5.3 10h3.4"/>',
+        picture:
+          '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2.5 11.2l3.4-3.4 3 3 2-2 2.6 2.6"/><circle cx="10.6" cy="6" r="1"/>',
+        video:
+          '<rect x="1.8" y="3.5" width="9" height="9" rx="1"/><path d="M10.8 6.5l3.4-2v7l-3.4-2"/>',
+        audio:
+          '<path d="M2.5 6h2.4L8 3.2v9.6L4.9 10H2.5z"/><path d="M10.4 5.6a3.2 3.2 0 0 1 0 4.8M12.2 3.8a5.8 5.8 0 0 1 0 8.4"/>',
+        model:
+          '<path d="M8 1.8l5.5 3v6.4L8 14.2 2.5 11.2V4.8z"/><path d="M2.5 4.8L8 7.8l5.5-3M8 7.8v6.4"/>',
+        character:
+          '<circle cx="8" cy="4.4" r="2.4"/><path d="M3.5 14c.3-3.2 2.1-5.1 4.5-5.1s4.2 1.9 4.5 5.1"/>',
+        story:
+          '<path d="M1.8 4.2c0-.6.4-1 1-1h3.4l1.4 1.5h5.6c.6 0 1 .4 1 1v6.9c0 .6-.4 1-1 1H2.8c-.6 0-1-.4-1-1z"/>',
+        text: '<path d="M3 3.5h10M8 3.5V13"/>',
+        choice:
+          '<path d="M8 14V9M8 9L4 4.5M8 9l4-4.5"/><path d="M2.6 6V3.2h2.8M13.4 6V3.2h-2.8"/>',
+        quiz: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
+        station:
+          '<path d="M8 14.5s4.6-4.6 4.6-8.1a4.6 4.6 0 0 0-9.2 0c0 3.5 4.6 8.1 4.6 8.1z"/><circle cx="8" cy="6.4" r="1.6"/>',
+        pen: '<path d="M10.6 2.9l2.5 2.5-7.6 7.6-3.1.6.6-3.1z"/><path d="M9.2 4.3l2.5 2.5"/>',
+        lock: '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+        unlock:
+          '<rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/>',
+        earlier: '<path d="M8 13.5V3M4.5 6.5L8 3l3.5 3.5"/>',
+        later: '<path d="M8 2.5V13M4.5 9.5L8 13l3.5-3.5"/>',
+        ground:
+          '<path d="M1.5 13h13"/><path d="M8 2.5v7M5.5 7.2L8 9.7l2.5-2.5"/>',
+        move: '<path d="M2.5 8h8.5M8 4.5L11.5 8 8 11.5"/><path d="M13.5 3v10"/>',
+        align:
+          '<circle cx="8" cy="9.5" r="4.5"/><path d="M8 1.5v8"/><path d="M6 3.5l2-2 2 2"/>',
+        frame:
+          '<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/><circle cx="8" cy="8" r="1.6"/>',
+        trash:
+          '<path d="M3 4.2h10M6.2 4.2V2.6h3.6v1.6M4.5 4.2l.7 9.3h5.6l.7-9.3"/>',
+        dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 5.5V3.2a.7.7 0 0 0-.7-.7H3.2a.7.7 0 0 0-.7.7v6.6c0 .4.3.7.7.7h2.3"/>',
+        copy: '<circle cx="8" cy="8" r="3.6"/><path d="M8 1.5v2.9M8 11.6v2.9M1.5 8h2.9M11.6 8h2.9"/>',
+        play: '<path d="M5 3.2l7.5 4.8L5 12.8z"/>',
+        close: '<path d="M4 4l8 8M12 4l-8 8"/>',
+        undo: '<path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a3.6 3.6 0 0 1 0 7.2H6.5"/>',
+        redo: '<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a3.6 3.6 0 0 0 0 7.2h3"/>',
+        bold: '<path d="M4.5 2.8h4.2a2.5 2.5 0 0 1 0 5H4.5zM4.5 7.8h4.9a2.7 2.7 0 0 1 0 5.4H4.5z"/>',
+        italic: '<path d="M6.5 2.8h6M3.5 13.2h6M9.5 2.8l-3 10.4"/>',
+        link: '<path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.9.9"/><path d="M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.9-.9"/>',
+        bullets:
+          '<circle cx="3" cy="4.5" r=".6"/><circle cx="3" cy="8" r=".6"/><circle cx="3" cy="11.5" r=".6"/><path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5"/>',
+        upload:
+          '<path d="M8 10.5V2.5M5 5.5l3-3 3 3"/><path d="M2.5 10v3.5h11V10"/>',
+        emptyPic:
+          '<rect x="2" y="3" width="12" height="10" rx="1.2"/><circle cx="10.6" cy="6" r="1.1"/><path d="M2.6 11.4l3.4-3.4 3 3 2-2 2.4 2.4"/>',
+        warn: '<path d="M8 2l6.3 11H1.7z"/><path d="M8 6.5v3"/><circle cx="8" cy="11.5" r=".4"/>',
+      };
+      const icon = (n) =>
+        `<svg class="i" viewBox="0 0 16 16">${ICON[n] || ""}</svg>`;
+      document.querySelectorAll("i[data-icon]").forEach((el) => {
+        const s = el.getAttribute("style");
+        el.outerHTML = s
+          ? icon(el.dataset.icon).replace("<svg", `<svg style="${s}"`)
+          : icon(el.dataset.icon);
+      });
+
+      // a fake picture: an inline SVG drawing (no network)
+      function fakePic(kind) {
+        const sky = {
+          column: ["#e8b77a", "#6f7fa3"],
+          gate: ["#9fb6cf", "#4c5d78"],
+          fountain: ["#c7d7c2", "#5d7a83"],
+          new: ["#d6a3c3", "#5a5f8f"],
+        }[kind] || ["#bbb", "#555"];
+        const fig =
+          {
+            column:
+              '<rect x="70" y="18" width="20" height="62" fill="#3b342d"/><rect x="62" y="12" width="36" height="8" fill="#3b342d"/><circle cx="80" cy="8" r="5" fill="#3b342d"/>',
+            gate: '<path d="M40 80V30h80v50h-24V52a16 16 0 0 0-32 0v28z" fill="#3a3530"/><rect x="36" y="24" width="88" height="8" fill="#3a3530"/>',
+            fountain:
+              '<ellipse cx="80" cy="70" rx="50" ry="10" fill="#33403f"/><rect x="74" y="36" width="12" height="34" fill="#33403f"/><path d="M80 34c-14-14-26-6-30 6M80 34c14-14 26-6 30 6" stroke="#e6f3f5" stroke-width="2" fill="none"/>',
+            new: '<circle cx="110" cy="30" r="12" fill="#f3d8a0"/><path d="M0 80l40-30 30 20 30-26 60 36z" fill="#3a3640"/>',
+          }[kind] || "";
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[1]}"/><stop offset="1" stop-color="${sky[0]}"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/><rect y="78" width="160" height="12" fill="#4a463e"/>${fig}</svg>`;
+        return "url('data:image/svg+xml," + encodeURIComponent(svg) + "')";
+      }
+
+      // ------------------------------------------------------------------ content types
+      const TYPES = {
+        short: {
+          label: "Short text",
+          hint: "A pin with a caption and a few words",
+          nameCap: 40,
+          descCap: 160,
+          views: [
+            ["Pin with caption", "A small sign on a stalk"],
+            ["Sign on a post", "A board at eye height"],
+            ["Marking on the ground", "Painted on the floor"],
+          ],
+        },
+        long: {
+          label: "Long text",
+          hint: "A title and a longer text, can be narrated",
+          descCap: 160,
+          views: [
+            ["Reading sign", "A sign that opens to read"],
+            ["Screen only", "Read on the phone screen"],
+            ["Captions", "Follows a narration"],
+          ],
+        },
+        picture: {
+          label: "Picture",
+          hint: "A photo or image in the world",
+          descCap: 160,
+          views: [
+            ["Plane in the world", "Stands where it was taken"],
+            ["Framed", "In a picture frame"],
+            ["Then and now", "Old view over the real one"],
+          ],
+        },
+        video: {
+          label: "Video",
+          hint: "A screen, porthole, window or cutout",
+          descCap: 160,
+          views: [
+            ["Screen", "A flat screen"],
+            ["Porthole", "A round hole into the scene"],
+            ["Window", "A window in a wall"],
+            ["Cutout", "Only the person, no background"],
+          ],
+        },
+        audio: {
+          label: "Audio",
+          hint: "Ambient sound in a zone, or a narration",
+          descCap: 160,
+          views: [
+            ["Ambient sound in a zone", "Plays while the visitor is near"],
+            ["Narration", "Played once, start to end"],
+          ],
+        },
+        model: {
+          label: "3D model",
+          hint: "Full size, ghost, toy size, with notes",
+          descCap: 160,
+          views: [
+            ["Full size", "Real size, solid"],
+            ["Ghost", "See-through, like a memory"],
+            ["Toy size", "Small, on a table"],
+            ["Cutaway", "Shows its sections"],
+          ],
+        },
+        character: {
+          label: "Character",
+          hint: "A guide figure that speaks",
+          descCap: 160,
+          views: [
+            ["Standing", "Pose for a greeting"],
+            ["Pointing", "Pose to show something"],
+            ["Sitting", "Pose for a long talk"],
+          ],
+        },
+        story: { label: "Story", hint: "A folder of entries played in order" },
+        // story entry only
+        text: {
+          label: "Text",
+          hint: "A card of text",
+          descCap: 160,
+          views: [
+            ["Card in front", "Floats in front of the visitor"],
+            ["Speech bubble", "Above the character"],
+          ],
+        },
+        choice: {
+          label: "Choice",
+          hint: "The visitor picks where to go on",
+          views: [
+            ["Buttons", "Answers as buttons"],
+            ["Signposts", "Answers as signs in the world"],
+          ],
+        },
+        quiz: {
+          label: "Quiz",
+          hint: "A question with one right answer",
+          views: [
+            ["Buttons", "Answers as buttons"],
+            ["Cards on the ground", "Walk to the answer"],
+          ],
+        },
+      };
+      const ADD_ORDER = [
+        "short",
+        "long",
+        "picture",
+        "video",
+        "audio",
+        "model",
+        "character",
+        "story",
+      ];
+      const ENTRY_ORDER = [
+        "text",
+        "picture",
+        "audio",
+        "character",
+        "choice",
+        "quiz",
+        "video",
+        "model",
+      ];
+      const DEFAULT_NAMES = {
+        short: "New short text",
+        long: "New long text",
+        picture: "New picture",
+        video: "New video",
+        audio: "New sound",
+        model: "New 3D model",
+        character: "New character",
+        story: "New story",
+        text: "New text",
+        choice: "Which way?",
+        quiz: "New question",
+      };
+
+      function mkItem(type, over = {}) {
+        const it = {
+          id: uid("i"),
+          type,
+          name: DEFAULT_NAMES[type],
+          desc: "",
+          view: 0,
+          e: Math.round((Math.random() - 0.5) * 16),
+          n: Math.round((Math.random() - 0.5) * 16),
+          h: 0,
+          heading: 0,
+          size: 100,
+          x: {},
+        };
+        if (type === "choice")
+          it.x.options = ["Go left, to the river", "Go right, to the market"];
+        if (type === "quiz")
+          ((it.x.answers = ["1450", "1612", "1803"]), (it.x.right = 1));
+        if (type === "model") {
+          it.x.notes = [];
+          it.x.sections = [];
+        }
+        if (type === "character") it.x.lines = ["Welcome!"];
+        return Object.assign(it, over);
+      }
+
+      // ------------------------------------------------------------------ sample data
+      const S = {
+        stations: [
+          {
+            id: "s1",
+            name: "The Column",
+            desc: "Raised after the great fire, the **column** marks the old *market cross*.",
+            pic: "column",
+            radius: 25,
+            locked: false,
+            e: -120,
+            n: 60,
+            open: true,
+            stories: [
+              {
+                id: "g1",
+                name: "The Column's tale",
+                desc: "Four short steps about why the column stands here.",
+                open: true,
+                start: 0,
+                replay: true,
+                entries: [
+                  mkItem("character", {
+                    name: "The stonemason says hello",
+                    e: 4,
+                    n: 3,
+                  }),
+                  mkItem("text", {
+                    name: "The night of the fire",
+                    desc: "In one night half the town burned.",
+                  }),
+                  mkItem("picture", {
+                    name: "The square in 1890",
+                    view: 2,
+                    e: -6,
+                    n: 2,
+                  }),
+                  mkItem("quiz", { name: "When was it raised?" }),
+                ],
+              },
+            ],
+            items: [
+              mkItem("short", {
+                name: "Look up!",
+                desc: "The statue on top faces the old harbour.",
+                e: 3,
+                n: -5,
+              }),
+              mkItem("audio", { name: "Market noise", view: 0, e: -4, n: -8 }),
+            ],
+          },
+          {
+            id: "s2",
+            name: "The old gate",
+            desc: "",
+            pic: "gate",
+            radius: 20,
+            locked: true,
+            e: -40,
+            n: 110,
+            open: false,
+            stories: [],
+            items: [
+              mkItem("picture", {
+                name: "The gate before the restoration",
+                e: 2,
+                n: 5,
+              }),
+              mkItem("short", { name: "Toll house", e: -5, n: 1 }),
+              mkItem("model", {
+                name: "Gate tower as it was",
+                view: 1,
+                e: 0,
+                n: -6,
+              }),
+            ],
+          },
+          {
+            id: "s3",
+            name: "Market fountain and the long story of the water carriers who kept it going",
+            desc: "The fountain was the only clean water for the market.",
+            pic: "fountain",
+            radius: 30,
+            locked: false,
+            e: 40,
+            n: 40,
+            open: false,
+            stories: [
+              {
+                id: "g2",
+                name: "Water for the town",
+                desc: "",
+                open: false,
+                start: 1,
+                replay: true,
+                entries: [
+                  mkItem("text", { name: "Before the fountain" }),
+                  mkItem("video", { name: "A carrier at work", view: 3 }),
+                  mkItem("choice", { name: "Where did the water come from?" }),
+                ],
+              },
+            ],
+            items: [],
+          },
+          {
+            id: "s4",
+            name: "The bridge",
+            desc: "",
+            pic: null,
+            radius: 25,
+            locked: false,
+            e: 110,
+            n: -20,
+            open: false,
+            stories: [],
+            items: [],
+          },
+          {
+            id: "s5",
+            name: "The tower",
+            desc: "",
+            pic: null,
+            radius: 40,
+            locked: false,
+            e: 60,
+            n: -110,
+            open: false,
+            stories: [],
+            items: [
+              mkItem("long", {
+                name: "Three hundred steps",
+                desc: "A walk up the tower, told by the old keeper.",
+                x: {
+                  body: "## The keeper\n\nEvery morning the **keeper** climbed three hundred steps.\n\n- the bell room\n- the lookout",
+                },
+              }),
+              mkItem("audio", { name: "Bells and wind", e: 6, n: 4 }),
+            ],
+          },
+        ],
+        sel: null, // { k: 'station'|'story'|'item'|'entry', sid, gid?, iid? }
+        tabs: { station: "content", story: "entries", item: "content" },
+        cardOpen: window.innerHeight >= 560,
+        lastType: "picture",
+        rings: true,
+        zoom: 1.6,
+        view: { cx: 0, cy: 0, px: 0, py: 0 },
+        userView: false,
+      };
+      let undoStack = [],
+        redoStack = [];
+      let flashId = null;
+
+      // ------------------------------------------------------------------ lookups
+      const stById = (id) => S.stations.find((s) => s.id === id);
+      function locate(sel = S.sel) {
+        if (!sel) return {};
+        const st = stById(sel.sid);
+        if (!st) return {};
+        if (sel.k === "station") return { st };
+        if (sel.k === "story") {
+          const story = st.stories.find((g) => g.id === sel.gid);
+          return story ? { st, story } : {};
+        }
+        if (sel.k === "item") {
+          const item = st.items.find((i) => i.id === sel.iid);
+          return item ? { st, item } : {};
+        }
+        if (sel.k === "entry") {
+          const story = st.stories.find((g) => g.id === sel.gid);
+          const item = story && story.entries.find((i) => i.id === sel.iid);
+          return item ? { st, story, item } : {};
+        }
+        return {};
+      }
+      const stIndex = (st) => S.stations.indexOf(st);
+      const itemCount = (st) =>
+        st.items.length + st.stories.reduce((a, g) => a + g.entries.length, 0);
+      function summary(st) {
+        const parts = [];
+        if (st.items.length)
+          parts.push(
+            st.items.length + (st.items.length === 1 ? " item" : " items"),
+          );
+        if (st.stories.length)
+          parts.push(
+            st.stories.length +
+              (st.stories.length === 1 ? " story" : " stories"),
+          );
+        return parts.join(", ") || "Empty";
+      }
+      const plural = (n, a, b) => n + " " + (n === 1 ? a : b);
+      const visibleLen = (md) =>
+        md
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+          .replace(/[*_`#>]/g, "")
+          .replace(/^\s*[-+]\s+/gm, "")
+          .replace(/\n+/g, " ")
+          .trim().length;
+
+      // ------------------------------------------------------------------ changes, undo
+      function snapshot() {
+        return JSON.stringify(S.stations);
+      }
+      function change(fn, opts = {}) {
+        undoStack.push(snapshot());
+        if (undoStack.length > 100) undoStack.shift();
+        redoStack = [];
+        fn();
+        document.body.classList.add("dirty");
+        if (!opts.quiet) renderAll();
+        else {
+          renderTree();
+          drawMap();
+          updateUndo();
+        }
+      }
+      function restore(json) {
+        S.stations = JSON.parse(json);
+        if (!locate().st) S.sel = null;
+        document.body.classList.add("dirty");
+        renderAll();
+      }
+      function doUndo() {
+        if (!undoStack.length) return;
+        redoStack.push(snapshot());
+        restore(undoStack.pop());
+        toast("Undone");
+      }
+      function doRedo() {
+        if (!redoStack.length) return;
+        undoStack.push(snapshot());
+        restore(redoStack.pop());
+        toast("Redone");
+      }
+      function updateUndo() {
+        $("#bUndo").disabled = !undoStack.length;
+        $("#bRedo").disabled = !redoStack.length;
+      }
+
+      let toastTimer = 0;
+      function toast(msg, withUndo = false) {
+        $("#toastTxt").textContent = msg;
+        $("#toastUndo").style.display = withUndo ? "" : "none";
+        $("#toast").classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(
+          () => $("#toast").classList.remove("show"),
+          withUndo ? 6000 : 2200,
+        );
+      }
+      $("#toastUndo").onclick = () => {
+        $("#toast").classList.remove("show");
+        doUndo();
+      };
+
+      // ------------------------------------------------------------------ selection
+      const autoOpen = new Set();
+      function select(sel, opts = {}) {
+        S.sel = sel;
+        if (sel) {
+          const st = stById(sel.sid);
+          // a station opened by selecting it folds again when the selection moves on
+          autoOpen.forEach((id) => {
+            const o = stById(id);
+            if (id !== sel.sid && o) o.open = false;
+            if (id !== sel.sid) autoOpen.delete(id);
+          });
+          if (st && !st.open) {
+            st.open = true;
+            autoOpen.add(st.id);
+          }
+          if (sel.gid) {
+            const g = st.stories.find((x) => x.id === sel.gid);
+            if (g && sel.k === "entry") g.open = true;
+          }
+        }
+        if (window.innerWidth <= 700 && !opts.keepLeft)
+          document.body.classList.remove("leftOpen");
+        renderAll();
+      }
+      const kindOf = (sel) =>
+        sel.k === "station" ? "station" : sel.k === "story" ? "story" : "item";
+
+      // ------------------------------------------------------------------ left tree
+      function isSel(k, id) {
+        const s = S.sel;
+        if (!s) return false;
+        return (
+          (k === "station" && s.k === "station" && s.sid === id) ||
+          (k === "story" && s.k === "story" && s.gid === id) ||
+          ((k === "item" || k === "entry") &&
+            (s.k === "item" || s.k === "entry") &&
+            s.iid === id)
+        );
+      }
+      function renderTree() {
+        $("#stCount").textContent = S.stations.length;
+        const ctxSid = S.sel && S.sel.sid;
+        let h = "";
+        S.stations.forEach((st, i) => {
+          h += `<div class="trow ${isSel("station", st.id) ? "sel" : ""} ${ctxSid === st.id ? "ctx" : ""} ${flashId === st.id ? "new" : ""}" data-sel="station:${st.id}" title="${esc(st.name)}">
+      <button class="tw ${st.open ? "open" : ""}" data-tog="s:${st.id}" aria-label="${st.open ? "Fold" : "Unfold"} station">${icon("chev")}</button>
+      <span class="num">${i + 1}</span><span class="nm">${esc(st.name)}</span>
+      ${st.locked ? `<span class="lockg" title="Position locked">${icon("lock")}</span>` : ""}<span class="sum">${summary(st)}</span></div>`;
+          if (!st.open) return;
+          h += '<div class="kids">';
+          if (st.pic)
+            h += `<div class="banner" style="background-image:${fakePic(st.pic)}"></div>`;
+          st.stories.forEach((g) => {
+            h += `<div class="trow ${isSel("story", g.id) ? "sel" : ""} ${flashId === g.id ? "new" : ""}" data-sel="story:${st.id}:${g.id}" title="${esc(g.name)}">
+        <button class="tw ${g.open ? "open" : ""} ${g.entries.length ? "" : "none"}" data-tog="g:${st.id}:${g.id}" aria-label="Fold story">${icon("chev")}</button>
+        <span class="ic t-story">${icon("story")}</span><span class="nm">${esc(g.name)}</span><span class="sum">${plural(g.entries.length, "entry", "entries")}</span></div>`;
+            if (g.open && g.entries.length) {
+              h += '<div class="kids">';
+              g.entries.forEach((e, n) => {
+                h += `<div class="trow ${isSel("entry", e.id) ? "sel" : ""} ${flashId === e.id ? "new" : ""}" data-sel="entry:${st.id}:${g.id}:${e.id}" title="${esc(e.name)}"><span class="enum">${n + 1}</span><span class="ic t-${e.type}">${icon(e.type)}</span><span class="nm">${esc(e.name)}</span></div>`;
+              });
+              h += "</div>";
+            }
+          });
+          st.items.forEach((it) => {
+            h += `<div class="trow ${isSel("item", it.id) ? "sel" : ""} ${flashId === it.id ? "new" : ""}" data-sel="item:${st.id}:${it.id}" title="${esc(it.name)}"><span class="tw none"></span><span class="ic t-${it.type}">${icon(it.type)}</span><span class="nm">${esc(it.name)}</span></div>`;
+          });
+          if (!st.stories.length && !st.items.length)
+            h += `<div class="tempty">Nothing here yet. <button data-sel="station:${st.id}" data-addtab="1">Add content</button></div>`;
+          h += "</div>";
+        });
+        $("#tree").innerHTML = h;
+      }
+      $("#tree").addEventListener("click", (ev) => {
+        const tog = ev.target.closest("[data-tog]");
+        if (tog) {
+          const [k, sid, gid] = tog.dataset.tog.split(":");
+          const st = stById(sid);
+          if (k === "s") {
+            st.open = !st.open;
+            autoOpen.delete(st.id);
+          }
+          else {
+            const g = st.stories.find((x) => x.id === gid);
+            g.open = !g.open;
+          }
+          renderTree();
+          return;
+        }
+        const r = ev.target.closest("[data-sel]");
+        if (!r) return;
+        const [k, sid, a, b] = r.dataset.sel.split(":");
+        if (k === "station") {
+          const st = stById(sid);
+          if (r.dataset.addtab) S.tabs.station = "content";
+          select({ k, sid });
+          if (r.dataset.addtab)
+            setTimeout(() => {
+              const btn = $("#addMore");
+              if (btn) openAddMenu(btn, { sid });
+            }, 0);
+        } else if (k === "story") select({ k, sid, gid: a });
+        else if (k === "item") select({ k, sid, iid: a });
+        else if (k === "entry") select({ k, sid, gid: a, iid: b });
+      });
+
+      // ------------------------------------------------------------------ right panel
+      let editingName = false;
+      function renderRight() {
+        const R = $("#right");
+        const L = locate();
+        if (!S.sel || !L.st) {
+          R.hidden = true;
+          R.innerHTML = "";
+          return;
+        }
+        R.hidden = false;
+        const kind = kindOf(S.sel);
+        const obj =
+          kind === "station" ? L.st : kind === "story" ? L.story : L.item;
+        const type =
+          kind === "station"
+            ? "station"
+            : kind === "story"
+              ? "story"
+              : obj.type;
+        const T = TYPES[type] || {};
+        const cap = T.nameCap;
+        // header
+        let h = `<div class="phead"><div class="prow1"><span class="ticon t-${type}" style="${type === "station" ? "color:#8db8e3" : ""}">${icon(type)}</span>`;
+        if (editingName)
+          h += `<input class="nameIn" id="nameIn" value="${esc(obj.name)}" ${cap ? `maxlength="${cap + 20}"` : ""} aria-label="Name">${cap ? `<span class="capc" id="nameCap">${obj.name.length}/${cap}</span>` : ""}`;
+        else
+          h += `<button class="nameBtn" id="nameBtn" title="Click to rename"><span class="t">${esc(obj.name)}</span><span class="pen">${icon("pen")}</span></button>`;
+        h += `<button class="ib" id="bClose" title="Close (Esc)">${icon("close")}</button></div>`;
+        // kind label with breadcrumb
+        let kindTxt;
+        if (kind === "station")
+          kindTxt = `Station ${stIndex(L.st) + 1} of ${S.stations.length} &middot; ${summary(L.st)}`;
+        else if (kind === "story")
+          kindTxt = `Story &middot; ${plural(L.story.entries.length, "entry", "entries")} &middot; in <button class="crumb" data-go="station">${esc(L.st.name)}</button>`;
+        else if (S.sel.k === "entry")
+          kindTxt = `${T.label} &middot; entry ${L.story.entries.indexOf(L.item) + 1} of <button class="crumb" data-go="story">${esc(L.story.name)}</button>`;
+        else
+          kindTxt = `${T.label} &middot; in <button class="crumb" data-go="station">${esc(L.st.name)}</button>`;
+        h += `<div class="prow2"><span class="kind">${kindTxt}</span><button class="fold ${S.cardOpen ? "open" : ""}" id="bCard" title="Show or hide the name card">${icon("chev")}Card</button></div>`;
+        // the card: description (+ station picture)
+        h += `<div class="card" ${S.cardOpen ? "" : "hidden"}>`;
+        if (kind === "station") {
+          h += L.st.pic
+            ? `<div class="pic" style="background-image:${fakePic(L.st.pic)}"><span class="plab">Station picture</span><div class="pacts"><button data-act="picChoose">Replace</button><button data-act="picRemove">Remove</button></div></div>`
+            : `<div class="picEmpty">${icon("emptyPic")}<div class="pe-t"><b>No station picture yet</b><span>Shown on the station's card in the tour list</span></div><button class="sbtn" data-act="picChoose">${icon("upload")}Choose...</button></div>`;
+        }
+        if (type !== "choice" && type !== "quiz")
+          h += mdWriter(
+            "desc",
+            obj.desc,
+            T.descCap || (kind === "station" ? 240 : 160),
+            kind === "station"
+              ? "Describe the station in a sentence or two"
+              : "A short description, shown under the name",
+          );
+        h += "</div></div>";
+        // toolbar
+        h += `<div class="tbar" role="toolbar" aria-label="Actions">${toolbar(kind, L)}</div><div id="tipLine"></div>`;
+        // tabs
+        const tabs =
+          kind === "station"
+            ? [
+                ["content", "Content", L.st.items.length + L.st.stories.length],
+                ["details", "Details"],
+                ["place", "Place"],
+              ]
+            : kind === "story"
+              ? [
+                  ["entries", "Entries", L.story.entries.length],
+                  ["details", "Details"],
+                ]
+              : [
+                  ["content", "Content"],
+                  ["look", "Look"],
+                  ["place", "Place"],
+                ];
+        if (!tabs.some((t) => t[0] === S.tabs[kind])) S.tabs[kind] = tabs[0][0];
+        h += `<div class="tabs" role="tablist">${tabs.map(([k, l, b]) => `<button class="tab ${S.tabs[kind] === k ? "on" : ""}" role="tab" aria-selected="${S.tabs[kind] === k}" data-tab="${k}">${l}${b != null ? `<span class="badge">${b}</span>` : ""}</button>`).join("")}</div>`;
+        h += `<div class="pbody scroll" id="pbody">${tabBody(kind, S.tabs[kind], L, obj)}</div>`;
+        R.innerHTML = h;
+        if (editingName) {
+          const inp = $("#nameIn");
+          inp.focus();
+          inp.select();
+        }
+      }
+      function mdWriter(field, val, cap, ph, tall) {
+        const n = visibleLen(val || "");
+        return `<div class="md ${tall ? "tall" : ""}" data-md="${field}" data-cap="${cap || ""}"><div class="mdbar">
+    <button data-mdc="b" title="Bold (Ctrl+B)">${icon("bold")}</button><button data-mdc="i" title="Italic (Ctrl+I)">${icon("italic")}</button>
+    <button data-mdc="l" title="Link (Ctrl+K)">${icon("link")}</button><button data-mdc="u" title="List">${icon("bullets")}</button>
+    ${cap ? `<span class="cnt ${n > cap ? "over" : ""}">${n} / ${cap}</span>` : `<span class="cnt">Markdown</span>`}</div>
+    <textarea data-field="${field}" placeholder="${esc(ph)}" spellcheck="true">${esc(val || "")}</textarea>
+    ${cap && n > cap ? `<div class="over-note">Visitors see the first ${cap} characters.</div>` : ""}</div>`;
+      }
+      function ab(act, ic, tip, opts = {}) {
+        return `<button class="ab ${opts.cls || ""}" data-act="${act}" data-tip="${esc(tip)}" aria-label="${esc(tip)}" ${opts.disabled ? "disabled" : ""} ${opts.on ? 'aria-pressed="true"' : ""}>${icon(ic)}</button>`;
+      }
+      function toolbar(kind, L) {
+        if (kind === "station") {
+          const i = stIndex(L.st);
+          return (
+            ab("stEarlier", "earlier", "Earlier in the tour", {
+              disabled: i === 0,
+              cls: "tipL",
+            }) +
+            ab("stLater", "later", "Later in the tour", {
+              disabled: i === S.stations.length - 1,
+            }) +
+            '<span class="sep"></span>' +
+            ab(
+              "lock",
+              L.st.locked ? "lock" : "unlock",
+              L.st.locked ? "Unlock the position" : "Lock the position",
+              { cls: L.st.locked ? "on" : "", on: L.st.locked },
+            ) +
+            ab("groundAll", "ground", "Put all its items on the ground", {
+              disabled: !itemCount(L.st),
+            }) +
+            ab("frame", "frame", "Show on the map") +
+            '<span class="gap"></span><span class="sep"></span>' +
+            ab("delStation", "trash", "Delete station...", {
+              cls: "danger tipR",
+            })
+          );
+        }
+        if (kind === "story") {
+          const i = L.st.stories.indexOf(L.story);
+          return (
+            ab("play", "play", "Play from the start", {
+              disabled: !L.story.entries.length,
+              cls: "tipL",
+            }) +
+            '<span class="sep"></span>' +
+            ab("gEarlier", "earlier", "Earlier in the station", {
+              disabled: i === 0,
+            }) +
+            ab("gLater", "later", "Later in the station", {
+              disabled: i === L.st.stories.length - 1,
+            }) +
+            ab("move", "move", "Move to a new station...") +
+            ab("frame", "frame", "Show on the map") +
+            '<span class="gap"></span><span class="sep"></span>' +
+            ab("delStory", "trash", "Delete story...", { cls: "danger tipR" })
+          );
+        }
+        const list = S.sel.k === "entry" ? L.story.entries : L.st.items;
+        const i = list.indexOf(L.item);
+        const placed = !["text", "choice", "quiz"].includes(L.item.type);
+        return (
+          ab(
+            "iEarlier",
+            "earlier",
+            S.sel.k === "entry"
+              ? "Earlier in the story"
+              : "Earlier in the list",
+            { disabled: i === 0, cls: "tipL" },
+          ) +
+          ab(
+            "iLater",
+            "later",
+            S.sel.k === "entry" ? "Later in the story" : "Later in the list",
+            { disabled: i === list.length - 1 },
+          ) +
+          '<span class="sep"></span>' +
+          ab("align", "align", "Align to station (face its centre)", {
+            disabled: !placed,
+          }) +
+          ab("ground", "ground", "Put on the ground", {
+            disabled: !placed || L.item.h === 0,
+          }) +
+          (S.sel.k === "item"
+            ? ab("move", "move", "Move to a new station...")
+            : "") +
+          ab("frame", "frame", "Show on the map", { disabled: !placed }) +
+          '<span class="gap"></span><span class="sep"></span>' +
+          ab(
+            "delItem",
+            "trash",
+            S.sel.k === "entry" ? "Delete entry" : "Delete item",
+            { cls: "danger tipR" },
+          )
+        );
+      }
+
+      // ---- tab bodies
+      function addSplit(scope) {
+        const T = TYPES[S.lastType];
+        return `<div class="split"><button class="main" data-act="addLast" title="Add a ${esc(T.label.toLowerCase())} (the last type you added)">${icon("plus")}Add ${esc(T.label.toLowerCase())}</button><button class="more" id="addMore" data-act="addMenu" title="Choose what to add" aria-haspopup="menu">${icon("caret")}</button></div>`;
+      }
+      function seqHtml(st, g) {
+        let h = '<div class="seq">';
+        g.entries.forEach((e, n) => {
+          h += `<div class="slot" data-slot="${st.id}:${g.id}:${n}"><button data-act="slotAdd" title="Insert an entry here" aria-label="Insert an entry before entry ${n + 1}">${icon("plus")}</button></div>`;
+          h += `<div class="ent ${flashId === e.id ? "crow new" : ""}" data-sel="entry:${st.id}:${g.id}:${e.id}"><span class="en">${n + 1}</span><span class="ic t-${e.type}">${icon(e.type)}</span><span class="nm">${esc(e.name)}</span><span class="typ">${TYPES[e.type].label}</span></div>`;
+        });
+        h += `<div class="slot end" data-slot="${st.id}:${g.id}:${g.entries.length}"><button data-act="slotAdd">${icon("plus")}Add entry</button></div></div>`;
+        return h;
+      }
+      function tabBody(kind, tab, L, obj) {
+        if (kind === "station" && tab === "content") {
+          const st = L.st;
+          let h = `<div class="chead"><span class="note" style="margin:0">Same order as the list on the left</span><span class="sp"></span>${addSplit()}</div>`;
+          if (!st.stories.length && !st.items.length) {
+            return (
+              h +
+              `<div class="cempty"><b>This station is empty</b>Add what visitors find here. Free items are all there at once; a story plays its entries one after another.<div class="quick">${ADD_ORDER.map((t) => `<button data-act="addType" data-type="${t}"><span class="ic t-${t}">${icon(t)}</span>${TYPES[t].label}</button>`).join("")}</div></div>`
+            );
+          }
+          h += '<div class="clist">';
+          if (st.stories.length) {
+            h += `<div class="cgrp">Stories <span class="mono">${st.stories.length}</span></div>`;
+            st.stories.forEach((g) => {
+              h += `<div class="story"><div class="crow ${flashId === g.id ? "new" : ""}" data-sel="story:${st.id}:${g.id}"><span class="ic t-story">${icon("story")}</span><span class="nm">${esc(g.name)}</span><span class="typ">${plural(g.entries.length, "entry", "entries")}</span></div>${seqHtml(st, g)}</div>`;
+            });
+          }
+          if (st.items.length) {
+            h += `<div class="cgrp">Free items <span class="mono">${st.items.length}</span><span style="font-weight:400;letter-spacing:0;text-transform:none">all there at once</span></div>`;
+            st.items.forEach((it) => {
+              h += `<div class="crow ${flashId === it.id ? "new" : ""}" data-sel="item:${st.id}:${it.id}"><span class="ic t-${it.type}">${icon(it.type)}</span><span class="nm">${esc(it.name)}</span><span class="typ">${TYPES[it.type].label}</span></div>`;
+            });
+          }
+          return h + "</div>";
+        }
+        if (kind === "station" && tab === "details") {
+          const st = L.st;
+          const hasStory = st.stories.length > 0;
+          return `<div class="sec"><div class="sech">When a visitor arrives</div>
+      <label class="chk"><input type="radio" name="arr" ${hasStory ? "" : "checked"}> Show everything at once</label>
+      <label class="chk" style="${hasStory ? "" : "color:var(--dim)"}"><input type="radio" name="arr" ${hasStory ? "checked" : "disabled"}> Start the story ${hasStory ? `"${esc(st.stories[0].name)}"` : "(add a story first)"}</label>
+      <p class="note">A visitor counts as arrived within ${st.radius} m. <button class="link" data-tab="place">Change the radius in Place</button></p></div>
+      <div class="sec"><div class="sech">Before arrival</div>
+      <label class="chk"><input type="checkbox" checked> Show this station on the visitor's map</label>
+      <label class="chk"><input type="checkbox"> Hide its name until the visitor arrives</label></div>
+      <div class="sec"><div class="sech">In this tour</div><p class="note" style="margin:0">Station ${stIndex(st) + 1} of ${S.stations.length}. Change the order with Earlier and Later in the toolbar above.</p></div>`;
+        }
+        if (kind === "station" && tab === "place") {
+          const st = L.st;
+          const ro = st.locked;
+          return `<div class="sec"><div class="sech">Position<span class="sp"></span>${ro ? `<span style="color:var(--accentInk);text-transform:none;letter-spacing:0;font-weight:400">${icon("lock")} locked</span>` : ""}</div>
+      <div class="vec">${numF("e", "E", st.e, "m", ro)}${numF("n", "N", st.n, "m", ro)}</div>
+      <p class="note">${ro ? "The position is locked, so a drag on the map cannot move it by accident. Unlock it in the toolbar." : "Drag the station on the map, or type east and north in metres from the tour's centre."}</p></div>
+      <div class="sec"><div class="sech">Arrival radius</div>
+      <div class="slider"><input type="range" min="5" max="80" step="1" value="${st.radius}" data-field="radius" aria-label="Arrival radius"><div class="nf" style="width:74px"><input data-field="radius" value="${st.radius}" inputmode="numeric" aria-label="Arrival radius in metres"><span class="unit">m</span></div></div>
+      <p class="note">The ring on the map. A visitor inside it has arrived at this station. It sits here, with the position, because it is a distance on the ground.</p></div>`;
+        }
+        if (kind === "story" && tab === "entries") {
+          const g = L.story;
+          let h = `<div class="chead"><span class="note" style="margin:0">Played one after another. Hover between two entries to insert one there.</span></div>`;
+          if (!g.entries.length)
+            h += `<div class="cempty"><b>No entries yet</b>Start with a text, a picture or the character greeting the visitor.</div>`;
+          return h + `<div class="story">${seqHtml(L.st, g)}</div>`;
+        }
+        if (kind === "story" && tab === "details") {
+          const g = L.story;
+          return `<div class="sec"><div class="sech">How it starts</div>
+      <label class="chk"><input type="radio" name="gs" data-field="start" value="0" ${g.start === 0 ? "checked" : ""}> When the visitor arrives at the station</label>
+      <label class="chk"><input type="radio" name="gs" data-field="start" value="1" ${g.start === 1 ? "checked" : ""}> When the visitor taps the story</label></div>
+      <div class="sec"><div class="sech">Afterwards</div><label class="chk"><input type="checkbox" ${g.replay ? "checked" : ""}> Visitors can play it again</label></div>`;
+        }
+        // items and entries
+        const it = obj;
+        if (tab === "content") return itemContent(it, L);
+        if (tab === "look") {
+          const T = TYPES[it.type];
+          return (
+            `<div class="sec"><div class="sech">${it.type === "audio" ? "How it plays" : it.type === "character" ? "Pose" : "How visitors see it"}</div><div class="views" role="radiogroup">${T.views.map(([n, d], i) => `<button class="vcard ${it.view === i ? "on" : ""}" role="radio" aria-checked="${it.view === i}" data-view="${i}"><div class="art">${viewArt(it.type, i)}</div><b>${esc(n)}</b><span>${esc(d)}</span></button>`).join("")}</div></div>` +
+            (it.type === "model"
+              ? `<p class="note">Notes and sections are set in the Content tab; Cutaway shows the sections.</p>`
+              : "")
+          );
+        }
+        if (tab === "place") {
+          const placed = !["text", "choice", "quiz"].includes(it.type);
+          if (!placed)
+            return `<div class="cempty"><b>Not placed in the world</b>${TYPES[it.type].label} entries are shown on the visitor's screen while the story plays.</div>`;
+          return `<div class="sec"><div class="sech">Position from the station</div>
+      <div class="vec">${numF("e", "E", it.e, "m")}${numF("n", "N", it.n, "m")}${numF("h", "Up", it.h, "m")}${numF("heading", "Turn", it.heading, "&deg;")}</div>
+      <p class="note">Drag it on the map, or type here. Align to station and Put on the ground are in the toolbar above.</p></div>
+      <div class="sec"><div class="sech">Size</div><div class="slider"><input type="range" min="10" max="300" step="5" value="${it.size}" data-field="size" aria-label="Size"><div class="nf" style="width:74px"><input data-field="size" value="${it.size}" aria-label="Size in percent"><span class="unit">%</span></div></div></div>`;
+        }
+        return "";
+      }
+      function numF(field, ax, v, unit, ro) {
+        return `<div class="nf ${ro ? "ro" : ""}"><span class="ax ${ax === "E" ? "e" : ax === "N" ? "n" : ax === "Up" ? "u" : ""}">${ax}</span><input data-field="${field}" value="${v}" ${ro ? "readonly" : ""} inputmode="decimal" aria-label="${ax}"><span class="unit">${unit}</span></div>`;
+      }
+      function viewArt(type, i) {
+        const c = "#e9a23b";
+        const shapes = [
+          `<i style="left:44%;top:10px;width:12%;height:20px;background:${c};border-radius:2px"></i><i style="left:49.5%;top:30px;width:1px;height:16px;background:#ddd"></i>`,
+          `<i style="left:34%;top:8px;width:32%;height:26px;border:3px solid #c9a66b;background:#566"></i>`,
+          `<i style="left:20%;top:6px;width:30%;height:34px;background:#8a7a64;opacity:.8"></i><i style="left:50%;top:6px;width:30%;height:34px;background:#5f7d95"></i>`,
+          `<i style="left:38%;top:8px;width:24%;height:30px;border-radius:50%;border:2px dashed ${c}"></i>`,
+        ];
+        return shapes[i % shapes.length];
+      }
+      function fileBox(label, name, pic) {
+        return `<div class="filebox"><span class="thumb" style="${pic ? `background-image:${fakePic(pic)}` : ""}">${pic ? "" : icon("upload")}</span><span class="fn">${name ? esc(name) : "No file yet"}<small>${esc(label)}</small></span><button class="sbtn" data-act="fakeFile">${name ? "Replace..." : "Choose..."}</button></div>`;
+      }
+      function miniList(key, arr, ph, addLabel) {
+        return `<div class="minilist">${arr.map((v, i) => `<div class="mrow"><input class="tfield" data-list="${key}" data-i="${i}" value="${esc(v)}" placeholder="${esc(ph)}"><button class="x" data-act="listDel" data-list="${key}" data-i="${i}" title="Remove">${icon("close")}</button></div>`).join("")}</div><button class="addrow" data-act="listAdd" data-list="${key}">${icon("plus")}${esc(addLabel)}</button>`;
+      }
+      function itemContent(it) {
+        const sec = (t, b) =>
+          `<div class="sec"><div class="sech">${t}</div>${b}</div>`;
+        switch (it.type) {
+          case "short":
+            return (
+              sec(
+                "Caption",
+                `<p class="note" style="margin:0">The caption is the name at the top (up to 40 characters); the description sits right under it.</p>`,
+              ) +
+              sec(
+                "Pin colour",
+                `<div class="quick" style="justify-content:flex-start">${["Orange", "Blue", "Green", "White"].map((c) => `<button>${c}</button>`).join("")}</div>`,
+              )
+            );
+          case "long":
+            return (
+              sec(
+                "Text",
+                mdWriter(
+                  "body",
+                  it.x.body || "",
+                  0,
+                  "Write the text. Headings, bold, italic, lists and links work.",
+                  true,
+                ),
+              ) +
+              sec(
+                "Narration",
+                fileBox(
+                  "A voice recording read over the text",
+                  it.x.voice,
+                  null,
+                ) +
+                  `<p class="note">With a recording, the Captions view follows the voice line by line.</p>`,
+              )
+            );
+          case "picture":
+            return (
+              sec(
+                "Picture",
+                fileBox(
+                  "Photo or image",
+                  it.x.file || "square-1890.jpg",
+                  "gate",
+                ),
+              ) +
+              (it.view === 2
+                ? sec(
+                    "Then and now",
+                    fileBox(
+                      "The old view, laid over the real one",
+                      it.x.old,
+                      null,
+                    ),
+                  )
+                : "")
+            );
+          case "video":
+            return (
+              sec(
+                "Video",
+                fileBox("A video file", it.x.file || "carrier.mp4", "fountain"),
+              ) +
+              sec(
+                "Playback",
+                `<label class="chk"><input type="checkbox" checked> Loop</label><label class="chk"><input type="checkbox"> With sound</label>`,
+              )
+            );
+          case "audio":
+            return (
+              sec(
+                "Sound",
+                fileBox("A sound file", it.x.file || "market.ogg", null),
+              ) +
+              sec(
+                "Volume",
+                `<div class="slider"><input type="range" min="0" max="100" value="70" aria-label="Volume"></div>`,
+              ) +
+              (it.view === 0
+                ? sec(
+                    "Zone",
+                    `<p class="note" style="margin:0">Heard within 15 m of the item. The view is chosen in Look.</p>`,
+                  )
+                : "")
+            );
+          case "model":
+            return (
+              sec(
+                "Model file",
+                fileBox("A .glb model", it.x.file || "tower.glb", null),
+              ) +
+              sec(
+                "Notes on the model",
+                miniList(
+                  "notes",
+                  it.x.notes,
+                  "A note at a spot on the model",
+                  "Add a note",
+                ),
+              ) +
+              sec(
+                "Sections",
+                miniList(
+                  "sections",
+                  it.x.sections,
+                  "A cut through the model",
+                  "Add a section",
+                ),
+              )
+            );
+          case "character":
+            return (
+              sec(
+                "Figure",
+                `<div class="quick" style="justify-content:flex-start">${["Stonemason", "Market woman", "Keeper"].map((c, i) => `<button style="${i === 0 ? "border-color:var(--accent)" : ""}">${icon("character")}${c}</button>`).join("")}</div>`,
+              ) +
+              sec(
+                "What it says",
+                miniList(
+                  "lines",
+                  it.x.lines,
+                  "A line the figure speaks",
+                  "Add a line",
+                ),
+              ) +
+              `<p class="note">Its pose is chosen in Look.</p>`
+            );
+          case "text":
+            return sec(
+              "Text",
+              `<p class="note" style="margin:0">The card shows the name as its title and the description as its text.</p>`,
+            );
+          case "choice":
+            return (
+              sec(
+                "Question",
+                `<p class="note" style="margin:0">The question is the name at the top.</p>`,
+              ) +
+              sec(
+                "Answers",
+                miniList("options", it.x.options, "An answer", "Add an answer"),
+              ) +
+              `<p class="note">Each answer goes on to the next entry in this prototype.</p>`
+            );
+          case "quiz":
+            return (
+              sec(
+                "Question",
+                `<p class="note" style="margin:0">The question is the name at the top.</p>`,
+              ) +
+              sec(
+                "Answers (tick the right one)",
+                `<div class="minilist">${it.x.answers.map((v, i) => `<div class="mrow"><input type="radio" class="ok" name="qr" data-act="quizRight" data-i="${i}" ${it.x.right === i ? "checked" : ""} aria-label="Right answer"><input class="tfield" data-list="answers" data-i="${i}" value="${esc(v)}"><button class="x" data-act="listDel" data-list="answers" data-i="${i}" title="Remove">${icon("close")}</button></div>`).join("")}</div><button class="addrow" data-act="listAdd" data-list="answers">${icon("plus")}Add an answer</button>`,
+              )
+            );
+        }
+        return "";
+      }
+
+      // ---- right panel events
+      const R = $("#right");
+      R.addEventListener("click", (ev) => {
+        const t = ev.target;
+        if (t.closest("#nameBtn")) {
+          editingName = true;
+          renderRight();
+          return;
+        }
+        if (t.closest("#bClose")) {
+          select(null);
+          return;
+        }
+        if (t.closest("#bCard")) {
+          S.cardOpen = !S.cardOpen;
+          renderRight();
+          return;
+        }
+        const go = t.closest("[data-go]");
+        if (go) {
+          const s = S.sel;
+          if (go.dataset.go === "station") select({ k: "station", sid: s.sid });
+          else select({ k: "story", sid: s.sid, gid: s.gid });
+          return;
+        }
+        const tab = t.closest("[data-tab]");
+        if (tab) {
+          S.tabs[kindOf(S.sel)] = tab.dataset.tab;
+          renderRight();
+          drawMap();
+          return;
+        }
+        const mdc = t.closest("[data-mdc]");
+        if (mdc) {
+          mdCmd(mdc);
+          return;
+        }
+        const v = t.closest("[data-view]");
+        if (v) {
+          const L = locate();
+          change(() => {
+            L.item.view = +v.dataset.view;
+          });
+          return;
+        }
+        const a = t.closest("[data-act]");
+        if (a) {
+          act(a.dataset.act, a);
+          return;
+        }
+        const r = t.closest("[data-sel]");
+        if (r) {
+          const [k, sid, x, y] = r.dataset.sel.split(":");
+          select(
+            k === "story"
+              ? { k, sid, gid: x }
+              : k === "item"
+                ? { k, sid, iid: x }
+                : { k, sid, gid: x, iid: y },
+          );
+        }
+      });
+      R.addEventListener("keydown", (ev) => {
+        if (ev.target.id === "nameIn") {
+          if (ev.key === "Enter") commitName();
+          else if (ev.key === "Escape") {
+            editingName = false;
+            renderRight();
+          }
+          return;
+        }
+        if (
+          ev.target.tagName === "TEXTAREA" &&
+          (ev.ctrlKey || ev.metaKey) &&
+          ["b", "i", "k"].includes(ev.key.toLowerCase())
+        ) {
+          ev.preventDefault();
+          mdCmd(
+            {
+              dataset: {
+                mdc: { b: "b", i: "i", k: "l" }[ev.key.toLowerCase()],
+              },
+            },
+            ev.target,
+          );
+        }
+      });
+      R.addEventListener("focusout", (ev) => {
+        if (ev.target.id === "nameIn" && editingName) commitName();
+      });
+      R.addEventListener("input", (ev) => {
+        const t = ev.target;
+        if (t.id === "nameIn") {
+          const c = $("#nameCap");
+          if (c) {
+            const cap = TYPES[locate().item?.type]?.nameCap;
+            c.textContent = `${t.value.length}/${cap}`;
+            c.classList.toggle("over", t.value.length > cap);
+          }
+          return;
+        }
+        const L = locate();
+        const kind = kindOf(S.sel);
+        const obj =
+          kind === "station" ? L.st : kind === "story" ? L.story : L.item;
+        if (t.tagName === "TEXTAREA") {
+          const f = t.dataset.field;
+          const md = t.closest(".md");
+          const cap = +md.dataset.cap;
+          if (f === "body") obj.x.body = t.value;
+          else obj[f] = t.value;
+          if (cap) {
+            const n = visibleLen(t.value);
+            const c = md.querySelector(".cnt");
+            c.textContent = `${n} / ${cap}`;
+            c.classList.toggle("over", n > cap);
+          }
+          markDirtyQuiet();
+          return;
+        }
+        if (t.dataset.list) {
+          obj.x[t.dataset.list][+t.dataset.i] = t.value;
+          markDirtyQuiet();
+          return;
+        }
+        const f = t.dataset.field;
+        if (!f) return;
+        if (f === "start") {
+          obj.start = +t.value;
+          markDirtyQuiet();
+          return;
+        }
+        const v = parseFloat(t.value);
+        if (!isFinite(v)) return;
+        obj[f] =
+          f === "radius"
+            ? clamp(Math.round(v), 5, 80)
+            : f === "size"
+              ? clamp(Math.round(v), 10, 300)
+              : v;
+        if (t.type === "range") {
+          const twin = R.querySelector(`.nf input[data-field="${f}"]`);
+          if (twin) twin.value = obj[f];
+        } else {
+          const twin = R.querySelector(`input[type=range][data-field="${f}"]`);
+          if (twin) twin.value = obj[f];
+        }
+        markDirtyQuiet();
+        drawMap();
+      });
+      let typingSnap = null,
+        typingTimer = 0;
+      function markDirtyQuiet() {
+        // one undo step per burst of typing
+        if (!typingSnap) {
+          typingSnap = true;
+          undoStack.push(lastStable);
+          redoStack = [];
+        }
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => {
+          typingSnap = null;
+          lastStable = snapshot();
+        }, 700);
+        document.body.classList.add("dirty");
+        renderTree();
+        updateUndo();
+      }
+      let lastStable = snapshot();
+      function commitName() {
+        const inp = $("#nameIn");
+        if (!inp) return;
+        editingName = false;
+        const L = locate();
+        const kind = kindOf(S.sel);
+        const obj =
+          kind === "station" ? L.st : kind === "story" ? L.story : L.item;
+        let v = inp.value.trim();
+        const cap = TYPES[obj.type]?.nameCap;
+        if (cap) v = v.slice(0, cap);
+        if (v && v !== obj.name)
+          change(() => {
+            obj.name = v;
+          });
+        else renderRight();
+      }
+      function mdCmd(btn, ta) {
+        ta = ta || btn.closest(".md").querySelector("textarea");
+        const s = ta.selectionStart,
+          e = ta.selectionEnd,
+          sel =
+            ta.value.slice(s, e) ||
+            { b: "bold", i: "italic", l: "link text", u: "item" }[
+              btn.dataset.mdc
+            ];
+        const rep = {
+          b: `**${sel}**`,
+          i: `*${sel}*`,
+          l: `[${sel}](https://)`,
+          u: (s === 0 || ta.value[s - 1] === "\n" ? "" : "\n") + "- " + sel,
+        }[btn.dataset.mdc];
+        ta.focus();
+        ta.setSelectionRange(s, e);
+        document.execCommand("insertText", false, rep);
+      }
+
+      // ------------------------------------------------------------------ actions
+      function act(a, el) {
+        const L = locate();
+        const st = L.st;
+        switch (a) {
+          case "stEarlier":
+          case "stLater": {
+            const i = stIndex(st),
+              j = i + (a === "stEarlier" ? -1 : 1);
+            change(() => {
+              S.stations.splice(i, 1);
+              S.stations.splice(j, 0, st);
+            });
+            toast(`"${st.name}" is now station ${j + 1}`);
+            break;
+          }
+          case "lock":
+            change(() => {
+              st.locked = !st.locked;
+            });
+            toast(st.locked ? "Position locked" : "Position unlocked");
+            break;
+          case "groundAll": {
+            const n = itemCount(st);
+            change(() => {
+              st.items.forEach((i) => (i.h = 0));
+              st.stories.forEach((g) => g.entries.forEach((i) => (i.h = 0)));
+            });
+            toast(`${plural(n, "item", "items")} put on the ground`, true);
+            break;
+          }
+          case "frame":
+            toast("The map shows the selection");
+            {
+              const o = L.item ? { e: st.e + L.item.e, n: st.n + L.item.n } : st;
+              const reg = mapRegion();
+              Object.assign(S.view, { cx: o.e, cy: o.n, px: (reg.x0 + reg.x1) / 2, py: (reg.y0 + reg.y1) / 2 });
+              S.zoom = L.item ? 4 : 2.6;
+              S.userView = true;
+            }
+            drawMap();
+            break;
+          case "delStation":
+            confirmDel(
+              `Delete station "${st.name}"?`,
+              itemCount(st) + st.stories.length
+                ? `This also deletes ${[st.stories.length ? plural(st.stories.length, "story", "stories") : "", plural(itemCount(st), "item", "items")].filter(Boolean).join(" and ")} in it. You can undo this.`
+                : "It is empty. You can undo this.",
+              "Delete station",
+              () => {
+                const name = st.name;
+                change(() => {
+                  S.stations.splice(stIndex(st), 1);
+                  S.sel = null;
+                });
+                toast(`Station "${name}" deleted`, true);
+              },
+            );
+            break;
+          case "play":
+            toast(
+              `Preview: "${L.story.name}", entry 1 of ${L.story.entries.length}`,
+            );
+            break;
+          case "gEarlier":
+          case "gLater": {
+            const arr = st.stories,
+              i = arr.indexOf(L.story),
+              j = i + (a === "gEarlier" ? -1 : 1);
+            change(() => {
+              arr.splice(i, 1);
+              arr.splice(j, 0, L.story);
+            });
+            break;
+          }
+          case "delStory":
+            confirmDel(
+              `Delete the story "${L.story.name}"?`,
+              `This also deletes its ${plural(L.story.entries.length, "entry", "entries")}. You can undo this.`,
+              "Delete story",
+              () => {
+                const name = L.story.name;
+                change(() => {
+                  st.stories.splice(st.stories.indexOf(L.story), 1);
+                  S.sel = { k: "station", sid: st.id };
+                });
+                toast(`Story "${name}" deleted`, true);
+              },
+            );
+            break;
+          case "iEarlier":
+          case "iLater": {
+            const arr = S.sel.k === "entry" ? L.story.entries : st.items,
+              i = arr.indexOf(L.item),
+              j = i + (a === "iEarlier" ? -1 : 1);
+            change(() => {
+              arr.splice(i, 1);
+              arr.splice(j, 0, L.item);
+            });
+            break;
+          }
+          case "align":
+            change(() => {
+              L.item.heading = Math.round(
+                ((Math.atan2(-L.item.e, -L.item.n) * 180) / Math.PI + 360) %
+                  360,
+              );
+            });
+            toast(`"${L.item.name}" now faces the station's centre`);
+            break;
+          case "ground":
+            change(() => {
+              L.item.h = 0;
+            });
+            toast("Put on the ground");
+            break;
+          case "move":
+            openMoveMenu(el);
+            break;
+          case "delItem": {
+            const arr = S.sel.k === "entry" ? L.story.entries : st.items;
+            const name = L.item.name;
+            const back =
+              S.sel.k === "entry"
+                ? { k: "story", sid: st.id, gid: L.story.id }
+                : { k: "station", sid: st.id };
+            change(() => {
+              arr.splice(arr.indexOf(L.item), 1);
+              S.sel = back;
+            });
+            toast(`"${name}" deleted`, true);
+            break;
+          }
+          case "addLast":
+            addContent(S.lastType, { sid: st.id });
+            break;
+          case "addMenu":
+            openAddMenu(el, { sid: st.id });
+            break;
+          case "addType":
+            addContent(el.dataset.type, { sid: st.id });
+            break;
+          case "slotAdd": {
+            const [sid, gid, at] = el
+              .closest("[data-slot]")
+              .dataset.slot.split(":");
+            openAddMenu(el, { sid, gid, at: +at });
+            el.closest(".slot").classList.add("keep");
+            break;
+          }
+          case "picChoose":
+            change(() => {
+              st.pic =
+                st.pic === "new" ? (st.id === "s1" ? "column" : "gate") : "new";
+            });
+            toast("Station picture set (a sample image)");
+            break;
+          case "picRemove":
+            change(() => {
+              st.pic = null;
+            });
+            toast("Station picture removed", true);
+            break;
+          case "fakeFile":
+            toast("A file picker opens here (not in this prototype)");
+            break;
+          case "listAdd":
+            change(() => {
+              L.item.x[el.dataset.list].push("");
+            });
+            setTimeout(() => {
+              const ins = R.querySelectorAll(
+                `input[data-list="${el.dataset.list}"]`,
+              );
+              ins[ins.length - 1]?.focus();
+            }, 0);
+            break;
+          case "listDel":
+            change(() => {
+              const arr = L.item.x[el.dataset.list];
+              arr.splice(+el.dataset.i, 1);
+              if (el.dataset.list === "answers" && L.item.x.right >= arr.length)
+                L.item.x.right = 0;
+            });
+            break;
+          case "quizRight":
+            change(() => {
+              L.item.x.right = +el.dataset.i;
+            });
+            break;
+        }
+      }
+      function bottomAct(a) {
+        const L = locate();
+        if (!L.st) return;
+        const kind = kindOf(S.sel);
+        if (a === "copypos") {
+          const o = kind === "station" ? L.st : L.item;
+          if (!o) return;
+          toast(
+            `Copied: E ${o.e} m, N ${o.n} m${kind === "item" ? `, up ${o.h} m` : ""}`,
+          );
+          return;
+        }
+        if (a === "dup") {
+          if (kind === "station") {
+            const c = JSON.parse(JSON.stringify(L.st));
+            c.id = uid("s");
+            c.name = L.st.name + " (copy)";
+            c.e += 20;
+            c.n -= 20;
+            c.stories.forEach((g) => {
+              g.id = uid("g");
+              g.entries.forEach((e) => (e.id = uid("i")));
+            });
+            c.items.forEach((i) => (i.id = uid("i")));
+            change(() => {
+              S.stations.splice(stIndex(L.st) + 1, 0, c);
+              S.sel = { k: "station", sid: c.id };
+            });
+            flash(c.id);
+            toast("Station duplicated", true);
+          } else if (kind === "story") {
+            const c = JSON.parse(JSON.stringify(L.story));
+            c.id = uid("g");
+            c.name += " (copy)";
+            c.entries.forEach((e) => (e.id = uid("i")));
+            change(() => {
+              L.st.stories.splice(L.st.stories.indexOf(L.story) + 1, 0, c);
+              S.sel = { k: "story", sid: L.st.id, gid: c.id };
+            });
+            flash(c.id);
+            toast("Story duplicated", true);
+          } else {
+            const arr = S.sel.k === "entry" ? L.story.entries : L.st.items;
+            const c = JSON.parse(JSON.stringify(L.item));
+            c.id = uid("i");
+            c.name += " (copy)";
+            c.e += 2;
+            change(() => {
+              arr.splice(arr.indexOf(L.item) + 1, 0, c);
+              S.sel = Object.assign({}, S.sel, { iid: c.id });
+            });
+            flash(c.id);
+            toast("Duplicated", true);
+          }
+        }
+        if (a === "del") {
+          const map = {
+            station: "delStation",
+            story: "delStory",
+            item: "delItem",
+          };
+          act(map[kind]);
+        }
+      }
+      function flash(id) {
+        flashId = id;
+        renderTree();
+        renderRight();
+        setTimeout(() => {
+          flashId = null;
+        }, 1500);
+      }
+
+      function addContent(type, where) {
+        const st = stById(where.sid);
+        if (ADD_ORDER.includes(type)) S.lastType = type;
+        if (where.gid) {
+          const g = st.stories.find((x) => x.id === where.gid);
+          const it = mkItem(type);
+          change(() => {
+            g.entries.splice(where.at, 0, it);
+            g.open = true;
+            st.open = true;
+          });
+          flash(it.id);
+          toast(
+            `${TYPES[type].label} added as entry ${where.at + 1} of "${g.name}"`,
+            true,
+          );
+          return;
+        }
+        if (type === "story") {
+          const g = {
+            id: uid("g"),
+            name: "New story",
+            desc: "",
+            open: true,
+            start: 0,
+            replay: true,
+            entries: [],
+          };
+          change(() => {
+            st.stories.push(g);
+            st.open = true;
+            S.tabs.station = "content";
+          });
+          flash(g.id);
+          toast(
+            `Story added to "${st.name}". Add its first entry with the + below it.`,
+            true,
+          );
+          return;
+        }
+        const it = mkItem(type);
+        change(() => {
+          st.items.push(it);
+          st.open = true;
+          S.tabs.station = "content";
+        });
+        flash(it.id);
+        toast(`${TYPES[type].label} added to "${st.name}"`, true);
+      }
+
+      // ------------------------------------------------------------------ popovers
+      let pop = null;
+      function closePop() {
+        if (pop) {
+          pop.remove();
+          pop = null;
+        }
+        document
+          .querySelectorAll(".slot.keep")
+          .forEach((s) => s.classList.remove("keep"));
+      }
+      function placePop(p, anchor) {
+        document.body.appendChild(p);
+        const r = anchor.getBoundingClientRect();
+        const w = p.offsetWidth,
+          h = p.offsetHeight;
+        let x = r.right - w;
+        if (x < 8) x = 8;
+        if (x + w > innerWidth - 8) x = innerWidth - 8 - w;
+        let y = r.bottom + 4;
+        if (y + h > innerHeight - 8) y = Math.max(8, r.top - 4 - h);
+        p.style.left = x + "px";
+        p.style.top = y + "px";
+        pop = p;
+        p.querySelector("button")?.focus();
+      }
+      function openAddMenu(anchor, where) {
+        closePop();
+        const p = document.createElement("div");
+        p.className = "pop";
+        p.setAttribute("role", "menu");
+        const list = where.gid ? ENTRY_ORDER : ADD_ORDER;
+        p.innerHTML =
+          `<h4>${where.gid ? `Insert as entry ${where.at + 1}` : "Add to this station"}</h4>` +
+          list
+            .map(
+              (t) =>
+                `<button class="pi" role="menuitem" data-type="${t}"><span class="ic t-${t}">${icon(t)}</span><span class="pt"><b>${TYPES[t].label}</b><span>${TYPES[t].hint}</span></span>${t === S.lastType && !where.gid ? '<span class="last">last used</span>' : ""}</button>`,
+            )
+            .join("");
+        p.addEventListener("click", (ev) => {
+          const b = ev.target.closest("[data-type]");
+          if (!b) return;
+          closePop();
+          addContent(b.dataset.type, where);
+        });
+        placePop(p, anchor);
+      }
+      function openMoveMenu(anchor) {
+        closePop();
+        const L = locate();
+        const p = document.createElement("div");
+        p.className = "pop";
+        p.setAttribute("role", "menu");
+        p.innerHTML =
+          `<h4>Move to station</h4>` +
+          S.stations
+            .filter((s) => s !== L.st)
+            .map(
+              (s) =>
+                `<button class="pi" role="menuitem" data-to="${s.id}"><span class="num">${stIndex(s) + 1}</span><span class="pt" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</b><span>${summary(s)}</span></span></button>`,
+            )
+            .join("") +
+          `<div class="msep"></div><button class="pi" data-to="__new"><span class="ic">${icon("plus")}</span><span class="pt"><b>A new station here</b><span>Made at this place</span></span></button>`;
+        p.addEventListener("click", (ev) => {
+          const b = ev.target.closest("[data-to]");
+          if (!b) return;
+          closePop();
+          const isStory = S.sel.k === "story";
+          const obj = isStory ? L.story : L.item;
+          let to = stById(b.dataset.to);
+          change(() => {
+            if (!to) {
+              to = {
+                id: uid("s"),
+                name: "New station",
+                desc: "",
+                pic: null,
+                radius: 25,
+                locked: false,
+                e: L.st.e + (obj.e || 0),
+                n: L.st.n + (obj.n || 0),
+                open: true,
+                stories: [],
+                items: [],
+              };
+              S.stations.push(to);
+            }
+            if (isStory) {
+              L.st.stories.splice(L.st.stories.indexOf(obj), 1);
+              to.stories.push(obj);
+              S.sel = { k: "story", sid: to.id, gid: obj.id };
+            } else {
+              L.st.items.splice(L.st.items.indexOf(obj), 1);
+              to.items.push(obj);
+              S.sel = { k: "item", sid: to.id, iid: obj.id };
+            }
+            to.open = true;
+          });
+          toast(`Moved to "${to.name}"`, true);
+        });
+        placePop(p, anchor);
+      }
+      document.addEventListener("pointerdown", (ev) => {
+        if (
+          pop &&
+          !pop.contains(ev.target) &&
+          !ev.target.closest(
+            '[data-act="addMenu"],[data-act="slotAdd"],[data-act="move"]',
+          )
+        )
+          closePop();
+        if (!ev.target.closest(".menu"))
+          document
+            .querySelectorAll(".menu.open")
+            .forEach((m) => m.classList.remove("open"));
+      });
+
+      // ------------------------------------------------------------------ confirm
+      function confirmDel(title, body, okLabel, onOk) {
+        const m = $("#modal");
+        m.innerHTML = `<h2 id="mTtl">${icon("warn")}${esc(title)}</h2><p>${esc(body)}</p><div class="mf"><button class="btn" id="mCancel">Cancel</button><button class="btn del" id="mOk">${esc(okLabel)}</button></div>`;
+        $("#modalBack").classList.add("show");
+        $("#mCancel").focus();
+        const close = () => $("#modalBack").classList.remove("show");
+        $("#mCancel").onclick = close;
+        $("#mOk").onclick = () => {
+          close();
+          onOk();
+        };
+      }
+      $("#modalBack").addEventListener("click", (ev) => {
+        if (ev.target.id === "modalBack")
+          $("#modalBack").classList.remove("show");
+      });
+
+      // ------------------------------------------------------------------ bottom bar
+      function renderBottom() {
+        const k = S.sel ? kindOf(S.sel) : null;
+        const L = locate();
+        const placed =
+          k &&
+          (k !== "item" || !["text", "choice", "quiz"].includes(L.item.type));
+        $("#sbActs").innerHTML = !k
+          ? ""
+          : `<button class="sact" data-b="dup">${icon("dup")}<span class="lbl">Duplicate</span></button>` +
+            (placed && k !== "story"
+              ? `<button class="sact" data-b="copypos">${icon("copy")}<span class="lbl">Copy position</span></button>`
+              : "");
+        $("#sbHint").textContent = !k
+          ? "Select a station on the map or in the list"
+          : k === "station"
+            ? "Station: add content in the Content tab"
+            : k === "story"
+              ? "Story: hover between entries to insert one"
+              : "Click the name to rename it";
+      }
+      $("#sbActs").addEventListener("click", (ev) => {
+        const b = ev.target.closest("[data-b]");
+        if (b) bottomAct(b.dataset.b);
+      });
+
+      // ------------------------------------------------------------------ the fake map
+      const cv = $("#cv"),
+        ctx = cv.getContext("2d");
+      function proj(e, n) {
+        const w = cv.clientWidth,
+          h = cv.clientHeight;
+        return [S.view.px + (e - S.view.cx) * S.zoom, S.view.py - (n - S.view.cy) * S.zoom];
+      }
+      // the part of the map not covered by the notes box or the phone's sheet
+      function mapRegion() {
+        const w = cv.clientWidth, h = cv.clientHeight;
+        const nb = $("#notes"), mr = $("#map").getBoundingClientRect();
+        let x0 = 40, y0 = 40, y1 = h - 50;
+        if (nb.open && w > 700) x0 = nb.getBoundingClientRect().right - mr.left + 40;
+        if (w <= 700) {
+          y0 = 150;
+          if (!$("#right").hidden) y1 = Math.max(y0 + 80, $("#right").getBoundingClientRect().top - mr.top - 30);
+        }
+        return { x0, x1: w - 150, y0, y1 };
+      }
+      function fitView() {
+        const r = mapRegion();
+        const es = S.stations.map((s) => s.e), ns = S.stations.map((s) => s.n);
+        if (!es.length) return;
+        const e0 = Math.min(...es) - 30, e1 = Math.max(...es) + 30, n0 = Math.min(...ns) - 30, n1 = Math.max(...ns) + 30;
+        S.zoom = clamp(Math.min(Math.max(60, r.x1 - r.x0) / (e1 - e0), Math.max(60, r.y1 - r.y0) / (n1 - n0)), 0.4, 5);
+        S.view = { cx: (e0 + e1) / 2, cy: (n0 + n1) / 2, px: (r.x0 + Math.max(r.x0 + 60, r.x1)) / 2, py: (r.y0 + r.y1) / 2 };
+      }
+      function drawMap() {
+        const dpr = window.devicePixelRatio || 1,
+          w = cv.clientWidth,
+          h = cv.clientHeight;
+        if (!w || !h) return;
+        if (!S.userView) fitView();
+        if (
+          cv.width !== Math.round(w * dpr) ||
+          cv.height !== Math.round(h * dpr)
+        ) {
+          cv.width = Math.round(w * dpr);
+          cv.height = Math.round(h * dpr);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const g = ctx.createRadialGradient(
+          w * 0.5,
+          h * 0.45,
+          20,
+          w * 0.5,
+          h * 0.5,
+          Math.max(w, h) * 0.8,
+        );
+        g.addColorStop(0, "#2c3038");
+        g.addColorStop(1, "#17181b");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        // streets and a river
+        ctx.strokeStyle = "rgba(255,255,255,.05)";
+        ctx.lineWidth = 1;
+        for (let x = -400; x <= 400; x += 40) {
+          const [a, b] = proj(x, -400),
+            [c, d] = proj(x + 30, 400);
+          ctx.beginPath();
+          ctx.moveTo(a, b);
+          ctx.lineTo(c, d);
+          ctx.stroke();
+        }
+        for (let y = -400; y <= 400; y += 40) {
+          const [a, b] = proj(-400, y),
+            [c, d] = proj(400, y - 25);
+          ctx.beginPath();
+          ctx.moveTo(a, b);
+          ctx.lineTo(c, d);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(90,130,170,.28)";
+        ctx.lineWidth = Math.max(4, 14 * S.zoom / 1.6);
+        ctx.beginPath();
+        for (let n = -400; n <= 400; n += 10) {
+          const [x, y] = proj(150 + 30 * Math.sin(n / 60), n);
+          n === -400 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        // route
+        ctx.strokeStyle = "rgba(233,162,59,.35)";
+        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        S.stations.forEach((s, i) => {
+          const [x, y] = proj(s.e, s.n);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const L = locate();
+        const placeOpen =
+          S.sel && kindOf(S.sel) === "station" && S.tabs.station === "place";
+        S.stations.forEach((s, i) => {
+          const [x, y] = proj(s.e, s.n);
+          const sel = L.st === s;
+          if (S.rings || (sel && placeOpen)) {
+            ctx.beginPath();
+            ctx.arc(x, y, s.radius * S.zoom, 0, Math.PI * 2);
+            ctx.fillStyle = sel
+              ? "rgba(233,162,59,.10)"
+              : "rgba(141,184,227,.05)";
+            ctx.fill();
+            ctx.strokeStyle = sel
+              ? placeOpen
+                ? "rgba(233,162,59,.95)"
+                : "rgba(233,162,59,.55)"
+              : "rgba(141,184,227,.22)";
+            ctx.lineWidth = sel && placeOpen ? 2 : 1;
+            ctx.stroke();
+          }
+          if (sel) {
+            const items = s.items
+              .concat(...s.stories.map((g) => g.entries))
+              .filter((it) => !["text", "choice", "quiz"].includes(it.type));
+            items.forEach((it) => {
+              const [ix, iy] = proj(s.e + it.e, s.n + it.n);
+              const on = L.item === it;
+              ctx.fillStyle = on ? "#e9a23b" : "#cfd3da";
+              ctx.fillRect(
+                ix - (on ? 4 : 2.5),
+                iy - (on ? 4 : 2.5),
+                on ? 8 : 5,
+                on ? 8 : 5,
+              );
+            });
+          }
+          ctx.beginPath();
+          ctx.arc(x, y, 9, 0, Math.PI * 2);
+          ctx.fillStyle = sel ? "#e9a23b" : "#3a4656";
+          ctx.fill();
+          ctx.strokeStyle = sel ? "#fff3dc" : "#8db8e3";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = sel ? "#1c1c1c" : "#e6f0fa";
+          ctx.font = "600 10px Consolas, monospace";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(i + 1), x, y + 0.5);
+          if (s.locked) {
+            ctx.fillStyle = "#9aa0a6";
+            ctx.fillRect(x + 8, y - 13, 6, 5);
+          }
+          ctx.font = '11px "Segoe UI", system-ui, sans-serif';
+          ctx.textAlign = "left";
+          const label =
+            s.name.length > 26 ? s.name.slice(0, 25) + "..." : s.name;
+          const tw = ctx.measureText(label).width;
+          ctx.fillStyle = "rgba(24,25,28,.82)";
+          ctx.fillRect(x + 13, y - 8, tw + 10, 16);
+          ctx.fillStyle = sel ? "#fff" : "#d0d3d8";
+          ctx.fillText(label, x + 18, y + 0.5);
+        });
+      }
+      cv.addEventListener("click", (ev) => {
+        const r = cv.getBoundingClientRect();
+        const mx = ev.clientX - r.left,
+          my = ev.clientY - r.top;
+        let best = null,
+          bd = 16;
+        S.stations.forEach((s) => {
+          const [x, y] = proj(s.e, s.n);
+          const d = Math.hypot(mx - x, my - y);
+          if (d < bd) {
+            bd = d;
+            best = s;
+          }
+        });
+        if (best) {
+          select({ k: "station", sid: best.id });
+        } else if (S.sel) select(null);
+      });
+      $("#zin").onclick = () => {
+        S.zoom = clamp(S.zoom * 1.25, 0.4, 6);
+        S.userView = true;
+        drawMap();
+      };
+      $("#zout").onclick = () => {
+        S.zoom = clamp(S.zoom / 1.25, 0.4, 6);
+        S.userView = true;
+        drawMap();
+      };
+      $("#compass").onclick = () => toast("North is up");
+      $("#notes").addEventListener("toggle", () => drawMap());
+      new ResizeObserver(drawMap).observe(cv);
+
+      // ------------------------------------------------------------------ top bar
+      document.querySelectorAll(".menu").forEach((m) =>
+        m.querySelector(".mbtn").addEventListener("click", () => {
+          const o = m.classList.contains("open");
+          document
+            .querySelectorAll(".menu.open")
+            .forEach((x) => x.classList.remove("open"));
+          if (!o) m.classList.add("open");
+        }),
+      );
+      document.querySelectorAll(".mi[data-cmd]").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.closest(".menu").classList.remove("open");
+          cmd(b.dataset.cmd);
+        }),
+      );
+      function cmd(c) {
+        if (c === "save") {
+          document.body.classList.remove("dirty");
+          toast("Saved");
+        }
+        if (c === "undo") doUndo();
+        if (c === "redo") doRedo();
+        if (c === "dup" || c === "copypos" || c === "del") {
+          if (!S.sel) toast("Select something first");
+          else bottomAct(c);
+        }
+        if (c === "rings") {
+          S.rings = !S.rings;
+          drawMap();
+          toast(
+            S.rings
+              ? "Arrival rings shown"
+              : "Arrival rings hidden (still shown in Place)",
+          );
+        }
+        if (c === "foldall") {
+          S.stations.forEach((s) => (s.open = false));
+          renderTree();
+        }
+        if (c === "notes") {
+          $("#notes").open = true;
+        }
+      }
+      $("#dirty").onclick = () => cmd("save");
+      $("#bUndo").onclick = doUndo;
+      $("#bRedo").onclick = doRedo;
+      $("#bStations").onclick = () =>
+        document.body.classList.toggle("leftOpen");
+      $("#bAddStation").onclick = () => {
+        const n = S.stations.length + 1;
+        const s = {
+          id: uid("s"),
+          name: "New station " + n,
+          desc: "",
+          pic: null,
+          radius: 25,
+          locked: false,
+          e: Math.round((Math.random() - 0.5) * 80),
+          n: Math.round((Math.random() - 0.5) * 80),
+          open: true,
+          stories: [],
+          items: [],
+        };
+        change(() => {
+          S.stations.push(s);
+          S.sel = { k: "station", sid: s.id };
+          S.tabs.station = "content";
+        });
+        flash(s.id);
+        toast("Station added. Add its content in the Content tab.", true);
+      };
+      document.addEventListener("keydown", (ev) => {
+        const inField = /INPUT|TEXTAREA/.test(
+          document.activeElement?.tagName || "",
+        );
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+          ev.preventDefault();
+          cmd("save");
+          return;
+        }
+        if (inField) return;
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") {
+          ev.preventDefault();
+          ev.shiftKey ? doRedo() : doUndo();
+        } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") {
+          ev.preventDefault();
+          doRedo();
+        } else if (ev.key === "Escape") {
+          if (pop) closePop();
+          else if ($("#modalBack").classList.contains("show"))
+            $("#modalBack").classList.remove("show");
+          else select(null);
+        }
+      });
+      // on touch screens the action labels show in a line under the toolbar
+      R.addEventListener("pointerdown", (ev) => {
+        const b = ev.target.closest(".ab");
+        const tl = $("#tipLine");
+        if (tl) tl.textContent = b ? b.dataset.tip : "";
+      });
+
+      function renderAll() {
+        closePop();
+        renderTree();
+        renderRight();
+        renderBottom();
+        drawMap();
+        updateUndo();
+        lastStable = snapshot();
+      }
+      if (window.innerWidth < 1200 || window.innerHeight < 700) $("#notes").open = false;
+      select({ k: "station", sid: "s1" }, { keepLeft: true });
+    </script>
+  </body>
+</html>

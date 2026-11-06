@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Glitter and haze</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --panel: rgba(12, 18, 28, 0.62);
+        --text: #eef3f8;
+        --muted: #b7c3d0;
+        --accent: #ffd98a;
+        --line: rgba(255, 255, 255, 0.18);
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1420;
+        color: var(--text);
+        font:
+          13px/1.4 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      .hud {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-start;
+        pointer-events: none;
+      }
+      .hud > * {
+        pointer-events: auto;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 6px 9px;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+      #readout {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .bar {
+        position: fixed;
+        left: 50%;
+        transform: translateX(-50%);
+        width: max-content;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: calc(100vw - 20px);
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        background: rgba(255, 217, 138, 0.25);
+        border-color: var(--accent);
+      }
+      .sep {
+        width: 1px;
+        background: var(--line);
+        margin: 2px 2px;
+      }
+      details {
+        max-width: min(440px, calc(100vw - 20px));
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--accent);
+      }
+      details[open] {
+        max-height: calc(100vh - 140px);
+        overflow: auto;
+      }
+      details p,
+      details ul {
+        margin: 6px 0;
+        color: var(--muted);
+      }
+      details ul {
+        padding-left: 18px;
+      }
+      #err {
+        position: fixed;
+        inset: auto 10px 70px 10px;
+        color: #ffb4a8;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div class="hud">
+      <div class="panel" id="readout">starting...</div>
+      <details class="panel" id="notes">
+        <summary>Notes</summary>
+        <p>
+          <b>Technique.</b> One full-screen shader, analytic per pixel, on a
+          spherical Earth (radius 6371 km), so every term could become a patch
+          on a globe's sea and sky shaders. Sea: the wind-driven slope variance
+          of a Cox-Munk distribution is split by pixel footprint. Wave octaves
+          the pixel resolves are drawn as moving slopes (sharp sparkles near the
+          camera); smaller ones add their variance to the glint lobe, so the sun
+          path becomes a broad smooth sheen with distance. Fresnel-weighted sky
+          reflection. Haze: air plus a low marine haze layer, Chapman optical
+          depth, single scattering with sun transmittance and ozone, which gives
+          the bright horizon band, warm toward the sun. Clouds: one deck at
+          1.3 km, a 2D coverage field relief-marched as a height field (flat
+          base, domed tops), with wrap light, sky light, a backlit rim and
+          shadows on the sea and in the haze below the deck.
+        </p>
+        <ul>
+          <li>
+            <b>Low tier</b>: 0.6 of CSS pixels (steps down to 0.4 while p95 is
+            above 40 ms), 5 wave octaves, 5 relief steps plus 2 refinements, 4
+            cloud octaves, no cloud self-shadow, no lens ghost.
+          </li>
+          <li>
+            <b>High tier</b>: device pixels (at most 2x), 8 wave octaves, 14
+            relief steps plus 4 refinements, 5 cloud octaves, a self-shadow
+            sample toward the sun, faint lens ghost.
+          </li>
+          <li>
+            <b>Measured</b> headless with software WebGL, a forced-sync render,
+            all three views, ranges over repeated runs (only the ratios mean
+            anything): high 1440x900 2.7-6.3 s, low 1440x900 0.47-0.80 s, high
+            390x844 0.9-1.9 s, low 390x844 0.18-0.32 s. Low is about 5-6 times
+            cheaper than high. Live on this device:
+            <span id="measured">see the readout</span>.
+          </li>
+        </ul>
+        <p>
+          <b>Self-check against the reference.</b> The clouds are the weak part.
+          They are height-field domes: no volume, no overhangs, no light through
+          thin parts, hard and slightly dithered rims, and at 3 km the grazing
+          march leaves combed streaks on the tops. Fix: a raymarched volume over
+          a 2D weather map, about 3-6 times this cost on a phone. The far deck
+          is sparser than the reference's. No crepuscular rays through cloud
+          gaps (shadowed in-scatter, about 8 extra samples per pixel), no cloud
+          reflections in the sea, no real bloom (the halo is analytic). The sea
+          is slightly too blue-cyan at 10 km. Far glitter has no single
+          sparkles, by design: they are below pixel size there.
+        </p>
+      </details>
+    </div>
+    <div class="bar panel" role="toolbar" aria-label="View and quality">
+      <button data-view="10km">10 km</button>
+      <button data-view="3km">3 km</button>
+      <button data-view="30km">30 km</button>
+      <span class="sep"></span>
+      <button data-tier="low">Low</button>
+      <button data-tier="high">High</button>
+    </div>
+    <div id="err" class="panel"></div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+
+      const params = new URLSearchParams(location.search);
+      const coarse =
+        matchMedia("(pointer: coarse)").matches ||
+        Math.min(screen.width, screen.height) < 600;
+      const state = {
+        tier:
+          params.get("tier") === "high"
+            ? "high"
+            : params.get("tier") === "low"
+              ? "low"
+              : coarse
+                ? "low"
+                : "high",
+        view: ["10km", "3km", "30km"].includes(params.get("view"))
+          ? params.get("view")
+          : "10km",
+        sunDeg: Math.min(
+          80,
+          Math.max(0.5, parseFloat(params.get("sun") ?? "10") || 10),
+        ),
+        renderScale: 1,
+      };
+      const TIERS = {
+        low: {
+          WAVE_OCT: 5,
+          WAVE_L0: 16.0,
+          RELIEF_STEPS: 5,
+          REFINE: 2,
+          CLOUD_OCT: 4,
+          SELF_SHADOW: 0,
+          GHOST: 0,
+          base: 0.6,
+          min: 0.4,
+        },
+        high: {
+          WAVE_OCT: 8,
+          WAVE_L0: 8.0,
+          RELIEF_STEPS: 14,
+          REFINE: 4,
+          CLOUD_OCT: 5,
+          SELF_SHADOW: 1,
+          GHOST: 1,
+          base: 0,
+          min: 0,
+        },
+      };
+      const VIEWS = {
+        "10km": { h: 10, horizonAt: 0.25, yaw: 10 },
+        "3km": { h: 3, horizonAt: 0.22, yaw: 8 },
+        "30km": { h: 30, horizonAt: 0.32, yaw: 10 },
+      };
+
+      const canvas = document.getElementById("c");
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          alpha: false,
+          powerPreference: "high-performance",
+        });
+      } catch (e) {
+        const el = document.getElementById("err");
+        el.style.display = "block";
+        el.textContent = "WebGL is not available.";
+        throw e;
+      }
+
+      const vert = /* glsl */ `
+in vec3 position;
+void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+      const frag = /* glsl */ `
+precision highp float;
+precision highp int;
+out vec4 fragColor;
+
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uH;          // camera altitude, km
+uniform vec3 uFwd, uRight, uUp;
+uniform vec2 uTan;         // tan(half fov) x, y
+uniform vec3 uSun;         // unit vector toward the sun (camera-local frame, y up at the camera)
+uniform float uPixAng;     // radians per pixel
+uniform vec2 uCloudOff;    // km
+uniform vec2 uSunNdc;
+uniform float uSunOn;
+uniform float uExposure;
+uniform vec3 uSunCol;      // sun path at sea level: air column, haze column, ozone path (per frame, from JS)
+uniform vec3 uSkyIrr0;     // sky irradiance at sea level (per frame, from JS)
+uniform vec3 uSkyIrrC;     // sky irradiance at cloud height (per frame, from JS)
+
+const float PI = 3.14159265;
+const float R = 6371.0;
+const float HR = 8.0;      // air scale height, km
+const float HM = 1.2;      // marine haze scale height, km
+const vec3 BR = vec3(5.802e-3, 13.558e-3, 33.1e-3);   // air scattering, 1/km at sea level
+const vec3 BMS = vec3(0.022);                         // haze scattering
+const vec3 BME = vec3(0.025);                         // haze extinction
+const float ESUN = 20.0;
+const float HB = 1.3;      // cloud base, km
+const float HMAX = 0.9;    // max cloud thickness, km
+const float WIND = 5.0;    // m/s for the slope statistics
+const vec2 WDIR = vec2(0.28, -0.96);  // wind heading (roughly along the view)
+
+// ---------- hashing and noise ----------
+uint hash2(ivec2 p) {
+  uvec2 q = uvec2(p) * uvec2(1597334673u, 3812015801u);
+  uint n = (q.x ^ q.y) * 1597334673u;
+  n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return n;
+}
+vec2 grad(ivec2 p) {
+  uint h = hash2(p);
+  return vec2(float(h & 0xffffu), float(h >> 16)) * (2.0 / 65535.0) - 1.0;
+}
+// gradient noise with analytic derivatives: (value, d/dx, d/dy)
+vec3 noised(vec2 p) {
+  ivec2 i = ivec2(floor(p)); vec2 f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  vec2 ga = grad(i), gb = grad(i + ivec2(1, 0)), gc = grad(i + ivec2(0, 1)), gd = grad(i + ivec2(1, 1));
+  float va = dot(ga, f), vb = dot(gb, f - vec2(1, 0)), vc = dot(gc, f - vec2(0, 1)), vd = dot(gd, f - vec2(1, 1));
+  float k = va - vb - vc + vd;
+  return vec3(va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * k,
+              ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd)
+              + du * (u.yx * k + vec2(vb, vc) - va));
+}
+float noise(vec2 p) {
+  ivec2 i = ivec2(floor(p)); vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float va = dot(grad(i), f), vb = dot(grad(i + ivec2(1, 0)), f - vec2(1, 0));
+  float vc = dot(grad(i + ivec2(0, 1)), f - vec2(0, 1)), vd = dot(grad(i + ivec2(1, 1)), f - vec2(1, 1));
+  return mix(mix(va, vb, u.x), mix(vc, vd, u.x), u.y);
+}
+
+// ---------- geometry ----------
+// first hit of the sphere of altitude hs from altitude h (> hs) along a unit ray with vertical cosine dy
+float hitDown(float dy, float h, float hs) {
+  float b = (R + h) * dy;
+  float c = (h - hs) * (2.0 * R + h + hs);
+  float disc = b * b - c;
+  if (disc < 0.0 || b >= 0.0) return -1.0;
+  return c / (-b + sqrt(disc));
+}
+float altOf(vec3 p) { return length(vec3(p.x, R + uH + p.y, p.z)) - R; }
+vec3 upOf(vec3 p) { return normalize(vec3(p.x, R + uH + p.y, p.z)); }
+
+// ---------- atmosphere ----------
+float chap(float x, float mu) { float c = sqrt(1.5707963 * x); return c / ((c - 1.0) * mu + 1.0); }
+// column (sea-level-equivalent km) from altitude h along direction cosine mu to space
+float column(float h, float mu, float H) {
+  if (mu >= 0.0) return H * exp(-h / H) * chap((R + h) / H, mu);
+  float ht = (R + h) * sqrt(max(0.0, 1.0 - mu * mu)) - R;
+  return max(0.0, 2.0 * H * exp(-ht / H) * chap((R + ht) / H, 0.0) - H * exp(-h / H) * chap((R + h) / H, -mu));
+}
+const vec3 BO3 = vec3(0.65e-3, 1.881e-3, 0.085e-3);  // ozone absorption, 1/km, as a ~15 km layer above the haze
+// sun transmittance at altitude h: the sea-level sun columns scaled by density (the Chapman factor barely
+// changes over the first kilometres), so it costs two exp per call instead of two Chapman evaluations
+vec3 sunTrans(float h) {
+  return exp(-(BR * (uSunCol.x * exp(-h / HR)) + BME * (uSunCol.y * exp(-h / HM)) + BO3 * uSunCol.z));
+}
+float phaseR(float c) { return 0.0596831 * (1.0 + c * c); }
+float phaseM(float c, float g) {
+  float g2 = g * g;
+  return 0.1193662 * (1.0 - g2) * (1.0 + c * c) / ((2.0 + g2) * pow(1.0 + g2 - 2.0 * g * c, 1.5));
+}
+// in-scatter and transmittance for a segment with the given air and haze columns
+void segment(float cR, float cM, float hRep, float cosT, out vec3 ins, out vec3 tr) {
+  vec3 tau = BR * cR + BME * cM;
+  tr = exp(-tau);
+  vec3 tsR = sunTrans(hRep + 3.0);
+  vec3 tsM = sunTrans(hRep + 0.4);
+  float pm = 0.8 * phaseM(cosT, 0.78) + 0.2 * phaseM(cosT, 0.2);
+  vec3 src = tsR * BR * cR * (phaseR(cosT) + 0.012) + tsM * BMS * cM * (pm + 0.02);
+  ins = ESUN * src * (1.0 - tr) / max(tau, vec3(1e-5));
+}
+vec3 skyRad(float h, vec3 d, out vec3 tr) {
+  float mu = d.y;
+  float hmin = mu >= 0.0 ? h : (R + h) * sqrt(max(0.0, 1.0 - mu * mu)) - R;
+  vec3 ins;
+  segment(column(h, mu, HR), column(h, mu, HM), max(hmin, 0.0), dot(d, uSun), ins, tr);
+  return ins;
+}
+// segment from the camera down to a point p (relative to the camera, altitude hp)
+void downSeg(vec3 d, vec3 p, float hp, out vec3 ins, out vec3 tr) {
+  float mup = dot(d, upOf(p));
+  float cR = max(0.0, column(hp, -mup, HR) - column(uH, -d.y, HR));
+  float cM = max(0.0, column(hp, -mup, HM) - column(uH, -d.y, HM));
+  segment(cR, cM, hp, dot(d, uSun), ins, tr);
+}
+
+// ---------- clouds ----------
+// coverage at ground position x (km), with octave fade by footprint fp (km); y = cluster strength
+vec2 cov(vec2 x, float fp, int oct) {
+  x += uCloudOff;
+  float cl = noise(x * 0.045) + 0.55 * noise(x * 0.11 + 17.3);
+  float s = 0.0, a = 0.5, f = 0.42;
+  mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 6; i++) {
+    if (i >= oct) break;
+    float w = clamp((1.0 / f) / (fp * 2.5) - 0.5, 0.0, 1.0);
+    s += a * mix(0.25, abs(noise(x * f)), w);
+    a *= 0.5; f *= 2.07; x = rot * x + 3.1;
+  }
+  return vec2(s * 2.1 + cl * 1.05 - 0.5, cl);
+}
+float topOf(vec2 c) {
+  return c.x <= 0.0 ? -1.0 : HB + HMAX * (0.45 + 0.55 * clamp(c.y + 0.6, 0.0, 1.0)) * (1.0 - pow(1.0 - clamp(c.x * 1.35, 0.0, 1.0), 2.0));
+}
+float footprint(float t, float mu) {
+  return t * uPixAng * inversesqrt(max(abs(mu), 0.04));
+}
+
+// ---------- sea ----------
+float smithL(float mu, float s) {
+  float a = mu / (s * sqrt(max(1e-4, 1.0 - mu * mu)));
+  return a < 1.6 ? (1.0 - 1.259 * a + 0.396 * a * a) / (3.535 * a + 2.181 * a * a) : 0.0;
+}
+float fresnel(float c) {
+  // unpolarised dielectric Fresnel, n = 1.333
+  float n = 1.333;
+  float g = sqrt(max(0.0, n * n - 1.0 + c * c));
+  float A = (g - c) / (g + c), B = (c * (g + c) - 1.0) / (c * (g - c) + 1.0);
+  return 0.5 * A * A * (1.0 + B * B);
+}
+
+vec3 shadeSea(vec3 d, float t, out float shadowOut) {
+  vec3 p = d * t;
+  vec3 N = upOf(p);
+  vec3 Wt = normalize(vec3(WDIR.x, 0.0, WDIR.y) - N * dot(N, vec3(WDIR.x, 0.0, WDIR.y)));
+  vec3 Wc = cross(N, Wt);
+  vec3 V = -d;
+  float muV = max(dot(V, N), 1e-3);
+
+  // Cox-Munk slope variances (upwind, crosswind)
+  float su2 = 0.00316 * WIND + 0.004;
+  float sc2 = 0.003 + 0.00192 * WIND;
+  float s2 = 0.5 * (su2 + sc2);
+
+  // explicit octaves where the pixel resolves them
+  float fpm = footprint(t, muV) * 1000.0;
+  vec2 xm = vec2(dot(p, Wt), dot(p, Wc)) * 1000.0;      // metres, wind frame
+  vec2 slope = vec2(0.0);
+  float resolved = 0.0;
+  float lam = WAVE_L0;
+  const float PER_OCT = 0.13;   // share of the total variance carried by each explicit octave
+  for (int i = 0; i < WAVE_OCT; i++) {
+    float w = smoothstep(1.2, 3.5, lam / fpm);
+    if (w > 0.0) {
+      float ang = float(i) * 1.7;
+      mat2 rot = mat2(cos(ang * 0.35), -sin(ang * 0.35), sin(ang * 0.35), cos(ang * 0.35));
+      float c = sqrt(9.81 * lam / 6.2831853) * 1.6;         // deep-water phase speed, sped up
+      vec2 dirr = rot * vec2(1.0, 0.0);
+      vec2 q = rot * xm; q.y *= 1.6;                        // waves longer crosswind
+      q = q / lam - vec2(c * uTime / lam, float(i) * 13.7);
+      vec2 g = noised(q).yz;
+      g.y *= 1.6;
+      g = transpose(rot) * g;
+      float amp = sqrt(PER_OCT * s2) * 1.2;
+      slope += w * amp * g;
+      resolved += w * w * PER_OCT * s2;
+    }
+    lam *= 2.0;
+  }
+  float k = max(0.18, 1.0 - resolved / s2);
+  float ru2 = su2 * k, rc2 = sc2 * k;
+
+  // cloud shadow on the sea
+  vec2 off = vec2(uSun.x, uSun.z) / max(uSun.y, 0.05) * (HB + 0.35);
+  vec2 cs = cov(p.xz + off, max(footprint(t, muV), 0.6), 3);
+  float shadow = 1.0 - 0.82 * smoothstep(0.0, 0.22, cs.x);
+  shadowOut = shadow;
+
+  vec3 Tsun = sunTrans(0.0) * ESUN;
+  // sun glint: anisotropic Cox-Munk lobe around the explicit slope
+  vec3 L = uSun;
+  vec3 Hh = normalize(V + L);
+  float hz = max(dot(Hh, N), 1e-3);
+  vec2 need = -vec2(dot(Hh, Wt), dot(Hh, Wc)) / hz;
+  vec2 rel = need - slope;
+  float pdf = exp(-0.5 * (rel.x * rel.x / ru2 + rel.y * rel.y / rc2)) / (6.2831853 * sqrt(ru2 * rc2));
+  float sr = sqrt(0.5 * (ru2 + rc2));
+  float G = 1.0 / (1.0 + smithL(muV, sr) + smithL(max(dot(L, N), 1e-3), sr));
+  float Fg = fresnel(clamp(dot(V, Hh), 0.0, 1.0));
+  vec3 glint = Tsun * pdf * Fg * G / (4.0 * muV * hz * hz * hz * hz) * shadow;
+
+  // sky reflection on the explicit normal
+  vec3 Ne = normalize(N - slope.x * Wt - slope.y * Wc);
+  vec3 Rr = reflect(d, Ne);
+  float ry = dot(Rr, N);
+  if (ry < 0.02) Rr = normalize(Rr + N * (0.02 - ry));
+  vec3 trS;
+  vec3 sky = skyRad(0.0, Rr, trS);
+  float muE = clamp(max(dot(V, Ne), sr * 0.55), 0.0, 1.0);
+  float F = fresnel(muE);
+
+  // water body: deep blue-grey upwelling
+  vec3 irr = Tsun * max(L.y, 0.0) * shadow + uSkyIrr0;
+  vec3 body = (1.0 - F) * irr * vec3(0.0013, 0.0032, 0.0062);
+
+  return F * sky + glint + body;
+}
+
+// ---------- tone and lens ----------
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+void main() {
+  vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  vec3 d = normalize(uFwd + ndc.x * uTan.x * uRight + ndc.y * uTan.y * uUp);
+  float cosS = dot(d, uSun);
+  float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+
+  vec3 col;
+  vec3 ins, tr;
+  float tSea = hitDown(d.y, uH, 0.0);
+
+  // clouds: relief march through the deck
+  float cloudA = 0.0;
+  vec3 cloudCol = vec3(0.0);
+  float tTop = uH > HB + HMAX ? hitDown(d.y, uH, HB + HMAX) : 0.0;
+  if (tTop >= 0.0 && d.y < 0.0) {
+    float tEnd = hitDown(d.y, uH, HB);
+    if (tEnd < 0.0) tEnd = tTop + 120.0;
+    tEnd = min(tEnd, tTop + 120.0);
+    float prevT = tTop, prevDiff = 1.0;
+    float hitT = -1.0;
+    for (int i = 0; i < RELIEF_STEPS; i++) {
+      // quadratic spacing: short steps near the camera, long ones where haze hides them
+      float xs = (float(i) + 0.35 + 0.6 * dither) / float(RELIEF_STEPS);
+      float tt = mix(tTop, tEnd, xs * xs);
+      vec3 pp = d * tt;
+      float fpK = footprint(tt, d.y);
+      float diff = altOf(pp) - topOf(cov(pp.xz, fpK, CLOUD_OCT));
+      if (diff < 0.0) {
+        float a = prevDiff / max(prevDiff - diff, 1e-4);
+        // bisection refine between the last outside and the first inside sample
+        float lo = prevT, hi = tt;
+        for (int j = 0; j < REFINE; j++) {
+          float mid = 0.5 * (lo + hi);
+          vec3 pm2 = d * mid;
+          float dm = altOf(pm2) - topOf(cov(pm2.xz, footprint(mid, d.y), CLOUD_OCT));
+          if (dm < 0.0) hi = mid; else lo = mid;
+        }
+        hitT = 0.5 * (lo + hi);
+        break;
+      }
+      prevT = tt; prevDiff = diff;
+    }
+    if (hitT > 0.0) {
+      vec3 pc = d * hitT;
+      float ac = altOf(pc);
+      float fpK = footprint(hitT, d.y);
+      vec2 c0 = cov(pc.xz, fpK, CLOUD_OCT);
+      float e = max(0.3, fpK * 1.5);
+      float tx = topOf(cov(pc.xz + vec2(e, 0.0), fpK, CLOUD_OCT));
+      float tz = topOf(cov(pc.xz + vec2(0.0, e), fpK, CLOUD_OCT));
+      float t0 = max(topOf(c0), HB);
+      vec2 gr = (vec2(max(tx, HB), max(tz, HB)) - t0) / e;
+      gr = clamp(gr, -1.8, 1.8);
+      vec3 up = upOf(pc);
+      // small puffs on top of the height field normal (cauliflower texture)
+      vec3 pb = noised(pc.xz * 1.7 + uCloudOff * 1.7 + 9.1);
+      gr += pb.yz * 0.3 * smoothstep(1.2, 0.2, fpK);
+      vec3 n = normalize(up - vec3(gr.x, 0.0, gr.y));
+      float dens = clamp(c0.x * 3.2, 0.0, 1.0);
+
+      float sunVis = 1.0;
+#if SELF_SHADOW
+      vec3 q = pc + uSun * 0.7;
+      float occ = clamp((topOf(cov(q.xz, fpK + 0.3, 3)) - altOf(q)) / 0.35, 0.0, 1.0);
+      sunVis = 1.0 - 0.6 * occ;
+#endif
+      // light from the sun through haze above the deck
+      vec3 Ts = sunTrans(ac) * ESUN;
+      float ndl = dot(n, uSun);
+      float hl = clamp(ndl * 0.5 + 0.55, 0.0, 1.0);
+      float lit = hl * hl;
+      float height = clamp((ac - HB) / HMAX, 0.0, 1.0);
+      float thin = 1.0 - smoothstep(0.0, 0.35, dens);
+      float edge = 1.0 - abs(dot(n, d));
+      // backlit rim: forward scattering where the cloud is thin or seen edge-on
+      float silver = phaseM(cosS, 0.6) * (thin * 1.2 + edge * edge * 0.5);
+      vec3 amb = uSkyIrrC * (0.35 + 0.45 * n.y) * (0.6 + 0.4 * height);
+      vec3 ground = vec3(0.012, 0.02, 0.03) * ESUN * 0.25 * max(-n.y, 0.0);
+      cloudCol = 0.92 * (Ts * sunVis * (lit * (0.6 + 0.4 * height) * 0.42 + silver * 0.6) + amb * 0.42 + ground);
+      cloudA = smoothstep(0.0, mix(0.05, 0.24, clamp(-d.y * 2.2, 0.0, 1.0)), c0.x);
+      vec3 ci, ct;
+      downSeg(d, pc, ac, ci, ct);
+      cloudCol = cloudCol * ct + ci;
+    }
+  }
+
+  if (cloudA < 0.999) {
+    if (tSea > 0.0) {
+      float sh;
+      vec3 sea = shadeSea(d, tSea, sh);
+      downSeg(d, d * tSea, 0.0, ins, tr);
+      // the haze below the deck is shadowed too, which is what makes cloud shadows read from above
+      col = sea * tr + ins * mix(1.0, sh, 0.3);
+    } else {
+      col = skyRad(uH, d, tr);
+      float ang = acos(clamp(cosS, -1.0, 1.0));
+      float disc = 1.0 - smoothstep(0.0055, 0.0072, ang);
+      col += ESUN * tr * disc * 400.0;
+    }
+    col = mix(col, cloudCol, cloudA);
+  } else {
+    col = cloudCol;
+  }
+
+  // analytic lens halo and faint rays around the sun (bloom stand-in)
+  {
+    vec3 trC = exp(-(BR * column(uH, uSun.y, HR) + BME * column(uH, uSun.y, HM)));
+    float ang = acos(clamp(cosS, -1.0, 1.0));
+    vec3 u = normalize(cross(uSun, vec3(0.0, 1.0, 0.0)));
+    vec3 v = cross(u, uSun);
+    vec2 pd = vec2(dot(d, u), dot(d, v));
+    float phi = atan(pd.y, pd.x);
+    float rays = noise(vec2(cos(phi), sin(phi)) * 9.0 + 3.0) + 0.5 * noise(vec2(cos(phi), sin(phi)) * 23.0);
+    float glow = 1.4 * exp(-ang * 90.0) + 0.10 * exp(-ang * 14.0)
+               + 0.035 * exp(-ang * 22.0) * max(0.0, rays * 1.6);
+    col += ESUN * trC * glow * vec3(1.0, 0.97, 0.9);
+#if GHOST
+    if (uSunOn > 0.5) {
+      vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+      float gd = length((ndc + uSunNdc * 0.55) * asp);
+      float ring = exp(-pow((gd - 0.11) / 0.02, 2.0));
+      vec3 tint = 0.5 + 0.5 * cos(6.2831853 * (gd * 6.0 + vec3(0.0, 0.33, 0.67)));
+      col += ESUN * trC * 0.0014 * ring * tint + ESUN * trC * 0.0008 * exp(-gd * gd / 0.004);
+    }
+#endif
+  }
+
+  col = aces(col * uExposure);
+  col = pow(col, vec3(1.0 / 2.2));
+  col += (dither - 0.5) / 255.0;
+  fragColor = vec4(col, 1.0);
+}`;
+
+      const uniforms = {
+        uRes: { value: new THREE.Vector2(1, 1) },
+        uTime: { value: 0 },
+        uH: { value: 10 },
+        uFwd: { value: new THREE.Vector3() },
+        uRight: { value: new THREE.Vector3() },
+        uUp: { value: new THREE.Vector3() },
+        uTan: { value: new THREE.Vector2(1, 1) },
+        uSun: { value: new THREE.Vector3() },
+        uPixAng: { value: 0.001 },
+        uCloudOff: { value: new THREE.Vector2() },
+        uSunNdc: { value: new THREE.Vector2() },
+        uSunOn: { value: 0 },
+        uExposure: { value: 0.47 },
+        uSunCol: { value: new THREE.Vector3() },
+        uSkyIrr0: { value: new THREE.Vector3() },
+        uSkyIrrC: { value: new THREE.Vector3() },
+      };
+      function definesFor(tier) {
+        const t = TIERS[tier];
+        return {
+          WAVE_OCT: t.WAVE_OCT,
+          WAVE_L0: t.WAVE_L0.toFixed(1),
+          RELIEF_STEPS: t.RELIEF_STEPS, REFINE: t.REFINE,
+          CLOUD_OCT: t.CLOUD_OCT,
+          SELF_SHADOW: t.SELF_SHADOW,
+          GHOST: t.GHOST,
+        };
+      }
+      const material = new THREE.RawShaderMaterial({
+        vertexShader: vert,
+        fragmentShader: frag,
+        uniforms,
+        glslVersion: THREE.GLSL3,
+        defines: definesFor(state.tier),
+        depthTest: false,
+        depthWrite: false,
+      });
+      const scene = new THREE.Scene();
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      quad.frustumCulled = false;
+      scene.add(quad);
+      const cam = new THREE.Camera();
+
+      function baseScale() {
+        const t = TIERS[state.tier];
+        return t.base > 0 ? t.base : Math.min(window.devicePixelRatio || 1, 2);
+      }
+      function applySize() {
+        const w = Math.max(1, window.innerWidth),
+          h = Math.max(1, window.innerHeight);
+        renderer.setPixelRatio(state.renderScale);
+        renderer.setSize(w, h, false);
+        const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
+        uniforms.uRes.value.copy(buf);
+        updateCamera();
+      }
+
+      const ATM = { R: 6371, HR: 8, HM: 1.2, BR: [5.802e-3, 13.558e-3, 33.1e-3], BMS: 0.022, BME: 0.025,
+        BO3: [0.65e-3, 1.881e-3, 0.085e-3], ESUN: 20, HB: 1.3 };
+      const chap = (x, mu) => { const c = Math.sqrt(1.5707963 * x); return c / ((c - 1) * mu + 1); };
+      function column(h, mu, H) {
+        const R = ATM.R;
+        if (mu >= 0) return H * Math.exp(-h / H) * chap((R + h) / H, mu);
+        const ht = (R + h) * Math.sqrt(Math.max(0, 1 - mu * mu)) - R;
+        return Math.max(0, 2 * H * Math.exp(-ht / H) * chap((R + ht) / H, 0) - H * Math.exp(-h / H) * chap((R + h) / H, -mu));
+      }
+      const phaseR = (c) => 0.0596831 * (1 + c * c);
+      const phaseM = (c, g) => { const g2 = g * g; return 0.1193662 * (1 - g2) * (1 + c * c) / ((2 + g2) * Math.pow(1 + g2 - 2 * g * c, 1.5)); };
+      function skyIrr(h, sun, sunCol) {
+        const sunTrans = (hh) => ATM.BR.map((b, i) => Math.exp(-(b * sunCol.x * Math.exp(-hh / ATM.HR) + ATM.BME * sunCol.y * Math.exp(-hh / ATM.HM) + ATM.BO3[i] * sunCol.z)));
+        const skyRad = (d) => {
+          const mu = d.y;
+          const hmin = Math.max(0, mu >= 0 ? h : (ATM.R + h) * Math.sqrt(Math.max(0, 1 - mu * mu)) - ATM.R);
+          const cR = column(h, mu, ATM.HR), cM = column(h, mu, ATM.HM), cosT = d.dot(sun);
+          const tsR = sunTrans(hmin + 3), tsM = sunTrans(hmin + 0.4);
+          const pm = 0.8 * phaseM(cosT, 0.78) + 0.2 * phaseM(cosT, 0.2);
+          return ATM.BR.map((b, i) => {
+            const tau = b * cR + ATM.BME * cM;
+            const src = tsR[i] * b * cR * (phaseR(cosT) + 0.012) + tsM[i] * ATM.BMS * cM * (pm + 0.02);
+            return ATM.ESUN * src * (1 - Math.exp(-tau)) / Math.max(tau, 1e-5);
+          });
+        };
+        const side = new THREE.Vector3(-sun.z, 0, sun.x).normalize();
+        const a = skyRad(new THREE.Vector3(0, 1, 0).addScaledVector(side, 0.6).normalize());
+        const b = skyRad(new THREE.Vector3(-sun.x, 0.35, -sun.z).normalize());
+        return new THREE.Vector3(...a.map((v, i) => Math.PI * (0.55 * v + 0.45 * b[i])));
+      }
+      function updateAtmosphere(sun) {
+        const cR = column(0, sun.y, ATM.HR);
+        const sunCol = new THREE.Vector3(cR, column(0, sun.y, ATM.HM), 15 * cR / ATM.HR);
+        uniforms.uSunCol.value.copy(sunCol);
+        uniforms.uSkyIrr0.value.copy(skyIrr(0, sun, sunCol));
+        uniforms.uSkyIrrC.value.copy(skyIrr(ATM.HB + 0.5, sun, sunCol));
+      }
+
+      function updateCamera() {
+        const v = VIEWS[state.view];
+        const buf = uniforms.uRes.value;
+        const aspect = buf.x / buf.y;
+        // landscape: 70 deg vertical; portrait: 58 deg horizontal
+        const tanY =
+          aspect >= 1
+            ? Math.tan(THREE.MathUtils.degToRad(35))
+            : Math.tan(THREE.MathUtils.degToRad(29)) / aspect;
+        const tanX = tanY * aspect;
+        const dip = Math.acos(6371 / (6371 + v.h));
+        // pitch so the horizon sits at a chosen fraction from the top, but keep the sun in frame
+        let pitch = -dip - Math.atan((1 - 2 * v.horizonAt) * tanY);
+        const sunEl = THREE.MathUtils.degToRad(state.sunDeg);
+        pitch = Math.max(pitch, sunEl - Math.atan(0.82 * tanY));
+        const yaw = THREE.MathUtils.degToRad(aspect >= 1 ? v.yaw : v.yaw * 0.4);
+        // sun azimuth along -z; camera yawed left so the sun sits right of centre
+        const sun = new THREE.Vector3(0, Math.sin(sunEl), -Math.cos(sunEl));
+        const fwd = new THREE.Vector3(
+          -Math.sin(yaw) * Math.cos(pitch),
+          Math.sin(pitch),
+          -Math.cos(yaw) * Math.cos(pitch),
+        );
+        const right = new THREE.Vector3()
+          .crossVectors(fwd, new THREE.Vector3(0, 1, 0))
+          .normalize();
+        const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+        uniforms.uFwd.value.copy(fwd);
+        uniforms.uRight.value.copy(right);
+        uniforms.uUp.value.copy(up);
+        uniforms.uTan.value.set(tanX, tanY);
+        uniforms.uSun.value.copy(sun);
+        uniforms.uH.value = v.h;
+        updateAtmosphere(sun);
+        uniforms.uPixAng.value = (2 * Math.atan(tanY)) / buf.y;
+        const z = sun.dot(fwd);
+        const sx = sun.dot(right) / z / tanX,
+          sy = sun.dot(up) / z / tanY;
+        uniforms.uSunNdc.value.set(sx, sy);
+        uniforms.uSunOn.value =
+          z > 0 && Math.abs(sx) < 1.1 && Math.abs(sy) < 1.1 ? 1 : 0;
+      }
+
+      function syncButtons() {
+        document
+          .querySelectorAll("[data-view]")
+          .forEach((b) =>
+            b.setAttribute(
+              "aria-pressed",
+              String(b.dataset.view === state.view),
+            ),
+          );
+        document
+          .querySelectorAll("[data-tier]")
+          .forEach((b) =>
+            b.setAttribute(
+              "aria-pressed",
+              String(b.dataset.tier === state.tier),
+            ),
+          );
+      }
+      function setUrl() {
+        const p = new URLSearchParams(location.search);
+        p.set("view", state.view);
+        p.set("tier", state.tier);
+        history.replaceState(null, "", "?" + p.toString());
+      }
+      function setTier(tier) {
+        state.tier = tier;
+        material.defines = definesFor(tier);
+        material.needsUpdate = true;
+        state.renderScale = baseScale();
+        samples.length = 0;
+        applySize();
+        syncButtons();
+        setUrl();
+      }
+      document.querySelectorAll("[data-view]").forEach((b) =>
+        b.addEventListener("click", () => {
+          state.view = b.dataset.view;
+          samples.length = 0;
+          updateCamera();
+          syncButtons();
+          setUrl();
+        }),
+      );
+      document
+        .querySelectorAll("[data-tier]")
+        .forEach((b) =>
+          b.addEventListener("click", () => setTier(b.dataset.tier)),
+        );
+      window.addEventListener("resize", applySize);
+
+      // frame statistics over the last 2 s
+      const samples = []; // [timestamp, ms]
+      let frames = 0,
+        last = 0,
+        lastAdapt = 0;
+      function stats() {
+        const ms = samples.map((s) => s[1]).sort((a, b) => a - b);
+        const q = (f) =>
+          ms.length
+            ? ms[Math.min(ms.length - 1, Math.floor(f * ms.length))]
+            : 0;
+        return {
+          tier: state.tier,
+          view: state.view,
+          medianMs: +q(0.5).toFixed(2),
+          p95Ms: +q(0.95).toFixed(2),
+          frames,
+          dpr: window.devicePixelRatio || 1,
+          renderScale: +state.renderScale.toFixed(3),
+        };
+      }
+      window.lookStats = stats;
+      // test hook: stop the loop (true) or restart it (false), so a slow renderer can be captured
+      let paused = false;
+      window.lookPause = (on = true) => {
+        const was = paused;
+        paused = !!on;
+        if (was && !paused) requestAnimationFrame(frame);
+        return paused;
+      };
+      // test hook: render n frames synchronously (a 1-pixel readback forces completion), return the median ms
+      window.lookBench = (n = 5) => {
+        const gl = renderer.getContext();
+        const px = new Uint8Array(4);
+        const ms = [];
+        for (let i = 0; i < n; i++) {
+          const a = performance.now();
+          renderer.render(scene, cam);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          ms.push(performance.now() - a);
+        }
+        ms.sort((x, y) => x - y);
+        return +ms[Math.floor(n / 2)].toFixed(1);
+      };
+      const adapt = params.get("adapt") !== "0";
+      let lastReadout = 0;
+
+      const readout = document.getElementById("readout");
+      const t0 = performance.now();
+      const tOverride = params.has("t") ? parseFloat(params.get("t")) : null;
+      function frame(now) {
+        if (last) {
+          samples.push([now, now - last]);
+          while (samples.length && now - samples[0][0] > 2000) samples.shift();
+        }
+        last = now;
+        frames++;
+        const time = tOverride ?? (now - t0) / 1000;
+        uniforms.uTime.value = time;
+        uniforms.uCloudOff.value.set(time * 0.05, -time * 0.02);
+        renderer.render(scene, cam);
+
+        // low tier: step the resolution down when frames run long, back up when there is headroom
+        if (
+          adapt &&
+          state.tier === "low" &&
+          now - lastAdapt > 2000 &&
+          samples.length > 20
+        ) {
+          const s = stats();
+          const t = TIERS.low;
+          let next = state.renderScale;
+          if (s.p95Ms > 40) next = Math.max(t.min, state.renderScale * 0.85);
+          else if (s.p95Ms < 22)
+            next = Math.min(t.base, state.renderScale * 1.1);
+          if (Math.abs(next - state.renderScale) > 0.01) {
+            state.renderScale = next;
+            applySize();
+          }
+          lastAdapt = now;
+        }
+        if (now - lastReadout > 250) {
+          lastReadout = now;
+          const s = stats();
+          readout.textContent = `${s.tier} | ${s.view} | median ${s.medianMs.toFixed(1)} ms | p95 ${s.p95Ms.toFixed(1)} ms | scale ${s.renderScale.toFixed(2)}`;
+          document.getElementById("measured").textContent =
+            `${s.tier}: median ${s.medianMs.toFixed(1)} ms, p95 ${s.p95Ms.toFixed(1)} ms`;
+        }
+        if (!paused) requestAnimationFrame(frame);
+      }
+
+      state.renderScale = baseScale();
+      applySize();
+      syncButtons();
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

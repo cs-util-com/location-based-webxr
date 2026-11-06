@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Relief cloud deck</title>
+    <style>
+      :root {
+        --panel: rgba(10, 16, 28, 0.62);
+        --text: #eef3fa;
+        --muted: #b7c3d4;
+        --accent: #ffd98a;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b1a33;
+        color: var(--text);
+        overflow: hidden;
+        font:
+          13px/1.35 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      .ui {
+        position: fixed;
+        z-index: 2;
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 8px 10px;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+      #readout {
+        top: 12px;
+        left: 12px;
+        font-variant-numeric: tabular-nums;
+        white-space: pre;
+        font-size: 12px;
+      }
+      #controls {
+        left: 12px;
+        bottom: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-width: calc(100vw - 48px);
+      }
+      #controls button {
+        font: inherit;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 7px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+      #controls button[aria-pressed="true"] {
+        background: rgba(255, 217, 138, 0.25);
+        border-color: var(--accent);
+      }
+      #controls .sep {
+        width: 1px;
+        background: rgba(255, 255, 255, 0.2);
+        margin: 0 2px;
+      }
+      #notes {
+        top: 12px;
+        right: 12px;
+        max-width: min(380px, calc(100vw - 48px));
+        max-height: calc(100vh - 110px);
+        overflow: auto;
+      }
+      #notes summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      #notes p,
+      #notes li {
+        color: var(--muted);
+        margin: 6px 0;
+      }
+      #notes ul {
+        padding-left: 18px;
+        margin: 4px 0;
+      }
+      #notes b {
+        color: var(--text);
+      }
+      #err {
+        position: fixed;
+        inset: auto 12px 64px 12px;
+        z-index: 3;
+        color: #ffb4a8;
+        display: none;
+      }
+      @media (max-width: 520px) {
+        #notes {
+          top: auto;
+          bottom: 64px;
+          right: 12px;
+          left: 12px;
+          max-width: none;
+          max-height: 45vh;
+        }
+        #readout {
+          font-size: 11px;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="readout" class="ui">starting...</div>
+    <div id="controls" class="ui" role="group" aria-label="View and quality">
+      <button data-view="10km">10 km</button>
+      <button data-view="3km">3 km</button>
+      <button data-view="30km">30 km</button>
+      <span class="sep"></span>
+      <button data-tier="low">Low</button>
+      <button data-tier="high">High</button>
+    </div>
+    <details id="notes" class="ui">
+      <summary>Notes: relief cloud deck</summary>
+      <p>
+        <b>Technique.</b> One full-screen pass over an analytic sphere. The
+        cloud layer is a 2.5D height field: cloud thickness above one flat base,
+        baked once into a tiling, world-anchored texture (clustered unions of
+        domes plus a small detail texture, stored with its gradient and
+        mipmaps). Each pixel marches the ray through the cloud slab until it
+        drops below the height field, refines the hit, and shades it from the
+        stored gradient: sun with a short self-shadow march along the sun
+        direction in the same field, sky light on the shadow sides, a
+        forward-scattering rim on edges seen against the sun, and soft fringes
+        from near misses. The sea gets its cloud shadows from the same field,
+        sun glitter from a slope distribution with per-pixel random glint counts
+        (sharp near, smooth far), and everything is fogged by an analytic haze
+        integral.
+      </p>
+      <p><b>Tiers.</b></p>
+      <ul>
+        <li>
+          <b>Low:</b> 18 march steps, 3 refinement steps, 3 shadow taps, 1
+          sea-shadow tap, one glint level, 1024 texel cloud map, render scale
+          0.6 of CSS pixels (adapts 0.45-0.8 to keep frames near 30 ms).
+        </li>
+        <li>
+          <b>High:</b> 44 march steps, 5 refinement steps, 7 shadow taps, 3
+          sea-shadow taps, two blended glint levels, 2048 texel cloud map,
+          render scale up to 1.5 device pixels.
+        </li>
+      </ul>
+      <p>
+        <b>Measured</b> (headless Chromium, so only relative; GPU time per frame
+        with <code>?bench=1</code>, which waits for the GPU after each frame):
+      </p>
+      <ul>
+        <li>
+          Integrated laptop GPU, 1440x900: low 4.7-6.6 ms, high 14-15 ms (3 km,
+          10 km) and 33 ms (30 km, the longest rays through the deck).
+        </li>
+        <li>
+          Same GPU, 390x844: low 3.8-5.3 ms (one noisy 15 ms reading), high
+          7-17 ms.
+        </li>
+        <li>
+          Software WebGL (CPU), 390x844: low 300-560 ms, high 2.4-3.5 s, so low
+          costs about 1/7 of high. Not measured on a phone; a low-end phone GPU
+          is several times slower than the laptop GPU above, which puts low at
+          roughly 20-40 ms before the render scale adapts down.
+        </li>
+        <li>Startup: the cloud maps bake once in about 0.3-0.9 s.</li>
+      </ul>
+      <p><b>Self-check against the reference.</b></p>
+      <ul id="selfcheck">
+        <li>
+          The clouds read as solid, lit mounds, not as soft vapour: a surface
+          model with a short shadow march has no light through thin parts, no
+          inner glow and no wispy edges. From 3 km they look like pillows or
+          snowy hills. A thickness-based translucency term (2-3 more taps)
+          would soften them; real softness needs a volume.
+        </li>
+        <li>
+          A height field cannot overhang: flanks are steep and the flat dark
+          base is never seen from the side, and there is only one layer, so a
+          partly transparent edge shows the sea behind it rather than the cloud
+          behind it.
+        </li>
+        <li>
+          Silhouettes are jittered single samples: the backlit rim and the soft
+          fringe flicker as a fine white fuzz, and near the horizon the deck
+          turns into crumbly white noise instead of dissolving smoothly into the
+          haze. Temporal accumulation or a stronger far-field blur would fix it
+          (one history buffer).
+        </li>
+        <li>
+          The haze band is thinner and less golden than in the reference, the
+          glitter path is narrower near the horizon, and the small scattered
+          clouds are too uniform (popcorn) at 30 km. These are tuning, not cost.
+        </li>
+        <li>
+          The cloud map tiles every 64 km, hidden by a second mask at another
+          scale; on a globe it would be a per-tile or cube-face map. Sky and
+          haze are hand-fitted, not a physical atmosphere.
+        </li>
+      </ul>
+    </details>
+    <div id="err"></div>
+    <canvas id="c"></canvas>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const params = new URLSearchParams(location.search);
+      const coarse =
+        matchMedia("(pointer: coarse)").matches ||
+        Math.min(innerWidth, innerHeight) < 600;
+      const tierParam = params.get("tier");
+      const tier =
+        tierParam === "low" || tierParam === "high"
+          ? tierParam
+          : coarse
+            ? "low"
+            : "high";
+      const sunDeg = Number.isFinite(parseFloat(params.get("sun")))
+        ? Math.min(85, Math.max(-2, parseFloat(params.get("sun"))))
+        : 10;
+      const adapt = params.get("adapt") !== "0";
+      // ?bench=1: wait for the GPU after every frame so the cost of the pass is measured, not the display rate
+      const bench = params.get("bench") === "1";
+      const benchPx = new Uint8Array(4);
+      const synced = [];
+      let view = ["10km", "3km", "30km"].includes(params.get("view"))
+        ? params.get("view")
+        : "10km";
+
+      const TIERS = {
+        low: {
+          STEPS: 18,
+          REFINE: 3,
+          SHADOW: 3,
+          SEA_SH: 1,
+          GLINT2: 0,
+          macro: 1024,
+          scale: 0.6,
+          minScale: 0.45,
+          maxScale: 0.8,
+          dprCap: 1,
+        },
+        high: {
+          STEPS: 44,
+          REFINE: 5,
+          SHADOW: 7,
+          SEA_SH: 3,
+          GLINT2: 1,
+          macro: 2048,
+          scale: 1.0,
+          minScale: 1.0,
+          maxScale: 1.0,
+          dprCap: 1.5,
+        },
+      };
+      const T = TIERS[tier];
+
+      const VIEWS = {
+        "10km": { alt: 10.0, pitch: -9.0, yaw: -12.0, vfov: 62, ox: 0, oz: 0 },
+        "3km": { alt: 3.0, pitch: -6.0, yaw: -14.0, vfov: 62, ox: 0, oz: -20 },
+        "30km": { alt: 30.0, pitch: -15.0, yaw: -12.0, vfov: 62, ox: 0, oz: 0 },
+      };
+
+      const errBox = document.getElementById("err");
+      function fail(msg) {
+        errBox.style.display = "block";
+        errBox.textContent = msg;
+      }
+
+      const canvas = document.getElementById("c");
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: false,
+          alpha: false,
+          powerPreference: "high-performance",
+        });
+      } catch (e) {
+        fail("WebGL is not available on this device.");
+        throw e;
+      }
+      renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+      renderer.autoClear = false;
+
+      const gl = renderer.getContext();
+      const canFloatRT =
+        renderer.extensions.has("EXT_color_buffer_float") ||
+        renderer.extensions.has("EXT_color_buffer_half_float");
+      const rtType = canFloatRT ? THREE.HalfFloatType : THREE.UnsignedByteType;
+      // 8-bit fallback stores encoded values; decode = raw * scale + bias.
+      const DEC_SCALE = canFloatRT
+        ? new THREE.Vector4(1, 1, 1, 1)
+        : new THREE.Vector4(2.0, 8.0, 8.0, 1.0);
+      const DEC_BIAS = canFloatRT
+        ? new THREE.Vector4(0, 0, 0, 0)
+        : new THREE.Vector4(-0.3, -4.0, -4.0, 0.0);
+
+      // ---------------------------------------------------------------------------
+      // Bake: cluster mask -> dome heights -> gradient + mips (macro and detail maps)
+      // ---------------------------------------------------------------------------
+      const MACRO_KM = 64.0;
+      const DETAIL_KM = 3.2;
+
+      const quadGeo = new THREE.PlaneGeometry(2, 2);
+      const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const quadMesh = new THREE.Mesh(quadGeo);
+      quadMesh.frustumCulled = false;
+      const quadScene = new THREE.Scene();
+      quadScene.add(quadMesh);
+
+      const VERT = /* glsl */ `
+  varying vec2 vUv;
+  void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+      const NOISE = /* glsl */ `
+  float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec4 hash42(vec2 p) { vec4 p4 = fract(vec4(p.xyxy) * vec4(0.1031, 0.1030, 0.0973, 0.1099)); p4 += dot(p4, p4.wzxy + 33.33); return fract((p4.xxyz + p4.yzzw) * p4.zywx); }
+  float vnoiseP(vec2 x, float per) {
+    vec2 i = floor(x), f = fract(x);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float a = hash12(mod(i, per)), b = hash12(mod(i + vec2(1, 0), per));
+    float c = hash12(mod(i + vec2(0, 1), per)), d = hash12(mod(i + vec2(1, 1), per));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+  float fbmP(vec2 x, float per) {
+    float s = 0.0, a = 0.5;
+    for (int k = 0; k < 5; k++) { s += a * vnoiseP(x, per); x *= 2.0; per *= 2.0; a *= 0.5; }
+    return s / 0.96875;
+  }
+`;
+
+      function makeRT(size, mips, type = rtType) {
+        return new THREE.WebGLRenderTarget(size, size, {
+          type,
+          format: THREE.RGBAFormat,
+          depthBuffer: false,
+          stencilBuffer: false,
+          wrapS: THREE.RepeatWrapping,
+          wrapT: THREE.RepeatWrapping,
+          magFilter: THREE.LinearFilter,
+          minFilter: mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter,
+          generateMipmaps: mips,
+        });
+      }
+
+      function runPass(material, target) {
+        quadMesh.material = material;
+        renderer.setRenderTarget(target);
+        renderer.clear();
+        renderer.render(quadScene, quadCam);
+        renderer.setRenderTarget(null);
+      }
+
+      const maskMat = new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader:
+          NOISE +
+          /* glsl */ `
+    varying vec2 vUv;
+    uniform vec4 uEncS, uEncB;
+    void main() {
+      float m = smoothstep(0.46, 0.74, fbmP(vUv * 3.0, 3.0));
+      gl_FragColor = vec4(m, 0.0, 0.0, 1.0);
+    }`,
+      });
+
+      // Dome unions: each cell may hold one dome (a spherical cap standing on the flat base).
+      // The max of overlapping caps of several sizes gives cauliflower-like crowns with creases.
+      const domeMat = (detail) =>
+        new THREE.ShaderMaterial({
+          uniforms: {
+            tMask: { value: null },
+            uEncS: { value: DEC_SCALE },
+            uEncB: { value: DEC_BIAS },
+          },
+          vertexShader: VERT,
+          fragmentShader:
+            NOISE +
+            /* glsl */ `
+    varying vec2 vUv;
+    uniform sampler2D tMask;
+    uniform vec4 uEncS, uEncB;
+    #define DETAIL ${detail ? 1 : 0}
+    float cluster(vec2 uv) {
+    #if DETAIL
+      return 1.0;
+    #else
+      return texture2D(tMask, uv).r;
+    #endif
+    }
+    // zero-preserving soft union (p-norm): merges neighbouring domes without lifting empty sea
+    float smax(float a, float b, float p) { return pow(pow(max(a, 0.0), p) + pow(max(b, 0.0), p), 1.0 / p); }
+    // returns cap height in cell units; profile (1 - x^2)^0.62 gives rounded tops and soft, not vertical, flanks
+    float domes(vec2 uv, float per, float rmin, float rmax, float d0, float d1, float salt, float k) {
+      vec2 x = uv * per; vec2 c0 = floor(x); float h = 0.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 c = c0 + vec2(float(i), float(j));
+        vec4 r = hash42(mod(c, per) + salt);
+        vec2 ctr = c + 0.15 + 0.7 * r.xy;
+        float m = cluster(ctr / per);
+        if (r.w > mix(d0, d1, m)) continue;
+        float rr = mix(rmin, rmax, r.z) * mix(0.6, 1.0, m);
+        vec2 dv = x - ctr; float q = 1.0 - dot(dv, dv) / (rr * rr);
+        if (q > 0.0) h = smax(h, rr * pow(q, 0.62), k);
+      }
+      return h;
+    }
+    vec2 grad2(vec2 i, float per, float salt) { float a = 6.2831853 * hash12(mod(i, per) + salt); return vec2(cos(a), sin(a)); }
+    float gnoiseP(vec2 x, float per, float salt) {
+      vec2 i = floor(x), f = fract(x);
+      vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+      float a = dot(grad2(i, per, salt), f), b = dot(grad2(i + vec2(1, 0), per, salt), f - vec2(1, 0));
+      float c = dot(grad2(i + vec2(0, 1), per, salt), f - vec2(0, 1)), d = dot(grad2(i + vec2(1, 1), per, salt), f - vec2(1, 1));
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 1.4;
+    }
+    void main() {
+      vec2 uv = vUv;
+    #if DETAIL
+      // tile ${DETAIL_KM} km: billow noise (folded gradient noise: rounded crowns, creased valleys) of 120-530 m, centred around zero
+      float h = 0.0;
+      h += 0.120 * abs(gnoiseP(uv * 6.0, 6.0, 1.0));
+      h += 0.050 * abs(gnoiseP(uv * 13.0, 13.0, 2.0));
+      h += 0.020 * abs(gnoiseP(uv * 27.0, 27.0, 3.0));
+      h += 0.009 * abs(gnoiseP(uv * 56.0, 56.0, 4.0));
+      h -= 0.092;
+      gl_FragColor = vec4(h, 0.0, 0.0, 1.0);
+    #else
+      // tile ${MACRO_KM} km: clustered big domes, medium domes on their shoulders, scattered small ones between clusters
+      float m = texture2D(tMask, uv).r;
+      uv += 0.012 * vec2(fbmP(uv * 9.0, 9.0) - 0.5, fbmP(uv * 9.0 + 4.7, 9.0) - 0.5);
+      float L1 = domes(uv, 18.0, 0.35, 0.85, 0.0, 0.85, 1.7, 5.0) * (${MACRO_KM.toFixed(1)} / 18.0) * 0.30;
+      float L2 = domes(uv, 46.0, 0.35, 0.85, 0.02, 0.75, 7.3, 4.0) * (${MACRO_KM.toFixed(1)} / 46.0) * 0.72;
+      float L3 = domes(uv, 120.0, 0.30, 0.70, 0.05, 0.22, 3.1, 4.0) * (${MACRO_KM.toFixed(1)} / 120.0) * 0.80;
+      float h = smax(L1, L2 + 0.30 * L1 * step(0.001, L2), 4.0);
+      h = smax(h, L3 + 0.15 * h * step(0.001, L3), 6.0);
+      h = 1.45 * tanh(h / 1.45);
+      gl_FragColor = vec4(h, 0.0, 0.0, m);
+    #endif
+    }`,
+        });
+
+      const gradMat = new THREE.ShaderMaterial({
+        uniforms: {
+          tH: { value: null },
+          uTexel: { value: 1 },
+          uTexelKm: { value: 1 },
+          uEncS: { value: DEC_SCALE },
+          uEncB: { value: DEC_BIAS },
+        },
+        vertexShader: VERT,
+        fragmentShader: /* glsl */ `
+    varying vec2 vUv;
+    uniform sampler2D tH;
+    uniform float uTexel, uTexelKm;
+    uniform vec4 uEncS, uEncB;
+    void main() {
+      vec4 c = texture2D(tH, vUv);
+      float hx1 = texture2D(tH, vUv + vec2(uTexel, 0.0)).r, hx0 = texture2D(tH, vUv - vec2(uTexel, 0.0)).r;
+      float hz1 = texture2D(tH, vUv + vec2(0.0, uTexel)).r, hz0 = texture2D(tH, vUv - vec2(0.0, uTexel)).r;
+      vec4 v = vec4(c.r, (hx1 - hx0) / (2.0 * uTexelKm), (hz1 - hz0) / (2.0 * uTexelKm), c.a);
+      gl_FragColor = (v - uEncB) / uEncS;
+    }`,
+      });
+
+      function bake() {
+        const mask = makeRT(256, false);
+        runPass(maskMat, mask);
+
+        function heightMap(size, detail, tileKm) {
+          const raw = makeRT(
+            size,
+            false,
+            canFloatRT ? THREE.HalfFloatType : THREE.UnsignedByteType,
+          );
+          const dm = domeMat(detail);
+          dm.uniforms.tMask.value = mask.texture;
+          runPass(dm, raw);
+          const out = makeRT(size, true);
+          gradMat.uniforms.tH.value = raw.texture;
+          gradMat.uniforms.uTexel.value = 1 / size;
+          gradMat.uniforms.uTexelKm.value = tileKm / size;
+          runPass(gradMat, out);
+          raw.dispose();
+          dm.dispose();
+          return out;
+        }
+        const macro = heightMap(T.macro, false, MACRO_KM);
+        const detail = heightMap(256, true, DETAIL_KM);
+        mask.dispose();
+        return { macro, detail };
+      }
+
+      let maps;
+      const bakeT0 = performance.now();
+      maps = bake();
+      const bakeMs = performance.now() - bakeT0;
+
+      // ---------------------------------------------------------------------------
+      // Main pass
+      // ---------------------------------------------------------------------------
+      const mainFrag = /* glsl */ `
+  varying vec2 vUv;
+  uniform vec2 uRes;
+  uniform float uTime, uAlt, uTanHalf, uPixAngle, uDip;
+  uniform vec3 uFwd, uRight, uUp, uSun;
+  uniform vec3 uSunScreen;
+  uniform vec2 uWindM, uWindD;
+  uniform sampler2D tMacro, tDetail;
+  uniform float uMacroTexel, uDetailTexel;
+  uniform vec4 uDecS, uDecB;
+
+  #define STEPS ${T.STEPS}
+  #define REFINE ${T.REFINE}
+  #define SHADOW ${T.SHADOW}
+  #define SEA_SH ${T.SEA_SH}
+  #define GLINT2 ${T.GLINT2}
+  #define R 6371.0
+  #define BASE 1.2
+  #define TOP 2.72
+  #define MACRO_KM ${MACRO_KM.toFixed(1)}
+  #define DETAIL_KM ${DETAIL_KM.toFixed(2)}
+  #define PI 3.14159265
+
+  const vec3 SUN_COL = vec3(1.0, 0.93, 0.80) * 3.0;
+  const vec3 EXT = vec3(0.80, 1.0, 1.25);
+
+  float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+  float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+
+  // Stable sphere geometry relative to the camera (camera on the local +y axis).
+  float altAt(float t, float b, float c0) { float q = c0 + 2.0 * t * b + t * t; return q / (sqrt(R * R + q) + R); }
+  bool shell(float a, float b, float h, out float tn, out float tf) {
+    float c = (h - a) * (2.0 * R + h + a);
+    float disc = b * b - c;
+    if (disc < 0.0) return false;
+    float s = sqrt(disc);
+    tf = -b + s;
+    if (c > 0.0) { if (b >= 0.0) return false; tn = c / (-b + s); } else { tn = 0.0; }
+    return true;
+  }
+
+  // ---- haze, sky ----
+  float hgPhase(float mu, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * mu, 1.5)); }
+  vec3 hazeCol(float mu) {
+    vec3 blue = vec3(0.22, 0.32, 0.50);
+    vec3 warm = vec3(0.95, 0.86, 0.66);
+    float f = pow(mu * 0.5 + 0.5, 7.0);
+    return mix(blue, warm, f) + vec3(1.0, 0.88, 0.66) * hgPhase(mu, 0.8) * 0.18;
+  }
+  float density(float a) { return 0.028 * exp(-a / 1.2) + 0.006 * exp(-a / 8.0); }
+  float opticalDepth(float t1, float b, float c0) {
+    float od = 0.0; float dt = t1 / 6.0;
+    for (int k = 0; k < 6; k++) { float tk = (float(k) + 0.5) * dt; od += density(max(altAt(tk, b, c0), 0.0)) * dt; }
+    return od;
+  }
+  vec3 applyHaze(vec3 col, float t, float b, float c0, float mu) {
+    vec3 tr = exp(-opticalDepth(t, b, c0) * EXT);
+    return col * tr + hazeCol(mu) * (1.0 - tr);
+  }
+  // bright pale band hugging the horizon, warmer toward the sun
+  vec3 horizonBand(float e, float mu) {
+    float a01 = clamp(uAlt / 40.0, 0.0, 1.0);
+    float w = mix(0.028, 0.013, a01);
+    return vec3(0.46, 0.39, 0.25) * exp(-abs(e) / w) * (0.4 + 1.1 * pow(mu * 0.5 + 0.5, 6.0));
+  }
+  vec3 skyCol(vec3 d, float mu) {
+    float e = asin(clamp(d.y, -1.0, 1.0)) + uDip;           // radians above the geometric horizon
+    float a01 = clamp(uAlt / 40.0, 0.0, 1.0);
+    vec3 zen = mix(vec3(0.022, 0.07, 0.33), vec3(0.014, 0.045, 0.22), a01);
+    vec3 mid = mix(vec3(0.10, 0.22, 0.58), vec3(0.07, 0.16, 0.46), a01);
+    float ee = max(e, 0.0);
+    float k1 = 1.0 - exp(-ee / mix(0.04, 0.02, a01));
+    float k2 = smoothstep(0.02, 0.6, ee);
+    vec3 c = mix(mix(hazeCol(mu), mid, k1), zen, k2);
+    c += horizonBand(e, mu);
+    c += vec3(1.0, 0.88, 0.68) * (0.20 * pow(max(mu, 0.0), 80.0) + 0.05 * pow(max(mu, 0.0), 10.0));
+    return c;
+  }
+
+  // ---- cloud height field ----
+  // returns thickness (km) above BASE and its gradient (dT/dx, dT/dz)
+  vec4 cloudT(vec2 xz, float fp) {
+    vec2 uvM = (xz + uWindM) / MACRO_KM;
+    float lodM = log2(max(fp / uMacroTexel, 1.0));
+    vec4 m = textureLod(tMacro, uvM, lodM) * uDecS + uDecB;
+    float v = textureLod(tMacro, uvM * 0.173 + vec2(0.31, 0.77), max(lodM - 2.5, 0.0)).a * uDecS.a + uDecB.a;
+    float s = mix(0.25, 1.0, smoothstep(0.05, 0.6, v));
+    vec4 r = vec4(m.rgb * s, 1.0);
+    if (r.x > 0.004) {
+      vec2 uvD = (xz + uWindD) / DETAIL_KM;
+      float lodD = log2(max(fp / uDetailTexel, 1.0));
+      vec4 dd = textureLod(tDetail, uvD, lodD) * uDecS + uDecB;
+      float w = smoothstep(0.0, 0.10, r.x) * (1.0 - smoothstep(3.0, 6.0, lodD));
+      r.xyz += w * vec3(dd.r, dd.gb * 0.65);
+      r.w = mix(1.0, smoothstep(-0.09, 0.03, dd.r), w);
+    }
+    return r;
+  }
+
+  vec3 shadeCloud(vec2 xz, float a, vec4 g, vec3 d, float mu, vec3 L) {
+    vec3 n = normalize(vec3(-g.y, 1.0, -g.z));
+    // self-shadow: march toward the sun inside the same height field
+    float occ = 0.0;
+    float s = 0.06;
+    for (int k = 0; k < SHADOW; k++) {
+      vec2 q = xz + L.xz * s;
+      float aq = a + L.y * s;
+      float tq = cloudT(q, 0.03 + s * 0.08).x;
+      occ += clamp((BASE + tq - aq) / (0.05 + 0.08 * s), 0.0, 1.0) * (3.0 / float(SHADOW));
+      s *= (SHADOW > 4 ? 1.8 : 3.4);
+    }
+    float vis = exp(-occ * 2.0);
+    float crease = mix(0.55, 1.0, g.w);
+    float hrel = clamp((a - BASE) / 1.1, 0.0, 1.0);
+    float ndl = dot(n, L);
+    float wrap = clamp((ndl + 0.06) / 1.06, 0.0, 1.0);
+    // sky light from above (blue-grey shadow sides), darker low in the cloud, faint sea bounce
+    vec3 sky = vec3(0.095, 0.14, 0.235) * (0.5 + 0.5 * n.y) * mix(0.5, 1.0, hrel);
+    vec3 ground = vec3(0.02, 0.03, 0.045) * (0.5 - 0.5 * n.y);
+    float edge = pow(1.0 - clamp(dot(n, -d), 0.0, 1.0), 3.0);
+    float fwd = hgPhase(mu, 0.7) * 4.0 * PI;
+    vec3 sun = SUN_COL * vis * (0.05 + 0.95 * pow(wrap, 0.85)) * mix(0.72, 1.0, hrel);
+    vec3 rim = SUN_COL * mix(vis, 1.0, 0.35) * edge * fwd * 0.12;
+    return 0.9 * (sun * mix(0.7, 1.0, g.w) + sky * crease + ground) + rim;
+  }
+
+  // ---- sea ----
+  // value noise with its analytic derivative
+  vec3 noised(vec2 x) {
+    vec2 i = floor(x), f = fract(x);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+    float a = hash12(i), b = hash12(i + vec2(1, 0)), c = hash12(i + vec2(0, 1)), d = hash12(i + vec2(1, 1));
+    return vec3(a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y, du * (vec2(b - a, c - a) + (a - b - c + d) * u.yx));
+  }
+  // resolved wave slopes (dh/dx, dh/dz) and the slope variance of the waves too small for this pixel
+  vec3 swell(vec2 xm, float fp) {
+    vec3 r = vec3(0.0);
+    float lens[3]; lens[0] = 160.0; lens[1] = 62.0; lens[2] = 24.0;
+    vec2 drift[3]; drift[0] = vec2(1.2, 0.5); drift[1] = vec2(-0.6, 1.5); drift[2] = vec2(0.9, -1.1);
+    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+    vec2 x = xm;
+    for (int i = 0; i < 3; i++) {
+      float vis = 1.0 - smoothstep(lens[i] * 0.06, lens[i] * 0.35, fp);
+      vec3 nd = noised(x / lens[i] + drift[i] * uTime * (0.08 + 0.05 * float(i)));
+      float amp = 0.16;
+      r.xy += amp * (rot * nd.yz) * vis;   // slope ~ amp * derivative
+      r.z += 0.25 * amp * amp * (1.0 - vis);
+      x = rot * x;
+    }
+    return r;
+  }
+  float poisson(float lam, float u, float u2) {
+    if (lam > 7.0) { float gss = sqrt(-2.0 * log(max(u, 1e-6))) * cos(6.2831853 * u2); return max(0.0, lam + sqrt(lam) * gss); }
+    float p = exp(-lam), c = p, n = 0.0;
+    for (int k = 1; k < 14; k++) { if (u <= c) break; p *= lam / float(k); c += p; n += 1.0; }
+    return n;
+  }
+  float glintLevel(vec2 xm, float cell, float lam) {
+    vec2 id = floor(xm / cell);
+    vec2 h = hash22(id);
+    float slot = floor(uTime * 2.2 + h.x * 17.0);
+    vec2 u = hash22(id + slot * 13.17);
+    return poisson(lam, u.x, u.y) / max(lam, 1e-4);
+  }
+
+  vec3 shadeSea(float t, vec3 d, float b, float h, float mu, vec3 L, out float shadowOut) {
+    vec3 p = vec3(t * d.x, (R + h) + t * d.y, t * d.z);
+    vec3 n0 = normalize(p);
+    vec3 tx = normalize(vec3(1.0, 0.0, 0.0) - n0 * n0.x);
+    vec3 tz = cross(tx, n0);
+    vec2 xz = t * d.xz;
+    vec2 xm = xz * 1000.0;
+    float cosV = max(dot(n0, -d), 0.012);
+    float fp = t * uPixAngle * 1000.0;             // metres per pixel (across)
+    float area = fp * fp / cosV;                   // metres^2 per pixel (stretched along view)
+
+    // cloud shadow from the same height field, sampled along the sun ray
+    float Ly = max(dot(L, n0), 0.03);
+    float sh = 0.0;
+    for (int k = 0; k < SEA_SH; k++) {
+      float ak = BASE + (float(k) + 0.5) / float(SEA_SH) * 1.1;
+      float s = ak / Ly;
+      vec2 q = xz + L.xz * s;
+      float tq = cloudT(q, 0.05 + 0.02 * s).x;
+      sh += clamp((BASE + tq - ak) / 0.12, 0.0, 1.0);
+    }
+    float sunVis = 1.0 - 0.92 * clamp(sh / float(SEA_SH) * (SEA_SH > 1 ? 1.6 : 1.0), 0.0, 1.0);
+    shadowOut = sunVis;
+
+    vec3 sw = swell(xm, fp);
+    float sigma2 = 0.024 + sw.z;                   // unresolved slope variance (about 6 m/s wind)
+    vec3 H = normalize(L - d);
+    float hz = max(dot(H, n0), 1e-3);
+    vec2 sReq = vec2(-dot(H, tx), -dot(H, tz)) / hz - sw.xy;
+    float pSlope = exp(-dot(sReq, sReq) / sigma2) / (PI * sigma2);
+    float cosHV = clamp(dot(H, -d), 0.0, 1.0);
+    float F = 0.02 + 0.98 * pow(1.0 - cosHV, 5.0);
+    float spec = F * pSlope / (4.0 * cosV * hz * hz * hz * hz) * step(0.0, dot(L, n0));
+
+    // sparkle: Poisson count of glinting facets per pixel-sized cell; mean 1, so far away it is smooth
+    float lam = 0.0005 * pSlope * area;            // expected glinting facets in this pixel
+    float lv = log2(max(fp, 0.25));
+    float lf = fract(lv);
+    float cell0 = exp2(floor(lv));
+    float g = glintLevel(xm, cell0, lam);
+    #if GLINT2
+      float g1 = glintLevel(xm, cell0 * 2.0, lam);
+      g = mix(g, g1, lf);
+    #endif
+    float smoothF = smoothstep(3.0, 60.0, lam);
+    g = mix(g, 1.0, smoothF);
+
+    // sea body: deep blue-grey, sky reflection by Fresnel
+    vec3 ns = normalize(n0 - tx * sw.x - tz * sw.y);
+    vec3 rd = reflect(d, ns); rd.y = max(rd.y, 0.0);
+    float cv = clamp(dot(ns, -d), 0.0, 1.0);
+    float Fv = 0.02 + 0.98 * pow(1.0 - cv, 5.0);
+    vec3 skyR = skyCol(rd, dot(rd, L)) * mix(0.85, 1.0, sunVis);
+    vec3 body = vec3(0.006, 0.017, 0.030) * (0.45 + 0.55 * sunVis);
+    vec3 col = body * (1.0 - Fv) + skyR * Fv;
+    col += vec3(1.0, 0.86, 0.66) * 1.7 * spec * g * sunVis;
+    return col;
+  }
+
+  vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+
+  void main() {
+    vec2 ndc = vUv * 2.0 - 1.0;
+    float aspect = uRes.x / uRes.y;
+    vec3 d = normalize(uFwd + ndc.x * uTanHalf * aspect * uRight + ndc.y * uTanHalf * uUp);
+    vec3 L = uSun;
+    float mu = dot(d, L);
+    float h = uAlt;
+    float b = (R + h) * d.y;
+    float c0 = h * (2.0 * R + h);
+
+    vec3 col;
+    float tSea, tSeaF;
+    bool seaHit = shell(0.0, b, h, tSea, tSeaF);
+    float tEnd = seaHit ? tSea : 1e9;
+    float seaSun = 1.0;
+    if (seaHit) {
+      col = shadeSea(tSea, d, b, h, mu, L, seaSun);
+      col = applyHaze(col, tSea, b, c0, mu);
+    } else {
+      col = skyCol(d, mu);
+      // sun disc, halo and faint rays
+      float ang = acos(clamp(mu, -1.0, 1.0));
+      col += vec3(60.0, 56.0, 50.0) * (1.0 - smoothstep(0.0040, 0.0062, ang));
+      col += vec3(1.0, 0.93, 0.8) * (1.2 * exp(-ang / 0.008) + 0.12 * exp(-ang / 0.03));
+      vec2 sp = (ndc - uSunScreen.xy) * vec2(aspect, 1.0);
+      float rays = pow(0.5 + 0.5 * sin(atan(sp.y, sp.x) * 9.0 + 1.3) * sin(atan(sp.y, sp.x) * 5.0), 8.0);
+      col += vec3(1.0, 0.92, 0.8) * rays * 0.18 * exp(-ang / 0.06) * step(0.0, uSunScreen.z);
+    }
+
+    // ---- relief march through the cloud slab ----
+    float tTopN, tTopF, tBaseN, tBaseF;
+    if (shell(TOP, b, h, tTopN, tTopF)) {
+      float tEnter = tTopN;
+      float tExit = shell(BASE, b, h, tBaseN, tBaseF) ? tBaseN : tTopF;
+      tExit = min(tExit, tEnd);
+      float seg = min(tExit - tEnter, 420.0);
+      if (seg > 0.0) {
+        float j = hash12(gl_FragCoord.xy * 1.37 + 11.0);
+        float tPrev = tEnter;
+        bool hit = false; float tHit = 0.0;
+        float best = 1e3; float tBest = 0.0;
+        for (int i = 0; i < STEPS; i++) {
+          float f = (float(i) + j) / float(STEPS);
+          float t = tEnter + seg * mix(f, f * f, smoothstep(8.0, 80.0, seg));
+          float a = altAt(t, b, c0);
+          vec4 c = cloudT(t * d.xz, t * uPixAngle);
+          float gap = a - (BASE + c.x);
+          if (c.x > 0.01) { float ratio = gap / (0.015 + 0.003 * t); if (ratio < best) { best = ratio; tBest = t; } }
+          if (gap < 0.0) {
+            hit = true;
+            float lo = tPrev, hi = t;
+            for (int k = 0; k < REFINE; k++) {
+              float mt = 0.5 * (lo + hi);
+              float am = altAt(mt, b, c0);
+              if (am - BASE - cloudT(mt * d.xz, mt * uPixAngle).x < 0.0) hi = mt; else lo = mt;
+            }
+            tHit = hi;
+            break;
+          }
+          tPrev = t;
+        }
+        float alpha = 0.0; float tc = 0.0;
+        if (hit) { tc = tHit; }
+        else if (best < 1.0) { tc = tBest; }
+        if (hit || best < 1.0) {
+          float a = altAt(tc, b, c0);
+          vec2 xz = tc * d.xz;
+          vec4 g = cloudT(xz, tc * uPixAngle);
+          float thick = max(g.x, a - BASE);
+          if (hit) alpha = smoothstep(0.0, 0.12, thick) * (0.75 + 0.25 * smoothstep(0.0, 0.4, thick));
+          else { float fr = 1.0 - smoothstep(0.0, 1.0, best); alpha = fr * fr * mix(0.25, 0.6, smoothstep(4.0, 30.0, tc)); }
+          // local sun elevation changes with distance on the sphere
+          vec3 up = normalize(vec3(xz.x, R + a, xz.y));
+          vec3 Ll = vec3(L.x, dot(L, up), L.z);
+          vec3 cc = shadeCloud(xz, a, g, d, mu, Ll);
+          cc = applyHaze(cc, tc, b, c0, mu);
+          col = mix(col, cc, alpha);
+        }
+      }
+    }
+
+    // faint lens reflections along the sun-centre axis
+    if (uSunScreen.z > 0.0) {
+      vec2 sp = uSunScreen.xy;
+      float ghosts = 0.0;
+      vec3 gcol = vec3(0.0);
+      for (int i = 0; i < 4; i++) {
+        float k = (i == 0) ? -0.35 : (i == 1) ? -0.7 : (i == 2) ? -1.25 : 0.45;
+        float r = (i == 0) ? 0.05 : (i == 1) ? 0.11 : (i == 2) ? 0.22 : 0.03;
+        vec2 gp = sp * k;
+        float dd = length((ndc - gp) * vec2(aspect, 1.0));
+        float disc = smoothstep(r, r * 0.6, dd);
+        vec3 tint = (i == 2) ? vec3(0.45, 0.8, 0.6) : (i == 1) ? vec3(0.8, 0.6, 1.0) : vec3(1.0, 0.85, 0.6);
+        gcol += tint * disc * 0.022;
+        if (i == 2) { float ring = exp(-pow((dd - r) / (r * 0.08), 2.0)); gcol += vec3(0.9, 0.5, 0.9) * ring * 0.03 * smoothstep(-0.1, 0.4, dd - r * 0.9); }
+      }
+      col += gcol * smoothstep(-1.4, -0.2, -length(sp));
+    }
+
+    float eH = asin(clamp(d.y, -1.0, 1.0)) + uDip;
+    if (eH < 0.0) col += horizonBand(eH, mu);
+    col = aces(col * 0.82);
+    col = pow(col, vec3(1.0 / 2.2));
+    col += (hash12(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) / 255.0;
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+      const mainMat = new THREE.ShaderMaterial({
+        vertexShader: VERT,
+        fragmentShader: mainFrag,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          uRes: { value: new THREE.Vector2(1, 1) },
+          uTime: { value: 0 },
+          uAlt: { value: 10 },
+          uTanHalf: { value: 0.5 },
+          uPixAngle: { value: 0.001 },
+          uDip: { value: 0 },
+          uFwd: { value: new THREE.Vector3() },
+          uRight: { value: new THREE.Vector3() },
+          uUp: { value: new THREE.Vector3() },
+          uSun: { value: new THREE.Vector3() },
+          uSunScreen: { value: new THREE.Vector3() },
+          uWindM: { value: new THREE.Vector2() },
+          uWindD: { value: new THREE.Vector2() },
+          tMacro: { value: maps.macro.texture },
+          tDetail: { value: maps.detail.texture },
+          uMacroTexel: { value: MACRO_KM / T.macro },
+          uDetailTexel: { value: DETAIL_KM / 256 },
+          uDecS: { value: DEC_SCALE },
+          uDecB: { value: DEC_BIAS },
+        },
+      });
+      const scene = new THREE.Scene();
+      const mainMesh = new THREE.Mesh(quadGeo, mainMat);
+      mainMesh.frustumCulled = false;
+      scene.add(mainMesh);
+
+      // ---------------------------------------------------------------------------
+      // Camera, sizing, loop, stats
+      // ---------------------------------------------------------------------------
+      const deg = Math.PI / 180;
+      let renderScale = T.scale;
+      const dpr = window.devicePixelRatio || 1;
+
+      function pixelRatio() {
+        return tier === "high"
+          ? Math.min(dpr, T.dprCap) * renderScale
+          : Math.min(dpr, T.dprCap) * renderScale;
+      }
+      function resize() {
+        renderer.setPixelRatio(pixelRatio());
+        renderer.setSize(innerWidth, innerHeight, false);
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      function setCamera() {
+        const v = VIEWS[view];
+        const u = mainMat.uniforms;
+        // narrow (portrait) screens turn closer to the sun so it stays in frame
+        const yaw = v.yaw * deg * Math.min(1, Math.max(0.25, innerWidth / innerHeight / 1.6)),
+          pitch = v.pitch * deg;
+        // camera looks along -z at yaw 0; the sun sits at azimuth 0
+        const fwd = new THREE.Vector3(
+          Math.sin(yaw) * Math.cos(pitch),
+          Math.sin(pitch),
+          -Math.cos(yaw) * Math.cos(pitch),
+        );
+        const right = new THREE.Vector3()
+          .crossVectors(fwd, new THREE.Vector3(0, 1, 0))
+          .normalize();
+        const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+        u.uFwd.value.copy(fwd);
+        u.uRight.value.copy(right);
+        u.uUp.value.copy(up);
+        u.uAlt.value = v.alt;
+        u.uTanHalf.value = Math.tan((v.vfov * deg) / 2);
+        u.uDip.value = Math.acos(6371 / (6371 + v.alt));
+        const e = sunDeg * deg;
+        const sun = new THREE.Vector3(0, Math.sin(e), -Math.cos(e));
+        u.uSun.value.copy(sun);
+        const z = sun.dot(fwd);
+        const aspect = innerWidth / innerHeight;
+        if (z > 0.01)
+          u.uSunScreen.value.set(
+            sun.dot(right) / z / (u.uTanHalf.value * aspect),
+            sun.dot(up) / z / u.uTanHalf.value,
+            1,
+          );
+        else u.uSunScreen.value.set(0, 0, -1);
+      }
+
+      const buttons = [...document.querySelectorAll("#controls button")];
+      function syncButtons() {
+        for (const b of buttons) {
+          if (b.dataset.view)
+            b.setAttribute("aria-pressed", String(b.dataset.view === view));
+          if (b.dataset.tier)
+            b.setAttribute("aria-pressed", String(b.dataset.tier === tier));
+        }
+      }
+      for (const b of buttons) {
+        b.addEventListener("click", () => {
+          const q = new URLSearchParams(location.search);
+          if (b.dataset.view) {
+            view = b.dataset.view;
+            q.set("view", view);
+            history.replaceState(null, "", "?" + q.toString());
+            frames.length = 0;
+            syncButtons();
+          } else if (b.dataset.tier && b.dataset.tier !== tier) {
+            q.set("tier", b.dataset.tier);
+            q.set("view", view);
+            location.search = q.toString();
+          }
+        });
+      }
+      syncButtons();
+
+      const frames = []; // [timestamp, ms]
+      let frameCount = 0;
+      let last = performance.now();
+      let lastAdapt = last;
+      const start = last;
+      const readout = document.getElementById("readout");
+      let lastReadout = 0;
+
+      function stats() {
+        const now = performance.now();
+        // keep the last 2 s, but never fewer than 3 frames (very slow devices)
+        while (frames.length > 3 && now - frames[0][0] > 2000) frames.shift();
+        const ms = frames.map((f) => f[1]).sort((a, b) => a - b);
+        const q = (p) =>
+          ms.length
+            ? ms[Math.min(ms.length - 1, Math.floor(p * (ms.length - 1) + 0.5))]
+            : 0;
+        return {
+          tier,
+          view,
+          medianMs: +q(0.5).toFixed(1),
+          p95Ms: +q(0.95).toFixed(1),
+          frames: frameCount,
+          dpr,
+          renderScale: +(pixelRatio() / dpr).toFixed(3),
+          ...(bench ? { syncedMedianMs: +syncedMedian().toFixed(2) } : {}),
+        };
+      }
+      function syncedMedian() {
+        const a = synced.slice(-60).sort((x, y) => x - y);
+        return a.length ? a[Math.floor(a.length / 2)] : 0;
+      }
+      window.lookStats = stats;
+
+      function frame(now) {
+        const dt = now - last;
+        last = now;
+        if (frameCount > 0) frames.push([now, dt]);
+        frameCount++;
+        const time = (now - start) / 1000;
+        const u = mainMat.uniforms;
+        u.uTime.value = time;
+        // clouds drift (sped up so the motion is visible from altitude), billows evolve slightly faster
+        const vv = VIEWS[view];
+        const ox = Number.isFinite(parseFloat(params.get("ox"))) ? parseFloat(params.get("ox")) : vv.ox;
+        const oz = Number.isFinite(parseFloat(params.get("oz"))) ? parseFloat(params.get("oz")) : vv.oz;
+        u.uWindM.value.set(ox - 0.12 * time, oz + 0.04 * time);
+        u.uWindD.value.set(-0.16 * time, 0.07 * time);
+        setCamera();
+        const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+        u.uRes.value.copy(size);
+        u.uPixAngle.value = (2 * u.uTanHalf.value) / size.y;
+        renderer.setRenderTarget(null);
+        const t0 = performance.now();
+        renderer.render(scene, quadCam);
+        if (bench) {
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, benchPx);
+          synced.push(performance.now() - t0);
+        }
+
+        if (
+          adapt &&
+          tier === "low" &&
+          now - lastAdapt > 1500 &&
+          frames.length > 20
+        ) {
+          const s = stats();
+          const target = renderScale * Math.sqrt(30 / Math.max(s.p95Ms, 1));
+          const next = Math.min(
+            T.maxScale,
+            Math.max(T.minScale, renderScale * 0.6 + target * 0.4),
+          );
+          if (Math.abs(next - renderScale) > 0.03) {
+            renderScale = next;
+            resize();
+          }
+          lastAdapt = now;
+        }
+        if (now - lastReadout > 250) {
+          const s = stats();
+          readout.textContent = `tier ${s.tier}  view ${s.view}  sun ${sunDeg}°\nmedian ${s.medianMs} ms  p95 ${s.p95Ms} ms\nscale ${s.renderScale} of device px  ${size.x}x${size.y}`;
+          lastReadout = now;
+        }
+        requestAnimationFrame(frame);
+      }
+      renderer.compile(scene, quadCam);
+      requestAnimationFrame(frame);
+      console.info(
+        `relief deck: baked cloud maps in ${bakeMs.toFixed(0)} ms (${canFloatRT ? "half float" : "8-bit"})`,
+      );
+    </script>
+  </body>
+</html>

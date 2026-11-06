@@ -1,0 +1,3543 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Status Drawers</title>
+    <!--
+  Throwaway prototype: the tour editor's bottom bar as a status bar of quiet
+  status items, each opening its own drawer. Original code, no libraries, no
+  network. Inspired by the status bars of code editors (items that appear when
+  they have something to say, a problems list, a click that jumps to the
+  cause) and by the history panels of image editors (jump to any step). The
+  side panels and the 3D view are simple stand-ins; all data is fake sample
+  data and nothing is saved.
+-->
+    <style>
+      :root {
+        --bg0: #1c1e22;
+        --bg1: #212327;
+        --panel: #24272c;
+        --bg3: #2c2f35;
+        --bg4: #363a41;
+        --line: #33363c;
+        --line2: #41454d;
+        --text: #e6e6e6;
+        --muted: #9aa0a6;
+        --dim: #6c727b;
+        --accent: #e9a23b;
+        --accentText: #f3c47e;
+        --accentBg: rgba(233, 162, 59, 0.14);
+        --accentLine: rgba(233, 162, 59, 0.55);
+        --danger: #e07a74;
+        --ok: #7cc48a;
+        --focus: #5b9cf0;
+        --top-h: 40px;
+        --load-h: 4px;
+        --bar-h: 26px;
+        --left-w: 260px;
+        --right-w: 300px;
+        --status-w: 700px;
+        --mono:
+          "Cascadia Mono", Consolas, "SF Mono", ui-monospace, Menlo, monospace;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      body {
+        background: var(--bg0);
+        color: var(--text);
+        font:
+          12px/1.4 "Segoe UI",
+          system-ui,
+          -apple-system,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        display: grid;
+        grid-template-rows: var(--top-h) var(--load-h) minmax(0, 1fr) var(
+            --bar-h
+          );
+        grid-template-columns: minmax(0, 1fr);
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      svg.i {
+        width: 15px;
+        height: 15px;
+        flex: none;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.35;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      kbd {
+        font: 10px var(--mono);
+        color: var(--dim);
+      }
+
+      /* ---- top bar */
+      #tb {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 8px;
+        background: var(--bg1);
+        border-bottom: 1px solid var(--line);
+        min-width: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: 8px;
+        border-right: 1px solid var(--line);
+        height: 24px;
+        min-width: 0;
+      }
+      .brand b {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .brand .doc {
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 220px;
+      }
+      .menus {
+        display: flex;
+        gap: 1px;
+      }
+      .mbtn {
+        height: 26px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .mbtn:hover,
+      .mbtn[aria-expanded="true"] {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      .tsp {
+        flex: 1;
+        min-width: 4px;
+      }
+      #unsaved {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--accentText);
+        font-size: 11.5px;
+        white-space: nowrap;
+      }
+      #unsaved::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      #unsaved[hidden] {
+        display: none;
+      }
+      .tbtn {
+        height: 26px;
+        min-width: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--panel);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+      }
+      .tbtn:hover {
+        background: var(--bg3);
+      }
+      .tbtn:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .tbtn.ghost {
+        border-color: transparent;
+        background: transparent;
+        padding: 0 5px;
+      }
+      .tbtn.ghost:hover:not(:disabled) {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      #bStations {
+        display: none;
+      }
+
+      /* dropdown menus (top bar and the bar's "more" menu) */
+      .menu {
+        position: fixed;
+        z-index: 60;
+        min-width: 220px;
+        padding: 4px;
+        background: var(--panel);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      }
+      .menu[hidden] {
+        display: none;
+      }
+      .menu .mi {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 28px;
+        padding: 3px 8px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        color: var(--text);
+      }
+      .menu .mi:hover,
+      .menu .mi:focus-visible {
+        background: var(--bg3);
+      }
+      .menu .mi .k {
+        margin-left: auto;
+        padding-left: 16px;
+      }
+      .menu .sep {
+        height: 1px;
+        background: var(--line);
+        margin: 4px 2px;
+      }
+      .menu .cap {
+        padding: 4px 8px 2px;
+        color: var(--dim);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .menu label.mi input {
+        margin: 0 0 0 auto;
+        accent-color: var(--accent);
+      }
+
+      /* loading line: fills while the map loads, stays full afterwards */
+      #load {
+        background: var(--bg1);
+        position: relative;
+        overflow: hidden;
+      }
+      #load i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.25s linear;
+      }
+
+      /* ---- work area */
+      #work {
+        display: grid;
+        grid-template-columns: var(--left-w) minmax(0, 1fr) auto;
+        min-height: 0;
+        position: relative;
+      }
+      #left,
+      #right {
+        background: var(--panel);
+        min-height: 0;
+        overflow: auto;
+      }
+      #left {
+        border-right: 1px solid var(--line);
+      }
+      #right {
+        width: var(--right-w);
+        border-left: 1px solid var(--line);
+      }
+      #right[hidden] {
+        display: none;
+      }
+      .ph {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--line);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        background: var(--panel);
+        z-index: 1;
+      }
+      .ph .n {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .ph .sp {
+        flex: 1;
+      }
+      .ic {
+        width: 24px;
+        height: 24px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        flex: none;
+      }
+      .ic:hover {
+        color: var(--text);
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      .tree {
+        list-style: none;
+        margin: 0;
+        padding: 4px 0;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 8px;
+        cursor: pointer;
+        white-space: nowrap;
+        min-width: 0;
+        border: 0;
+        background: transparent;
+        width: 100%;
+        text-align: left;
+        color: var(--text);
+      }
+      .row:hover {
+        background: var(--bg3);
+      }
+      .row.sel {
+        background: var(--accentBg);
+      }
+      .row.sel::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--accent);
+      }
+      .row .chev {
+        width: 12px;
+        color: var(--dim);
+        transition: transform 0.12s;
+      }
+      .row.open .chev {
+        transform: rotate(90deg);
+      }
+      .row .num {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--bg4);
+        font-size: 10.5px;
+        flex: none;
+      }
+      .row .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      .row .cnt {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .row.kid {
+        padding-left: 34px;
+      }
+      .row.kid svg.i {
+        color: var(--muted);
+      }
+      .row.kid.story svg.i {
+        color: var(--accentText);
+      }
+      .row .flag {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex: none;
+      }
+      .row .flag.err {
+        background: var(--danger);
+      }
+      .stub {
+        margin: 10px 12px;
+        padding: 8px 10px;
+        border: 1px dashed var(--line2);
+        border-radius: 5px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* right panel stand-in */
+      .rp-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 8px 8px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .rp-head .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .rp-head .t b {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border-bottom: 1px dotted var(--dim);
+        width: fit-content;
+        max-width: 100%;
+      }
+      .rp-head .t span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .sec {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .sec h4 {
+        margin: 0 0 8px;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        font-weight: 600;
+      }
+      .fld {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .fld div {
+        background: var(--bg1);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 4px 7px;
+        font: 11px var(--mono);
+        color: var(--muted);
+      }
+      .fld div b {
+        color: var(--text);
+        font-weight: 400;
+      }
+      .warnbox {
+        margin-top: 8px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: var(--accentBg);
+        border: 1px solid var(--accentLine);
+        color: var(--accentText);
+        font-size: 11.5px;
+      }
+      .warnbox.err {
+        background: rgba(224, 122, 116, 0.12);
+        border-color: rgba(224, 122, 116, 0.5);
+        color: #f0aaa5;
+      }
+      .entries {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        counter-reset: e;
+      }
+      .entries li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 5px 6px;
+        border-radius: 4px;
+        counter-increment: e;
+      }
+      .entries li::before {
+        content: counter(e);
+        width: 16px;
+        color: var(--dim);
+        font-size: 11px;
+        text-align: right;
+      }
+      .entries li.hl {
+        background: var(--accentBg);
+        outline: 1px solid var(--accentLine);
+      }
+      .entries li span {
+        color: var(--dim);
+        margin-left: auto;
+        font-size: 11px;
+      }
+
+      /* ---- 3D view stand-in */
+      #view {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #15171a;
+      }
+      #cv {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+      }
+      #cv.drag {
+        cursor: grabbing;
+      }
+      #mapCtl {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 6px;
+        z-index: 3;
+      }
+      .pill {
+        display: flex;
+        background: rgba(36, 39, 44, 0.92);
+        border: 1px solid var(--line2);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .pill button {
+        width: 32px;
+        height: 30px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        color: var(--text);
+      }
+      .pill button + button {
+        border-left: 1px solid var(--line2);
+      }
+      .pill button:hover {
+        background: var(--bg3);
+      }
+      #notes {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        z-index: 4;
+        max-width: min(420px, calc(100% - 20px));
+        background: rgba(31, 33, 37, 0.95);
+        border: 1px solid var(--line2);
+        border-radius: 6px;
+        font-size: 11.5px;
+        color: var(--muted);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      #notes summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--text);
+        font-weight: 600;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #notes summary::-webkit-details-marker {
+        display: none;
+      }
+      #notes summary::before {
+        content: "i";
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        border: 1px solid var(--accent);
+        color: var(--accentText);
+        display: grid;
+        place-items: center;
+        font-size: 10px;
+        font-style: italic;
+      }
+      #notes .nb {
+        padding: 0 12px 10px;
+        max-height: min(60vh, 460px);
+        overflow: auto;
+      }
+      #notes p {
+        margin: 0 0 6px;
+        color: var(--text);
+      }
+      #notes ul {
+        margin: 4px 0 0;
+        padding-left: 16px;
+      }
+      #notes li {
+        margin-bottom: 4px;
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(var(--bar-h) + 14px);
+        transform: translateX(-50%) translateY(6px);
+        z-index: 70;
+        padding: 6px 12px;
+        border-radius: 5px;
+        background: rgba(36, 39, 44, 0.97);
+        border: 1px solid var(--line2);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.15s,
+          transform 0.15s;
+        max-width: calc(100vw - 32px);
+        text-align: center;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%);
+      }
+
+      /* ---- bottom bar: credits | (space) | context actions | status items */
+      #sb {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto);
+        align-items: stretch;
+        background: var(--bg1);
+        border-top: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--muted);
+        min-width: 0;
+        position: relative;
+        z-index: 40;
+      }
+      #credits {
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        white-space: nowrap;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      #credits a {
+        color: inherit;
+        text-decoration: none;
+      }
+      #credits a:hover {
+        color: var(--text);
+        text-decoration: underline;
+      }
+      #credits .s {
+        display: none;
+      }
+      #acts {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 6px;
+        border-left: 1px solid var(--line);
+      }
+      #acts:empty {
+        display: none;
+      }
+      .sact {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .sact svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accentText);
+      }
+      .sact:hover {
+        background: var(--bg3);
+        border-color: var(--line2);
+      }
+      #status {
+        display: flex;
+        justify-content: flex-end;
+        align-items: stretch;
+        min-width: 0;
+        width: var(--status-w);
+        overflow: hidden;
+      }
+      .sitem {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 10px;
+        border: 0;
+        border-left: 1px solid transparent;
+        border-right: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+        min-width: 0;
+        flex: none;
+        font-size: 11px;
+        animation: appear 0.25s ease-out;
+      }
+      .sitem[hidden] {
+        display: none;
+      }
+      .sitem:hover {
+        color: var(--text);
+        background: var(--bg3);
+      }
+      .sitem .tx {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      /* the bar picks the richest text level that fits (set from the script) */
+      .sitem .tx .f,
+      .sitem .tx .m,
+      .sitem .tx .s {
+        display: none;
+      }
+      #status[data-lv="f"] .tx .f,
+      #status[data-lv="m"] .tx .m,
+      #status[data-lv="s"] .tx .s {
+        display: inline;
+      }
+      .sitem b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .sitem.att {
+        color: var(--accentText);
+      }
+      .sitem.att svg.i {
+        color: var(--accent);
+      }
+      .sitem.bad svg.i {
+        color: var(--danger);
+      }
+      .sitem.good svg.i {
+        color: var(--ok);
+      }
+      /* the open item becomes the tab the drawer rises from */
+      .sitem.open {
+        background: var(--panel);
+        color: var(--text);
+        border-left-color: var(--line2);
+        border-right-color: var(--line2);
+      }
+      .sitem.open::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -1px;
+        height: 1px;
+        background: var(--panel);
+      }
+      .sitem.pinned::after {
+        content: "";
+        position: absolute;
+        right: 3px;
+        top: 4px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      #bMore {
+        padding: 0 8px;
+      }
+      @keyframes appear {
+        from {
+          opacity: 0;
+          transform: translateY(3px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .spin {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        border: 1.6px solid var(--line2);
+        border-top-color: var(--accent);
+        animation: spin 0.8s linear infinite;
+        flex: none;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ---- drawers */
+      .drawer {
+        position: fixed;
+        z-index: 45;
+        display: flex;
+        flex-direction: column;
+        background: var(--panel);
+        border: 1px solid var(--line2);
+        border-bottom: 0;
+        border-radius: 6px 6px 0 0;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+        min-height: 0;
+        transform-origin: bottom;
+        animation: rise 0.14s ease-out;
+      }
+      .drawer[hidden] {
+        display: none;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scaleY(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .drawer.pinned {
+        border-bottom: 1px solid var(--line2);
+        border-radius: 6px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+        animation: none;
+      }
+      .drawer.flash {
+        animation: flash 0.6s ease-out;
+      }
+      @keyframes flash {
+        0%,
+        60% {
+          box-shadow:
+            0 0 0 2px var(--accent),
+            0 12px 32px rgba(0, 0, 0, 0.5);
+        }
+      }
+      .rz {
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        top: -3px;
+        height: 7px;
+        cursor: ns-resize;
+        z-index: 2;
+        touch-action: none;
+      }
+      .rz::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 3px;
+        width: 28px;
+        height: 3px;
+        margin-left: -14px;
+        border-radius: 2px;
+        background: var(--line2);
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .drawer:hover .rz::after,
+      .rz:hover::after {
+        opacity: 1;
+      }
+      .corner {
+        display: none;
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 14px;
+        height: 14px;
+        cursor: nwse-resize;
+        touch-action: none;
+        background: linear-gradient(
+          135deg,
+          transparent 50%,
+          var(--line2) 50%,
+          var(--line2) 58%,
+          transparent 58%,
+          transparent 70%,
+          var(--line2) 70%,
+          var(--line2) 78%,
+          transparent 78%
+        );
+        border-bottom-right-radius: 6px;
+      }
+      .drawer.pinned .corner {
+        display: block;
+      }
+      .dh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 4px 0 10px;
+        border-bottom: 1px solid var(--line);
+        flex: none;
+        user-select: none;
+      }
+      .drawer.pinned .dh {
+        cursor: move;
+      }
+      .dh .grip {
+        display: none;
+        width: 8px;
+        height: 12px;
+        background: radial-gradient(circle, var(--dim) 1px, transparent 1.3px) 0
+          0 / 4px 4px;
+        flex: none;
+      }
+      .drawer.pinned .dh .grip {
+        display: block;
+      }
+      .dh .ttl {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .dh .sub {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      .dh .ic {
+        width: 24px;
+        height: 24px;
+      }
+      .dh .ic.on {
+        color: var(--accentText);
+      }
+      .db {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 6px 0;
+      }
+      .df {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .df .sp {
+        flex: 1;
+      }
+      .btn {
+        height: 24px;
+        padding: 0 9px;
+        border: 1px solid var(--line2);
+        border-radius: 4px;
+        background: var(--bg3);
+        cursor: pointer;
+        white-space: nowrap;
+        font-size: 11.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .btn:hover:not(:disabled) {
+        background: var(--bg4);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .btn.acc {
+        border-color: var(--accentLine);
+        color: var(--accentText);
+        background: var(--accentBg);
+      }
+
+      /* problems */
+      .pgrp {
+        padding: 6px 12px 2px;
+        color: var(--dim);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .prow {
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr) auto;
+        gap: 2px 8px;
+        align-items: start;
+        width: 100%;
+        padding: 6px 10px 6px 12px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .prow:hover,
+      .prow:focus-visible {
+        background: var(--bg3);
+      }
+      .prow.cur {
+        background: var(--accentBg);
+      }
+      .prow svg.i {
+        margin-top: 1px;
+        color: var(--accent);
+      }
+      .prow.err svg.i {
+        color: var(--danger);
+      }
+      .prow .pt {
+        font-size: 12px;
+      }
+      .prow .pw {
+        grid-column: 2;
+        color: var(--muted);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .prow .fix {
+        grid-row: 1 / span 2;
+        grid-column: 3;
+        align-self: center;
+      }
+      .empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 22px 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty svg.i {
+        width: 22px;
+        height: 22px;
+        color: var(--ok);
+      }
+
+      /* map loading */
+      .banner {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 4px 10px 8px;
+        padding: 7px 9px;
+        border-radius: 5px;
+        background: var(--accentBg);
+        border: 1px solid var(--accentLine);
+        color: var(--accentText);
+        font-size: 11.5px;
+      }
+      .banner[hidden] {
+        display: none;
+      }
+      .banner .bt {
+        flex: 1;
+        min-width: 0;
+      }
+      .banner b {
+        font-weight: 600; font-variant-numeric: tabular-nums;
+        color: var(--text);
+      }
+      .layer {
+        padding: 6px 12px;
+      }
+      .layer .lh {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .layer .lh b {
+        font-weight: 500;
+      }
+      .layer .lh span {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .layer .bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--bg4);
+        margin-top: 5px;
+        overflow: hidden;
+      }
+      .layer .bar i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        border-radius: 2px;
+        transition: width 0.2s linear;
+      }
+      .layer.done .bar i {
+        background: var(--ok);
+      }
+      .layer.wait .bar i {
+        background: var(--dim);
+      }
+      .mnote {
+        padding: 6px 12px 2px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+
+      /* history */
+      .hrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        height: 26px;
+        padding: 0 10px 0 12px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .hrow:hover,
+      .hrow:focus-visible {
+        background: var(--bg3);
+      }
+      .hrow .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: 1.5px solid var(--muted);
+        flex: none;
+      }
+      .hrow .lb {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      .hrow .tm {
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .hrow.cur {
+        background: var(--accentBg);
+      }
+      .hrow.cur .dot {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .hrow.cur .lb::after {
+        content: "  now";
+        color: var(--accentText);
+        font-size: 10.5px;
+      }
+      .hrow.redo {
+        color: var(--dim);
+      }
+      .hrow.redo .dot {
+        border-style: dashed;
+        border-color: var(--dim);
+      }
+      .hrow.redo .lb {
+        text-decoration: line-through;
+        text-decoration-color: rgba(108, 114, 123, 0.6);
+      }
+
+      /* performance */
+      .pstats {
+        display: flex;
+        gap: 14px;
+        padding: 4px 12px 6px;
+        flex-wrap: wrap;
+      }
+      .pstats div {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .pstats b {
+        display: block;
+        color: var(--text);
+        font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums;
+      }
+      .spark {
+        position: relative;
+        margin: 0 12px;
+        height: 72px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--bg1);
+      }
+      .spark svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .spark .tip {
+        position: absolute;
+        top: 4px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        background: var(--bg4);
+        color: var(--text);
+        font: 10.5px var(--mono);
+        pointer-events: none;
+        white-space: nowrap;
+        transform: translateX(-50%);
+      }
+      .spark .tip[hidden] {
+        display: none;
+      }
+      .spark .ln {
+        position: absolute;
+        right: 4px;
+        font-size: 9.5px;
+        color: var(--dim);
+        transform: translateY(-100%);
+      }
+      .pgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 14px;
+        padding: 8px 12px 4px;
+      }
+      .pgrid div {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 11px;
+        border-bottom: 1px dotted var(--line);
+        padding-bottom: 2px;
+      }
+      .pgrid b {
+        color: var(--text);
+        font: 11px var(--mono);
+      }
+
+      /* ---- medium widths */
+      @media (max-width: 1279px) {
+        :root {
+          --left-w: 210px;
+          --right-w: 250px;
+          --status-w: 440px;
+        }
+        .brand .doc {
+          max-width: 140px;
+        }
+      }
+      @media (max-width: 1099px) {
+        .sact .lbl {
+          display: none;
+        }
+        .sact {
+          padding: 0 5px;
+        }
+        #credits .f {
+          display: none;
+        }
+        #credits .s {
+          display: inline;
+        }
+        .menus .mbtn.opt {
+          display: none;
+        }
+      }
+      /* ---- phone: panels become sheets, status items shrink to icon + number, drawers become full-width sheets */
+      @media (max-width: 759px) {
+        :root {
+          --status-w: auto;
+        }
+        #work {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        #left {
+          position: absolute;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: min(300px, 84vw);
+          z-index: 20;
+          box-shadow: 6px 0 20px rgba(0, 0, 0, 0.45);
+          display: none;
+        }
+        body.left-open #left {
+          display: block;
+        }
+        #right {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: auto;
+          max-height: 46%;
+          z-index: 15;
+          border-left: 0;
+          border-top: 1px solid var(--line2);
+          border-radius: 8px 8px 0 0;
+          box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.4);
+        }
+        #bStations {
+          display: inline-flex;
+        }
+        .menus .mbtn:not(.keep) {
+          display: none;
+        }
+        .brand {
+          border-right: 0;
+        }
+        .brand b {
+          display: none;
+        }
+        .tbtn .lbl {
+          display: none;
+        }
+        #unsaved span {
+          display: none;
+        }
+        #mapCtl {
+          top: 10px;
+          bottom: auto;
+          right: 10px;
+        }
+        #notes {
+          top: 54px;
+        }
+        .sitem {
+          padding: 0 8px;
+        }
+        .drawer .pin {
+          display: none;
+        }
+        .rz {
+          left: 0;
+          right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header id="tb">
+      <button
+        class="tbtn ghost"
+        id="bStations"
+        title="Show the station list"
+        aria-expanded="false"
+      >
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M3 4h10M3 8h10M3 12h10" />
+        </svg>
+      </button>
+      <div class="brand">
+        <b>Tour editor</b><span class="doc" id="tourName">Old Town Walk</span>
+      </div>
+      <nav class="menus">
+        <button
+          class="mbtn opt"
+          data-menu="mFile"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          File
+        </button>
+        <button
+          class="mbtn opt"
+          data-menu="mEdit"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          Edit
+        </button>
+        <button
+          class="mbtn keep"
+          data-menu="mView"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          View
+        </button>
+        <button
+          class="mbtn opt"
+          data-menu="mHelp"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          Help
+        </button>
+      </nav>
+      <div class="tsp"></div>
+      <div
+        id="unsaved"
+        title="There are changes that are not in the tour file yet"
+      >
+        <span>Not saved</span>
+      </div>
+      <button class="tbtn" id="bSave" title="Save the tour (Ctrl+S)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M3 2.5h8l2.5 2.5v8.5h-11z" />
+          <path d="M5.5 2.5v3.5h5V2.5M5 13.5V9.5h6v4" /></svg
+        ><span class="lbl">Save</span>
+      </button>
+      <button class="tbtn ghost" id="bUndo" title="Undo (Ctrl+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M5.5 3.5 2.5 6.5l3 3" />
+          <path d="M2.5 6.5h7a3.5 3.5 0 0 1 0 7H7" />
+        </svg>
+      </button>
+      <button class="tbtn ghost" id="bRedo" title="Redo (Ctrl+Shift+Z)">
+        <svg class="i" viewBox="0 0 16 16">
+          <path d="M10.5 3.5l3 3-3 3" />
+          <path d="M13.5 6.5h-7a3.5 3.5 0 0 0 0 7H9" />
+        </svg>
+      </button>
+    </header>
+    <div
+      id="load"
+      role="progressbar"
+      aria-label="Map loading"
+      aria-valuemin="0"
+      aria-valuemax="100"
+    >
+      <i></i>
+    </div>
+
+    <div id="work">
+      <aside id="left" aria-label="Stations"></aside>
+      <main id="view">
+        <canvas
+          id="cv"
+          aria-label="3D map view (stand-in). Drag to move the camera, which loads more map tiles."
+        ></canvas>
+        <details id="notes" open>
+          <summary>
+            About this prototype: status items with their own drawers
+          </summary>
+          <div class="nb">
+            <p>
+              The bottom bar is a quiet status bar. Each status item appears
+              only while it has something to say (map tiles loading, problems,
+              steps to undo, slow frames) and opens its own small drawer that
+              rises from it. Pin a drawer and it becomes a floating mini-window
+              over the 3D view; several can sit side by side.
+            </p>
+            <ul>
+              <li>
+                <b>Removed from the bar:</b> the "Saved to" text (the top bar's
+                "Not saved" mark plus a short note after saving), the tilt
+                readout (the view and the compass show it), the hint line
+                (belongs in Help) and the Debug toggle (its numbers now live in
+                the History and Performance drawers, in readable size).
+              </li>
+              <li>
+                <b>Never hidden for good:</b> a quiet item can still be opened
+                from View &gt; Status, or from the "..." at the bar's right end,
+                where each item can be set to always show.
+              </li>
+              <li>
+                <b>Drawers:</b> one opens at a time; Escape or a click outside
+                closes it; drag its top edge to make it taller. Pinned windows
+                stay until closed: drag them by the header, resize them at the
+                corner.
+              </li>
+              <li>
+                <b>The bar's layout:</b> map credits at the left; the
+                selection's actions (Duplicate, Align to station, Copy position)
+                at the centre-right, only while something is selected; the
+                status area has a fixed width, so the actions do not jump when
+                items come and go.
+              </li>
+              <li>
+                <b>Phone:</b> items shrink to icon and number, drawers become
+                full-width sheets, no pinning.
+              </li>
+              <li>
+                The side panels are static stand-ins here; they only show what a
+                problem row selects.
+              </li>
+            </ul>
+            <p class="muted" style="margin-top: 6px">
+              Try: wait for the street map's "server busy" countdown; open "4
+              problems" and click a row or a fix; open History and jump back two
+              steps (a fixed problem returns); drag the view to load new tiles;
+              pin two drawers.
+            </p>
+          </div>
+        </details>
+        <div id="mapCtl">
+          <div class="pill">
+            <button id="compass" title="Turn north up">
+              <svg width="22" height="22" viewBox="0 0 24 24">
+                <path d="M12 3 15 12H9z" fill="#e5483f" />
+                <path d="M12 21 9 12h6z" fill="#9aa0a6" />
+              </svg>
+            </button>
+          </div>
+          <div class="pill">
+            <button id="zin" title="Zoom in">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg></button
+            ><button id="zout" title="Zoom out">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              >
+                <path d="M5 12h14" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </main>
+      <aside id="right" aria-label="Selection" hidden></aside>
+    </div>
+
+    <footer id="sb">
+      <div id="credits">
+        <a
+          href="#"
+          onclick="return false;"
+          title="Map data from OpenStreetMap contributors (sample tiles in this prototype)"
+          ><span class="f">Map data &copy; OpenStreetMap contributors</span
+          ><span class="s">&copy; OSM</span></a
+        >
+      </div>
+      <div></div>
+      <div id="acts" aria-label="Selection actions"></div>
+      <div id="status" aria-label="Status">
+        <button
+          class="sitem"
+          data-k="map"
+          aria-expanded="false"
+          aria-controls="dr-map"
+          hidden
+        ></button>
+        <button
+          class="sitem"
+          data-k="problems"
+          aria-expanded="false"
+          aria-controls="dr-problems"
+          hidden
+        ></button>
+        <button
+          class="sitem"
+          data-k="history"
+          aria-expanded="false"
+          aria-controls="dr-history"
+          hidden
+        ></button>
+        <button
+          class="sitem"
+          data-k="perf"
+          aria-expanded="false"
+          aria-controls="dr-perf"
+          hidden
+        ></button>
+        <button
+          class="sitem"
+          id="bMore"
+          title="All status items"
+          aria-haspopup="true"
+          aria-expanded="false"
+        >
+          <svg class="i" viewBox="0 0 16 16" stroke-width="2.2">
+            <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" />
+          </svg>
+        </button>
+      </div>
+    </footer>
+
+    <div id="menus"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const phone = () => innerWidth < 760;
+
+      const IC = {
+        warn: '<path d="M8 2.5 14 13H2z"/><path d="M8 6.5v3M8 11.3v.1"/>',
+        err: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.5M8 10.8v.1"/>',
+        ok: '<circle cx="8" cy="8" r="5.5"/><path d="m5.6 8.2 1.7 1.7 3.2-3.4"/>',
+        clock: '<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/>',
+        pause: '<path d="M6 4.5v7M10 4.5v7"/>',
+        hist: '<path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5V5h2.5"/><path d="M8 5.5V8l1.8 1.2"/>',
+        pulse: '<path d="M1.5 8.5h3l1.5-4 2.5 7 1.5-3h4.5"/>',
+        pin: '<path d="M6 2.5h4l-.6 3.5 2.1 2.2H4.5L6.6 6z"/><path d="M8 8.2v5.3"/>',
+        dock: '<path d="M2.5 10.5h11v3h-11z"/><path d="M8 2.5V8M5.8 5.8 8 8l2.2-2.2"/>',
+        x: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+        dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1h-8v8h1"/>',
+        copy: '<circle cx="8" cy="6.8" r="1.8"/><path d="M8 13.5s-4.3-3.9-4.3-6.7a4.3 4.3 0 0 1 8.6 0C12.3 9.6 8 13.5 8 13.5z"/>',
+        align:
+          '<path d="M8 13.5V5"/><path d="M5 7.5 8 4.5l3 3"/><path d="M3 2.5h10"/>',
+        chev: '<path d="m6 4 4 4-4 4"/>',
+        folder: '<path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/>',
+        txt: '<path d="M3.5 4h9M8 4v8.5"/>',
+        doc: '<path d="M4 2.5h5.5L12 5v8.5H4z"/><path d="M6 7.5h4M6 10h4"/>',
+        pic: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="m2.5 11.5 3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/>',
+        aud: '<path d="M2.5 6.5H5L8 4v8L5 9.5H2.5z"/><path d="M10.5 6a3 3 0 0 1 0 4M12 4.5a5 5 0 0 1 0 7"/>',
+        cube: '<path d="M8 2 13.5 5v6L8 14 2.5 11V5z"/><path d="M2.5 5 8 8l5.5-3M8 8v6"/>',
+        plus: '<path d="M8 3v10M3 8h10"/>',
+      };
+      const ic = (n, cls = "") =>
+        `<svg class="i ${cls}" viewBox="0 0 16 16" aria-hidden="true">${IC[n]}</svg>`;
+      const TYPE_IC = {
+        "Short text": "txt",
+        "Long text": "doc",
+        Picture: "pic",
+        Audio: "aud",
+        "3D model": "cube",
+        Story: "folder",
+      };
+
+      // ---------------------------------------------------------------- sample data
+      let uid = 100;
+      const S = {
+        dirty: true,
+        stations: [
+          {
+            id: "s1",
+            name: "The Column",
+            radius: 20,
+            x: -70,
+            z: 120,
+            kids: [
+              {
+                id: "st1",
+                kind: "story",
+                type: "Story",
+                name: "The Column's tale",
+                entries: [
+                  { name: "Who built it?", type: "Text" },
+                  { name: "The statue on top", type: "Picture" },
+                  { name: "Left or right?", type: "Choice" },
+                  { name: "The fire of 1702", type: "Long text" },
+                ],
+              },
+              { id: "i1", kind: "item", type: "Short text", name: "Look up!" },
+              {
+                id: "i2",
+                kind: "item",
+                type: "Picture",
+                name: "The column in 1902",
+              },
+            ],
+          },
+          {
+            id: "s2",
+            name: "The old gate - the town's last surviving medieval gateway",
+            radius: 25,
+            x: 40,
+            z: 165,
+            kids: [
+              {
+                id: "i3",
+                kind: "item",
+                type: "Picture",
+                name: "Gate in 1890",
+                float: 2.4,
+              },
+              {
+                id: "i4",
+                kind: "item",
+                type: "Short text",
+                name: "Tolls were paid here",
+              },
+              {
+                id: "i5",
+                kind: "item",
+                type: "3D model",
+                name: "Gate tower as built",
+              },
+            ],
+          },
+          {
+            id: "s3",
+            name: "Market fountain",
+            radius: 20,
+            x: -20,
+            z: 225,
+            kids: [
+              {
+                id: "st2",
+                kind: "story",
+                type: "Story",
+                name: "Water for the whole town",
+                entries: [
+                  { name: "Before the pipes", type: "Text" },
+                  { name: "Which year?", type: "Quiz", noAnswer: true },
+                  { name: "The first pump", type: "Picture" },
+                ],
+              },
+            ],
+          },
+          { id: "s4", name: "The bridge", radius: 15, x: 90, z: 270, kids: [] },
+          {
+            id: "s5",
+            name: "The tower",
+            radius: 25,
+            x: -100,
+            z: 300,
+            kids: [
+              {
+                id: "i6",
+                kind: "item",
+                type: "Long text",
+                name: "Four hundred steps",
+              },
+              {
+                id: "i7",
+                kind: "item",
+                type: "Audio",
+                name: "Bells and pigeons",
+                zone: 35,
+              },
+            ],
+          },
+        ],
+      };
+      const expanded = new Set(["s2"]);
+      let sel = null; // { id, entry }
+
+      function find(id) {
+        for (const [si, s] of S.stations.entries()) {
+          if (s.id === id) return { s, si, kind: "station" };
+          const ki = s.kids.findIndex((k) => k.id === id);
+          if (ki >= 0)
+            return { s, si, k: s.kids[ki], ki, kind: s.kids[ki].kind };
+        }
+        return null;
+      }
+      const getSel = () => (sel ? find(sel.id) : null);
+      const sortedKids = (s) => [
+        ...s.kids.filter((k) => k.kind === "story"),
+        ...s.kids.filter((k) => k.kind !== "story"),
+      ];
+
+      // ---------------------------------------------------------------- problems (derived from the data, so fixes and undo just work)
+      function computeProblems() {
+        const out = [];
+        S.stations.forEach((s, si) => {
+          const where = `${si + 1}  ${s.name}`;
+          if (!s.kids.length)
+            out.push({
+              sev: "warn",
+              text: "This station has no content yet",
+              where,
+              sel: { id: s.id },
+            });
+          for (const k of s.kids) {
+            if (k.float > 0.05)
+              out.push({
+                sev: "warn",
+                text: `"${k.name}" floats ${k.float.toFixed(1)} m above the ground`,
+                where: `${where} > ${k.name}`,
+                sel: { id: k.id },
+                fix: {
+                  label: "Put on the ground",
+                  run: () =>
+                    setField(k, "float", 0, `Put "${k.name}" on the ground`),
+                },
+              });
+            if (k.zone > s.radius)
+              out.push({
+                sev: "warn",
+                text: `Sound zone (${k.zone} m) reaches past the station radius (${s.radius} m)`,
+                where: `${where} > ${k.name}`,
+                sel: { id: k.id },
+                fix: {
+                  label: `Shrink to ${s.radius} m`,
+                  run: () =>
+                    setField(
+                      k,
+                      "zone",
+                      s.radius,
+                      `Shrank the sound zone of "${k.name}" to ${s.radius} m`,
+                    ),
+                },
+              });
+            (k.entries || []).forEach((e, ei) => {
+              if (e.noAnswer)
+                out.push({
+                  sev: "err",
+                  text: `Quiz "${e.name}" has no correct answer`,
+                  where: `${where} > ${k.name} > entry ${ei + 1}`,
+                  sel: { id: k.id, entry: ei },
+                  fix: {
+                    label: "Mark answer 1",
+                    run: () =>
+                      setField(
+                        e,
+                        "noAnswer",
+                        false,
+                        `Marked answer 1 of "${e.name}" as correct`,
+                      ),
+                  },
+                });
+            });
+          }
+        });
+        return out.sort((a, b) =>
+          a.sev === b.sev ? 0 : a.sev === "err" ? -1 : 1,
+        );
+      }
+      let problems = computeProblems();
+
+      // ---------------------------------------------------------------- history
+      const t0 = Date.now();
+      const H = { ptr: 0, steps: [] };
+      const noop = () => {};
+      const removedPicture = { at: 0, item: null };
+      [
+        ["Moved The Column 3.2 m east", 9.5],
+        ['Renamed station 2 to "The old gate - the town\'s last..."', 7],
+        [
+          'Added picture "Gate in 1890"',
+          4.2,
+          () => {
+            const s = S.stations[1];
+            if (removedPicture.item)
+              s.kids.splice(removedPicture.at, 0, removedPicture.item);
+            removedPicture.item = null;
+          },
+          () => {
+            const s = S.stations[1];
+            const i = s.kids.findIndex((k) => k.id === "i3");
+            if (i >= 0) {
+              removedPicture.at = i;
+              removedPicture.item = s.kids.splice(i, 1)[0];
+              if (sel && sel.id === "i3") sel = null;
+            }
+          },
+        ],
+        ["Changed the radius of Market fountain to 20 m", 2.5],
+        ['Turned "Gate tower as built" to 35 deg', 0.8],
+      ].forEach(([label, minAgo, apply, revert]) =>
+        H.steps.push({
+          label,
+          t: t0 - minAgo * 60000,
+          apply: apply || noop,
+          revert: revert || noop,
+        }),
+      );
+      H.ptr = H.steps.length;
+
+      function record(label, apply, revert) {
+        H.steps.length = H.ptr;
+        H.steps.push({ label, apply, revert, t: Date.now() });
+        apply();
+        H.ptr++;
+        S.dirty = true;
+        changed();
+      }
+      function undo(quiet) {
+        if (!H.ptr) return;
+        const st = H.steps[--H.ptr];
+        st.revert();
+        S.dirty = true;
+        if (!quiet) toast("Undone: " + st.label);
+        changed();
+      }
+      function redo(quiet) {
+        if (H.ptr >= H.steps.length) return;
+        const st = H.steps[H.ptr++];
+        st.apply();
+        S.dirty = true;
+        if (!quiet) toast("Redone: " + st.label);
+        changed();
+      }
+      function jumpTo(k) {
+        if (k === H.ptr) return;
+        const n = Math.abs(k - H.ptr);
+        while (H.ptr > k) undo(true);
+        while (H.ptr < k) redo(true);
+        toast(
+          k === 0
+            ? "Back to the tour as opened"
+            : `Jumped ${n} step${n > 1 ? "s" : ""}: now after "${H.steps[k - 1].label}"`,
+        );
+      }
+      function setField(obj, f, v, label) {
+        const old = obj[f];
+        record(
+          label,
+          () => {
+            obj[f] = v;
+          },
+          () => {
+            obj[f] = old;
+          },
+        );
+        toast(label);
+      }
+      function ago(t) {
+        const m = Math.round((Date.now() - t) / 60000);
+        return m < 1 ? "just now" : `${m} min ago`;
+      }
+
+      // ---------------------------------------------------------------- side panels (stand-ins)
+      function renderLeft() {
+        const L = $("#left");
+        let h = `<div class="ph">Stations <span class="n">${S.stations.length}</span><span class="sp"></span><button class="ic" title="Add a station (not part of this prototype)" onclick="toast('Adding stations is shown in the station-list prototypes')">${ic("plus")}</button></div><ul class="tree">`;
+        const flagFor = (id) => {
+          const ps = problems.filter((p) => p.sel.id === id);
+          return ps.length
+            ? `<span class="flag ${ps.some((p) => p.sev === "err") ? "err" : ""}" title="${ps.length} problem${ps.length > 1 ? "s" : ""}"></span>`
+            : "";
+        };
+        S.stations.forEach((s, si) => {
+          const open = expanded.has(s.id);
+          h += `<li><button class="row st ${open ? "open" : ""} ${sel && sel.id === s.id ? "sel" : ""}" data-id="${s.id}" title="${esc(s.name)}">${ic("chev", "chev")}<span class="num">${si + 1}</span><span class="nm">${esc(s.name)}</span>${flagFor(s.id)}<span class="cnt">${s.kids.length || ""}</span></button>`;
+          if (open)
+            for (const k of sortedKids(s)) {
+              h += `<button class="row kid ${k.kind === "story" ? "story" : ""} ${sel && sel.id === k.id ? "sel" : ""}" data-id="${k.id}" title="${esc(k.name)}">${ic(TYPE_IC[k.type] || "txt")}<span class="nm">${esc(k.name)}</span>${flagFor(k.id)}${k.entries ? `<span class="cnt">${k.entries.length}</span>` : ""}</button>`;
+            }
+          h += "</li>";
+        });
+        h +=
+          '</ul><div class="stub">Static stand-in for the station list. A dot marks a row with a problem.</div>';
+        L.innerHTML = h;
+      }
+      $("#left").addEventListener("click", (e) => {
+        const r = e.target.closest(".row");
+        if (!r) return;
+        const id = r.dataset.id;
+        if (r.classList.contains("st")) {
+          if (sel && sel.id === id) {
+            expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+            renderLeft();
+            return;
+          }
+          expanded.add(id);
+        }
+        select(id);
+        if (phone()) document.body.classList.remove("left-open");
+      });
+
+      function renderRight() {
+        const R = $("#right");
+        const g = getSel();
+        R.hidden = !g;
+        if (!g) {
+          R.innerHTML = "";
+          return;
+        }
+        const name = g.k ? g.k.name : g.s.name;
+        const sub =
+          g.kind === "station"
+            ? `Station ${g.si + 1}`
+            : `${g.k.type} in station ${g.si + 1}`;
+        let h = `<div class="rp-head">${ic(g.k ? TYPE_IC[g.k.type] || "txt" : "copy")}<div class="t"><b title="Click to rename">${esc(name)}</b><span>${esc(sub)}</span></div><button class="ic" id="rpClose" title="Close (Escape)">${ic("x")}</button></div>`;
+        if (g.kind === "station") {
+          h += `<div class="sec"><h4>Position</h4><div class="fld"><div>E <b>+0.0 m</b></div><div>N <b>+0.0 m</b></div><div>Radius <b>${g.s.radius} m</b></div><div>Heading <b>0 deg</b></div></div></div>`;
+          h += `<div class="sec"><h4>Contents</h4>${g.s.kids.length ? `${g.s.kids.length} item${g.s.kids.length > 1 ? "s" : ""}` : '<div class="warnbox">Nothing here yet. Visitors would arrive at an empty station.</div>'}</div>`;
+        } else if (g.kind === "story") {
+          h += `<div class="sec"><h4>Entries</h4><ol class="entries">${g.k.entries.map((e, i) => `<li class="${sel.entry === i ? "hl" : ""}">${esc(e.name)}<span>${esc(e.type)}</span></li>`).join("")}</ol>`;
+          const bad = g.k.entries.findIndex((e) => e.noAnswer);
+          if (bad >= 0)
+            h += `<div class="warnbox err">Entry ${bad + 1}: no answer is marked as correct.</div>`;
+          h += "</div>";
+        } else {
+          h += `<div class="sec"><h4>Position</h4><div class="fld"><div>E <b>+3.2 m</b></div><div>N <b>-1.4 m</b></div><div>Height <b>${(g.k.float || 0).toFixed(1)} m</b></div><div>Heading <b>35 deg</b></div></div>${g.k.float > 0.05 ? `<div class="warnbox">${g.k.float.toFixed(1)} m above the ground.</div>` : ""}</div>`;
+          if (g.k.zone)
+            h += `<div class="sec"><h4>Sound zone</h4><div class="fld"><div>Radius <b>${g.k.zone} m</b></div><div>Station <b>${g.s.radius} m</b></div></div>${g.k.zone > g.s.radius ? '<div class="warnbox">The zone reaches past the station radius.</div>' : ""}</div>`;
+        }
+        h += '<div class="stub">Static stand-in for the context panel.</div>';
+        R.innerHTML = h;
+        $("#rpClose").onclick = () => select(null);
+      }
+
+      function select(id, entry) {
+        sel = id ? { id, entry } : null;
+        const g = getSel();
+        if (g) expanded.add(g.s.id);
+        if (g) mapFlash = { id: g.s.id, until: performance.now() + 900 };
+        changed();
+      }
+
+      // ---------------------------------------------------------------- context actions (centre-right of the bar)
+      let actsKey = "";
+      function renderActs() {
+        const g = getSel();
+        const key = g ? g.kind + ":" + sel.id : "";
+        if (key === actsKey) return;
+        actsKey = key;
+        const A = $("#acts");
+        A.innerHTML = "";
+        if (!g) return;
+        const add = (icn, label, title, fn) => {
+          const b = document.createElement("button");
+          b.className = "sact";
+          b.title = title;
+          b.innerHTML = ic(icn) + `<span class="lbl">${label}</span>`;
+          b.onclick = fn;
+          A.append(b);
+        };
+        add(
+          "dup",
+          "Duplicate",
+          "Duplicate the selection (Ctrl+D)",
+          duplicateSel,
+        );
+        if (g.kind === "item")
+          add(
+            "align",
+            "Align to station",
+            "Turn it to face the way its station faces",
+            () => {
+              const n = g.k.name;
+              record(`Aligned "${n}" to its station`, noop, noop);
+              toast(`"${n}" now faces the way its station faces`);
+            },
+          );
+        if (g.kind !== "story")
+          add(
+            "copy",
+            "Copy position",
+            "Copy the position and heading as text",
+            () => {
+              const txt =
+                g.kind === "station"
+                  ? `Station ${g.si + 1}: E +0.0 m, N +0.0 m, heading 0 deg`
+                  : `E +3.2 m, N -1.4 m, height ${(g.k.float || 0).toFixed(1)} m, heading 35 deg`;
+              try {
+                navigator.clipboard &&
+                  navigator.clipboard.writeText(txt).catch(() => {});
+              } catch (e) {
+                /* clipboard unavailable */
+              }
+              toast("Position copied: " + txt);
+            },
+          );
+      }
+      function duplicateSel() {
+        const g = getSel();
+        if (!g) return;
+        if (g.kind === "station") {
+          const copy = JSON.parse(JSON.stringify(g.s));
+          copy.id = "s" + uid++;
+          copy.name = g.s.name + " (copy)";
+          copy.x += 30;
+          copy.z += 18;
+          copy.kids.forEach((k) => {
+            k.id = "k" + uid++;
+          });
+          const at = g.si + 1;
+          record(
+            `Duplicated station "${g.s.name}"`,
+            () => S.stations.splice(at, 0, copy),
+            () => {
+              S.stations.splice(S.stations.indexOf(copy), 1);
+              if (sel && find(sel.id) == null) sel = null;
+            },
+          );
+        } else {
+          const copy = JSON.parse(JSON.stringify(g.k));
+          copy.id = "k" + uid++;
+          copy.name = g.k.name + " (copy)";
+          const s = g.s;
+          const at = g.ki + 1;
+          record(
+            `Duplicated "${g.k.name}"`,
+            () => s.kids.splice(at, 0, copy),
+            () => {
+              s.kids.splice(s.kids.indexOf(copy), 1);
+              if (sel && find(sel.id) == null) sel = null;
+            },
+          );
+        }
+        toast("Duplicated");
+      }
+
+      // ---------------------------------------------------------------- map loading simulation
+      const TILE = 50;
+      const cam = { x: 0, z: -30, H: 70, zoom: 1 };
+      const loaded = new Map(); // "i,j" -> time loaded
+      const M = {
+        queue: [],
+        rate: 1.4,
+        acc: 0,
+        wait: 0,
+        waitTotal: 0,
+        paused: false,
+        sinceStart: 0,
+        armed: true,
+        batches: 0,
+        batch: 0,
+        done: 0,
+        terrain: { left: 0, total: 0, acc: 0 },
+        bld: { left: 0, total: 0, acc: 0 },
+        readyAt: 0,
+        retries: 0,
+      };
+      function visibleCells() {
+        const { w, h } = viewSize();
+        const f = focal(h);
+        const out = [];
+        const j0 = Math.floor((cam.z + 12) / TILE),
+          j1 = Math.floor((cam.z + 380) / TILE);
+        for (let j = j0; j <= j1; j++) {
+          const far = (j + 1) * TILE - cam.z;
+          const half = ((w / 2) * far) / f + TILE;
+          const i0 = Math.floor((cam.x - half) / TILE),
+            i1 = Math.floor((cam.x + half) / TILE);
+          for (
+            let i = Math.max(i0, Math.floor(cam.x / TILE) - 9);
+            i <= Math.min(i1, Math.floor(cam.x / TILE) + 9);
+            i++
+          )
+            out.push(i + "," + j);
+        }
+        return out;
+      }
+      function requeue(initial) {
+        const vis = visibleCells();
+        const inQ = new Set(M.queue);
+        let added = 0;
+        for (const c of vis)
+          if (!loaded.has(c) && !inQ.has(c)) {
+            M.queue.push(c);
+            added++;
+          }
+        if (!added) return;
+        const idle =
+          M.batch === M.done && !M.terrain.left && !M.bld.left && !M.wait;
+        if (idle) {
+          M.batch = 0;
+          M.done = 0;
+          M.terrain.total = 0;
+          M.bld.total = 0;
+          M.batches++;
+          M.sinceStart = 0;
+          if (!initial) M.armed = M.batches % 2 === 0;
+        }
+        M.batch += added;
+        const t = Math.ceil(added / 4),
+          b = Math.ceil(added / 3);
+        M.terrain.left += t;
+        M.terrain.total += t;
+        M.bld.left += b;
+        M.bld.total += b;
+        M.readyAt = 0;
+      }
+      function loaderTick(dt) {
+        if (M.paused) return;
+        if (M.wait > 0) {
+          M.wait = Math.max(0, M.wait - dt);
+          if (!M.wait) toast("Street map: loading again");
+        } else if (M.queue.length) {
+          M.acc += dt * M.rate;
+          while (M.acc >= 1 && M.queue.length) {
+            M.acc -= 1;
+            const idx = Math.floor(Math.random() * Math.min(M.queue.length, 6)); // roughly nearest first
+            const c = M.queue.splice(idx, 1)[0];
+            loaded.set(c, performance.now());
+            M.done++;
+            M.sinceStart++;
+            mapDirty = true;
+            if (M.armed && M.sinceStart >= 4 && M.queue.length) {
+              M.armed = false;
+              M.wait = M.waitTotal = 18;
+              M.acc = 0;
+              break;
+            }
+          }
+        }
+        for (const [L, rate] of [
+          [M.terrain, 1.6],
+          [M.bld, 0.9],
+        ])
+          if (L.left > 0) {
+            L.acc += dt * rate;
+            while (L.acc >= 1 && L.left > 0) {
+              L.acc -= 1;
+              L.left--;
+            }
+          }
+        if (mapBusy() === false && !M.readyAt) M.readyAt = Date.now();
+      }
+      const mapBusy = () =>
+        M.queue.length > 0 ||
+        M.wait > 0 ||
+        M.terrain.left > 0 ||
+        M.bld.left > 0;
+      function fmtEta(sec) {
+        sec = Math.ceil(sec);
+        if (sec < 60) return `~${Math.max(1, Math.round(sec / 5) * 5 || 1)} s`;
+        return `~${Math.round(sec / 60)} min`;
+      }
+      function etas() {
+        const street = M.queue.length / M.rate + M.wait;
+        return {
+          street,
+          all: Math.max(street, M.terrain.left / 1.6, M.bld.left / 0.9),
+        };
+      }
+
+      // ---------------------------------------------------------------- performance simulation
+      const P = { samples: [], slowAt: -1e9, slowPeak: 0, calls: 212, tris: 184 };
+      for (let i = 0; i < 120; i++) P.samples.push(9 + Math.random() * 4);
+      function perfTick() {
+        let v = 8.5 + Math.random() * 4.5;
+        const decoding = M.queue.length && !M.wait && !M.paused;
+        if (decoding && Math.random() < 0.7) v += 12 + Math.random() * 26;
+        if (Math.random() < 0.015) v += 30;
+        P.samples.push(v);
+        if (P.samples.length > 120) P.samples.shift();
+        P.calls = 190 + loaded.size + Math.round(Math.random() * 6);
+        P.tris = 150 + Math.round(loaded.size * 0.45);
+        const a8 = avg(8);
+        if (a8 > 22) {
+          // the item reports the worst stretch of this slow spell, not the latest frame
+          P.slowPeak = Date.now() - P.slowAt < 4000 ? Math.max(P.slowPeak, a8) : a8;
+          P.slowAt = Date.now();
+        }
+      }
+      const avg = (n) => {
+        const a = P.samples.slice(-n);
+        return a.reduce((x, y) => x + y, 0) / a.length;
+      };
+
+      // ---------------------------------------------------------------- status items + drawers
+      const KINDS = ["map", "problems", "history", "perf"];
+      const TITLES = {
+        map: "Map loading",
+        problems: "Problems",
+        history: "History",
+        perf: "Performance",
+      };
+      const always = {
+        map: false,
+        problems: false,
+        history: false,
+        perf: false,
+      };
+      try {
+        Object.assign(
+          always,
+          JSON.parse(localStorage.getItem("sd-always") || "{}"),
+        );
+      } catch (e) {
+        /* storage unavailable */
+      }
+      const D = {};
+      const SIZE = {
+        map: [360, 250],
+        problems: [420, 260],
+        history: [340, 280],
+        perf: [360, 270],
+      };
+      let zTop = 46;
+      const item = (k) => $(`.sitem[data-k="${k}"]`);
+
+      function hasNews(k) {
+        if (k === "map")
+          return mapBusy() || (M.readyAt && Date.now() - M.readyAt < 2500);
+        if (k === "problems") return problems.length > 0;
+        if (k === "history") return H.steps.length > 0;
+        if (k === "perf") return Date.now() - P.slowAt < 4000;
+        return false;
+      }
+      function itemContent(k) {
+        if (k === "map") {
+          if (!mapBusy())
+            return {
+              icon: ic("ok"),
+              cls: "good",
+              f: "Map ready",
+              m: "Map ready",
+              s: "",
+              title: "All map tiles are loaded",
+            };
+          const e = etas();
+          if (M.paused)
+            return {
+              icon: ic("pause"),
+              cls: "",
+              f: `Map loading paused, <b>${M.queue.length}</b> tiles left`,
+              m: `Paused, ${M.queue.length} left`,
+              s: `${M.queue.length}`,
+              title: "Map loading is paused",
+            };
+          if (M.wait > 0)
+            return {
+              icon: ic("clock"),
+              cls: "att",
+              f: `Street map busy, retry in <b>${Math.ceil(M.wait)} s</b>`,
+              m: `Busy, retry in ${Math.ceil(M.wait)} s`,
+              s: `${Math.ceil(M.wait)} s`,
+              title: "The street map server asked to slow down",
+            };
+          if (M.queue.length)
+            return {
+              icon: '<span class="spin"></span>',
+              cls: "",
+              f: `Street map: <b>${M.queue.length}</b> tiles loading, ${fmtEta(e.street)}`,
+              m: `${M.queue.length} tiles, ${fmtEta(e.street)}`,
+              s: `${M.queue.length}`,
+              title: "Street map tiles are loading",
+            };
+          const n = M.terrain.left + M.bld.left;
+          return {
+            icon: '<span class="spin"></span>',
+            cls: "",
+            f: `Terrain and buildings: <b>${n}</b> left, ${fmtEta(e.all)}`,
+            m: `${n} left, ${fmtEta(e.all)}`,
+            s: `${n}`,
+            title: "Terrain and building tiles are loading",
+          };
+        }
+        if (k === "problems") {
+          const n = problems.length;
+          const errs = problems.filter((p) => p.sev === "err").length;
+          if (!n)
+            return {
+              icon: ic("ok"),
+              cls: "good",
+              f: "No problems",
+              m: "No problems",
+              s: "0",
+              title: "No problems found",
+            };
+          return {
+            icon: ic(errs ? "err" : "warn"),
+            cls: errs ? "bad" : "att",
+            f: `<b>${n}</b> problem${n > 1 ? "s" : ""}`,
+            m: `${n} problem${n > 1 ? "s" : ""}`,
+            s: `${n}`,
+            title: `${errs} error${errs === 1 ? "" : "s"}, ${n - errs} warning${n - errs === 1 ? "" : "s"} (Ctrl+Shift+M)`,
+          };
+        }
+        if (k === "history") {
+          const u = H.ptr,
+            r = H.steps.length - H.ptr;
+          const f = r
+            ? `Undo <b>${u}</b>, redo <b>${r}</b>`
+            : `Undo <b>${u}</b>`;
+          return {
+            icon: ic("hist"),
+            cls: "",
+            f,
+            m: r ? `Undo ${u}, redo ${r}` : `Undo ${u}`,
+            s: `${u}`,
+            title: "History: jump to any step",
+          };
+        }
+        const slow = Date.now() - P.slowAt < 4000;
+        const a = Math.round(slow ? P.slowPeak : avg(8));
+        return {
+          icon: ic("pulse"),
+          cls: slow ? "att" : "",
+          f: slow ? `Slow frames, up to <b>${a} ms</b>` : `Frames: <b>${a} ms</b>`,
+          m: `${a} ms`,
+          s: `${a} ms`,
+          title: "Performance: frame time, draw calls",
+        };
+      }
+      const lastItemHtml = {};
+      function renderStatus() {
+        for (const k of KINDS) {
+          const b = item(k);
+          const d = D[k];
+          const show = hasNews(k) || always[k] || d.open || d.pinned;
+          b.hidden = !show;
+          if (!show) continue;
+          const c = itemContent(k);
+          const html = `${c.icon}<span class="tx"><span class="f">${c.f}</span><span class="m">${esc(c.m)}</span><span class="s">${esc(c.s)}</span></span>`;
+          if (lastItemHtml[k] !== html) {
+            b.innerHTML = html;
+            lastItemHtml[k] = html;
+          }
+          b.className = `sitem ${c.cls} ${d.open && !d.pinned ? "open" : ""} ${d.pinned ? "pinned" : ""}`;
+          b.title = c.title + (d.pinned ? " (pinned)" : "");
+          b.setAttribute("aria-expanded", String(d.open));
+          b.setAttribute("aria-label", `${TITLES[k]}: ${c.m}`);
+        }
+        fitStatus();
+        // a drawer follows its item when the bar's layout shifts
+        for (const k of KINDS) if (D[k].open && !D[k].pinned) placeAnchored(k);
+        // the accent loading line under the top bar
+        const frac = M.batch
+          ? (M.done +
+              (M.terrain.total - M.terrain.left) +
+              (M.bld.total - M.bld.left)) /
+            (M.batch + M.terrain.total + M.bld.total)
+          : 1;
+        $("#load i").style.width = (mapBusy() ? frac * 100 : 100) + "%";
+        $("#load").setAttribute(
+          "aria-valuenow",
+          String(Math.round((mapBusy() ? frac : 1) * 100)),
+        );
+      }
+
+      function fitStatus() {
+        const st = $("#status");
+        const vis = [...st.children].filter((c) => !c.hidden);
+        for (const lv of ["f", "m", "s"]) {
+          st.dataset.lv = lv;
+          const need = vis.reduce((a, c) => a + c.offsetWidth, 0);
+          if (need <= st.clientWidth + 1) break;
+        }
+      }
+      function makeDrawer(k) {
+        const el = document.createElement("section");
+        el.className = "drawer";
+        el.id = "dr-" + k;
+        el.hidden = true;
+        el.setAttribute("role", "dialog");
+        el.setAttribute("aria-label", TITLES[k]);
+        el.innerHTML = `<div class="rz" title="Drag to resize"></div>
+    <header class="dh"><span class="grip"></span><span class="ttl">${TITLES[k]}</span><span class="sub"></span>
+      <button class="ic pin" title="Pin as a floating window">${ic("pin")}</button>
+      <button class="ic cls" title="Close (Escape)">${ic("x")}</button></header>
+    <div class="db"></div><div class="corner" title="Drag to resize"></div>`;
+        document.body.append(el);
+        D[k] = {
+          el,
+          open: false,
+          pinned: false,
+          w: SIZE[k][0],
+          h: SIZE[k][1],
+          body: $(".db", el),
+          sub: $(".sub", el),
+          built: false,
+        };
+        $(".cls", el).onclick = () => closeDrawer(k, true);
+        $(".pin", el).onclick = () => (D[k].pinned ? dock(k) : pin(k));
+        el.addEventListener("pointerdown", () => {
+          if (D[k].pinned) front(k);
+        });
+        setupResize(k);
+      }
+      function front(k) {
+        D[k].el.style.zIndex = ++zTop;
+      }
+      function placeAnchored(k) {
+        const d = D[k];
+        const r = item(k).getBoundingClientRect();
+        const el = d.el;
+        const topLimit = $("#work").getBoundingClientRect().top + 8;
+        const maxH = Math.max(120, r.top - topLimit);
+        if (phone()) {
+          el.style.left = "0px";
+          el.style.width = innerWidth + "px";
+          el.style.height =
+            Math.min(d.h, Math.round(innerHeight * 0.6), maxH) + "px";
+        } else {
+          const w = Math.min(d.w, innerWidth - 16);
+          let left =
+            r.left + r.width / 2 > innerWidth / 2 ? r.right - w : r.left; // rise from the item, growing towards the middle
+          left = clamp(left, 8, innerWidth - w - 8);
+          el.style.left = left + "px";
+          el.style.width = w + "px";
+          el.style.height = Math.min(d.h, maxH) + "px";
+        }
+        el.style.top = "auto";
+        el.style.bottom = innerHeight - r.top + "px";
+      }
+      function openDrawer(k) {
+        const d = D[k];
+        if (d.pinned) {
+          front(k);
+          d.el.classList.remove("flash");
+          void d.el.offsetWidth;
+          d.el.classList.add("flash");
+          return;
+        }
+        for (const o of KINDS)
+          if (o !== k && D[o].open && !D[o].pinned) closeDrawer(o);
+        d.open = true;
+        d.el.hidden = false;
+        d.el.classList.remove("pinned");
+        $(".pin", d.el).innerHTML = ic("pin");
+        $(".pin", d.el).title = "Pin as a floating window";
+        renderStatus(); // the item must be visible before we measure it
+        placeAnchored(k);
+        front(k);
+        renderDrawer(k, true);
+        const first = $(".prow, .hrow.cur, button", d.body) || $(".cls", d.el);
+        first.focus({ preventScroll: true });
+      }
+      function closeDrawer(k, refocus) {
+        const d = D[k];
+        if (!d.open) return;
+        d.open = false;
+        d.pinned = false;
+        d.el.hidden = true;
+        d.el.classList.remove("pinned");
+        d.built = false;
+        renderStatus();
+        if (refocus && !item(k).hidden) item(k).focus({ preventScroll: true });
+      }
+      function toggleDrawer(k) {
+        const d = D[k];
+        if (d.open && !d.pinned) closeDrawer(k, true);
+        else openDrawer(k);
+      }
+      function pin(k) {
+        if (phone()) return;
+        const d = D[k];
+        const el = d.el;
+        const r = el.getBoundingClientRect();
+        const v = $("#view").getBoundingClientRect();
+        const w = Math.min(r.width, v.width - 16),
+          h = Math.min(r.height, v.height - 16);
+        // pinned windows fly up to the view's top right, side by side from the right;
+        // the bottom stays free for the next drawer. No free slot: cascade.
+        const others = KINDS.filter((o) => o !== k && D[o].pinned).map((o) =>
+          // the target rect, not the live one: a window may still be flying there
+          ({
+            left: parseFloat(D[o].el.style.left),
+            top: parseFloat(D[o].el.style.top),
+            right: parseFloat(D[o].el.style.left) + parseFloat(D[o].el.style.width),
+            bottom: parseFloat(D[o].el.style.top) + parseFloat(D[o].el.style.height),
+          }),
+        );
+        const free = (x, y) =>
+          !others.some((o) =>
+            overlap(o, { left: x, top: y, right: x + w, bottom: y + h }),
+          );
+        let y = v.top + 12;
+        let x = null;
+        for (let cx = v.right - w - 12; cx >= v.left + 8; cx -= 16)
+          if (free(cx, y)) {
+            x = cx;
+            break;
+          }
+        if (x == null) {
+          const n = others.length;
+          x = clamp(v.right - w - 12 - 24 * n, v.left + 8, v.right - w - 8);
+          y = clamp(v.top + 12 + 24 * n, v.top + 8, v.bottom - h - 8);
+        }
+        el.style.transition = "left .22s ease, top .22s ease";
+        setTimeout(() => (el.style.transition = ""), 260);
+        Object.assign(el.style, {
+          left: r.left + "px",
+          top: r.top + "px",
+          bottom: "auto",
+        });
+        void el.offsetWidth;
+        d.pinned = true;
+        el.classList.add("pinned");
+        Object.assign(el.style, {
+          left: x + "px",
+          top: y + "px",
+          bottom: "auto",
+          width: w + "px",
+          height: h + "px",
+        });
+        $(".pin", el).innerHTML = ic("dock");
+        $(".pin", el).title = "Dock back to the status bar";
+        front(k);
+        renderStatus();
+        toast(`${TITLES[k]} pinned: drag it by its header`);
+      }
+      function dock(k) {
+        const d = D[k];
+        d.pinned = false;
+        d.open = false;
+        d.el.classList.remove("pinned");
+        openDrawer(k);
+      }
+      const overlap = (a, b) =>
+        a.left < b.right &&
+        b.left < a.right &&
+        a.top < b.bottom &&
+        b.top < a.bottom;
+
+      function setupResize(k) {
+        const d = D[k];
+        const el = d.el;
+        const drag = (handle, onMove) =>
+          handle.addEventListener("pointerdown", (e) => {
+            if (e.button !== 0 || e.target.closest("button")) return;
+            e.preventDefault();
+            e.stopPropagation();
+            front(k);
+            const r = el.getBoundingClientRect();
+            const sx = e.clientX,
+              sy = e.clientY;
+            handle.setPointerCapture(e.pointerId);
+            const mv = (ev) => onMove(ev.clientX - sx, ev.clientY - sy, r);
+            const up = () => {
+              handle.removeEventListener("pointermove", mv);
+              handle.removeEventListener("pointerup", up);
+              handle.removeEventListener("pointercancel", up);
+            };
+            handle.addEventListener("pointermove", mv);
+            handle.addEventListener("pointerup", up);
+            handle.addEventListener("pointercancel", up);
+          });
+        const workTop = () => $("#work").getBoundingClientRect().top;
+        drag($(".rz", el), (dx, dy, r) => {
+          const minTop = workTop() + 8;
+          const h = clamp(r.height - dy, 110, r.bottom - minTop);
+          d.h = h;
+          el.style.height = h + "px";
+          if (d.pinned) el.style.top = r.bottom - h + "px";
+        });
+        drag($(".corner", el), (dx, dy, r) => {
+          const w = clamp(r.width + dx, 260, innerWidth - r.left - 4),
+            h = clamp(r.height + dy, 110, innerHeight - r.top - 4);
+          d.w = w;
+          d.h = h;
+          el.style.width = w + "px";
+          el.style.height = h + "px";
+        });
+        drag($(".dh", el), (dx, dy, r) => {
+          if (!d.pinned) return;
+          el.style.left = clamp(r.left + dx, 0, innerWidth - r.width) + "px";
+          el.style.top = clamp(r.top + dy, workTop(), innerHeight - 60) + "px";
+        });
+      }
+
+      // ---- drawer contents
+      function renderDrawer(k, full) {
+        const d = D[k];
+        if (!d.open) return;
+        if (k === "problems") return renderProblems(d);
+        if (k === "history") return renderHistory(d, full);
+        if (k === "map") return renderMap(d);
+        if (k === "perf") return renderPerf(d);
+      }
+      function renderProblems(d) {
+        const errs = problems.filter((p) => p.sev === "err").length;
+        d.sub.textContent = problems.length
+          ? `${errs} error${errs === 1 ? "" : "s"}, ${problems.length - errs} warning${problems.length - errs === 1 ? "" : "s"}`
+          : "";
+        if (!problems.length) {
+          d.body.innerHTML = `<div class="empty">${ic("ok")}<div>No problems. Every station has content and every quiz can be finished.</div></div>`;
+          return;
+        }
+        const focusedIdx = $$(".prow", d.body).indexOf(document.activeElement);
+        let h = "",
+          grp = "";
+        problems.forEach((p, i) => {
+          const g = p.sev === "err" ? "Errors: visitors get stuck" : "Warnings";
+          if (g !== grp) {
+            grp = g;
+            h += `<div class="pgrp">${g}</div>`;
+          }
+          const cur =
+            sel &&
+            sel.id === p.sel.id &&
+            (p.sel.entry == null || sel.entry === p.sel.entry);
+          h += `<div class="prow ${p.sev} ${cur ? "cur" : ""}" role="button" tabindex="0" data-i="${i}" title="Select it">${ic(p.sev === "err" ? "err" : "warn")}<span class="pt">${esc(p.text)}</span><span class="pw">${esc(p.where)}</span>${p.fix ? `<button class="btn fix" data-fix="${i}">${esc(p.fix.label)}</button>` : ""}</div>`;
+        });
+        d.body.innerHTML = h;
+        const rows = $$(".prow", d.body);
+        if (focusedIdx >= 0 && rows.length)
+          rows[Math.min(focusedIdx, rows.length - 1)].focus({
+            preventScroll: true,
+          });
+      }
+      document.addEventListener("click", (e) => {
+        const fix = e.target.closest("[data-fix]");
+        if (fix && fix.closest("#dr-problems")) {
+          const p = problems[+fix.dataset.fix];
+          if (p) {
+            select(p.sel.id, p.sel.entry);
+            p.fix.run();
+          }
+          return;
+        }
+        const row = e.target.closest("#dr-problems .prow");
+        if (row) {
+          const p = problems[+row.dataset.i];
+          if (p) select(p.sel.id, p.sel.entry);
+          return;
+        }
+        const hr = e.target.closest("#dr-history .hrow");
+        if (hr) {
+          jumpTo(+hr.dataset.k);
+          return;
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        const row = e.target.closest && e.target.closest(".prow, .hrow");
+        if (!row) return;
+        const list = $$(
+          row.classList.contains("prow") ? ".prow" : ".hrow",
+          row.parentElement,
+        );
+        const i = list.indexOf(row);
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const n =
+            list[
+              clamp(i + (e.key === "ArrowDown" ? 1 : -1), 0, list.length - 1)
+            ];
+          n.focus();
+        } else if (
+          (e.key === "Enter" || e.key === " ") &&
+          row.classList.contains("prow") &&
+          e.target === row
+        ) {
+          e.preventDefault();
+          row.click();
+        }
+      });
+
+      function renderHistory(d, full) {
+        const r = H.steps.length - H.ptr;
+        d.sub.textContent = `${H.ptr} to undo${r ? `, ${r} to redo` : ""}`;
+        const focusedK =
+          document.activeElement &&
+          document.activeElement.classList.contains("hrow")
+            ? +document.activeElement.dataset.k
+            : null;
+        let h = `<button class="hrow ${H.ptr === 0 ? "cur" : ""}" data-k="0" title="Go back to the tour as it was opened"><span class="dot"></span><span class="lb">Opened the tour</span><span class="tm">${ago(t0 - 11 * 60000)}</span></button>`;
+        H.steps.forEach((st, i) => {
+          const k = i + 1;
+          const cls = k === H.ptr ? "cur" : k > H.ptr ? "redo" : "";
+          h += `<button class="hrow ${cls}" data-k="${k}" title="${k > H.ptr ? "Redo up to here" : "Go back to right after this step"}"><span class="dot"></span><span class="lb">${esc(st.label)}</span><span class="tm">${ago(st.t)}</span></button>`;
+        });
+        d.body.innerHTML = h;
+        if (!d.foot) {
+          d.foot = document.createElement("div");
+          d.foot.className = "df";
+          d.foot.innerHTML =
+            '<button class="btn" data-h="u">Undo</button><button class="btn" data-h="r">Redo</button><span class="sp"></span><span>Click a step to jump there</span>';
+          d.el.append(d.foot);
+          d.foot.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-h]");
+            if (b) b.dataset.h === "u" ? undo() : redo();
+          });
+          d.el.insertBefore(d.foot, $(".corner", d.el));
+        }
+        $('[data-h="u"]', d.foot).disabled = !H.ptr;
+        $('[data-h="r"]', d.foot).disabled = !r;
+        const cur = $(".hrow.cur", d.body);
+        if (cur) cur.scrollIntoView({ block: "nearest" });
+        if (focusedK != null) {
+          const f = $(`.hrow[data-k="${focusedK}"]`, d.body);
+          if (f) f.focus({ preventScroll: true });
+        }
+      }
+
+      function renderMap(d) {
+        if (!d.built) {
+          d.built = true;
+          d.body.innerHTML = `<div class="banner" data-f="banner">${ic("clock")}<span class="bt">The street map server asked us to slow down. Trying again in <b data-f="wait">18 s</b>.</span><button class="btn" data-m="retry">Try now</button></div>
+      ${["street", "terrain", "bld"].map((id) => `<div class="layer" data-l="${id}"><div class="lh"><b>${{ street: "Street map tiles", terrain: "Terrain heights", bld: "Buildings" }[id]}</b><span data-f="${id}"></span></div><div class="bar"><i data-f="${id}Bar"></i></div></div>`).join("")}
+      <div class="mnote" data-f="note"></div>`;
+          if (!d.foot) {
+            d.foot = document.createElement("div");
+            d.foot.className = "df";
+            d.foot.innerHTML =
+              '<button class="btn" data-m="pause">Pause</button><span class="sp"></span><button class="btn" data-m="again" title="Forget the loaded tiles and load them again (to replay this demo)">Load again</button>';
+            d.el.insertBefore(d.foot, $(".corner", d.el));
+            d.foot.addEventListener("click", mapAction);
+          }
+          d.body.addEventListener("click", mapAction);
+        }
+        const f = (n) => $(`[data-f="${n}"]`, d.body);
+        const e = etas();
+        d.sub.textContent = !mapBusy()
+          ? "everything loaded"
+          : M.paused
+            ? "paused"
+            : `about ${fmtEta(e.all).slice(1)} left`;
+        f("banner").hidden = !(M.wait > 0);
+        f("wait").textContent = Math.ceil(M.wait) + " s";
+        const sDone = M.done,
+          sTot = M.batch;
+        const layer = (id, done, tot, txt, waiting) => {
+          const L = $(`[data-l="${id}"]`, d.body);
+          L.classList.toggle("done", done >= tot);
+          L.classList.toggle("wait", !!waiting);
+          f(id).textContent = txt;
+          f(id + "Bar").style.width = (tot ? (done / tot) * 100 : 100) + "%";
+        };
+        layer(
+          "street",
+          sDone,
+          sTot,
+          M.queue.length
+            ? M.wait > 0
+              ? `waiting, ${M.queue.length} left`
+              : `${M.queue.length} left, ${fmtEta(e.street)}`
+            : `${loaded.size} loaded`,
+          M.wait > 0,
+        );
+        layer(
+          "terrain",
+          M.terrain.total - M.terrain.left,
+          M.terrain.total,
+          M.terrain.left
+            ? `${M.terrain.left} left, ${fmtEta(M.terrain.left / 1.6)}`
+            : "done",
+        );
+        layer(
+          "bld",
+          M.bld.total - M.bld.left,
+          M.bld.total,
+          M.bld.left
+            ? `${M.bld.left} left, ${fmtEta(M.bld.left / 0.9)}`
+            : "done",
+        );
+        f("note").textContent = mapBusy()
+          ? "Editing goes on while tiles load. Moving the camera loads the new area."
+          : "All tiles in view are loaded. Move the camera to load more.";
+        const pb = $('[data-m="pause"]', d.foot);
+        pb.textContent = M.paused ? "Resume" : "Pause";
+        pb.disabled = !mapBusy();
+      }
+      function mapAction(e) {
+        const b = e.target.closest("[data-m]");
+        if (!b) return;
+        if (b.dataset.m === "retry") {
+          M.wait = 0;
+          M.retries++;
+          toast("Street map: trying again now");
+        }
+        if (b.dataset.m === "pause") {
+          M.paused = !M.paused;
+          toast(M.paused ? "Map loading paused" : "Map loading resumed");
+        }
+        if (b.dataset.m === "again") {
+          loaded.clear();
+          M.queue = [];
+          M.batch = M.done = 0;
+          M.terrain = { left: 0, total: 0, acc: 0 };
+          M.bld = { left: 0, total: 0, acc: 0 };
+          M.wait = 0;
+          M.paused = false;
+          M.batches = 1;
+          requeue();
+          M.armed = true;
+          M.sinceStart = 0;
+          mapDirty = true;
+        }
+        tickUI();
+      }
+
+      function renderPerf(d) {
+        if (!d.built) {
+          d.built = true;
+          d.body.innerHTML = `<div class="pstats"><div>Now<b data-f="now"></b></div><div>Average<b data-f="avg"></b></div><div>Worst<b data-f="worst"></b></div></div>
+      <div class="spark" data-f="spark"><svg viewBox="0 0 240 72" preserveAspectRatio="none" aria-label="Frame time over the last 30 seconds">
+        <line x1="0" x2="240" y1="${y(16.7)}" y2="${y(16.7)}" stroke="#41454d" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>
+        <line x1="0" x2="240" y1="${y(33.3)}" y2="${y(33.3)}" stroke="#41454d" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>
+        <path data-f="area" fill="rgba(233,162,59,.12)"/><polyline data-f="line" fill="none" stroke="#e9a23b" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+        <line data-f="cross" y1="0" y2="72" stroke="#9aa0a6" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/></svg>
+        <span class="ln" style="top:${(y(16.7) / 72) * 100}%">60 fps</span><span class="ln" style="top:${(y(33.3) / 72) * 100}%">30 fps</span><span class="tip" data-f="tip" hidden></span></div>
+      <div class="pgrid"><div>Draw calls<b data-f="calls"></b></div><div>Triangles<b data-f="tris"></b></div><div>Map tiles in memory<b data-f="tiles"></b></div><div>Stations drawn<b data-f="st"></b></div></div>
+      <div class="mnote">Frame time in milliseconds over the last 30 seconds; lower is smoother. Frames get slower while map tiles are decoded.</div>`;
+          if (!d.foot) {
+            d.foot = document.createElement("div");
+            d.foot.className = "df";
+            d.foot.innerHTML =
+              '<span>Hover the line to read a frame</span><span class="sp"></span><button class="btn" data-p="copy">Copy numbers</button>';
+            d.el.insertBefore(d.foot, $(".corner", d.el));
+            d.foot.addEventListener("click", (e) => {
+              if (e.target.closest("[data-p]")) {
+                const txt = `frame avg ${avg(40).toFixed(1)} ms, worst ${Math.max(...P.samples).toFixed(1)} ms, draw calls ${P.calls}, triangles ${P.tris}k, tiles ${loaded.size}`;
+                try {
+                  navigator.clipboard &&
+                    navigator.clipboard.writeText(txt).catch(() => {});
+                } catch (err) {
+                  /* clipboard unavailable */
+                }
+                toast("Copied: " + txt);
+              }
+            });
+          }
+          const sp = $('[data-f="spark"]', d.body);
+          sp.addEventListener("pointermove", (e) => {
+            const r = sp.getBoundingClientRect();
+            perfHover = clamp((e.clientX - r.left) / r.width, 0, 1);
+            renderPerf(d);
+          });
+          sp.addEventListener("pointerleave", () => {
+            perfHover = null;
+            renderPerf(d);
+          });
+        }
+        const f = (n) => $(`[data-f="${n}"]`, d.body);
+        const s = P.samples;
+        const n = s.length;
+        const pts = s.map(
+          (v, i) => `${((i / (n - 1)) * 240).toFixed(1)},${y(v).toFixed(1)}`,
+        );
+        f("line").setAttribute("points", pts.join(" "));
+        f("area").setAttribute("d", `M0,72 L${pts.join(" L")} L240,72 Z`);
+        f("now").textContent = s[n - 1].toFixed(0) + " ms";
+        f("avg").textContent = avg(40).toFixed(0) + " ms";
+        f("worst").textContent = Math.max(...s).toFixed(0) + " ms";
+        f("calls").textContent = P.calls;
+        f("tris").textContent = P.tris + "k";
+        f("tiles").textContent = loaded.size;
+        f("st").textContent = S.stations.length;
+        d.sub.textContent =
+          Date.now() - P.slowAt < 4000
+            ? "slow frames right now"
+            : "running smoothly";
+        const tip = f("tip"),
+          cross = f("cross");
+        if (perfHover == null) {
+          tip.hidden = true;
+          cross.setAttribute("visibility", "hidden");
+        } else {
+          const i = Math.round(perfHover * (n - 1));
+          const secAgo = ((n - 1 - i) * 0.25).toFixed(1);
+          tip.hidden = false;
+          tip.textContent = `${s[i].toFixed(1)} ms, ${secAgo} s ago`;
+          tip.style.left = clamp(perfHover * 100, 18, 82) + "%";
+          const x = (i / (n - 1)) * 240;
+          cross.setAttribute("x1", x);
+          cross.setAttribute("x2", x);
+          cross.setAttribute("visibility", "visible");
+        }
+      }
+      let perfHover = null;
+      function y(ms) {
+        return 72 - (clamp(ms, 0, 60) / 60) * 68;
+      }
+
+      // ---- status item clicks, outside clicks, Escape
+      $$(".sitem[data-k]").forEach((b) =>
+        b.addEventListener("click", () => toggleDrawer(b.dataset.k)),
+      );
+      document.addEventListener(
+        "pointerdown",
+        (e) => {
+          for (const k of KINDS) {
+            const d = D[k];
+            if (
+              d.open &&
+              !d.pinned &&
+              !d.el.contains(e.target) &&
+              !item(k).contains(e.target) &&
+              !e.target.closest(".menu") &&
+              !e.target.closest("[data-menu]")
+            )
+              closeDrawer(k);
+          }
+          if (
+            !e.target.closest(".menu") &&
+            !e.target.closest("[data-menu]") &&
+            !e.target.closest("#bMore")
+          )
+            closeMenus();
+        },
+        true,
+      );
+
+      // ---------------------------------------------------------------- menus
+      const MENUS = {
+        mFile: () => [
+          ["Save", "Ctrl+S", save],
+          ["Download tour file", "", () => toast("Not part of this prototype")],
+        ],
+        mEdit: () => [
+          ["Undo", "Ctrl+Z", () => undo()],
+          ["Redo", "Ctrl+Shift+Z", () => redo()],
+          ["Duplicate", "Ctrl+D", duplicateSel],
+        ],
+        mView: () => [
+          ["cap", "Status"],
+          ["Problems", "Ctrl+Shift+M", () => openDrawer("problems")],
+          ["Map loading", "", () => openDrawer("map")],
+          ["History", "Ctrl+H", () => openDrawer("history")],
+          ["Performance", "", () => openDrawer("perf")],
+          ["sep"],
+          ["Top view", "T", () => toast("The view stand-in has no top view")],
+        ],
+        mHelp: () => [
+          ["Mouse: drag the view to move the camera", "", noop],
+          ["Escape closes an open drawer", "", noop],
+        ],
+      };
+      const menuEl = document.createElement("div");
+      menuEl.className = "menu";
+      menuEl.hidden = true;
+      menuEl.setAttribute("role", "menu");
+      $("#menus").append(menuEl);
+      let menuOwner = null;
+      function openMenu(owner, rows, above) {
+        if (menuOwner === owner) {
+          closeMenus();
+          return;
+        }
+        closeMenus();
+        menuOwner = owner;
+        owner.setAttribute("aria-expanded", "true");
+        menuEl.innerHTML = "";
+        for (const r of rows) {
+          if (r[0] === "sep") {
+            menuEl.insertAdjacentHTML("beforeend", '<div class="sep"></div>');
+            continue;
+          }
+          if (r[0] === "cap") {
+            menuEl.insertAdjacentHTML(
+              "beforeend",
+              `<div class="cap">${esc(r[1])}</div>`,
+            );
+            continue;
+          }
+          if (r[0] === "html") {
+            menuEl.append(r[1]);
+            continue;
+          }
+          const b = document.createElement("button");
+          b.className = "mi";
+          b.setAttribute("role", "menuitem");
+          b.innerHTML = `<span>${esc(r[0])}</span>${r[1] ? `<kbd class="k">${esc(r[1])}</kbd>` : ""}`;
+          b.onclick = () => {
+            closeMenus();
+            r[2]();
+          };
+          menuEl.append(b);
+        }
+        menuEl.hidden = false;
+        const o = owner.getBoundingClientRect();
+        const mw = menuEl.offsetWidth,
+          mh = menuEl.offsetHeight;
+        menuEl.style.left =
+          clamp(above ? o.right - mw : o.left, 6, innerWidth - mw - 6) + "px";
+        menuEl.style.top = (above ? o.top - mh - 4 : o.bottom + 4) + "px";
+        const f = $(".mi", menuEl);
+        if (f) f.focus({ preventScroll: true });
+      }
+      function closeMenus() {
+        if (!menuOwner) return;
+        menuOwner.setAttribute("aria-expanded", "false");
+        menuOwner = null;
+        menuEl.hidden = true;
+      }
+      $$("[data-menu]").forEach((b) =>
+        b.addEventListener("click", () => openMenu(b, MENUS[b.dataset.menu]())),
+      );
+      $("#bMore").addEventListener("click", () => {
+        const rows = [["cap", "Status items"]];
+        for (const k of KINDS) {
+          const lab = document.createElement("label");
+          lab.className = "mi";
+          lab.innerHTML = `<span class="open-it" style="cursor:pointer">${TITLES[k]}</span><span class="muted" style="margin-left:auto;font-size:11px">always show</span><input type="checkbox" ${always[k] ? "checked" : ""} aria-label="Always show ${TITLES[k]}">`;
+          $("input", lab).addEventListener("change", (e) => {
+            always[k] = e.target.checked;
+            try {
+              localStorage.setItem("sd-always", JSON.stringify(always));
+            } catch (err) {
+              /* storage unavailable */
+            }
+            renderStatus();
+          });
+          $(".open-it", lab).addEventListener("click", (e) => {
+            e.preventDefault();
+            closeMenus();
+            openDrawer(k);
+          });
+          rows.push(["html", lab]);
+        }
+        rows.push(["sep"]);
+        rows.push([
+          "Close all pinned windows",
+          "",
+          () => KINDS.forEach((k) => D[k].pinned && closeDrawer(k)),
+        ]);
+        openMenu($("#bMore"), rows, true);
+      });
+
+      // ---------------------------------------------------------------- top bar, keys, toast
+      function save() {
+        S.dirty = false;
+        changed();
+        toast("Saved to tour.zip");
+      }
+      $("#bSave").onclick = save;
+      $("#bUndo").onclick = () => undo();
+      $("#bRedo").onclick = () => redo();
+      $("#bStations").onclick = () => {
+        const on = document.body.classList.toggle("left-open");
+        $("#bStations").setAttribute("aria-expanded", String(on));
+      };
+      let toastTimer = 0;
+      function toast(msg) {
+        const t = $("#toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+      }
+      window.addEventListener("keydown", (e) => {
+        const mod = e.ctrlKey || e.metaKey;
+        const k = e.key.toLowerCase();
+        if (e.key === "Escape") {
+          if (menuOwner) {
+            const o = menuOwner;
+            closeMenus();
+            o.focus();
+            return;
+          }
+          const open = KINDS.find((x) => D[x].open && !D[x].pinned);
+          if (open) {
+            closeDrawer(open, true);
+            return;
+          }
+          const pinnedFocus = KINDS.find(
+            (x) => D[x].pinned && D[x].el.contains(document.activeElement),
+          );
+          if (pinnedFocus) return; // pinned windows stay until closed
+          if (document.body.classList.contains("left-open")) {
+            document.body.classList.remove("left-open");
+            return;
+          }
+          if (sel) select(null);
+          return;
+        }
+        if (mod && k === "z") {
+          e.preventDefault();
+          e.shiftKey ? redo() : undo();
+        } else if (mod && k === "y") {
+          e.preventDefault();
+          redo();
+        } else if (mod && k === "s") {
+          e.preventDefault();
+          save();
+        } else if (mod && e.shiftKey && k === "m") {
+          e.preventDefault();
+          toggleDrawer("problems");
+        } else if (mod && k === "h") {
+          e.preventDefault();
+          toggleDrawer("history");
+        } else if (mod && k === "d") {
+          e.preventDefault();
+          duplicateSel();
+        }
+      });
+
+      // ---------------------------------------------------------------- 3D view stand-in (perspective ground plane with tiles)
+      const cv = $("#cv");
+      const ctx = cv.getContext("2d");
+      let mapDirty = true,
+        mapFlash = null;
+      function viewSize() {
+        const r = $("#view").getBoundingClientRect();
+        return { w: Math.max(50, r.width), h: Math.max(50, r.height) };
+      }
+      const focal = (h) => h * 0.78 * cam.zoom;
+      function hash(i, j) {
+        let x = (i * 374761393 + j * 668265263) | 0;
+        x = (x ^ (x >>> 13)) * 1274126177;
+        return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+      }
+      function draw(now) {
+        const dpr = devicePixelRatio || 1;
+        const { w, h } = viewSize();
+        if (
+          cv.width !== Math.round(w * dpr) ||
+          cv.height !== Math.round(h * dpr)
+        ) {
+          cv.width = Math.round(w * dpr);
+          cv.height = Math.round(h * dpr);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const f = focal(h);
+        const hor = h * 0.14;
+        const P2 = (x, z) => {
+          const dz = z - cam.z;
+          return dz < 6
+            ? null
+            : [w / 2 + ((x - cam.x) * f) / dz, hor + (cam.H * f) / dz];
+        };
+        const sky = ctx.createLinearGradient(0, 0, 0, hor + 30);
+        sky.addColorStop(0, "#1b2230");
+        sky.addColorStop(1, "#2a2f38");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#17191c";
+        ctx.fillRect(0, hor, w, h - hor);
+        let fading = false;
+        for (const c of visibleCells().reverse()) {
+          const [i, j] = c.split(",").map(Number);
+          const x0 = i * TILE,
+            z0 = j * TILE,
+            x1 = x0 + TILE,
+            z1 = z0 + TILE;
+          const a = P2(x0, Math.max(z0, cam.z + 7)),
+            b = P2(x1, Math.max(z0, cam.z + 7)),
+            cc = P2(x1, z1),
+            d = P2(x0, z1);
+          if (!a || !b || !cc || !d) continue;
+          const dz = (z0 + z1) / 2 - cam.z;
+          const fog = clamp(1 - dz / 420, 0.15, 1);
+          const lt = loaded.get(c);
+          let t = 0;
+          if (lt != null) {
+            t = clamp((now - lt) / 450, 0, 1);
+            if (t < 1) fading = true;
+          }
+          ctx.beginPath();
+          ctx.moveTo(a[0], a[1]);
+          ctx.lineTo(b[0], b[1]);
+          ctx.lineTo(cc[0], cc[1]);
+          ctx.lineTo(d[0], d[1]);
+          ctx.closePath();
+          ctx.fillStyle = t
+            ? `rgba(${Math.round(34 + 10 * t)},${Math.round(37 + 10 * t)},${Math.round(42 + 10 * t)},${fog})`
+            : `rgba(30,32,36,${fog})`;
+          ctx.fill();
+          ctx.strokeStyle = t
+            ? `rgba(20,22,25,${fog})`
+            : `rgba(55,58,64,${fog * 0.6})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          if (t) {
+            ctx.strokeStyle = `rgba(78,84,94,${fog * t})`;
+            ctx.lineWidth = Math.max(0.6, (2.2 * f) / dz / 6);
+            const hz = z0 + TILE * (0.25 + 0.5 * hash(i, j)),
+              vx = x0 + TILE * (0.2 + 0.6 * hash(j, i));
+            const p1 = P2(x0, hz),
+              p2 = P2(x1, hz),
+              q1 = P2(vx, Math.max(z0, cam.z + 7)),
+              q2 = P2(vx, z1);
+            ctx.beginPath();
+            if (p1 && p2) {
+              ctx.moveTo(p1[0], p1[1]);
+              ctx.lineTo(p2[0], p2[1]);
+            }
+            if (q1 && q2 && hash(i + 7, j) > 0.35) {
+              ctx.moveTo(q1[0], q1[1]);
+              ctx.lineTo(q2[0], q2[1]);
+            }
+            ctx.stroke();
+          }
+        }
+        // tour path
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "rgba(233,162,59,.45)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        S.stations.forEach((s, i) => {
+          const p = P2(s.x, s.z);
+          if (!p) return;
+          i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // stations, far first
+        const order = S.stations
+          .map((s, i) => [s, i])
+          .sort((a, b) => b[0].z - a[0].z);
+        hits = [];
+        const g = getSel();
+        for (const [s, i] of order) {
+          const p = P2(s.x, s.z);
+          if (!p) continue;
+          const dz = s.z - cam.z;
+          const rx = (s.radius * f) / dz,
+            ry = rx * (cam.H / Math.hypot(cam.H, dz)) * 1.2;
+          const isSel = g && g.s === s;
+          const hasProb = problems.some((pr) => find(pr.sel.id)?.s === s);
+          ctx.beginPath();
+          ctx.ellipse(p[0], p[1], rx, Math.max(2, ry), 0, 0, Math.PI * 2);
+          ctx.fillStyle = isSel
+            ? "rgba(233,162,59,.16)"
+            : "rgba(230,230,230,.05)";
+          ctx.fill();
+          ctx.strokeStyle = isSel ? "#e9a23b" : "rgba(230,230,230,.35)";
+          ctx.lineWidth = isSel ? 1.6 : 1;
+          ctx.stroke();
+          if (mapFlash && mapFlash.id === s.id && now < mapFlash.until) {
+            const k = 1 - (mapFlash.until - now) / 900;
+            fading = true;
+            ctx.beginPath();
+            ctx.ellipse(
+              p[0],
+              p[1],
+              rx * (1 + k * 0.8),
+              Math.max(2, ry) * (1 + k * 0.8),
+              0,
+              0,
+              Math.PI * 2,
+            );
+            ctx.strokeStyle = `rgba(233,162,59,${1 - k})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+          const top = p[1] - 30;
+          ctx.strokeStyle = "rgba(230,230,230,.5)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p[0], p[1]);
+          ctx.lineTo(p[0], top + 9);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(p[0], top, 9, 0, Math.PI * 2);
+          ctx.fillStyle = isSel ? "#e9a23b" : "#3a3e46";
+          ctx.fill();
+          ctx.strokeStyle = isSel ? "#f3c47e" : "#5a5f68";
+          ctx.stroke();
+          ctx.fillStyle = isSel ? "#1c1e22" : "#e6e6e6";
+          ctx.font = "600 10px Segoe UI, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(i + 1), p[0], top + 0.5);
+          if (hasProb) {
+            ctx.beginPath();
+            ctx.arc(p[0] + 8, top - 7, 3, 0, Math.PI * 2);
+            ctx.fillStyle = problems.some(
+              (pr) => pr.sev === "err" && find(pr.sel.id)?.s === s,
+            )
+              ? "#e07a74"
+              : "#e9a23b";
+            ctx.fill();
+          }
+          ctx.font = "11px Segoe UI, system-ui, sans-serif";
+          ctx.textAlign = "left";
+          let name = s.name;
+          const maxW = 150;
+          if (ctx.measureText(name).width > maxW) {
+            while (
+              name.length > 3 &&
+              ctx.measureText(name + "...").width > maxW
+            )
+              name = name.slice(0, -1);
+            name = name.trimEnd() + "...";
+          }
+          const tw = ctx.measureText(name).width;
+          ctx.fillStyle = "rgba(28,30,34,.85)";
+          ctx.fillRect(p[0] + 13, top - 8, tw + 10, 16);
+          ctx.fillStyle = isSel ? "#f3c47e" : "#e6e6e6";
+          ctx.fillText(name, p[0] + 18, top + 0.5);
+          hits.push({ id: s.id, x: p[0], y: top, w: tw + 24 });
+        }
+        return fading;
+      }
+      let hits = [];
+      function frame(now) {
+        if (
+          mapDirty ||
+          draw.fadingLast ||
+          (mapFlash && now < mapFlash.until + 50)
+        ) {
+          draw.fadingLast = draw(now);
+          mapDirty = false;
+        }
+        requestAnimationFrame(frame);
+      }
+      // pan by drag; a click without drag selects a station or clears the selection
+      let drag = null;
+      cv.addEventListener("pointerdown", (e) => {
+        drag = { x: e.clientX, y: e.clientY, moved: false };
+        cv.setPointerCapture(e.pointerId);
+      });
+      cv.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x,
+          dy = e.clientY - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+        drag.moved = true;
+        cv.classList.add("drag");
+        cam.x -= (dx * 0.45) / cam.zoom;
+        cam.z += (dy * 0.9) / cam.zoom;
+        drag.x = e.clientX;
+        drag.y = e.clientY;
+        mapDirty = true;
+      });
+      cv.addEventListener("pointerup", (e) => {
+        if (!drag) return;
+        const moved = drag.moved;
+        drag = null;
+        cv.classList.remove("drag");
+        if (moved) {
+          requeue();
+          tickUI();
+          return;
+        }
+        const r = cv.getBoundingClientRect();
+        const x = e.clientX - r.left,
+          yy = e.clientY - r.top;
+        const hit = [...hits]
+          .reverse()
+          .find(
+            (h) => Math.abs(yy - h.y) < 11 && x > h.x - 11 && x < h.x + h.w,
+          );
+        select(hit ? hit.id : null);
+      });
+      cv.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          cam.zoom = clamp(cam.zoom * (e.deltaY < 0 ? 1.1 : 0.9), 0.6, 2.2);
+          mapDirty = true;
+          requeue();
+          tickUI();
+        },
+        { passive: false },
+      );
+      $("#zin").onclick = () => {
+        cam.zoom = clamp(cam.zoom * 1.15, 0.6, 2.2);
+        mapDirty = true;
+      };
+      $("#zout").onclick = () => {
+        cam.zoom = clamp(cam.zoom / 1.15, 0.6, 2.2);
+        mapDirty = true;
+        requeue();
+        tickUI();
+      };
+      $("#compass").onclick = () => toast("North is already up");
+
+      // ---------------------------------------------------------------- glue
+      function changed() {
+        problems = computeProblems();
+        renderLeft();
+        renderRight();
+        renderActs();
+        renderStatus();
+        $("#unsaved").hidden = !S.dirty;
+        $("#bUndo").disabled = !H.ptr;
+        $("#bRedo").disabled = H.ptr >= H.steps.length;
+        for (const k of ["problems", "history"]) renderDrawer(k);
+        mapDirty = true;
+      }
+      function tickUI() {
+        renderStatus();
+        renderDrawer("map");
+      }
+      let last = performance.now();
+      setInterval(() => {
+        const now = performance.now();
+        const dt = Math.min(0.5, (now - last) / 1000);
+        last = now;
+        loaderTick(dt);
+        tickUI();
+      }, 100);
+      setInterval(() => {
+        perfTick();
+        renderStatus();
+        renderDrawer("perf");
+      }, 250);
+      window.addEventListener("resize", () => {
+        for (const k of KINDS) {
+          const d = D[k];
+          if (d.pinned && phone()) {
+            closeDrawer(k);
+            continue;
+          }
+          if (d.open && !d.pinned) placeAnchored(k);
+          if (d.pinned) {
+            const r = d.el.getBoundingClientRect();
+            d.el.style.left = clamp(r.left, 0, innerWidth - r.width) + "px";
+            d.el.style.top = clamp(r.top, 50, innerHeight - 60) + "px";
+          }
+        }
+        mapDirty = true;
+      });
+
+      KINDS.forEach(makeDrawer);
+      // start: most of the view is cached, the rest loads
+      for (const c of visibleCells())
+        if (hash(...c.split(",").map(Number)) > 0.2) loaded.set(c, -1e6);
+      M.batches = 1;
+      requeue(true);
+      M.armed = true;
+      changed();
+      requestAnimationFrame(frame);
+      // URL hook for screenshots: #open=problems,perf&pin=perf&sel=i3
+      (() => {
+        const q = new URLSearchParams(location.hash.slice(1));
+        if (q.get("notes") === "0") $("#notes").open = false;
+        if (q.get("sel")) select(q.get("sel"));
+        for (const k of (q.get("pin") || "").split(",").filter((x) => D[x])) {
+          openDrawer(k);
+          pin(k);
+        }
+        for (const k of (q.get("open") || "").split(",").filter((x) => D[x]))
+          openDrawer(k);
+      })();
+    </script>
+  </body>
+</html>
