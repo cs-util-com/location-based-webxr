@@ -5,8 +5,10 @@
  * arrows move the row that Enter adds (`aria-activedescendant`, the focus
  * staying in the field), a click adds a row, Escape and a press on the
  * backdrop close it with the focus back where it was (Escape goes no
- * further: the page's Escape would drop the selection), Tab closes it and
- * lets the focus move on.
+ * further: the page's Escape would drop the selection), Tab closes it with
+ * the focus back too and lets it move on from there (the palette is the
+ * page's last element: from its field the focus would wrap to the page's
+ * start).
  *
  * Ctrl+K opens it wherever the key is no field's: in a line field too (it
  * has no Ctrl+K of its own), not in a text of several lines or an editable
@@ -169,7 +171,7 @@ export function createAddPalette(deps: {
       event.stopPropagation();
       close(true);
     } else if (event.key === "Tab") {
-      close(false);
+      close(true);
     }
   });
   // A press on a row keeps the focus in the field; the click adds it.

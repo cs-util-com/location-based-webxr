@@ -111,3 +111,45 @@ test("a station added during a search is in the list, and the grips say they dra
   await expect(cards).toHaveCount(4);
   await expect(page.locator("#tree-body .card.sel")).toBeVisible();
 });
+
+test("Tab leaves the palette from where it was opened, not off the page's end", async ({
+  page,
+}) => {
+  // Why: the palette is the page's last element, so a Tab from its field,
+  // which closes it, wrapped to the page's first control (a browser with
+  // its own bar goes there first). Only a real browser's Tab can show it.
+  test.setTimeout(180_000);
+  await open3dAt(page, 1280);
+  const add = page.locator("#studio-add");
+  await add.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#add-palette-input")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#add-palette")).toBeHidden();
+  await expect(page.locator("#studio-help")).toBeFocused();
+});
+
+test("a station copied with Ctrl+D during a search is in the list", async ({
+  page,
+}) => {
+  // Why: the selection can be a station the search hides, and its copy
+  // matches the search no better, so the copy must clear it like every
+  // other way of making a station.
+  test.setTimeout(180_000);
+  await open3dAt(page, 1280);
+  const cards = page.locator("#tree-body .card[data-station]");
+  await expect(cards).toHaveCount(3);
+  await cards.first().locator(".head").click();
+  await expect(page.locator("#tree-body .card.sel")).toHaveCount(1);
+  const search = page.locator("#tree-search");
+  await search.fill("town hall");
+  await expect(cards).toHaveCount(1);
+  await search.blur();
+  await page.keyboard.press("Control+d");
+  await expect(
+    page.locator(".toast", { hasText: "Duplicated" }),
+  ).not.toHaveCount(0);
+  await expect(search).toHaveValue("");
+  await expect(cards).toHaveCount(4);
+  await expect(page.locator("#tree-body .card.sel")).toBeVisible();
+});

@@ -35,7 +35,7 @@ the add.
 - The focus stays in the field: the arrows move the active row (round at
   either end), a press on a row does not take the focus (its click adds).
 - Escape closes it and goes no further (the page's Escape would drop the
-  selection); Tab closes it and lets the focus move on; a press on the
+  selection); Tab closes it with the focus back and lets it move on from there; a press on the
   backdrop closes it with the focus back.
 - It closes before it adds: the add redraws the tree, and the focus must
   already be back where it was.
