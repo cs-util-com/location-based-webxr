@@ -198,7 +198,7 @@ describe("startDesktopSim", () => {
   // 2026-07-20: desktop showed no HUD elements while the phone AR mode did
   // (there the framework's arpose chain keeps the camera in the scene). This
   // pins the scene-graph wiring the status seam cannot see; the pixel-level
-  // proof lives in playwright-tests/hud-render.spec.js.
+  // proof lives in playwright-tests/smoke.spec.js.
   it("parents the camera into the scene so camera-attached HUD indicators render", () => {
     const h = makeHarness();
     h.step(0);

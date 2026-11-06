@@ -89,15 +89,6 @@ export function loadAppCss(): string {
 }
 
 /**
- * Clear the cached HTML and parsed DOM (useful for testing the loader itself).
- */
-export function clearHtmlCache(): void {
-  cachedIndexHtml = null;
-  cachedDom = null;
-  cachedAppCss = null;
-}
-
-/**
  * Extract an element and its contents from index.html by ID.
  * Uses jsdom for robust HTML parsing.
  *
@@ -133,7 +124,7 @@ export function extractElementById(elementId: string): string {
  * const html = extractElementsById(['settings-modal', 'setup-modal']);
  * document.body.innerHTML = html;
  */
-export function extractElementsById(elementIds: string[]): string {
+function extractElementsById(elementIds: string[]): string {
   return elementIds.map((id) => extractElementById(id)).join('\n');
 }
 

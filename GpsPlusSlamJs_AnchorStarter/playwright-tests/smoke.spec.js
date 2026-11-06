@@ -30,7 +30,9 @@ const isExpectedCapabilityNoise = (text) => {
 };
 
 test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
-  test("loads without unexpected console errors @pr", async ({ page }) => {
+  test("boots to the start screen honestly: the capability gate fires, the live panels stay hidden, on a clean console @pr", async ({
+    page,
+  }) => {
     const consoleIssues = [];
     const pageErrors = [];
 
@@ -57,35 +59,13 @@ test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
 
     // The start screen is the first thing the app reveals once booted.
     await page.getByTestId("start-screen").waitFor({ state: "visible" });
-
-    expect(consoleIssues, "Unexpected console errors detected").toEqual([]);
-    expect(pageErrors, "Unexpected page errors detected").toEqual([]);
-  });
-
-  test("renders the start screen and intro copy @pr", async ({ page }) => {
-    await page.goto("/");
-
-    await expect(page.getByTestId("start-screen")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Persistent GPS anchor" }),
     ).toBeVisible();
-    await expect(page.getByTestId("start-button")).toBeVisible();
-  });
-
-  test("keeps the live guidance and placement panels hidden on boot @pr", async ({
-    page,
-  }) => {
-    await page.goto("/");
 
     // Until the user taps Start (and AR boots), the live HUD stays hidden.
     await expect(page.getByTestId("guidance")).toBeHidden();
     await expect(page.getByTestId("placement")).toBeHidden();
-  });
-
-  test("fires the E1 capability gate when WebXR is unavailable @pr", async ({
-    page,
-  }) => {
-    await page.goto("/");
 
     // Playwright Chromium has no WebXR, so `isFullySupported` is false and the
     // start button must be disabled rather than letting the user start a
@@ -100,5 +80,8 @@ test.describe("Anchor starter — Tier 0 smoke & capability gate", () => {
     await expect(message).toBeVisible();
     await expect(message).toContainText("WebXR");
     await expect(message).toContainText(/AR-capable phone/i);
+
+    expect(consoleIssues, "Unexpected console errors detected").toEqual([]);
+    expect(pageErrors, "Unexpected page errors detected").toEqual([]);
   });
 });

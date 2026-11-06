@@ -84,7 +84,9 @@ test("a station's found radius shows where the relief stands above the station",
   await keepRejections(page);
   await openSampleIn3d(page);
   // The names' number badges are the same blue.
-  await page.locator('#tree-body [data-layer="names"]').click();
+  const names = page.locator('#tree-body [data-layer="names"]');
+  await names.click();
+  await expect(names).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.press("t");
   await expect.poll(async () => (await view3d(page))?.top).toBe(true);
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);

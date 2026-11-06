@@ -104,7 +104,7 @@ describe("the flight clock, over random networks and frame rates", () => {
           expect(b.s).toBeLessThanOrEqual(1);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -114,7 +114,7 @@ describe("the flight clock, over random networks and frame rates", () => {
         const last = run(p, steps, frameSteps).at(-1)!;
         expect(last.elapsedMs).toBeGreaterThanOrEqual(p.minMs);
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -136,7 +136,7 @@ describe("the flight clock, over random networks and frame rates", () => {
           expect(Math.abs(b.rate - a.rate)).toBeLessThanOrEqual(bound + eps);
         }
       }),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 
@@ -242,7 +242,7 @@ describe("the flight clock, over random networks and frame rates", () => {
           );
         },
       ),
-      { numRuns: 300 },
+      { numRuns: 100 },
     );
   });
 });

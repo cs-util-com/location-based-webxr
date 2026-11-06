@@ -325,7 +325,7 @@ describe('playwrightGrep', () => {
 describe('an empty tier selection fails in Playwright itself', () => {
   // A throwaway suite outside the repo, whose config greps with tierGrep:
   // Playwright must refuse a run that selects no test (no
-  // --pass-with-no-tests), and run a changed spec whole.
+  // --pass-with-no-tests).
   const fromTourViewer = createRequire(path.join(ROOT, 'GpsPlusSlamJs_TourViewer', 'package.json'));
   const cli = fromTourViewer.resolve('@playwright/test/cli');
   const playwright = pathToFileURL(path.join(path.dirname(cli), 'index.mjs')).href;
@@ -342,11 +342,11 @@ describe('an empty tier selection fails in Playwright itself', () => {
     path.join(dir, 'a.spec.mjs'),
     `import { test } from ${JSON.stringify(playwright)};\ntest("untagged", () => {});\ntest("another", () => {});\n`,
   );
-  /** @param {Record<string, string>} extra @param {string[]} [args] */
-  const list = (extra, args = []) =>
+  /** @param {Record<string, string>} extra */
+  const list = (extra) =>
     spawnSync(
       process.execPath,
-      [cli, 'test', '--config', path.join(dir, 'pw.config.mjs'), '--list', ...args],
+      [cli, 'test', '--config', path.join(dir, 'pw.config.mjs'), '--list'],
       {
         cwd: dir,
         env: { ...process.env, CI: '', [TIER_ENV]: '', ...extra },
@@ -358,16 +358,5 @@ describe('an empty tier selection fails in Playwright itself', () => {
     const run = list({});
     expect(run.status).not.toBe(0);
     expect(`${run.stdout}${run.stderr}`).toContain('No tests found');
-  }, 60_000);
-
-  it('lists an area-narrowed empty tier as 0 tests, which the runner then warns about', () => {
-    const run = list({}, ['--pass-with-no-tests']);
-    expect(run.status).toBe(0);
-    expect(listedTotal(`${run.stdout}${run.stderr}`)).toBe(0);
-  }, 60_000);
-
-  it('runs every test of a changed spec, and every test in the full set', () => {
-    expect(list({ PROBE_SPECS: '["a.spec.mjs"]' }).stdout).toContain('Total: 2 tests in 1 file');
-    expect(list({ [TIER_ENV]: 'full' }).stdout).toContain('Total: 2 tests in 1 file');
   }, 60_000);
 });

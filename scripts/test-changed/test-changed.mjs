@@ -24,7 +24,8 @@
 // `GpsPlusSlamJs_Investigation` have no equivalent and keep their own full gate.
 //
 // A COMMITTED MERGE HAS NOTHING TO DIFF against the default HEAD, so a clean
-// tree on one is refused (exit 2, select.mjs `cleanMergeRefusal`): name a --ref.
+// tree on one is refused (exit 2, select.mjs `cleanMergeRefusal`): name a
+// --ref, or --all. A --dry-run is let through, to say what the run would do.
 //
 // Usage: pnpm run test:changed [--all] [--ref <git-ref>] [--dry-run]
 //   --all      run the full cascade (escape hatch, e.g. after a change to
@@ -170,13 +171,16 @@ function currentSelection() {
 
 // Before the queue: a refused run must not wait hours for the slot first.
 if (!runAll && refIdx === -1) {
-  const [head = '', ...parents] = spawnSync(
+  const headLine = spawnSync(
     'git',
     ['rev-list', '--parents', '-n', '1', 'HEAD'],
     { cwd: WORKSPACE_ROOT, encoding: 'utf8' }
-  ).stdout.trim().split(/\s+/);
+  );
+  const [head = '', ...parents] =
+    headLine.status === 0 ? headLine.stdout.trim().split(/\s+/) : [];
   const refusal = cleanMergeRefusal({
     refGiven: false,
+    dryRun,
     selection: currentSelection(),
     headIsMerge: parents.length > 1,
     headOnMain: parents.length > 1 && mainMergeBase() === head,

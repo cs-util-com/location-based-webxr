@@ -1326,6 +1326,10 @@ async function duplicateSelection(id: string): Promise<void> {
     showNewStation(outcome.stationId, () => said);
     return;
   }
+  const home = manifestToWrite(store.getState().tourDocument)?.stations.find(
+    (s) => tourFreeBlocks(s).some((i) => i.id === outcome.id),
+  );
+  if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
   autosave.changed();
@@ -1353,11 +1357,14 @@ function commitSceneEdit(edit: GestureEdit): boolean {
 }
 
 /** An item a write gave another station (`reseat-note.ts`): a station
- *  the rule made for it starts unlocked, as every station made in this
- *  session; the line saying so is the caller's to show. */
+ *  the rule made for it shows in the list and starts unlocked, as every
+ *  station made in this session; the line saying so is the caller's. */
 function announceReseat(before: TourDocumentState, id: string): Reseat | null {
   const reseat = reseatOf(before, store.getState().tourDocument, id);
-  if (reseat?.made === true) unlockMade(reseat.stationId);
+  if (reseat?.made === true) {
+    showRowsOf(reseat.stationId);
+    unlockMade(reseat.stationId);
+  }
   return reseat;
 }
 
@@ -1462,16 +1469,22 @@ function stationTitleOf(stationId: string): string {
     : stationTitle(station, index + 1);
 }
 
-/** A station the page made: in the list (no search hides it), unlocked,
- *  selected, its card unfolded, said. */
-function showNewStation(stationId: string, said: (title: string) => string) {
+/** A station's rows in the list, for what was just made there: no search
+ *  hides them (a new name matches nothing typed), its card unfolded. */
+function showRowsOf(stationId: string): void {
   shell.clearSearch();
-  unlockMade(stationId);
-  refresh();
-  select(`${STATION_PREFIX}${stationId}`);
   store.dispatch(
     editorViewActions.stationFolded({ id: stationId, open: true }),
   );
+}
+
+/** A station the page made: in the list, unlocked, selected, its card
+ *  unfolded, said. */
+function showNewStation(stationId: string, said: (title: string) => string) {
+  showRowsOf(stationId);
+  unlockMade(stationId);
+  refresh();
+  select(`${STATION_PREFIX}${stationId}`);
   toast(said(stationTitleOf(stationId)));
   autosave.changed();
 }

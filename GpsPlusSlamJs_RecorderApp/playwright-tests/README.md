@@ -19,7 +19,7 @@ npm run test:e2e
 | `button-states.spec.js`           | Button labels, HUD text and the controls layout    |
 | `settings-modal.spec.js`          | Settings modal interactions and persistence        |
 | `ref-point-picker.spec.js`        | Reference point picker modal interactions          |
-| `test-hooks-verification.spec.js` | Verifies testHooks match real application behavior |
+| `test-hooks-verification.spec.js` | Keeps the hook list equal to the exposed testHooks |
 
 ## Testing Guidelines
 

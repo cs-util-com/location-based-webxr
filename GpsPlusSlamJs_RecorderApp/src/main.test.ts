@@ -493,6 +493,7 @@ import {
   handleReplayScenarioChangeForTesting,
   getReplaySessionEntriesForTesting,
   handleRefPointIndexingSettled,
+  setRecordingOptionsForTesting,
 } from './main';
 import { startSession as storageStartSession } from './storage/scenario-storage';
 import { resetForNewSession } from './storage/scenario-storage';
@@ -518,6 +519,17 @@ import {
 } from './storage/recording-discovery';
 import { showConfirmDialog } from './ui/confirm-dialog';
 import { pushScreenState } from './ui/navigation';
+import { requestOrientationPermission } from 'gps-plus-slam-app-framework/sensors/gps';
+import { loadRecordingOptions } from './state/recording-options';
+
+// Test order is not a contract. Tests below change these for themselves, and
+// vi.clearAllMocks() keeps an implementation set with mockResolvedValue or
+// mockImplementation, so each test starts from the defaults here.
+beforeEach(() => {
+  vi.mocked(requestOrientationPermission).mockResolvedValue(true);
+  mockShowRefPointPicker.mockResolvedValue(null);
+  setRecordingOptionsForTesting(vi.mocked(loadRecordingOptions)());
+});
 
 // Helper to simulate state changes
 function simulateStateChange(): void {
@@ -1029,6 +1041,9 @@ describe('AR Tracking Lost Callback', () => {
   beforeEach(() => {
     resetMainState();
     vi.clearAllMocks();
+    // handleEnterAR needs its container; the test must not borrow one from an
+    // earlier test.
+    document.body.innerHTML = '<div id="app"></div>';
   });
 
   afterEach(() => {
@@ -1093,6 +1108,9 @@ describe('AR Tracking Restart Callbacks (Phase 1+2)', () => {
   beforeEach(() => {
     resetMainState();
     vi.clearAllMocks();
+    // handleEnterAR needs its container; the test must not borrow one from an
+    // earlier test.
+    document.body.innerHTML = '<div id="app"></div>';
   });
 
   afterEach(() => {
