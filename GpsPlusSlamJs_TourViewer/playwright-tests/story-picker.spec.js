@@ -45,6 +45,23 @@ async function atTheGate(page) {
   await expect(page.getByTestId("scene-text")).toHaveText("Choose a story");
 }
 
+test("the walk's words at the picker say what is asked, and what the end control does", async ({
+  page,
+}) => {
+  // Why: the picker waits for a tap and its end control leaves the
+  // station, so "its story is playing" and "End the story" both mislead.
+  await atTheGate(page);
+  const end = page.getByTestId("story-end");
+  await expect(end).toHaveText("Skip the stories");
+  await end.click();
+  await expect(end).toHaveText("Skip the stories of The gate now");
+  await expect(page.getByTestId("keep-listening")).toHaveText("Keep choosing");
+  await page.getByTestId("keep-listening").click();
+  await expect(end).toHaveText("Skip the stories");
+  await page.getByTestId("scene-choice").first().click();
+  await expect(end).toHaveText("End this story?");
+});
+
 const picks = (page) => page.getByTestId("scene-choice");
 
 /** An element's box. */

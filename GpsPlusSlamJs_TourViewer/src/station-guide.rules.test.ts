@@ -64,7 +64,10 @@ const ANY: StationTour = {
   order: "any",
 };
 
-function harness(tour: StationTour, options: { end?: boolean } = {}) {
+function harness(
+  tour: StationTour,
+  options: { end?: boolean; choosing?: boolean } = {},
+) {
   let now = 1_000;
   let lined = false;
   let playing: string | null = null;
@@ -120,6 +123,7 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     guideStore: store,
     walkStore: store,
     storyPlaying: () => playing,
+    storyChoosing: () => (options.choosing === true ? playing : null),
     onFound: (s) => {
       found.push(s.id);
       playing ??= s.id;
@@ -634,6 +638,28 @@ describe("'End this story?' on the story card whenever a story plays", () => {
     h.tapEnd();
     expect(h.walk().progress?.stations[0]?.state).toBe("done");
     expect(h.dom.end?.hidden).toBe(true);
+  });
+});
+
+describe("at a station's story picker", () => {
+  // Why: nothing plays at the picker and its end control leaves the
+  // station's stories unplayed: the words say that, not "End the story".
+  it("asks for a story on the line, and the end control skips the stories", () => {
+    const h = harness(
+      {
+        assets: new Set(),
+        stations: [station("here", 0, 0)],
+        order: "fixed",
+      },
+      { end: true, choosing: true },
+    );
+    h.at(0, 0);
+    expect(h.dom.line.textContent).toBe("Station found - choose a story.");
+    expect(h.dom.end?.textContent).toBe("Skip the stories");
+    h.tapEnd();
+    expect(h.dom.end?.textContent).toBe("Skip the stories of HERE now");
+    h.tapEnd();
+    expect(h.walk().progress?.stations[0]?.state).toBe("done");
   });
 });
 

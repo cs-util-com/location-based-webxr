@@ -61,8 +61,12 @@ export interface WalkSheetInput {
   readonly tourTitle: string;
   readonly progress: WalkProgress;
   readonly view: GuideView;
-  /** The story playing, or null. */
-  readonly story: { readonly stationId: string } | null;
+  /** The story playing, or null; `choosing`: the station's picker shows
+   *  and nothing plays yet. */
+  readonly story: {
+    readonly stationId: string;
+    readonly choosing?: boolean;
+  } | null;
   readonly sheet: WalkSheet;
   /** Each station's direction now: the word with its hysteresis
    *  (`createWalkDirections`) and its angle from straight ahead, degrees,
@@ -283,11 +287,14 @@ function rowActions(
 
 function rowSub(
   state: WalkRowState,
-  view: GuideView,
+  input: Pick<WalkSheetInput, "story" | "view">,
   id: string,
   direction: WalkSheetDirection | undefined,
 ): { sub: string; arrowDeg: number | null } {
-  const sub = rowSubOf(state, view, id, direction);
+  const { view } = input;
+  const choosing =
+    input.story?.stationId === id && input.story.choosing === true;
+  const sub = rowSubOf(state, view, id, direction, choosing);
   return view.chosenId === id && (state === "next" || state === "left")
     ? { ...sub, sub: `${sub.sub} - your choice` }
     : sub;
@@ -298,13 +305,18 @@ function rowSubOf(
   view: GuideView,
   id: string,
   direction: WalkSheetDirection | undefined,
+  choosing: boolean,
 ): { sub: string; arrowDeg: number | null } {
   const plain = (sub: string) => ({ sub, arrowDeg: null });
   switch (state) {
     case "found":
       return plain("Found");
     case "here":
-      return plain("You are here - its story is playing");
+      return plain(
+        choosing
+          ? "You are here - choose a story"
+          : "You are here - its story is playing",
+      );
     case "skipped":
       return plain("Skipped");
     case "later":
@@ -427,7 +439,10 @@ function peekOf(
       distance: null,
       arrowDeg: null,
       nextArrowDeg: null,
-      tail: "Its story is playing.",
+      tail:
+        input.story?.choosing === true
+          ? "Choose a story."
+          : "Its story is playing.",
     };
   }
   const chosen = view.chosenId === focus.id;
@@ -541,7 +556,7 @@ export function walkSheetModel(input: WalkSheetInput): WalkSheetModel {
     const title = stationTitle(station, number);
     const { sub, arrowDeg } = rowSub(
       state,
-      view,
+      input,
       station.id,
       input.directions?.get(station.id),
     );

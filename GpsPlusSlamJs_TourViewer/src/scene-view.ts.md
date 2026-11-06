@@ -26,7 +26,10 @@ status line and what an end means.
     the queue; `onStoryEnd(stationId)` is reported either way, also for a
     station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
-  - `playing()` - the station whose panel is open: its story, card or picker.
+  - `playing()` - the station whose panel is open: its story, card or picker;
+  - `choosing()` - the station whose picker shows, null while its story or
+    card plays: the guide's and the sheet's words ask for a choice then, and
+    never say a story is playing.
 - Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),

@@ -395,6 +395,9 @@ export interface StationGuideDeps {
   /** The station whose story plays now (the story panel's), for the end
    *  control's station; absent or null: the first found offered one. */
   storyPlaying?(): string | null;
+  /** The station whose story picker shows, or null: nothing plays there,
+   *  and the end control leaves its stories unplayed. */
+  storyChoosing?(): string | null;
   /** End a found station's story now (the visitor asked, K4 review R9):
    *  the story panel stops it and reports its end (`storyEnded`). Absent:
    *  the guide marks the station done itself. */
@@ -1227,7 +1230,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const which = offered > 1 ? `${String(offered)} stations to find` : null;
     if (focus === null) {
       if (unfoundOffered(run).length === 0) {
-        return `${lead}Station found - its story is playing.`;
+        const asks = (deps.storyChoosing?.() ?? null) !== null;
+        return `${lead}Station found - ${asks ? "choose a story" : "its story is playing"}.`;
       }
       // The no-guess rule: no station named, the position's state alone.
       return `${lead}${which ?? "Stations to find"} - ${noGuessTail()}`;
@@ -1469,13 +1473,16 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipLabel(action: SkipAction): string {
     if (action.kind === "ask-skip") return "Can't get there?";
     const title = stationTitle(stationById(action.id) ?? {});
+    const atPicker = deps.storyChoosing?.() === action.id;
     switch (action.kind) {
       case "skip":
         return `Skip ${title} - I can't get there`;
       case "ask-end":
-        return "End this story?";
+        return atPicker ? "Skip the stories" : "End this story?";
       case "end":
-        return `End the story of ${title} now`;
+        return atPicker
+          ? `Skip the stories of ${title} now`
+          : `End the story of ${title} now`;
       case "undo":
         return `Undo: bring back ${title}`;
       case "finish-tour":

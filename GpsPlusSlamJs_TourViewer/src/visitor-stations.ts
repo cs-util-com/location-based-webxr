@@ -456,6 +456,7 @@ export function wireVisitorStations(deps: {
     },
     // The story the visitor may end is the one playing.
     storyPlaying: () => view.playing(),
+    storyChoosing: () => view.choosing(),
     onUpcoming: (station) => {
       prefetch.ahead(station);
     },
@@ -620,7 +621,10 @@ export function wireVisitorStations(deps: {
       tourTitle: visitorStartView(ctx.tourDocument.manifest()).title,
       progress,
       view: guideView,
-      story: playing === null ? null : { stationId: playing },
+      story:
+        playing === null
+          ? null
+          : { stationId: playing, choosing: view.choosing() === playing },
       sheet,
       directions,
     });
@@ -649,7 +653,11 @@ export function wireVisitorStations(deps: {
       story:
         playing === null
           ? null
-          : { stationId: playing, progress: view.progress() },
+          : {
+              stationId: playing,
+              progress: view.progress(),
+              choosing: view.choosing() === playing,
+            },
     });
     renderPill(guideView, tour, directions, sheet === "list", playing !== null);
     sheetView.renderAway(null);

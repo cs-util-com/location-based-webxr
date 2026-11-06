@@ -204,6 +204,21 @@ describe("a station with several stories", () => {
     expect(h.ended).toEqual(["gate"]);
   });
 
+  // Why: nothing plays at a picker, and an end there ends the station, so
+  // the walk's words depend on this, and on it alone.
+  it("names the station whose picker shows, never one whose story plays", () => {
+    const h = harness();
+    h.view.offer(twoStories());
+    expect(h.view.choosing()).toBe("gate");
+    h.lastChoices()[0]!.click();
+    expect(h.view.playing()).toBe("gate");
+    expect(h.view.choosing()).toBeNull();
+    h.view.end("gate");
+    expect(h.view.choosing()).toBe("gate");
+    h.view.end("gate");
+    expect(h.view.choosing()).toBeNull();
+  });
+
   it("ends the station on an end while the picker shows", () => {
     const h = harness();
     h.view.offer(twoStories());

@@ -335,6 +335,39 @@ describe("the peek", () => {
   });
 });
 
+describe("a station's story picker", () => {
+  // Why: the picker waits for the visitor and nothing plays yet, so "its
+  // story is playing" would tell them to wait for something that needs
+  // their tap.
+  it("asks for a choice in the peek and on the station's row", () => {
+    const peek = walkSheetModel(
+      input({
+        order: "fixed",
+        progress: walk("fixed", [
+          ...done("gate"),
+          { kind: "found", id: "well" },
+        ]),
+        view: view({ focusId: null }),
+        story: { stationId: "well", choosing: true },
+      }),
+    ).peek;
+    expect(peek.tail).toBe("Choose a story.");
+    const m = walkSheetModel(
+      input({
+        progress: walk("any", [
+          { kind: "found", id: "gate" },
+          { kind: "found", id: "well" },
+        ]),
+        story: { stationId: "gate", choosing: true },
+      }),
+    );
+    const sub = (id: string) => m.list.rows.find((r) => r.id === id)?.sub;
+    expect(sub("gate")).toBe("You are here - choose a story");
+    // A found station queued behind the picker is not the one asking.
+    expect(sub("well")).toBe("You are here - its story is playing");
+  });
+});
+
 describe("the story card's place", () => {
   it("takes the peek's place while a story plays, and gives it back with the list open", () => {
     const playing = input({

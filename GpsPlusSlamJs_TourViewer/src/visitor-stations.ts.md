@@ -156,7 +156,8 @@ hooks.tickStations = stations.tick;
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);
   `storyPlaying` is the story panel's `playing()`, the story "End this
-  story?" names. Each render holds the story's step while its end is
+  story?" names; `storyChoosing` is its `choosing()`, which turns the
+  guide's and the sheet's words from a story playing to a choice asked. Each render holds the story's step while its end is
   asked (`view.holdStep(end?.kind === "end")`, before the story's
   progress is read): the step's timer stops under the question and
   "Keep listening" starts it again from its full length.

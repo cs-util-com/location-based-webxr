@@ -194,6 +194,9 @@ export interface SceneView {
   stopAll(): void;
   /** The station whose panel is open (its story, card or picker), or null. */
   playing(): string | null;
+  /** The station whose story picker shows, or null: nothing plays yet, and
+   *  an end there ends the station. */
+  choosing(): string | null;
   /** Where the story playing is; null with none (a picker shows no dots),
    *  or for a scene with a choice (no fixed number of steps). */
   progress(): StoryProgress | null;
@@ -215,6 +218,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     player: ScenePlayer;
     count: number | null;
   } | null = null;
+  /** The turn showing a picker: a story tapped takes a new turn. */
+  let pickerTurn: object | null = null;
   const queue: TourStation[] = [];
   const choices = createStoryChoices();
   /** Bumped per rendered step: a load that lands later is dropped. */
@@ -663,6 +668,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
 
   /** The station's stories to tap, on a turn with no story. */
   function showPicker(picker: StoryPicker): void {
+    pickerTurn = story;
     showCard("Choose a story");
     const buttons = picker.picks.map((pick) =>
       deps.createChoiceButton(storyPickLabel(pick), () => {
@@ -848,6 +854,8 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     },
     debugLines: () => (sheetFailure === null ? [] : [sheetFailure]),
     playing: () => story?.station.id ?? null,
+    choosing: () =>
+      story !== null && story === pickerTurn ? story.station.id : null,
     progress() {
       const step = story?.player.current() ?? null;
       if (story === null || story.count === null || step === null) return null;
