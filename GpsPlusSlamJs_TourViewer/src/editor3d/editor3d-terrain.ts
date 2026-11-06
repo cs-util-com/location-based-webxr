@@ -70,6 +70,13 @@ export const EDITOR_OSM_LIMITS: Readonly<OsmGateLimits> = Object.freeze({
 export const EDITOR_OSM_FADE_M = 2400;
 
 /**
+ * Where that fade starts, as a share of it. The map is about 2.4 times as
+ * bright as the ground around it, so a narrow fade arrives as a sudden
+ * bright disc in a descent; see the sidecar.
+ */
+export const EDITOR_OSM_FADE_START_SHARE = 0.2;
+
+/**
  * Released map regions kept in memory, by relief device class: about
  * 512 KiB each outside the relief's budget, the globe's 64 (about 32 MiB)
  * on a phone too. A phone has a quarter of a desktop's relief budget, but
@@ -207,6 +214,7 @@ export function createEditorTerrain(input: {
     maxZoom: OSM_TILE_MAX_ZOOM,
     renderer: input.renderer,
     fadeM: EDITOR_OSM_FADE_M,
+    fadeStartShare: EDITOR_OSM_FADE_START_SHARE,
     limits: EDITOR_OSM_LIMITS,
     keep: EDITOR_OSM_KEEP[input.device],
     gain: input.osmGain ?? GLOBE_SWITCH.osmGain.fallback,

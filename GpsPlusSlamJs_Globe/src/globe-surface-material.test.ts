@@ -399,6 +399,51 @@ describe("patchGlobeSurfaceShader", () => {
   });
 });
 
+describe("the sea in the surface's program", () => {
+  const SEA = { waveOctaves: 7, shortestWaveM: 16 };
+
+  // Why: the wave count is compiled, so a tier is its own program; and a
+  // page without the sea (no atmosphere to reflect) keeps the old one.
+  it("is compiled only when asked for, with its tier's wave count", () => {
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    const plain = standardShader();
+    patchGlobeSurfaceShader(plain, uniforms);
+    expect(plain.fragmentShader).not.toContain("globeSeaShade");
+    const withSea = standardShader();
+    patchGlobeSurfaceShader(withSea, uniforms, { sea: SEA });
+    expect(withSea.fragmentShader).toContain("#define GLOBE_SEA\n");
+    expect(withSea.fragmentShader).toContain("#define GLOBE_SEA_OCTAVES 7");
+    const m = new THREE.MeshStandardMaterial();
+    applyGlobeSurface(m, uniforms, { band: true, sea: SEA });
+    expect(m.customProgramCacheKey()).toBe(
+      `${GLOBE_SURFACE_CACHE_KEY}-band-sea7`,
+    );
+  });
+
+  // Why: the sea replaces the lit water, so it must come after all of the
+  // surface's lighting and before three writes and tone maps the colour.
+  it("shades over the lit surface, before the colour is written", () => {
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()), {
+      sea: SEA,
+    });
+    const at = (x: string) => shader.fragmentShader.indexOf(x);
+    expect(at("float globeSeaWater")).toBeGreaterThan(at("globeShellShadow ="));
+    expect(at("float globeSeaWater")).toBeLessThan(
+      at("#include <opaque_fragment>"),
+    );
+  });
+
+  // Why: one uniforms object feeds every tile and the relief's copies.
+  it("shares the sea's uniforms with the surface's", () => {
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    expect(uniforms.uSeaOn.value).toBe(0);
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, uniforms, { sea: SEA });
+    expect(shader.uniforms.uSeaOn).toBe(uniforms.uSeaOn);
+  });
+});
+
 describe("cloudLonOffsetRad", () => {
   const TURN = 2 * Math.PI;
   const wrapped = (a: number) => ((a % TURN) + TURN) % TURN;
@@ -540,6 +585,6 @@ describe("the clouds in the surface or on their own shell", () => {
 
   it("keeps the program key in step with the shader", () => {
     // v12: the clouds through the B-spline (round-3 plan M1).
-    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v12");
+    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v13");
   });
 });

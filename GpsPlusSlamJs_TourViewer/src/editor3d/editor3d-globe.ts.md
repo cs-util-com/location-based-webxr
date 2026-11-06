@@ -39,7 +39,9 @@ true ECEF place, so one placed anywhere shows where it is.
     a named tier holds it, with none the device's default may step down),
     and `grade`, the raw `?grade=` name judged here by
     `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
-    and keeps the default). `view3d().globe.grade` reads the tone curve and
+    and keeps the default). `quality`, the raw `?quality=`, goes through `resolveGlobeQuality` with
+    the pointer: a coarse pointer gets the low tier unless the link names one.
+    `view3d().globe.grade` reads the tone curve and
     exposure back.
   - Resolves on the render loop's first tick with the same `Editor3dView`
     shape, so the shell, the view switch and the page's test hooks work

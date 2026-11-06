@@ -35,7 +35,12 @@ import {
   type GlobeGradeName,
 } from "./globe-grade.js";
 import type { GlobeSurfaceLoader } from "./globe-map-loader.js";
-import { resolveGlobeQuality, type GlobeQualityName } from "./globe-quality.js";
+import {
+  GLOBE_QUALITIES,
+  resolveGlobeQuality,
+  type GlobeQualityName,
+} from "./globe-quality.js";
+import { createGlobeSea, type GlobeSea } from "./globe-sea.js";
 import { createGlobeSky, type GlobeSky } from "./globe-sky.js";
 import { greenwichSiderealAngleRad } from "./globe-stars.js";
 import { sunDirectionEcef } from "./globe-sun.js";
@@ -162,6 +167,8 @@ export interface GlobeViewOptions {
   readonly grade?: GlobeGradeName;
   /** The quality tier, fixed for the view's life (default: a fine pointer's). */
   readonly quality?: GlobeQualityName;
+  /** False: no sea is compiled, the flat glint stays (default: the sea). */
+  readonly sea?: boolean;
   /** Tests: the renderer, and the monotonic clock (`performance.now`). */
   readonly createRenderer?: (
     parameters: THREE.WebGLRendererParameters,
@@ -191,6 +198,8 @@ export interface GlobeView {
   readonly radius: number;
   /** The quality tier the view was made with. */
   readonly quality: GlobeQualityName;
+  /** The sea (`globe-sea.ts`), or null when the view was made without one. */
+  readonly sea: GlobeSea | null;
   /** The camera's pose in ECEF, through the frame. */
   ecefCamera(): EcefPose;
   /** Places the camera at an ECEF pose, through the frame. */
@@ -322,12 +331,18 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
   let distance = radius * 3;
   let fittedSize = "";
   let frameAt = 0;
+  const quality = options.quality ?? resolveGlobeQuality(null, false);
   const globe = createGlobeSurface(options.mapLoader, {
     band: options.band === true,
     // A globe that fills the relief's gaps never discards: its program
     // keeps the GPU's early stencil test.
     fill: options.fill === true,
+    ...(options.sea === false ? {} : { sea: GLOBE_QUALITIES[quality].sea }),
   });
+  const sea =
+    options.sea === false
+      ? null
+      : createGlobeSea(globe.surfaceUniforms, GLOBE_QUALITIES[quality].sea);
   scene.add(globe.group);
 
   // The world frame: one matrix on globe.group, from ECEF to the target's
@@ -502,6 +517,21 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     }
   };
 
+  /** The sea's frame: the camera just placed, the frame's clock. */
+  const stepSea = () => {
+    if (sea === null) return;
+    const { position, quaternion } = ecefCamera();
+    sea.step({
+      position,
+      quaternion,
+      altitudeKm: globe.tiles.ellipsoid.getPositionElevation(position) / 1000,
+      timeS: theClock().timeAt(frameAt) / 1000,
+      pixelRad:
+        (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
+        Math.max(1, canvas.height),
+    });
+  };
+
   const frame = () => {
     refuseDisposed();
     seams.frameStart?.(monoNow());
@@ -515,6 +545,7 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     frameAt = now;
     seams.driveCamera?.(now);
     seams.update?.(now);
+    stepSea();
     clearAndSky();
     seams.beforeScene?.();
     renderer.render(scene, camera);
@@ -529,7 +560,8 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     sky,
     globe,
     radius,
-    quality: options.quality ?? resolveGlobeQuality(null, false),
+    quality,
+    sea,
     ecefCamera,
     placeCameraEcef,
     frameTarget: () => worldFrame.target,

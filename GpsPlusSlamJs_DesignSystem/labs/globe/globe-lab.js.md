@@ -107,6 +107,8 @@
   first view, round-2 plan DEC-FR2-3; 0 from the camera as placed; the
   pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
+  `sea` (1; 0 keeps the flat glint, fixed for the page's life: compiled),
+  `?quality=` (the tier, by `resolveGlobeQuality` and the pointer),
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
   default 0.375 by the owner's choice, DEC-G6-5, now the FAR rate; in
   real time while `time=` holds the hour, round-5 plan C1), and the drift
@@ -263,7 +265,7 @@
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so
-  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), the library's default tone curve (`aces-bright`), no ambient
+  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), the library's default tone curve (`aces`), no ambient
   light, a black sky (plan §7.3).
 - The atmosphere's cost on the device (review 2026-10-01 M2): the plate's
   "Measure the atmosphere's cost" button alternates 10 animation frames

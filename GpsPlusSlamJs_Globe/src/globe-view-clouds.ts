@@ -143,8 +143,8 @@ export interface CloudsView {
 
 /** The three parts the clouds drive (tests pass fakes). */
 export interface CloudsParts {
-  readonly sceneDepth: Pick<GlobeSceneDepth, "beginFrame" | "render"> &
-    Partial<Pick<GlobeSceneDepth, "dispose" | "fresh" | "texture" | "camera">>;
+  readonly sceneDepth: Omit<GlobeSceneDepth, "dispose" | "state"> &
+    Partial<Pick<GlobeSceneDepth, "dispose">>;
   readonly cloudVolume: GlobeCloudVolume;
   readonly shellVolume: GlobeCloudShellVolume;
   /** The near clouds; absent without `near` in the options. */
@@ -178,8 +178,11 @@ export interface GlobeViewClouds {
   patch(tiles: CloudsTiles): void;
   /** Who draws the clouds, the shell's share and shadow, the volumes. */
   step(frame: CloudsStepFrame): void;
-  /** The relief's depth (while the ground sky shows), the clouds. */
+  /** The relief's depth (while the ground sky shows, on or off), the
+   *  clouds (on). */
   render(frame: CloudsRenderFrame): void;
+  /** The depth `render` draws: the air ends its veil at it. */
+  sceneDepth(): CloudsParts["sceneDepth"];
   /** The heavy clouds on (the default) or off. */
   setOn(on: boolean): void;
   /** Whether they are on, and the last plan's flat share and shell, the
@@ -434,12 +437,13 @@ export function createGlobeViewClouds(
       if (disposed || relief === null) return;
       const { globe, camera } = view;
       sceneDepth.beginFrame();
-      if (knobs.cloudVolume === 0) return;
       // The relief's depth while the ground sky shows (the shell's rays end
-      // at it by that weight); the slab draws it itself when only it needs it.
+      // at it by that weight, and the air's veil, so it is drawn with the
+      // clouds off too); the slab draws it itself when only it needs it.
       const extra = extraOf();
       const nearOn = clouds.nearShare > 0;
       if (weight > 0 || nearOn) sceneDepth.render(camera, relief, extra);
+      if (knobs.cloudVolume === 0) return;
       clouds.render(camera, {
         relief,
         extra,
@@ -451,6 +455,7 @@ export function createGlobeViewClouds(
         ...(nearOn && nearDriver !== null ? { near: nearDriver.frame() } : {}),
       });
     },
+    sceneDepth: () => sceneDepth,
     setOn(on) {
       knobs = on ? onKnobs : offKnobs;
     },

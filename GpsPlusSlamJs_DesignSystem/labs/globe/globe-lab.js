@@ -21,6 +21,10 @@ import {
 } from "/globe/globe-surface.js";
 import { createGlobeView, viewPoseEcef } from "/globe/globe-view.js";
 import { GLOBE_GRADE_PARAM, resolveGlobeGrade } from "/globe/globe-grade.js";
+import {
+  GLOBE_QUALITY_PARAM,
+  resolveGlobeQuality,
+} from "/globe/globe-quality.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
   CLOUD_LIVE_NOISE,
@@ -412,6 +416,9 @@ const PARAMS = {
   // requests a minute. The overlay is attached the first time it is on.
   osm: { fallback: 0, min: 0, max: 1 },
   osmFadeM: { fallback: 300, min: 50, max: 2000 },
+  // The sea (`/globe/globe-sea.js`): 0 keeps the flat glint. Fixed for the
+  // page's life: its waves are compiled into the globe's shader.
+  sea: { fallback: 1, min: 0, max: 1 },
   /**
    * The globe's error target while the relief has every pixel and the
    * globe only fills its gaps: coarse, so it keeps to its top tiles.
@@ -1472,6 +1479,11 @@ async function start() {
     // plain globe draws the program from before the relief.
     mapLoader: startParams.mapBitmap === 0 ? elementMapLoader : undefined,
     band: startParams.relief === 1,
+    sea: startParams.sea === 1,
+    quality: resolveGlobeQuality(
+      new URLSearchParams(location.search).get(GLOBE_QUALITY_PARAM),
+      matchMedia("(pointer: coarse)").matches,
+    ),
     // A globe that fills the relief's gaps never discards (round-6 plan
     // G6-1): its program keeps the GPU's early stencil test.
     fill: fillAtStart,
@@ -2391,6 +2403,8 @@ async function start() {
     controls.fitPlanes();
     // The sky hand-over (F2b): the observer's height over the ellipsoid,
     // the ground sky's weight and its eased exposure.
+    // The sea reflects the production sky once the ground sky has one.
+    view.sea?.setSky(groundSky.atmosphere?.sharedUniforms ?? null);
     air.step(params, {
       cameraEcef: ecefCamera().position.toArray(),
       framed: frameTarget() !== null,
@@ -2711,6 +2725,8 @@ async function start() {
     ready: false,
     error: null,
     state: () => ({
+      // The sea's state (the smoke spec's), null where it is not compiled.
+      sea: view.sea?.state() ?? null,
       ...globe.state(),
       ...flight.state(),
       appliedHash,

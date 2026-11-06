@@ -176,7 +176,7 @@ describe("createGlobeView: the grade", () => {
   it("is the default grade when none is named", () => {
     const renderer = open();
     expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.75);
+    expect(renderer.toneMappingExposure).toBe(0.47);
   });
 
   it("sets a named grade on the renderer", () => {
@@ -191,6 +191,38 @@ describe("createGlobeView: the grade", () => {
  * clouds read off the view, so the view must hold the name it was made with
  * and a page that names none must get the fine-pointer tier.
  */
+describe("createGlobeView: the sea", () => {
+  const open = (options: { sea?: boolean; quality?: GlobeQualityName }) =>
+    createGlobeView({
+      canvas: { clientWidth: 800, clientHeight: 600 } as HTMLCanvasElement,
+      fovYDeg: SETTINGS.fovY,
+      settings: () => SETTINGS,
+      solarPosition: () => ({ elevationRad: 0.3, azimuthRad: 1.2 }),
+      mapLoader: stubLoader,
+      createRenderer: () => fakeRenderer([]) as unknown as THREE.WebGLRenderer,
+      ...options,
+    });
+
+  // Why: the sea is the globe's default look; a caller without a sky (or a
+  // page that compares) must be able to do without it.
+  it("is there by default and off on request", () => {
+    expect(open({}).sea?.state()).toMatchObject({
+      on: true,
+      octaves: 8,
+      shortestWaveM: 8,
+    });
+    expect(open({ sea: false }).sea).toBeNull();
+  });
+
+  // Why: the quality's wave count is what a phone is spared.
+  it("takes its waves from the quality", () => {
+    expect(open({ quality: "low" }).sea?.state()).toMatchObject({
+      octaves: 6,
+      shortestWaveM: 32,
+    });
+  });
+});
+
 describe("createGlobeView: the quality", () => {
   const open = (quality?: GlobeQualityName) => {
     const view = createGlobeView({

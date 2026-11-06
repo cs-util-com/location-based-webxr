@@ -32,9 +32,11 @@
       draws the clouds at the camera's altitude (`globe-cloud-step.ts`),
       the shell's share from the page (`shareClouds(flat)`, the relief
       mount's), the ground's soft shadow, then both volumes' update.
-    - `render({ weight })`: begins the scene depth's frame; with the
-      clouds on, the relief's depth while the ground sky shows
-      (`weight > 0`), then the slab and the shell.
+    - `render({ weight })`: begins the scene depth's frame; the relief's
+      depth while the ground sky shows (`weight > 0`), with the clouds
+      off too, then, with them on, the slab and the shell.
+    - `sceneDepth()`: the depth `render` draws, for the air's ground
+      veil.
     - `setOn(on)`: the switch (off is the lab's `cloudVolume=0`: no slab,
       no shell; the flat layer only weakens near the ground). Off keeps
       the render targets allocated: the switch saves frame time, not

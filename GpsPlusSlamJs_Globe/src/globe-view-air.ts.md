@@ -46,13 +46,21 @@
     and strength from `GLOBE_ATMOSPHERE`, its samples by the pointer
     (`defaultAtmosphereSteps`), the haze's scale 1, the shell's ramp on,
     the space view's exposure the globe sun's intensity at the mount.
-  - One deliberate difference: `atmoGround` 0. The lab ends the space
-    pass's ground veil at the drawn relief through its scene-depth pass;
-    without one its rays end at the ellipsoid, under the relief, and the
-    veil over high ground would be far too thick. So below the edge the
-    space pass fades out entirely (sky and ground shares both
-    `1 - weight`) and the haze carries the ground; the lab's comparison
-    note says the ground then darkens over the 80 to 40 km cross-fade.
+  - The ground's veil follows the depth. With the clouds, `atmoGround` 1
+    and `sceneDepth` their `sceneDepth()`, so the veil's rays end at the
+    drawn relief as in the lab, with one depth pass per frame, drawn even
+    while the cloud volumes are switched off. Without clouds there is no
+    depth, the rays would end at the ellipsoid, under the relief, and the
+    veil over high ground would be far too thick; so `atmoGround` 0 and
+    the space pass fades out entirely below the edge.
+  - **Why the veil stays:** the haze's strength follows the observer's
+    height, so at 40 km it is nearly nothing and cannot replace the veil.
+    With the veil fading out, a descent turned blue to olive and lost
+    almost half its brightness between 80 and 40 km (mean colour of the
+    picture's lower part 44,62,84 hue 213 at 71 km; 33,36,27 hue 86 at
+    43 km), then went blue again near 15 km as the haze returned. With the
+    veil kept: 47,66,91 and 50,71,97, hue 213-216 from 217 km down to
+    7 km (measured 2026-11-06, editor, noon, tilt 55).
   - Nothing is drawn before the first `step` (there is no hand-over yet;
     `globe-air.ts` refuses `finish` before it) and nothing after
     `dispose`.
@@ -83,3 +91,6 @@
   flat share of 1 without clouds). The drawing itself is
   checked in a browser by the Tour Viewer's `editor3d-globe.spec.js` (the
   sky's colour at noon and at midnight) and the lab's own smokes.
+
+- The sea: each step hands `groundSky.atmosphere`'s tables to `view.sea`
+  (null while the ground sky has none, which keeps the flat glint).

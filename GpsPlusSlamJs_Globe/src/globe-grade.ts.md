@@ -5,14 +5,14 @@
 One table of tone curve plus exposure, so the globe's look is a named
 choice rather than a value fixed inside `globe-view.ts`. Pages pick a name
 by link (`?grade=<name>`); a page that names none gets the default,
-`aces-bright`, chosen by comparing the presets on the real globe.
+`aces`, the look prototype's grade.
 `?grade=neutral` keeps the earlier look reachable.
 
 ## Public API
 
 - `GLOBE_GRADES`: frozen table, name to `{ toneMapping, exposure }`.
 - `GlobeGradeName`: the table's keys.
-- `DEFAULT_GLOBE_GRADE`: `"aces-bright"`.
+- `DEFAULT_GLOBE_GRADE`: `"aces"`.
 - `GLOBE_GRADE_PARAM`: `"grade"`, the link's parameter.
 - `resolveGlobeGrade(name, warn = console.warn)`: the name to use. `null`
   (nothing in the link) is the default, silently; an unknown name is the
@@ -31,11 +31,12 @@ Chosen by looking at the real globe at street level, 300 m, 3 km and 60 km.
 
 - `neutral`: Neutral at 1. The look before the presets, bright and
   saturated.
-- `aces`: ACES at 0.47, the exposure of the look prototype's page. On the
-  real globe it is the darkest: clouds turn grey at 60 km and near ground
-  goes dark.
-- `aces-bright`: ACES at 0.75, the default. Keeps the filmic shoulder and
-  contrast while whites stay white: the step between `neutral` and `aces`.
+- `aces`: ACES at 0.47, the exposure of the look prototype's page, the
+  default since the new clouds and sea were chosen to replace the old look.
+  It is the darkest preset: clouds turn grey at 60 km and near ground goes
+  dark, which is the prototype's look.
+- `aces-bright`: ACES at 0.75. Keeps the filmic shoulder and contrast
+  while whites stay white: the step between `neutral` and `aces`.
 - `agx`: AgX at 1. The other direction: flat, soft and desaturated, with
   the most detail left in cloud tops and shadows.
 
