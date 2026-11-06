@@ -97,9 +97,8 @@ test("a station added during a search is in the list, and the grips say they dra
   const cards = page.locator("#tree-body .card[data-station]");
   await expect(cards).toHaveCount(3);
   const search = page.locator("#tree-search");
-  const words = (await cards.first().locator(".head").innerText()).split(/\s+/);
-  await search.fill(words.filter(Boolean).pop() ?? "");
-  await expect(cards.first()).toBeVisible();
+  await search.fill("town hall");
+  await expect(cards).toHaveCount(1);
   await expect(cards.first().locator(".grip")).toHaveCSS(
     "cursor",
     "not-allowed",
@@ -152,4 +151,70 @@ test("a station copied with Ctrl+D during a search is in the list", async ({
   await expect(search).toHaveValue("");
   await expect(cards).toHaveCount(4);
   await expect(page.locator("#tree-body .card.sel")).toBeVisible();
+});
+
+/**
+ * A new item selected in a folded station, then a search that finds neither
+ * of them. Returns the search field and the station's card.
+ * @param {import("@playwright/test").Page} page
+ */
+async function selectItemHiddenBySearch(page) {
+  const cards = page.locator("#tree-body .card[data-station]");
+  await expect(cards).toHaveCount(3);
+  const id = await cards
+    .filter({ hasNotText: /town hall/i })
+    .first()
+    .getAttribute("data-station");
+  const card = page.locator(`#tree-body .card[data-station="${id}"]`);
+  await card.locator(".pick").click();
+  await page.keyboard.press("Control+k");
+  await page.locator("#add-palette-input").fill("short");
+  await page.keyboard.press("Enter");
+  await expect(card.locator(".kid.sel")).toBeVisible();
+  await card.locator(".tw").click();
+  await expect(card.locator(".tw")).toHaveAttribute("aria-expanded", "false");
+  const search = page.locator("#tree-search");
+  await search.fill("town hall");
+  await expect(cards).toHaveCount(1);
+  await expect(card).toHaveCount(0);
+  await search.blur();
+  return { search, card };
+}
+
+test("an item copied with Ctrl+D during a search is in the list, in its unfolded station", async ({
+  page,
+}) => {
+  // Why: the copy matches the search no better than the item the search
+  // hides, and ending the search folds what it had unfolded, so the copy
+  // needs both, as a copied station does.
+  test.setTimeout(180_000);
+  await open3dAt(page, 1280);
+  const { search, card } = await selectItemHiddenBySearch(page);
+  await page.keyboard.press("Control+d");
+  await expect(
+    page.locator(".toast", { hasText: "Duplicated" }),
+  ).not.toHaveCount(0);
+  await expect(search).toHaveValue("");
+  await expect(card.locator(".tw")).toHaveAttribute("aria-expanded", "true");
+  await expect(card.locator(".kid.sel")).toBeVisible();
+});
+
+test("a station made by moving an item out of every circle during a search is in the list", async ({
+  page,
+}) => {
+  // Why: the one way of making a station that is no command: the rule
+  // makes it from a write, so it takes the same care in another place.
+  test.setTimeout(180_000);
+  await open3dAt(page, 1280);
+  const { search } = await selectItemHiddenBySearch(page);
+  await page.locator('#shell-inspector [data-act="position"]').click();
+  const north = page.locator('#shell-inspector [data-field="north"]');
+  await north.fill("5000");
+  await north.press("Enter");
+  await expect(
+    page.locator(".toast", { hasText: "in a station of its own" }),
+  ).not.toHaveCount(0);
+  await expect(search).toHaveValue("");
+  await expect(page.locator("#tree-body .card[data-station]")).toHaveCount(4);
+  await expect(page.locator("#tree-body .kid.sel")).toBeVisible();
 });

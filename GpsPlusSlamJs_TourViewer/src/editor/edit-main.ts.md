@@ -740,12 +740,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     offer, refreshes the views and tells autosave, or toasts a refusal;
     an item pose that gave the item another station is said in a toast
     (`announceReseat`, `reseat-note.ts`), and a station the rule made
-    for it starts unlocked. The 2D map's drag (`finishMove`) says the
+    for it shows in the list (`showRowsOf`) and starts unlocked. The 2D map's drag (`finishMove`) says the
     same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
     with the toast's Undo, or a station (`deleteStation`);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies an item or a
-    station beside itself, selects the copy and says "Duplicated ...";
+    station beside itself, ends a running search and unfolds the station
+    the copy is in (`showRowsOf`: the copy's name matches what was typed
+    no better), selects the copy and says "Duplicated ...";
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
   - `keysFree` is false in a field, in a menu, for the pattern's keys on a menu's button,
