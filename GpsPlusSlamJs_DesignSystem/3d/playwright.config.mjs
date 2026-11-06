@@ -64,7 +64,11 @@ export default defineConfig({
   // A cold SwiftShader boot plus the CPU parity oracle (a few million
   // scattering evaluations) is slow by design, not by defect.
   timeout: 180_000,
-  reporter: [["list"]],
+  // On CI also a JSON report, which the job uploads: it is what is left of a
+  // run that hung, and the list keeps printing bytes for the stage watchdog.
+  reporter: process.env.CI
+    ? [["list"], ["json", { outputFile: "../test-results/results.json" }]]
+    : [["list"]],
   use: {
     ...devices["Desktop Chrome"],
     baseURL: `http://127.0.0.1:${PORT}`,

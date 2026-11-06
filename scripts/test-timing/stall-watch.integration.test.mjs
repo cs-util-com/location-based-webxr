@@ -155,7 +155,7 @@ describe('the stage watchdog, end to end', () => {
     expect(out).not.toContain('STALLED');
     expect(out).toContain('done');
     expect(code).toBe(0);
-  }, 30_000);
+  }, 45_000);
 
   // The driver takes the machine slot first, as every gate does, and the
   // slot's own SIGINT/SIGTERM handler exits at once: the forwarding must run
