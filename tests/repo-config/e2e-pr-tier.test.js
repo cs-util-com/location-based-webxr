@@ -342,6 +342,9 @@ describe('the per-PR browser tier', () => {
       const name = relative(ROOT, file);
       expect(text, name).toMatch(/grep: playwrightGrep\(import\.meta\.url\)/);
       expect(text, name).toMatch(/retries: tierRetries\(process\.env/);
+      // Without it the job's limit in ci.yml means nothing for this package:
+      // a hang runs into the job's timeout and leaves no log.
+      expect(text, name).toMatch(/globalTimeout: tierGlobalTimeout\(process\.env\)/);
     }
   });
 });

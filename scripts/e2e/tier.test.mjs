@@ -7,7 +7,7 @@
 // passes. The last one is proven against Playwright itself, because the
 // "No tests found" failure is Playwright's behaviour, not this module's.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +17,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import {
   DEVELOPER_FILTER_ENV,
+  GLOBAL_TIMEOUT_ENV,
   TIER_BASE_ENV,
   TIER_ENV,
   changedSpecNames,
@@ -28,6 +29,7 @@ import {
   passesEmpty,
   playwrightGrep,
   specsImporting,
+  tierGlobalTimeout,
   tierGrep,
   tierRetries,
   tierStageRun,
@@ -320,6 +322,74 @@ describe('playwrightGrep', () => {
       /E2E_TIER_BASE "nope"/,
     );
   });
+});
+
+describe('tierGlobalTimeout', () => {
+  it('is off without a limit, which is every run outside the CI browser jobs', () => {
+    expect(tierGlobalTimeout({})).toBe(0);
+    expect(tierGlobalTimeout({ [GLOBAL_TIMEOUT_ENV]: '' })).toBe(0);
+  });
+
+  it('reads minutes', () => {
+    expect(tierGlobalTimeout({ [GLOBAL_TIMEOUT_ENV]: '30' })).toBe(1_800_000);
+    expect(tierGlobalTimeout({ [GLOBAL_TIMEOUT_ENV]: '0.5' })).toBe(30_000);
+  });
+
+  it('refuses anything else, so a typo in the matrix never switches the limit off', () => {
+    for (const value of ['0', '-1', 'abc', '30m', 'Infinity']) {
+      expect(() => tierGlobalTimeout({ [GLOBAL_TIMEOUT_ENV]: value }), value).toThrow(RangeError);
+    }
+  });
+});
+
+describe('a hung run under the limit, in Playwright itself', () => {
+  // A throwaway suite with a test that never ends and no browser: the run must
+  // end red by itself, name the limit in its log, and tell the hung test from
+  // the rest in its JSON report, which is what a CI job uploads. Why: a job
+  // cancelled at its own time limit leaves none of these.
+  // Playwright reports a test interrupted this way as "skipped" with a
+  // worker's start time, and a test it never reached with no result at all.
+  const fromTourViewer = createRequire(path.join(ROOT, 'GpsPlusSlamJs_TourViewer', 'package.json'));
+  const cli = fromTourViewer.resolve('@playwright/test/cli');
+  const playwright = pathToFileURL(path.join(path.dirname(cli), 'index.mjs')).href;
+  const tier = pathToFileURL(path.join(HERE, 'tier.mjs')).href;
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-hang-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(
+    path.join(dir, 'pw.config.mjs'),
+    `import { defineConfig } from ${JSON.stringify(playwright)};\n` +
+      `import { tierGlobalTimeout } from ${JSON.stringify(tier)};\n` +
+      'export default defineConfig({ testDir: ".", timeout: 0, workers: 1,\n' +
+      '  globalTimeout: tierGlobalTimeout(process.env),\n' +
+      '  reporter: [["github"], ["json", { outputFile: "results.json" }]] });\n',
+  );
+  writeFileSync(
+    path.join(dir, 'hang.spec.mjs'),
+    `import { test } from ${JSON.stringify(playwright)};\n` +
+      'test("never ends", () => new Promise(() => {}));\n' +
+      'test("not reached", () => {});\n',
+  );
+
+  it('fails, says why, and reports the test that hung', () => {
+    const run = spawnSync(
+      process.execPath,
+      [cli, 'test', '--config', path.join(dir, 'pw.config.mjs')],
+      {
+        cwd: dir,
+        env: { ...process.env, CI: '1', [TIER_ENV]: 'full', [GLOBAL_TIMEOUT_ENV]: '0.1' },
+        encoding: 'utf8',
+        timeout: 50_000,
+      },
+    );
+    expect(run.status).toBe(1);
+    expect(`${run.stdout}${run.stderr}`).toContain('Timed out waiting 6s');
+    const report = JSON.parse(readFileSync(path.join(dir, 'results.json'), 'utf8'));
+    expect(report.errors[0].message).toContain('Timed out waiting 6s');
+    const [hung, unreached] = report.suites[0].specs;
+    expect(hung.title).toBe('never ends');
+    expect(hung.tests[0].results[0].workerIndex).toBe(0);
+    expect(unreached.tests[0].results).toEqual([]);
+  }, 60_000);
 });
 
 describe('an empty tier selection fails in Playwright itself', () => {
