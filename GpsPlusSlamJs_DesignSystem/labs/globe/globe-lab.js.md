@@ -46,7 +46,14 @@
   (`../../3d/lookdev.css`, `../../3d/panel.js`: collapses, remembered,
   folded on a phone), moved to the right. Every control writes its hash
   key and follows the hash back, so the hash is the one state and a link
-  reproduces a view. Sections: Sun and time (the UTC hour of `#time=`,
+  reproduces a view. The one thing outside the hash is the colour grade,
+  `?grade=<name>` in the query (`/globe/globe-grade.js`), read once at the
+  start because a tone curve is compiled into the shaders: an unknown name
+  warns and keeps the default, and `state().grade` reads it back. Two
+  different things share the word: `?grade=` is this tone curve, by name;
+  `#grade=` is the blue grade of the "Reference look" section, 0 to 1. A
+  `#grade=aces` is therefore not a tone curve: the number falls back to 0
+  and the page shows the default with no warning. Sections: Sun and time (the UTC hour of `#time=`,
   "Now" removes it, the clock speed `timeScale`, sun intensity), Surface (night lights, water roughness,
   cloud opacity, cloud drift), Sky (the pass on or off, the sun disc's
   apparent diameter, its glow), Camera and turn (field of view, the wait for a fix, the
@@ -256,7 +263,7 @@
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so
-  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), Neutral tone mapping, no ambient
+  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), the library's default tone curve (`aces-bright`), no ambient
   light, a black sky (plan §7.3).
 - The atmosphere's cost on the device (review 2026-10-01 M2): the plate's
   "Measure the atmosphere's cost" button alternates 10 animation frames

@@ -13,6 +13,14 @@ import { describe, expect, it } from "vitest";
 import { GLOBE_SWITCH, readGlobeSwitch } from "./globe-switch.js";
 
 describe("readGlobeSwitch", () => {
+  // Why this test matters: the name stays raw here because this module must
+  // not load the globe's code; the globe's own table judges it (and warns).
+  it("hands the link's grade on as written", () => {
+    expect(readGlobeSwitch("?grade=aces").grade).toBe("aces");
+    expect(readGlobeSwitch("?grade=nope").grade).toBe("nope");
+    expect(readGlobeSwitch("?globe=1").grade).toBeNull();
+  });
+
   it("is on with its defaults for a link without the switch", () => {
     expect(readGlobeSwitch("")).toEqual({
       on: true,
@@ -28,6 +36,7 @@ describe("readGlobeSwitch", () => {
       cloudShadow: GLOBE_SWITCH.cloudShadow.fallback,
       cloudWind: GLOBE_SWITCH.cloudWind.fallback,
       buildings: 1,
+      grade: null,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
   });

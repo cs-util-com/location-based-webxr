@@ -168,6 +168,7 @@ const EXPECTED = {
     '3d/pages.fast.spec.mjs: the catalog page opens without errors',
     '3d/pages.fast.spec.mjs: the look-dev page boots in its default look and draws, without errors',
     '3d/pages.fast.spec.mjs: the globe lab opens with the relief and the band, and draws, without errors',
+    "3d/pages.fast.spec.mjs: the globe lab's query picks the tone curve and the hash's grade leaves it",
     '3d/pages.fast.spec.mjs: the globe-terrain carrier lab opens and draws without errors',
     '3d/pages.fast.spec.mjs: the terrain colour comparison page starts and drives the lab',
     '3d/pages.fast.spec.mjs: the AR shadows lab opens and draws without errors',

@@ -134,7 +134,10 @@ test("navy space: a corner of the frame is black off and navy on", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const errors = await bootGlobe(page, `${DAY}&space=0`);
+  // Read on the curve its floors were set on.
+  const errors = await bootGlobe(page, `${DAY}&space=0`, {
+    query: "?grade=neutral",
+  });
   await loaded(page);
   const [cornerOff] = await read(page, [[0.03, 0.05]]);
   await applyHash(page, DAY);
