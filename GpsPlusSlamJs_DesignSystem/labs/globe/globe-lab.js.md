@@ -263,7 +263,7 @@
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so
-  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), Neutral tone mapping, no ambient
+  the owner can read it on his phone before the terrain dive is built; intensity 5 (DEC-GL4-1), the library's default tone curve (`aces-bright`), no ambient
   light, a black sky (plan §7.3).
 - The atmosphere's cost on the device (review 2026-10-01 M2): the plate's
   "Measure the atmosphere's cost" button alternates 10 animation frames
