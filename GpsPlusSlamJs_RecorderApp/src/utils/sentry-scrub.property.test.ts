@@ -245,7 +245,7 @@ describe('scrubText properties', () => {
     );
   });
 
-  it("never keeps an id of this site, whatever follows it", () => {
+  it('never keeps an id of this site, whatever follows it', () => {
     fc.assert(
       fc.property(
         fc.stringMatching(/^[A-Za-z0-9_-]{25,44}$/),
@@ -253,7 +253,9 @@ describe('scrubText properties', () => {
         (id, end) => {
           const link = `https://${OWN}/files/${id}${end}`;
           expect(scrubText(`see ${link}`, OWN)).not.toContain(id);
-          expect(scrubText(`GET /files/${id}${end} 200`, OWN)).not.toContain(id);
+          expect(scrubText(`GET /files/${id}${end} 200`, OWN)).not.toContain(
+            id
+          );
         }
       )
     );

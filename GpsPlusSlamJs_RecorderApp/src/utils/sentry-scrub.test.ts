@@ -343,7 +343,10 @@ describe('scrubText', () => {
 
   it('removes a quoted id, and one in a stack frame, as the app writes them', () => {
     expect(
-      scrubText(`Failed to load 'https://gps.csutil.com/files/${DRIVE_ID}'`, OWN)
+      scrubText(
+        `Failed to load 'https://gps.csutil.com/files/${DRIVE_ID}'`,
+        OWN
+      )
     ).toBe(`Failed to load 'https://gps.csutil.com/files/${REDACTED}'`);
     expect(
       scrubText(`at load (https://gps.csutil.com/files/${DRIVE_ID})`, OWN)
