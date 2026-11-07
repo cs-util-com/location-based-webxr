@@ -3,11 +3,13 @@
  * shows the radius in the number and on the 3D view's ring (`preview`)
  * and writes nothing; the release writes one edit, one undo step, when
  * the radius moved. The dock is drawn again from the store, so what the
- * slider keeps during a drag lives here, not in the elements.
+ * slider keeps during a drag lives here, not in the elements, and a drag
+ * ends at the pointer's release too: a browser fires no `change` for a
+ * drag back to where it began.
  *
  * The track covers the radii a creator sets by feel; the number takes the
- * rest of what the format allows, and the thumb rests at the track's end
- * for those, unwritten until it is moved.
+ * rest of what the format allows, and the thumb rests at the nearer end of
+ * the track for those, unwritten until it is moved.
  *
  * @see radius-slider.ts.md
  */
@@ -56,12 +58,45 @@ export function wireRadiusSlider(deps: {
   /** Write the radius: one edit. */
   readonly write: (stationId: string, radiusM: number) => void;
 }): RadiusSlider {
-  /** The station a drag is showing, and the number it writes into. */
+  /** The station a drag is showing, its radius before, and where it is. */
   let drag: {
     readonly id: string;
     readonly radiusM: number;
-    readonly number: HTMLInputElement | null;
+    atM: number;
   } | null = null;
+
+  const doc = deps.root.ownerDocument;
+  const sliderNow = () =>
+    deps.root.querySelector<HTMLInputElement>(`[data-act="${SLIDER_ACT}"]`);
+  const numberNow = () =>
+    sliderNow()?.parentElement?.querySelector<HTMLInputElement>(
+      "input[data-field]",
+    ) ?? null;
+  const released = () => {
+    finish(true);
+  };
+  const cancelled = () => {
+    finish(false);
+  };
+
+  /** The drag over: written or not, then the number, the thumb and the
+   *  ring as the tour has them (a write may have changed nothing). */
+  function finish(write: boolean): void {
+    if (drag === null) return;
+    const { id, radiusM, atM } = drag;
+    drag = null;
+    doc.removeEventListener("pointerup", released, true);
+    doc.removeEventListener("pointercancel", cancelled, true);
+    const number = numberNow();
+    if (number !== null) number.value = number.defaultValue;
+    if (write && atM !== radiusM) deps.write(id, atM);
+    const station = deps.station();
+    const slider = sliderNow();
+    if (slider !== null && station?.id === id) {
+      slider.value = String(station.radiusM);
+    }
+    deps.preview(id, null);
+  }
 
   const sliderOf = (target: EventTarget | null): HTMLInputElement | null =>
     target instanceof HTMLInputElement && target.dataset["act"] === SLIDER_ACT
@@ -73,37 +108,26 @@ export function wireRadiusSlider(deps: {
     if (slider === null) return;
     const station = deps.station();
     if (station === null) return;
-    drag ??= {
-      id: station.id,
-      radiusM: station.radiusM,
-      number:
-        slider.parentElement?.querySelector<HTMLInputElement>(
-          "input[data-field]",
-        ) ?? null,
-    };
     const radiusM = Number(slider.value);
-    if (drag.number !== null) drag.number.value = radiusM.toFixed(1);
+    if (drag === null) {
+      drag = { id: station.id, radiusM: station.radiusM, atM: radiusM };
+      doc.addEventListener("pointerup", released, true);
+      doc.addEventListener("pointercancel", cancelled, true);
+    }
+    drag.atM = radiusM;
+    const number = numberNow();
+    if (number !== null) number.value = radiusM.toFixed(1);
     deps.preview(drag.id, radiusM);
   });
 
   deps.root.addEventListener("change", (event) => {
     const slider = sliderOf(event.target);
     if (slider === null || drag === null) return;
-    const { id, radiusM, number } = drag;
-    drag = null;
-    if (number !== null) number.value = number.defaultValue;
-    const now = Number(slider.value);
-    if (now !== radiusM) deps.write(id, now);
-    deps.preview(id, null);
+    drag.atM = Number(slider.value);
+    finish(true);
   });
 
   return {
-    cancel() {
-      if (drag === null) return;
-      const { id, number } = drag;
-      drag = null;
-      if (number !== null) number.value = number.defaultValue;
-      deps.preview(id, null);
-    },
+    cancel: cancelled,
   };
 }

@@ -25,10 +25,19 @@ one edit.
   nothing: one drag is at most one undo step.
 - The preview is dropped after the write, so the ring never shows the old
   radius for a frame.
-- The dock is drawn again from the store, so the drag's state lives here.
+- The dock is drawn again from the store, so the drag's state lives here,
+  and the number and the slider are looked up at each step.
+- A drag ends at `change` or at the pointer's release, whichever comes
+  first: a browser fires no `change` for a drag back to where it began, and
+  a draw can take the slider from under the pointer. A cancelled pointer
+  writes nothing. The two listeners on the document exist only during a
+  drag.
+- After a drag the thumb goes back to the station's radius, so a write that
+  changed nothing leaves no thumb beside a number that disagrees.
 - The format allows more than the track (2 to 300 m): the thumb rests at the
-  track's end for such a radius, the number keeps the value, and nothing is
-  written until the thumb moves.
+  nearer end of the track for such a radius, the number keeps the value, and
+  nothing is written until the thumb moves. A radius under 5 m is reached
+  by the number only.
 - Events of any other input in `root` are ignored, as is a drag with nothing
   selected.
 
@@ -47,6 +56,7 @@ const radius = wireRadiusSlider({
 
 `radius-slider.test.ts` (jsdom): the row's order and range, a radius past
 the track, the preview and the one write, a drag back to the start, the
-order of write and preview, a refused edit, a cut-off drag, other inputs.
+order of write and preview, a refused edit, a cut-off drag, a drag ended by
+the pointer alone, other inputs.
 `editor-shell.test.ts`: the wiring to the view and the edits.
 `playwright-tests/editor3d-station-ring.spec.js`: the ring in the 3D view.

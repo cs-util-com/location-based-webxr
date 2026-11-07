@@ -8,7 +8,7 @@
  * under it) must leave the view as the tour has it, or the ring would keep
  * a size the tour never took.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   RADIUS_SLIDER,
@@ -61,6 +61,78 @@ beforeEach(() => {
   drawn(25);
 });
 
+// A drag left open here would answer the next test's release.
+afterEach(() => {
+  document.dispatchEvent(new Event("pointercancel"));
+});
+
+describe("a drag that ends without a change event", () => {
+  const up = (kind: string) => {
+    document.dispatchEvent(new Event(kind));
+  };
+
+  // Why: a browser fires no `change` for a drag back to where it began, so
+  // the drag stayed open: the next drag wrote into the number of an older
+  // draw, and the ring kept the dragged size.
+  it("ends a drag released where it began, writing nothing", () => {
+    wired();
+    drag(30);
+    drag(25);
+    up("pointerup");
+    expect(write).not.toHaveBeenCalled();
+    expect(preview).toHaveBeenLastCalledWith("gate", null);
+    drawn(25);
+    drag(40);
+    expect(number.value).toBe("40.0");
+  });
+
+  // Why: a draw during a drag replaces the slider under the pointer, whose
+  // release then reaches no `change` handler: the drag is still the
+  // creator's, so the release writes it.
+  it("follows a draw during a drag and writes at the release", () => {
+    wired();
+    drag(30);
+    drawn(25);
+    drag(40);
+    expect(number.value).toBe("40.0");
+    up("pointerup");
+    expect(write.mock.calls).toEqual([["gate", 40]]);
+    expect(preview).toHaveBeenLastCalledWith("gate", null);
+  });
+
+  // Why: the system took the gesture away, so nothing was chosen.
+  it("gives everything back when the pointer is cancelled", () => {
+    wired();
+    drag(30);
+    up("pointercancel");
+    expect(write).not.toHaveBeenCalled();
+    expect(preview).toHaveBeenLastCalledWith("gate", null);
+    expect(slider.value).toBe("25");
+    expect(number.value).toBe("25.0");
+  });
+
+  // Why: a write can change nothing (a station the session refuses), and
+  // then no draw comes to put the thumb back beside the number.
+  it("puts the thumb back when a write leaves the radius as it was", () => {
+    wired();
+    drag(30);
+    release();
+    expect(write).toHaveBeenCalledOnce();
+    expect(slider.value).toBe("25");
+  });
+
+  it("listens for a release only during a drag", () => {
+    wired();
+    up("pointerup");
+    expect(preview).not.toHaveBeenCalled();
+    drag(30);
+    release();
+    preview.mockClear();
+    up("pointerup");
+    expect(preview).not.toHaveBeenCalled();
+  });
+});
+
 describe("radiusRange", () => {
   it("puts the slider before the number, over the prototype's range", () => {
     const box = root.querySelector(".range") as HTMLElement;
@@ -75,6 +147,10 @@ describe("radiusRange", () => {
   // Why: the format takes radii the track does not reach. The thumb rests
   // at its end, and the number keeps saying what the tour holds.
   it("rests at the end for a radius past the track", () => {
+    // Under the track the thumb rests at its start, the number keeping 2.
+    drawn(2);
+    expect(slider.value).toBe(String(RADIUS_SLIDER.min));
+    expect(number.value).toBe("2.0");
     drawn(250);
     expect(slider.value).toBe("100");
     expect(number.value).toBe("250.0");
