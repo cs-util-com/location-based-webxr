@@ -121,12 +121,12 @@ describe("blockFields", () => {
     ]);
     expect(rows(VIDEO)).toEqual([
       ["title", 40, "codePoints", false, false],
-      ["transcript", 32_000, "codePoints", true, true],
+      ["transcript", 32_000, "codePoints", false, true],
     ]);
     expect(rows(AUDIO)).toEqual(rows(VIDEO));
     expect(rows(CHARACTER)).toEqual([
       ["name", 80, "codePoints", true, false],
-      ["caption", 2000, "codePoints", true, true],
+      ["caption", 2000, "codePoints", false, true],
     ]);
     expect(blockFields(LONG)[1]?.value).toBe("In 1632 the town...");
     expect(blockFields(PIN)[0]?.unit).toBe("codePoints");

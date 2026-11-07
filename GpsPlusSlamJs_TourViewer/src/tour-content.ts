@@ -40,6 +40,7 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type {
   TourAsset,
   TourBlock,
@@ -60,7 +61,6 @@ import {
   tourStories,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { itemStoredAssets } from "./item-card.js";
 import { STATION_RADIUS_M, type StationPoint } from "./station-assign.js";
 
 /**
@@ -250,7 +250,7 @@ function withPictureAssets(
 ): TourAsset[] {
   const owned = ownedAssetIds(manifest);
   const named = new Set([
-    ...objects.flatMap((b) => itemStoredAssets(b)),
+    ...objects.flatMap((b) => tourBlockAssetIds(b)),
     ...manifest.stations.flatMap(stepAssetIds),
   ]);
   const kept = manifest.assets.filter(
@@ -325,7 +325,7 @@ export function keepsItself(
  *  for an undo that brings the picture back. */
 export function objectAssetIds(object: TourObject): readonly string[] {
   if (isCapturedPhoto(object)) return [];
-  return itemStoredAssets(object);
+  return tourBlockAssetIds(object);
 }
 
 /** The assets a station's story blocks name (a frame's: its free blocks
@@ -333,7 +333,7 @@ export function objectAssetIds(object: TourObject): readonly string[] {
 export function stepAssetIds(
   station: Pick<TourStation, "children">,
 ): readonly string[] {
-  return tourStationStoryBlocks(station).flatMap((b) => itemStoredAssets(b));
+  return tourStationStoryBlocks(station).flatMap((b) => tourBlockAssetIds(b));
 }
 
 /**
@@ -346,7 +346,7 @@ export function stepRequiredAssetIds(
   station: Pick<TourStation, "children">,
 ): readonly string[] {
   return tourStationStoryBlocks(station).flatMap((b) =>
-    itemStoredAssets(b, true),
+    tourBlockAssetIds(b, true),
   );
 }
 
@@ -358,7 +358,7 @@ export function stepRequiredAssetIds(
 function referencedAssetIds(manifest: TourManifest): Set<string> {
   return new Set([
     ...manifest.stations.flatMap((station) => [
-      ...tourStationBlocks(station).flatMap((b) => itemStoredAssets(b)),
+      ...tourStationBlocks(station).flatMap((b) => tourBlockAssetIds(b)),
       ...(station.image === undefined ? [] : [station.image]),
     ]),
     ...(manifest.cover === undefined ? [] : [manifest.cover]),
