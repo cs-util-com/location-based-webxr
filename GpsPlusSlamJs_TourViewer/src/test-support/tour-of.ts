@@ -29,6 +29,8 @@ import {
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import { stationContent } from "./station-content.js";
+
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 /** The station `tourOf` gives an object of this id. */
@@ -50,8 +52,7 @@ function stationFor(object: TourObject): TourStation {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    blocks: [tourObjectBlock(object, localPoseOf(object.geo, geo))],
-    steps: [],
+    ...stationContent([tourObjectBlock(object, localPoseOf(object.geo, geo))]),
   };
 }
 
@@ -74,7 +75,7 @@ export function tourOf(
 ): TourManifest {
   const listed = new Set((extra.assets ?? []).map((a) => a.id));
   return {
-    version: 4,
+    version: 5,
     minor: 0,
     order: "fixed",
     ...extra,

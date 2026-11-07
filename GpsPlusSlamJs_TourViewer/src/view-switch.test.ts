@@ -17,6 +17,7 @@ import {
   withPreferredView,
   type ViewPlacement,
 } from "./visitor-prefs.js";
+import { stationContent } from "./test-support/station-content.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -540,8 +541,7 @@ describe("the blocks the switch describes", () => {
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    blocks,
-    steps: [],
+    ...stationContent(blocks),
   });
   const stations = [station("gate", [longText("t", "reading")])];
 

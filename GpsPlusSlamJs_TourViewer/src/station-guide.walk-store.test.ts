@@ -29,6 +29,11 @@ import {
   subscribeToLogs,
   type LogEntry,
 } from "gps-plus-slam-app-framework/utils/logger";
+import {
+  playableStory,
+  stationContent,
+  storyOf,
+} from "./test-support/station-content.js";
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -50,17 +55,11 @@ function station(
     id,
     title: id.toUpperCase(),
     geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-    blocks: [],
+    ...stationContent([playableStory(`${id}-story`)]),
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [
-      {
-        id: "t",
-        action: { kind: "show", block: "hi" },
-        advance: { mode: "tap" },
-      },
-    ],
+
     ...extra,
   };
 }
@@ -511,7 +510,7 @@ describe("the station guide on the page's store", () => {
             [0, 25],
           ] as const;
           const stations = spots.map(([n, e], i) =>
-            station(`s${String(i)}`, n, e, i === 2 ? { steps: [] } : {}),
+            station(`s${String(i)}`, n, e, i === 2 ? stationContent([]) : {}),
           );
           const page = onThePage(stations, order, { endStory: true });
           for (const call of calls) {
@@ -586,17 +585,18 @@ describe("the station guide on the page's store", () => {
           station(`s${String(i)}`, north, east, {
             // One choice whose only option loops back to itself: it never
             // ends on its own.
-            steps: [
-              {
-                id: "ask",
-                action: {
+            ...stationContent([
+              storyOf(`s${String(i)}-story`, [
+                {
+                  id: `s${String(i)}-ask`,
                   kind: "choice",
                   prompt: "Again?",
-                  options: [{ id: "yes", label: "Yes", goto: "ask" }],
+                  options: [
+                    { id: "yes", label: "Yes", goto: `s${String(i)}-ask` },
+                  ],
                 },
-                advance: { mode: "tap" },
-              },
-            ],
+              ]),
+            ]),
           }),
         );
         const page = onThePage(stations, order, {

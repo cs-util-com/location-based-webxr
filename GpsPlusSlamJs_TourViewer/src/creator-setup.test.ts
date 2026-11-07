@@ -19,6 +19,7 @@
  * `dom` - so this stays a pure test, as this package's unit tests are by
  * convention.
  */
+import { stationBlocks } from "./test-support/station-content.js";
 import { describe, expect, it } from "vitest";
 import { Group, Matrix4, Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -3026,7 +3027,9 @@ describe("'New station here' (D8)", () => {
   function stationsOf(ctx: ReturnType<typeof createTourViewerSession>) {
     return (
       manifestToWrite(ctx.tourDocument.state())?.stations.map((s) =>
-        s.blocks.map((i) => (i.kind === "shortText" ? i.caption : i.id)),
+        stationBlocks(s).map((i) =>
+          i.kind === "shortText" ? i.caption : i.id,
+        ),
       ) ?? []
     );
   }

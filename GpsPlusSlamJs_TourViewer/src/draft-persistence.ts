@@ -378,6 +378,34 @@ export async function isOlderVersionDraft(
   return true;
 }
 
+/**
+ * Empty a draft whose meta an older format wrote, as its tour opens; whether
+ * it did. No reader for an older format exists, and a refusal reaches
+ * neither the sample's draft (its rebuilt file is never refused) nor one
+ * holding only frames (`isOlderVersionDraft` proves neither), so such a
+ * draft would restore half a tour: its object records read, its frames do
+ * not. Unlike a refusal the meta alone decides: the open is of a file this
+ * version reads, so the draft's work cannot be restored into it. Only a
+ * stamped format decides: an unstamped meta names no format, and its frames
+ * are dropped on read as any older frame is. No meta, or one that does not
+ * read, keeps the draft (`readDraft` reads nothing without a meta). A store
+ * that fails keeps it too.
+ */
+export async function discardOlderFormatDraft(
+  store: DraftFileStore,
+): Promise<boolean> {
+  try {
+    const format = parsedFormat(await store.getText(META_KEY));
+    if (typeof format !== "number" || format >= TOUR_OBJECT_RECORD_FORMAT) {
+      return false;
+    }
+    await store.clear(META_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A file that does not read as a JSON object (`parsedFormat`). */
 const UNREADABLE = Symbol("unreadable");
 

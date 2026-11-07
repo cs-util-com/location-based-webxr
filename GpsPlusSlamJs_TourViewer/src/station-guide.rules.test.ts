@@ -17,6 +17,10 @@ import { selectHeadingPending, trackingLostSet } from "./visitor-guide-slice";
 import type { VisitorPosition } from "./visitor-position";
 import type { WalkFocusCue } from "./walk-focus-cues";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the walk's rules as the guide applies them. With no
@@ -31,11 +35,6 @@ import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const zero = { lat: 47.5, lon: 8.7 };
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 function station(id: string, north: number, east: number): TourStation {
   const geo = calcGpsCoords(zero, [north, 0, east]);
@@ -46,8 +45,8 @@ function station(id: string, north: number, east: number): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 
@@ -65,7 +64,10 @@ const ANY: StationTour = {
   order: "any",
 };
 
-function harness(tour: StationTour, options: { end?: boolean } = {}) {
+function harness(
+  tour: StationTour,
+  options: { end?: boolean; choosing?: boolean } = {},
+) {
   let now = 1_000;
   let lined = false;
   let playing: string | null = null;
@@ -121,6 +123,7 @@ function harness(tour: StationTour, options: { end?: boolean } = {}) {
     guideStore: store,
     walkStore: store,
     storyPlaying: () => playing,
+    storyChoosing: () => (options.choosing === true ? playing : null),
     onFound: (s) => {
       found.push(s.id);
       playing ??= s.id;
@@ -638,6 +641,28 @@ describe("'End this story?' on the story card whenever a story plays", () => {
   });
 });
 
+describe("at a station's story picker", () => {
+  // Why: nothing plays at the picker and its end control leaves the
+  // station's stories unplayed: the words say that, not "End the story".
+  it("asks for a story on the line, and the end control skips the stories", () => {
+    const h = harness(
+      {
+        assets: new Set(),
+        stations: [station("here", 0, 0)],
+        order: "fixed",
+      },
+      { end: true, choosing: true },
+    );
+    h.at(0, 0);
+    expect(h.dom.line.textContent).toBe("Station found - choose a story.");
+    expect(h.dom.end?.textContent).toBe("Skip the stories");
+    h.tapEnd();
+    expect(h.dom.end?.textContent).toBe("Skip the stories of HERE now");
+    h.tapEnd();
+    expect(h.walk().progress?.stations[0]?.state).toBe("done");
+  });
+});
+
 describe("being there at a station, and finishing the tour", () => {
   // Why these tests matter: a station is done when its story ends, which
   // moves the order on, but the visitor still stands among its content.
@@ -755,7 +780,7 @@ describe("leaving the last station is judged by its own distance, not by presenc
       ...station(id, north, east),
       activateRadiusM: 50,
       foundRadiusM: 25,
-      steps: [],
+      ...stationContent([]),
     };
   }
   const pair = (spacingM: number): StationTour => ({

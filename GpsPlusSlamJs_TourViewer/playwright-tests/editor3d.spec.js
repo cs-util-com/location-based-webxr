@@ -44,7 +44,7 @@ test("a tour whose 3D view cannot load opens on a page that says so, the tour st
   await expect(page.locator("body")).not.toHaveAttribute("data-view", "3d");
   await expect(page.locator("#view-switch")).toHaveText("3D view");
   await expect(page.locator(".mk-station")).toHaveCount(3);
-  await expect(page.locator("#rail .row-title")).toHaveCount(3);
+  await expect(page.locator("#rail .row-title")).toHaveCount(5);
 });
 
 // Why: a failure's page stays until the view is tried again (the creator

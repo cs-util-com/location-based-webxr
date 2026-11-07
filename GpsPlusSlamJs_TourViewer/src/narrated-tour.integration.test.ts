@@ -13,6 +13,7 @@
  * load), so a seam that only each module's own fakes agree with cannot
  * pass.
  */
+import { stationBlocks } from "./test-support/station-content.js";
 import { describe, expect, it } from "vitest";
 import {
   parseTourManifest,
@@ -102,7 +103,7 @@ async function manifestOf(session: TourSession): Promise<TourManifest> {
 
 function essayIn(manifest: TourManifest): TourLongTextBlock {
   const block = manifest.stations
-    .flatMap((s) => s.blocks)
+    .flatMap((s) => stationBlocks(s))
     .find((b) => b.id === "essay");
   if (block?.kind !== "longText") throw new Error("no essay in the tour");
   return block;

@@ -21,6 +21,7 @@ import {
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: the inspector is where a creator types a
@@ -113,8 +114,7 @@ async function twoPinTour() {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    children: [
       {
         id: `p${id}`,
         kind: "shortText",
@@ -249,7 +249,9 @@ test("a station's name, description and radius typed in the inspector are one st
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
   expect(
-    (await stationNow(page, "a")).blocks.map((/** @type {any} */ i) => i.id),
+    stationBlocks(await stationNow(page, "a")).map(
+      (/** @type {any} */ i) => i.id,
+    ),
   ).toEqual(["pa"]);
 
   // A value that is no number is said, and writes nothing.
@@ -440,7 +442,7 @@ test("a short text's caption and Description are typed in the inspector: one ste
   await expect(await countOf()).toHaveText("0 / 160");
   const start = await revision(page);
   const blockNow = async () =>
-    (await stationNow(page, "a")).blocks.find(
+    stationBlocks(await stationNow(page, "a")).find(
       (/** @type {any} */ b) => b.id === "pa",
     );
 
@@ -494,7 +496,9 @@ test("a short text's caption and Description are typed in the inspector: one ste
   const saved = await (await download).path();
   const { readFileSync } = await import("node:fs");
   const written = readFileSync(saved);
-  expect((await savedTour(written)).stations[0].blocks[0]).toMatchObject({
+  expect(
+    stationBlocks((await savedTour(written)).stations[0])[0],
+  ).toMatchObject({
     id: "pa",
     caption: "The old well",
     description: "Under the arch",
@@ -540,16 +544,18 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   ).toBeVisible();
   expect(await revision(page)).toBe(start + 1);
   const anchor = (await stationNow(page, "a")).geo.alt;
-  expect((await stationNow(page, "a")).blocks[0].pose.position[1]).toBeCloseTo(
-    0,
-    1,
-  );
+  expect(
+    stationBlocks(await stationNow(page, "a"))[0].pose.position[1],
+  ).toBeCloseTo(0, 1);
   expect(anchor).toBeCloseTo(ground, 1);
   // Nothing off it now: the command is off.
   await expect(act(page, "ground-items")).toBeDisabled();
   await page.locator("#studio-undo").click();
   await expect
-    .poll(async () => (await stationNow(page, "a")).blocks[0].pose.position[1])
+    .poll(
+      async () =>
+        stationBlocks(await stationNow(page, "a"))[0].pose.position[1],
+    )
     .toBeCloseTo(1.5, 1);
 
   // Station b stands 3 m over the ground; locked, its own Put on the
@@ -598,7 +604,9 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   expect(await revision(page)).toBe(before + 4);
   const pin = await selected(page);
   expect(
-    (await stationNow(page, "b")).blocks.map((/** @type {any} */ i) => i.id),
+    stationBlocks(await stationNow(page, "b")).map(
+      (/** @type {any} */ i) => i.id,
+    ),
   ).toContain(pin);
   await expect(field(page, "title")).toHaveValue("New pin 2");
   await field(page, "title").fill("Look up");
@@ -606,7 +614,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await expect
     .poll(
       async () =>
-        (await stationNow(page, "b")).blocks.find(
+        stationBlocks(await stationNow(page, "b")).find(
           (/** @type {any} */ i) => i.id === pin,
         )?.caption,
     )
@@ -670,7 +678,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
     }),
   ).toBeVisible();
   const home = (await tourNow(page)).stations.find((/** @type {any} */ s) =>
-    s.blocks.some((/** @type {any} */ i) => i.id === "pa"),
+    stationBlocks(s).some((/** @type {any} */ i) => i.id === "pa"),
   );
   expect(home.id).not.toBe("a");
   await selectStation(page, home.id);
@@ -921,7 +929,7 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     "Photo",
   );
   const blockNow = async (/** @type {string} */ id) =>
-    (await stationNow(page, "gate")).blocks.find(
+    stationBlocks(await stationNow(page, "gate")).find(
       (/** @type {any} */ b) => b.id === id,
     );
 
@@ -1012,7 +1020,7 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     (/** @type {any} */ s) => s.id === "gate",
   );
   const savedBlock = (/** @type {string} */ id) =>
-    gate.blocks.find((/** @type {any} */ b) => b.id === id);
+    stationBlocks(gate).find((/** @type {any} */ b) => b.id === id);
   expect(savedBlock("gate-photo")).toMatchObject({
     title: "Dusk",
     alt: "The gate's two towers against a red sky",

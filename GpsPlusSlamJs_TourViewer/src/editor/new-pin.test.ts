@@ -19,6 +19,7 @@ import {
   parseTourObject,
   tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { stationContent } from "../test-support/station-content.js";
 
 const AT = "2026-10-25T10:00:00Z";
 
@@ -33,15 +34,16 @@ function station(
     activateRadiusM: 2 * foundRadiusM,
     foundRadiusM,
     hint: "arrow",
-    steps: [],
-    blocks: items.map(([north, east], i) => ({
-      id: `pin-${String(i)}`,
-      kind: "shortText",
-      view: "pin",
-      caption: `Pin ${String(i)}`,
-      createdAtIso: AT,
-      pose: { position: [north, 0, east], rotation: [0, 0, 0, 1] },
-    })),
+    ...stationContent(
+      items.map(([north, east], i) => ({
+        id: `pin-${String(i)}`,
+        kind: "shortText",
+        view: "pin",
+        caption: `Pin ${String(i)}`,
+        createdAtIso: AT,
+        pose: { position: [north, 0, east], rotation: [0, 0, 0, 1] },
+      })),
+    ),
   } as unknown as TourStation;
 }
 

@@ -239,6 +239,45 @@ describe("the visitor's tap on the story's character", () => {
   });
 });
 
+describe("createCallGuard, what waits for the render", () => {
+  // Why this test matters: the story's sheet is hidden until the render a
+  // find defers, and a hidden element takes no focus, so a picker opened by
+  // a find lost its focus without a word.
+  it("runs after the render of the outermost call", () => {
+    const seen: string[] = [];
+    const guard = createCallGuard(() => {
+      seen.push("render");
+    });
+    guard.during(() => {
+      guard.during(() => {
+        guard.after(() => {
+          seen.push("after");
+        });
+        guard.request();
+      });
+      seen.push("still in the call");
+    });
+    expect(seen).toEqual(["still in the call", "render", "after"]);
+  });
+
+  it("runs at once outside a call, and once in a call nothing rendered", () => {
+    const seen: string[] = [];
+    const guard = createCallGuard(() => {
+      seen.push("render");
+    });
+    guard.after(() => {
+      seen.push("outside");
+    });
+    guard.during(() => {
+      guard.after(() => {
+        seen.push("inside");
+      });
+    });
+    guard.during(() => undefined);
+    expect(seen).toEqual(["outside", "inside"]);
+  });
+});
+
 describe("createCallGuard", () => {
   // Why: a story's change (its `onChange`) can fire from inside a guide
   // call - a find starts the story - and a sheet drawn then reads the

@@ -395,6 +395,9 @@ export interface StationGuideDeps {
   /** The station whose story plays now (the story panel's), for the end
    *  control's station; absent or null: the first found offered one. */
   storyPlaying?(): string | null;
+  /** The station whose story picker shows, or null: nothing plays there,
+   *  and the end control leaves its stories unplayed. */
+  storyChoosing?(): string | null;
   /** End a found station's story now (the visitor asked, K4 review R9):
    *  the story panel stops it and reports its end (`storyEnded`). Absent:
    *  the guide marks the station done itself. */
@@ -637,6 +640,10 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The present station was last judged on a position a code held:
    *  once the code goes (a veto) and nothing else can judge, it ends. */
   let presentByCode = false;
+  /** The end's ask was made at the picker: its confirm skips the stories,
+   *  so it does not carry over to a story, nor a story's to the picker. The
+   *  guide's own bookkeeping; the store holds the ask (`quickArmedId`). */
+  let askedAtPicker = false;
   /** The camera's last bearing this AR entry (`Measurement.headingDeg`). */
   let lastHeadingDeg: number | null = null;
   /** The last judged geometry, for a frozen radar: a
@@ -1227,7 +1234,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const which = offered > 1 ? `${String(offered)} stations to find` : null;
     if (focus === null) {
       if (unfoundOffered(run).length === 0) {
-        return `${lead}Station found - its story is playing.`;
+        const asks = (deps.storyChoosing?.() ?? null) !== null;
+        return `${lead}Station found - ${asks ? "choose a story" : "its story is playing"}.`;
       }
       // The no-guess rule: no station named, the position's state alone.
       return `${lead}${which ?? "Stations to find"} - ${noGuessTail()}`;
@@ -1402,9 +1410,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const skip = unsettledSkip();
     if (skip !== null && deps.now() >= skip.atMs + SKIP_UNDO_MS) settleUndo();
     startFocusClock();
-    // The end's ask follows the story it was asked for.
-    const story = storyTarget();
-    if (walk().quickArmedId !== null && walk().quickArmedId !== story) {
+    // The end's ask follows the story it was asked for, at the picker or
+    // in the story: a pick answers the picker's, and the page holds the
+    // step while an ask stands.
+    const armed = walk().quickArmedId;
+    if (
+      armed !== null &&
+      (armed !== storyTarget() || askedAtPicker !== atPicker(armed))
+    ) {
       disarm();
     }
     show(dom.line, lineText());
@@ -1469,18 +1482,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function skipLabel(action: SkipAction): string {
     if (action.kind === "ask-skip") return "Can't get there?";
     const title = stationTitle(stationById(action.id) ?? {});
+    const picker = atPicker(action.id);
     switch (action.kind) {
       case "skip":
         return `Skip ${title} - I can't get there`;
       case "ask-end":
-        return "End this story?";
+        return picker ? "Skip the stories" : "End this story?";
       case "end":
-        return `End the story of ${title} now`;
+        return picker
+          ? `Skip the stories of ${title} now`
+          : `End the story of ${title} now`;
       case "undo":
         return `Undo: bring back ${title}`;
       case "finish-tour":
         return "Finish the tour";
     }
+  }
+
+  /** Whether the story picker of `stationId` shows now. */
+  function atPicker(stationId: string): boolean {
+    return deps.storyChoosing?.() === stationId;
   }
 
   /** The found station whose story the visitor may end: the one playing
@@ -1669,6 +1690,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       case "ask-end":
         // On demand: the first tap asks, the second acts.
         if (run.status(action.id)?.state === "found") {
+          askedAtPicker = atPicker(action.id);
           change(quickArmed(action.id));
         }
         break;

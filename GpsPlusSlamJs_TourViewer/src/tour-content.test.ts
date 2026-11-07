@@ -43,6 +43,12 @@ import {
   withTourContent,
 } from "./tour-content.js";
 import { withCaption } from "./test-support/tour-of.js";
+import {
+  editedBlocks,
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 // The core's geodesy runs only under an activated licence.
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -74,8 +80,7 @@ function station(id: string, n: number, e: number): TourStation {
     activateRadiusM: 40,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 
@@ -91,7 +96,7 @@ function pin(id: string, n: number, e: number, label = id): TourPin {
 }
 
 function tour(stations: TourStation[]): TourManifest {
-  return { version: 4, minor: 0, order: "fixed", assets: [], stations };
+  return { version: 5, minor: 0, order: "fixed", assets: [], stations };
 }
 
 /** `object` naming the station `id`, as the tour document seats it. */
@@ -123,9 +128,9 @@ describe("withTourContent", () => {
     const next = withTourContent(base, {
       objects: [withCaption(a!, "renamed"), moved],
     });
-    const items = next.stations[0]!.blocks;
+    const items = stationBlocks(next.stations[0]!);
     expect(items[0]).toMatchObject({ caption: "renamed" });
-    expect(items[0]!.pose).toBe(base.stations[0]!.blocks[0]!.pose);
+    expect(items[0]!.pose).toBe(stationBlocks(base.stations[0]!)[0]!.pose);
     expect(items[1]!.pose).toEqual(
       localPoseOf(moved.geo, base.stations[0]!.geo),
     );
@@ -147,12 +152,12 @@ describe("withTourContent", () => {
         ],
       },
     );
-    expect(next.stations.map((s) => [s.id, s.blocks.map((i) => i.id)])).toEqual(
-      [
-        ["gate", ["near-well"]],
-        ["well", ["lone"]],
-      ],
-    );
+    expect(
+      next.stations.map((s) => [s.id, stationBlocks(s).map((i) => i.id)]),
+    ).toEqual([
+      ["gate", ["near-well"]],
+      ["well", ["lone"]],
+    ]);
   });
 
   it("an object keeps the station the tour holds it in when it names none", () => {
@@ -161,7 +166,7 @@ describe("withTourContent", () => {
     });
     const { station: _station, ...unnamed } = tourObjects(base)[0]!;
     const next = withTourContent(base, { objects: [unnamed] });
-    expect(next.stations[0]!.blocks.map((i) => i.id)).toEqual(["a"]);
+    expect(stationBlocks(next.stations[0]!).map((i) => i.id)).toEqual(["a"]);
   });
 
   // Why this test matters: an object that reaches the writer in no station
@@ -201,9 +206,9 @@ describe("withTourContent", () => {
     const next = withTourContent(base, {
       objects: tourObjects(base).filter((o) => o.id !== "a"),
     });
-    expect(next.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
-      ["b"],
-    ]);
+    expect(next.stations.map((s) => stationBlocks(s).map((i) => i.id))).toEqual(
+      [["b"]],
+    );
   });
 
   it("a station emptied by this write goes when it carries nothing else; a titled or storied one stays", () => {
@@ -218,25 +223,21 @@ describe("withTourContent", () => {
     const titled = { ...station("titled", 100, 0), title: "Old well" };
     const storied: TourStation = {
       ...station("storied", 200, 0),
-      blocks: [
-        {
-          id: "hi",
-          kind: "shortText",
-          view: "card",
-          caption: "Hi",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "hi",
+            kind: "shortText",
+            view: "card",
+            caption: "Hi",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+            advance: { mode: "tap" },
           },
-        },
-      ],
-      steps: [
-        {
-          id: "t",
-          action: { kind: "show", block: "hi" },
-          advance: { mode: "tap" },
-        },
-      ],
+        ]),
+      ]),
     };
     const stations = [
       station("auto", 0, 0),
@@ -386,19 +387,19 @@ describe("withReferencedAssets", () => {
   ): TourStation {
     return {
       ...station(id, north, 0),
-      blocks: fields.map((f, i) => ({
-        ...f,
-        id: `${id}-b${String(i)}`,
-        pose: {
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0, 1] as [number, number, number, number],
-        },
-      })),
-      steps: fields.map((_f, i) => ({
-        id: `${id}-s${String(i)}`,
-        action: { kind: "show", block: `${id}-b${String(i)}` },
-        advance: { mode: "tap" },
-      })),
+      ...stationContent([
+        storyOf(
+          `${id}-story`,
+          fields.map((f, i) => ({
+            ...f,
+            id: `${id}-b${String(i)}`,
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+          })),
+        ),
+      ]),
     };
   }
   /** A tour with every asset and one station telling `blocks`. */
@@ -615,24 +616,20 @@ describe("asStored", () => {
 describe("stepRequiredAssetIds", () => {
   it("keeps a long text's narration voice and drops the pictures its body names", () => {
     const station = {
-      blocks: [
-        {
-          id: "words",
-          kind: "longText",
-          view: "reading",
-          title: "Words",
-          body: "See ![gate](asset:gone) here.\n\n![wall](asset:wall)",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-          narration: { audio: "voice", synthetic: false },
-        },
-      ] as TourBlock[],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show" as const, block: "words" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-101", [
+          {
+            id: "words",
+            kind: "longText",
+            view: "reading",
+            title: "Words",
+            body: "See ![gate](asset:gone) here.\n\n![wall](asset:wall)",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            narration: { audio: "voice", synthetic: false },
+            advance: { mode: "tap" as const },
+          },
+        ]),
+      ]),
     };
     expect([...stepAssetIds(station)].sort()).toEqual([
       "gone",
@@ -654,7 +651,7 @@ describe("stepRequiredAssetIds", () => {
           // names no picture: the body's pictures are all it leaves out.
           const plainBodies = {
             ...station,
-            blocks: station.blocks.map((b) =>
+            ...editedBlocks(station, (b) =>
               b.kind === "longText" ? { ...b, body: "Plain words." } : b,
             ),
           };

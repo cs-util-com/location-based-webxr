@@ -1,28 +1,28 @@
 # tour-blocks.ts
 
-**Purpose:** the BLOCKS of a station in `tour.json` version 4 - one list
-of the things a station shows (a short text, a long text, a picture, a
+**Purpose:** the BLOCKS of a station in `tour.json` version 5 - the things
+a station shows (a short text, a long text, a picture, a
 video, a sound, a 3D model, a character), each carrying its data, the
 creator's choice of how it looks (its `view`) and where it stands (a
-local `pose` in the station's frame). A block no story step shows is
-FREE and stands in the world; a block a `show` step names is a STORY
-block (`tour-story.ts`).
+local `pose` in the station's frame). A block that is a child of its
+station is FREE and stands in the world; a block that is a child of a
+story is a STORY block (`tour-story.ts`).
 
-The manifest (`tour-manifest.ts`) reads every station's blocks and story
-through `tour-story.ts`, which reads the blocks here.
+The manifest (`tour-manifest.ts`) reads every station's children through
+`tour-story.ts`, which reads each block here.
 
 ## Public API
 
 - `TourBlockKind` - `shortText | longText | picture | video | audio |
 model | character`.
 - `TOUR_BLOCK_VIEWS` - the views this reader draws, per kind:
-  - `shortText`: `pin`, `card`; `longText`: `lectern` (minor 3, a reading stand
-    in the square), `reading` (minor 4, a short sign that opens the whole
-    text on a tap), `card`;
+  - `shortText`: `pin`, `card`; `longText`: `lectern` (a reading stand in the
+    square), `reading` (a short sign that opens the whole text on a tap),
+    `card`;
   - `picture`: `plane`, `card`; `video`, `audio`: `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `stage`,
     `card`; `character`: `stage`, `bubble`, `speak`, `two-stations`,
-    `portrait`, `popup`, `card` (the five between are minor 2,
+    `portrait`, `popup`, `card` (the five between are
     `TOUR_CHARACTER_VIEWS`, story views only).
   - The WORLD views (a free block's) are `pin`, `lectern`, `reading`, `plane` and the model's
     world views, `TOUR_WORLD_VIEWS`; renderers ask that set rather than
@@ -31,7 +31,7 @@ model | character`.
   (glass whose feet fade into the ground), `hotspots` (its notes drawn on
   it, its clip held at rest), `cutaway` (cut open by its sections), `toy`
   (at its pose and size until the visitor resizes or moves it). Every one
-  needs `sizeM`. All but `placed` are minor 1.
+  needs `sizeM`.
 - `TOUR_MODEL_NOTE_RULES` (`title` required 64, `text` optional 1024),
   `TOUR_MODEL_MAX_NOTES` (32), `TOUR_MODEL_SECTION_RULES` (`name` required
   40), `TOUR_MODEL_MAX_SECTIONS` (4), `TOUR_MODEL_ANIMATION_RULES` (`name`
@@ -42,15 +42,9 @@ model | character`.
   the reader's own minor; a lenient read of a newer minor leaves out just
   that note or section and reports it through `onDropped` as a field drop
   (`annotations[i]` / `sections[i]`).
-- `tourBlocksMinor(blocks): number` - the lowest minor `blocks` need: 1
-  when a model stands in a view minor 1 added or carries `animation`,
-  `annotations` or `sections`; 2 when a character stands in a minor-2
-  view or names a declared character; 3 when a long text stands as a
-  `lectern`; 4 when one stands as a `reading` sign; 5 when one is
-  narrated (`narration`); else 0. The writer stamps it.
 - `TOUR_NARRATION_RULES` (`voiceCredit` optional 200 code points),
   `TOUR_NARRATION_MAX_DURATION_MS` (14 400 000, four hours) and the type
-  `TourNarration` - a long text's narration (minor 5).
+  `TourNarration` - a long text's narration.
 - `TOUR_BLOCK_TEXT_RULES` - every capped text, as `{ max, unit, required }`:
   - `shortText`: `caption` required 40, `description` optional 160;
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
@@ -70,19 +64,20 @@ model | character`.
 - `checkTourBlockText(rule, value): TourBlockTextCheck` -
   `{ ok: true, value }` (the text exactly as written) or
   `{ ok: false, reason, blank? }` (`blank` for a whitespace-only text).
-- `tourFloorView(kind, 'free' | 'story'): TourBlockView | null` - the view
-  a block falls back to when its own is unknown to this reader: `card` for
-  a story block; for a free one its kind's world view (`pin`, `reading`
-  from minor 4, `plane`, `placed`) or `null` (no world view: skipped).
-- `readTourBlocks(value, at, options): TourBlockRead[]` - one station's
-  blocks, each field checked, each media reference resolved, ids unique.
-  `TourBlockRead` is `{ block, knownView }`; the view is settled by
-  `placeTourBlocks` once the story is known.
-- `placeTourBlocks(read, shown, { fail, lenient?, onDropped? }): TourBlock[]`
-  - `shown` holds the ids the station's `show` steps name; every other
-    block must stand in a world view.
-- `checkTourBlockIdsUnique(stations, fail)` - block ids are unique across
-  the whole tour, not only within a station (for the manifest reader).
+- `tourFloorView(kind): TourBlockView | null` - the view a free block falls
+  back to when its own is unknown to this reader: its kind's world view
+  (`pin`, `reading`, `plane`, `placed`) or `null` (no world view:
+  skipped). A story block's floor is `card`, from its reader.
+- `readTourBlocks(value, at, options): TourBlockRead[]` - a list of blocks
+  read at once, ids unique (the draft record's one block).
+- `tourBlockReader(options)` - the per-block reader of a station's children
+  (`tour-story.ts`): `(value, at) => TourBlockRead | null`, each field
+  checked, each media reference resolved, `null` when a lenient read
+  skipped the block (reported). It checks no id uniqueness; the caller
+  does. `TourBlockRead` is `{ block, knownView }`; a free block's view is
+  settled by `placeTourBlocks`.
+- `placeTourBlocks(read, { fail, lenient?, onDropped? }): TourBlock[]` -
+  every block in `read` must stand in a world view.
 - `TourBlocksReadOptions` - `{ assets, fail, lenient?, onDropped? }`.
 - `TourBlockDrop` - `{ kind: 'field', block, field, reason }` (an optional
   text left out) or `{ kind: 'block', block, reason }` (a block skipped).
@@ -94,12 +89,12 @@ model | character`.
 ## The block
 
 - Every block: `id` (`[A-Za-z0-9_-]{1,64}`, unique among the tour's
-  blocks; asset ids are a namespace of their own, so a block may share an
+  children; asset ids are a namespace of their own, so a block may share an
   asset's id), `kind`, `view`, `pose` (`parseTourLocalPose`), optional
   `createdAtIso` (ISO-8601).
 - `shortText`: `caption`, optional `description`.
-- `longText`: `title`, `body` (the text's source), and from minor 5 an
-  optional `narration` `{ audio, timing?, voiceCredit?, synthetic,
+- `longText`: `title`, `body` (the text's source), and an optional
+  `narration` `{ audio, timing?, voiceCredit?, synthetic,
 durationMs? }`: `audio` names an audio asset; `timing` must be the
   block's own entry `timing/<id>.json` (`tour-timing.ts`, read by a
   viewer only when the text opens); `synthetic` reads as false when
@@ -115,7 +110,7 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
 - `audio`: `audio` (an audio asset), `transcript`, optional `title`.
 - `model`: `asset` (a model asset), `sizeM` by view - required in every
   world view, refused for `stage` (shown at the file's own size), optional
-  for `card` - and optional `title`. Minor 1 adds, in any view:
+  for `card` - and optional `title`. In any view:
   - `animation` `{ name, autoplay }` - a clip of the file by name (a name
     the file lacks plays nothing); `autoplay` must be a boolean.
   - `annotations` - 1 to 32 notes `{ position, normal, title, text? }` in
@@ -134,7 +129,7 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
     (skips the block when lenient). Vectors are kept as written;
     renderers normalise directions.
 - `character`: `name`, `image` (an image asset), `caption`, optional
-  `voice` (an audio asset), and (minor 2) an optional `character`, the id
+  `voice` (an audio asset), and an optional `character`, the id
   of a declared character (`tour-characters.ts`, passed in as
   `TourBlocksReadOptions.characters`). A resolved reference gives the block
   the declaration's name and image (the writer writes them inline too); an
@@ -177,12 +172,12 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
 ## Examples
 
 ```ts
-const read = readTourBlocks(station.blocks, 'stations[0].blocks', {
+const readBlock = tourBlockReader({
   assets,
   fail,
   onDropped: (d) => console.warn(d.block, d.reason),
 });
-const blocks = placeTourBlocks(read, new Set(['intro']), { fail });
+const read = readBlock(station.children[0], 'stations[0].children[0]');
 
 tourTextCount('  a \t b  '); // 3
 tourTextCount('é'); // 2 (a combining mark counts)
@@ -201,17 +196,15 @@ tourTextCount('\u{1F600}', 'utf16'); // 2
   messages an author reads (path, unit, article, bounds), a number or an
   array that would coerce into a valid id, kind or timestamp refused, a
   non-positive size malformed even for a newer minor, and an optional
-  over-cap text dropped with no listener. The model's minor-1 fields:
+  over-cap text dropped with no listener. The model's fields:
   every world view needing a size, notes, sections and clip kept exactly,
   notes surviving a replaced model file, the empty-list rules, 32 notes
   and 4 sections at N and N+1 (strict and lenient), note title and text
-  caps, malformed vectors at every minor, the space bound, and
-  `tourBlocksMinor` per view and field.
+  caps, malformed vectors at every minor, and the space bound.
 - `tour-blocks.property.test.ts` - a model's size for every double, and
-  for the minor-1 fields: every valid set reads back exactly through JSON
-  in every world view, any note count against the limit, any note title
-  against its cap, and the minor a model needs for every combination of
-  view and fields. A scoped mutation run over this
+  for its fields: every valid set reads back exactly through JSON in every
+  world view, any note count against the limit, any note title against its
+  cap. A scoped mutation run over this
   file left two survivors, both equivalent: the `typeof value ===
 'string'` guard before a `Map.get` and an `Array.includes` that only
   match strings.

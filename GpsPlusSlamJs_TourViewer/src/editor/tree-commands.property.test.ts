@@ -8,6 +8,7 @@
  * that the stations are numbered 1 to n in the tour's order, no id
  * repeats, and the tour still writes and reads back as a valid file.
  */
+import { stationContent, storyOf } from "../test-support/station-content.js";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -59,11 +60,10 @@ function storyTour(): TourManifest {
   const base = tourOf(OBJECTS);
   const stories: Record<string, Partial<TourStation>> = {
     [B]: {
-      steps: [
-        {
-          id: "q1",
-          advance: { mode: "tap" },
-          action: {
+      ...stationContent([
+        storyOf("b-story", [
+          {
+            id: "q1",
             kind: "quiz",
             question: "Which way?",
             points: 1,
@@ -76,8 +76,8 @@ function storyTour(): TourManifest {
               correct: "o1",
             },
           },
-        },
-      ],
+        ]),
+      ]),
     },
   };
   return {

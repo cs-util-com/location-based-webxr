@@ -35,6 +35,10 @@ import {
   walkStarted,
   walkStepped,
 } from "./visitor-walk-slice";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 type Call =
   | {
@@ -149,19 +153,10 @@ function tourOf(
     id: `s${String(i)}`,
     title: `S${String(i)}`,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: [],
+    ...stationContent(s.steps ? [playableStory(`s${String(i)}-story`)] : []),
     activateRadiusM: s.foundRadiusM * 4,
     foundRadiusM: s.foundRadiusM,
     hint: "arrow",
-    steps: s.steps
-      ? [
-          {
-            id: "t",
-            action: { kind: "show", block: "hi" },
-            advance: { mode: "tap" },
-          },
-        ]
-      : [],
   }));
 }
 

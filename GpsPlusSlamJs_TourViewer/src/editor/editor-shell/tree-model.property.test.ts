@@ -31,6 +31,10 @@ import {
   treeFoldOf,
   type TreeInput,
 } from "./tree-model.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "../../test-support/station-content.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -48,15 +52,16 @@ const stationList = fc
               activateRadiusM: 50,
               foundRadiusM: 25,
               hint: "arrow",
-              steps: [],
-              blocks: Array.from({ length: n }, (_, i) => ({
-                id: `${id}-pin${String(i)}`,
-                kind: "shortText",
-                view: "pin",
-                caption: "A pin",
-                createdAtIso: "2026-10-22T10:00:00Z",
-                pose: POSE,
-              })),
+              ...stationContent(
+                Array.from({ length: n }, (_, i) => ({
+                  id: `${id}-pin${String(i)}`,
+                  kind: "shortText",
+                  view: "pin",
+                  caption: "A pin",
+                  createdAtIso: "2026-10-22T10:00:00Z",
+                  pose: POSE,
+                })),
+              ),
             }) as unknown as TourStation,
         ),
       ),
@@ -131,7 +136,7 @@ function run(stations: readonly TourStation[], steps: readonly Step[]) {
       continue;
     }
     clock += s.gap;
-    const item = s.item ? target.blocks[0] : undefined;
+    const item = s.item ? stationBlocks(target)[0] : undefined;
     const id = item?.id ?? `station:${target.id}`;
     const click = treeClick({
       id,

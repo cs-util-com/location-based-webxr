@@ -156,7 +156,10 @@ hooks.tickStations = stations.tick;
   call) and the sheet is drawn after; `onUndone` tells the prefetch of a
   station brought back after its skip settled (`prefetch.undone`);
   `storyPlaying` is the story panel's `playing()`, the story "End this
-  story?" names. Each render holds the story's step while its end is
+  story?" names; `storyChoosing` is its `choosing()`, which turns the
+  guide's and the sheet's words from a story playing to a choice asked.
+  A change of it ticks the guide at once (`onChange`): a tap on a story
+  must not wait for the next position to change the end control. Each render holds the story's step while its end is
   asked (`view.holdStep(end?.kind === "end")`, before the story's
   progress is read): the step's timer stops under the question and
   "Keep listening" starts it again from its full length.
@@ -180,7 +183,9 @@ hooks.tickStations = stations.tick;
   `skipTapped`, `rowTapped`, `cancelAsk`, `storyEnded`, the stop's `stopAll` and
   `endSession`); `request()` inside one defers the draw to the end of the
   outermost call, once, and outside any call draws at once. A call that
-  throws still draws (try/finally). Tests: `visitor-stations.test.ts`
+  throws still draws (try/finally). `after(run)` runs work behind that draw
+  (a sheet opening with it takes the focus only then), and at once outside
+  a call. Tests: `visitor-stations.test.ts`
   "createCallGuard".
 - `progressKept()` - the open tour has a walk with progress: the
   progress's stations are the open tour's (a closed tour's walk stays in

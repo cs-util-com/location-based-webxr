@@ -26,7 +26,8 @@ by the radius alone).
     naming a missing asset shows nothing, so it is no card. The one rule
     for the walk and the card (`scene-view.ts` uses it too).
   - `walkRoute(stations, assets)` - that tour fact per station (`type
-WalkRoute`, `{ id, stepless }`). Stepless means no steps AND no card
+WalkRoute`, `{ id, stepless }`). Stepless means no story to play (`story-choice.ts`
+    `playableStories`: quizzes alone play nothing yet) AND no card
     (`stationHasCard`): a station with a card keeps it until Continue
     (`scene-view.ts`), and that story end finishes it. The guide passes
     the open tour's assets (`StationTour.assets`). `assets` is required,
@@ -133,8 +134,7 @@ focusDistanceM }`.
   one, every offered station can be skipped, and the next offer is computed
   from the list; property-tested over generated tours under both
   orders.
-- **A station with no steps** (all left out for a newer minor, K1 review R4)
-  is done the moment it is found (under fixed order too: done is
+- **A station with no story to play** is done the moment it is found (under fixed order too: done is
   progress, and holding it would hold back the next offer).
 - **Done is progress; finished is the visitor's:** `complete` = every
   station done, and it still

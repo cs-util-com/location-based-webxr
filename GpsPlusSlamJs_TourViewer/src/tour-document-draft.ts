@@ -76,6 +76,11 @@ export interface TourSettingsRecord {
  *  reader skips it. */
 export const SETTINGS_KEY = "settings";
 
+/** What both pages tell an author when a stored record, or a station in
+ *  it, did not read (`parseSettingsRecord`'s `onLost`). */
+export const DRAFT_PART_UNREAD =
+  "Part of this tour's saved draft could not be read and was left out.";
+
 /** The ids of `wanted`'s stations whose pose differs from the one
  *  `against` gives them; none without an opinion, and none for a station
  *  `against` does not carry (nothing a restore could move). */
@@ -126,18 +131,23 @@ function parseStations(value: unknown): StationPose[] | undefined | null {
  * under one id the first is kept. A frame that does not read is lost (the
  * objects naming it are seated by the station rule as they come back). A
  * frame naming an asset or a character reads only against `against`, which
- * declares them; without `against`, such a frame is lost. */
+ * declares them; without `against`, such a frame is lost. `onLost` hears
+ * each frame lost, and a list that is none. */
 function parseFrames(
   value: unknown,
   against: TourManifest | undefined,
+  onLost: (() => void) | undefined,
 ): StationFrame[] | undefined {
-  if (!Array.isArray(value)) return undefined;
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    onLost?.();
+    return undefined;
+  }
   const frames: StationFrame[] = [];
   for (const entry of value as unknown[]) {
     const frame = parseFrame(entry, against);
-    if (frame !== undefined && !frames.some((f) => f.id === frame.id)) {
-      frames.push(frame);
-    }
+    if (frame === undefined) onLost?.();
+    else if (!frames.some((f) => f.id === frame.id)) frames.push(frame);
   }
   return frames;
 }
@@ -219,12 +229,26 @@ function parseDetails(value: unknown): TourDetailFields | undefined | null {
  *  itself, never the objects beside it). `against`: the tour it is read
  *  for (the one opened), whose assets and characters a recorded frame's
  *  story may name (`parseFrames`). A frame list or a
- *  deleted list that does not read costs only itself. */
+ *  deleted list that does not read costs only itself. `onLost` hears what
+ *  did not read: the `record` once, or each `frame`; never when there is
+ *  no record. A page tells the author (`DRAFT_PART_UNREAD`). */
 export function parseSettingsRecord(
   text: string | undefined,
   against?: TourManifest,
+  onLost?: (what: "record" | "frame") => void,
 ): TourSettingsRecord | undefined {
   if (text === undefined) return undefined;
+  const lostFrame = onLost === undefined ? undefined : () => onLost("frame");
+  const read = readSettingsRecord(text, against, lostFrame);
+  if (read === undefined) onLost?.("record");
+  return read;
+}
+
+function readSettingsRecord(
+  text: string,
+  against: TourManifest | undefined,
+  lostFrame: (() => void) | undefined,
+): TourSettingsRecord | undefined {
   try {
     const value: unknown = JSON.parse(text);
     if (value === null || typeof value !== "object") return undefined;
@@ -234,8 +258,8 @@ export function parseSettingsRecord(
     const stations = parseStations(record["stations"]);
     if (typeof needsNoGps !== "boolean" || details === null) return undefined;
     if (stations === null) return undefined;
-    const created = parseFrames(record["createdStations"], against);
-    const frames = parseFrames(record["frames"], against);
+    const created = parseFrames(record["createdStations"], against, lostFrame);
+    const frames = parseFrames(record["frames"], against, lostFrame);
     const order = parseIds(record["order"]);
     const deletedStations = parseIds(record["deletedStations"]);
     const handMade = parseIds(record["handMadeStations"]);

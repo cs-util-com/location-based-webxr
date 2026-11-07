@@ -1,32 +1,16 @@
 /**
- * Why this test matters: a long text may be read aloud (`narration`,
- * `tour.json` version 4 minor 5), with a read-along track in its own
- * archive entry `timing/<blockId>.json`. It is an additive minor, so three
- * promises are pinned here: this reader keeps every field exactly through
- * a write and a read, and stamps 4.5 only when a text is narrated; a
- * narration this reader cannot use fails a file of its own minor (a
- * writer's bug, found when the tour is made) but drops only the narration
- * of a newer minor's file (the text itself still reads); and the reader
- * the framework actually released (1.31.0, minor 0) opens a narrated tour
- * as it opened it before - the narration ignored - and refuses to write
- * it back, so no older app ever saves the narration away.
- *
- * The minor-4 reader is not released and cannot be installed: it is this
- * module one commit back. It ignores `narration` by the rule this file
- * shares with every minor (unknown fields are ignored at every level), the
- * rule `tour-manifest.test.ts` pins for a newer minor's unknown fields.
+ * Why this test matters: a long text may be read aloud (`narration`), with
+ * a read-along track in its own archive entry `timing/<blockId>.json`. This
+ * reader keeps every field exactly through a write and a read; a narration
+ * it cannot use fails a file of its own minor (a writer's bug, found when
+ * the tour is made) but drops only the narration of a newer minor's file
+ * (the text itself still reads).
  */
 
 import { describe, expect, it } from 'vitest';
 
 import {
-  parseTourManifest as parseReleased,
-  serializeTourManifest as serializeReleased,
-} from 'tour-reader-1-31/ar/tour-manifest';
-
-import {
   TOUR_NARRATION_MAX_DURATION_MS,
-  tourBlocksMinor,
   type TourLongTextBlock,
 } from './tour-blocks';
 import {
@@ -35,6 +19,7 @@ import {
   TOUR_MANIFEST_MINOR,
   TourManifestValidationError,
 } from './tour-manifest';
+import { tourStationBlocks } from './tour-story';
 
 const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] };
 const GEO = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
@@ -63,10 +48,17 @@ function text(extra: Record<string, unknown> = {}) {
 function tour(
   blocks: unknown[],
   shown: readonly string[] = [],
-  minor: number = 5
+  minor: number = 0
 ) {
+  const isShown = (b: unknown) => shown.includes((b as { id: string }).id);
+  const story = {
+    id: 'story',
+    kind: 'story',
+    title: 'A story',
+    children: blocks.filter(isShown),
+  };
   return {
-    version: 4,
+    version: 5,
     minor,
     assets: [
       { id: 'voice', path: 'content/voice.mp3' },
@@ -79,32 +71,28 @@ function tour(
         geo: GEO,
         activateRadiusM: 25,
         foundRadiusM: 4,
-        blocks,
-        steps: shown.map((block, i) => ({
-          id: `s${String(i)}`,
-          action: { kind: 'show', block },
-        })),
+        children: [
+          ...(shown.length === 0 ? [] : [story]),
+          ...blocks.filter((b) => !isShown(b)),
+        ],
       },
     ],
   };
 }
 
 function longText(manifest: ReturnType<typeof parseTourManifest>) {
-  return manifest.stations[0]?.blocks[0] as TourLongTextBlock | undefined;
+  return tourStationBlocks(manifest.stations[0]!)[0] as
+    TourLongTextBlock | undefined;
 }
 
-describe('a narrated long text (minor 5)', () => {
-  it('is minor 5', () => {
-    expect(TOUR_MANIFEST_MINOR).toBeGreaterThanOrEqual(5);
-  });
-
-  it('reads every field and round-trips exactly, written at minor 5', () => {
+describe('a narrated long text', () => {
+  it('reads every field and round-trips exactly', () => {
     const read = parseTourManifest(tour([text()]));
     expect(longText(read)?.narration).toEqual(NARRATION);
     const written = JSON.parse(serializeTourManifest(read)) as {
       minor: number;
     };
-    expect(written.minor).toBe(5);
+    expect(written.minor).toBe(0);
     expect(parseTourManifest(written)).toEqual(read);
   });
 
@@ -119,17 +107,6 @@ describe('a narrated long text (minor 5)', () => {
       audio: 'voice',
       synthetic: false,
     });
-  });
-
-  it('needs minor 5 above everything else; an unnarrated text does not', () => {
-    const narrated = parseTourManifest(tour([text()])).stations[0]?.blocks;
-    expect(tourBlocksMinor(narrated ?? [])).toBe(5);
-    const card = parseTourManifest(tour([text({ view: 'card' })], ['text']))
-      .stations[0]?.blocks;
-    expect(tourBlocksMinor(card ?? [])).toBe(5);
-    const plain = parseTourManifest(tour([text({ narration: undefined })]))
-      .stations[0]?.blocks;
-    expect(tourBlocksMinor(plain ?? [])).toBe(4);
   });
 
   it('accepts a duration at its edges', () => {
@@ -213,56 +190,5 @@ describe('a narrated long text (minor 5)', () => {
       ])
     );
     expect(longText(kept)?.narration?.voiceCredit).toHaveLength(200);
-  });
-});
-
-describe('the released reader (framework 1.31.0, minor 0) opens a minor-5 tour', () => {
-  // Why: "additive" is a promise to readers already on phones. This is
-  // the published package's own parser, installed as a dev dependency.
-  const story = JSON.parse(
-    serializeTourManifest(
-      parseTourManifest(tour([text({ view: 'card' })], ['text']))
-    )
-  ) as { minor: number };
-  const free = JSON.parse(
-    serializeTourManifest(
-      parseTourManifest(
-        tour([
-          text(),
-          {
-            id: 'pin',
-            kind: 'shortText',
-            view: 'pin',
-            caption: 'Here',
-            pose: POSE,
-          },
-        ])
-      )
-    )
-  ) as unknown;
-
-  it('shows a narrated story text as its card, the narration ignored', () => {
-    expect(story.minor).toBe(5);
-    const old = parseReleased(story);
-    const block = old.stations[0]?.blocks[0];
-    expect(block).toMatchObject({
-      kind: 'longText',
-      view: 'card',
-      title: 'The guild house',
-    });
-    expect(block).not.toHaveProperty('narration');
-  });
-
-  it('leaves a free reading sign out as before, keeping the rest', () => {
-    const drops: unknown[] = [];
-    const old = parseReleased(free, { onDropped: (d) => drops.push(d) });
-    expect(old.stations[0]?.blocks.map((b) => b.id)).toEqual(['pin']);
-    expect(drops).toHaveLength(1);
-  });
-
-  it('refuses to write it back, instead of dropping the narration', () => {
-    expect(() => serializeReleased(parseReleased(story))).toThrow(
-      /made with a newer version of the app/
-    );
   });
 });

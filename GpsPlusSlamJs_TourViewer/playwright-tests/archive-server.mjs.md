@@ -42,7 +42,7 @@ the stations tour (minor 4) whose gate also holds a long text its creator
 stands as a reading sign; the second is another tour, its own title and
 block id, so `view-switch.spec.js` sees the visitor's view preference
 carried from one tour to the next.
-`/ranges-ok/v3-tour.zip` is a tour in the earlier format 3, written
+`/ranges-ok/v4-tour.zip` is a tour in the earlier format 4, written
 literally: the app refuses it and deletes the draft it kept for it.
 
 `/ranges-ok/walk-tour.zip` (any order) and `/ranges-ok/walk-tour-fixed.zip`
@@ -58,13 +58,13 @@ proxy's own path so the app treats it as a Drive tour without a Google host
 with the file name "My tour.zip", any other id sends none (the fallback).
 `content-disposition` is in the exposed headers, because the app (port 5187) reads this server (port 5197) cross-origin.
 
-Every `tour.json` it writes is version 4: stations at geo poses, the pins
+Every `tour.json` it writes is version 5: stations at geo poses, the pins
 and photos as their free blocks (a pin a short text in its `pin` view, a
 photo a picture in its `plane` view whose image asset carries its own id),
-a story as card or stage blocks shown by `show` steps. The shapes come
+a story as a child holding its card or stage blocks. The shapes come
 from `tour-fixture.mjs` (`stationAt`, `inOwnStation`: anchored exactly at
 the element, turned like north, so its local pose is a zero offset;
-`pinBlock`, `capturedPhoto`, `imageAsset`, `textCard`, `showStep`),
+`pinBlock`, `capturedPhoto`, `imageAsset`, `textCard`, `told`, `storyOf`, `stationBlocks`),
 which the editor spec uses too. A story line of an earlier format's text
 step is a long text in the card, titled with its station's title.
 

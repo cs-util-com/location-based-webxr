@@ -11,6 +11,7 @@ import type { GuideView } from "./station-guide";
 import { startWalk, walkRoute } from "./station-run";
 import { wireWalkSheet, type WalkSheetDom } from "./walk-sheet";
 import { walkSheetModel } from "./walk-sheet-model";
+import { stationContent } from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the sheet's model says what the list shows, but
@@ -29,8 +30,7 @@ function station(id: string, title: string): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 

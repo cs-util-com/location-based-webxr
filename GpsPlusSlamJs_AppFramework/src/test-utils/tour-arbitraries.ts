@@ -9,13 +9,14 @@
  *   CJK, whitespace runs inside and padding outside (which the count
  *   ignores and the reader keeps);
  * - ids up to their 64-character limit, block ids that collide with asset
- *   ids (separate namespaces) and with step ids;
- * - valid version 4 blocks of every kind in every view this reader draws,
- *   free ones in a world view, story ones in any;
- * - stations' contents: free and story blocks, shows, choices whose
- *   options jump or continue, quizzes of every answer type;
- * - whole version 4 manifests of one to four stations, block ids unique
- *   across the tour.
+ *   ids (separate namespaces);
+ * - valid blocks of every kind in every view this reader draws, free ones
+ *   in a world view, story ones in any;
+ * - children lists: stories (titled, possibly empty, holding blocks in any
+ *   view, choices jumping back or forward inside the story, and quizzes of
+ *   every answer type) and free blocks in a world view, in a shuffled order;
+ * - whole manifests of one to four stations, child ids unique across the
+ *   tour.
  *
  * `fast-check` is NOT bundled into the built file (`neverBundle` in
  * `config/tsdown.config.ts`): it is imported as a bare specifier and
@@ -45,6 +46,7 @@ import {
   type TourBlockKind,
   type TourTextRule,
 } from '../ar/tour-blocks.js';
+import { TOUR_STORY_TITLE_RULE } from '../ar/tour-story.js';
 
 /** The assets every generated block names: one or two of each kind, with
  *  ids the block id generator also produces (they may collide). */
@@ -345,7 +347,7 @@ export const TOUR_FREE_VIEWS: Readonly<
 const KINDS = Object.keys(TOUR_BLOCK_VIEWS) as TourBlockKind[];
 
 /**
- * A valid version 4 block (a plain JSON record) with id `id`: a free one in
+ * A valid version 5 block (a plain JSON record) with id `id`: a free one in
  * a world view of its kind, a story one in any view of its kind.
  */
 export function tourBlockArbitrary(
@@ -420,51 +422,8 @@ const quizActionArbitrary = fc
     answer,
   }));
 
-/** Sizes of a generated station content (swept by the properties). */
-export interface TourStationContentSize {
-  readonly maxBlocks?: number;
-  readonly maxExtraSteps?: number;
-}
-
-interface ContentPlan {
-  readonly blocks: readonly { id: string; story: boolean }[];
-  readonly stepIds: readonly string[];
-  readonly extras: readonly ('choice' | 'quiz')[];
-  readonly order: readonly number[];
-}
-
-function contentPlan(size: TourStationContentSize): fc.Arbitrary<ContentPlan> {
-  const maxBlocks = size.maxBlocks ?? 6;
-  const maxExtra = size.maxExtraSteps ?? 3;
-  return fc
-    .record({
-      blocks: fc.uniqueArray(
-        fc.record({ id: tourIdArbitrary, story: fc.boolean() }),
-        { maxLength: maxBlocks, selector: (b) => b.id }
-      ),
-      extras: fc.array(fc.constantFrom('choice' as const, 'quiz' as const), {
-        maxLength: maxExtra,
-      }),
-    })
-    .chain(({ blocks, extras }) => {
-      const steps = blocks.filter((b) => b.story).length + extras.length;
-      return fc
-        .record({
-          stepIds: fc.uniqueArray(tourIdArbitrary, {
-            minLength: steps,
-            maxLength: steps,
-          }),
-          order: fc.shuffledSubarray(
-            Array.from({ length: steps }, (_, i) => i),
-            { minLength: steps, maxLength: steps }
-          ),
-        })
-        .map(({ stepIds, order }) => ({ blocks, stepIds, extras, order }));
-    });
-}
-
 function choiceAction(
-  stepIds: readonly string[],
+  childIds: readonly string[],
   gotos: readonly (number | null)[]
 ): Record<string, unknown> {
   return {
@@ -475,62 +434,127 @@ function choiceAction(
         id: `o${String(i)}`,
         label: `Option ${String(i)}`,
         goto:
-          g === null || stepIds.length === 0
+          g === null || childIds.length === 0
             ? undefined
-            : stepIds[g % stepIds.length],
+            : childIds[g % childIds.length],
       })
     ),
   };
 }
 
+// --- a station's children ----------------------------------------------
+
+/** How a story block moves on: every mode this reader knows. */
+const storyAdvanceArbitrary = fc.oneof(
+  advanceArbitrary,
+  fc.constant({ mode: 'lineEnd' })
+);
+
+/** Sizes of a generated children list (swept by the properties). */
+export interface TourStationChildrenSize {
+  readonly maxStories?: number;
+  readonly maxFreeBlocks?: number;
+  readonly maxStoryChildren?: number;
+}
+
+type StoryChildKind = 'block' | 'choice' | 'quiz';
+
+interface ChildrenPlan {
+  /** Each story's children kinds, in order. */
+  readonly stories: readonly (readonly StoryChildKind[])[];
+  readonly freeBlocks: number;
+  /** Indices into stories-then-free-blocks: the station's order. */
+  readonly order: readonly number[];
+  /** One id per story, free block and story child, all unique. */
+  readonly ids: readonly string[];
+}
+
+function childrenPlan(
+  size: TourStationChildrenSize
+): fc.Arbitrary<ChildrenPlan> {
+  return fc
+    .record({
+      stories: fc.array(
+        fc.array(fc.constantFrom<StoryChildKind>('block', 'choice', 'quiz'), {
+          maxLength: size.maxStoryChildren ?? 5,
+        }),
+        { maxLength: size.maxStories ?? 4 }
+      ),
+      freeBlocks: fc.integer({ min: 0, max: size.maxFreeBlocks ?? 4 }),
+    })
+    .chain(({ stories, freeBlocks }) => {
+      const top = stories.length + freeBlocks;
+      const count = top + stories.reduce((n, s) => n + s.length, 0);
+      return fc
+        .record({
+          order: fc.shuffledSubarray(
+            Array.from({ length: top }, (_, i) => i),
+            { minLength: top, maxLength: top }
+          ),
+          ids: fc.uniqueArray(tourIdArbitrary, {
+            minLength: count,
+            maxLength: count,
+          }),
+        })
+        .map(({ order, ids }) => ({ stories, freeBlocks, order, ids }));
+    });
+}
+
+function storyChildArbitrary(
+  kind: StoryChildKind,
+  id: string,
+  storyIds: readonly string[]
+): fc.Arbitrary<Record<string, unknown>> {
+  if (kind === 'quiz') return quizActionArbitrary.map((q) => ({ id, ...q }));
+  if (kind === 'choice') {
+    return fc
+      .array(fc.option(fc.nat(), { nil: null }), { minLength: 2, maxLength: 4 })
+      .map((gotos) => ({ id, ...choiceAction(storyIds, gotos) }));
+  }
+  return fc
+    .tuple(tourBlockArbitrary(id, 'story'), storyAdvanceArbitrary)
+    .map(([block, advance]) => ({ ...block, advance }));
+}
+
 /**
- * A valid version 4 station content `{ blocks, steps }` as JSON records:
- * free blocks in a world view, story blocks each shown by at least one
- * `show` step, and choices (options jumping to a step or continuing) and
- * quizzes among the shows, in a shuffled order.
+ * A valid children list as JSON records: stories (titled, each
+ * with its own blocks in any view, choices whose options jump to a child
+ * of the same story, back or forward, or continue, and quizzes; possibly
+ * empty) and free blocks in a world view, in a shuffled order, so free
+ * blocks may come before, between or after the stories. Every id in the
+ * list is unique.
  */
-export function tourStationContentArbitrary(
-  size: TourStationContentSize = {}
-): fc.Arbitrary<{
-  blocks: Record<string, unknown>[];
-  steps: Record<string, unknown>[];
-}> {
-  return contentPlan(size).chain((plan) => {
-    const blocks = fc.tuple(
-      ...plan.blocks.map((b) =>
-        tourBlockArbitrary(b.id, b.story ? 'story' : 'free')
-      )
-    );
-    const extras = fc.tuple(
-      ...plan.extras.map((kind) =>
-        kind === 'quiz'
-          ? quizActionArbitrary
-          : fc
-              .array(fc.option(fc.nat(), { nil: null }), {
-                minLength: 2,
-                maxLength: 4,
-              })
-              .map((gotos) => choiceAction(plan.stepIds, gotos))
-      )
-    );
-    const advances = fc.array(advanceArbitrary, {
-      minLength: plan.stepIds.length,
-      maxLength: plan.stepIds.length,
+export function tourStationChildrenArbitrary(
+  size: TourStationChildrenSize = {}
+): fc.Arbitrary<Record<string, unknown>[]> {
+  return childrenPlan(size).chain((plan) => {
+    let next = 0;
+    const take = (): string => plan.ids[next++]!;
+    const stories = plan.stories.map((kinds) => {
+      const id = take();
+      const childIds = kinds.map(take);
+      return fc
+        .record({
+          title: tourTextArbitrary(TOUR_STORY_TITLE_RULE),
+          children: fc.tuple(
+            ...kinds.map((kind, i) =>
+              storyChildArbitrary(kind, childIds[i]!, childIds)
+            )
+          ),
+        })
+        .map(({ title, children }) => ({
+          id,
+          kind: 'story',
+          title,
+          children: [...children],
+        }));
     });
-    return fc.tuple(blocks, extras, advances).map(([bs, xs, adv]) => {
-      const actions: Record<string, unknown>[] = [
-        ...plan.blocks
-          .filter((b) => b.story)
-          .map((b) => ({ kind: 'show', block: b.id })),
-        ...xs,
-      ];
-      const steps = plan.order.map((a, i) => ({
-        id: plan.stepIds[i]!,
-        action: actions[a]!,
-        advance: adv[i]!,
-      }));
-      return { blocks: [...bs], steps };
-    });
+    const free = Array.from({ length: plan.freeBlocks }, () =>
+      tourBlockArbitrary(take(), 'free')
+    );
+    return fc
+      .tuple(...stories, ...free)
+      .map((top) => plan.order.map((i) => top[i]!));
   });
 }
 
@@ -543,51 +567,70 @@ const geoArbitrary = fc.record({
   headingDeg: coordinate(0, 359.9),
 });
 
-/** `content` with every block id another station already uses renamed
- *  (`s<station>b<index>`, suffixed until no block of the tour has it), and
- *  the `show` steps naming it with it: block ids are unique across the
- *  tour. */
-function withTourUniqueBlockIds(
-  content: {
-    blocks: Record<string, unknown>[];
-    steps: Record<string, unknown>[];
-  },
+/** `children` with every id another station already uses renamed
+ *  (`s<station>c<n>`, suffixed until no child of the tour has it), and the
+ *  gotos naming it with it: child ids are unique across the tour. */
+function withTourUniqueChildIds(
+  children: readonly Record<string, unknown>[],
   station: number,
   used: Set<string>
-): { blocks: Record<string, unknown>[]; steps: Record<string, unknown>[] } {
-  const own = new Set(content.blocks.map((b) => b.id as string));
-  const taken = (id: string) => used.has(id) || own.has(id);
-  const renamed = new Map<string, string>();
-  const blocks = content.blocks.map((block, i) => {
-    const id = block.id as string;
-    if (!used.has(id)) return block;
-    let fresh = `s${String(station)}b${String(i)}`;
-    while (taken(fresh)) fresh += '_';
-    own.add(fresh);
-    renamed.set(id, fresh);
-    return { ...block, id: fresh };
+): Record<string, unknown>[] {
+  const kidsOf = (child: Record<string, unknown>) =>
+    child.kind === 'story' ? (child.children as Record<string, unknown>[]) : [];
+  const own = new Set(
+    children.flatMap((c) => [c, ...kidsOf(c)]).map((c) => c.id as string)
+  );
+  let n = 0;
+  const fresh = (id: string): string => {
+    if (!used.has(id)) return id;
+    let next = `s${String(station)}c${String(n++)}`;
+    while (used.has(next) || own.has(next)) next += '_';
+    own.add(next);
+    return next;
+  };
+  const unique = children.map((child) => {
+    if (child.kind !== 'story') {
+      return { ...child, id: fresh(child.id as string) };
+    }
+    const kids = kidsOf(child);
+    const renamed = new Map(
+      kids.map((k) => [k.id as string, fresh(k.id as string)])
+    );
+    return {
+      ...child,
+      id: fresh(child.id as string),
+      children: kids.map((kid) => {
+        const id = renamed.get(kid.id as string);
+        if (kid.kind !== 'choice') return { ...kid, id };
+        const options = kid.options as { goto?: string }[];
+        return {
+          ...kid,
+          id,
+          options: options.map((o) =>
+            o.goto === undefined ? o : { ...o, goto: renamed.get(o.goto) }
+          ),
+        };
+      }),
+    };
   });
-  for (const block of blocks) used.add(block.id as string);
-  const steps = content.steps.map((step) => {
-    const action = step.action as Record<string, unknown>;
-    const to =
-      action.kind === 'show' ? renamed.get(action.block as string) : undefined;
-    return to === undefined
-      ? step
-      : { ...step, action: { ...action, block: to } };
-  });
-  return { blocks, steps };
+  for (const child of unique) {
+    for (const c of [child, ...kidsOf(child)]) used.add(c.id as string);
+  }
+  return unique;
 }
 
 /**
- * A version 4 `tour.json` (a JSON record) of one to four stations, each
- * with a generated content ({@link tourStationContentArbitrary}: free and
- * story blocks of every kind, shows, choices and quizzes), block ids
+ * A `tour.json` (a JSON record) of one to four stations, each with
+ * generated children ({@link tourStationChildrenArbitrary}), child ids
  * unique across the tour, order fixed or any, assets
  * {@link TOUR_ARBITRARY_ASSETS}.
  */
 export function tourManifestArbitrary(
-  size: TourStationContentSize = {}
+  size: TourStationChildrenSize = {
+    maxStories: 2,
+    maxFreeBlocks: 3,
+    maxStoryChildren: 4,
+  }
 ): fc.Arbitrary<Record<string, unknown>> {
   return fc
     .integer({ min: 1, max: 4 })
@@ -596,7 +639,7 @@ export function tourManifestArbitrary(
         stations: fc.tuple(
           ...Array.from({ length: n }, (_, i) =>
             fc.record({
-              content: tourStationContentArbitrary(size),
+              children: tourStationChildrenArbitrary(size),
               geo: geoArbitrary,
               title: fc.option(fc.stringMatching(/^[A-Za-z]{1,12}$/), {
                 nil: undefined,
@@ -614,23 +657,21 @@ export function tourManifestArbitrary(
     .map(({ stations, order, title }) => {
       const used = new Set<string>();
       return defined({
-        version: 4,
+        version: 5,
         title,
         order,
         assets: TOUR_ARBITRARY_ASSETS.map((a) => ({ ...a })),
-        stations: stations.map(({ content, geo, title: name, index }) => {
-          const unique = withTourUniqueBlockIds(content, index, used);
-          return defined({
+        stations: stations.map(({ children, geo, title: name, index }) =>
+          defined({
             id: `s${String(index)}`,
             title: name,
             geo,
             activateRadiusM: 30,
             foundRadiusM: 20,
             hint: 'arrow',
-            blocks: unique.blocks,
-            steps: unique.steps,
-          });
-        }),
+            children: withTourUniqueChildIds(children, index, used),
+          })
+        ),
       });
     });
 }

@@ -6,16 +6,16 @@ import { Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
 /**
  * A tour of an older format (the archive server's
- * `/ranges-ok/v3-tour.zip`, a format 3 tour), end to end on both creator
+ * `/ranges-ok/v4-tour.zip`, a format 4 tour), end to end on both creator
  * pages: refused in plain words, and the draft this browser kept for it -
  * which has nothing left to be restored into - deleted, the refusal saying
  * so. Another tour's draft stays: it is its creator's unsaved work.
  */
 
-const V3_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/v3-tour.zip";
+const V4_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/v4-tour.zip";
 const OTHER_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 const REFUSED =
-  "This tour is in an older format (version 3) that this version of the app no longer opens; it has to be made again";
+  "This tour is in an older format (version 4) that this version of the app no longer opens; it has to be made again";
 const LOST = `${REFUSED}, and its unsaved changes cannot be restored.`;
 
 /**
@@ -99,14 +99,14 @@ test("the phone refuses a tour of an older format and deletes its draft, and no 
   // device); a refusal that left it would offer nothing and keep it
   // forever, and one that took another tour's would lose real work.
   await page.goto("/?nocache=1");
-  await seedDraft(page, V3_ARCHIVE);
+  await seedDraft(page, V4_ARCHIVE);
   await seedDraft(page, OTHER_ARCHIVE);
-  await page.getByTestId("link-input").fill(V3_ARCHIVE);
+  await page.getByTestId("link-input").fill(V4_ARCHIVE);
   await page.getByTestId("open-button").click();
   await expect(page.getByTestId("error")).toHaveText(LOST, {
     timeout: 15000,
   });
-  expect(await draftFiles(page, V3_ARCHIVE)).toEqual([]);
+  expect(await draftFiles(page, V4_ARCHIVE)).toEqual([]);
   expect(await draftFiles(page, OTHER_ARCHIVE)).toEqual([
     "meta.blob",
     "object%3Aoldpin.blob",
@@ -123,8 +123,8 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
   // The file carries its own id, so the draft is under that id; its
   // content key names the RECORDING, which another tour on it may share,
   // so a draft under the content key stays (B2a review findings 1 and 4).
-  const zip = new Uint8Array(await (await fetch(V3_ARCHIVE)).arrayBuffer());
-  const key = "local-file:tour:OlderTour3";
+  const zip = new Uint8Array(await (await fetch(V4_ARCHIVE)).arrayBuffer());
+  const key = "local-file:tour:OlderTour4";
   const contentKey = await fileKeyOf(zip);
   await page.addInitScript(() => {
     // @ts-expect-error - the e2e takes the picker away on purpose: the

@@ -343,7 +343,7 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
  * under a centimetre (`content-placement.test.ts`, swept).
  */
 export function renderTourStation(
-  station: Pick<TourStation, "geo" | "blocks" | "steps">,
+  station: Pick<TourStation, "geo" | "children">,
   deps: TourStationRendererDeps,
 ): Promise<RenderedTourObjects> {
   return renderStationBlocks(station, tourFreeBlocks(station), deps);

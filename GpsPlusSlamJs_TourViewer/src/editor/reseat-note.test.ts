@@ -25,6 +25,7 @@ import {
   type TourDocumentState,
 } from "../tour-document.js";
 import { reseatOf } from "./reseat-note.js";
+import { stationContent } from "../test-support/station-content.js";
 
 /** A point `north` m north of (48.6, 9.1), at 400 m. */
 function spot(north: number): TourObject["geo"] {
@@ -41,8 +42,7 @@ function station(id: string, north: number, title?: string): TourStation {
     activateRadiusM: 20,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 
@@ -52,7 +52,7 @@ function tour(): TourDocumentState {
     initialTourDocumentState,
     act.opened({
       manifest: {
-        version: 4,
+        version: 5,
         minor: 0,
         order: "fixed",
         assets: [],

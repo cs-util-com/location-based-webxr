@@ -1,13 +1,12 @@
 # tour-stations.ts
 
-**Purpose:** the STATIONS of `tour.json` version 4: each station a geo
-pose (position and a rotation against north) with two radii, its BLOCKS -
-what it shows, each at a local pose in the station's frame
-(`tour-blocks.ts`) - and its STORY, the steps that show some of those
-blocks, ask choices and quizzes (`tour-story.ts`). A block no step shows
-is free: it stands in the world while its station is shown. A station may
-have no steps: an automatic station only groups what was placed there,
-and finding it completes it. Design:
+**Purpose:** the STATIONS of `tour.json` version 5: each station a geo
+pose (position and a rotation against north) with two radii and its
+CHILDREN (`tour-story.ts`): STORIES, each holding its blocks, choices and
+quizzes in order, and FREE blocks, which stand in the world at a local pose
+in the station's frame (`tour-blocks.ts`) while their station is shown. A
+station may have no children: an automatic station only groups what was
+placed there, and finding it completes it. Design:
 `GpsPlusSlamJs_Docs/docs/2026-10-25-0845-station-blocks-model-proposal-design.md`.
 
 ## Public API
@@ -21,7 +20,7 @@ and finding it completes it. Design:
     malformed value) and each block or block field a reader left out
     (`TourBlockDrop`, `tour-blocks.ts`).
 - Types: `TourStation` (`{ id, title?, description?, image?, geo,
-activateRadiusM, foundRadiusM, hint: "arrow", blocks, steps }`),
+activateRadiusM, foundRadiusM, hint: "arrow", children }`),
   `TourStationDrop`, `TourStationsReadOptions`, `TourOrder`
   (`fixed | any`).
 - `fail` is the caller's: `tour-manifest.ts` passes one that throws
@@ -32,17 +31,15 @@ activateRadiusM, foundRadiusM, hint: "arrow", blocks, steps }`),
 
 - **Station**: `id`, optional `title`, `geo` (a geo pose, required;
   `qr/geo-pose.ts`), `activateRadiusM` and `foundRadiusM` (positive,
-  found <= activate), `hint` (`"arrow"`, the default), `blocks` and
-  `steps` (both lists, may be empty), optional `description` and `image`
+  found <= activate), `hint` (`"arrow"`, the default), `children`
+  (required, may be empty), optional `description` and `image`
   (below). An old `anchor`, a `next` (a default next station of the
-  former `branch` order) and an `items` list (version 3's) are unknown
-  fields, ignored.
-- **Blocks and story** are read together by `tour-story.ts`
-  (`parseTourStationContent`): every block checked and every media
-  reference resolved, every `show` naming a block of THIS station, every
-  `goto` a step of this station, and every block no step shows standing
-  in the world. Block ids are unique across the WHOLE tour
-  (`checkTourBlockIdsUnique`), step ids per station.
+  former `branch` order), an `items` list (version 3's) and `blocks` and
+  `steps` (version 4's) are unknown fields, ignored.
+- **Children** are read by `tour-story.ts` (`parseTourStationChildren`):
+  every block checked and every media reference resolved, every `goto` a
+  child of its own story, and every free block standing in the world. Child
+  ids are unique across the WHOLE tour (`checkTourChildIdsUnique`).
 - **Description**: the tour description's rule (`checkTourDescription`
   of `tour-details.ts`): read trimmed, line breaks kept, at most 2000
   characters (code points). A blank one reads as none. Not text, or too
@@ -95,9 +92,9 @@ parseTourStations(json.stations, {
   the stage, a choice, a quiz), every quiz answer type, a station `next`
   and a quiz `route` ignored, the defaults, one rejection per rule (the
   station's own fields, block poses, block ids twice in a station and
-  across stations, a show naming another station's block, each block
+  across stations, each block
   kind's required fields and asset references, advances, choices,
-  quizzes), a station with no steps and its free blocks read kind by
+  quizzes), a station with no children and its free blocks read kind by
   kind, a lenient read leaving out a model whose asset it lacks, an old
   anchor and items list ignored, and the description and card image
   rules.
@@ -105,5 +102,5 @@ parseTourStations(json.stations, {
   sets survive a JSON round trip unchanged; breaking any one asset
   reference or a choice target is refused; one unknown closed-list value
   anywhere never fails a lenient parse, everything that survives still
-  resolves (shows, gotos, media, free blocks in a world view), and the
+  resolves (gotos, media, free blocks in a world view), and the
   same input fails a strict parse.

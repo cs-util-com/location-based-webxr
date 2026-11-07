@@ -13,6 +13,7 @@ import {
   stopsVisitorDownload,
   visitorEntryNames,
 } from "./tour-read-set";
+import { stationContent } from "./test-support/station-content.js";
 
 /**
  * Why these tests matter (scan-pass plan S1, S-D10): the read set is what
@@ -130,7 +131,9 @@ describe("visitorEntryNames", () => {
     const read = visitorEntryNames(
       ["mytour/tour.json", "mytour/timing/t1.json", "mytour/timing/t9.json"],
       manifest({
-        stations: [{ id: "s1", blocks: [narrated], steps: [] } as never],
+        stations: [
+          { id: "s1", ...stationContent([narrated as never]) } as never,
+        ],
       }),
       "mytour/",
     );

@@ -14,6 +14,10 @@ import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
 import { walkStepped } from "./visitor-walk-slice";
 import { walkSheetModel } from "./walk-sheet-model";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these properties matter: the peek is a split of the hidden station line, which the
@@ -42,14 +46,8 @@ function station(
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [
-      {
-        id: "s",
-        action: { kind: "show", block: "hi" },
-        advance: { mode: "tap" },
-      },
-    ],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 

@@ -7,6 +7,8 @@
  *
  * @see tree-model.ts.md
  */
+import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TourAsset,
   TourStation,
@@ -258,6 +260,8 @@ export function treeFoldOf(tree: TreeModel): {
 export function stationGroups(stations: readonly TourStation[]): TreeGroup[] {
   return stations.map((s) => ({
     id: s.id,
-    children: s.blocks.map((block) => block.id),
+    children: [...tourFreeBlocks(s), ...tourStationStoryBlocks(s)].map(
+      (block) => block.id,
+    ),
   }));
 }

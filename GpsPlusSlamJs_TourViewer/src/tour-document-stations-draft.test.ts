@@ -32,6 +32,7 @@ import {
   settingsRecordText,
 } from "./tour-document-draft.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 function pin(id: string, lat: number): TourPin {
   return {
@@ -85,26 +86,22 @@ const OPENED: TourManifest = parseTourManifest(
             activateRadiusM: 50,
             foundRadiusM: 25,
             hint: "arrow",
-            steps: [
-              {
-                id: "s1",
-                action: { kind: "show", block: "look" },
-                advance: { mode: "tap" },
-              },
-            ],
-            blocks: [
-              {
-                id: "look",
-                kind: "picture",
-                view: "card",
-                image: "img1",
-                widthM: 1,
-                pose: {
-                  position: [0, 0, 0],
-                  rotation: [0, 0, 0, 1],
+            ...stationContent([
+              storyOf("story-story", [
+                {
+                  id: "look",
+                  kind: "picture",
+                  view: "card",
+                  image: "img1",
+                  widthM: 1,
+                  pose: {
+                    position: [0, 0, 0],
+                    rotation: [0, 0, 0, 1],
+                  },
+                  advance: { mode: "tap" },
                 },
-              },
-            ],
+              ]),
+            ]),
           },
         ],
       }),
@@ -450,8 +447,7 @@ describe("the draft keeps the stations whole", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
-      blocks: [],
-      steps: [],
+      ...stationContent([]),
     };
     const restored = reduce(
       open(),
@@ -465,26 +461,22 @@ describe("the draft keeps the stations whole", () => {
           {
             ...frame,
             id: "noAsset",
-            blocks: [
-              {
-                id: "look",
-                kind: "picture",
-                view: "card",
-                image: "elsewhere",
-                widthM: 1,
-                pose: {
-                  position: [0, 0, 0],
-                  rotation: [0, 0, 0, 1],
+            ...stationContent([
+              storyOf("noAsset-story", [
+                {
+                  id: "look",
+                  kind: "picture",
+                  view: "card",
+                  image: "elsewhere",
+                  widthM: 1,
+                  pose: {
+                    position: [0, 0, 0],
+                    rotation: [0, 0, 0, 1],
+                  },
+                  advance: { mode: "tap" },
                 },
-              },
-            ],
-            steps: [
-              {
-                id: "s1",
-                action: { kind: "show", block: "look" },
-                advance: { mode: "tap" },
-              },
-            ],
+              ]),
+            ]),
           },
           frame,
         ],
@@ -515,23 +507,19 @@ describe("the draft keeps the stations whole", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
-        {
-          id: "words",
-          kind: "longText",
-          view: "reading",
-          title: "Words",
-          body: "See ![the old gate](asset:gone) here.",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "words" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("essay-story", [
+          {
+            id: "words",
+            kind: "longText",
+            view: "reading",
+            title: "Words",
+            body: "See ![the old gate](asset:gone) here.",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     };
     const restored = reduce(
       open(),

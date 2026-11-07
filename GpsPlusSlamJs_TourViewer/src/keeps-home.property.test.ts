@@ -36,6 +36,7 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
+import { stationContent } from "./test-support/station-content.js";
 
 const RADIUS_M = 25;
 
@@ -53,8 +54,7 @@ function station(id: string, north: number): TourStation {
     activateRadiusM: 2 * RADIUS_M,
     foundRadiusM: RADIUS_M,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 
@@ -64,7 +64,7 @@ function withPin(north: number, east = 0): TourDocumentState {
     initialTourDocumentState,
     act.opened({
       manifest: {
-        version: 4,
+        version: 5,
         minor: 0,
         order: "fixed",
         assets: [],

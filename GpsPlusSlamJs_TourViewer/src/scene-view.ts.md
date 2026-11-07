@@ -8,6 +8,10 @@ the tap to continue, the timed advance, scene choices, and ONE story at a
 time. Plan:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
 
+What each kind shows, and which files it reads, lives in `item-card.ts`; this
+panel is its host: when a step starts and stops, the sound, the stage, the
+status line and what an end means.
+
 ## Public API
 
 - `createSceneView(deps): SceneView`
@@ -22,16 +26,19 @@ time. Plan:
     the queue; `onStoryEnd(stationId)` is reported either way, also for a
     station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
-  - `playing()` - the station whose story plays.
+  - `playing()` - the station whose panel is open: its story, card or picker;
+  - `choosing()` - the station whose picker shows, null while its story or
+    card plays: the guide's and the sheet's words ask for a choice then, and
+    never say a story is playing.
 - Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
   `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
-  `createChoiceButton(label, onClick)`, `schedule(fn, ms)`, `objectUrls`,
+  `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
   `onStoryEnd(stationId)`.
 
 ## Invariants & assumptions
 
-- **A `show` step shows the block it names, by its view.** A block in its
+- **A story's block shows by its view.** A block in its
   `stage` view (a character or a model) stands at the station, as the
   character and model steps of earlier versions did; every other block
   shows in the card: a short text's caption, a long text's plain text P
@@ -39,8 +46,8 @@ time. Plan:
   an audio's transcript
   with its sound, a model's title, a character's caption with its voice
   (a character in the card plays its voice, but no figure stands). A
-  block's world view (a pin, a plane, a placed model) is drawn with its
-  station's free blocks (`content-placement.ts`), never by a step.
+  block's world view (a pin, a plane, a placed model) stands in the world
+  (`content-placement.ts`, `onBlockShown` below); the card holds its words.
 - **A declared character's frames sheet:** a story view of a block whose
   `character` names a declaration with `frames` stands from the sheet (the
   look gets `sheet: true` and slices it); the `portrait` view's round
@@ -52,7 +59,7 @@ time. Plan:
   until the next story starts or everything stops (`stopAll`). The `stage` view and a declaration without
   `frames` use the `image` as before.
 - **A character in a story view** (`bubble`, `speak`, `two-stations`,
-  `portrait`, `popup`; tour format 4.2) goes to the stage with a look
+  `portrait`, `popup`) goes to the stage with a look
   spec `{ view, name, line, voiced, pose }` (the line is the caption;
   `voiced` is false in the bubble view, which has no voice), which the stage
   draws as a character look (`scene-stage.ts`, `character-look.ts`). The
@@ -118,7 +125,7 @@ time. Plan:
   its sound stopped when the step changes.
 - **Auto steps** advance on `schedule(afterS x 1000)`; a tap first cancels
   the timer. A choice never auto-advances.
-- **`lineEnd` steps** (format 4.2) advance when the step's voice or sound
+- **`lineEnd` steps** advance when the step's voice or sound
   ends, after a 600 ms tail; never while it plays. With no voice, or one
   that cannot be read or played, or a story view's voice nobody tapped,
   the words' reading time stands in; a tap that starts the voice holds the
@@ -132,7 +139,7 @@ time. Plan:
   released, the wait starts again. One timer at a time: `armTimer` cancels
   any earlier one (a voice lost while its step renders arms it early).
 - **Video** (B2b step 3) plays in the card's `<video controls playsinline
-preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
+preload="metadata">` (`dom.video`, `ItemVideo`): the clip and its
   poster are read through `loadAsset` as object URLs of the step. The
   player shows only once its CLIP is here: a player without a clip has
   controls that do nothing. Until then (and for good when the clip cannot
@@ -141,7 +148,7 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
   clip (the tap is the activation, so no autoplay rule applies), and the
   transcript stays below. A clip that cannot be read says "The video could
   not be loaded - the words are below." on the status line; one that loads
-  but does not decode (the player's `error`, wired through `SceneVideo`'s
+  but does not decode (the player's `error`, wired through `ItemVideo`'s
   `onerror`) says "The video could not be played here - the words are
   below." and ends the step's "a video plays" hold, so a tap on him plays
   his voice, as for a clip that cannot be read; a poster that
@@ -162,6 +169,21 @@ preload="metadata">` (`dom.video`, `SceneVideo`): the clip and its
 - A quiz never reaches the view (the player skips it until K5).
 - **One story at a time** is the community PR idea (K-D4: the idea, not
   its implementation): a new tap stops the previous story.
+
+- **A station with several playable stories** opens on a picker
+  (`story-choice.ts` holds the rule): the station's name, description and card
+  picture as for a story, the line "Choose a story" in `dom.text` (the panel is
+  the live region), the titles as buttons of `createChoiceButton`, Continue. The
+  focus moves to the first story each time the picker opens (`focusChoice`,
+  asked for after `onChange`, because a page may only open the panel then).
+  A tap plays that story under the same name and picture; at its end, or on
+  `end`, the picker returns with it marked while a story is unplayed. Continue
+  in the picker, `end` while the picker shows and the end of the last unplayed
+  story end the station. One playable story starts directly and no title
+  shows. Technically a picker is a turn with no story, like a card: an empty
+  player, so `progress()` is null and `holdStep` has nothing to hold, and a
+  re-queued station shows its picker again on its turn. A figure stays for the
+  picker (`stage.release`) and goes when the next story starts.
 
 ## Examples
 
@@ -190,7 +212,7 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 ## Progress and change
 
 - `SceneViewDeps.onChange?()` - called after every render of a step, at
-  a story's end and on `stopAll()`, so the sheet's story card (its dots,
+  a story's end, when a picker opens and on `stopAll()`, so the sheet's story card (its dots,
   the peek in its place) follows without polling.
 - `SceneView.progress(): StoryProgress | null` -
   `{ index, count, autoMs }` of the story playing: the step shown, the
@@ -216,14 +238,14 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
   start" and "a hold set with no story is dropped when the next story
   starts" in `scene-view.test.ts`.
 
-## World blocks a step reaches (B2b)
+## World blocks a story reaches (B2b)
 
 - `sayFailure?(text)`: a failure the hidden panel cannot show (his voice,
   tapped after his story, could not be read or played); the app shows it
   in the walk's toast (`visitor-stations.ts` `sayFailureInToast`).
   Absent: not said.
 - `onBlockShown?(stationId, blockId)`: called from the step's render when
-  a `show` step reaches a block with a world view (`worldBlockReachedBy`),
+  the story reaches a block with a world view (`worldBlockReachedBy`),
   after a tap, a timer or a choice alike. The card still shows its words;
   the app keeps the block standing in the world from then on. Never for a
   card or a stage block.

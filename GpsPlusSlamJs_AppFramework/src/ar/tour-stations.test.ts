@@ -1,12 +1,11 @@
 /**
  * Why this test matters: `tour.json` carries the tour's game content -
- * stations, the blocks they show, their stories (shows, choices,
- * quizzes) and the media assets the blocks name. It is hand-editable
+ * stations, their free blocks, their stories (blocks, choices, quizzes)
+ * and the media assets the blocks name. It is hand-editable
  * external data that later drives what a visitor sees and hears, so every
  * cross-reference must be checked at the boundary: a block naming a
- * missing asset, a picture pointing at an audio file, a show naming
- * another station's block, a choice jumping to a step that does not
- * exist, a quiz whose correct answer is not one of its options. Each
+ * missing asset, a picture pointing at an audio file, a choice
+ * jumping to a child that does not exist in its story, a quiz whose correct answer is not one of its options. Each
  * would otherwise surface as a broken station in the middle of a walk,
  * far from the file that caused it.
  */
@@ -15,6 +14,12 @@ import { describe, expect, it } from 'vitest';
 
 import { parseTourAssets, type TourAsset } from './tour-assets';
 import { parseTourStations } from './tour-stations';
+import {
+  tourChildrenFreeBlocks,
+  tourStationBlocks,
+  tourStories,
+  type TourStationChild,
+} from './tour-story';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -36,7 +41,7 @@ function assets(): TourAsset[] {
 const geo = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 
-/** A long text shown by a step, so a station has a story. */
+/** A long text in a story, so a station has one. */
 const welcome = (id = 'welcome') => ({
   id,
   kind: 'longText',
@@ -46,6 +51,13 @@ const welcome = (id = 'welcome') => ({
   pose: POSE,
 });
 
+const story = (id: string, children: unknown[]) => ({
+  id,
+  kind: 'story',
+  title: 'A story',
+  children,
+});
+
 function station(extra: Record<string, unknown> = {}): Record<string, unknown> {
   const id = typeof extra.id === 'string' ? extra.id : 's1';
   return {
@@ -53,11 +65,14 @@ function station(extra: Record<string, unknown> = {}): Record<string, unknown> {
     geo,
     activateRadiusM: 25,
     foundRadiusM: 5,
-    blocks: [welcome(`welcome-${id}`)],
-    steps: [{ id: 'a', action: { kind: 'show', block: `welcome-${id}` } }],
+    children: [story(`story-${id}`, [welcome(`welcome-${id}`)])],
     ...extra,
   };
 }
+
+/** The children of a station's first story. */
+const firstStory = (s: { readonly children: readonly TourStationChild[] }) =>
+  tourStories(s)[0]?.children ?? [];
 
 function parse(stations: unknown) {
   return parseTourStations(stations, { assets: assets(), fail });
@@ -69,71 +84,65 @@ describe('parseTourStations', () => {
       station({
         title: 'The gate',
         hint: 'arrow',
-        blocks: [
-          {
-            id: 'kurt',
-            kind: 'character',
-            view: 'stage',
-            name: 'Sir Kurt',
-            image: 'knight',
-            voice: 'voice',
-            caption: 'Welcome to the castle!',
-            pose: POSE,
-          },
-          {
-            id: 'arch-model',
-            kind: 'model',
-            view: 'stage',
-            asset: 'arch',
-            pose: POSE,
-          },
-        ],
-        steps: [
-          { id: 'hello', action: { kind: 'show', block: 'kurt' } },
-          {
-            id: 'ask',
-            action: {
+        children: [
+          story('scene', [
+            {
+              id: 'kurt',
+              kind: 'character',
+              view: 'stage',
+              name: 'Sir Kurt',
+              image: 'knight',
+              voice: 'voice',
+              caption: 'Welcome to the castle!',
+              pose: POSE,
+            },
+            {
+              id: 'ask',
               kind: 'choice',
               prompt: 'Where to?',
               options: [
-                { id: 'tower', label: 'The tower', goto: 'arch' },
+                { id: 'tower', label: 'The tower', goto: 'arch-model' },
                 { id: 'quiz', label: 'A question', goto: 'q' },
               ],
             },
-          },
-          {
-            id: 'arch',
-            action: { kind: 'show', block: 'arch-model' },
-            advance: { mode: 'auto', afterS: 4 },
-          },
-          {
-            id: 'q',
-            action: {
+            {
+              id: 'arch-model',
+              kind: 'model',
+              view: 'stage',
+              asset: 'arch',
+              pose: POSE,
+              advance: { mode: 'auto', afterS: 4 },
+            },
+            {
+              id: 'q',
               kind: 'quiz',
               question: 'When was the gate built?',
               points: 10,
               answer: { type: 'number', value: 1250, tolerance: 10 },
             },
-          },
+          ]),
         ],
       }),
     ]);
     expect(parsed?.title).toBe('The gate');
     expect(parsed?.geo).toEqual(geo);
     expect(parsed?.hint).toBe('arrow');
-    expect(parsed?.steps.map((s) => s.action.kind)).toEqual([
-      'show',
+    const kids = firstStory(parsed!);
+    expect(kids.map((c) => c.kind)).toEqual([
+      'character',
       'choice',
-      'show',
+      'model',
       'quiz',
     ]);
-    expect(parsed?.blocks.map((b) => [b.id, b.kind, b.view])).toEqual([
+    expect(
+      tourStationBlocks(parsed!).map((b) => [b.id, b.kind, b.view])
+    ).toEqual([
       ['kurt', 'character', 'stage'],
       ['arch-model', 'model', 'stage'],
     ]);
     // Defaults are written out, so a renderer never guesses.
-    expect(parsed?.steps[0]?.advance).toEqual({ mode: 'tap' });
-    expect(parsed?.steps[2]?.advance).toEqual({ mode: 'auto', afterS: 4 });
+    expect(kids[0]).toMatchObject({ advance: { mode: 'tap' } });
+    expect(kids[2]).toMatchObject({ advance: { mode: 'auto', afterS: 4 } });
   });
 
   it('defaults the hint to the arrow', () => {
@@ -155,17 +164,22 @@ describe('parseTourStations', () => {
     ];
     const [parsed] = parse([
       station({
-        blocks: [],
-        steps: answers.map((answer, i) => ({
-          id: `q${String(i)}`,
-          action: { kind: 'quiz', question: 'Q?', points: 1, answer },
-        })),
+        children: [
+          story(
+            'quizzes',
+            answers.map((answer, i) => ({
+              id: `q${String(i)}`,
+              kind: 'quiz',
+              question: 'Q?',
+              points: 1,
+              answer,
+            }))
+          ),
+        ],
       }),
     ]);
     expect(
-      parsed?.steps.map((s) =>
-        s.action.kind === 'quiz' ? s.action.answer.type : null
-      )
+      firstStory(parsed!).map((c) => (c.kind === 'quiz' ? c.answer.type : null))
     ).toEqual(['single', 'multiple', 'text', 'number', 'code']);
   });
 
@@ -177,11 +191,10 @@ describe('parseTourStations', () => {
       station({
         id: 's1',
         next: 'nowhere',
-        blocks: [],
-        steps: [
-          {
-            id: 'q',
-            action: {
+        children: [
+          story('asking', [
+            {
+              id: 'q',
               kind: 'quiz',
               question: 'Left or right?',
               points: 0,
@@ -195,23 +208,24 @@ describe('parseTourStations', () => {
               },
               route: { byOption: { l: 'nowhere', z: 's3' }, wrong: 9 },
             },
-          },
+          ]),
         ],
       }),
       station({ id: 's3' }),
     ]);
     expect(stations[0]).not.toHaveProperty('next');
-    expect(stations[0]?.steps[0]?.action).not.toHaveProperty('route');
+    expect(firstStory(stations[0]!)[0]).not.toHaveProperty('route');
   });
 
-  /** A station whose one step is `action` (and no blocks). */
-  const withStep = (action: Record<string, unknown>, extra = {}) =>
-    station({ blocks: [], steps: [{ id: 'a', action, ...extra }] });
-  /** A station whose one block (shown by its one step) is `block`. */
+  /** A station whose story holds one choice or quiz, `child`. */
+  const withChild = (child: Record<string, unknown>) =>
+    station({ children: [story('asking', [{ id: 'a', ...child }])] });
+  /** A station whose story holds one block, `block`. */
   const withBlock = (block: Record<string, unknown>) =>
     station({
-      blocks: [{ id: 'b', view: 'card', pose: POSE, ...block }],
-      steps: [{ id: 'a', action: { kind: 'show', block: 'b' } }],
+      children: [
+        story('scene', [{ id: 'b', view: 'card', pose: POSE, ...block }]),
+      ],
     });
   const quiz = (extra: Record<string, unknown>) => ({
     kind: 'quiz',
@@ -244,7 +258,7 @@ describe('parseTourStations', () => {
     ['a bad station id', [station({ id: 'a b' })], /stations\[0\]\.id/],
     [
       'a duplicate station id',
-      [station(), { ...station(), blocks: [], steps: [] }],
+      [station(), { ...station(), children: [] }],
       /duplicate station id "s1"/,
     ],
     [
@@ -258,72 +272,49 @@ describe('parseTourStations', () => {
       /stations\[0\]\.geo\.lat/,
     ],
     [
-      'blocks that are not a list',
-      [station({ blocks: {} })],
-      /stations\[0\]\.blocks" must be an array/,
-    ],
-    [
-      'steps that are not a list',
-      [station({ steps: {} })],
-      /stations\[0\]\.steps" must be an array/,
+      'children that are not a list',
+      [station({ children: {} })],
+      /stations\[0\]\.children" must be an array/,
     ],
     [
       'a block without a local pose',
       [
         station({
-          blocks: [{ ...placedPin('p1', [0, 0, 0]), pose: undefined }],
-          steps: [],
+          children: [{ ...placedPin('p1', [0, 0, 0]), pose: undefined }],
         }),
       ],
-      /stations\[0\]\.blocks\[0\]\.pose/,
+      /stations\[0\]\.children\[0\]\.pose/,
     ],
     [
       'a block placed absurdly far from its station',
-      [station({ blocks: [placedPin('p1', [0, 0, 20_000])], steps: [] })],
-      /stations\[0\]\.blocks\[0\]\.pose\.position" must be three numbers within 10000 m/,
+      [station({ children: [placedPin('p1', [0, 0, 20_000])] })],
+      /stations\[0\]\.children\[0\]\.pose\.position" must be three numbers within 10000 m/,
     ],
     [
       'a block whose rotation is not a unit quaternion',
       [
         station({
-          blocks: [placedPin('p1', [0, 0, 0], [0, 0, 0, 2])],
-          steps: [],
+          children: [placedPin('p1', [0, 0, 0], [0, 0, 0, 2])],
         }),
       ],
-      /stations\[0\]\.blocks\[0\]\.pose\.rotation" must be a unit quaternion/,
+      /stations\[0\]\.children\[0\]\.pose\.rotation" must be a unit quaternion/,
     ],
     [
       'the same block twice in a station',
       [
         station({
-          blocks: [placedPin('p1', [0, 0, 0]), placedPin('p1', [1, 0, 0])],
-          steps: [],
+          children: [placedPin('p1', [0, 0, 0]), placedPin('p1', [1, 0, 0])],
         }),
       ],
-      /duplicate block id "p1"/,
+      /duplicate child id "p1"/,
     ],
     [
       'the same block id in two stations (block ids are tour-wide)',
       [
-        station({ blocks: [placedPin('p1', [0, 0, 0])], steps: [] }),
-        station({ id: 's2', blocks: [placedPin('p1', [0, 0, 0])], steps: [] }),
+        station({ children: [placedPin('p1', [0, 0, 0])] }),
+        station({ id: 's2', children: [placedPin('p1', [0, 0, 0])] }),
       ],
-      /duplicate block id "p1"/,
-    ],
-    [
-      "a show naming another station's block",
-      [
-        station({
-          blocks: [welcome('w1')],
-          steps: [{ id: 'a', action: { kind: 'show', block: 'w1' } }],
-        }),
-        station({
-          id: 's2',
-          blocks: [],
-          steps: [{ id: 'a', action: { kind: 'show', block: 'w1' } }],
-        }),
-      ],
-      /stations\[1\]\.steps\[0\]\.action\.block" must name a block of this station/,
+      /duplicate child id "p1"/,
     ],
     [
       'a found radius larger than the activation radius',
@@ -337,50 +328,33 @@ describe('parseTourStations', () => {
     ],
     ['an unknown hint', [station({ hint: 'map' })], /stations\[0\]\.hint/],
     [
-      'a duplicate step id',
+      'a duplicate child id in a story',
       [
         station({
-          steps: [
-            { id: 'a', action: { kind: 'show', block: 'welcome-s1' } },
-            { id: 'a', action: { kind: 'show', block: 'welcome-s1' } },
-          ],
+          children: [story('scene', [welcome('a'), welcome('a')])],
         }),
       ],
-      /stations\[0\]\.steps: duplicate step id "a"/,
+      /stations\[0\]\.children: duplicate child id "a"/,
     ],
     [
-      'an unknown step kind',
-      [withStep({ kind: 'html' })],
-      /stations\[0\]\.steps\[0\]\.action\.kind/,
-    ],
-    [
-      'a step stored under the earlier key block',
-      [
-        station({
-          steps: [{ id: 'a', block: { kind: 'show', block: 'welcome-s1' } }],
-        }),
-      ],
-      /stations\[0\]\.steps\[0\]\.action/,
-    ],
-    [
-      'an unknown block kind',
+      'an unknown child kind',
       [withBlock({ kind: 'html' })],
-      /stations\[0\]\.blocks\[0\]\.kind/,
+      /stations\[0\]\.children\[0\]\.children\[0\]\.kind/,
     ],
     [
       'an empty long text',
       [withBlock({ kind: 'longText', title: 'T', body: ' ' })],
-      /blocks\[0\]\.body/,
+      /children\[0\]\.body/,
     ],
     [
       'a picture naming a missing asset',
       [withBlock({ kind: 'picture', image: 'nope', widthM: 1 })],
-      /blocks\[0\]\.image" must name an image asset/,
+      /children\[0\]\.image" must name an image asset/,
     ],
     [
       'a picture naming an audio asset',
       [withBlock({ kind: 'picture', image: 'voice', widthM: 1 })],
-      /blocks\[0\]\.image" must name an image asset/,
+      /children\[0\]\.image" must name an image asset/,
     ],
     [
       'a character without a caption (captions always)',
@@ -392,7 +366,7 @@ describe('parseTourStations', () => {
           image: 'knight',
         }),
       ],
-      /blocks\[0\]\.caption/,
+      /children\[0\]\.caption/,
     ],
     [
       'a character voice that is not audio',
@@ -406,68 +380,62 @@ describe('parseTourStations', () => {
           voice: 'gate',
         }),
       ],
-      /blocks\[0\]\.voice" must name an audio asset/,
+      /children\[0\]\.voice" must name an audio asset/,
     ],
     [
       'audio without a transcript (audio needs a text version)',
       [withBlock({ kind: 'audio', audio: 'voice' })],
-      /blocks\[0\]\.transcript/,
+      /children\[0\]\.transcript/,
     ],
     [
       'video without a transcript',
       [withBlock({ kind: 'video', video: 'clip' })],
-      /blocks\[0\]\.transcript/,
+      /children\[0\]\.transcript/,
     ],
     [
       'a model naming an image',
       [withBlock({ kind: 'model', asset: 'gate' })],
-      /blocks\[0\]\.asset" must name a model asset/,
+      /children\[0\]\.asset" must name a model asset/,
     ],
     [
       'an auto advance without a positive duration',
       [
         station({
-          steps: [
-            {
-              id: 'a',
-              action: { kind: 'show', block: 'welcome-s1' },
-              advance: { mode: 'auto', afterS: 0 },
-            },
+          children: [
+            story('scene', [
+              { ...welcome(), advance: { mode: 'auto', afterS: 0 } },
+            ]),
           ],
         }),
       ],
-      /steps\[0\]\.advance\.afterS/,
+      /children\[0\]\.advance\.afterS/,
     ],
     [
       'an unknown advance mode',
       [
         station({
-          steps: [
-            {
-              id: 'a',
-              action: { kind: 'show', block: 'welcome-s1' },
-              advance: { mode: 'swipe' },
-            },
+          children: [
+            story('scene', [{ ...welcome(), advance: { mode: 'swipe' } }]),
           ],
         }),
       ],
-      /steps\[0\]\.advance\.mode/,
+      /children\[0\]\.advance\.mode/,
     ],
     [
       'a choice with one option',
       [
-        withStep({
+        withChild({
           kind: 'choice',
           prompt: 'P',
           options: [{ id: 'o', label: 'O', goto: 'a' }],
         }),
       ],
-      /steps\[0\]\.action\.options" must list at least 2/,
+      /children\[0\]\.options" must list at least 2/,
     ],
     [
-      'a choice jumping to a missing step',
+      'a choice jumping to a missing child',
       [
-        withStep({
+        withChild({
           kind: 'choice',
           prompt: 'P',
           options: [
@@ -476,31 +444,31 @@ describe('parseTourStations', () => {
           ],
         }),
       ],
-      /options\[1\]\.goto" must name a step of this station/,
+      /options\[1\]\.goto" must name a child of this story/,
     ],
     [
       'a negative quiz score',
-      [withStep(quiz({ points: -1, answer: single }))],
-      /steps\[0\]\.action\.points/,
+      [withChild(quiz({ points: -1, answer: single }))],
+      /children\[0\]\.points/,
     ],
     [
       'a single-choice correct answer that is not an option',
-      [withStep(quiz({ answer: { ...single, correct: 'z' } }))],
-      /action\.answer\.correct" must name one of its options/,
+      [withChild(quiz({ answer: { ...single, correct: 'z' } }))],
+      /answer\.correct" must name one of its options/,
     ],
     [
       'a multiple-choice answer with no correct option',
       [
-        withStep(
+        withChild(
           quiz({ answer: { ...single, type: 'multiple', correct: [] } })
         ),
       ],
-      /action\.answer\.correct" must list at least one of its options/,
+      /answer\.correct" must list at least one of its options/,
     ],
     [
       'duplicate option ids',
       [
-        withStep(
+        withChild(
           quiz({
             answer: {
               ...single,
@@ -512,30 +480,34 @@ describe('parseTourStations', () => {
           })
         ),
       ],
-      /action\.answer\.options: duplicate option id "x"/,
+      /answer\.options: duplicate option id "x"/,
     ],
     [
       'a text answer hash that is not SHA-256 hex',
       [
-        withStep(
+        withChild(
           quiz({ answer: { type: 'text', salt: 's', sha256: ['abc'] } })
         ),
       ],
-      /action\.answer\.sha256\[0\]/,
+      /answer\.sha256\[0\]/,
     ],
     [
       'a code answer without a salt',
       [
-        withStep(
+        withChild(
           quiz({ answer: { type: 'code', salt: '', sha256: ['a'.repeat(64)] } })
         ),
       ],
-      /action\.answer\.salt/,
+      /answer\.salt/,
     ],
     [
       'a negative number tolerance',
-      [withStep(quiz({ answer: { type: 'number', value: 1, tolerance: -1 } }))],
-      /action\.answer\.tolerance/,
+      [
+        withChild(
+          quiz({ answer: { type: 'number', value: 1, tolerance: -1 } })
+        ),
+      ],
+      /answer\.tolerance/,
     ],
   ])('rejects %s', (_label, data, message) => {
     expect(() => parse(data)).toThrow(Invalid);
@@ -547,12 +519,10 @@ describe('stations as the parent of what was placed around them', () => {
   // Why: a station has its own geo pose and no code, it may have no story
   // at all (an automatic station: finding it completes it), and its
   // blocks carry local poses that move with it.
-  it('a station may have no steps: an automatic station only groups its free blocks', () => {
-    const [parsed] = parse([
-      station({ blocks: [placedPinAt('p1')], steps: [] }),
-    ]);
-    expect(parsed?.steps).toEqual([]);
-    expect(parsed?.blocks.map((b) => b.id)).toEqual(['p1']);
+  it('a station may have no story: an automatic station only groups its free blocks', () => {
+    const [parsed] = parse([station({ children: [placedPinAt('p1')] })]);
+    expect(tourStories(parsed!)).toEqual([]);
+    expect(parsed?.children.map((b) => b.id)).toEqual(['p1']);
   });
 
   it('reads its free blocks with their local poses, kind by kind', () => {
@@ -581,10 +551,8 @@ describe('stations as the parent of what was placed around them', () => {
       sizeM: 3,
       pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
     };
-    const [parsed] = parse([
-      station({ blocks: [pin, picture, model], steps: [] }),
-    ]);
-    expect(parsed?.blocks).toEqual([pin, picture, model]);
+    const [parsed] = parse([station({ children: [pin, picture, model] })]);
+    expect(parsed?.children).toEqual([pin, picture, model]);
   });
 
   it('a lenient read leaves out a model whose asset it left out or does not have', () => {
@@ -605,17 +573,18 @@ describe('stations as the parent of what was placed around them', () => {
     const [parsed] = parseTourStations(
       [
         station({
-          blocks: [
+          children: [
             placedModel('m1', 'tower'),
             placedModel('m2', 'nowhere'),
             placedModel('m3', 'arch'),
           ],
-          steps: [],
         }),
       ],
       { assets: newer, fail, lenient: true }
     );
-    expect(parsed?.blocks.map((b) => b.id)).toEqual(['m3']);
+    expect(tourChildrenFreeBlocks(parsed!.children).map((b) => b.id)).toEqual([
+      'm3',
+    ]);
   });
 
   it('ignores a code an earlier station named: no station is found by a code any more', () => {
@@ -623,7 +592,7 @@ describe('stations as the parent of what was placed around them', () => {
     expect(parsed).not.toHaveProperty('anchor');
   });
 
-  it('ignores the earlier items list: what a station shows is its blocks', () => {
+  it('ignores the earlier items list: what a station shows is its children', () => {
     const [parsed] = parse([station({ items: [{ id: 'p1', kind: 'pin' }] })]);
     expect(parsed).not.toHaveProperty('items');
   });
@@ -709,7 +678,7 @@ describe("a station's description and card image", () => {
 
   it('drops an image naming no image asset - a block, an audio or model asset, a missing id - and says so, never failing the tour', () => {
     const { parsed, dropped } = parseWithDrops([
-      station({ image: 'p1', blocks: [placedPinAt('p1')], steps: [] }),
+      station({ image: 'p1', children: [placedPinAt('p1')] }),
       station({ id: 's3', image: 'voice' }),
       station({ id: 's4', image: 'arch' }),
       station({ id: 's5', image: 'gone' }),
