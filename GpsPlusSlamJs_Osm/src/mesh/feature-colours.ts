@@ -213,11 +213,43 @@ const SURFACE_RGB: Readonly<Record<string, Rgb>> = {
 };
 
 /**
- * Parses `building:colour`, which OSM allows as `#rrggbb` or a CSS name.
+ * The colour names mappers actually type, with their CSS values.
  *
- * NAMES ARE NOT RESOLVED, deliberately: the CSS list is 148 entries of which a
- * handful appear in OSM, and a wrong colour is worse than the class default —
- * it looks like a decision. Only the hex forms are read.
+ * WHY A SHORT TABLE AND NOT THE CSS LIST. The OSM wiki (Key:building:colour,
+ * read 2026-11-07) prefers `#rrggbb` and allows "basic" names, and says
+ * renderers interpret those differently. The corpus of 3 108 colour values on
+ * building and roof tags has 2 597 in hex; every name it uses, from `grey`
+ * (377 times) down to `blue` (twice), is here. A name outside the table still
+ * falls through to the class colour: a wrong colour looks like a decision,
+ * so only names that were seen in use are resolved. `darkbrown` and
+ * `multiple` occur too and are not colours CSS defines, so they are not read.
+ *
+ * The values are the CSS ones, unmuted: a mapper who wrote `red` said red.
+ */
+const NAMED_COLOUR_RGB: Readonly<Record<string, Rgb>> = {
+  grey: 0x808080,
+  gray: 0x808080,
+  white: 0xffffff,
+  lightgrey: 0xd3d3d3,
+  lightgray: 0xd3d3d3,
+  darkgrey: 0xa9a9a9,
+  darkgray: 0xa9a9a9,
+  red: 0xff0000,
+  gold: 0xffd700,
+  lightgreen: 0x90ee90,
+  black: 0x000000,
+  green: 0x008000,
+  burlywood: 0xdeb887,
+  lightblue: 0xadd8e6,
+  skyblue: 0x87ceeb,
+  firebrick: 0xb22222,
+  brown: 0xa52a2a,
+  blue: 0x0000ff,
+};
+
+/**
+ * Parses an OSM colour value (`building:colour`, `roof:colour`): `#rrggbb`,
+ * `#rgb`, or one of the names in `NAMED_COLOUR_RGB`.
  *
  * Returns `undefined` for anything malformed rather than black: a building that
  * renders black reads as a rendering failure, and `#gggggg` is a real thing
@@ -229,26 +261,50 @@ export function parseOsmColour(raw: string | undefined): Rgb | undefined {
   const long = /^#([0-9a-f]{6})$/.exec(text);
   if (long?.[1] !== undefined) return Number.parseInt(long[1], 16);
   const short = /^#([0-9a-f]{3})$/.exec(text);
-  if (short?.[1] === undefined) return undefined;
+  if (short?.[1] === undefined) return NAMED_COLOUR_RGB[text];
   // `#abc` is `#aabbcc`, not `#0a0b0c`.
   const [r, g, b] = [...short[1]] as [string, string, string];
   return Number.parseInt(`${r}${r}${g}${g}${b}${b}`, 16);
 }
 
 /**
- * The colour of one building.
+ * The colour of one building, or of one `building:part` of it.
  *
  * Precedence: `building:colour`, then `building:material`, then `building=*`,
  * then the default. Highest first, which is the order a mapper's intent runs in
  * — an explicit colour is a statement about THIS building, a material is a
  * statement about its construction, and a class is a statement about its use.
+ *
+ * A PART'S OWN TAGS WIN OVER ITS OUTLINE'S (bug 8 of the 2026-11-07 findings,
+ * owner decision). Simple 3D Buildings lets the colour and material tags sit on
+ * both, and a part that carries one is a mapper saying this part differs: the
+ * copper spire on a stone tower. Only when the part says nothing does it take
+ * its outline's colour, which keeps an untagged cathedral one colour rather
+ * than striped by whichever part happened to carry a tag. The class is always
+ * the outline's: `building:part=*` describes the shape, not the use.
  */
-export function buildingColour(tags: OsmTags): Rgb {
-  return (
+export function buildingColour(tags: OsmTags, outline?: OsmTags): Rgb {
+  const own =
     parseOsmColour(tags["building:colour"]) ??
-    BUILDING_MATERIAL_RGB[tags["building:material"] ?? ""] ??
-    BUILDING_CLASS_RGB[tags["building"] ?? ""] ??
-    DEFAULT_BUILDING_RGB
+    BUILDING_MATERIAL_RGB[tags["building:material"] ?? ""];
+  if (own !== undefined) return own;
+  if (outline !== undefined) return buildingColour(outline);
+  return BUILDING_CLASS_RGB[tags["building"] ?? ""] ?? DEFAULT_BUILDING_RGB;
+}
+
+/**
+ * The colour of a building's roof, or `undefined` when no `roof:colour` says
+ * one, in which case the roof is drawn in the building's colour.
+ *
+ * The part's own tag first, then its outline's: a `roof:colour` on the outline
+ * describes the roofs of the building, and once the outline is hidden behind
+ * its parts those roofs are the parts'. `roof:material` is not read; no
+ * table for it exists and the findings did not ask for one.
+ */
+export function roofColour(tags: OsmTags, outline?: OsmTags): Rgb | undefined {
+  return (
+    parseOsmColour(tags["roof:colour"]) ??
+    parseOsmColour(outline?.["roof:colour"])
   );
 }
 

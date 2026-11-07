@@ -222,3 +222,123 @@ describe("a building:part drawn as a multipolygon with several outers", () => {
     expect(westmost).toBeLessThan(-19.9);
   });
 });
+
+describe("colour of a building:part", () => {
+  /** The distinct "r,g,b" of every vertex whose normal y passes `facing`. */
+  function colouredWhere(
+    normals: Float32Array,
+    colors: Float32Array,
+    facing: (normalY: number) => boolean,
+  ): Set<string> {
+    const seen = new Set<string>();
+    for (let i = 0; i < normals.length; i += 3) {
+      if (facing(normals[i + 1] as number))
+        seen.add([colors[i], colors[i + 1], colors[i + 2]].join(","));
+    }
+    return seen;
+  }
+
+  /** The packed 0xrrggbb drawn at a volume's first vertex. */
+  function drawnColour(features: OsmFeature[], feature: string): number {
+    const city = buildCity(features, { frame: FRAME });
+    const volume = city.volumes.find((v) => v.feature === feature);
+    if (volume === undefined) throw new Error(`${feature} not drawn`);
+    const [x, y, z] = [...volume.mesh.positions.slice(0, 3)];
+    for (const chunk of city.buildings) {
+      const p = chunk.mesh.positions;
+      for (let i = 0; i < p.length; i += 3) {
+        if (p[i] === x && p[i + 1] === y && p[i + 2] === z && chunk.colors) {
+          const c = chunk.colors;
+          return (
+            (Math.round((c[i] as number) * 255) << 16) |
+            (Math.round((c[i + 1] as number) * 255) << 8) |
+            Math.round((c[i + 2] as number) * 255)
+          );
+        }
+      }
+    }
+    throw new Error("vertex not found in any chunk");
+  }
+
+  it("uses the part's own building:colour", () => {
+    // Bug 8. S3DB: the colour tags "can be used on both building outlines and
+    // building parts". 1 590 of the 2 147 parts in the eleven sampled sites
+    // carry a colour of their own, and every one was drawn in its outline's.
+    // Owner decision 2026-11-07: the part's own colour wins.
+    const features = [
+      box(
+        1,
+        { building: "yes", "building:colour": "#0000ff" },
+        [-10, -10, 10, 10],
+      ),
+      box(
+        2,
+        { "building:part": "yes", height: "9", "building:colour": "#ff0000" },
+        [-10, -10, 10, 10],
+      ),
+    ];
+    expect(drawnColour(features, "way/2")).toBe(0xff0000);
+  });
+
+  it("PIN: a part without a colour takes its outline's", () => {
+    // The other half of the rule: an untagged part must not fall to the
+    // default grey, or an untagged cathedral stripes by part.
+    const features = [
+      box(
+        1,
+        { building: "yes", "building:colour": "#0000ff" },
+        [-10, -10, 10, 10],
+      ),
+      box(2, { "building:part": "yes", height: "9" }, [-10, -10, 10, 10]),
+    ];
+    expect(drawnColour(features, "way/2")).toBe(0x0000ff);
+  });
+
+  it("gives the roof its roof:colour, and keeps the walls the building's", () => {
+    // Bug 8, a missing feature rather than a wrong one: `roof:colour` was read
+    // nowhere and `chunkMeshes` held one colour per volume. A spire is nearly
+    // all roof (the Nordturm shaft `way/207377042` is 61.6 m of roof on 24 m of
+    // wall), so its colour IS its roof colour. Judged per face: the slopes
+    // face up, the walls and gable ends do not.
+    const city = buildCity(
+      [
+        box(
+          1,
+          {
+            building: "yes",
+            height: "10",
+            "roof:height": "4",
+            "roof:shape": "gabled",
+            "building:colour": "#ffffff",
+            "roof:colour": "#ff0000",
+          },
+          [-10, -5, 10, 5],
+        ),
+      ],
+      { frame: FRAME },
+    );
+    const chunk = city.buildings[0];
+    expect(chunk?.colors).toBeDefined();
+    const n = chunk?.mesh.normals ?? new Float32Array();
+    const c = chunk?.colors ?? new Float32Array();
+    // Each set non-empty AND one colour: equality with a one-element set.
+    expect(colouredWhere(n, c, (y) => y > 0.1)).toEqual(new Set(["1,0,0"]));
+    expect(colouredWhere(n, c, (y) => Math.abs(y) < 1e-6)).toEqual(
+      new Set(["1,1,1"]),
+    );
+  });
+
+  it("gives a part its outline's roof:colour when it has none of its own", () => {
+    // Once the outline is hidden behind its parts, the roofs a viewer sees are
+    // the parts'; a roof:colour on the outline describes those.
+    const features = [
+      box(1, { building: "yes", "roof:colour": "red" }, [-10, -10, 10, 10]),
+      box(2, { "building:part": "yes", height: "9" }, [-10, -10, 10, 10]),
+    ];
+    const city = buildCity(features, { frame: FRAME });
+    const chunk = city.buildings[0];
+    const n = chunk?.mesh.normals ?? new Float32Array();
+    const c = chunk?.colors ?? new Float32Array();
+    expect(colouredWhere(n, c, (y) => y > 0.5)).toEqual(new Set(["1,0,0"]));
+  });
+});

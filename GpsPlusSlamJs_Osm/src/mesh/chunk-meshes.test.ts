@@ -196,6 +196,60 @@ describe("chunkMeshes — per-feature colours (W22/W23)", () => {
  * buildings breathe in lockstep, which looks deliberate too. The only way either
  * is caught is here, where the feature boundaries still exist.
  */
+describe("chunkMeshes - roof colours (bug 8)", () => {
+  // WHY THESE TESTS MATTER. `roof:colour` was read nowhere and a chunk held one
+  // colour per feature, so a red-tiled roof on white walls drew all white.
+  // The roof is told apart by its normal; these pin that walls and the bottom
+  // keep the wall colour and that a feature with no roof colour is unchanged.
+  const paint = (roof: number | undefined) =>
+    chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0xffffff,
+      undefined,
+      () => roof,
+    )[0];
+
+  it("paints upward-facing vertices with the roof colour, the rest with the wall colour", () => {
+    const chunk = paint(0xff0000);
+    const normals = chunk?.mesh.normals ?? new Float32Array();
+    const colors = chunk?.colors ?? new Float32Array();
+    const up: string[] = [];
+    const other: string[] = [];
+    for (let i = 0; i < normals.length / 3; i++) {
+      const rgb = [...colors.slice(i * 3, i * 3 + 3)].join(",");
+      ((normals[i * 3 + 1] as number) > 0.5 ? up : other).push(rgb);
+    }
+    expect(new Set(up)).toEqual(new Set(["1,0,0"]));
+    expect(new Set(other)).toEqual(new Set(["1,1,1"]));
+    // A cube has one top face and five others; both groups must be reached.
+    expect(up.length).toBeGreaterThan(0);
+    expect(other.length).toBeGreaterThan(up.length);
+  });
+
+  it("is unchanged for a feature without a roof colour", () => {
+    const plain = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0x336699,
+    )[0];
+    const unpainted = chunkMeshes(
+      [cube(0, 0)],
+      (m) => m,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0x336699,
+      undefined,
+      () => undefined,
+    )[0];
+    expect(unpainted?.colors).toEqual(plain?.colors);
+  });
+});
+
 describe("chunkMeshes shell attributes", () => {
   /** A box from y=base to y=top, as two triangles' worth of vertices. */
   const column = (base: number, top: number): MeshData => ({

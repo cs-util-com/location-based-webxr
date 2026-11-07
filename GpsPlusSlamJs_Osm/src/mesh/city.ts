@@ -28,7 +28,7 @@ import {
   type MeshChunk,
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
-import { buildingColour, roadColour } from "./feature-colours.js";
+import { buildingColour, roadColour, roofColour } from "./feature-colours.js";
 import { buildRoads } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
@@ -125,21 +125,24 @@ export function buildCity(
   const tagsByKey = new Map(
     all.map((feature) => [featureKey(feature), feature.tags]),
   );
-  // A `building:part` takes its PARENT's tags for its colour: the parts of
-  // one building are one building, and colouring them independently would
-  // stripe a cathedral by whichever part carried which tag. A barrier has no
-  // parent and is simply itself.
+  // A `building:part` is coloured by its OWN colour tags first and by its
+  // outline's when it has none (`buildingColour`, bug 8): an untagged part
+  // stays the colour of the building it belongs to, so an untagged cathedral
+  // is not striped, and a part a mapper coloured is drawn that colour. A
+  // barrier has no outline and is simply itself.
   const drawn = [
     ...volumes.map((volume) => ({
       mesh: volume.mesh,
-      tags:
-        tagsByKey.get(volume.parentFeature ?? volume.feature) ??
-        tagsByKey.get(volume.feature) ??
-        {},
+      tags: tagsByKey.get(volume.feature) ?? {},
+      outline:
+        volume.parentFeature === undefined
+          ? undefined
+          : tagsByKey.get(volume.parentFeature),
     })),
     ...barriers.map((barrier) => ({
       mesh: barrier.mesh,
       tags: tagsByKey.get(barrier.feature) ?? {},
+      outline: undefined,
     })),
   ];
   const buildings = chunkMeshes(
@@ -147,10 +150,11 @@ export function buildCity(
     (item) => item.mesh,
     (item) => meshCentroidEnu(item.mesh),
     undefined,
-    (item) => buildingColour(item.tags),
+    (item) => buildingColour(item.tags, item.outline),
     // The shell shader's phase, from the feature's own geometry, so it is
     // stable across rebuilds (an index would re-shuffle on every refresh).
     (item) => shellRandFor(item.mesh),
+    (item) => roofColour(item.tags, item.outline),
   );
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)

@@ -127,11 +127,19 @@ export function chunkMeshes<T>(
    * extra `Float32Array`s for bytes they never read.
    */
   shellRandOf?: (item: T) => number,
+  /**
+   * Packed `0xrrggbb` for the item's ROOF, or `undefined` for an item whose
+   * roof is its wall colour. Read only together with `colourOf`.
+   *
+   * A ROOF VERTEX IS ONE WHOSE NORMAL POINTS UP (y above `ROOF_NORMAL_MIN_Y`):
+   * the slopes, a flat top, a dome. Walls and gable ends are vertical and the
+   * bottom cap of a floating part points down, so they keep the wall colour.
+   * This works because the builders emit flat-shaded faces with their own
+   * vertices; a vertex shared between a wall and a roof would take one colour.
+   */
+  roofColourOf?: (item: T) => number | undefined,
 ): MeshChunk[] {
-  const grouped = new Map<
-    string,
-    { mesh: MeshData; colour: number; rand: number }[]
-  >();
+  const grouped = new Map<string, ChunkPart[]>();
   for (const item of items) {
     const mesh = meshOf(item);
     // A feature that produced no triangles must not create a chunk — see above.
@@ -141,6 +149,7 @@ export function chunkMeshes<T>(
     list.push({
       mesh,
       colour: colourOf?.(item) ?? 0xffffff,
+      roof: roofColourOf?.(item),
       rand: shellRandOf?.(item) ?? 0,
     });
     grouped.set(key, list);
@@ -157,27 +166,59 @@ export function chunkMeshes<T>(
     if (colourOf === undefined) {
       return shell === undefined ? { key, mesh } : { key, mesh, ...shell };
     }
-    // FLAT PER FEATURE, never interpolated across one: a building whose walls
-    // faded from one class colour to its neighbour's would read as a gradient
-    // someone chose. The merge preserves order, so filling in the same order is
-    // what keeps a colour on the feature it belongs to.
-    const colors = new Float32Array((mesh.positions.length / 3) * 3);
-    let at = 0;
-    for (const part of parts) {
-      const r = ((part.colour >> 16) & 0xff) / 255;
-      const g = ((part.colour >> 8) & 0xff) / 255;
-      const b = (part.colour & 0xff) / 255;
-      for (let i = 0; i < part.mesh.positions.length / 3; i++) {
-        colors[at] = r;
-        colors[at + 1] = g;
-        colors[at + 2] = b;
-        at += 3;
-      }
-    }
+    const colors = vertexColours(parts, mesh.positions.length / 3);
     return shell === undefined
       ? { key, mesh, colors }
       : { key, mesh, colors, ...shell };
   });
+}
+
+/** One item's mesh with what `chunkMeshes` paints on it. */
+interface ChunkPart {
+  readonly mesh: MeshData;
+  readonly colour: number;
+  readonly roof: number | undefined;
+  readonly rand: number;
+}
+
+/** Normal `y` above which a vertex belongs to a roof (see `roofColourOf`). */
+const ROOF_NORMAL_MIN_Y = 1e-3;
+
+/** A packed `0xrrggbb` as three 0..1 channels. */
+function channels(colour: number): readonly [number, number, number] {
+  return [
+    ((colour >> 16) & 0xff) / 255,
+    ((colour >> 8) & 0xff) / 255,
+    (colour & 0xff) / 255,
+  ];
+}
+
+/**
+ * The per-vertex colours of one chunk's parts, in merge order.
+ *
+ * FLAT PER FEATURE, never interpolated across one: a building whose walls
+ * faded from one class colour to its neighbour's would read as a gradient
+ * someone chose. The merge preserves order, so filling in the same order is
+ * what keeps a colour on the feature it belongs to. A part with a roof colour
+ * paints its upward-facing vertices with it.
+ */
+function vertexColours(
+  parts: readonly ChunkPart[],
+  vertexCount: number,
+): Float32Array {
+  const colors = new Float32Array(vertexCount * 3);
+  let at = 0;
+  for (const part of parts) {
+    const wall = channels(part.colour);
+    const roof = part.roof === undefined ? wall : channels(part.roof);
+    const normals = part.mesh.normals;
+    for (let i = 0; i < part.mesh.positions.length / 3; i++) {
+      const up = (normals[i * 3 + 1] ?? 0) > ROOF_NORMAL_MIN_Y;
+      colors.set(up ? roof : wall, at);
+      at += 3;
+    }
+  }
+  return colors;
 }
 
 /**

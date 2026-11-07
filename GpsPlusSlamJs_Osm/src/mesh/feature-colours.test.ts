@@ -141,15 +141,28 @@ describe("parseOsmColour", () => {
     // a real thing people type. Falling through to the class colour is the
     // honest answer.
     expect(parseOsmColour("#gggggg")).toBeUndefined();
-    expect(parseOsmColour("beige")).toBeUndefined();
+    expect(parseOsmColour("darkbrown")).toBeUndefined();
     expect(parseOsmColour("")).toBeUndefined();
     expect(parseOsmColour(undefined)).toBeUndefined();
   });
 
-  it("does NOT resolve CSS colour names, deliberately", () => {
-    // The CSS list is 148 entries of which a handful appear in OSM, and a wrong
-    // colour is worse than the class default because it looks like a decision.
-    expect(parseOsmColour("red")).toBeUndefined();
+  it("resolves the colour names the corpus uses, to their CSS values", () => {
+    // WHY (bug 8 of the 2026-11-07 findings): 511 of the corpus's 3 108 colour
+    // values are names, `grey` alone 377 of them, and every one was dropped to
+    // the class colour. The wiki allows basic names, so a mapper who typed
+    // `red` said red.
+    expect(parseOsmColour("grey")).toBe(0x808080);
+    expect(parseOsmColour("gray")).toBe(0x808080);
+    expect(parseOsmColour(" Red ")).toBe(0xff0000);
+    expect(parseOsmColour("lightgrey")).toBe(0xd3d3d3);
+    expect(parseOsmColour("gold")).toBe(0xffd700);
+  });
+
+  it("still does NOT resolve a CSS name nobody in the corpus uses", () => {
+    // A wrong colour is worse than the class default because it looks like a
+    // decision, so the table holds only names seen in use; `beige` is CSS
+    // but not among them.
+    expect(parseOsmColour("beige")).toBeUndefined();
   });
 });
 

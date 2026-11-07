@@ -12,7 +12,7 @@ coloured.
 - `CHUNK_SIZE_M` (920) — the grain, taken from the H3 res-8 ladder.
 - `MeshChunk` — `{ key, mesh, colors? }`.
 - `chunkKeyFor(point, sizeM?): string`
-- `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?): MeshChunk[]`
+- `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?, shellRandOf?, roofColourOf?): MeshChunk[]`
 - `meshCentroidEnu(mesh): EnuPoint`
 
 ## Invariants & assumptions
@@ -45,6 +45,12 @@ coloured.
   where per-feature colour meets per-chunk batching.
 - **No `colourOf` means no colour buffer** — bytes and a shader define bought for
   nothing.
+- **`roofColourOf` paints a feature's roof** (bug 8): every vertex whose normal
+  y is above `1e-3` (slopes, flat tops, domes) takes the roof colour, every
+  other vertex (walls, gable ends, the bottom cap) the wall colour. It relies
+  on the builders emitting flat-shaded faces with their own vertices; a vertex
+  shared between a wall and a roof would take one colour. It is read only with
+  `colourOf`, and `undefined` for an item leaves it one colour.
 
 ## Examples
 
@@ -54,7 +60,9 @@ const buildings = chunkMeshes(
   (v) => v.mesh,
   (v) => meshCentroidEnu(v.mesh),
   undefined,
-  (v) => buildingColour(tagsByKey.get(v.parentFeature ?? v.feature) ?? {}),
+  (v) => buildingColour(tagsOf(v), outlineTagsOf(v)),
+  undefined,
+  (v) => roofColour(tagsOf(v), outlineTagsOf(v)),
 );
 ```
 
@@ -64,4 +72,5 @@ const buildings = chunkMeshes(
 distant-apart grouping, the empty and degenerate cases, determinism, the key's
 sign handling, the centroid's frame, and for colours: flat per feature, each
 feature's colour on its own vertices, no buffer when uncoloured, and the buffer
-sized to the merged vertex count.
+sized to the merged vertex count; the roof colour on upward-facing vertices
+only, and no change for a feature without one.

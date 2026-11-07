@@ -45,9 +45,12 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
 
 ## Invariants & assumptions
 
-- **A `building:part` takes its parent's colour** (its tags: `building:colour`,
-  then material, then class), because the parts of one building are one
-  building. A part without its parent in the set keeps its own.
+- **A `building:part` is coloured by its own `building:colour` or
+  `building:material` first, and by its parent's colour when it has neither**
+  (bug 8, `buildingColour(tags, outline)`), so a mapped copper spire is copper
+  and an untagged cathedral is still one colour. A part without its parent in
+  the set keeps its own. **Roofs take `roof:colour`** (the part's, then the
+  parent's) through `chunkMeshes`'s `roofColourOf`.
 - **The shell phase is stable across rebuilds** (`shellRandFor`, from each
   feature's first vertex), so the AR shell does not re-randomise when a tile
   loads.
@@ -65,8 +68,9 @@ for (const chunk of city.buildings) draw(chunk);
 
 ## Tests
 
-`city.test.ts` - volumes, barriers and trees built; a part coloured exactly
-as its parent (and differently under another parent); the ground under every
+`city.test.ts` - volumes, barriers and trees built; an untagged part coloured
+exactly as its parent (and differently under another parent); a part's own
+colour and the roof colours in `s3db-parts.test.ts`; the ground under every
 building; the shell phase stable and in [0, 1); empty in, empty out;
 `cityGround` flat without a field and reading the field at the position's ENU
 metres; `withinM` dropping what lies outside, keeping all without it, keeping a
