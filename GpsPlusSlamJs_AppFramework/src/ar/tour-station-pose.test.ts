@@ -284,12 +284,13 @@ describe('the world view', () => {
       activateRadiusM: 30,
       foundRadiusM: 25,
       hint: 'arrow' as const,
-      blocks: [pin, card],
-      steps: [
+      children: [
+        pin,
         {
           id: 's',
-          action: { kind: 'show' as const, block: 'intro' },
-          advance: { mode: 'tap' as const },
+          kind: 'story' as const,
+          title: 'A story',
+          children: [{ ...card, advance: { mode: 'tap' as const } }],
         },
       ],
     },
@@ -299,8 +300,7 @@ describe('the world view', () => {
       activateRadiusM: 30,
       foundRadiusM: 25,
       hint: 'arrow' as const,
-      blocks: [photo],
-      steps: [],
+      children: [photo],
     },
   ];
 
@@ -318,7 +318,7 @@ describe('the world view', () => {
 
   it('a picture in the world carries its image asset, and a story block is not in the world', () => {
     // Why: the page that draws or saves a picture needs the file it names;
-    // a block a step shows appears only when that step is reached.
+    // a block in a story appears only when the story reaches it.
     const objects = tourObjects({ stations, assets: [asset] });
     expect(objects[1]).toMatchObject({ kind: 'picture', imageAsset: asset });
     expect(objects.map((o) => o.id)).not.toContain('intro');

@@ -42,7 +42,8 @@ the peek into the store's `sheetSet`. A thin writer, wired by
 - The completion card has no button of its own: the X at the top left
   (`#enter-ar`) is the one way out of AR (an "Exit AR" there only clicked
   the X again).
-- "Keep listening" shows only beside the confirm ("End this story" asked).
+- "Keep listening" shows only beside the confirm ("End this story" asked);
+  at a story picker, where nothing plays yet, it reads "Keep choosing".
 - **Focus follows what takes a hidden control's place**
   (`hideKeepingFocus(el, hidden, fallback, active)`, exported): when
   "Keep listening" hides while focused, the focus moves to the story's

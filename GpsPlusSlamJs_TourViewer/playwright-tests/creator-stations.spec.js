@@ -10,6 +10,7 @@ import {
   openFixtureTour,
   standAt,
 } from "./ar-fakes.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Stations in the creator's AR view, end to end (tour editor plan
@@ -92,7 +93,9 @@ async function expectWrittenAsTold(page) {
   const { manifest } = await downloadedZip(page, 0);
   const holding = (/** @type {string} */ label) =>
     manifest.stations.find((s) =>
-      s.blocks.some((i) => i.kind === "shortText" && i.caption === label),
+      stationBlocks(s).some(
+        (i) => i.kind === "shortText" && i.caption === label,
+      ),
     );
   const fixture = holding("Fixture pin");
   const started = holding("Outside");
@@ -212,7 +215,9 @@ test("'New station here' makes the next pin start its own station within the rad
   const { manifest } = await downloadedZip(page, 0);
   const holding = (/** @type {string} */ label) =>
     manifest.stations.find((s) =>
-      s.blocks.some((i) => i.kind === "shortText" && i.caption === label),
+      stationBlocks(s).some(
+        (i) => i.kind === "shortText" && i.caption === label,
+      ),
     );
   const own = manifest.objects.find(
     (o) => o.kind === "shortText" && o.caption === "Own",
@@ -225,7 +230,7 @@ test("'New station here' makes the next pin start its own station within the rad
   expect(started.id).not.toBe(fixture.id);
   expect(holding("After")?.id).toBe(started.id);
   // The fixture's station keeps its own pin and photos, nothing more.
-  expect(fixture.blocks.map((i) => i.id)).toEqual([
+  expect(stationBlocks(fixture).map((i) => i.id)).toEqual([
     "fixturepin01",
     "fixturephoto1",
     "fixturephoto2",

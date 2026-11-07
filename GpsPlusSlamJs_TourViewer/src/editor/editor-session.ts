@@ -8,6 +8,10 @@
  * @see editor-session.ts.md
  */
 
+import {
+  tourStationChildIds,
+  tourStationStoryBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
@@ -63,7 +67,6 @@ import {
   isDocumentEdit,
   manifestNow,
   objectFits,
-  storyBlocksOf,
   nextStep,
   objectMoveChange,
   picturesNeeded,
@@ -885,9 +888,12 @@ export function createEditorSession(input: {
   ): { kind: "edited" | "unchanged" } | EditorRefusal {
     const state = mine();
     const station = (state === null ? null : manifestNow(state))?.stations.find(
-      (s) => storyBlocksOf(s).some((b) => b.id === id),
+      (s) => tourStationStoryBlocks(s).some((b) => b.id === id),
     );
-    const block = station?.blocks.find((b) => b.id === id);
+    const block =
+      station === undefined
+        ? undefined
+        : tourStationStoryBlocks(station).find((b) => b.id === id);
     if (state === null || station === undefined || block === undefined) {
       return notInTour;
     }
@@ -1283,11 +1289,11 @@ export function createEditorSession(input: {
         .filter((o) => o.station === stationId);
       const read = await picturesOf(items);
       if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
-      // Every block of the station gets a new id, its story's too: block
-      // ids are unique across the tour.
+      // Every child of the station gets a new id, its stories' and theirs
+      // too: child ids are unique across the tour.
       const blockIds = new Set([
         ...items.map((o) => o.id),
-        ...frame.blocks.map((b) => b.id),
+        ...tourStationChildIds(frame),
       ]);
       const newItemIds = Object.fromEntries(
         [...blockIds].map((id) => [id, newObjectId()]),

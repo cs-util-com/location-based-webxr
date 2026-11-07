@@ -28,6 +28,7 @@
  *   dropped when the tour closes or another opens.
  */
 
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TourAsset,
   TourBlock,
@@ -35,7 +36,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
-import { isStageCharacterView } from "./character-views.js";
+import { itemAssets } from "./item-card.js";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
@@ -106,59 +107,25 @@ export async function decodeFigure<T>(
  *  G2 follow-up 9): drawn with the station, they would otherwise be read
  *  from the archive on arrival. Free pictures are read on their own. */
 export function stationAssetIds(
-  station: Pick<TourStation, "blocks" | "steps">,
+  station: Pick<TourStation, "children">,
   characters: ReadonlyMap<string, TourCharacter> = new Map(),
 ): string[] {
-  const blocks = new Map(station.blocks.map((b) => [b.id, b]));
-  const ids = station.steps.flatMap((step): readonly string[] => {
-    if (step.action.kind !== "show") return [];
-    const block = blocks.get(step.action.block);
-    return block === undefined ? [] : storyAssetIds(block, characters);
-  });
+  const ids = tourStationStoryBlocks(station).flatMap((block) =>
+    storyAssetIds(block, characters),
+  );
   const models = tourFreeBlocks(station).flatMap((b) =>
     b.kind === "model" ? [b.asset] : [],
   );
   return [...new Set([...ids, ...models])];
 }
 
-/** The assets the story reads to show `block` (`scene-view.ts`); a
- *  character resolves his declaration in `characters`. */
+/** The assets read ahead of showing `block` (`item-card.ts`): all but a
+ *  video's. */
 function storyAssetIds(
   block: TourBlock,
   characters: ReadonlyMap<string, TourCharacter>,
 ): readonly string[] {
-  switch (block.kind) {
-    case "picture":
-      return [block.image];
-    case "audio":
-      return [block.audio];
-    case "model":
-      // On the stage, or placed in the world once reached (B2b).
-      return block.view === "card" ? [] : [block.asset];
-    case "character": {
-      // Drawn in every view but the card (the plain stage figure, or a
-      // character look in a story view). A story view of a declared
-      // character with a frames sheet stands from the sheet; his image
-      // then only for the portrait view's portrait.
-      const sheet =
-        isStageCharacterView(block.view) && block.character !== undefined
-          ? characters.get(block.character)?.frames
-          : undefined;
-      const figure =
-        block.view === "card"
-          ? []
-          : sheet === undefined
-            ? [block.image]
-            : block.view === "portrait"
-              ? [block.image, sheet]
-              : [sheet];
-      return block.voice === undefined ? figure : [...figure, block.voice];
-    }
-    case "shortText":
-    case "longText":
-    case "video":
-      return [];
-  }
+  return block.kind === "video" ? [] : itemAssets(block, characters);
 }
 
 export interface StationPrefetch {

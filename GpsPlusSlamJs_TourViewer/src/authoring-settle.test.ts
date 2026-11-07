@@ -14,6 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import { stationBlocks } from "./test-support/station-content.js";
 import { isAnyOf } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { objectContentKey } from "./authoring-draft.js";
@@ -3800,7 +3801,7 @@ describe(
       expect(after!.geo).not.toEqual(station!.geo);
       // The blocks as they were: the same local poses, re-expressed in no
       // frame (the station moved, they ride along).
-      expect(after!.blocks).toEqual(station!.blocks);
+      expect(stationBlocks(after!)).toEqual(stationBlocks(station!));
       // The page's edit is the pin where its moved station puts it.
       const edit = a.ctx.tourDocument
         .entries()
@@ -3820,8 +3821,8 @@ describe(
         JSON.parse(serializeTourManifest(a.ctx.tourDocument.manifest()!)),
       );
       const home = written.stations.find((s) => s.id === station!.id)!;
-      expect(home.blocks.map((i) => i.pose)).toEqual(
-        station!.blocks.map((i) => i.pose),
+      expect(stationBlocks(home).map((i) => i.pose)).toEqual(
+        stationBlocks(station!).map((i) => i.pose),
       );
       expect(home.geo).toEqual(after!.geo);
     });

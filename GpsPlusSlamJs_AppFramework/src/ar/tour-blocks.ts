@@ -1,5 +1,5 @@
 /**
- * A station's BLOCKS in `tour.json` version 4: one list of the things a
+ * A station's BLOCKS in `tour.json` version 5: one list of the things a
  * station shows - a short text, a long text, a picture, a video, a sound, a
  * 3D model, a character - each its data (the model), the creator's choice
  * of how it looks (the view) and where it stands (a local pose in the
@@ -22,10 +22,10 @@
  * fields, or widen a cap. Read from such a file, a block of an unknown
  * kind, naming an asset this reader does not have, or breaking a rule a
  * later minor may relax is skipped and reported, never failing the tour; a
- * block in an unknown view falls back to the kind's floor view
- * ({@link tourFloorView}): `card` for a story block, the kind's world view
- * for a free one, and a free block with no world view this reader draws is
- * skipped and reported. Structural faults (an id, a pose) fail at every
+ * block in an unknown view falls back to its floor view: `card` for a
+ * story block, the kind's world view for a free one
+ * ({@link tourFloorView}), and a free block with no world view this reader
+ * draws is skipped and reported. Structural faults (an id, a pose) fail at every
  * minor: no revision can make them valid.
  *
  * @see tour-blocks.ts.md
@@ -53,8 +53,8 @@ export type TourBlockKind =
   | 'model'
   | 'character';
 
-/** The views a character speaks in as a story step (minor 2), besides
- *  4.0's `stage` and `card`: a speech bubble over his head (`bubble`);
+/** The views a character speaks in in a story, besides
+ *  `stage` and `card`: a speech bubble over his head (`bubble`);
  *  the bubble with his voice on a tap (`speak`); the bubble, and once his
  *  line has ended he beckons along the tour (`two-stations`); a portrait
  *  card at the foot of the screen (`portrait`); a paper stage that unfolds
@@ -84,8 +84,7 @@ export const TOUR_BLOCK_VIEWS = {
 } as const satisfies Record<TourBlockKind, readonly string[]>;
 
 /**
- * The views a model stands in the world in (minor 1 added all but
- * `placed`): `placed` at its pose and size; `ghost`, the same shape as
+ * The views a model stands in the world in: `placed` at its pose and size; `ghost`, the same shape as
  * glass whose feet fade into the ground; `hotspots`, its notes drawn on it
  * (its animation held at rest, so they stay on the surface); `cutaway`,
  * cut open by its sections; `toy`, at its pose and size until the visitor
@@ -117,18 +116,6 @@ export const TOUR_WORLD_VIEWS: ReadonlySet<string> = new Set([
 ]);
 
 const MODEL_WORLD_VIEWS: ReadonlySet<string> = new Set(TOUR_MODEL_WORLD_VIEWS);
-
-/** The views of minor 0: a model in any other view, or carrying a minor-1
- *  field, makes the tour need minor 1. */
-const MINOR_0_MODEL_VIEWS: ReadonlySet<string> = new Set([
-  'placed',
-  'stage',
-  'card',
-]);
-
-/** A character's views of minor 0; any other, or a `character`
- *  reference, makes the tour need minor 2. */
-const MINOR_0_CHARACTER_VIEWS: ReadonlySet<string> = new Set(['stage', 'card']);
 
 /** How a text cap is counted. */
 export type TourTextUnit = 'codePoints' | 'utf16';
@@ -170,7 +157,7 @@ export const TOUR_BLOCK_TEXT_RULES = {
 export const TOUR_MODEL_MIN_SIZE_M = 0.05;
 export const TOUR_MODEL_MAX_SIZE_M = 500;
 
-/** A model's notes (minor 1): a note's title is required, its text
+/** A model's notes: a note's title is required, its text
  *  optional; at most {@link TOUR_MODEL_MAX_NOTES} on one model. */
 export const TOUR_MODEL_NOTE_RULES = {
   title: required(64),
@@ -178,14 +165,14 @@ export const TOUR_MODEL_NOTE_RULES = {
 } as const satisfies Record<string, TourTextRule>;
 export const TOUR_MODEL_MAX_NOTES = 32;
 
-/** A model's sections (minor 1), the planes a cutaway cuts it by: 1 to
+/** A model's sections, the planes a cutaway cuts it by: 1 to
  *  {@link TOUR_MODEL_MAX_SECTIONS}, each named. */
 export const TOUR_MODEL_SECTION_RULES = {
   name: required(40),
 } as const satisfies Record<string, TourTextRule>;
 export const TOUR_MODEL_MAX_SECTIONS = 4;
 
-/** The name of a model's animation clip (minor 1), as its file names it. */
+/** The name of a model's animation clip, as its file names it. */
 export const TOUR_MODEL_ANIMATION_RULES = {
   name: required(128),
 } as const satisfies Record<string, TourTextRule>;
@@ -201,7 +188,7 @@ export const TOUR_MODEL_SPACE_MAX = 10_000;
  *  leaving out just that note or section of a newer one. */
 export const TOUR_MODEL_MIN_DIRECTION_LENGTH = 1e-9;
 
-/** A narration's credit line (minor 5): optional, left out alone when
+/** A narration's credit line: optional, left out alone when
  *  over its cap. */
 export const TOUR_NARRATION_RULES = {
   voiceCredit: optional(200),
@@ -233,7 +220,7 @@ export interface TourShortTextBlock extends TourBlockEnvelope<'shortText'> {
 }
 
 /**
- * A long text's narration (minor 5): its voice, and optionally the
+ * A long text's narration: its voice, and optionally the
  * read-along track that says which words it speaks when.
  */
 export interface TourNarration {
@@ -256,7 +243,7 @@ export interface TourLongTextBlock extends TourBlockEnvelope<'longText'> {
   readonly title: string;
   /** The text's source, counted in UTF-16 units. */
   readonly body: string;
-  /** Minor 5: the text read aloud. */
+  /** The text read aloud. */
   readonly narration?: TourNarration;
 }
 
@@ -326,13 +313,13 @@ export interface TourModelBlock extends TourBlockEnvelope<'model'> {
    *  view, refused on the stage (mounted at its file's own size). */
   readonly sizeM?: number;
   readonly title?: string;
-  /** Minor 1: its clip. */
+  /** Its clip. */
   readonly animation?: TourModelAnimation;
-  /** Minor 1: its notes, drawn in the `hotspots` view; 1 to
+  /** Its notes, drawn in the `hotspots` view; 1 to
    *  {@link TOUR_MODEL_MAX_NOTES} (an empty list reads as absent). They
    *  live on the block, not in the file, so replacing the file keeps them. */
   readonly annotations?: readonly TourModelNote[];
-  /** Minor 1: the planes a `cutaway` steps through, 1 to
+  /** The planes a `cutaway` steps through, 1 to
    *  {@link TOUR_MODEL_MAX_SECTIONS}. Absent (an empty list reads so): one
    *  cut that turns to face the visitor. */
   readonly sections?: readonly TourModelSection[];
@@ -344,7 +331,7 @@ export interface TourCharacterBlock extends TourBlockEnvelope<'character'> {
   /** A cut-out image asset; with a `character` reference, the
    *  declaration's. */
   readonly image: string;
-  /** Minor 2: the tour's declared character this is (`tour-characters.ts`). */
+  /** The tour's declared character this is (`tour-characters.ts`). */
   readonly character?: string;
   /** Captions always: what the character says, as text. */
   readonly caption: string;
@@ -434,15 +421,12 @@ export function checkTourBlockText(
 }
 
 /**
- * The view a block falls back to when this reader does not know its own: a
- * story block's is `card`; a free block's is its kind's world view, or
- * null when this reader draws none for that kind (the block is skipped).
+ * The view a free block falls back to when this reader does not know its
+ * own: its kind's world view, or null when this reader draws none for that
+ * kind (the block is skipped). A story block's floor is `card`, which is
+ * also what its reader gives a block with no view at all.
  */
-export function tourFloorView(
-  kind: TourBlockKind,
-  placement: 'free' | 'story'
-): TourBlockView | null {
-  if (placement === 'story') return 'card';
+export function tourFloorView(kind: TourBlockKind): TourBlockView | null {
   return FREE_FLOOR[kind];
 }
 
@@ -751,7 +735,7 @@ function modelAnimation(v: Fields, ctx: BlockContext) {
 }
 
 /** A character block's name and image, from the declaration it names
- *  (minor 2) or as written. A name no declaration has fails a file of this
+ *  or as written. A name no declaration has fails a file of this
  *  reader's own minor; a newer one's drops just the reference. */
 function characterFields(v: Fields, ctx: BlockContext) {
   const name = requiredText(v, 'name', rules.character.name, ctx);
@@ -800,7 +784,7 @@ function narrationFault(value: Fields, ctx: BlockContext): string | null {
   return null;
 }
 
-/** A long text's narration (minor 5). Not an object fails at every
+/** A long text's narration. Not an object fails at every
  *  minor; a field breaking its rule fails a file of this reader's own
  *  minor, and a newer one's drops just the narration, keeping the text.
  *  An over-long credit is left out alone. */
@@ -836,41 +820,6 @@ function narrationOf(v: Fields, ctx: BlockContext) {
     ...(durationMs === undefined ? {} : { durationMs }),
   };
   return { narration };
-}
-
-/**
- * The lowest minor `blocks` need: 5 when a long text is narrated; 4 when
- * a long text stands in the world as a short reading sign (`reading`); 3 when one stands as a reading
- * stand (`lectern`); 2 when a character speaks in a view
- * minor 2 added or names a declared character; 1 when a model stands in a
- * view minor 1 added, or carries an animation, notes or sections; 0
- * otherwise.
- */
-export function tourBlocksMinor(blocks: readonly TourBlock[]): number {
-  if (blocks.some((b) => b.kind === 'longText' && b.narration !== undefined)) {
-    return 5;
-  }
-  if (blocks.some((b) => b.kind === 'longText' && b.view === 'reading')) {
-    return 4;
-  }
-  if (blocks.some((b) => b.kind === 'longText' && b.view === 'lectern')) {
-    return 3;
-  }
-  const needsTwo = blocks.some(
-    (b) =>
-      b.kind === 'character' &&
-      (!MINOR_0_CHARACTER_VIEWS.has(b.view) || b.character !== undefined)
-  );
-  if (needsTwo) return 2;
-  const needsOne = blocks.some(
-    (b) =>
-      b.kind === 'model' &&
-      (!MINOR_0_MODEL_VIEWS.has(b.view) ||
-        b.animation !== undefined ||
-        b.annotations !== undefined ||
-        b.sections !== undefined)
-  );
-  return needsOne ? 1 : 0;
 }
 
 type KindFields = (v: Fields, view: string | null, ctx: BlockContext) => Fields;
@@ -980,10 +929,47 @@ function readBlock(v: Fields, ctx: BlockContext): TourBlockRead {
 }
 
 /**
- * Read one station's blocks (`value`, at `at`): each field checked, each
- * media reference resolved against `assets`, block ids unique. Their views
- * are settled by {@link placeTourBlocks} once the story is read. A lenient
- * reader skips (and reports) what it cannot show.
+ * A reader of single blocks under `options` (the assets indexed once): it
+ * reads the block record `value` at `at` - each field checked, each media
+ * reference resolved - or returns null when a lenient reader skips it,
+ * reported as a `block` drop. Its view is settled by the caller, which
+ * knows whether the block is free ({@link placeTourBlocks}). The id is
+ * checked at every minor; uniqueness is the caller's.
+ */
+export function tourBlockReader(
+  options: TourBlocksReadOptions
+): (
+  value: Readonly<Record<string, unknown>>,
+  at: string
+) => TourBlockRead | null {
+  const assets = new Map(options.assets.map((a) => [a.id, a.kind] as const));
+  const characters = options.characters ?? new Map();
+  const lenient = options.lenient === true;
+  return (v, at) => {
+    const id = blockIdOf(v, at, options.fail);
+    const ctx: BlockContext = {
+      at,
+      id,
+      assets,
+      characters,
+      fail: options.fail,
+      lenient,
+      onDropped: options.onDropped,
+    };
+    try {
+      return readBlock(v, ctx);
+    } catch (err) {
+      if (!(err instanceof SkippedBlock)) throw err;
+      options.onDropped?.({ kind: 'block', block: id, reason: err.message });
+      return null;
+    }
+  };
+}
+
+/**
+ * Read a list of blocks (`value`, at `at`): each field checked, each media
+ * reference resolved against `assets`, block ids unique. The views of free
+ * blocks are settled by {@link placeTourBlocks}. A lenient reader skips (and reports) what it cannot show.
  */
 export function readTourBlocks(
   value: unknown,
@@ -992,45 +978,17 @@ export function readTourBlocks(
 ): TourBlockRead[] {
   const fail: Fail = options.fail;
   if (!Array.isArray(value)) return fail(`"${at}" must be an array`);
-  const assets = new Map(options.assets.map((a) => [a.id, a.kind] as const));
-  const lenient = options.lenient === true;
+  const readOne = tourBlockReader(options);
   const ids: string[] = [];
   const read = (value as unknown[]).flatMap((v, i): TourBlockRead[] => {
     const blockAt = `${at}[${String(i)}]`;
     if (!isRecord(v)) return fail(`"${blockAt}" must be an object`);
-    const id = blockIdOf(v, blockAt, fail);
-    ids.push(id);
-    const ctx: BlockContext = {
-      at: blockAt,
-      id,
-      assets,
-      characters: options.characters ?? new Map(),
-      fail,
-      lenient,
-      onDropped: options.onDropped,
-    };
-    try {
-      return [readBlock(v, ctx)];
-    } catch (err) {
-      if (!(err instanceof SkippedBlock)) throw err;
-      options.onDropped?.({ kind: 'block', block: id, reason: err.message });
-      return [];
-    }
+    ids.push(blockIdOf(v, blockAt, fail));
+    const block = readOne(v, blockAt);
+    return block === null ? [] : [block];
   });
   assertUniqueTourIds(ids, 'block', fail);
   return read;
-}
-
-/** Block ids are unique across the tour, not only within a station. */
-export function checkTourBlockIdsUnique(
-  stations: readonly { readonly blocks: readonly { readonly id: string }[] }[],
-  fail: Fail
-): void {
-  assertUniqueTourIds(
-    stations.flatMap((s) => s.blocks.map((b) => b.id)),
-    'block',
-    fail
-  );
 }
 
 /** The free block's place, or why it has none this reader draws. */
@@ -1039,32 +997,28 @@ function freePlacement(read: TourBlockRead): TourBlock | string {
   if (knownView) {
     return TOUR_WORLD_VIEWS.has(block.view)
       ? block
-      : `no step shows block "${block.id}", so it must stand in the world (${[...TOUR_WORLD_VIEWS].join(', ')}), not in "${block.view}"`;
+      : `block "${block.id}" stands free in its station, so it must stand in the world (${[...TOUR_WORLD_VIEWS].join(', ')}), not in "${block.view}"`;
   }
-  const floor = tourFloorView(block.kind, 'free');
+  const floor = tourFloorView(block.kind);
   if (floor === null) {
-    return `no step shows block "${block.id}", and this version of the app draws no ${block.kind} in the world`;
+    return `block "${block.id}" stands free in its station, and this version of the app draws no ${block.kind} in the world`;
   }
   if (block.kind === 'model' && block.sizeM === undefined) {
-    return `no step shows block "${block.id}", and a placed model needs a size`;
+    return `block "${block.id}" stands free in its station, and a placed model needs a size`;
   }
   return { ...block, view: floor } as TourBlock;
 }
 
 /**
- * Settle each block's view against its station's story: `shown` holds the
- * ids its `show` steps name. A story block in a view this reader does not
- * know shows as `card`; a FREE block must stand in the world - in a strict
- * read anything else fails the file, in a lenient one a free block falls
- * back to its kind's world view or is skipped and reported.
+ * Settle each FREE block's view: it must stand in the world - in a strict
+ * read anything else fails the file, in a lenient one it falls back to its
+ * kind's world view or is skipped and reported.
  */
 export function placeTourBlocks(
   read: readonly TourBlockRead[],
-  shown: ReadonlySet<string>,
   options: Pick<TourBlocksReadOptions, 'fail' | 'lenient' | 'onDropped'>
 ): TourBlock[] {
   return read.flatMap((r): TourBlock[] => {
-    if (shown.has(r.block.id)) return [r.block];
     const placed = freePlacement(r);
     if (typeof placed !== 'string') return [placed];
     if (options.lenient !== true) return options.fail(placed);

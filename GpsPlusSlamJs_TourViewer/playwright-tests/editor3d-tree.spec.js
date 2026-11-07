@@ -26,6 +26,7 @@ import {
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: the tree is where a creator shapes the tour -
@@ -261,9 +262,11 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await afterFrames(page, 3);
   /** @returns {Promise<any[]>} */
   const gateBlocks = async () =>
-    (await tourNow(page)).stations.find(
-      (/** @type {any} */ s) => s.id === "gate",
-    ).blocks;
+    stationBlocks(
+      (await tourNow(page)).stations.find(
+        (/** @type {any} */ s) => s.id === "gate",
+      ),
+    );
   const before = (await gateBlocks()).length;
   const start = await revision(page);
   const gate = card(page, "gate");
@@ -333,8 +336,11 @@ test("Ctrl+K adds a kind to a place named in one query, and leaves the long-text
   await openSampleIn3d(page);
   await afterFrames(page, 3);
   const blocksOf = async (/** @type {string} */ id) =>
-    (await tourNow(page)).stations.find((/** @type {any} */ s) => s.id === id)
-      .blocks;
+    stationBlocks(
+      (await tourNow(page)).stations.find(
+        (/** @type {any} */ s) => s.id === id,
+      ),
+    );
   const before = (await blocksOf("steps")).length;
   const start = await revision(page);
   const palette = page.locator("#add-palette");
@@ -463,8 +469,7 @@ async function photoTour(page) {
         activateRadiusM: 50,
         foundRadiusM: 25,
         hint: "arrow",
-        steps: [],
-        blocks: [
+        children: [
           {
             id: "shot",
             kind: "picture",
@@ -555,8 +560,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
   expect(written.stations).toHaveLength(2);
   const pictures = written.stations.map(
     (/** @type {any} */ s) =>
-      written.assets.find((/** @type {any} */ a) => a.id === s.blocks[0]?.image)
-        ?.path,
+      written.assets.find(
+        (/** @type {any} */ a) => a.id === stationBlocks(s)[0]?.image,
+      )?.path,
   );
   // Two photos, two pictures: the copy's is its own file, the same bytes.
   expect(new Set(pictures).size).toBe(2);
@@ -633,7 +639,7 @@ test("a long text added in place is saved and opens again as it was made", async
   const written = JSON.parse(
     new TextDecoder().decode(files.get("tour.json") ?? new Uint8Array()),
   );
-  const block = written.stations[0].blocks.find(
+  const block = stationBlocks(written.stations[0]).find(
     (/** @type {any} */ b) => b.id === made,
   );
   expect(block).toMatchObject({
@@ -764,8 +770,7 @@ async function threePinTour() {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    children: [
       {
         id: `p${id}`,
         kind: "shortText",
@@ -1028,7 +1033,7 @@ async function rowsTour(page) {
     id,
     title,
     geo: { ...photo.geo, lat: photo.geo.lat + 0.0003 },
-    blocks: [],
+    children: [],
   });
   manifest.stations = [
     { ...photo, id: "short", title: "A" },

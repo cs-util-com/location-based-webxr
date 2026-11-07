@@ -19,6 +19,10 @@ import {
   WALK_SEGMENT_LIMIT,
   type WalkSheetInput,
 } from "./walk-sheet-model";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: the sheet is what the visitor reads of the walk
@@ -29,12 +33,6 @@ import {
  * of the visitor, so every state of the peek and of a row is pinned here.
  */
 
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
-
 function station(id: string, title: string): TourStation {
   return {
     id,
@@ -43,8 +41,8 @@ function station(id: string, title: string): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 
@@ -334,6 +332,39 @@ describe("the peek", () => {
       tail: "Every station is done.",
     });
     expect(m.list.completion).toBeNull();
+  });
+});
+
+describe("a station's story picker", () => {
+  // Why: the picker waits for the visitor and nothing plays yet, so "its
+  // story is playing" would tell them to wait for something that needs
+  // their tap.
+  it("asks for a choice in the peek and on the station's row", () => {
+    const peek = walkSheetModel(
+      input({
+        order: "fixed",
+        progress: walk("fixed", [
+          ...done("gate"),
+          { kind: "found", id: "well" },
+        ]),
+        view: view({ focusId: null }),
+        story: { stationId: "well", choosing: true },
+      }),
+    ).peek;
+    expect(peek.tail).toBe("Choose a story.");
+    const m = walkSheetModel(
+      input({
+        progress: walk("any", [
+          { kind: "found", id: "gate" },
+          { kind: "found", id: "well" },
+        ]),
+        story: { stationId: "gate", choosing: true },
+      }),
+    );
+    const sub = (id: string) => m.list.rows.find((r) => r.id === id)?.sub;
+    expect(sub("gate")).toBe("You are here - choose a story");
+    // A found station queued behind the picker is not the one asking.
+    expect(sub("well")).toBe("You are here - its story is playing");
   });
 });
 

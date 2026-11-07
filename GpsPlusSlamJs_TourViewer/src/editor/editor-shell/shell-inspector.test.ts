@@ -22,6 +22,7 @@ import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { buildInspector, type InspectorCode } from "./inspector-model.js";
 import { drawInspector, inspectorDrawing } from "./shell-inspector.js";
 import type { ShellPictures } from "./shell-pictures.js";
+import { stationContent } from "../../test-support/station-content.js";
 
 const AT = "2026-10-22T10:00:00Z";
 
@@ -34,9 +35,9 @@ const STATIONS = [
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
+
     image: "photo-1",
-    blocks: [
+    ...stationContent([
       {
         id: "photo-1",
         kind: "picture",
@@ -46,7 +47,7 @@ const STATIONS = [
         createdAtIso: AT,
         pose: { position: [4, 1.5, -2], rotation: [0, 0, 0, 1] },
       },
-    ],
+    ]),
   },
   {
     id: "steps",
@@ -55,8 +56,7 @@ const STATIONS = [
     activateRadiusM: 60,
     foundRadiusM: 30,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   },
 ] as unknown as TourStation[];
 
@@ -722,7 +722,7 @@ describe("drawInspector", () => {
         stations: [
           {
             ...STATIONS[1],
-            blocks: [
+            ...stationContent([
               {
                 id: "pin-x",
                 kind: "shortText",
@@ -731,7 +731,7 @@ describe("drawInspector", () => {
                 createdAtIso: AT,
                 pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
               },
-            ],
+            ]),
           } as unknown as TourStation,
         ],
         assets: [],
@@ -755,7 +755,7 @@ describe("drawInspector", () => {
         stations: [
           {
             ...STATIONS[1],
-            blocks: [
+            ...stationContent([
               {
                 id: "pin-x",
                 kind: "shortText",
@@ -764,7 +764,7 @@ describe("drawInspector", () => {
                 createdAtIso: AT,
                 pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
               },
-            ],
+            ]),
           } as unknown as TourStation,
         ],
         assets: [],
@@ -1106,7 +1106,7 @@ describe("drawInspector", () => {
       s.id === "steps"
         ? {
             ...s,
-            blocks: [
+            ...stationContent([
               {
                 id: "lines",
                 kind: "shortText",
@@ -1115,10 +1115,10 @@ describe("drawInspector", () => {
                 createdAtIso: AT,
                 pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
               },
-            ],
+            ]),
           }
         : s,
-    ) as unknown as TourStation[];
+    );
     drawInspector(
       dock,
       buildInspector({

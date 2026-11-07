@@ -17,6 +17,7 @@ import { walkOffered, walkStatus } from "./station-run";
 import { createTourViewerStore } from "./tour-viewer-session";
 import type { VisitorPosition } from "./visitor-position";
 import { WALK_NO_GUESS_HOLD_MS } from "./walk-no-guess";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 /**
  * Why these properties matter: the walk's rules are many small decisions
@@ -47,18 +48,16 @@ function station(i: number, north: number, east: number): TourStation {
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    blocks: [],
-    steps: [
-      {
-        id: "ask",
-        action: {
+    ...stationContent([
+      storyOf("story-1", [
+        {
+          id: "ask",
           kind: "choice",
           prompt: "Again?",
           options: [{ id: "yes", label: "Yes", goto: "ask" }],
         },
-        advance: { mode: "tap" },
-      },
-    ],
+      ]),
+    ]),
   };
 }
 

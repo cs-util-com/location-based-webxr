@@ -1,12 +1,11 @@
 /**
- * A tour's recurring CHARACTERS (`tour.json` version 4, minor 2): declared
+ * A tour's recurring CHARACTERS (`tour.json`): declared
  * once for the whole tour - an id, a name, a cut-out image and, optionally,
  * a sheet of his four poses (`frames`) - and named
  * by the `character` blocks of any station (`tour-blocks.ts`, the block's
  * `character` field). A block that names one takes its name and image from
  * here; the writer keeps the block's own inline name and image as well, in
- * step with the declaration, so a reader of an older minor (which knows no
- * declaration) still shows him by name.
+ * step with the declaration, so a block reads on its own.
  *
  * Defensive by the rule of `tour-manifest.ts`: an id is structural and
  * fails at every minor; a name over its cap, or an image that is not an

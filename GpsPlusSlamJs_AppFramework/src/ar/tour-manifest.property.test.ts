@@ -4,8 +4,8 @@
  * makes that safe is exact round-trip: any manifest the writer accepts
  * parses back to the same records - every station's geo pose and every
  * block's local pose bit for bit (nothing may nudge a local pose) - for
- * every mix of stations, free and story blocks of every kind, shows,
- * choices and quizzes, details, station descriptions and card images the
+ * every mix of stations, free and story blocks of every kind, choices and
+ * quizzes, details, station descriptions and card images the
  * generators can produce, not only the hand-written examples. A tour of a
  * newer minor is never written back: it was read without what this
  * reader does not know.
@@ -26,8 +26,9 @@ import {
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
 } from './tour-manifest';
-import { TOUR_WORLD_VIEWS, tourBlocksMinor } from './tour-blocks';
+import { TOUR_WORLD_VIEWS } from './tour-blocks';
 import { tourObjects } from './tour-station-pose';
+import { isTourStoryBlock, tourStationBlocks, tourStories } from './tour-story';
 
 /** What a card image or the cover may name: an image asset, another
  *  asset, a block id, or nothing the tour has. */
@@ -60,7 +61,7 @@ const manifest = tourManifestArbitrary().chain((record) => {
     })
     .map(({ extras, needsNoGps, tourId, description, cover }) => {
       const firstBlock = (s: Record<string, unknown>) =>
-        (s.blocks as { id: string }[])[0]?.id ?? 'no-block';
+        (s.children as { id: string }[])[0]?.id ?? 'no-block';
       const named = (pick: string, s: Record<string, unknown>) =>
         pick === 'block' ? firstBlock(s) : pick;
       return {
@@ -86,14 +87,14 @@ function imageIds(m: ReturnType<typeof parseTourManifest>): Set<string> {
   return new Set(m.assets.filter((a) => a.kind === 'image').map((a) => a.id));
 }
 
-describe('tour manifest version 4 (properties)', () => {
+describe('tour manifest (properties)', () => {
   // One generation for every claim about a manifest the writer accepts
   // (each claim used to draw its own 100-300 manifests): the reader accepts
   // it, serialize -> parse is the identity with poses bit for bit, parsing
   // is idempotent, a written file is a byte-for-byte fixed point, stations,
-  // blocks and card images stay where they were written; and, collected
-  // over the runs, the generator reaches every block kind, every step kind,
-  // free blocks and every world view (were it to miss one, every claim
+  // children and card images stay where they were written; and, collected
+  // over the runs, the generator reaches every block kind, every story
+  // child kind, free blocks and every world view (were it to miss one, every claim
   // above would silently skip it). Unseeded, so every run draws new
   // manifests: the coverage claims held in 24 of 24 runs at 40 manifests and
   // in 20 of 24 at 20, so 300 leaves them a wide margin. Each claim carries
@@ -106,7 +107,7 @@ describe('tour manifest version 4 (properties)', () => {
       TOUR_WORLD_VIEWS
     );
     const kinds = new Set<string>();
-    const steps = new Set<string>();
+    const storyKinds = new Set<string>();
     const views = new Set<string>();
     let free = 0;
     fc.assert(
@@ -120,28 +121,26 @@ describe('tour manifest version 4 (properties)', () => {
           },
         });
         for (const station of parsed.stations) {
-          for (const block of station.blocks) kinds.add(block.kind);
-          for (const step of station.steps) steps.add(step.action.kind);
+          for (const block of tourStationBlocks(station)) kinds.add(block.kind);
+          for (const child of tourStories(station).flatMap((s) => s.children)) {
+            storyKinds.add(isTourStoryBlock(child) ? 'block' : child.kind);
+          }
         }
         for (const object of tourObjects(parsed)) views.add(object.view);
         free += tourObjects(parsed).length;
 
-        // Identity through the writer: the lowest minor the tour needs is
-        // stamped, everything else reads back unchanged.
+        // Identity through the writer.
         const text = serializeTourManifest(parsed);
         const written = JSON.parse(text) as unknown;
         const again = parseTourManifest(written);
-        // The writer stamps the lowest minor the tour needs; everything
-        // else reads back unchanged.
-        const needed = tourBlocksMinor(
-          parsed.stations.flatMap((s) => s.blocks)
-        );
-        expect(again).toEqual({ ...parsed, minor: needed });
-        expect(written).toMatchObject({ version: 4, minor: needed });
+        expect(again).toEqual(parsed);
+        expect(written).toMatchObject({ version: 5, minor: 0 });
         // The same numbers exactly, not merely close: JSON round trips a
         // double exactly, and nothing on the way may recompute a pose.
         const poses = (x: typeof parsed) =>
-          JSON.stringify(x.stations.map((s) => s.blocks.map((b) => b.pose)));
+          JSON.stringify(
+            x.stations.map((s) => tourStationBlocks(s).map((b) => b.pose))
+          );
         expect(poses(again)).toBe(poses(parsed));
         expect(JSON.stringify(tourObjects(again))).toBe(
           JSON.stringify(tourObjects(parsed))
@@ -154,34 +153,25 @@ describe('tour manifest version 4 (properties)', () => {
         ).toEqual(parsed);
 
         // A written file is a fixed point: read and written again, the same
-        // bytes; and every step is written under its one key.
-        const file = written as {
-          stations: { steps: Record<string, unknown>[] }[];
-        };
-        expect(
-          file.stations
-            .flatMap((s) => s.steps)
-            .filter((s) => !('action' in s) || 'block' in s),
-          'every step under its one key'
-        ).toEqual([]);
+        // bytes.
         expect(
           serializeTourManifest(parseTourManifest(JSON.parse(text))),
           'a written file is a fixed point'
         ).toBe(text);
 
-        // Every station and every block stays in the station it was
+        // Every station and every child stays in the station it was
         // written in; a cover or card image only when it names an image
         // asset, and every card image dropped is reported.
         const stations = m.stations as {
           id: string;
-          blocks: { id: string }[];
+          children: { id: string }[];
           image?: string;
         }[];
         expect(parsed.stations.map((s) => s.id)).toEqual(
           stations.map((s) => s.id)
         );
-        expect(parsed.stations.map((s) => s.blocks.map((b) => b.id))).toEqual(
-          stations.map((s) => s.blocks.map((b) => b.id))
+        expect(parsed.stations.map((s) => s.children.map((c) => c.id))).toEqual(
+          stations.map((s) => s.children.map((c) => c.id))
         );
         const images = imageIds(parsed);
         expect(
@@ -216,10 +206,10 @@ describe('tour manifest version 4 (properties)', () => {
         'video',
       ].sort()
     );
-    expect([...steps].sort(), 'every step kind').toEqual([
+    expect([...storyKinds].sort(), 'every story child kind').toEqual([
+      'block',
       'choice',
       'quiz',
-      'show',
     ]);
     expect(free, 'free blocks').toBeGreaterThan(0);
     expect(views, 'every world view').toEqual(TOUR_WORLD_VIEWS);

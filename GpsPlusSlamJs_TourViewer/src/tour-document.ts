@@ -19,6 +19,15 @@
  */
 
 import {
+  isTourStory,
+  tourStationChildIds,
+  tourStationStoryBlocks,
+  tourStories,
+  type TourStory,
+  type TourStoryBlock,
+  type TourStoryChild,
+} from "gps-plus-slam-app-framework/ar/tour-story";
+import {
   createAction,
   createSlice,
   current,
@@ -114,20 +123,18 @@ import {
   objectAssetIds,
   stepAssetIds,
   stepRequiredAssetIds,
-  storyBlocksOf,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
 import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
 /** The world view's readers (`tour-content.ts`), for the pages: the
- *  free blocks of a station, the blocks its story shows, and which
- *  pictures are captured photos and own their image asset. Read-only; the
+ *  free blocks of a station, and which pictures are captured photos and
+ *  own their image asset. Read-only; the
  *  rules stay behind the document. */
 export {
   isCapturedPhoto,
   ownedAssetIds,
-  storyBlocksOf,
   worldBlocks,
   type WorldBlock,
 } from "./tour-content.js";
@@ -591,7 +598,7 @@ export const initialTourDocumentState: TourDocumentState = {
 export function framesOf(manifest: TourManifest): StationFrame[] {
   return manifest.stations.map((station) => ({
     ...station,
-    blocks: storyBlocksOf(station),
+    children: tourStories(station),
   }));
 }
 
@@ -755,10 +762,10 @@ function withFrames(
         ) {
           return [];
         }
-        // The written free blocks first, then the frame's story blocks:
-        // the order every write puts a station's blocks in.
+        // The frame's stories first, then the written free blocks: the
+        // order every write puts a station's children in.
         const free = own === undefined ? [] : tourFreeBlocks(own);
-        return [{ ...frame, blocks: [...free, ...frame.blocks] }];
+        return [{ ...frame, children: [...frame.children, ...free] }];
       }),
       ...written.stations.filter(
         (s) =>
@@ -1079,7 +1086,9 @@ export function historyTimingEntries(state: TourDocumentState): Set<string> {
     }
   };
   for (const { view } of [...state.past, ...state.future]) {
-    for (const frame of view.stations) frame.blocks.forEach(add);
+    for (const frame of view.stations) {
+      tourStationStoryBlocks(frame).forEach(add);
+    }
     view.objects.forEach(add);
   }
   return names;
@@ -2170,15 +2179,35 @@ function characterEditFits(edit: StationCharacterEdit): boolean {
   );
 }
 
+/** `frame` with `block` in the place of its story block of that id. */
+function withStoryBlock(
+  frame: StationFrame,
+  block: TourStoryBlock,
+): StationFrame {
+  return {
+    ...frame,
+    children: frame.children.map((child) =>
+      isTourStory(child)
+        ? {
+            ...child,
+            children: child.children.map((c) =>
+              c.id === block.id ? block : c,
+            ),
+          }
+        : child,
+    ),
+  };
+}
+
 /** `frame` with its story character `edit.block` set by `edit`; null
  *  when the block is no character of it, the view is none of a
  *  character's, the advance is neither a tap nor the line's end, or the
- *  facing is no number. The steps that show him all take the advance. */
+ *  facing is no number. */
 function withCharacter(
   frame: StationFrame,
   edit: StationCharacterEdit,
 ): StationFrame | null {
-  const block = frame.blocks.find((b) => b.id === edit.block);
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
   if (block?.kind !== "character" || !characterEditFits(edit)) return null;
   let rotation = block.pose.rotation;
   if (edit.facingDeg !== undefined) {
@@ -2186,24 +2215,14 @@ function withCharacter(
     if (turned === null) return null;
     rotation = turned;
   }
+  const advance = edit.advance;
   const character = {
     ...block,
     ...(edit.view === undefined ? {} : { view: edit.view }),
+    ...(advance === undefined ? {} : { advance: { mode: advance } }),
     pose: { ...block.pose, rotation },
   } as typeof block;
-  const advance = edit.advance;
-  return {
-    ...frame,
-    blocks: frame.blocks.map((b) => (b.id === edit.block ? character : b)),
-    steps:
-      advance === undefined
-        ? frame.steps
-        : frame.steps.map((s) =>
-            s.action.kind === "show" && s.action.block === edit.block
-              ? { ...s, advance: { mode: advance } }
-              : s,
-          ),
-  };
+  return withStoryBlock(frame, character);
 }
 
 /** `frame` with the text `edit.field` of its story block `edit.block`
@@ -2215,7 +2234,7 @@ function withStoryText(
   frame: StationFrame,
   edit: StationStoryTextEdit,
 ): StationFrame | null {
-  const block = storyBlocksOf(frame).find((b) => b.id === edit.block);
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
   if (block === undefined) return null;
   const rules = TOUR_BLOCK_TEXT_RULES[block.kind] as Readonly<
     Record<string, TourTextRule | undefined>
@@ -2238,11 +2257,7 @@ function withStoryText(
     if (!checkTourBlockText(rule, text).ok) return null;
     next[edit.field] = text;
   }
-  const after = next as unknown as TourBlock;
-  return {
-    ...frame,
-    blocks: frame.blocks.map((b) => (b.id === edit.block ? after : b)),
-  };
+  return withStoryBlock(frame, next as unknown as TourStoryBlock);
 }
 
 /**
@@ -2339,7 +2354,7 @@ function freeObjectId(state: TourDocumentState, id: string): boolean {
   return ![
     ...documentObjects(state).map((o) => o.object.id),
     ...(written === null ? [] : tourObjects(written).map((o) => o.id)),
-    ...allFrames(state).flatMap((s) => s.blocks.map((b) => b.id)),
+    ...allFrames(state).flatMap((s) => tourStationChildIds(s)),
     ...(written?.assets ?? []).map((a) => a.id),
   ].includes(id);
 }
@@ -2638,13 +2653,37 @@ function stationsReorder(
   );
 }
 
+/** `story` under the new ids `renamed` gives it and its children, its
+ *  choices' gotos with them. */
+function copiedStory(
+  story: TourStory,
+  renamed: (id: string) => string,
+): TourStory {
+  return {
+    ...story,
+    id: renamed(story.id),
+    children: story.children.map((child): TourStoryChild => {
+      const id = renamed(child.id);
+      if (child.kind === "longText") return copiedNarration({ ...child, id });
+      if (child.kind !== "choice") return { ...child, id };
+      const options = child.options.map((option) =>
+        option.goto === undefined
+          ? option
+          : { ...option, goto: renamed(option.goto) },
+      );
+      return { ...child, id, options };
+    }),
+  };
+}
+
 /** What `stationDuplicated` carries: the new ids are minted outside the
  *  reducer, the items' by the page (it copies their pictures first). */
 interface StationDuplicatePayload {
   readonly stationId: string;
   readonly newStationId: string;
-  /** A new id for EVERY block of the station, by its old id: its items
-   *  and its story's blocks (block ids are unique across the tour). */
+  /** A new id for EVERY child of the station, by its old id: its items,
+   *  its stories and what they hold (child ids are unique across the
+   *  tour). */
   readonly newItemIds: Readonly<Record<string, string>>;
   readonly createdAtIso: string;
   /** Where the copy stands; beside the original when absent
@@ -2677,7 +2716,9 @@ function stationDuplicate(
     .map((o) => o.object)
     .filter((o) => o.station === frame.id);
   const newIds = items.map((o) => payload.newItemIds[o.id]);
-  const storyIds = frame.blocks.map((b) => payload.newItemIds[b.id]);
+  const storyIds = tourStationChildIds(frame).map(
+    (id) => payload.newItemIds[id],
+  );
   const minted = [...newIds, ...storyIds];
   if (
     minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
@@ -2697,19 +2738,7 @@ function stationDuplicate(
     id: payload.newStationId,
     geo,
     title: copyTitle(shownTitle(before, frame)),
-    blocks: frame.blocks.map((b) =>
-      b.kind === "longText"
-        ? copiedNarration({ ...b, id: renamed(b.id) })
-        : { ...b, id: renamed(b.id) },
-    ),
-    steps: frame.steps.map((s) =>
-      s.action.kind === "show"
-        ? {
-            ...s,
-            action: { ...s.action, block: renamed(s.action.block) },
-          }
-        : s,
-    ),
+    children: tourStories(frame).map((story) => copiedStory(story, renamed)),
   };
   let placed = before.placed;
   for (const [i, item] of items.entries()) {

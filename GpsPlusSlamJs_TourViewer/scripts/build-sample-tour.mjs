@@ -294,11 +294,12 @@ function geoAt(northM, eastM, altM) {
 export function buildSampleTour() {
   const knight = knightPng();
   return {
-    // Version 4: every station has a geo pose of its own, its story's
-    // blocks and the steps that show them; this story places no pins or
-    // photos in the world.
+    // Every station has a geo pose of its own and a story holding its
+    // blocks in the order a visitor meets them. The gate holds two stories,
+    // so a visitor meets the picker; beside the stories, the items a guide
+    // would leave standing in the square, to read at any time.
     tour: {
-      version: 4,
+      version: 5,
       minor: 0,
       title: "The knight of Marienplatz (sample)",
       order: "fixed",
@@ -320,62 +321,61 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
-          blocks: [
+          children: [
             {
-              id: "konrad-greets",
-              kind: "character",
-              view: "stage",
-              name: "Sir Konrad",
-              image: "knight",
-              caption:
-                "Halt, traveller! I guard this square. Will you help me find the old gate?",
-              voice: "fanfare",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              id: "column-sign",
+              kind: "shortText",
+              view: "pin",
+              caption: "The Marian Column",
+              description:
+                "Raised in 1638, when the Swedish occupation of the city had ended.",
+              pose: { position: [2.5, 0, -2.5], rotation: [0, 0, 0, 1] },
             },
             {
-              id: "konrad-sighs",
-              kind: "longText",
-              view: "card",
-              title: "The column",
-              body: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-            {
-              id: "konrad-thanks",
-              kind: "longText",
-              view: "card",
-              title: "The column",
-              body: "Splendid! Walk about 30 m east, to the corner of the square.",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
-          steps: [
-            {
-              id: "greet",
-              action: { kind: "show", block: "konrad-greets" },
-              advance: { mode: "tap" },
-            },
-            {
-              id: "ask",
-              action: {
-                kind: "choice",
-                prompt: "Help the knight?",
-                options: [
-                  { id: "yes", label: "Of course", goto: "thanks" },
-                  { id: "no", label: "Not right now", goto: "later" },
-                ],
-              },
-              advance: { mode: "tap" },
-            },
-            {
-              id: "later",
-              action: { kind: "show", block: "konrad-sighs" },
-              advance: { mode: "tap" },
-            },
-            {
-              id: "thanks",
-              action: { kind: "show", block: "konrad-thanks" },
-              advance: { mode: "tap" },
+              id: "konrad-welcome",
+              kind: "story",
+              title: "Sir Konrad's welcome",
+              children: [
+                {
+                  id: "konrad-greets",
+                  kind: "character",
+                  view: "stage",
+                  name: "Sir Konrad",
+                  image: "knight",
+                  caption:
+                    "Halt, traveller! I guard this square. Will you help me find the old gate?",
+                  voice: "fanfare",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+                {
+                  id: "ask",
+                  kind: "choice",
+                  prompt: "Help the knight?",
+                  options: [
+                    { id: "yes", label: "Of course", goto: "konrad-thanks" },
+                    { id: "no", label: "Not right now", goto: "konrad-sighs" },
+                  ],
+                },
+                {
+                  id: "konrad-sighs",
+                  kind: "longText",
+                  view: "card",
+                  title: "The column",
+                  body: "Sir Konrad sighs. Come back when you can - the gate is a few steps east.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+                {
+                  id: "konrad-thanks",
+                  kind: "longText",
+                  view: "card",
+                  title: "The column",
+                  body: "Splendid! Walk about 30 m east, to the corner of the square.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ],
             },
           ],
         },
@@ -386,21 +386,57 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
-          blocks: [
+          children: [
             {
-              id: "old-arch",
-              kind: "model",
-              view: "stage",
-              asset: "arch",
-              title: "Here stood the old gate. Imagine riding through it.",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              id: "market-lectern",
+              kind: "longText",
+              view: "lectern",
+              title: "The market square",
+              body: "For centuries this square was the city's market. Grain was sold here, and until 1854 the square was called Schrannenplatz, after the grain trade.",
+              pose: { position: [-2.5, 0, 2.5], rotation: [0, 0, 0, 1] },
             },
-          ],
-          steps: [
             {
-              id: "arch",
-              action: { kind: "show", block: "old-arch" },
-              advance: { mode: "tap" },
+              id: "old-gate",
+              kind: "story",
+              title: "The old gate",
+              children: [
+                {
+                  id: "old-arch",
+                  kind: "model",
+                  view: "stage",
+                  asset: "arch",
+                  title: "Here stood the old gate. Imagine riding through it.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ],
+            },
+            {
+              id: "gate-toll",
+              kind: "story",
+              title: "The toll",
+              children: [
+                {
+                  id: "konrad-toll",
+                  kind: "character",
+                  view: "stage",
+                  name: "Sir Konrad",
+                  image: "knight",
+                  caption:
+                    "Every cart paid its toll at this gate. You, traveller, may pass for free.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+                {
+                  id: "toll-salt",
+                  kind: "longText",
+                  view: "card",
+                  title: "The toll",
+                  body: "Salt made this city rich: the salt carts rolled through here on their way west, and every one of them paid.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ],
             },
           ],
         },
@@ -411,22 +447,32 @@ export function buildSampleTour() {
           activateRadiusM: 30,
           foundRadiusM: 5,
           hint: "arrow",
-          blocks: [
+          children: [
             {
-              id: "konrad-farewell",
-              kind: "character",
-              view: "stage",
-              name: "Sir Konrad",
-              image: "knight",
-              caption: "You found every place. Farewell, and thank you!",
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              id: "town-hall-sign",
+              kind: "shortText",
+              view: "pin",
+              caption: "The New Town Hall",
+              description:
+                "Built between 1867 and 1908. Look up at eleven: the figures in its tower dance to the chimes.",
+              pose: { position: [2.5, 0, 2.5], rotation: [0, 0, 0, 1] },
             },
-          ],
-          steps: [
             {
               id: "farewell",
-              action: { kind: "show", block: "konrad-farewell" },
-              advance: { mode: "tap" },
+              kind: "story",
+              title: "Farewell",
+              children: [
+                {
+                  id: "konrad-farewell",
+                  kind: "character",
+                  view: "stage",
+                  name: "Sir Konrad",
+                  image: "knight",
+                  caption: "You found every place. Farewell, and thank you!",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ],
             },
           ],
         },

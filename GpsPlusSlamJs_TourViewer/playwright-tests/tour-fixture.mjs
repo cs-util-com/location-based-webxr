@@ -1,8 +1,8 @@
 // @ts-check
 /**
- * Version 4 `tour.json` stations for the e2e fixtures: stations at geo
+ * Version 5 `tour.json` stations for the e2e fixtures: stations at geo
  * poses, their pins and photos as free blocks at local poses, their
- * stories as card or stage blocks shown by steps. One place, so the
+ * stories holding their own card or stage blocks. One place, so the
  * archive server and the specs that build tours of their own write the
  * same shape.
  *
@@ -18,21 +18,20 @@ export const ZERO_POSE = Object.freeze({
 });
 
 /**
- * A station anchored at `geo`, turned like north, holding `blocks` and no
- * story.
+ * A station anchored at `geo`, turned like north, holding `children`
+ * (free blocks and stories).
  * @param {string} id
  * @param {{ lat: number, lon: number, alt: number }} geo
- * @param {object[]} [blocks]
+ * @param {object[]} [children]
  */
-export function stationAt(id, geo, blocks = []) {
+export function stationAt(id, geo, children = []) {
   return {
     id,
     geo: { lat: geo.lat, lon: geo.lon, alt: geo.alt, rotation: [0, 0, 0, 1] },
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    blocks,
-    steps: [],
+    children,
   };
 }
 
@@ -102,16 +101,38 @@ export function textCard(id, title, body) {
 }
 
 /**
- * A step that shows `block`.
- * @param {string} id
- * @param {string} block
- * @param {Record<string, unknown>} [fields] more step fields (an advance)
+ * `block` as a story's child: it moves on by a tap unless `fields` say
+ * otherwise.
+ * @param {Record<string, unknown>} block
+ * @param {Record<string, unknown>} [fields] more story fields (an advance)
  */
-export function showStep(id, block, fields = {}) {
-  return {
-    id,
-    action: { kind: "show", block },
-    advance: { mode: "tap" },
-    ...fields,
-  };
+export function told(block, fields = {}) {
+  return { ...block, advance: { mode: "tap" }, ...fields };
+}
+
+/**
+ * A story of `children` (its blocks, choices and quizzes, in the order a
+ * visitor meets them).
+ * @param {string} id
+ * @param {object[]} children
+ * @param {string} [title]
+ */
+export function storyOf(id, children, title = "A story") {
+  return { id, kind: "story", title, children };
+}
+
+/**
+ * Every block of a station read back from a saved tour: its stories'
+ * blocks and its free ones, in the order of its children.
+ * @param {any} station
+ * @returns {any[]}
+ */
+export function stationBlocks(station) {
+  return station.children.flatMap((/** @type {any} */ child) =>
+    child.kind === "story"
+      ? child.children.filter(
+          (/** @type {any} */ c) => c.kind !== "choice" && c.kind !== "quiz",
+        )
+      : [child],
+  );
 }

@@ -57,7 +57,8 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     rejects. The refused tour never presented its draft, so no open
     tour's state is touched. The emptied directory itself stays (the store
     empties in place). Only a draft PROVED to be an older version's is
-    emptied (`isOlderVersionDraft`): a refused older copy and the current
+    emptied (`isOlderVersionDraft`; a draft of an older format goes at open,
+    `discardOlderFormatDraft` in `present`): a refused older copy and the current
     copy of the same tour share the tour id, so the draft under the key may
     be the current copy's unsaved work. A draft holding a record this
     version reads, or nothing that decides it (no object records, or one
@@ -297,7 +298,11 @@ setting, the details once set, every station's pose once one moved, the
 whole frames of the stations this page created) is one file, `settings`
 (`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
 (`editor/editor-draft.ts`), read by the same `parseSettingsRecord`, against
-the opened tour, whose assets and characters a stored frame may name. The
+the opened tour, whose assets and characters a stored frame may name. What
+did not read is told on the status line (`DRAFT_PART_UNREAD`), beside any
+other note of the open; a record with a station that did not read is kept
+though spent, since a corrected file reads it again, until the next whole
+write. The
 document's listener writes it whole on each change, in its own queue. The
 phone reads its STATION POSES and its CREATED STATIONS back:
 

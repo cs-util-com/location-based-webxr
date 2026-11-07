@@ -135,14 +135,16 @@ test("the sample tour opens with its story's stations on the map", async ({
   page,
 }) => {
   // Why: "Use the sample tour" is the first thing a visitor of the page
-  // tries; the sample is a story tour with stations only, and an editor
+  // tries; the sample is a story tour, and an editor
   // that listed only codes and notes opened it as an empty world map.
   await page.goto("/edit.html");
   await page.locator("#sample-btn").click();
   await expect(page.locator(".toast")).toHaveText(
-    "Opened marienplatz-tour.zip: 0 codes, 0 notes, 3 stations",
+    "Opened marienplatz-tour.zip: 0 codes, 2 notes, 3 stations",
   );
   await expect(page.locator("#rail .row-title")).toHaveText([
+    "The Marian Column",
+    "The New Town Hall",
     "The column",
     "The old gate",
     "The town hall steps",
@@ -2502,7 +2504,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   // reader does not announce the warning again.
   expect(await line?.evaluate((node) => node.isConnected)).toBe(true);
   expect(await savedManifest(page, "nogps.zip")).toMatchObject({
-    version: 4,
+    version: 5,
     minor: 0,
     needsNoGps: true,
   });
@@ -2527,7 +2529,7 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await expect(next.locator("#save-status")).toHaveText("Saved to nogps.zip");
   const off = await savedManifest(next, "nogps.zip");
   expect(off).not.toHaveProperty("needsNoGps");
-  expect(off).toMatchObject({ version: 4, minor: 0 });
+  expect(off).toMatchObject({ version: 5, minor: 0 });
 });
 
 test("a changed needs-no-GPS setting survives a closed tab, and Restore brings it back", async ({
@@ -2607,7 +2609,7 @@ test("the tour's name opens its details: applied, saved into tour.json, and an e
   );
   const saved = await saveAndRead(page);
   expect(saved.manifest).toMatchObject({
-    version: 4,
+    version: 5,
     minor: 0,
     title: "Castle walk",
     description: "Up to the castle and back.",

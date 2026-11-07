@@ -16,6 +16,7 @@
  * behaviour, so a draw while typing is tested as the browser runs it; the
  * e2e (`editor3d-inspector.spec.js`) checks the same in Chromium itself.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,11 @@ import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "../../test-support/station-content.js";
 
 /** How often the tour to write is rebuilt (`manifestToWrite`): the
  *  readout's tick must not pay for it with nothing to show. */
@@ -65,8 +71,7 @@ function station(id: string, dLat: number, pinText = `Pin ${id}`): TourStation {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    ...stationContent([
       {
         id: `p${id}`,
         kind: "shortText",
@@ -75,7 +80,7 @@ function station(id: string, dLat: number, pinText = `Pin ${id}`): TourStation {
         createdAtIso: AT,
         pose: { position: [5, 1.5, 0], rotation: [0, 0, 0, 1] },
       },
-    ],
+    ]),
   } as unknown as TourStation;
 }
 
@@ -314,7 +319,7 @@ describe("the tree's add in place", () => {
       tourDocumentActions.opened({
         manifest: {
           ...createEmptyTourManifest(),
-          stations: [{ ...station("c", 0), blocks: [] }],
+          stations: [{ ...station("c", 0), ...stationContent([]) }],
         },
       }),
     );
@@ -929,11 +934,11 @@ function withModel(
           station("a", 0),
           {
             ...b,
-            blocks: [
+            ...stationContent([
               {
                 id: "m",
                 kind: "model",
-                view,
+                view: view as "placed",
                 asset: "glb",
                 sizeM: 2,
                 createdAtIso: AT,
@@ -954,8 +959,8 @@ function withModel(
                   { name: "Frame", position: [0, 0.5, 0], normal: [0, 0, 1] },
                 ],
               },
-            ],
-          } as unknown as TourStation,
+            ]),
+          },
         ],
       },
     }),
@@ -1099,25 +1104,21 @@ describe("a story character's chips", () => {
     const set = setUp();
     const gate = {
       ...station("c", 0.0008),
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "w1" },
-          advance: { mode: "tap" },
-        },
-      ],
-      blocks: [
-        {
-          id: "w1",
-          kind: "character",
-          view: "speak",
-          name: "Wendel",
-          image: "cut",
-          caption: "Good day",
-          pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-    } as unknown as TourStation;
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "w1",
+            kind: "character",
+            view: "speak",
+            name: "Wendel",
+            image: "cut",
+            caption: "Good day",
+            pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
+    };
     set.store.dispatch(
       tourDocumentActions.opened({
         manifest: {
@@ -1307,7 +1308,7 @@ describe("a save while typing", () => {
           stations: [
             {
               ...station("a", 0),
-              blocks: [
+              ...stationContent([
                 {
                   id: "essay",
                   kind: "longText",
@@ -1317,8 +1318,8 @@ describe("a save while typing", () => {
                   createdAtIso: AT,
                   pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
                 },
-              ],
-            } as unknown as TourStation,
+              ]),
+            },
           ],
         },
       }),
@@ -1347,15 +1348,16 @@ describe("a save while typing", () => {
 describe("the long text's preview", () => {
   it("names the selected text's view in its head", () => {
     const { store, select, shell } = setUp();
-    const essay = (id: string, view: string) => ({
-      id,
-      kind: "longText",
-      view,
-      title: "Essay",
-      body: "Words.",
-      createdAtIso: AT,
-      pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
-    });
+    const essay = (id: string, view: string) =>
+      ({
+        id,
+        kind: "longText",
+        view,
+        title: "Essay",
+        body: "Words.",
+        createdAtIso: AT,
+        pose: { position: [3, 0, 0], rotation: [0, 0, 0, 1] },
+      }) as unknown as TourBlock;
     store.dispatch(
       tourDocumentActions.opened({
         manifest: {
@@ -1363,8 +1365,11 @@ describe("the long text's preview", () => {
           stations: [
             {
               ...station("a", 0),
-              blocks: [essay("stand", "lectern"), essay("card", "card")],
-            } as unknown as TourStation,
+              ...stationContent([
+                essay("stand", "lectern"),
+                essay("card", "card"),
+              ]),
+            },
           ],
         },
       }),
@@ -1419,14 +1424,14 @@ describe("the bottom panel", () => {
           stations: [
             {
               ...far,
-              blocks: [
+              ...stationContent([
                 {
-                  ...(far.blocks[0] as object),
+                  ...(stationBlocks(far)[0] as object),
                   id: "far",
                   pose: { position: [40, 1.5, 0], rotation: [0, 0, 0, 1] },
-                },
-              ],
-            } as unknown as TourStation,
+                } as unknown as TourBlock,
+              ]),
+            },
           ],
         },
       }),

@@ -21,6 +21,10 @@
  *
  * @see inspector-model.ts.md
  */
+import {
+  tourStationStoryBlocks,
+  type TourStoryBlock,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
   TourAsset,
   TourStation,
@@ -47,7 +51,6 @@ import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
 import {
   ownedAssetIds,
-  storyBlocksOf,
   worldBlocks,
   type WorldBlock,
 } from "../../tour-document.js";
@@ -179,11 +182,8 @@ export const CHARACTER_VIEW_CHOICES: readonly {
   }[view],
 }));
 
-/** What the inspector shows of the story block `block` of `station`. */
-function storyEntry(
-  station: TourStation,
-  block: ReturnType<typeof storyBlocksOf>[number],
-): InspectorStoryBlock {
+/** What the inspector shows of the story block `block`. */
+function storyEntry(block: TourStoryBlock): InspectorStoryBlock {
   const entry = {
     id: block.id,
     kind: BLOCK_KIND_LABEL[block.kind],
@@ -191,14 +191,11 @@ function storyEntry(
     fields: storyBlockFields(block),
   };
   if (block.kind !== "character") return entry;
-  const step = station.steps.find(
-    (s) => s.action.kind === "show" && s.action.block === block.id,
-  );
   return {
     ...entry,
     character: {
       view: block.view,
-      advance: step?.advance.mode ?? "tap",
+      advance: block.advance.mode,
       facingDeg: facingDegOf(block.pose.rotation),
     },
   };
@@ -517,7 +514,7 @@ export function buildInspector(input: {
       groundOffM: offGroundOf(station.geo, groundAt),
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
-      story: storyBlocksOf(station).map((block) => storyEntry(station, block)),
+      story: tourStationStoryBlocks(station).map(storyEntry),
       contents: stationContents(station),
     };
   }

@@ -15,6 +15,11 @@ import {
 
 import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import type { VisitorPosition } from "./visitor-position";
+import {
+  playableStory,
+  stationContent,
+  storyOf,
+} from "./test-support/station-content.js";
 
 /**
  * Why this property matters (K4 review R9): "no order can deadlock" was
@@ -71,23 +76,21 @@ describe("wireStationGuide (properties)", () => {
             id: `s${String(i)}`,
             title: `S${String(i)}`,
             geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-            blocks: [],
+            ...stationContent([
+              storyOf("story-1", [
+                {
+                  id: "ask",
+                  kind: "choice",
+                  prompt: "Again?",
+                  options: [{ id: "yes", label: "Yes", goto: "ask" }],
+                },
+              ]),
+            ]),
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
             // One choice whose only option loops back to itself: it never
             // ends on its own.
-            steps: [
-              {
-                id: "ask",
-                action: {
-                  kind: "choice",
-                  prompt: "Again?",
-                  options: [{ id: "yes", label: "Yes", goto: "ask" }],
-                },
-                advance: { mode: "tap" },
-              },
-            ],
           };
         });
         let now = 0;
@@ -176,17 +179,10 @@ describe("wireStationGuide (properties)", () => {
             id: "s",
             title: "S",
             geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-            blocks: [],
+            ...stationContent([playableStory("s-story")]),
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            steps: [
-              {
-                id: "t",
-                action: { kind: "show", block: "hi" },
-                advance: { mode: "tap" },
-              },
-            ],
           };
           const now = 100_000;
           const visitor: VisitorPosition = {
@@ -253,17 +249,10 @@ describe("wireStationGuide (properties)", () => {
             id: "s",
             title: "S",
             geo: { lat: geo.lat, lon: geo.lon, alt: 400, headingDeg: 0 },
-            blocks: [],
+            ...stationContent([playableStory("s-story")]),
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            steps: [
-              {
-                id: "t",
-                action: { kind: "show", block: "hi" },
-                advance: { mode: "tap" },
-              },
-            ],
           };
           const now = 100_000;
           // Aligned but not ready (a cold start: the camera far away), or

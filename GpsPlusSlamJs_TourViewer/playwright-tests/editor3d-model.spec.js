@@ -8,6 +8,7 @@ import {
   view3d,
 } from "./editor3d-fixture.js";
 import { viewCommand } from "./editor-menus.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: a model's notes and sections are placed by a
@@ -112,7 +113,9 @@ async function modelNow(page) {
     /** @type {any} */ (window).__tourEditor.manifest(),
   );
   for (const station of tour.stations) {
-    const block = station.blocks.find((/** @type {any} */ b) => b.id === MODEL);
+    const block = stationBlocks(station).find(
+      (/** @type {any} */ b) => b.id === MODEL,
+    );
     if (block !== undefined) return block;
   }
   return null;

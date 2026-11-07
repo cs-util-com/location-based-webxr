@@ -8,6 +8,7 @@ import {
   noClouds,
   openZip,
 } from "./editor3d-fixture.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: a long text's narration is added in the
@@ -75,7 +76,9 @@ async function essayNow(page) {
     /** @type {any} */ (window).__tourEditor.manifest(),
   );
   const gate = tour.stations.find((/** @type {any} */ s) => s.id === "gate");
-  return gate.blocks.find((/** @type {any} */ b) => b.id === "gate-essay");
+  return stationBlocks(gate).find(
+    (/** @type {any} */ b) => b.id === "gate-essay",
+  );
 }
 
 /** The session's read of the essay's narration (its timing text).

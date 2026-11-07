@@ -56,6 +56,7 @@ import {
   MAX_DECODE_SIDE_PX,
   PREFETCH_LEAD_M,
 } from "./station-prefetch";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const LEADS = [20, 40, 60, 80, 100];
 const SPEEDS = [0.8, 1.4, 1.8];
@@ -83,27 +84,27 @@ function stationOf(
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: ["figure", "voice", "picture"]
-      .map((kind) => `${prefix}-${kind}`)
-      .map((asset, i) => ({
-        id: `b${String(i)}`,
-        kind: "picture" as const,
-        view: "card" as const,
-        image: asset,
-        widthM: 1,
-        pose: {
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0, 1] as [number, number, number, number],
-        },
-      })),
+    ...stationContent([
+      storyOf(
+        `${id}-story`,
+        ["figure", "voice", "picture"]
+          .map((kind) => `${prefix}-${kind}`)
+          .map((asset, i) => ({
+            id: `b${String(i)}`,
+            kind: "picture" as const,
+            view: "card" as const,
+            image: asset,
+            widthM: 1,
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+          })),
+      ),
+    ]),
     activateRadiusM,
     foundRadiusM,
     hint: "arrow",
-    steps: ["figure", "voice", "picture"].map((_asset, i) => ({
-      id: `s${String(i)}`,
-      action: { kind: "show" as const, block: `b${String(i)}` },
-      advance: { mode: "tap" as const },
-    })),
   };
 }
 

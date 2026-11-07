@@ -123,10 +123,16 @@ describe("nearStations", () => {
 });
 
 describe("selectedStationOf", () => {
+  const block = {
+    kind: "shortText",
+    view: "pin",
+    caption: "A pin",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  } as const;
   const manifest = {
     stations: [
-      { id: "a", blocks: [{ id: "pin1" }] },
-      { id: "b", blocks: [{ id: "photo2" }] },
+      { id: "a", children: [{ ...block, id: "pin1" }] },
+      { id: "b", children: [{ ...block, id: "photo2" }] },
     ],
   };
 

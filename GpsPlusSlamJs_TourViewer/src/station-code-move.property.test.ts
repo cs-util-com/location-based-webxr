@@ -20,6 +20,10 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "./test-support/tour-of.js";
 import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { moveStationsWithCode } from "./station-code-move.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 const M_PER_DEG = 111_320;
 
@@ -119,8 +123,9 @@ describe("moveStationsWithCode (property, D17)", () => {
           activateRadiusM: 50,
           foundRadiusM: 25,
           hint: "arrow",
-          steps: [],
-          blocks: s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
+          ...stationContent(
+            s.items.map((it, j) => it(`i${String(i)}-${String(j)}`)),
+          ),
         }));
         const claimed = new Set(t.claimFirst ? ["s0"] : []);
         const out = moveStationsWithCode(stations, {
@@ -143,7 +148,7 @@ describe("moveStationsWithCode (property, D17)", () => {
         const movedIds = new Set(expected);
         // Never an item: the same array, the same objects.
         for (const { before, after } of pairs) {
-          expect(after.blocks).toBe(before.blocks);
+          expect(after.children).toBe(before.children);
         }
         for (const { before, after } of pairs.filter(
           (p) => !movedIds.has(p.before.id),
@@ -155,7 +160,7 @@ describe("moveStationsWithCode (property, D17)", () => {
         )) {
           expect({ ...after, geo: before.geo }).toEqual(before);
           // Rigid: each item where the code's correction puts it.
-          for (const it of before.blocks) {
+          for (const it of stationBlocks(before)) {
             const was = itemGeoPose(it.pose, before.geo);
             const is = itemGeoPose(it.pose, after.geo);
             expect(metres(is, moveWithCode(was, from, to))).toBeLessThan(0.002);

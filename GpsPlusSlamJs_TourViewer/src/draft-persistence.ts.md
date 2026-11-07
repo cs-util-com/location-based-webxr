@@ -156,8 +156,16 @@ are the framework's.
   record of this format or a newer one, no object records, a record that
   does not read - is not decidable and reads false. The refusal of an
   older-format tour deletes a draft only on true (`creator-draft.ts`
-  `forgetRefused`, `editor/editor-draft.ts` `forget`). Tests:
-  `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a refused
+  `forgetRefused`, `editor/editor-draft.ts` `forget`).
+- `discardOlderFormatDraft(store): Promise<boolean>` - a draft's meta holds
+  whole station frames, so a meta stamped with an older format describes the
+  old shape: it goes, and true says so. Frame records of the
+  older shape are dropped on read as well (`parseFrame` reads through the
+  format's reader). An unstamped meta, no meta, an unreadable meta or a failing store: false,
+  and nothing goes. Called when a draft opens (`creator-draft.ts` `present`,
+  `editor/editor-draft.ts` `makeSpace`), so a refused 4.x tour's draft
+  cannot come back through a later open.
+  Tests: `creator-setup.test.ts` and `editor/editor-draft.test.ts` ("a refused
   older ... draft"), `draft-persistence.test.ts` ("a meta this version
   wrote").
 - `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
@@ -230,7 +238,7 @@ are the framework's.
   the framework's world-view reader (`parseTourObject`). A record an
   earlier app wrote (a pin with a `label`, a photo with its image path)
   reads as nothing: its tour is in an older format, which the app refuses,
-  deleting that tour's draft with it. The Finish writes version 4, with
+  deleting that tour's draft with it. The Finish writes version 5, with
   every object in a station (`draft-persistence.test.ts`).
 
 ## Examples

@@ -31,6 +31,7 @@ import {
   NO_GPS_CODE_REACH_M,
   noGpsWarnings,
 } from "./no-gps-check.js";
+import { stationContent } from "../test-support/station-content.js";
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -55,8 +56,7 @@ function station(
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 

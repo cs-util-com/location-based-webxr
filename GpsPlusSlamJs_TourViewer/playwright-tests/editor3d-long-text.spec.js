@@ -14,6 +14,7 @@ import {
   noClouds,
   openZip,
 } from "./editor3d-fixture.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: a long text is written in the 3D view's
@@ -59,7 +60,9 @@ function tourNow(page) {
 async function essayNow(page) {
   const tour = await tourNow(page);
   const gate = tour.stations.find((/** @type {any} */ s) => s.id === "gate");
-  return gate.blocks.find((/** @type {any} */ b) => b.id === "gate-essay");
+  return stationBlocks(gate).find(
+    (/** @type {any} */ b) => b.id === "gate-essay",
+  );
 }
 
 /**
@@ -442,7 +445,7 @@ test("words typed just before Ctrl+S are in the saved tour @pr", async ({
   const tour = JSON.parse((await entry?.getData?.(new TextWriter())) ?? "{}");
   await reader.close();
   const gate = tour.stations.find((/** @type {any} */ s) => s.id === "gate");
-  const essay = gate.blocks.find(
+  const essay = stationBlocks(gate).find(
     (/** @type {any} */ b) => b.id === "gate-essay",
   );
   expect(essay.body).toMatch(/ Saved at once\.$/);

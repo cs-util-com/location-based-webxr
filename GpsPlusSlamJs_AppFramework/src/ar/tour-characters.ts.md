@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A tour's recurring characters (`tour.json` version 4, minor 2): declared
+A tour's recurring characters (`tour.json` version 5): declared
 once for the whole tour - an id, a name and a cut-out image - and named by
 the `character` blocks of any station through the block's optional
 `character` field (`tour-blocks.ts`). One guide who walks the visitor from
@@ -43,11 +43,9 @@ station to station is written once, not copied into every block.
 - **The writer keeps the inline copies.** `tour-manifest.ts` passes the
   declarations to the block reader, which gives a referencing block the
   declaration's name and image; the serializer writes those inline as well,
-  so a reader of minor 0 or 1, which knows no declaration, still shows the
-  character by name (as a `card`).
+  so a block carries everything it shows on its own.
 - `tour-manifest.ts` reads the characters after the assets and before the
-  stations; a tour with none omits the field and is written at the lower
-  minor its other parts need.
+  stations; a tour with none omits the field.
 
 - **The frames sheet's layout is fixed, not declared:** four equal cells
   in one row in the order of `TOUR_CHARACTER_FRAMES` (idle; mouth half
@@ -90,8 +88,4 @@ const characters = parseTourCharacters(
   strict refusals, lenient drops), reference resolution and the writer
   syncing the inline copies, an unknown reference strict and lenient, the
   five views as story views (refused for a free block), `lineEnd` read and
-  an unknown mode refused, the minor the writer stamps (0 or 2), the
-  fixed-point bytes, and the released 1.31.0 reader (the
-  `tour-reader-1-31` devDependency alias) reading a 4.2 tour: a card with
-  the inline name, image, caption and voice, `lineEnd` as a tap, no
-  `characters`, and a refused save.
+  an unknown mode refused, and the fixed-point bytes.

@@ -22,7 +22,7 @@ reducers' building blocks, so a page cannot apply them differently.
 - `opened`, `written` - the tour as opened, and as last written (the
   opened one until a save landed); null before an open.
 - `stations: StationFrame[]` - every station without its free blocks (`geo`,
-  radii, title, its story: the steps and the blocks they show): the frames as they stand, moved by `stationMoved`,
+  radii, title, its stories with everything in them): the frames as they stand, moved by `stationMoved`,
   started by the station rule (below) and dropped with the last object of
   an automatic one, in the order they were made.
 - `placed: EditEntry[]` - objects placed, edited or moved, in the world,
@@ -169,7 +169,7 @@ afterHome? })`
     lowered under its objects moves none of them: they stay in the
     station, outside the circle, until moved. The station it left goes in the same step when that leaves
     it an EMPTY AUTOMATIC station: no object names it, and nothing of its
-    own (`keepsItself` of `tour-content.ts`: a title, a story step, a
+    own (`keepsItself` of `tour-content.ts`: a title, a story, a
     non-blank description, a card image naming an image asset) keeps it.
     An unknown id changes nothing.
   - One step each: an undo gives the stations back exactly as they were.
@@ -241,7 +241,7 @@ rerun?, what, newStationIds? })` - a draft's work,
   each recorded frame replaces the document's frame of its id AT THE
   DOCUMENT'S POSE (the opened file's, or the poses' record's - a frame is
   recorded for an edit beyond its pose, so a file moved on another device
-  keeps its move) or is added whole (one whose story steps name an asset
+  keeps its move) or is added whole (one whose story names an asset
   the written tour lacks is skipped); each deleted station no restored
   object names goes (a written one joins `deletedStations`); and the stations
   follow the recorded `order`, those it does not name after them (no
@@ -333,10 +333,10 @@ geo?, what })` - a copy inserted after the original (any station the
     at `duplicateStationGeo` (twice the found radius plus 5 m
     east, so the two preload rings never overlap) or `geo`; each item is
     copied under its new id at the same local pose (`rigidlyMoved`), a
-    photo naming `content/<new id>.<ext>`, and the story's blocks under
-    their new ids, the copied `show` steps naming those (block ids are
-    unique across the tour); a block of the station without a fresh new
-    id refuses the copy. `prepare` mints the station id and the time; the
+    photo naming `content/<new id>.<ext>`, and its stories under
+    new ids, every child and the `goto`s naming one with them (ids are
+    one namespace across the tour); a child of the station without a fresh
+    new id refuses the copy. `prepare` mints the station id and the time; the
     page mints the blocks' ids (it copies their pictures first). An original the frames do not list back (`framesToList`: an
     emptied automatic station, which the next write leaves out) stays
     unlisted, and the copy takes its place in the shown order. It once
@@ -397,8 +397,7 @@ written, hand })` (the hosted texts enter the book);
 
 - `selectTourDocument(root)` - the slice in a store's state.
 - Re-exported from `tour-content.ts` for the pages, read-only: `worldBlocks`
-  and `WorldBlock` (a station's free blocks), `storyBlocksOf` (the blocks
-  its story shows), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
+  and `WorldBlock` (a station's free blocks), `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - The codes: `documentCodes(state)` (the book, in order),
@@ -753,7 +752,7 @@ store.dispatch(tourDocumentActions.undone());
   station's delete counting as one change (seen red with the
   `deletedStations` exclusion off), the last station refused; a reorder
   (anything but a permutation refused); a copy of a station (new ids,
-  items rigidly, a photo under its own file; a story's steps;
+  items rigidly, a photo under its own file; a story's children and their gotos;
   a long title shortened so the copy's fits 80 characters, counted in
   code points, and an image asset's card kept - seen red at 84) and of an
   item (1.5 m east, caption marked); a written station no frame names
@@ -771,7 +770,7 @@ store.dispatch(tourDocumentActions.undone());
   deleted recorded, an automatic one a save dropped once emptied not
   (seen red with the exclusion off); a copied
   station's card image kept through the record (seen red with the
-  record's image re-attach off); a frame whose step names an asset parses
+  record's image re-attach off); a frame whose story names an asset parses
   only against the tour; a deleted station an object still names stays;
   a created station checked against the tour it is restored into (a
   missing asset leaves it out; seen red); a record of the earlier

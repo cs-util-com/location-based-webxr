@@ -33,6 +33,7 @@ import {
 } from "./tour-document.js";
 import { tourOf } from "./test-support/tour-of.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 function pin(id: string, label = `pin ${id}`): TourPin {
   return {
@@ -426,16 +427,11 @@ describe("followDocument, the stations this page created", () => {
       answer: { type: "number", value: 1, tolerance: 0 },
     } as const;
     // A's quiz sends a right answer to B.
+    const routed = { id: "q", ...quiz, route: { correct: "b" } };
     const a = {
       ...frame,
       id: "a",
-      steps: [
-        {
-          id: "q",
-          action: { ...quiz, route: { correct: "b" } },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([storyOf("a-story", [routed])]),
     };
     // C goes on to B.
     const c = { ...frame, id: "c", next: "b" };
@@ -449,11 +445,31 @@ describe("followDocument, the stations this page created", () => {
         {
           ...frame,
           id: "a",
-          steps: [{ id: "q", action: quiz, advance: { mode: "tap" } }],
+          ...stationContent([storyOf("a-story", [{ id: "q", ...quiz }])]),
         },
         { ...frame, id: "c" },
       ],
     });
+  });
+
+  // Why: `children` is required, so a frame an older format wrote is
+  // dropped. Read as a station with no children, it would empty a station
+  // when the record is restored.
+  it("drops a frame of the older shape, never reading it as empty", () => {
+    const started = writesFor(
+      opened,
+      act.placed({ object: far, what: "p", newStationId: "made" }),
+    );
+    const record = settingsRecord(started.after);
+    const { children: _children, ...frame } = record.createdStations![0]!;
+    expect(
+      parseSettingsRecord(
+        JSON.stringify({
+          ...record,
+          createdStations: [{ ...frame, blocks: [], steps: [] }],
+        }),
+      ),
+    ).toEqual({ needsNoGps: false });
   });
 
   it("a record whose created frames do not read keeps the rest", () => {
@@ -474,6 +490,42 @@ describe("followDocument, the stations this page created", () => {
         JSON.stringify({ ...record, createdStations: "not a list" }),
       ),
     ).toEqual({ needsNoGps: false });
+  });
+});
+
+describe("parseSettingsRecord says what it could not read", () => {
+  // Why these tests matter: a frame that does not read is dropped and a
+  // record that does not read is lost whole. Silent, the author only finds
+  // a station missing later; both pages tell the author from this report.
+  const heard = (text: string | undefined): string[] => {
+    const lost: string[] = [];
+    parseSettingsRecord(text, undefined, (what) => {
+      lost.push(what);
+    });
+    return lost;
+  };
+
+  it("reports nothing for no record, and nothing for a record that reads", () => {
+    expect(heard(undefined)).toEqual([]);
+    expect(heard(JSON.stringify({ needsNoGps: false }))).toEqual([]);
+  });
+
+  it("reports a record that does not read, once", () => {
+    expect(heard("{not json")).toEqual(["record"]);
+    expect(heard(JSON.stringify({ needsNoGps: "yes" }))).toEqual(["record"]);
+    expect(heard("null")).toEqual(["record"]);
+  });
+
+  it("reports each frame that does not read, and a frame list that is none", () => {
+    expect(
+      heard(
+        JSON.stringify({
+          needsNoGps: false,
+          frames: [{ id: "bad", foundRadiusM: -1 }, 7],
+          createdStations: "not a list",
+        }),
+      ),
+    ).toEqual(["frame", "frame", "frame"]);
   });
 });
 
@@ -556,26 +608,22 @@ describe("settingsRecordText", () => {
     activateRadiusM: 30,
     foundRadiusM: 10,
     hint: "arrow" as const,
-    blocks: [
-      {
-        id: "welcome",
-        kind: "longText" as const,
-        view: "card" as const,
-        title: "Gate",
-        body: "Welcome",
-        pose: {
-          position: [0, 0, 0] as [number, number, number],
-          rotation: [0, 0, 0, 1] as [number, number, number, number],
+    ...stationContent([
+      storyOf("gate-story", [
+        {
+          id: "welcome",
+          kind: "longText" as const,
+          view: "card" as const,
+          title: "Gate",
+          body: "Welcome",
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+          advance: { mode: "tap" as const },
         },
-      },
-    ],
-    steps: [
-      {
-        id: "s1",
-        action: { kind: "show" as const, block: "welcome" },
-        advance: { mode: "tap" as const },
-      },
-    ],
+      ]),
+    ]),
   };
 
   it("stores a frame with its story blocks and steps, and reads it back as the frame it was", () => {

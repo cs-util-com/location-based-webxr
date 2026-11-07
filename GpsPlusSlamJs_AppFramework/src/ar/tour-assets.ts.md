@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The media files of `tour.json` version 4: every picture, sound, video and
+The media files of `tour.json` version 5: every picture, sound, video and
 3D model a tour shows is an ASSET with its own id and its file
 `content/<id>.<ext>` in the tour's archive - a captured photo too (its
 bytes stay at `content/<id>.<ext>`, the asset carrying the picture's own
@@ -26,8 +26,8 @@ id.
 ## Invariants & assumptions
 
 - **Asset ids are a namespace of their own.** A block may carry the same
-  id as an asset (every reference says which kind it names: a `show` a
-  block, a picture's `image` an asset), which is exactly what a captured
+  id as an asset (every reference says which kind it names: a `goto` a
+  child, a picture's `image` an asset), which is exactly what a captured
   photo mints.
 - **The path is the id's own content entry**: `content/<id>.<ext>`, the
   extension on the allowlist. SVG is not on it (it can carry script).

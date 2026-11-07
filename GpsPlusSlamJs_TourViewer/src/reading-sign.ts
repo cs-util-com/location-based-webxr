@@ -17,6 +17,8 @@
  * @see reading-sign.ts.md
  */
 
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import {
   CanvasTexture,
   CylinderGeometry,
@@ -347,13 +349,12 @@ export function shownReadingSignUnderTap<T>(
  * no station holds the block.
  */
 export function readingSheetContent(
-  stations: readonly {
-    readonly title?: string;
-    readonly blocks: readonly { readonly id: string }[];
-  }[],
+  stations: readonly Pick<TourStation, "title" | "children">[],
   block: ReadingSignBlock,
 ): { over: string; title: string; body: string } {
-  const at = stations.findIndex((s) => s.blocks.some((b) => b.id === block.id));
+  const at = stations.findIndex((s) =>
+    tourStationBlocks(s).some((b) => b.id === block.id),
+  );
   const station = stations[at];
   return {
     over: station === undefined ? "" : stationLine(station.title, at + 1),

@@ -17,6 +17,7 @@ import {
   saveAndRead,
   wrappedTour,
 } from "./editor-tours.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: what the editor keeps of a creator's work - the
@@ -103,21 +104,31 @@ const remove = (page, id) =>
   sessionEdit(page, { act: "remove", id }, "deleted");
 
 /**
+ * The tour as the page would write it, read back into the test (the
+ * helpers that walk it are not in the page).
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<any>}
+ */
+function editorManifest(page) {
+  return page.evaluate(() =>
+    // @ts-expect-error - the editor's dev-only test hook.
+    window.__tourEditor.manifest(),
+  );
+}
+
+/**
  * The text (a pin's) or caption (a photo's) of the tour's object `id` as
  * the page would write it, or `undefined` when the tour has no such object.
  * @param {import("@playwright/test").Page} page
  * @param {string} id
  * @returns {Promise<string | undefined>}
  */
-function captionOf(page, id) {
-  return page.evaluate((blockId) => {
-    // @ts-expect-error - the editor's dev-only test hook.
-    const manifest = window.__tourEditor.manifest();
-    const block = manifest.stations
-      .flatMap((/** @type {{ blocks: any[] }} */ s) => s.blocks)
-      .find((/** @type {{ id: string }} */ b) => b.id === blockId);
-    return block === undefined ? undefined : block.caption;
-  }, id);
+async function captionOf(page, id) {
+  const manifest = await editorManifest(page);
+  const block = manifest.stations
+    .flatMap((/** @type {any} */ s) => stationBlocks(s))
+    .find((/** @type {{ id: string }} */ b) => b.id === id);
+  return block === undefined ? undefined : block.caption;
 }
 
 /**
@@ -129,24 +140,21 @@ function captionOf(page, id) {
  * @param {string} id
  * @returns {Promise<{ lat: number, lon: number, position: number[] } | undefined>}
  */
-function placeOf(page, id) {
-  return page.evaluate((blockId) => {
-    // @ts-expect-error - the editor's dev-only test hook.
-    const manifest = window.__tourEditor.manifest();
-    for (const station of manifest.stations) {
-      const block = station.blocks.find(
-        (/** @type {{ id: string }} */ b) => b.id === blockId,
-      );
-      if (block !== undefined) {
-        return {
-          lat: station.geo.lat,
-          lon: station.geo.lon,
-          position: [...block.pose.position],
-        };
-      }
+async function placeOf(page, id) {
+  const manifest = await editorManifest(page);
+  for (const station of manifest.stations) {
+    const block = stationBlocks(station).find(
+      (/** @type {{ id: string }} */ b) => b.id === id,
+    );
+    if (block !== undefined) {
+      return {
+        lat: station.geo.lat,
+        lon: station.geo.lon,
+        position: [...block.pose.position],
+      };
     }
-    return undefined;
-  }, id);
+  }
+  return undefined;
 }
 
 /**

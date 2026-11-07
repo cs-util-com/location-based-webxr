@@ -4,15 +4,17 @@
  * at the boundary with a message naming the record, not produce a pin at
  * (0, 0) or a picture plane with a zero aspect. The writer re-validates
  * through the reader, so a manifest the creator's session assembled wrong
- * fails on the phone, not on the visitor's. Version 4 holds every thing a
- * station shows as a block at a local pose, every media file (a captured
- * photo's too) as an asset, and refuses the older formats with a message
- * that says so (no migration).
+ * fails on the phone, not on the visitor's. Version 5 holds every thing a
+ * station shows as a child at a local pose, free or inside a story, every
+ * media file (a captured photo's too) as an asset, and refuses the older
+ * formats with a message that says so (no migration).
  */
 
 // Activates the core library's licence before any module under test loads.
 import '../test-setup';
 import { describe, expect, it } from 'vitest';
+
+import { parseTourManifest as parseReleased } from 'tour-reader-1-31/ar/tour-manifest';
 
 import {
   createEmptyTourManifest,
@@ -27,6 +29,11 @@ import {
   TourManifestValidationError,
 } from './tour-manifest';
 import { tourObjects } from './tour-station-pose';
+import {
+  tourStationBlocks,
+  tourStationStoryBlocks,
+  tourStories,
+} from './tour-story';
 
 const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] };
 const pin = {
@@ -62,6 +69,13 @@ const hello = {
 };
 const GEO = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 };
 
+const storyOf = (id: string, children: unknown[]) => ({
+  id,
+  kind: 'story',
+  title: 'A story',
+  children,
+});
+
 function station(blocks: unknown[], extra: Record<string, unknown> = {}) {
   return {
     id: 'gate',
@@ -69,15 +83,14 @@ function station(blocks: unknown[], extra: Record<string, unknown> = {}) {
     geo: GEO,
     activateRadiusM: 25,
     foundRadiusM: 4,
-    blocks: [hello, ...blocks],
-    steps: [{ id: 'hi', action: { kind: 'show', block: 'hello' } }],
+    children: [storyOf('hello-story', [hello]), ...blocks],
     ...extra,
   };
 }
 
 function tour(extra: Record<string, unknown> = {}) {
   return {
-    version: 4,
+    version: 5,
     assets: [photoAsset],
     stations: [station([pin, photo])],
     ...extra,
@@ -108,13 +121,15 @@ describe('parseTourManifest', () => {
       ...photoAsset,
       kind: 'image',
     });
-    const block = manifest.stations[0]!.blocks.find((b) => b.id === 'f1')!;
+    const block = tourStationBlocks(manifest.stations[0]!).find(
+      (b) => b.id === 'f1'
+    )!;
     expect(Math.hypot(...block.pose.rotation)).toBeCloseTo(1, 12);
   });
 
   it('an empty manifest is valid and is what the starter zip carries', () => {
     expect(parseTourManifest(createEmptyTourManifest())).toEqual({
-      version: 4,
+      version: 5,
       minor: 0,
       order: 'fixed',
       assets: [],
@@ -123,49 +138,51 @@ describe('parseTourManifest', () => {
   });
 
   it('block and asset ids are separate namespaces: a captured photo is a picture block and an image asset of one id', () => {
-    // Why: every reference says which kind it names (a show names a block,
+    // Why: every reference says which kind it names (a goto names a child,
     // a picture's image an asset), so the same id in both is unambiguous -
     // and is exactly what a captured photo mints.
     const manifest = parseTourManifest(tour());
     expect(manifest.assets.map((a) => a.id)).toEqual(['f1']);
-    expect(manifest.stations[0]?.blocks.map((b) => b.id)).toContain('f1');
+    expect(tourStationBlocks(manifest.stations[0]!).map((b) => b.id)).toContain(
+      'f1'
+    );
   });
 
   it.each([
     ['a non-object', null, /JSON object/],
     [
       'a version that is not a format number',
-      { version: '4', stations: [] },
-      /"version" must be 4/,
+      { version: '5', stations: [] },
+      /"version" must be 5/,
     ],
-    ['version 0', { version: 0, stations: [] }, /"version" must be 4/],
+    ['version 0', { version: 0, stations: [] }, /"version" must be 5/],
     [
       'a version from a newer app',
-      { version: 5, stations: [] },
-      /made with a newer version of the app \(format 5\)/,
+      { version: 6, stations: [] },
+      /made with a newer version of the app \(format 6\)/,
     ],
     [
       'a minor that is not a whole number',
-      { version: 4, minor: 1.5, stations: [] },
+      { version: 5, minor: 1.5, stations: [] },
       /"minor" must be an integer >= 0/,
     ],
     [
       'a negative minor',
-      { version: 4, minor: -1, stations: [] },
+      { version: 5, minor: -1, stations: [] },
       /"minor" must be an integer >= 0/,
     ],
     [
       'an unknown order',
-      { version: 4, order: 'random', stations: [] },
+      { version: 5, order: 'random', stations: [] },
       /"order"/,
     ],
     [
       'the same block id in two stations',
       {
-        version: 4,
+        version: 5,
         stations: [station([pin]), { ...station([pin]), id: 'well' }],
       },
-      /duplicate block id/,
+      /duplicate child id/,
     ],
     [
       'the same asset id twice',
@@ -175,37 +192,37 @@ describe('parseTourManifest', () => {
     [
       'a picture naming a missing asset',
       tour({ assets: [] }),
-      /stations\[0\]\.blocks\[2\]\.image" must name an image asset/,
+      /stations\[0\]\.children\[2\]\.image" must name an image asset/,
     ],
     [
       'a picture naming an asset that is not an image',
       tour({ assets: [{ id: 'f1', path: 'content/f1.mp3' }] }),
-      /stations\[0\]\.blocks\[2\]\.image" must name an image asset/,
+      /stations\[0\]\.children\[2\]\.image" must name an image asset/,
     ],
     [
       'an unknown block kind',
       tour({ stations: [station([{ ...pin, kind: 'sticker' }])] }),
-      /stations\[0\]\.blocks\[1\]\.kind/,
+      /stations\[0\]\.children\[1\]\.kind/,
     ],
     [
       'a path-unsafe block id',
       tour({ stations: [station([{ ...pin, id: '../x' }])] }),
-      /stations\[0\]\.blocks\[1\]\.id/,
+      /stations\[0\]\.children\[1\]\.id/,
     ],
     [
       'a timestamp that is not a date',
       tour({ stations: [station([{ ...pin, createdAtIso: 'yesterday' }])] }),
-      /stations\[0\]\.blocks\[1\]\.createdAtIso/,
+      /stations\[0\]\.children\[1\]\.createdAtIso/,
     ],
     [
       'a pin without a caption',
       tour({ stations: [station([{ ...pin, caption: '  ' }])] }),
-      /stations\[0\]\.blocks\[1\]\.caption/,
+      /stations\[0\]\.children\[1\]\.caption/,
     ],
     [
       'a pin caption over 40 characters',
       tour({ stations: [station([{ ...pin, caption: 'x'.repeat(41) }])] }),
-      /stations\[0\]\.blocks\[1\]\.caption" is longer than 40/,
+      /stations\[0\]\.children\[1\]\.caption" is longer than 40/,
     ],
     [
       'an asset whose path is not its own content entry',
@@ -244,7 +261,7 @@ describe('parseTourManifest', () => {
       tour({
         stations: [station([{ ...pin, pose: { ...POSE, position: [1, 2] } }])],
       }),
-      /blocks\[1\]\.pose\.position/,
+      /children\[1\]\.pose\.position/,
     ],
     [
       'a station geo pose with neither heading nor rotation',
@@ -253,8 +270,8 @@ describe('parseTourManifest', () => {
     ],
     [
       'a free block in a view that does not stand in the world',
-      tour({ stations: [station([], { steps: [] })] }),
-      /no step shows block "hello"/,
+      tour({ stations: [station([], { children: [hello] })] }),
+      /block "hello" stands free in its station/,
     ],
   ])('rejects %s', (_label, data, message) => {
     expect(() => parseTourManifest(data)).toThrow(TourManifestValidationError);
@@ -263,11 +280,11 @@ describe('parseTourManifest', () => {
 });
 
 describe('the version policy', () => {
-  it('is version 4, minor 5', () => {
-    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([4, 5]);
+  it('is version 5, minor 0', () => {
+    expect([TOUR_MANIFEST_VERSION, TOUR_MANIFEST_MINOR]).toEqual([5, 0]);
   });
 
-  it.each([1, 2, 3])(
+  it.each([1, 2, 3, 4])(
     'refuses a version %i tour with a message that says it is an older format: no migration',
     (version) => {
       // Why: a creator who opens an old file must learn why it does not
@@ -291,16 +308,16 @@ describe('the version policy', () => {
     }
   );
 
-  it('writes version 4 at minor 0, with every station and its blocks', () => {
+  it('writes version 5 at minor 0, with every station and its children', () => {
     const written = JSON.parse(
       serializeTourManifest(parseTourManifest(tour()))
     ) as Record<string, unknown>;
-    expect(written).toMatchObject({ version: 4, minor: 0 });
+    expect(written).toMatchObject({ version: 5, minor: 0 });
     expect(written).not.toHaveProperty('objects');
     expect(
       JSON.parse(serializeTourManifest(createEmptyTourManifest()))
     ).toEqual({
-      version: 4,
+      version: 5,
       minor: 0,
       order: 'fixed',
       assets: [],
@@ -312,12 +329,12 @@ describe('the version policy', () => {
     // Why: the editor trims the name it writes, so a title read untrimmed
     // differed from its own field and counted as a change.
     expect(
-      parseTourManifest({ version: 4, title: '  Castle walk \n', stations: [] })
+      parseTourManifest({ version: 5, title: '  Castle walk \n', stations: [] })
         .title
     ).toBe('Castle walk');
   });
 
-  it('reads a full tour: title, order, assets, stations with blocks and steps', () => {
+  it('reads a full tour: title, order, assets, stations with free blocks and stories', () => {
     const manifest = parseTourManifest(
       tour({
         title: 'Castle walk',
@@ -325,19 +342,20 @@ describe('the version policy', () => {
         assets: [{ id: 'knight', path: 'content/knight.png' }],
         stations: [
           station([pin], {
-            blocks: [
+            children: [
               pin,
-              {
-                id: 'kurt',
-                kind: 'character',
-                view: 'stage',
-                name: 'Kurt',
-                image: 'knight',
-                caption: 'Hi',
-                pose: POSE,
-              },
+              storyOf('kurt-story', [
+                {
+                  id: 'kurt',
+                  kind: 'character',
+                  view: 'stage',
+                  name: 'Kurt',
+                  image: 'knight',
+                  caption: 'Hi',
+                  pose: POSE,
+                },
+              ]),
             ],
-            steps: [{ id: 'hi', action: { kind: 'show', block: 'kurt' } }],
           }),
         ],
       })
@@ -345,10 +363,9 @@ describe('the version policy', () => {
     expect(manifest.title).toBe('Castle walk');
     expect(manifest.order).toBe('any');
     expect(manifest.assets[0]?.kind).toBe('image');
-    expect(manifest.stations[0]?.steps[0]?.action).toEqual({
-      kind: 'show',
-      block: 'kurt',
-    });
+    expect(
+      tourStationStoryBlocks(manifest.stations[0]!).map((b) => b.id)
+    ).toEqual(['kurt']);
     expect(tourObjects(manifest).map((o) => o.id)).toEqual(['p1']);
   });
 
@@ -364,7 +381,7 @@ describe('the version policy', () => {
       /this tour lets answers choose the next station, which this version of the app no longer does; change its order to fixed or any/
     );
     expect(
-      parseTourManifest({ version: 4, minor: 9, order: 'branch', stations: [] })
+      parseTourManifest({ version: 5, minor: 9, order: 'branch', stations: [] })
         .order
     ).toBe('any');
   });
@@ -380,7 +397,7 @@ describe('the version policy', () => {
     });
     expect(manifest.minor).toBe(7);
     expect(manifest).not.toHaveProperty('futureField');
-    expect(manifest.stations[0]?.blocks[1]).not.toHaveProperty(
+    expect(manifest.stations[0]?.children[1]).not.toHaveProperty(
       'futureBlockField'
     );
     expect(manifest.stations[0]).not.toHaveProperty('futureStationField');
@@ -389,21 +406,23 @@ describe('the version policy', () => {
   describe('unknown values of a closed list', () => {
     // Why: "minor versions are additive" is only true if a reader of an
     // older minor survives what a newer one ADDS - a new block kind, a new
-    // step kind, a new media type, a new order. Such a value degrades when
+    // child kind, a new media type, a new order. Such a value degrades when
     // the file says it is newer; at this reader's own minor the same value
     // is a broken file.
     const newer = TOUR_MANIFEST_MINOR + 1;
     const file = (minor: number) => ({
-      version: 4,
+      version: 5,
       minor,
       order: 'spiral',
       assets: [{ id: 'f1', path: 'content/f1.heic' }],
       stations: [
-        station([pin, { ...pin, id: 'p9', kind: 'sticker' }, photo], {
+        station([], {
           hint: 'compass',
-          steps: [
-            { id: 'hi', action: { kind: 'show', block: 'hello' } },
-            { id: 'holo', action: { kind: 'hologram' } },
+          children: [
+            storyOf('hello-story', [hello, { id: 'holo', kind: 'hologram' }]),
+            pin,
+            { ...pin, id: 'p9', kind: 'sticker' },
+            photo,
           ],
         }),
       ],
@@ -415,7 +434,9 @@ describe('the version policy', () => {
       expect(manifest.assets).toEqual([]);
       expect(tourObjects(manifest).map((o) => o.id)).toEqual(['p1']);
       expect(manifest.stations[0]?.hint).toBe('arrow');
-      expect(manifest.stations[0]?.steps.map((s) => s.id)).toEqual(['hi']);
+      expect(
+        tourStories(manifest.stations[0]!)[0]?.children.map((c) => c.id)
+      ).toEqual(['hello']);
     });
 
     it("the same file at this reader's own minor is refused", () => {
@@ -453,10 +474,12 @@ describe('a placed 3D model (a size in metres)', () => {
   it('writes a tour carrying a model at minor 0, and reads it back exactly', () => {
     const manifest = parseTourManifest(withModel());
     const json = serializeTourManifest(manifest);
-    expect(JSON.parse(json)).toMatchObject({ version: 4, minor: 0 });
+    expect(JSON.parse(json)).toMatchObject({ version: 5, minor: 0 });
     const again = parseTourManifest(JSON.parse(json));
     expect(again).toEqual(manifest);
-    expect(again.stations[0]?.blocks.find((b) => b.id === 'm1')).toEqual(model);
+    expect(
+      tourStationBlocks(again.stations[0]!).find((b) => b.id === 'm1')
+    ).toEqual(model);
   });
 
   it("a newer minor's model beyond this reader's bound is left out", () => {
@@ -468,11 +491,9 @@ describe('a placed 3D model (a size in metres)', () => {
     expect(tourObjects(manifest).map((o) => o.id)).toEqual(['p1']);
   });
 
-  describe("a model's views, notes, sections and clip: minor 1", () => {
-    // Why: the writer writes the LOWEST minor a tour needs, so a tour that
-    // uses none of minor 1 still opens fully in an app that reads only
-    // minor 0, and one that does is marked so that app opens it leniently
-    // (falling back to `placed`) instead of refusing a view it never met.
+  describe("a model's views, notes, sections and clip", () => {
+    // Why: every field is the creator's work, so each must come back
+    // exactly, and a model in any world view must reach the world view list.
     const annotated = {
       ...model,
       view: 'hotspots',
@@ -490,39 +511,15 @@ describe('a placed 3D model (a size in metres)', () => {
         stations: [station(blocks)],
       });
 
-    it('writes minor 1 and reads every field back exactly', () => {
+    it('reads every field back exactly', () => {
       const manifest = parseTourManifest(withBlocks([pin, annotated]));
       const json = serializeTourManifest(manifest);
-      expect(JSON.parse(json)).toMatchObject({ version: 4, minor: 1 });
+      expect(JSON.parse(json)).toMatchObject({ version: 5, minor: 0 });
       const again = parseTourManifest(JSON.parse(json));
-      expect(again).toEqual({ ...manifest, minor: 1 });
+      expect(again).toEqual(manifest);
       expect(
-        again.stations[0]?.blocks.find((b) => b.id === annotated.id)
+        tourStationBlocks(again.stations[0]!).find((b) => b.id === annotated.id)
       ).toEqual(annotated);
-    });
-
-    it('writes minor 0 again once the tour no longer uses any of it', () => {
-      const {
-        animation: _a,
-        annotations: _n,
-        sections: _s,
-        ...plain
-      } = annotated;
-      const json = serializeTourManifest(
-        parseTourManifest(withBlocks([pin, { ...plain, view: 'placed' }]))
-      );
-      expect(JSON.parse(json)).toMatchObject({ minor: 0 });
-    });
-
-    it('reads the fields from a file that says minor 0, as the reader that knows them', () => {
-      const manifest = parseTourManifest({
-        ...withBlocks([pin, annotated]),
-        minor: 0,
-      });
-      expect(tourObjects(manifest).map((o) => o.view)).toEqual([
-        'pin',
-        'hotspots',
-      ]);
     });
 
     it('each new world view puts the model in the world view list', () => {
@@ -559,8 +556,7 @@ describe("a station's description and card image", () => {
           station([], {
             id: 'well',
             image: 'art',
-            blocks: [{ ...hello, id: 'hello-2' }],
-            steps: [{ id: 'hi', action: { kind: 'show', block: 'hello-2' } }],
+            children: [storyOf('well-story', [{ ...hello, id: 'hello-2' }])],
           }),
         ],
       })
@@ -570,7 +566,7 @@ describe("a station's description and card image", () => {
       [undefined, 'art'],
     ]);
     const json = serializeTourManifest(manifest);
-    expect(JSON.parse(json)).toMatchObject({ version: 4, minor: 0 });
+    expect(JSON.parse(json)).toMatchObject({ version: 5, minor: 0 });
     expect(parseTourManifest(JSON.parse(json))).toEqual(manifest);
   });
 
@@ -584,7 +580,7 @@ describe("a station's description and card image", () => {
       stations: [
         {
           ...manifest.stations[0]!,
-          blocks: manifest.stations[0]!.blocks.filter((b) => b.id !== 'f1'),
+          children: manifest.stations[0]!.children.filter((b) => b.id !== 'f1'),
         },
       ],
     };
@@ -667,7 +663,10 @@ describe('serializeTourManifest', () => {
         stations: [
           {
             ...manifest.stations[0]!,
-            blocks: [hello, { ...pin, caption: '' }] as never,
+            children: [
+              manifest.stations[0]!.children[0]!,
+              { ...pin, caption: '' },
+            ] as never,
           },
         ],
       })
@@ -682,8 +681,8 @@ describe('serializeTourManifest', () => {
         stations: [
           {
             ...manifest.stations[0]!,
-            blocks: [
-              hello,
+            children: [
+              manifest.stations[0]!.children[0]!,
               { ...pin, description: 'x'.repeat(161) },
               photo,
             ] as never,
@@ -748,7 +747,7 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
       geo: GEO,
       station: 'gate',
     });
-    expect(TOUR_OBJECT_RECORD_FORMAT).toBe(4);
+    expect(TOUR_OBJECT_RECORD_FORMAT).toBe(5);
   });
 
   it('a picture and a model read back exactly', () => {
@@ -763,12 +762,12 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
     [
       'no format',
       { ...record, format: undefined },
-      /object\.format" must be 4/,
+      /object\.format" must be 5/,
     ],
     [
       'an earlier format',
-      { ...record, format: 3 },
-      /object\.format" must be 4/,
+      { ...record, format: 4 },
+      /object\.format" must be 5/,
     ],
     ['no geo pose', { ...record, geo: undefined }, /object\.geo/],
     ['a bad station id', { ...record, station: 'a b' }, /object\.station/],
@@ -845,8 +844,7 @@ describe("an earlier file's captureSpots (removed from the format)", () => {
   const walkStation = station([], {
     id: 'walk-1',
     title: undefined,
-    blocks: [],
-    steps: [],
+    children: [],
   });
 
   it('reads a file that carries it without it, every station kept as written', () => {
@@ -858,7 +856,7 @@ describe("an earlier file's captureSpots (removed from the format)", () => {
     );
     expect('captureSpots' in manifest).toBe(false);
     expect(manifest.stations.map((s) => s.id)).toEqual(['gate', 'walk-1']);
-    expect(manifest.stations[1]?.blocks).toEqual([]);
+    expect(manifest.stations[1]?.children).toEqual([]);
   });
 
   it('a malformed one no longer fails the tour: it is an unknown field', () => {
@@ -1054,5 +1052,20 @@ describe('a stable tour id', () => {
         /"tourId" must be/
       );
     }
+  });
+});
+
+describe('the released reader (framework 1.31.0) and this format', () => {
+  // Why: version 5 is a major: nothing stays readable by the format 4 apps
+  // already on phones, and the promise left is that they say so instead of
+  // showing an empty tour. This is the published package's own parser,
+  // installed as a dev dependency. Its reader knows version 4 only.
+  it('refuses a written tour, naming the newer format', () => {
+    const written = JSON.parse(
+      serializeTourManifest(parseTourManifest(tour()))
+    ) as unknown;
+    expect(() => parseReleased(written)).toThrow(
+      /made with a newer version of the app \(format 5\)/
+    );
   });
 });

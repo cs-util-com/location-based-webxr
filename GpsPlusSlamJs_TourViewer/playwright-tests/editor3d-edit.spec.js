@@ -26,6 +26,7 @@ import {
 } from "./editor3d-fixture.js";
 import { save, viewCommand } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
+import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
  * Why these tests matter: the 3D view is where a creator moves things by
@@ -123,7 +124,9 @@ function selected(page) {
  */
 function pinOf(tour) {
   for (const station of tour.stations) {
-    const item = station.blocks.find((/** @type {any} */ i) => i.id === PIN);
+    const item = stationBlocks(station).find(
+      (/** @type {any} */ i) => i.id === PIN,
+    );
     if (item !== undefined) return { item, station };
   }
   return null;
@@ -374,7 +377,7 @@ test("answers every key: nudges, turns, height, delete, duplicate, Esc, and leav
   await expect(page.locator(".toast", { hasText: "Deleted" })).toBeVisible();
   expect(
     (await manifest(page)).stations.some((/** @type {any} */ s) =>
-      s.blocks.some((/** @type {any} */ i) => i.id === copy),
+      stationBlocks(s).some((/** @type {any} */ i) => i.id === copy),
     ),
   ).toBe(false);
   await selectPin(page, station);
@@ -722,8 +725,7 @@ async function oneCodeTour() {
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
-        blocks: [],
-        steps: [],
+        children: [],
       },
     ],
   };

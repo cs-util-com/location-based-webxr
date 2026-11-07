@@ -43,6 +43,7 @@
  *
  * @see editor3d-stations.ts.md
  */
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import * as THREE from "three";
 
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -709,7 +710,9 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   const entryOfItem = (id: string): StationEntry | null => {
     for (const entry of stations.values()) {
-      if (entry.station.blocks.some((i) => i.id === id)) return entry;
+      if (tourStationBlocks(entry.station).some((i) => i.id === id)) {
+        return entry;
+      }
     }
     return null;
   };

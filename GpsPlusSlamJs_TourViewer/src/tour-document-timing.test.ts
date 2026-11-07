@@ -22,6 +22,11 @@ import {
   tourDocumentActions as act,
   tourDocumentReducer as reduce,
 } from "./tour-document.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -51,12 +56,66 @@ describe("historyTimingEntries: the read-along entries the undo history names", 
     expect(historyTimingEntries(state)).toEqual(new Set(["timing/essay.json"]));
     const written = manifestToWrite(state);
     expect(
-      written?.stations.flatMap((s) => s.blocks).map((b) => b.id),
+      written?.stations.flatMap((s) => stationBlocks(s)).map((b) => b.id),
     ).not.toContain("essay");
     // The redo side counts too: undone, the deleting step is a future one
     // whose view has no essay, and the current view names it itself.
     state = reduce(state, act.undone());
     expect(historyTimingEntries(state)).toEqual(new Set());
+  });
+});
+
+describe("historyTimingEntries, a story's narrated text", () => {
+  // Why: a story block is no object of the document, so its timing is only
+  // found through the frames an undo step keeps; missing it, a save drops
+  // the read-along an undo then brings the text back without.
+  it("names the timing an undo step's story still shows", () => {
+    const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+    let state = reduce(
+      initialTourDocumentState,
+      act.opened({
+        manifest: tourOf([], {
+          assets: [{ id: "voice", path: "content/voice.mp3", kind: "audio" }],
+          stations: [
+            {
+              id: "mill",
+              title: "The mill",
+              geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+              activateRadiusM: 50,
+              foundRadiusM: 25,
+              hint: "arrow",
+              ...stationContent([
+                storyOf("told", [
+                  {
+                    id: "tale",
+                    kind: "longText",
+                    view: "card",
+                    title: "The tale",
+                    body: "It turned.",
+                    narration: {
+                      audio: "voice",
+                      timing: "timing/tale.json",
+                      synthetic: true,
+                    },
+                    pose: POSE,
+                  },
+                ]),
+              ]),
+            },
+          ],
+        }),
+      }),
+    );
+    expect(historyTimingEntries(state)).toEqual(new Set());
+    state = reduce(
+      state,
+      act.stationEdited({
+        stationId: "mill",
+        edit: { title: "The old mill" },
+        what: "the title",
+      }),
+    );
+    expect(historyTimingEntries(state)).toEqual(new Set(["timing/tale.json"]));
   });
 });
 
@@ -108,28 +167,24 @@ describe("a copied narrated text", () => {
           activateRadiusM: 50,
           foundRadiusM: 25,
           hint: "arrow",
-          steps: [
-            {
-              id: "s1",
-              action: { kind: "show", block: "told" },
-              advance: { mode: "tap" },
-            },
-          ],
-          blocks: [
-            {
-              id: "told",
-              kind: "longText",
-              view: "reading",
-              title: "Told",
-              body: "Once.",
-              narration: {
-                audio: "voice",
-                timing: "timing/told.json",
-                synthetic: false,
+          ...stationContent([
+            storyOf("story-story", [
+              {
+                id: "told",
+                kind: "longText",
+                view: "reading",
+                title: "Told",
+                body: "Once.",
+                narration: {
+                  audio: "voice",
+                  timing: "timing/told.json",
+                  synthetic: false,
+                },
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                advance: { mode: "tap" },
               },
-              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-            },
-          ],
+            ]),
+          ]),
         },
       ],
     });
@@ -139,7 +194,7 @@ describe("a copied narrated text", () => {
       act.stationDuplicated({
         stationId: "story",
         newStationId: "story2",
-        newItemIds: { told: "told2" },
+        newItemIds: { "story-story": "story2-story", told: "told2" },
         createdAtIso: "2026-10-31T00:00:02.000Z",
         what: "the copy",
       }),
@@ -147,7 +202,7 @@ describe("a copied narrated text", () => {
     const written = manifestToWrite(state);
     if (written === null) throw new Error("nothing open");
     const told = written.stations
-      .flatMap((s) => s.blocks)
+      .flatMap((s) => stationBlocks(s))
       .filter((b) => b.kind === "longText")
       .map((b) => [b.id, b.narration?.timing]);
     expect(told).toEqual([

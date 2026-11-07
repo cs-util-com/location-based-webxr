@@ -24,6 +24,7 @@ import {
   type EditorModel,
 } from "./editor-model.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
+import { stationContent } from "../test-support/station-content.js";
 
 // The distance lines use the licensed library's geo maths.
 beforeAll(() => {
@@ -93,8 +94,7 @@ function stationAt(id: string, geo: QrGeoPose, title?: string): TourStation {
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [],
-    blocks: [],
+    ...stationContent([]),
   };
 }
 

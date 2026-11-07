@@ -29,6 +29,7 @@
  * the result its AR path leaves in the page's lists (named per row), and
  * the row compares what the document makes of it from there on.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { isDeepStrictEqual } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -68,6 +69,10 @@ import {
 import { documentObjects, selectTourDocument } from "./tour-document.js";
 import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
+import {
+  stationContent,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 beforeAll(() => {
   createTourViewerStore();
@@ -704,7 +709,7 @@ function titleOrId(station: TourStation): string {
 }
 
 /** An item's kind. */
-function kindOf(item: TourStation["blocks"][number]): string {
+function kindOf(item: TourBlock): string {
   return item.kind;
 }
 
@@ -716,7 +721,11 @@ function itemsByStation(written: TourManifest): {
 } {
   const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const itemsOf = (stations: readonly TourStation[]) =>
-    stations.map((s) => s.blocks.map((i) => i.id).sort());
+    stations.map((s) =>
+      stationBlocks(s)
+        .map((i) => i.id)
+        .sort(),
+    );
   return {
     opened: itemsOf(written.stations.filter((s) => opened.has(s.id))),
     added: itemsOf(written.stations.filter((s) => !opened.has(s.id))),
@@ -728,7 +737,9 @@ function stationHolding(
   written: TourManifest,
   id: string,
 ): TourStation | undefined {
-  return written.stations.find((s) => s.blocks.some((i) => i.id === id));
+  return written.stations.find((s) =>
+    stationBlocks(s).some((i) => i.id === id),
+  );
 }
 
 const ROWS: readonly Row[] = [
@@ -1097,7 +1108,7 @@ const ROWS: readonly Row[] = [
     each: ({ written }) => {
       const copy = written.stations[3];
       expect(copy?.title).toBe("Station 3 copy");
-      expect(copy?.blocks.map(kindOf)).toEqual(["picture"]);
+      expect(stationBlocks(copy!).map(kindOf)).toEqual(["picture"]);
       expect(itemsByStation(written).opened[0]).toHaveLength(2);
     },
   },
@@ -1126,7 +1137,7 @@ const ROWS: readonly Row[] = [
         added: [["a"]],
       });
       const home = stationHolding(written, "a");
-      expect(home?.blocks[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
+      expect(stationBlocks(home!)[0]?.pose.position[1]).toBeCloseTo(-1.5, 6);
     },
   },
   {
@@ -1316,8 +1327,7 @@ describe("the parity contract: an earlier file carrying debug camera captures", 
         activateRadiusM: 50,
         foundRadiusM: 25,
         hint: "arrow",
-        steps: [],
-        blocks: [],
+        ...stationContent([]),
       },
     ],
     captureSpots: {

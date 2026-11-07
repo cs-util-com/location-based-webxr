@@ -1,3 +1,4 @@
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
@@ -40,6 +41,7 @@ import {
 } from "./content-placement";
 import { mountedModelViews } from "./model-views";
 import { contentSegment } from "./tour-flow";
+import { stationContent } from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: a placed object's record is what a visitor sees
@@ -492,7 +494,7 @@ describe("renderTourStation", () => {
   function stationAt(
     id: string,
     geo: TourStation["geo"],
-    items: TourStation["blocks"],
+    items: TourBlock[],
   ): TourStation {
     return {
       id,
@@ -500,8 +502,7 @@ describe("renderTourStation", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      steps: [],
-      blocks: items,
+      ...stationContent(items),
     };
   }
 

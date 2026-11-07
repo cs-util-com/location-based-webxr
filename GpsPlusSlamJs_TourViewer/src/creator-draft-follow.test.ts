@@ -14,10 +14,15 @@ import { describe, expect, it } from "vitest";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
+import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
-import { parseSettingsRecord, SETTINGS_KEY } from "./tour-document-draft.js";
+import {
+  DRAFT_PART_UNREAD,
+  parseSettingsRecord,
+  SETTINGS_KEY,
+} from "./tour-document-draft.js";
 import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -25,6 +30,7 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { createVisitLog } from "./visit-log.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const OLD = "local-file:00000000000000000000000000000001";
 const NEW = "local-file:tour:0123456789abcdef0123456789abcdef";
@@ -145,6 +151,91 @@ async function wired(
   return { ctx, draft };
 }
 
+describe("the phone's draft of an older format", () => {
+  // Why: the sample's key is stable and its rebuilt file is never refused,
+  // so a draft an older build left there is met only by this open. Its
+  // frames no longer read, so kept it would restore half a tour.
+  it("is gone when its tour opens, and the open starts a new one", async () => {
+    const ns = namespaces();
+    const files = new Map<string, Blob | string>([
+      [META_KEY, JSON.stringify({ format: 4, tourUrl: OLD })],
+      [objectKey("old"), JSON.stringify({ id: "old" })],
+      [SETTINGS_KEY, JSON.stringify({ stations: [] })],
+    ]);
+    ns.spaces.set(draftKeyForTour(OLD), files);
+    await wired(ns);
+    expect(files.has(objectKey("old"))).toBe(false);
+    expect(files.has(SETTINGS_KEY)).toBe(false);
+    expect(JSON.parse(files.get(META_KEY) as string)).toMatchObject({
+      format: TOUR_OBJECT_RECORD_FORMAT,
+    });
+  });
+});
+
+describe("the phone's draft says what it could not read", () => {
+  // Why these tests matter: a stored station naming a picture the tour no
+  // longer holds was dropped and, with nothing left to offer, its record
+  // removed: work gone with nothing on screen, though the station reads
+  // again once a file with that picture opens.
+  const unreadable = {
+    id: "s-new",
+    geo: { lat: 48.5205, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    children: [
+      {
+        id: "tale",
+        kind: "story",
+        title: "The tale",
+        children: [
+          {
+            id: "look",
+            kind: "picture",
+            view: "card",
+            image: "img1",
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ],
+      },
+    ],
+  };
+
+  async function space(settings: string) {
+    const ns = namespaces();
+    const files = await ns.open(draftKeyForTour(OLD));
+    await files.put(
+      META_KEY,
+      JSON.stringify({ format: TOUR_OBJECT_RECORD_FORMAT, tourUrl: OLD }),
+    );
+    await files.put(SETTINGS_KEY, settings);
+    return ns;
+  }
+
+  it("tells of a station that no longer reads, and keeps its record", async () => {
+    const ns = await space(
+      JSON.stringify({ needsNoGps: false, createdStations: [unreadable] }),
+    );
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
+    expect(ns.files(OLD).has(SETTINGS_KEY)).toBe(true);
+  });
+
+  it("tells of a record that does not read", async () => {
+    const ns = await space("{not json");
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
+  });
+
+  it("says nothing of a record that reads", async () => {
+    const ns = await space(JSON.stringify({ needsNoGps: false }));
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBeNull();
+  });
+});
+
 describe("the phone draft follows the saved file's key", () => {
   it("copies every file there, a photo's bytes among them, re-states the meta, and writes there from then on", async () => {
     const ns = namespaces();
@@ -259,25 +350,21 @@ describe("the phone draft's settings record", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,
-      blocks: [
-        {
-          id: "hello-text",
-          kind: "shortText" as const,
-          view: "card" as const,
-          caption: "Hello there.",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("s-new-story", [
+          {
+            id: "hello-text",
+            kind: "shortText" as const,
+            view: "card" as const,
+            caption: "Hello there.",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
+            advance: { mode: "tap" as const },
           },
-        },
-      ],
-      steps: [
-        {
-          id: "hello",
-          action: { kind: "show" as const, block: "hello-text" },
-          advance: { mode: "tap" as const },
-        },
-      ],
+        ]),
+      ]),
     };
     expect(
       await draft.saveSettings({ needsNoGps: false, frames: [frame] }),
@@ -299,21 +386,22 @@ describe("the phone draft's settings record", () => {
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
+      children: [
         {
-          id: "look",
-          kind: "picture",
-          view: "card",
-          image: "img1",
-          widthM: 1,
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "look" },
-          advance: { mode: "tap" },
+          id: "tale",
+          kind: "story",
+          title: "The tale",
+          children: [
+            {
+              id: "look",
+              kind: "picture",
+              view: "card",
+              image: "img1",
+              widthM: 1,
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              advance: { mode: "tap" },
+            },
+          ],
         },
       ],
     };

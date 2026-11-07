@@ -256,9 +256,21 @@ describe("readingSignUnderTap", () => {
 });
 
 describe("readingSheetContent", () => {
+  const block = {
+    kind: "shortText",
+    view: "pin",
+    caption: "A pin",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  } as const;
   const stations = [
-    { title: "Old square", blocks: [{ id: "x" }] },
-    { title: "Market", blocks: [{ id: "y" }, { id: "text" }] },
+    { title: "Old square", children: [{ ...block, id: "x" }] },
+    {
+      title: "Market",
+      children: [
+        { ...block, id: "y" },
+        { ...block, id: "text" },
+      ],
+    },
   ];
 
   it("names the station holding the text and its place in the tour", () => {
@@ -277,7 +289,7 @@ describe("readingSheetContent", () => {
 
   it("an untitled station is named by its place alone", () => {
     expect(
-      readingSheetContent([{ blocks: [{ id: "t" }] }], {
+      readingSheetContent([{ children: [{ ...block, id: "t" }] }], {
         id: "t",
         title: "T",
         body: "B",

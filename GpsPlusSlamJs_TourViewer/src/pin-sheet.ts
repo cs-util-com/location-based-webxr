@@ -13,6 +13,7 @@
  * @see pin-sheet.ts.md
  */
 
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { Object3D } from "three";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import type {
@@ -41,12 +42,12 @@ export function cancelsXrSelect(
 /** Every station's blocks by id (block ids are unique tour-wide). */
 export function tourBlocksById(
   manifest: {
-    readonly stations: readonly Pick<TourStation, "blocks">[];
+    readonly stations: readonly Pick<TourStation, "children">[];
   } | null,
 ): Map<string, TourBlock> {
   return new Map(
     (manifest?.stations ?? []).flatMap((s) =>
-      s.blocks.map((b) => [b.id, b] as const),
+      tourStationBlocks(s).map((b) => [b.id, b] as const),
     ),
   );
 }

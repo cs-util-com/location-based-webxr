@@ -38,6 +38,10 @@ import {
   showAllContentSet,
   type VisitorGuideStore,
 } from "./visitor-guide-slice";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -71,11 +75,6 @@ const CODE: PositionPrecision = {
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 const zero = { lat: 47.5, lon: 8.7 };
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 /** A station `north`/`east` metres from the zero. */
 function station(
@@ -92,8 +91,8 @@ function station(
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
     ...extra,
   };
 }
@@ -517,7 +516,10 @@ describe("wireStationGuide", () => {
   // it opened. A picture the tour does not hold is no card: that station
   // is done at once.
   it("a storyless station with only a card picture the tour holds waits for its story's end", () => {
-    const picture = station("gate", 0, 0, { steps: [], image: "photo" });
+    const picture = station("gate", 0, 0, {
+      ...stationContent([]),
+      image: "photo",
+    });
     const next = station("well", 0, 80);
     const h = harness({
       stations: [picture, next],
@@ -1967,7 +1969,7 @@ describe("wireStationGuide: the wait for a heading (D34)", () => {
     const h = harness(
       {
         assets: new Set(),
-        stations: [station("a", 40, 0, { steps: [] })],
+        stations: [station("a", 40, 0, stationContent([]))],
         order: "fixed",
       },
       { guideStore },
