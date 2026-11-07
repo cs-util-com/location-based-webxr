@@ -35,6 +35,7 @@ const READY = {
   "/index.html": null,
   "/3d/index.html": "__lookdev",
   "/labs/ar-shadows/index.html": "__arShadowsLab",
+  "/labs/building-geometry/index.html": "__buildingGeometry",
   "/labs/globe/index.html": "__globeLab",
   "/labs/globe-terrain/index.html": "__terrainCarrier",
   "/labs/terrain/index.html": "__terrainLab",
@@ -382,5 +383,21 @@ test("the AR shadows lab opens and draws without errors @pr", async ({
   expect(problems).toEqual([]);
   const stdev = await drawnStdev(page);
   console.log(`AR shadows lab drawn: stdev ${stdev.toFixed(1)}`);
+  expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
+});
+
+// Why this test matters: the building geometry lab is how the owner checks the
+// OSM roof and part fixes by eye; its default view loads the largest site
+// fixture and builds the city in the page, so it is what still catches a
+// library module the page cannot import or a fixture the route does not serve.
+test("the building geometry lab opens and draws without errors @pr", async ({
+  page,
+}) => {
+  const problems = await watch(page);
+  await page.goto("/labs/building-geometry/");
+  await ready(page, "__buildingGeometry");
+  expect(problems).toEqual([]);
+  const stdev = await drawnStdev(page);
+  console.log(`building geometry lab drawn: stdev ${stdev.toFixed(1)}`);
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 });
