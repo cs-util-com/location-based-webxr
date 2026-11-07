@@ -2016,7 +2016,12 @@ describe("the files a draft keeps", () => {
   it("offers a new station whose story names a file brought in", async () => {
     const station = {
       id: "s-new",
-      geo: { lat: 48.5205, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
+      geo: {
+        lat: 48.5205,
+        lon: 9.0,
+        alt: 340,
+        rotation: [0, 0, 0, 1] as const,
+      },
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow" as const,

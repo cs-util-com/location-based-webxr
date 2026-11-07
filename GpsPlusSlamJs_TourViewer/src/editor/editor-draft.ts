@@ -1324,7 +1324,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // story may name a file brought in, which the next save writes.
       const withHeld: TourManifest = {
         ...manifest,
-        assets: [...manifest.assets, ...[...files.values()].map((f) => f.asset)],
+        assets: [
+          ...manifest.assets,
+          ...[...files.values()].map((f) => f.asset),
+        ],
       };
       // A station that no longer reads may read again against a corrected
       // file: told, and its record stays. A record that does not read at

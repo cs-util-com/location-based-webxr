@@ -1183,8 +1183,7 @@ export function createEditorSession(input: {
 
   function nextSaveBytes(): number {
     return (
-      (saves.newest()?.blob.size ?? openedBytes) +
-      saves.addedBytes(own(), true)
+      (saves.newest()?.blob.size ?? openedBytes) + saves.addedBytes(own(), true)
     );
   }
 

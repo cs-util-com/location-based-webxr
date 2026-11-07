@@ -318,7 +318,9 @@ export function createTourSaves(input: {
       for (const { path, data } of files) {
         if (kept !== null && !kept.has(path)) continue;
         sum +=
-          typeof data === "string" ? encoder.encode(data).byteLength : data.size;
+          typeof data === "string"
+            ? encoder.encode(data).byteLength
+            : data.size;
       }
       return sum;
     },
