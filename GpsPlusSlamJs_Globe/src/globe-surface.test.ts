@@ -129,11 +129,15 @@ describe("createGlobeSurface", () => {
     expect(band.template.customProgramCacheKey()).toBe(
       `${GLOBE_SURFACE_CACHE_KEY}-band`,
     );
-    band.sun.intensity = 3;
-    band.sun.color.setRGB(1, 0.5, 0.25);
+    // Why this: the sky fill is the twilight's light on the ground and it
+    // has its own fall with the sun. The light's ground sun, red at a low
+    // sun and black below the horizon, must not reach it.
+    band.sunExposure.value = 3;
+    band.sun.intensity = 0;
+    band.sun.color.setRGB(0, 0, 0);
     band.setSun(new THREE.Vector3(0, 0, 2));
     expect(band.surfaceUniforms.uSunRadiance.value.toArray()).toEqual([
-      3, 1.5, 0.75,
+      3, 3, 3,
     ]);
     plain.dispose();
     band.dispose();

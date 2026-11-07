@@ -39,7 +39,8 @@ function fakeView(altitudeM: number, framed = true) {
     renderer: {} as THREE.WebGLRenderer,
     camera,
     globe: {
-      sun: { intensity: 5 },
+      sun: { intensity: 0.1 },
+      sunExposure: { value: 5 },
       cloudShell: {
         heightM: () => heightM,
         setHeightM(next: number) {
@@ -68,6 +69,7 @@ function fakeParts() {
   const slabFrames: { radiusKm: number; altitudeKm: number }[] = [];
   const shellFrames: { altitudeKm: number; shadow: number; cover: number }[] =
     [];
+  const shellRenders: { sunIntensity: number }[] = [];
   const patched: unknown[] = [];
   const depthDrawn: unknown[] = [];
   const depthExtra: unknown[] = [];
@@ -107,7 +109,10 @@ function fakeParts() {
       update(frame: { altitudeKm: number; shadow: number; cover: number }) {
         shellFrames.push(frame);
       },
-      render: () => log.push("shell"),
+      render(_camera: unknown, options: { sunIntensity: number }) {
+        shellRenders.push(options);
+        log.push("shell");
+      },
       state: () => ({
         drawn: log.filter((l) => l === "shell").length,
         share: 0.5,
@@ -124,6 +129,7 @@ function fakeParts() {
     log,
     slabFrames,
     shellFrames,
+    shellRenders,
     patched,
     depthDrawn,
     depthExtra,
@@ -150,6 +156,8 @@ function fakeNear() {
     shadowTexture: new THREE.Texture(),
     uv: new THREE.Vector2(1, 1),
     resolution: new THREE.Vector2(10, 10),
+    // The march pass always carries its sun (the near clouds' gain reads it).
+    uniforms: () => ({ uSun: { value: new THREE.Vector3(0, 1, 0) } }),
     dispose() {
       this.disposed += 1;
     },
@@ -343,6 +351,18 @@ describe("createGlobeViewClouds", () => {
     expect(fakes.log).toContain("shell off");
   });
 
+  // Why: the shell marches the sun through the air itself, so it takes the
+  // sun above the air; the light's intensity has the air in it already, and
+  // the old deck and the high layer went dark at a low sun with it.
+  it("gives the clouds the sun above the air, not the sun on the ground", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.step({ observerKm: 10, shareClouds: () => 1 });
+    clouds.render({ weight: 1 });
+    expect(fakes.shellRenders.at(-1)?.sunIntensity).toBe(5);
+  });
+
   // Why: the slab's shadow must reach the relief's tiles before the haze
   // patches them, and the relief is what ends the march; nothing is drawn
   // before a relief is named.
@@ -409,7 +429,8 @@ describe("createGlobeViewClouds", () => {
 
   // Why: the layer switch: off, the slab and the shell are turned off at
   // the next frame and nothing of them is drawn; on again, they come back.
-  // The depth stays: the shell's rays end at it while the sky shows.
+  // The depth goes with them where nothing reads it: with the ground sky
+  // whole the veil over the ground is gone too (the next test).
   it("turns the heavy clouds off and on again", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(10_000), fakes.parts);
@@ -420,13 +441,26 @@ describe("createGlobeViewClouds", () => {
     expect(clouds.state()).toMatchObject({ on: false, shellOn: false });
     expect(fakes.log).toContain("slab off");
     expect(fakes.log).toContain("shell off");
-    expect(fakes.log).toContain("depth");
+    expect(fakes.log).not.toContain("depth");
     expect(fakes.log).not.toContain("slab");
     clouds.setOn(true);
     clouds.step({ observerKm: 10, shareClouds: () => 1 });
     clouds.render({ weight: 1 });
     expect(clouds.state().on).toBe(true);
     expect(fakes.log).toContain("slab");
+  });
+
+  // Why this test matters: a whole depth pass a frame for no reader is the
+  // price of the switch that is meant to save frame time; in the hand-over
+  // the fading veil still ends at the relief, as it always has.
+  it("draws the depth with the clouds off only in the hand-over", () => {
+    const fakes = fakeParts();
+    const clouds = createGlobeViewClouds(fakeView(70_000), fakes.parts);
+    clouds.patch(reliefTiles());
+    clouds.setOn(false);
+    clouds.step({ observerKm: 70, shareClouds: () => 1 });
+    clouds.render({ weight: 0.5 });
+    expect(fakes.log).toContain("depth");
   });
 
   // Why: the air ends its veil at this same depth, so one pass serves both.
@@ -535,7 +569,7 @@ describe("createCloudsParts", () => {
       const { clouds, fakes, worker, frame } = set(60_000);
       frame();
       expect(clouds.nearLive()).toBe(true);
-      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
+      expect(clouds.nearAir()).toBe(0);
       clouds.setOn(false);
       expect(clouds.nearLive()).toBe(false);
       clouds.setOn(true);
@@ -544,6 +578,19 @@ describe("createCloudsParts", () => {
       await vi.waitFor(() => expect(clouds.nearLive()).toBe(false));
       frame();
       expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+    });
+
+    // Why this test matters: the lift makes up for what the near clouds take
+    // over at the hand-over. Until they draw, the old clouds do, and a lifted
+    // cover is a cover nobody measured for them.
+    it("lifts the shell's cover only once the bakes are in", async () => {
+      const { fakes, near, worker, frame } = set(60_000);
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBe(1);
+      worker.onmessage?.({ data: { kind: "bakes", bakes } } as MessageEvent);
+      await vi.waitFor(() => expect(near.ready).toBe(true));
+      frame();
+      expect(fakes.shellFrames.at(-1)?.cover).toBeGreaterThan(1.2);
     });
 
     // Why this test matters: a view closed during the bake must not leave

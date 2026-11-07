@@ -110,6 +110,12 @@ function skyIrradiance(h: number, sun: Vec3, path: Vec3): Rgb {
   return mapRgb((i) => Math.PI * (0.55 * a[i] + 0.45 * b[i]));
 }
 
+/**
+ * The cloud sun's least green and blue, as shares of its red: the last light
+ * through the air is nearly pure red, and tone mapping drew it crimson.
+ */
+export const CLOUD_SUN_FLOOR = { green: 0.42, blue: 0.22 } as const;
+
 /** What the march's cloud light is made of (`cloudMarchLight`). */
 export interface CloudMarchLight {
   /** Air column, haze column and ozone path of the sun at sea level. */
@@ -136,9 +142,14 @@ export function cloudMarchLight(sun: Vec3): CloudMarchLight {
   const through = sunThrough(2, path).map((v) => v * ESUN);
   const [r = 0, g = 0, b = 0] = through;
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const cloudSun = mapRgb(
+  const [red = 0, green = 0, blue = 0] = mapRgb(
     (i) => (lum + ((through[i] ?? 0) - lum) * 0.5) * CLOUD_SUN_SCALE,
   );
+  const cloudSun: Rgb = [
+    red,
+    Math.max(green, CLOUD_SUN_FLOOR.green * red),
+    Math.max(blue, CLOUD_SUN_FLOOR.blue * red),
+  ];
   const ambientTop = mapRgb(
     (i) => irradiance[i] * CLOUD_AMBIENT_SCALE + CLOUD_NIGHT_AMBIENT[i],
   );

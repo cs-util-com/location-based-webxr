@@ -11,10 +11,12 @@
  * recording fakes of both volumes; the clouds' look is the lab's smokes and
  * the reference captures.
  */
+import { nearCloudsGain } from "./globe-sky-hand-over.js";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { flatCloudShare } from "./globe-cloud-flat-fade.js";
+import type { GlobeCloudMarch } from "./globe-cloud-march-pass.js";
 import { CLOUD_SHELL_LIFT } from "./globe-cloud-march-law.js";
 import {
   CLOUD_HIGH_LAYER,
@@ -506,6 +508,7 @@ describe("createGlobeCloudStep: render", () => {
   });
 
   describe("with the near clouds", () => {
+    const marchAir = { uH: { value: 3 }, uSun: { value: { y: 0.5 } } };
     const fakeNear = (log: unknown[][], ready = true) => ({
       ready,
       render: (frame: unknown) => {
@@ -516,6 +519,8 @@ describe("createGlobeCloudStep: render", () => {
       shadowTexture: new THREE.Texture(),
       uv: new THREE.Vector2(1, 1),
       resolution: new THREE.Vector2(10, 10),
+      uniforms: () =>
+        marchAir as unknown as ReturnType<GlobeCloudMarch["uniforms"]>,
     });
     const nearKnobs = knobs({
       cloudNear: 1,
@@ -610,15 +615,30 @@ describe("createGlobeCloudStep: render", () => {
         slabTexture: unknown;
         disc: unknown;
         flatten: number;
-        near: { weight: number; tapPixels: number };
+        near: { weight: number; tapPixels: number; air: unknown };
       };
       expect(options.slabTexture).toBeNull();
       expect(options.disc).toBeNull();
       expect(options.flatten).toBe(0);
       expect(options.near.weight).toBeCloseTo(0.5);
+      // Why: the air behind the clouds is the march's own, on the same
+      // camera, sun and depth, or the two part at the silhouettes.
+      expect(options.near.air).toBe(marchAir);
       expect(options.near.tapPixels).toBe(
         GLOBE_QUALITIES.high.clouds.tapPixels,
       );
+    });
+
+    // Why this test matters: the near clouds carry their light in their own
+    // units while the ground follows the camera's exposure, so at dusk they
+    // stood black on a lit ground.
+    it("raises the near clouds with the camera's exposure", () => {
+      const log: unknown[][] = [];
+      const step = make(log);
+      step.plan(nearKnobs, { cameraAltM: 60_000, framed: true });
+      step.render(camera, { ...nearFrame, sunIntensity: 30 });
+      const options = log[1]?.[1] as { near: { gain: number } };
+      expect(options.near.gain).toBe(nearCloudsGain(30, marchAir.uSun.value.y));
     });
 
     it("keeps to the old path above its ceiling", () => {
