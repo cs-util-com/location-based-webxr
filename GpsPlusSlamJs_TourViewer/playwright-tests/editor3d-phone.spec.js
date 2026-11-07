@@ -233,7 +233,7 @@ test("on a phone the controls smaller for a mouse take a finger", async ({
   await page.locator('#inspector-body [data-act="position"]').click();
   const slider = page.locator('#inspector-body [data-act="radius-slider"]');
   expect((await box(slider)).height).toBe(32);
-  await page.locator("#studio-add").click();
+  await page.keyboard.press("Control+k");
   const chip = page.locator("#add-palette .pfil .chip").first();
   expect((await box(chip)).height).toBe(32);
 });
