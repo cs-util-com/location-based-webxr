@@ -248,7 +248,7 @@ function stationEdit(
 export type EntryAdvance = Exclude<TourStepAdvance, { mode: "lineEnd" }>;
 
 /** The field naming a story block's seconds: `entry-after:<id>`. */
-export const ENTRY_AFTER = "entry-after:";
+const ENTRY_AFTER = "entry-after:";
 
 /** A field of a story's entry, selected as `id` in `station`. */
 function storyEntryEdit(
