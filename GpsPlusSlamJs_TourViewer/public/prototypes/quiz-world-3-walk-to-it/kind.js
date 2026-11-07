@@ -500,7 +500,7 @@ function makeSession(block, env) {
     if (s.checking || s.result || !typed.trim()) return;
     s.checking = true;
     s.render();
-    let hex = null;
+    let hex;
     try {
       hex = await saltedHash(block.typed.salt, typed);
     } catch {

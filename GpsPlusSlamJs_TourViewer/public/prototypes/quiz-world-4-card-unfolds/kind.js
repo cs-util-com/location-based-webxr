@@ -657,7 +657,7 @@ function makeDeck(block, env) {
   function seat() {
     const s = bridge.sheet();
     let fx0 = 0;
-    let fx1 = view.w;
+    const fx1 = view.w;
     let fy1 = view.h * 0.6;
     if (s.right > 0) {
       if (s.left <= 20 && s.right < view.w * 0.6) {
