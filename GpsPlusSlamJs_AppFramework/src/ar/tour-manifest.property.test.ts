@@ -26,7 +26,7 @@ import {
   serializeTourManifest,
   TOUR_MANIFEST_MINOR,
 } from './tour-manifest';
-import { TOUR_WORLD_VIEWS } from './tour-blocks';
+import { TOUR_FREE_BLOCK_VIEWS } from './tour-blocks';
 import { tourObjects } from './tour-station-pose';
 import { isTourStoryBlock, tourStationBlocks, tourStories } from './tour-story';
 
@@ -100,12 +100,10 @@ describe('tour manifest (properties)', () => {
   // in 20 of 24 at 20, so 300 leaves them a wide margin. Each claim carries
   // its own failure message.
   it('every manifest the writer accepts: identity, idempotent parse, a byte fixed point, stations and card images kept; the generator reaches every kind and world view', () => {
-    // The generator's free views must be exactly the format's world views
-    // (a long text's lectern and reading sign once went untested because
-    // the generator never wrote them).
-    expect(new Set(Object.values(TOUR_FREE_VIEWS).flat())).toEqual(
-      TOUR_WORLD_VIEWS
-    );
+    // The generator's free views must be exactly the format's (a long
+    // text's lectern and reading sign once went untested because the
+    // generator never wrote them).
+    expect(TOUR_FREE_VIEWS).toEqual(TOUR_FREE_BLOCK_VIEWS);
     const kinds = new Set<string>();
     const storyKinds = new Set<string>();
     const views = new Set<string>();
@@ -212,7 +210,9 @@ describe('tour manifest (properties)', () => {
       'quiz',
     ]);
     expect(free, 'free blocks').toBeGreaterThan(0);
-    expect(views, 'every world view').toEqual(TOUR_WORLD_VIEWS);
+    expect(views, 'every free view').toEqual(
+      new Set(Object.values(TOUR_FREE_BLOCK_VIEWS).flat())
+    );
   });
 
   it('the writer refuses every tour of a newer minor: it was read without what this reader does not know', () => {

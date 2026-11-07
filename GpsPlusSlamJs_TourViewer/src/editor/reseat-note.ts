@@ -9,6 +9,7 @@
  */
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { objectOwnText } from "../object-describe.js";
 import { stationTitle } from "../station-run.js";
 import {
   documentObjects,
@@ -32,16 +33,15 @@ const KIND_WORD: Readonly<Record<TourObject["kind"], string>> = {
   longText: "The reading stand",
   picture: "The photo",
   model: "The 3D model",
+  video: "The video",
+  audio: "The sound",
+  character: "The character",
 };
 
-/** An item as the line names it: a pin's text, a picture's caption or a
- *  model's or a reading stand's title, shortened, else what it is. */
+/** An item as the line names it: its own text (`objectOwnText`),
+ *  shortened, else what it is. */
 function itemName(object: TourObject): string {
-  const text =
-    object.kind === "model" || object.kind === "longText"
-      ? object.title
-      : object.caption;
-  const label = (text ?? "").replace(/\s+/g, " ").trim();
+  const label = (objectOwnText(object) ?? "").replace(/\s+/g, " ").trim();
   if (label === "") return KIND_WORD[object.kind];
   return `"${truncated(label, 40)}"`;
 }

@@ -15,6 +15,7 @@
 
 import { spawn, execFileSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -32,7 +33,11 @@ import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { narrowedStageRun } from '../e2e/project-runs.mjs';
 import { tierStageRun } from '../e2e/tier.mjs';
-import { buildStageCommand, decideRecording } from './stage-args.mjs';
+import {
+  buildStageCommand,
+  decideRecording,
+  runnerReportFile,
+} from './stage-args.mjs';
 import {
   STALL_EXIT,
   STALL_KILL_GRACE_MS,
@@ -505,6 +510,24 @@ function summarizeStage(stageName, history) {
 }
 
 /**
+ * Copies the injected JSON report to where the job uploads it. A run that
+ * died before writing one leaves nothing to copy, and a failed copy must not
+ * change the gate's result.
+ *
+ * @param {string | null} report - the scratch JSON report, if any
+ * @param {string | null} target - runnerReportFile's answer
+ */
+function keepReportForUpload(report, target) {
+  if (report === null || target === null || !existsSync(report)) return;
+  try {
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(report, target);
+  } catch (error) {
+    console.warn(`test-timing: could not keep the JSON report: ${String(error)}`);
+  }
+}
+
+/**
  * @typedef {Object} StageResult
  * @property {number} exitCode
  * @property {number} durationMs
@@ -648,6 +671,7 @@ export async function runStage(project, stageName, forwardedArgs) {
       `test-timing: recording failed (gate unaffected): ${String(error)}`
     );
   } finally {
+    keepReportForUpload(countsFile, runnerReportFile(stage.counts, env, root));
     if (scratchDir) {
       rmSync(scratchDir, { recursive: true, force: true });
     }

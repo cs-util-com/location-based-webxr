@@ -3,6 +3,8 @@
 // so any forwarded CLI arg means the run is filtered and must not record —
 // timing rows only ever compare like-for-like full-suite runs.
 
+import path from 'node:path';
+
 /**
  * @typedef {Object} RecordingDecision
  * @property {boolean} record - true when this run may update the timing file
@@ -33,6 +35,22 @@ export const RECORD_ON_RUNNER_ENV = 'TIMING_RECORD_ON_RUNNER';
  */
 export function onGithubRunner(env) {
   return Boolean(env.GITHUB_ACTIONS);
+}
+
+/**
+ * Where a recording Playwright stage keeps its JSON for the job's upload, or
+ * null where nothing uploads it. The gate's `--reporter=list,json` replaces
+ * the config's reporters, whose JSON goes to this file on CI.
+ *
+ * @param {'vitest' | 'playwright' | null | undefined} counts - the stage's counts
+ * @param {Record<string, string | undefined>} env - process.env (or a stub)
+ * @param {string} root - absolute project root
+ * @returns {string | null}
+ */
+export function runnerReportFile(counts, env, root) {
+  return counts === 'playwright' && onGithubRunner(env)
+    ? path.join(root, 'test-results', 'results.json')
+    : null;
 }
 
 /**

@@ -78,9 +78,10 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   a story; a story holds its blocks, choices and quizzes in order. A choice
   option's `goto` names a child of the same story, or is absent: the next
   child. A block lives in one place, so being in a story is what shows it;
-  there are no `show` steps. A free block must stand in the world (`pin`,
-  a long text's `lectern` or `reading`, `plane`, or a model's `placed`,
-  `ghost`, `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`). A station
+  there are no `show` steps. A free block stands in a view its kind has for
+  standing free (`TOUR_FREE_BLOCK_VIEWS`: `pin`, a long text's `lectern` or
+  `reading`, `plane`, a model's `placed`, `ghost`, `hotspots`, `cutaway` or
+  `toy`, `card` for a video or a sound, a character's own five). A station
   may have no children (an automatic station: finding it completes it).
   Several stories at a station are allowed by the format; a viewer plays
   the first with something to play.

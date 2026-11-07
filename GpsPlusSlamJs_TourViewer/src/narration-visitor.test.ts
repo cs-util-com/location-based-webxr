@@ -213,6 +213,61 @@ describe("the visitor's narrated texts", () => {
     expect(player?.disposed).toBe(true);
   });
 
+  // Why: walking away pauses a voice and it carries on at return. Both
+  // voices of a station that were wanted come back in the one channel: the
+  // first plays, the second waits for a tap. A station whose voices were
+  // left alone wakes nothing.
+  it("carries on what a station's leaving paused, at that station's return", () => {
+    const { visitor, made } = make(() => timingFile());
+    const first = visitor.sheetNarration(text())?.player;
+    const second = visitor.sheetNarration({ ...text(), id: "yard" })?.player;
+    first?.play();
+    second?.play();
+    expect(made[0]?.on).toBe(false);
+    expect(made[1]?.on).toBe(true);
+    visitor.pauseAll("gate");
+    expect(made.map((p) => p.on)).toEqual([false, false]);
+    visitor.carryOn("yard");
+    expect(made.map((p) => p.on)).toEqual([false, false]);
+    visitor.carryOn("gate");
+    expect(made.filter((p) => p.on)).toHaveLength(1);
+    visitor.carryOn("gate");
+    expect(made.filter((p) => p.on)).toHaveLength(1);
+  });
+
+  // Why: the one heard last plays at return, and the other, held behind it,
+  // carries on when that one is over: a station's second voice is not lost.
+  it("the voice held behind the first carries on when that one is over", () => {
+    const { visitor, made } = make(() => timingFile());
+    const first = visitor.sheetNarration(text())?.player;
+    const second = visitor.sheetNarration({ ...text(), id: "yard" })?.player;
+    first?.play();
+    second?.play();
+    visitor.pauseAll("gate");
+    visitor.carryOn("gate");
+    expect(made.map((p) => p.on)).toEqual([false, true]);
+    second?.pause();
+    expect(made.map((p) => p.on)).toEqual([true, false]);
+  });
+
+  // Why: a voice stopped by the visitor is off until tapped, and passing
+  // through another station must not forget what the first one left.
+  it("leaves a paused voice off, and remembers a station across another", () => {
+    const { visitor, made } = make(() => timingFile());
+    const voice = visitor.sheetNarration(text())?.player;
+    voice?.play();
+    voice?.pause();
+    visitor.pauseAll("gate");
+    visitor.carryOn("gate");
+    expect(made[0]?.on).toBe(false);
+
+    voice?.play();
+    visitor.pauseAll("gate");
+    visitor.pauseAll("yard");
+    visitor.carryOn("gate");
+    expect(made[0]?.on).toBe(true);
+  });
+
   it("starts afresh for a new tour", async () => {
     const { visitor, reads, reopen } = make(() => timingFile());
     const block = text("timing/hall.json");

@@ -256,8 +256,8 @@ describe('a hung browser run ends before its job does', () => {
   });
 
   // Why: `e2e_limit` alone cannot say whether one hang leaves a report in a job
-  // of many packages. At a job limit of 50 the sum is 63.2 min, so the hang was
-  // cancelled with no report; at 75 a green run step above about 32.7 min
+  // of many packages. At a job limit of 50 the sum is 72.5 min, so the hang was
+  // cancelled with no report; at 75 a green run step above about 23.4 min
   // reverses this. Two hung packages in one job still outrun it, which is
   // accepted: the first report is the one that names the problem.
   it('leaves room for one hang in the fastest package of a job with several', () => {
@@ -274,9 +274,11 @@ describe('a hung browser run ends before its job does', () => {
   // Why: the job's limit is the slowest way to find a hung installer, and it
   // cancels the job with no log (one install sat for 75 min). The browser
   // install is mostly apt: 20 s on a good mirror, but over 15 min on a slow one
-  // (15.8 min green), and 15 min failed a job that was only slow. A green one
-  // above 20 reverses that limit. It is not cut and retried: a slow fetch is
-  // not a stall, and killing apt can leave dpkg interrupted.
+  // (at most 15.8 min in about 500 green runs). The limit sits above that to
+  // keep the slow green runs; a green one above 20 reverses it. It does not
+  // save a stall: about 2 runs in 500 stalled in `apt update` (one sat for
+  // 74.7 min), and such a run stays a rerun. It is not cut and retried: a slow
+  // fetch is not a stall, and killing apt can leave dpkg interrupted.
   it('stops a hung install at a step limit, well before the job limit', () => {
     const installs = testJob.steps.filter((s) => /\binstall\b/.test(String(s.run ?? '')));
     expect(installs.map((s) => [s.name, s['timeout-minutes']])).toEqual([

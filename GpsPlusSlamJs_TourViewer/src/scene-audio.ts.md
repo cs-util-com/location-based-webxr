@@ -14,10 +14,15 @@ battery"): ONE audio element for the page, unlocked by the visitor's
     tiny silent WAV; once (a refused unlock may be tried on the next tap);
   - `play(blob, onEnded)` - stops the previous clip, plays this one;
     rejects when the browser refuses (the story then says so);
-  - `stop()` - pause, forget the end callback, revoke the clip's URL.
+  - `stop()` - pause, forget the end callback, revoke the clip's URL;
+  - `pause()` - the clip stops where it is, keeping its file and its end;
+  - `resume()` - the paused clip carries on; one the browser refuses runs
+    its end instead, so a step waiting for it does not wait for good. Both
+    do nothing with no clip.
 - `silentWav()` - a 45-byte RIFF/WAVE, PCM mono 8 kHz, one silent sample.
 - `AudioElementLike` - the slice of `HTMLAudioElement` it drives (`duration` optional).
 - `durationMs()` - the playing clip's length in ms once its metadata is read (`duration` finite and above 0), else null (no clip, not yet known, a stream).
+- `leftMs()` - what is left of it in ms, never below 0; null when the length or the position is not known.
 
 ## Invariants & assumptions
 

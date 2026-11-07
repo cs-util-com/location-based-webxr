@@ -378,14 +378,23 @@ describe("the character's five views and the line's end", () => {
   });
 
   it.each(TOUR_CHARACTER_VIEWS)(
-    'refuses a free block in %s: he speaks only in a story',
+    'reads a free block in %s: he stands directly in a station too',
     (view) => {
       const free = { ...station('gate', []), children: [figure({ view })] };
-      expect(() => parseTourManifest(tour({ stations: [free] }))).toThrow(
-        /block "w1" stands free in its station/
-      );
+      const manifest = parseTourManifest(tour({ stations: [free] }));
+      expect(manifest.stations[0]?.children[0]).toMatchObject({ view });
     }
   );
+
+  it('refuses a free character on the stage: that figure lives with a story', () => {
+    const free = {
+      ...station('gate', []),
+      children: [figure({ view: 'stage' })],
+    };
+    expect(() => parseTourManifest(tour({ stations: [free] }))).toThrow(
+      /block "w1" stands free in its station/
+    );
+  });
 
   it('reads the advance "when the line ends", and refuses an unknown mode at its own minor', () => {
     const manifest = parseTourManifest(
