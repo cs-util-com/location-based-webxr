@@ -131,6 +131,7 @@ function storyDom(): SceneViewDom {
     choices: must("lab-choices"),
     continueButton: must("lab-continue"),
     playNext: must("lab-play-next"),
+    surface: must("lab-surface"),
   };
 }
 

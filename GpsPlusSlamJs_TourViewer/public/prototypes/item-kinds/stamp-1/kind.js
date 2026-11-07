@@ -23,13 +23,16 @@ export function show(block, host) {
     host.slots.image.src = host.url(blob);
     host.slots.image.alt = block.name;
     host.slots.image.hidden = false;
-    await host.stage?.character(blob, {
+    const look = {
       view: "speak",
       name: block.name,
       line: block.words,
       voiced: true,
-    });
+    };
+    await host.stage?.stand("stamp", (world, place) =>
+      world.showCharacter(place.stationId, blob, place.onWaiting, look),
+    );
     return undefined;
   });
-  host.stage?.tapTarget({ view: "speak", voice: block.sound });
+  host.stage?.tapTarget({ bubble: false, voice: block.sound });
 }

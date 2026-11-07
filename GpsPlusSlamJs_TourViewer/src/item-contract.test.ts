@@ -11,13 +11,7 @@ import type {
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
-<<<<<<< HEAD
-import {
-  itemAssets,
-  itemStoredAssets,
-  showItemCard,
-  type ItemCardHost,
-} from "./item-card";
+import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
 import {
   createSilentAudio,
   freeCarrier,
@@ -30,9 +24,6 @@ import {
 } from "./checks/item-lab-kind";
 import { createFreeItems } from "./free-items";
 import { createNarrationPlayer } from "./narration-player";
-=======
-import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
->>>>>>> r1098
 import { createSceneView } from "./scene-view";
 import { createVoiceFocus } from "./voice-focus";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -306,6 +297,20 @@ const flush = (): Promise<void> =>
     setTimeout(resolve, 0);
   });
 
+/** The card's own element: what an item put in it, until the host empties it. */
+function fakeSurface() {
+  const surface = {
+    held: [] as unknown[],
+    append(...nodes: unknown[]) {
+      surface.held.push(...nodes);
+    },
+    replaceChildren(...nodes: unknown[]) {
+      surface.held = nodes;
+    },
+  };
+  return surface as typeof surface & HTMLElement;
+}
+
 function panel(
   loadAsset: (path: string) => Promise<Blob> = (path) =>
     Promise.resolve(new Blob([path])),
@@ -356,6 +361,7 @@ function panel(
     choices: { replaceChildren: () => undefined },
     continueButton: { hidden: false },
     playNext: { hidden: true, textContent: "" },
+    surface: fakeSurface(),
   };
   const view = createSceneView({
     dom,
@@ -485,7 +491,7 @@ function freeSide(
 }
 
 describe("the table of kinds", () => {
-  // Why this test matters: the switches in item-card.ts stop a new kind at
+  // Why this test matters: the rows in play-kinds.ts stop a new kind at
   // the compiler, but the contract below only binds a kind with a row. A
   // kind the format gains must not pass this file by being absent from it.
   it("has a row for every kind the format knows", () => {
@@ -556,18 +562,13 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     const { view, reads } = panel(undefined, undefined, showOf(item));
     view.offer(stationOf(item.fields));
     await flush();
-<<<<<<< HEAD
     view.characterTapped();
     await flush();
     const declared = declaredOf(item);
-=======
-    const declared = itemAssets(block(item.fields), characters);
-    const stored = tourBlockAssetIds(block(item.fields));
->>>>>>> r1098
     expect(declared).toEqual(expect.arrayContaining(reads));
     // A prototype has no format half yet: nothing writes it.
     if (kindOfRow.has(item)) return;
-    const stored = itemStoredAssets(block(item.fields));
+    const stored = tourBlockAssetIds(block(item.fields));
     expect(stored).toEqual(
       expect.arrayContaining(declared.filter(OWN_ASSETS_ONLY)),
     );
@@ -862,5 +863,28 @@ describe("itemAssets", () => {
         characters,
       ),
     ).toEqual(["clip", "still"]);
+  });
+});
+
+describe("the card's surface", () => {
+  // Why this test matters: a kind fills the surface with elements of its
+  // own, so the host must hand it over and take it back at the step's end,
+  // or the next step shows the last item's leftovers.
+  it("is offered to the item and emptied when the step changes", async () => {
+    const offered: unknown[] = [];
+    const { view, dom } = panel(undefined, undefined, (shown, host) => {
+      offered.push(host.surface);
+      host.surface?.append("its own");
+      showItemCard(shown, host);
+    });
+    view.offer(stationOf(ITEMS[0]?.fields ?? {}));
+    await flush();
+    expect(offered[0]).toBe(dom.surface);
+    expect(dom.surface.held).toEqual(["its own"]);
+    view.continueTapped();
+    expect(dom.surface.held).toEqual(["its own"]);
+    expect(offered).toHaveLength(2);
+    view.stopAll();
+    expect(dom.surface.held).toEqual([]);
   });
 });

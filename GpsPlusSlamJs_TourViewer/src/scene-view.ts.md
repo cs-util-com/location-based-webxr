@@ -30,9 +30,9 @@ status line and what an end means.
   - `choosing()` - the station whose picker shows, null while its story or
     card plays: the guide's and the sheet's words ask for a choice then, and
     never say a story is playing.
-- Deps: `dom` (`SceneViewDom`), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
+- Deps: `dom` (`SceneViewDom`, with an optional `surface` an item fills on its own, emptied when the step changes), `assets` (by id), `characters?` (the tour's declared characters by id, minor 2), `loadAsset(path)`,
   `audio` (`SceneAudio`: `play(blob, onEnded)` rejecting when refused,
-  `stop()`), `stage` (`SceneStage` from `scene-stage.ts`),
+  `stop()`), `stage` (`SceneStage` from `scene-stage.ts`: the `ItemWorld` an item draws on through its row's `stand`, which the panel wraps with its waiting line, plus what the panel tells the stage itself),
   `createChoiceButton(label, onClick)`, `focusChoice?(button)`, `schedule(fn, ms)`, `objectUrls`,
   `onStoryEnd(stationId)`, `showItem?(block, host)` (the item lab swaps a kind in; `showItemCard` otherwise; the app passes none).
 
