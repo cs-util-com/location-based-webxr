@@ -919,7 +919,8 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   await expect(
     inspector.locator('[data-act="goto:story:gate-story"]'),
   ).toBeVisible();
-  await expect(inspector.locator(".character")).toHaveCount(0);
+  await expect(inspector.locator('[data-act="goto:sir-kay"]')).toHaveCount(0);
+  await expect(inspector.locator(".isec.character")).toHaveCount(0);
   await card.locator('[data-folder="gate-story"]').click();
   await card.locator('[data-select="sir-kay"]').click();
   await expect.poll(() => selected(page)).toBe("sir-kay");
