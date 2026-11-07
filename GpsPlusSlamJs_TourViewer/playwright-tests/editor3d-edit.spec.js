@@ -276,10 +276,10 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
     .toEqual(after.item.pose);
 });
 
-// Why: a move keeps an item in its station, so the ring is what tells the
-// creator, during the drag, that the drop will leave it out; and the drop
-// must stay in the station, listed by Problems with its two ways out, and
-// survive a reload of the page as it was dropped.
+// Why: a move keeps an item in its station, so a drag out of its circle
+// must drop it there, outside the circle, with no station made, and say
+// so. The ring's warning colour during the drag is held by the stations
+// layer's unit test; the capture is for a reader.
 test("a pin dragged out of its circle warns on the ring and stays in its station", async ({
   page,
 }) => {
