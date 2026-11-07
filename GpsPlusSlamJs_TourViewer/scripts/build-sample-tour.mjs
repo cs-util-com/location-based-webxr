@@ -295,8 +295,9 @@ export function buildSampleTour() {
   const knight = knightPng();
   return {
     // Every station has a geo pose of its own and a story holding its
-    // blocks in the order a visitor meets them; this tour places no pins
-    // or photos in the world.
+    // blocks in the order a visitor meets them. The gate holds two stories,
+    // so a visitor meets the picker; beside the stories, the items a guide
+    // would leave standing in the square, to read at any time.
     tour: {
       version: 5,
       minor: 0,
@@ -321,6 +322,15 @@ export function buildSampleTour() {
           foundRadiusM: 5,
           hint: "arrow",
           children: [
+            {
+              id: "column-sign",
+              kind: "shortText",
+              view: "pin",
+              caption: "The Marian Column",
+              description:
+                "Raised in 1638, when the Swedish occupation of the city had ended.",
+              pose: { position: [2.5, 0, -2.5], rotation: [0, 0, 0, 1] },
+            },
             {
               id: "konrad-welcome",
               kind: "story",
@@ -378,6 +388,14 @@ export function buildSampleTour() {
           hint: "arrow",
           children: [
             {
+              id: "market-lectern",
+              kind: "longText",
+              view: "lectern",
+              title: "The market square",
+              body: "For centuries this square was the city's market. Grain was sold here, and until 1854 the square was called Schrannenplatz, after the grain trade.",
+              pose: { position: [-2.5, 0, 2.5], rotation: [0, 0, 0, 1] },
+            },
+            {
               id: "old-gate",
               kind: "story",
               title: "The old gate",
@@ -393,6 +411,33 @@ export function buildSampleTour() {
                 },
               ],
             },
+            {
+              id: "gate-toll",
+              kind: "story",
+              title: "The toll",
+              children: [
+                {
+                  id: "konrad-toll",
+                  kind: "character",
+                  view: "stage",
+                  name: "Sir Konrad",
+                  image: "knight",
+                  caption:
+                    "Every cart paid its toll at this gate. You, traveller, may pass for free.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+                {
+                  id: "toll-salt",
+                  kind: "longText",
+                  view: "card",
+                  title: "The toll",
+                  body: "Salt made this city rich: the salt carts rolled through here on their way west, and every one of them paid.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  advance: { mode: "tap" },
+                },
+              ],
+            },
           ],
         },
         {
@@ -403,6 +448,15 @@ export function buildSampleTour() {
           foundRadiusM: 5,
           hint: "arrow",
           children: [
+            {
+              id: "town-hall-sign",
+              kind: "shortText",
+              view: "pin",
+              caption: "The New Town Hall",
+              description:
+                "Built between 1867 and 1908. Look up at eleven: the figures in its tower dance to the chimes.",
+              pose: { position: [2.5, 0, 2.5], rotation: [0, 0, 0, 1] },
+            },
             {
               id: "farewell",
               kind: "story",

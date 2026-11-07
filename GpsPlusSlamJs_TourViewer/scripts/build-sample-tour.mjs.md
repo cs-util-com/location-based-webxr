@@ -13,12 +13,17 @@ into the build, so a branch preview serves it at
 - Three stations at Marienplatz, Munich (a well-known public place, so no
   private location reaches the public repository), fixed order, 25-30 m
   apart: "The column" (the Mariensaeule, a knight who greets and asks a
-  choice), "The old gate" (a grey arch as a `.glb`), "The town hall steps"
-  (the knight says farewell). Written as `tour.json` version 4: each
+  choice), "The old gate" (a grey arch as a `.glb`, and a second story, the
+  toll, so a visitor meets the story picker), "The town hall steps" (the
+  knight says farewell). Free items stand beside the stories, each about
+  3.5 m from the station: a pin at the column and at the steps, a lectern on
+  the market square at the gate, so an author sees that not everything
+  lives in a story. `?relocate=here` moves the stations only, so these stay
+  at Marienplatz there. Written as `tour.json` version 5: each
   station has its own geo pose, its story's blocks (the knight a
   `character` and the arch a `model` on the stage, a story line a
   `longText` card titled with its station's title) and the steps that
-  show them; the story places nothing in the world. It goes through the
+  show them. It goes through the
   framework's `parseTourManifest` and `serializeTourManifest`, so a tour
   the reader refuses fails the build, and a build from before version 4
   refuses the file with "update the app".
