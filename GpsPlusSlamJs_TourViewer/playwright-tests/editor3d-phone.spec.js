@@ -347,19 +347,13 @@ test("over a keyboard every field in use stays in sight, at every size and sheet
     );
   }
   // A long text's writer, the field a creator types most into: the
-  // sample's second station holds one, among its rows.
+  // sample's reading stand at the old gate, picked by its row.
   await page.setViewportSize(PORTRAIT);
   const writer = page.locator("#inspector-body .lw-writer textarea");
-  await page.locator("#shell-tree .card .pick").nth(1).click();
-  const rows = page.locator('#inspector-body [data-act^="goto:"]');
-  const count = await rows.count();
-  for (let i = 0; i < count && (await writer.count()) === 0; i += 1) {
-    await rows.nth(i).click();
-    if ((await writer.count()) === 0) {
-      await page.locator('#inspector-head [data-act="back"]').click();
-      await page.locator("#shell-tree .card .pick").nth(1).click();
-    }
-  }
+  await station(page, "The old gate").click();
+  await page
+    .locator('#inspector-body [data-act="goto:market-lectern"]')
+    .click();
   await expect(writer).toHaveCount(1);
   for (const size of KEYBOARD_SIZES) {
     await page.setViewportSize(size);
