@@ -88,13 +88,14 @@ describe("the visitor's overlay and the tour's blocks", () => {
     document.body.innerHTML = `<div id="overlay">
         <button><span id="in-button">Continue</span></button>
         <div class="sheet"><p id="in-sheet">Text</p></div>
-        <div id="scene-panel"><p id="in-panel">Words</p></div>
+        <div id="scene-panel"><p id="in-panel">Words</p><div id="scene-choices"><button id="a-story">A story</button></div></div>
         <div id="open-view"></div>
       </div>`;
     const at = (id: string) => document.getElementById(id);
     expect(cancelsXrSelect(at("in-button"))).toBe(true);
     expect(cancelsXrSelect(at("in-sheet"))).toBe(true);
     expect(cancelsXrSelect(at("in-panel"))).toBe(true);
+    expect(cancelsXrSelect(at("a-story"))).toBe(true);
     expect(cancelsXrSelect(at("open-view"))).toBe(false);
     expect(cancelsXrSelect(at("overlay"))).toBe(false);
     expect(cancelsXrSelect(null)).toBe(false);
@@ -104,7 +105,7 @@ describe("the visitor's overlay and the tour's blocks", () => {
   // across the tour), so the sheet reads every station's blocks.
   it("maps every station's blocks by id, none without a tour", () => {
     expect(tourBlocksById(null).size).toBe(0);
-    const station = (id: string, blocks: TourBlock[]) => ({ id, blocks });
+    const station = (id: string, children: TourBlock[]) => ({ id, children });
     const map = tourBlocksById({
       stations: [station("a", [pin("x", "X.")]), station("b", [pin("y")])],
     });

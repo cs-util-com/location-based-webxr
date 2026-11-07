@@ -40,6 +40,7 @@ import {
   type VisitorPrefsState,
 } from "./visitor-prefs-slice.js";
 import { storeVisitorChoice, withPreferredView } from "./visitor-prefs.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 /** A visitor's choice the way the page makes it (no device storage
  *  here): merged into the store's value and dispatched. */
@@ -114,35 +115,27 @@ const STATION: TourStation = {
   activateRadiusM: 20,
   foundRadiusM: 5,
   hint: "arrow",
-  blocks: [
-    {
-      id: "sign",
-      kind: "shortText",
-      view: "pin",
-      caption: "Old sign",
-      pose: POSE,
-    },
-    {
-      id: "words",
-      kind: "longText",
-      view: "card",
-      title: "W",
-      body: "W",
-      pose: POSE,
-    },
-  ],
-  steps: [
-    {
-      id: "s1",
-      action: { kind: "show", block: "sign" },
-      advance: { mode: "tap" },
-    },
-    {
-      id: "s2",
-      action: { kind: "show", block: "words" },
-      advance: { mode: "tap" },
-    },
-  ],
+  ...stationContent([
+    storyOf("gate-story", [
+      {
+        id: "sign",
+        kind: "shortText",
+        view: "pin",
+        caption: "Old sign",
+        pose: POSE,
+        advance: { mode: "tap" },
+      },
+      {
+        id: "words",
+        kind: "longText",
+        view: "card",
+        title: "W",
+        body: "W",
+        pose: POSE,
+        advance: { mode: "tap" },
+      },
+    ]),
+  ]),
 };
 
 const flush = async (): Promise<void> => {
@@ -303,7 +296,7 @@ describe("a visitor's view choice", () => {
   it("draws a standing long text again in the chosen view, and back", async () => {
     const station: TourStation = {
       ...STATION,
-      blocks: [
+      ...stationContent([
         {
           id: "essay",
           kind: "longText",
@@ -312,8 +305,7 @@ describe("a visitor's view choice", () => {
           body: "Plain words.",
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     const h = harness([station]);
     await h.lock();
@@ -349,7 +341,7 @@ describe("a visitor's view choice", () => {
   it("draws a captions text again in the creator's view once its read-along turns out stale", async () => {
     const station: TourStation = {
       ...STATION,
-      blocks: [
+      ...stationContent([
         {
           id: "essay",
           kind: "longText",
@@ -363,8 +355,7 @@ describe("a visitor's view choice", () => {
           },
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     let verdict: NarrationVerdict = "live";
     let revision = 0;
@@ -424,7 +415,7 @@ describe("a visitor's view choice", () => {
   it("keeps the part when stale captions fall back to the same reading sign", async () => {
     const station: TourStation = {
       ...STATION,
-      blocks: [
+      ...stationContent([
         {
           id: "essay",
           kind: "longText",
@@ -438,8 +429,7 @@ describe("a visitor's view choice", () => {
           },
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     let verdict: NarrationVerdict = "live";
     let revision = 0;
@@ -474,7 +464,7 @@ describe("a visitor's view choice", () => {
   it("keeps a station's part when no block's shown view changes", async () => {
     const station: TourStation = {
       ...STATION,
-      blocks: [
+      ...stationContent([
         {
           id: "plain",
           kind: "longText",
@@ -483,13 +473,12 @@ describe("a visitor's view choice", () => {
           body: "Plain words.",
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     const pictured: TourStation = {
       ...STATION,
       id: "mill",
-      blocks: [
+      ...stationContent([
         {
           id: "pictured",
           kind: "longText",
@@ -498,8 +487,7 @@ describe("a visitor's view choice", () => {
           body: "Before.\n\n![The mill](asset:mill)",
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     const h = harness([station, pictured]);
     await h.lock();
@@ -530,23 +518,19 @@ describe("a visitor's view choice", () => {
   it("replaces a story block's part without taking its station down", async () => {
     const station: TourStation = {
       ...STATION,
-      blocks: [
-        {
-          id: "essay",
-          kind: "longText",
-          view: "reading",
-          title: "E",
-          body: "Plain words.",
-          pose: POSE,
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "essay" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-2", [
+          {
+            id: "essay",
+            kind: "longText",
+            view: "reading",
+            title: "E",
+            body: "Plain words.",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     };
     const h = harness([station]);
     h.store.dispatch(
@@ -580,7 +564,7 @@ describe("a visitor's view choice", () => {
   it("keeps the choice for the next tour opened in the same page", async () => {
     const first: TourStation = {
       ...STATION,
-      blocks: [
+      ...stationContent([
         {
           id: "essay",
           kind: "longText",
@@ -589,8 +573,7 @@ describe("a visitor's view choice", () => {
           body: "Plain words.",
           pose: POSE,
         },
-      ],
-      steps: [],
+      ]),
     };
     const h = harness([first]);
     await h.lock();
@@ -613,7 +596,7 @@ describe("a visitor's view choice", () => {
           {
             ...first,
             id: "keep",
-            blocks: [
+            ...stationContent([
               {
                 id: "keep-essay",
                 kind: "longText",
@@ -622,7 +605,7 @@ describe("a visitor's view choice", () => {
                 body: "Other words.",
                 pose: POSE,
               },
-            ],
+            ]),
           },
         ],
       }),

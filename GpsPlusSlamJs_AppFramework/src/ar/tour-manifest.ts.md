@@ -10,22 +10,23 @@ absolute altitude, rotation against north) and its BLOCKS
 (`tour-blocks.ts`) carry LOCAL poses relative to it (`tour-items.ts`,
 `tour-station-pose.ts`). A block is one thing a station shows - a short
 text, a long text, a picture, a video, a sound, a 3D model, a character -
-in a view the creator chose; a station's STORY (`tour-story.ts`) shows
-some of its blocks step by step, and the rest are FREE: they stand in the
-world (a pin, a picture's plane, a placed model) while the station is
-shown. Also the tour's title, station order, the needs-no-GPS flag, the
+in a view the creator chose. Since version 5 a station holds one ordered
+list of CHILDREN: a STORY (`tour-story.ts`) holds its own blocks, choices
+and quizzes in the order a visitor meets them, and a block outside any
+story is FREE: it stands in the world (a pin, a picture's plane, a placed
+model) while the station is shown. Also the tour's title, station order, the needs-no-GPS flag, the
 tour id and the tour details.
 
 ## Public API
 
-- `TOUR_MANIFEST_VERSION = 4` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 3` (the newest additive revision of version 4
+- `TOUR_MANIFEST_VERSION = 5` (the format's major number) and
+  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 5
   this module knows).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
-    record (`"stations[1].blocks[3].pose.position" …`,
-    `"stations[0].steps[2].action.block" …`), or its subclass
-    `TourManifestOlderFormatError` for versions 1 to 3. Unknown kinds and
+    record (`"stations[1].children[3].pose.position" …`,
+    `"stations[0].children[0].children[2].options[1].goto" …`), or its
+    subclass `TourManifestOlderFormatError` for versions 1 to 4. Unknown kinds and
     duplicate ids reject - except in a file of a NEWER minor, where an
     unknown value of a closed list degrades (below).
     `options.onDropped(drop)` hears each tour detail, each station
@@ -35,11 +36,10 @@ tour id and the tour details.
     `cause` is a malformed value.
 - `serializeTourManifest(manifest, options?): string` - re-validates
   through the reader, refuses a manifest of a newer minor, then
-  pretty-prints `{ version: 4, minor, ... }` at the lowest minor the tour
-  needs. The in-memory shape is
-  the file's shape (a step's content is `action` in both), so nothing is
-  mapped on the way.
-- `createEmptyTourManifest(): TourManifest` - `{ version: 4, minor: 0,
+  pretty-prints `{ version: 5, minor, ... }` at the lowest minor the tour
+  needs. The in-memory shape is the file's shape, so nothing is mapped on
+  the way.
+- `createEmptyTourManifest(): TourManifest` - `{ version: 5, minor: 0,
 order: "fixed", assets: [], stations: [] }`, the starter zip's content.
 - The WORLD VIEW a creator's pages hold: `TourObject = TourPin |
 TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without its local pose, plus
@@ -48,9 +48,9 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   (`imageAsset`, with `imageAsset.id === image`), because the page that
   captured a photo holds its asset before any tour lists it. `TourModel`
   carries its `sizeM` (required to place it). `TourObjectKind`.
-- `TOUR_OBJECT_RECORD_FORMAT = 4` and `TourObjectRecord` - a world-view
+- `TOUR_OBJECT_RECORD_FORMAT = 5` and `TourObjectRecord` - a world-view
   object as a creator's on-device draft stores it:
-  `{ format: 4, block, asset?, geo, station? }` (`block` without a pose;
+  `{ format: 5, block, asset?, geo, station? }` (`block` without a pose;
   `asset` a picture's image asset entry `{ id, path, width?, height? }`).
 - `tourObjectRecord(object): TourObjectRecord` and
   `parseTourObject(value, at?): TourObject` - write and read that record.
@@ -66,36 +66,40 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   `TourBlock` and each block kind's type, `TourBlockKind`, `TourBlockView`,
   `TourBlockDrop` (`tour-blocks.ts`); `TourLocalPose` (`tour-items.ts`);
   `TourOrder`, `TourStation`, `TourStationDrop` (`tour-stations.ts`);
-  `TourStep`, `TourStepAction`, `TourStepAdvance`, `TourChoiceOption`,
+  `TourStationChild`, `TourStory`, `TourStoryChild`, `TourStoryBlock`,
+  `TourChoice`, `TourQuizEntry`, `TourStepAdvance`, `TourChoiceOption`,
   `TourQuiz`, `TourQuizAnswer`, `TourQuizOption` (`tour-story.ts`).
 
-## Version 4 (a major)
+## Version 5 (a major)
 
-- **Blocks and story.** `stations[]` each carry `geo` (required; no code
-  link, no code-only station), `blocks[]` and `steps[]`. A step `show`s a
-  block of its own station, asks a `choice` (an option's `goto` names a
-  step of the station, or is absent: the next step), or asks a `quiz`. A
-  block no step shows must stand in the world (`pin`, a long text's
-  `lectern` or `reading`, `plane`, or a model's `placed`, `ghost`,
-  `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`).
-  A station may have no steps (an automatic station: finding it
-  completes it).
+- **Children.** `stations[]` each carry `geo` (required; no code link, no
+  code-only station) and `children` (required; a file without it fails, so
+  a 4.x station is never read as an empty one). A child is a free block or
+  a story; a story holds its blocks, choices and quizzes in order. A choice
+  option's `goto` names a child of the same story, or is absent: the next
+  child. A block lives in one place, so being in a story is what shows it;
+  there are no `show` steps. A free block must stand in the world (`pin`,
+  a long text's `lectern` or `reading`, `plane`, or a model's `placed`,
+  `ghost`, `hotspots`, `cutaway` or `toy`: `TOUR_WORLD_VIEWS`). A station
+  may have no children (an automatic station: finding it completes it).
+  Several stories at a station are allowed by the format; a viewer plays
+  the first with something to play.
 - **Every media file is an asset**, a captured photo's too: its bytes stay
   at `content/<id>.<ext>`, and the asset carries the picture's own id.
-- **Separate namespaces.** Block ids are unique across the tour, asset ids
-  across the assets, and a block may share an id with an asset: every
-  reference says which kind it names.
+- **Separate namespaces.** Child ids (blocks, stories, choices, quizzes)
+  are one namespace across the tour, asset ids another, and a block may
+  share an id with an asset: every reference says which kind it names.
 - **Local poses are the truth.** The manifest holds the local poses as
   written, and the writer writes them as held: nothing on the way
   recomputes one, so a station's move or a save never nudges a block
   (property-tested bit for bit). The world view is computed
   (`tour-station-pose.ts` `tourObjects`).
-- **No migration.** Versions 1, 2 and 3 are refused with
+- **No migration.** Versions 1 to 4 are refused with
   `TourManifestOlderFormatError`: "this tour is in an older format
   (version N) that this version of the app no longer opens; it has to be
   made again". A page that kept something for that tour (a creator's
-  unsaved draft) removes it by that type. A version 5 file is refused
-  with "made with a newer version of the app (format 5); update the app to
+  unsaved draft) removes it by that type. A version 6 file is refused
+  with "made with a newer version of the app (format 6); update the app to
   open it".
 - **The walk is never branched by answers.** A `branch` order is refused
   in a sentence a creator can act on ("this tour lets answers choose the
@@ -152,58 +156,35 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
 
 ## The version policy
 
-- **Minor (`minor`, default 0).** Additive revisions of version 4. A
+- **Minor (`minor`, default 0).** Additive revisions of version 5. A
   reader opens any minor; unknown fields are IGNORED at every level and at
   every minor. The writer refuses a manifest whose minor is newer than
   `TOUR_MANIFEST_MINOR` (it was read with fields dropped). The writer
-  writes the LOWEST minor the tour needs (`tourBlocksMinor` over every
-  station's blocks, `tourStepsMinor` over every station's story, and 2
-  when the tour declares characters), so an older reader opens fully every tour that uses
-  nothing newer, and is never handed something it would drop on its own
-  write.
-- **Minor 1** (`TOUR_MANIFEST_MINOR = 1`): a model's world views `ghost`,
-  `hotspots`, `cutaway` and `toy`, and its `animation`, `annotations`
-  (notes) and `sections` (`tour-blocks.ts.md`). This reader accepts them
-  in a file of any minor, as the reader of 3.1 accepted the model. A 4.0
-  reader opening a 4.1 tour reads it leniently: a model in a view it does
-  not know falls back to `placed`, and the new fields are ignored.
-  `TourModel['view']` is any `TourModelWorldView`.
-- **Minor 2** (`TOUR_MANIFEST_MINOR = 2`): the tour's recurring
-  characters (`characters`, `tour-characters.ts.md`, read before the
-  stations so a `character` block's `character` reference resolves), the
-  character's five story views `bubble`, `speak`, `two-stations`,
-  `portrait`, `popup`, and the advance `{ mode: 'lineEnd' }`
-  (`tour-story.ts.md`). The writer keeps a referencing block's inline
-  `name` and `image` in step with its declaration, so a 4.0 or 4.1 reader
-  shows the character as a `card` by its name, reads `lineEnd` as a tap,
-  ignores `characters`, and will not save the tour.
-- **Minor 4** (`TOUR_MANIFEST_MINOR = 4`): a long text's `reading` view,
-  a short sign in the square at the block's pose that opens the whole text
-  on a tap (`TourReadingSign`, one of `TourObject`), as a free block or a
-  story block, and from this minor the long text's floor view (a free long
-  text in an unknown view stands as its sign instead of being left out).
-  Written at minor 4 only when a long text uses it; the released reader
-  treats it as it treats a lectern (`tour-reading.test.ts`).
-- **Minor 5** (`TOUR_MANIFEST_MINOR = 5`): a long text's `narration`, a
-  voice and optionally a read-along track in its own archive entry
-  `timing/<blockId>.json` (`tour-blocks.ts.md`, `tour-timing.ts.md`).
-  Written at minor 5 only when a text is narrated. The released reader
-  ignores the field (unknown fields are ignored at every minor), so it
-  shows the text as it did at minor 4 - a story text as its card, a free
-  reading sign left out - and will not save the tour; a minor-4 reader
-  shows the text with no voice (`tour-narration.test.ts`).
-- **Minor 3**: a long text's `lectern` view,
-  a reading stand in the square at the block's pose (`TourLectern`, one
-  of `TourObject`), as a free block or a story block. A file is written at
-  minor 3 only when a long text uses it (`tourBlocksMinor`). The reader
-  the framework released (1.31.0, minor 0) leaves a free lectern out
-  (reported through `onDropped`), shows a story one as a card, and will
-  not save the tour (`tour-lectern.test.ts`).
-- **Unknown VALUES of a newer minor:** an unknown block kind or view, step
-  kind, quiz answer type, advance mode or asset media type degrades as
+  writes the LOWEST minor the tour needs (`tourManifestMinor`), so an
+  older reader opens fully every tour that uses nothing newer, and is
+  never handed something it would drop on its own write. Version 5 has no
+  later revision yet, so every tour is written at minor 0.
+- **Everything 4.1 to 4.5 added is part of 5.0**, none of it released on
+  its own: a model's world views `ghost`, `hotspots`, `cutaway` and `toy`,
+  its `animation`, `annotations` and `sections` (`tour-blocks.ts.md`); the
+  tour's recurring `characters` (`tour-characters.ts.md`, read before the
+  stations so a `character` block's reference resolves; the writer keeps a
+  referencing block's inline `name` and `image` in step with its
+  declaration), the character's story views `bubble`, `speak`,
+  `two-stations`, `portrait`, `popup` and the advance `{ mode: 'lineEnd' }`
+  (`tour-story.ts.md`); a long text's `lectern` view (`TourLectern`, one of
+  `TourObject`), its `reading` view, a short sign that opens the whole text
+  on a tap (`TourReadingSign`, one of `TourObject`), with the long text's
+  floor view (a free long text in an unknown view stands as its sign); and
+  a long text's `narration`, a voice and optionally a read-along track in
+  its own archive entry `timing/<blockId>.json` (`tour-blocks.ts.md`,
+  `tour-timing.ts.md`). The released reader (framework 1.31.0, version 4)
+  refuses a version 5 file as newer (`tour-manifest.test.ts`).
+- **Unknown VALUES of a newer minor:** an unknown block or child kind or
+  view, quiz answer type, advance mode or asset media type degrades as
   `tour-blocks.ts`, `tour-story.ts` and `tour-assets.ts` say (a story
   block in an unknown view shows as a card; a free block falls back to
-  its kind's world view or is left out; a step or asset this reader
+  its kind's world view or is left out; a child or asset this reader
   cannot show is left out with what names it); an unknown `order` reads
   `any`; an unknown hint is the arrow. At this reader's own minor the same
   value fails. Such a tour is never written back.
@@ -232,7 +213,7 @@ manifest.stations.push({
   activateRadiusM: 50,
   foundRadiusM: 25,
   hint: 'arrow',
-  blocks: [
+  children: [
     {
       id,
       kind: 'shortText',
@@ -242,35 +223,29 @@ manifest.stations.push({
       pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
     },
   ],
-  steps: [],
 });
 const text = serializeTourManifest(manifest); // throws if any record is wrong
-parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderFormatError
+parseTourManifest({ version: 4, stations: [] }); // throws TourManifestOlderFormatError
 ```
 
 ## Tests
 
 - `tour-narration.test.ts` - a long text's narration: every field read
-  and written back exactly at minor 5, the voice alone, minor 5 only when
-  narrated, the duration's edges, one failure per rule at this minor, a
-  newer minor dropping only the narration, a non-object failing at every
-  minor, the credit cap, and the released reader carding, dropping and
-  refusing to save it.
+  and written back exactly, the voice alone, the duration's edges, one
+  failure per rule at this minor, a newer minor dropping only the
+  narration, a non-object failing at every minor, and the credit cap.
 - `tour-reading.test.ts` - the long text's `reading` view: a free one
-  read as a tour object and written back exactly at minor 4, a story one
-  kept, minor 4 only when a long text uses it, the floor of a free long
-  text in a newer view, and the released reader dropping, carding and
-  refusing to save it.
+  read as a tour object and written back exactly, a story one kept, and
+  the floor of a free long text in a newer view.
 - `tour-lectern.test.ts` - the long text's `lectern` view: a free one
-  read as a tour object and written back exactly at minor 3, a story one
-  kept, minor 3 only when a long text uses it, a free card refused, and
-  the released reader (framework 1.31.0, minor 0, installed as
-  `tour-reader-1-31`) dropping, carding and refusing to save it.
+  read as a tour object and written back exactly, a story one kept, a free
+  card refused.
 - `tour-manifest.test.ts` - a station with a pin and a picture at local
   poses, the empty manifest, block and asset ids as separate namespaces,
-  one rejection per rule with the record named, versions 1, 2 and 3
-  refused as older formats (by type, with their version) and 5 as newer,
-  version 4 minor 0 written, a full tour, the branch refusal, a newer
+  one rejection per rule with the record named, versions 1 to 4
+  refused as older formats (by type, with their version) and 6 as newer,
+  version 5 minor 0 written, the released reader (framework 1.31.0,
+  installed as `tour-reader-1-31`) refusing a version 5 file, a full tour, the branch refusal, a newer
   minor's unknown fields ignored and its unknown values degraded (refused
   at this minor and on write), the placed model (read back exactly, a
   newer minor's oversized one left out, an asset's id allowed), a
@@ -282,14 +257,12 @@ parseTourManifest({ version: 3, stations: [] }); // throws TourManifestOlderForm
   refusal), an earlier file's `captureSpots`, the needs-no-GPS flag, the
   tour details and the tour id.
 - `tour-manifest.property.test.ts` - over the shared generators
-  (`test-utils/tour-arbitraries.ts`: blocks of every kind, free and shown,
-  shows, choices and quizzes) with generated details, tour ids, station
+  (`test-utils/tour-arbitraries.ts`: free blocks of every kind, stories of
+  blocks, choices and quizzes) with generated details, tour ids, station
   descriptions and card images: serialize->parse is the identity with
-  every local pose the same numbers exactly, written at the lowest minor
-  the tour needs (`tourBlocksMinor`); parse is
-  idempotent; the writer refuses every tour of a newer minor; every block
+  every local pose the same numbers exactly; parse is idempotent; the writer refuses every tour of a newer minor; every block
   stays in its station, and a kept cover or card image always names an
   image asset, every dropped card image reported.
 - `tour-manifest.bytes.test.ts` - the writer's bytes pinned by recorded
-  cases (`fixtures/tour-v4-writer-golden.json`) and a written file a
+  cases (`fixtures/tour-v5-writer-golden.json`) and a written file a
   fixed point.

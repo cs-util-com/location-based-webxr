@@ -18,42 +18,33 @@ reason; no production module imports it.
   mark, surrogate pairs, CJK, whitespace runs (tab, newline, no-break and
   ideographic spaces, CRLF) and outside padding; UTF-16 texts never start
   with whitespace and count spaces as written.
-- `tourIdArbitrary` - ids from a small pool that collides with asset ids
-  and with step ids, short random ids, and ids at the 64-character limit.
+- `tourIdArbitrary` - ids from a small pool that collides with asset ids,
+  short random ids, and ids at the 64-character limit.
 - `tourLocalPoseArbitrary` - a local pose with a yaw-only unit quaternion
   (exact through JSON and the reader's renormalisation; never `-0`).
 - `TOUR_FREE_VIEWS` - the world views a free block of each kind may take. Together they are exactly the format's `TOUR_WORLD_VIEWS` (a test holds the two together), so every world view is round-tripped.
-- `tourBlockArbitrary(id, 'free' | 'story', kinds?)` - a valid version 4
+- `tourBlockArbitrary(id, 'free' | 'story', kinds?)` - a valid version 5
   block record: a free one in a world view, a story one in any view of its
   kind.
-- `tourStationContentArbitrary({ maxBlocks?, maxExtraSteps? })` - a valid
-  `{ blocks, steps }` record: free and story blocks, one `show` per story
-  block, choices (options jumping to a step or continuing) and quizzes of
-  every answer type, in a shuffled order.
-- `tourManifestArbitrary(size?)` - a valid version 4 `tour.json` record
-  of one to four stations, each with a generated content (the size as for
-  `tourStationContentArbitrary`), block ids unique across the tour (a
-  block id another station already uses is renamed, and its `show` steps
-  with it), order `fixed` or `any`, assets `TOUR_ARBITRARY_ASSETS`.
-
-## Invariants & assumptions
-
-- Every record is plain JSON (no `undefined` values, no `-0`), so a
-  reader's output can be compared with `toEqual` to the record itself.
-- Every generated text satisfies its rule as `checkTourBlockText` counts
-  it; every `over` text does not.
-- `fast-check` is a dev dependency and is NOT bundled into the built file
-  (`neverBundle` in `config/tsdown.config.ts`): a consumer resolves its
-  own, so one `fc.Arbitrary` class is in play.
-
-## Examples
+- `tourStationChildrenArbitrary({ maxStories?, maxFreeBlocks?,
+maxStoryChildren? })` - a valid version 5 children list (defaults 4, 4,
+  5): titled stories (possibly empty) of blocks in any view with an
+  advance of every mode, choices whose options jump back or forward to a
+  child of the same story or continue, and quizzes of every answer type;
+  free blocks in a world view; stories and free blocks in a shuffled
+  order; every id in the list unique.
+- `tourManifestArbitrary(size?)` - a valid version 5 `tour.json` record
+  of one to four stations, each with a generated children list (the size as
+  for `tourStationChildrenArbitrary`), child ids unique across the tour (an
+  id another station already uses is renamed, and the gotos naming it with
+  it), order `fixed` or `any`, assets `TOUR_ARBITRARY_ASSETS`.
 
 ```ts
 import fc from 'fast-check';
-import { tourStationContentArbitrary } from 'gps-plus-slam-app-framework/test-utils/tour-arbitraries';
+import { tourStationChildrenArbitrary } from 'gps-plus-slam-app-framework/test-utils/tour-arbitraries';
 
 fc.assert(
-  fc.property(tourStationContentArbitrary({ maxBlocks: 4 }), (record) => {
+  fc.property(tourStationChildrenArbitrary({ maxStories: 2 }), (record) => {
     expect(parse(record)).toEqual(record);
   })
 );
@@ -64,9 +55,11 @@ fc.assert(
 - `tour-arbitraries.test.ts` - counts as claimed for every rule, the
   boundaries reached, `over` texts over and failing, the hostile spellings
   actually produced, surrogate pairs counted twice in UTF-16, ids at 64
-  characters and colliding with asset ids, version 4 manifests accepted by
-  the reader with blocks of every kind, steps of every kind and free
-  blocks.
+  characters and colliding with asset ids, manifests accepted by the reader
+  with blocks of every kind, stories of every child kind and free blocks;
+  children lists accepted by the reader, reaching no
+  story and four, an empty story, a free block after a story, every child
+  kind and gotos back and forward.
 - `tour-arbitraries.bundle.test.ts` - builds this entry with the package's
   own build settings and asserts it imports `fast-check` by name and
   carries none of its code.

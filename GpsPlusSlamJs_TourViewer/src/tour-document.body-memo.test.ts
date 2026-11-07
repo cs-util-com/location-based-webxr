@@ -9,6 +9,7 @@
  * one). A step of the history never changes, so its answer is kept by
  * the block object itself: a second write parses no past body again.
  */
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   createEmptyTourManifest,
   parseTourManifest,
@@ -26,17 +27,18 @@ import {
   tourDocumentReducer as reduce,
   type TourDocumentState,
 } from "./tour-document.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 // The real parser, watched: each call is counted.
 vi.mock("gps-plus-slam-app-framework/ar/tour-markdown", { spy: true });
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
-const POSE = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
+const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
 const OPENED: TourManifest = parseTourManifest({
   ...createEmptyTourManifest(),
-  minor: 2,
+  minor: 0,
   stations: [
     {
       id: "gate",
@@ -45,23 +47,19 @@ const OPENED: TourManifest = parseTourManifest({
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632 the gate held.",
-          pose: POSE,
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "intro" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632 the gate held.",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     },
   ],
 });

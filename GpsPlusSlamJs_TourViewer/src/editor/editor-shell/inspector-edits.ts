@@ -29,12 +29,12 @@
  *
  * @see inspector-edits.ts.md
  */
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
-  storyBlocksOf,
   worldBlocks,
   type StationEdit,
   type WorldBlock,
@@ -127,7 +127,7 @@ function storyTextEdit(
   if (cut <= 0) return NONE;
   const id = rest.slice(0, cut);
   const name = rest.slice(cut + 1);
-  const block = storyBlocksOf(station).find((b) => b.id === id);
+  const block = tourStationStoryBlocks(station).find((b) => b.id === id);
   if (block === undefined) return NONE;
   return storyBlockFields(block).some((f) => f.name === name)
     ? { kind: "block", id, field: name, value }
@@ -145,7 +145,7 @@ function characterFacingEdit(
   block: string,
   value: string,
 ): InspectorEdit {
-  const character = station.blocks.find((b) => b.id === block);
+  const character = tourStationStoryBlocks(station).find((b) => b.id === block);
   if (character?.kind !== "character") return NONE;
   const typed = typedNumber(value);
   if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };

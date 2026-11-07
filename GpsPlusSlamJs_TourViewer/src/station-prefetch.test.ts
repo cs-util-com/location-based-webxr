@@ -13,6 +13,12 @@ import {
   PREFETCH_LEAD_M,
   stationAssetIds,
 } from "./station-prefetch";
+import {
+  stationBlocks,
+  stationContent,
+  storyOf,
+  withFreeBlocks,
+} from "./test-support/station-content.js";
 
 /**
  * Why these tests matter: a story should start the moment its station is
@@ -34,25 +40,25 @@ function station(id: string, assetIds: string[]): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: assetIds.map((asset, i) => ({
-      id: `b${String(i)}`,
-      kind: "picture" as const,
-      view: "card" as const,
-      image: asset,
-      widthM: 1,
-      pose: {
-        position: [0, 0, 0] as [number, number, number],
-        rotation: [0, 0, 0, 1] as [number, number, number, number],
-      },
-    })),
+    ...stationContent([
+      storyOf(
+        `${id}-story`,
+        assetIds.map((asset, i) => ({
+          id: `b${String(i)}`,
+          kind: "picture" as const,
+          view: "card" as const,
+          image: asset,
+          widthM: 1,
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        })),
+      ),
+    ]),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: assetIds.map((_asset, i) => ({
-      id: `s${String(i)}`,
-      action: { kind: "show" as const, block: `b${String(i)}` },
-      advance: { mode: "tap" as const },
-    })),
   };
 }
 
@@ -94,12 +100,7 @@ describe("stationAssetIds", () => {
   function told(blocks: TourBlock[]): TourStation {
     return {
       ...station("gate", []),
-      blocks,
-      steps: blocks.map((b) => ({
-        id: `s-${b.id}`,
-        action: { kind: "show", block: b.id },
-        advance: { mode: "tap" },
-      })),
+      ...stationContent([storyOf("gate-story", blocks)]),
     };
   }
 
@@ -227,29 +228,23 @@ describe("stationAssetIds", () => {
     const base = station("gate", ["knight"]);
     const s: TourStation = {
       ...base,
-      blocks: [
-        {
-          id: "v",
-          kind: "video",
-          view: "card",
-          video: "film",
-          poster: "big",
-          transcript: "t",
-          pose: {
-            position: [0, 0, 0] as [number, number, number],
-            rotation: [0, 0, 0, 1] as [number, number, number, number],
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "v",
+            kind: "video",
+            view: "card",
+            video: "film",
+            poster: "big",
+            transcript: "t",
+            pose: {
+              position: [0, 0, 0] as [number, number, number],
+              rotation: [0, 0, 0, 1] as [number, number, number, number],
+            },
           },
-        },
-        ...base.blocks,
-      ],
-      steps: [
-        {
-          id: "sv",
-          action: { kind: "show", block: "v" },
-          advance: { mode: "tap" },
-        },
-        ...base.steps,
-      ],
+          ...stationBlocks(base),
+        ]),
+      ]),
     };
     expect(stationAssetIds(s)).toEqual(["knight"]);
   });
@@ -268,8 +263,7 @@ describe("stationAssetIds and the world (B2b)", () => {
     const base = station("gate", ["knight"]);
     const s: TourStation = {
       ...base,
-      blocks: [
-        ...base.blocks,
+      ...withFreeBlocks(base, [
         {
           id: "m",
           kind: "model",
@@ -278,7 +272,7 @@ describe("stationAssetIds and the world (B2b)", () => {
           sizeM: 2,
           pose: POSE,
         },
-      ],
+      ]),
     };
     expect(stationAssetIds(s)).toEqual(["knight", "arch"]);
   });
@@ -292,23 +286,19 @@ describe("stationAssetIds and the world (B2b)", () => {
     };
     const s: TourStation = {
       ...station("gate", []),
-      blocks: [
-        {
-          id: "m",
-          kind: "model",
-          view: "placed",
-          asset: "arch",
-          sizeM: 2,
-          pose: POSE,
-        },
-      ],
-      steps: [
-        {
-          id: "s-m",
-          action: { kind: "show", block: "m" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "m",
+            kind: "model",
+            view: "placed",
+            asset: "arch",
+            sizeM: 2,
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     };
     expect(stationAssetIds(s)).toEqual(["arch"]);
   });

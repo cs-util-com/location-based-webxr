@@ -351,6 +351,8 @@ export function wireVisitorStations(deps: {
     beckonOf: (id) => beckonOf(id),
   });
   // The sheet is drawn after a guide call, never from inside one.
+  /** The picker the guide last spoke of (`view.choosing()`). */
+  let choosingShown: string | null = null;
   const calls = createCallGuard(() => {
     renderSheet();
   });
@@ -376,6 +378,13 @@ export function wireVisitorStations(deps: {
       button.addEventListener("click", onClick);
       return button;
     },
+    // The sheet holding the panel opens with the render, and a hidden
+    // element takes no focus.
+    focusChoice: (button) => {
+      calls.after(() => {
+        (button as HTMLElement).focus();
+      });
+    },
     schedule: deps.schedule,
     objectUrls,
     onStoryEnd: (stationId) => {
@@ -387,6 +396,16 @@ export function wireVisitorStations(deps: {
     // after the guide call it happened in (never a half-made view).
     onChange: () => {
       calls.request();
+      // A story tapped at the picker changes what the guide's line and end
+      // control say; they must not wait for the next position.
+      const choosing = view.choosing();
+      if (choosing === choosingShown) return;
+      choosingShown = choosing;
+      calls.after(() => {
+        calls.during(() => {
+          guide.tick();
+        });
+      });
     },
     // A reached world block stands from now on (B2b): kept with the
     // walk, through the guide's call (it may be the one starting the walk).
@@ -449,6 +468,7 @@ export function wireVisitorStations(deps: {
     },
     // The story the visitor may end is the one playing.
     storyPlaying: () => view.playing(),
+    storyChoosing: () => view.choosing(),
     onUpcoming: (station) => {
       prefetch.ahead(station);
     },
@@ -613,7 +633,10 @@ export function wireVisitorStations(deps: {
       tourTitle: visitorStartView(ctx.tourDocument.manifest()).title,
       progress,
       view: guideView,
-      story: playing === null ? null : { stationId: playing },
+      story:
+        playing === null
+          ? null
+          : { stationId: playing, choosing: view.choosing() === playing },
       sheet,
       directions,
     });
@@ -642,7 +665,11 @@ export function wireVisitorStations(deps: {
       story:
         playing === null
           ? null
-          : { stationId: playing, progress: view.progress() },
+          : {
+              stationId: playing,
+              progress: view.progress(),
+              choosing: view.choosing() === playing,
+            },
     });
     renderPill(guideView, tour, directions, sheet === "list", playing !== null);
     sheetView.renderAway(null);
@@ -922,13 +949,16 @@ export function walkDebugLines(
  * once; outside any call it renders at once. A story's `onChange` fires
  * from inside a guide call (a find starts the story), where the guide's
  * view is half made and its walk batch has not reached the store yet.
+ * `after` runs its work behind that render, at once outside any call.
  */
 export function createCallGuard(render: () => void): {
   during(call: () => void): void;
   request(): void;
+  after(run: () => void): void;
 } {
   let depth = 0;
   let pending = false;
+  const waiting: (() => void)[] = [];
   return {
     during(call) {
       depth += 1;
@@ -936,15 +966,22 @@ export function createCallGuard(render: () => void): {
         call();
       } finally {
         depth -= 1;
-        if (depth === 0 && pending) {
-          pending = false;
-          render();
+        if (depth === 0) {
+          if (pending) {
+            pending = false;
+            render();
+          }
+          for (const run of waiting.splice(0)) run();
         }
       }
     },
     request() {
       if (depth > 0) pending = true;
       else render();
+    },
+    after(run) {
+      if (depth > 0) waiting.push(run);
+      else run();
     },
   };
 }

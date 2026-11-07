@@ -1,3 +1,4 @@
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -64,7 +65,7 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     const json = JSON.parse(new TextDecoder().decode(raw)) as unknown;
     // Written at version 4: an older build refuses it with "update the
     // app" rather than misreading it.
-    expect(json).toMatchObject({ version: 4, minor: 0 });
+    expect(json).toMatchObject({ version: 5, minor: 0 });
     const manifest = parseTourManifest(json);
     expect(manifest.order).toBe("fixed");
     expect(manifest.stations.map((s) => s.id)).toEqual([
@@ -74,7 +75,47 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     ]);
     for (const station of manifest.stations) {
       expect(station.geo).toBeDefined();
-      expect(station.steps.length).toBeGreaterThan(0);
+      expect(tourStories(station).length).toBeGreaterThan(0);
+    }
+  });
+
+  // Why: a tester on the preview needs a station with a choice of stories
+  // to meet the picker at all, and only the gate offers one; the column and
+  // the steps keep one story so the plain flow stays visible too.
+  it("offers two stories at the gate, one at the other stations", async () => {
+    const files = await entries();
+    const manifest = parseTourManifest(
+      JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
+    );
+    expect(
+      manifest.stations.map((s) => tourStories(s).map((t) => t.title)),
+    ).toEqual([
+      ["Sir Konrad's welcome"],
+      ["The old gate", "The toll"],
+      ["Farewell"],
+    ]);
+  });
+
+  // Why: the sample is what a new author learns the format from, and with
+  // stories alone it read as if everything had to live in one. A free item
+  // needs a world view and a pose beside the stage, so the figure and the
+  // item never stand in one spot.
+  it("leaves free items at every station, each beside the stage", async () => {
+    const files = await entries();
+    const manifest = parseTourManifest(
+      JSON.parse(new TextDecoder().decode(files.get("tour.json"))) as unknown,
+    );
+    const free = manifest.stations.map((s) =>
+      s.children.flatMap((c) => (c.kind === "story" ? [] : [c])),
+    );
+    expect(free.map((f) => f.map((c) => [c.kind, c.view]))).toEqual([
+      [["shortText", "pin"]],
+      [["longText", "lectern"]],
+      [["shortText", "pin"]],
+    ]);
+    for (const item of free.flat()) {
+      const [x, , z] = item.pose.position;
+      expect(Math.hypot(x, z), item.id).toBeGreaterThan(2);
     }
   });
 
@@ -166,16 +207,18 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // change to the reader's in-memory model (a renamed field, a reshaped
     // type) must not change one written byte; this pins the writer's
     // output for a real tour, beside the generated ones in the framework.
-    // Re-recorded when the tour moved to format 4 (its script writes it
-    // through this writer, so the file is the writer's own bytes).
+    // Re-recorded when the tour moved to format 5 (its script writes it
+    // through this writer, so the file is the writer's own bytes), and
+    // when it gained the toll story and its free items (content only).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
-    expect(written.length).toBe(5354);
+    expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
+    expect(written.length).toBe(8434);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "c6399b32d9dc36776231c1f158c4848e4b072e07259e9ee521c324c23c8aeefe",
+      "989a236749a8a3c1eada210bd80fe331483098b9919f532e2189a9fee098803e",
     );
   });
 });

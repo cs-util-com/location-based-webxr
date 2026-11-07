@@ -1,5 +1,5 @@
 /**
- * A station's frame in `tour.json` version 4: converts a block's LOCAL
+ * A station's frame in `tour.json` version 5: converts a block's LOCAL
  * pose (relative to its station) to its world geo pose and back, and gives
  * the WORLD VIEW of a tour - every FREE block (a pin, a picture's plane, a
  * placed model) with its geo pose and the station holding it - which a
@@ -37,7 +37,10 @@ import type { TourAsset } from './tour-assets.js';
 import type { TourBlock } from './tour-blocks.js';
 import type { TourLocalPose } from './tour-items.js';
 import type { TourManifest, TourObject } from './tour-manifest.js';
-import { tourShownBlockIds } from './tour-story.js';
+import {
+  tourChildrenFreeBlocks,
+  type TourStationHolder,
+} from './tour-story.js';
 
 const IDENTITY: Quaternion = [0, 0, 0, 1];
 
@@ -136,14 +139,10 @@ function placed(
   } as TourObject;
 }
 
-/** A station's FREE blocks: the ones no step of its story shows, which
- *  stand in the world while the station is shown. */
-export function tourFreeBlocks(station: {
-  readonly blocks: readonly TourBlock[];
-  readonly steps: Parameters<typeof tourShownBlockIds>[0];
-}): TourBlock[] {
-  const shown = tourShownBlockIds(station.steps);
-  return station.blocks.filter((b) => !shown.has(b.id));
+/** A station's FREE blocks: the block children of the station itself, which
+ *  stand in the world while it is shown. */
+export function tourFreeBlocks(station: TourStationHolder): TourBlock[] {
+  return tourChildrenFreeBlocks(station.children);
 }
 
 /** The tour's free blocks in the world, each naming its station, in

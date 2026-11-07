@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Where a station's blocks stand in `tour.json` version 4: a LOCAL pose
+Where a station's blocks stand in `tour.json` version 5: a LOCAL pose
 relative to the station, which carries the geo pose. A station moves
 rigidly with everything it holds: moving it changes its own geo pose,
 never its blocks' local poses (`tour-station-pose.ts` converts both

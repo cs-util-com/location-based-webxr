@@ -5,6 +5,7 @@
  * world, or a free block counted twice would each show the visitor
  * something the creator did not make.
  */
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 import type {
   TourBlock,
@@ -18,6 +19,7 @@ import {
   reachedWorldBlocks,
   worldBlockReachedBy,
 } from "./shown-blocks.js";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 const POSE = {
   position: [0, 0, 0] as [number, number, number],
@@ -38,11 +40,6 @@ const card = (id: string): TourBlock => ({
   body: id,
   pose: POSE,
 });
-const show = (id: string, block: string) => ({
-  id,
-  action: { kind: "show" as const, block },
-  advance: { mode: "tap" as const },
-});
 
 function station(blocks: TourBlock[], shown: string[]): TourStation {
   return {
@@ -51,8 +48,13 @@ function station(blocks: TourBlock[], shown: string[]): TourStation {
     activateRadiusM: 20,
     foundRadiusM: 5,
     hint: "arrow",
-    blocks,
-    steps: shown.map((b) => show(`step-${b}`, b)),
+    ...stationContent([
+      storyOf(
+        "story",
+        shown.flatMap((id) => blocks.filter((b) => b.id === id)),
+      ),
+      ...blocks.filter((b) => !shown.includes(b.id)),
+    ]),
   };
 }
 
@@ -62,19 +64,17 @@ describe("shown-blocks", () => {
     expect(isWorldBlock(card("c"))).toBe(false);
   });
 
-  it("names the world block a show step reaches, none for a card or a choice", () => {
+  it("names the world block a story reaches, none for a card or a choice", () => {
     const s = station([pin("p"), card("c")], ["p", "c"]);
-    expect(worldBlockReachedBy(s, s.steps[0]!)?.id).toBe("p");
-    expect(worldBlockReachedBy(s, s.steps[1]!)).toBeNull();
+    const [first, second] = tourStationStoryBlocks(s);
+    expect(worldBlockReachedBy(first!)?.id).toBe("p");
+    expect(worldBlockReachedBy(second!)).toBeNull();
     expect(
-      worldBlockReachedBy(s, {
+      worldBlockReachedBy({
         id: "q",
-        action: {
-          kind: "choice",
-          prompt: "?",
-          options: [{ id: "a", label: "A" }],
-        },
-        advance: { mode: "tap" },
+        kind: "choice",
+        prompt: "?",
+        options: [{ id: "a", label: "A" }],
       }),
     ).toBeNull();
   });

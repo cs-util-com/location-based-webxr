@@ -69,7 +69,9 @@ chosen, choosable, mainLabel }` with
     `state` (`WalkRowState`) one of next (the focus), left (offered, not
     the focus), found (done), here (found, its story playing), skipped,
     later (not offered yet) and the subs Found, "You are here - its story
-    is playing", Skipped, Later, "Distance unknown" (no position, or GPS
+    is playing" ("You are here - choose a story" while its picker shows
+    and the input's `story.choosing` is set; the peek's tail follows),
+    Skipped, Later, "Distance unknown" (no position, or GPS
     too weak), "Waiting…", "N m" (" - your choice" on the chosen target).
     The row's fields: `action` - `skip` ("Skip", for a station to find),
     `bring` ("Bring back", a skipped one) or `undo` ("Undo: bring back

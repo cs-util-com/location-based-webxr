@@ -2,9 +2,8 @@
  * The media files of `tour.json`: every picture, sound, video and 3D model
  * a tour shows is an ASSET with its own id and its file
  * `content/<id>.<ext>` in the tour's archive. Blocks, a station's card
- * image and the tour's cover name assets by id (version 4: a captured
- * photo is an image asset too, its bytes at `content/<id>.<ext>` as
- * before).
+ * image and the tour's cover name assets by id (a captured
+ * photo is an image asset too, its bytes at `content/<id>.<ext>`).
  *
  * Asset ids are a namespace of their own: no id is shared with a block
  * here, since every reference says which kind it names. An asset id must

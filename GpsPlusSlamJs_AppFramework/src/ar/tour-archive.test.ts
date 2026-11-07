@@ -84,7 +84,7 @@ describe('readTourManifestFromEntries', () => {
   });
 
   it('parses the manifest the writer named', async () => {
-    const text = '{"version":4,"stations":[]}';
+    const text = '{"version":5,"stations":[]}';
     await expect(
       readTourManifestFromEntries(
         [TOUR_MANIFEST_ENTRY],
@@ -94,7 +94,7 @@ describe('readTourManifestFromEntries', () => {
         },
         parseTourManifest
       )
-      // The empty version 4 tour.
+      // The empty tour.
     ).resolves.toEqual(createEmptyTourManifest());
   });
 

@@ -1,7 +1,7 @@
 # tour-timing.ts
 
 **Purpose:** a narrated long text's read-along TIMING (`tour.json`
-version 4 minor 5): which stretch of the text the voice speaks when. It is
+version 5): which stretch of the text the voice speaks when. It is
 its own archive entry, `timing/<blockId>.json`, beside `tour.json`, named
 by the long text's `narration.timing` (`tour-blocks.ts`). A tour opens
 without reading any timing; a viewer reads one only when its text opens.

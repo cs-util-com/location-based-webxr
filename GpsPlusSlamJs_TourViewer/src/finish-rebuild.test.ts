@@ -43,6 +43,11 @@ import {
   withWorldObjects,
 } from "./test-support/tour-of.js";
 import { withTourContent } from "./tour-content.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
 const WRAP = "mytour/";
 const LEVEL_ID = "abc123";
@@ -89,8 +94,7 @@ const HERE: TourStation = {
   activateRadiusM: 50,
   foundRadiusM: 25,
   hint: "arrow",
-  steps: [],
-  blocks: [],
+  ...stationContent([]),
 };
 
 /** An empty tour with `HERE`. */
@@ -459,23 +463,19 @@ describe("rebuildFinishedTour drops the assets nothing uses", () => {
   it("writes the step's asset and the cover, and leaves out a stray asset's entry", async () => {
     const told: TourStation = {
       ...HERE,
-      blocks: [
-        {
-          id: "look-picture",
-          kind: "picture",
-          view: "card",
-          image: "used",
-          widthM: 1,
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "look",
-          action: { kind: "show", block: "look-picture" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "look-picture",
+            kind: "picture",
+            view: "card",
+            image: "used",
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     };
     const manifest = tourOf([], {
       stations: [told],
@@ -592,9 +592,9 @@ describe("pendingAfterRebuild (M6 E0b: what is still to save after a write)", ()
     const saved = withTourContent(manifestOf([pin("a")]), {
       objects: [pin("a"), seated(near, stationIdOf("a"))],
     });
-    expect(saved.stations.map((s) => s.blocks.map((i) => i.id))).toEqual([
-      ["a", "near"],
-    ]);
+    expect(
+      saved.stations.map((s) => stationBlocks(s).map((i) => i.id)),
+    ).toEqual([["a", "near"]]);
     const placed = { object: near };
     const out = pendingAfterRebuild(
       { placed: [placed], deleted: [] },
@@ -777,7 +777,7 @@ describe("a long text's media survive a Finish", () => {
     const written = await zipManifest(result!.blob);
     expect(written.assets.map((a) => a.id)).toEqual(["wheel", "race", "voice"]);
     const essay = written.stations
-      .flatMap((s) => s.blocks)
+      .flatMap((s) => stationBlocks(s))
       .find((b) => b.id === "essay");
     expect(essay?.kind === "longText" ? essay.narration : null).toEqual(
       narration,

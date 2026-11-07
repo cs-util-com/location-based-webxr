@@ -78,6 +78,10 @@ import {
   stationAlignmentSignals,
   stationPlacementAllowed,
 } from "./visitor-stations.js";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 /** The code's converged (fused) pose: a stand-in, its own tests are
  *  `fused-pose-wiring.test.ts`. */
@@ -565,17 +569,10 @@ describe("after a code-set zero the content shows on the first voted lock (no co
         id: "tower",
         title: "TOWER",
         geo: levelGeo,
-        blocks: [],
+        ...stationContent([playableStory("tower-story")]),
         activateRadiusM: 30,
         foundRadiusM: 5,
         hint: "arrow",
-        steps: [
-          {
-            id: "s",
-            action: { kind: "show", block: "hi" },
-            advance: { mode: "tap" },
-          },
-        ],
       },
     ];
     const found: { id: string; locks: number }[] = [];

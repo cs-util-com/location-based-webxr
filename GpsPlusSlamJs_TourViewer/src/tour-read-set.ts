@@ -8,6 +8,7 @@
  * @see tour-read-set.ts.md
  */
 
+import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -41,7 +42,7 @@ export function visitorEntryNames(
     ...signedManifestFilesOf(entryNames),
     ...manifest.assets.map((a) => `${wrap}${a.path}`),
     ...manifest.stations.flatMap((station) =>
-      station.blocks.flatMap((block) =>
+      tourStationBlocks(station).flatMap((block) =>
         block.kind === "longText" && block.narration?.timing !== undefined
           ? [`${wrap}${block.narration.timing}`]
           : [],

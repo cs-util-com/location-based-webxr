@@ -22,6 +22,7 @@ import { initialEditorViewState } from "../editor-view.js";
 import type { ShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
 import { buildTree, type TreeModel } from "./tree-model.js";
+import { stationContent } from "../../test-support/station-content.js";
 
 const pictures: ShellPictures = {
   show: () => undefined,
@@ -39,8 +40,7 @@ function station(id: string, title: string): TourStation {
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    ...stationContent([
       {
         id: `${id}-photo`,
         kind: "picture",
@@ -50,7 +50,7 @@ function station(id: string, title: string): TourStation {
         createdAtIso: "2026-11-03T10:00:00Z",
         pose: { position: [1, 1, 1], rotation: [0, 0, 0, 1] },
       },
-    ],
+    ]),
   } as unknown as TourStation;
 }
 

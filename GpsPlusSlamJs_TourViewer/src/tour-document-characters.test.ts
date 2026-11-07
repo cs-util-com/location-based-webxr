@@ -6,6 +6,8 @@
  * and anything the format would refuse must change nothing (a refused
  * value written would make every later save fail).
  */
+import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import type { TourLocalPose } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 import {
   createEmptyTourManifest,
@@ -25,14 +27,19 @@ import {
   type StationCharacterEdit,
   type TourDocumentState,
 } from "./tour-document.js";
+import {
+  stationContent,
+  storyOf,
+  stationBlocks,
+} from "./test-support/station-content.js";
 
-const POSE = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
+const POSE: TourLocalPose = { position: [3, 0, 1], rotation: [0, 0, 0, 1] };
 
 /** A station "gate" whose story shows a long text, then Wendel (a
  *  declared character) in the speak view, each moving on by a tap. */
 const OPENED: TourManifest = parseTourManifest({
   ...createEmptyTourManifest(),
-  minor: 2,
+  minor: 0,
   assets: [
     {
       id: "wendel",
@@ -51,38 +58,30 @@ const OPENED: TourManifest = parseTourManifest({
       activateRadiusM: 50,
       foundRadiusM: 25,
       hint: "arrow",
-      blocks: [
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632 the gate held.",
-          pose: POSE,
-        },
-        {
-          id: "w1",
-          kind: "character",
-          view: "speak",
-          character: "wendel",
-          name: "Wendel",
-          image: "wendel",
-          caption: "Good day, traveller!",
-          pose: POSE,
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "intro" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "s2",
-          action: { kind: "show", block: "w1" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("gate-story", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632 the gate held.",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+          {
+            id: "w1",
+            kind: "character",
+            view: "speak",
+            character: "wendel",
+            name: "Wendel",
+            image: "wendel",
+            caption: "Good day, traveller!",
+            pose: POSE,
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     },
   ],
 });
@@ -120,7 +119,7 @@ function gateOf(manifest: TourManifest) {
 }
 
 function wendelOf(manifest: TourManifest) {
-  const block = gateOf(manifest).blocks.find((b) => b.id === "w1");
+  const block = stationBlocks(gateOf(manifest)).find((b) => b.id === "w1");
   if (block?.kind !== "character") throw new Error("no Wendel");
   return block;
 }
@@ -152,15 +151,13 @@ describe("stationEdited: a character of the station's story", () => {
 
   it("moves the step showing him on when his line ends, and back on a tap; the other steps keep theirs", () => {
     const lineEnd = edit(open(), { block: "w1", advance: "lineEnd" });
-    expect(gateOf(readBack(lineEnd)).steps.map((s) => s.advance)).toEqual([
-      { mode: "tap" },
-      { mode: "lineEnd" },
-    ]);
+    expect(
+      tourStationStoryBlocks(gateOf(readBack(lineEnd))).map((b) => b.advance),
+    ).toEqual([{ mode: "tap" }, { mode: "lineEnd" }]);
     const tap = edit(lineEnd, { block: "w1", advance: "tap" });
-    expect(gateOf(readBack(tap)).steps.map((s) => s.advance.mode)).toEqual([
-      "tap",
-      "tap",
-    ]);
+    expect(
+      tourStationStoryBlocks(gateOf(readBack(tap))).map((b) => b.advance.mode),
+    ).toEqual(["tap", "tap"]);
     expectOneStep(lineEnd, tap);
   });
 

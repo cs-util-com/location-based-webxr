@@ -219,6 +219,8 @@ export interface WalkSheetView {
       readonly story: {
         readonly stationId: string;
         readonly progress: StoryProgress | null;
+        /** The station's picker shows: there is nothing to listen to. */
+        readonly choosing?: boolean;
       } | null;
     },
   ): void;
@@ -604,6 +606,10 @@ export function wireWalkSheet(deps: {
       drawDots(extra.story);
       const confirming = extra.end?.kind === "end";
       setData(dom.storyEnd, "kind", confirming ? "end" : "ask");
+      setText(
+        dom.keepListening,
+        extra.story?.choosing === true ? "Keep choosing" : "Keep listening",
+      );
       // "Keep listening" hides once tapped: the end control takes its
       // focus.
       hideKeepingFocus(

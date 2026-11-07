@@ -8,6 +8,7 @@
  *
  * @see tour-problems.ts.md
  */
+import { isTourStory } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
@@ -73,7 +74,7 @@ function groundDistanceM(item: WorldBlock): number {
  *  centre along the ground than `foundRadiusM`; on the circle is
  *  inside). The inspector's "outside" count is this rule too. */
 export function outsideItems(
-  station: Pick<TourStation, "blocks" | "steps" | "foundRadiusM">,
+  station: Pick<TourStation, "children" | "foundRadiusM">,
 ): WorldBlock[] {
   return worldBlocks(station).filter(
     (item) => groundDistanceM(item) > station.foundRadiusM,
@@ -143,7 +144,7 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
         done: `Moved "${objectTitle(item)}" inside its station's circle`,
       },
     }));
-    if (station.blocks.length === 0) {
+    if (!hasContent(station)) {
       problems.push({
         severity: "note",
         what: "Has no content yet",
@@ -158,6 +159,15 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
     groups.push({ stationId: station.id, number: index + 1, title, problems });
   }
   return groups;
+}
+
+/** Whether a visitor meets anything at the station: a free block, or a
+ *  story with a child of any kind (a choice or a quiz is content too, and
+ *  holds no block). */
+function hasContent(station: TourStation): boolean {
+  return station.children.some(
+    (child) => !isTourStory(child) || child.children.length > 0,
+  );
 }
 
 /** The problems of `groups` counted by severity. */

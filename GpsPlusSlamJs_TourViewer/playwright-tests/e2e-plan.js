@@ -107,6 +107,7 @@ export const SPECS = {
     lane: 4,
   },
   "story-blocks.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "story-picker.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "streaming.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "summary.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "view-switch.spec.js": { project: "dom", area: "viewer", lane: 2 },

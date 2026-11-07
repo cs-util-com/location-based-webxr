@@ -50,12 +50,16 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   file's shape (a frame is a station with its story blocks, a step's
   `action` the file's own key), which `parseSettingsRecord` reads as the
   format reads a station.
-- `parseSettingsRecord(text, against?)` - a stored record, or undefined
+- `DRAFT_PART_UNREAD` - the line both pages show when part of a draft did
+  not read.
+- `parseSettingsRecord(text, against?, onLost?)` - a stored record, or undefined
   when it does not read (a bad station pose or detail costs the record,
   never the objects beside it). `against` is the opened tour: what a
   story may name, its assets and its declared characters, resolves
   against it, and both pages read with it (without it, a frame naming
-  either is lost). The created frames and the `frames` are read
+  either is lost). `onLost` hears what did not read, `record` once or
+  `frame` for each frame (and a frame list that is none), never for no
+  record: nothing is lost in silence, a page tells the author. The created frames and the `frames` are read
   one by one, in one pass, as the format reads a station: each as the
   only station of `against` (`parseTourManifest`, the whole tour, so a new
   tour-level declaration needs no change here; without free blocks,

@@ -79,6 +79,10 @@ import { FIX_MAX_AGE_MS, wireStationGuide } from "./station-guide";
 import { visitorGuideReducer } from "./visitor-guide-slice";
 import { createTourViewerStore } from "./tour-viewer-session";
 import { visitorPosition } from "./visitor-position";
+import {
+  playableStory,
+  stationContent,
+} from "./test-support/station-content.js";
 
 // The core's geodesy needs an activated store (the framework's factory).
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -92,12 +96,6 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 /** A code's synthetic reading: its fixed accuracy (m), far better than
  *  any fix in these streams, so mixing it in would show. */
 const VOTE_ACCURACY_M = 0.5;
-
-const step = {
-  id: "s",
-  action: { kind: "show", block: "hi" },
-  advance: { mode: "tap" },
-} as const;
 
 function station(
   id: string,
@@ -113,8 +111,8 @@ function station(
     activateRadiusM: foundRadiusM * 4,
     foundRadiusM,
     hint: "arrow",
-    steps: [step],
-    blocks: [],
+
+    ...stationContent([playableStory(`${id}-story`)]),
   };
 }
 

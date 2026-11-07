@@ -8,6 +8,7 @@
  * metres read back as the ones typed, a heading as the turn from the one
  * it has now, and a value that is no number as a refusal in words.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
 
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -17,6 +18,11 @@ import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import "../../test-support/tour-of.js";
 import { eastNorthOf } from "../tour-origin.js";
 import { groundEdit, inspectorEdit } from "./inspector-edits.js";
+import {
+  stationContent,
+  storyOf,
+  withFreeBlocks,
+} from "../../test-support/station-content.js";
 
 const AT = "2026-10-25T10:00:00Z";
 const ORIGIN = { lat: 48.137, lng: 11.575 };
@@ -29,8 +35,7 @@ const STATIONS = [
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: [
+    ...stationContent([
       {
         id: "pin-1",
         kind: "shortText",
@@ -48,7 +53,7 @@ const STATIONS = [
         createdAtIso: AT,
         pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
       },
-    ],
+    ]),
   },
 ] as unknown as TourStation[];
 
@@ -128,8 +133,7 @@ describe("inspectorEdit", () => {
     const withPicture = [
       {
         ...first,
-        blocks: [
-          ...first.blocks,
+        ...withFreeBlocks(first, [
           {
             id: "photo-1",
             kind: "picture",
@@ -137,8 +141,8 @@ describe("inspectorEdit", () => {
             asset: "photo",
             createdAtIso: AT,
             pose: { position: [1, 1, 1], rotation: [0, 0, 0, 1] },
-          },
-        ],
+          } as unknown as TourBlock,
+        ]),
       },
     ] as unknown as TourStation[];
     const titled = (selected: string) =>
@@ -370,38 +374,30 @@ describe("inspectorEdit: a story character's facing", () => {
   const story = [
     {
       ...STATIONS[0],
-      blocks: [
-        {
-          id: "w1",
-          kind: "character",
-          view: "speak",
-          name: "Wendel",
-          image: "cut",
-          caption: "Good day",
-          // No turn: he faces east (90).
-          pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-        {
-          id: "intro",
-          kind: "longText",
-          view: "card",
-          title: "The siege",
-          body: "In 1632",
-          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-        },
-      ],
-      steps: [
-        {
-          id: "s1",
-          action: { kind: "show", block: "intro" },
-          advance: { mode: "tap" },
-        },
-        {
-          id: "s2",
-          action: { kind: "show", block: "w1" },
-          advance: { mode: "tap" },
-        },
-      ],
+      ...stationContent([
+        storyOf("story-1", [
+          {
+            id: "intro",
+            kind: "longText",
+            view: "card",
+            title: "The siege",
+            body: "In 1632",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+          {
+            id: "w1",
+            kind: "character",
+            view: "speak",
+            name: "Wendel",
+            image: "cut",
+            caption: "Good day",
+            // No turn: he faces east (90).
+            pose: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ]),
+      ]),
     },
   ] as unknown as TourStation[];
   const typed = (field: string, value: string) =>

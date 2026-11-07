@@ -4,7 +4,7 @@
  * properties make that safe beyond the hand-written examples: every
  * well-formed set of assets and stations survives a JSON round trip
  * unchanged (so a parsed tour can be written back without drift); breaking
- * any ONE reference - an asset a block names, a step a choice jumps to -
+ * any ONE reference - an asset a block names, a child a choice jumps to -
  * is refused rather than reaching a renderer as a dangling id; and a file
  * of a newer minor, whatever closed-list value it adds, is read without
  * failing and leaves only references that resolve.
@@ -20,7 +20,12 @@ import {
 import { parseTourAssets } from './tour-assets';
 import { TOUR_WORLD_VIEWS } from './tour-blocks';
 import { parseTourStations } from './tour-stations';
-import { tourShownBlockIds } from './tour-story';
+import {
+  isTourStoryBlock,
+  tourChildrenFreeBlocks,
+  tourStationBlocks,
+  tourStories,
+} from './tour-story';
 
 class Invalid extends Error {}
 const fail = (message: string): never => {
@@ -28,9 +33,9 @@ const fail = (message: string): never => {
 };
 
 type Json = Record<string, unknown>;
-type StationJson = Json & { blocks: Json[]; steps: Json[] };
+type StationJson = Json & { children: Json[] };
 
-/** One to four generated stations (their blocks and stories). */
+/** One to four generated stations (their free blocks and stories). */
 const stations = tourManifestArbitrary().map(
   (record) => record.stations as StationJson[]
 );
@@ -44,6 +49,17 @@ function parseAll(data: unknown) {
   });
 }
 
+const storiesOf = (station: StationJson): Json[] =>
+  station.children.filter((c) => c.kind === 'story');
+const kidsOf = (story: Json): Json[] => story.children as Json[];
+const isBlockRecord = (c: Json): boolean =>
+  !['choice', 'quiz', 'story'].includes(c.kind as string);
+/** Every block record of a station, free and in stories. */
+const blocksOf = (station: StationJson): Json[] =>
+  station.children.flatMap((c) =>
+    c.kind === 'story' ? kidsOf(c).filter(isBlockRecord) : [c]
+  );
+
 /** The fields of a block that name an asset. */
 const MEDIA_FIELDS = ['image', 'video', 'audio', 'asset', 'voice', 'poster'];
 
@@ -55,7 +71,7 @@ function injectUnknown(data: StationJson[], pick: number): void {
     sites.push(() => {
       station.hint = 'compass';
     });
-    for (const block of station.blocks) {
+    for (const block of blocksOf(station)) {
       sites.push(() => {
         block.kind = 'hologram';
       });
@@ -67,17 +83,19 @@ function injectUnknown(data: StationJson[], pick: number): void {
         }
       }
     }
-    for (const step of station.steps) {
-      const action = step.action as Json;
-      sites.push(() => {
-        action.kind = 'hologram';
-      });
-      sites.push(() => {
-        step.advance = { mode: 'gaze' };
-      });
-      if (action.kind === 'quiz') {
+    for (const kid of storiesOf(station).flatMap(kidsOf)) {
+      if (isBlockRecord(kid)) {
         sites.push(() => {
-          (action.answer as Json).type = 'map-pick';
+          kid.advance = { mode: 'gaze' };
+        });
+        continue;
+      }
+      sites.push(() => {
+        kid.kind = 'hologram';
+      });
+      if (kid.kind === 'quiz') {
+        sites.push(() => {
+          (kid.answer as Json).type = 'map-pick';
         });
       }
     }
@@ -87,7 +105,7 @@ function injectUnknown(data: StationJson[], pick: number): void {
 
 // One generation for the four claims (each used to draw its own 150-200
 // station sets); each claim works on its own deep copy. The two claims that
-// need a site (a media field, a choice step) skip a run without one and
+// need a site (a media field, a choice) skip a run without one and
 // count the runs they checked, so the merged property cannot quietly test
 // nothing (the old fc.pre discarded the whole run instead).
 const RUNS = 200;
@@ -139,41 +157,44 @@ describe('tour stations (properties)', () => {
           const assetIds = new Set(assets.map((a) => a.id));
           for (const station of parsed) {
             expect(station.hint).toBe('arrow');
-            const stepIds = new Set(station.steps.map((s) => s.id));
-            const blockIds = new Set(station.blocks.map((b) => b.id));
-            const shown = tourShownBlockIds(station.steps);
-            expect(
-              station.steps.every((s) =>
-                ['tap', 'auto'].includes(s.advance.mode)
-              )
-            ).toBe(true);
-            expect([...shown].every((id) => blockIds.has(id))).toBe(true);
-            for (const block of station.blocks) {
+            for (const block of tourStationBlocks(station)) {
               const refs = MEDIA_FIELDS.flatMap((f) => {
                 const v = (block as unknown as Json)[f];
                 return typeof v === 'string' ? [v] : [];
               });
               expect(refs.every((r) => assetIds.has(r))).toBe(true);
-              // A block no step shows stands in the world.
-              expect(
-                shown.has(block.id) || TOUR_WORLD_VIEWS.has(block.view)
-              ).toBe(true);
             }
-            for (const step of station.steps) {
-              if (step.action.kind !== 'choice') continue;
-              expect(step.action.options.length).toBeGreaterThanOrEqual(2);
+            // A free block stands in the world.
+            expect(
+              tourChildrenFreeBlocks(station.children).every((b) =>
+                TOUR_WORLD_VIEWS.has(b.view)
+              )
+            ).toBe(true);
+            for (const story of tourStories(station)) {
+              const ids = new Set(story.children.map((c) => c.id));
               expect(
-                step.action.options.every(
-                  (o) => o.goto === undefined || stepIds.has(o.goto)
-                )
+                story.children
+                  .filter(isTourStoryBlock)
+                  .every((b) =>
+                    ['tap', 'auto', 'lineEnd'].includes(b.advance.mode)
+                  )
               ).toBe(true);
+              for (const child of story.children) {
+                if (child.kind !== 'choice') continue;
+                expect(child.options.length).toBeGreaterThanOrEqual(2);
+                expect(
+                  child.options.every(
+                    (o) => o.goto === undefined || ids.has(o.goto)
+                  )
+                ).toBe(true);
+              }
             }
           }
           expect(() => parseAll(copy), 'strict refuses').toThrow(Invalid);
 
           // Breaking any one asset reference, or a choice target, is refused.
           assetBreaks += Number(refusesABrokenAsset(data, pick));
-          choiceBreaks += Number(refusesAChoiceToNoStep(data, ghost));
+          choiceBreaks += Number(refusesAChoiceToNoChild(data, ghost));
         }
       ),
       { numRuns: RUNS }
@@ -198,7 +219,7 @@ function refusesABrokenAsset(
 ): boolean {
   const broken = JSON.parse(JSON.stringify(data)) as StationJson[];
   const sites = broken.flatMap((s) =>
-    s.blocks.flatMap((block) =>
+    blocksOf(s).flatMap((block) =>
       MEDIA_FIELDS.filter((f) => typeof block[f] === 'string').map(
         (f) => () => {
           block[f] = 'missing';
@@ -217,23 +238,23 @@ function refusesABrokenAsset(
  * expects the parse to refuse it; false (nothing checked) when no station
  * has a choice or `ghost` happens to name one of its steps.
  */
-function refusesAChoiceToNoStep(
+function refusesAChoiceToNoChild(
   data: readonly StationJson[],
   ghost: string
 ): boolean {
   const jumped = JSON.parse(JSON.stringify(data)) as StationJson[];
-  const station = jumped.find((s) =>
-    s.steps.some((st) => (st.action as Json).kind === 'choice')
-  );
-  if (station === undefined || station.steps.some((st) => st.id === ghost)) {
+  const story = jumped
+    .flatMap(storiesOf)
+    .find((s) => kidsOf(s).some((c) => c.kind === 'choice'));
+  if (story === undefined || kidsOf(story).some((c) => c.id === ghost)) {
     return false;
   }
-  const choice = station.steps.find(
-    (st) => (st.action as Json).kind === 'choice'
-  )!.action as { options: { goto?: string }[] };
+  const choice = kidsOf(story).find((c) => c.kind === 'choice') as unknown as {
+    options: { goto?: string }[];
+  };
   choice.options[0]!.goto = ghost;
-  expect(() => parseAll(jumped), 'a choice to no step').toThrow(
-    /must name a step of this station/
+  expect(() => parseAll(jumped), 'a choice to no child').toThrow(
+    /must name a child of this story/
   );
   return true;
 }

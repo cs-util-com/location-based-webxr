@@ -8,6 +8,7 @@
  * problem lists nothing, which is what the empty state and the hidden
  * badge rest on.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +17,7 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { outsideItems, problemCounts, tourProblems } from "./tour-problems.js";
+import { stationContent, storyOf } from "../../test-support/station-content.js";
 
 const AT = "2026-11-04T00:00:00.000Z";
 
@@ -47,8 +49,7 @@ function station(
     activateRadiusM: 50,
     foundRadiusM,
     hint: "arrow",
-    steps: [],
-    blocks,
+    ...stationContent(blocks as readonly TourBlock[]),
   } as unknown as TourStation;
 }
 
@@ -167,6 +168,61 @@ describe("tourProblems", () => {
         select: "station:b",
       },
     ]);
+  });
+
+  // Why: the note says the station is empty, and a story holding only a
+  // choice is not: a creator told otherwise looks for a fault that is not
+  // there, and only blocks would count as content.
+  it("does not note a station whose only story holds just a choice", () => {
+    const told = station("a", [], "Square");
+    expect(
+      tourProblems([
+        {
+          ...told,
+          children: [
+            storyOf("first", [
+              { id: "ask", kind: "choice", prompt: "Which way?", options: [] },
+            ]),
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  // Why: the other edge of the same rule. A story with nothing in it shows
+  // a visitor nothing, so the note still stands.
+  it("notes a station whose only story is empty", () => {
+    const told = station("a", [], "Square");
+    const groups = tourProblems([
+      { ...told, children: [storyOf("first", [])] },
+    ]);
+    expect(groups[0]?.problems.map((p) => p.what)).toEqual([
+      "Has no content yet",
+    ]);
+  });
+
+  // Why: a station whose only content is a story has something to show;
+  // the note would send a creator looking for a fault that is not there.
+  it("does not note a station whose content is all in a story", () => {
+    const told = station("a", [], "Square");
+    expect(
+      tourProblems([
+        {
+          ...told,
+          children: [
+            storyOf("first", [
+              {
+                id: "line",
+                kind: "shortText",
+                view: "card",
+                caption: "Hello",
+                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              },
+            ]),
+          ],
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it("counts the problems by severity", () => {

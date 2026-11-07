@@ -61,7 +61,7 @@ under - what a tap in AR is cast against to name the object
   (one call per station, so each station is drawn and freed on its own,
   `station-content.ts`): a `Group` at the station's geo pose in the
   session's NUE (`objectPoseNue`), its free blocks (`tourFreeBlocks`: the
-  blocks no step shows) as children at their LOCAL poses
+  blocks outside its stories) as children at their LOCAL poses
   (`[north, up, east]` and a rotation relative to the station), added to
   `scene` once every picture decoded; `root` is that group. A `pin` short
   text is a label, a `plane` picture a photo plane whose file is the
@@ -87,8 +87,8 @@ under - what a tap in AR is cast against to name the object
   stand keeps only its turn), added after the models and
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
-  order behind the labels holds. A station's story blocks (shown by its
-  steps) are the story's, never drawn here. A station without free blocks gives an empty
+  order behind the labels holds. A station's story blocks are the
+  story's, never drawn here. A station without free blocks gives an empty
   one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`

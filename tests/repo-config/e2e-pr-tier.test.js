@@ -247,6 +247,7 @@ const EXPECTED = {
     'playwright-tests/open-file.spec.js: opens a tour zip from the device through the file chooser',
     'playwright-tests/setup-flow.spec.js: starts at the host tiles, and a chosen host carries on to the link',
     'playwright-tests/stations.spec.js: a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped',
+    "playwright-tests/story-picker.spec.js: a station's stories are offered by title; one plays, comes back marked, and Continue moves the walk on",
     'playwright-tests/streaming.spec.js: streams the gallery from range requests without downloading the whole archive',
     "playwright-tests/visitor-start.spec.js: the start page leads with the tour's name and puts the round button on the first ${viewport.width}x${viewport.height} screen [if viewport.height === 640]",
     'playwright-tests/visitor-walk.spec.js: the peek names the nearest station; the list opens by the grab and by a drag, and closes',

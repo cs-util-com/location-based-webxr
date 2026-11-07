@@ -54,10 +54,12 @@
  * - `/ranges-ok/storyless-tour.zip` - the stations tour whose gate has no
  *   story, as a station made on the phone: only its name, its description
  *   and its card picture (the knight).
+ * - `/ranges-ok/two-stories-tour.zip` - the stations tour whose gate holds
+ *   two stories, one with a title of 67 characters, beside its free pin.
  * - `/ranges-ok/story-count-<5|20|50>.zip` - the stations tour whose gate
  *   story first shows that many pins and pictures in the world, one per
  *   step (the opt-in frame-time spec).
- * - `/ranges-ok/v3-tour.zip` - a tour in the earlier format 3 (a station
+ * - `/ranges-ok/v4-tour.zip` - a tour in the earlier format 4 (a station
  *   holding a pin as an item), which the app refuses.
  * - `/ranges-ok/walk-tour.zip` (any order) and
  *   `/ranges-ok/walk-tour-fixed.zip` (fixed order) - the visitor walk
@@ -65,8 +67,9 @@
  *   stations at the prototype's spots, each a story of auto-advancing
  *   lines, for the sheet's and the layout's specs.
  *
- * Every `tour.json` here is version 4: stations at geo poses, their pins
- * and photos as free blocks, their stories as blocks shown by steps.
+ * Every `tour.json` here is version 5: stations at geo poses, their pins
+ * and photos as free blocks, their stories as children holding their own
+ * blocks.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -89,7 +92,8 @@ import {
   imageAsset,
   inOwnStation,
   pinBlock,
-  showStep,
+  storyOf,
+  told,
   stationAt,
   textCard,
 } from "./tour-fixture.mjs";
@@ -164,7 +168,7 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
       "tour.json",
       new TextReader(
         JSON.stringify({
-          version: 4,
+          version: 5,
           minor: 0,
           ...(needsNoGps ? { needsNoGps: true } : {}),
           assets: FIXTURE_PHOTO_IDS.map((id) =>
@@ -244,6 +248,7 @@ async function buildStationsZip({
   worldBlocks = false,
   storyBlocks = false,
   storyless = false,
+  twoStories = false,
   storyCount = 0,
   longText = null,
   title = "E2E castle",
@@ -394,9 +399,8 @@ async function buildStationsZip({
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 4,
-        // A long text's world views came with minor 4.
-        minor: longText === null ? 0 : 4,
+        version: 5,
+        minor: 0,
         title,
         order: "fixed",
         assets: [
@@ -412,7 +416,7 @@ async function buildStationsZip({
           {
             id: "gate",
             title: "The gate",
-            ...(storyBlocks || storyless
+            ...(storyBlocks || storyless || twoStories
               ? { description: "The castle's main gate, built in 1400." }
               : {}),
             ...(storyless ? { image: "knight" } : {}),
@@ -420,7 +424,74 @@ async function buildStationsZip({
             activateRadiusM: 30,
             foundRadiusM: 5,
             hint: "arrow",
-            blocks: [
+            children: [
+              // The gate's story: a storyless station has none (a block in
+              // no story must stand in the world).
+              ...(twoStories
+                ? [
+                    storyOf(
+                      "gate-arch-story",
+                      [
+                        told(
+                          textCard(
+                            "arch-text",
+                            "The arch",
+                            "Built in 1400 and rebuilt twice.",
+                          ),
+                        ),
+                      ],
+                      "The arch",
+                    ),
+                    storyOf(
+                      "gate-guard-story",
+                      [
+                        told(
+                          textCard(
+                            "guard-text",
+                            "The guard",
+                            "Sixty years, and never a day off.",
+                          ),
+                        ),
+                      ],
+                      "The guard who has stood at this gate for more than sixty long years",
+                    ),
+                  ]
+                : []),
+              ...(storyless || twoStories
+                ? []
+                : [
+                    storyOf("gate-story", [
+                      ...gateStory.map((b) => told(b)),
+                      ...manyStory.map((b) => told(b)),
+                      told({
+                        id: "sir-kay",
+                        kind: "character",
+                        view: "stage",
+                        name: "Sir Kay",
+                        image: "knight",
+                        caption: "Halt, traveller!",
+                        voice: "voice",
+                        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                      }),
+                      {
+                        id: "ask",
+                        kind: "choice",
+                        prompt: "Enter the castle?",
+                        options: [
+                          {
+                            id: "no",
+                            label: "Not today",
+                            goto: "farewell-text",
+                          },
+                          { id: "yes", label: "Yes", goto: "welcome-text" },
+                        ],
+                      },
+                      told(textCard("farewell-text", "The gate", "Farewell.")),
+                      told(
+                        textCard("welcome-text", "The gate", "Welcome inside."),
+                      ),
+                    ]),
+                  ]),
               pinBlock("gate-pin", "Gate sign", {
                 createdAtIso: "2026-10-19T08:00:00.000Z",
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
@@ -439,54 +510,7 @@ async function buildStationsZip({
                       pose: { position: [-2, 1.5, 1], rotation: [0, 0, 0, 1] },
                     },
                   ]),
-              ...gateStory,
-              ...manyStory,
-              // The story's own blocks: a storyless station has none (a
-              // block no step shows must stand in the world).
-              ...(storyless
-                ? []
-                : [
-                    {
-                      id: "sir-kay",
-                      kind: "character",
-                      view: "stage",
-                      name: "Sir Kay",
-                      image: "knight",
-                      caption: "Halt, traveller!",
-                      voice: "voice",
-                      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-                    },
-                    textCard("farewell-text", "The gate", "Farewell."),
-                    textCard("welcome-text", "The gate", "Welcome inside."),
-                  ]),
             ],
-            steps: storyless
-              ? []
-              : [
-                  ...(storyBlocks
-                    ? [
-                        showStep("sign", "gate-story-sign"),
-                        showStep("clip", "gate-clip"),
-                        showStep("history", "gate-history"),
-                      ]
-                    : []),
-                  ...manyStory.map((b) => showStep(b.id, b.id)),
-                  showStep("knight", "sir-kay"),
-                  {
-                    id: "ask",
-                    action: {
-                      kind: "choice",
-                      prompt: "Enter the castle?",
-                      options: [
-                        { id: "no", label: "Not today", goto: "farewell" },
-                        { id: "yes", label: "Yes", goto: "welcome" },
-                      ],
-                    },
-                    advance: { mode: "tap" },
-                  },
-                  showStep("farewell", "farewell-text"),
-                  showStep("welcome", "welcome-text"),
-                ],
           },
           {
             id: "well",
@@ -495,21 +519,22 @@ async function buildStationsZip({
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            blocks: [
+            children: [
+              storyOf("well-story", [
+                told({
+                  id: "old-arch",
+                  kind: "model",
+                  view: "stage",
+                  asset: "arch",
+                  title: "The old arch.",
+                  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                }),
+              ]),
               pinBlock("well-pin", "Well sign", {
                 createdAtIso: "2026-10-19T08:00:00.000Z",
                 pose: { position: [0, 1.5, 1], rotation: [0, 0, 0, 1] },
               }),
-              {
-                id: "old-arch",
-                kind: "model",
-                view: "stage",
-                asset: "arch",
-                title: "The old arch.",
-                pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-              },
             ],
-            steps: [showStep("arch", "old-arch")],
           },
           {
             id: "tower",
@@ -518,8 +543,11 @@ async function buildStationsZip({
             activateRadiusM: 20,
             foundRadiusM: 5,
             hint: "arrow",
-            blocks: [textCard("top-text", "The tower", "The top.")],
-            steps: [showStep("top", "top-text")],
+            children: [
+              storyOf("tower-story", [
+                told(textCard("top-text", "The tower", "The top.")),
+              ]),
+            ],
           },
         ],
       }),
@@ -570,20 +598,22 @@ async function buildWalkZip(order) {
     activateRadiusM: 60,
     foundRadiusM: radiusM,
     hint: "arrow",
-    blocks: lines.map((text, i) =>
-      textCard(`${id}-line-${String(i)}`, title, text),
-    ),
-    steps: lines.map((_text, i) =>
-      showStep(`${id}-${String(i)}`, `${id}-line-${String(i)}`, {
-        advance: { mode: "auto", afterS: 6 },
-      }),
-    ),
+    children: [
+      storyOf(
+        `${id}-story`,
+        lines.map((text, i) =>
+          told(textCard(`${id}-line-${String(i)}`, title, text), {
+            advance: { mode: "auto", afterS: 6 },
+          }),
+        ),
+      ),
+    ],
   });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 4,
+        version: 5,
         minor: 0,
         title: "Old town walk",
         order,
@@ -725,7 +755,7 @@ async function buildBakedZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 4,
+        version: 5,
         minor: 0,
         stations: [
           stationAt("walk-0", { lat: 47.50002, lon: 8.7, alt: 400 }, [
@@ -787,17 +817,17 @@ async function buildBakedZip() {
  * app writes it any more): one station holding a pin as an item. The app
  * refuses it, and deletes the draft it kept for it.
  */
-async function buildV3Zip() {
+async function buildV4Zip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
   await writer.add(
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 3,
+        version: 4,
         minor: 0,
-        // Its own id, as a 3.x save wrote it: the editor kept its draft
-        // under `local-file:tour:<id>` (B2a review finding 1).
-        tourId: "OlderTour3",
+        // Its own id: the editor keeps a tour's draft under
+        // `local-file:tour:<id>`, so the draft of a refused tour can go.
+        tourId: "OlderTour4",
         title: "An older tour",
         stations: [
           {
@@ -807,11 +837,12 @@ async function buildV3Zip() {
             foundRadiusM: 25,
             hint: "arrow",
             steps: [],
-            items: [
+            blocks: [
               {
                 id: "oldpin",
-                kind: "pin",
-                label: "An older pin",
+                kind: "shortText",
+                view: "pin",
+                caption: "An older pin",
                 createdAtIso: "2026-09-08T12:00:00.000Z",
                 pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               },
@@ -862,7 +893,7 @@ async function buildDetailsZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 4,
+        version: 5,
         minor: 0,
         title: "Harbour Lights",
         description: "Six places along the old harbour.",
@@ -896,7 +927,7 @@ async function buildUnfinishedZip() {
     "tour.json",
     new TextReader(
       JSON.stringify({
-        version: 4,
+        version: 5,
         minor: 0,
         title: "Harbour Lights",
         contact: "guide@example.org",
@@ -936,6 +967,7 @@ const stationsNoCodeZipBytes = await buildStationsZip({ withCode: false });
 const blocksZipBytes = await buildStationsZip({ worldBlocks: true });
 const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
 const storylessZipBytes = await buildStationsZip({ storyless: true });
+const twoStoriesZipBytes = await buildStationsZip({ twoStories: true });
 /** Two tours, each with a long text at its gate (the visitor's view
  *  preference holds across tours). */
 const longTextZips = {
@@ -956,7 +988,7 @@ const storyCountZips = new Map(
     ]),
   ),
 );
-const v3ZipBytes = await buildV3Zip();
+const v4ZipBytes = await buildV4Zip();
 const walkZipBytes = await buildWalkZip("any");
 const walkFixedZipBytes = await buildWalkZip("fixed");
 const sampleZipBytes = new Uint8Array(
@@ -1169,6 +1201,16 @@ createServer((req, res) => {
     );
     return;
   }
+  if (url.pathname === "/ranges-ok/two-stories-tour.zip") {
+    handleArchive(
+      req,
+      res,
+      "ranges-ok",
+      twoStoriesZipBytes,
+      '"e2e-two-stories-v1"',
+    );
+    return;
+  }
   if (url.pathname === "/ranges-ok/story-blocks-tour.zip") {
     handleArchive(
       req,
@@ -1194,8 +1236,8 @@ createServer((req, res) => {
     handleArchive(req, res, "ranges-ok", blocksZipBytes, '"e2e-blocks-v1"');
     return;
   }
-  if (url.pathname === "/ranges-ok/v3-tour.zip") {
-    handleArchive(req, res, "ranges-ok", v3ZipBytes, '"e2e-v3-v1"');
+  if (url.pathname === "/ranges-ok/v4-tour.zip") {
+    handleArchive(req, res, "ranges-ok", v4ZipBytes, '"e2e-v4-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/walk-tour.zip") {

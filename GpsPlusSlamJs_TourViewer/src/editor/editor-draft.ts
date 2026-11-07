@@ -55,6 +55,7 @@
  * @see editor-draft.ts.md
  */
 
+import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type {
   TourManifest,
@@ -89,6 +90,7 @@ import {
   writeDraftDeletion,
   writeDraftLiveRecord,
   writeDraftMeta,
+  discardOlderFormatDraft,
   isOlderVersionDraft,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
@@ -198,7 +200,7 @@ function changedFrames(
       (f) =>
         !theirs.has(f.id) &&
         (f.title !== undefined ||
-          f.steps.length > 0 ||
+          tourStories(f).length > 0 ||
           f.description !== undefined ||
           f.image !== undefined),
     )
@@ -517,6 +519,8 @@ export interface EditorDraftDeps {
   readonly holdLock: (key: string) => Promise<EditorLock>;
   /** Said once per opened tour: this page keeps no backup copy. */
   readonly noBackup: (reason: NoBackupReason) => void;
+  /** Part of the opened tour's settings record did not read. */
+  readonly unreadDraft?: () => void;
   /** Writes started (true) or all settled (false): the page's readiness
    *  mark. */
   readonly onWriting?: (writing: boolean) => void;
@@ -771,6 +775,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       made.lock = lock;
       const store = await deps.openStore(key).catch(() => undefined);
       if (store === undefined) made.refused = "storage";
+      // Inside the space's own promise: every write of it waits for this.
+      else await discardOlderFormatDraft(store);
       return store;
     })();
     return made;
@@ -1098,7 +1104,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // file does not carry it; spent or unreadable, it goes.
       const settingsText = await store.getText(SETTINGS_KEY);
       if (mine !== generation) return none;
-      const readSettings = parseSettingsRecord(settingsText, manifest);
+      // A station that no longer reads may read again against a corrected
+      // file: told, and its record stays. A record that does not read at
+      // all has no such way back: told, and it goes.
+      let frameLost = false;
+      let lost = false;
+      const readSettings = parseSettingsRecord(
+        settingsText,
+        manifest,
+        (what) => {
+          lost = true;
+          if (what === "frame") frameLost = true;
+        },
+      );
+      if (lost) deps.unreadDraft?.();
       const storedSettings =
         readSettings === undefined
           ? undefined
@@ -1115,7 +1134,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             (notes > 0 && addsStations(storedSettings, file)))
             ? storedSettings
             : undefined;
-        if (settingsText !== undefined && settings === undefined) {
+        if (
+          settingsText !== undefined &&
+          settings === undefined &&
+          !frameLost
+        ) {
           void settingsIn(s, null);
         }
       };

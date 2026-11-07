@@ -294,8 +294,13 @@ export {
   type TourQuizOption,
   type TourShortTextBlock,
   type TourStation,
-  type TourStep,
-  type TourStepAction,
+  type TourChildDrop,
+  type TourChoice,
+  type TourQuizEntry,
+  type TourStationChild,
+  type TourStory,
+  type TourStoryBlock,
+  type TourStoryChild,
   type TourStepAdvance,
   type TourVideoBlock,
   type TourObject,
@@ -365,7 +370,14 @@ export {
   type TourTimingSource,
   type TourTimingText,
 } from './tour-timing.js';
-export { tourShownBlockIds } from './tour-story.js';
+export {
+  tourChildPlace,
+  tourStationBlocks,
+  tourStationChildIds,
+  tourStationStoryBlocks,
+  tourStories,
+  tourStoryBlocks,
+} from './tour-story.js';
 export {
   TOUR_CONTACT_MAX_CHARS,
   TOUR_DESCRIPTION_MAX_CHARS,

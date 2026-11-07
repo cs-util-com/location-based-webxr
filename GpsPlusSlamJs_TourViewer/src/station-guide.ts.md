@@ -66,7 +66,9 @@ activateM)` (each tick, each offered station with a distance: the
   its skip settled - the prefetch reads it again; never for an undo inside
   the window, which the prefetch never heard of), `storyPlaying?()` (M4:
   the station whose story the panel plays, the one "End this story?"
-  names), `onUpcoming?(station)` (every render while the current
+  names), `storyChoosing?()` (the station whose picker shows, so the line
+  says "Station found - choose a story." and its end control "Skip the
+  stories"), `onUpcoming?(station)` (every render while the current
   station is found under a fixed order: the station that comes
   next, which the prefetch reads ahead, K4 review R5), `onGuide?(visitor, target)` (every render: the breadcrumbs'
   target, the station in focus with its arrival band as `stopM`; null when
@@ -421,7 +423,8 @@ activateM)` (each tick, each offered station with a distance: the
   is offered (the one playing first, `storyPlaying`), the story card's end
   control (or, without one, the skip button while it has nothing else to
   show) is about it: "End this story?", then "End the story of <title>
-  now"; the second tap asks
+  now"; at the station's picker, where no story is playing yet, "Skip the
+  stories", then "Skip the stories of <title> now"; the second tap asks
   the story panel to end it (`onEndStory`; without one the guide marks the
   station done). A story whose choices all loop back therefore cannot hold
   a tour: with the run's own guarantee, every order completes within two
@@ -741,7 +744,10 @@ undo, note }`: the line's station, how the position stands
   chosen target is the focus whatever the precision, until it is found,
   skipped or no longer offered.
 - **The end-a-story rule:** the end control is shown whenever a found station is offered;
-  its ask is disarmed when the story it named is no longer the target.
+  its ask is disarmed when the story it named is no longer the target, and
+  when the picker opens or closes under it (a pick answers the picker's ask,
+  which would otherwise hold the picked story's auto step; a story's ask
+  does not become a confirmed skip of the stories).
 - **The parity golden's exception for the walk's rules, field by field:** on a tick where
   the no-guess rule holds the `line`, `crumbs` and `skip` may differ from the golden;
   on a tick with no distance the `hud` may; every other field equals the

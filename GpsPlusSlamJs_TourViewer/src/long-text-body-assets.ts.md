@@ -8,7 +8,7 @@ line of its own), at any depth; the view switch reads them (a lectern
 "shows no pictures", `visitor-prefs.ts` `bodyHasPictures`). Named: those
 and every other `asset:` picture the body holds (inline, or past the
 parser's cap), which show their alt text; a write's asset rule reads them
-(`tour-content.ts` `blockAssetIds`, which must not drop the file of a
+(`item-card.ts` `itemStoredAssets`, which must not drop the file of a
 picture the body names).
 
 ## Public API
@@ -21,7 +21,7 @@ picture the body names).
   picture whose target is `asset:<id>`, shown or not (the parser's
   `pictureAlt.asset` for one that is not). Remembered by the block object
   (a `WeakMap`). The write's asset rule (`tour-content.ts`
-  `blockAssetIds`) asks through it.
+  `itemStoredAssets`) asks through it.
 
 ## Invariants & assumptions
 

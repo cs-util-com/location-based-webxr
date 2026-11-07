@@ -27,7 +27,8 @@ import {
   imageAsset,
   inOwnStation,
   pinBlock,
-  showStep,
+  storyOf,
+  told,
   textCard,
 } from "./tour-fixture.mjs";
 
@@ -95,7 +96,7 @@ export async function editorTour({ station = false, farStation = false } = {}) {
       }),
     });
   }
-  // Through the serializer (version 4: stations at geo poses, the pins
+  // Through the serializer (version 5: stations at geo poses, the pins
   // and photos as their free blocks).
   const manifest = {
     ...createEmptyTourManifest(),
@@ -116,8 +117,11 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              blocks: [textCard("hello", "At the gate", "Hello")],
-              steps: [showStep("hi", "hello")],
+              children: [
+                storyOf("hello-story", [
+                  told(textCard("hello", "At the gate", "Hello")),
+                ]),
+              ],
             },
           ]
         : []),
@@ -133,8 +137,11 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              blocks: [textCard("a-well", "Old well", "A well")],
-              steps: [showStep("w", "a-well")],
+              children: [
+                storyOf("a-well-story", [
+                  told(textCard("a-well", "Old well", "A well")),
+                ]),
+              ],
             },
             {
               id: "bench",
@@ -142,8 +149,11 @@ export async function editorTour({ station = false, farStation = false } = {}) {
               activateRadiusM: 30,
               foundRadiusM: 5,
               hint: "arrow",
-              blocks: [textCard("a-bench", "A bench", "A bench")],
-              steps: [showStep("b", "a-bench")],
+              children: [
+                storyOf("a-bench-story", [
+                  told(textCard("a-bench", "A bench", "A bench")),
+                ]),
+              ],
             },
           ]
         : []),

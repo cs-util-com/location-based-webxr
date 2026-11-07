@@ -6,6 +6,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createStationPrefetch } from "./station-prefetch";
+import { stationContent, storyOf } from "./test-support/station-content.js";
 
 /**
  * Why these properties matter (K4 review R4, R11): whatever order the
@@ -25,25 +26,25 @@ function station(id: string, assetIds: readonly string[]): TourStation {
   return {
     id,
     geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
-    blocks: assetIds.map((asset, i) => ({
-      id: `b${String(i)}`,
-      kind: "picture" as const,
-      view: "card" as const,
-      image: asset,
-      widthM: 1,
-      pose: {
-        position: [0, 0, 0] as [number, number, number],
-        rotation: [0, 0, 0, 1] as [number, number, number, number],
-      },
-    })),
+    ...stationContent([
+      storyOf(
+        `${id}-story`,
+        assetIds.map((asset, i) => ({
+          id: `b${String(i)}`,
+          kind: "picture" as const,
+          view: "card" as const,
+          image: asset,
+          widthM: 1,
+          pose: {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0, 1] as [number, number, number, number],
+          },
+        })),
+      ),
+    ]),
     activateRadiusM: 30,
     foundRadiusM: 5,
     hint: "arrow",
-    steps: assetIds.map((_asset, i) => ({
-      id: `s${String(i)}`,
-      action: { kind: "show" as const, block: `b${String(i)}` },
-      advance: { mode: "tap" as const },
-    })),
   };
 }
 

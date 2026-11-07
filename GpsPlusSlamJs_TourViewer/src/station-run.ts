@@ -45,6 +45,7 @@ import type {
 import type { PositionPrecision } from "gps-plus-slam-app-framework/state/position-precision";
 
 import { stationBands } from "./station-bands.js";
+import { playableStories } from "./story-choice.js";
 
 /** No state between waiting and found (K4 review R10): an "active" state
  *  with its own hysteresis drove nothing a visitor sees. */
@@ -268,7 +269,7 @@ export function walkRoute(
 ): WalkRoute {
   return stations.map((s) => ({
     id: s.id,
-    stepless: s.steps.length === 0 && !stationHasCard(s, assets),
+    stepless: playableStories(s).length === 0 && !stationHasCard(s, assets),
   }));
 }
 

@@ -7,6 +7,7 @@
  * that station, or an image of the tour, else its first photo); and a
  * layer the view cannot show has no chip.
  */
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -22,14 +23,21 @@ import {
   treeFoldOf,
   type TreeInput,
 } from "./tree-model.js";
+import { stationContent, storyOf } from "../../test-support/station-content.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 const AT = "2026-10-22T10:00:00Z";
+const STORY_LINE = {
+  kind: "shortText",
+  view: "card",
+  caption: "Hello",
+  pose: POSE,
+} as const;
 
 function station(
   id: string,
   extra: Partial<TourStation> = {},
-  items: TourStation["blocks"] = [],
+  items: TourBlock[] = [],
 ): TourStation {
   return {
     id,
@@ -37,8 +45,7 @@ function station(
     activateRadiusM: 50,
     foundRadiusM: 25,
     hint: "arrow",
-    steps: [],
-    blocks: items,
+    ...stationContent(items),
     ...extra,
   };
 }
@@ -187,6 +194,29 @@ describe("buildTree", () => {
       }),
     );
     expect(treeFoldOf(tree).openStations).toEqual(["b"]);
+  });
+});
+
+// Why: a click in the tree extends a selection along a station's listed
+// items; an item left out of its group is one the click rule cannot reach.
+describe("a station's group for the click rule", () => {
+  it("lists a station's free items, then the blocks of its stories", () => {
+    const told = {
+      ...station("a", {}, [PIN]),
+    };
+    const groups = stationGroups([
+      {
+        ...told,
+        children: [
+          storyOf("first", [{ ...STORY_LINE, id: "line-1" }]),
+          storyOf("second", [{ ...STORY_LINE, id: "line-2" }]),
+          ...told.children,
+        ],
+      },
+    ]);
+    expect(groups).toEqual([
+      { id: "a", children: ["pin-1", "line-1", "line-2"] },
+    ]);
   });
 });
 

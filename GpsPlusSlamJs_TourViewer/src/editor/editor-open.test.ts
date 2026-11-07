@@ -23,6 +23,7 @@ import {
   openTourForEditing,
 } from "./editor-open.js";
 import { createEditorSession } from "./editor-session.js";
+import { stationContent } from "../test-support/station-content.js";
 
 async function zipFile(
   entries: { path: string; data: string }[],
@@ -60,7 +61,7 @@ describe("openTourForEditing", () => {
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 4,
+          version: 5,
           minor: 0,
           stations: [],
           description: "Fine.",
@@ -129,15 +130,14 @@ describe("openTourForEditing", () => {
       geo: at,
       activateRadiusM: 50,
       foundRadiusM: 25,
-      steps: [],
-      blocks: [],
+      ...stationContent([]),
       ...extra,
     });
     const file = await zipFile([
       {
         path: "tour.json",
         data: JSON.stringify({
-          version: 4,
+          version: 5,
           minor: 0,
           stations: [
             bare("k3f9", { title: "The old well", image: "gone" }),
