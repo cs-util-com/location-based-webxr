@@ -142,8 +142,6 @@ async function carried(
   );
 }
 
-/** The saved `tour.json` as written, before any parse fills defaults. */
-
 describe("createEditorSession", () => {
   it("edits a pin's text, moves a note and deletes one, and the save carries all three", async () => {
     const { session, manifest } = await opened([
