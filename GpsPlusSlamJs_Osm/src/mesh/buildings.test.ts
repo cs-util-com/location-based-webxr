@@ -427,6 +427,21 @@ describe("trees", () => {
     tags: { natural: "tree", ...tags },
   });
 
+  it("reads a leaf type that names an Object.prototype member as unknown (M1 review finding 2)", () => {
+    // WHY THIS TEST MATTERS. The leaf-type table was a plain object, so
+    // `leaf_type=constructor` found the inherited function and the tree took a
+    // function as its variant, which `packInstances` files under no geometry:
+    // the tree was dropped. OSM values are free text.
+    for (const name of Object.getOwnPropertyNames(Object.prototype)) {
+      for (const key of ["leaf_type", "wood"]) {
+        const [placement] = buildTrees([tree(1, 50.9413, { [key]: name })], {
+          frame,
+        });
+        expect(placement?.variant, `${key}=${name}`).toBe("unknown");
+      }
+    }
+  });
+
   it("places one instance per tree node", () => {
     const placements = buildTrees(
       [tree(1, 50.9413, {}), tree(2, 50.9414, {})],

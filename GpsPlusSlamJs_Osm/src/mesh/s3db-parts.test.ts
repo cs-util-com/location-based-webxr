@@ -279,6 +279,26 @@ describe("a nested outline counts toward its enclosing outline (review finding 2
     expect(drawn.map((v) => v.feature).sort()).toEqual(["way/2", "way/3"]);
   });
 
+  it("PIN: the accepted loss - a lower parts-less nested outline under a taller enclosing one", () => {
+    // Why this test matters: counting a parts-less nested outline by its own
+    // polygon is a judgement call kept after the M1 review (both alternatives
+    // were identical on all 13 fixtures and each failed a synthetic case
+    // closer to the S3DB pattern). Its stated cost is this case: the 30 m
+    // outline goes, so over the nested 10 m outline only 10 m is drawn. Pinned
+    // so a change to the rule shows up here as a decision, not by accident.
+    const drawn = buildBuildings(
+      [
+        box(1, { building: "yes", height: "30" }, [0, 0, 100, 40]),
+        box(2, { building: "yes", height: "10" }, [0, 0, 30, 40]),
+        box(3, { "building:part": "yes", height: "30" }, [30, 0, 100, 40]),
+      ],
+      { frame: FRAME },
+    );
+    expect(drawn.map((v) => v.feature).sort()).toEqual(["way/2", "way/3"]);
+    const nested = drawn.find((v) => v.feature === "way/2");
+    expect(nested?.topHeightM).toBeCloseTo(10, 6);
+  });
+
   it("PIN: a kiosk inside an outline with no parts anywhere is still drawn", () => {
     // The removed nesting rule deleted Heidelberg's kiosks; nesting alone must
     // never hide anything. Only an outline that has parts somewhere is a
@@ -569,6 +589,59 @@ describe("colour of a building:part", () => {
       });
       expect(colours(all.filter((v) => v.ny > 1e-3))).toEqual(new Set([RED]));
       expect(colours(all.filter((v) => v.ny <= 1e-3))).toEqual(new Set([GREY]));
+    });
+
+    it("paints both wings of a two-outer multipolygon by their own roof ranges (M1 review finding 5)", () => {
+      // Why this test matters: `volumeFor` merges one mesh per polygon, so the
+      // second wing's roof range must move by the first wing's vertex count.
+      // An offset left out paints the first wing's walls red and the second
+      // wing's roof grey; one polygon per volume (every test above) cannot
+      // show it.
+      const ring = (w: number, e: number) => [
+        { lat: -5 * DEG_PER_METRE, lng: w * DEG_PER_METRE },
+        { lat: -5 * DEG_PER_METRE, lng: e * DEG_PER_METRE },
+        { lat: 5 * DEG_PER_METRE, lng: e * DEG_PER_METRE },
+        { lat: 5 * DEG_PER_METRE, lng: w * DEG_PER_METRE },
+        { lat: -5 * DEG_PER_METRE, lng: w * DEG_PER_METRE },
+      ];
+      const city = buildCity(
+        [
+          {
+            type: "relation",
+            id: 5,
+            tags: {
+              type: "multipolygon",
+              building: "yes",
+              height: "10",
+              "roof:shape": "gabled",
+              "roof:height": "4",
+              "building:colour": "#808080",
+              "roof:colour": "#ff0000",
+            },
+            members: [
+              { type: "way", ref: 11, role: "outer", geometry: ring(-20, -10) },
+              { type: "way", ref: 12, role: "outer", geometry: ring(10, 20) },
+            ],
+          },
+        ],
+        { frame: FRAME },
+      );
+      const ranges = city.volumes[0]?.roofVertexRanges ?? [];
+      expect(ranges).toHaveLength(2);
+      const p = city.buildings.flatMap((chunk) => [...chunk.mesh.positions]);
+      const n = city.buildings.flatMap((chunk) => [...chunk.mesh.normals]);
+      const c = city.buildings.flatMap((chunk) => [...(chunk.colors ?? [])]);
+      const seen = { west: new Set<string>(), east: new Set<string>() };
+      const walls = new Set<string>();
+      for (let i = 0; i < p.length; i += 3) {
+        const rgb = [c[i], c[i + 1], c[i + 2]].join(",");
+        if ((n[i + 1] as number) > 0.1) {
+          seen[(p[i] as number) < 0 ? "west" : "east"].add(rgb);
+        } else if (Math.abs(n[i + 1] as number) < 1e-6) walls.add(rgb);
+      }
+      expect(seen.west).toEqual(new Set([RED]));
+      expect(seen.east).toEqual(new Set([RED]));
+      expect(walls).toEqual(new Set([GREY]));
     });
   });
 

@@ -25,7 +25,7 @@ import { loadSite } from "../test-utils/load-fixtures.js";
  * KNOWN FAILURE until the skeleton roof lands (M2 of
  * `GpsPlusSlamJs_Docs/docs/2026-11-07-2130-osm-skeleton-roof-and-geometry-review-fixes-plan.md`).
  * The hip-over-outline fallback goes flat at the eave where a hip line would
- * cross a wall. So the strict assertion is `it.fails`, and the count is pinned
+ * cross a wall. So the strict assertion is `it.fails`, and the list is pinned
  * beside it so it cannot grow unnoticed. M2 removes both: the strict test then
  * passes as a plain `it`.
  *
@@ -38,11 +38,42 @@ import { loadSite } from "../test-utils/load-fixtures.js";
 const TOLERANCE_M = 0.01;
 
 /**
- * Volumes short of their top on r1129 at 1 cm (29; 28 of them by more than
- * 0.5 m, the review's count). Lowered, never raised: a new short volume is a
- * new defect.
+ * The volumes short of their top on r1129 at 1 cm, as sorted `fixture feature`
+ * keys (29; 28 of them by more than 0.5 m, the review's count). A list, not a
+ * count (M1 review finding 4): a count stays green when one volume is fixed and
+ * another breaks. Shortened, never lengthened.
  */
-const KNOWN_SHORT_VOLUMES = 29;
+const KNOWN_SHORT_VOLUMES: readonly string[] = [
+  "cologne-cathedral way/16367389",
+  "cologne-cathedral way/416846395",
+  "cologne-cathedral way/691239651",
+  "cologne-cathedral way/691239653",
+  "heidelberg-altstadt way/171041984",
+  "heidelberg-altstadt way/171691889",
+  "heidelberg-altstadt way/180108327",
+  "heidelberg-altstadt way/247081690",
+  "heidelberg-altstadt way/247521018",
+  "heidelberg-altstadt way/247530267",
+  "heidelberg-altstadt way/247844774",
+  "heidelberg-altstadt way/312575198",
+  "heidelberg-altstadt way/32200572",
+  "heidelberg-altstadt way/92139256",
+  "heidelberg-altstadt way/92139269",
+  "london-westminster way/1134791147",
+  "london-westminster way/153342452",
+  "moscow-st-basil.json relation/3030595",
+  "munich-frauenkirche.json way/80965569",
+  "sylt-westerland way/199572766",
+  "sylt-westerland way/199829557",
+  "sylt-westerland way/200056529",
+  "sylt-westerland way/356841441",
+  "sylt-westerland way/356898090",
+  "sylt-westerland way/356898091",
+  "sylt-westerland way/631351550",
+  "ulm-minster.json way/128963311",
+  "ulm-minster.json way/237518946",
+  "ulm-minster.json way/255550471",
+];
 
 const LANDMARK_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -97,8 +128,15 @@ function drawnTop(volume: BuildingVolume): number {
   return top;
 }
 
-/** `fixture volume: reported vs drawn` for every volume that disagrees. */
-function shortVolumes(fixtures: readonly Fixture[]): string[] {
+interface ShortVolume {
+  /** `fixture feature`, the pinned identity. */
+  readonly key: string;
+  /** The key with the reported and drawn tops, for a readable failure. */
+  readonly detail: string;
+}
+
+/** Every volume whose drawn top disagrees with its reported one. */
+function shortVolumes(fixtures: readonly Fixture[]): ShortVolume[] {
   return fixtures.flatMap((fixture) =>
     fixture.volumes
       .filter((volume) => volume.mesh.triangleCount > 0)
@@ -106,10 +144,13 @@ function shortVolumes(fixtures: readonly Fixture[]): string[] {
         (volume) =>
           Math.abs(volume.topHeightM - drawnTop(volume)) > TOLERANCE_M,
       )
-      .map(
-        (volume) =>
-          `${fixture.name} ${volume.feature}: reported ${volume.topHeightM.toFixed(2)}, drawn ${drawnTop(volume).toFixed(2)}`,
-      ),
+      .map((volume) => {
+        const key = `${fixture.name} ${volume.feature}`;
+        return {
+          key,
+          detail: `${key}: reported ${volume.topHeightM.toFixed(2)}, drawn ${drawnTop(volume).toFixed(2)}`,
+        };
+      }),
   );
 }
 
@@ -126,11 +167,11 @@ describe("drawn top against reported top, over the 13 fixtures", () => {
   it.fails(
     "draws every volume up to its reported top (KNOWN FAILURE until M2)",
     () => {
-      expect(short).toEqual([]);
+      expect(short.map((v) => v.detail)).toEqual([]);
     },
   );
 
-  it("has exactly the known number of short volumes, so the defect cannot grow", () => {
-    expect(short).toHaveLength(KNOWN_SHORT_VOLUMES);
+  it("has exactly the known short volumes, so the defect cannot grow or move", () => {
+    expect(short.map((v) => v.key).sort()).toEqual(KNOWN_SHORT_VOLUMES);
   });
 });

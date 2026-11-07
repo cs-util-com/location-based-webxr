@@ -555,3 +555,34 @@ describe("isBridgeCrossing (DEC-R1)", () => {
     ).toBe(false);
   });
 });
+
+describe("highway values that name Object.prototype members (M1 review finding 2)", () => {
+  // WHY THIS TEST MATTERS. The width tables were plain objects, so
+  // `PATH_WIDTH_M["constructor"]` found the inherited function: the road's
+  // width came back as a function (NaN in the buffer, so the road vanished)
+  // and `"toString" in PATH_WIDTH_M` made `toString` a footpath.
+  // OSM values are free text, so every name below can arrive in a tile.
+  const PROTOTYPE_NAMES = Object.getOwnPropertyNames(Object.prototype);
+
+  it("gives each the unknown-class width", () => {
+    const unknown = roadWidthM({ highway: "no_such_class" });
+    for (const name of PROTOTYPE_NAMES) {
+      expect(roadWidthM({ highway: name }), name).toBe(unknown);
+    }
+  });
+
+  it("calls none of them a pedestrian path", () => {
+    for (const name of PROTOTYPE_NAMES) {
+      const feature: OsmFeature = {
+        type: "way",
+        id: 1,
+        geometry: [
+          { lat: 0, lng: 0 },
+          { lat: 0, lng: 0.001 },
+        ],
+        tags: { highway: name },
+      };
+      expect(isPedestrianPath(feature), name).toBe(false);
+    }
+  });
+});

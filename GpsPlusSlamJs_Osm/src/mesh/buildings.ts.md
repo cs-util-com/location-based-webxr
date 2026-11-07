@@ -145,7 +145,8 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     near-duplicate of the Middlesex Abutment outline `way/367654296` (204 m²,
     22 m, with parts) and was drawn invisibly inside it. Swept 0.5-0.95: the
     same one, plus `way/367654912` at 0.5 and 0.7 only. Build time unchanged
-    within noise (interleaved runs 168-195 ms against 162-181 ms).
+    within noise at fixture scale (interleaved runs 168-195 ms against
+    162-181 ms; a 7 x 7 tiling of a fixture adds a few hundred ms at most).
   - **The cost of the rule, stated:** an enclosing outline covered by a nested
     outline that is itself drawn is hidden like one covered by parts, so a
     taller enclosing outline over a lower nested one would lose its height.

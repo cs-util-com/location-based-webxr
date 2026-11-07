@@ -41,6 +41,9 @@ geometry.
   carrying both is mid-retagging, so the newer key is the one someone last
   checked.
   - `wood=yes` and `wood=mixed` stay `unknown`: they are not leaf-type claims.
+  - The table is a `Map` (M1 review finding 2): on a plain object
+    `leaf_type=constructor` found an inherited function and the tree was
+    dropped; prototype names now read as `unknown`.
   - **Species is still not guessed.** `species`/`genus` are free text, not a
     controlled vocabulary, and a wrong species is no better than an unknown one.
   - This matters more than it looks: `variant` is the only thing standing

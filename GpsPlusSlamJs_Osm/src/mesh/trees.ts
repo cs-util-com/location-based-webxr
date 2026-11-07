@@ -70,19 +70,22 @@ export const DEFAULT_CROWN_RATIO = 0.6;
  * Note what is NOT here: `wood=yes`, `wood=mixed`, and every free-text
  * `species`/`genus` value. A controlled vocabulary is a different question from
  * a guess, and a wrong species is no better than an unknown one.
+ *
+ * A `Map`: on a plain object `leaf_type=constructor` found an inherited
+ * function and the tree was dropped (M1 review finding 2).
  */
-const LEAF_TYPES: Readonly<Record<string, TreeVariant>> = {
-  broadleaved: "broadleaved",
-  deciduous: "broadleaved",
-  needleleaved: "needleleaved",
-  coniferous: "needleleaved",
-};
+const LEAF_TYPES: ReadonlyMap<string, TreeVariant> = new Map([
+  ["broadleaved", "broadleaved"],
+  ["deciduous", "broadleaved"],
+  ["needleleaved", "needleleaved"],
+  ["coniferous", "needleleaved"],
+]);
 
 function variantOf(tags: Record<string, string>): TreeVariant {
   // `leaf_type` FIRST, because it is the current key: a feature carrying both
   // is mid-retagging, and the newer value is the one someone last checked.
   for (const key of ["leaf_type", "wood"] as const) {
-    const variant = LEAF_TYPES[tags[key] ?? ""];
+    const variant = LEAF_TYPES.get(tags[key] ?? "");
     if (variant !== undefined) return variant;
   }
   return "unknown";
