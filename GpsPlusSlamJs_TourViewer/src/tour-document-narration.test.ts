@@ -307,4 +307,54 @@ describe("draftableObject: what a draft keeps of a narration", () => {
       narration: { audio: "voice", synthetic: false },
     });
   });
+  // Why: a file brought in whose write did not land (a full disk) is held
+  // nowhere after a reload, and a record naming it is then left out whole.
+  // That holds for every kind that names a file, not only a narration: a
+  // model naming such a file is drafted as the written file has it, and a
+  // new one naming it not at all, never as a record naming a missing file.
+  it("drafts a model naming a file the draft could not keep as the written file has it, or not at all", () => {
+    const STATUE: TourAsset = {
+      id: "statue",
+      path: "content/statue.glb",
+      kind: "model",
+    };
+    const NEW_STATUE: TourAsset = {
+      id: "statue2",
+      path: "content/statue2.glb",
+      kind: "model",
+    };
+    const model = {
+      id: "m",
+      kind: "model",
+      view: "placed",
+      asset: "statue",
+      sizeM: 2,
+      createdAtIso: "2026-10-31T00:00:02.000Z",
+      geo: {
+        lat: 47.5,
+        lon: 8.7,
+        alt: 400,
+        rotation: [0, 0, 0, 1],
+        headingDeg: 0,
+      },
+      station: "st-m",
+    } as const satisfies TourObject;
+    const state = reduce(
+      reduce(
+        initialTourDocumentState,
+        act.opened({ manifest: tourOf([model], { assets: [STATUE] }) }),
+      ),
+      act.assetsAdded({ assets: [NEW_STATUE] }),
+    );
+    const written = documentObjects(state).find(
+      (o) => o.object.id === "m",
+    )?.object;
+    const renamed: TourObject = { ...model, asset: "statue2", sizeM: 3 };
+    const notKept = (id: string): boolean => id !== "statue2";
+    expect(draftableObject(renamed, state)).toBe(renamed);
+    expect(draftableObject(renamed, state, notKept)).toEqual(written);
+    expect(
+      draftableObject({ ...renamed, id: "m-new" }, state, notKept),
+    ).toBeNull();
+  });
 });
