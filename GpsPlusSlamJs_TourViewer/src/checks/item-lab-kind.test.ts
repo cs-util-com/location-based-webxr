@@ -114,6 +114,16 @@ describe("reading a kind's folder", () => {
       freeKnown: "a sound has no figure",
     });
     expect(noted.sample.freeKnown).toBe("a sound has no figure");
+    // A note is words: JSON's null, an empty string or a number is none,
+    // with an image or without (the contract test reads it as the note).
+    for (const freeKnown of [null, "", 3]) {
+      for (const sample of [sound, SAMPLE]) {
+        expect(
+          () => readItemKind("a", module, { ...sample, freeKnown }),
+          JSON.stringify(freeKnown),
+        ).toThrow(/"freeKnown" in sample\.json must be a note/);
+      }
+    }
   });
 
   it("lists its files as the tour's assets, by their file names", () => {

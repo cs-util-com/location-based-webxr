@@ -102,6 +102,16 @@ export function readItemKind(
   if (!Array.isArray(sample.assets) || !sample.assets.every(isKindFile)) {
     throw fail('needs "assets" of { id, kind, file } in sample.json');
   }
+  // A note is words: JSON's null or an empty string would pass for none
+  // below and fail deep in the free host instead.
+  if (
+    sample.freeKnown !== undefined &&
+    (typeof sample.freeKnown !== "string" || sample.freeKnown === "")
+  ) {
+    throw fail(
+      '"freeKnown" in sample.json must be a note: words saying why the kind cannot stand in the free host',
+    );
+  }
   // The free host stands the kind as a figure drawn from its image.
   if (
     sample.freeKnown === undefined &&
