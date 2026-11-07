@@ -66,7 +66,6 @@ import {
   inMenu,
   closeOpenMenu,
   setItemDisabled,
-  DEFAULT_DOCK_LAYOUT,
   docksAfter,
   type DockChange,
   waitForGround,
@@ -102,6 +101,14 @@ import {
   inspectorDrawing,
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
+import { watchKeyboard } from "./phone-keyboard.js";
+import {
+  SHELL_DOCK_LAYOUT,
+  phoneSheets,
+  wirePhoneSheets,
+  type SheetKind,
+} from "./phone-sheet.js";
+import { wireRadiusSlider } from "./radius-slider.js";
 import { createShellPictures } from "./shell-pictures.js";
 import { tourProblems } from "./tour-problems.js";
 import { drawTree } from "./shell-tree.js";
@@ -138,6 +145,7 @@ type ShellView = Pick<
   | "setLayers"
   | "centre"
   | "turn"
+  | "previewRadius"
   | "groundAt"
   | "origin"
   | "mapTiles"
@@ -353,6 +361,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     host: document.body,
     choose: (id, kind) => {
       addInPlace(id, kind);
+      // Added from the details on a phone: the draw took the button away.
+      if (document.activeElement === document.body) {
+        focusControl(inspector.root, '[data-act="close"]');
+      }
     },
   });
   // Ctrl+K: a kind and a place in one query.
@@ -410,6 +422,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     frame: byId<HTMLButtonElement>("studio-frame"),
     topView: byId<HTMLButtonElement>("studio-top"),
     help: byId<HTMLButtonElement>("studio-help"),
+    list: byId<HTMLButtonElement>("studio-list"),
   };
   const helpBox = byId("shell-help");
   const needle = byId<HTMLElement>("compass-needle");
@@ -515,6 +528,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** A station's Contents unfolded: kept from one station to the next. */
+  let contentsOpen = true;
   /** A ground command waiting for the ground: the inspector shows it in
    *  progress; a new selection or the view hidden calls it off. */
   let busy: {
@@ -526,6 +541,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     doc: TourDocumentState;
     ui: EditorViewState;
     positionOpen: boolean;
+    contentsOpen: boolean;
     busy: string | null;
   } | null = null;
 
@@ -568,6 +584,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       {
         folded: state().editorView.foldedDocks.inspector,
         positionOpen,
+        contentsOpen,
         busy: busy?.act ?? null,
         ...(writer === null ? {} : { longText: longText.state() }),
       },
@@ -595,16 +612,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The docks after `change` by the dock rule, stored. */
+  let onPhone = phoneSheets(window.innerWidth);
   const applyDocks = (change: DockChange) => {
     const ui = state().editorView;
+    const inspectorShows = inspectorModel(ui) !== null;
+    const phone = phoneSheets(window.innerWidth);
+    // Turned sideways, the list the details covered stands beside them.
+    const turnedWide = change === "resized" && onPhone && !phone;
+    onPhone = phone;
+    const folded = {
+      tree: ui.foldedDocks.tree && !turnedWide,
+      // A phone's details are a whole sheet, with no head to unfold it by.
+      inspector: ui.foldedDocks.inspector && !(phone && inspectorShows),
+    };
     const after = docksAfter(
       change,
-      {
-        widthPx: window.innerWidth,
-        folded: ui.foldedDocks,
-        inspectorShows: inspectorModel(ui) !== null,
-      },
-      DEFAULT_DOCK_LAYOUT,
+      { widthPx: window.innerWidth, folded, inspectorShows },
+      SHELL_DOCK_LAYOUT,
     );
     for (const dock of ["tree", "inspector"] as const) {
       if (after[dock] !== ui.foldedDocks[dock]) {
@@ -614,6 +638,45 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     }
   };
+
+  /** The sheet a phone shows now: the details over the list. */
+  const shownSheet = (): SheetKind | null => {
+    const ui = state().editorView;
+    if (!phoneSheets(window.innerWidth)) return null;
+    if (inspectorModel(ui) !== null) return "details";
+    return ui.foldedDocks.tree ? null : "tree";
+  };
+  /** The selection let go and the list shown: on a phone, the way back
+   *  from the details. */
+  const showList = () => {
+    creatorTouchesTree();
+    if (state().editorView.selected !== null) deps.select(null);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "tree", folded: false }),
+    );
+  };
+  const sheets = wirePhoneSheets({
+    tree: tree.root,
+    details: inspector.root,
+    spacePx: () => {
+      const panelPx = Number.parseFloat(
+        getComputedStyle(document.body).getPropertyValue("--s-panel-h"),
+      );
+      const viewPx = tree.root.parentElement?.clientHeight ?? 0;
+      return viewPx - (Number.isFinite(panelPx) ? panelPx : 0);
+    },
+    dismiss: (which) => {
+      if (which === "details") {
+        deps.select(null);
+        return;
+      }
+      creatorTouchesTree();
+      store.dispatch(
+        editorViewActions.dockFolded({ dock: "tree", folded: true }),
+      );
+    },
+  });
+  let stopKeyboard: (() => void) | null = null;
 
   const drawHistory = (doc: TourDocumentState) => {
     for (const which of ["undo", "redo"] as const) {
@@ -699,6 +762,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       drawn.doc === doc &&
       drawn.ui === ui &&
       drawn.positionOpen === positionOpen &&
+      drawn.contentsOpen === contentsOpen &&
       drawn.busy === busyAct
     ) {
       return;
@@ -706,7 +770,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const docChanged = drawn?.doc !== doc;
     const uiChanged = drawn?.ui !== ui;
     const before = drawn?.ui ?? null;
-    drawn = { doc, ui, positionOpen, busy: busyAct };
+    drawn = { doc, ui, positionOpen, contentsOpen, busy: busyAct };
     const tour = manifest();
     if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
@@ -720,9 +784,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
     }
+    sheets.sync(shownSheet());
   };
 
   // --- the inspector's fields and commands ---------------------------------
+
+  const radius = wireRadiusSlider({
+    root: inspector.root,
+    station: () => {
+      const model = inspectorModel(state().editorView);
+      const id = selectedStationId();
+      return model?.kind === "station" && id !== null
+        ? { id, radiusM: model.foundRadiusM }
+        : null;
+    },
+    preview: (id, radiusM) => view?.previewRadius(id, radiusM),
+    write: (id, foundRadiusM) => {
+      deps.edits.station(id, { foundRadiusM });
+    },
+  });
 
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
@@ -931,6 +1011,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const was = lastSelected;
       lastSelected = selected;
       positionOpen = false;
+      radius.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -1251,6 +1332,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       runBarAction(action);
     }
   });
+  top.list.addEventListener("click", showList);
   tree.fold.addEventListener("click", () => {
     creatorTouchesTree();
     const folded = !state().editorView.foldedDocks.tree;
@@ -1265,6 +1347,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return;
     }
     if (act === "close") deps.select(null);
+    if (act === "back") showList();
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
@@ -1283,8 +1366,30 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       positionOpen = !positionOpen;
       draw();
     }
+    if (act === "contents") {
+      contentsOpen = !contentsOpen;
+      draw();
+    }
     const { selected } = state().editorView;
     if (selected === null) return;
+    if (act === "add-content" && selected.startsWith(STATION_PREFIX)) {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      if (button !== null && model !== null) {
+        addMenu.openFor(
+          button,
+          selected.slice(STATION_PREFIX.length),
+          model.title,
+        );
+      }
+    }
+    if (act?.startsWith("goto:") === true) {
+      const item = act.slice("goto:".length);
+      deps.select(item);
+      view?.flyTo(item);
+    }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act === "delete") deleteSelected(selected);
     if (act === "split") deps.stations.split(selected);
@@ -1321,7 +1426,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // the control the focus is moving to out of the page too, and Chromium
   // then drops the focus to the page: it goes to that control as drawn
   // again, found by its name.
+  let tabPressed = false;
   inspector.root.addEventListener("focusout", (event) => {
+    const tabbed = tabPressed;
+    tabPressed = false;
     const input = event.target;
     // Only a field drawn under its name: a long text's writer and its link
     // line keep their own text and write it themselves.
@@ -1333,12 +1441,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     ) {
       const next = controlName(inspector.root, event.relatedTarget);
       commitField(input, state().editorView.selected);
-      focusControl(inspector.root, next);
+      focusControl(inspector.root, next, tabbed);
     }
   });
   inspector.root.addEventListener("keydown", (event) => {
     const input = event.target;
     if (!isTyped(input) || input.dataset["field"] === undefined) return;
+    if (event.key === "Tab") tabPressed = true;
     // Enter keeps a line; in prose (a text area) it starts a new line.
     if (
       event.key === "Enter" &&
@@ -1459,6 +1568,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   const onResize = () => {
     applyDocks("resized");
+    sheets.sync(shownSheet());
   };
 
   return {
@@ -1488,6 +1598,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.addEventListener("keydown", onKey, true);
       document.addEventListener("pointerdown", onOutside);
       window.addEventListener("resize", onResize);
+      const box = tree.root.parentElement;
+      stopKeyboard?.();
+      stopKeyboard = box === null ? null : watchKeyboard(window, box);
     },
     flush() {
       const pending = typedField();
@@ -1507,6 +1620,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         );
       }
       endUnfolding();
+      radius.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       longText.flush();
@@ -1521,6 +1635,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("pointerdown", onOutside);
       window.removeEventListener("resize", onResize);
+      stopKeyboard?.();
+      stopKeyboard = null;
+      sheets.sync(null);
       showHelp(false);
       addMenu.close(false);
       palette.close(false);
@@ -1558,7 +1675,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
           folded: { tree: false, inspector: ui.foldedDocks.inspector },
           inspectorShows: inspectorModel(ui) !== null,
         },
-        DEFAULT_DOCK_LAYOUT,
+        SHELL_DOCK_LAYOUT,
       );
       if (after.tree) return;
       const still =

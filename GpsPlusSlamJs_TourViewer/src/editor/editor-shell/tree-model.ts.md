@@ -52,6 +52,8 @@ children }`; `count` is how many items it holds, `unlocked` whether
 - `stationGroups(stations)` -> the editor kit's `TreeGroup[]`: each
   station's id with its items' ids, for the tree's click rule
   (`treeClickPlan`).
+- `StationContent` (`{ id, kind, title }`), `stationContents(station)` - the
+  items of a station's world in their order, as the tree names them.
 
 ## Invariants & assumptions
 

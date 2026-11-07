@@ -45,7 +45,10 @@
     writes it only when every stage recorded.
   - Counts capture: vitest `--reporter=default --reporter=json
     --outputFile.json=<scratch>`; playwright `--reporter=list,json` +
-    `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.
+    `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row. That
+    flag replaces the config's reporters, so on the runner the scratch JSON is
+    copied to `runnerReportFile` before it is removed, red or stalled runs
+    included: the job's upload is what is left of a run that hung.
   - Atomic write: temp file + rename, last-writer-wins; concurrent recorded
     runs in one project are unsupported (single-dev workflow).
   - Browser stages run at BELOW_NORMAL priority on Windows (2026-09-30):

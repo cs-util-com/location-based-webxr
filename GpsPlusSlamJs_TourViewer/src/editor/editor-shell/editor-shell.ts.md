@@ -46,6 +46,24 @@ was opened over. Both close with the view. The tree's foot
 (`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
 nor while the dock is folded.
 
+**On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
+over the foot of the page with the map above them: the list when nothing
+is selected, the details over it when something is, each with a grip
+(drag to resize, down past the floor to dismiss). The share of the page
+is one CSS number on the body (`--s-sheet-share`), which the canvas reads
+too, so the map ends where the sheet begins and is told of its new size
+on release only. The head of the details has a back arrow to the list
+(`act` "back", `showList`: the selection goes, the list shows) beside
+its close button, and `#studio-list` in the top bar brings a dismissed
+list back. An open bottom panel stays at the foot and the sheet stands
+on it, taking its share of what is left, so Problems and History still
+work; a problem tapped turns the sheet into its details. A sideways
+phone wider than 700 px keeps the two docks, and turning one with
+something selected unfolds the list the details covered. The on-screen keyboard
+(`phone-keyboard.ts`) is `--s-keyboard-h` on the page; at 900 px or less
+a sheet is padded by what the keyboard covers, so a focused field can
+scroll above it.
+
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
 station at the centre of the view (where the view has none, `centre()`
 null, it says to come closer to the ground and adds nothing), the scene's
@@ -103,7 +121,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   flight unfolds, with the `dock-unfold` animation (the class
   `unfolding`, gone at its `animationend`) unless reduced motion asks
   for none. It follows the dock rule as at an open with the tree unfolded
-  (a tab below 700 px, or where the open inspector has the room). Once
+  (a tab where the open inspector has no room; on a phone the list opens,
+  as at a start). Once
   per approach, and not at all after the creator folded or unfolded the
   tree during the flight; nothing folds the tree again afterwards (no
   zoom-out rule exists).
@@ -146,6 +165,11 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   through the new `edits.view(id, view)` (`editor.editBlockView`). The
   shell's generic field input skips its fields: only an input drawn under
   a field name (`data-field`) is written by the shell.
+- The inspector's station extras: `contents` folds Contents (kept across
+  selections), `add-content` opens the tree's type menu for the station,
+  `goto:<id>` selects and flies as a tree row does, and the radius slider
+  (`radius-slider.ts`) previews through `view.previewRadius` and is
+  cancelled when the selection goes or the shell hides.
 
 ## Invariants & assumptions
 
@@ -161,7 +185,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   "Stations" header in its head only unfolds the dock, its sections as
   they were (a tap there used to unfold the dock and close the stations
   in one go, so the tree seemed to collapse).
-- **The dock rule** (`dock-rule.ts`): `opened` on show, `selected` when
+- **The dock rule** (`dock-rule.ts`, with `SHELL_DOCK_LAYOUT` of
+  `phone-sheet.ts`: side by side above 700 px, the list open on a phone): `opened` on show, `selected` when
   the selection becomes another, `resized` on a window resize,
   `tree-unfolded` and `inspector-unfolded` when the creator unfolds one.
 - **Layers:** only the codes and the station names are offered (the
@@ -248,10 +273,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   before the name goes under it:
   - at 820 px the unsaved mark keeps its dot (its words are its title,
     and the save status a screen reader hears);
-  - at 820 px too the docks shrink to 56 % and 60 % of the width where
-    that is less; a folded tree's head ends where the
-    inspector begins (156 px at 390), so the inspector never covers its
-    fold arrow;
+  - from 900 px down to 701 px the docks are 226 px and 268 px wide (a
+    phone turned sideways keeps both, with the map between them);
   - at 720 px the buttons drop their icons, keeping words;
   - at 520 px Undo and Redo fold into the Edit menu;
   - at 400 px the menus' carets go and the groups close up.
@@ -353,7 +376,11 @@ The rules it applies are unit-tested in their own files
 `tree-model.property.test.ts`, `inspector-model.test.ts`,
 `dock-rule.test.ts`), and its drawing parts under jsdom
 (`shell-tree.test.ts`, `shell-inspector.test.ts`,
-`shell-pictures.test.ts`, `shell-icons.test.ts`). The page is covered
+`shell-pictures.test.ts`, `shell-icons.test.ts`). The phone's sheets and
+keyboard: `phone-sheet.test.ts`, `phone-keyboard.test.ts`, and
+`playwright-tests/editor3d-phone.spec.js` (positions and gaps at 390x844
+and 844x390: the tap to details, back and close, the drag and the
+dismiss, the bottom panel under a sheet). The page is covered
 by `playwright-tests/editor3d-shell.spec.js`: the layout at 390x844,
 844x390, 820x1180 and 1440x900 (bars, docks, the map controls at the
 bottom right and under the inspector, every top-bar control inside the

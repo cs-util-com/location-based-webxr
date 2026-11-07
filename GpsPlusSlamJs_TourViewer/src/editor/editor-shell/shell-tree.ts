@@ -196,6 +196,7 @@ function cardOf(
     // folders and its free items below the row.
     if (card.imagePath !== null) {
       const pic = el("div", "pic");
+      pic.dataset["select"] = card.selection;
       pic.setAttribute("aria-hidden", "true");
       pictures.show(pic, card.imagePath);
       box.append(pic);

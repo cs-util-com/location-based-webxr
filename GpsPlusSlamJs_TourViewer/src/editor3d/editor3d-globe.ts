@@ -1634,6 +1634,9 @@ export async function openGlobeEditor(
       groundAt: (place) => editing.groundAt(place),
       origin: () => ({ lat: centre.lat, lng: centre.lng }),
       turn: (selection, deg) => editing.turn(selection, deg),
+      previewRadius: (id, radiusM) => {
+        editing.previewRadius(id, radiusM);
+      },
       pointOf(selection) {
         const place = placeOf(selection);
         if (place === null) return null;

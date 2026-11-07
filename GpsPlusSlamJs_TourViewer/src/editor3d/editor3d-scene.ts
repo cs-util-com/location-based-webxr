@@ -217,6 +217,9 @@ export interface Editor3dView {
   /** Turn the selection `deg` clockwise about up, as one edit through the
    *  page (the bar's Align to station); false for one without a pose. */
   turn(selection: string, deg: number): boolean;
+  /** A station's ring and radius dots drawn at `radiusM` (null: as the
+   *  tour has them); no edit. The inspector's slider, during its drag. */
+  previewRadius(stationId: string, radiusM: number | null): void;
   /** Where the selection stands in the world (the page's checks). */
   pointOf(selection: string): readonly [number, number, number] | null;
   /** The ground's ellipsoidal height at a place, as loaded (null where
@@ -839,6 +842,9 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       groundAt: (place) => editing.groundAt(place),
       origin: () => ({ lat: centre.lat, lng: centre.lng }),
       turn: (selection, deg) => editing.turn(selection, deg),
+      previewRadius: (id, radiusM) => {
+        editing.previewRadius(id, radiusM);
+      },
       pointOf(selection) {
         const place = placeOf(selection);
         return place === null ? null : [place.at.x, place.at.y, place.at.z];

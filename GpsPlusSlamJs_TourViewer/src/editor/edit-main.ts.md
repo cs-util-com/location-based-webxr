@@ -12,6 +12,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
 
+- Every slider of the page takes the framework's scroll guard at load, so a
+  vertical swipe on the radius slider scrolls its panel on a phone.
+
 - The open dialog's "Choose…" is a button, so the chooser can be reached
   and opened from the keyboard (the label and its hidden input are not in
   the tab order, PR #612 review).

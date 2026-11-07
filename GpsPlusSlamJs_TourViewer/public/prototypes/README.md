@@ -208,7 +208,12 @@ wired into its logic: every interaction is faked.
 - `world-items-1-real-objects/` ... `world-items-3-tap-a-card/` - three
   directions for video, audio and a character standing free in the world:
   real objects in the place, a quiet marker that starts when you are near,
-  and a card that a tap opens on the screen; made 2026-11-06.
+  and a card that a tap opens on the screen; made 2026-11-06. They explored
+  when these items start and stop, a question largely answered before they
+  were made, so where they differ the earlier answer stands: free sound and
+  video stay stopped until tapped; a character or a video may start by itself
+  only if its settings say so and nothing else plays; the AR view shows no
+  lists of items in its HUD.
 - `editor-import-1-drop-into-scene/` and `editor-import-2-tour-library/` -
   two directions for bringing pictures and 3D models into the desktop
   editor: straight onto the place, or a checked library shelf first; the
