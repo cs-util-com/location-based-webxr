@@ -30,6 +30,7 @@ import { AFFORDANCE_RES } from "../spatial/resolutions.js";
 import { buildObstacleIndex, crossesObstacle } from "../nav/obstacles.js";
 import { enuFrameAt } from "./enu.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
+import { uniformIn } from "../test-utils/uniform-arbitrary.js";
 
 /** Half the length of every test wall, metres. Long enough to have a far end. */
 const WALL_HALF_M = 40;
@@ -145,21 +146,6 @@ function asLatLng(cell: string): LatLng {
   return { lat, lng };
 }
 
-/**
- * A latitude or longitude drawn UNIFORMLY over `[min, max]`.
- *
- * Not `fc.double`, whose values are spread evenly over the floating-point
- * representations rather than over the range: most of them sit within a
- * hair of zero, so forty runs of `(lat, lng)` sampled essentially ONE spot on
- * the H3 lattice, and the property never saw the alignments it exists to
- * check. A micro-degree grid is far finer than a res-13 cell (~0.1 m).
- */
-function coordinate(min: number, max: number): fc.Arbitrary<number> {
-  return fc
-    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
-    .map((micro) => micro / 1e6);
-}
-
 /** Whether some step across the wall at the gate is left open by the index. */
 function openStepsThroughGate(centre: LatLng, bearing: number): number {
   const wall = wallThrough(centre, bearing);
@@ -178,9 +164,9 @@ describe("a mapped gate is walkable", () => {
   it("always leaves at least one step through it, whatever the bearing", () => {
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 180, noNaN: true }),
-        coordinate(-60, 60),
-        coordinate(-179, 179),
+        uniformIn(0, 180),
+        uniformIn(-60, 60),
+        uniformIn(-179, 179),
         (bearing, lat, lng) => {
           expect(openStepsThroughGate({ lat, lng }, bearing)).toBeGreaterThan(
             0,
@@ -226,9 +212,9 @@ describe("a mapped gate is walkable", () => {
     // hole; thirty metres away the wall is exactly as solid as it was.
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 180, noNaN: true }),
-        coordinate(-60, 60),
-        coordinate(-179, 179),
+        uniformIn(0, 180),
+        uniformIn(-60, 60),
+        uniformIn(-179, 179),
         (bearing, lat, lng) => {
           const centre = { lat, lng };
           const wall = wallThrough(centre, bearing);
@@ -254,9 +240,9 @@ describe("a mapped gate is walkable", () => {
     // Without this, a bug that opened every wall would pass the test above.
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 180, noNaN: true }),
-        coordinate(-60, 60),
-        coordinate(-179, 179),
+        uniformIn(0, 180),
+        uniformIn(-60, 60),
+        uniformIn(-179, 179),
         (bearing, lat, lng) => {
           const centre = { lat, lng };
           const wall = wallThrough(centre, bearing);
