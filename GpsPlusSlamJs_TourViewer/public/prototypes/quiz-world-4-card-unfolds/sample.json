@@ -1,0 +1,101 @@
+{
+  "normal": {
+    "ask": "The statue over there has turned green with age. What is it made of?",
+    "format": "choice",
+    "answers": [
+      { "text": "Bronze" },
+      { "text": "Marble" },
+      { "text": "Painted oak" },
+      { "text": "Sandstone" }
+    ],
+    "right": 0,
+    "retry": true,
+    "points": 10,
+    "showScore": false,
+    "says": {
+      "right": "Bronze. It goes green all by itself, given a century of rain.",
+      "retry": "Not that one. Look at how it has weathered, then try again.",
+      "wrong": "It is bronze. Nothing else turns that green in the rain."
+    },
+    "stand": { "x": 0, "z": 4 },
+    "reach": 2.4
+  },
+  "longest": {
+    "ask": "Before you walk on, look carefully around this whole square, past the fountain and the statue, and tell me which of these has stood here for the longest time.",
+    "format": "choice",
+    "answers": [
+      { "text": "The clock tower with the slate roof at the far corner" },
+      { "text": "The low stone wall on either side of the old gate" },
+      { "text": "The fountain that the market traders once drank from" },
+      { "text": "The bench that nobody remembers ever being put there" }
+    ],
+    "right": 1,
+    "retry": true,
+    "points": 20,
+    "showScore": true,
+    "says": {
+      "right": "The wall. It was here before the square had a name, and it will probably be here when the name has been forgotten again.",
+      "retry": "Not that one, although it certainly looks the part. Look for what everything else has been built around.",
+      "wrong": "It was the wall. Everything else in this square has been built around it, some of it several times over."
+    },
+    "stand": { "x": 0.6, "z": 3.5 },
+    "reach": 2.6
+  },
+  "missing": {
+    "ask": "Which way does the old gate lead?",
+    "answers": [
+      { "text": "Out of town" },
+      { "text": "To the hall" },
+      { "text": "Nowhere" }
+    ]
+  },
+  "typed": {
+    "ask": "One word for what falls from the fountain. Type it.",
+    "format": "typed",
+    "placeholder": "Type the word",
+    "salt": "k3v9-square",
+    "sha256": [
+      "109fabbf7f5b8d2fe67128908503761eade54e397a92cefceaa5deb96f65e341",
+      "4960c941ab61792e17773876f2fb4b855e452192adb3cfa4d0939a8161f358d1"
+    ],
+    "retry": true,
+    "says": {
+      "right": "Water. Sometimes the easy answer is the true one.",
+      "retry": "That is not it. Listen for a moment, then try again.",
+      "wrong": "It was water, plain and simple."
+    },
+    "stand": { "x": 0, "z": 4 }
+  },
+  "no retry": {
+    "ask": "How many lamps stand around this square?",
+    "format": "choice",
+    "answers": [
+      { "text": "Two" },
+      { "text": "Four" },
+      { "text": "Six" },
+      { "text": "Eight" }
+    ],
+    "right": 1,
+    "retry": false,
+    "says": {
+      "right": "Four, one for each corner.",
+      "retry": "Not quite.",
+      "wrong": "There are four, one for each corner. Count them on your way out."
+    },
+    "stand": { "x": -1, "z": 4 }
+  },
+  "done": {
+    "ask": "The statue over there has turned green with age. What is it made of?",
+    "format": "choice",
+    "answers": [
+      { "text": "Bronze" },
+      { "text": "Marble" },
+      { "text": "Painted oak" },
+      { "text": "Sandstone" }
+    ],
+    "right": 0,
+    "retry": true,
+    "answered": { "picked": 0, "crossed": [2], "right": true, "earned": 5 },
+    "stand": { "x": 0, "z": 4 }
+  }
+}

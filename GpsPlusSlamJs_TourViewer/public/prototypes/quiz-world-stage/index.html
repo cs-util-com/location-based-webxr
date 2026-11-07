@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Prototype: the shared stage for the quiz-in-the-world variants, with a trivial sample kind. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Quiz World Stage</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { runStage } from "./stage.js";
+      import { kind } from "./kind.js";
+
+      const samples = await fetch("./sample.json").then((r) => r.json());
+      runStage({ kind, samples, title: "Quiz World Stage" });
+    </script>
+  </body>
+</html>

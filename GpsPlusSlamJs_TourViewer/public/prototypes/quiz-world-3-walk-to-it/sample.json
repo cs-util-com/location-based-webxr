@@ -1,0 +1,189 @@
+{
+  "normal": {
+    "ask": "Count the lamps around this square as you go. How many are there?",
+    "answers": [
+      {
+        "text": "Two",
+        "at": {
+          "x": -6.5,
+          "z": 1
+        }
+      },
+      {
+        "text": "Three",
+        "at": {
+          "x": -3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "Four",
+        "at": {
+          "x": 3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "Six",
+        "at": {
+          "x": 6.5,
+          "z": 1
+        }
+      }
+    ],
+    "right": 2,
+    "retry": true,
+    "circle": 3,
+    "points": 10,
+    "showScore": false,
+    "says": {
+      "right": "Four, one in each corner. You counted while you walked, the best way to count.",
+      "retry": "Not quite. Look into the corners of the square, then choose again.",
+      "wrong": "There are four, one in each corner. Have a look on your way out."
+    }
+  },
+  "longest": {
+    "ask": "Before you decide, walk once around the whole square and look up at the rooftops, the lamps, the fountain and the statue. Which of these would you not find anywhere here, however long you looked for it today?",
+    "answers": [
+      {
+        "text": "A clock on the tall tower at the north end of the square",
+        "at": {
+          "x": -6.5,
+          "z": 1
+        }
+      },
+      {
+        "text": "A bench under the trees, facing the fountain basin",
+        "at": {
+          "x": -3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "A stone figure on a plinth with a green patina",
+        "at": {
+          "x": 3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "A windmill with four sails turning above the rooftops",
+        "at": {
+          "x": 6.5,
+          "z": 1
+        }
+      }
+    ],
+    "right": 3,
+    "retry": false,
+    "circle": 4,
+    "points": 20,
+    "showScore": true,
+    "says": {
+      "right": "Right, there has never been a windmill here, however much the rooftops look as if they might hide one from where you are standing.",
+      "retry": "Not that one. It is here if you look. Walk a little further and take your time before you choose again.",
+      "wrong": "That one is here, if you look. The windmill is the one you would not find, and now you can tell everybody that you know it."
+    }
+  },
+  "missing": {
+    "ask": "Which way does the gate lie?",
+    "answers": [
+      {
+        "text": "Behind you",
+        "at": {
+          "x": -6.5,
+          "z": 1
+        }
+      },
+      {
+        "text": "Ahead",
+        "at": {
+          "x": -3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "To the right",
+        "at": {
+          "x": 6.5,
+          "z": 1
+        }
+      }
+    ],
+    "right": 0
+  },
+  "typed": {
+    "type": "typed",
+    "ask": "Walk to the flag and look up at the clock on the tower. How many hands does it have?",
+    "retry": true,
+    "circle": 3,
+    "points": 10,
+    "showScore": false,
+    "typed": {
+      "at": {
+        "x": -3.5,
+        "z": -6.5
+      },
+      "salt": "walk-q7f2",
+      "placeholder": "Type a number",
+      "blanks": "_ ? _",
+      "sha256": [
+        "0ef0fb83dcdf1ccf97bae3e9401934a490fb814b2b9376e071ae697b8d89b0ed",
+        "88ef6a8f59e8abd7eca21256528507ed70dc683a9cda17d52406d27881cfc23e",
+        "c05ee7880190d3c03fbe7b4d47c547fe2eda648e8807ea23b44cc4b30ba476c4"
+      ]
+    },
+    "says": {
+      "right": "Two, and it has been telling the time with them for a long while.",
+      "retry": "Have another look at the clock face. Count again.",
+      "wrong": "Not what the clock shows. Have a look as you walk on."
+    }
+  },
+  "done": {
+    "ask": "Count the lamps around this square as you go. How many are there?",
+    "answers": [
+      {
+        "text": "Two",
+        "at": {
+          "x": -6.5,
+          "z": 1
+        }
+      },
+      {
+        "text": "Three",
+        "at": {
+          "x": -3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "Four",
+        "at": {
+          "x": 3.5,
+          "z": -6.5
+        }
+      },
+      {
+        "text": "Six",
+        "at": {
+          "x": 6.5,
+          "z": 1
+        }
+      }
+    ],
+    "right": 2,
+    "retry": true,
+    "circle": 3,
+    "points": 10,
+    "showScore": false,
+    "already": {
+      "picked": 1,
+      "tries": 1
+    },
+    "says": {
+      "right": "Four, one in each corner.",
+      "retry": "Not quite.",
+      "wrong": "There are four, one in each corner."
+    }
+  }
+}
