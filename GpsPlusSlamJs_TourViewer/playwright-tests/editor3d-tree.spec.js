@@ -570,7 +570,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
     expect([...(files.get(path) ?? [])]).toEqual(jpeg);
   }
 
-  // Opened again: both cards, each with its picture.
+  // Opened again: both cards, each with its picture. The saving page goes
+  // first: two pages of the editor would share one machine's budget.
+  await page.close();
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);

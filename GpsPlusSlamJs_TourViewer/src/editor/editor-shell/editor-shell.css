@@ -841,6 +841,10 @@ body {
   background: #33363c center / cover no-repeat;
 }
 
+.card > .pic:hover {
+  border-color: #5a5f69;
+}
+
 .kids {
   padding: 0 0 2px;
 }
@@ -2545,6 +2549,18 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
   #shell-inspector {
     z-index: 7;
+  }
+
+  /* A keyboard up: the sheet takes all the room above it, whatever its
+   * share, and its grip goes (no drag while typing), so the field in use
+   * and its row fit in the least a keyboard leaves. */
+  body[data-keyboard] #shell-tree:not(.collapsed),
+  body[data-keyboard] #shell-inspector:not(.collapsed) {
+    height: calc(100% - max(var(--s-panel-h, 0px), var(--s-keyboard-foot)));
+  }
+
+  body[data-keyboard] .sheet-grip {
+    display: none;
   }
 
   #shell-tree.collapsed {
