@@ -15,7 +15,8 @@
  *   haze's sync after each of the ground sky's reads, the haze's weight.
  * - `finish` (after the cloud volumes' updates): the sun's intensity and
  *   the shell's thickness.
- * - `render` (after the scene): the space pass over the Earth and the sky.
+ * - `render` (after the scene): the space pass over the Earth and the sky,
+ *   by the share the near clouds' composite does not draw.
  *
  * @see globe-air.ts.md
  */
@@ -30,6 +31,14 @@ interface AirHandOver {
   exposure: number;
 }
 
+/** The sun at the ground, relative to the exposure (`globe-ground-sky.ts`). */
+interface AirSunOnGround {
+  scale: number;
+  colour: readonly [number, number, number];
+}
+
+const SPACE_SUN: AirSunOnGround = { scale: 1, colour: [1, 1, 1] };
+
 /** What the ground sky's `update` is told each frame. */
 interface GroundSkyFrame {
   altitudeKm: number;
@@ -39,12 +48,15 @@ interface GroundSkyFrame {
   widthKm: number;
   stepPct: number;
   spaceExposure: number;
+  /** The near clouds' look: their camera and the ground's own sun. */
+  nearLook: boolean;
 }
 
 /** The lab's ground sky, as the wiring uses it. */
 interface AirGroundSky<Sky> {
   readonly atmosphere: Sky | null;
   update(frame: GroundSkyFrame): AirHandOver;
+  sunOnGround(): AirSunOnGround;
   state(): { lastStage: string };
 }
 
@@ -102,7 +114,9 @@ interface GlobeAirOptions<Sky, Depth> {
   /** The atmosphere model's ground radius (km). */
   groundRadiusKm: number;
   /** The globe's sun: its position in the globe's group, its intensity. */
-  sun: { position: THREE.Vector3; intensity: number };
+  sun: { position: THREE.Vector3; intensity: number; color: THREE.Color };
+  /** The sun above the air, for what marches the air itself. */
+  sunExposure: { value: number };
   /** The globe's group, whose world matrix turns the sun into the world. */
   globeGroup: { matrixWorld: THREE.Matrix4 };
   spacePass: AirSpacePass<Depth>;
@@ -119,7 +133,12 @@ export interface GlobeAir<Depth> {
    */
   step(
     params: AirParams,
-    frame: { cameraEcef: readonly [number, number, number]; framed: boolean },
+    frame: {
+      cameraEcef: readonly [number, number, number];
+      framed: boolean;
+      /** The share of the air the near clouds draw themselves (default 0). */
+      nearAir?: number;
+    },
   ): void;
   /**
    * The sun's eased intensity and the shell's thickness, after the clouds.
@@ -135,7 +154,9 @@ export interface GlobeAir<Depth> {
   /**
    * The space pass over the Earth and the sky (nothing when `drawn` is
    * false): its sky share fades under the ground sky, its ground keeps its
-   * veil unless `atmoGround` is 0, its rays end at the drawn relief.
+   * veil unless `atmoGround` is 0, its rays end at the drawn relief; both
+   * give way to the near clouds' own air, and at their whole share it does
+   * not run.
    */
   render(
     camera: THREE.Camera,
@@ -159,40 +180,45 @@ export interface GlobeAir<Depth> {
 export function createGlobeAir<Sky, Depth>(
   options: GlobeAirOptions<Sky, Depth>,
 ): GlobeAir<Depth> {
-  const { sun, globeGroup, spacePass, groundSky, haze } = options;
+  const { sun, sunExposure, globeGroup, spacePass, groundSky, haze } = options;
   const radii: [number, number, number] = [...options.ellipsoidRadii];
   const sunWorld = new THREE.Vector3();
   let handOver: AirHandOver = { weight: 0, exposure: Number.NaN };
+  let onGround = SPACE_SUN;
+  let nearAir = 0;
   let observerKm = Number.POSITIVE_INFINITY;
   let shellThickness: number | null = null;
   let stepped = false;
   return {
-    step(params, { cameraEcef, framed }) {
+    step(params, { cameraEcef, framed, nearAir: share = 0 }) {
+      nearAir = share;
       observerKm = observerAltitudeKm(
         cameraEcef,
         radii,
         options.groundRadiusKm,
       );
       sunWorld.copy(sun.position).transformDirection(globeGroup.matrixWorld);
-      handOver =
-        params.groundSky === 1 && params.sky !== 0
-          ? groundSky.update({
-              altitudeKm: observerKm,
-              sunWorld,
-              framed,
-              edgeKm: params.skyEdgeKm,
-              widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
-              stepPct: params.skyStepPct,
-              spaceExposure: params.sunIntensity,
-            })
-          : { weight: 0, exposure: params.sunIntensity };
+      const grounded = params.groundSky === 1 && params.sky !== 0;
+      handOver = grounded
+        ? groundSky.update({
+            altitudeKm: observerKm,
+            sunWorld,
+            framed,
+            edgeKm: params.skyEdgeKm,
+            widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
+            stepPct: params.skyStepPct,
+            spaceExposure: params.sunIntensity,
+            nearLook: params.atmoGround === 1,
+          })
+        : { weight: 0, exposure: params.sunIntensity };
+      onGround = grounded ? groundSky.sunOnGround() : SPACE_SUN;
       // The haze follows the ground sky: its state after each read, its
       // strength by the weight. Without its sky there is nothing to copy.
       const { atmosphere } = groundSky;
       if (groundSky.state().lastStage === "read" && atmosphere !== null) {
         haze.sync(atmosphere);
       }
-      haze.setWeight(handOver.weight, params.hazeScale);
+      haze.setWeight(handOver.weight * (1 - nearAir), params.hazeScale);
       stepped = true;
     },
     finish(params) {
@@ -200,7 +226,10 @@ export function createGlobeAir<Sky, Depth>(
       // the observer at +Infinity): a caller out of order fails loudly
       // rather than drawing the scene black or guessing a far look.
       if (!stepped) throw new Error("GlobeAir.finish before the first step");
-      sun.intensity = handOver.exposure;
+      // The globe's light came through the air; the veil adds the air itself.
+      sun.intensity = handOver.exposure * onGround.scale;
+      sun.color.setRGB(...onGround.colour);
+      sunExposure.value = handOver.exposure;
       const thickness =
         params.atmoRamp === 1
           ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)
@@ -217,15 +246,16 @@ export function createGlobeAir<Sky, Depth>(
       });
     },
     render(camera, params, { drawn, worldFromEcef, sunEcef, sceneDepth }) {
-      if (!drawn) return;
+      if (!drawn || nearAir >= 1) return;
       spacePass.render(camera, {
         worldFromEcef,
         sunEcef,
-        sunIntensity: sun.intensity,
-        skyShare: 1 - handOver.weight,
+        sunIntensity: handOver.exposure,
+        skyShare: (1 - handOver.weight) * (1 - nearAir),
         // The ground keeps its veil, its rays ending at the drawn relief
         // (§17); `atmoGround=0` fades it with the sky's, for a comparison.
-        groundShare: params.atmoGround === 1 ? 1 : 1 - handOver.weight,
+        groundShare:
+          (params.atmoGround === 1 ? 1 : 1 - handOver.weight) * (1 - nearAir),
         sceneDepth,
         // From nothing at the 80 km edge, so the depth is no jump there.
         sceneDepthWeight: handOver.weight,

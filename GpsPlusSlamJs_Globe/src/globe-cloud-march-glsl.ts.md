@@ -5,6 +5,7 @@ Purpose: the near clouds' shaders: one ray march through the layer between the g
 ## Public API
 
 - `CLOUD_MARCH_VERTEX`, `CLOUD_MARCH_FRAGMENT`, `CLOUD_MARCH_SHADOW_FRAGMENT`: GLSL 3 sources for `globe-cloud-march-pass.ts`.
+- `CLOUD_AIR_GLSL`: the air's functions (the sun's transmittance, the sky's radiance, a segment of air), shared with the composite in `globe-cloud-shell-volume-pass.ts`. It reads only `uH`, `uSun` and `uSunCol` and must be included after those are declared; everything else that needs a uniform stays in the march's own part.
 
 ## Invariants
 
@@ -14,6 +15,7 @@ Purpose: the near clouds' shaders: one ray march through the layer between the g
 - Premultiplied output: radiance in rgb, opacity in alpha, no tone curve. The composite tones it.
 - The coverage is read per step from the map as the shell reads it, so the map decides where the clouds are.
 - Depth: rays end at the scene's depth where it is given.
+- The air exists once: the march and the composite include the same block, so they cannot drift.
 
 ## Example
 
