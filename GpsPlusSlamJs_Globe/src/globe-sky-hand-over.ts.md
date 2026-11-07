@@ -40,6 +40,15 @@ tests read the same numbers.
   at least the step (true for a first sun). RangeError for a zero or
   non-finite direction or a step that is not positive.
 
+- `nearCloudsGain(exposure, sunUp)`: how far the near clouds and the air
+  drawn with them follow the camera's exposure. They carry their light in
+  the units of the page they were chosen on, the ground and the shell follow
+  the camera, so at dusk they stood black on a lit ground. 1 up to
+  `dayExposure` (the sun about 8 degrees up), held at `nearGain.maxGain`,
+  and gone with the night (`nearGain.fadeSunUp`, -3 to -8 degrees), whose
+  exposure opens up on an empty scene and drew the night ambient white.
+  1 on anything but finite values.
+
 ## Invariants & assumptions
 
 - Continuity is the point: every curve is a smoothstep or a log-linear

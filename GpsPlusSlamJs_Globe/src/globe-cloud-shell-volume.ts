@@ -522,6 +522,8 @@ export const CLOUD_HIGH_LAYER = {
   noiseShare: 0.3,
   cover: 0.35,
   thicknessScale: 1,
+  /** How far the thin ice stops the light where it is densest. */
+  veil: 0.5,
 } as const;
 
 /**

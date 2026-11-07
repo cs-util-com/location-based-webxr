@@ -41,6 +41,20 @@ export const GLOBE_SKY_HAND_OVER = {
   altitudeStepPct: 5,
   /** The sun's step, degrees. */
   sunStepDeg: 0.25,
+  /**
+   * How far the camera adapts to the light, 0 fixed, 1 fully. The
+   * framework's street default of 0.75 drives a low sun to white from the
+   * air; 0 leaves the ground black at dusk, 0.5 pale.
+   */
+  exposureAdaptation: 0.5,
+  /** The exposure the near clouds' light was chosen at (the space view's). */
+  dayExposure: 5,
+  /**
+   * The near clouds' gain: held at dusk, and gone with the night, whose
+   * exposure opens up on an empty scene (`fadeSunUp`: the sine of the sun's
+   * height, -8 to -3 degrees).
+   */
+  nearGain: { maxGain: 8, fadeSunUp: { dark: -0.14, lit: -0.05 } },
 };
 
 function finite(name: string, value: number): void {
@@ -189,4 +203,21 @@ export function sunStepped(
     (previous[0] * next[0] + previous[1] * next[1] + previous[2] * next[2]) /
     (lp * ln);
   return Math.acos(Math.min(1, Math.max(-1, cos))) >= (stepDeg * Math.PI) / 180;
+}
+
+/**
+ * The near clouds' share of the camera's exposure: they carry their light
+ * in the page's units, so by day (1) they keep that look, and when the
+ * camera opens up for dusk they follow it as the ground and the shell do.
+ * `sunUp` is the sine of the sun's height. Anything but finite values gives 1.
+ */
+export function nearCloudsGain(exposure: number, sunUp: number): number {
+  if (!Number.isFinite(exposure) || !Number.isFinite(sunUp)) return 1;
+  const { dayExposure, nearGain } = GLOBE_SKY_HAND_OVER;
+  const { dark, lit } = nearGain.fadeSunUp;
+  const gain = Math.min(nearGain.maxGain, exposure / dayExposure);
+  return Math.max(
+    1,
+    1 + (gain - 1) * smoothstep((sunUp - dark) / (lit - dark)),
+  );
 }

@@ -17,15 +17,13 @@ void main() {
   gl_Position = vec4(position.xy, 0.0, 1.0);
 }`;
 
-const COMMON = /* glsl */ `precision highp float; precision highp int; precision highp sampler3D; precision highp sampler2D;
-uniform float uH;          // camera altitude, km
-uniform vec3 uFwd, uRight, uUp;
-uniform vec2 uTan;         // tan(half fov) x, y
-uniform vec3 uSun;         // unit vector toward the sun (camera-local frame, y up at the camera)
-uniform float uPixAng;     // radians per canvas pixel
-uniform vec3 uSunCol;      // sun path at sea level: air column, haze column, ozone path (from JS)
-
-const float PI = 3.14159265;
+/**
+ * The air the clouds fade into: the constants and functions of its single
+ * scattering over a sphere of radius R, on the camera-relative frame of
+ * uH, uSun and uSunCol. The march and the shell's composite share it, so
+ * the air behind a cloud is the air in front of it.
+ */
+export const CLOUD_AIR_GLSL = /* glsl */ `const float PI = 3.14159265;
 const float R = 6371.0;
 const float HR = 8.0;      // air scale height, km
 const float HM = 1.2;      // marine haze scale height, km
@@ -82,9 +80,6 @@ void downSeg(vec3 d, vec3 p, float hp, out vec3 ins, out vec3 tr) {
   float cM = max(0.0, column(hp, -mup, HM) - column(uH, -d.y, HM));
   segment(cR, cM, hp, dot(d, uSun), ins, tr);
 }
-float footprint(float t, float mu) {
-  return t * uPixAng * inversesqrt(max(abs(mu), 0.04));
-}
 // The same segment for any direction. downSeg integrates the reversed ray, which
 // for a ray climbing from the camera runs through the ground and overflows (inf - inf) from a few degrees up;
 // a climbing ray is the column from the camera to space minus the column from p onward.
@@ -94,6 +89,20 @@ void segTo(vec3 d, vec3 p, float hp, out vec3 ins, out vec3 tr) {
   float cR = max(0.0, column(uH, d.y, HR) - column(hp, mup, HR));
   float cM = max(0.0, column(uH, d.y, HM) - column(hp, mup, HM));
   segment(cR, cM, uH, dot(d, uSun), ins, tr);
+}
+`;
+
+const COMMON = /* glsl */ `precision highp float; precision highp int; precision highp sampler3D; precision highp sampler2D;
+uniform float uH;          // camera altitude, km
+uniform vec3 uFwd, uRight, uUp;
+uniform vec2 uTan;         // tan(half fov) x, y
+uniform vec3 uSun;         // unit vector toward the sun (camera-local frame, y up at the camera)
+uniform float uPixAng;     // radians per canvas pixel
+uniform vec3 uSunCol;      // sun path at sea level: air column, haze column, ozone path (from JS)
+
+${CLOUD_AIR_GLSL}
+float footprint(float t, float mu) {
+  return t * uPixAng * inversesqrt(max(abs(mu), 0.04));
 }
 uniform sampler2D uSceneDepth;
 uniform mat4 uSceneInverseProjection;
