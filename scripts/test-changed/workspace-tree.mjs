@@ -62,21 +62,3 @@ export function loadImpactGraph(root) {
   }
   return buildImpactGraph({ packages: workspacePackages(root), files, texts });
 }
-
-/**
- * @param {string} root - the workspace root
- * @param {string} ref - the diff base
- * @returns {string[]} tracked changes vs `ref`, then untracked FILES (never
- *   the collapsed folder `git status` shows for a new directory)
- */
-export function changedFiles(root, ref) {
-  const lines = (/** @type {string[]} */ args) =>
-    execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 })
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-  return [
-    ...lines(['diff', '--name-only', '--no-renames', ref]),
-    ...lines(['ls-files', '--others', '--exclude-standard']),
-  ];
-}

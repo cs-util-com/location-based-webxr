@@ -997,12 +997,17 @@ export function gateBaseCommand(stage, env = {}) {
   // set for the changed packages and the dependents the import graph reaches
   // (select.mjs `gateCommands`); the milestone run and a package's own gate
   // run the suite.
-  return skipBrowser &&
-    Boolean(env[UNIT_RELATED_ENV]) &&
-    stage.name === "test:unit" &&
-    stage.counts === "vitest"
-    ? `node ${RELATED_UNIT_SCRIPT} ${command}`
-    : command;
+  const fastGate = skipBrowser && Boolean(env[UNIT_RELATED_ENV]);
+  if (fastGate && stage.name === "test:unit" && stage.counts === "vitest") {
+    return `node ${RELATED_UNIT_SCRIPT} ${command}`;
+  }
+  // Format and lint check only the changed files in the per-commit gate
+  // (scripts/test-changed/changed-files-stage.mjs); the package-wide run is
+  // the milestone run's, a package's own gate's and CI's.
+  if (fastGate && (stage.name === "format" || stage.name === "lint")) {
+    return `node ${CHANGED_FILES_SCRIPT} ${command}`;
+  }
+  return command;
 }
 
 /** Env var with the diff base for a changed package's related unit run. */
@@ -1010,6 +1015,9 @@ export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
 
 /** The related-unit wrapper, relative to a package directory. */
 export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
+
+/** The changed-files wrapper of the format and lint stages, relative to a package directory. */
+export const CHANGED_FILES_SCRIPT = "../scripts/test-changed/changed-files-stage.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
 export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";

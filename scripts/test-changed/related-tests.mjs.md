@@ -17,10 +17,6 @@
     package's tests in `impact.tests` (package-relative, sorted), or
     `{ mode: 'full', reason }` when `impact.fullSuite` names
     `packageDir`; a full own plan stays full.
-  - `upstreamChange({ changed, packageDir, packages })` -> the first
-    repo-relative changed path inside a workspace package this one depends
-    on (directly or transitively), or `null`. No longer called by
-    `related-unit.mjs`, which merges the graph's reached tests instead.
   - `DEFAULT_MAX_FILES` (150).
 - Rules, in order:
   - Markdown (sidecars, docs) and the generated `docs/test-timings.md` are

@@ -11,12 +11,11 @@
     that exists on disk, repo-relative.
   - `loadImpactGraph(root)` -> the built graph. Module texts skip `.d.ts`
     and files over 3 MB (generated data, not source with imports).
-  - `changedFiles(root, ref)` -> `git diff --name-only --no-renames <ref>`
-    (a rename lists both names) plus the untracked FILES.
 - Invariants & assumptions: git errors propagate; both callers catch them and
   fall back to their full behaviour. Loading the whole tree takes about 1.6 s
   warm and 6 s cold on the development machine.
-- Example: `impactOf(loadImpactGraph(root), changedFiles(root, 'origin2/main'))`.
+- Example: `impactOf(loadImpactGraph(root), changedFiles('origin2/main', root))`
+  (`changedFiles` is in [changed-paths.mjs](changed-paths.mjs.md)).
 - Tests: none of its own (it only reads git and files); the rules it feeds
   are tested in `impact-graph.test.mjs`, and the shell by real fast-gate
   runs.

@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { UNIT_RELATED_ENV } from '../test-timing/projects.mjs';
-import { trackedPaths } from './changed-paths.mjs';
+import { changedFiles } from './changed-paths.mjs';
 import { impactOf } from './impact-graph.mjs';
 import { mergeImpact, planRelatedRun, relatedVitestArgs } from './related-tests.mjs';
 import { loadImpactGraph } from './workspace-tree.mjs';
@@ -47,11 +47,7 @@ function computePlan() {
     const prefix = path.relative(root, pkgDir).replaceAll('\\', '/') + '/';
     const inPackage = (/** @type {string} */ p) =>
       p.startsWith(prefix) ? [p.slice(prefix.length)] : [];
-    const everyChange = [
-      ...trackedPaths(ref, root),
-      // Files, not the collapsed directories `git status` shows for a new dir.
-      ...git(['ls-files', '--others', '--exclude-standard', '--full-name', ':/']),
-    ];
+    const everyChange = changedFiles(ref, root);
     const changed = everyChange.flatMap(inPackage);
     const deleted = changed.filter((p) => !existsSync(path.join(pkgDir, p)));
     const testFiles = git(['ls-files', '--cached', '--others', '--exclude-standard', '.'])

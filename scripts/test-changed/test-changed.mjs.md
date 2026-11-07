@@ -55,8 +55,10 @@
     each saying so in one `related-unit:` line, and the dependents skip
     the checks that read only their own files (`dependentTrimEnv`, named in
     each dependent's skip line); the green banner says so too.
+    Their format and lint stages check only the changed files
+    ([changed-files-stage.mjs](changed-files-stage.mjs.md)).
     The dependents are the packages the cross-package graph reaches
-    ([impact-graph.mjs](impact-graph.mjs.md), one `the import graph
+    ([graph-dependents.mjs](graph-dependents.mjs.md), one `the import graph
     reaches ...` line), not pnpm's whole closure, and each runs only the
     unit tests the change reaches (or its full suite when a graph fallback
     says so). The milestone run (no skip switch), a package's own
