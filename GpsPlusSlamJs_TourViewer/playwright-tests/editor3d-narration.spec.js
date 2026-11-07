@@ -30,6 +30,9 @@ test.describe.configure({ mode: "default" });
 // sizes) with CI=1 and one worker on 2026-11-03, so the budget is about
 // twice the slower one.
 const BUDGET_MS = 240_000;
+/** How long a voice add may take: the section's 5 s cap on reading the
+ *  voice's length, the write, and a slow runner's frames on top. */
+const VOICE_ADD_MS = 30_000;
 
 const TOUR = "http://127.0.0.1:5197/ranges-ok/long-text-tour.zip";
 const VTT = [
@@ -141,8 +144,16 @@ test("a voice and its timing are imported, a word is edited, and lining the voic
     mimeType: "audio/wav",
     buffer: silentWav(),
   });
+  // The add waits for the browser to read the voice's length (an audio
+  // element's metadata, capped at 5 s by the section) before it writes.
+  // On a CI runner drawing the globe in software that took longer than
+  // the default 5 s wait: three of three attempts on 2026-11-07 ran out
+  // with the button still "Adding the voice..." and the file named just
+  // after (the failure screenshot). The wait covers the section's own cap
+  // plus the write; what is asserted is unchanged.
   await expect(page.locator(".ln-sec .ln-fn").first()).toHaveText(
     "gate-voice.wav",
+    { timeout: VOICE_ADD_MS },
   );
   await expect(head).toHaveText("Voice, no timing yet");
   const voiced = await essayNow(page);
