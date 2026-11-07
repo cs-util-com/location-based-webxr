@@ -110,6 +110,7 @@ function fakeView() {
     setLayers: vi.fn(),
     centre: () => ({ lat: 48.1371, lon: 11.5754, alt: 560 }),
     turn: vi.fn(() => true),
+    previewRadius: vi.fn(),
     groundAt: () => ground.m,
     origin: () => ({ lat: 48.1371, lng: 11.5754 }),
     mapTiles: vi.fn(() => [
@@ -1245,13 +1246,13 @@ describe("the tree during the approach", () => {
     expect(treeFolded(store)).toBe(true);
   });
 
-  it("keeps the tree a tab at the landing on a narrow window", () => {
-    // Why: below the dock rule's width the tree starts folded at any
-    // open; the landing follows the same rule.
+  it("opens the list at the landing on a phone", () => {
+    // Why: a phone opens on the list, so a landing ends there too; no tab
+    // stands for the tree on a phone.
     vi.stubGlobal("innerWidth", 600);
     const { store, shell } = onApproach();
     shell.approachEnded("landed");
-    expect(treeFolded(store)).toBe(true);
+    expect(treeFolded(store)).toBe(false);
   });
 
   it("keeps a tree the creator had folded when the view closes mid-flight", () => {
@@ -1512,6 +1513,241 @@ describe("the bottom panel", () => {
     select("station:a");
     expect(hint()).not.toBe(none);
     expect(hint()).not.toBe("");
+    shell.hide();
+  });
+});
+
+describe("the inspector's station extras", () => {
+  const openStation = (store: ReturnType<typeof setUp>["store"]) => {
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+  };
+  const openPlace = () => {
+    document
+      .querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="position"]',
+      )
+      ?.click();
+  };
+
+  // Why: the ring is the 3D view's, the number the inspector's: the drag
+  // must reach both, and the tour only once, at the release.
+  it("follows the radius slider in the view and writes once", () => {
+    const { store, edits, shell, view } = setUp();
+    openStation(store);
+    openPlace();
+    const slider = document.querySelector<HTMLInputElement>(
+      "#shell-inspector input[type=range]",
+    ) as HTMLInputElement;
+    slider.value = "40";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", 40);
+    expect(edits.station).not.toHaveBeenCalled();
+    slider.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(edits.station.mock.calls).toEqual([["a", { foundRadiusM: 40 }]]);
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", null);
+    shell.hide();
+  });
+
+  // Why: Escape during a drag drops the selection, and the slider with it;
+  // no release ever comes, so the ring must be given back here.
+  it("gives the ring back when the selection goes during a drag", () => {
+    const { store, select, edits, shell, view } = setUp();
+    openStation(store);
+    openPlace();
+    const slider = document.querySelector<HTMLInputElement>(
+      "#shell-inspector input[type=range]",
+    ) as HTMLInputElement;
+    slider.value = "40";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    select(null);
+    expect(view.previewRadius).toHaveBeenLastCalledWith("a", null);
+    expect(edits.station).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  // Why: a tap on a listed item is the tree's tap: selected and flown to.
+  it("selects and flies to an item of Contents", () => {
+    const { store, shell, view } = setUp();
+    openStation(store);
+    document
+      .querySelector<HTMLButtonElement>('#shell-inspector [data-act="goto:pa"]')
+      ?.click();
+    expect(store.getState().editorView.selected).toBe("pa");
+    expect(view.flyTo).toHaveBeenCalledWith("pa");
+    shell.hide();
+  });
+
+  it("folds Contents and keeps it folded for the next station", () => {
+    const { store, shell } = setUp();
+    openStation(store);
+    const contents = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="contents"]',
+      );
+    contents()?.click();
+    expect(contents()?.getAttribute("aria-expanded")).toBe("false");
+    store.dispatch(editorViewActions.selected({ id: "station:b" }));
+    expect(contents()?.getAttribute("aria-expanded")).toBe("false");
+    shell.hide();
+  });
+
+  // Why: the add menu is the tree's, so the button must open that one
+  // menu, for this station, and the choice must add there.
+  it("opens the type menu from Add content, adding to the station", () => {
+    const { store, edits, shell } = setUp();
+    openStation(store);
+    document
+      .querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="add-content"]',
+      )
+      ?.click();
+    const item = [
+      ...document.querySelectorAll<HTMLElement>(
+        '#tree-add-menu [role="menuitem"]',
+      ),
+    ][0];
+    item?.click();
+    expect(edits.addItem).toHaveBeenCalledWith("a", "pin");
+    shell.hide();
+  });
+});
+
+describe("on a phone", () => {
+  const sheetShare = () =>
+    document.body.style.getPropertyValue("--s-sheet-share");
+  const treeDock = () => document.getElementById("shell-tree") as HTMLElement;
+  const act = (name: string) =>
+    document.querySelector<HTMLButtonElement>(
+      `#inspector-head [data-act="${name}"]`,
+    );
+
+  beforeEach(() => {
+    vi.stubGlobal("innerWidth", 390);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why: the prototype opens on the list; its height shapes the map.
+  it("opens with the list as a sheet", () => {
+    const { shell } = setUp();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+    expect(sheetShare()).toBe("");
+  });
+
+  it("turns the sheet into the details and back to the list", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(treeDock().classList.contains("collapsed")).toBe(true);
+    expect(sheetShare()).toBe("0.66");
+    act("back")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  // Why: the tree is out of sight under the details, so the menu's way
+  // back is the button that opened it, and the add draws that button away.
+  it("keeps the focus in sight when the details open the add menu", () => {
+    const { store, edits, select, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    const opener = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="add-content"]',
+      );
+    opener()?.focus();
+    opener()?.click();
+    const item = document.querySelector<HTMLElement>(
+      '#tree-add-menu [role="menuitem"]',
+    );
+    item?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(document.activeElement).toBe(opener());
+    opener()?.click();
+    edits.addItem.mockImplementation(() => {
+      select("pa");
+    });
+    item?.click();
+    expect(document.activeElement).toBe(act("close"));
+    shell.hide();
+  });
+
+  // Why: the close button leaves the map alone, so List is the only way
+  // to the tree then.
+  it("shows the map alone after a close, and the list on List", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    act("close")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(sheetShare()).toBe("");
+    document.getElementById("studio-list")?.click();
+    expect(treeDock().classList.contains("collapsed")).toBe(false);
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  it("lets List drop a selection, as the back arrow does", () => {
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    document.getElementById("studio-list")?.click();
+    expect(store.getState().editorView.selected).toBeNull();
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+
+  // Why: the sheet has no fold, so details folded on a wider window would
+  // be a selection with nothing to show it.
+  it("unfolds details folded on a wider window", () => {
+    const { store, shell } = setUp();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.inspector).toBe(false);
+    expect(sheetShare()).toBe("0.66");
+    shell.hide();
+  });
+
+  it("writes no share on a wider window, and takes it when it narrows", () => {
+    vi.stubGlobal("innerWidth", 844);
+    const { shell } = setUp();
+    expect(sheetShare()).toBe("");
+    vi.stubGlobal("innerWidth", 390);
+    window.dispatchEvent(new Event("resize"));
+    expect(sheetShare()).toBe("0.62");
+    shell.hide();
+  });
+});
+
+describe("on a phone's side", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why: the prototype keeps both panels at 844 px, the map between them.
+  it("keeps the list open beside the details", () => {
+    vi.stubGlobal("innerWidth", 844);
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(false);
+    shell.hide();
+  });
+
+  // Why: a phone hides the list behind the details by folding it, and no
+  // rule unfolds a dock; turned sideways with something selected, the list
+  // stayed a tab where the prototype has it open beside the details.
+  it("brings the list back beside the details when the phone turns", () => {
+    vi.stubGlobal("innerWidth", 390);
+    const { store, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(true);
+    vi.stubGlobal("innerWidth", 844);
+    window.dispatchEvent(new Event("resize"));
+    expect(store.getState().editorView.foldedDocks.tree).toBe(false);
     shell.hide();
   });
 });

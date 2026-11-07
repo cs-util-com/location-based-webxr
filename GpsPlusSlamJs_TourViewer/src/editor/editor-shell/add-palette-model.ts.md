@@ -16,7 +16,10 @@ where, best first; Enter adds the first.
   ("Short text", "Long text", "New station"), where it goes ("in 2 The
   old gate", or `NEW_STATION_PLACE` "at the centre of the view"), its
   shell icon.
-- `paletteRows(query, stations, selectedStationId)` -> `PaletteRow[]`:
+- `PaletteKind`, `PALETTE_KINDS` - the kinds the palette's chips offer,
+  by the labels of the rows, in their order.
+- `paletteRows(query, stations, selectedStationId, kind = null)` ->
+  `PaletteRow[]`:
   - candidates: every addable kind of `ADD_CHOICES` (`tree-add-menu.ts`)
     in every station, then a new station;
   - an empty query lists the default place's rows only: the selected
@@ -29,7 +32,13 @@ where, best first; Enter adds the first.
     contains "1" too), 10 for the default place, -1 for the new
     station, per word 3 for a kind word it starts and 3 more when it
     starts the kind's label; equal scores keep the tour's order;
+  - `kind` keeps only that kind's rows, before the cap;
   - at most `PALETTE_MAX_ROWS` (40).
+- `highlightParts(text, query)` -> `HighlightPart[]` - `text` cut into
+  `{ text, match }` parts that read back as `text`: every place a word of
+  the query (two letters or more, folded as above) occurs is marked,
+  overlaps merged. Regular-expression characters in a query are plain
+  letters here.
 
 ## Invariants & assumptions
 
@@ -55,4 +64,6 @@ number over the selection among 12 stations, a query in another
 Unicode form, the label's rank, no
 match and no picture, a tour without stations, case and spaces, and a
 property over 30 stations (each row once, the cap, a kind alone first at
-the selection).
+the selection); the kind filter, and `highlightParts` with overlaps, a
+single letter, a query in another Unicode form and a query full of
+regular-expression characters.

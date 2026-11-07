@@ -23,7 +23,9 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   is drawn again, the control that had the focus (by its `data-act` or
   `data-field`) has it again, with its selection and any text typed and not
   yet committed (a selection left behind would put the next key before the
-  old text instead of over it); a control drawn disabled leaves the focus where it fell. A call made
+  old text instead of over it); a slider keeps the focus and carries
+  nothing (it has no caret); a control drawn disabled leaves the focus where
+  it fell. A call made
   while a draw of the same dock runs (from a `focusout` the draw itself
   caused) is not run: the draw in progress finishes alone. The shell
   draws a null model when it is hidden, before it lets the pictures go.
@@ -38,6 +40,8 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   a null name leaves it). The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
+  - Every head starts with "Back to the list" (`data-act="back"`), shown
+    only on a phone (`editor-shell.css`), which drops the selection.
   - A station: its name as text in the head (`span.ttl`); "Station n
     of N"; its commands; then, first in its section, its **Name** to type
     (`input.tfield`, `data-field="title"`, its label "Name", the
@@ -161,6 +165,11 @@ content` (Chromium, the editor's browser; elsewhere it stays three
   (`lt-preview`) and Wider (`lt-wide`) in the head, pressed while on
   (`InspectorState.longText`). The writer sits between the narration's
   spot and Position; its fields are not drawn again under their names.
+
+- A station's Contents (`.contents`, `data-act="contents"`, open unless
+  `contentsOpen` is false): its items (`inspector-contents.ts`) and Add
+  content (`data-act="add-content"`). Its radius has a slider beside the
+  number (`radius-slider.ts`).
 
 ## Invariants & assumptions
 

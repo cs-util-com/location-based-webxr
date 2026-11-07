@@ -13,11 +13,11 @@ export { createStatusLines } from "./status-lines.js";
 export { waitForGround } from "./ground-wait.js";
 export { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";
 export {
-  DEFAULT_DOCK_LAYOUT,
   docksAfter,
   INSPECTOR_DOCK_PX,
   TREE_DOCK_PX,
   type DockChange,
+  type DockLayout,
 } from "./dock-rule.js";
 export { movedTo } from "./tree-reorder.js";
 export { createTreeDrag } from "./tree-drag.js";
