@@ -1929,6 +1929,43 @@ describe("the files a draft keeps", () => {
     expect(again.unread()).toBe(1);
   });
 
+  // Why: a long text's record naming a voice whose file is gone still
+  // carries the visitor's words. Left out whole, every text edit of it is
+  // lost with the voice; it is offered with the narration the opened file
+  // gives it instead, and the loss is told.
+  it("offers a long text whose voice is gone with the opened file's narration", async () => {
+    const VOICE: TourAsset = {
+      id: "b".repeat(64),
+      path: `content/${"b".repeat(64)}.mp3`,
+      kind: "audio",
+    };
+    const ESSAY: TourObject = {
+      id: "e",
+      kind: "longText",
+      view: "reading",
+      station: "st-a",
+      title: "Essay",
+      body: "Typed here.",
+      narration: { audio: VOICE.id, synthetic: false },
+      createdAtIso: "2026-11-07T00:00:00.000Z",
+      geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
+    };
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(VOICE, new Blob(["voice"]));
+    await draft.saveObject(ESSAY);
+    await draft.idle();
+    draft.close();
+    b.spaces.get(editorDraftKey(K1))?.delete(`asset:${VOICE.id}`);
+    const again = draftIn(b);
+    const { offer } = await again.open(K1, tour(pin("a")));
+    const essay = offer?.objects.find((o) => o.id === "e");
+    expect(essay).toMatchObject({ body: "Typed here." });
+    expect(essay !== undefined && "narration" in essay).toBe(false);
+    expect(again.unread()).toBe(1);
+  });
+
   it("says a file that did not land, as any write that did not", async () => {
     const b = browser();
     const draft = draftIn(b);

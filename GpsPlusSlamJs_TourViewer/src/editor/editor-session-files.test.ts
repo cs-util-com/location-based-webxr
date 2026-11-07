@@ -210,6 +210,44 @@ describe("the files across a reload", () => {
   });
 });
 
+/** Why this test matters: a full disk refuses the voice's bytes, and the
+ *  visitor keeps writing in that long text; a closed tab must bring the
+ *  text back. The draft must not keep a narration naming a file it does
+ *  not hold, or the reopen leaves the whole record out. */
+describe("a voice the draft could not keep", () => {
+  it("leaves the text edits of its long text in the draft", async () => {
+    const session = await openedTour();
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    await draft.open(K, MANIFEST);
+    const { editor } = editorOf(session, draft);
+    stores.failPutsOf = /^asset:/;
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["lost-voice"]),
+      fileName: "v.mp3",
+    });
+    expect(editor.editBlockField("t1", "body", "Typed after.")).toEqual({
+      kind: "edited",
+    });
+    await draft.idle();
+    draft.close();
+    stores.failPutsOf = null;
+
+    let unread = 0;
+    const again = draftOf(stores, () => {
+      unread += 1;
+    });
+    const { offer } = await again.open(K, MANIFEST);
+    const t1 = offer?.objects.find((o) => o.id === "t1");
+    expect(t1).toMatchObject({ kind: "longText", body: "Typed after." });
+    expect(t1 !== undefined && "narration" in t1).toBe(false);
+    expect(unread).toBe(0);
+    again.close();
+    await session.close();
+  });
+});
+
 /** Why this test matters: the draft hands its files back as the browser
  *  stores them, a snapshot of an entry that a landed save then removes
  *  (the written file holds the bytes now). The session must not depend on

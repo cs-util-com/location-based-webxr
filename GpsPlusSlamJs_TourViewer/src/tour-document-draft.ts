@@ -319,6 +319,8 @@ function codesRecord(
 export interface TourDocumentDraft extends DraftObjectWrites {
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
   saveCodes?(codes: TourCodesRecord): Promise<boolean>;
+  /** Whether the draft holds a file brought in (absent: every one). */
+  holdsFile?(id: string): boolean;
 }
 
 /** The settings record as the document holds it now. */
@@ -368,23 +370,38 @@ interface Holders {
 export function draftableObject(
   object: TourObject,
   state: TourDocumentState,
+  holdsFile: (id: string) => boolean = () => true,
 ): TourObject {
   if (object.kind !== "longText" || object.narration === undefined) {
     return object;
   }
   const { audio, timing } = object.narration;
-  const assets = new Set(
-    [...(state.written?.assets ?? []), ...state.addedAssets].map((a) => a.id),
-  );
+  const assets = new Set([
+    ...(state.written?.assets ?? []).map((a) => a.id),
+    ...state.addedAssets.map((a) => a.id).filter(holdsFile),
+  ]);
   const timingHeld =
     timing === undefined ||
     !Object.hasOwn(state.timingsWritten, timing) ||
     state.timingsWritten[timing] !== null;
   if (assets.has(audio) && timingHeld) return object;
+  return withFiledNarration(object, state.written);
+}
+
+/** `object` with the narration `file` gives it in place of its own (none
+ *  when the file gives none): a long text whose narration names what is
+ *  held nowhere keeps its words. Any other object is returned as it is. */
+export function withFiledNarration(
+  object: TourObject,
+  file: TourManifest | null,
+): TourObject {
+  if (object.kind !== "longText" || object.narration === undefined) {
+    return object;
+  }
   const filed =
-    state.written === null
+    file === null
       ? undefined
-      : tourObjects(state.written).find((o) => o.id === object.id);
+      : tourObjects(file).find((o) => o.id === object.id);
   const { narration: _unheld, ...rest } = object;
   return filed?.kind === "longText" && filed.narration !== undefined
     ? { ...rest, narration: filed.narration }
@@ -481,7 +498,8 @@ export function followDocument(
       standing(after, id),
       pictureOf,
       holds,
-      (object) => draftableObject(object, after),
+      (object) =>
+        draftableObject(object, after, (id) => draft.holdsFile?.(id) ?? true),
     );
   }
   const was = settingsRecord(before);

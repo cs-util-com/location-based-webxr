@@ -118,6 +118,7 @@ import {
   parseSettingsRecord,
   settingsRecordText,
   SETTINGS_KEY,
+  withFiledNarration,
 } from "../tour-document-draft.js";
 
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
@@ -648,6 +649,9 @@ interface DraftFileWrites {
   /** A file brought in, with its bytes: written with the list before the
    *  record naming it; whether it landed. */
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
+  /** Whether a file brought in is held here: false once its write did not
+   *  land, so no record names it (`draftableObject`). */
+  holdsFile(id: string): boolean;
 }
 
 export interface EditorDraft
@@ -734,6 +738,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   /** The ids of the files brought in since the open: live work, kept on
    *  "Delete it". */
   const filesHere = new Set<string>();
+  /** The files brought in whose write did not land. */
+  const filesNotKept = new Set<string>();
   /** The pictures of the pending objects the opened file lacks (a copied
    *  photo), as last written: a key move carries them with the record. */
   const pendingPictures = new Map<string, Blob>();
@@ -1440,11 +1446,17 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         draftObjectsSuperseded(stored.draft, manifest).length +
         (notHosted.length - offered.length);
       // A record naming a file neither the opened file nor this draft
-      // holds is not offered: a restore of it would make every save fail
-      // (told: part of the draft did not read).
+      // holds is not offered as it is: a restore of it would make every
+      // save fail (told: part of the draft did not read). A long text
+      // whose voice is gone keeps its words, with the opened file's
+      // narration; any other such record is left out.
       const heldFiles = new Set([...inFile, ...files.keys()]);
-      const waiting = offered.filter((o) => objectAssetsHeld(o, heldFiles));
-      if (waiting.length < offered.length) lost = true;
+      const waiting = offered.flatMap((o) => {
+        if (objectAssetsHeld(o, heldFiles)) return [o];
+        lost = true;
+        const kept = withFiledNarration(o, manifest);
+        return kept !== o && objectAssetsHeld(kept, heldFiles) ? [kept] : [];
+      });
       const deleted = draftDeletionsNotYetHosted(stored.draft, manifest);
       const kept = new Set([...waiting.map((o) => o.id), ...deleted]);
       offerSettings(waiting.length);
@@ -1499,6 +1511,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           live() ? api.saveSettings(settings) : Promise.resolve(true),
         saveAsset: (asset, blob) =>
           live() ? api.saveAsset(asset, blob) : Promise.resolve(true),
+        holdsFile: (id) => api.holdsFile(id),
         built: (written) => {
           if (live()) api.built(written);
         },
@@ -1688,8 +1701,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       files.set(asset.id, file);
       filesHere.add(asset.id);
       const s = space;
-      return s === null ? Promise.resolve(true) : fileIn(s, file);
+      if (s === null) return Promise.resolve(true);
+      return fileIn(s, file).then((ok) => {
+        if (ok) filesNotKept.delete(asset.id);
+        else filesNotKept.add(asset.id);
+        return ok;
+      });
     },
+    holdsFile: (id) => !filesNotKept.has(id),
     saveSettings(settings) {
       settingsWanted = settings;
       // Kept while the file on disk differs, or a build wrote other
