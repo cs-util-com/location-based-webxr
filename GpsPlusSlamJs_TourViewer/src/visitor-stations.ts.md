@@ -111,6 +111,10 @@ const stations = wireVisitorStations({
 hooks.tickStations = stations.tick;
 ```
 
+## Free items
+
+`free-items.ts` is built here beside the story's view, a visitor's alone: `tick` hands it which stations' content shows (a creator's show-all stands no figure, so it does not decode every figure of a tour), `characterTapped` asks the story's figure first and the free ones after, and `stop` ends them. `makeStage` builds the story's stage and each free figure's from one set of seams. The story's sound and its clip go through the page's one voice channel (`focus`, shared with the narrated texts): `focusedSceneAudio` and `storyVideoVoice` of `voice-focus.ts`; `unlockAudio` keeps the raw channel.
+
 ## Tests
 
 - `playwright-tests/stations.spec.js` (the composition).

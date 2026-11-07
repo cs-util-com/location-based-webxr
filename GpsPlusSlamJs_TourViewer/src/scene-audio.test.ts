@@ -55,6 +55,39 @@ function harness(play: () => Promise<void> = () => Promise.resolve()) {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("createSceneAudio", () => {
+  // Why: a free voice tapped over a story pauses the story's clip, and the
+  // story's step waits for that clip's end: the clip must keep its file and
+  // its end through the pause, and a phone refusing to resume must end it,
+  // or the story hangs for good.
+  it("pauses a clip and resumes it, and a refused resume ends it", async () => {
+    let refuse = false;
+    const { audio, elements, urls } = harness(() =>
+      refuse ? Promise.reject(new Error("no")) : Promise.resolve(),
+    );
+    const ended = vi.fn();
+    await audio.play(new Blob(), ended);
+    audio.pause();
+    expect(elements[0]!.paused).toBeGreaterThan(0);
+    expect(urls.revoked).toEqual([]);
+    audio.resume();
+    expect(elements[0]!.plays).toHaveLength(2);
+    expect(ended).not.toHaveBeenCalled();
+    refuse = true;
+    audio.resume();
+    await settle();
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(urls.revoked).toHaveLength(1);
+  });
+
+  it("resumes nothing once the clip has stopped", async () => {
+    const { audio, elements } = harness();
+    await audio.play(new Blob(), () => undefined);
+    audio.stop();
+    audio.resume();
+    audio.pause();
+    expect(elements[0]!.plays).toHaveLength(1);
+  });
+
   // Why: the read-along stretches to the voice's real length, which the
   // element knows only once it has read the clip's metadata: before that
   // (NaN), for a stream (Infinity) or with no element, there is none.

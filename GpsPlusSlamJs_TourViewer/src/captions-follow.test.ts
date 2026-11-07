@@ -50,6 +50,22 @@ describe("captionsBlock", () => {
 });
 
 describe("createCaptionsFollow", () => {
+  // Why: walking away pauses a voice and it carries on at return, so each
+  // station's voices must be named on the way out and on the way back, and a
+  // station passed on the way must not wake another's.
+  it("names the station it leaves, and the one it comes back to", () => {
+    const { narration, follow, set } = make();
+    set({ presentId: "a" });
+    follow.sync();
+    expect(narration.carryOn).toHaveBeenLastCalledWith("a");
+    set({ presentId: null });
+    follow.sync();
+    expect(narration.pauseAll).toHaveBeenLastCalledWith("a");
+    set({ presentId: "b" });
+    follow.sync();
+    expect(narration.carryOn).toHaveBeenLastCalledWith("b");
+  });
+
   function make() {
     const strip = { show: vi.fn(), hide: vi.fn() };
     let content: CaptionsContent | null = null;
@@ -57,6 +73,7 @@ describe("createCaptionsFollow", () => {
       verdictOf: vi.fn((): NarrationVerdict => "live"),
       captions: vi.fn(() => content),
       pauseAll: vi.fn(),
+      carryOn: vi.fn(),
     };
     let now = {
       blocks: [] as readonly TourBlock[],

@@ -157,6 +157,9 @@ export interface SceneViewDeps {
    *  plays and the panel is hidden: his voice, tapped after his story,
    *  could not play. The app says it in its toast. None: not said. */
   sayFailure?(text: string): void;
+  /** The step's clip in the page's voice channel (`voice-focus.ts`): told
+   *  each time it starts and when it is over. None: no channel. */
+  readonly videoVoice?: { started(): void; ended(): void };
 }
 
 /** Where a choice-free story is (the story card's dots). */
@@ -320,6 +323,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     video.onended = null;
     video.onplay = null;
     video.onerror = null;
+    deps.videoVoice?.ended();
   }
 
   /** The stage is cleared: nothing of his stands to tap. */
@@ -487,17 +491,22 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     const run = voiceRun;
     return {
       started() {
-        if (run !== voiceRun || lineVoice === "playing") return;
+        if (run !== voiceRun) return;
+        // Also a re-play after the channel held it: it takes the channel.
+        deps.videoVoice?.started();
+        if (lineVoice === "playing") return;
         lineVoice = "playing";
         rearmLineEnd();
       },
       ended() {
         if (run !== voiceRun) return;
+        deps.videoVoice?.ended();
         lineVoice = "ended";
         rearmLineEnd();
       },
       lost(why) {
         if (run !== voiceRun) return;
+        deps.videoVoice?.ended();
         if (why !== undefined) {
           notices.set("video", why);
           showStatus();

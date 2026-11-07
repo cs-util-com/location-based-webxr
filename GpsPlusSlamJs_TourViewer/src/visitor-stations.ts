@@ -40,6 +40,7 @@ import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { createWalkFocusCues } from "./walk-focus-cues.js";
 import { startWalkHuds } from "./walk-hud.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
+import { createFreeItems } from "./free-items.js";
 import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage, type SceneStage } from "./scene-stage.js";
 import {
@@ -48,6 +49,11 @@ import {
   type SceneViewDom,
 } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
+import {
+  focusedSceneAudio,
+  storyVideoVoice,
+  type VoiceFocus,
+} from "./voice-focus.js";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import {
@@ -227,6 +233,8 @@ export function wireVisitorStations(deps: {
   ctx: TourViewerSession;
   mode: ViewerMode;
   arStore: TourViewerStore;
+  /** The page's one voice channel, shared with the narrated texts. */
+  focus: VoiceFocus;
   seams: Pick<
     TourViewerSeams,
     | "getScene"
@@ -328,27 +336,41 @@ export function wireVisitorStations(deps: {
   // The guide is created below; the stage reads its poses late. The
   // figure's pose waits for a heading (`figurePoseOf`): the stage parks the figure and the story says so.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
-  const stage = createSceneStage({
-    getScene: () => seams.getScene(),
-    poseOf: (id) => poseOf(id),
-    // The figure measured from its own header, and the
-    // decoder holds the same cap again.
-    decodeTexture: (blob) =>
-      decodes.run("figure", () =>
-        decodeFigure(blob, (b, divisor) =>
-          decodeFrameTexture(b, divisor, {
-            maxPixels: TOUR_MAX_IMAGE_PIXELS,
-          }),
+  const makeStage = (): SceneStage =>
+    createSceneStage({
+      getScene: () => seams.getScene(),
+      poseOf: (id) => poseOf(id),
+      // The figure measured from its own header, and the
+      // decoder holds the same cap again.
+      decodeTexture: (blob) =>
+        decodes.run("figure", () =>
+          decodeFigure(blob, (b, divisor) =>
+            decodeFrameTexture(b, divisor, {
+              maxPixels: TOUR_MAX_IMAGE_PIXELS,
+            }),
+          ),
         ),
-      ),
-    loadModel: (blob) => seams.loadGlbModel(blob),
-    // The figure fades with its station's content (`follow` below).
-    now: deps.now,
-    registerFrame: registerFrameUpdate,
-    // A character look turns and opens to the visitor's camera, and
-    // beckons along the walk (two-stations).
-    getCamera: () => seams.getViewerCamera(),
-    beckonOf: (id) => beckonOf(id),
+      loadModel: (blob) => seams.loadGlbModel(blob),
+      // The figure fades with its station's content (`follow` below).
+      now: deps.now,
+      registerFrame: registerFrameUpdate,
+      // A character look turns and opens to the visitor's camera, and
+      // beckons along the walk (two-stations).
+      getCamera: () => seams.getViewerCamera(),
+      beckonOf: (id) => beckonOf(id),
+    });
+  const stage = makeStage();
+  // What a station shows that no story brings: a visitor's alone.
+  const free = createFreeItems({
+    tour: () => ctx.tourDocument.manifest(),
+    characters: charactersById,
+    assets: assetsById,
+    loadAsset: (path) => prefetch.load(path),
+    makeStage,
+    focus: deps.focus,
+    checkPicture: (blob) => pictureProblem(blob),
+    pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+    sayFailure: sayFailureInToast(deps.walk?.toast),
   });
   // The sheet is drawn after a guide call, never from inside one.
   /** The picker the guide last spoke of (`view.choosing()`). */
@@ -366,7 +388,8 @@ export function wireVisitorStations(deps: {
       return charactersById();
     },
     loadAsset: (path) => prefetch.load(path),
-    audio,
+    audio: focusedSceneAudio(audio, deps.focus),
+    videoVoice: storyVideoVoice(dom.scene.video, deps.focus),
     stage,
     checkPicture: (blob) => pictureProblem(blob),
     createChoiceButton: (label, onClick) => {
@@ -477,6 +500,7 @@ export function wireVisitorStations(deps: {
     },
     onVisitor: (nue) => {
       stage.faceVisitor(nue);
+      free.faceVisitor(nue);
     },
     onGuide: (visitor, target) => {
       breadcrumbs.update(visitor, target);
@@ -764,13 +788,22 @@ export function wireVisitorStations(deps: {
   // His portrait in the card is his tap target too (the portrait view).
   wirePortraitTap(dom.scene.portrait, view);
 
+  const storyCharacterTapped = characterTapOf({
+    stage,
+    pick: (targets, tap) => seams.pickObjectInView(targets, tap),
+    view,
+  });
+
   return {
     tick: () => {
       calls.during(() => {
         guide.tick();
       });
       // The figure shows only where its station's content does.
-      stage.follow((id) => selectStationContentShown(arStore.getState(), id));
+      const isShown = (id: string): boolean =>
+        selectStationContentShown(arStore.getState(), id);
+      stage.follow(isShown);
+      free.follow((id) => deps.mode === "visitor" && isShown(id));
       renderSheet();
     },
     loadContent: (path) => prefetch.load(path),
@@ -789,6 +822,7 @@ export function wireVisitorStations(deps: {
         view.stopAll();
         guide.endSession();
       });
+      free.stop();
       // A tour close has already dropped the manifest: the cache goes now;
       // a session end keeps it for the next session.
       prefetch.sync();
@@ -814,11 +848,7 @@ export function wireVisitorStations(deps: {
         : walkDebugLines(deps.mode, radarView, frames, win.performance.now())),
       ...view.debugLines(),
     ],
-    characterTapped: characterTapOf({
-      stage,
-      pick: (targets, tap) => seams.pickObjectInView(targets, tap),
-      view,
-    }),
+    characterTapped: (tap) => storyCharacterTapped(tap) || free.tapped(tap),
   };
 }
 

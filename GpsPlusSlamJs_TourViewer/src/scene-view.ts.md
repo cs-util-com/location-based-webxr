@@ -185,6 +185,10 @@ preload="metadata">` (`dom.video`, `ItemVideo`): the clip and its
   re-queued station shows its picker again on its turn. A figure stays for the
   picker (`stage.release`) and goes when the next story starts.
 
+## The voice channel
+
+The step's sound reaches the channel through `audio`, which `visitor-stations.ts` wraps; the step's clip plays in the page's `<video>`, so the optional `videoVoice` hears it: `started` each time it starts (also a re-play after the channel held it), `ended` at its end, when it is lost and when the step goes.
+
 ## Examples
 
 ```ts

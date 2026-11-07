@@ -22,9 +22,9 @@ import { save, startOnMap } from "./editor-menus.js";
  * A tour whose station stands every kind of free block in the world (the
  * archive server's `/ranges-ok/blocks-tour.zip`: the stations tour, its
  * gate also holding a captured photo with its own image asset, a picture
- * of the tour's knight image and a placed arch), end to end: the visitor
- * draws the pin, both pictures and the placed model (B2b), and
- * the desktop editor opens it, edits the pin, saves, and the saved file
+ * of the tour's knight image, a placed arch and two free characters), end
+ * to end: the visitor draws the pin, both pictures and the placed model
+ * (B2b), both figures stand, and the desktop editor opens it, edits the pin, saves, and the saved file
  * opens again with every block, its story and its assets.
  */
 
@@ -82,6 +82,27 @@ test("the visitor sees a station's pin, its captured photo, its picture and its 
       { timeout: 20000 },
     )
     .toEqual(["gate-arch", "gate-knight", "gate-photo", "gate-pin"]);
+  // A free character stands with no story playing, and two stand side by
+  // side, each on a stage of his own: the stage of a story holds one.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          /** @param {any} o @returns {boolean} */
+          const holdsFigure = (o) =>
+            o.name === "station-character" ||
+            (o.children ?? []).some(holdsFigure);
+          return /** @type {any} */ (
+            window
+          ).__tourViewerTest.fakeScene.children.filter(
+            (/** @type {any} */ c) =>
+              c.name === "station-stage:gate" && holdsFigure(c),
+          ).length;
+        }),
+      { timeout: 20000 },
+    )
+    .toBe(2);
 });
 
 /**

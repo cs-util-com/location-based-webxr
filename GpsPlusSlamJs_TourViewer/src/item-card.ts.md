@@ -36,6 +36,10 @@ it has a row).
   - `showing()`: false once the item stopped.
   - `notice(what, text | null)`, `debugLine(text)`.
 
+## Hosts
+
+Two hosts show items: `scene-view.ts` for a story's step and `free-items.ts` for what stands free in a station. `ItemVideo`'s optional `paused`, `muted` and `play` are what the voice channel reads of a real element (`voice-focus.ts`).
+
 ## Invariants and assumptions
 
 - **The item owns** what it shows, what it reads and its words. **The host
