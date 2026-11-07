@@ -61,7 +61,10 @@ camera captures are debug data, never in a station (an earlier file's
   (`blockBodyAssets`, `tour-body-assets.ts`, remembered by the
   block), and its narration's voice (the reader requires it; the timing is an
   entry, not an asset);
-  none for a short text), every station's card image and the cover. A
+  none for a short text), every station's card image, the cover, and every
+  declared character's image and frames sheet (the declaration names them
+  whether or not a block shows him; dropped, the strict re-read of the
+  save refused the tour). A
   body's pictures are named only inside its Markdown; before they were
   counted, every Finish dropped their assets and deleted their files.
 - `keepsItself(station, imageAssets) -> boolean`: whether an EMPTY

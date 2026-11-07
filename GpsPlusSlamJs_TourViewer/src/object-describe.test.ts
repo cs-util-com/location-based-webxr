@@ -10,6 +10,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type {
+  TourObject,
   TourPicture,
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -19,6 +20,7 @@ import {
   codeDistanceLine,
   kindNoun,
   objectLook,
+  objectOwnText,
   objectTitle,
 } from "./object-describe.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
@@ -136,6 +138,24 @@ describe("objectTitle", () => {
     expect(
       block({ kind: "shortText", view: "pin", caption: " Look up " }),
     ).toBe("Look up");
+  });
+});
+
+describe("objectOwnText", () => {
+  // Why: the field a page edits as a block's name differs per kind (a
+  // caption, a name, a title). Every kind says which; a kind this list
+  // does not know is named by no field it happens to carry, so a new kind
+  // has to choose its field rather than inherit "title" unseen.
+  it("reads each kind's own field, and none of an unknown kind", () => {
+    const of = (fields: Record<string, unknown>) =>
+      objectOwnText(fields as unknown as TourObject);
+    expect(of({ kind: "shortText", caption: "Pin", title: "x" })).toBe("Pin");
+    expect(of({ kind: "picture", caption: "Pic", title: "x" })).toBe("Pic");
+    expect(of({ kind: "character", name: "Kay", caption: "x" })).toBe("Kay");
+    for (const kind of ["longText", "video", "audio", "model"]) {
+      expect(of({ kind, title: "T", caption: "x" })).toBe("T");
+    }
+    expect(of({ kind: "hologram", title: "T" })).toBeUndefined();
   });
 });
 

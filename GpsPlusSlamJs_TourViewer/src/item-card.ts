@@ -37,7 +37,8 @@ export type ItemVideo = Pick<
 
 /** The places of a card an item fills. */
 interface ItemCardSlots {
-  /** Text, caption or transcript: every item has words (captions always). */
+  /** Text, caption or transcript: the item's words, empty when an
+   *  optional caption or transcript is absent. */
   readonly text: Pick<HTMLElement, "textContent">;
   /** A character's name; the host hides it for other items. */
   readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;
@@ -249,7 +250,8 @@ export function showItemCard(block: TourBlock, host: ItemCardHost): void {
       slots.text.textContent = block.transcript ?? "";
       // The player does not start by itself: until the visitor starts
       // the clip a `lineEnd` step waits the transcript's reading time
-      // (as for one that cannot be read); once it plays, its end.
+      // (as for one that cannot be read), or with no transcript for the
+      // visitor to start it; once it plays, its end.
       const clip = host.clip();
       let clipShown = false;
       if (block.poster !== undefined) {

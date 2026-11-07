@@ -84,6 +84,7 @@ import { applySceneEdit } from "./scene-edits.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
+  droppedBlockFieldsLine,
   droppedDetailsLine,
   droppedStationFieldsLine,
   openTourForEditing,
@@ -2263,12 +2264,13 @@ async function openFile(
   sayNoBackup();
   sayUnreadDraft();
   keepStorage();
-  // Details, station descriptions and card images the reader dropped are
-  // said, never lost silently by the next save (M4a review #6); kept until
-  // closed, as an instruction.
+  // Details, station descriptions, card images and block texts the reader
+  // dropped are said, never lost silently by the next save (M4a review #6);
+  // kept until closed, as an instruction.
   for (const line of [
     droppedDetailsLine(outcome.dropped),
     droppedStationFieldsLine(outcome.dropped, outcome.manifest),
+    droppedBlockFieldsLine(outcome.dropped, outcome.manifest),
   ]) {
     if (line !== null) fileToasts.push(toast(line, undefined, null));
   }
