@@ -157,7 +157,9 @@ hooks.tickStations = stations.tick;
   station brought back after its skip settled (`prefetch.undone`);
   `storyPlaying` is the story panel's `playing()`, the story "End this
   story?" names; `storyChoosing` is its `choosing()`, which turns the
-  guide's and the sheet's words from a story playing to a choice asked. Each render holds the story's step while its end is
+  guide's and the sheet's words from a story playing to a choice asked.
+  A change of it ticks the guide at once (`onChange`): a tap on a story
+  must not wait for the next position to change the end control. Each render holds the story's step while its end is
   asked (`view.holdStep(end?.kind === "end")`, before the story's
   progress is read): the step's timer stops under the question and
   "Keep listening" starts it again from its full length.

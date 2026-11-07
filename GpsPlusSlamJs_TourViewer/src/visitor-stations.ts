@@ -351,6 +351,8 @@ export function wireVisitorStations(deps: {
     beckonOf: (id) => beckonOf(id),
   });
   // The sheet is drawn after a guide call, never from inside one.
+  /** The picker the guide last spoke of (`view.choosing()`). */
+  let choosingShown: string | null = null;
   const calls = createCallGuard(() => {
     renderSheet();
   });
@@ -394,6 +396,16 @@ export function wireVisitorStations(deps: {
     // after the guide call it happened in (never a half-made view).
     onChange: () => {
       calls.request();
+      // A story tapped at the picker changes what the guide's line and end
+      // control say; they must not wait for the next position.
+      const choosing = view.choosing();
+      if (choosing === choosingShown) return;
+      choosingShown = choosing;
+      calls.after(() => {
+        calls.during(() => {
+          guide.tick();
+        });
+      });
     },
     // A reached world block stands from now on (B2b): kept with the
     // walk, through the guide's call (it may be the one starting the walk).
