@@ -17,15 +17,17 @@ import { mountReadingSign } from "../reading-sign.js";
 import type { StationsLayerDeps } from "./editor3d-stations.js";
 
 /** What of the stations layer's needs draws an item. */
-export type EditorDrawings = Pick<
-  StationsLayerDeps,
-  | "makeLabel"
-  | "makeLectern"
-  | "makeReadingSign"
-  | "loadPhotoTexture"
-  | "loadContent"
-  | "loadGlbModel"
-  | "worldPart"
+export type EditorDrawings = Required<
+  Pick<
+    StationsLayerDeps,
+    | "makeLabel"
+    | "makeLectern"
+    | "makeReadingSign"
+    | "loadPhotoTexture"
+    | "loadContent"
+    | "loadGlbModel"
+    | "worldPart"
+  >
 >;
 
 /** The item builders, the tour's files read through `loadContent` (a

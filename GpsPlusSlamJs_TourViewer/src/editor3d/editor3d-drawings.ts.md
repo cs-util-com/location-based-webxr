@@ -34,6 +34,11 @@ reading sign: a long text shown as a sign was drawn in the flat view only.
 
 - Both views spread the result into `createStationsLayer`'s deps; a
   builder the layer gains belongs here, never in one view.
+- `EditorDrawings` is `Required<Pick<...>>`: the layer's deps are
+  optional, so a plain `Pick` would let a listed builder go missing
+  unnoticed; dropping one is a type error here. A builder newly added to
+  the layer's deps and not listed here is caught by neither the type nor
+  `editor3d-drawings.test.ts`, which pins the listed builders by name.
 - A failed read rejects as `loadContent` does; the layer leaves that item
   out.
 
