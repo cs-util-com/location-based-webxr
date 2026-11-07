@@ -226,6 +226,38 @@ test.describe("the item lab", () => {
     await expect(page.locator("#lab-error")).toContainText("not the name");
   });
 
+  // Why this test matters: a kind's `assets(block)` is untyped code from a
+  // session's folder. One that throws must fail once, as the page loads,
+  // with its words on the page, not on every frame behind a running lab.
+  test("says so at load when the kind's assets() throws", async ({ page }) => {
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/prototypes/item-kinds/broken-1/kind.js", (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: [
+          "export function show(block, host) { host.slots.text.textContent = 'x'; }",
+          "export function assets() { throw new Error('assets broke'); }",
+        ].join("\n"),
+      }),
+    );
+    await page.route("**/prototypes/item-kinds/broken-1/sample.json", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: "Broken",
+          words: "Broken words.",
+          block: { kind: "broken" },
+          assets: [{ id: "pic", kind: "image", file: "pic.png" }],
+        }),
+      }),
+    );
+    await page.goto("/item-lab.html?kind=broken-1");
+    await expect(page.locator("#lab-error")).toContainText("assets broke");
+    expect(await page.evaluate(() => window.__itemLab)).toBeUndefined();
+    expect(errors).toEqual([]);
+  });
+
   for (const viewport of VIEWPORTS) {
     test(`fits a ${viewport.name} with no sideways scroll`, async ({
       page,

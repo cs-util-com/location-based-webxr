@@ -6,7 +6,7 @@ Runs a kind from `public/prototypes/item-kinds/<name>/` in both contexts, side b
 
 ## Public API
 
-- `startItemLab()` - reads the kind `?kind=` names and runs the page. A name that is no folder name, or a folder that cannot be read, shows a line in `#lab-error` and nothing else.
+- `startItemLab()` - reads the kind `?kind=` names and runs the page. A name that is no folder name, a folder that cannot be read, or a kind whose `assets(block)` throws, shows a line in `#lab-error` and nothing else.
 - `window.__itemLab` (`ItemLab`), installed when the kind was read:
   - `start()`, `next()`, `stop()`, `tap("story" | "free")`, `secondSound()`, `endSound()`
   - `loseAsset(id, lost)`, `holdLoads()`, `releaseLoads()`, `walk(away)`
@@ -16,6 +16,8 @@ Runs a kind from `public/prototypes/item-kinds/<name>/` in both contexts, side b
 ## Invariants and assumptions
 
 - Left: real `createSceneView`; the `audio` and `stage` seams are fakes that remember what they would play and stand. Its Continue (`#lab-continue`) and play-next (`#lab-play-next`) buttons, which the scene view shows and hides, are wired to `continueTapped` and `playNextNow` as the app wires its own.
+- The kind's `assets(block)` runs once, as the page loads (`state().declared` is that list), so a kind whose code throws fails there with its words instead of on every frame.
+- `#lab-state` is for a person reading it and is redrawn at most every 250 ms; `state()` is read fresh on every call, so a test sees no delay.
 - Right: real `createFreeItems` and real `createSceneStage` on a three.js scene; a pointer tap goes through the real `pickObject`, a hook tap takes the first target. Its player is the real narration player over `createSilentAudio`.
 - Both sides share one voice channel, one set of loads and one count of object URLs, so a sound on one side holds the other, as in the app.
 - A lost file or a held load is decided in `loadAsset`, so a kind sees what a real failure gives it.
