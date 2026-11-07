@@ -866,22 +866,36 @@ body {
 /* A row's "+", its last piece: shown where the pointer is, on the
  * selection, on the keyboard's focus and while its menu is open, as the
  * explorer shows it (always on a phone, which has no pointer over it). */
-.head .add {
+:is(.head, .folder) .add {
+  flex: none;
   width: 22px;
   height: 22px;
   opacity: 0;
 }
 
-.head:hover .add,
+:is(.head, .folder):hover .add,
 .card.sel .head .add,
-.head .add:focus-visible,
-.head .add[aria-expanded="true"] {
+.folder.sel .add,
+:is(.head, .folder) .add:focus-visible,
+:is(.head, .folder) .add[aria-expanded="true"] {
   opacity: 1;
 }
 
-.head .add svg.i {
+:is(.head, .folder) .add svg.i {
   width: 12px;
   height: 12px;
+}
+
+/* A story in the type menu, behind a line. */
+#tree-add-menu .storypart {
+  display: grid;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--s-line);
+}
+
+#tree-add-menu .storypart[hidden] {
+  display: none;
 }
 
 /* The tree's type menu: under the "+" pressed, in the window. */
@@ -929,14 +943,84 @@ body {
   text-overflow: ellipsis;
 }
 
-/* A story folder's row, its entries a level deeper. */
+/* A story's row: its fold arrow, its name, its count and its "+", its
+ * entries a level deeper. The arrow stands left of the icons of the free
+ * items, so a folder's icon lines up with theirs. */
 .folder {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 26px;
-  padding: 0 8px 0 60px;
+  padding: 0 4px 0 40px;
   color: var(--s-text);
+}
+
+.folder:hover {
+  background: rgb(255 255 255 / 3.5%);
+}
+
+.folder.ctx {
+  background: rgb(233 162 59 / 5%);
+}
+
+.folder.sel {
+  background: var(--s-accent-bg);
+}
+
+.folder.sel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--s-accent);
+}
+
+.folder .tw {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--s-dim);
+  cursor: pointer;
+}
+
+.folder .tw:hover {
+  color: var(--s-text);
+}
+
+.folder .tw svg.i {
+  width: 12px;
+  height: 12px;
+}
+
+.folder .fname {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder .fname:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: -2px;
 }
 
 .folder .nm {
@@ -947,8 +1031,39 @@ body {
   white-space: nowrap;
 }
 
+.folder.sel .nm {
+  color: #fff;
+}
+
+.folder .meta,
+.kid .meta {
+  flex: none;
+  color: var(--s-dim);
+  font: 10px var(--s-mono, monospace);
+}
+
+.emptyrow.deep {
+  margin-left: 76px;
+}
+
 .ic.story {
   color: var(--s-accent-text);
+}
+
+.ic:is(.video, .audio) {
+  color: #8fb3d9;
+}
+
+.ic.character {
+  color: #d6a8d0;
+}
+
+.ic.choice {
+  color: #a8d0a0;
+}
+
+.ic.quiz {
+  color: #d9c07a;
 }
 
 .kid,
@@ -2771,7 +2886,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
     height: 32px;
   }
 
-  .head .add {
+  :is(.head, .folder) .add {
     opacity: 1;
   }
 
@@ -3051,29 +3166,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-/* The blocks a station's story shows: listed, not edited, here. */
-.story-blocks {
+/* What a choice or a quiz says: read here, not edited. */
+.steplines {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   margin: 4px 0;
   padding: 0;
   list-style: none;
-}
-
-.story-blocks li {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 6px;
-}
-
-.story-blocks .kind {
-  color: var(--s-muted);
-}
-
-.story-blocks .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* A model's own parts in the inspector (the station blocks prototype's

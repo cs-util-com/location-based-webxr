@@ -277,6 +277,12 @@ largeTour?, cannotSave? })`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
   before an open, for an unknown station or item, or for a value the
   format refuses - the page asks the exported guard first and says why):
+  - `storyAdded`, `storyRenamed`, `storyDeleted`, `storyChildAdded`,
+    `storyChildDeleted` (which prunes the `goto`s that led to the child) - one
+    history entry each and a draft write; the maths is `tour-story-edit.ts`,
+    and `story-commands.property.test.ts` holds that after any sequence and
+    its undos the writer accepts the document and a draft reload equals it.
+    `stationEdited` with `storyAdvance` sets how a story's block moves on.
   - `stationEdited({ stationId, edit, what })` - a station's title, found
     radius (`isStationRadius`, 2 m to 300 m inclusive; the preload radius
     follows at twice it, `preloadRadiusM`), description or card image

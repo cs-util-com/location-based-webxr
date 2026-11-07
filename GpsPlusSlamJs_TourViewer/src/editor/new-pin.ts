@@ -12,6 +12,10 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import type {
+  TourStory,
+  TourStoryBlock,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { worldBlocks } from "../tour-document.js";
 
@@ -145,6 +149,38 @@ export function addNewItem(
 
 /** The body a new long text starts with: the format requires one. */
 const NEW_LONG_TEXT_BODY = "Write the text here.";
+
+/** What a story's add can make. */
+export type NewEntryKind = "pin" | "longText";
+
+/**
+ * A new entry at the end of `story`: a card a visitor taps on from, in its
+ * station's middle, "New pin n" or "New long text n" with n one more than
+ * the story's cards of that kind. Moved in the room later, as any story
+ * block.
+ */
+export function newStoryEntry(
+  story: TourStory,
+  kind: NewEntryKind,
+  id: string,
+): TourStoryBlock {
+  const textKind = kind === "pin" ? "shortText" : "longText";
+  const n = story.children.filter((c) => c.kind === textKind).length + 1;
+  const shared = {
+    id,
+    view: "card",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    advance: { mode: "tap" },
+  } as const;
+  return kind === "pin"
+    ? { ...shared, kind: "shortText", caption: `New pin ${String(n)}` }
+    : {
+        ...shared,
+        kind: "longText",
+        title: `New long text ${String(n)}`,
+        body: NEW_LONG_TEXT_BODY,
+      };
+}
 
 /**
  * A new long text of `station`, as `newPin` makes a pin: a reading sign

@@ -63,7 +63,8 @@ chrome reads, one copy for every view of the page.
     `view3dShown()` (only while loading), `view3dFailed({ reason })` (only
     while loading or shown: back on the map, the reason kept),
     `view2dRequested()` (the map, idle, no reason);
-  - the shell's: `stationFolded({ id, open })` (an empty id ignored, no
+  - the shell's: `storyFolded({ id, open })` keeps `openStories`, the story
+    folders unfolded in the tree (folded by default); `stationFolded({ id, open })` (an empty id ignored, no
     id twice), `sectionFolded({ section, open })`,
     `dockFolded({ dock, folded })`, `layerShown({ layer, shown })` (each
     ignoring a key it does not know); each of

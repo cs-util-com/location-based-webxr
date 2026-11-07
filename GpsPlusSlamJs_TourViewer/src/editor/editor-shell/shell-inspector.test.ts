@@ -19,7 +19,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tourDocumentActions, manifestToWrite } from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
-import { buildInspector, type InspectorCode } from "./inspector-model.js";
+import {
+  buildInspector,
+  type InspectorCode,
+  type InspectorModel,
+} from "./inspector-model.js";
 import { drawInspector, inspectorDrawing } from "./shell-inspector.js";
 import type { ShellPictures } from "./shell-pictures.js";
 import { stationContent } from "../../test-support/station-content.js";
@@ -203,7 +207,6 @@ describe("drawInspector", () => {
         position: null,
         locked: true,
         contents: [],
-        story: [],
       },
       { folded: false, positionOpen: false },
       pictures,
@@ -216,118 +219,223 @@ describe("drawInspector", () => {
     expect(notes).toContain("The file gives this station no position.");
   });
 
-  // Why: the blocks a station's story shows stand nowhere in the 3D view,
-  // so the station's inspector is where the creator sees them: a labelled
-  // list, a row each with its kind and its name as text (a name is the
-  // file's, never markup), and no list at all for a station without a
-  // story.
-  it("lists the blocks its story shows, by kind and name, as text", () => {
-    const station = (
-      story: {
-        id: string;
-        kind: string;
-        title: string;
-        fields: readonly never[];
-      }[],
-    ) =>
-      ({
-        kind: "station",
-        title: "Unplaced",
-        sub: "Station 1 of 1",
-        place: { number: 1, count: 1 },
-        name: "Unplaced",
-        description: null,
-        imagePath: null,
-        images: [],
-        imageId: null,
-        foundRadiusM: 25,
-        activateRadiusM: 50,
-        outside: 0,
-        offGround: null,
-        groundOffM: null,
-        position: null,
-        locked: true,
-        story,
-        contents: [],
-      }) as const;
-    drawInspector(
-      dock,
-      station([
-        {
-          id: "intro",
-          kind: "Long text",
-          title: "The <b>siege</b>",
-          fields: [],
-        },
-        { id: "guard", kind: "Character", title: "The watchman", fields: [] },
-      ]),
-      { folded: false, positionOpen: false },
-      pictures,
-    );
-    const list = dock.body.querySelector<HTMLElement>("ul.story-blocks");
-    expect(list).not.toBeNull();
-    const label = list?.getAttribute("aria-labelledby") ?? "";
-    expect(dock.body.querySelector(`[id="${label}"]`)?.textContent).toBe(
-      "In its story",
-    );
-    expect(
-      [...(list?.querySelectorAll("li") ?? [])].map((li) => [
-        li.dataset["block"],
-        li.querySelector(".kind")?.textContent,
-        li.querySelector(".name")?.textContent,
-      ]),
-    ).toEqual([
-      ["intro", "Long text", "The <b>siege</b>"],
-      ["guard", "Character", "The watchman"],
-    ]);
-    expect(list?.querySelector("b")).toBeNull();
-    drawInspector(
-      dock,
-      station([]),
-      { folded: false, positionOpen: false },
-      pictures,
-    );
-    expect(dock.body.querySelector("ul.story-blocks")).toBeNull();
-  });
+  /** A story's entry with `block`, as its inspector reads it. */
+  const entryOf = (
+    block: Extract<InspectorModel, { kind: "storyEntry" }>["block"],
+    advance: { mode: string; afterS: number | null } = {
+      mode: "tap",
+      afterS: null,
+    },
+  ) =>
+    ({
+      kind: "storyEntry",
+      id: block.id,
+      stationId: "gate",
+      title: block.title,
+      sub: "1 The old gate / The legend / Long text, entry 1",
+      block,
+      advance,
+    }) as const;
+  const FOLD = { folded: false, positionOpen: false };
 
-  // Why: a story character is set in the station's inspector with the
-  // controls a model's view already has - chips, the one in use pressed -
-  // and his facing as a heading typed like an item's: each control named
-  // by the block it sets (`data-act` / `data-field`), so the shell writes
-  // to the right character; a long text of the story gets none.
-  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+  // Why: a story's parts left the station's inspector for a story's own: a
+  // story's title is typed in the head, its entries are listed in order
+  // with the way to add one, and its Delete says what goes with it. Names
+  // are the file's, never markup.
+  it("draws a story: its typed title, its numbered entries, its commands", () => {
     drawInspector(
       dock,
       {
-        kind: "station",
-        title: "Unplaced",
-        sub: "Station 1 of 1",
-        place: { number: 1, count: 1 },
-        name: "Unplaced",
-        description: null,
-        imagePath: null,
-        images: [],
-        imageId: null,
-        foundRadiusM: 25,
-        activateRadiusM: 50,
-        outside: 0,
-        offGround: null,
-        groundOffM: null,
-        position: null,
-        locked: true,
-        contents: [],
-        story: [
-          { id: "intro", kind: "Long text", title: "The siege", fields: [] },
+        kind: "story",
+        storyId: "legend",
+        stationId: "gate",
+        title: "The <b>legend</b>",
+        sub: "1 The old gate / Story",
+        entries: [
+          { id: "intro", kind: "text", title: "The <i>siege</i>", place: 1 },
+          { id: "way", kind: "choice", title: "Choice: Which?", place: 2 },
+        ],
+      },
+      FOLD,
+      pictures,
+    );
+    const title = dock.head.querySelector<HTMLInputElement>(
+      '[data-field="story-title"]',
+    );
+    expect(title?.defaultValue).toBe("The <b>legend</b>");
+    expect(title?.getAttribute("aria-label")).toBe("Name of the story");
+    expect(dock.body.querySelector(".sub")?.textContent).toBe(
+      "1 The old gate / Story",
+    );
+    expect(dock.body.querySelector('[data-act="contents"]')?.textContent).toBe(
+      "Entries2, played in order",
+    );
+    expect(
+      [...dock.body.querySelectorAll<HTMLElement>(".kids .kid")].map((k) => [
+        k.dataset["act"],
+        k.querySelector(".meta")?.textContent,
+        k.querySelector(".nm")?.textContent,
+      ]),
+    ).toEqual([
+      ["goto:intro", "1", "The <i>siege</i>"],
+      ["goto:way", "2", "Choice: Which?"],
+    ]);
+    expect(dock.body.querySelector("b, i")).toBeNull();
+    expect(
+      dock.body.querySelector('[data-act="add-entry"]')?.textContent,
+    ).toContain("Add entry...");
+    expect(
+      dock.body.querySelector('[data-act="delete"]')?.textContent,
+    ).toContain("Delete story and its 2 entries...");
+  });
+
+  it("says an empty story has no entries, and needs no words on its Delete", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "story",
+        storyId: "legend",
+        stationId: "gate",
+        title: "Empty",
+        sub: "1 The old gate / Story",
+        entries: [],
+      },
+      FOLD,
+      pictures,
+    );
+    expect(dock.body.querySelector(".kids")).toBeNull();
+    expect(dock.body.textContent).toContain("No entries yet.");
+    expect(
+      dock.body.querySelector('[data-act="delete"]')?.textContent,
+    ).toContain("Delete story");
+    expect(
+      dock.body.querySelector('[data-act="delete"]')?.textContent,
+    ).not.toContain("entries");
+  });
+
+  // Why: an entry that is no block waits for an answer. It cannot be edited
+  // yet, so what it says and its Delete are all there is: a summary drawn as
+  // text, and no field that would suggest otherwise.
+  it("draws a choice's or a quiz's summary as text, with its Delete", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "storyStep",
+        stepKind: "choice",
+        id: "way",
+        stationId: "gate",
+        title: "Which <b>way</b>?",
+        sub: "1 The old gate / The legend / Choice, entry 2",
+        heading: "Answers",
+        lines: ["<b>Back</b> - goes to The siege", "On - plays on"],
+      },
+      FOLD,
+      pictures,
+    );
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe(
+      "Which <b>way</b>?",
+    );
+    expect(
+      [...dock.body.querySelectorAll(".steplines li")].map(
+        (l) => l.textContent,
+      ),
+    ).toEqual(["<b>Back</b> - goes to The siege", "On - plays on"]);
+    expect(dock.body.querySelector("b")).toBeNull();
+    expect(dock.body.querySelector("input, textarea")).toBeNull();
+    expect(
+      dock.body.querySelector('[data-act="delete"]')?.textContent,
+    ).toContain("Delete choice");
+  });
+
+  it("draws a free video's texts and its Delete", () => {
+    drawInspector(
+      dock,
+      {
+        kind: "freeBlock",
+        itemKind: "video",
+        id: "clip",
+        stationId: "gate",
+        title: "A clip",
+        sub: "Video in The old gate",
+        fields: [
           {
-            id: "w1",
-            kind: "Character",
-            title: "Wendel",
-            character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
-            fields: [],
+            name: "title",
+            label: "Title",
+            value: "A clip",
+            max: 80,
+            unit: "codePoints",
+            required: false,
+            prose: false,
           },
         ],
       },
-      { folded: false, positionOpen: false },
+      FOLD,
+      pictures,
+    );
+    expect(
+      dock.body.querySelector<HTMLInputElement>('[data-field="title"]')
+        ?.defaultValue,
+    ).toBe("A clip");
+    expect(
+      dock.body.querySelector('[data-act="delete"]')?.textContent,
+    ).toContain("Delete video");
+  });
+
+  // Why: how a block moves on is the one thing of its step the entry's
+  // inspector sets: the chip in use pressed, the seconds only while they
+  // mean something, and a mode no chip offers still shown as its own chip.
+  it("draws how a story's block moves on, its seconds only when automatic", () => {
+    const block = { id: "b1", kind: "Long text", title: "T", fields: [] };
+    const chips = () =>
+      [
+        ...dock.body.querySelectorAll<HTMLElement>("[data-act^=entry-advance]"),
+      ].map((b) => [b.dataset["act"], b.getAttribute("aria-pressed")]);
+    drawInspector(dock, entryOf(block), FOLD, pictures);
+    expect(chips()).toEqual([
+      ["entry-advance:b1:tap", "true"],
+      ["entry-advance:b1:auto", "false"],
+    ]);
+    expect(dock.body.querySelector('[data-field="entry-after:b1"]')).toBeNull();
+    drawInspector(
+      dock,
+      entryOf(block, { mode: "auto", afterS: 8 }),
+      FOLD,
+      pictures,
+    );
+    expect(chips()[1]).toEqual(["entry-advance:b1:auto", "true"]);
+    expect(
+      dock.body.querySelector<HTMLInputElement>('[data-field="entry-after:b1"]')
+        ?.defaultValue,
+    ).toBe("8");
+    drawInspector(
+      dock,
+      entryOf(block, { mode: "lineEnd", afterS: null }),
+      FOLD,
+      pictures,
+    );
+    expect(chips()).toEqual([
+      ["entry-advance:b1:tap", "false"],
+      ["entry-advance:b1:auto", "false"],
+      ["entry-advance:b1:lineEnd", "true"],
+    ]);
+  });
+
+  // Why: a story character is set in his entry's inspector with the
+  // controls a model's view already has - chips, the one in use pressed -
+  // and his facing as a heading typed like an item's: each control named
+  // by the block it sets (`data-act` / `data-field`), so the shell writes
+  // to the right character.
+  it("draws a story character's view and advance as chips and his facing as a heading", () => {
+    drawInspector(
+      dock,
+      entryOf({
+        id: "w1",
+        kind: "Character",
+        title: "Wendel",
+        character: { view: "speak", advance: "lineEnd", facingDeg: 179.6 },
+        fields: [],
+      }),
+      FOLD,
       pictures,
     );
     const section = dock.body.querySelector<HTMLElement>(
@@ -374,7 +482,7 @@ describe("drawInspector", () => {
     expect(section?.textContent).toContain("Wendel");
   });
 
-  // Why: a story block's texts are typed in its station's inspector, each
+  // Why: a story block's texts are typed in its entry's inspector, each
   // named by the block and the field it sets (`block:<id>:<field>`), so
   // the shell writes to the right block; each shows its count against the
   // format's cap; a character's texts sit in his own box, under his
@@ -396,61 +504,20 @@ describe("drawInspector", () => {
     });
     drawInspector(
       dock,
-      {
-        kind: "station",
-        title: "Unplaced",
-        sub: "Station 1 of 1",
-        place: { number: 1, count: 1 },
-        name: "Unplaced",
-        description: null,
-        imagePath: null,
-        images: [],
-        imageId: null,
-        foundRadiusM: 25,
-        activateRadiusM: 50,
-        outside: 0,
-        offGround: null,
-        groundOffM: null,
-        position: null,
-        locked: true,
-        contents: [],
-        story: [
-          {
-            id: "intro",
-            kind: "Long text",
-            title: "The siege",
-            fields: [
-              field("title", "Title", "The siege", 80),
-              field("body", "Body", "In 1632", 32000),
-            ],
-          },
-          {
-            id: "bell",
-            kind: "Long text",
-            title: "The bell",
-            fields: [field("title", "Title", "The bell", 80)],
-          },
-          {
-            id: "k1",
-            kind: "Character",
-            title: "Sir Kay",
-            character: { view: "speak", advance: "tap", facingDeg: 0 },
-            fields: [
-              field("name", "Name", "Sir Kay", 80),
-              field("caption", "Caption", "Hold the gate.", 2000),
-            ],
-          },
-          { id: "arch", kind: "Model", title: "Arch", fields: [] },
+      entryOf({
+        id: "intro",
+        kind: "Long text",
+        title: "The siege",
+        fields: [
+          field("title", "Title", "The siege", 80),
+          field("body", "Body", "In 1632", 32000),
         ],
-      },
-      { folded: false, positionOpen: false },
+      }),
+      FOLD,
       pictures,
     );
     const intro = dock.body.querySelector<HTMLElement>(
       '.story-text[data-block="intro"]',
-    );
-    expect(intro?.querySelector(".flabel")?.textContent).toBe(
-      "Long text - The siege",
     );
     const title = intro?.querySelector<HTMLInputElement>(
       '[data-field="block:intro:title"]',
@@ -465,6 +532,22 @@ describe("drawInspector", () => {
       `[id="${body?.getAttribute("aria-describedby") ?? ""}"]`,
     );
     expect(count?.textContent).toContain("32000");
+
+    drawInspector(
+      dock,
+      entryOf({
+        id: "k1",
+        kind: "Character",
+        title: "Sir Kay",
+        character: { view: "speak", advance: "tap", facingDeg: 0 },
+        fields: [
+          field("name", "Name", "Sir Kay", 80),
+          field("caption", "Caption", "Hold the gate.", 2000),
+        ],
+      }),
+      FOLD,
+      pictures,
+    );
     const kay = dock.body.querySelector<HTMLElement>(
       '.character[data-block="k1"]',
     );
@@ -473,43 +556,14 @@ describe("drawInspector", () => {
         (f) => f.dataset["field"],
       ),
     ).toEqual(["character-facing:k1", "block:k1:name", "block:k1:caption"]);
-    // Each box is a group named by its head, and each field is named by
-    // its own label only: a screen reader says the group's name once, on
-    // entering it, so two blocks' "Title" fields are told apart by their
-    // group - the head is not said again for every field.
-    const nameOf = (node: Element | null | undefined): string =>
-      (node?.getAttribute("aria-labelledby") ?? "")
-        .split(" ")
-        .map((id) => dock.body.querySelector(`[id="${id}"]`)?.textContent)
-        .join(" ");
-    const group = (name: string): Element | undefined =>
-      [...dock.body.querySelectorAll('[role="group"]')].find(
-        (g) => nameOf(g) === name,
-      );
-    const labelled = (
-      box: Element | undefined,
-      label: string,
-    ): HTMLInputElement | HTMLTextAreaElement | undefined =>
-      [
-        ...(box?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-          "input, textarea",
-        ) ?? []),
-      ].find(
-        (f) =>
-          !f.hasAttribute("aria-labelledby") &&
-          !f.hasAttribute("aria-label") &&
-          f.labels?.[0]?.textContent === label,
-      );
-    expect(group("Long text - The siege")).toBe(intro);
-    expect(labelled(group("Long text - The siege"), "Title")).toBe(title);
-    expect(
-      labelled(group("Long text - The bell"), "Title")?.dataset["field"],
-    ).toBe("block:bell:title");
-    expect(group("Sir Kay")).toBe(kay);
-    expect(labelled(group("Sir Kay"), "Caption")?.dataset["field"]).toBe(
-      "block:k1:caption",
-    );
     expect(dock.body.querySelector('.story-text[data-block="k1"]')).toBeNull();
+
+    drawInspector(
+      dock,
+      entryOf({ id: "arch", kind: "Model", title: "Arch", fields: [] }),
+      FOLD,
+      pictures,
+    );
     expect(dock.body.querySelector('.isec[data-block="arch"]')).toBeNull();
   });
 

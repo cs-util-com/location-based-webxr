@@ -46,7 +46,11 @@ import {
   SAMPLE_PHOTOS,
   sampleRecordingBytes,
 } from "../test-support/sample-recording.js";
-import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import {
+  freeLocks,
+  memoryDraftStores,
+  writtenJson,
+} from "../test-support/memory-draft.js";
 import type { DetailsForm } from "../tour-details-form.js";
 import { TOUR_TITLE_MAX_CHARS } from "gps-plus-slam-app-framework/ar/tour-details";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
@@ -140,13 +144,6 @@ async function carried(
 }
 
 /** The saved `tour.json` as written, before any parse fills defaults. */
-async function writtenJson(blob: Blob): Promise<Record<string, unknown>> {
-  const bytes = readStoredEntryBytes(
-    new Uint8Array(await blob.arrayBuffer()),
-    "tour.json",
-  );
-  return JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
-}
 
 describe("createEditorSession", () => {
   it("edits a pin's text, moves a note and deletes one, and the save carries all three", async () => {
@@ -658,62 +655,6 @@ function loggedDraft(): EditorSessionDraft & { calls: string[] } {
       return Promise.resolve();
     },
   };
-}
-
-/** One browser's draft directories, in memory, with the OPFS store's
- *  contract (`editor-draft.test.ts` has the fuller one, with faults). */
-function memoryDraftStores(): {
-  open: (key: string) => Promise<DraftFileStore | undefined>;
-} {
-  const spaces = new Map<string, Map<string, Blob | string>>();
-  return {
-    open: (key) => {
-      const files = spaces.get(key) ?? new Map<string, Blob | string>();
-      spaces.set(key, files);
-      return Promise.resolve({
-        put: (k, data) => {
-          files.set(k, data as Blob | string);
-          return Promise.resolve(true);
-        },
-        remove: (k) => {
-          files.delete(k);
-          return Promise.resolve();
-        },
-        getText: async (k) => {
-          const v = files.get(k);
-          return v === undefined
-            ? undefined
-            : typeof v === "string"
-              ? v
-              : v.text();
-        },
-        getBlob: (k) => {
-          const v = files.get(k);
-          return Promise.resolve(
-            v === undefined
-              ? undefined
-              : typeof v === "string"
-                ? new Blob([v])
-                : v,
-          );
-        },
-        keys: () => Promise.resolve([...files.keys()]),
-        clear: () => {
-          files.clear();
-          return Promise.resolve();
-        },
-      });
-    },
-  };
-}
-
-/** Every lock granted: one tab. */
-function freeLocks(): Promise<EditorLock> {
-  return Promise.resolve({
-    granted: true,
-    release: () => undefined,
-    released: Promise.resolve(),
-  });
 }
 
 const K = "local-file:00000000000000000000000000000001";

@@ -149,4 +149,38 @@ describe("selectedStationOf", () => {
     expect(selectedStationOf(null, manifest)).toBeNull();
     expect(selectedStationOf("station:a", null)).toBeNull();
   });
+
+  // Why: a story and its choice or quiz are no blocks, and a selection of
+  // one must still say whose station it is: the shell's add and the near-K
+  // rule follow it.
+  it("finds the station of a story and of any of a story's children", () => {
+    const stories = {
+      stations: [
+        {
+          id: "s",
+          children: [
+            {
+              id: "legend",
+              kind: "story",
+              title: "A story",
+              children: [
+                {
+                  id: "way",
+                  kind: "choice",
+                  prompt: "Which?",
+                  options: [
+                    { id: "a", label: "A" },
+                    { id: "b", label: "B" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof selectedStationOf>[1];
+    expect(selectedStationOf("story:legend", stories)).toBe("s");
+    expect(selectedStationOf("way", stories)).toBe("s");
+    expect(selectedStationOf("story:gone", stories)).toBeNull();
+  });
 });

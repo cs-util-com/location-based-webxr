@@ -67,6 +67,10 @@ export interface EditorModel {
  *  spaces in the manifest. */
 export const STATION_PREFIX = "station:";
 
+/** A story's id in the selection: a story has no place of its own in the
+ *  page's object lists, so it is told from a block by this. */
+export const STORY_PREFIX = "story:";
+
 function noteMeta(object: TourObject, codes: readonly QrGeoPose[]): string {
   const distance = codeDistanceLine(object, codes);
   // The kind in the one rule's words (`object-describe.ts`), so no kind

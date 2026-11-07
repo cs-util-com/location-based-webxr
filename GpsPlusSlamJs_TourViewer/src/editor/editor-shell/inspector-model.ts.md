@@ -28,11 +28,22 @@ origin?, groundAt? })` ->
     loaded), `groundOffM` (the anchor's height over the ground as shown:
     in tenths of a metre, 0 within `ON_GROUND_M`; null while unknown),
     `position` (`InspectorPosition`), or null when the
-    station's point or the origin cannot be read, and `story`
-    (`InspectorStoryBlock[]`: the blocks its story shows,
-    `tourStationStoryBlocks`, in the station's order, each `{ id, kind, title }`
-    with the kind in the block model's words and the name by
-    `objectTitle` (`../../object-describe.ts`, the one naming rule), and `fields` (`storyBlockFields`, its texts to type); listed, neither added, ordered nor removed here (the story editor's); a character also carries `character: InspectorCharacter { view, advance, facingDeg }`: his block's view, the advance mode his block carries, his facing by `facingDegOf`);
+    station's point or the origin cannot be read;
+  - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
+    `stationId`, `title`, `sub` ("2 The gate / Story") and `entries`
+    (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
+  - `StoryEntryInspector` - `kind: "storyEntry"`, a block of a story: `id`,
+    `stationId`, `rowKind`, `title`, `sub` ("2 The gate / The legend / Long
+    text, entry 1"), `block` (`InspectorStoryBlock { id, kind, title, fields,
+character? }`, `kind` in the block model's words, `title` by `objectTitle`,
+    `fields` by `storyBlockFields`; a character carries `InspectorCharacter {
+view, advance, facingDeg }`) and `advance { mode, afterS }`;
+  - `StoryStepInspector` - `kind: "storyStep"`, `stepKind` "choice" or "quiz",
+    `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
+    leads, or a quiz's points and its answers with the right one said (a typed
+    answer's check is not said);
+  - `FreeBlockInspector` - `kind: "freeBlock"`, a free video, audio or
+    character: `itemKind`, `id`, `stationId`, `title`, `sub`, `fields`;
   - `ItemInspector` - `kind: "item"`, `itemKind`, title, `sub` naming
     its kind in the one word every creator page uses and its station ("Pin in
     Market Square", "Photo in ...", "3D model in ...", `BLOCK_KIND_LABEL`; the
@@ -86,9 +97,8 @@ origin?, groundAt? })` ->
   for the picture button); null for every other item, and for a long text a
   station's story shows (its prose stays a field there). Its body and title
   are not repeated in `fields`.
-- A station's model carries `contents`: its items from `stationContents`
-  (`tree-model.ts`), the world's only; a story's blocks stay under "In its
-  story".
+- A station's model carries `contents`: its stories and its free items from
+  `stationContents` (`tree-model.ts`); a story's parts are the story's.
 
 ## Invariants & assumptions
 

@@ -43,6 +43,8 @@ const BUTTONS: Readonly<Record<BarAction, BarButton>> = {
 /** The bar's actions for the selection's inspector (none without one). */
 export function barActions(model: InspectorModel | null): readonly BarButton[] {
   if (model === null) return [];
+  // A story and what stands nowhere in the world: nothing to copy or turn.
+  if (!["station", "item", "code"].includes(model.kind)) return [];
   const copy = positionText(model) === null ? [] : [BUTTONS.copy];
   if (model.kind === "code") return copy;
   if (model.kind === "station") return [BUTTONS.duplicate, ...copy];
@@ -72,7 +74,8 @@ export function positionText(model: InspectorModel | null): string | null {
     const { northM, eastM, upM } = model.offset;
     return `${metres(northM)} m north, ${metres(eastM)} m east, ${metres(upM)} m up of its station, ${heading(model.headingDeg)}`;
   }
-  const at = model.position;
+  const at =
+    model.kind === "station" || model.kind === "code" ? model.position : null;
   if (at === null) return null;
   return `E ${metres(at.eastM)} m, N ${metres(at.northM)} m, height ${metres(at.altM)} m, ${heading(at.headingDeg)}`;
 }

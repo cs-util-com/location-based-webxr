@@ -9,6 +9,9 @@
  * - A text of a block a station's story shows (`block:<id>:<field>`,
  *   `storyBlockFields`): that block's edit, as a free block's other
  *   texts are.
+ * - A story's title (`story-title`): the story's. A story block's seconds
+ *   (`entry-after:<id>`): how it moves on.
+ * - A text of a free block that stands nowhere in the world: its edit.
  * - A station's east and north: its anchor at the place those metres name
  *   from the 3D view's origin (`placeAtEastNorth`), height and turn kept.
  * - An item's east and north: its offset in its station's frame, the
@@ -29,9 +32,17 @@
  *
  * @see inspector-edits.ts.md
  */
-import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourChildPlace,
+  tourStationStoryBlocks,
+  tourStories,
+  type TourStepAdvance,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  itemGeoPose,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import type { GestureEdit } from "../../editor3d/gesture.js";
 import {
@@ -39,7 +50,7 @@ import {
   type StationEdit,
   type WorldBlock,
 } from "../../tour-document.js";
-import { STATION_PREFIX } from "../editor-model.js";
+import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import { eastNorthOf, placeAtEastNorth } from "../tour-origin.js";
 import { blockFields, storyBlockFields } from "../block-fields.js";
 import type { ModelEdit } from "../model-edits.js";
@@ -60,6 +71,18 @@ export type InspectorEdit =
       readonly edit: StationEdit;
     }
   | { readonly kind: "text"; readonly id: string; readonly text: string }
+  /** A story's title. */
+  | {
+      readonly kind: "story-title";
+      readonly id: string;
+      readonly title: string;
+    }
+  /** How a story's block moves on. */
+  | {
+      readonly kind: "story-advance";
+      readonly id: string;
+      readonly advance: EntryAdvance;
+    }
   /** One of a block's other text fields (`block-fields.ts`): a free
    *  block's, or one of a block its station's story shows. */
   | {
@@ -220,6 +243,39 @@ function stationEdit(
   };
 }
 
+/** How a story's block can be set to move on here: when its line ends is
+ *  the character's, set with his chips. */
+export type EntryAdvance = Exclude<TourStepAdvance, { mode: "lineEnd" }>;
+
+/** The field naming a story block's seconds: `entry-after:<id>`. */
+export const ENTRY_AFTER = "entry-after:";
+
+/** A field of a story's entry, selected as `id` in `station`. */
+function storyEntryEdit(
+  station: TourStation,
+  id: string,
+  field: string,
+  value: string,
+  origin: { readonly lat: number; readonly lng: number } | null,
+): InspectorEdit {
+  if (field.startsWith(STORY_TEXT) || field.startsWith(CHARACTER_FACING)) {
+    return stationEdit(station, field, value, origin);
+  }
+  if (field !== `${ENTRY_AFTER}${id}`) return NONE;
+  const block = tourStationStoryBlocks(station).find((b) => b.id === id);
+  if (block === undefined) return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  return block.advance.mode === "auto" &&
+    Math.abs(block.advance.afterS - typed) < SAME
+    ? NONE
+    : {
+        kind: "story-advance",
+        id,
+        advance: { mode: "auto", afterS: typed },
+      };
+}
+
 /** Which axis of the offset (north, up, east) a field types. */
 const AXIS: Readonly<Record<string, 0 | 1 | 2>> = {
   north: 0,
@@ -315,7 +371,8 @@ function itemEdit(
 
 /**
  * The edit `value` typed into `field` writes for `selected` (the page's
- * selection: `station:<id>` or an item's id), its metres measured from
+ * selection: `station:<id>`, `story:<id>` or an item's id), its metres
+ * measured from
  * `origin` (the 3D view's; null: a station's place is not typed). Fields:
  * `title`, `description`, `radius`, `east`, `north`, `height`, `heading`,
  * `size`. A selection the tour lacks, a code, and a field the selection
@@ -339,9 +396,28 @@ export function inspectorEdit(input: {
       ? NONE
       : stationEdit(station, field, value, input.origin);
   }
+  if (selected.startsWith(STORY_PREFIX)) {
+    const id = selected.slice(STORY_PREFIX.length);
+    const known = stations.some((s) =>
+      tourStories(s).some((story) => story.id === id),
+    );
+    return known && field === "story-title"
+      ? { kind: "story-title", id, title: value }
+      : NONE;
+  }
+  const place = tourChildPlace({ stations }, selected);
+  if (place?.story !== undefined) {
+    return storyEntryEdit(place.station, selected, field, value, input.origin);
+  }
   for (const station of stations) {
     const item = worldBlocks(station).find((i) => i.id === selected);
     if (item !== undefined) return itemEdit(item, station, field, value);
+    const free = tourFreeBlocks(station).find((b) => b.id === selected);
+    if (free !== undefined) {
+      return blockFields(free).some((f) => f.name === field)
+        ? { kind: "block", id: selected, field, value }
+        : NONE;
+    }
   }
   return NONE;
 }

@@ -24,8 +24,13 @@ children }`; `count` is how many items it holds, `unlocked` whether
     its position may be moved (every station starts locked), `context`
     is true for the card of a selected item; `children` are its free
     items (`TreeChild`), `folders` its story folders (`TreeFolder`
-    `{ id, title, open, children }`), listed before them - always empty
-    until the format has story folders;
+    `{ id, selection, title, open, searchOpened, selected, context, count,
+children }`), listed before them, a folder's `children` its entries with
+    their 1-based `place`; free items carry no place; `children` of a station
+    list every free block, a video, an audio and a character too;
+  - `storyRows(story)` - a story's entries as `{ id, kind, title, place }`;
+  - `stationContents(station)` - its stories (selected as `story:<id>`), then
+    its free items, as the inspector's Contents lists them;
   - the search (`query`, trimmed into `TreeModel.query`) matches as the
     2D rail's does (`../editor-model.ts` `matchesQuery`): a station
     whose name or description holds it is listed with all its items as
@@ -78,8 +83,9 @@ const tree = buildTree({
 
 `tree-model.test.ts`: cards numbered and folded with their items as
 text, the selected and context cards, the chips, the sections, a stale
-unfolded id ignored, the explorer row's facts (count, unlocked, no
-folders yet), the search (blank, by a station's name or description, by
+unfolded id ignored, the explorer row's facts (count, unlocked), the story
+folders (order, counts, entries, selection and context, folds, search), the
+search (blank, by a station's name or description, by
 an item's title or kind's words, codes, nothing found),
 `stationImagePath`'s order, `stationGroups`.
 `tree-model.property.test.ts`: for any station list and any run of fold

@@ -56,6 +56,30 @@ const code: InspectorModel = {
   position: { eastM: 0, northM: 0, altM: 339, headingDeg: null },
 };
 
+describe("barActions for what stands nowhere", () => {
+  // Why: a story and its entries have no place in the world to copy, and
+  // the bar's Duplicate would copy a world item: a button that did nothing
+  // would read as broken.
+  it("offers nothing for a story, an entry or a free block", () => {
+    const base = { id: "x", stationId: "s", title: "T", sub: "" };
+    expect(
+      barActions({ ...base, kind: "story", storyId: "x", entries: [] }),
+    ).toEqual([]);
+    expect(
+      barActions({
+        ...base,
+        kind: "storyStep",
+        stepKind: "choice",
+        heading: "Answers",
+        lines: [],
+      }),
+    ).toEqual([]);
+    expect(
+      barActions({ ...base, kind: "freeBlock", itemKind: "video", fields: [] }),
+    ).toEqual([]);
+  });
+});
+
 describe("barActions", () => {
   it("gives a station Duplicate and Copy position, an item Align to station too", () => {
     expect(barActions(station).map((a) => a.action)).toEqual([

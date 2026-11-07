@@ -10,6 +10,12 @@ button pressed.
 
 ## Public API
 
+- `createTreeAddMenu({ body, host, choose, chooseForStory })` - `openFor` for a
+  station (its `choose` gets a kind or `"story"`: the Story item, behind a
+  line, a station's alone), `openForStory` for a story ("Add to the story
+  "<name>"", `chooseForStory`, no Story item). The focus returns to that row's
+  "+".
+
 - `AddKind` - `"pin" | "longText"`: the kinds the editor makes from
   nothing (`../new-pin.ts`).
 - `ADD_CHOICES` - the menu's lines in order, `{ kind, label, hint, words,

@@ -28,6 +28,9 @@ station near-K must keep.
 
 ## Invariants & assumptions
 
+- `selectedStationOf` knows every child of a station: a free block, a story
+  (`story:<id>`) and a story's child. The tree's click, delete and the page's
+  "still in the tour" use it.
 - The morph is non-decreasing in the tilt and clamped to 0..1 for any
   valid band.
 - Near-K returns at most `k + 1` ids, always the selected one when it

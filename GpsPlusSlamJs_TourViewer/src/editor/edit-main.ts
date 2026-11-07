@@ -26,7 +26,12 @@
  * @see edit-main.ts.md
  */
 
-import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourChildPlace,
+  tourStationBlocks,
+  tourStories,
+  type TourStory,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import {
   downloadZip,
   requestPersistentStorage,
@@ -76,11 +81,14 @@ import {
 import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   STATION_PREFIX,
+  STORY_PREFIX,
   photoSource,
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
 import { applySceneEdit } from "./scene-edits.js";
+import { selectedStationOf } from "../editor3d/editor3d-visibility.js";
+import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import {
@@ -1007,10 +1015,9 @@ function renderTourName(): void {
  *  free long text. */
 function stillInTour(id: string): boolean {
   if (model?.items.some((i) => i.id === id) === true) return true;
-  const tour = manifestToWrite(store.getState().tourDocument);
   return (
-    tour?.stations.some((s) => tourStationBlocks(s).some((b) => b.id === id)) ??
-    false
+    selectedStationOf(id, manifestToWrite(store.getState().tourDocument)) !==
+    null
   );
 }
 
@@ -1298,13 +1305,33 @@ const card = createEditorCard(
  */
 function deleteSelection(id: string): void {
   if (editor === null) return;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (id.startsWith(STORY_PREFIX)) {
+    deleteStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
+  const place = tour === null ? null : tourChildPlace(tour, id);
+  if (place?.story !== undefined) {
+    deleteStoryEntry(id, place.story);
+    return;
+  }
   const item = model?.items.find((i) => i.id === id);
   // One delete toast at a time: its Undo takes back the newest edit.
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
     ? editor.deleteStation(id.slice(STATION_PREFIX.length))
     : editor.remove(id);
-  if (outcome.kind === "refused") {
+  deleted(outcome, `Deleted ${item?.title ?? "the note"}`);
+}
+
+/** After a delete: the selection gone, the page redrawn and the toast with
+ *  its Undo, or a refusal said. */
+function deleted(
+  outcome: { readonly kind: "refused"; readonly reason: string } | object,
+  said: string,
+): void {
+  if (editor === null) return;
+  if ("reason" in outcome) {
     // Nothing was deleted: no "Deleted" toast, and no Undo offered - it
     // would only answer that there is nothing to take back.
     select(null);
@@ -1318,7 +1345,7 @@ function deleteSelection(id: string): void {
   // newest edit; a newer one ends the toast.
   const mine = editor;
   const at = editor.revision();
-  const t = toast(`Deleted ${item?.title ?? "the note"}`, {
+  const t = toast(said, {
     label: "Undo",
     run: () => {
       if (editor !== mine || mine.revision() !== at) {
@@ -1333,6 +1360,53 @@ function deleteSelection(id: string): void {
     timer: window.setTimeout(endUndo, UNDO_MS),
   };
   autosave.changed();
+}
+
+/** The story `id` of the tour as it stands. */
+function storyNamed(id: string): TourStory | undefined {
+  return manifestToWrite(store.getState().tourDocument)
+    ?.stations.flatMap((s) => tourStories(s))
+    .find((s) => s.id === id);
+}
+
+/** Delete a story and its entries, once its creator said yes: one step,
+ *  which Undo takes back. */
+function deleteStorySelection(storyId: string): void {
+  const story = storyNamed(storyId);
+  if (editor === null || story === undefined) return;
+  const n = story.children.length;
+  const goes =
+    n === 0
+      ? "It has no entries."
+      : n === 1
+        ? "Its entry goes with it."
+        : `Its ${String(n)} entries go with it.`;
+  if (
+    !confirmPausingFrames(
+      `Delete the story "${story.title}"? ${goes} You can undo this.`,
+    )
+  ) {
+    return;
+  }
+  endUndo();
+  deleted(editor.deleteStory(storyId), `Deleted the story "${story.title}"`);
+}
+
+/** Delete an entry of `story`: one step; the toast says when answers that
+ *  led to it changed. */
+function deleteStoryEntry(id: string, story: TourStory): void {
+  if (editor === null) return;
+  const title = storyRows(story).find((r) => r.id === id)?.title ?? "the entry";
+  endUndo();
+  const outcome = editor.deleteStoryChild(id);
+  const n = outcome.kind === "deleted" ? outcome.answers : 0;
+  const said = `Deleted ${title}`;
+  deleted(
+    outcome,
+    n === 0
+      ? said
+      : `${said}. ${String(n)} ${n === 1 ? "answer no longer leads" : "answers no longer lead"} to it.`,
+  );
 }
 
 /**
@@ -1479,6 +1553,40 @@ function addItemTo(stationId: string, kind: AddKind): void {
   select(outcome.item.id);
   const what = kind === "pin" ? "a pin" : "a long text";
   toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
+  autosave.changed();
+}
+
+/** The tree's add of a story to `stationId`: a new story, selected with its
+ *  folder open, said once it was made; one step. */
+function addStoryTo(stationId: string): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addStory(stationId);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
+  select(`${STORY_PREFIX}${outcome.id}`);
+  toast(`Added a story to "${stationTitleOf(stationId)}"`);
+  autosave.changed();
+}
+
+/** The tree's add into the story `storyId`: a new entry of `kind`,
+ *  selected, said once it was made; one step. */
+function addToStoryEntry(storyId: string, kind: AddKind): void {
+  if (editor === null) return;
+  endUndo();
+  const outcome = editor.addToStory(storyId, kind);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  select(outcome.id);
+  const what = kind === "pin" ? "a pin" : "a long text";
+  toast(`Added ${what} to the story "${storyNamed(storyId)?.title ?? ""}"`);
   autosave.changed();
 }
 
@@ -3901,6 +4009,12 @@ const shell = createEditorShell({
       writeInspectorEdit((e) => e.groundItems(items));
     },
     addItem: addItemTo,
+    addStory: addStoryTo,
+    addToStory: addToStoryEntry,
+    storyTitle: (id, title) =>
+      writeInspectorEdit((e) => e.renameStory(id, title)),
+    storyAdvance: (id, advance) =>
+      writeInspectorEdit((e) => e.setStoryAdvance(id, advance)),
     narration: (id) =>
       editor === null
         ? Promise.resolve({

@@ -869,7 +869,7 @@ test("the inspector's fields sit in place at a phone, a phone in landscape, a ta
   }
 });
 
-test("a picture's and a model's fields are typed in the inspector, the station lists its story's blocks, and the edits survive a draft reload, a save and a new open", async ({
+test("a picture's and a model's fields are typed in the inspector, a story's entry shows its own texts, and the edits survive a draft reload, a save and a new open", async ({
   page,
   context,
 }) => {
@@ -877,9 +877,9 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   // typed in the inspector by the format's caps; each edit must reach the
   // shared tour document, be backed up by the draft over a reload, be
   // written by the save and read back by a new open. The tree names an
-  // untitled picture by its kind, and a station's inspector lists the
-  // blocks its story shows (the 3D view draws none of them), with the
-  // texts of each typed there too (a story block's edit is its station's).
+  // untitled picture by its kind. A story's blocks (the 3D view draws none
+  // of them) are selected in the story's folder and their texts typed in
+  // their own inspector: the station's lists only the story.
   test.slow();
   const zip = Buffer.from(
     await (
@@ -902,11 +902,15 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   });
   await selectStation(page, "gate");
   const inspector = page.locator("#shell-inspector");
-  // The story's character, listed by kind and name.
-  const story = inspector.locator("ul.story-blocks li");
-  await expect(story.filter({ hasText: "Sir Kay" })).toHaveText(
-    "CharacterSir Kay",
-  );
+  const card = page.locator('#tree-body .card[data-station="gate"]');
+  // The station lists its story, not the story's parts.
+  await expect(
+    inspector.locator('[data-act="goto:story:gate-story"]'),
+  ).toBeVisible();
+  await expect(inspector.locator(".character")).toHaveCount(0);
+  await card.locator('[data-folder="gate-story"]').click();
+  await card.locator('[data-select="sir-kay"]').click();
+  await expect.poll(() => selected(page)).toBe("sir-kay");
   // His name heads his own parts, on a line of its own: it once ran into
   // the "View" label after it ("Sir KayView").
   const kayLabels = inspector.locator(
@@ -933,7 +937,6 @@ test("a picture's and a model's fields are typed in the inspector, the station l
   expect(labels.nameHeight).toBeGreaterThan(0);
   expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
   // An untitled picture is named by its kind in the tree.
-  const card = page.locator('#tree-body .card[data-station="gate"]');
   await expect(card.locator('[data-select="gate-knight"]')).toContainText(
     "Photo",
   );
@@ -972,9 +975,10 @@ test("a picture's and a model's fields are typed in the inspector, the station l
     .poll(async () => (await blockNow("gate-arch"))?.title)
     .toBe("The castle arch");
 
-  // A story character's line, typed in his station's inspector: one step
-  // that undo takes back and redo puts again; over its cap, nothing.
-  await selectStation(page, "gate");
+  // A story character's line, typed in his own inspector: one step that
+  // undo takes back and redo puts again; over its cap, nothing.
+  await card.locator('[data-select="sir-kay"]').click();
+  await expect.poll(() => selected(page)).toBe("sir-kay");
   const kayCaption = field(page, "block:sir-kay:caption");
   await expect(kayCaption).toHaveValue("Halt, traveller!");
   await expect(field(page, "block:sir-kay:name")).toHaveValue("Sir Kay");
