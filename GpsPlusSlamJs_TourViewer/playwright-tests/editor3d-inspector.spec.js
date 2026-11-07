@@ -1072,7 +1072,11 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   await expect(
     next.locator("#shell-inspector").getByLabel("Title", { exact: true }),
   ).toHaveValue("The castle arch");
-  await next.locator('#tree-body .card[data-station="gate"] .pick').click();
+  // A story's character is read back in his own inspector, reached
+  // through the story's folder.
+  const nextCard = next.locator('#tree-body .card[data-station="gate"]');
+  await nextCard.locator('[data-folder="gate-story"]').click();
+  await nextCard.locator('[data-select="sir-kay"]').click();
   await expect(field(next, "block:sir-kay:caption")).toHaveValue(
     "Halt! Who goes there?",
   );
