@@ -955,10 +955,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   function settingsIn(
     s: Space,
     value: EditorTourSettings | null,
+    after?: Promise<unknown>,
   ): Promise<boolean> {
     return inSpace(
       s,
       chain.run(settingsChain(s), async () => {
+        await after;
         const store = await s.store;
         if (store === undefined) return false;
         if (value === null) {
@@ -974,8 +976,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   function writeSettingsIn(
     s: Space,
     value: EditorTourSettings | null,
+    after?: Promise<unknown>,
   ): Promise<boolean> {
-    return settingsIn(s, value).then((ok) => {
+    return settingsIn(s, value, after).then((ok) => {
       if (!ok) say(s, s.refused ?? "storage");
       return ok;
     });
@@ -1086,11 +1089,13 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     change: TourObject | null,
     base: DraftBase | undefined,
     picture?: Blob,
+    after?: Promise<unknown>,
   ): Promise<boolean> {
     s.ids.add(id);
     return inSpace(
       s,
       chain.run(objectChain(s, id), async () => {
+        await after;
         if (s.rejected.includes(id)) return true;
         const store = await s.store;
         if (store === undefined) return false;
@@ -1197,16 +1202,28 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   function moveTo(s: Space, fileKey: string, emptyOld: boolean): void {
     const next = makeSpace(fileKey);
     space = next;
-    const carried = [writeMeta(next)];
+    // The files first: a record or a story frame naming a file the new
+    // namespace lacks yet would, for a tab closed mid-move, be dropped by
+    // the reopen. Each record still queues now, in its own chain, so a
+    // change made after the move lands after it.
+    const filesCarried = [...files.values()].map((file) => fileIn(next, file));
+    const filesIn = Promise.all(filesCarried);
+    const carried = [writeMeta(next), ...filesCarried];
     for (const [id, change] of pending) {
       carried.push(
-        carry(next, id, change, bases.get(id), pendingPictures.get(id)),
+        carry(
+          next,
+          id,
+          change,
+          bases.get(id),
+          pendingPictures.get(id),
+          filesIn,
+        ),
       );
     }
     if (settingsPending !== null) {
-      carried.push(writeSettingsIn(next, settingsPending));
+      carried.push(writeSettingsIn(next, settingsPending, filesIn));
     }
-    for (const file of files.values()) carried.push(fileIn(next, file));
     // An offer not yet answered (or put off with "Not now") moves too.
     if (offer !== null) {
       for (const object of offer.objects) {
@@ -1218,15 +1235,18 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
               object,
               bases.get(object.id),
               offer.pictures?.get(object.id),
+              filesIn,
             ),
           );
         }
       }
       for (const id of offer.deleted) {
-        if (!touched.has(id)) carried.push(carry(next, id, null, undefined));
+        if (!touched.has(id)) {
+          carried.push(carry(next, id, null, undefined, undefined, filesIn));
+        }
       }
       if (offer.settings !== undefined && settingsWanted === null) {
-        carried.push(writeSettingsIn(next, offer.settings));
+        carried.push(writeSettingsIn(next, offer.settings, filesIn));
       }
     }
     // The old namespace goes only once the new one holds everything

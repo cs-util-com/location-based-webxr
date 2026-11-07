@@ -44,7 +44,7 @@ import { stationContent, storyOf } from "../test-support/station-content.js";
 
 /** One browser's draft directories: namespace -> files. `failIn` makes
  *  one namespace's writes refuse; `holdPuts` holds every write until
- *  `releasePuts`; `holdOpenOf` holds a namespace's open until
+ *  `releasePuts` (`holdPutsOf` only the keys it matches); `holdOpenOf` holds a namespace's open until
  *  `releaseOpens` - the order a key move's writes land in; `failMetaPuts`
  *  refuses that many of the next meta writes; `failRemoveOf` makes a
  *  removal of those keys throw (a store breaking its never-throws
@@ -55,6 +55,7 @@ function browser(): {
   failWrites: boolean;
   failIn: Set<string>;
   holdPuts: boolean;
+  holdPutsOf: RegExp | null;
   releasePuts: (ok?: boolean) => void;
   holdOpenOf: Set<string>;
   releaseOpens: () => void;
@@ -69,8 +70,10 @@ function browser(): {
     failWrites: false,
     failIn: new Set<string>(),
     holdPuts: false,
+    holdPutsOf: null as RegExp | null,
     releasePuts: (ok = true) => {
       state.holdPuts = false;
+      state.holdPutsOf = null;
       for (const land of heldPuts.splice(0)) land(ok);
     },
     failMetaPuts: 0,
@@ -92,7 +95,7 @@ function browser(): {
             state.failMetaPuts -= 1;
             return Promise.resolve(false);
           }
-          if (state.holdPuts) {
+          if (state.holdPuts || state.holdPutsOf?.test(k) === true) {
             return new Promise((resolve) => {
               heldPuts.push((ok) => {
                 if (ok) files.set(k, data as Blob | string);
@@ -2002,6 +2005,38 @@ describe("the files a draft keeps", () => {
     await draft.idle();
     draft.close();
     const { offer } = await draftIn(b).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
+    expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
+  });
+
+  // Why: a key move writes the records and the files into the new key's
+  // namespace. A small record landing before a large file leaves, for a
+  // tab closed mid-move, a record naming a file the new key lacks: the
+  // reopen drops that record whole. The records wait for the files.
+  it("a key move writes a record only after the files it may name", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    await draft.idle();
+    b.holdPutsOf = /^asset:/;
+    draft.writes().moved(K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The tab closes here: what the new key holds is all a reopen finds.
+    const closed = browser();
+    closed.spaces.set(
+      editorDraftKey(K2),
+      new Map(b.spaces.get(editorDraftKey(K2))),
+    );
+    const cut = draftIn(closed);
+    await cut.open(K2, tour(pin("a")));
+    expect(cut.unread()).toBe(0);
+    b.releasePuts();
+    await draft.idle();
+    draft.close();
+    const again = draftIn(b);
+    const { offer } = await again.open(K2, tour(pin("a")));
     expect(offer?.objects.map((o) => o.id)).toEqual(["m"]);
     expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
   });
