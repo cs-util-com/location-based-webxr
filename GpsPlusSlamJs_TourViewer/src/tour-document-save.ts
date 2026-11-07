@@ -148,6 +148,10 @@ interface TourSaves {
   queued<T>(start: () => Promise<T>): TourDocumentThunk<Promise<T>>;
   /** The document as a save reads it now. */
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
+  /** The bytes a save of `state` adds to the written file: the pictures
+   *  of the captured photos it does not host, the timing texts and the
+   *  files brought in it lacks (the snapshot's own rule). */
+  addedBytes(state: TourDocumentState): number;
   /** Settles once the pictures being read are read: a rebuild waits for
    *  it, since it replaces the bytes they may be read from. */
   picturesRead(): Promise<void>;
@@ -189,15 +193,8 @@ export function createTourSaves(input: {
   function snapshotOf(state: TourDocumentState): TourSaveSnapshot {
     const manifest = manifestNow(state);
     if (manifest === null) throw new Error("no tour is open to save");
-    const hosted = hostedObjects(state.written);
     return {
-      placed: state.placed.map(({ object }) => {
-        const blob =
-          isCapturedPhoto(object) && hosted.key(object.id) === undefined
-            ? input.fileOf(object.id)
-            : undefined;
-        return blob === undefined ? { object } : { object, blob };
-      }),
+      placed: placedOf(state),
       deleted: [...state.deleted],
       manifest,
       keepAssets: historyAssetIds(state),
@@ -207,6 +204,19 @@ export function createTourSaves(input: {
       timings: state.timings,
       files: filesOf(state),
     };
+  }
+
+  /** The snapshot's `placed`: a captured photo the written file does not
+   *  host carries its picture, which the save writes. */
+  function placedOf(state: TourDocumentState): TourSaveSnapshot["placed"] {
+    const hosted = hostedObjects(state.written);
+    return state.placed.map(({ object }) => {
+      const blob =
+        isCapturedPhoto(object) && hosted.key(object.id) === undefined
+          ? input.fileOf(object.id)
+          : undefined;
+      return blob === undefined ? { object } : { object, blob };
+    });
   }
 
   /** The snapshot's `files`: the texts and the files brought in that the
@@ -274,6 +284,16 @@ export function createTourSaves(input: {
     },
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
+    },
+    addedBytes(state) {
+      const encoder = new TextEncoder();
+      let sum = 0;
+      for (const placed of placedOf(state)) sum += placed.blob?.size ?? 0;
+      for (const { data } of filesOf(state)) {
+        sum +=
+          typeof data === "string" ? encoder.encode(data).byteLength : data.size;
+      }
+      return sum;
     },
     async picturesRead() {
       await input.picturesRead();

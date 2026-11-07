@@ -616,8 +616,9 @@ export interface EditorSession {
     fileName: string,
     kinds?: readonly TourAssetKind[],
   ): Promise<EditorFileAdded | EditorRefusal>;
-  /** The bytes of the files brought in that the newest written file does
-   *  not hold yet: what the next save adds to it. */
+  /** What the next save adds to the newest written file: the files
+   *  brought in, the timing texts and the copied or restored photos'
+   *  pictures it does not hold yet. */
   addedBytes(): number;
   /** What the tour weighs now: the newest written file (the opened one
    *  before a save) and the files added since - what an in-place save
@@ -1069,14 +1070,9 @@ export function createEditorSession(input: {
     return read;
   }
 
-  /** The bytes of the files brought in that the written file lacks. */
+  /** The bytes the next save adds to the written file. */
   function addedBytes(): number {
-    const state = own();
-    const listed = new Set((state.written?.assets ?? []).map((a) => a.id));
-    return state.addedAssets.reduce(
-      (sum, a) => sum + (listed.has(a.id) ? 0 : (files.get(a.id)?.size ?? 0)),
-      0,
-    );
+    return saves.addedBytes(own());
   }
 
   function tourBytes(): number {

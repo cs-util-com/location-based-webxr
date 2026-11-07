@@ -269,3 +269,26 @@ describe("what editNarration refuses, changing nothing", () => {
     await session.close();
   });
 });
+
+describe("the bytes the next save adds", () => {
+  it("counts a timing text written since the last save", async () => {
+    // Why: the archive room check and the autosave cap judge the next save
+    // by `addedBytes`; a new timing is an entry that save writes too.
+    const { session, editor } = await editorOf([ESSAY]);
+    await editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["RIFF-voice-bytes"], { type: "audio/wav" }),
+      fileName: "v.wav",
+    });
+    const voiceOnly = editor.addedBytes();
+    expect(voiceOnly).toBe(16);
+    const text = await timingText();
+    await editor.editNarration("t1", { kind: "timing", text });
+    expect(editor.addedBytes()).toBe(
+      voiceOnly + new TextEncoder().encode(text).byteLength,
+    );
+    await editor.save({ keepScan: false });
+    expect(editor.addedBytes()).toBe(0);
+    await session.close();
+  });
+});

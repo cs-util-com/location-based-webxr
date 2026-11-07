@@ -53,6 +53,7 @@ phone's Finish does not yet: see "Not here yet" below.
     undo asked for right after an awaited save is not refused. The
     desktop's move of the walk out runs in the same queue.
   - `snapshot()` - thunk; the document as a save reads it now.
+  - `addedBytes(state)` - the bytes a save of `state` adds to the written file, by the snapshot's own rule: the pictures of the captured photos it does not host, the timing texts and the files brought in it lacks.
   - `picturesRead()` - settles after the input's `picturesRead()`
     (before a rebuild replaces the bytes a picture may be read from; the
     desktop's move of the walk waits for it too).
