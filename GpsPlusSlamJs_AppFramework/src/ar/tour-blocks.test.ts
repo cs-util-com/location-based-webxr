@@ -215,12 +215,12 @@ const CAPPED = [
   ['picture', 'caption', 1200, 'drop'],
   ['picture', 'alt', 300, 'drop'],
   ['video', 'title', 40, 'drop'],
-  ['video', 'transcript', 32_000, 'fail'],
+  ['video', 'transcript', 32_000, 'drop'],
   ['audio', 'title', 40, 'drop'],
-  ['audio', 'transcript', 32_000, 'fail'],
+  ['audio', 'transcript', 32_000, 'drop'],
   ['model', 'title', 80, 'drop'],
   ['character', 'name', 80, 'fail'],
-  ['character', 'caption', 2000, 'fail'],
+  ['character', 'caption', 2000, 'drop'],
 ] as const;
 
 describe('every cap at N-1, N and N+1', () => {
@@ -312,7 +312,22 @@ describe('every cap at N-1, N and N+1', () => {
   it('a required text that is missing or blank fails the file', () => {
     expect(() => one('shortText', { caption: undefined })).toThrow(Invalid);
     expect(() => one('character', { name: ' ' })).toThrow(Invalid);
-    expect(() => one('video', { transcript: '' })).toThrow(Invalid);
+  });
+
+  it.each([
+    ['video', 'transcript'],
+    ['audio', 'transcript'],
+    ['character', 'caption'],
+  ] as const)('a %s may have no %s', (kind, field) => {
+    // Why: a creator can place a clip, a sound or a figure before writing
+    // its text, so a blank one must not fail the write; it stays absent, so
+    // a draft and the written file agree.
+    for (const value of [undefined, '', '   ']) {
+      const drops: TourBlockDrop[] = [];
+      const block = one(kind, { [field]: value }, { drops });
+      expect(block !== undefined && field in block).toBe(false);
+      expect(drops).toEqual([]);
+    }
   });
 });
 

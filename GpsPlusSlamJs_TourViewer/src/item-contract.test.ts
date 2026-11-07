@@ -7,14 +7,10 @@ import type {
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import {
-  itemAssets,
-  itemStoredAssets,
-  showItemCard,
-  type ItemCardHost,
-} from "./item-card";
+import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
 import { createSceneView } from "./scene-view";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 /**
  * Why these tests matter: what every kind of item owes whoever shows it. A
@@ -305,7 +301,7 @@ describe.each(ITEMS)("the item contract: $name", (item) => {
     view.offer(stationOf(item.fields));
     await flush();
     const declared = itemAssets(block(item.fields), characters);
-    const stored = itemStoredAssets(block(item.fields));
+    const stored = tourBlockAssetIds(block(item.fields));
     expect(declared).toEqual(expect.arrayContaining(reads));
     expect(stored).toEqual(
       expect.arrayContaining(declared.filter(OWN_ASSETS_ONLY)),

@@ -98,13 +98,14 @@ import {
 } from './tour-details.js';
 import { isTourId } from './tour-fields.js';
 import type { TourLocalPose } from './tour-items.js';
+import { tourBlockMinor, tourBlockRefs, tourKindsMinor } from './tour-kinds.js';
 import {
   parseTourStations,
   type TourOrder,
   type TourStation,
   type TourStationDrop,
 } from './tour-stations.js';
-import type { TourChildDrop } from './tour-story.js';
+import { tourStationBlocks, type TourChildDrop } from './tour-story.js';
 
 export type { TourAsset, TourAssetKind } from './tour-assets.js';
 export type {
@@ -156,7 +157,7 @@ export type {
 export const TOUR_MANIFEST_VERSION = 5;
 
 /** The newest additive revision of version 5 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+export const TOUR_MANIFEST_MINOR = tourKindsMinor();
 
 /** Where a free block stands in the WORLD: the view the viewer places and
  *  the creator's drafts hold (`tour-station-pose.ts` `tourObjects`). */
@@ -337,18 +338,10 @@ const IDENTITY_POSE: TourLocalPose = {
   rotation: [0, 0, 0, 1],
 };
 
-/** The asset entry a record does not store for `id`, so its block reads
- *  (the file is the tour's asset, checked when the tour is written). */
-function unstoredAsset(
-  id: unknown,
-  kind: 'model' | 'video' | 'audio' | 'image'
-): TourAsset[] {
-  return isTourId(id) ? [{ id, path: `content/${id}`, kind }] : [];
-}
-
 /** The record's asset entries: the picture's own, read by the manifest's
- *  asset rules; for every other kind, entries the record does not store
- *  (`unstoredAsset`). */
+ *  asset rules; for every other kind, what its block requires, as entries
+ *  the record does not store, so its block reads (the file is the tour's
+ *  asset, checked when the tour is written). */
 function recordAssets(
   record: Record<string, unknown>,
   block: Record<string, unknown>,
@@ -364,24 +357,9 @@ function recordAssets(
   if (record.asset !== undefined) {
     fail(`"${at}.asset" is only for a picture`);
   }
-  switch (block.kind) {
-    case 'model':
-      return unstoredAsset(block.asset, 'model');
-    case 'video':
-      return [
-        ...unstoredAsset(block.video, 'video'),
-        ...unstoredAsset(block.poster, 'image'),
-      ];
-    case 'audio':
-      return unstoredAsset(block.audio, 'audio');
-    case 'character':
-      return [
-        ...unstoredAsset(block.image, 'image'),
-        ...unstoredAsset(block.voice, 'audio'),
-      ];
-    default:
-      return [];
-  }
+  return tourBlockRefs(block)
+    .filter((ref) => ref.required)
+    .map(({ id, kind }) => ({ id, path: `content/${id}`, kind }));
 }
 
 /** The declaration a free character's record names, so its block reads
@@ -666,8 +644,10 @@ export function serializeTourManifest(
   );
 }
 
-/** The lowest minor a tour needs: version 5 has no later revision yet. A
- *  minor that adds to the format says here which tours need it. */
-function tourManifestMinor(_manifest: TourManifest): number {
-  return 0;
+/** The lowest minor a tour needs: the newest its blocks' kinds and views
+ *  brought (the list's rows say). */
+function tourManifestMinor(manifest: TourManifest): number {
+  return manifest.stations
+    .flatMap(tourStationBlocks)
+    .reduce((minor, block) => Math.max(minor, tourBlockMinor(block)), 0);
 }

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- **One list of block kinds** (`ar/tour-kinds`): `TOUR_KINDS` holds what the
+  format knows about each kind, and `TOUR_BLOCK_VIEWS`,
+  `TOUR_FREE_BLOCK_VIEWS`, `TOUR_BLOCK_TEXT_RULES` and `TOUR_WORLD_VIEWS` are
+  derived from it. New: `tourBlockRefs` and `tourBlockAssetIds` (the assets a
+  block names), `sinceMinor` per kind, so a tour is written at the minor its
+  kinds need, and the read toolkit `ar/tour-block-read`.
+
+### Changed
+
+- A video's and a sound's `transcript` and a character's `caption` are
+  optional: a blank one no longer fails the write.
+
+### Fixed
+
+- A creator's draft record of a narrated long text reads again
+  (`parseTourObject`).
+
 ### ⚠️ Breaking changes
 
 - **`tour.json` version 5: stations hold children, stories hold their own**
