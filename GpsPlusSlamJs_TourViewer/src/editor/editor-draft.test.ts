@@ -2125,6 +2125,32 @@ describe("the files a draft keeps", () => {
     expect(moving.holdsFile(STATUE.id)).toBe(true);
   });
 
+  // Why: only a record naming a file has to wait for it in a key move. A
+  // record naming none (a text edit) must reach the new key at once, or a
+  // tab closed while a large file is still being written keeps it only in
+  // the old key, which only the old file reaches.
+  it("a key move writes a record naming no file without waiting for the files", async () => {
+    const b = browser();
+    const draft = draftIn(b);
+    await draft.open(K1, tour(pin("a")));
+    await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
+    await draft.saveObject(MODEL);
+    await draft.saveObject(pin("a", "Edited before the move"));
+    await draft.idle();
+    b.holdPutsOf = /^asset:/;
+    draft.writes().moved(K2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const closed = browser();
+    closed.spaces.set(
+      editorDraftKey(K2),
+      new Map(b.spaces.get(editorDraftKey(K2))),
+    );
+    const { offer } = await draftIn(closed).open(K2, tour(pin("a")));
+    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
+    b.releasePuts();
+    await draft.idle();
+  });
+
   it("drops the offered files a discard turns down", async () => {
     const b = browser();
     await keptModel(b);

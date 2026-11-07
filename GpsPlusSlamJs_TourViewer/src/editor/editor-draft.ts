@@ -70,6 +70,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
@@ -1218,11 +1219,20 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     // The files first: a record or a story frame naming a file the new
     // namespace lacks yet would, for a tab closed mid-move, be dropped by
     // the reopen. Each record still queues now, in its own chain, so a
-    // change made after the move lands after it.
+    // change made after the move lands after it. Only a record naming a
+    // carried file waits for them: one naming none reaches the new key at
+    // once. The settings always wait (a station's story may name one).
     const filesCarried = [...files.values()].map((file) =>
       keepFile(next, file),
     );
     const filesIn = Promise.all(filesCarried);
+    const waitFor = (
+      change: TourObject | null,
+    ): Promise<unknown> | undefined =>
+      change !== null &&
+      tourBlockAssetIds(change).some((asset) => files.has(asset))
+        ? filesIn
+        : undefined;
     const carried = [writeMeta(next), ...filesCarried];
     for (const [id, change] of pending) {
       carried.push(
@@ -1232,7 +1242,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           change,
           bases.get(id),
           pendingPictures.get(id),
-          filesIn,
+          waitFor(change),
         ),
       );
     }
@@ -1250,14 +1260,14 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
               object,
               bases.get(object.id),
               offer.pictures?.get(object.id),
-              filesIn,
+              waitFor(object),
             ),
           );
         }
       }
       for (const id of offer.deleted) {
         if (!touched.has(id)) {
-          carried.push(carry(next, id, null, undefined, undefined, filesIn));
+          carried.push(carry(next, id, null, undefined, undefined));
         }
       }
       if (offer.settings !== undefined && settingsWanted === null) {
