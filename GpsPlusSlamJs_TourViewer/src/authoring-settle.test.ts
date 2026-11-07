@@ -3077,6 +3077,9 @@ describe(
         expect(a.ctx.tourDocument.state().revision).toBe(revision);
         const row = list.lastModel!.rows.find((r) => r.busy !== null);
         expect(row?.busy).toBe("Asking…");
+        // Its other actions, Close and Delete among them, wait for the
+        // answer: the question names this pin.
+        expect(row?.enabled).toBe(false);
         expect(
           logged(a, "tourAuthoring/objectMoved").filter(
             (e) => e.payload["id"] === "h1",
