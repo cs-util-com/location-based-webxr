@@ -26,8 +26,19 @@ import {
 } from './map-browser-index';
 import type { RecordingCoverage } from './recording-index';
 
-const latArb = fc.double({ min: -85, max: 85, noNaN: true });
-const lngArb = fc.double({ min: -180, max: 180, noNaN: true });
+/**
+ * Uniform over `[min, max]` on a 1e-6 grid. Not `fc.double`, which spreads
+ * its draws over the floating-point representations: about 91 % of them land
+ * within 1e-6 of zero, so "any place" sampled one place.
+ */
+function uniformIn(min: number, max: number): fc.Arbitrary<number> {
+  return fc
+    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    .map((micro) => micro / 1e6);
+}
+
+const latArb = uniformIn(-85, 85);
+const lngArb = uniformIn(-180, 180);
 const pathArb = fc.array(fc.record({ lat: latArb, lng: lngArb }), {
   maxLength: 12,
 });
@@ -52,22 +63,18 @@ const recArb: fc.Arbitrary<RecordingCoverage> = fc
 describe('leafletZoomToH3Res — properties', () => {
   it('always returns an integer in [0, H3_RESOLUTION] and is monotonic', () => {
     fc.assert(
-      fc.property(
-        fc.double({ min: -50, max: 50, noNaN: true }),
-        fc.double({ min: -50, max: 50, noNaN: true }),
-        (z1, z2) => {
-          const lo = Math.min(z1, z2);
-          const hi = Math.max(z1, z2);
-          const rLo = leafletZoomToH3Res(lo);
-          const rHi = leafletZoomToH3Res(hi);
-          for (const r of [rLo, rHi]) {
-            expect(Number.isInteger(r)).toBe(true);
-            expect(r).toBeGreaterThanOrEqual(0);
-            expect(r).toBeLessThanOrEqual(H3_RESOLUTION);
-          }
-          expect(rHi).toBeGreaterThanOrEqual(rLo);
+      fc.property(uniformIn(-50, 50), uniformIn(-50, 50), (z1, z2) => {
+        const lo = Math.min(z1, z2);
+        const hi = Math.max(z1, z2);
+        const rLo = leafletZoomToH3Res(lo);
+        const rHi = leafletZoomToH3Res(hi);
+        for (const r of [rLo, rHi]) {
+          expect(Number.isInteger(r)).toBe(true);
+          expect(r).toBeGreaterThanOrEqual(0);
+          expect(r).toBeLessThanOrEqual(H3_RESOLUTION);
         }
-      )
+        expect(rHi).toBeGreaterThanOrEqual(rLo);
+      })
     );
   });
 });

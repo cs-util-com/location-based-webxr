@@ -24,11 +24,12 @@ import {
 import { coverCells } from "./cell-coverage.js";
 import { AFFORDANCE_RES } from "./resolutions.js";
 import type { OsmGeometry, PolygonGeometry } from "../model/osm-geometry.js";
+import { uniformIn } from "../test-utils/uniform-arbitrary.js";
 
 /** Mid-latitude, away from the poles and the antimeridian. */
 const positionArb = fc.record({
-  lat: fc.double({ min: -60, max: 60, noNaN: true }),
-  lng: fc.double({ min: -170, max: 170, noNaN: true }),
+  lat: uniformIn(-60, 60),
+  lng: uniformIn(-170, 170),
 });
 
 /** An axis-aligned square of a given size, at a given place. */

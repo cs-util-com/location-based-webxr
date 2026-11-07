@@ -21,10 +21,21 @@ import {
   H3_RESOLUTION,
 } from './h3-proximity';
 
+/**
+ * Uniform over `[min, max]` on a 1e-6 grid. Not `fc.double`, which spreads
+ * its draws over the floating-point representations: about 91 % of them land
+ * within 1e-6 of zero, so "any place" sampled one place.
+ */
+function uniformIn(min: number, max: number): fc.Arbitrary<number> {
+  return fc
+    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    .map((micro) => micro / 1e6);
+}
+
 // Full lat/lng ranges, including near the poles and the ±180° antimeridian, so
 // the validity invariants are exercised at the seams h3-js must handle.
-const latArb = fc.double({ min: -89.9, max: 89.9, noNaN: true });
-const lngArb = fc.double({ min: -180, max: 180, noNaN: true });
+const latArb = uniformIn(-89.9, 89.9);
+const lngArb = uniformIn(-180, 180);
 const pathArb = fc.array(fc.record({ lat: latArb, lng: lngArb }), {
   maxLength: 60,
 });
