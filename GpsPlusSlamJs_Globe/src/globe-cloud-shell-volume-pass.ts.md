@@ -180,6 +180,10 @@ radiusM }` from its state, the centre null on the camera, where its flat
 
 `render(camera, { near })` takes a `CloudShellNearMix`. The composite is the one place the old and the new clouds meet: `c = (1 - w) * c + w * near`, by one weight, never stacked, read through a four-tap tent inside the share the frame drew. The two shadows mix the same way, so a shadow does not double at the hand-over. At `weight` 1 the shell's own deck and its shadow are not marched, which saves their cost; the high layer stays.
 
+### The air, in the same pass
+
+With the near clouds in the frame the composite also draws the march's air, by the near share: the segment of air to the ground or to the scene's depth, the sky behind the clouds where the frame has depth, the sun's disc and its halo. The air goes behind the clouds and over their shadow, so 1 - alpha = (1 - cloud)(1 - shadow)(1 - air) and rgb = clouds + (1 - cloud) air. Without scene depth the sky stays out, so it never paints over a building. `CloudShellNearMix.air` hands the march's own uniform values over, so the two passes cannot disagree on the camera or the sun; `uAirOn` is 0 without near clouds and at weight 0, and the shader then skips the air. The composite tones the sum, then blends in display space: an approximation for thin air, which the old sky and the ground veil share by the same near share in `globe-air.ts`.
+
 ## Tests
 
 - `globe-cloud-shell-volume-pass.test.ts` (Node, the real framework sky

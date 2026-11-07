@@ -189,6 +189,8 @@ export interface GlobeViewClouds {
   /** Whether the near clouds are drawn or on their way: false with the
    *  clouds off and on the old clouds, by choice or after a failed bake. */
   nearLive(): boolean;
+  /** The share of the air the near clouds draw this frame, 0-1. */
+  nearAir(): number;
   /** Whether they are on, and the last plan's flat share and shell, the
    *  shell's own ground shadow and the surface's (`uCloudShadow`). */
   state(): {
@@ -484,6 +486,7 @@ export function createGlobeViewClouds(
       knobs = chooseKnobs();
     },
     nearLive: () => on && nearFine,
+    nearAir: () => (on ? clouds.nearShare : 0),
     state: () => ({
       on: knobs.cloudVolume !== 0,
       ...last,

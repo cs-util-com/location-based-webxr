@@ -314,7 +314,13 @@ interface GlobeCloudStepOptions {
   /** The near clouds, in charge below their ceiling once they are ready. */
   readonly near?: Pick<
     GlobeCloudMarch,
-    "ready" | "render" | "texture" | "shadowTexture" | "uv" | "resolution"
+    | "ready"
+    | "render"
+    | "texture"
+    | "shadowTexture"
+    | "uv"
+    | "resolution"
+    | "uniforms"
   > | null;
 }
 
@@ -401,6 +407,7 @@ export function createGlobeCloudStep({
       tapPixels: frame.near.quality.tapPixels,
       weight: nearShare,
       shadow: nearShadow > 0,
+      air: near.uniforms(),
     };
   };
 

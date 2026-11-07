@@ -28,6 +28,12 @@
  *   60 km over the Alps at noon. The first build gave the sky the lab's 5
  *   AND multiplied the globe's 5 by the automatic 4.2, counting the scale
  *   twice: the frame brightened by 2 EV across the cross-fade (2026-10-05).
+ * - The sun on the ground (`sunOnGround`): the exposure climbs as the light
+ *   falls (some 30x at sunset), and the sun that lights the ground has come
+ *   through the air, so the globe's light carries the air's dimming and
+ *   colour on top of it, measured for the ground whatever the camera's
+ *   height, eased in by the weight. Without it a low sun burns the ground
+ *   out to white from 40 km down.
  * - It starts working a width ABOVE the edge, so its tables are built
  *   before its weight leaves 0.
  *
@@ -38,6 +44,10 @@
  */
 import * as THREE from "three";
 
+import {
+  sunLight,
+  type SunLight,
+} from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-model";
 import {
   SkyAtmosphere,
   SkyAtmosphereUnsupportedError,
@@ -100,6 +110,15 @@ interface GroundSkyState {
   rebuilds: Record<CountedStage, number>;
 }
 
+/** The sun at the ground, relative to the exposure. */
+interface OnGroundSun {
+  scale: number;
+  colour: readonly [number, number, number];
+}
+
+/** The sun's scale under the horizon: finite for the eased logarithm. */
+const SUN_SCALE_FLOOR = 1e-4;
+
 export interface GlobeGroundSky {
   /** False where the framework sky cannot run (no float targets). */
   readonly supported: boolean;
@@ -115,6 +134,14 @@ export interface GlobeGroundSky {
    */
   update(frame: GroundSkyFrame): { weight: number; exposure: number };
   /**
+   * This frame's sun at the ground, relative to the exposure: `scale` (1
+   * with the sun at the framework's reference height) and its `colour`,
+   * both eased in by the weight, so white and 1 above the edge and without
+   * a sky. It times the exposure for the globe's light; the sky and the
+   * veil carry the air themselves.
+   */
+  sunOnGround(): OnGroundSun;
+  /**
    * Draws the ground sky over the current frame with its weight (nothing
    * at 0). Call after the space sky, before the Earth.
    */
@@ -129,12 +156,14 @@ function createSky(
   renderer: THREE.WebGLRenderer,
 ): SkyAtmosphere | null {
   try {
-    return new SkyAtmosphere({
+    const sky = new SkyAtmosphere({
       scene,
       renderer,
       rebuild: "staged",
       observerAltitudeKm: GLOBE_SKY_HAND_OVER.observerCeilingKm,
     });
+    sky.setAutoExposureAdaptation(GLOBE_SKY_HAND_OVER.exposureAdaptation);
+    return sky;
   } catch (e) {
     if (!(e instanceof SkyAtmosphereUnsupportedError)) throw e;
     return null;
@@ -192,6 +221,7 @@ export function createGlobeGroundSky(
     bake: 0,
   };
   /** Moves the sky's observer and sun by their steps, one rebuild stage. */
+  let groundSun: SunLight | null = null;
   const advance = (
     sky: SkyAtmosphere,
     altitudeKm: number,
@@ -206,6 +236,10 @@ export function createGlobeGroundSky(
     if (sunStepped(lastSun, sun)) {
       sky.setSun(sunWorld);
       lastSun = sun;
+      groundSun = sunLight(sunWorld.clone().normalize().y, {
+        visibilityKm: sky.visibilityKm,
+        observerAltitudeKm: 0,
+      });
     }
     const stage = sky.stepRebuild();
     lastStage = stage;
@@ -249,6 +283,17 @@ export function createGlobeGroundSky(
         }
       }
       return { weight, exposure };
+    },
+    sunOnGround() {
+      if (groundSun === null || weight <= 0) {
+        return { scale: 1, colour: [1, 1, 1] };
+      }
+      const [r, g, b] = groundSun.colour;
+      const ease = (c: number) => 1 + (c - 1) * weight;
+      return {
+        scale: Math.max(groundSun.intensity, SUN_SCALE_FLOOR) ** weight,
+        colour: [ease(r), ease(g), ease(b)],
+      };
     },
     render(camera) {
       if (atmosphere === null || weight <= 0) return;

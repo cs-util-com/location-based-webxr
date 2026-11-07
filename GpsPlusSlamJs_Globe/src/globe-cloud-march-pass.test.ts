@@ -18,6 +18,10 @@ import {
   type GlobeCloudMarch,
   createGlobeCloudMarch,
 } from "./globe-cloud-march-pass.js";
+import {
+  CLOUD_AIR_GLSL,
+  CLOUD_MARCH_FRAGMENT,
+} from "./globe-cloud-march-glsl.js";
 import { CLOUD_MARCH_LAYER } from "./globe-cloud-march-law.js";
 import { GLOBE_QUALITIES } from "./globe-quality.js";
 
@@ -346,5 +350,25 @@ describe("createGlobeCloudMarch", () => {
     march.dispose();
     expect(march.ready).toBe(false);
     expect(march.render(frameAt(cameraOver(53, 10, 5_000)))).toBe(false);
+  });
+});
+
+describe("CLOUD_AIR_GLSL", () => {
+  // Why this test matters: the composite includes this block too and vitest
+  // does not compile GLSL. A uniform only the march declares (the block once
+  // read uPixAng) leaves the march working and the composite black, with no
+  // clouds at all.
+  it("reads no uniform beyond the three the block's users all declare", () => {
+    const declared = [
+      ...CLOUD_MARCH_FRAGMENT.matchAll(/uniform\s+\w+\s+([^;]+);/g),
+    ]
+      .flatMap((m) => (m[1] ?? "").split(/\s*,\s*/))
+      .filter((name) => /^u\w+$/.test(name));
+    const allowed = new Set(["uH", "uSun", "uSunCol"]);
+    expect(declared.length).toBeGreaterThan(allowed.size);
+    const read = declared.filter((name) =>
+      new RegExp(`\\b${name}\\b`).test(CLOUD_AIR_GLSL),
+    );
+    expect(new Set(read)).toEqual(allowed);
   });
 });

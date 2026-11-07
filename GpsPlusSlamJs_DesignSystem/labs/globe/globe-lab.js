@@ -2408,6 +2408,7 @@ async function start() {
     air.step(params, {
       cameraEcef: ecefCamera().position.toArray(),
       framed: frameTarget() !== null,
+      nearAir: clouds.nearShare,
     });
     // The cloud volume (C2): its share by altitude, its disc, and the
     // shell's hole of the same size (variant 1), so the clouds are drawn
@@ -2494,8 +2495,9 @@ async function start() {
         near: {
           timeS: view.driftTimeS(),
           quality:
-            GLOBE_QUALITIES[GLOBE_QUALITY_NAMES[Math.round(params.cloudNearTier)]]
-              .clouds,
+            GLOBE_QUALITIES[
+              GLOBE_QUALITY_NAMES[Math.round(params.cloudNearTier)]
+            ].clouds,
           pixelScale: 1,
           sceneDepth: sceneDepth?.fresh ? sceneDepth : null,
         },

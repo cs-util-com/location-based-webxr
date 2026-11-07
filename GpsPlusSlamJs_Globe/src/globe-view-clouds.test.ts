@@ -150,6 +150,7 @@ function fakeNear() {
     shadowTexture: new THREE.Texture(),
     uv: new THREE.Vector2(1, 1),
     resolution: new THREE.Vector2(10, 10),
+    uniforms: () => ({}),
     dispose() {
       this.disposed += 1;
     },
@@ -549,6 +550,7 @@ describe("createCloudsParts", () => {
       const { clouds, fakes, worker, frame } = set(60_000);
       frame();
       expect(clouds.nearLive()).toBe(true);
+      expect(clouds.nearAir()).toBe(0);
       clouds.setOn(false);
       expect(clouds.nearLive()).toBe(false);
       clouds.setOn(true);

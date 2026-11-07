@@ -26,6 +26,7 @@ import {
   cloudLiveBasis,
 } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-live-noise";
 
+import { CLOUD_AIR_GLSL } from "./globe-cloud-march-glsl.js";
 import { ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
   CLOUD_HIGH_LAYER,
@@ -71,6 +72,8 @@ const COMPOSITE_KEYS = [
   "uHighOn",
   "uHighInFront",
   "uNearWeight",
+  "uAirOn",
+  "uH",
   "uNearShadowOn",
   "uShadowWeight",
 ] as const;
@@ -556,6 +559,18 @@ describe("createGlobeCloudShellVolume", () => {
   });
 
   describe("with the near clouds", () => {
+    const air = {
+      uH: { value: 12 },
+      uFwd: { value: new THREE.Vector3(0, 0, -1) },
+      uRight: { value: new THREE.Vector3(1, 0, 0) },
+      uUp: { value: new THREE.Vector3(0, 1, 0) },
+      uTan: { value: new THREE.Vector2(1, 1) },
+      uSun: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: { value: new THREE.Vector3(1, 1, 1) },
+      uSceneDepth: { value: new THREE.Texture() as THREE.Texture | null },
+      uSceneInverseProjection: { value: new THREE.Matrix4() },
+      uSceneDepthOn: { value: 1 },
+    };
     const near = (weight: number, shadow = true) => ({
       texture: new THREE.Texture(),
       shadowTexture: new THREE.Texture(),
@@ -564,6 +579,7 @@ describe("createGlobeCloudShellVolume", () => {
       tapPixels: 0.45,
       weight,
       shadow,
+      air,
     });
 
     // Why this test matters: the mix is the hand-over. Stacked, the two
@@ -591,6 +607,29 @@ describe("createGlobeCloudShellVolume", () => {
         uNearShadowOn: 1,
         uShadowWeight: 0.75,
       });
+    });
+
+    // Why this test matters: the near clouds fade into their air, so the
+    // air behind them must be that same air, from the same camera, sun and
+    // depth. Against any other sky far clouds stand out as white dashes on
+    // a dark limb. It sits under the clouds and over their ground shadow,
+    // and comes and goes with them.
+    it("draws the march's air behind them, over their shadow", () => {
+      const { shell, draws } = setUp();
+      shell.setEnabled(true);
+      shell.update(frameAt({ shares: { shellIn: 1, shell: 1, slab: 0 } }));
+      shell.render(camera(), { ...renderOptions, near: near(0.25) });
+      const composite = drawAt(draws, -1);
+      expect(composite.snapshot).toMatchObject({ uAirOn: 1, uH: 12 });
+      expect(composite.uniforms.uSceneDepth?.value).toBe(air.uSceneDepth.value);
+      expect(composite.uniforms.uFwd?.value).toBe(air.uFwd.value);
+      expect(composite.fragmentShader).toContain(CLOUD_AIR_GLSL);
+      const shader = composite.fragmentShader;
+      expect(shader.indexOf("airAt( vUv )")).toBeGreaterThan(
+        shader.indexOf("tHigh, vUv"),
+      );
+      shell.render(camera(), { ...renderOptions, near: null });
+      expect(drawAt(draws, -1).snapshot).toMatchObject({ uAirOn: 0 });
     });
 
     // Why this test matters: the reason for the rule. Left in, the old

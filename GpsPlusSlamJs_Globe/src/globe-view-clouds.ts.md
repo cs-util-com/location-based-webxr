@@ -82,6 +82,8 @@ mapFactor`, as the lab's: whole from orbit, gone below about 1,000 km
 
 ## The near clouds
 
+`nearAir()` is the share the air hands to the composite: `nearShare` while the clouds are on, else 0.
+
 The old clouds stay the old path: without the near clouds, or after a failed bake (`nearLive()` false), `cloudNear` is 0, so the shell keeps its cover and the air fades its veil with the sky. A closed view stops the worker, and a bake arriving after that is dropped.
 
 With `near: { createWorker, autoQuality?, warn?, nowMs? }` in the options, `createGlobeCloudMarch` joins the parts and `GLOBE_VIEW_CLOUDS.cloudNear` is honoured. The bakes are asked of a worker when the clouds are made; until they arrive, or if they fail (reported once), the old clouds draw, without the shell's lifted cover. A worker that never answers leaves that state for the view's life: the old clouds, with the near clouds' veil over the ground. The tier starts at `view.quality` and `autoQuality: false` holds it. `state().near` gives the share, pixel scale and tier, null without them. The life clock is `view.driftTimeS()`. The governor is fed only on frames where they draw.

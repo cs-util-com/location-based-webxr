@@ -10,6 +10,7 @@ Purpose: the near clouds' drawing pass: the march into a half-float target alloc
 - `texture`, `shadowTexture`: premultiplied radiance; shadow in alpha.
 - `uv`, `resolution`: the share of the target this frame drew and the target's size, both shared with the composite.
 - `state()`, `uniforms()`: what a page or a test reads.
+- `CloudAirUniforms`: the part of `uniforms()` the composite's air reads (camera basis, sun, scene depth).
 - `dispose()`.
 
 `CloudMarchFrame`: `camera`, `worldFromEcef`, `sunEcef`, `timeS` (the drift clock), `quality` (a tier's clouds), `pixelScale` (the step-down), `sceneDepth` (or null), `shadow` (strength, 0 none).

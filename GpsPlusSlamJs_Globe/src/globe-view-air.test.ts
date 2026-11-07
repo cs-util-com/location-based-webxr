@@ -37,7 +37,11 @@ const RADII = new THREE.Vector3(6378137, 6378137, 6356752.314245);
 /** A view whose camera stands `altitudeM` over the equator at 0 deg. */
 const fakeView = (altitudeM: number, framed = true) => {
   const camera = new THREE.PerspectiveCamera();
-  const sun = { position: new THREE.Vector3(1, 0, 0), intensity: 5 };
+  const sun = {
+    position: new THREE.Vector3(1, 0, 0),
+    intensity: 5,
+    color: new THREE.Color(1, 1, 1),
+  };
   return {
     renderer: {} as THREE.WebGLRenderer,
     scene: new THREE.Scene(),
@@ -95,6 +99,7 @@ const fakeDrawers = (hand = { weight: 1, exposure: 3.5 }) => {
         updates.push(frame);
         return hand;
       },
+      sunOnGround: () => ({ scale: 1, colour: [1, 1, 1] }),
       state: () => ({ lastStage: stage }),
       render(camera: THREE.Camera) {
         log.push(`ground ${camera.type}`);
@@ -251,6 +256,7 @@ describe("mountGlobeViewAir", () => {
           render: () => undefined,
           sceneDepth: () => null,
           nearLive: () => false,
+          nearAir: () => 0,
         }) as unknown as GlobeViewClouds,
     });
     air.step();
@@ -270,6 +276,7 @@ describe("mountGlobeViewAir", () => {
           render: () => undefined,
           sceneDepth: () => depth,
           nearLive: () => true,
+          nearAir: () => 0,
         }) as unknown as GlobeViewClouds,
     });
     air.step();
@@ -280,6 +287,27 @@ describe("mountGlobeViewAir", () => {
       sceneDepth: depth,
       sceneDepthWeight: 1,
     });
+  });
+
+  // Why this test matters: the near clouds' air stands in for the veil, by
+  // the share they drew: told nothing, the air is counted twice.
+  it("tells the air the near clouds' share", () => {
+    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
+    const air = mountGlobeViewAir(fakeView(2), {
+      coarsePointer: false,
+      drawers: () => fakes.drawers,
+      clouds: () =>
+        ({
+          step: () => undefined,
+          render: () => undefined,
+          sceneDepth: () => null,
+          nearLive: () => true,
+          nearAir: () => 0.5,
+        }) as unknown as GlobeViewClouds,
+    });
+    air.step();
+    air.afterScene();
+    expect(fakes.renders[0]).toMatchObject({ groundShare: 0.5 });
   });
 
   // Why: the space pass's march is the expensive part; a touch screen gets
@@ -374,6 +402,7 @@ describe("mountGlobeViewAir", () => {
           sceneDepth: () => ({ fresh: false }) as unknown as GlobeSceneDepth,
           setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
           nearLive: () => false,
+          nearAir: () => 0,
           state: () => ({
             on: true,
             flat: 0.25,

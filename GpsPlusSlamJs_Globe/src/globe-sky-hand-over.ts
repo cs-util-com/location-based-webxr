@@ -41,6 +41,12 @@ export const GLOBE_SKY_HAND_OVER = {
   altitudeStepPct: 5,
   /** The sun's step, degrees. */
   sunStepDeg: 0.25,
+  /**
+   * How far the camera adapts to the light, 0 fixed, 1 fully. The
+   * framework's street default of 0.75 drives a low sun to white from the
+   * air; 0 leaves the ground black at dusk, 0.5 pale.
+   */
+  exposureAdaptation: 0.3,
 };
 
 function finite(name: string, value: number): void {

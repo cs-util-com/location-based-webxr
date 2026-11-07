@@ -157,6 +157,21 @@ interface GlobeCloudMarchOptions {
 
 type MarchUniforms = ReturnType<typeof marchUniforms>;
 
+/** What the air behind the clouds reads of the march's frame. */
+export type CloudAirUniforms = Pick<
+  MarchUniforms,
+  | "uH"
+  | "uFwd"
+  | "uRight"
+  | "uUp"
+  | "uTan"
+  | "uSun"
+  | "uSunCol"
+  | "uSceneDepth"
+  | "uSceneInverseProjection"
+  | "uSceneDepthOn"
+>;
+
 function marchUniforms(map: { value: unknown }) {
   return {
     uH: { value: 0 },

@@ -57,7 +57,11 @@ interface AirView {
   readonly scene: THREE.Scene;
   readonly camera: THREE.Camera;
   readonly globe: {
-    readonly sun: { readonly position: THREE.Vector3; intensity: number };
+    readonly sun: {
+      readonly position: THREE.Vector3;
+      intensity: number;
+      readonly color: THREE.Color;
+    };
     readonly group: { readonly matrixWorld: THREE.Matrix4 };
     readonly tiles: {
       readonly group: { readonly matrixWorld: THREE.Matrix4 };
@@ -84,6 +88,7 @@ interface AirDrawers {
   readonly groundSky: Pick<
     GlobeGroundSky,
     | "atmosphere"
+    | "sunOnGround"
     | "update"
     | "state"
     | "render"
@@ -206,31 +211,39 @@ export function mountGlobeViewAir(
   let disposed = false;
   /** Drawn only between the first step and the dispose. */
   const live = () => stepped && !disposed;
+  /** The air's step: the near clouds decide its shares. */
+  const stepAir = () => {
+    params.atmoGround = clouds?.nearLive() === true ? 1 : 0;
+    const { position } = view.ecefCamera();
+    air.step(params, {
+      cameraEcef: [position.x, position.y, position.z],
+      framed: view.frameTarget() !== null,
+      nearAir: clouds?.nearAir() ?? 0,
+    });
+  };
+  /**
+   * The clouds between the hand-over and the sun's ease (the volumes update
+   * with the frame's previous sun, as in the lab); without them the flat
+   * layer is whole, on a shell at the clouds' height (the heavy clouds set
+   * it each frame; the shell is made at height 0, under the terrain).
+   */
+  const stepClouds = (shareClouds: (flat: number) => number) => {
+    if (clouds) {
+      clouds.step({ observerKm: air.observerKm(), shareClouds });
+      return;
+    }
+    view.globe.cloudShell.setHeightM(GLOBE_VIEW_CLOUDS.cloudShellKm * 1000);
+    shareClouds(1);
+  };
   return {
     afterSky() {
       if (live()) groundSky.render(view.camera);
     },
     step(frame = {}) {
       if (disposed) return;
-      params.atmoGround = clouds?.nearLive() === true ? 1 : 0;
-      const { position } = view.ecefCamera();
-      air.step(params, {
-        cameraEcef: [position.x, position.y, position.z],
-        framed: view.frameTarget() !== null,
-      });
+      stepAir();
       view.sea?.setSky(groundSky.atmosphere?.sharedUniforms ?? null);
-      const shareClouds = frame.shareClouds ?? (() => 0);
-      // The clouds between the hand-over and the sun's ease (the volumes
-      // update with the frame's previous sun, as in the lab); without
-      // them the flat layer is whole, on a shell at the clouds' height (the
-      // heavy clouds set it each frame; the shell is made at height 0,
-      // under the terrain).
-      if (clouds) {
-        clouds.step({ observerKm: air.observerKm(), shareClouds });
-      } else {
-        view.globe.cloudShell.setHeightM(GLOBE_VIEW_CLOUDS.cloudShellKm * 1000);
-        shareClouds(1);
-      }
+      stepClouds(frame.shareClouds ?? (() => 0));
       air.finish(params);
       stepped = true;
     },
