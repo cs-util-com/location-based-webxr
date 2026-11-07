@@ -55,6 +55,7 @@ import { pictureProblem } from "../image-cap.js";
 import { objectLook } from "../object-describe.js";
 import { scanEntryNames } from "../tour-read-set.js";
 import { openDraftStore } from "../draft-store-root.js";
+import { DRAFT_PART_UNREAD } from "../tour-document-draft.js";
 import {
   openTourFile,
   tourFileKeyOfFile,
@@ -689,6 +690,10 @@ const draft = createEditorDraft({
     // takes the old file's toasts away.
     if (!ui().busy) sayNoBackup();
   },
+  unreadDraft: () => {
+    unreadDraftNote = DRAFT_PART_UNREAD;
+    if (!ui().busy) sayUnreadDraft();
+  },
   onWriting: (writing) => {
     if (document.body.dataset["draft"] === "off") return;
     document.body.dataset["draft"] = writing ? "writing" : "saved";
@@ -702,6 +707,16 @@ function sayNoBackup(): void {
   if (noBackupNote === null) return;
   fileToasts.push(toast(noBackupNote, undefined, null));
   noBackupNote = null;
+}
+
+/** The unread-draft line not yet shown: as the no-backup line, it waits
+ *  until the tour shows. */
+let unreadDraftNote: string | null = null;
+
+function sayUnreadDraft(): void {
+  if (unreadDraftNote === null) return;
+  fileToasts.push(toast(unreadDraftNote, undefined, null));
+  unreadDraftNote = null;
 }
 
 /** "2 codes, 3 notes" - and the stations when the story has any. */
@@ -2232,6 +2247,7 @@ async function openFile(
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
+  sayUnreadDraft();
   keepStorage();
   // Details, station descriptions and card images the reader dropped are
   // said, never lost silently by the next save (M4a review #6); kept until

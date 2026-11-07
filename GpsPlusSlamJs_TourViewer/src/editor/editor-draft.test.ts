@@ -171,16 +171,20 @@ function locks(): (key: string) => Promise<EditorLock> {
 function draftIn(
   b: ReturnType<typeof browser>,
   holdLock = locks(),
-): EditorDraft & { said: NoBackupReason[] } {
+): EditorDraft & { said: NoBackupReason[]; unread: () => number } {
   const said: NoBackupReason[] = [];
+  let unread = 0;
   const draft = createEditorDraft({
     openStore: b.open,
     holdLock,
     noBackup: (reason) => {
       said.push(reason);
     },
+    unreadDraft: () => {
+      unread += 1;
+    },
   });
-  return Object.assign(draft, { said });
+  return Object.assign(draft, { said, unread: () => unread });
 }
 
 function pin(id: string, label = id): TourPin {
@@ -1258,6 +1262,54 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     expect((await again.open(K1, tour(pin("a")))).offer).toBeNull();
     await again.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
+    expect(again.unread()).toBe(1);
+  });
+
+  it("a station that no longer reads is told, and its record stays", async () => {
+    // Why: its story names a picture the file no longer holds. Removing the
+    // record said nothing and took the station for good, though it reads
+    // again the moment a file with that picture is opened.
+    const b = browser();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    await first.idle();
+    first.close();
+    const lostStation = {
+      id: "s-new",
+      geo: { lat: 48.5205, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+      activateRadiusM: 50,
+      foundRadiusM: 25,
+      hint: "arrow",
+      children: [
+        {
+          id: "tale",
+          kind: "story",
+          title: "The tale",
+          children: [
+            {
+              id: "look",
+              kind: "picture",
+              view: "card",
+              image: "img1",
+              widthM: 1,
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              advance: { mode: "tap" },
+            },
+          ],
+        },
+      ],
+    };
+    b.spaces
+      .get(editorDraftKey(K1))
+      ?.set(
+        SETTINGS,
+        JSON.stringify({ needsNoGps: false, createdStations: [lostStation] }),
+      );
+    const again = draftIn(b);
+    await again.open(K1, tour(pin("a")));
+    await again.idle();
+    expect(again.unread()).toBe(1);
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
   });
 
   it("a record whose station poses do not read is no offer, and goes", async () => {

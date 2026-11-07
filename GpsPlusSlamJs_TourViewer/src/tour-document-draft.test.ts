@@ -493,6 +493,42 @@ describe("followDocument, the stations this page created", () => {
   });
 });
 
+describe("parseSettingsRecord says what it could not read", () => {
+  // Why these tests matter: a frame that does not read is dropped and a
+  // record that does not read is lost whole. Silent, the author only finds
+  // a station missing later; both pages tell the author from this report.
+  const heard = (text: string | undefined): string[] => {
+    const lost: string[] = [];
+    parseSettingsRecord(text, undefined, (what) => {
+      lost.push(what);
+    });
+    return lost;
+  };
+
+  it("reports nothing for no record, and nothing for a record that reads", () => {
+    expect(heard(undefined)).toEqual([]);
+    expect(heard(JSON.stringify({ needsNoGps: false }))).toEqual([]);
+  });
+
+  it("reports a record that does not read, once", () => {
+    expect(heard("{not json")).toEqual(["record"]);
+    expect(heard(JSON.stringify({ needsNoGps: "yes" }))).toEqual(["record"]);
+    expect(heard("null")).toEqual(["record"]);
+  });
+
+  it("reports each frame that does not read, and a frame list that is none", () => {
+    expect(
+      heard(
+        JSON.stringify({
+          needsNoGps: false,
+          frames: [{ id: "bad", foundRadiusM: -1 }, 7],
+          createdStations: "not a list",
+        }),
+      ),
+    ).toEqual(["frame", "frame", "frame"]);
+  });
+});
+
 describe("followDocument, the codes record (plan M3b)", () => {
   // Why these tests matter: the draft's codes moved out of the phone's meta
   // into a record the document's listener writes. It must follow every

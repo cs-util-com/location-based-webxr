@@ -91,6 +91,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   browser kept for its file is deleted (`EditorDraft.forget`); once one
   was, and the box still shows that refusal, it adds that its unsaved
   changes cannot be restored (`playwright-tests/older-format.spec.js`).
+- **Part of a draft that did not read** (`unreadDraft`) is said in a toast
+  that stays until closed, once the tour shows, as the no-backup line is.
 - **Details the reader dropped** (a hand-edited description, contact or
   cover; M4a review #6) are said in a toast that stays until closed
   (`droppedDetailsLine`): which ones, and that the next save writes the

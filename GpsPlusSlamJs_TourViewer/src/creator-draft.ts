@@ -57,6 +57,7 @@ import {
 } from "./tour-document.js";
 import {
   changedStations,
+  DRAFT_PART_UNREAD,
   parseSettingsRecord,
   settingsRecord,
   settingsRecordText,
@@ -411,6 +412,8 @@ export function wireCreatorDraft(deps: {
   const openedTour = (): TourManifest | null => ctx.tourDocument.opened();
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
+  /** The line saying part of the draft did not read, for the open. */
+  let unreadNote: string | null = null;
   /** The objects this load's Finishes wrote (F19): what a yes to "did you
    *  upload it?" can be about. */
   const finishedIds = new Set<string>();
@@ -1049,6 +1052,7 @@ export function wireCreatorDraft(deps: {
     // this open's: `stale`).
     const opened = openedTour();
     supersededNote = null;
+    unreadNote = null;
     // This open's holder (L2): its writes read its poses and codes,
     // whatever opens after it.
     const held: SettingsHolder = { poses: null, created: null, codes: null };
@@ -1081,12 +1085,18 @@ export function wireCreatorDraft(deps: {
       // The settings record FIRST, in its own queue: a write this page
       // issues from here on (the live record below, a rename) runs after
       // this read, carrying the poses it found undecided.
+      let frameLost = false;
+      let lost = false;
       const storedSettings = await draftWrites.run(
         settingsChainKey(tourUrl),
         async () => {
           const read = parseSettingsRecord(
             await store.getText(SETTINGS_KEY),
             opened ?? undefined,
+            (what) => {
+              lost = true;
+              if (what === "frame") frameLost = true;
+            },
           );
           // Into this open's own holder: only its writes read it.
           const openedPoses = (opened?.stations ?? []).map(({ id, geo }) => ({
@@ -1107,6 +1117,11 @@ export function wireCreatorDraft(deps: {
         },
       );
       if (stale()) return;
+      if (lost) {
+        unreadNote = DRAFT_PART_UNREAD;
+        ctx.placementNote = unreadNote;
+        deps.render();
+      }
       await codesRead.catch(() => undefined);
       if (stale()) return;
       const stored = await readDraft(store);
@@ -1183,7 +1198,9 @@ export function wireCreatorDraft(deps: {
       supersededNote =
         superseded.length === 0 ? null : supersededLine(superseded.length);
       if (supersededNote !== null) {
-        ctx.placementNote = supersededNote;
+        ctx.placementNote = [unreadNote, supersededNote]
+          .filter((line) => line !== null)
+          .join(" ");
         deps.render();
         // Said once (review #4): the replaced records go - unless this
         // page changed them again before the draft opened.
@@ -1273,8 +1290,10 @@ export function wireCreatorDraft(deps: {
         held.created = null;
         // The record is spent too: the opened tour carries its poses. Not
         // when this page wrote its own (live) - and `settingsLive` asked
-        // again, a station may have moved during the awaits.
-        if (!live && !settingsLive()) {
+        // again, a station may have moved during the awaits. Nor while a
+        // station in it did not read: it may read again against a corrected
+        // file, and removing the record would take it for good.
+        if (!live && !settingsLive() && !frameLost) {
           void writeSettings(store, tourUrl, null, held);
         }
         return;
@@ -1347,6 +1366,7 @@ export function wireCreatorDraft(deps: {
         ctx.placementNote = [
           "Unsaved work for this tour is on this device - restore it after leaving AR.",
           ...(supersededNote === null ? [] : [supersededNote]),
+          ...(unreadNote === null ? [] : [unreadNote]),
         ].join(" ");
         deps.render();
       }
@@ -1364,6 +1384,7 @@ export function wireCreatorDraft(deps: {
     forgetRefused,
     reset: () => {
       supersededNote = null;
+      unreadNote = null;
       // A write still queued for the closing tour keeps its own holder.
       undecided = null;
       touchedIds.clear();

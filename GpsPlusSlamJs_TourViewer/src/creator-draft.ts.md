@@ -298,7 +298,11 @@ setting, the details once set, every station's pose once one moved, the
 whole frames of the stations this page created) is one file, `settings`
 (`SETTINGS_KEY`), in the tour's namespace - the desktop's name and shape
 (`editor/editor-draft.ts`), read by the same `parseSettingsRecord`, against
-the opened tour, whose assets and characters a stored frame may name. The
+the opened tour, whose assets and characters a stored frame may name. What
+did not read is told on the status line (`DRAFT_PART_UNREAD`), beside any
+other note of the open; a record with a station that did not read is kept
+though spent, since a corrected file reads it again, until the next whole
+write. The
 document's listener writes it whole on each change, in its own queue. The
 phone reads its STATION POSES and its CREATED STATIONS back:
 

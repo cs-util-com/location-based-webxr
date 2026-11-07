@@ -13,7 +13,7 @@ editor's own namespace, one tab at a time. Design:
 
 ## Public API
 
-- `createEditorDraft({ openStore, holdLock, noBackup, onWriting? }): EditorDraft`
+- `createEditorDraft({ openStore, holdLock, noBackup, unreadDraft?, onWriting? }): EditorDraft`
   - `openStore(key)` - a draft namespace's store (`draft-store-root.ts`),
     undefined without persistence; `holdLock(key)` - this tab's hold on the
     draft key (`holdEditorDraftLock`); `noBackup(reason)` - said once per
@@ -225,7 +225,11 @@ editor's own namespace, one tab at a time. Design:
   objects' rules, for a boolean: kept while the file on disk differs, or a
   build wrote the other value (a build never put in place); offered by a
   later open whose file does not carry it - read whether or not a meta
-  landed, since the namespace names the tour; spent or unreadable, it goes;
+  landed, since the namespace names the tour; spent or unreadable, it goes,
+  and an unreadable one is told (`unreadDraft`). A station in it that no
+  longer reads (its story names what the file no longer declares) is told
+  too, and the record stays, as a file with that asset reads it again; it
+  lasts until the next whole write of the record, which holds only what read;
   a landed write that carries it clears it; a key move carries it (and an
   unanswered offer's), and the old namespace's goes with it; "Delete it"
   removes an offered one after the meta's commit point, awaited, failing

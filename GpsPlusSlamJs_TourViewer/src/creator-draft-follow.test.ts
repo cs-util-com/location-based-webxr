@@ -18,7 +18,11 @@ import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-m
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
-import { parseSettingsRecord, SETTINGS_KEY } from "./tour-document-draft.js";
+import {
+  DRAFT_PART_UNREAD,
+  parseSettingsRecord,
+  SETTINGS_KEY,
+} from "./tour-document-draft.js";
 import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -165,6 +169,70 @@ describe("the phone's draft of an older format", () => {
     expect(JSON.parse(files.get(META_KEY) as string)).toMatchObject({
       format: TOUR_OBJECT_RECORD_FORMAT,
     });
+  });
+});
+
+describe("the phone's draft says what it could not read", () => {
+  // Why these tests matter: a stored station naming a picture the tour no
+  // longer holds was dropped and, with nothing left to offer, its record
+  // removed: work gone with nothing on screen, though the station reads
+  // again once a file with that picture opens.
+  const unreadable = {
+    id: "s-new",
+    geo: { lat: 48.5205, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    children: [
+      {
+        id: "tale",
+        kind: "story",
+        title: "The tale",
+        children: [
+          {
+            id: "look",
+            kind: "picture",
+            view: "card",
+            image: "img1",
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            advance: { mode: "tap" },
+          },
+        ],
+      },
+    ],
+  };
+
+  async function space(settings: string) {
+    const ns = namespaces();
+    const files = await ns.open(draftKeyForTour(OLD));
+    await files.put(
+      META_KEY,
+      JSON.stringify({ format: TOUR_OBJECT_RECORD_FORMAT, tourUrl: OLD }),
+    );
+    await files.put(SETTINGS_KEY, settings);
+    return ns;
+  }
+
+  it("tells of a station that no longer reads, and keeps its record", async () => {
+    const ns = await space(
+      JSON.stringify({ needsNoGps: false, createdStations: [unreadable] }),
+    );
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
+    expect(ns.files(OLD).has(SETTINGS_KEY)).toBe(true);
+  });
+
+  it("tells of a record that does not read", async () => {
+    const ns = await space("{not json");
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
+  });
+
+  it("says nothing of a record that reads", async () => {
+    const ns = await space(JSON.stringify({ needsNoGps: false }));
+    const { ctx } = await wired(ns);
+    expect(ctx.placementNote).toBeNull();
   });
 });
 
