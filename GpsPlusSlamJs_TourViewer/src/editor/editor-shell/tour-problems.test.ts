@@ -193,7 +193,9 @@ describe("tourProblems", () => {
   // a visitor nothing, so the note still stands.
   it("notes a station whose only story is empty", () => {
     const told = station("a", [], "Square");
-    const groups = tourProblems([{ ...told, children: [storyOf("first", [])] }]);
+    const groups = tourProblems([
+      { ...told, children: [storyOf("first", [])] },
+    ]);
     expect(groups[0]?.problems.map((p) => p.what)).toEqual([
       "Has no content yet",
     ]);
