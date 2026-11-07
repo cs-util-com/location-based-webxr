@@ -9,7 +9,7 @@
  * 10 cm. These render the file to pixels and measure.
  */
 import { createRequire } from 'node:module';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -34,14 +34,15 @@ GlobalWorkerOptions.workerSrc = pathToFileURL(
  *  ubuntu-26.04 runner image the poster text drew nothing. The package
  *  folder is taken from the entry imported above (it sits at legacy/build/
  *  inside it), not from `pdfjs-dist/package.json`, which resolves only
- *  while the package's `exports` happens to list it. */
+ *  while the package's `exports` happens to list it. pdf.js insists on a
+ *  trailing '/', also on Windows. */
 const STANDARD_FONTS =
   join(
     dirname(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')),
     '..',
     '..',
     'standard_fonts'
-  ) + sep;
+  ) + '/';
 
 /** Pixels per millimetre the pages are rendered at. */
 const PX_PER_MM = 4;
