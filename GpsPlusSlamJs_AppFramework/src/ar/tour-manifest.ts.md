@@ -20,7 +20,7 @@ tour id and the tour details.
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 5` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision of version 5
+  `TOUR_MANIFEST_MINOR` (the list of kinds' newest minor, 0 today; the newest additive revision of version 5
   this module knows).
 - `parseTourManifest(data: unknown, options?: TourManifestReadOptions): TourManifest`
   - validates every field; throws `TourManifestValidationError` naming the
