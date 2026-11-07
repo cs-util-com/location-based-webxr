@@ -38,8 +38,9 @@ its station's circle" that the inspector's count reads too.
     otherwise leave it floating or buried); where either is missing, its
     height in the station's frame is kept;
   - note: "Has no content yet" for a station with no free block and no
-    story holding a child of any kind (a story of just a choice or a quiz
-    counts as content; an empty story does not).
+    story holding a child that plays (a story of just a choice counts as
+    content; an empty story does not, nor does one of only quizzes, which
+    do not play yet).
 - `problemCounts(groups)` -> `{ error, warning, note }`.
 
 ## Invariants & assumptions

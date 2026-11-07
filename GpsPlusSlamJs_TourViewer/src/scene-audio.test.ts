@@ -55,6 +55,39 @@ function harness(play: () => Promise<void> = () => Promise.resolve()) {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("createSceneAudio", () => {
+  // Why: a free voice tapped over a story pauses the story's clip, and the
+  // story's step waits for that clip's end: the clip must keep its file and
+  // its end through the pause, and a phone refusing to resume must end it,
+  // or the story hangs for good.
+  it("pauses a clip and resumes it, and a refused resume ends it", async () => {
+    let refuse = false;
+    const { audio, elements, urls } = harness(() =>
+      refuse ? Promise.reject(new Error("no")) : Promise.resolve(),
+    );
+    const ended = vi.fn();
+    await audio.play(new Blob(), ended);
+    audio.pause();
+    expect(elements[0]!.paused).toBeGreaterThan(0);
+    expect(urls.revoked).toEqual([]);
+    audio.resume();
+    expect(elements[0]!.plays).toHaveLength(2);
+    expect(ended).not.toHaveBeenCalled();
+    refuse = true;
+    audio.resume();
+    await settle();
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(urls.revoked).toHaveLength(1);
+  });
+
+  it("resumes nothing once the clip has stopped", async () => {
+    const { audio, elements } = harness();
+    await audio.play(new Blob(), () => undefined);
+    audio.stop();
+    audio.resume();
+    audio.pause();
+    expect(elements[0]!.plays).toHaveLength(1);
+  });
+
   // Why: the read-along stretches to the voice's real length, which the
   // element knows only once it has read the clip's metadata: before that
   // (NaN), for a stream (Infinity) or with no element, there is none.
@@ -72,6 +105,26 @@ describe("createSceneAudio", () => {
       el.duration = s;
       expect(h.audio.durationMs?.(), String(s)).toBe(ms);
     }
+  });
+
+  // Why: a held voice's look goes back to speaking when it carries on, and
+  // its speech reel must run for what is left, not for the whole clip.
+  it("tells what is left of the clip, and nothing while it knows no length", async () => {
+    const h = harness();
+    expect(h.audio.leftMs?.()).toBeNull();
+    await h.audio.play(new Blob(["v"]), () => undefined);
+    const el = h.elements[0] as FakeElement & {
+      duration?: number;
+      currentTime?: number;
+    };
+    el.currentTime = 1;
+    expect(h.audio.leftMs?.()).toBeNull();
+    el.duration = 2.5;
+    expect(h.audio.leftMs?.()).toBe(1500);
+    el.currentTime = 9;
+    expect(h.audio.leftMs?.()).toBe(0);
+    el.currentTime = Number.NaN;
+    expect(h.audio.leftMs?.()).toBeNull();
   });
 
   it("plays every clip through the one element the tap unlocked", async () => {

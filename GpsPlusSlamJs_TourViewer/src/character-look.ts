@@ -112,11 +112,33 @@ export interface CharacterBeckon {
   readonly title: string;
 }
 
-export interface CharacterLookOptions {
+/** His die-cut poses from the decoded image: four from a frames sheet that
+ *  slices, else one. */
+export function paintPoses(
+  source: FigureSource,
+  sheet: boolean,
+  painters: CharacterPainters = CANVAS_PAINTERS,
+): readonly PaintedFigure[] {
+  const sliced = sheet ? painters.frames(source) : [];
+  return sliced.length === 4 ? sliced : [painters.figure(source)];
+}
+
+export type CharacterLookOptions = CharacterLookParts &
+  (
+    | { readonly figure: FigureSource; readonly poses?: undefined }
+    | {
+        /** Painted before (`figure-memo.ts`): shared, and left unchanged. */
+        readonly poses: readonly PaintedFigure[];
+        readonly figure?: undefined;
+      }
+  );
+
+interface CharacterLookParts {
   readonly view: StageCharacterView;
   readonly name: string;
   readonly line: string;
-  readonly figure: FigureSource;
+  /** No card shows his line: he stands outside a story. Default false. */
+  readonly noCard?: boolean;
   /** `figure` is a frames sheet (four equal cells in one row: idle,
    *  talk-a, talk-b, beckon), not one pose. A sheet that does not slice
    *  into four is drawn whole as one pose. Default false. */
@@ -262,7 +284,7 @@ export function createCharacterLook(
 ): CharacterLook {
   const painters = options.painters ?? CANVAS_PAINTERS;
   const view = options.view;
-  const look = characterViewLook(view);
+  const look = characterViewLook(view, options.noCard === true);
   const heightM =
     options.heightM !== undefined &&
     Number.isFinite(options.heightM) &&
@@ -286,9 +308,10 @@ export function createCharacterLook(
 
   // The die-cut figure: front and back, each seen from its own side.
   // A frames sheet gives a pose per frame (the same size each).
-  const sliced = options.sheet === true ? painters.frames(options.figure) : [];
   const poses =
-    sliced.length === 4 ? sliced : [painters.figure(options.figure)];
+    options.poses !== undefined
+      ? options.poses
+      : paintPoses(options.figure, options.sheet === true, painters);
   const fig = poses[0]!;
   const figGeo = figureGeometry(fig, heightM);
   const frontTexs = poses.map((p) => texture(p.front));
@@ -354,7 +377,8 @@ export function createCharacterLook(
   turn.add(popup);
   const popupScale = heightM / POPUP_FIGURE_M;
   popup.scale.setScalar(popupScale);
-  const topTex = texture(painters.stageTop(name).image);
+  // The paper stage is the look's costliest painting: only the pop-up shows it.
+  const topTex = look.popup ? texture(painters.stageTop(name).image) : null;
   const sideMat = basic(null, {
     color: 0xd9ccb0,
     transparent: false,
@@ -381,7 +405,7 @@ export function createCharacterLook(
   const popBack = new Group();
   popBack.position.set(0, 0.05, -0.6);
   popup.add(popBack);
-  const backdropTex = texture(painters.backdrop().image);
+  const backdropTex = look.popup ? texture(painters.backdrop().image) : null;
   const backdropGeo = new PlaneGeometry(2.3, BACKDROP_H);
   backdropGeo.translate(0, BACKDROP_H / 2, 0);
   const backdrop = new Mesh(

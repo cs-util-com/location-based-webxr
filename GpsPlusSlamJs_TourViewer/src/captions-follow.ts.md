@@ -17,6 +17,10 @@ Decides when the captions strip shows, and what: inside a station, the first of 
 - A stale timing makes `shownView` fall back from captions, so the world shows the text in another view and the strip never shows empty.
 - A voice does not follow the visitor out of its station.
 
+## Leaving and coming back
+
+Leaving a station pauses its voices by name (`pauseAll(stationId)`), and arriving at one calls `carryOn(stationId)`, so a voice picks up where the visitor left it. `stop` pauses without a name: nothing carries on after the session.
+
 ## Tests
 
 - `captions-follow.test.ts` - the first captions text, the strip once the read-along fits, pausing on leaving and on stop.

@@ -14,6 +14,7 @@ import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import { objectTitle } from "../../object-describe.js";
+import { isPlayableInK4 } from "../../scene-player.js";
 import { stationTitle } from "../../station-run.js";
 import { worldBlocks, type WorldBlock } from "../../tour-document.js";
 import type { GestureEdit } from "../../editor3d/gesture.js";
@@ -169,11 +170,11 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
 }
 
 /** Whether a visitor meets anything at the station: a free block, or a
- *  story with a child of any kind (a choice or a quiz is content too, and
- *  holds no block). */
+ *  story with a child that plays (a choice is content too, and holds no
+ *  block; a quiz does not play yet). */
 function hasContent(station: TourStation): boolean {
   return station.children.some(
-    (child) => !isTourStory(child) || child.children.length > 0,
+    (child) => !isTourStory(child) || child.children.some(isPlayableInK4),
   );
 }
 

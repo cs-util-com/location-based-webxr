@@ -1440,7 +1440,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   // the control the focus is moving to out of the page too, and Chromium
   // then drops the focus to the page: it goes to that control as drawn
   // again, found by its name.
+  let tabPressed = false;
   inspector.root.addEventListener("focusout", (event) => {
+    const tabbed = tabPressed;
+    tabPressed = false;
     const input = event.target;
     // Only a field drawn under its name: a long text's writer and its link
     // line keep their own text and write it themselves.
@@ -1452,12 +1455,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     ) {
       const next = controlName(inspector.root, event.relatedTarget);
       commitField(input, state().editorView.selected);
-      focusControl(inspector.root, next);
+      focusControl(inspector.root, next, tabbed);
     }
   });
   inspector.root.addEventListener("keydown", (event) => {
     const input = event.target;
     if (!isTyped(input) || input.dataset["field"] === undefined) return;
+    if (event.key === "Tab") tabPressed = true;
     // Enter keeps a line; in prose (a text area) it starts a new line.
     if (
       event.key === "Enter" &&

@@ -41,6 +41,7 @@ import {
   stepRequiredAssetIds,
   withReferencedAssets,
   withTourContent,
+  worldBlocks,
 } from "./tour-content.js";
 import { withCaption } from "./test-support/tour-of.js";
 import {
@@ -105,6 +106,59 @@ function inStation(object: TourObject, id: string): TourObject {
 }
 
 describe("withTourContent", () => {
+  // Why: the creator pages neither draw nor list a free video or character
+  // yet, so a save made there must carry them through untouched, stored
+  // files included: losing an author's item to a pin edit is the one
+  // outcome the format's "free" must never have.
+  it("a free video and a free character outlive a write, with their stored files", () => {
+    const pose = localPoseOf(geo(1, 1), station("gate", 0, 0).geo);
+    const base: TourManifest = {
+      ...tour([
+        {
+          ...station("gate", 0, 0),
+          children: [
+            {
+              id: "v",
+              kind: "video",
+              view: "card",
+              video: "film",
+              poster: "still",
+              transcript: "t",
+              pose,
+            },
+            {
+              id: "c",
+              kind: "character",
+              view: "popup",
+              name: "Ann",
+              image: "ann",
+              caption: "Hello",
+              pose,
+            },
+          ],
+        },
+      ]),
+      assets: [
+        { id: "film", path: "content/film.mp4", kind: "video" },
+        { id: "still", path: "content/still.jpg", kind: "image" },
+        { id: "ann", path: "content/ann.png", kind: "image" },
+      ],
+    };
+    const pinned = inStation(pin("a", 3, 4), "gate");
+    const next = withTourContent(base, {
+      objects: [...tourObjects(base), pinned],
+    });
+    expect(next.stations[0]!.children.slice(0, 2)).toEqual(
+      base.stations[0]!.children,
+    );
+    expect(next.assets.map((a) => a.id).sort()).toEqual([
+      "ann",
+      "film",
+      "still",
+    ]);
+    expect(worldBlocks(next.stations[0]!).map((b) => b.id)).toEqual(["a"]);
+  });
+
   it("an object nobody moved keeps its local pose bit for bit, its station, and its order", () => {
     const base = withTourContent(tour([station("gate", 0, 0)]), {
       objects: [

@@ -35,9 +35,10 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
   middle of the draw, and the draw carries the typed text over.
 - `controlName(root, target)` - the name `target` is drawn under in the
   dock (an attribute selector by its `data-act` or `data-field`), null
-  for anything else or outside `root`. `focusControl(root, name)` puts
-  the focus on the control drawn under `name` (none, a disabled one or
-  a null name leaves it). The shell uses the two for the control the
+  for anything else or outside `root`. `focusControl(root, name,
+tabbed)` puts the focus on the control drawn under `name` (none, a
+  disabled one or a null name leaves it) and, with `tabbed`, selects a
+  one-line field's text, as Tab does in a field no draw replaced. The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
   - Every head starts with "Back to the list" (`data-act="back"`), shown

@@ -31,6 +31,12 @@ import {
   type NarrationTimings,
   type NarrationVerdict,
 } from "./narration-timing.js";
+import {
+  createVoiceFocus,
+  focusedPlayer,
+  type FocusedPlayer,
+  type VoiceFocus,
+} from "./voice-focus.js";
 
 /** What the open tour gives: its entries and its assets. */
 export interface NarratedTour {
@@ -57,6 +63,8 @@ export interface NarrationVisitorDeps {
   onError(message: string): void;
   /** Makes a player (a seam for tests). */
   makePlayer?: (deps: NarrationPlayerDeps) => NarrationPlayer;
+  /** The page's one voice channel; default a channel of these voices. */
+  readonly focus?: VoiceFocus;
   /** Where a stale read-along's reason goes (the console by default). */
   warn?: (message: string) => void;
 }
@@ -74,8 +82,13 @@ export interface NarrationVisitor {
   /** The captions strip's content for a text whose read-along fits, or
    *  null - while it is read (the read starts here) or when it does not. */
   captions(block: TourLongTextBlock): CaptionsContent | null;
-  /** Pauses every voice (the visitor left the station, or the AR ended). */
-  pauseAll(): void;
+  /** Pauses every voice (the visitor left the station, or the AR ended).
+   *  With `stationId`, those wanted now carry on at its `carryOn`. */
+  pauseAll(stationId?: string): void;
+  /** The visitor is back at `stationId`: what its leaving paused carries
+   *  on, as far as the voice channel lets it (`voice-focus.ts`). What
+   *  does not stays paused, and a tap takes it up. */
+  carryOn(stationId: string): void;
   /** Lets every voice go (the tour closed). */
   reset(): void;
 }
@@ -100,10 +113,13 @@ export function createNarrationVisitor(
   deps: NarrationVisitorDeps,
 ): NarrationVisitor {
   const makePlayer = deps.makePlayer ?? createNarrationPlayer;
+  const focus = deps.focus ?? createVoiceFocus();
   let tourSeen: NarratedTour | null = null;
   let timings: NarrationTimings | null = null;
   let revision = 0;
-  const players = new Map<string, NarrationPlayer>();
+  const players = new Map<string, FocusedPlayer>();
+  /** What each station's leaving paused, for its return. */
+  const left = new Map<string, readonly FocusedPlayer[]>();
   const live = new Map<string, TourTiming>();
   const plains = new Map<string, Plain>();
 
@@ -142,14 +158,14 @@ export function createNarrationVisitor(
     });
   }
 
-  function playerOf(block: TourLongTextBlock): NarrationPlayer | null {
+  function playerOf(block: TourLongTextBlock): FocusedPlayer | null {
     const narration = block.narration;
     if (narration === undefined) return null;
     judge();
     const key = `${block.id}\u0000${narration.audio}`;
     const have = players.get(key);
     if (have !== undefined) return have;
-    const player = makePlayer({
+    const inner = makePlayer({
       load: () => {
         const path = audioAssetPath(deps.assets(), narration.audio);
         if (path === null) {
@@ -170,6 +186,7 @@ export function createNarrationVisitor(
         );
       },
     });
+    const player = focusedPlayer(inner, focus);
     players.set(key, player);
     return player;
   }
@@ -192,6 +209,7 @@ export function createNarrationVisitor(
   function reset(): void {
     for (const player of players.values()) player.dispose();
     players.clear();
+    left.clear();
     live.clear();
     plains.clear();
     timings = null;
@@ -243,10 +261,23 @@ export function createNarrationVisitor(
           : { voiceCredit: narration.voiceCredit }),
       };
     },
-    pauseAll() {
-      for (const player of players.values()) {
-        if (player.playing()) player.pause();
+    pauseAll(stationId) {
+      const wanted = [...players.values()].filter((p) => p.wanted());
+      // The held ones first: pausing the one heard would wake them. It
+      // comes first at the return, for the same one to go on.
+      const heard = wanted.filter((p) => p.playing());
+      for (const player of wanted) if (!player.playing()) player.pause();
+      for (const player of heard) player.pause();
+      if (stationId !== undefined && wanted.length > 0) {
+        left.set(stationId, [
+          ...heard,
+          ...wanted.filter((p) => !heard.includes(p)),
+        ]);
       }
+    },
+    carryOn(stationId) {
+      for (const player of left.get(stationId) ?? []) player.carryOn();
+      left.delete(stationId);
     },
     reset,
   };

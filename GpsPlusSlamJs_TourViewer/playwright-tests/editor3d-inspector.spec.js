@@ -248,6 +248,18 @@ test("a station's name, description and radius typed in the inspector are one st
   await expect(page.locator("#shell-inspector .warn")).toHaveText(
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
+  // Tab selected the next field's text, as it does in a field no draw
+  // replaced, so typing replaces the value.
+  await expect(field(page, "east")).toBeFocused();
+  expect(
+    await field(page, "east").evaluate((/** @type {any} */ input) => [
+      input.selectionEnd - input.selectionStart,
+      input.value.length,
+    ]),
+  ).toEqual([
+    (await field(page, "east").inputValue()).length,
+    (await field(page, "east").inputValue()).length,
+  ]);
   expect(
     stationBlocks(await stationNow(page, "a")).map(
       (/** @type {any} */ i) => i.id,

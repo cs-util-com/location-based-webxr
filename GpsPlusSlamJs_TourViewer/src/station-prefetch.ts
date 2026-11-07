@@ -105,7 +105,10 @@ export async function decodeFigure<T>(
  *  entry cap allows; nor its poster, which nothing draws yet. Then the
  *  files of the station's free models (each in a world view) (station blocks plan B2b,
  *  G2 follow-up 9): drawn with the station, they would otherwise be read
- *  from the archive on arrival. Free pictures are read on their own. */
+ *  from the archive on arrival. Then a free sound's file and a free
+ *  character's image, model and voice, by the same rule as a story's: he
+ *  stands from arrival, and a tap must not wait for his voice. Never a free
+ *  video's file or poster, as above. Free pictures are read on their own. */
 export function stationAssetIds(
   station: Pick<TourStation, "children">,
   characters: ReadonlyMap<string, TourCharacter> = new Map(),
@@ -113,10 +116,13 @@ export function stationAssetIds(
   const ids = tourStationStoryBlocks(station).flatMap((block) =>
     storyAssetIds(block, characters),
   );
-  const models = tourFreeBlocks(station).flatMap((b) =>
-    b.kind === "model" ? [b.asset] : [],
-  );
-  return [...new Set([...ids, ...models])];
+  const free = tourFreeBlocks(station).flatMap((b) => {
+    if (b.kind === "model") return [b.asset];
+    return b.kind === "audio" || b.kind === "character"
+      ? storyAssetIds(b, characters)
+      : [];
+  });
+  return [...new Set([...ids, ...free])];
 }
 
 /** The assets read ahead of showing `block` (`item-card.ts`): all but a

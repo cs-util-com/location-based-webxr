@@ -15,21 +15,33 @@ import type {
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { horizontalM } from "./move-with-code.js";
+import type { WorldBlock } from "./tour-content.js";
 
 /** What an object in the world is, in the pages' words and icons: a short
  *  text is a pin, a picture a photo, a long text (its reading stand) a
  *  text, a model a model. */
 export type ObjectLook = "pin" | "photo" | "text" | "model";
 
-const LOOK: Readonly<Record<TourObject["kind"], ObjectLook>> = {
+/** The kinds the creator pages draw and list (`WorldBlock`). */
+type LookKind = WorldBlock["kind"];
+
+const LOOK: Readonly<Record<LookKind, ObjectLook>> = {
   shortText: "pin",
   picture: "photo",
   longText: "text",
   model: "model",
 };
 
-export function objectLook(kind: TourObject["kind"]): ObjectLook {
+export function objectLook(kind: LookKind): ObjectLook {
   return LOOK[kind];
+}
+
+/** Whether a creator page has a look for `object`: a free video, sound or
+ *  character has none yet, so no list names it. */
+export function hasLook(
+  object: TourObject,
+): object is Extract<TourObject, { readonly kind: LookKind }> {
+  return Object.hasOwn(LOOK, object.kind);
 }
 
 /** Each kind in the one word every creator page uses for it: what a block
@@ -67,6 +79,21 @@ export function objectTitle(object: TourObject | TourBlock): string {
     if (typeof value === "string" && value.trim() !== "") return value.trim();
   }
   return BLOCK_KIND_LABEL[object.kind];
+}
+
+/** The text a free block carries for its name, as a page edits it: a
+ *  pin's or a picture's caption, a character's name, else its title. Unlike
+ *  `objectTitle` it can be empty, and names no kind in its place. */
+export function objectOwnText(object: TourObject): string | undefined {
+  switch (object.kind) {
+    case "shortText":
+    case "picture":
+      return object.caption;
+    case "character":
+      return object.name;
+    default:
+      return object.title;
+  }
 }
 
 /** "4 m from the code" / "12 m from the nearest code"; "" without a code

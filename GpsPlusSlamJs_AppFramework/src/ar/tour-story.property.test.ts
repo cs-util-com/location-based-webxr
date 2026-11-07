@@ -9,7 +9,7 @@
  * 1. the reader keeps exactly what a valid file says, and the writer's
  *    output reads back to the same content (an exact round trip);
  * 2. a file of a newer minor never fails to open, and what survives still
- *    resolves - every free block stands in a world view, every choice keeps
+ *    resolves - every free block stands in a view its kind may stand in free, every choice keeps
  *    two ways on - while the same file at this reader's own minor is
  *    refused;
  * 3. a text over its cap fails the file when the block needs it and is left
@@ -33,7 +33,7 @@ import {
 } from '../test-utils/tour-arbitraries';
 import {
   TOUR_BLOCK_TEXT_RULES,
-  TOUR_WORLD_VIEWS,
+  TOUR_FREE_BLOCK_VIEWS,
   tourTextCount,
   type TourBlockKind,
   type TourTextRule,
@@ -381,7 +381,10 @@ describe('a list of a newer minor (properties)', () => {
           ).toEqual([]);
           expect(
             tourChildrenFreeBlocks(read).filter(
-              (b) => !TOUR_WORLD_VIEWS.has(b.view)
+              (b) =>
+                !(TOUR_FREE_BLOCK_VIEWS[b.kind] as readonly string[]).includes(
+                  b.view
+                )
             )
           ).toEqual([]);
           // Every child it left out was reported, by id, and every way on

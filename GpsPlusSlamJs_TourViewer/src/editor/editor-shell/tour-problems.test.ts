@@ -219,6 +219,31 @@ describe("tourProblems", () => {
     ]);
   });
 
+  // Why: a quiz does not play yet, so a story of nothing but quizzes is one
+  // no visitor can start: the station is empty for them, whatever it holds.
+  it("notes a station whose only story holds just a quiz", () => {
+    const told = station("a", [], "Square");
+    const groups = tourProblems([
+      {
+        ...told,
+        children: [
+          storyOf("first", [
+            {
+              id: "age",
+              kind: "quiz",
+              question: "How old?",
+              points: 1,
+              answer: { type: "number", value: 800, tolerance: 50 },
+            },
+          ]),
+        ],
+      },
+    ]);
+    expect(groups[0]?.problems.map((p) => p.what)).toEqual([
+      "Has no content yet",
+    ]);
+  });
+
   // Why: a station whose only content is a story has something to show;
   // the note would send a creator looking for a fault that is not there.
   it("does not note a station whose content is all in a story", () => {

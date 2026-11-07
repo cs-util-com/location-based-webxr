@@ -15,6 +15,7 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
     the Finish writes them (`object-editing.ts` `authoringObjects`).
   - `state.codes` - the stored codes' geo; each row says how far the object
     is from the nearest one ("11 m from the code", whole metres).
+  - A free video, sound or character gets no row (`hasLook`).
   - `state.inAr` - on the page every row is in `rows`; in AR `rows` holds
     only the selected object (none while nothing is selected, with
     `SELECT_HINT`), and there is no heading.

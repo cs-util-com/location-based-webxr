@@ -40,6 +40,7 @@ import {
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_SECTION_RULES,
   TOUR_MODEL_SPACE_MAX,
+  TOUR_CHARACTER_VIEWS,
   TOUR_MODEL_WORLD_VIEWS,
   TOUR_PICTURE_MAX_WIDTH_M,
   TOUR_PICTURE_MIN_WIDTH_M,
@@ -331,17 +332,18 @@ const modelSize = fc.double({
   noNaN: true,
 });
 
-/** The views a free block may stand in, per kind (none: story only). */
+/** The views a free block may stand in, per kind. Written out, not taken
+ *  from the format: a property test holds the two together. */
 export const TOUR_FREE_VIEWS: Readonly<
   Record<TourBlockKind, readonly string[]>
 > = {
   shortText: ['pin'],
   longText: ['lectern', 'reading'],
   picture: ['plane'],
-  video: [],
-  audio: [],
+  video: ['card'],
+  audio: ['card'],
   model: TOUR_MODEL_WORLD_VIEWS,
-  character: [],
+  character: TOUR_CHARACTER_VIEWS,
 };
 
 const KINDS = Object.keys(TOUR_BLOCK_VIEWS) as TourBlockKind[];
@@ -355,12 +357,8 @@ export function tourBlockArbitrary(
   placement: 'free' | 'story',
   kinds: readonly TourBlockKind[] = KINDS
 ): fc.Arbitrary<Record<string, unknown>> {
-  const allowed =
-    placement === 'free'
-      ? kinds.filter((k) => TOUR_FREE_VIEWS[k].length > 0)
-      : kinds;
   return fc
-    .constantFrom(...allowed)
+    .constantFrom(...kinds)
     .chain((kind) => {
       const views =
         placement === 'free' ? TOUR_FREE_VIEWS[kind] : TOUR_BLOCK_VIEWS[kind];

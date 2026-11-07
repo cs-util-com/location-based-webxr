@@ -1,0 +1,2199 @@
+<!doctype html>
+<!-- Prototype: the quiz lives in the visitor's story card. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Quiz in the story card</title>
+    <style>
+      :root {
+        /* the walk's own tokens, as the app sets them */
+        --walk-accent: #fb923c;
+        --walk-accent-ink: #1f1105;
+        --walk-found: #2dd4bf;
+        --walk-found-ink: #04201c;
+        --walk-ink: #f3f5f7;
+        --walk-muted: #b3bcc6;
+        --walk-surface: rgb(12 16 21 / 80%);
+        --walk-surface-2: rgb(255 255 255 / 7%);
+        --walk-line: rgb(255 255 255 / 15%);
+        --walk-danger: #f87171;
+        --gold: #e5ab3e;
+        --tap: 44px;
+        --font:
+          Corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font: 15px/1.4 var(--font);
+        background: #14171d;
+        color: var(--walk-ink);
+        overflow: hidden;
+        font-variant-numeric: lining-nums;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+
+      /* ---------- the phone: the whole screen on a phone, a frame on a desktop ---------- */
+      .stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 40px;
+      }
+      .device {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #5d7f97;
+        container: dev / size;
+      }
+      .cam {
+        position: absolute;
+        inset: -2%;
+        width: 104%;
+        height: 104%;
+        display: block;
+        transition:
+          opacity 1.2s ease,
+          filter 0.4s;
+        animation: sway 9s ease-in-out infinite alternate;
+      }
+      #camFar {
+        opacity: 0;
+      }
+      .device[data-at="far"] #camFar,
+      .device[data-at="next"] #camFar {
+        opacity: 1;
+      }
+      .device[data-at="far"] .cam,
+      .device[data-at="next"] .cam {
+        animation-duration: 2.2s;
+      }
+      .device[data-sun="on"] .cam {
+        filter: brightness(1.4) contrast(0.82) saturate(0.85);
+      }
+      @keyframes sway {
+        from {
+          transform: translate(-0.5%, 0.25%) rotate(-0.12deg);
+        }
+        to {
+          transform: translate(0.5%, -0.3%) rotate(0.14deg);
+        }
+      }
+
+      .top {
+        position: absolute;
+        z-index: 6;
+        top: calc(10px + env(safe-area-inset-top));
+        left: 12px;
+        right: 12px;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        pointer-events: none;
+      }
+      .top .sp {
+        flex: 1;
+      }
+      .pillbtn {
+        pointer-events: auto;
+        min-height: var(--tap);
+        padding: 0 14px;
+        border-radius: 22px;
+        border: 1px solid rgb(255 255 255 / 34%);
+        background: rgb(10 14 18 / 55%);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .radar {
+        flex: none;
+        width: 76px;
+        height: 76px;
+        border-radius: 50%;
+        background: conic-gradient(
+          from -28deg,
+          rgb(255 255 255 / 28%) 0 56deg,
+          rgb(10 14 18 / 44%) 56deg
+        );
+        border: 1px solid rgb(255 255 255 / 34%);
+        position: relative;
+      }
+      .radar::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 9px;
+        height: 9px;
+        margin: -4.5px;
+        border-radius: 50%;
+        background: var(--walk-accent);
+        box-shadow: 0 0 0 2px #fff;
+      }
+
+      /* demonstration buttons: not part of the design */
+      .demos {
+        position: absolute;
+        z-index: 6;
+        top: 96px;
+        left: 12px;
+        right: 96px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        pointer-events: none;
+      }
+      .demotap {
+        pointer-events: auto;
+        min-height: 36px;
+        padding: 0 11px;
+        border-radius: 10px;
+        border: 1px dashed rgb(255 255 255 / 62%);
+        background: rgb(0 0 0 / 42%);
+        color: #eef0f3;
+        font-size: 12px;
+      }
+      .proto {
+        position: absolute;
+        z-index: 6;
+        left: 12px;
+        top: calc(60px + env(safe-area-inset-top));
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: rgb(0 0 0 / 55%);
+        color: #fff;
+        pointer-events: none;
+      }
+
+      /* ---------- the walk sheet, as in the app ---------- */
+      .sheet {
+        position: absolute;
+        z-index: 8;
+        left: 0;
+        right: 0;
+        bottom: var(--kbd, 0px);
+        max-height: 66cqh;
+        margin: 0 auto;
+        max-width: 520px;
+        display: flex;
+        flex-direction: column;
+        padding-bottom: env(safe-area-inset-bottom);
+        border-top: 1px solid var(--walk-line);
+        border-radius: 22px 22px 0 0;
+        background: var(--walk-surface);
+        box-shadow: 0 -10px 30px rgb(0 0 0 / 25%);
+        -webkit-backdrop-filter: blur(14px) saturate(1.2);
+        backdrop-filter: blur(14px) saturate(1.2);
+        transition: bottom 0.22s ease;
+      }
+      .grab {
+        position: relative;
+        flex: none;
+        display: block;
+        width: 100%;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .grab::before {
+        content: "";
+        position: absolute;
+        inset: -11px 0;
+      }
+      .grab i {
+        display: block;
+        width: 40px;
+        height: 5px;
+        margin: 8px auto 0;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 40%);
+      }
+      .body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 0 16px 14px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .eyerow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 20px;
+        margin-bottom: 6px;
+      }
+      .eyebrow {
+        flex: 1;
+        min-width: 0;
+        color: var(--walk-found);
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .eyebrow.done {
+        color: var(--walk-muted);
+      }
+      .total {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: #ffd391;
+        font-size: 14px;
+        font-weight: 700;
+        font-variant-numeric: lining-nums tabular-nums;
+      }
+      .total svg {
+        width: 13px;
+        height: 13px;
+        fill: currentcolor;
+      }
+      .total.pulse {
+        animation: pulse 0.6s ease;
+      }
+      @keyframes pulse {
+        40% {
+          transform: scale(1.35);
+        }
+      }
+
+      /* the line: the same slot for a story line, a question and a reaction */
+      .who {
+        display: flow-root;
+        min-height: 70px;
+      }
+      .portrait {
+        float: left;
+        width: 64px;
+        height: 64px;
+        margin: 2px 12px 4px 0;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: #1b2232;
+        overflow: hidden;
+        box-shadow:
+          0 0 0 3px var(--gold),
+          0 6px 18px rgb(0 0 0 / 30%);
+      }
+      .portrait svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .portrait .m {
+        display: none;
+      }
+      .portrait[data-mood="calm"] .m-calm,
+      .portrait[data-mood="happy"] .m-happy,
+      .portrait[data-mood="doubt"] .m-doubt {
+        display: inline;
+      }
+      .portrait[data-mood="happy"] {
+        animation: hop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      .portrait[data-mood="doubt"] {
+        animation: tilt 0.6s ease;
+      }
+      @keyframes hop {
+        35% {
+          transform: translateY(-9px);
+        }
+      }
+      @keyframes tilt {
+        30% {
+          transform: rotate(-11deg);
+        }
+        65% {
+          transform: rotate(7deg);
+        }
+      }
+      .speaker {
+        font-weight: 600;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+        line-height: 1.3;
+      }
+      .line {
+        font-size: 17px;
+        line-height: 1.38;
+        font-weight: 500;
+      }
+      .line.ask {
+        font-weight: 600;
+      }
+      .echo {
+        font-size: 13px;
+        line-height: 1.3;
+        color: var(--walk-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .in {
+        animation: in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      @keyframes in {
+        from {
+          opacity: 0;
+          transform: translateY(7px);
+        }
+      }
+      .plus {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #ffd391;
+        color: #2a1a04;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.5;
+      }
+      .plus.none {
+        background: rgb(255 255 255 / 14%);
+        color: var(--walk-ink);
+      }
+
+      /* the answers: in the place of the Continue button */
+      .answers {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .a {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 64px;
+        padding: 8px 10px;
+        border: 1.5px solid rgb(255 255 255 / 42%);
+        border-radius: 14px;
+        background: rgb(255 255 255 / 11%);
+        color: #fff;
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.15;
+        touch-action: manipulation;
+        transition:
+          background 0.15s,
+          opacity 0.25s;
+      }
+      .answers.small .a {
+        font-size: 16px;
+        font-weight: 600;
+        min-height: 60px;
+      }
+      .a:active:not(:disabled) {
+        background: rgb(255 255 255 / 24%);
+      }
+      .a:disabled {
+        cursor: default;
+      }
+      .a .g {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        display: none;
+      }
+      .a.right .g,
+      .a.wrong .g,
+      .a.was .g,
+      .a.on .g {
+        display: block;
+      }
+      .a .g svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .a .box {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        border: 2px solid rgb(255 255 255 / 70%);
+        border-radius: 6px;
+      }
+      .a.on {
+        border-color: var(--walk-accent);
+        background: rgb(251 146 60 / 22%);
+      }
+      .a.on .box {
+        display: none;
+      }
+      .a.right {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        animation: pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      .a.wrong {
+        border-color: var(--walk-danger);
+        background: rgb(248 113 113 / 18%);
+        color: #fecaca;
+        text-decoration: line-through;
+        text-decoration-thickness: 2px;
+        animation: shake 0.35s ease;
+      }
+      .a.was {
+        border-color: var(--walk-found);
+        color: #a7f3e6;
+        background: transparent;
+      }
+      .a.dim {
+        opacity: 0.42;
+      }
+      @keyframes pop {
+        50% {
+          transform: scale(1.04);
+        }
+      }
+      @keyframes shake {
+        25% {
+          transform: translateX(-5px);
+        }
+        60% {
+          transform: translateX(4px);
+        }
+      }
+
+      /* the typed answer */
+      .typed {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .field {
+        flex: 1;
+        min-width: 0;
+        height: 60px;
+        padding: 0 14px;
+        border: 1.5px solid rgb(255 255 255 / 55%);
+        border-radius: 14px;
+        background: rgb(255 255 255 / 12%);
+        color: #fff;
+        font-size: 21px;
+        font-weight: 600;
+        outline: 0;
+      }
+      .field:focus {
+        border-color: var(--walk-found);
+      }
+      .field::placeholder {
+        color: #c6cdd5;
+        font-weight: 500;
+        font-size: 17px;
+      }
+      .field.wrong {
+        border-color: var(--walk-danger);
+        color: #fecaca;
+        animation: shake 0.35s ease;
+      }
+      .field.right {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .check {
+        flex: none;
+        min-width: 92px;
+        height: 60px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        font-size: 17px;
+        font-weight: 700;
+      }
+      .check:disabled {
+        background: rgb(255 255 255 / 12%);
+        color: var(--walk-muted);
+        cursor: default;
+      }
+
+      /* a quiz that cannot be answered now: greyed as a whole */
+      .greyed .answers,
+      .greyed .typed {
+        filter: grayscale(1);
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      .greyed .a.right {
+        animation: none;
+        background: rgb(255 255 255 / 20%);
+        border-color: rgb(255 255 255 / 60%);
+        color: #fff;
+      }
+      .greyed .a.wrong {
+        animation: none;
+      }
+      .greyed .field {
+        animation: none;
+      }
+      .greyed .line.ask {
+        color: var(--walk-muted);
+      }
+      .stamp {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 10px;
+        padding: 5px 10px;
+        border-radius: 9px;
+        background: rgb(255 255 255 / 12%);
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .stamp svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 2.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .dots {
+        display: flex;
+        gap: 5px;
+        margin: 12px 0 10px;
+      }
+      .dots i {
+        width: 22px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .dots i.on,
+      .dots i.now {
+        background: var(--walk-found);
+      }
+      .acts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .btn {
+        min-height: var(--tap);
+        padding: 10px 16px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .btn.primary {
+        flex: 1;
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        font-size: 16px;
+      }
+      .btn.primary:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn.warn {
+        flex: 1;
+        border-color: var(--walk-danger);
+        background: rgb(248 113 113 / 16%);
+        color: #fecaca;
+      }
+
+      /* folded: a question that waits, one line */
+      .fold {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 60px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        text-align: left;
+      }
+      .fold .mark {
+        flex: none;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #ffd391;
+        color: #2a1a04;
+        font-size: 24px;
+        font-weight: 700;
+      }
+      .fold b {
+        display: block;
+        font-size: 17px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+      .fold small {
+        display: block;
+        margin-top: 2px;
+        font-size: 13.5px;
+        color: var(--walk-muted);
+        line-height: 1.3;
+      }
+      .fold .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .fold .up {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 2.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        opacity: 0.8;
+      }
+      .nextline {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--walk-line);
+        font-size: 14px;
+        color: var(--walk-muted);
+      }
+      .nextline b {
+        color: var(--walk-ink);
+      }
+      .nextline em {
+        margin-left: auto;
+        font-style: normal;
+        font-weight: 700;
+        color: var(--walk-accent);
+      }
+      .playnext {
+        width: 100%;
+        margin-top: 10px;
+      }
+
+      /* the peek after the story */
+      .seg {
+        display: flex;
+        gap: 4px;
+        margin: 2px 0 10px;
+      }
+      .seg i {
+        flex: 1;
+        height: 6px;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 14%);
+      }
+      .seg i.found {
+        background: var(--walk-found);
+      }
+      .seg i.next {
+        background: var(--walk-accent);
+      }
+      .peektitle {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-top: 2px;
+      }
+      .peektitle b {
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+      .peektitle em {
+        font-style: normal;
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--walk-accent);
+      }
+      .tail {
+        margin-top: 3px;
+        font-size: 13.5px;
+        color: var(--walk-muted);
+        line-height: 1.35;
+      }
+
+      .toast {
+        position: absolute;
+        z-index: 9;
+        top: calc(150px + env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: min(280px, 62cqw);
+        padding: 9px 14px;
+        border-radius: 12px;
+        background: rgb(255 255 255 / 92%);
+        color: #111;
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+        animation: in 0.3s ease;
+      }
+
+      /* a stand-in for the phone's keyboard, on a screen without one */
+      .kbd {
+        position: absolute;
+        z-index: 7;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--kbd, 0px);
+        padding: 7px 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #2a2e35;
+      }
+      .kbd div {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        gap: 5px;
+      }
+      .kbd span {
+        flex: 1;
+        max-width: 36px;
+        border-radius: 5px;
+        background: #4b515b;
+      }
+      .kbd div:last-child span {
+        max-width: 200px;
+      }
+
+      /* ---------- a phone held sideways: the sheet a card at the bottom left ---------- */
+      @container dev (orientation:landscape) and (max-height:520px) {
+        .sheet {
+          left: 10px;
+          right: auto;
+          bottom: calc(10px + var(--kbd, 0px));
+          width: min(370px, 48cqw);
+          max-height: calc(100cqh - 74px);
+          margin: 0;
+          padding-bottom: 0;
+          border: 1px solid var(--walk-line);
+          border-radius: 20px;
+        }
+        .body {
+          padding-bottom: 10px;
+        }
+        .who {
+          min-height: 48px;
+        }
+        .portrait {
+          width: 44px;
+          height: 44px;
+          margin-right: 10px;
+        }
+        .line {
+          font-size: 15.5px;
+          line-height: 1.3;
+        }
+        .answers {
+          margin-top: 8px;
+          gap: 6px;
+        }
+        .a {
+          min-height: 50px;
+          font-size: 19px;
+        }
+        .answers.small .a {
+          min-height: 50px;
+          font-size: 14.5px;
+        }
+        .typed {
+          margin-top: 8px;
+        }
+        .field,
+        .check {
+          height: 50px;
+        }
+        .dots {
+          margin: 8px 0 6px;
+        }
+        .acts .btn {
+          min-height: 40px;
+          padding: 7px 12px;
+        }
+        .demos {
+          top: auto;
+          bottom: 10px;
+          left: calc(min(370px, 48cqw) + 22px);
+          right: 10px;
+          justify-content: flex-end;
+        }
+        .proto {
+          left: auto;
+          right: 96px;
+          top: 12px;
+        }
+        .toast {
+          left: auto;
+          right: 96px;
+          transform: none;
+          top: 44px;
+        }
+        .fold {
+          min-height: 48px;
+        }
+      }
+      /* the keyboard is up: only the question and the field */
+      .device.typing .portrait,
+      .device.typing .dots,
+      .device.typing .acts,
+      .device.typing .speaker {
+        display: none;
+      }
+      .device.typing .who {
+        min-height: 0;
+      }
+      .device.typing .sheet {
+        max-height: calc(100cqh - var(--kbd, 0px) - 8px);
+      }
+      @container dev (orientation:landscape) and (max-height:520px) {
+        .device.typing .sheet {
+          left: 0;
+          right: 0;
+          width: auto;
+          bottom: var(--kbd, 0px);
+          max-width: none;
+          border-radius: 16px 16px 0 0;
+        }
+        .device.typing .eyerow {
+          display: none;
+        }
+        .device.typing .grab {
+          height: 12px;
+        }
+        .device.typing .grab i {
+          margin-top: 4px;
+        }
+      }
+
+      /* ---------- the demonstration's panel ---------- */
+      .panel {
+        display: none;
+        position: absolute;
+        z-index: 20;
+        top: calc(60px + env(safe-area-inset-top));
+        left: 12px;
+        right: 12px;
+        max-height: calc(100% - 84px);
+        overflow: auto;
+        padding: 12px 14px 14px;
+        border-radius: 16px;
+        background: #f5f1e8;
+        color: #17191c;
+        box-shadow: 0 14px 34px rgb(0 0 0 / 40%);
+        font-size: 14px;
+      }
+      .panel.open {
+        display: block;
+      }
+      .panel h1 {
+        font-size: 18px;
+        line-height: 1.2;
+        font-weight: 700;
+      }
+      .panel h2 {
+        margin-top: 12px;
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5c605d;
+      }
+      .panel p {
+        margin-top: 6px;
+        color: #3d4144;
+      }
+      .panel ul {
+        margin: 6px 0 0;
+        padding-left: 18px;
+        color: #3d4144;
+      }
+      .panel li {
+        margin-top: 3px;
+      }
+      .opts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .opts button {
+        min-height: 40px;
+        padding: 0 12px;
+        border: 1px solid #c9c2b2;
+        border-radius: 10px;
+        background: #fff;
+        color: #17191c;
+        font-size: 13.5px;
+      }
+      .opts button[aria-pressed="true"] {
+        background: #0f766e;
+        border-color: #0f766e;
+        color: #fff;
+      }
+      .deskonly {
+        display: none;
+      }
+
+      @media (min-width: 900px) and (min-height: 640px) {
+        .stage {
+          background: radial-gradient(circle at 70% 30%, #242a36, #14171d 70%);
+        }
+        .device {
+          flex: none;
+          width: 390px;
+          height: min(844px, calc(100vh - 40px));
+          border-radius: 30px;
+          box-shadow:
+            0 0 0 8px #0a0c10,
+            0 24px 60px rgb(0 0 0 / 50%);
+        }
+        .stage[data-view="land"] .device {
+          width: 844px;
+          height: 390px;
+        }
+        .panel {
+          display: block;
+          position: static;
+          flex: none;
+          width: 340px;
+          max-height: calc(100vh - 40px);
+        }
+        #demoBtn {
+          display: none;
+        }
+        .deskonly {
+          display: block;
+        }
+        .demos {
+          right: 96px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage" id="stage" data-view="port">
+      <aside class="panel" id="panel" aria-label="Demonstration">
+        <h1>Quiz in the story card</h1>
+        <p>
+          The question is one more line of the story: the same card, the same
+          guide, the same place. Answers stand where Continue stood.
+        </p>
+        <h2>Kind of question</h2>
+        <div class="opts" id="kinds">
+          <button data-kind="single">One right answer</button>
+          <button data-kind="multiple">Several right</button>
+          <button data-kind="text">Typed answer</button>
+        </div>
+        <h2>A wrong answer</h2>
+        <div class="opts" id="retries">
+          <button data-retry="1">One more try</button>
+          <button data-retry="0">No retry</button>
+        </div>
+        <h2>Jump to</h2>
+        <div class="opts">
+          <button data-go="start">Start of the story</button>
+          <button data-go="quiz">The question</button>
+          <button data-go="done">Already done</button>
+          <button data-go="locked">Needs coins</button>
+        </div>
+        <h2>Outdoors</h2>
+        <div class="opts">
+          <button id="sunBtn" aria-pressed="false">Bright sun</button>
+        </div>
+        <div class="deskonly">
+          <h2>Screen</h2>
+          <div class="opts" id="views">
+            <button data-view="port" aria-pressed="true">Phone upright</button>
+            <button data-view="land" aria-pressed="false">
+              Phone sideways
+            </button>
+          </div>
+          <h2>What to look at</h2>
+          <ul>
+            <li>
+              Walk away from an open question: the card folds and keeps your
+              tries.
+            </li>
+            <li>
+              A second try gives half the points, so leaving and coming back
+              buys nothing.
+            </li>
+            <li>
+              A typed answer never shows the solution: the tour file only holds
+              a salted hash.
+            </li>
+          </ul>
+        </div>
+      </aside>
+
+      <main class="device" id="dev" data-at="near" data-sun="off">
+        <canvas class="cam" id="cam" aria-hidden="true"></canvas>
+        <canvas class="cam" id="camFar" aria-hidden="true"></canvas>
+        <div class="top">
+          <button class="pillbtn" id="stopBtn" type="button">Stop</button>
+          <button
+            class="pillbtn"
+            id="demoBtn"
+            type="button"
+            aria-expanded="false"
+          >
+            Demo
+          </button>
+          <span class="sp"></span>
+          <span class="radar" aria-hidden="true"></span>
+        </div>
+        <div class="demos" id="demos"></div>
+        <div id="toast" class="toast" hidden></div>
+        <section class="sheet" id="sheet" aria-label="Story">
+          <button
+            class="grab"
+            id="grab"
+            type="button"
+            aria-label="Fold the card"
+          >
+            <i></i>
+          </button>
+          <div class="body" id="body" aria-live="polite"></div>
+        </section>
+        <div class="kbd" id="kbd" hidden aria-hidden="true">
+          <div>
+            <span></span><span></span><span></span><span></span><span></span
+            ><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div>
+            <span></span><span></span><span></span><span></span><span></span
+            ><span></span><span></span><span></span><span></span>
+          </div>
+          <div>
+            <span></span><span></span><span></span><span></span><span></span
+            ><span></span><span></span>
+          </div>
+          <div><span></span></div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      "use strict";
+      const $ = (s, r = document) => r.querySelector(s);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+
+      /* ---------- the sample tour ---------- */
+      const GUIDE = "Greta, the miller";
+      const STATION = "The Old Mill";
+      const NEXT = "The Weir";
+      const LINES = [
+        "This wheel turned for two hundred years and never once asked for a day off. Have a good look at it.",
+        null,
+        "Good. Now follow the stream down to the weir. That is where the water gets its orders.",
+      ];
+      const POINTS = 10;
+      const COINS = { have: 1, need: 2 };
+      const QUIZ = {
+        single: {
+          ask: "Count the spokes on the wheel. How many are there?",
+          options: [
+            ["a", "6"],
+            ["b", "8"],
+            ["c", "10"],
+            ["d", "12"],
+          ],
+          correct: ["b"],
+          says: {
+            right: "Eight. You have a miller's eye.",
+            retry: "Not quite. Count again, starting from the top spoke.",
+            wrong: "No, it has eight. Count them on your way past.",
+          },
+        },
+        multiple: {
+          ask: "Which of these can you see from where you stand? Pick all that fit.",
+          options: [
+            ["a", "A water wheel"],
+            ["b", "Carved stone"],
+            ["c", "A windmill sail"],
+            ["d", "A bell tower"],
+          ],
+          correct: ["a", "b"],
+          small: true,
+          says: {
+            right: "Both of them. Nothing gets past you.",
+            retry:
+              "Not quite. One of those is wrong or missing. Look around once more.",
+            wrong:
+              "The wheel and the carved stone. The rest belongs to another village.",
+          },
+        },
+        text: {
+          ask: "One word is carved in the stone above the door. What does it say?",
+          placeholder: "Type the word",
+          /* As in a tour file: a salt and the hashes of the accepted spellings,
+       after normalisation. The words themselves are not in the file. */
+          salt: "k3v9-mill",
+          sha256: [
+            "0d902576f13fa6fbaa83bf547bf4c6440f7f463cee157d302d097abe46d0ce42",
+            "3ad00670cb91270f19f2d1b59a594a31cd98ec756800ad7a7b199a9644a07fd8",
+            "ef2ee4fbb7cfe8aa445ef74af4653d4c7cb73ca7872b106391ee09c17f34b191",
+          ],
+          says: {
+            right: "That is the word. Carved in 1784 and still not worn away.",
+            retry:
+              "That is not what the stone says. Look again, letter by letter.",
+            wrong:
+              "That is not what the stone says. Have another look on your way out.",
+          },
+        },
+      };
+
+      /* The tour's normalisation: Unicode NFC, case and white space folded. */
+      const normalise = (s) =>
+        s.normalize("NFC").toLowerCase().trim().replace(/\s+/g, " ");
+
+      async function typedIsRight(q, typed) {
+        const n = normalise(typed);
+        if (!crypto.subtle)
+          return n === "mühle" || n === "muehle" || n === "muhle";
+        const bytes = new TextEncoder().encode(q.salt + n);
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        const hex = [...new Uint8Array(digest)]
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        return q.sha256.includes(hex);
+      }
+
+      /* ---------- the state ---------- */
+      const newTry = () => ({
+        tries: 0,
+        crossed: [],
+        picked: [],
+        typed: "",
+        result: null,
+        earned: 0,
+      });
+      const S = {
+        kind: "single",
+        retry: true,
+        step: 0,
+        score: 20,
+        q: newTry(),
+        history: {}, // what was answered, per kind: a done quiz stays done
+        mode: "live", // live | done | locked
+        folded: false,
+        at: "near",
+        endAsk: false,
+        ended: null, // null | 'done' | 'open' | 'weir'
+        pulse: false,
+        fresh: true,
+        typing: false,
+      };
+      const quiz = () => QUIZ[S.kind];
+      const lastStep = LINES.length - 1;
+
+      function phase() {
+        if (S.mode === "done") return "done";
+        if (S.mode === "locked") return "locked";
+        if (S.q.result === "right") return "right";
+        if (S.q.result === "wrong") return "wrong";
+        return S.q.tries > 0 ? "retry" : "open";
+      }
+
+      const moodOf = (p) =>
+        p === "right"
+          ? "happy"
+          : p === "retry" || p === "wrong"
+            ? "doubt"
+            : "calm";
+      const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 13l5 5 9-11"/></svg>';
+      const CROSS =
+        '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      const CHEV =
+        '<svg class="up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
+      const STAR =
+        '<svg viewBox="0 0 24 24"><path d="M12 2l3 6.7 7 .8-5.2 4.8 1.5 7.2L12 17.3 5.7 21l1.5-7.2L2 9.5l7-.8z"/></svg>';
+
+      const PORTRAIT = `<svg viewBox="0 0 64 64" aria-hidden="true">
+  <rect width="64" height="64" fill="#3a4a5a"/>
+  <path d="M8 64c2-14 12-19 24-19s22 5 24 19z" fill="#8c6a48"/>
+  <path d="M24 45c4 3 12 3 16 0l2 19H22z" fill="#efe7d8"/>
+  <rect x="27" y="35" width="10" height="12" rx="4" fill="#d9a67c"/>
+  <ellipse cx="32" cy="27" rx="13.5" ry="15" fill="#ecbf98"/>
+  <path d="M17 24c0-11 7-17 15-17s15 6 15 17c-3-5-9-7-15-7s-12 2-15 7z" fill="#f4efe6"/>
+  <path d="M18.5 25c-1.6 4 0 9 2.6 11-1-4-1.2-8-.6-11zM45.5 25c1.6 4 0 9-2.6 11 1-4 1.2-8 .6-11z" fill="#7b5a3c"/>
+  <circle cx="26.5" cy="28" r="1.8" fill="#26211c"/><circle cx="37.5" cy="28" r="1.8" fill="#26211c"/>
+  <g class="m m-calm" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 23.5q3.5-1.6 6.5 0M34.5 23.5q3.5-1.6 6.5 0"/><path d="M28 36.5q4 2 8 0"/></g>
+  <g class="m m-happy" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 22q3.5-2.6 6.5-.4M34.5 21.6q3-2.2 6.5.4"/><path d="M26.5 34.5q5.5 6.5 11 0z" fill="#fff"/></g>
+  <g class="m m-doubt" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 23q3.5-1.2 6.5 0M34.5 21.6q3-2.6 6.5-1.4"/><path d="M29 37.4l6.4-1"/></g>
+</svg>`;
+
+      /* ---------- rendering ---------- */
+      function renderAnswers(p) {
+        const q = quiz();
+        if (S.kind === "text") {
+          const locked =
+            p === "right" || p === "wrong" || p === "done" || p === "locked";
+          const cls =
+            p === "right" || (p === "done" && S.q.result === "right")
+              ? "right"
+              : p === "wrong" ||
+                  p === "retry" ||
+                  (p === "done" && S.q.result === "wrong")
+                ? "wrong"
+                : "";
+          return `<div class="typed"><input class="field ${cls}" id="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Your answer" placeholder="${esc(q.placeholder)}" value="${esc(S.q.typed)}" ${locked ? "readonly" : ""}>${locked ? "" : `<button class="check" id="check" type="button" ${S.q.typed.trim() ? "" : "disabled"}>Check</button>`}</div>`;
+        }
+        const shut =
+          p === "right" || p === "wrong" || p === "done" || p === "locked";
+        const multi = S.kind === "multiple";
+        const items = q.options
+          .map(([id, label]) => {
+            const picked = S.q.picked.includes(id);
+            const crossed = S.q.crossed.includes(id);
+            const isRight = q.correct.includes(id);
+            let cls = "";
+            let glyph = "";
+            if (p === "right" || (p === "done" && S.q.result === "right")) {
+              if (picked) {
+                cls = "right";
+                glyph = CHECK;
+              } else cls = "dim";
+            } else if (
+              p === "wrong" ||
+              (p === "done" && S.q.result === "wrong")
+            ) {
+              if (picked && !isRight) {
+                cls = "wrong";
+                glyph = CROSS;
+              } else if (isRight) {
+                cls = "was";
+                glyph = CHECK;
+              } else if (crossed) {
+                cls = "wrong";
+                glyph = CROSS;
+              } else cls = "dim";
+            } else if (crossed) {
+              cls = "wrong";
+              glyph = CROSS;
+            } else if (multi && picked) {
+              cls = "on";
+              glyph = CHECK;
+            }
+            const box =
+              multi && !shut && !picked ? '<span class="box"></span>' : "";
+            const off = shut || crossed ? "disabled" : "";
+            return `<button class="a ${cls}" type="button" data-a="${id}" ${off} ${multi ? `aria-pressed="${picked}"` : ""}>${box}<span class="g">${glyph}</span><span>${esc(label)}</span></button>`;
+          })
+          .join("");
+        return `<div class="answers ${q.small ? "small" : ""}">${items}</div>`;
+      }
+
+      function renderCard() {
+        const atQuiz = S.step === 1;
+        const p = atQuiz ? phase() : null;
+        const q = quiz();
+        const fresh = S.fresh ? "in" : "";
+        let eyebrow;
+        let eyeCls = "";
+        if (!atQuiz) eyebrow = "Station found - its story is playing.";
+        else if (p === "done") {
+          eyebrow =
+            S.q.result === "right"
+              ? `Question done - ${S.q.earned} points`
+              : "Question done - no points";
+          eyeCls = "done";
+        } else if (p === "locked") {
+          eyebrow = "Question closed for now";
+          eyeCls = "done";
+        } else if (p === "retry") {
+          eyebrow = `One more try - ${Math.floor(POINTS / 2)} points`;
+        } else eyebrow = `A question - ${POINTS} points`;
+
+        const total = atQuiz
+          ? `<span class="total ${S.pulse ? "pulse" : ""}">${STAR}${S.score}</span>`
+          : "";
+        let line;
+        if (!atQuiz)
+          line = `<p class="line ${fresh}">${esc(LINES[S.step])}</p>`;
+        else if (p === "open" || p === "done" || p === "locked") {
+          line = `<p class="line ask ${fresh}">${esc(q.ask)}</p>`;
+        } else {
+          const said =
+            p === "right"
+              ? q.says.right
+              : p === "retry"
+                ? q.says.retry
+                : q.says.wrong;
+          const pill =
+            p === "right"
+              ? `<span class="plus">+${S.q.earned}</span>`
+              : p === "wrong"
+                ? '<span class="plus none">No points</span>'
+                : "";
+          line = `<p class="echo">${esc(q.ask)}</p><p class="line ${fresh}">${esc(said)}${pill}</p>`;
+        }
+        let stamp = "";
+        if (p === "locked") {
+          stamp = `<p class="stamp">Needs ${COINS.need} coins. You have ${COINS.have}.</p>`;
+        }
+
+        const dots = LINES.map(
+          (_, i) =>
+            `<i class="${i < S.step ? "on" : i === S.step ? "now" : ""}"></i>`,
+        ).join("");
+
+        let acts;
+        if (S.endAsk) {
+          acts =
+            '<button class="btn" id="keep" type="button">Keep listening</button><button class="btn warn" id="endYes" type="button">End the story</button>';
+        } else {
+          const end =
+            '<button class="btn" id="end" type="button">End this story?</button>';
+          if (atQuiz && p === "open" && S.kind === "multiple") {
+            acts = `<button class="btn primary" id="checkMany" type="button" ${S.q.picked.length ? "" : "disabled"}>Check my answer</button><button class="btn" id="skip" type="button">Skip</button>`;
+          } else if (atQuiz && p === "retry" && S.kind === "multiple") {
+            acts =
+              '<button class="btn primary" id="checkMany" type="button">Check again</button><button class="btn" id="skip" type="button">Skip</button>';
+          } else if (atQuiz && (p === "open" || p === "retry")) {
+            acts = `<button class="btn" id="skip" type="button">Skip this question</button>${end}`;
+          } else {
+            acts = `<button class="btn primary" id="cont" type="button" ${atQuiz && p !== "done" && p !== "locked" ? 'disabled data-guard="1"' : ""}>${p === "locked" ? "Go on without it" : "Continue"}</button>${end}`;
+          }
+        }
+
+        const answers = atQuiz ? renderAnswers(p) : "";
+        const grey = p === "done" || p === "locked" ? "greyed" : "";
+        return `<div class="${grey}">
+    <div class="eyerow"><p class="eyebrow ${eyeCls}">${esc(eyebrow)}</p>${total}</div>
+    <div class="who">
+      <button class="portrait" type="button" aria-label="${esc(GUIDE)}" data-mood="${atQuiz ? moodOf(p) : "calm"}">${PORTRAIT}</button>
+      <p class="speaker">${esc(GUIDE)}</p>
+      ${line}
+    </div>
+    ${answers}${stamp}
+    <div class="dots" aria-hidden="true">${dots}</div>
+    <div class="acts">${acts}</div>
+  </div>`;
+      }
+
+      function renderFold() {
+        let head;
+        let sub;
+        if (S.at === "near") {
+          head = "Question waiting";
+          sub = "Have a good look. Tap when you are ready.";
+        } else {
+          head = "Question waiting";
+          sub = `At ${STATION}, 38 m behind you`;
+        }
+        const next =
+          S.at === "near"
+            ? ""
+            : S.at === "far"
+              ? `<p class="nextline">Next <b>${esc(NEXT)}</b><em>90 m</em></p>`
+              : `<p class="nextline"><b>${esc(NEXT)}</b> found</p><button class="btn primary playnext" id="playNext" type="button">Play ${esc(NEXT)}</button>`;
+        return `<button class="fold" id="unfold" type="button"><span class="mark" aria-hidden="true">?</span><span class="t"><b>${head}</b><small>${esc(sub)}</small></span>${CHEV}</button>${next}`;
+      }
+
+      function renderPeek() {
+        const weir = S.ended === "weir";
+        const seg = weir
+          ? ["found", "found", "found", "", ""]
+          : ["found", "found", "next", "", ""];
+        const open = S.ended === "open" || weir;
+        const tail = weir
+          ? `A question is still open at ${STATION}.`
+          : open
+            ? `One question is still open at ${STATION}.`
+            : `${STATION} is done.`;
+        return `<div class="seg" aria-hidden="true">${seg.map((c) => `<i class="${c}"></i>`).join("")}</div>
+    <p class="eyebrow ${weir ? "" : "done"}">${weir ? "Station found" : "Next station"}</p>
+    <p class="peektitle"><b>${esc(NEXT)}</b>${weir ? "" : "<em>120 m</em>"}</p>
+    <p class="tail">${esc(tail)} ${S.score} points so far.</p>`;
+      }
+
+      function renderDemos() {
+        const b = [];
+        if (S.ended) {
+          b.push(
+            '<button class="demotap" data-demo="replay" type="button">Demo: play this story again</button>',
+          );
+        } else if (S.step === 1 && S.mode === "live" && !S.q.result) {
+          if (S.at === "near")
+            b.push(
+              '<button class="demotap" data-demo="walk" type="button">Demo: walk away</button>',
+            );
+          if (S.at === "far") {
+            b.push(
+              '<button class="demotap" data-demo="back" type="button">Demo: come back</button>',
+            );
+            b.push(
+              '<button class="demotap" data-demo="reach" type="button">Demo: reach the next station</button>',
+            );
+          }
+          if (S.at === "next")
+            b.push(
+              '<button class="demotap" data-demo="back" type="button">Demo: come back</button>',
+            );
+        }
+        $("#demos").innerHTML = b.join("");
+      }
+
+      function render() {
+        const dev = $("#dev");
+        dev.dataset.at = S.at;
+        const body = $("#body");
+        const showGrab =
+          !S.ended && S.step === 1 && S.mode === "live" && !S.q.result;
+        $("#grab").style.visibility = showGrab ? "" : "hidden";
+        $("#grab").setAttribute(
+          "aria-label",
+          S.folded ? "Open the card" : "Fold the card",
+        );
+        body.innerHTML = S.ended
+          ? renderPeek()
+          : S.folded
+            ? renderFold()
+            : renderCard();
+        body.scrollTop = 0;
+        renderDemos();
+        document
+          .querySelectorAll("[data-kind]")
+          .forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.kind === S.kind)),
+          );
+        document
+          .querySelectorAll("[data-retry]")
+          .forEach((b) =>
+            b.setAttribute(
+              "aria-pressed",
+              String((b.dataset.retry === "1") === S.retry),
+            ),
+          );
+        S.fresh = false;
+        S.pulse = false;
+        const guarded = $("#cont[data-guard]");
+        /* The thumb is still on the answer: Continue wakes a moment later, so a
+     double tap cannot jump over the reaction. */
+        if (guarded)
+          setTimeout(() => {
+            guarded.disabled = false;
+          }, 450);
+      }
+
+      let toastTimer = 0;
+      function toast(text) {
+        const t = $("#toast");
+        t.textContent = text;
+        t.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          t.hidden = true;
+        }, 2600);
+      }
+
+      /* ---------- moves ---------- */
+      function goto(step) {
+        S.step = step;
+        S.endAsk = false;
+        S.fresh = true;
+        render();
+      }
+      function restart(step) {
+        Object.assign(S, {
+          step,
+          folded: false,
+          at: "near",
+          endAsk: false,
+          ended: null,
+          fresh: true,
+          mode: "live",
+          q: newTry(),
+        });
+        const had = S.history[S.kind];
+        if (had) {
+          S.q = { ...had };
+          S.mode = "done";
+        }
+        closeKeyboard();
+        render();
+      }
+      function settle() {
+        S.history[S.kind] = { ...S.q };
+      }
+
+      function answered(right) {
+        S.fresh = true;
+        if (right) {
+          S.q.result = "right";
+          S.q.earned = S.q.tries === 0 ? POINTS : Math.floor(POINTS / 2);
+          S.score += S.q.earned;
+          S.pulse = true;
+          settle();
+        } else {
+          S.q.tries += 1;
+          if (!S.retry || S.q.tries >= 2) {
+            S.q.result = "wrong";
+            S.q.earned = 0;
+            settle();
+          }
+        }
+        render();
+      }
+
+      function judgeSingle(id) {
+        const right = quiz().correct.includes(id);
+        S.q.picked = [id];
+        if (!right) {
+          S.q.crossed.push(id);
+          if (S.retry && S.q.tries === 0) S.q.picked = [];
+        }
+        answered(right);
+      }
+      function judgeMany() {
+        const c = quiz().correct;
+        const p = S.q.picked;
+        answered(p.length === c.length && c.every((id) => p.includes(id)));
+      }
+      async function judgeTyped() {
+        const typed = S.q.typed;
+        if (!typed.trim()) return;
+        const right = await typedIsRight(quiz(), typed);
+        closeKeyboard();
+        answered(right);
+      }
+      function endStory(state) {
+        S.ended = state;
+        S.step = lastStep;
+        S.endAsk = false;
+        S.folded = false;
+        if (state !== "weir") S.at = "near";
+        render();
+      }
+      function next() {
+        if (S.step < lastStep) {
+          goto(S.step + 1);
+          return;
+        }
+        const answeredKind = S.history[S.kind];
+        endStory(answeredKind || S.mode === "locked" ? "done" : "open");
+      }
+
+      /* ---------- the keyboard ---------- */
+      const hasRealKeyboard = () => matchMedia("(pointer:coarse)").matches;
+      function setKeyboard(px) {
+        const dev = $("#dev");
+        dev.style.setProperty("--kbd", `${px}px`);
+        dev.classList.toggle("typing", px > 0);
+      }
+      function openKeyboard() {
+        if (hasRealKeyboard()) return;
+        const h = $("#dev").clientHeight;
+        const land = $("#dev").clientWidth > h;
+        $("#kbd").hidden = false;
+        setKeyboard(Math.round(land ? h * 0.52 : Math.min(h * 0.34, 290)));
+      }
+      function closeKeyboard() {
+        $("#kbd").hidden = true;
+        setKeyboard(0);
+      }
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => {
+          if (!hasRealKeyboard()) return;
+          const v = window.visualViewport;
+          const px = Math.round(window.innerHeight - v.height - v.offsetTop);
+          setKeyboard(v.scale <= 1.01 && px >= 80 ? px : 0);
+        });
+      }
+
+      /* ---------- events ---------- */
+      $("#body").addEventListener("click", (e) => {
+        const a = e.target.closest("[data-a]");
+        if (a && !a.disabled) {
+          const id = a.dataset.a;
+          if (S.kind === "multiple") {
+            const p = S.q.picked;
+            const i = p.indexOf(id);
+            if (i >= 0) p.splice(i, 1);
+            else p.push(id);
+            render();
+          } else judgeSingle(id);
+          return;
+        }
+        const b = e.target.closest("button");
+        if (!b) return;
+        switch (b.id) {
+          case "check":
+            judgeTyped();
+            break;
+          case "checkMany":
+            judgeMany();
+            break;
+          case "cont":
+            next();
+            break;
+          case "skip":
+            toast("Skipped. It stays open for later.");
+            goto(S.step + 1);
+            break;
+          case "end":
+            S.endAsk = true;
+            render();
+            break;
+          case "keep":
+            S.endAsk = false;
+            render();
+            break;
+          case "endYes":
+            endStory(S.history[S.kind] ? "done" : "open");
+            break;
+          case "unfold":
+            S.folded = false;
+            S.fresh = true;
+            render();
+            break;
+          case "playNext":
+            toast("The question stays open at the mill.");
+            endStory("weir");
+            break;
+          default:
+            break;
+        }
+      });
+      $("#body").addEventListener("input", (e) => {
+        if (e.target.id !== "field") return;
+        S.q.typed = e.target.value;
+        e.target.classList.remove("wrong");
+        const c = $("#check");
+        if (c) c.disabled = !S.q.typed.trim();
+      });
+      $("#body").addEventListener("keydown", (e) => {
+        if (e.target.id === "field" && e.key === "Enter") {
+          e.preventDefault();
+          judgeTyped();
+        }
+      });
+      $("#body").addEventListener("focusin", (e) => {
+        if (e.target.id !== "field" || e.target.readOnly) return;
+        e.target.select();
+        openKeyboard();
+      });
+      $("#body").addEventListener("focusout", (e) => {
+        if (e.target.id !== "field") return;
+        /* Leave the keyboard up while the tap goes to Check. */
+        setTimeout(() => {
+          if (document.activeElement?.id !== "field") closeKeyboard();
+        }, 120);
+      });
+
+      $("#grab").addEventListener("click", () => {
+        closeKeyboard();
+        S.folded = !S.folded;
+        S.fresh = !S.folded;
+        render();
+      });
+      $("#demos").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-demo]");
+        if (!b) return;
+        const d = b.dataset.demo;
+        closeKeyboard();
+        if (d === "walk") {
+          S.at = "far";
+          S.folded = true;
+          toast("Your question waits. Walk on.");
+        }
+        if (d === "back") {
+          S.at = "near";
+          S.folded = false;
+          S.fresh = true;
+          toast(
+            S.q.tries > 0
+              ? "Back at the wheel. Your last try is still here."
+              : "Back at the wheel. Your question is still here.",
+          );
+        }
+        if (d === "reach") {
+          S.at = "next";
+        }
+        if (d === "replay") {
+          restart(0);
+          return;
+        }
+        render();
+      });
+      $("#panel").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.kind) {
+          S.kind = b.dataset.kind;
+          delete S.history[S.kind];
+          restart(1);
+        }
+        if (b.dataset.retry) {
+          S.retry = b.dataset.retry === "1";
+          delete S.history[S.kind];
+          restart(1);
+        }
+        if (b.dataset.go === "start") {
+          delete S.history[S.kind];
+          restart(0);
+        }
+        if (b.dataset.go === "quiz") {
+          delete S.history[S.kind];
+          restart(1);
+        }
+        if (b.dataset.go === "done") {
+          if (!S.history[S.kind]) {
+            const q = quiz();
+            S.history[S.kind] = {
+              ...newTry(),
+              result: "right",
+              earned: POINTS,
+              picked: q.correct ? [...q.correct] : [],
+              typed: S.kind === "text" ? "MÜHLE" : "",
+            };
+          }
+          restart(1);
+        }
+        if (b.dataset.go === "locked") {
+          delete S.history[S.kind];
+          restart(1);
+          S.mode = "locked";
+          render();
+        }
+        if (b.id === "sunBtn") {
+          const on = $("#dev").dataset.sun !== "on";
+          $("#dev").dataset.sun = on ? "on" : "off";
+          b.setAttribute("aria-pressed", String(on));
+        }
+        if (b.dataset.view) {
+          $("#stage").dataset.view = b.dataset.view;
+          document.querySelectorAll("[data-view]").forEach((x) => {
+            if (x.tagName === "BUTTON")
+              x.setAttribute("aria-pressed", String(x === b));
+          });
+        }
+        if (!b.dataset.view && !b.id && $("#panel").classList.contains("open"))
+          togglePanel(false);
+      });
+      function togglePanel(open) {
+        $("#panel").classList.toggle("open", open);
+        $("#demoBtn").setAttribute("aria-expanded", String(open));
+      }
+      $("#demoBtn").addEventListener("click", () =>
+        togglePanel(!$("#panel").classList.contains("open")),
+      );
+      $("#stopBtn").addEventListener("click", () =>
+        toast("Stop leaves the AR view. Not part of this sample."),
+      );
+
+      /* ---------- the camera: a drawn stand-in for a photograph ---------- */
+      function rng(seed) {
+        let s = seed;
+        return () => {
+          s = (s * 1664525 + 1013904223) >>> 0;
+          return s / 4294967296;
+        };
+      }
+
+      function drawMill(g, R) {
+        // shadowy pit behind the wheel, so the spokes read
+        g.fillStyle = "#26221d";
+        g.fillRect(205, 66, 180, 214);
+        // the wall
+        g.fillStyle = "#8d8373";
+        g.fillRect(14, 72, 226, 214);
+        for (let y = 72; y < 286; y += 15) {
+          let x = 14 - R() * 16;
+          while (x < 240) {
+            const w = 20 + R() * 22;
+            const t = (112 + R() * 58) | 0;
+            g.fillStyle = `rgb(${t + 12} ${t + 3} ${t - 14})`;
+            const l = Math.max(14, x);
+            const r = Math.min(240, x + w - 2);
+            if (r > l) g.fillRect(l, y + 1, r - l, 13);
+            x += w;
+          }
+        }
+        // roof
+        g.fillStyle = "#5a342a";
+        g.beginPath();
+        g.moveTo(-6, 78);
+        g.lineTo(62, 8);
+        g.lineTo(262, 8);
+        g.lineTo(262, 78);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = "rgb(30 16 12 / 55%)";
+        g.lineWidth = 1.5;
+        for (let y = 16; y < 78; y += 9) {
+          g.beginPath();
+          g.moveTo(74 - 0.97 * y, y);
+          g.lineTo(262, y);
+          g.stroke();
+        }
+        // window
+        g.fillStyle = "#d8d0c0";
+        g.fillRect(166, 104, 48, 56);
+        g.fillStyle = "#20282e";
+        g.fillRect(170, 108, 40, 48);
+        g.strokeStyle = "#d8d0c0";
+        g.lineWidth = 3;
+        g.beginPath();
+        g.moveTo(190, 108);
+        g.lineTo(190, 156);
+        g.moveTo(170, 132);
+        g.lineTo(210, 132);
+        g.stroke();
+        // door and the carved lintel
+        g.fillStyle = "#3c2a1e";
+        g.fillRect(66, 176, 66, 104);
+        g.strokeStyle = "rgb(0 0 0 / 40%)";
+        g.lineWidth = 2;
+        for (let x = 77; x < 132; x += 11) {
+          g.beginPath();
+          g.moveTo(x, 176);
+          g.lineTo(x, 280);
+          g.stroke();
+        }
+        g.fillStyle = "#c8bfa9";
+        g.fillRect(50, 148, 98, 28);
+        g.strokeStyle = "rgb(70 60 44 / 50%)";
+        g.lineWidth = 1;
+        g.strokeRect(50, 148, 98, 28);
+        g.font = "bold 18px Georgia, serif";
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillStyle = "rgb(255 255 255 / 55%)";
+        g.fillText("MÜHLE", 99.5, 163.5);
+        g.fillStyle = "#332a1d";
+        g.fillText("MÜHLE", 99, 162.5);
+        // the wheel: eight spokes
+        const cx = 298;
+        const cy = 176;
+        const r = 100;
+        g.lineCap = "butt";
+        for (let i = 0; i < 8; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 4;
+          g.strokeStyle = "#a98a60";
+          g.lineWidth = 10;
+          g.beginPath();
+          g.moveTo(cx + Math.cos(a) * 12, cy + Math.sin(a) * 12);
+          g.lineTo(cx + Math.cos(a) * r * 0.9, cy + Math.sin(a) * r * 0.9);
+          g.stroke();
+          g.strokeStyle = "rgb(255 236 200 / 28%)";
+          g.lineWidth = 2;
+          g.beginPath();
+          g.moveTo(cx + Math.cos(a - 0.03) * 14, cy + Math.sin(a - 0.03) * 14);
+          g.lineTo(
+            cx + Math.cos(a - 0.015) * r * 0.9,
+            cy + Math.sin(a - 0.015) * r * 0.9,
+          );
+          g.stroke();
+        }
+        g.strokeStyle = "#7d6240";
+        g.lineWidth = 13;
+        g.beginPath();
+        g.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+        g.stroke();
+        g.strokeStyle = "#5f4a30";
+        g.lineWidth = 4;
+        g.beginPath();
+        g.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
+        g.stroke();
+        for (let i = 0; i < 28; i++) {
+          const a = (i * Math.PI) / 14;
+          g.save();
+          g.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+          g.rotate(a);
+          g.fillStyle = "#54402a";
+          g.fillRect(-9, -4, 20, 8);
+          g.restore();
+        }
+        g.fillStyle = "#3b2e20";
+        g.beginPath();
+        g.arc(cx, cy, 15, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = "#6c6a66";
+        g.beginPath();
+        g.arc(cx, cy, 6, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      let grain = null;
+      function grainTile() {
+        if (grain) return grain;
+        const c = document.createElement("canvas");
+        c.width = c.height = 160;
+        const x = c.getContext("2d");
+        const d = x.createImageData(160, 160);
+        const R = rng(9);
+        for (let i = 0; i < d.data.length; i += 4) {
+          const v = 90 + R() * 80;
+          d.data[i] = d.data[i + 1] = d.data[i + 2] = v;
+          d.data[i + 3] = 255;
+        }
+        x.putImageData(d, 0, 0);
+        grain = c;
+        return c;
+      }
+
+      function paint(cv, far) {
+        const box = $("#dev").getBoundingClientRect();
+        const W = box.width;
+        const H = box.height;
+        if (!W || !H) return;
+        /* Below the screen's own density on purpose: the softness reads as a
+           camera, and the paint stays cheap on a phone. */
+        const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+        cv.width = Math.round(W * 1.04 * dpr);
+        cv.height = Math.round(H * 1.04 * dpr);
+        const g = cv.getContext("2d");
+        g.setTransform(
+          dpr * 1.0,
+          0,
+          0,
+          dpr * 1.0,
+          W * 0.02 * dpr,
+          H * 0.02 * dpr,
+        );
+        const R = rng(far ? 77 : 41);
+        const land = W > H;
+        let s;
+        let ox;
+        let oy;
+        if (land) {
+          s = Math.min(H / 330, (W * 0.54) / 400);
+          ox = W - 400 * s - 6;
+          oy = (H - 300 * s) * 0.45;
+        } else {
+          s = W / 400;
+          ox = 0;
+          oy = H * 0.065;
+        }
+        if (far) {
+          s *= 0.34;
+          ox = land ? W * 0.66 : W * 0.46;
+          oy = land ? H * 0.38 : H * 0.26;
+        }
+        const hy = oy + 272 * s;
+
+        // sky
+        const sky = g.createLinearGradient(0, 0, 0, hy);
+        sky.addColorStop(0, "#5f93bd");
+        sky.addColorStop(0.7, "#a9c8da");
+        sky.addColorStop(1, "#dbe4dc");
+        g.fillStyle = sky;
+        g.fillRect(-20, -20, W + 40, H + 40);
+        for (let i = 0; i < 16; i++) {
+          const cx = R() * W;
+          const cy = R() * hy * 0.6;
+          const rx = 60 + R() * 100;
+          const a = 0.25 + R() * 0.4;
+          const puff = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+          puff.addColorStop(0, `rgb(255 255 255 / ${a})`);
+          puff.addColorStop(1, "rgb(255 255 255 / 0%)");
+          g.save();
+          g.translate(cx, cy);
+          g.scale(rx, 18 + R() * 24);
+          g.fillStyle = puff;
+          g.beginPath();
+          g.arc(0, 0, 1, 0, Math.PI * 2);
+          g.fill();
+          g.restore();
+        }
+        // the far tree line
+        for (let i = 0; i < 240; i++) {
+          const x = R() * (W + 40) - 20;
+          const r = (10 + R() * 26) * (far ? 1 : 1.5);
+          const t = (50 + R() * 50) | 0;
+          g.fillStyle = `rgb(${t} ${t + 34} ${t - 16})`;
+          g.beginPath();
+          g.arc(x, hy - r * (0.4 + R() * 1.7), r, 0, Math.PI * 2);
+          g.fill();
+        }
+        // the ground
+        const ground = g.createLinearGradient(0, hy, 0, H);
+        ground.addColorStop(0, "#6f8a45");
+        ground.addColorStop(0.5, "#58723a");
+        ground.addColorStop(1, "#3e5230");
+        g.fillStyle = ground;
+        g.fillRect(-20, hy - 2, W + 40, H - hy + 24);
+        for (let i = 0; i < 2600; i++) {
+          const y = hy + Math.pow(R(), 1.6) * (H - hy + 10);
+          const x = R() * (W + 40) - 20;
+          const t = (60 + R() * 70) | 0;
+          const d = (y - hy) / (H - hy + 1);
+          g.strokeStyle = `rgb(${t} ${t + 30} ${t - 26} / 55%)`;
+          g.lineWidth = 0.7 + d * 1.4;
+          g.beginPath();
+          g.moveTo(x, y);
+          g.lineTo(x + (R() - 0.5) * 5, y - 4 - d * 11);
+          g.stroke();
+        }
+        // the path, seen from further away
+        if (far) {
+          g.fillStyle = "#b3a487";
+          g.beginPath();
+          g.moveTo(W * 0.32, H + 20);
+          g.quadraticCurveTo(
+            W * 0.44,
+            hy + (H - hy) * 0.4,
+            ox + 90 * s,
+            hy + 2,
+          );
+          g.lineTo(ox + 130 * s, hy + 2);
+          g.quadraticCurveTo(W * 0.66, hy + (H - hy) * 0.4, W * 0.92, H + 20);
+          g.closePath();
+          g.fill();
+        }
+        // the mill
+        g.save();
+        g.translate(ox, oy);
+        g.scale(s, s);
+        drawMill(g, R);
+        const eaves = g.createLinearGradient(0, 72, 0, 130);
+        eaves.addColorStop(0, "rgb(20 14 10 / 62%)");
+        eaves.addColorStop(1, "rgb(20 14 10 / 0%)");
+        g.fillStyle = eaves;
+        g.fillRect(14, 72, 226, 58);
+        const damp = g.createLinearGradient(0, 226, 0, 286);
+        damp.addColorStop(0, "rgb(52 66 34 / 0%)");
+        damp.addColorStop(1, "rgb(52 66 34 / 70%)");
+        g.fillStyle = damp;
+        g.fillRect(14, 226, 226, 60);
+        for (let i = 0; i < 60; i++) {
+          const t = (44 + R() * 44) | 0;
+          g.fillStyle = `rgb(${t} ${t + 36} ${t - 12})`;
+          g.beginPath();
+          g.arc(8 + R() * 56, 276 + R() * 16, 5 + R() * 9, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.restore();
+        // the stream
+        const sy = oy + 262 * s;
+        const sh = 42 * s;
+        const water = g.createLinearGradient(0, sy, 0, sy + sh);
+        water.addColorStop(0, "#4b6f78");
+        water.addColorStop(1, "#2f4a50");
+        g.fillStyle = water;
+        g.beginPath();
+        g.moveTo(ox + 190 * s, sy);
+        g.lineTo(W + 30, sy - 4 * s);
+        g.lineTo(W + 30, sy + sh + 8 * s);
+        g.lineTo(ox + 160 * s, sy + sh);
+        g.closePath();
+        g.fill();
+        for (let i = 0; i < 70; i++) {
+          g.fillStyle = `rgb(235 245 250 / ${0.1 + R() * 0.4})`;
+          g.fillRect(
+            ox + (170 + R() * 240) * s,
+            sy + R() * sh,
+            (6 + R() * 22) * s,
+            1.3,
+          );
+        }
+        // the photographic finish: warm light, grain, a lens fall-off
+        g.globalCompositeOperation = "soft-light";
+        const light = g.createLinearGradient(0, 0, W, H);
+        light.addColorStop(0, "rgb(255 226 170 / 55%)");
+        light.addColorStop(1, "rgb(30 40 60 / 40%)");
+        g.fillStyle = light;
+        g.fillRect(-20, -20, W + 40, H + 40);
+        g.globalCompositeOperation = "overlay";
+        g.globalAlpha = 0.28;
+        g.fillStyle = g.createPattern(grainTile(), "repeat");
+        g.fillRect(-20, -20, W + 40, H + 40);
+        g.globalAlpha = 1;
+        g.globalCompositeOperation = "source-over";
+        const v = g.createRadialGradient(
+          W / 2,
+          H * 0.42,
+          Math.min(W, H) * 0.4,
+          W / 2,
+          H * 0.5,
+          Math.max(W, H) * 0.78,
+        );
+        v.addColorStop(0, "rgb(0 0 0 / 0%)");
+        v.addColorStop(1, "rgb(0 0 0 / 40%)");
+        g.fillStyle = v;
+        g.fillRect(-20, -20, W + 40, H + 40);
+      }
+
+      function paintAll() {
+        paint($("#cam"), false);
+        paint($("#camFar"), true);
+      }
+      new ResizeObserver(paintAll).observe($("#dev"));
+
+      /* ---------- start ---------- */
+      render();
+    </script>
+  </body>
+</html>

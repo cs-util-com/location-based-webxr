@@ -2473,6 +2473,10 @@ function copiedObject(
   };
   const rules = TOUR_BLOCK_TEXT_RULES;
   switch (base.kind) {
+    case "video":
+    case "audio":
+    case "character":
+      return base;
     case "shortText":
       return {
         ...base,

@@ -31,9 +31,8 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-timing";
 import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import {
-  TOUR_BLOCK_VIEWS,
   TOUR_NARRATION_MAX_DURATION_MS,
-  TOUR_WORLD_VIEWS,
+  TOUR_FREE_BLOCK_VIEWS,
   TOUR_MODEL_MAX_SIZE_M,
   TOUR_MODEL_MIN_SIZE_M,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -105,7 +104,7 @@ import {
   blockFields,
   storyBlockFields,
 } from "./block-fields.js";
-import { kindNoun, objectTitle } from "../object-describe.js";
+import { kindNoun, objectOwnText, objectTitle } from "../object-describe.js";
 import { applyModelEdit, type ModelEdit } from "./model-edits.js";
 import { buildEditorModel, type EditorModel } from "./editor-model.js";
 import { STATION_LOCKED } from "./editor-view.js";
@@ -128,13 +127,10 @@ const PICTURE_GONE =
 /** An object as the undo's words name it: its text, shortened, or what
  *  it is. */
 function objectName(object: TourObject): string {
-  const label = (
-    (object.kind === "model" || object.kind === "longText"
-      ? object.title
-      : object.caption) ?? ""
-  ).trim();
-  // TourObject kinds (pin, long text, photo, 3D model) all take "a".
-  if (label === "") return `a ${kindNoun(object.kind)}`;
+  const label = (objectOwnText(object) ?? "").trim();
+  if (label === "") {
+    return `${object.kind === "audio" ? "an" : "a"} ${kindNoun(object.kind)}`;
+  }
   return `"${truncated(label, 40)}"`;
 }
 
@@ -464,9 +460,9 @@ export interface EditorSession {
     field: string,
     value: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Set a free block's view, one its kind has (`TOUR_BLOCK_VIEWS`) that
-   *  stands in the world (`TOUR_WORLD_VIEWS`: no step shows a free block,
-   *  so the format refuses it a card): one step. Refused in words,
+  /** Set a free block's view, one its kind may stand free in
+   *  (`TOUR_FREE_BLOCK_VIEWS`: no step shows a free block, so the format
+   *  refuses a text or a picture a card): one step. Refused in words,
    *  changing nothing, for an id the tour does not carry, a model (its view
    *  is `editModel`'s) and any other view. */
   editBlockView(
@@ -1145,8 +1141,8 @@ export function createEditorSession(input: {
       if (object.kind === "model") {
         return { kind: "refused", reason: MODEL_VIEW_ELSEWHERE };
       }
-      const views: readonly string[] = TOUR_BLOCK_VIEWS[object.kind];
-      if (!views.includes(view) || !TOUR_WORLD_VIEWS.has(view)) {
+      const views: readonly string[] = TOUR_FREE_BLOCK_VIEWS[object.kind];
+      if (!views.includes(view)) {
         return { kind: "refused", reason: NOT_ITS_VIEW };
       }
       if (object.view === view) return { kind: "unchanged" };
