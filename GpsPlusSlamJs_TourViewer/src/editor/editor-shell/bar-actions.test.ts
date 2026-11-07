@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { ALIGNED_DEG, barActions, positionText } from "./bar-actions.js";
 import type { InspectorModel } from "./inspector-model.js";
 
-const station: InspectorModel = {
+const station: Extract<InspectorModel, { kind: "station" }> = {
   kind: "station",
   title: "Gate",
   name: "Gate",
@@ -28,7 +28,6 @@ const station: InspectorModel = {
   groundOffM: null,
   position: { eastM: 12.345, northM: -4.1, altM: 340.256, headingDeg: 90.4 },
   locked: true,
-  story: [],
   contents: [],
 };
 
@@ -55,6 +54,30 @@ const code: InspectorModel = {
   printSizeM: 0.2,
   position: { eastM: 0, northM: 0, altM: 339, headingDeg: null },
 };
+
+describe("barActions for what stands nowhere", () => {
+  // Why: a story and its entries have no place in the world to copy, and
+  // the bar's Duplicate would copy a world item: a button that did nothing
+  // would read as broken.
+  it("offers nothing for a story, an entry or a free block", () => {
+    const base = { id: "x", stationId: "s", title: "T", sub: "" };
+    expect(
+      barActions({ ...base, kind: "story", storyId: "x", entries: [] }),
+    ).toEqual([]);
+    expect(
+      barActions({
+        ...base,
+        kind: "storyStep",
+        stepKind: "choice",
+        heading: "Answers",
+        lines: [],
+      }),
+    ).toEqual([]);
+    expect(
+      barActions({ ...base, kind: "freeBlock", itemKind: "video", fields: [] }),
+    ).toEqual([]);
+  });
+});
 
 describe("barActions", () => {
   it("gives a station Duplicate and Copy position, an item Align to station too", () => {

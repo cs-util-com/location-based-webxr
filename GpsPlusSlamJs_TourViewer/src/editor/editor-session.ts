@@ -9,8 +9,13 @@
  */
 
 import {
+  isTourStoryBlock,
+  tourChildPlace,
   tourStationChildIds,
   tourStationStoryBlocks,
+  tourStories,
+  type TourStory,
+  type TourStoryChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -78,6 +83,7 @@ import {
   tourDocumentReducer,
   unsavedEntries,
   type StationEdit,
+  type StationStoryAdvanceEdit,
   type TourDocumentState,
 } from "../tour-document.js";
 import { newObjectId } from "../content-placement.js";
@@ -111,6 +117,8 @@ import { STATION_LOCKED } from "./editor-view.js";
 import { checkNoGps, type NoGpsCheck } from "./no-gps-check.js";
 import { readZipBlobEntry, zipBlobEntryNames } from "../zip-blob.js";
 import { truncated } from "../truncated.js";
+import { newStory, withoutStoryChild } from "../tour-story-edit.js";
+import { newStoryEntry, type NewEntryKind } from "./new-pin.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -264,7 +272,13 @@ interface EditorRestore {
 /** Said for a station's edit the format refuses, by the field. */
 const STATION_REFUSALS: Readonly<
   Record<
-    "title" | "radius" | "description" | "image" | "character" | "storyText",
+    | "title"
+    | "radius"
+    | "description"
+    | "image"
+    | "character"
+    | "storyText"
+    | "storyAdvance",
     string
   >
 > = {
@@ -277,7 +291,22 @@ const STATION_REFUSALS: Readonly<
     "A character of the station's story takes one of a character's views, moves on by a tap or when his line ends, and faces a heading in degrees.",
   storyText:
     "That text of a block of the station's story is not one the tour can carry.",
+  storyAdvance:
+    "A block of a story moves on by a tap, or by itself after a number of seconds above 0.",
 };
+
+/** Said for a story's title the format refuses. */
+const STORY_TITLE = "A story needs a name of at most 80 characters.";
+
+/** Said for a story or a story's child that is gone. */
+const NO_SUCH_STORY = "That is no longer in this tour.";
+
+/** What the document calls a story's child: a block by its text, a choice
+ *  by its prompt, a quiz by its question. */
+function storyChildName(child: TourStoryChild): string {
+  if (isTourStoryBlock(child)) return objectTitle(child);
+  return child.kind === "choice" ? child.prompt : child.question;
+}
 
 /** Said for a delete of the tour's last station. */
 const LAST_STATION =
@@ -495,6 +524,36 @@ export interface EditorSession {
   /** Delete a station with its items: one step.
    *  Refused for the tour's last station. */
   deleteStation(stationId: string): { kind: "deleted" } | EditorRefusal;
+  /** A new empty story "Story n", n one more than the station's stories,
+   *  after its stories: one step. */
+  addStory(stationId: string): { kind: "added"; id: string } | EditorRefusal;
+  /** A story's title: one step; refused for one the format cannot carry,
+   *  `unchanged` for the same one. */
+  renameStory(
+    storyId: string,
+    title: string,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Delete a story with its children: one step; `children` says how many
+   *  went. */
+  deleteStory(
+    storyId: string,
+  ): { kind: "deleted"; children: number } | EditorRefusal;
+  /** A new entry at the end of a story: one step. */
+  addToStory(
+    storyId: string,
+    kind: NewEntryKind,
+  ): { kind: "added"; id: string } | EditorRefusal;
+  /** Delete a story's child: one step; `answers` says how many answers
+   *  that led to it now go on to the next child. */
+  deleteStoryChild(
+    id: string,
+  ): { kind: "deleted"; answers: number } | EditorRefusal;
+  /** How a story's block moves on: on a tap, or by itself after `afterS`
+   *  seconds. One step. */
+  setStoryAdvance(
+    id: string,
+    advance: StationStoryAdvanceEdit["advance"],
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */
   reorderStations(
     order: readonly string[],
@@ -915,6 +974,16 @@ export function createEditorSession(input: {
     return applied ? { kind: "edited" } : { kind: "unchanged" };
   }
 
+  /** The story `id` of the tour as it stands. */
+  function storyNow(
+    state: TourDocumentState,
+    id: string,
+  ): TourStory | undefined {
+    return manifestNow(state)
+      ?.stations.flatMap((s) => tourStories(s))
+      .find((s) => s.id === id);
+  }
+
   /** `edit` dispatched, and whether the document took it (a reducer that
    *  refuses returns the state it had). */
   function took(edit: () => void): boolean {
@@ -1249,6 +1318,139 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "deleted" }
+        : notApplied;
+    },
+    addStory(stationId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const station = manifestNow(state)?.stations.find(
+        (s) => s.id === stationId,
+      );
+      if (station === undefined) return noSuchStation;
+      const id = newObjectId();
+      const title = `Story ${String(tourStories(station).length + 1)}`;
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyAdded({
+            stationId,
+            id,
+            title,
+            what: `the new story "${title}"`,
+          }),
+        ),
+      )
+        ? { kind: "added", id }
+        : notApplied;
+    },
+    renameStory(storyId, title) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const made = newStory(storyId, title);
+      if (made === null) return { kind: "refused", reason: STORY_TITLE };
+      if (made.title === story.title) return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyRenamed({
+            story: storyId,
+            title,
+            what: `the name of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? { kind: "edited" }
+        : notApplied;
+    },
+    deleteStory(storyId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyDeleted({
+            story: storyId,
+            what: `the delete of the story "${story.title}"`,
+          }),
+        ),
+      )
+        ? { kind: "deleted", children: story.children.length }
+        : notApplied;
+    },
+    addToStory(storyId, kind) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const story = storyNow(state, storyId);
+      if (story === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      const child = newStoryEntry(story, kind, newObjectId());
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyChildAdded({
+            story: storyId,
+            child,
+            what: `the new entry "${storyChildName(child)}"`,
+          }),
+        ),
+      )
+        ? { kind: "added", id: child.id }
+        : notApplied;
+    },
+    deleteStoryChild(id) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      const child =
+        place?.story === undefined
+          ? undefined
+          : place.story.children[place.index];
+      const out =
+        place === null || child === undefined
+          ? null
+          : withoutStoryChild(place.station, id);
+      if (out === null || child === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storyChildDeleted({
+            child: id,
+            what: `the delete of "${storyChildName(child)}"`,
+          }),
+        ),
+      )
+        ? { kind: "deleted", answers: out.answers }
+        : notApplied;
+    },
+    setStoryAdvance(id, advance) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      if (place === null) return { kind: "refused", reason: NO_SUCH_STORY };
+      const edit: StationEdit = { storyAdvance: { block: id, advance } };
+      const change = stationEditChange(state, place.station.id, edit);
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind !== "edited") return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId: place.station.id,
+            edit,
+            what: "how an entry moves on",
+          }),
+        ),
+      )
+        ? { kind: "edited" }
         : notApplied;
     },
     reorderStations(order) {

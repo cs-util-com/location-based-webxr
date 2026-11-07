@@ -836,6 +836,14 @@ The shell's and the 3D view's `model` edits go through
 The dev hook adds `view3dModelParts()` and
 `view3dModelScreen(id, at)` for `editor3d-model.spec.js`.
 
+### Stories in the tree
+
+The tree's add makes a story (`addStoryTo`) or an entry (`addToStoryEntry`),
+selects it, says it in a toast, one step each. Deleting a story asks first
+(`confirmPausingFrames`, naming what goes with it); an entry goes without a
+question, the toast's Undo taking it back and saying how many answers no
+longer lead to it. Every delete shares `deleted`, the toast and its Undo.
+
 ## Tests
 
 The modules it wires have their own unit tests; the page is pinned by

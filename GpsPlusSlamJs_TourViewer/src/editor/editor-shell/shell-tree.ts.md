@@ -28,9 +28,12 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     `.pick` does (`.pick` is the way for the keyboard) - only when unfolded AND the station has a picture: the
     picture under the row (no empty frame when it has none), hidden
     from screen readers;
-  - `.kids` - only when unfolded: its story folders first (`.folder`,
-    no button yet, its entries `.kid.deep` under it when open), then
-    its items (`.kid`), or `.emptyrow` "Nothing here yet. " with its
+  - `.kids` - only when unfolded: its story folders first (`.folder`, `data-story` its
+    id: `.tw` its fold, `data-folder`; `.fname` its icon and name,
+    `data-select="story:<id>"`; `.meta` its entry count; `.add`,
+    `data-storyadd`; its entries `.kid.deep`, their place in `.meta`, under it
+    when open, or `.emptyrow.deep` with "Add the first entry", `data-storyfill`),
+    then its items (`.kid`), or `.emptyrow` "Nothing here yet. " with its
     `.fill` "Add content" (`data-fill`), the same menu.
 
   A search that finds nothing draws `.nomatch` 'Nothing matches "..."'

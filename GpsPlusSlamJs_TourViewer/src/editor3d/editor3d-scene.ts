@@ -56,7 +56,10 @@ import type {
   OsmRetryAsk,
   OsmRetryOutcome,
 } from "gps-plus-slam-globe/editor";
-import { STATION_PREFIX as STATION } from "../editor/editor-model.js";
+import {
+  STATION_PREFIX as STATION,
+  selectedStationOf,
+} from "../editor/editor-model.js";
 import { tourCentre } from "../editor/tour-origin.js";
 import {
   EDITOR_CAMERA,
@@ -101,7 +104,7 @@ import {
   viewFailure,
 } from "./editor3d-view-parts.js";
 import { createFrameDrawCalls } from "./frame-draw-calls.js";
-import { morphStanding, selectedStationOf } from "./editor3d-visibility.js";
+import { morphStanding } from "./editor3d-visibility.js";
 import type { EditorCityStats } from "./editor3d-globe-city.js";
 
 /** The store, as the 3D view reads it. */

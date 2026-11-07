@@ -111,7 +111,7 @@ function inspect(selected: string | null, unlockedStations: string[] = []) {
 /** The position the inspector shows for `selected`. */
 function positionOf(selected: string) {
   const model = inspect(selected);
-  if (model === null || model.kind === "item" || model.position === null) {
+  if (model === null || !("position" in model) || model.position === null) {
     throw new Error(`no position for ${selected}`);
   }
   return model.position;
@@ -141,7 +141,7 @@ describe("buildInspector", () => {
       offGround: null,
       groundOffM: null,
       locked: true,
-      story: [],
+
       contents: [
         { id: "pin-1", kind: "pin", title: "Fountain, 1612" },
         { id: "model-1", kind: "model", title: expect.any(String) },
@@ -174,120 +174,183 @@ describe("buildInspector", () => {
     expect(b.northM - a.northM).toBeCloseTo((48.138 - 48.1371234) * 111_190, 0);
   });
 
-  // A station's story shows blocks that do not stand in the world (a long
-  // text, a character on its stage): the station's inspector lists them,
-  // each by its kind and its name, in the station's order, so the creator
-  // sees what the story carries though the 3D view draws none of it.
-  it("lists the blocks the station's story shows, by kind and name", () => {
+  // Why: a story is a folder of the tree now. Selecting one, or one of its
+  // entries, must open that thing's inspector and no longer the station's:
+  // what the creator reads and types here is what the tour holds.
+  describe("a story and its entries", () => {
     const POSE: TourLocalPose = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
-    const storyStation = {
+    const STORY_STATION = {
       ...STATIONS[1],
+      title: "The gate",
       ...stationContent([
-        storyOf("story-1", [
-          {
-            id: "intro",
-            kind: "longText",
-            view: "card",
-            title: "The siege",
-            body: "In 1632...",
-            pose: POSE,
-          },
-          {
-            id: "guard",
-            kind: "character",
-            view: "stage",
-            name: "",
-            image: "cut",
-            caption: "Halt!",
-            pose: POSE,
-          },
-        ]),
+        storyOf(
+          "legend",
+          [
+            {
+              id: "intro",
+              kind: "longText",
+              view: "card",
+              title: "The siege",
+              body: "In 1632...",
+              pose: POSE,
+              advance: { mode: "auto", afterS: 8 },
+            },
+            {
+              id: "wendel",
+              kind: "character",
+              view: "two-stations",
+              name: "Wendel",
+              image: "cut",
+              caption: "Follow me",
+              pose: { position: [2, 0, 0], rotation: facingRotation(200)! },
+              advance: { mode: "lineEnd" },
+            },
+            {
+              id: "way",
+              kind: "choice",
+              prompt: "Which way?",
+              options: [
+                { id: "o1", label: "Back", goto: "intro" },
+                { id: "o2", label: "On" },
+              ],
+            },
+            {
+              id: "age",
+              kind: "quiz",
+              question: "How old?",
+              points: 2,
+              answer: {
+                type: "single",
+                options: [
+                  { id: "o1", label: "Old" },
+                  { id: "o2", label: "New" },
+                ],
+                correct: "o1",
+              },
+            },
+            {
+              id: "year",
+              kind: "quiz",
+              question: "Which year?",
+              points: 1,
+              answer: { type: "number", value: 1632, tolerance: 1 },
+            },
+          ],
+          "The legend",
+        ),
         {
-          id: "unused",
+          id: "clip",
           kind: "video",
           view: "card",
           video: "v",
-          transcript: "x",
+          transcript: "",
+          title: "A clip",
           pose: POSE,
         },
       ]),
     } as unknown as TourStation;
-    const model = buildInspector({
-      selected: "station:b",
-      stations: [STATIONS[0]!, storyStation],
-      assets: [],
-      codes: CODES,
+    const inStory = (selected: string) =>
+      buildInspector({
+        selected,
+        stations: [STATIONS[0]!, STORY_STATION],
+        assets: [],
+        codes: CODES,
+      });
+
+    it("lists a station's stories first in its Contents, and no story parts", () => {
+      const model = inStory("station:b");
+      expect(model?.kind).toBe("station");
+      if (model?.kind !== "station") return;
+      expect(model.contents.map((c) => c.id)).toEqual(["story:legend", "clip"]);
+      expect(model).not.toHaveProperty("story");
     });
-    const story = model?.kind === "station" ? model.story : [];
-    // Each carries its texts to type (`storyBlockFields`).
-    expect(story.map((s) => s.fields.map((f) => [f.name, f.value]))).toEqual([
-      [
+
+    it("shows a story's title, its place and its numbered entries", () => {
+      expect(inStory("story:legend")).toEqual({
+        kind: "story",
+        storyId: "legend",
+        stationId: "b",
+        title: "The legend",
+        sub: "2 The gate / Story",
+        entries: [
+          { id: "intro", kind: "text", title: "The siege", place: 1 },
+          { id: "wendel", kind: "character", title: "Wendel", place: 2 },
+          { id: "way", kind: "choice", title: "Choice: Which way?", place: 3 },
+          { id: "age", kind: "quiz", title: "Quiz: How old?", place: 4 },
+          { id: "year", kind: "quiz", title: "Quiz: Which year?", place: 5 },
+        ],
+      });
+    });
+
+    it("shows a story's block by its texts and how it moves on", () => {
+      const model = inStory("intro");
+      expect(model?.kind).toBe("storyEntry");
+      if (model?.kind !== "storyEntry") return;
+      expect(model.stationId).toBe("b");
+      expect(model.title).toBe("The siege");
+      expect(model.sub).toBe("2 The gate / The legend / Long text, entry 1");
+      expect(model.advance).toEqual({ mode: "auto", afterS: 8 });
+      expect(model.block.fields.map((f) => [f.name, f.value])).toEqual([
         ["title", "The siege"],
         ["body", "In 1632..."],
-      ],
-      [
-        ["name", ""],
-        ["caption", "Halt!"],
-      ],
-    ]);
-    expect(story.map((s) => ({ ...s, fields: undefined }))).toEqual([
-      { id: "intro", kind: "Long text", title: "The siege" },
-      // A character without a name is named by its caption (one rule,
-      // `objectTitle`).
-      {
-        id: "guard",
-        kind: "Character",
-        title: "Halt!",
-        // A character carries what the inspector sets of him: no turn
-        // faces east.
-        character: { view: "stage", advance: "tap", facingDeg: 90 },
-      },
-    ]);
-  });
+      ]);
+      expect(model.block.character).toBeUndefined();
+    });
 
-  // Why: the station's inspector is where a story character is set (his
-  // view, how the step showing him moves on, his facing), so it must read
-  // them as the file holds them: the view of the block, the advance of the
-  // step that shows him, the heading his rest rotation faces.
-  it("reads a story character's view, how his step moves on and his facing", () => {
-    const POSE: TourLocalPose = {
-      position: [2, 0, 0],
-      rotation: facingRotation(200)!,
-    };
-    const storyStation = {
-      ...STATIONS[1],
-      ...stationContent([
-        storyOf("story-2", [
-          {
-            id: "wendel",
-            kind: "character",
-            view: "two-stations",
-            name: "Wendel",
-            image: "cut",
-            caption: "Follow me",
-            pose: POSE,
-            advance: { mode: "lineEnd" },
-          },
-        ]),
-      ]),
-    } as unknown as TourStation;
-    const model = buildInspector({
-      selected: "station:b",
-      stations: [STATIONS[0]!, storyStation],
-      assets: [],
-      codes: CODES,
+    // Why: a story character is set here (his view, how his step moves on,
+    // his facing), so this must read them as the file holds them.
+    it("reads a story character's view, how he moves on and his facing", () => {
+      const model = inStory("wendel");
+      if (model?.kind !== "storyEntry") throw new Error("no entry");
+      expect(model.block.character).toMatchObject({
+        view: "two-stations",
+        advance: "lineEnd",
+      });
+      expect(model.block.character?.facingDeg).toBeCloseTo(200, 6);
+      expect(CHARACTER_VIEW_CHOICES.map((c) => c.view)).toEqual([
+        ...TOUR_CHARACTER_VIEWS,
+      ]);
     });
-    const story = model?.kind === "station" ? model.story : [];
-    expect(story).toHaveLength(1);
-    expect(story[0]?.character).toMatchObject({
-      view: "two-stations",
-      advance: "lineEnd",
+
+    it("sums up a choice: each answer and where it leads", () => {
+      expect(inStory("way")).toMatchObject({
+        kind: "storyStep",
+        stepKind: "choice",
+        id: "way",
+        stationId: "b",
+        title: "Which way?",
+        sub: "2 The gate / The legend / Choice, entry 3",
+        lines: ["Back - goes to The siege", "On - plays on"],
+      });
     });
-    expect(story[0]?.character?.facingDeg).toBeCloseTo(200, 6);
-    // The chips offer the format's story views, in its order.
-    expect(CHARACTER_VIEW_CHOICES.map((c) => c.view)).toEqual([
-      ...TOUR_CHARACTER_VIEWS,
-    ]);
+
+    it("sums up a quiz: its points, and its answers with the right one", () => {
+      expect(inStory("age")).toMatchObject({
+        kind: "storyStep",
+        stepKind: "quiz",
+        title: "How old?",
+        lines: ["2 points", "Old - right", "New"],
+      });
+      expect(inStory("year")).toMatchObject({
+        lines: ["1 point", "1632, within 1"],
+      });
+    });
+
+    it("shows a free block with no place in the world by its texts", () => {
+      const model = inStory("clip");
+      expect(model?.kind).toBe("freeBlock");
+      if (model?.kind !== "freeBlock") return;
+      expect(model.title).toBe("A clip");
+      expect(model.sub).toBe("Video in The gate");
+      expect(model.stationId).toBe("b");
+      expect(model.itemKind).toBe("video");
+      expect(model.fields.map((f) => f.name)).toEqual(["title", "transcript"]);
+    });
+
+    it("hints at what can be done, and answers nothing for a gone story", () => {
+      expect(inspectorHint(inStory("story:legend"))).toContain("The legend");
+      expect(inStory("story:gone")).toBeNull();
+    });
   });
 
   it("shows an item's kind, its station, its offset and its size", () => {

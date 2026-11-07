@@ -16,13 +16,24 @@
  *   edit), its kind and station, a model's size, its offset in the
  *   station's frame and its heading there, and how far it stands off the
  *   ground; for a long text, what its writer shows (`InspectorLongText`).
+ * - A story (`story:<id>`): its title, its place and its numbered entries.
+ * - A story's block: its texts, how it moves on and, for a character, what
+ *   is set of him; a story's choice or quiz: a summary, read here and not
+ *   edited.
+ * - A free block with no place in the world (a video, an audio, a
+ *   character): its texts.
  * - A code: its name, its line, its print size and where it stands, in
  *   the same metres.
  *
  * @see inspector-model.ts.md
  */
 import {
-  tourStationStoryBlocks,
+  isTourStoryBlock,
+  tourChildPlace,
+  tourStories,
+  type TourChoice,
+  type TourQuizEntry,
+  type TourStory,
   type TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type {
@@ -30,7 +41,10 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  itemGeoPose,
+  tourFreeBlocks,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   TOUR_CHARACTER_VIEWS,
   TOUR_MODEL_MAX_NOTES,
@@ -59,12 +73,15 @@ import {
   storyBlockFields,
   type BlockField,
 } from "../block-fields.js";
+import { STORY_PREFIX } from "../editor-model.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { outsideItems } from "./tour-problems.js";
 import {
   stationContents,
   stationImagePath,
+  storyRows,
   type StationContent,
+  type TreeRowKind,
 } from "./tree-model.js";
 
 /** Where something stands: as the 3D view frames it, and as the file
@@ -134,28 +151,85 @@ interface StationInspector {
   /** Its position, height and heading may not be edited (the page's view
    *  state, `isStationLocked`): its gizmo is its radius dots alone. */
   readonly locked: boolean;
-  /** The blocks its story shows, in the station's order, by kind and
-   *  name (`objectTitle`): listed, not edited, here. */
-  readonly story: readonly InspectorStoryBlock[];
-  /** Its items, by kind and name: the inspector's Contents. */
+  /** Its stories and its free items, by kind and name: the inspector's
+   *  Contents. */
   readonly contents: readonly StationContent[];
 }
 
-/** A block a station's story shows, as its inspector lists it. */
+/** A story, selected by `story:<id>`. */
+interface StoryInspector {
+  readonly kind: "story";
+  readonly storyId: string;
+  readonly stationId: string;
+  readonly title: string;
+  /** Its station, numbered as the tree numbers it. */
+  readonly sub: string;
+  readonly entries: readonly {
+    readonly id: string;
+    readonly kind: TreeRowKind;
+    readonly title: string;
+    readonly place: number;
+  }[];
+}
+
+/** A block of a story, as its inspector shows it. */
+interface StoryEntryInspector {
+  readonly kind: "storyEntry";
+  readonly id: string;
+  readonly stationId: string;
+  /** Its row's kind in the tree. */
+  readonly rowKind: TreeRowKind;
+  readonly title: string;
+  /** Where it stands: its station, its story, its kind and its place. */
+  readonly sub: string;
+  readonly block: InspectorStoryBlock;
+  /** How it moves on; `afterS` only when by itself. */
+  readonly advance: {
+    readonly mode: string;
+    readonly afterS: number | null;
+  };
+}
+
+/** A choice or a quiz of a story: read here, not edited. */
+interface StoryStepInspector {
+  readonly kind: "storyStep";
+  readonly stepKind: "choice" | "quiz";
+  readonly id: string;
+  readonly stationId: string;
+  readonly title: string;
+  readonly sub: string;
+  /** The summary's label. */
+  readonly heading: string;
+  /** Text, never markup: it comes from a file anyone can write. */
+  readonly lines: readonly string[];
+}
+
+/** A free block with no place in the world. */
+interface FreeBlockInspector {
+  readonly kind: "freeBlock";
+  readonly itemKind: "video" | "audio" | "character";
+  readonly id: string;
+  readonly stationId: string;
+  readonly title: string;
+  readonly sub: string;
+  readonly fields: readonly BlockField[];
+}
+
+/** A block of a story, as its entry's inspector shows it. */
 interface InspectorStoryBlock {
   readonly id: string;
   /** Its kind in the block model's words ("Long text"). */
   readonly kind: string;
   /** Text, never markup: it comes from a file anyone can write. */
   readonly title: string;
-  /** For a character: what the station's inspector sets of him. */
+  /** For a character: what his entry's inspector sets of him. */
   readonly character?: InspectorCharacter;
   /** Its texts to type (`storyBlockFields`), named `block:<id>:<field>`
    *  in the inspector. */
   readonly fields: readonly BlockField[];
 }
 
-/** A story character's settings as the station's inspector shows them. */
+/** A story character's settings as his entry's inspector shows them. */
 export interface InspectorCharacter {
   /** His block's view. */
   readonly view: string;
@@ -314,7 +388,14 @@ interface CodeInspector {
   readonly position: InspectorPosition | null;
 }
 
-export type InspectorModel = StationInspector | ItemInspector | CodeInspector;
+export type InspectorModel =
+  | StationInspector
+  | ItemInspector
+  | CodeInspector
+  | StoryInspector
+  | StoryEntryInspector
+  | StoryStepInspector
+  | FreeBlockInspector;
 
 /** The bottom bar's hint for the selection: the handles its gizmo has in
  *  the 3D view, or how to select when nothing is. A code is read-only
@@ -331,6 +412,12 @@ export function inspectorHint(model: InspectorModel | null): string {
   if (model.kind === "item") {
     const resize = model.itemKind === "model" ? ", a white dot to resize" : "";
     return `${model.title} - drag the middle to move along the ground, the round arrow to turn${resize}`;
+  }
+  if (model.kind === "story") {
+    return `${model.title} - its entries play in order; its + in the list adds one, Esc deselects`;
+  }
+  if (model.kind !== "code") {
+    return `${model.title} - it has no place in the 3D view; Esc deselects`;
   }
   return `${model.title} - read-only here; F frames it, Esc deselects`;
 }
@@ -456,6 +543,148 @@ function itemOffGround(
   }
 }
 
+/** A quiz's points and answers, the right one said. */
+function quizLines(quiz: TourQuizEntry): string[] {
+  const points =
+    quiz.points === 1 ? "1 point" : `${String(quiz.points)} points`;
+  const { answer } = quiz;
+  switch (answer.type) {
+    case "single":
+      return [
+        points,
+        ...answer.options.map((o) =>
+          o.id === answer.correct ? `${o.label} - right` : o.label,
+        ),
+      ];
+    case "multiple":
+      return [
+        points,
+        ...answer.options.map((o) =>
+          answer.correct.includes(o.id) ? `${o.label} - right` : o.label,
+        ),
+      ];
+    case "number": {
+      const unit = answer.unit === undefined ? "" : ` ${answer.unit}`;
+      const within =
+        answer.tolerance > 0 ? `, within ${String(answer.tolerance)}` : "";
+      return [points, `${String(answer.value)}${unit}${within}`];
+    }
+    default:
+      return [points, "A typed answer"];
+  }
+}
+
+/** A choice's answers and where each leads. */
+function choiceLines(choice: TourChoice, story: TourStory): string[] {
+  const rows = storyRows(story);
+  return choice.options.map((option) => {
+    if (option.goto === undefined) return `${option.label} - plays on`;
+    const to = rows.find((r) => r.id === option.goto);
+    return `${option.label} - goes to ${to?.title ?? "another entry"}`;
+  });
+}
+
+/** The inspector of the story's child `selected`, or null for an id that
+ *  is no story's child. */
+function storyChildInspector(
+  selected: string,
+  stations: readonly TourStation[],
+): InspectorModel | null {
+  const place = tourChildPlace({ stations }, selected);
+  if (place === null || place.story === undefined) return null;
+  const { station, story, index } = place;
+  const number = stations.findIndex((s) => s.id === station.id) + 1;
+  const crumb = `${String(number)} ${stationTitle(station, number)} / ${story.title}`;
+  const entry = `entry ${String(index + 1)}`;
+  const child = story.children[index];
+  if (child === undefined) return null;
+  if (isTourStoryBlock(child)) {
+    return {
+      kind: "storyEntry",
+      id: child.id,
+      stationId: station.id,
+      rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
+      title: objectTitle(child),
+      sub: `${crumb} / ${BLOCK_KIND_LABEL[child.kind]}, ${entry}`,
+      block: storyEntry(child),
+      advance: {
+        mode: child.advance.mode,
+        afterS: child.advance.mode === "auto" ? child.advance.afterS : null,
+      },
+    };
+  }
+  const common = {
+    kind: "storyStep",
+    id: child.id,
+    stationId: station.id,
+    heading: "Answers",
+  } as const;
+  return child.kind === "choice"
+    ? {
+        ...common,
+        stepKind: "choice",
+        title: child.prompt,
+        sub: `${crumb} / Choice, ${entry}`,
+        lines: choiceLines(child, story),
+      }
+    : {
+        ...common,
+        stepKind: "quiz",
+        title: child.question,
+        sub: `${crumb} / Quiz, ${entry}`,
+        lines: quizLines(child),
+      };
+}
+
+/** The inspector of the story `storyId`, or null for a gone one. */
+function storyInspector(
+  storyId: string,
+  stations: readonly TourStation[],
+): InspectorModel | null {
+  for (const [index, station] of stations.entries()) {
+    const story = tourStories(station).find((s) => s.id === storyId);
+    if (story === undefined) continue;
+    const number = index + 1;
+    return {
+      kind: "story",
+      storyId,
+      stationId: station.id,
+      title: story.title,
+      sub: `${String(number)} ${stationTitle(station, number)} / Story`,
+      entries: storyRows(story),
+    };
+  }
+  return null;
+}
+
+/** The inspector of the free block `selected` that stands nowhere in the
+ *  world, or null for any other id. */
+function freeBlockInspector(
+  selected: string,
+  stations: readonly TourStation[],
+): InspectorModel | null {
+  for (const [index, station] of stations.entries()) {
+    const block = tourFreeBlocks(station).find((b) => b.id === selected);
+    if (
+      block?.kind !== "video" &&
+      block?.kind !== "audio" &&
+      block?.kind !== "character"
+    ) {
+      continue;
+    }
+    return {
+      kind: "freeBlock",
+      itemKind: block.kind,
+      id: block.id,
+      stationId: station.id,
+      title: objectTitle(block),
+      sub: `${BLOCK_KIND_LABEL[block.kind]} in ${stationTitle(station, index + 1)}`,
+      fields: blockFields(block),
+    };
+  }
+  return null;
+}
+
 /** The inspector for `selected` (the page's selection id), or null when
  *  nothing is selected or the tour does not have it. */
 export function buildInspector(input: {
@@ -514,10 +743,14 @@ export function buildInspector(input: {
       groundOffM: offGroundOf(station.geo, groundAt),
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
-      story: tourStationStoryBlocks(station).map(storyEntry),
       contents: stationContents(station),
     };
   }
+  if (selected.startsWith(STORY_PREFIX)) {
+    return storyInspector(selected.slice(STORY_PREFIX.length), stations);
+  }
+  const inStory = storyChildInspector(selected, stations);
+  if (inStory !== null) return inStory;
   for (const [index, station] of stations.entries()) {
     const item = worldBlocks(station).find((i) => i.id === selected);
     if (item === undefined) continue;
@@ -578,6 +811,8 @@ export function buildInspector(input: {
       groundOffM: itemOffGround(item, station, groundAt),
     };
   }
+  const free = freeBlockInspector(selected, stations);
+  if (free !== null) return free;
   const code = input.codes.find((c) => c.id === selected);
   if (code === undefined) return null;
   return {

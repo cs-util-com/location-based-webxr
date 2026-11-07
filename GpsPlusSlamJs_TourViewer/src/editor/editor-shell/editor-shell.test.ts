@@ -152,6 +152,10 @@ function setUp() {
     scene: vi.fn(() => true),
     groundItems: vi.fn(),
     addItem: vi.fn(),
+    addStory: vi.fn(),
+    addToStory: vi.fn(),
+    storyTitle: vi.fn(() => "written" as const),
+    storyAdvance: vi.fn(() => "written" as const),
     narration: vi.fn(() =>
       Promise.resolve({ kind: "refused" as const, reason: "none" }),
     ),
@@ -1167,7 +1171,7 @@ describe("a story character's chips", () => {
         },
       }),
     );
-    set.select("station:c");
+    set.select("w1");
     return set;
   }
   const click = (act: string) => {
@@ -1195,6 +1199,152 @@ describe("a story character's chips", () => {
     click("character-view:w1:speak");
     click("character-advance:w1:tap");
     expect(edits.station).not.toHaveBeenCalled();
+    shell.hide();
+  });
+});
+
+// Why these tests matter: a story's folder works through the tree's own
+// clicks. Its arrow, its name and its + each mean one thing; one that did
+// another's job (a + that added to the station, a name that folded a
+// selected station) puts a creator's work in the wrong place.
+describe("a story's folder in the tree", () => {
+  function withStory() {
+    const set = setUp();
+    const gate = {
+      ...station("c", 0.0008),
+      ...stationContent([
+        storyOf(
+          "legend",
+          [
+            {
+              id: "l1",
+              kind: "longText",
+              view: "card",
+              title: "The siege",
+              body: "In 1632",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              advance: { mode: "tap" },
+            },
+          ],
+          "The legend",
+        ),
+      ]),
+    };
+    set.store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [station("a", 0), gate],
+        },
+      }),
+    );
+    set.store.dispatch(
+      editorViewActions.stationFolded({ id: "c", open: true }),
+    );
+    return set;
+  }
+  const tree = (selector: string) => {
+    const found = document.querySelector<HTMLElement>(`#tree-body ${selector}`);
+    if (found === null) throw new Error(`no ${selector}`);
+    return found;
+  };
+  const inspectorAct = (act: string) => {
+    const found = document.querySelector<HTMLElement>(
+      `#shell-inspector [data-act="${act}"]`,
+    );
+    if (found === null) throw new Error(`no ${act}`);
+    return found;
+  };
+
+  it("folds by its arrow, and selects by its name, unfolding only its holders", () => {
+    const { store, shell } = withStory();
+    tree('[data-select="story:legend"]').click();
+    expect(store.getState().editorView.selected).toBe("story:legend");
+    expect(store.getState().editorView.openStories).toEqual([]);
+    tree('[data-folder="legend"]').click();
+    expect(store.getState().editorView.openStories).toEqual(["legend"]);
+    expect(tree('[data-select="l1"]').textContent).toContain("The siege");
+    tree('[data-folder="legend"]').click();
+    expect(store.getState().editorView.openStories).toEqual([]);
+    shell.hide();
+  });
+
+  it("opens its story's menu from its +, and adds into the story", () => {
+    const { edits, shell } = withStory();
+    tree('[data-storyadd="legend"]').click();
+    const menu = document.getElementById("tree-add-menu");
+    expect(menu?.querySelector(".mhead")?.textContent).toBe(
+      'Add to the story "The legend"',
+    );
+    menu?.querySelector<HTMLElement>('[data-kind="pin"]')?.click();
+    expect(edits.addToStory).toHaveBeenCalledWith("legend", "pin");
+    expect(edits.addItem).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("adds a story from the station's +, into that station", () => {
+    const { edits, shell } = withStory();
+    tree('[data-add="c"]').click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="story"]')
+      ?.click();
+    expect(edits.addStory).toHaveBeenCalledWith("c");
+    shell.hide();
+  });
+
+  it("offers a story's Add entry from its inspector, in the same menu", () => {
+    const { edits, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("add-entry").click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="longText"]')
+      ?.click();
+    expect(edits.addToStory).toHaveBeenCalledWith("legend", "longText");
+    shell.hide();
+  });
+
+  it("goes from a story's entry row to the entry, unfolding its folder", () => {
+    const { store, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("goto:l1").click();
+    expect(store.getState().editorView.selected).toBe("l1");
+    expect(store.getState().editorView.openStories).toEqual(["legend"]);
+    shell.hide();
+  });
+
+  it("writes a typed title and how an entry moves on as the story's edits", () => {
+    const { edits, select, shell } = withStory();
+    select("story:legend");
+    const title = document.querySelector<HTMLInputElement>(
+      '#shell-inspector [data-field="story-title"]',
+    );
+    if (title === null) throw new Error("no title");
+    title.focus();
+    title.value = "Better";
+    title.blur();
+    expect(edits.storyTitle).toHaveBeenCalledWith("legend", "Better");
+    select("l1");
+    inspectorAct("entry-advance:l1:auto").click();
+    expect(edits.storyAdvance).toHaveBeenCalledWith("l1", {
+      mode: "auto",
+      afterS: 5,
+    });
+    shell.hide();
+  });
+
+  it("writes nothing for the moves-on chip already pressed", () => {
+    const { edits, select, shell } = withStory();
+    select("l1");
+    inspectorAct("entry-advance:l1:tap").click();
+    expect(edits.storyAdvance).not.toHaveBeenCalled();
+    shell.hide();
+  });
+
+  it("deletes a story through the page's one delete", () => {
+    const { deps, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("delete").click();
+    expect(deps.stations.remove).toHaveBeenCalledWith("story:legend");
     shell.hide();
   });
 });

@@ -17,13 +17,173 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { manifestToWrite, tourDocumentActions } from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
-import { editorViewActions, editorViewReducer } from "../editor-view.js";
+import {
+  editorViewActions,
+  editorViewReducer,
+  initialEditorViewState,
+  type EditorViewState,
+} from "../editor-view.js";
 import type { ShellPictures } from "./shell-pictures.js";
 import { drawTree } from "./shell-tree.js";
 import { buildTree, type TreeModel } from "./tree-model.js";
-import { stationContent } from "../../test-support/station-content.js";
+import { stationContent, storyOf } from "../../test-support/station-content.js";
 
 const AT = "2026-10-22T10:00:00Z";
+
+// Why these tests matter: a story's folder holds three controls side by side
+// (the arrow, the name, the +), none inside another, and the folder keeps its
+// keyboard focus across draws: a click on the arrow redraws the tree, and a
+// keyboard user dropped to the page's top could not fold the next one.
+describe("a story's folder", () => {
+  const LINE = {
+    id: "l1",
+    kind: "longText",
+    view: "card",
+    title: "The siege",
+    body: "x",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    advance: { mode: "tap" },
+  } as const;
+  const FREE = {
+    id: "kay",
+    kind: "character",
+    view: "speak",
+    name: "Sir Kay",
+    image: "cut",
+    caption: "Halt",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  } as const;
+  const stations = [
+    {
+      ...STATIONS_FOR_FOLDERS(),
+      ...stationContent([
+        storyOf("legend", [LINE], "The legend"),
+        storyOf("empty", [], "Nothing yet"),
+        FREE,
+      ]),
+    },
+  ] as unknown as TourStation[];
+  const drawn = (view: Partial<EditorViewState>) => {
+    const parts = {
+      root: document.createElement("aside"),
+      stationsHead: document.createElement("button"),
+      fold: document.createElement("button"),
+      body: document.createElement("div"),
+    };
+    parts.root.append(parts.body);
+    document.body.replaceChildren(parts.root);
+    const draw = (v: Partial<EditorViewState>) => {
+      drawTree(
+        parts,
+        buildTree({
+          stations,
+          assets: [],
+          codes: [],
+          view: {
+            ...initialEditorViewState,
+            openStations: ["gate"],
+            ...v,
+          },
+          layers: [],
+        }),
+        false,
+        { show: vi.fn(), sweep: vi.fn(), clear: vi.fn() },
+      );
+    };
+    draw(view);
+    return { body: parts.body, draw };
+  };
+
+  it("draws the arrow, the name and the + side by side, its count beside them", () => {
+    const { body } = drawn({});
+    const folder = body.querySelector<HTMLElement>('[data-story="legend"]');
+    expect(folder?.querySelector("button button")).toBeNull();
+    const arrow = folder?.querySelector<HTMLElement>("[data-folder]");
+    expect(arrow?.getAttribute("aria-expanded")).toBe("false");
+    expect(arrow?.title).toBe("Show the entries");
+    const name = folder?.querySelector<HTMLElement>(
+      '[data-select="story:legend"]',
+    );
+    expect(name?.textContent).toBe("The legend");
+    expect(name?.getAttribute("aria-pressed")).toBe("false");
+    expect(folder?.querySelector(".meta")?.textContent).toBe("1");
+    const plus = folder?.querySelector<HTMLElement>("[data-storyadd]");
+    expect(plus?.title).toBe('Add an entry to the story "The legend"');
+    expect(plus?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(plus?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("lists a free character, and stories before free items", () => {
+    const { body } = drawn({});
+    expect(
+      [...body.querySelectorAll(".kids > *")].map(
+        (r) => r.querySelector(".nm")?.textContent,
+      ),
+    ).toEqual(["The legend", "Nothing yet", "Sir Kay"]);
+    expect(
+      body.querySelector('[data-select="kay"] .ic.character'),
+    ).not.toBeNull();
+  });
+
+  it("lists an open story's entries a level deeper, with their place", () => {
+    const { body } = drawn({ openStories: ["legend"] });
+    const entry = body.querySelector<HTMLElement>('[data-select="l1"]');
+    expect(entry?.classList.contains("deep")).toBe(true);
+    expect(entry?.querySelector(".meta")?.textContent).toBe("1");
+    expect(
+      body.querySelector('[data-folder="legend"]')?.getAttribute("title"),
+    ).toBe("Hide the entries");
+  });
+
+  it("says an open empty story has no entries, with the way to add one", () => {
+    const { body } = drawn({ openStories: ["empty"] });
+    const empty = body.querySelector(".emptyrow.deep");
+    expect(empty?.textContent).toBe("No entries yet. Add the first entry");
+    expect(
+      empty?.querySelector<HTMLElement>("[data-storyfill]")?.dataset[
+        "storyfill"
+      ],
+    ).toBe("empty");
+  });
+
+  it("marks a selected story and the story of a selected entry", () => {
+    const { body, draw } = drawn({
+      selected: "story:legend",
+      openStories: ["legend"],
+    });
+    const folder = () => body.querySelector('[data-story="legend"]');
+    expect(folder()?.classList.contains("sel")).toBe(true);
+    draw({ selected: "l1", openStories: ["legend"] });
+    expect(folder()?.classList.contains("sel")).toBe(false);
+    expect(folder()?.classList.contains("ctx")).toBe(true);
+  });
+
+  it("keeps the focus on the arrow, the name and the + across a draw", () => {
+    const { body, draw } = drawn({});
+    for (const selector of [
+      '[data-folder="legend"]',
+      '[data-storyadd="legend"]',
+      '[data-select="story:legend"]',
+    ]) {
+      body.querySelector<HTMLElement>(selector)?.focus();
+      draw({ openStories: ["legend"] });
+      expect(document.activeElement).toBe(body.querySelector(selector));
+      draw({});
+      expect(document.activeElement).toBe(body.querySelector(selector));
+    }
+  });
+});
+
+function STATIONS_FOR_FOLDERS() {
+  return {
+    id: "gate",
+    title: "The old gate",
+    geo: { lat: 48.1371, lon: 11.5754, alt: 562.25, headingDeg: 30 },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+  };
+}
 
 const STATIONS = [
   {
@@ -367,7 +527,7 @@ describe("drawTree", () => {
   // Why: a station's story folders (a later format) come before its free
   // items, each its own row with its entries under it, a level deeper.
   // The format has none yet, so the draw is checked on a model made by
-  // hand; the folder row is no button (no command acts on it yet).
+  // hand; the row holds its own buttons, none inside another.
   it("draws a station's story folders before its free items", () => {
     store.dispatch(editorViewActions.stationFolded({ id: "gate", open: true }));
     const built = model();
@@ -375,8 +535,13 @@ describe("drawTree", () => {
     if (gate === undefined) throw new Error("no gate");
     const folder = {
       id: "story-1",
+      selection: "story:story-1",
       title: "The siege",
       open: true,
+      searchOpened: false,
+      selected: false,
+      context: false,
+      count: 1,
       children: [
         { id: "pin-9", kind: "pin" as const, title: "A shot", selected: false },
       ],

@@ -8,7 +8,10 @@ the way on from a station to what it holds.
 
 ## Public API
 
-- `contentsSummary(count)` - the fold's summary, "1 item" or "3 items".
+- `contentsSummary(contents)` - the fold's summary: "1 item", "3 items", or
+  with stories "1 story, 2 free items", "2 stories".
+- `entriesList(rows)` -> `.kids`, a row each, a row with a `place` numbered
+  (`.meta` before its icon): a story's Entries.
 - `contentsBody(items, add)` -> elements: `.kids` of `button.kid`
   (`data-act="goto:<id>"`, `.ic <kind>`, `.nm`), or a note that the station
   holds nothing; then `add`, then a note on the other ways to add.

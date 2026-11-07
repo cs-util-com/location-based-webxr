@@ -323,6 +323,163 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect.poll(async () => (await gateBlocks()).length).toBe(before);
 });
 
+test("a story is a folder of the tree: added, named, filled, its entry's texts shown, deleted and undone", async ({
+  page,
+}) => {
+  // Why: a story stopped being a hidden part of its station. Only the page
+  // shows the row's "+", the type menu, the inspector's name, the folder
+  // and the delete's question working together, each edit one step of the
+  // history.
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  /** @returns {Promise<any[]>} */
+  const stories = async () =>
+    (await tourNow(page)).stations
+      .find((/** @type {any} */ s) => s.id === "gate")
+      .children.filter((/** @type {any} */ c) => c.kind === "story");
+  const before = (await stories()).length;
+  const start = await revision(page);
+  const gate = card(page, "gate");
+  const menu = page.locator("#tree-add-menu");
+  const inspector = page.locator("#shell-inspector");
+
+  // Add: the Story item of the station's menu; the name is ready to type.
+  await gate.locator(".head").hover();
+  await gate.locator(".head .add").click();
+  await menu.locator('[data-kind="story"]').click();
+  await expect(menu).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: "Added a story to" }),
+  ).toBeVisible();
+  const name = inspector.locator('[data-field="story-title"]');
+  await expect(name).toBeFocused();
+  expect((await stories()).length).toBe(before + 1);
+  const chosen = await selected(page);
+  const id = chosen.slice("story:".length);
+  const made = () =>
+    stories().then((all) => all.find((/** @type {any} */ s) => s.id === id));
+  expect(await made()).toBeDefined();
+  expect(await revision(page)).toBe(start + 1);
+  await expect(inspector.locator(".kids")).toHaveCount(0);
+
+  // Rename, in the inspector's head; the folder follows.
+  await name.fill("The legend");
+  await name.press("Enter");
+  const folder = gate.locator(`.folder[data-story="${id}"]`);
+  await expect(folder.locator(".nm")).toHaveText("The legend");
+  await expect(folder.locator(".meta")).toHaveText("0");
+  expect(await revision(page)).toBe(start + 2);
+
+  // Fill: the story's "+" adds into it, and the menu says so.
+  await folder.locator(".add").click();
+  await expect(menu).toHaveAttribute(
+    "aria-label",
+    'Add to the story "The legend"',
+  );
+  await expect(menu.locator('[data-kind="story"]')).toBeHidden();
+  await menu.locator('[data-kind="longText"]').click();
+  await expect(
+    page.locator(".toast", { hasText: 'to the story "The legend"' }),
+  ).toBeVisible();
+  await expect(folder.locator(".meta")).toHaveText("1");
+  const entry = (await made()).children[0];
+  expect(await selected(page)).toBe(entry.id);
+  const row = gate.locator(`.kid[data-select="${entry.id}"]`);
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row.locator(".meta")).toHaveText("1");
+  expect(await revision(page)).toBe(start + 3);
+
+  // A story block's texts are in its own inspector.
+  await expect(inspector.locator(".sub")).toContainText(
+    "/ The legend / Long text, entry 1",
+  );
+  await expect(
+    inspector.locator('[data-act="entry-advance:' + entry.id + ':tap"]'),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Delete: the question names what goes; Undo brings the story back whole.
+  await gate.locator(`.fname[data-select="story:${id}"]`).click();
+  await expect.poll(() => selected(page)).toBe(`story:${id}`);
+  /** @type {string[]} */
+  const asked = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.accept();
+  });
+  await inspector.locator('[data-act="delete"]').click();
+  await expect.poll(async () => (await stories()).length).toBe(before);
+  expect(asked).toEqual([
+    'Delete the story "The legend"? Its entry goes with it. You can undo this.',
+  ]);
+  expect(await selected(page)).toBeNull();
+  await page.locator(".toast button", { hasText: "Undo" }).click();
+  await expect.poll(async () => (await stories()).length).toBe(before + 1);
+  expect((await made()).children.map((/** @type {any} */ c) => c.id)).toEqual([
+    entry.id,
+  ]);
+});
+
+test("a story's folder sits a step in from its station and its entries a step further, at a phone and a desktop", async ({
+  page,
+}) => {
+  // Why: the explorer was chosen for its one-line rows and its plain
+  // indents. Presence would pass a folder set flush with the station, or
+  // entries as tall as cards, so this pins positions, heights and gaps.
+  test.slow();
+  await answerHosts(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openSampleIn3d(page);
+  await afterFrames(page, 3);
+  const gate = card(page, "gate");
+  await gate.locator(".head").hover();
+  await gate.locator(".head .add").click();
+  await page.locator('#tree-add-menu [data-kind="story"]').click();
+  const id = (await selected(page)).slice("story:".length);
+  const folder = `.folder[data-story="${id}"]`;
+  for (const _ of [1, 2]) {
+    await page.locator(`${folder} .add`).click();
+    await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  }
+  await expect(page.locator(`${folder} ~ .kid.deep`)).toHaveCount(2);
+  const sels = [
+    folder,
+    `${folder} .tw`,
+    `${folder} .ic`,
+    `${folder} ~ .kid.deep`,
+    `${folder} ~ .kid.deep .ic`,
+    '.card[data-station="gate"] .head',
+  ];
+  /** @param {number} rowH */
+  const pinned = async (rowH) => {
+    const l = await layoutOf(page, sels);
+    const row = boxIn(l, sels[0]);
+    const arrow = boxIn(l, sels[1]);
+    const icon = boxIn(l, sels[2]);
+    const first = boxIn(l, sels[3], 0);
+    const second = boxIn(l, sels[3], 1);
+    const entryIcon = boxIn(l, sels[4], 0);
+    expect(row.height).toBe(rowH);
+    expect(first.height).toBe(rowH);
+    expect(second.height).toBe(rowH);
+    // Rows touch: one line after the other, no gap between entries.
+    expect(second.y).toBeCloseTo(first.y + first.height, 0);
+    // An indent of 16 px per level, as the prototype's rows.
+    expect(entryIcon.x - icon.x).toBeCloseTo(16, 0);
+    expect(icon.x - (arrow.x + arrow.width)).toBeCloseTo(4, 0);
+    expect(boxIn(l, sels[5]).x).toBe(row.x);
+  };
+  await pinned(26);
+  // The folders work in the phone's list sheet, its rows finger-sized.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#shell-inspector [data-act="close"]').click();
+  await page.locator("#studio-list").click();
+  await expect(page.locator(folder)).toBeVisible();
+  await pinned(32);
+});
+
 test("Ctrl+K adds a kind to a place named in one query, and leaves the long-text writer's Ctrl+K alone", async ({
   page,
 }) => {

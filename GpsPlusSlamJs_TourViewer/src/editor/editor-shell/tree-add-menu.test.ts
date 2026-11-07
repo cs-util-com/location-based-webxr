@@ -29,12 +29,14 @@ function plusFor(body: HTMLElement, id: string): HTMLButtonElement {
 }
 
 let body: HTMLElement;
-let choose: ReturnType<typeof vi.fn<(id: string, kind: AddKind) => void>>;
+let choose: ReturnType<
+  typeof vi.fn<(id: string, kind: AddKind | "story") => void>
+>;
 
 beforeEach(() => {
   body = document.createElement("div");
   document.body.replaceChildren(body);
-  choose = vi.fn<(id: string, kind: AddKind) => void>();
+  choose = vi.fn<(id: string, kind: AddKind | "story") => void>();
 });
 
 afterEach(() => {
@@ -42,7 +44,12 @@ afterEach(() => {
 });
 
 function opened() {
-  const menu = createTreeAddMenu({ body, host: document.body, choose });
+  const menu = createTreeAddMenu({
+    body,
+    host: document.body,
+    choose,
+    chooseForStory: vi.fn(),
+  });
   const plus = plusFor(body, "gate");
   plus.focus();
   menu.openFor(plus, "gate", "The old gate");
@@ -63,6 +70,67 @@ function key(target: Element, k: string): KeyboardEvent {
   return event;
 }
 
+// Why: the + of a story adds into that story, the + of a station adds to
+// the station, and the menu's head says which: two places behind one look
+// is where an entry lands in the wrong one. A story holds no story, so the
+// menu must not offer one there.
+describe("the menu for a story", () => {
+  function forStory() {
+    const chooseForStory = vi.fn<(id: string, kind: AddKind) => void>();
+    const menu = createTreeAddMenu({
+      body,
+      host: document.body,
+      choose,
+      chooseForStory,
+    });
+    const plus = document.createElement("button");
+    plus.dataset["storyadd"] = "legend";
+    body.append(plus);
+    plus.focus();
+    menu.openForStory(plus, "legend", "The legend");
+    const root = document.getElementById("tree-add-menu");
+    if (root === null) throw new Error("no menu");
+    return { menu, plus, root, chooseForStory };
+  }
+
+  it("names the story, offers no story, and adds into it", () => {
+    const { root, plus, chooseForStory } = forStory();
+    expect(root.querySelector(".mhead")?.textContent).toBe(
+      'Add to the story "The legend"',
+    );
+    expect(root.getAttribute("aria-label")).toBe(
+      'Add to the story "The legend"',
+    );
+    const story = root.querySelector<HTMLElement>('[data-kind="story"]');
+    expect(story?.closest("[hidden]")).not.toBeNull();
+    root.querySelector<HTMLElement>('[data-kind="longText"]')?.click();
+    expect(chooseForStory).toHaveBeenCalledWith("legend", "longText");
+    expect(choose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(plus);
+  });
+
+  it("skips the hidden story item from the keys", () => {
+    const { root } = forStory();
+    key(root, "End");
+    expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
+      "picture",
+    );
+    key(root, "ArrowDown");
+    expect((document.activeElement as HTMLElement).dataset["kind"]).toBe("pin");
+  });
+
+  it("offers a story again on a station's +", () => {
+    const { menu, root } = forStory();
+    menu.close(false);
+    const plus = plusFor(body, "gate");
+    menu.openFor(plus, "gate", "The old gate");
+    const story = root.querySelector<HTMLElement>('[data-kind="story"]');
+    expect(story?.closest("[hidden]")).toBeNull();
+    story?.click();
+    expect(choose).toHaveBeenCalledWith("gate", "story");
+  });
+});
+
 describe("createTreeAddMenu", () => {
   it("opens as a menu titled by its station, the focus on its first item, the picture off with its reason", () => {
     const { root, item } = opened();
@@ -82,7 +150,7 @@ describe("createTreeAddMenu", () => {
       [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
         (i) => i.dataset["kind"],
       ),
-    ).toEqual(ADD_CHOICES.map((c) => c.kind));
+    ).toEqual([...ADD_CHOICES.map((c) => c.kind), "story"]);
     const picture = item("picture");
     expect(picture?.getAttribute("aria-disabled")).toBe("true");
     expect(picture?.textContent).toContain("Taken on site with the phone");
@@ -96,15 +164,19 @@ describe("createTreeAddMenu", () => {
     key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("picture"));
     key(root, "ArrowDown");
+    expect(document.activeElement).toBe(item("story"));
+    key(root, "ArrowDown");
     expect(document.activeElement).toBe(item("pin"));
     key(root, "ArrowUp");
-    expect(document.activeElement).toBe(item("picture"));
+    expect(document.activeElement).toBe(item("story"));
     key(root, "Home");
     expect(document.activeElement).toBe(item("pin"));
     key(root, "End");
-    expect(document.activeElement).toBe(item("picture"));
+    expect(document.activeElement).toBe(item("story"));
     key(root, "l");
     expect(document.activeElement).toBe(item("longText"));
+    key(root, "s");
+    expect(document.activeElement).toBe(item("story"));
     key(root, "s");
     expect(document.activeElement).toBe(item("pin"));
   });
