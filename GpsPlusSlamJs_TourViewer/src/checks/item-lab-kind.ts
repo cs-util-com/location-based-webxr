@@ -14,6 +14,7 @@ import type {
   TourManifest,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { isRecord } from "gps-plus-slam-app-framework/utils/json-guards";
 
 import { showItemCard, type ItemCardHost } from "../item-card.js";
 import type { NarrationAudio } from "../narration-player.js";
@@ -64,10 +65,6 @@ export interface ItemKind {
 export function kindNameOf(search: string): string | null {
   const name = new URLSearchParams(search).get("kind") ?? DEFAULT_KIND;
   return KIND_NAME.test(name) ? name : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function isKindFile(value: unknown): value is KindFile {

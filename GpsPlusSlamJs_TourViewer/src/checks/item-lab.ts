@@ -326,6 +326,9 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
   let tappedAt: { x: number; y: number } | undefined;
   let shown = false;
 
+  /** The figure being stood; a release or clear makes an older one stale. */
+  let standings = 0;
+
   function makeStage() {
     const stage = createSceneStage({
       getScene: () => scene,
@@ -348,20 +351,26 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
     });
     return {
       ...stage,
-      showCharacter: ((id, blob, wait, look) => {
+      // Standing only once decoded and mounted, so a wait for it is a wait
+      // for the figure in the scene.
+      showCharacter: (async (id, blob, wait, look) => {
+        const mine = ++standings;
+        await stage.showCharacter(id, blob, wait, look);
+        if (mine !== standings) return;
         figure.standing = true;
         figure.line = look?.line ?? "";
-        return stage.showCharacter(id, blob, wait, look);
       }) as typeof stage.showCharacter,
       setVoice: ((voice, ms) => {
         figure.voice = voice;
         stage.setVoice(voice, ms);
       }) as typeof stage.setVoice,
       release() {
+        standings += 1;
         figure.standing = false;
         stage.release();
       },
       clear() {
+        standings += 1;
         figure.standing = false;
         stage.clear();
       },

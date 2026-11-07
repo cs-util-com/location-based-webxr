@@ -9,7 +9,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createCharacterLook, paintPoses } from "./character-look";
 import type { StageCharacterView } from "./character-views";
-import { fakeCharacterPainters } from "./test-support/fake-character-painters";
+import {
+  fakeCharacterPainters,
+  UPRIGHT_MARK,
+} from "./test-support/fake-character-painters";
 
 function setup(
   view: StageCharacterView,
@@ -672,6 +675,21 @@ describe("paintPoses", () => {
       paintPoses(source, true, { ...painters, frames: () => [] }),
     ).toHaveLength(1);
   });
+
+  // Why: a figure decoded for WebGL is stored bottom row first; a pose
+  // painted from the source rather than its turned copy stands on its head,
+  // and only a check of what the painters received sees that.
+  it.each([true, false])(
+    "paints a flipped figure from its upright copy (sheet %s)",
+    (sheet) => {
+      const { painters, painted } = fakeCharacterPainters();
+      const source = {} as never;
+      paintPoses(source, sheet, painters, true);
+      expect(painted.sources).toEqual([UPRIGHT_MARK]);
+      paintPoses(source, sheet, painters, false);
+      expect(painted.sources).toEqual([UPRIGHT_MARK, source]);
+    },
+  );
 });
 
 describe("createCharacterLook: a portrait with no card", () => {

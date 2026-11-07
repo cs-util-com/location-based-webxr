@@ -105,7 +105,10 @@ test.describe("the item lab", () => {
       const found = { red: [], brown: [] };
       for (let y = 0; y < image.height; y += 1) {
         for (let x = 0; x < image.width; x += 1) {
-          const [r, g, b] = data.slice((y * image.width + x) * 4);
+          const i = (y * image.width + x) * 4;
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
           if (r > 150 && g < 80 && b < 80) found.red.push(y);
           else if (r > 80 && r < 140 && g > 50 && g < 100 && b < 70) {
             found.brown.push(y);

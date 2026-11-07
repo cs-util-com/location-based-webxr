@@ -11,7 +11,7 @@ Runs a kind from `public/prototypes/item-kinds/<name>/` in both contexts, side b
   - `start()`, `next()`, `stop()`, `tap("story" | "free")`, `secondSound()`, `endSound()`
   - `loseAsset(id, lost)`, `holdLoads()`, `releaseLoads()`, `walk(away)`
   - `settle()` - resolves after two drawn frames
-  - `state()` - `ItemLabState`: the story's words, status, end count and stage line, the free figure's words, voice and failures, the sound, live object URLs, the assets read and declared
+  - `state()` - `ItemLabState`: the story's words, status, end count and stage line, the free figure's words (`free.standing` turns true once the figure is decoded and in the scene, so a wait for it is a wait for the figure), voice and failures, the sound, live object URLs, the assets read and declared
 
 ## Invariants and assumptions
 

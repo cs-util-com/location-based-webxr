@@ -44,8 +44,9 @@ import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
  * `public/prototypes/item-kinds/` is a row too, so a session's new kind is
  * held to the same contract without touching this file.
  *
- * A gap of the free host is a row marked `known`, run with `it.fails`: the
- * line says what is missing, and the row goes red the day it arrives.
+ * A gap of the free host is a row marked `known`: the line says what is
+ * missing, the row asserts the free host stands nothing for it, and it goes
+ * red the day the host stands it.
  */
 
 const IMAGE = { kind: "image", width: 16, height: 9 } as const;
@@ -397,13 +398,12 @@ function panel(
   };
 }
 
-/** The real free host beside a real story panel, on one voice channel. */
+/** The real free host, with silent sounds and stages that record. */
 function freeSide(
   row: ItemRow,
   loadAsset: (path: string) => Promise<Blob> = (path) =>
     Promise.resolve(new Blob([path])),
 ) {
-  const story = panel();
   const focus = createVoiceFocus();
   const reads: string[] = [];
   const failures: string[] = [];
@@ -466,7 +466,6 @@ function freeSide(
   });
   return {
     free,
-    story,
     reads,
     failures,
     live,
@@ -491,7 +490,19 @@ describe("the table of kinds", () => {
   });
 });
 
-describe.each(ROWS.filter((i) => /picture|sheet|the kind/.test(i.name)))(
+/** A kind measures a picture only when its sample has one. */
+const hasPicture = (row: ItemRow): boolean => {
+  const kind = kindOfRow.get(row);
+  return kind === undefined
+    ? /picture|sheet/.test(row.name)
+    : [...kindAssets(kind).values()].some((asset) => asset.kind === "image");
+};
+
+/** It speaks: one of its files is a sound. */
+const voiced = (row: ItemRow): boolean =>
+  declaredOf(row).some((id) => assets.get(id)?.kind === "audio");
+
+describe.each(ROWS.filter(hasPicture))(
   "the item contract, a picture being measured: $name",
   (item) => {
     // Why this test matters: measuring is a second wait after the read, so
@@ -672,12 +683,12 @@ describe.each(ROWS.filter((row) => row.known !== undefined))(
   "the free host, a known gap: $name",
   (row) => {
     // Why this test matters: the gap is stated, not skipped. The day the free
-    // host runs this row the test goes red: take the mark off the row.
-    it.fails(`stands: ${row.known ?? ""}`, async () => {
+    // host stands this row the test goes red: take the mark off the row.
+    it(`stands nothing: ${row.known ?? ""}`, async () => {
       const side = freeSide(row);
       side.arrive();
       await flush();
-      expect(side.lines.join(" ")).toContain(row.words);
+      expect(side.stages).toEqual([]);
     });
   },
 );
@@ -705,6 +716,7 @@ describe.each(STANDS)("the item contract, in the free host: $name", (item) => {
     await flush();
     side.tap();
     await flush();
+    expect(side.sounds.length > 0).toBe(voiced(item));
     side.free.stop();
     expect(side.sounds.every((sound) => sound.paused)).toBe(true);
     expect([...side.live]).toEqual([]);
@@ -752,7 +764,7 @@ describe.each(STANDS)("the item contract, in the free host: $name", (item) => {
     },
   );
 
-  it("reports its voice's end at most once, and never a story's end", async () => {
+  it("reports its voice's end once however often it ends", async () => {
     const side = freeSide(item);
     side.arrive();
     await flush();
@@ -763,9 +775,7 @@ describe.each(STANDS)("the item contract, in the free host: $name", (item) => {
     const spoken = side.stages
       .flatMap((stage) => stage.setVoice.mock.calls)
       .filter(([voice]) => voice === "spoken");
-    expect(spoken.length).toBeLessThanOrEqual(1);
-    side.free.stop();
-    expect(side.story.onStoryEnd).not.toHaveBeenCalled();
+    expect(spoken).toHaveLength(voiced(item) ? 1 : 0);
   });
 });
 
