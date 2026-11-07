@@ -905,8 +905,9 @@ export function pinTextChange(
 /** What a move of an object to `lat`/`lon` on the map would change
  *  (`moveObjectTo`: its height and facing kept): the object before and
  *  after (`moved`, to dispatch), or `missing` for an id the tour does not
- *  carry. No move is too far: one beyond its station's found radius
- *  keeps its station (`moved`). Throws for a position nobody can
+ *  carry. One beyond its station's found radius keeps its station
+ *  (`moved`); the session refuses one beyond an item's reach of its
+ *  station and asks before one into another station's circle. Throws for a position nobody can
  *  draw, as `moveObjectTo` does. */
 export function objectMoveChange(
   state: TourDocumentState,
