@@ -454,6 +454,11 @@ export class MeshBuilder {
     this.idxLen += mesh.indices.length;
   }
 
+  /** Vertices written so far: where the next `vertex` or `append` starts. */
+  get vertexCount(): number {
+    return this.pxLen / 3;
+  }
+
   build(forcedEars = 0): MeshData {
     // `slice` on a typed array copies exactly the written prefix, so the
     // returned buffers are the mesh's true size and none of the spare capacity

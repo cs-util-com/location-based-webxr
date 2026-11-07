@@ -405,7 +405,7 @@ describe("colour of a building:part", () => {
     // Bug 8. S3DB: the colour tags "can be used on both building outlines and
     // building parts". 1 590 of the 2 147 parts in the eleven sampled sites
     // carry a colour of their own, and every one was drawn in its outline's.
-    // Owner decision 2026-11-07: the part's own colour wins.
+    // Accepted recommendation 2026-11-07: the part's own colour wins.
     const features = [
       box(
         1,
@@ -467,6 +467,109 @@ describe("colour of a building:part", () => {
     expect(colouredWhere(n, c, (y) => Math.abs(y) < 1e-6)).toEqual(
       new Set(["1,1,1"]),
     );
+  });
+
+  describe("the roof is the roof block, not the upward faces (review finding 3)", () => {
+    // Why these tests matter: a vertex was roof-coloured when its normal
+    // pointed up. An onion swells out past the eave ring and draws in again,
+    // so its lower half faces DOWN and was painted in the wall colour: half
+    // a copper onion drawn grey. The roof is now the vertices the roof builder
+    // emitted (per polygon) whose face is not vertical, so a downward roof
+    // face is roof, while gable ends (vertical, in the roof block) and the
+    // floor of a floating part (outside it) keep the wall colour.
+    const RED = "1,0,0";
+    // The colour buffer is a Float32Array, so the channel is the float32 value.
+    const G = Math.fround(0x80 / 255);
+    const GREY = `${G},${G},${G}`;
+
+    /** "r,g,b" per vertex of the one chunk, with its y and normal y. */
+    function vertices(
+      tags: Record<string, string>,
+    ): { y: number; ny: number; rgb: string }[] {
+      const city = buildCity(
+        [
+          box(
+            1,
+            { "building:colour": "#808080", "roof:colour": "#ff0000", ...tags },
+            [-10, -10, 10, 10],
+          ),
+        ],
+        { frame: FRAME },
+      );
+      expect(city.buildings).toHaveLength(1);
+      const chunk = city.buildings[0];
+      const p = chunk?.mesh.positions ?? new Float32Array();
+      const n = chunk?.mesh.normals ?? new Float32Array();
+      const c = chunk?.colors ?? new Float32Array();
+      const out: { y: number; ny: number; rgb: string }[] = [];
+      for (let i = 0; i < p.length; i += 3) {
+        out.push({
+          y: p[i + 1] as number,
+          ny: n[i + 1] as number,
+          rgb: [c[i], c[i + 1], c[i + 2]].join(","),
+        });
+      }
+      return out;
+    }
+    const colours = (list: readonly { rgb: string }[]): Set<string> =>
+      new Set(list.map((v) => v.rgb));
+
+    it("paints every non-vertical vertex of an onion above the eave in the roof colour", () => {
+      const all = vertices({
+        building: "yes",
+        height: "30",
+        "roof:shape": "onion",
+        "roof:height": "15",
+      });
+      const roof = all.filter((v) => v.y > 15 - 1e-3 && Math.abs(v.ny) > 1e-3);
+      // Not vacuous: the onion really has downward faces above the eave.
+      expect(roof.some((v) => v.ny < -1e-3)).toBe(true);
+      expect(colours(roof)).toEqual(new Set([RED]));
+      expect(
+        colours(all.filter((v) => Math.abs(v.ny) <= 1e-3 && v.y < 15)),
+      ).toEqual(new Set([GREY]));
+    });
+
+    it("PIN: keeps a gabled house's gable triangles in the wall colour", () => {
+      const all = vertices({
+        building: "house",
+        height: "10",
+        "roof:shape": "gabled",
+        "roof:height": "4",
+      });
+      const gables = all.filter((v) => v.y > 6 + 1e-3 && Math.abs(v.ny) < 1e-6);
+      expect(gables.length).toBeGreaterThan(0);
+      expect(colours(gables)).toEqual(new Set([GREY]));
+      expect(colours(all.filter((v) => v.ny > 0.1))).toEqual(new Set([RED]));
+    });
+
+    it("PIN: a flat roof is its top face, the walls and floor keep the wall colour", () => {
+      // A floating part draws a floor that faces down; it is not in the roof
+      // block, so it must stay grey under the |ny| rule.
+      const all = vertices({
+        building: "yes",
+        height: "10",
+        min_height: "4",
+      });
+      expect(colours(all.filter((v) => v.ny > 0.5))).toEqual(new Set([RED]));
+      const floor = all.filter((v) => v.ny < -0.5);
+      expect(floor.length).toBeGreaterThan(0);
+      expect(colours(floor)).toEqual(new Set([GREY]));
+      expect(colours(all.filter((v) => Math.abs(v.ny) < 1e-6))).toEqual(
+        new Set([GREY]),
+      );
+    });
+
+    it("PIN: a dome is roof-coloured wherever it faces up, and nothing else is", () => {
+      const all = vertices({
+        building: "yes",
+        height: "20",
+        "roof:shape": "dome",
+        "roof:height": "10",
+      });
+      expect(colours(all.filter((v) => v.ny > 1e-3))).toEqual(new Set([RED]));
+      expect(colours(all.filter((v) => v.ny <= 1e-3))).toEqual(new Set([GREY]));
+    });
   });
 
   it("gives a part its outline's roof:colour when it has none of its own", () => {

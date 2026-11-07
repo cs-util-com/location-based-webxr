@@ -31,6 +31,7 @@
 
 import type { EnuPoint } from "./enu.js";
 import { mergeMeshes } from "./extrude.js";
+import type { VertexRange } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
 
 /**
@@ -128,16 +129,18 @@ export function chunkMeshes<T>(
    */
   shellRandOf?: (item: T) => number,
   /**
-   * Packed `0xrrggbb` for the item's ROOF, or `undefined` for an item whose
-   * roof is its wall colour. Read only together with `colourOf`.
+   * The item's ROOF colour and where its roof is, or `undefined` for an item
+   * whose roof is its wall colour. Read only together with `colourOf`.
    *
-   * A ROOF VERTEX IS ONE WHOSE NORMAL POINTS UP (y above `ROOF_NORMAL_MIN_Y`):
-   * the slopes, a flat top, a dome. Walls and gable ends are vertical and the
-   * bottom cap of a floating part points down, so they keep the wall colour.
-   * This works because the builders emit flat-shaded faces with their own
-   * vertices; a vertex shared between a wall and a roof would take one colour.
+   * A ROOF VERTEX IS ONE IN `vertexRanges` WHOSE FACE IS NOT VERTICAL (|normal
+   * y| above `ROOF_NORMAL_MIN_Y`), review finding 3. The ranges are what the
+   * roof builder emitted, so the floor of a floating part (outside them) keeps
+   * the wall colour, and gable ends (vertical) do too, while an onion's lower,
+   * downward-facing half is roof. Until 2026-11-07 it was "the normal points
+   * up", which drew half a copper onion in the wall colour. This works because
+   * the builders emit flat-shaded faces with their own vertices.
    */
-  roofColourOf?: (item: T) => number | undefined,
+  roofOf?: (item: T) => RoofPaint | undefined,
 ): MeshChunk[] {
   const grouped = new Map<string, ChunkPart[]>();
   for (const item of items) {
@@ -149,7 +152,7 @@ export function chunkMeshes<T>(
     list.push({
       mesh,
       colour: colourOf?.(item) ?? 0xffffff,
-      roof: roofColourOf?.(item),
+      roof: roofOf?.(item),
       rand: shellRandOf?.(item) ?? 0,
     });
     grouped.set(key, list);
@@ -177,11 +180,19 @@ export function chunkMeshes<T>(
 interface ChunkPart {
   readonly mesh: MeshData;
   readonly colour: number;
-  readonly roof: number | undefined;
+  readonly roof: RoofPaint | undefined;
   readonly rand: number;
 }
 
-/** Normal `y` above which a vertex belongs to a roof (see `roofColourOf`). */
+/** A roof colour and the vertices of the item's mesh it applies to. */
+export interface RoofPaint {
+  /** Packed `0xrrggbb`. */
+  readonly colour: number;
+  /** Half-open vertex ranges of the roof in the item's own mesh. */
+  readonly vertexRanges: readonly VertexRange[];
+}
+
+/** |Normal `y`| above which a roof-block vertex is roof (see `roofOf`). */
 const ROOF_NORMAL_MIN_Y = 1e-3;
 
 /** A packed `0xrrggbb` as three 0..1 channels. */
@@ -200,7 +211,8 @@ function channels(colour: number): readonly [number, number, number] {
  * faded from one class colour to its neighbour's would read as a gradient
  * someone chose. The merge preserves order, so filling in the same order is
  * what keeps a colour on the feature it belongs to. A part with a roof colour
- * paints its upward-facing vertices with it.
+ * paints the non-vertical vertices of its roof ranges with it; ranges are
+ * clamped to the part's own vertices, so a bad range cannot paint a neighbour.
  */
 function vertexColours(
   parts: readonly ChunkPart[],
@@ -209,16 +221,31 @@ function vertexColours(
   const colors = new Float32Array(vertexCount * 3);
   let at = 0;
   for (const part of parts) {
+    const count = part.mesh.positions.length / 3;
     const wall = channels(part.colour);
-    const roof = part.roof === undefined ? wall : channels(part.roof);
-    const normals = part.mesh.normals;
-    for (let i = 0; i < part.mesh.positions.length / 3; i++) {
-      const up = (normals[i * 3 + 1] ?? 0) > ROOF_NORMAL_MIN_Y;
-      colors.set(up ? roof : wall, at);
-      at += 3;
-    }
+    for (let i = 0; i < count; i++) colors.set(wall, at + i * 3);
+    if (part.roof !== undefined) paintRoof(colors, at, part.mesh, part.roof);
+    at += count * 3;
   }
   return colors;
+}
+
+/** Paints one part's roof ranges, starting at float offset `at`. */
+function paintRoof(
+  colors: Float32Array,
+  at: number,
+  mesh: MeshData,
+  roof: RoofPaint,
+): void {
+  const count = mesh.positions.length / 3;
+  const rgb = channels(roof.colour);
+  for (const range of roof.vertexRanges) {
+    const end = Math.min(range.end, count);
+    for (let i = Math.max(0, range.start); i < end; i++) {
+      const ny = mesh.normals[i * 3 + 1] ?? 0;
+      if (Math.abs(ny) > ROOF_NORMAL_MIN_Y) colors.set(rgb, at + i * 3);
+    }
+  }
 }
 
 /**

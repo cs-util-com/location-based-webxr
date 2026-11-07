@@ -5,6 +5,7 @@ import {
   chunkKeyFor,
   chunkMeshes,
   meshCentroidEnu,
+  type RoofPaint,
 } from "./chunk-meshes.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import { box, composed } from "./poi-primitives.js";
@@ -196,12 +197,17 @@ describe("chunkMeshes — per-feature colours (W22/W23)", () => {
  * buildings breathe in lockstep, which looks deliberate too. The only way either
  * is caught is here, where the feature boundaries still exist.
  */
-describe("chunkMeshes - roof colours (bug 8)", () => {
+describe("chunkMeshes - roof colours (bug 8, review finding 3)", () => {
   // WHY THESE TESTS MATTER. `roof:colour` was read nowhere and a chunk held one
   // colour per feature, so a red-tiled roof on white walls drew all white.
-  // The roof is told apart by its normal; these pin that walls and the bottom
-  // keep the wall colour and that a feature with no roof colour is unchanged.
-  const paint = (roof: number | undefined) =>
+  // BASELINE MOVED BY PLAN (review finding 3, 2026-11-07): the roof was told
+  // apart by an upward normal, which left an onion's downward-facing lower
+  // half in the wall colour. It is now the item's roof vertex ranges, and in
+  // them every face that is not vertical. These pin that rule on a cube whose
+  // whole mesh is declared roof (top AND bottom paint, sides do not), that a
+  // vertex outside the ranges never paints, and that a feature with no roof
+  // colour is unchanged.
+  const paint = (roof: RoofPaint | undefined) =>
     chunkMeshes(
       [cube(0, 0)],
       (m) => m,
@@ -211,22 +217,69 @@ describe("chunkMeshes - roof colours (bug 8)", () => {
       undefined,
       () => roof,
     )[0];
+  const CUBE_VERTICES = cube(0, 0).positions.length / 3;
 
-  it("paints upward-facing vertices with the roof colour, the rest with the wall colour", () => {
-    const chunk = paint(0xff0000);
+  /** "r,g,b" per vertex, split by whether the face is vertical. */
+  function byFacing(chunk: ReturnType<typeof paint>): {
+    vertical: Set<string>;
+    other: Set<string>;
+  } {
     const normals = chunk?.mesh.normals ?? new Float32Array();
     const colors = chunk?.colors ?? new Float32Array();
-    const up: string[] = [];
-    const other: string[] = [];
+    const vertical = new Set<string>();
+    const other = new Set<string>();
     for (let i = 0; i < normals.length / 3; i++) {
       const rgb = [...colors.slice(i * 3, i * 3 + 3)].join(",");
-      ((normals[i * 3 + 1] as number) > 0.5 ? up : other).push(rgb);
+      (Math.abs(normals[i * 3 + 1] as number) < 1e-6 ? vertical : other).add(
+        rgb,
+      );
     }
-    expect(new Set(up)).toEqual(new Set(["1,0,0"]));
-    expect(new Set(other)).toEqual(new Set(["1,1,1"]));
-    // A cube has one top face and five others; both groups must be reached.
-    expect(up.length).toBeGreaterThan(0);
-    expect(other.length).toBeGreaterThan(up.length);
+    return { vertical, other };
+  }
+
+  it("paints the non-vertical vertices of the roof ranges, the rest with the wall colour", () => {
+    const { vertical, other } = byFacing(
+      paint({
+        colour: 0xff0000,
+        vertexRanges: [{ start: 0, end: CUBE_VERTICES }],
+      }),
+    );
+    // Both sets non-empty and one colour each: equality with one-element sets.
+    expect(other).toEqual(new Set(["1,0,0"]));
+    expect(vertical).toEqual(new Set(["1,1,1"]));
+  });
+
+  it("never paints a vertex outside the ranges, whatever it faces", () => {
+    const { vertical, other } = byFacing(
+      paint({ colour: 0xff0000, vertexRanges: [] }),
+    );
+    expect(other).toEqual(new Set(["1,1,1"]));
+    expect(vertical).toEqual(new Set(["1,1,1"]));
+  });
+
+  it("clamps a range that runs past the mesh, so it cannot paint a neighbour", () => {
+    // Defensive: the ranges come from the caller. Two cubes in one chunk, the
+    // first declaring a range far past its own end.
+    const items: { mesh: MeshData; roof?: RoofPaint }[] = [
+      {
+        mesh: cube(0, 0),
+        roof: { colour: 0xff0000, vertexRanges: [{ start: -5, end: 1e9 }] },
+      },
+      { mesh: cube(1, 0) },
+    ];
+    const chunk = chunkMeshes(
+      items,
+      (item) => item.mesh,
+      () => ({ x: 0, y: 0 }),
+      undefined,
+      () => 0xffffff,
+      undefined,
+      (item) => item.roof,
+    )[0];
+    const colors = chunk?.colors ?? new Float32Array();
+    const second = [...colors.slice(CUBE_VERTICES * 3)];
+    expect(second.length).toBe(CUBE_VERTICES * 3);
+    expect(new Set(second)).toEqual(new Set([1]));
   });
 
   it("is unchanged for a feature without a roof colour", () => {

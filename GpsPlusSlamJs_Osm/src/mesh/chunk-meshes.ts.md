@@ -12,7 +12,8 @@ coloured.
 - `CHUNK_SIZE_M` (920) — the grain, taken from the H3 res-8 ladder.
 - `MeshChunk` — `{ key, mesh, colors? }`.
 - `chunkKeyFor(point, sizeM?): string`
-- `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?, shellRandOf?, roofColourOf?): MeshChunk[]`
+- `chunkMeshes(items, meshOf, positionOf, sizeM?, colourOf?, shellRandOf?, roofOf?): MeshChunk[]`
+- `interface RoofPaint` - `{ colour, vertexRanges }`, what `roofOf` returns
 - `meshCentroidEnu(mesh): EnuPoint`
 
 ## Invariants & assumptions
@@ -45,12 +46,16 @@ coloured.
   where per-feature colour meets per-chunk batching.
 - **No `colourOf` means no colour buffer** — bytes and a shader define bought for
   nothing.
-- **`roofColourOf` paints a feature's roof** (bug 8): every vertex whose normal
-  y is above `1e-3` (slopes, flat tops, domes) takes the roof colour, every
-  other vertex (walls, gable ends, the bottom cap) the wall colour. It relies
-  on the builders emitting flat-shaded faces with their own vertices; a vertex
-  shared between a wall and a roof would take one colour. It is read only with
-  `colourOf`, and `undefined` for an item leaves it one colour.
+- **`roofOf` paints a feature's roof** (bug 8, review finding 3): a vertex in
+  one of the item's `vertexRanges` whose face is not vertical (|normal y| above
+  `1e-3`) takes the roof colour, every other vertex the wall colour. The ranges
+  are the roof block `extrudeBuilding` emitted, so the floor of a floating
+  part (outside them) and gable ends (vertical) stay wall-coloured, while an
+  onion's lower, downward-facing half is roof. Until 2026-11-07 the rule was
+  "normal y above `1e-3`", which drew that half grey. Ranges are clamped to the
+  item's own vertices, so a bad range cannot paint a neighbour. It relies on
+  flat-shaded faces with their own vertices; it is read only with `colourOf`,
+  and `undefined` for an item leaves it one colour.
 
 ## Examples
 
@@ -72,5 +77,8 @@ const buildings = chunkMeshes(
 distant-apart grouping, the empty and degenerate cases, determinism, the key's
 sign handling, the centroid's frame, and for colours: flat per feature, each
 feature's colour on its own vertices, no buffer when uncoloured, and the buffer
-sized to the merged vertex count; the roof colour on upward-facing vertices
-only, and no change for a feature without one.
+sized to the merged vertex count; the roof colour on the non-vertical
+vertices of the roof ranges only (a vertex outside them never paints, an
+overlong range is clamped), and no change for a feature without one.
+`s3db-parts.test.ts` checks the rule end to end through `buildCity`: onion,
+gable ends, a floating flat part's floor, dome.

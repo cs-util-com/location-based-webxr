@@ -69,6 +69,21 @@ export interface ExtrudeOptions {
 export interface ExtrudedBuilding extends MeshData {
   /** True when the ROOF was approximated rather than generated exactly. */
   readonly roofIsApproximate: boolean;
+  /**
+   * The vertices the roof builder emitted, `[start, end)` (review finding 3).
+   *
+   * The roof is ONE contiguous block between the walls and the floor, so a
+   * consumer can tell roof from wall by position in the buffer instead of by
+   * the normal. Painting by "faces up" left an onion's lower, downward-facing
+   * half in the wall colour.
+   */
+  readonly roofVertices: VertexRange;
+}
+
+/** A half-open range of vertex indices, `[start, end)`. */
+export interface VertexRange {
+  readonly start: number;
+  readonly end: number;
 }
 
 /** An empty mesh, used for footprints that cannot form a volume. */
@@ -79,6 +94,7 @@ const EMPTY: ExtrudedBuilding = {
   triangleCount: 0,
   forcedEars: 0,
   roofIsApproximate: false,
+  roofVertices: { start: 0, end: 0 },
 };
 
 /**
@@ -124,7 +140,9 @@ export function extrudeBuilding(
       ? {}
       : { orientation: options.roofOrientation }),
   });
+  const roofStart = builder.vertexCount;
   builder.append(roof);
+  const roofVertices = { start: roofStart, end: builder.vertexCount };
 
   if (options.includeFloor === true || options.minHeightM > 0) {
     // A floating part's underside IS visible from the street below, which is
@@ -135,6 +153,7 @@ export function extrudeBuilding(
   return {
     ...builder.build(cap.forcedEars + roof.forcedEars),
     roofIsApproximate: roof.isApproximate,
+    roofVertices,
   };
 }
 

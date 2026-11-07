@@ -11,7 +11,9 @@ What a mesh IS — the buffer type and the builder that accumulates one.
   `colours` (`Float32Array | undefined`)
 - `class MeshBuilder` — `vertex(x,y,z,nx,ny,nz)`, `triangle(a,b,c)`,
   `paint(0xrrggbb)`, `pushTransform({rotateX?, rotateY?, x?, y?, z?})`,
-  `popTransform()`, `append(mesh)`, `build(forcedEars?)`
+  `popTransform()`, `append(mesh)`, `build(forcedEars?)`, and the getter
+  `vertexCount` (vertices written so far; `extrude.ts` reads it around the
+  roof to record the roof's vertex range)
 
 ## Invariants & assumptions
 

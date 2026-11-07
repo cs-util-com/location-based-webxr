@@ -50,7 +50,9 @@ trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own resul
   (bug 8, `buildingColour(tags, outline)`), so a mapped copper spire is copper
   and an untagged cathedral is still one colour. A part without its parent in
   the set keeps its own. **Roofs take `roof:colour`** (the part's, then the
-  parent's) through `chunkMeshes`'s `roofColourOf`.
+  parent's) through `chunkMeshes`'s `roofOf`, on each volume's `roofVertexRanges` (the
+  roof block, not the upward faces; review finding 3). A barrier has no roof
+  block.
 - **The shell phase is stable across rebuilds** (`shellRandFor`, from each
   feature's first vertex), so the AR shell does not re-randomise when a tile
   loads.

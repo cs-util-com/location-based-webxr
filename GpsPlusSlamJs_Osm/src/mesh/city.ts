@@ -133,6 +133,7 @@ export function buildCity(
   const drawn = [
     ...volumes.map((volume) => ({
       mesh: volume.mesh,
+      roofVertexRanges: volume.roofVertexRanges,
       tags: tagsByKey.get(volume.feature) ?? {},
       outline:
         volume.parentFeature === undefined
@@ -141,6 +142,8 @@ export function buildCity(
     })),
     ...barriers.map((barrier) => ({
       mesh: barrier.mesh,
+      // A barrier has no roof block: it is all wall.
+      roofVertexRanges: [],
       tags: tagsByKey.get(barrier.feature) ?? {},
       outline: undefined,
     })),
@@ -154,7 +157,12 @@ export function buildCity(
     // The shell shader's phase, from the feature's own geometry, so it is
     // stable across rebuilds (an index would re-shuffle on every refresh).
     (item) => shellRandFor(item.mesh),
-    (item) => roofColour(item.tags, item.outline),
+    (item) => {
+      const colour = roofColour(item.tags, item.outline);
+      return colour === undefined
+        ? undefined
+        : { colour, vertexRanges: item.roofVertexRanges };
+    },
   );
   const { roads, roadCount } = options.roads
     ? cityRoads(all, ground, inside, tagsByKey)

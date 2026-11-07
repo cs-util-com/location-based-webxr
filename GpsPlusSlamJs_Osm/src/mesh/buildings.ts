@@ -51,7 +51,7 @@ import {
 } from "./building-heights.js";
 import type { BuildingHeights } from "./building-heights.js";
 import { extrudeBuilding, mergeMeshes } from "./extrude.js";
-import type { ExtrudedBuilding } from "./extrude.js";
+import type { ExtrudedBuilding, VertexRange } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
 import {
   PART_COVERAGE_TO_HIDE_OUTLINE,
@@ -75,6 +75,13 @@ export interface BuildingVolume {
    * is the common case §8's approximation trade rests on.
    */
   readonly roofIsApproximate: boolean;
+  /**
+   * The roof's vertices in `mesh`, one range per polygon (review finding 3).
+   *
+   * Carried so `chunkMeshes` paints the roof colour on what the roof builder
+   * drew, not on whatever faces up; see `ExtrudedBuilding.roofVertices`.
+   */
+  readonly roofVertexRanges: readonly VertexRange[];
   /**
    * The OUTER ring in ENU metres, kept so a consumer can ask what ground this
    * volume covers (F33, §5).
@@ -940,6 +947,17 @@ function volumeFor(
   const mesh =
     meshes.length === 1 ? (meshes[0] as MeshData) : mergeMeshes(meshes);
   const roofIsApproximate = meshes.some((m) => m.roofIsApproximate);
+  // `mergeMeshes` keeps the order, so each polygon's roof moves by the
+  // vertices of the polygons before it.
+  const roofVertexRanges: VertexRange[] = [];
+  let offset = 0;
+  for (const m of meshes) {
+    roofVertexRanges.push({
+      start: m.roofVertices.start + offset,
+      end: m.roofVertices.end + offset,
+    });
+    offset += m.positions.length / 3;
+  }
   const footprint = polygons[0]?.[0] ?? [];
   // The absolute top: the base the walls actually stand on, plus the height the
   // roof reaches above that base.
@@ -950,6 +968,7 @@ function volumeFor(
         heights,
         mesh,
         roofIsApproximate,
+        roofVertexRanges,
         footprint,
         topHeightM,
       }
@@ -960,6 +979,7 @@ function volumeFor(
         footprint,
         mesh,
         roofIsApproximate,
+        roofVertexRanges,
         topHeightM,
       };
 }

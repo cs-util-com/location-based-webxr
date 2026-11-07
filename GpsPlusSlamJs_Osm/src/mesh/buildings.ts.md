@@ -42,7 +42,8 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     Berlin; no hand-built fixture would have.
   - **No area cap** — a measured deviation from DEC-R11-9. See below.
 - `interface BuildingVolume` — `feature`, `parentFeature?`, `heights`, `mesh`,
-  `roofIsApproximate`
+  `roofIsApproximate`, `roofVertexRanges` (the roof block of each merged
+  polygon in `mesh`, review finding 3), `footprint`, `topHeightM`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
     Substituting "is the shape gabled or hipped?" is a _different_ claim: a
     gabled roof on an actual rectangle is exact, and that is the common case
