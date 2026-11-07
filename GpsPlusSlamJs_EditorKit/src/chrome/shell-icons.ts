@@ -45,8 +45,7 @@ const PATHS = {
   story: '<path d="M1.8 4h4.1l1.4 1.6h6.9v7.4H1.8z"/>',
   storyOpen:
     '<path d="M1.8 13V4h4.1l1.4 1.6h5.6v1.7"/><path d="M1.8 13l1.7-5.7h11.2L13 13z"/>',
-  choice:
-    '<path d="M8 14V8.6L4 3.6M8 8.6l4-5M3 6.2V3.2h3M13 6.2V3.2h-3"/>',
+  choice: '<path d="M8 14V8.6L4 3.6M8 8.6l4-5M3 6.2V3.2h3M13 6.2V3.2h-3"/>',
   quiz: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".35"/>',
   plus: '<path d="M8 3v10M3 8h10"/>',
   // A long text's writer (long-text-writer.ts): its toolbar, its note, the
