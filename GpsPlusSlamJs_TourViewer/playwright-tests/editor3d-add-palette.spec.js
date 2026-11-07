@@ -51,7 +51,7 @@ test("just above a phone's width the top bar's Add opens the palette, and Escape
   page,
 }) => {
   test.setTimeout(180_000);
-  await open3dAt(page, 521);
+  await open3dAt(page, 561);
   const add = page.locator("#studio-add");
   await expect(add).toBeVisible();
   await expect(page.locator("#edit-menu-btn")).toBeHidden();

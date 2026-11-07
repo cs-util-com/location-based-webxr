@@ -355,13 +355,19 @@ body[data-view="3d"] #view3d {
   color-scheme: dark;
 }
 
+/* What the on-screen keyboard covers of the view (`phone-keyboard.ts`): a
+ * panel stands on it, so its scroller ends in sight. */
+body {
+  --s-keyboard-foot: max(0px, var(--s-keyboard-h, 0px) - var(--s-bar-h));
+}
+
 .dock {
   position: absolute;
   top: var(--s-dock-top);
   z-index: 5;
   display: flex;
   flex-direction: column;
-  max-height: calc(100% - var(--s-dock-top));
+  max-height: calc(100% - var(--s-dock-top) - var(--s-keyboard-foot));
   border: 1px solid var(--s-line);
   background: rgb(31 32 35 / 97%);
   box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
@@ -370,7 +376,7 @@ body[data-view="3d"] #view3d {
 /* Open, a dock runs from the accent line down to the bottom bar; folded,
  * it is its head alone (38 px), square where it meets the line. */
 .dock:not(.collapsed) {
-  bottom: 0;
+  bottom: var(--s-keyboard-foot);
   border-bottom: 0;
 }
 
@@ -1785,7 +1791,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
 }
 
 #view3d.panel-span .dock:not(.collapsed) {
-  bottom: var(--s-panel-h, 0px);
+  bottom: max(var(--s-panel-h, 0px), var(--s-keyboard-foot));
   border-bottom: 1px solid var(--s-line);
 }
 
@@ -2519,10 +2525,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   #shell-inspector:not(.collapsed) {
     top: auto;
     right: 0;
-    bottom: var(--s-panel-h, 0px);
+    bottom: max(var(--s-panel-h, 0px), var(--s-keyboard-foot));
     left: 0;
     width: auto;
-    height: calc((100% - var(--s-panel-h, 0px)) * var(--s-sheet-share, 0));
+    height: min(
+      (100% - var(--s-panel-h, 0px)) * var(--s-sheet-share, 0),
+      100% - max(var(--s-panel-h, 0px), var(--s-keyboard-foot))
+    );
     max-height: none;
     border: 0;
     border-top: 1px solid var(--s-line2);
@@ -2738,6 +2747,15 @@ body[data-view="3d"] #view3d .view3d-canvas {
   box-shadow: 0 3px 0 0 var(--s-accent);
 }
 
+/* A finger's height for what is smaller for a mouse: a phone's item row. */
+@media (width <= 700px), (pointer: coarse) {
+  .range input[type="range"],
+  .contents .kid,
+  #add-palette .pfil .chip {
+    height: 32px;
+  }
+}
+
 /* A phone: the rows take a finger, 34 px a station and 32 px an item. */
 @media (width <= 700px) {
   .card > .head {
@@ -2941,17 +2959,6 @@ body[data-view="3d"] #view3d .view3d-canvas {
   :root {
     --s-tree-w: 226px;
     --s-insp-w: 268px;
-  }
-}
-
-/* The on-screen keyboard lies over the page (`phone-keyboard.ts`): a panel
- * keeps its foot free, so its last field scrolls clear. */
-@media (width <= 900px) {
-  .dock:not(.collapsed) {
-    padding-bottom: max(
-      0px,
-      var(--s-keyboard-h, 0px) - var(--s-bar-h) - var(--s-panel-h, 0px)
-    );
   }
 }
 

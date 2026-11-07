@@ -2,8 +2,7 @@
  * A phone's on-screen keyboard over the editor's panels: it lies over the
  * page without changing its size, so the page reads its height from the
  * visual viewport, gives it to the styles as `--s-keyboard-h` (a panel
- * leaves that much free at its foot) and brings the field in use into
- * sight.
+ * stands on the keyboard) and brings the field in use into sight.
  *
  * @see phone-keyboard.ts.md
  */

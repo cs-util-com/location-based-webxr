@@ -8,6 +8,7 @@ import {
   GLOBE_VIEW,
   answerHosts,
   boxIn,
+  capture,
   layoutOf,
   noApproach,
   noClouds,
@@ -365,6 +366,58 @@ async function expectWriterLayout(page, size) {
   expect(phone.height, at).toBeLessThanOrEqual(760 + 0.5);
   expect(phone.y + phone.height, at).toBeLessThanOrEqual(view.y + view.height);
 }
+
+/**
+ * On a phone the writer is the details' sheet: the window's width, the
+ * height the sheet takes of the view, the canvas ending at its top. The
+ * prototype shows no phone, so this follows the phone's sheet: nothing can
+ * be wider there and there is no room for the preview beside it.
+ */
+test("on a phone the writer stands in the sheet, under the map, a wider one left behind", async ({
+  page,
+}) => {
+  test.setTimeout(BUDGET_MS);
+  await openEssay(page);
+  const dock = page.locator("#shell-inspector");
+  const rectOf = async (
+    /** @type {import("@playwright/test").Locator} */ it,
+  ) => {
+    const found = await it.boundingBox();
+    if (found === null) throw new Error("no box");
+    return found;
+  };
+  await page.locator('#inspector-head [data-act="lt-wide"]').click();
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 667, height: 375 },
+  ]) {
+    await page.setViewportSize(size);
+    const foot = size.height - 24;
+    await expect.poll(async () => (await rectOf(dock)).width).toBe(size.width);
+    const sheet = await rectOf(dock);
+    expect(sheet.x).toBe(0);
+    expect(sheet.y + sheet.height).toBeCloseTo(foot, 0);
+    expect(sheet.height).toBeCloseTo((foot - 40) * 0.66, 0);
+    await expect
+      .poll(async () => {
+        const map = await rectOf(page.locator("#view3d .view3d-canvas"));
+        return Math.round(map.y + map.height);
+      })
+      .toBe(Math.round(sheet.y));
+    await expect(dock.locator('[data-act="lt-wide"]')).toBeHidden();
+    await expect(dock.locator('[data-act="lt-preview"]')).toBeHidden();
+    await expect(page.locator(".lw-pv")).toBeHidden();
+    await expect(page.locator(".lw-pv-open")).toBeHidden();
+    await dock.locator(".lw-writer textarea").scrollIntoViewIfNeeded();
+    const writer = await rectOf(dock.locator(".lw-writer textarea"));
+    expect(writer.x).toBeGreaterThanOrEqual(0);
+    expect(writer.x + writer.width).toBeLessThanOrEqual(size.width);
+    await capture(
+      page,
+      test.info().outputPath(`writer-${String(size.width)}.png`),
+    );
+  }
+});
 
 test("words typed just before Ctrl+S are in the saved tour @pr", async ({
   page,

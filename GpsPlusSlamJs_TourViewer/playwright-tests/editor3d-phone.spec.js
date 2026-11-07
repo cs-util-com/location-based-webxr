@@ -218,6 +218,130 @@ test("on a phone's side both panels stay, the map between, and the close button 
   expect((await box(canvas(page))).height).toBe(foot - viewTop);
 });
 
+test("on a phone the controls smaller for a mouse take a finger", async ({
+  page,
+}) => {
+  await open(page, PORTRAIT);
+  await station(page, "The old gate").click();
+  // The sample's stations start empty: a row to measure, then back.
+  await page.locator('#inspector-body [data-act="add-content"]').click();
+  await page.locator('#tree-add-menu [data-kind="pin"]').click();
+  await page.locator('#inspector-head [data-act="back"]').click();
+  await station(page, "The old gate").click();
+  const row = page.locator('#inspector-body [data-act^="goto:"]').first();
+  expect((await box(row)).height).toBe(32);
+  await page.locator('#inspector-body [data-act="position"]').click();
+  const slider = page.locator('#inspector-body [data-act="radius-slider"]');
+  expect((await box(slider)).height).toBe(32);
+  await page.locator("#studio-add").click();
+  const chip = page.locator("#add-palette .pfil .chip").first();
+  expect((await box(chip)).height).toBe(32);
+});
+
+/**
+ * What an on-screen keyboard leaves at each size, by the page's real path:
+ * the visual viewport shrinks and `watchKeyboard` answers. A field counts
+ * as in sight when it ends above the keyboard and nothing covers its
+ * middle, its scroller's edge included. Keyboards above about 55 % of the
+ * height are left out: at those sizes a phone shows the field alone.
+ */
+const KEYBOARD_SIZES = [
+  PORTRAIT,
+  { width: 360, height: 640 },
+  { width: 667, height: 375 },
+  SIDEWAYS,
+  { width: 915, height: 412 },
+  { width: 1024, height: 600 },
+];
+const KEYBOARDS = [100, 150, 200, 260, 300];
+const SHARES = [0.3, 0.66, 0.8];
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string[]} fields
+ * @param {{ width: number, height: number }} size
+ * @returns {Promise<string[]>} what is out of sight
+ */
+function outOfSight(page, fields, size) {
+  const keyboards = KEYBOARDS.filter((px) => px <= size.height * 0.55);
+  return page.evaluate(
+    ({ fields, keyboards, shares }) => {
+      const viewport = /** @type {VisualViewport} */ (window.visualViewport);
+      const { style } = document.body;
+      const was = style.getPropertyValue("--s-sheet-share");
+      const lost = [];
+      for (const px of keyboards) {
+        for (const share of innerWidth <= 700 ? shares : [Number(was)]) {
+          if (innerWidth <= 700) {
+            style.setProperty("--s-sheet-share", String(share));
+          }
+          Object.defineProperty(viewport, "height", {
+            value: innerHeight - px,
+            configurable: true,
+          });
+          viewport.dispatchEvent(new Event("resize"));
+          for (const selector of fields) {
+            const field = /** @type {HTMLElement} */ (
+              document.querySelector(selector)
+            );
+            field.focus();
+            const at = field.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              at.x + at.width / 2,
+              at.y + at.height / 2,
+            );
+            const seen =
+              at.top >= 40 &&
+              at.bottom <= innerHeight - px &&
+              hit !== null &&
+              field.contains(hit);
+            if (!seen) {
+              lost.push(
+                `${String(innerWidth)}x${String(innerHeight)} keyboard ${String(px)} share ${String(share)} ${selector} at ${String(Math.round(at.top))}-${String(Math.round(at.bottom))}`,
+              );
+            }
+          }
+        }
+      }
+      // @ts-expect-error - the stub, back to the browser's own.
+      delete viewport.height;
+      viewport.dispatchEvent(new Event("resize"));
+      style.setProperty("--s-sheet-share", was);
+      return lost;
+    },
+    { fields, keyboards, shares: SHARES },
+  );
+}
+
+test("over a keyboard every field in use stays in sight, at every size and sheet height", async ({
+  page,
+}) => {
+  await open(page, PORTRAIT);
+  await station(page, "The old gate").click();
+  await page.locator('#inspector-body [data-act="position"]').click();
+  // The toast of the opened tour lies over everything for a while, on
+  // purpose: not what this test is about.
+  await page.addStyleTag({ content: ".toast { display: none; }" });
+  const lost = [];
+  const fields = ['[data-field="title"]', '[data-field="radius"]'].map(
+    (field) => `#inspector-body ${field}`,
+  );
+  for (const size of KEYBOARD_SIZES) {
+    await page.setViewportSize(size);
+    lost.push(...(await outOfSight(page, fields, size)));
+  }
+  // The list's search, the sheet the keyboard opens first.
+  await page.setViewportSize(PORTRAIT);
+  await page.locator('#inspector-head [data-act="back"]').click();
+  for (const size of KEYBOARD_SIZES) {
+    await page.setViewportSize(size);
+    lost.push(
+      ...(await outOfSight(page, ["#shell-tree .tsearch input"], size)),
+    );
+  }
+  expect(lost).toEqual([]);
+});
+
 test("the radius slider writes its number, one step in the history", async ({
   page,
 }) => {

@@ -22,8 +22,11 @@ styles, and the field in use brought into sight.
   browser's bar) are no keyboard.
 - Without a visual viewport nothing happens: the browser's own scrolling
   stays.
-- The panels leave the height free at their foot (`editor-shell.css`), so
-  they scroll to their last field; the map's canvas is not resized for it.
+- The panels stand on the keyboard (`editor-shell.css`, `--s-keyboard-foot`):
+  a panel gets shorter, or a sheet rises over the map, so its scroller ends
+  above the keyboard and a field scrolled into it is in sight. A padding
+  would not do: the scroller's box would still reach under the keyboard.
+  The map's canvas is not resized for it.
 
 ## Examples
 
