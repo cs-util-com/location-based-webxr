@@ -47,26 +47,37 @@ const FIXED_POSES = {
  * A scene's own fixed views, where the shared one would not work. Midtown's
  * towers reach 325 m: the shared landing pose at 150 m stands next to one and
  * sees a wall, so Midtown's landing stands back over the edge of the data,
- * looking in along the same line.
+ * looking in along the same line. Heidelberg's nearest street faces a wall
+ * 4 m away, so its street view stands in the Hauptstrasse, about 25 m from
+ * the centre, looking east along it.
  */
 const SCENE_POSES = {
   midtown: {
     landing: { position: [-330, 380, 530], target: [0, 40, 0] },
+  },
+  heidelberg: {
+    street: {
+      position: [16.3, EYE_HEIGHT_M, -19.4],
+      target: [16.79, EYE_HEIGHT_M, -19.49],
+    },
   },
 };
 
 /**
  * Where a view stands: `{ position, target }` as `[x, y, z]` in render axes
  * (east, up, minus north). `street` is the pose of `streetCamera`, needed
- * only for the street view; `scene` picks a scene's own fixed view where it
- * has one. RangeError for an unknown view or a missing pose.
+ * only for the street view; `scene` picks a scene's own view where it has
+ * one, the street view included. RangeError for an unknown view or a missing
+ * pose.
  */
 export function cameraPose(view, street, scene) {
+  const own = SCENE_POSES[scene]?.[view];
   if (view === "street") {
+    if (own) return own;
     if (!street) throw new RangeError("the street view needs its pose");
     return street;
   }
-  const pose = SCENE_POSES[scene]?.[view] ?? FIXED_POSES[view];
+  const pose = own ?? FIXED_POSES[view];
   if (!pose) throw new RangeError(`unknown view: ${view}`);
   return pose;
 }
@@ -92,10 +103,76 @@ export function clampSplit(x) {
   return Math.min(0.95, Math.max(0.05, value));
 }
 
+/** A linked pose further out than this is a typo, not a camera (the sky's radius). */
+const CAM_LIMIT_M = 5000;
+
+/** Eye and target closer than this give the orbit no direction. */
+const CAM_MIN_SPAN_M = 0.05;
+
 /**
- * A page's state from its link: `{ scene, view, split, heat }`. `split` is
- * the divider's share, or null for the full view (`split=off`). An unknown or
- * missing value takes the default, so a mistyped link still shows a page.
+ * A linked camera, `cam=ex,ey,ez,tx,ty,tz` in metres and render axes, as
+ * `{ position, target }`; null for anything else (not six finite numbers,
+ * further out than the sky, or eye on the target). Never throws.
+ */
+export function parseCameraOverride(raw) {
+  if (typeof raw !== "string") return null;
+  const parts = raw.split(",");
+  if (parts.length !== 6) return null;
+  const values = parts.map((part) =>
+    part.trim() === "" ? Number.NaN : Number(part),
+  );
+  if (!values.every((v) => Number.isFinite(v) && Math.abs(v) <= CAM_LIMIT_M)) {
+    return null;
+  }
+  const position = values.slice(0, 3);
+  const target = values.slice(3);
+  const span = Math.hypot(...position.map((v, i) => v - target[i]));
+  return span < CAM_MIN_SPAN_M ? null : { position, target };
+}
+
+/** Eyes below this stand in the street: they may look up and come close. */
+const STREET_EYE_M = 10;
+
+/**
+ * OrbitControls limits for a linked pose, so its first update keeps the
+ * camera where the link put it: the distance range holds the pose's own
+ * distance with room to zoom both ways, and the polar limit holds its angle.
+ * An eye in the street may look up; one above it stays above the ground.
+ */
+export function freeOrbitLimits({ position, target }) {
+  const offset = position.map((v, i) => v - target[i]);
+  const distance = Math.hypot(...offset);
+  if (!(distance > 0)) {
+    return {
+      minDistance: 30,
+      maxDistance: 1500,
+      maxPolarAngle: Math.PI * 0.49,
+    };
+  }
+  const polar = Math.acos(Math.min(1, Math.max(-1, offset[1] / distance)));
+  const street = position[1] < STREET_EYE_M;
+  return {
+    minDistance: Math.min(
+      distance,
+      street ? 0.1 : Math.max(0.5, distance / 10),
+    ),
+    maxDistance: Math.max(distance, Math.min(1500, distance * 6)),
+    maxPolarAngle: Math.min(
+      Math.PI * 0.95,
+      Math.max(Math.PI * (street ? 0.62 : 0.49), polar),
+    ),
+  };
+}
+
+/** A metre value as the link writes it: 10 cm, no trailing zeros, no minus zero. */
+const camNumber = (value) => String(Math.round(value * 10) / 10 + 0);
+
+/**
+ * A page's state from its link: `{ scene, view, split, heat, cam }`. `split`
+ * is the divider's share, or null for the full view (`split=off`). `cam` is a
+ * linked pose (`parseCameraOverride`) that replaces the view's, or null. An
+ * unknown or missing value takes the default, so a mistyped link still shows
+ * a page.
  */
 export function parseCityLookParams(search, { defaultSplit = null } = {}) {
   const params = new URLSearchParams(search);
@@ -115,15 +192,20 @@ export function parseCityLookParams(search, { defaultSplit = null } = {}) {
     view: pick("view", VIEWS),
     split,
     heat: params.get("heat") === "1",
+    cam: parseCameraOverride(params.get("cam")),
   };
 }
 
 /** The link's search string for a state, read back by `parseCityLookParams`. */
-export function cityLookSearch({ scene, view, split, heat }) {
+export function cityLookSearch({ scene, view, split, heat, cam = null }) {
   const params = new URLSearchParams({ scene, view });
   params.set("split", split === null ? "off" : split.toFixed(3));
   if (heat) params.set("heat", "1");
-  return `?${params}`;
+  // Commas stay plain, so a linked pose stays readable in the address bar.
+  const pose = cam
+    ? `&cam=${[...cam.position, ...cam.target].map(camNumber).join(",")}`
+    : "";
+  return `?${params}${pose}`;
 }
 
 /**

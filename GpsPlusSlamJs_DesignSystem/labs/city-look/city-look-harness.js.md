@@ -40,6 +40,7 @@ roads, built on the library's defaults), `sun` (a unit vector towards the sun),
 - `scene`, `camera`: the fixture's name and the view's name, strings, so a test can read
   them. The three.js objects are in `three: { scene, camera, renderer }`.
 - `split`: the divider's share, or null for the full view.
+- `cam`: the linked or last orbited pose (`{ position, target }`), or null on a view's own.
 - `triangles`, `draws`: what the variant's scene pass drew in the last frame, its
   geometry alone, the same in split and in full view. `allTriangles`, `allDraws`: every
   pass of the variant's side, full-screen passes and GTAO's second scene pass included, so
@@ -49,8 +50,10 @@ roads, built on the library's defaults), `sun` (a unit vector towards the sun),
   (`smoothedFrameMs`). It is capped by the display's
   refresh, and in split view it pays for both sides: read a variant's cost at `?split=off`.
 
-Link parameters: `?scene=lucerne|heidelberg|midtown|parkslope|reuss`, `?view=landing|bird|street`, `?split=0..1|off`,
-`?heat=1`.
+Link parameters: `?scene=lucerne|heidelberg|midtown|parkslope|reuss|woodland`,
+`?view=landing|bird|street`, `?split=0..1|off`, `?heat=1`, and `?cam=ex,ey,ez,tx,ty,tz`:
+eye and target in metres, render axes (east, up, minus north), replacing the view's
+pose, with orbit limits from `freeOrbitLimits`. `views.html` lists such links per topic.
 
 ## Invariants and assumptions
 
@@ -64,7 +67,10 @@ Link parameters: `?scene=lucerne|heidelberg|midtown|parkslope|reuss`, `?view=lan
 - The heat overlay is res 12 cells of the fixture's bbox, in OsmDemo's real ramp colours, on
   stand-in scores (`standInFraction`), labelled so on the page. It is tone-mapped with the
   scene, so it reads a little calmer than OsmDemo's own.
-- A scene change reloads the page; the other controls only rewrite the link.
+- A scene change reloads the page and drops `cam` (a pose belongs to its scene); the other
+  controls only rewrite the link. A view button drops `cam` too. Every orbit writes the
+  camera into `cam` when it ends, so a variant's own toggles, which reload with the current
+  link, come back to the same view.
 - The fixture URLs are literal, because the deploy's crawl copies only those.
 - A failure is shown on the page and stored in `error`, never swallowed.
 

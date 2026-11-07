@@ -37,6 +37,7 @@ import {
   cameraPose,
   cityLookSearch,
   clampSplit,
+  freeOrbitLimits,
   parseCityLookParams,
   seededRandom,
   smoothedFrameMs,
@@ -428,6 +429,7 @@ async function run(variant, api) {
   api.scene = state.scene;
   api.camera = state.view;
   api.split = state.split;
+  api.cam = state.cam;
 
   const fixture = await loadFixture(state.scene);
   const { features } = parseOverpassJson(fixture.payload);
@@ -440,11 +442,14 @@ async function run(variant, api) {
   const actions = {
     scene(name) {
       if (name === state.scene) return;
-      location.search = cityLookSearch({ ...state, scene: name });
+      // A linked pose belongs to its scene, so it does not travel along.
+      location.search = cityLookSearch({ ...state, scene: name, cam: null });
     },
     view(name) {
       state.view = name;
+      state.cam = null;
       api.camera = name;
+      api.cam = null;
       applyView();
       chrome.markView(name);
       writeLink();
@@ -534,16 +539,30 @@ async function run(variant, api) {
 
   const controls = new OrbitControls(camera, chrome.canvas);
   function applyView() {
-    const pose = cameraPose(state.view, street, state.scene);
+    const pose = state.cam ?? cameraPose(state.view, street, state.scene);
     const isStreet = state.view === "street";
-    controls.minDistance = isStreet ? 0.1 : 30;
-    controls.maxDistance = isStreet ? 30 : 1500;
-    controls.maxPolarAngle = Math.PI * (isStreet ? 0.62 : 0.49);
+    const limits = state.cam
+      ? freeOrbitLimits(state.cam)
+      : {
+          minDistance: isStreet ? 0.1 : 30,
+          maxDistance: isStreet ? 30 : 1500,
+          maxPolarAngle: Math.PI * (isStreet ? 0.62 : 0.49),
+        };
+    Object.assign(controls, limits);
     camera.position.fromArray(pose.position);
     controls.target.fromArray(pose.target);
     controls.update();
   }
   applyView();
+  // The link follows the camera, so a page toggle's reload comes back here.
+  controls.addEventListener("end", () => {
+    state.cam = {
+      position: camera.position.toArray(),
+      target: controls.target.toArray(),
+    };
+    api.cam = state.cam;
+    writeLink();
+  });
 
   let lastSplit = state.split;
   function setSplit(split) {
@@ -631,6 +650,7 @@ export async function startCityLook(variant) {
     scene: null,
     camera: null,
     split: null,
+    cam: null,
     triangles: 0,
     draws: 0,
     allTriangles: 0,

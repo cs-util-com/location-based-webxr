@@ -40,6 +40,7 @@ const READY = {
   "/labs/terrain/index.html": "__terrainLab",
   "/labs/terrain/compare.html": "__terrainCompare",
   "/labs/city-look/index.html": null,
+  "/labs/city-look/views.html": null,
 };
 
 /**
