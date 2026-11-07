@@ -45,7 +45,7 @@ async function atTheGate(page) {
   await expect(page.getByTestId("scene-text")).toHaveText("Choose a story");
 }
 
-test("the walk's words at the picker say what is asked, and what the end control does", async ({
+test("the walk's words at the picker say what is asked, and what the end control does @pr", async ({
   page,
 }) => {
   // Why: the picker waits for a tap and its end control leaves the
@@ -142,7 +142,7 @@ for (const viewport of [
   { width: 844, height: 390 },
   { width: 1440, height: 900 },
 ]) {
-  test(`the picker's order and gaps at ${String(viewport.width)}x${String(viewport.height)}`, async ({
+  test(`the picker's order and gaps at ${String(viewport.width)}x${String(viewport.height)}${viewport.width === 390 ? " @pr" : ""}`, async ({
     page,
   }) => {
     // Why this test matters: there is no prototype for this panel, and the

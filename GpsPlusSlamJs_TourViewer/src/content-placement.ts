@@ -343,7 +343,7 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
 };
 
 /** The blocks `makeFreeItem` builds: the free ones in a `card` view. */
-export type TourFreeLookBlock = TourVideoBlock | TourAudioBlock;
+type TourFreeLookBlock = TourVideoBlock | TourAudioBlock;
 
 /**
  * Play one station of a tour: a group at the station's geo pose in the

@@ -8,7 +8,7 @@
 import { Object3D } from "three";
 import { describe, expect, it } from "vitest";
 
-import type { TourFreeCharacter } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { TourCharacterBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { createFreeItems, type FreeItemsDeps } from "./free-items.js";
 import type { NarrationPlayer } from "./narration-player.js";
@@ -20,8 +20,8 @@ const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] } as const;
 
 function character(
   id: string,
-  extra: Partial<TourFreeCharacter> = {},
-): TourFreeCharacter {
+  extra: Partial<TourCharacterBlock> = {},
+): TourCharacterBlock {
   return {
     id,
     kind: "character",
@@ -32,7 +32,7 @@ function character(
     voice: `${id}-voice`,
     pose: POSE,
     ...extra,
-  } as TourFreeCharacter;
+  };
 }
 
 /** A stage as the host drives it, with what a test reads. */
@@ -137,11 +137,11 @@ function fakePlayer(deps: {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 function make(
-  blocks: readonly TourFreeCharacter[] = [character("ann")],
+  blocks: readonly TourCharacterBlock[] = [character("ann")],
   over: Partial<FreeItemsDeps> = {},
 ) {
   const base = { id: "gate", title: "Gate", children: [] };
-  const station = { ...base, ...withFreeBlocks(base, blocks as never) };
+  const station = { ...base, ...withFreeBlocks(base, blocks) };
   let tour: ReturnType<FreeItemsDeps["tour"]> = withTour(station as never);
   const stages: ReturnType<typeof fakeStage>[] = [];
   const players: ReturnType<typeof fakePlayer>[] = [];

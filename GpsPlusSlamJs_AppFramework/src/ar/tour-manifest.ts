@@ -201,12 +201,12 @@ export type TourReadingSign = InWorld<TourLongTextBlock> & {
 };
 /** A video standing free in its station, in `card` until a world look
  *  joins the format. */
-export type TourFreeVideo = InWorld<TourVideoBlock> & { readonly view: 'card' };
+type TourFreeVideo = InWorld<TourVideoBlock> & { readonly view: 'card' };
 /** A sound standing free in its station, as a video. */
-export type TourFreeAudio = InWorld<TourAudioBlock> & { readonly view: 'card' };
+type TourFreeAudio = InWorld<TourAudioBlock> & { readonly view: 'card' };
 /** A character standing free in his station, as a figure in one of his
  *  views. */
-export type TourFreeCharacter = InWorld<TourCharacterBlock> & {
+type TourFreeCharacter = InWorld<TourCharacterBlock> & {
   readonly view: TourCharacterView;
 };
 export type TourObject =
