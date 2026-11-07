@@ -1192,13 +1192,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       : selectedStationOf(selected, manifest());
     const index = stations.findIndex((s) => s.id === stationId);
     deps.stations.remove(selected);
-    // A story's delete asks first: answered no, the story stays selected.
-    if (
-      selected.startsWith(STORY_PREFIX) &&
-      state().editorView.selected === selected
-    ) {
-      return;
-    }
+    // A station's or a story's delete asks first: answered no, it stays
+    // selected, and the focus stays on the Delete that was pressed.
+    if (state().editorView.selected === selected) return;
     const picks = [
       ...tree.body.querySelectorAll<HTMLElement>(
         ".card[data-station] > .head > .pick",
