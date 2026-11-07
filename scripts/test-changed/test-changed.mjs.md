@@ -55,8 +55,12 @@
     each saying so in one `related-unit:` line, and the dependents skip
     the checks that read only their own files (`dependentTrimEnv`, named in
     each dependent's skip line); the green banner says so too.
-    Dependents still run every unit test; the milestone run (no skip
-    switch), a package's own `pnpm test` and CI run every stage.
+    The dependents are the packages the cross-package graph reaches
+    ([impact-graph.mjs](impact-graph.mjs.md), one `the import graph
+    reaches ...` line), not pnpm's whole closure, and each runs only the
+    unit tests the change reaches (or its full suite when a graph fallback
+    says so). The milestone run (no skip switch), a package's own
+    `pnpm test` and CI run every stage.
   - Selected packages run as `pnpm --filter "...<name>" test` — the `...`
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e

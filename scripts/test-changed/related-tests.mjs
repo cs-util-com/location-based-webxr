@@ -114,6 +114,27 @@ export function upstreamChange({ changed, packageDir, packages }) {
 }
 
 /**
+ * The plan of a package when some change lies outside it: its own related
+ * plan plus the unit tests of this package that the import graph reaches
+ * (impact-graph.mjs `impactOf`), or the whole suite when a graph rule asks for
+ * it. A full own plan stays full.
+ *
+ * @param {object} input
+ * @param {RelatedPlan} input.plan - this package's own plan (planRelatedRun)
+ * @param {{ tests: readonly string[], fullSuite: readonly { dir: string, reason: string }[] }} input.impact
+ * @param {string} input.packageDir
+ * @returns {RelatedPlan}
+ */
+export function mergeImpact({ plan, impact, packageDir }) {
+  if (plan.mode === 'full') return plan;
+  const full = impact.fullSuite.find((f) => f.dir === packageDir);
+  if (full) return { mode: 'full', reason: full.reason };
+  const prefix = `${packageDir}/`;
+  const reached = impact.tests.filter((t) => t.startsWith(prefix)).map((t) => t.slice(prefix.length));
+  return { mode: 'related', files: [...new Set([...plan.files, ...reached])].sort() };
+}
+
+/**
  * The vitest arguments of the related run, from the stage's full command.
  * `--coverage` is dropped: coverage (and its thresholds) of a slice is
  * meaningless, as for a filtered run.

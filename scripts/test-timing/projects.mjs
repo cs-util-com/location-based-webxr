@@ -994,8 +994,9 @@ export function gateBaseCommand(stage, env = {}) {
   }
   // A CHANGED package's unit stage in the per-commit gate: only the tests
   // related to the change (scripts/test-changed/related-unit.mjs). The ref is
-  // set for the changed packages only (select.mjs `gateCommands`), so a
-  // dependent, the milestone run and a package's own gate run the suite.
+  // set for the changed packages and the dependents the import graph reaches
+  // (select.mjs `gateCommands`); the milestone run and a package's own gate
+  // run the suite.
   return skipBrowser &&
     Boolean(env[UNIT_RELATED_ENV]) &&
     stage.name === "test:unit" &&

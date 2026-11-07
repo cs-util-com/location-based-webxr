@@ -13,11 +13,14 @@
   - `relatedVitestArgs(fullCommand, files)` -> the vitest arguments
     (`related --run <the command's other args> <files>`, `--coverage`
     dropped), or `null` when the command is not a plain `vitest run`.
+  - `mergeImpact({ plan, impact, packageDir })` -> the own plan plus this
+    package's tests in `impact.tests` (package-relative, sorted), or
+    `{ mode: 'full', reason }` when `impact.fullSuite` names
+    `packageDir`; a full own plan stays full.
   - `upstreamChange({ changed, packageDir, packages })` -> the first
     repo-relative changed path inside a workspace package this one depends
-    on (directly or transitively), or `null`. `related-unit.mjs` runs the
-    full suite on one: an app's tests can import an upstream package's
-    source through an alias, which a package-local related run cannot see.
+    on (directly or transitively), or `null`. No longer called by
+    `related-unit.mjs`, which merges the graph's reached tests instead.
   - `DEFAULT_MAX_FILES` (150).
 - Rules, in order:
   - Markdown (sidecars, docs) and the generated `docs/test-timings.md` are

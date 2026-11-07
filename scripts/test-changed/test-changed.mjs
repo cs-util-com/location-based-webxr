@@ -84,6 +84,8 @@ import {
   selectPackages,
 } from './select.mjs';
 import { trackedPaths, untrackedPaths } from './changed-paths.mjs';
+import { impactOf } from './impact-graph.mjs';
+import { changedFiles, loadImpactGraph } from './workspace-tree.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -310,13 +312,43 @@ function runInOrder(commands) {
   return 0;
 }
 
+const fastOptions = fastGateOptions(process.env);
+/**
+ * The fast gate's dependents: the packages the import graph reaches beyond
+ * the changed ones (impact-graph.mjs), not every pnpm dependent. A test-only
+ * change reaches none. Other runs keep every dependent.
+ * @returns {string[] | undefined} pnpm names, or undefined outside the fast gate
+ */
+function graphDependents() {
+  if (!fastOptions.relatedUnitEnv || names.length === 0) return undefined;
+  let impact;
+  try {
+    impact = impactOf(loadImpactGraph(WORKSPACE_ROOT), changedFiles(WORKSPACE_ROOT, ref));
+  } catch (error) {
+    // Without the graph, every dependent runs, as in the milestone run's closure.
+    const first = String(error).split('\n')[0];
+    console.log(`test-changed: the import graph could not be built (${first}), so every dependent runs`);
+    return undefined;
+  }
+  const dirs = impact.packages.filter((d) => !selection.packages.includes(d));
+  const tests = impact.tests.filter((t) => dirs.includes(t.split('/')[0])).length;
+  const full = impact.fullSuite.filter((f) => dirs.includes(f.dir)).map((f) => f.dir);
+  console.log(
+    dirs.length === 0
+      ? 'test-changed: the import graph reaches no other package, so no dependent runs'
+      : `test-changed: the import graph reaches ${dirs.join(', ')} (${tests} unit test file(s)${full.length > 0 ? `; whole suite in ${full.join(', ')}` : ''}); other dependents run nothing`
+  );
+  return dirs.map(packageName);
+}
+
 const status = runInOrder(
   gateCommands(names, {
     skipBrowserEnv: SKIP_BROWSER_ENV,
     rootChecks: selection.rootChecks ?? [],
     docOnlyNames,
     ref,
-    ...fastGateOptions(process.env),
+    ...fastOptions,
+    dependents: graphDependents(),
   })
 );
 
