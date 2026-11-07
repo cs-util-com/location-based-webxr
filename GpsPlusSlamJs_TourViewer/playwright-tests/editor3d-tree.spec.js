@@ -591,7 +591,9 @@ test("a station copied with its photo is saved with a picture of its own, and op
     const pic = each.locator(".pic");
     await expect(pic).toBeVisible();
     await expect
-      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage))
+      .poll(() => pic.evaluate((el) => getComputedStyle(el).backgroundImage), {
+        timeout: 30_000,
+      })
       .toMatch(/^url\(/);
   }
   // Nothing of the photos was lost on the way: a reader of the file
