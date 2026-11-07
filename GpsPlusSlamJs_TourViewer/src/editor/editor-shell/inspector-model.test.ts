@@ -111,7 +111,7 @@ function inspect(selected: string | null, unlockedStations: string[] = []) {
 /** The position the inspector shows for `selected`. */
 function positionOf(selected: string) {
   const model = inspect(selected);
-  if (model === null || model.kind === "item" || model.position === null) {
+  if (model === null || !("position" in model) || model.position === null) {
     throw new Error(`no position for ${selected}`);
   }
   return model.position;
@@ -241,10 +241,10 @@ describe("buildInspector", () => {
         {
           id: "clip",
           kind: "video",
-          view: "plane",
+          view: "card",
           video: "v",
+          transcript: "",
           title: "A clip",
-          widthM: 1,
           pose: POSE,
         },
       ]),

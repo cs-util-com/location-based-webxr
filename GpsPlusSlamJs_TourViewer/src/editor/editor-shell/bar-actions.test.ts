@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { ALIGNED_DEG, barActions, positionText } from "./bar-actions.js";
 import type { InspectorModel } from "./inspector-model.js";
 
-const station: InspectorModel = {
+const station: Extract<InspectorModel, { kind: "station" }> = {
   kind: "station",
   title: "Gate",
   name: "Gate",
@@ -28,7 +28,6 @@ const station: InspectorModel = {
   groundOffM: null,
   position: { eastM: 12.345, northM: -4.1, altM: 340.256, headingDeg: 90.4 },
   locked: true,
-  story: [],
   contents: [],
 };
 

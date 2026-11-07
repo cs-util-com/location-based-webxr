@@ -254,8 +254,9 @@ const QUIZ = {
 const VIDEO = {
   id: "video-1",
   kind: "video",
-  view: "plane",
+  view: "card",
   video: "clip",
+  transcript: "",
   widthM: 1,
   pose: POSE,
 } as const;

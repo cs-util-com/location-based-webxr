@@ -54,7 +54,6 @@ import {
 import type { DetailsForm } from "../tour-details-form.js";
 import { TOUR_TITLE_MAX_CHARS } from "gps-plus-slam-app-framework/ar/tour-details";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";
-import type { EditorLock } from "./save-target.js";
 import {
   captionOf,
   inOwnStation,

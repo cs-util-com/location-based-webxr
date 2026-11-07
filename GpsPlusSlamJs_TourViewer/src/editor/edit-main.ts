@@ -28,7 +28,6 @@
 
 import {
   tourChildPlace,
-  tourStationBlocks,
   tourStories,
   type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
@@ -2274,8 +2273,8 @@ async function openFile(
     if (older !== undefined) {
       // Its draft has nothing left to be restored into: deleted, and the
       // refusal says so once it is gone.
-      void draft.forget(older.fileKey).then((deleted) => {
-        if (deleted && openError.textContent === outcome.reason) {
+      void draft.forget(older.fileKey).then((forgotten) => {
+        if (forgotten && openError.textContent === outcome.reason) {
           openError.textContent = olderFormatRefusal(older.error, true);
         }
       });

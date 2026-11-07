@@ -231,6 +231,7 @@ describe("drawInspector", () => {
       kind: "storyEntry",
       id: block.id,
       stationId: "gate",
+      rowKind: "text",
       title: block.title,
       sub: "1 The old gate / The legend / Long text, entry 1",
       block,

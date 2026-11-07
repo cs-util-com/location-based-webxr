@@ -90,10 +90,10 @@ describe("a story's fields", () => {
         {
           id: "clip",
           kind: "video",
-          view: "plane",
+          view: "card",
           video: "v",
+          transcript: "",
           title: "A clip",
-          widthM: 1,
           pose: POSE,
         },
       ]),

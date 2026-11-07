@@ -214,12 +214,10 @@ describe("the tree's story commands", () => {
                 break;
             }
             const now = tour();
-            expect(now, `no tour after ${c.kind}`).not.toBeNull();
-            if (now !== null) {
-              expect(() =>
-                parseTourManifest(JSON.parse(serializeTourManifest(now))),
-              ).not.toThrow();
-            }
+            if (now === null) throw new Error(`no tour after ${c.kind}`);
+            expect(() =>
+              parseTourManifest(JSON.parse(serializeTourManifest(now))),
+            ).not.toThrow();
           }
           const before = await writtenJson(
             (await editor.save({ keepScan: false })).blob,

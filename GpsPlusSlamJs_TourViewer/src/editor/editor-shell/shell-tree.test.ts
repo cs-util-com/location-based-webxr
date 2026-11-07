@@ -43,7 +43,7 @@ describe("a story's folder", () => {
     body: "x",
     pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
     advance: { mode: "tap" },
-  };
+  } as const;
   const FREE = {
     id: "kay",
     kind: "character",
@@ -52,7 +52,7 @@ describe("a story's folder", () => {
     image: "cut",
     caption: "Halt",
     pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
-  };
+  } as const;
   const stations = [
     {
       ...STATIONS_FOR_FOLDERS(),
