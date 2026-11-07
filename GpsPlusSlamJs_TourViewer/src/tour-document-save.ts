@@ -31,6 +31,7 @@ import {
   historyAssetIds,
   historyTimingEntries,
   manifestNow,
+  manifestToWrite,
   tourDocumentActions,
   type StationFrame,
   type TourDocumentState,
@@ -150,8 +151,11 @@ interface TourSaves {
   snapshot(): TourDocumentThunk<TourSaveSnapshot>;
   /** The bytes a save of `state` adds to the written file: the pictures
    *  of the captured photos it does not host, the timing texts and the
-   *  files brought in it lacks (the snapshot's own rule). */
-  addedBytes(state: TourDocumentState): number;
+   *  files brought in it lacks (the snapshot's own rule). With
+   *  `keptOnly`, only the files the write keeps: one nothing names (an
+   *  undo took it out and a later edit dropped its redo, or a file not
+   *  named yet) is left out. */
+  addedBytes(state: TourDocumentState, keptOnly?: boolean): number;
   /** Settles once the pictures being read are read: a rebuild waits for
    *  it, since it replaces the bytes they may be read from. */
   picturesRead(): Promise<void>;
@@ -204,6 +208,16 @@ export function createTourSaves(input: {
       timings: state.timings,
       files: filesOf(state),
     };
+  }
+
+  /** The manifest a save of `state` writes; null when none can be built
+   *  (then every file counts). */
+  function writtenOrNull(state: TourDocumentState): TourManifest | null {
+    try {
+      return manifestToWrite(state);
+    } catch {
+      return null;
+    }
   }
 
   /** The snapshot's `placed`: a captured photo the written file does not
@@ -285,11 +299,24 @@ export function createTourSaves(input: {
     snapshot() {
       return (_dispatch, getState) => snapshotOf(getState().tourDocument);
     },
-    addedBytes(state) {
+    addedBytes(state, keptOnly = false) {
       const encoder = new TextEncoder();
       let sum = 0;
       for (const placed of placedOf(state)) sum += placed.blob?.size ?? 0;
-      for (const { data } of filesOf(state)) {
+      const files = filesOf(state);
+      // `keptOnly`: what the save keeps (the rebuild's own filter); a file
+      // no object or step names any more is left out of it.
+      const written = keptOnly ? writtenOrNull(state) : null;
+      const kept =
+        written === null
+          ? null
+          : visitorEntryNames(
+              files.map((file) => file.path),
+              written,
+              "",
+            );
+      for (const { path, data } of files) {
+        if (kept !== null && !kept.has(path)) continue;
         sum +=
           typeof data === "string" ? encoder.encode(data).byteLength : data.size;
       }

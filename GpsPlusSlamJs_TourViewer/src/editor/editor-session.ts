@@ -624,6 +624,10 @@ export interface EditorSession {
    *  before a save) and the files added since - what an in-place save
    *  rewrites, so what the autosave's cap is judged by. */
   tourBytes(): number;
+  /** What the next in-place save rewrites: the newest written file and
+   *  only the added bytes that write keeps (a file nothing names any more
+   *  is left out). What the autosave's cap is judged by. */
+  nextSaveBytes(): number;
   /** A file brought in, by its entry (`content/<id>.<ext>`), until a
    *  save wrote it: what a preview shows. */
   contentOf(path: string): Blob | undefined;
@@ -1075,6 +1079,13 @@ export function createEditorSession(input: {
     return saves.addedBytes(own());
   }
 
+  function nextSaveBytes(): number {
+    return (
+      (saves.newest()?.blob.size ?? openedBytes) +
+      saves.addedBytes(own(), true)
+    );
+  }
+
   function tourBytes(): number {
     return (saves.newest()?.blob.size ?? openedBytes) + addedBytes();
   }
@@ -1145,6 +1156,7 @@ export function createEditorSession(input: {
     addFile,
     addedBytes,
     tourBytes,
+    nextSaveBytes,
     contentOf(path) {
       const asset = own().addedAssets.find((a) => a.path === path);
       return asset === undefined ? undefined : files.get(asset.id);

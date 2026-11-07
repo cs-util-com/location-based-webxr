@@ -666,7 +666,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     editor: () => editor,
     edited: () => {
       refresh();
-      autosave.changed();
+      tourChanged();
     },
     view3d: () => shown3d?.stats() ?? null,
     view3dTilt: (deg) => {
@@ -1084,7 +1084,7 @@ function runStep(which: "undo" | "redo"): void {
   }, RESAVE_QUIET_MS);
   endUndo();
   toast(`${STEP_WORDS[which].done}: ${outcome.what}.`);
-  autosave.changed();
+  tourChanged();
 }
 
 function stopResaveTimer(): void {
@@ -1165,7 +1165,7 @@ function finishMove(): void {
               : `${reseat.said} - not saved yet.`,
         });
         endUndo();
-        autosave.changed();
+        tourChanged();
       } else {
         // Said, never dropped (PR #622 bot finding C).
         say({ id: done.id, text: outcome.reason, refused: true });
@@ -1281,7 +1281,7 @@ const card = createEditorCard(
       // Committed (or given back unchanged): the typing hold is over.
       if (outcome.kind === "edited") {
         endUndo();
-        autosave.changed();
+        tourChanged();
       }
       autosave.poke();
       void resaveIfDue();
@@ -1334,7 +1334,7 @@ function deleteSelection(id: string): void {
     toast: t,
     timer: window.setTimeout(endUndo, UNDO_MS),
   };
-  autosave.changed();
+  tourChanged();
 }
 
 /**
@@ -1367,7 +1367,7 @@ async function duplicateSelection(id: string): Promise<void> {
   if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
-  autosave.changed();
+  tourChanged();
 }
 
 /** A gesture of the 3D view written (`scene-edits.ts`): one step; a
@@ -1387,7 +1387,7 @@ function commitSceneEdit(edit: GestureEdit): boolean {
     const reseat = announceReseat(before, edit.id);
     if (reseat !== null) toast(reseat.said);
   }
-  autosave.changed();
+  tourChanged();
   return true;
 }
 
@@ -1422,7 +1422,7 @@ function writeInspectorEdit(
     toast(outcome.reason);
     return "refused";
   }
-  if (outcome.kind !== "unchanged") autosave.changed();
+  if (outcome.kind !== "unchanged") tourChanged();
   return "written";
 }
 
@@ -1450,8 +1450,8 @@ async function writeNarrationEdit(
     return "refused";
   }
   if (outcome.notBackedUp === true) toast(FILE_NOT_KEPT);
-  judgeAutosave();
-  if (outcome.kind !== "unchanged") autosave.changed();
+  if (outcome.kind === "unchanged") judgeAutosave();
+  else tourChanged();
   return "written";
 }
 
@@ -1460,15 +1460,28 @@ async function writeNarrationEdit(
 const FILE_NOT_KEPT =
   "The file is in the tour, but this browser could not keep a copy of it. Save the tour before you close this page.";
 
-/** A file brought in may take the tour over the autosave's cap: the cost
- *  of an in-place save is the tour's whole size, judged on what it weighs
- *  now (the written file and the files added since). Only ever turns the
- *  autosave off: a save in place is what brings the size back down. */
+/** An edit made: the autosave's cap judged again (an edit may drop the
+ *  redo steps naming a file brought in, so the next save no longer writes
+ *  it), then the autosave told. */
+function tourChanged(): void {
+  judgeAutosave();
+  autosave.changed();
+}
+
+/** The autosave's cap judged again: the cost of an in-place save is the
+ *  tour's whole size, judged on what the next one rewrites (the newest
+ *  written file and what it adds and keeps: `nextSaveBytes`). Both ways - a file
+ *  brought in may take the tour over the cap, and an edit that drops the
+ *  last step naming it (an undo alone keeps it: its redo does), or a save
+ *  writing less, may bring it back under. Asked after every edit, step and
+ *  save; a file that is not written in place, or no longer can be, is left
+ *  as it is. */
 function judgeAutosave(): void {
-  if (editor === null || target === null || saveState().largeTour) return;
-  if (autosaveFits(editor.tourBytes(), autosaveMaxBytes)) return;
-  store.dispatch(tourDocumentActions.saveLimited({ largeTour: true }));
-  autosave.enable(false);
+  if (editor === null || target === null || saveState().cannotSave) return;
+  const largeTour = !autosaveFits(editor.nextSaveBytes(), autosaveMaxBytes);
+  if (largeTour === saveState().largeTour) return;
+  store.dispatch(tourDocumentActions.saveLimited({ largeTour }));
+  autosave.enable(!largeTour);
   renderSaveState();
 }
 
@@ -1500,7 +1513,7 @@ function addItemTo(stationId: string, kind: AddKind): void {
   select(outcome.item.id);
   const what = kind === "pin" ? "a pin" : "a long text";
   toast(`Added ${what} to "${stationTitleOf(stationId)}"`);
-  autosave.changed();
+  tourChanged();
 }
 
 /** A station made in this session (added, split off, copied) starts
@@ -1540,7 +1553,7 @@ function showNewStation(stationId: string, said: (title: string) => string) {
   refresh();
   select(`${STATION_PREFIX}${stationId}`);
   toast(said(stationTitleOf(stationId)));
-  autosave.changed();
+  tourChanged();
 }
 
 /**
@@ -1571,7 +1584,7 @@ function reorderStations(order: readonly string[]): void {
   const outcome = editor.reorderStations(order);
   refresh();
   if (outcome.kind === "refused") toast(outcome.reason);
-  else if (outcome.kind === "reordered") autosave.changed();
+  else if (outcome.kind === "reordered") tourChanged();
 }
 
 /** An item given a station of its own where it stands ("Move to a new
@@ -1714,7 +1727,7 @@ const details = wireDetailsDialog({
     if (kind === "changed") endUndo();
     refresh();
     toast(kind === "changed" ? DETAILS_CHANGED : DETAILS_UNCHANGED);
-    if (kind === "changed") autosave.changed();
+    if (kind === "changed") tourChanged();
   },
   // Written with the details by Apply: one change, one toast.
   noGps: {
@@ -2350,7 +2363,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
           refresh();
           toast(restoredLine(applied.changed + applied.deleted, offer));
           // Restored work is pending work: saved by itself like any edit.
-          if (applied.changed + applied.deleted > 0) autosave.changed();
+          if (applied.changed + applied.deleted > 0) tourChanged();
         },
       },
       {
@@ -3089,6 +3102,7 @@ async function saveTour(
     // never a save of a tour opened meanwhile.
     if (editor === mine) releaseSave();
     ended();
+    if (editor === mine) judgeAutosave();
     // A Save asked for while this save ran runs now, for the tour that
     // shows - also when another tour opened meanwhile (`saveCopy`'s rule).
     if (editor !== null) runQueuedSave(editor);
@@ -3305,7 +3319,7 @@ noGpsInput.addEventListener("change", () => {
   renderSaveState();
   if (outcome.kind === "changed") {
     endUndo();
-    autosave.changed();
+    tourChanged();
   }
 });
 // One handler for the drop box and its "Choose…" button (a click on the

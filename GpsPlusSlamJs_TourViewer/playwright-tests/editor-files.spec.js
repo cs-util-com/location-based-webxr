@@ -946,3 +946,59 @@ test("a voice the browser cannot keep is still in the tour, and the page says th
     ),
   ).toBe(true);
 });
+
+test("autosave follows the tour's size both ways: off over the cap, on again once no step names the voice", async ({
+  page,
+}) => {
+  // Why: a file brought in may take the tour over the autosave's cap, and
+  // the cap is judged on what the next save in place would rewrite. Judged
+  // only one way, a tour back under the cap stayed saved only by hand for
+  // the rest of the visit.
+  const tour = Buffer.from(await (await fetch(LONG_TEXT_TOUR)).arrayBuffer());
+  await page.addInitScript((maxBytes) => {
+    // @ts-expect-error - the editor's dev-only autosave cap and timings.
+    window.__tourEditorAutosave = {
+      maxBytes,
+      delayMs: 3_600_000,
+      maxWaitMs: 3_600_000,
+    };
+  }, tour.length + 100_000);
+  await page.goto("/edit.html");
+  await offerOpfsFile(page, tour, "long-text-tour.zip");
+  await openOffered(page);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  expect(await importVoice(page, voiceBytes(300_000))).toEqual({
+    kind: "edited",
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "off");
+  await expect(page.locator("#save-status")).toContainText("large tour");
+  // The undo takes the voice out, but its redo still names the file, so
+  // the next save still writes it: autosave stays off.
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          // @ts-expect-error - the editor's dev-only test hook.
+          (await window.__tourEditor.editor().narration("gate-essay")).hasVoice,
+      ),
+    )
+    .toBe(false);
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "off");
+  // An edit after the undo drops that redo: the save no longer writes it.
+  expect(
+    await page.evaluate(() => {
+      // @ts-expect-error - the editor's dev-only test hook.
+      const hook = window.__tourEditor;
+      const editor = hook.editor();
+      const outcome = editor.setNeedsNoGps(!editor.needsNoGps());
+      hook.edited();
+      return outcome.kind;
+    }),
+  ).toBe("changed");
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    /^(idle|waiting)$/,
+  );
+  await expect(page.locator("#save-status")).not.toContainText("large tour");
+});
