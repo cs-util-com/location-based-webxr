@@ -69,18 +69,21 @@ const PASSAGE_TUNNEL = "building_passage";
 /**
  * How wide a mapped building passage is taken to be, metres.
  *
- * **Walkability does not depend on it, measured.** `crossesObstacle` admits a
- * step that comes within half this width of the passage line anywhere along its
- * length, so every step CROSSING the line is admitted at any width, and the
- * res-13 lattice edges a line crosses always form a connected zigzag (centres
- * are 7.1 m apart on average, up to 7.83 m). Over uniform and near-axis
- * placements, widths from 0 to 12 m all joined the two sides of the building.
+ * **SIZED BY THE PATHFINDER, from both sides.** `crossesObstacle` admits a step
+ * that comes within half this width of the passage line anywhere along its
+ * length. Where the line runs past the walls every step crossing it is
+ * admitted, so the chain exists at any width; but mapped passages END at the
+ * outline or a little inside it, and there the entry step has to reach the
+ * line's end across a res-13 lattice (centres 7.1 m apart on average, up to
+ * 7.83 m). Measured over 400 uniform placements of a 60 m building: a passage ending exactly at the walls joined the two sides
+ * every time from 7 m (5 m: 392 of 400), one ending 3 m short needed 10 m
+ * (8 m: 389, 9 m: 398 of 400). The LOWER bound is therefore about 8-10 m.
  *
- * **What it decides is how much of the building opens.** Rooms 15-29 m off the
- * passage stay sealed at 10 m; at 16 m they become reachable in roughly one
- * placement in seven, at 20 m in most. `building-passages.property.test.ts`
- * holds both sides: the passage is walkable end to end at any bearing, and the
- * rooms away from it stay sealed.
+ * **The UPPER bound is the building.** Rooms 15-29 m off the passage stayed
+ * sealed up to 14.5 m and were reached at 15 m in 3 % of placements, at 16 m in
+ * 24 %. 10 m keeps a margin on both sides. `building-passages.property.test.ts`
+ * holds both: walkable end to end (red at 5 m) and the rooms sealed (red at
+ * 16 m).
  */
 export const PASSAGE_CORRIDOR_M = 10;
 

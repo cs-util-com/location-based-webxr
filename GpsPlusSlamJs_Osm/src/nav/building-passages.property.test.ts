@@ -9,18 +9,19 @@
  *
  * A gate needs ONE admitted step across a line; a corridor needs a CHAIN of them
  * along its length, on a res-13 lattice (centres 7.1 m apart on average, up to
- * 7.83 m) that has no idea where the passage runs. Measured, the chain does NOT
- * depend on `PASSAGE_CORRIDOR_M`: a step is admitted when it comes within half
- * the corridor of the passage line ANYWHERE along its length, so every step
- * that crosses the line is admitted at any width, and the lattice edges a line
- * crosses always form a connected zigzag. Over 300 uniform and 300 near-axis
- * placements, with buildings 6, 16 and 60 m deep, widths from 0 to 12 m all
- * joined the two sides every time.
+ * 7.83 m) that has no idea where the passage runs. A step is admitted when it
+ * comes within half the corridor of the passage line anywhere along its
+ * length, so where the line runs PAST the walls every step crossing it is
+ * admitted and the chain exists at any width. Mapped passages end at the
+ * outline or a little inside it, and there the entry step has to reach the
+ * line's end: over 400 uniform placements, a passage ending 3 m short of the
+ * walls needed 10 m (8 m: 389, 9 m: 398 of 400). So the walk property draws
+ * passages that end at the walls or up to 3 m short, and fails at 5 m.
  *
- * What the width DOES decide is how much of the building opens, so the
- * counterweights are in the same file on purpose: an untagged road joins
+ * The counterweights are in the same file on purpose: an untagged road joins
  * nothing, and with a tagged one the rooms well away from the passage stay
- * sealed. That last property is the one that bounds the width.
+ * sealed. That last property bounds the width from above (it fails at 16 m),
+ * so `PASSAGE_CORRIDOR_M` sits inside a window of about 8 to 14.5 m.
  *
  * Both reachability checks are confined to a strip through the building. With
  * the whole disk around it the agent could walk round the outside, and the
@@ -73,18 +74,22 @@ function buildingAt(centre: LatLng, bearingDeg: number): OsmFeature {
   };
 }
 
-/** The passage, running through the middle of the building along `bearingDeg`. */
+/**
+ * The passage, running through the middle of the building along `bearingDeg`
+ * and reaching `overhangM` beyond each wall (negative: ending short of it).
+ */
 function passageAt(
   centre: LatLng,
   bearingDeg: number,
   tagged: boolean,
+  overhangM = HALF_M / 2,
 ): OsmFeature {
   return {
     type: "way",
     id: 2,
     geometry: [
-      along(centre, bearingDeg, -HALF_M * 1.5),
-      along(centre, bearingDeg, HALF_M * 1.5),
+      along(centre, bearingDeg, -(HALF_M + overhangM)),
+      along(centre, bearingDeg, HALF_M + overhangM),
     ],
     tags: tagged
       ? { highway: "footway", tunnel: "building_passage" }
@@ -175,21 +180,31 @@ const anyPlacement = () =>
 
 describe("a mapped building passage is walkable end to end", () => {
   it("joins the two sides of the building, whatever the bearing", () => {
+    // THE PASSAGE ENDS AT THE WALLS OR UP TO 3 M SHORT OF THEM, as mapped ways
+    // do: they are routinely split at the outline, and the split node is
+    // often a little inside it. A passage running well past both walls hides
+    // the width's lower bound, because then every step crossing the line is
+    // admitted and the chain exists at any width; this is what makes the
+    // property fail when the corridor is too narrow (red at 5 m).
     fc.assert(
-      fc.property(anyPlacement(), ([bearing, lat, lng]) => {
-        const centre = { lat, lng };
-        const index = buildObstacleIndex([
-          buildingAt(centre, bearing),
-          passageAt(centre, bearing, true),
-        ]);
+      fc.property(
+        anyPlacement(),
+        uniformIn(-3, 0),
+        ([bearing, lat, lng], overhangM) => {
+          const centre = { lat, lng };
+          const index = buildObstacleIndex([
+            buildingAt(centre, bearing),
+            passageAt(centre, bearing, true, overhangM),
+          ]);
 
-        const west = cellOf(along(centre, bearing, -(HALF_M + 8)));
-        const east = cellOf(along(centre, bearing, HALF_M + 8));
-        expect(west).not.toBe(east);
-        expect(reachable(index, west, east, throughOnly(centre, bearing))).toBe(
-          true,
-        );
-      }),
+          const west = cellOf(along(centre, bearing, -(HALF_M + 8)));
+          const east = cellOf(along(centre, bearing, HALF_M + 8));
+          expect(west).not.toBe(east);
+          expect(
+            reachable(index, west, east, throughOnly(centre, bearing)),
+          ).toBe(true);
+        },
+      ),
       // Each run builds an obstacle index and walks a BFS; this is the honest
       // ceiling for a unit test that still samples the lattice properly.
       { numRuns: 25 },
@@ -219,13 +234,12 @@ describe("a mapped building passage is walkable end to end", () => {
   });
 
   it("keeps the rooms away from the passage sealed", () => {
-    // THE COUNTERWEIGHT THAT BOUNDS THE WIDTH. Walkability holds at any
-    // corridor width (see the header), so nothing above stops the constant
-    // from growing until the passage swallows the building. Here the whole
-    // disk is open, so the agent may enter by the passage and wander: no cell
-    // inside the footprint more than 15 m off the passage may be reached.
-    // Measured: 10 m and 14 m reach none, 16 m reaches them in about one
-    // placement in six, 20 m in most.
+    // THE COUNTERWEIGHT THAT BOUNDS THE WIDTH FROM ABOVE. The walk property
+    // only stops the constant shrinking; this stops it growing until the
+    // passage swallows the building. Here the whole disk is open, so the agent
+    // may enter by the passage and wander: no cell inside the footprint more
+    // than 15 m off the passage may be reached. Measured over 400 placements:
+    // none up to 14.5 m, 3 % at 15 m, 24 % at 16 m.
     fc.assert(
       fc.property(anyPlacement(), ([bearing, lat, lng]) => {
         const centre = { lat, lng };
