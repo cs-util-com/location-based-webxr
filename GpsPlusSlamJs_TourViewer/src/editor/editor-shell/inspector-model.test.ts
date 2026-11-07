@@ -142,6 +142,10 @@ describe("buildInspector", () => {
       groundOffM: null,
       locked: true,
       story: [],
+      contents: [
+        { id: "pin-1", kind: "pin", title: "Fountain, 1612" },
+        { id: "model-1", kind: "model", title: expect.any(String) },
+      ],
       position: {
         eastM: expect.any(Number),
         northM: expect.any(Number),

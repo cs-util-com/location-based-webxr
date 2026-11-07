@@ -86,6 +86,9 @@ origin?, groundAt? })` ->
   for the picture button); null for every other item, and for a long text a
   station's story shows (its prose stays a field there). Its body and title
   are not repeated in `fields`.
+- A station's model carries `contents`: its items from `stationContents`
+  (`tree-model.ts`), the world's only; a story's blocks stay under "In its
+  story".
 
 ## Invariants & assumptions
 

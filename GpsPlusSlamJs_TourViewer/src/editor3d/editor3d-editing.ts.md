@@ -61,6 +61,8 @@ pure gesture maths reads (`GestureWorld`).
   changed, said missed after `HELD_CLICK_MS`. A model without a size is
   never drawn here, so a click on one is said missed at once.
 - `modelParts()` and `modelScreenOf(id, at)` - for the page's checks.
+- `previewRadius(stationId, radiusM)` - the station's ring and its rim at
+  `radiusM`, unwritten; null goes back to what the tour has.
 
 ## Invariants & assumptions
 

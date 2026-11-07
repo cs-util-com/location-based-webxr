@@ -118,6 +118,19 @@ describe("createTreeAddMenu", () => {
     expect(plus.getAttribute("aria-expanded")).toBe("false");
   });
 
+  // Why: on a phone the details cover a folded tree, so the station's +
+  // cannot take the focus; a keyboard would land on nothing.
+  it("goes back to the button pressed while the station's + is out of sight", () => {
+    const { menu, plus } = opened();
+    plus.closest("div")?.classList.add("collapsed");
+    const details = document.createElement("button");
+    document.body.append(details);
+    menu.close(false);
+    menu.openFor(details, "gate", "Gate");
+    menu.close(true);
+    expect(document.activeElement).toBe(details);
+  });
+
   it("adds nothing for the item that is off, and stays open", () => {
     const { root, item } = opened();
     item("picture")?.click();

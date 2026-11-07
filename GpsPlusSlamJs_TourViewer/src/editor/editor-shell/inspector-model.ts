@@ -61,7 +61,11 @@ import {
 } from "../block-fields.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import { outsideItems } from "./tour-problems.js";
-import { stationImagePath } from "./tree-model.js";
+import {
+  stationContents,
+  stationImagePath,
+  type StationContent,
+} from "./tree-model.js";
 
 /** Where something stands: as the 3D view frames it, and as the file
  *  says its height and heading. */
@@ -133,6 +137,8 @@ interface StationInspector {
   /** The blocks its story shows, in the station's order, by kind and
    *  name (`objectTitle`): listed, not edited, here. */
   readonly story: readonly InspectorStoryBlock[];
+  /** Its items, by kind and name: the inspector's Contents. */
+  readonly contents: readonly StationContent[];
 }
 
 /** A block a station's story shows, as its inspector lists it. */
@@ -509,6 +515,7 @@ export function buildInspector(input: {
       position: positionOf(station.geo, origin),
       locked: !(input.unlockedStations ?? []).includes(id),
       story: tourStationStoryBlocks(station).map(storyEntry),
+      contents: stationContents(station),
     };
   }
   for (const [index, station] of stations.entries()) {

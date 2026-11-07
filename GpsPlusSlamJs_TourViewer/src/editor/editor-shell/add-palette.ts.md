@@ -27,8 +27,10 @@ the add.
   (`role="dialog"`, "Add"), `#add-palette-input` (`role="combobox"`,
   `aria-controls`, `aria-activedescendant` on the active row),
   `#add-palette-list` (`role="listbox"`), its rows `.pr` (`role="option"`,
-  `aria-selected`, `.pl` the kind, `.pt` the place), `.pempty` when
-  nothing matches, `.pfoot` the keys in words.
+  `aria-selected`, `.pl` the kind, `.pt` the place, a `<mark>` around the
+  letters the query matched), `.pfil` the kind chips above the list
+  (`data-pf`, `aria-pressed`), `.pempty` when nothing matches, `.pfoot`
+  the keys in words.
 
 ## Invariants & assumptions
 
@@ -40,6 +42,11 @@ the add.
 - It closes before it adds: the add redraws the tree, and the focus must
   already be back where it was.
 - Nothing matching adds nothing (Enter does nothing).
+- A chip narrows the rows to one kind; a press on the active one lifts
+  it, and each opening starts with none. A chip keeps the focus in the
+  field (its press takes none) and stays out of the Tab order: Tab still
+  closes the palette, and typing the kind's word is the keyboard's filter.
+- The marks are elements, never markup built from the text.
 
 ## Examples
 
@@ -63,7 +70,7 @@ window.addEventListener("keydown", (e) => {
 `add-palette.test.ts` (jsdom): opening (focus, rows, the active one),
 typing and Enter (closed first, focus back), the arrows round, a click,
 no match, Escape not reaching the page, Tab and the backdrop, opening
-again empty; `isPaletteKey` with Ctrl and Cmd, a non-Latin layout, and
+again empty, the chips and the marks; `isPaletteKey` with Ctrl and Cmd, a non-Latin layout, and
 not with Shift, Alt or another layout's letter at K's place.
 `playwright-tests/editor3d-add-palette.spec.js`: each side of the 520 px
 fold (the top bar's Add, the Edit menu's Add), adding from the keyboard,

@@ -10,7 +10,9 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  highlightParts,
   NEW_STATION_PLACE,
+  PALETTE_KINDS,
   PALETTE_MAX_ROWS,
   paletteRows,
   type PaletteStation,
@@ -150,6 +152,102 @@ describe("paletteRows", () => {
           ).toBe(true);
         },
       ),
+    );
+  });
+});
+
+describe("paletteRows with a kind chip", () => {
+  // Why: a chip narrows to one kind without typing, on a phone above all,
+  // and it must narrow what the words found, never widen it.
+  it("keeps only that kind, at the default place for an empty query", () => {
+    expect(short(paletteRows("", STATIONS, "gate", "longText"))).toEqual([
+      "longText@gate",
+    ]);
+    expect(short(paletteRows("", STATIONS, "gate", "station"))).toEqual([
+      "station",
+    ]);
+  });
+
+  it("narrows what the words found, and can find nothing", () => {
+    expect(short(paletteRows("steps", STATIONS, "gate", "pin"))).toEqual([
+      "pin@steps",
+    ]);
+    expect(paletteRows("long", STATIONS, "gate", "pin")).toEqual([]);
+  });
+
+  it("lists every kind with no chip on", () => {
+    expect(short(paletteRows("", STATIONS, "gate", null))).toEqual(
+      short(paletteRows("", STATIONS, "gate")),
+    );
+  });
+
+  it("offers a chip per kind that adds, the picture none, a station last", () => {
+    expect(PALETTE_KINDS.map((k) => k.kind)).toEqual([
+      "pin",
+      "longText",
+      "station",
+    ]);
+    expect(PALETTE_KINDS.map((k) => k.label)).toEqual([
+      "Short text",
+      "Long text",
+      "Station",
+    ]);
+  });
+});
+
+describe("highlightParts", () => {
+  const marks = (text: string, query: string) =>
+    highlightParts(text, query)
+      .filter((p) => p.hit)
+      .map((p) => p.text);
+
+  // Why: the highlight shows why a row is listed, so it must find what the
+  // match found (case blind), keep every character of the text, and leave
+  // a one-letter word alone, which would light up half of a row.
+  it("marks each word, whatever its case, wherever it stands", () => {
+    expect(highlightParts("in 2 The old gate", "OLD")).toEqual([
+      { text: "in 2 The ", hit: false },
+      { text: "old", hit: true },
+      { text: " gate", hit: false },
+    ]);
+    expect(marks("Gate to the gates", "gate")).toEqual(["Gate", "gate"]);
+    expect(marks("Long text", "long te")).toEqual(["Long", "te"]);
+  });
+
+  it("marks nothing for an empty query or a one-letter word", () => {
+    expect(highlightParts("The old gate", "")).toEqual([
+      { text: "The old gate", hit: false },
+    ]);
+    expect(marks("The old gate", "o t")).toEqual([]);
+  });
+
+  it("takes the query as text, never as a pattern", () => {
+    expect(marks("a.b axb", "a.b")).toEqual(["a.b"]);
+    expect(marks("(gate)", "(g")).toEqual(["(g"]);
+    expect(highlightParts("The gate", "[[")).toEqual([
+      { text: "The gate", hit: false },
+    ]);
+  });
+
+  it("merges words that overlap into one mark", () => {
+    expect(marks("gateway", "gate way")).toEqual(["gateway"]);
+    expect(marks("gateway", "gatew tewa")).toEqual(["gatewa"]);
+  });
+
+  it("finds a word typed in the other Unicode form", () => {
+    expect(marks("Café Mozart", "café")).toEqual(["Café"]);
+  });
+
+  it("gives back the text whole, marked or not", () => {
+    // Why: a mark drawn by slicing must never drop or repeat a character.
+    fc.assert(
+      fc.property(fc.string(), fc.string(), (text, query) => {
+        expect(
+          highlightParts(text, query)
+            .map((p) => p.text)
+            .join(""),
+        ).toBe(text.normalize("NFC"));
+      }),
     );
   });
 });

@@ -59,7 +59,8 @@ const ACCENT = "rgb(233, 162, 59)";
 /** Where the docks begin (px from the window's top): directly under the
  *  40 px top bar and the accent line, no gap - in this view as in the
  *  globe view (`editor3d-globe-approach.spec.js`), so both lay out alike. */
-const DOCK_TOP_PX = 40 + LINE_PX;
+const VIEW_TOP_PX = 40;
+const DOCK_TOP_PX = VIEW_TOP_PX + LINE_PX;
 
 /** The dialogs' and toasts' dark dress: the shell's `--s-bg1`, `--s-bg2`
  *  and `--s-text`. */
@@ -211,6 +212,7 @@ async function expectFrame(page, size) {
     boxIn(frame.layout, selector);
   const shownNow = (/** @type {string} */ selector) =>
     shownIn(frame.layout, selector);
+  const phone = size.width <= 700;
   expect(must("#topbar")).toEqual({
     x: 0,
     y: 0,
@@ -250,6 +252,15 @@ async function expectFrame(page, size) {
   ]) {
     if (!shownNow(id)) continue;
     const dock = must(id);
+    // A phone's sheet stands on the bottom bar, the map above it.
+    if (phone) {
+      expect([dock.x, dock.width], `${id} ${at}`).toEqual([0, size.width]);
+      expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
+        size.height - 24,
+        0,
+      );
+      continue;
+    }
     expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX);
     if (shownNow(body)) {
       expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
@@ -260,10 +271,10 @@ async function expectFrame(page, size) {
       expect(dock.height, `${id} ${at}`).toBeCloseTo(FOLDED_PX, 0);
     }
   }
-  // The map controls: one row 14 px over the bottom bar, the compass
-  // left of + and -, 38 px buttons, the zoom pill 8 px right of the
-  // compass, its right edge 12 px left of an open inspector, else 12 px
-  // from the window's right.
+  // The map controls: one row 14 px over the bottom bar (on a phone 12 px
+  // under the top bar, clear of the sheet), the compass left of + and -, 38 px
+  // buttons, the zoom pill 8 px right of the compass, its right edge 12 px
+  // left of an open inspector, else 12 px from the window's right.
   const compass = must("#compass");
   const zoomIn = must("#zoom-in");
   const zoomOut = must("#zoom-out");
@@ -272,10 +283,12 @@ async function expectFrame(page, size) {
   expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
   // The second button's 1 px divider is inside its 38 px.
   expect(zoomOut.x, at).toBe(zoomIn.x + 38);
-  expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
-  const rightEdge = shownNow("#inspector-body")
-    ? must("#shell-inspector").x - 12
-    : size.width - 12;
+  if (phone) expect(compass.y, at).toBe(VIEW_TOP_PX + 12);
+  else expect(size.height - 24 - (compass.y + compass.height), at).toBe(14);
+  const rightEdge =
+    shownNow("#inspector-body") && !phone
+      ? must("#shell-inspector").x - 12
+      : size.width - 12;
   expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(rightEdge, 0);
   const controls = must("#map-controls");
   for (const id of ["#shell-tree", "#shell-inspector"]) {
@@ -366,64 +379,43 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   // About 52 s on CI, 144 s at worst under load.
   test.setTimeout(240_000);
   await useWideFont(page);
-  // A phone: the tree starts folded; opening it and selecting a station
-  // opens the inspector and folds the tree again.
+  // A phone: the list is a sheet; selecting a station turns it into the
+  // details. Where the sheets stand: `editor3d-phone.spec.js`.
   const phone = { width: 390, height: 844 };
   await page.setViewportSize(phone);
   await open3d(page);
   await expectFrame(page, phone);
-  // Folded, the tree's head keeps clear of where the inspector opens, so
-  // its fold arrow can still be tapped while a selection shows.
-  const phoneHead = Math.min(210, 0.56 * 390, 390 - Math.min(290, 0.6 * 390));
-  await expectTree(page, phoneHead, false);
+  await expect(page.locator("#tree-body")).toBeVisible();
   await expect(page.locator("#shell-inspector")).toBeHidden();
-  await page.locator("#tree-fold").click();
-  await expectTree(page, Math.min(210, 0.56 * 390), true);
   await card(page, "The old gate").locator(".pick").click();
-  const phoneInspector = await box(page.locator("#shell-inspector"));
-  expect(phoneInspector.x + phoneInspector.width).toBeCloseTo(390, 0);
-  expect(phoneInspector.y).toBe(DOCK_TOP_PX);
-  expect(phoneInspector.y + phoneInspector.height).toBeCloseTo(844 - 24, 0);
-  expect(phoneInspector.width).toBeCloseTo(Math.min(290, 0.6 * 390), 0);
-  // The one dock a phone shows, with the map controls left of it.
+  await expect(page.locator("#inspector-body")).toBeVisible();
+  await expect(page.locator("#shell-tree")).toBeHidden();
   await expectFrame(page, phone);
   await capture(page, test.info().outputPath("shell-390x844.png"));
-  await expectTree(page, phoneHead, false);
-  const phoneFold = await box(page.locator("#tree-fold"));
-  expect(phoneFold.x + phoneFold.width).toBeLessThanOrEqual(phoneInspector.x);
 
-  // A phone in landscape (under 900 px): still one dock at a time;
-  // unfolding the tree folds the inspector to its head.
+  // Turned, both docks stand, 226 and 268 px, the map controls left of the
+  // inspector; folded to its head, it gives the view back.
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectFrame(page, landscape);
-  // From 1100 px down the tree is 210 px wide.
-  await page.locator("#tree-fold").click();
-  await expectTree(page, 210, true);
-  const folded = await box(page.locator("#shell-inspector"));
-  expect(folded.height).toBeCloseTo(FOLDED_PX, 0);
-  expect(folded.x + folded.width).toBeCloseTo(844, 0);
+  await expectTree(page, 226, true);
+  const turned = await box(page.locator("#shell-inspector"));
+  expect(turned.width).toBeCloseTo(268, 0);
+  expect(turned.x + turned.width).toBeCloseTo(844, 0);
+  await capture(page, test.info().outputPath("shell-844x390.png"));
+  await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
-  await capture(page, test.info().outputPath("shell-844x390.png"));
-  // With the inspector open instead (the map controls then left of it),
-  // then folded again.
   await page.locator('#inspector-head [data-act="fold"]').click();
   await expect(page.locator("#inspector-body")).toBeVisible();
-  await expectFrame(page, landscape);
-  await page.locator('#inspector-head [data-act="fold"]').click();
-  await expect(page.locator("#inspector-body")).toBeHidden();
 
-  // A tablet in portrait: the labels go, the docks shrink to 56 % and
-  // 60 % of the width where that is less, and unfolding the inspector
-  // folds the tree.
+  // A tablet in portrait: the labels go, the same two docks.
   const tablet = { width: 820, height: 1180 };
   await page.setViewportSize(tablet);
   await expectFrame(page, tablet);
-  await page.locator('#inspector-head [data-act="fold"]').click();
-  await expectTree(page, Math.min(210, 0.56 * 820), false);
+  await expectTree(page, 226, true);
   const tabletInspector = await box(page.locator("#shell-inspector"));
-  expect(tabletInspector.width).toBeCloseTo(Math.min(290, 0.6 * 820), 0);
+  expect(tabletInspector.width).toBeCloseTo(268, 0);
   await expect(page.locator("#inspector-body")).toBeVisible();
 
   // A desktop: both docks open side by side, 248 and 290 px, the labels
@@ -431,7 +423,6 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   const desktop = { width: 1440, height: 900 };
   await page.setViewportSize(desktop);
   await expectFrame(page, desktop);
-  await page.locator("#tree-fold").click();
   await expectTree(page, 248, true);
   const inspector = await box(page.locator("#shell-inspector"));
   expect(inspector).toMatchObject({
@@ -494,13 +485,22 @@ async function expectPanel(page, size, heightPx) {
   const panel = await box(page.locator("#shell-panel"));
   expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
   expect(panel.height, at).toBeCloseTo(heightPx, 0);
-  // It pushes the view up: the view's canvas ends at its top. Polled: the
-  // canvas takes its size from a ResizeObserver, a callback after the layout
-  // the panel's box is read from, which a busy page delays.
+  const tree = page.locator("#shell-tree");
+  const inspector = page.locator("#shell-inspector");
+  const phone = size.width <= 700;
+  // It pushes the view up: the view's canvas ends at its top, or on a
+  // phone at the top of the sheet standing on it. Polled: the canvas takes
+  // its size from a ResizeObserver, a callback after the layout the panel's
+  // box is read from, which a busy page delays.
+  let mapFoot = panel.y;
+  if (phone) {
+    const sheet = (await inspector.isVisible()) ? inspector : tree;
+    if (await sheet.isVisible()) mapFoot = (await box(sheet)).y;
+  }
   await expect
     .poll(async () => {
       const canvas = await box(page.locator("#view3d canvas.view3d-canvas"));
-      return Math.abs(canvas.y + canvas.height - panel.y);
+      return Math.abs(canvas.y + canvas.height - mapFoot);
     }, at)
     .toBeLessThan(0.5);
   const head = await box(page.locator("#shell-panel .bp-head"));
@@ -512,8 +512,6 @@ async function expectPanel(page, size, heightPx) {
   const close = await box(page.locator("#shell-panel .bp-close"));
   expect(close.x + close.width, at).toBeCloseTo(panel.x + panel.width - 4, 0);
   // Between the open docks, or the width on a phone.
-  const tree = page.locator("#shell-tree");
-  const inspector = page.locator("#shell-inspector");
   const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
     (await d.isVisible()) &&
     !(await d.evaluate((el) => el.classList.contains("collapsed")));
@@ -531,19 +529,17 @@ async function expectPanel(page, size, heightPx) {
   }
   expect(panel.x, at).toBeCloseTo(left, 0);
   expect(panel.x + panel.width, at).toBeCloseTo(right, 0);
-  // A dock the panel lies under ends at its top (on a phone the open
-  // tree lies over the panel instead).
+  // A dock the panel lies under ends at its top.
   for (const dock of [tree, inspector]) {
     if (!(await open(dock))) continue;
     const d = await box(dock);
     const under = d.x < panel.x + panel.width && d.x + d.width > panel.x;
-    const treeOverIt = size.width <= 700 && dock === tree && !spanned;
-    if (under && !treeOverIt) {
-      expect(d.y + d.height, at).toBeCloseTo(panel.y, 0);
-    }
+    if (under) expect(d.y + d.height, at).toBeCloseTo(panel.y, 0);
   }
   const compass = await box(page.locator("#compass"));
-  expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
+  if (!phone) {
+    expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
+  }
 }
 
 test("the bottom bar's toggles open the bottom panel between the docks, at a phone, a phone in landscape, two laptop widths and a desktop", async ({
@@ -582,7 +578,7 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
     await expectPanel(page, laptop, 220);
   }
 
-  // A phone in landscape: one dock at a time.
+  // A phone in landscape: between the two docks.
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectPanel(page, landscape, 220);
@@ -595,13 +591,13 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await expectPanel(page, phone, 220);
   await page.screenshot({ path: test.info().outputPath("panel-390x844.png") });
 
-  // Ctrl+J closes it, the map controls back over the bar.
+  // Ctrl+J closes it, the map controls still at the map's top.
   await page.locator("#view3d").focus();
   await page.keyboard.press("Control+j");
   await expect(page.locator("#shell-panel")).toBeHidden();
   await expect(problems).toHaveAttribute("aria-pressed", "false");
   const compass = await box(page.locator("#compass"));
-  expect(phone.height - 24 - (compass.y + compass.height)).toBe(14);
+  expect(compass.y).toBe(VIEW_TOP_PX + 12);
 });
 
 test("a card's click selects, unfolds and flies; a second deselects and folds; a double click does not toggle", async ({
@@ -751,7 +747,7 @@ async function crowdTheBar(page) {
 
 /** Where the top bar folds a step (`editor-shell.css`): each is checked
  *  at its edges. */
-const FOLD_STEPS = [820, 720, 520, 400];
+const FOLD_STEPS = [820, 720, 560, 420];
 
 test("the top bar holds every control in its most crowded state, at every step it folds", async ({
   page,
@@ -777,7 +773,7 @@ test("the top bar holds every control in its most crowded state, at every step i
   // Each fold edge and the width just over it (the tightest the bar is
   // between two edges), and the widths of the two name-minimum edges'
   // band and below it (`editor-shell.css`: 440 and 375 px narrow the
-  // name's minimum, so 390 is the tightest checked width under 400). A
+  // name's minimum, so 390 is the tightest checked width under 420). A
   // width strictly inside a band has more room than that band's low end,
   // so 1440, 1280, 900 and 600 showed nothing the edges do not.
   const widths = [390, 320];
@@ -1014,7 +1010,7 @@ test.describe("on a touch screen", () => {
       .locator("#view3d canvas")
       .first()
       .tap({
-        position: { x: 200, y: 600 },
+        position: { x: 200, y: 150 },
       });
     await expect(page.locator("#edit-menu")).toBeHidden();
     // An edit through File's Tour details…, then Edit's Undo takes it back.
@@ -1203,19 +1199,17 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
-test("on a phone, a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
+test("a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
   page,
 }) => {
-  // Why: below 900 px a selection folds the tree to its head, and the
-  // head's "Stations" header is the larger target there. A tap on it
-  // unfolded the dock and also closed the Stations section, so the tree
-  // came back with every station hidden and seemed to have collapsed;
+  // Why: the folded head's "Stations" header is the larger target. A tap
+  // on it unfolded the dock and also closed the Stations section, so the
+  // tree came back with every station hidden and seemed to have collapsed;
   // the next tap opened it. On a folded dock the header only unfolds.
   test.setTimeout(150_000);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
   await page.locator("#tree-fold").click();
-  await card(page, "The old gate").locator(".pick").click();
   await expect(page.locator("#shell-tree")).toHaveClass(/\bcollapsed\b/);
   await expect(page.locator("#tree-stations")).toHaveAttribute(
     "aria-expanded",

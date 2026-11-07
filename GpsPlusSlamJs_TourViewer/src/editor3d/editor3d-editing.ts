@@ -340,6 +340,23 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   let hovered: GizmoHandle | null = null;
   let layout: GizmoLayout | null = null;
 
+  /** `target` drawn as `now` has it (null: as the tour has it). */
+  const showPreview = (target: GestureTarget, now: GesturePreview | null) => {
+    preview = now === null ? null : { target, now };
+    const shown: LayerPreview | null =
+      now === null
+        ? null
+        : target.kind === "station"
+          ? {
+              kind: "station",
+              id: target.id,
+              geo: now.geo,
+              foundRadiusM: now.foundRadiusM ?? target.foundRadiusM,
+            }
+          : { kind: "item", id: target.id, geo: now.geo, sizeM: now.sizeM };
+    layer.setPreview(shown);
+  };
+
   const spritePerPx = () =>
     viewHeightAtOneM(camera.fov) /
     Math.max(1, canvas.getBoundingClientRect().height);
@@ -437,21 +454,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       return best === null ? null : `${STATION}${best.id}`;
     },
     world,
-    preview(target, now) {
-      preview = now === null ? null : { target, now };
-      const shown: LayerPreview | null =
-        now === null
-          ? null
-          : target.kind === "station"
-            ? {
-                kind: "station",
-                id: target.id,
-                geo: now.geo,
-                foundRadiusM: now.foundRadiusM ?? target.foundRadiusM,
-              }
-            : { kind: "item", id: target.id, geo: now.geo, sizeM: now.sizeM };
-      layer.setPreview(shown);
-    },
+    preview: showPreview,
     hover(handle) {
       hovered = handle;
     },
@@ -510,6 +513,18 @@ export function createSceneEditing(deps: SceneEditingDeps) {
      *  none has loaded yet). */
     groundAt: (place: { readonly lat: number; readonly lon: number }) =>
       world.groundAt(place),
+    /** A station's ring and radius dots drawn at `radiusM` (null: as
+     *  the tour has them): the inspector's slider, during its drag. */
+    previewRadius(stationId: string, radiusM: number | null): void {
+      const target = targetOf(`${STATION}${stationId}`);
+      if (target === null) return;
+      showPreview(
+        target,
+        radiusM === null
+          ? null
+          : { geo: target.geo, foundRadiusM: radiusM, sizeM: null },
+      );
+    },
     /** Turn the selection `deg` clockwise about up, where it stands: one
      *  edit through the page (a locked station's is refused there).
      *  False for a selection without a pose here (a code). */

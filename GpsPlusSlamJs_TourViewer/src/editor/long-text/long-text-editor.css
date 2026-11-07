@@ -10,15 +10,18 @@
   --lw-ok: #8fcf9b;
 }
 
-/* The inspector, wider while it holds a writer, wider again on "Wider". */
-#shell-inspector.lw {
-  width: 360px;
-  transition: width 0.18s;
+/* The inspector, wider while it holds a writer, wider again on "Wider".
+ * A phone's sheet is the window's width already (editor-shell.css). */
+@media (width > 700px) {
+  #shell-inspector.lw {
+    width: 360px;
+    transition: width 0.18s;
+  }
+  #shell-inspector.lw.lw-wide {
+    width: min(540px, 52vw);
+  }
 }
-#shell-inspector.lw.lw-wide {
-  width: min(540px, 52vw);
-}
-@media (max-width: 1100px) {
+@media (700px < width <= 1100px) {
   #shell-inspector.lw {
     width: 340px;
   }
@@ -36,8 +39,10 @@
  * (its max-height, editor-shell.css) and the writer fills it: the item's
  * actions and Position sit under it, as in the prototype. Its own text
  * scrolls. */
-#shell-inspector.lw:not(.collapsed) {
-  height: 100%; /* capped by its max-height */
+@media (width > 700px) {
+  #shell-inspector.lw:not(.collapsed) {
+    height: 100%; /* capped by its max-height */
+  }
 }
 #shell-inspector.lw .dbody {
   display: flex;
@@ -872,4 +877,15 @@ button.lw-iss:hover {
 }
 .lw-pv-open:hover {
   color: #fff;
+}
+
+/* A phone: the sheet is the window's width, so nothing can be wider, and
+ * there is no room over the map beside it for the preview. */
+@media (width <= 700px) {
+  #shell-inspector [data-act="lt-wide"],
+  #shell-inspector [data-act="lt-preview"],
+  .lw-pv,
+  .lw-pv-open {
+    display: none;
+  }
 }
