@@ -499,7 +499,11 @@ export function followDocument(
       pictureOf,
       holds,
       (object) =>
-        draftableObject(object, after, (id) => draft.holdsFile?.(id) ?? true),
+        draftableObject(
+          object,
+          after,
+          (asset) => draft.holdsFile?.(asset) ?? true,
+        ),
     );
   }
   const was = settingsRecord(before);

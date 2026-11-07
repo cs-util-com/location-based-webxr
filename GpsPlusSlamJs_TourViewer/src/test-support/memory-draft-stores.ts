@@ -27,41 +27,32 @@ class SnapshotBlob extends Blob {
     super([source], { type: source.type });
     this.#alive = alive;
   }
-  #check(): void {
-    if (!this.#alive()) {
-      throw new DOMException("the entry changed", "NotReadableError");
-    }
+  /** The read error once the entry changed, else null. */
+  #gone(): DOMException | null {
+    return this.#alive()
+      ? null
+      : new DOMException("the entry changed", "NotReadableError");
   }
   override arrayBuffer(): Promise<ArrayBuffer> {
-    try {
-      this.#check();
-    } catch (e) {
-      return Promise.reject(e as Error);
-    }
-    return super.arrayBuffer();
+    const gone = this.#gone();
+    return gone === null ? super.arrayBuffer() : Promise.reject(gone);
   }
   override text(): Promise<string> {
-    try {
-      this.#check();
-    } catch (e) {
-      return Promise.reject(e as Error);
-    }
-    return super.text();
+    const gone = this.#gone();
+    return gone === null ? super.text() : Promise.reject(gone);
   }
   override bytes(): Promise<Uint8Array<ArrayBuffer>> {
-    try {
-      this.#check();
-    } catch (e) {
-      return Promise.reject(e as Error);
-    }
-    return super.bytes();
+    const gone = this.#gone();
+    return gone === null ? super.bytes() : Promise.reject(gone);
   }
   override stream(): ReadableStream<Uint8Array<ArrayBuffer>> {
-    this.#check();
+    const gone = this.#gone();
+    if (gone !== null) throw gone;
     return super.stream();
   }
   override slice(start?: number, end?: number, type?: string): Blob {
-    this.#check();
+    const gone = this.#gone();
+    if (gone !== null) throw gone;
     return super.slice(start, end, type);
   }
 }
