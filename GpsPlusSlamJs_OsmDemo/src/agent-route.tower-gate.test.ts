@@ -118,7 +118,7 @@ describe("the Tower of London gate", () => {
     expect(route).toBeDefined();
     // IT WENT THROUGH THE GATE rather than round the end of the trimmed wall.
     // The wall is 157 m long here, so a route round it would stay tens of metres
-    // away; GATE_GAP_M is 6, so the opening itself is 6 m wide.
+    // away; GATE_GAP_M is 8, so the opening itself is 8 m wide.
     expect(nearestApproachM(route!)).toBeLessThan(6);
   });
 
