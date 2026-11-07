@@ -56,8 +56,6 @@ import type {
   TourPicture,
   TourPin,
   TourStation,
-  TourAudioBlock,
-  TourVideoBlock,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
@@ -74,6 +72,11 @@ import {
   type ModelViewHandle,
   type TourModelBlock,
 } from "./model-views.js";
+import {
+  mountWorldPart,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part.js";
 
 /** Ids are file stems (`content/<id>.jpg`) and must be unique in the
  *  manifest: 12 base-36 characters of randomness, path-safe by construction. */
@@ -331,19 +334,15 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    */
   readonly viewOf?: (block: TourBlock) => string;
   /**
-   * A free video's or a free sound's look in the world, built by the page.
-   * Absent, or null for a block: nothing is drawn for it, quietly (no look
-   * exists yet, and a stand-in would be a marker nobody chose). A free
-   * character is no business of this renderer: the page's free host stands
-   * him (`free-items.ts`).
+   * The world door: a block's part in the world by its kind's row (the
+   * page passes `worldPartOf` of `play-kinds.ts` with its environment),
+   * asked of every block no drawing above has, whatever its kind. Absent,
+   * or null for a block: nothing is drawn for it, quietly (a stand-in
+   * would be a marker nobody chose). A free character stands by the
+   * page's free host (`free-items.ts`), so his row gives no part here.
    */
-  readonly makeFreeItem?: (
-    block: TourFreeLookBlock,
-  ) => { object: Object3D; dispose(): void } | null;
+  readonly worldPart?: (block: TourBlock) => WorldPart | null;
 };
-
-/** The blocks `makeFreeItem` builds: the free ones in a `card` view. */
-type TourFreeLookBlock = TourVideoBlock | TourAudioBlock;
 
 /**
  * Play one station of a tour: a group at the station's geo pose in the
@@ -435,11 +434,7 @@ type Drawn =
       readonly sizeM: number;
       readonly block: TourModelBlock;
     }
-  | {
-      readonly id: string;
-      readonly as: "free";
-      readonly block: TourFreeLookBlock;
-    }
+  | { readonly id: string; readonly as: "world"; readonly block: TourBlock }
   | { readonly id: string; readonly as: "none" };
 
 /** The views a long text stands in the world in; `captions` is a
@@ -501,7 +496,8 @@ function drawnObject(object: TourObject): Drawn {
 }
 
 /** A station's free block as drawn: a picture's file is the tour's asset
- *  of its `image`. A block in a view no world drawing has is nothing. */
+ *  of its `image`. A block in a view no drawing here has goes to the
+ *  world door (`worldPart`). */
 function drawnBlock(
   block: TourBlock,
   paths: ReadonlyMap<string, string>,
@@ -528,17 +524,14 @@ function drawnBlock(
       block,
     };
   }
-  if (block.kind === "video" || block.kind === "audio") {
-    return { id: block.id, as: "free", block };
-  }
-  return { id: block.id, as: "none" };
+  return { id: block.id, as: "world", block };
 }
 
 /** The one renderer: pins as labels, pictures as planes, models at their
  *  size (`modelScale`) in their world view (`mountModelView`, found again
  *  through `mountedModelViews`), reading stands by `makeLectern`,
- *  reading signs by `makeReadingSign` and a free video's or sound's look
- *  by `makeFreeItem`, each at
+ *  reading signs by `makeReadingSign` and any other block's part by
+ *  the world door (`worldPart`, mounted while it stands), each at
  *  its pose in `scene`'s frame, under one group added once everything
  *  decoded. */
 async function renderContent(
@@ -547,19 +540,24 @@ async function renderContent(
     alive?: () => boolean;
     loadModel?: TourStationRendererDeps["loadModel"];
     modelViews?: ModelViewEnv;
-    makeFreeItem?: TourStationRendererDeps["makeFreeItem"];
+    worldPart?: TourStationRendererDeps["worldPart"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
   const stands: { object: Object3D; dispose(): void }[] = [];
   const models: Object3D[] = [];
   const views: ModelViewHandle[] = [];
+  const parts: WorldPart[] = [];
   const disposeModels = (): void => {
     // The views first: they give the models back their own materials,
     // which `disposeObject3D` then frees.
     for (const view of views) view.dispose();
     for (const model of models) disposeObject3D(model);
     for (const stand of stands) stand.dispose();
+    for (const part of parts) {
+      unmountWorldPart(part);
+      part.dispose();
+    }
   };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
@@ -593,13 +591,14 @@ async function renderContent(
         // load" would claim a download failed.
         continue;
       }
-      if (drawn.as === "free") {
-        const look = deps.makeFreeItem?.(drawn.block) ?? null;
-        if (look === null) continue;
-        look.object.position.set(...pose.positionNue);
-        look.object.quaternion.set(...pose.rotationNue);
-        look.object.userData["objectId"] = drawn.id;
-        stands.push(look);
+      if (drawn.as === "world") {
+        const part = deps.worldPart?.(drawn.block) ?? null;
+        if (part === null) continue;
+        part.object.position.set(...pose.positionNue);
+        part.object.quaternion.set(...pose.rotationNue);
+        part.object.userData["objectId"] = drawn.id;
+        mountWorldPart(part);
+        parts.push(part);
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
@@ -669,6 +668,7 @@ async function renderContent(
     // above holds.
     for (const model of models) group.add(model);
     for (const stand of stands) group.add(stand.object);
+    for (const part of parts) group.add(part.object);
   } catch (error) {
     // A constructor that throws half way (a label without a canvas) must
     // not strand what was made before it: a station is drawn and freed
@@ -680,7 +680,12 @@ async function renderContent(
   }
   deps.scene.add(group);
   return {
-    count: labels.length + planes.count + models.length + stands.length,
+    count:
+      labels.length +
+      planes.count +
+      models.length +
+      stands.length +
+      parts.length,
     root: group,
     skipped,
     dispose: () => {

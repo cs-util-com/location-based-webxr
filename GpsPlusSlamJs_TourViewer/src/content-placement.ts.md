@@ -88,7 +88,7 @@ under - what a tap in AR is cast against to name the object
   disposed with them (the 3D editor passes it too); without the builder
   (the creator's previews, the unit tests) it is left out. Models are added after the planes, so the planes'
   order behind the labels holds. A station's story blocks are the
-  story's, never drawn here. A free video or sound is drawn by the page's `makeFreeItem`, at its pose; without one, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
+  story's, never drawn here. Any other block (a free video or sound, a kind with no drawing here) is asked of the page's world door, `worldPart` (the visitor's: its kind's row, `play-kinds.ts` `worldPartOf`), and the `WorldPart` it gives (`world-part.ts`) is placed at the block's pose, mounted in the one world-part set and unmounted and disposed with the station; without the door, or when it answers null, nothing stands there (no look exists yet, and a stand-in would be a marker nobody chose). The part's axes are the pose's: local +X turns to the heading, front (local +Z) to heading + 90 degrees, +Y up. A free character is the page's free host's (`free-items.ts`), never this renderer's. A station without free blocks gives an empty
   one. The
   same rendering (`renderContent`) as `renderTourObjects`, so labels,
   photo planes, `skipped` and `dispose` behave the same. `alive()`

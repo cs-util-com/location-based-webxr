@@ -26,15 +26,15 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
 - `buildReadingSign(map)` - `{ root ("reading-sign"), plate
 ("reading-sign-plate"), dispose }`. The plate's `onBeforeRender` turns it
   toward the camera, in the parent's frame, in the same frame.
-- `mountReadingSign(block)` - draws the canvas texture (sRGB), builds the
-  sign, registers its handle and returns `{ object, dispose }` for
-  `content-placement.ts`'s `makeReadingSign`. The minutes come from
-  `readMinutes(wordCount(body))` in `long-text-sheet.ts`.
-- `readingSignUnderTap(handles, pick, tap)` - the handle whose plate the
-  pick names, or `null`.
-- `shownReadingSignUnderTap(scene, pick, tap, handles?)` - the same over the
-  signs shown in the scene only (`shownIn` of `model-visitor.ts`); `null`
-  without a scene.
+- `mountReadingSign(block, open?)` - draws the canvas texture
+  (`world-part.ts` `paintText`, sRGB), builds the sign, mounts it in the
+  one world-part set and returns a `ReadingSignHandle` (a `WorldPart`:
+  `block`, `object`, `tapTarget` = the plate, `dispose`) for
+  `content-placement.ts`'s `makeReadingSign`. With `open` (the visitor's
+  reading sheet, `viewer-placement.ts` `openReading`) its `tap()` opens
+  the block's text; without it the sign takes no tap (the 3D editor's).
+  The minutes come from `readMinutes(wordCount(body))` in
+  `long-text-sheet.ts`.
 - `readingSheetContent(stations, block)` - `{ over, title, body }` for the
   sheet: `over` is "Title · Station N", "Station N" for an untitled
   station, or "" when no station holds the block.
@@ -44,10 +44,11 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
 - The sign's root carries the pose; only the plate turns. The stem reaches
   from the ground to the plate's lower edge, the plate's centre is 2.05 m
   up.
-- A hidden station's sign is never offered to the pick, so a tap cannot
-  open a text the visitor cannot see.
+- A hidden station's sign is never offered to the pick
+  (`tapShownWorldPart`), so a tap cannot open a text the visitor cannot
+  see.
 - `dispose` releases the geometry, material and texture and removes the
-  handle from the registry.
+  handle from the world-part set.
 - `mountReadingSign` throws without a 2D canvas context (a page without a
   DOM); its callers pass it only in a browser, and the tests build the
   sign with `buildReadingSign(null)` instead.
@@ -55,19 +56,20 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
 ## Example
 
 ```ts
-const stand = mountReadingSign({ id: "hall", title: "The hall", body });
+const stand = mountReadingSign({ id: "hall", title: "The hall", body }, (b) =>
+  sheet.show(readingSheetContent(stations, b)),
+);
 stationGroup.add(stand.object);
-// on a tap:
-const sign = shownReadingSignUnderTap(scene, pick, tap);
-if (sign) sheet.show(readingSheetContent(stations, sign.block));
+// on a tap (main.ts): tapShownWorldPart(scene, pick, tap) calls stand.tap()
 ```
 
 ## Tests
 
 - `reading-sign.test.ts` - the drawing's words and positions, the wrap and
   "Untitled", the geometry, the facing from four sides and in the parent's
-  frame through `onBeforeRender`, the shown-only pick, and
-  `readingSheetContent`.
+  frame through `onBeforeRender`, `mountReadingSign` as a world part (the
+  plate takes the tap and opens the text, none without an opener, mounted
+  until disposed), and `readingSheetContent`.
 - `reading-sign.property.test.ts` - the plate faces any viewer; any title
   draws at most two lines within 760 px.
 - `content-placement.test.ts`, `editor3d/editor3d-stations.test.ts` and

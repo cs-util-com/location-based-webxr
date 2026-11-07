@@ -11,8 +11,9 @@
  * its local +z (the photo planes' rule: a creator's "face me" rotation
  * turns the page toward them). Up is local +y.
  *
- * Mounted stands are kept in a registry (`mountedLecterns`), the model
- * views' pattern, so a tap finds them without walking the scene.
+ * A mounted stand is a world part in the one mounted set (`world-part.ts`):
+ * its page takes the tap, and the visitor's tap finds it as it finds every
+ * part.
  *
  * @see lectern-view.ts.md
  */
@@ -23,14 +24,13 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 import {
   BoxGeometry,
-  CanvasTexture,
+  type CanvasTexture,
   Group,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   PlaneGeometry,
-  SRGBColorSpace,
   type Object3D,
 } from "three";
 
@@ -44,7 +44,12 @@ import {
   type LecternPlace,
   type LecternText,
 } from "./lectern-page.js";
-import { shownIn } from "./model-visitor.js";
+import {
+  mountWorldPart,
+  paintText,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part.js";
 
 /** The stand's shape (m), the prototype's numbers. */
 export const LECTERN_STAND = {
@@ -202,15 +207,6 @@ export function drawLecternPage(
   );
 }
 
-/** The page's texture: sRGB, and as sharp seen at a slant from the
- *  square as the renderer allows (`LECTERN_PAGE_ANISOTROPY`). */
-export function lecternPageTexture(canvas: HTMLCanvasElement): CanvasTexture {
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  texture.anisotropy = LECTERN_PAGE_ANISOTROPY;
-  return texture;
-}
-
 /** The stand's geometry: the board (its back, the page plane showing
  *  `pageMap`, and the lip) on two legs and feet, its root on the ground.
  *  A null map draws a blank page (a page with no canvas, and the tests). */
@@ -269,26 +265,17 @@ export function buildLecternStand(pageMap: CanvasTexture | null): {
   };
 }
 
-/** A mounted reading stand. */
-export interface LecternHandle {
+/** A mounted reading stand: a world part whose page takes the tap. */
+export interface LecternHandle extends WorldPart {
   readonly blockId: string;
-  /** The stand: placed by the caller at the block's pose. */
-  readonly object: Object3D;
-  /** The page plane: what a tap is cast against. */
+  /** The page plane: what a tap is cast against (`tapTarget`). */
   readonly page: Object3D;
+  readonly tapTarget: Object3D;
   /** The sentence the page is on. */
   sentence(): number;
-  /** Turn the page (a tap): seven lines on (inside a long sentence too),
-   *  the next paragraph, or back to the first. */
-  turn(): void;
-  dispose(): void;
-}
-
-const mounted = new Set<LecternHandle>();
-
-/** The stands mounted and not yet disposed, oldest first. */
-function mountedLecterns(): LecternHandle[] {
-  return [...mounted];
+  /** Turn the page: seven lines on (inside a long sentence too), the next
+   *  paragraph, or back to the first. */
+  tap(): void;
 }
 
 /**
@@ -309,7 +296,8 @@ export function mountLectern(block: {
   canvas.height = LECTERN_PAGE.heightPx;
   const g = canvas.getContext("2d");
   if (g === null) throw new Error("the reading stand needs a 2D canvas");
-  const texture = lecternPageTexture(canvas);
+  // As sharp seen at a slant from the square as the renderer allows.
+  const texture = paintText(canvas, { anisotropy: LECTERN_PAGE_ANISOTROPY });
   const text = analyzeLecternText(
     plainTextOf(parseTourMarkdown(block.body)).text,
   );
@@ -325,58 +313,20 @@ export function mountLectern(block: {
     blockId: block.id,
     object: stand.root,
     page: stand.page,
+    tapTarget: stand.page,
     sentence: () => place.sentence,
-    turn() {
+    tap() {
       g.font = BODY_FONT;
       place = lecternTurn(text, place, (w) => g.measureText(w).width);
       draw();
     },
     dispose() {
-      if (!mounted.delete(handle)) return;
+      if (!unmountWorldPart(handle)) return;
       stand.root.removeFromParent();
       stand.dispose();
       texture.dispose();
     },
   };
-  mounted.add(handle);
+  mountWorldPart(handle);
   return handle;
-}
-
-/**
- * A visitor's tap on a reading stand: the stand whose page is under the
- * tap (`pick`, the page's `pickObjectInView`) among `handles` turns its
- * page. True when one did.
- */
-export function turnLecternUnderTap<T>(
-  handles: readonly LecternHandle[],
-  pick: (targets: ReadonlyMap<string, Object3D>, tap: T) => string | null,
-  tap: T,
-): boolean {
-  if (handles.length === 0) return false;
-  const byId = new Map(handles.map((h) => [h.blockId, h]));
-  const hit = pick(new Map(handles.map((h) => [h.blockId, h.page])), tap);
-  const handle = hit === null ? undefined : byId.get(hit);
-  if (handle === undefined) return false;
-  handle.turn();
-  return true;
-}
-
-/**
- * The visitor's tap on the reading stands (`main.ts`): only the stands
- * shown under a station's content group of `scene` (`shownIn`, the model
- * views' rule) can turn, so a hidden station's stand never takes a tap;
- * no scene, no turn. True when one turned.
- */
-export function turnShownLecternUnderTap<T>(
-  scene: Object3D | null,
-  pick: (targets: ReadonlyMap<string, Object3D>, tap: T) => string | null,
-  tap: T,
-  handles: readonly LecternHandle[] = mountedLecterns(),
-): boolean {
-  if (scene === null) return false;
-  return turnLecternUnderTap(
-    handles.filter((h) => shownIn(h.object, scene)),
-    pick,
-    tap,
-  );
 }

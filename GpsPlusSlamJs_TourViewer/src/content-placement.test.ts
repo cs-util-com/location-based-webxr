@@ -41,6 +41,7 @@ import {
   uprightTurn,
 } from "./content-placement";
 import { mountedModelViews } from "./model-views";
+import { mountedWorldParts, type WorldPart } from "./world-part";
 import { contentSegment } from "./tour-flow";
 import { stationContent } from "./test-support/station-content.js";
 
@@ -826,11 +827,13 @@ describe("renderTourStation", () => {
     expect(drawn).toEqual(["lectern:sign", "reading:sign", "reading:sign"]);
   });
 
-  // Why: a free video and a free sound have no look of their own yet. The
-  // page's builder is where one plugs in; without it nothing stands there,
-  // because a stand-in would be a marker nobody chose. A free character is
-  // the page's free host's, never this renderer's.
-  it("draws a free video or sound by the page's builder at its pose, and nothing without one", async () => {
+  // Why: a block no other drawing has is asked of the page's world door
+  // (the kinds' rows, `worldPartOf`), whatever its kind: a kind gets a
+  // look in the world by its row alone, with no arm here. Without the door
+  // nothing stands, because a stand-in would be a marker nobody chose. An
+  // empty object is a part too (a sound zone shows nothing): placed at its
+  // pose, mounted while it stands, freed and unmounted with the station.
+  it("asks the page's world door for every block no drawing has, and places what it gives", async () => {
     const scene = new Group();
     const pose = {
       position: [1, 2, 3] as [number, number, number],
@@ -880,26 +883,35 @@ describe("renderTourStation", () => {
     bare.dispose();
     const built: string[] = [];
     let freed = 0;
+    const parts: WorldPart[] = [];
     const drawn = await renderTourStation(
       { ...base, ...station },
       {
         ...deps,
-        makeFreeItem: (block) => {
+        worldPart: (block) => {
           built.push(block.id);
           if (block.kind === "audio") return null;
-          return { object: new Group(), dispose: () => (freed += 1) };
+          const part: WorldPart = {
+            object: new Object3D(),
+            dispose: () => (freed += 1),
+          };
+          parts.push(part);
+          return part;
         },
       },
     );
-    expect(built).toEqual(["film", "song"]);
-    expect(drawn.count).toBe(1);
+    expect(built).toEqual(["film", "song", "ann"]);
+    expect(drawn.count).toBe(2);
+    expect(mountedWorldParts()).toEqual(expect.arrayContaining(parts));
     let found: Object3D | undefined;
     drawn.root.traverse((o) => {
       if (o.userData["objectId"] === "film") found = o;
     });
     expect(found?.position.toArray()).toEqual([1, 2, 3]);
+    expect(found?.quaternion.toArray()).toEqual(yaw(0));
     drawn.dispose();
-    expect(freed).toBe(1);
+    expect(freed).toBe(2);
+    for (const part of parts) expect(mountedWorldParts()).not.toContain(part);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

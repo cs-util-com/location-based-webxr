@@ -21,7 +21,8 @@ paragraphs).
   views' check page (45 degrees) on purpose: each page copies its own
   prototype.
 - The hook `window.__lecternCheck`: `show({ title?, body? })` (re-made
-  from scratch; the default is the demo text), `turn()`, `standAt(x, z)`
+  from scratch; the default is the demo text), `turn()` (the stand's
+  `tap`), `standAt(x, z)`
   (throws on a non-finite number), `state()` (the sentence and the screen
   boxes of the page and the stand, null before a stand is shown),
   `stop()`.

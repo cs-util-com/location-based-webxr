@@ -39,7 +39,6 @@ import { getBuildInfo } from "gps-plus-slam-app-framework/utils/build-info";
 
 import { wireArchiveOpen } from "./archive-open.js";
 import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
-import { turnShownLecternUnderTap } from "./lectern-view.js";
 import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
 import { createCaptionsFollow } from "./captions-follow.js";
@@ -51,11 +50,9 @@ import {
   visitorPrefsLoaded,
 } from "./visitor-prefs-slice.js";
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
-import {
-  readingSheetContent,
-  shownReadingSignUnderTap,
-} from "./reading-sign.js";
+import { readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
+import { tapShownWorldPart } from "./world-part.js";
 import { wireArEntry } from "./ar-entry.js";
 import { createAuthoringRecording } from "./authoring-recording.js";
 import { arSessionLive, wireCreatorSetup } from "./creator-setup.js";
@@ -923,6 +920,10 @@ const viewer = createViewerPlacement({
   // It holds story media only, so a return reads an
   // item photo from the archive again until item photos join it.
   loadContent: (path) => stations.loadContent(path),
+  // A reading sign's tap opens its text in the sheet.
+  openReading: (block) => {
+    openLongText(block);
+  },
   narration,
   // The `tourViewing/*` log (M1b): only where a recording can run, and
   // silent until it does.
@@ -1226,24 +1227,14 @@ hooks.visitorTap = (tap) => {
   routeVisitorTap(tap, {
     character: stations.characterTapped,
     model: (t) => modelVisitor.tapped(t),
-    // A reading stand under the tap turns its page.
-    lectern: (t) =>
-      turnShownLecternUnderTap(
+    // A world part under the tap: a reading stand turns its page, a
+    // reading sign opens its text in the sheet (`openReading` below).
+    part: (t) =>
+      tapShownWorldPart(
         seams.getScene(),
         (targets, at) => seams.pickObjectInView(targets, at),
         t,
       ),
-    // A reading sign under the tap opens its text in the sheet.
-    reading: (t) => {
-      const sign = shownReadingSignUnderTap(
-        seams.getScene(),
-        (targets, at) => seams.pickObjectInView(targets, at),
-        t,
-      );
-      if (sign === null) return false;
-      openLongText(sign.block);
-      return true;
-    },
     pinSheet,
   });
 };

@@ -23,30 +23,23 @@ one, which the format does not have yet.
   moved, or the one the sentence opens); the sentence is clamped to the
   text's range; an empty text draws only the frame; a long title is cut
   with an ellipsis to the line's width.
-- `lecternPageTexture(canvas)` - the page's canvas texture: sRGB, its
-  anisotropy `LECTERN_PAGE_ANISOTROPY` (16: the prototype asks for the
+- `LECTERN_PAGE_ANISOTROPY` - 16, the page texture's anisotropy
+  (`world-part.ts` `paintText`, sRGB): the prototype asks for the
   renderer's maximum, and three clamps a texture's to that maximum on
-  upload, so the largest any WebGL device reports asks for the same).
+  upload, so the largest any WebGL device reports asks for the same.
 - `buildLecternStand(pageMap | null)` -> `{ root, page, dispose }` - the
   geometry, its root on the ground; the page plane is named
   `lectern-page`; a null map draws a blank page.
 - `mountLectern({ id, title, body })` -> `LecternHandle` - builds a stand
   with a canvas page for a block (`body` is Markdown, shown as its plain
-  text, `plainTextOf`), registers it and sets `userData.objectId`. Throws
-  when the page has no 2D canvas. The handle has `blockId`, `object` (the
-  stand, placed by the caller), `page` (what a tap is cast against),
-  `sentence()`, `turn()` (by `lecternTurn`, keeping the place: inside a
-  long sentence the window moves on) and `dispose()` (idempotent;
-  removes it from the scene and the registry).
-- `mountedLecterns()` (module-internal) - the mounted stands not yet
-  disposed, oldest first; the default of `turnShownLecternUnderTap`.
-- `turnLecternUnderTap(handles, pick, tap)` - turns the stand whose page
-  `pick` (the page's `pickObjectInView`) finds under the tap; true when
-  one turned. With no stands `pick` is not asked.
-- `turnShownLecternUnderTap(scene, pick, tap, handles = mountedLecterns())`
-  - the visitor's tap (`main.ts`): `turnLecternUnderTap` among the stands
-    shown under a station's content group of `scene` (`model-visitor.ts`
-    `shownIn`); a null scene turns none and asks nothing.
+  text, `plainTextOf`), mounts it in the one world-part set
+  (`world-part.ts`) and sets `userData.objectId`. Throws when the page
+  has no 2D canvas. The handle is a `WorldPart`: `blockId`, `object` (the
+  stand, placed by the caller), `page` and `tapTarget` (the page plane,
+  what a tap is cast against), `sentence()`, `tap()` (turns the page by
+  `lecternTurn`, keeping the place: inside a long sentence the window
+  moves on) and `dispose()` (idempotent; removes it from the scene and
+  the set).
 
 ## Invariants & assumptions
 
@@ -58,8 +51,9 @@ one, which the format does not have yet.
   material is unlit and not tone-mapped, so the page reads the same in
   any light, as in the prototype.
 - `main.ts` routes a tap here after the character and the model card
-  (`visitor-stations.ts` `routeVisitorTap`) through
-  `turnShownLecternUnderTap`.
+  (`visitor-stations.ts` `routeVisitorTap`) through `world-part.ts`
+  `tapShownWorldPart`, with every other shown world part (a reading
+  sign's plate too): whichever target the pick names takes the tap.
 
 ## Not built (needs a narration in the format)
 
@@ -72,7 +66,7 @@ fill and the voice's credit. The footer's track is drawn empty.
 const stand = mountLectern({ id: "b1", title: "The hall", body: "One. Two." });
 stand.object.position.set(0, 0, -3);
 scene.add(stand.object);
-stand.turn();
+stand.tap();
 stand.dispose();
 ```
 
@@ -80,8 +74,10 @@ stand.dispose();
 
 `lectern-view.test.ts` (the page's text, colours, highlight and footer
 with a recording context, the nine-row cap and the line step on a long
-paragraph and a moved window; the texture's anisotropy; the stand's
-geometry; the tap routing, shown and hidden stands and no scene);
+paragraph and a moved window; the stand's geometry; `mountLectern` as a
+world part: its page takes the tap and turns, the texture's anisotropy
+and colour space, mounted until disposed); `world-part.test.ts` (the
+shown-only tap routing over every part);
 `content-placement.test.ts` (placed at its local pose through the
 builder); `playwright-tests/lectern-check.spec.js` (where the drawn page
 lands at three viewports, and the tap turning it).

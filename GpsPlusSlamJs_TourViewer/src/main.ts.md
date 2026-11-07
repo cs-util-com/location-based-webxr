@@ -64,9 +64,10 @@ listed in `index.html.md`. The concerns and their modules:
   `main.ts` builds the reading sheet under `#ar-root` (its pictures read
   through the stations' prefetch by the asset's path, an image asset only
   (`pictureAssetPath`), a link asking while
-  an AR session is live), opens it from `hooks.visitorTap` when a shown
-  reading sign is under the tap (`shownReadingSignUnderTap`, after the
-  reading stands in `routeVisitorTap`'s order), with the station's line
+  an AR session is live), opens it when a shown reading sign is tapped
+  (the sign's `tap`, wired as `createViewerPlacement`'s `openReading`
+  and reached through `world-part.ts` `tapShownWorldPart`, the `part`
+  route of `routeVisitorTap`), with the station's line
   above the title (`readingSheetContent`), and closes it in
   `hooks.stopStations`.
 - `narration-visitor.ts`, `captions-strip.ts` and `captions-follow.ts` -
