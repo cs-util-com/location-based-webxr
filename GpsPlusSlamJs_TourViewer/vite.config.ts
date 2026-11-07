@@ -60,6 +60,9 @@ export default defineConfig({
         characterViewsCheck: fileURLToPath(
           new URL("character-views-check.html", import.meta.url),
         ),
+        // A new kind of item in a story and in a station, side by side
+        // (`item-lab.html.md`), linked from nothing.
+        itemLab: fileURLToPath(new URL("item-lab.html", import.meta.url)),
         // A long text on its reading stand without an AR session
         // (`lectern-check.html.md`), linked from nothing.
         lecternCheck: fileURLToPath(

@@ -49,6 +49,7 @@ import {
   paintBubble,
   paintFigure,
   paintFrames,
+  uprightFigure,
   paintPip,
   paintScroll,
   paintStageTop,
@@ -79,6 +80,8 @@ import {
 
 /** The painters a look draws its media with (fakes in unit tests). */
 export interface CharacterPainters {
+  /** A figure decoded for WebGL, the right way up on a canvas. */
+  upright(source: FigureSource): FigureSource;
   figure(source: FigureSource): PaintedFigure;
   /** A frames sheet's poses (`paintFrames`). */
   frames(sheet: FigureSource): PaintedFigure[];
@@ -91,6 +94,7 @@ export interface CharacterPainters {
 }
 
 const CANVAS_PAINTERS: CharacterPainters = {
+  upright: uprightFigure,
   figure: paintFigure,
   frames: paintFrames,
   bubble: (content) => paintBubble(content),
@@ -118,9 +122,13 @@ export function paintPoses(
   source: FigureSource,
   sheet: boolean,
   painters: CharacterPainters = CANVAS_PAINTERS,
+  /** `source` is stored bottom row first, as the decoder leaves a bitmap for
+   *  WebGL. */
+  flipped = false,
 ): readonly PaintedFigure[] {
-  const sliced = sheet ? painters.frames(source) : [];
-  return sliced.length === 4 ? sliced : [painters.figure(source)];
+  const upright = flipped ? painters.upright(source) : source;
+  const sliced = sheet ? painters.frames(upright) : [];
+  return sliced.length === 4 ? sliced : [painters.figure(upright)];
 }
 
 export type CharacterLookOptions = CharacterLookParts &
