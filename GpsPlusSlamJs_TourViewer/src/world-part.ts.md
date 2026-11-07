@@ -34,21 +34,37 @@ the reading sign (`reading-sign.ts`) are world parts too.
   `routeVisitorTap`): among the parts shown under a station's content group
   (`model-visitor.ts` `shownIn`) that have both `tap` and `tapTarget`, the
   one `pick` (the page's `pickObjectInView`) names is tapped; true when one
-  was. A null scene or no candidate asks no pick.
+  was. A null scene or no candidate asks no pick. Every kind's part is in
+  the one pick, so the nearest exact hit along the ray wins
+  (`object-pick.ts`), whatever the kind: a sign in front of a stand takes
+  the tap. Before the parts shared one pick, the stands were picked on
+  their own, ahead of everything else.
 
 ## Invariants & assumptions
 
 - **Axes.** Metres, Y up, origin at the item's foot on the ground. Front is
-  local +Z, right local +X. A station block's pose (`rotationFromHeading`,
-  a turn of -heading about up in the NUE world: x north, y up, z east)
-  turns local +X to the heading's bearing and local +Z to heading + 90
-  degrees, the QR poster rule; `content-placement.ts` drops pitch and roll.
-  Confirmed by a property test over headings.
+  local +Z, right local +X. The renderer sets the part's rotation to its
+  block's pose rotation as it stands (`block.pose.rotation`, under the
+  station's frame, which `objectPoseNue` places): pitch and roll included.
+  Only the stand and the sign are set upright, by their own arm of
+  `content-placement.ts`; a part from the door keeps any tilt the pose has.
+  Where front points is therefore the block's rotation, and two
+  conventions write one (NUE: x north, y up, z east):
+  - the editor's facing (`character-views.ts` `facingRotation(deg)`, a
+    turn of 90 - deg about up) turns front, local +Z, to the facing `deg`;
+  - the QR poster rule (`content-placement.ts` `rotationFromHeading(h)`, a
+    turn of -h about up, used for a geo pose given by heading alone) turns
+    local +X to the heading and front to heading + 90 degrees.
+  Both are confirmed by property tests over headings.
 - An empty `Object3D` is a valid part: mounted, placed and freed, never
   offered to a tap.
 - A hidden station's part is never offered to the pick.
 - The set is module-wide: every page that mounts parts (the visitor, the
   check pages) shares it, so a part must be unmounted by its `dispose`.
+- **Not done yet.** The editor does not build its previews through the
+  door with `mode: "edit"`: it still draws no part for a door kind, and
+  `edit` is so far only accepted by `worldEnv`. And `tap?()` takes no
+  hit: the part does not hear where on its `tapTarget` the tap landed.
 - Not in the set yet: the model views (`model-visitor.ts` keeps its own,
   with the model card's tap ahead of every part) and the story's figure
   (`free-items.ts`, whose object belongs to the scene stage shared with
@@ -71,7 +87,9 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 
 `world-part.test.ts`: `paintText`'s colour space and anisotropy (swept over
 1, 4 and 16, and none), the mounted set as a property, the shown-only tap
-(hidden, outside any station, no tap, no scene, a miss), an empty `Object3D` as a
-part, the axes over headings, and `worldEnv` in both modes with an unknown
-id. The door's delegation is in `play-kinds.test.ts`, the placement in
-`content-placement.test.ts`.
+(hidden, outside any station, no tap, no scene, a miss), the nearer of two
+parts on the ray through the real `pickObject`, an empty `Object3D` as a
+part, the axes of both rotation conventions over headings, and `worldEnv` in both modes with an unknown
+id. The door's delegation is in `play-kinds.test.ts`, the placement (the
+pose's rotation kept, tilt included, and a part that unmounts itself in its
+own dispose still freed) in `content-placement.test.ts`.

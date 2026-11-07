@@ -1228,7 +1228,7 @@ hooks.visitorTap = (tap) => {
     character: stations.characterTapped,
     model: (t) => modelVisitor.tapped(t),
     // A world part under the tap: a reading stand turns its page, a
-    // reading sign opens its text in the sheet (`openReading` below).
+    // reading sign opens its text in the sheet (`openReading` above).
     part: (t) =>
       tapShownWorldPart(
         seams.getScene(),
