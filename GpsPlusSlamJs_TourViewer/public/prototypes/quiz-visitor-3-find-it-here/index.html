@@ -1,0 +1,2528 @@
+<!doctype html>
+<!-- Prototype: a story's quiz as a small on-site riddle. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Quiz: find it here</title>
+    <style>
+      :root {
+        /* the visitor walk's colours and the design system's type, tap size and motion */
+        --walk-accent: #fb923c;
+        --walk-accent-ink: #1f1105;
+        --walk-found: #2dd4bf;
+        --walk-found-ink: #04201c;
+        --walk-ink: #f3f5f7;
+        --walk-muted: #b3bcc6;
+        --walk-surface: rgb(12 16 21 / 84%);
+        --walk-surface-2: rgb(255 255 255 / 7%);
+        --walk-line: rgb(255 255 255 / 15%);
+        --walk-danger: #f87171;
+        --gold: #e5ab3e;
+        --font-ui:
+          "Corbel", "Noto Sans", ui-rounded, "Segoe UI", "Roboto", system-ui,
+          sans-serif;
+        --tap: 44px;
+        --tap-out: 54px; /* outdoors, one-handed: larger than the 44 px floor */
+        --t-fast: 120ms;
+        --t-state: 250ms;
+        --t-enter: 400ms;
+        --ease-out: cubic-bezier(0, 0, 0.2, 1);
+        --kb: 0px;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        background: #0c0f14;
+        color: var(--walk-ink);
+        font: 500 16px/1.4 var(--font-ui);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
+
+      /* ---------- the stage: full screen on a phone, a framed phone plus the demo panel on a desktop ---------- */
+      .stage {
+        position: fixed;
+        inset: 0;
+      }
+      .device {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: #6f8fa8;
+        container: dev / size;
+      }
+      .cam {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        touch-action: none;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .cam:active {
+        cursor: grabbing;
+      }
+      .world {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 3600px;
+        height: 1125px;
+        transform-origin: 0 0;
+        will-change: transform;
+      }
+      .world.glide {
+        transition: transform var(--t-enter) var(--ease-out);
+      }
+      #pano {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #away {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.9s var(--ease-out);
+      }
+      #away.there {
+        transform: scale(1.7) translate(-4%, -8%);
+      }
+      .vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(
+            120% 90% at 50% 45%,
+            transparent 58%,
+            rgb(0 0 0 / 34%)
+          ),
+          linear-gradient(to bottom, rgb(0 0 0 / 22%), transparent 16%);
+      }
+
+      /* ---------- things that stand in the world ---------- */
+      .figure {
+        position: absolute;
+        left: 1780px;
+        top: 596px;
+        width: 190px;
+        height: 348px;
+        pointer-events: none;
+        transition: opacity 0.4s;
+      }
+      .figure.flip svg {
+        transform: scaleX(-1);
+      }
+      .figure svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        overflow: visible;
+      }
+      .arm {
+        transition: transform var(--t-state) var(--ease-out);
+      }
+      .arm-l {
+        transform-origin: 84px 182px;
+      }
+      .arm-r {
+        transform-origin: 156px 182px;
+      }
+      .m,
+      .brow {
+        display: none;
+      }
+      [data-pose="idle"] .arm-l {
+        transform: rotate(6deg);
+      }
+      [data-pose="idle"] .arm-r {
+        transform: rotate(-6deg);
+      }
+      [data-pose="idle"] .m-smile {
+        display: block;
+      }
+      [data-pose="point"] .arm-l {
+        transform: rotate(6deg);
+      }
+      [data-pose="point"] .arm-r {
+        transform: rotate(-104deg);
+      }
+      [data-pose="point"] .m-smile {
+        display: block;
+      }
+      [data-pose="wave"] .arm-l {
+        transform: rotate(6deg);
+      }
+      [data-pose="wave"] .arm-r {
+        transform: rotate(-150deg);
+      }
+      [data-pose="wave"] .m-open {
+        display: block;
+      }
+      [data-pose="cheer"] .arm-l {
+        transform: rotate(150deg);
+      }
+      [data-pose="cheer"] .arm-r {
+        transform: rotate(-150deg);
+      }
+      [data-pose="cheer"] .m-open {
+        display: block;
+      }
+      [data-pose="puzzled"] .arm-l {
+        transform: rotate(6deg);
+      }
+      [data-pose="puzzled"] .arm-r {
+        transform: rotate(-172deg);
+      }
+      [data-pose="puzzled"] .m-hm,
+      [data-pose="puzzled"] .brow {
+        display: block;
+      }
+      .ring {
+        position: absolute;
+        border-radius: 50%;
+        pointer-events: none;
+        border: 7px solid var(--walk-accent);
+        box-shadow:
+          0 0 0 3px rgb(0 0 0 / 45%),
+          inset 0 0 0 3px rgb(0 0 0 / 45%);
+      }
+      .ring::after {
+        content: "";
+        position: absolute;
+        inset: -7px;
+        border-radius: 50%;
+        border: 5px solid var(--walk-accent);
+        animation: ringOut 1.8s var(--ease-out) infinite;
+      }
+      .ring.found {
+        border-color: var(--walk-found);
+      }
+      .ring.found::after {
+        display: none;
+      }
+      @keyframes ringOut {
+        from {
+          transform: scale(1);
+          opacity: 0.9;
+        }
+        to {
+          transform: scale(1.35);
+          opacity: 0;
+        }
+      }
+
+      /* ---------- the layer over the camera ---------- */
+      .ui {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        padding: calc(10px + env(safe-area-inset-top))
+          calc(12px + env(safe-area-inset-right))
+          calc(12px + env(safe-area-inset-bottom) + var(--kb))
+          calc(12px + env(safe-area-inset-left));
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: var(--tap);
+      }
+      .top .sp {
+        flex: 1;
+      }
+      .proto {
+        font-size: 11.5px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: rgb(0 0 0 / 55%);
+        white-space: nowrap;
+      }
+      .score {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 34px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--walk-surface);
+        font-weight: 700;
+        font-size: 14.5px;
+        white-space: nowrap;
+      }
+      .score i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--gold);
+        box-shadow: 0 0 0 2px rgb(229 171 62 / 35%);
+      }
+      .demobtn {
+        pointer-events: auto;
+        min-height: var(--tap);
+        padding: 0 14px;
+        border-radius: 14px;
+        border: 1.5px dashed rgb(255 255 255 / 70%);
+        background: rgb(0 0 0 / 50%);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      /* demo-only helpers wear a dashed line: they are not part of the design */
+      .coach {
+        align-self: center;
+        margin-top: 8px;
+        padding: 6px 12px;
+        border-radius: 12px;
+        border: 1.5px dashed rgb(255 255 255 / 70%);
+        background: rgb(0 0 0 / 55%);
+        font-size: 12.5px;
+        text-align: center;
+        max-width: 300px;
+      }
+      .steps {
+        position: absolute;
+        right: calc(12px + env(safe-area-inset-right));
+        bottom: calc(112px + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .steps button {
+        pointer-events: auto;
+        min-width: 76px;
+        min-height: var(--tap);
+        padding: 0 10px;
+        border-radius: 14px;
+        border: 1.5px dashed rgb(255 255 255 / 75%);
+        background: rgb(0 0 0 / 55%);
+        font-size: 12.5px;
+        font-weight: 700;
+      }
+      .edge {
+        position: absolute;
+        top: 34%;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 40px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--walk-accent);
+        color: var(--walk-accent-ink);
+        font-weight: 700;
+        font-size: 14px;
+        box-shadow: 0 2px 10px rgb(0 0 0 / 35%);
+      }
+      .edge.l {
+        left: calc(10px + env(safe-area-inset-left));
+      }
+      .edge.r {
+        right: calc(10px + env(safe-area-inset-right));
+      }
+      .edge svg {
+        width: 16px;
+        height: 16px;
+      }
+      .edge.r svg {
+        transform: scaleX(-1);
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        top: 64px;
+        transform: translateX(-50%);
+        padding: 9px 14px;
+        border-radius: 14px;
+        background: rgb(255 255 255 / 92%);
+        color: #101418;
+        font-size: 14.5px;
+        font-weight: 600;
+        text-align: center;
+        width: max-content;
+        max-width: calc(100cqw - 32px);
+        box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
+      }
+
+      /* ---------- the dock ---------- */
+      .dock {
+        margin-top: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+      }
+      .dock > * {
+        pointer-events: auto;
+        animation: rise var(--t-enter) var(--ease-out);
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .card {
+        position: relative;
+        background: var(--walk-surface);
+        border: 1px solid rgb(255 255 255 / 9%);
+        border-radius: 22px;
+        padding: 14px 16px;
+        box-shadow: 0 10px 30px rgb(0 0 0 / 28%);
+      }
+      .eyebrow {
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--walk-found);
+        line-height: 1.25;
+      }
+      .eyebrow.riddle {
+        color: var(--gold);
+      }
+      .dots {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 9px;
+      }
+      .dots i {
+        width: 22px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .dots i.on {
+        background: var(--walk-found);
+      }
+      .who {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+      .pt {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #1b2232;
+        box-shadow:
+          0 0 0 3px var(--gold),
+          0 4px 12px rgb(0 0 0 / 30%);
+        flex: none;
+      }
+      .pt svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .line {
+        font-size: 17px;
+        line-height: 1.38;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+      .q {
+        font-size: 20px;
+        line-height: 1.25;
+        font-weight: 700;
+        margin-top: 3px;
+      }
+      .sub {
+        color: var(--walk-muted);
+        font-size: 14.5px;
+        margin-top: 4px;
+      }
+      .acts {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .btn {
+        min-height: var(--tap-out);
+        padding: 0 16px;
+        border-radius: 14px;
+        border: 1px solid rgb(255 255 255 / 28%);
+        background: var(--walk-surface-2);
+        font-weight: 700;
+        font-size: 16px;
+        line-height: 1.15;
+      }
+      .btn.primary {
+        flex: 1;
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .btn.primary[disabled] {
+        background: rgb(255 255 255 / 10%);
+        border-color: rgb(255 255 255 / 18%);
+        color: var(--walk-muted);
+        cursor: not-allowed;
+      }
+      .btn.quiet {
+        border-color: transparent;
+        background: none;
+        color: var(--walk-muted);
+        padding: 0 8px;
+        font-size: 14.5px;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .btn.quiet.armed {
+        color: var(--walk-accent);
+      }
+
+      /* the riddle slip: a torn-off ticket that stays at the thumb while the visitor looks */
+      .slip {
+        display: grid;
+        grid-template-columns: 58px 1fr auto;
+        align-items: center;
+        min-height: 84px;
+        background: var(--walk-surface);
+        border-radius: 18px;
+        box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+        -webkit-mask:
+          radial-gradient(circle 7px at 58px 0, transparent 98%, #000) top/100%
+            51% no-repeat,
+          radial-gradient(circle 7px at 58px 100%, transparent 98%, #000)
+            bottom/100% 51% no-repeat;
+        mask:
+          radial-gradient(circle 7px at 58px 0, transparent 98%, #000) top/100%
+            51% no-repeat,
+          radial-gradient(circle 7px at 58px 100%, transparent 98%, #000)
+            bottom/100% 51% no-repeat;
+      }
+      .stub {
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        border-right: 2px dashed rgb(255 255 255 / 28%);
+        color: var(--gold);
+        font-size: 12.5px;
+        font-weight: 700;
+      }
+      .stub svg {
+        width: 28px;
+        height: 28px;
+      }
+      .stub .arrow {
+        transform: rotate(-135deg);
+      }
+      .slip .body {
+        all: unset;
+        box-sizing: border-box;
+        display: block;
+        padding: 8px 10px 8px 12px;
+        min-width: 0;
+        cursor: pointer;
+      }
+      .slip .body:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: -3px;
+      }
+      .slip .t {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 15.5px;
+        line-height: 1.25;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+      .slip.open .t {
+        display: block;
+      }
+      .slip .nudge {
+        margin-top: 4px;
+        font-size: 14px;
+        color: var(--walk-muted);
+        line-height: 1.3;
+      }
+      .slip .ans {
+        align-self: center;
+        margin-right: 10px;
+        min-width: 92px;
+        min-height: var(--tap-out);
+        border-radius: 14px;
+        border: 0;
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        font-weight: 800;
+        font-size: 16px;
+      }
+
+      /* the answer step */
+      .sheet {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100cqh - 76px - var(--kb));
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+      .sheet .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -6px -8px 0 0;
+      }
+      .sheet .head .eyebrow {
+        flex: 1;
+      }
+      .opts {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      /* short answers share one row: the sheet stays low and the world stays visible */
+      .opts.row {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .opts.row .opt {
+        grid-template-columns: auto 1fr;
+        gap: 6px;
+        padding: 6px 9px;
+      }
+      .opts.row .opt small {
+        grid-column: 1 / -1;
+      }
+      .opt {
+        display: grid;
+        grid-template-columns: 26px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        min-height: var(--tap-out);
+        padding: 6px 14px;
+        border-radius: 14px;
+        border: 1.5px solid rgb(255 255 255 / 26%);
+        background: var(--walk-surface-2);
+        text-align: left;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      .opt .tick {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 2px solid rgb(255 255 255 / 55%);
+        display: grid;
+        place-items: center;
+      }
+      .opt .tick svg {
+        width: 15px;
+        height: 15px;
+        display: none;
+      }
+      .opt[aria-checked="true"] {
+        border-color: var(--walk-found);
+        background: rgb(45 212 191 / 16%);
+      }
+      .opt[aria-checked="true"] .tick {
+        background: var(--walk-found);
+        border-color: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .opt[aria-checked="true"] .tick svg {
+        display: block;
+      }
+      .opt[disabled] {
+        cursor: default;
+      }
+      .opt.crossed {
+        border-style: dashed;
+        color: var(--walk-muted);
+        text-decoration: line-through;
+        text-decoration-thickness: 2px;
+      }
+      .opt.crossed .tick {
+        border-color: transparent;
+        color: var(--walk-danger);
+      }
+      .opt.crossed .tick svg {
+        display: block;
+      }
+      .opt small {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--walk-muted);
+        text-decoration: none;
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        min-height: 60px;
+        padding: 0 14px;
+        border-radius: 14px;
+        border: 2px solid rgb(255 255 255 / 55%);
+        background: rgb(0 0 0 / 35%);
+      }
+      .field:focus-within {
+        border-color: var(--walk-found);
+      }
+      .field input {
+        flex: 1;
+        min-width: 0;
+        height: 56px;
+        border: 0;
+        outline: 0;
+        background: none;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      .field input::placeholder {
+        color: var(--walk-muted);
+        font-weight: 500;
+        font-size: 17px;
+        letter-spacing: 0;
+      }
+      .field span {
+        color: var(--walk-muted);
+        font-size: 15px;
+      }
+      .tried {
+        margin-top: 7px;
+        font-size: 14px;
+        color: var(--walk-muted);
+      }
+      .tried b {
+        color: var(--walk-ink);
+        font-weight: 600;
+        text-decoration: line-through;
+      }
+      .err {
+        margin-top: 6px;
+        font-size: 14px;
+        color: #fecaca;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .foot .primary {
+        flex: 1;
+      }
+
+      /* feedback: a stamp lands on the card */
+      .fb .line {
+        padding-right: 84px;
+      }
+      .stamp {
+        position: absolute;
+        right: 10px;
+        top: -22px;
+        width: 92px;
+        height: 92px;
+        border-radius: 50%;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        transform: rotate(-12deg);
+        background: var(--walk-found-ink);
+        color: var(--walk-found);
+        border: 3px solid var(--walk-found);
+        outline: 2px solid var(--walk-found);
+        outline-offset: -9px;
+        font-weight: 800;
+        font-size: 13.5px;
+        letter-spacing: 0.06em;
+        line-height: 1.1;
+        text-transform: uppercase;
+        animation: stamp var(--t-state) var(--ease-out);
+        box-shadow: 0 6px 16px rgb(0 0 0 / 40%);
+      }
+      .stamp b {
+        display: block;
+        font-size: 19px;
+        letter-spacing: 0;
+      }
+      .stamp.miss {
+        background: #20262e;
+        color: var(--walk-muted);
+        border-color: var(--walk-muted);
+        outline-color: var(--walk-muted);
+      }
+      @keyframes stamp {
+        from {
+          opacity: 0;
+          transform: rotate(-12deg) scale(1.5);
+        }
+        to {
+          opacity: 1;
+          transform: rotate(-12deg) scale(1);
+        }
+      }
+
+      /* a finished or locked quiz is greyed as a whole: one block, nothing singled out */
+      .greyed {
+        background: rgb(40 44 50 / 88%);
+      }
+      .greyed .eyebrow.riddle,
+      .greyed .q,
+      .greyed .opt,
+      .greyed .field {
+        color: #aeb4bc;
+        filter: saturate(0);
+      }
+      .greyed .opt,
+      .greyed .field {
+        border-color: rgb(255 255 255 / 16%);
+        background: none;
+      }
+      .greyed .opt[aria-checked="true"] {
+        border-color: rgb(255 255 255 / 45%);
+        background: rgb(255 255 255 / 6%);
+        color: #d7dbe0;
+      }
+      .greyed .opt[aria-checked="true"] .tick {
+        background: #aeb4bc;
+        border-color: #aeb4bc;
+        color: #20262e;
+      }
+      .greyed .field input {
+        color: #d7dbe0;
+      }
+      .needs {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+        font-weight: 700;
+        font-size: 15px;
+        color: #fde2b0;
+      }
+      .needs i {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--gold);
+      }
+
+      .nextrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 8px 8px 14px;
+        background: var(--walk-surface);
+        border-radius: 16px;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .nextrow span {
+        flex: 1;
+        min-width: 0;
+      }
+      .nextrow .btn {
+        min-height: var(--tap);
+        flex: none;
+      }
+      .mini {
+        align-self: flex-start;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: var(--walk-surface);
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--gold);
+      }
+      .demorow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1.5px dashed rgb(255 255 255 / 30%);
+      }
+      .demorow button {
+        min-height: 40px;
+        padding: 0 10px;
+        border-radius: 12px;
+        border: 1.5px dashed rgb(255 255 255 / 60%);
+        background: none;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+
+      /* ---------- sideways phone: the world keeps the left, the thumb keeps the right ---------- */
+      @container dev (max-height:520px) {
+        .dock {
+          position: absolute;
+          right: calc(10px + env(safe-area-inset-right));
+          bottom: calc(10px + var(--kb) + env(safe-area-inset-bottom));
+          width: min(404px, 50cqw);
+        }
+        .card {
+          padding: 10px 14px;
+          border-radius: 18px;
+        }
+        .pt {
+          width: 44px;
+          height: 44px;
+        }
+        .line {
+          font-size: 15.5px;
+        }
+        .q {
+          font-size: 17.5px;
+        }
+        .sub {
+          font-size: 13.5px;
+          margin-top: 2px;
+        }
+        .acts {
+          margin-top: 8px;
+        }
+        .sheet {
+          max-height: calc(100cqh - 20px - var(--kb));
+        }
+        .sheet .head {
+          margin-top: -8px;
+        }
+        .opts {
+          gap: 5px;
+          margin-top: 6px;
+        }
+        .opt {
+          min-height: 44px;
+          font-size: 16px;
+          padding: 3px 12px;
+        }
+        .field {
+          min-height: 48px;
+          margin-top: 6px;
+        }
+        .field input {
+          height: 44px;
+          font-size: 19px;
+        }
+        .foot {
+          margin-top: 6px;
+        }
+        .btn {
+          min-height: 46px;
+          font-size: 15px;
+        }
+        .steps {
+          right: auto;
+          left: calc(12px + env(safe-area-inset-left));
+          bottom: calc(12px + env(safe-area-inset-bottom));
+          flex-direction: row;
+        }
+        .coach {
+          align-self: flex-start;
+          margin-top: 0;
+          position: absolute;
+          left: 96px;
+          top: 14px;
+          max-width: 44cqw;
+        }
+        .stamp {
+          width: 74px;
+          height: 74px;
+          font-size: 11px;
+          top: -14px;
+        }
+        .stamp b {
+          font-size: 15px;
+        }
+        .fb .line {
+          padding-right: 64px;
+        }
+        .dots {
+          margin-bottom: 6px;
+        }
+        .toast {
+          top: 14px;
+        }
+        .demorow {
+          margin-top: 6px;
+          padding-top: 6px;
+        }
+      }
+      /* the keyboard is up: only what the typing needs */
+      .device.kbup .sheet .q {
+        font-size: 16px;
+      }
+      .device.kbup .sheet .sub,
+      .device.kbup .sheet .quiet {
+        display: none;
+      }
+
+      /* ---------- the demo panel ---------- */
+      .demo {
+        position: absolute;
+        z-index: 5;
+        inset: auto 0 0 0;
+        max-height: 82%;
+        overflow: auto;
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+        background: #14181f;
+        border-top: 1.5px dashed rgb(255 255 255 / 40%);
+        border-radius: 18px 18px 0 0;
+        font-size: 14.5px;
+      }
+      .demo h1 {
+        font-size: 17px;
+        line-height: 1.2;
+      }
+      .demo .lead {
+        color: var(--walk-muted);
+        margin-top: 4px;
+        font-size: 14px;
+      }
+      .demo h2 {
+        font-size: 12.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--walk-muted);
+        margin-top: 13px;
+      }
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 5px;
+      }
+      .seg button {
+        min-height: var(--tap);
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid rgb(255 255 255 / 26%);
+        background: rgb(255 255 255 / 5%);
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--walk-found);
+        border-color: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .demo ul {
+        margin-top: 6px;
+        padding-left: 18px;
+        color: #d4d9e0;
+        font-size: 13.5px;
+        line-height: 1.38;
+      }
+      .demo li + li {
+        margin-top: 5px;
+      }
+      .demo .close {
+        float: right;
+        min-width: var(--tap);
+        min-height: var(--tap);
+        margin: -6px -6px 0 0;
+        border-radius: 12px;
+        border: 1px solid rgb(255 255 255 / 26%);
+        background: none;
+        font-size: 13px;
+      }
+
+      @media (min-width: 1000px) and (min-height: 640px) {
+        body {
+          background: #171b22;
+        }
+        .stage {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 32px;
+          padding: 16px;
+        }
+        .device {
+          position: relative;
+          inset: auto;
+          flex: none;
+          width: 390px;
+          height: min(844px, calc(100vh - 32px));
+          border-radius: 34px;
+          box-shadow:
+            0 0 0 9px #05070a,
+            0 24px 60px rgb(0 0 0 / 50%);
+        }
+        .stage[data-o="side"] .device {
+          width: 844px;
+          height: 390px;
+        }
+        .demobtn {
+          display: none;
+        }
+        .demo {
+          position: relative;
+          inset: auto;
+          flex: none;
+          width: 340px;
+          max-height: calc(100vh - 32px);
+          display: block !important;
+          border: 0;
+          border-radius: 18px;
+          padding: 18px;
+        }
+        .demo .close {
+          display: none;
+        }
+      }
+      @media (max-width: 999px), (max-height: 639px) {
+        .onlywide {
+          display: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dock > *,
+        .stamp {
+          animation: none;
+        }
+        .ring::after {
+          animation: none;
+          opacity: 0;
+        }
+        .world.glide,
+        .arm,
+        #away {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage" id="stage" data-o="up">
+      <main class="device" id="device">
+        <div
+          class="cam"
+          id="cam"
+          aria-label="The camera view: drag to look around"
+        >
+          <div class="world" id="world">
+            <canvas id="pano" width="3600" height="1125"></canvas>
+            <div class="figure" id="fig" data-pose="idle"></div>
+            <div class="ring" id="ring" hidden></div>
+          </div>
+          <canvas id="away" width="1600" height="900" hidden></canvas>
+          <div class="vignette"></div>
+        </div>
+        <div class="ui">
+          <div class="top">
+            <span class="proto">Prototype</span>
+            <span class="sp"></span>
+            <span class="score" id="score" hidden
+              ><i></i><span id="scoreN"></span
+            ></span>
+            <button
+              class="demobtn"
+              id="demoOpen"
+              type="button"
+              aria-expanded="false"
+              aria-controls="demo"
+            >
+              Demo
+            </button>
+          </div>
+          <div class="coach" id="coach" hidden>
+            Demo: drag to look around. In AR the visitor just turns and walks.
+          </div>
+          <div class="steps" id="steps" hidden>
+            <button type="button" id="closer">Walk closer</button>
+            <button type="button" id="back">Step back</button>
+          </div>
+          <div class="edge" id="edge" hidden>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M11 2 4 8l7 6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              /></svg
+            ><span>This way</span>
+          </div>
+          <div class="toast" id="toast" role="status" hidden></div>
+          <div class="dock" id="dock" aria-live="polite"></div>
+        </div>
+      </main>
+
+      <aside class="demo" id="demo" hidden aria-label="Demo controls">
+        <button class="close" id="demoClose" type="button">Close</button>
+        <h1>Find it here</h1>
+        <p class="lead">
+          A quiz as a small riddle. The answer is out in the real place, not on
+          the screen. The mill, the guide and the words are invented.
+        </p>
+        <h2>The riddle</h2>
+        <div class="seg" data-seg="kind">
+          <button type="button" data-v="choice">Choice</button>
+          <button type="button" data-v="word">Typed word</button>
+          <button type="button" data-v="number">Typed number</button>
+        </div>
+        <h2>Tries</h2>
+        <div class="seg" data-seg="retry">
+          <button type="button" data-v="again">Try again</button>
+          <button type="button" data-v="once">One try</button>
+        </div>
+        <h2>Start from</h2>
+        <div class="seg" data-seg="start">
+          <button type="button" data-v="fresh">The start</button>
+          <button type="button" data-v="done">Already done</button>
+          <button type="button" data-v="locked">Needs a coin</button>
+        </div>
+        <h2>Walk away, at any moment</h2>
+        <div class="seg" data-seg="band">
+          <button type="button" data-v="0">At the mill</button>
+          <button type="button" data-v="1">40 m away</button>
+          <button type="button" data-v="2">At the next station</button>
+        </div>
+        <h2 class="onlywide">Hold the phone</h2>
+        <div class="seg onlywide" data-seg="orient">
+          <button type="button" data-v="up">Upright</button>
+          <button type="button" data-v="side">Sideways</button>
+        </div>
+        <h2>What to look at</h2>
+        <ul>
+          <li>
+            While the visitor looks, only a slip stays at the thumb. No answers
+            are on screen until they tap Answer.
+          </li>
+          <li>
+            Walking is the game, so walking away pauses nothing. The riddle
+            stays open and can be answered anywhere.
+          </li>
+          <li>
+            A wrong answer sends them back to look. It does not offer the next
+            guess at once.
+          </li>
+          <li>
+            A missed riddle marks the spot in the world instead of naming the
+            answer. That also works for a typed answer, which the tour file does
+            not hold in clear.
+          </li>
+          <li>
+            Typed answers are really judged here by a salted hash. Try
+            <code>patience</code> in any case.
+          </li>
+        </ul>
+      </aside>
+    </div>
+
+    <script>
+      "use strict";
+      /* ---------- the sample story: a line, a quiz, a line ---------- */
+      const GUIDE = "Mara, your guide";
+      const POINTS = 10;
+      const SPOT_STONE = { x: 2415, y: 482, r: 125 };
+      const SPOT_WHEEL = { x: 1040, y: 640, r: 285 };
+      const RIDDLES = {
+        choice: {
+          type: "single",
+          line: "The miller cut a year into the stone of this mill. He hid it well, so you will have to go and look for it.",
+          q: "Which year is cut into the stone of the mill?",
+          options: [
+            { id: "a", label: "1724" },
+            { id: "b", label: "1742" },
+            { id: "c", label: "1762" },
+          ],
+          correct: "b",
+          right: "Yes, 1742. You have sharp eyes.",
+          wrong: "Not that year.",
+          nudge: "Look over a door. The numbers are small, so walk closer.",
+          spot: SPOT_STONE,
+          flip: false,
+        },
+        word: {
+          type: "text",
+          line: "The miller left one word in the stone of this mill, for anyone who stops to look.",
+          q: "Which word did he cut into the stone?",
+          // what a tour file carries: a salt and the hash of the normalised answer
+          salt: "m1ll-7f3a",
+          sha256: [
+            "d8c046c23eda3a867fb659aa20339dbc3e9b0d1ed34ffcc0a8e40f4bfda2589e",
+          ],
+          right: "That is the one. He said it to every apprentice.",
+          wrong: "That is not the word.",
+          nudge: "Look over a door, under the year. Walk closer.",
+          spot: SPOT_STONE,
+          flip: false,
+        },
+        number: {
+          type: "number",
+          line: "This wheel has turned here for a very long time. Go and have a good look at it.",
+          q: "How many paddles does the wheel have?",
+          value: 12,
+          tolerance: 0,
+          unit: "paddles",
+          right: "Yes, you counted every one.",
+          wrong: "Not quite. Count once more.",
+          nudge:
+            "Start at the top one and go round. Walk closer if you need to.",
+          spot: SPOT_WHEEL,
+          flip: true,
+        },
+      };
+      const LINE_AFTER =
+        "He built this place in one summer with his two brothers. Next we follow the stream down to the footbridge.";
+      const MISSED_LINE =
+        "Not this time, so no points. I have marked the spot. Go and read it for yourself.";
+      const GAVE_UP_LINE =
+        "No problem, it is well hidden. I have marked the spot. Go and read it for yourself.";
+      const BRIDGE_LINE =
+        "This bridge was washed away twice. Your riddle at the mill stays open, you can finish it later.";
+
+      /* ---------- answer judging, as the tour rules describe it ---------- */
+      const FOLD = { ä: "ae", ö: "oe", ü: "ue", ß: "ss" };
+      function normalise(text) {
+        return String(text)
+          .normalize("NFC")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/[äöüß]/g, (c) => FOLD[c])
+          .replace(/(\d),(\d)/g, "$1.$2");
+      }
+      async function sha256Hex(text) {
+        const bytes = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(text),
+        );
+        return [...new Uint8Array(bytes)]
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
+      /** true or false, or null when the input cannot be judged at all. */
+      async function judge(riddle, input) {
+        if (riddle.type === "single") return input === riddle.correct;
+        const n = normalise(input);
+        if (n === "") return null;
+        if (riddle.type === "number") {
+          if (!/^-?\d+(\.\d+)?$/.test(n)) return null;
+          return Math.abs(Number(n) - riddle.value) <= riddle.tolerance;
+        }
+        if (!globalThis.crypto || !crypto.subtle) throw new Error("no crypto");
+        return riddle.sha256.includes(await sha256Hex(riddle.salt + n));
+      }
+
+      /* ---------- state ---------- */
+      const S = {
+        kind: "choice",
+        retry: "again",
+        start: "fresh",
+        band: 0,
+        step: "line1",
+        tries: 0,
+        picked: null,
+        typed: "",
+        crossed: [],
+        tried: [],
+        points: 0,
+        result: null,
+        answer: "",
+        armed: false,
+        err: "",
+        open: false,
+        bridge: "none",
+        ring: false,
+        looked: false,
+        gaveUp: false,
+      };
+      const R = () => RIDDLES[S.kind];
+      function restart(start) {
+        S.start = start;
+        S.tries = 0;
+        S.picked = null;
+        S.typed = "";
+        S.crossed = [];
+        S.tried = [];
+        S.points = 0;
+        S.result = null;
+        S.answer = "";
+        S.armed = false;
+        S.err = "";
+        S.open = false;
+        S.bridge = "none";
+        S.ring = false;
+        S.band = 0;
+        S.step = "line1";
+        if (start === "done") {
+          // what the phone remembers about a finished quiz: the outcome and the visitor's own answer
+          S.result = "right";
+          S.points = POINTS;
+          S.answer =
+            R().type === "single"
+              ? R().correct
+              : R().type === "text"
+                ? "patience"
+                : "12";
+          S.step = "done";
+          S.ring = true;
+        } else if (start === "locked") S.step = "locked";
+        V.cx = 1880;
+        V.cy = 562;
+        V.z = 1;
+        syncDemo();
+        render();
+        applyView();
+      }
+
+      /* ---------- small templates ---------- */
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const TICK =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const CROSS =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
+      const GLASS =
+        '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="3"/><path d="M18 18l7 7" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/></svg>';
+      const ARROW =
+        '<svg class="arrow" viewBox="0 0 28 28" aria-hidden="true"><path d="M14 4v20M14 4l-7 7M14 4l7 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+      function figure() {
+        return `<svg viewBox="0 0 240 440" aria-hidden="true">
+    <ellipse cx="120" cy="424" rx="74" ry="12" fill="#000" opacity=".32"/>
+    <rect x="94" y="300" width="22" height="108" rx="9" fill="#2a3244"/><rect x="124" y="300" width="22" height="108" rx="9" fill="#232a3a"/>
+    <ellipse cx="102" cy="412" rx="22" ry="11" fill="#3b2415"/><ellipse cx="140" cy="412" rx="22" ry="11" fill="#3b2415"/>
+    <g class="arm arm-l"><rect x="72" y="176" width="24" height="108" rx="12" fill="#27605a"/><circle cx="84" cy="288" r="13" fill="#e4b189"/></g>
+    <path d="M84 170Q120 150 156 170L172 322Q120 340 68 322Z" fill="#2f756e"/>
+    <path d="M120 164V330" stroke="#1e524c" stroke-width="3"/>
+    <rect x="76" y="258" width="88" height="11" rx="4" fill="#7a4d24"/><rect x="110" y="255" width="20" height="17" rx="3" fill="#e5ab3e"/>
+    <path d="M96 150Q120 170 144 150L146 170Q120 184 94 170Z" fill="#fb923c"/><path d="M134 170l12 44-16 4-8-44Z" fill="#ea7a22"/>
+    <circle cx="120" cy="110" r="42" fill="#e9bb93"/>
+    <path d="M78 104Q72 148 92 150Q84 120 92 92ZM162 104Q168 148 148 150Q156 120 148 92Z" fill="#6b3a22"/>
+    <path d="M84 84Q88 42 120 40Q152 42 156 84Z" fill="#7a5230"/><rect x="83" y="72" width="74" height="12" fill="#e5ab3e"/>
+    <ellipse cx="120" cy="86" rx="66" ry="12" fill="#684524"/>
+    <circle cx="105" cy="112" r="4.4" fill="#1d1a18"/><circle cx="135" cy="112" r="4.4" fill="#1d1a18"/>
+    <circle cx="94" cy="124" r="7" fill="#e88f7c" opacity=".35"/><circle cx="146" cy="124" r="7" fill="#e88f7c" opacity=".35"/>
+    <path class="brow" d="M96 100l17 3M127 96l18 5" stroke="#4e2a18" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+    <path class="m m-smile" d="M106 130Q120 142 134 130" stroke="#6e2f22" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path class="m m-open" d="M104 127Q120 130 136 127Q133 148 120 148Q107 148 104 127Z" fill="#6e2f22"/>
+    <path class="m m-hm" d="M108 136Q120 130 134 134" stroke="#6e2f22" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <g class="arm arm-r"><rect x="144" y="176" width="24" height="108" rx="12" fill="#27605a"/><circle cx="156" cy="288" r="13" fill="#e4b189"/>
+      <path d="M156 292v30" stroke="#684524" stroke-width="9" stroke-linecap="round"/><circle cx="156" cy="344" r="23" fill="rgb(190 225 240 / 45%)" stroke="#e5ab3e" stroke-width="7"/></g>
+  </svg>`;
+      }
+      const portraitOf = (pose) =>
+        `<span class="pt" data-pose="${pose}">${figure().replace('viewBox="0 0 240 440"', 'viewBox="62 34 116 116"')}</span>`;
+      const dots = (n) =>
+        `<div class="dots" aria-hidden="true">${[0, 1, 2].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</div>`;
+      const riddleEyebrow = () =>
+        S.retry === "once"
+          ? `Riddle · one try · ${POINTS} points`
+          : `Riddle · ${POINTS} points`;
+      const LOOK_NAMES = ["First look", "Second look", "Third look"];
+      const triedLine = () =>
+        S.tried.length
+          ? `<p class="tried">You tried ${S.tried.map((t) => `<b>${esc(t)}</b>`).join(", ")}</p>`
+          : "";
+
+      function lineCard(n, eyebrow, text, pose, act, label) {
+        return `<section class="card">${dots(n)}<div class="who">${portraitOf(pose)}<div>
+    <div class="eyebrow">${esc(eyebrow)}</div><p class="line">${esc(text)}</p></div></div>
+    <div class="acts"><button class="btn primary" type="button" data-a="${act}">${esc(label)}</button></div></section>`;
+      }
+      function feedbackCard({ stamp, miss, text, sub, pose, act, label }) {
+        return `<section class="card fb">${stamp ? `<div class="stamp ${miss ? "miss" : ""}">${stamp}</div>` : ""}<div class="who">${portraitOf(pose)}<div>
+    <div class="eyebrow">${esc(GUIDE)}</div><p class="line">${esc(text)}</p>${sub ? `<p class="sub">${sub}</p>` : ""}</div></div>
+    <div class="acts"><button class="btn primary" type="button" data-a="${act}">${esc(label)}</button></div></section>`;
+      }
+      function slip() {
+        const away = S.band > 0;
+        const lookName = LOOK_NAMES[Math.min(S.tries, 2)];
+        const eyebrow = away
+          ? "Waits at the old mill"
+          : S.tries
+            ? `${lookName} · ${POINTS} points`
+            : riddleEyebrow();
+        const stub = away
+          ? `${ARROW}<span>${S.band === 1 ? "40 m" : "150 m"}</span>`
+          : GLASS;
+        return `<section class="slip ${S.open ? "open" : ""}" aria-label="The riddle">
+    <div class="stub">${stub}</div>
+    <button class="body" type="button" data-a="toggle" aria-expanded="${S.open}">
+      <span class="eyebrow riddle">${esc(eyebrow)}</span>
+      <span class="t">${esc(R().q)}</span>
+      ${S.open || S.tries ? `<p class="nudge">${esc(R().nudge)}</p>` : ""}
+    </button>
+    <button class="ans" type="button" data-a="open">Answer</button>
+  </section>`;
+      }
+      function answersBlock(readonly) {
+        const r = R();
+        if (r.type === "single") {
+          const row = r.options.length <= 3 && r.options.every((o) => o.label.length <= 6);
+          return `<div class="opts ${row ? "row" : ""}" role="radiogroup" aria-label="Answers">${r.options
+            .map((o) => {
+              const crossed = S.crossed.includes(o.id);
+              const on = readonly ? S.answer === o.id : S.picked === o.id;
+              return `<button class="opt ${crossed && !readonly ? "crossed" : ""}" type="button" role="radio" aria-checked="${on}" ${readonly || crossed ? "disabled" : ""} data-a="pick" data-id="${o.id}">
+        <span class="tick">${crossed && !readonly ? CROSS : TICK}</span><span>${esc(o.label)}</span>${readonly && on ? "<small>Your answer</small>" : ""}</button>`;
+            })
+            .join("")}</div>`;
+        }
+        const inputmode = r.type === "number" ? "decimal" : "text";
+        const value = readonly ? S.answer : S.typed;
+        return `<label class="field"><input id="typed" type="text" inputmode="${inputmode}" enterkeyhint="done" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+      placeholder="${readonly ? "No answer" : r.type === "number" ? "A number" : "What you read"}" aria-label="Your answer" value="${esc(value)}" ${readonly ? "disabled" : ""}>${r.unit ? `<span>${esc(r.unit)}</span>` : ""}</label>`;
+      }
+      function sheet() {
+        const r = R();
+        const ready =
+          r.type === "single" ? S.picked !== null : S.typed.trim() !== "";
+        const where =
+          S.band > 0
+            ? `Away from the mill · ${POINTS} points`
+            : riddleEyebrow();
+        return `<section class="card sheet" aria-label="Answer the riddle">
+    <div class="head"><span class="eyebrow riddle">${esc(where)}</span><button class="btn quiet" type="button" data-a="close">Keep looking</button></div>
+    <p class="q">${esc(r.q)}</p>
+    ${answersBlock(false)}
+    ${r.type === "single" ? "" : triedLine()}
+    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ""}
+    <div class="foot">
+      <button class="btn quiet ${S.armed ? "armed" : ""}" type="button" data-a="giveup">${S.armed ? "Show me, no points" : "Can’t find it"}</button>
+      <button class="btn primary" id="confirm" type="button" data-a="submit" ${ready ? "" : "disabled"}>That’s my answer</button>
+    </div></section>`;
+      }
+      function doneCard() {
+        const ok = S.result === "right";
+        return `<section class="card greyed fb"><div class="stamp ${ok ? "" : "miss"}">${ok ? `Found<b>+${POINTS}</b>` : "Missed"}</div>
+    <div class="eyebrow riddle">Riddle done</div><p class="q" style="padding-right:84px">${esc(R().q)}</p>
+    ${answersBlock(true)}
+    <div class="acts"><button class="btn primary" type="button" data-a="goon">Go on</button></div></section>`;
+      }
+      function lockedCard() {
+        return `<section class="card greyed"><div class="eyebrow riddle">Riddle · ${POINTS} points</div><p class="q">${esc(R().q)}</p>
+    <p class="needs"><i></i>Needs 1 coin to answer</p>
+    <p class="sub">Right or wrong, this riddle costs a coin, so it stays closed as a whole.</p>
+    <div class="acts"><button class="btn primary" type="button" data-a="goon">Go on without it</button></div></section>`;
+      }
+      function endCard() {
+        const next = { choice: "word", word: "number", number: "choice" }[
+          S.kind
+        ];
+        const nextName = {
+          choice: "choice",
+          word: "typed word",
+          number: "typed number",
+        }[next];
+        return `<section class="card"><div class="eyebrow">The old mill is done</div>
+    <p class="line">Next: the footbridge, 120 m along the stream.</p>
+    <div class="demorow">
+      <button type="button" data-a="revisit">Demo: come back later</button>
+      <button type="button" data-a="again">Demo: start over</button>
+      <button type="button" data-a="kind" data-v="${next}">Demo: ${nextName}</button>
+    </div></section>`;
+      }
+
+      /* ---------- render ---------- */
+      const $ = (id) => document.getElementById(id);
+      const dock = $("dock");
+      const POSE = {
+        line1: "idle",
+        riddle: "point",
+        look: "point",
+        sheet: "idle",
+        right: "cheer",
+        wrong: "puzzled",
+        final: "point",
+        line2: "idle",
+        done: "idle",
+        locked: "idle",
+        end: "wave",
+      };
+
+      function render() {
+        const r = R();
+        const away = S.band > 0;
+        let html = "";
+        switch (S.step) {
+          case "line1":
+            html = lineCard(0, GUIDE, r.line, "idle", "cont", "Continue");
+            break;
+          case "riddle":
+            html = `<section class="card">${dots(1)}<div class="eyebrow riddle">${esc(riddleEyebrow())}</div><p class="q">${esc(r.q)}</p>
+        <p class="sub">The answer is out there. ${S.retry === "once" ? "You get one try." : "Take your time."}</p>
+        <div class="acts"><button class="btn primary" type="button" data-a="look">Go and look</button></div></section>`;
+            break;
+          case "look":
+            if (S.band === 2 && S.bridge === "none") {
+              html +=
+                '<div class="nextrow"><span>You are at the footbridge</span><button class="btn primary" type="button" data-a="bridge">Play</button></div>';
+            }
+            html +=
+              S.bridge === "playing"
+                ? `<div class="mini">Riddle still open at the old mill</div>${feedbackCard({ text: BRIDGE_LINE, pose: "idle", act: "bridgedone", label: "Done" })}`
+                : slip();
+            break;
+          case "sheet":
+            html = sheet();
+            break;
+          case "right":
+            html = feedbackCard({
+              stamp: `Found<b>+${POINTS}</b>`,
+              text: r.right,
+              pose: "cheer",
+              act: "goon",
+              label: "Go on",
+            });
+            break;
+          case "wrong":
+            html = feedbackCard({
+              text: r.wrong,
+              sub: esc(r.nudge),
+              pose: "puzzled",
+              act: "look",
+              label: "Look again",
+            });
+            break;
+          case "final":
+            html = feedbackCard({
+              stamp: S.gaveUp ? "" : "Missed",
+              miss: true,
+              text: S.gaveUp ? GAVE_UP_LINE : MISSED_LINE,
+              pose: "point",
+              act: "goon",
+              label: "Go on",
+            });
+            break;
+          case "done":
+            html = doneCard();
+            break;
+          case "locked":
+            html = lockedCard();
+            break;
+          case "line2":
+            html = lineCard(2, GUIDE, LINE_AFTER, "idle", "cont2", "Continue");
+            break;
+          case "end":
+            html = endCard();
+            break;
+        }
+        dock.innerHTML = html;
+
+        const pose = POSE[S.step] || "idle";
+        fig.dataset.pose = pose;
+        fig.classList.toggle("flip", r.flip && pose === "point");
+        fig.hidden = false;
+
+        const showRing = S.ring && !away;
+        ring.hidden = !showRing;
+        if (showRing) {
+          const p = r.spot;
+          ring.style.left = `${p.x - p.r}px`;
+          ring.style.top = `${p.y - p.r}px`;
+          ring.style.width = ring.style.height = `${p.r * 2}px`;
+          ring.classList.toggle("found", S.result === "right");
+        }
+        $("score").hidden = S.points === 0;
+        $("scoreN").textContent = `${S.points} points`;
+        const looking = S.step === "look" && !away;
+        $("coach").hidden = !looking || S.looked;
+        $("steps").hidden = !looking;
+        awayCv.hidden = !away;
+        awayCv.classList.toggle("there", S.band === 2);
+        $("cam").style.cursor = away ? "default" : "";
+        syncDemo();
+        applyView();
+      }
+
+      /* ---------- actions ---------- */
+      function go(step) {
+        S.step = step;
+        S.armed = false;
+        S.err = "";
+        render();
+      }
+      function pose(p, ms) {
+        fig.dataset.pose = p;
+        if (ms)
+          setTimeout(() => {
+            if (fig.dataset.pose === p)
+              fig.dataset.pose = POSE[S.step] || "idle";
+          }, ms);
+      }
+      let toastTimer = 0;
+      function toast(text) {
+        const t = $("toast");
+        t.textContent = text;
+        t.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          t.hidden = true;
+        }, 3000);
+      }
+      async function submit() {
+        const r = R();
+        const given = r.type === "single" ? S.picked : S.typed;
+        if (given === null) return;
+        if (r.type !== "single" && S.tried.includes(given.trim())) {
+          S.err = "You tried that one already.";
+          render();
+          return;
+        }
+        let verdict;
+        try {
+          verdict = await judge(r, given);
+        } catch {
+          S.err =
+            "This browser cannot check a typed answer here. Open the page over https.";
+          render();
+          return;
+        }
+        if (verdict === null) {
+          S.err =
+            r.type === "number"
+              ? "Numbers only, please."
+              : "Type what you read.";
+          render();
+          return;
+        }
+        S.answer = r.type === "single" ? given : given.trim();
+        if (verdict) {
+          S.result = "right";
+          S.points += POINTS;
+          S.ring = true;
+          go("right");
+          return;
+        }
+        S.tries += 1;
+        if (r.type === "single") {
+          S.crossed.push(given);
+          S.picked = null;
+        } else {
+          S.tried.push(given.trim());
+          S.typed = "";
+        }
+        if (S.retry === "once") {
+          S.result = "missed";
+          S.gaveUp = false;
+          S.ring = true;
+          go("final");
+        } else go("wrong");
+      }
+      function giveUp() {
+        if (!S.armed) {
+          S.armed = true;
+          render();
+          return;
+        }
+        S.result = "missed";
+        S.gaveUp = true;
+        S.ring = true;
+        go("final");
+      }
+      dock.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-a]");
+        if (!b) return;
+        const a = b.dataset.a;
+        if (a === "cont") go("riddle");
+        else if (a === "look") go("look");
+        else if (a === "open") {
+          go("sheet");
+          const i = $("typed");
+          if (i) i.focus();
+        } else if (a === "close") go("look");
+        else if (a === "toggle") {
+          S.open = !S.open;
+          render();
+        } else if (a === "pick") {
+          S.picked = b.dataset.id;
+          S.armed = false;
+          render();
+        } else if (a === "submit") submit();
+        else if (a === "giveup") giveUp();
+        else if (a === "goon") go("line2");
+        else if (a === "cont2") go("end");
+        else if (a === "bridge") {
+          S.bridge = "playing";
+          render();
+        } else if (a === "bridgedone") {
+          S.bridge = "played";
+          render();
+        } else if (a === "revisit") {
+          S.band = 0;
+          S.step = S.start === "locked" ? "locked" : "done";
+          if (S.result === null) S.result = "missed";
+          render();
+        } else if (a === "again") restart("fresh");
+        else if (a === "kind") {
+          S.kind = b.dataset.v;
+          restart("fresh");
+        }
+      });
+      dock.addEventListener("input", (e) => {
+        if (e.target.id !== "typed") return;
+        S.typed = e.target.value;
+        $("confirm").disabled = S.typed.trim() === "";
+      });
+      dock.addEventListener("keydown", (e) => {
+        if (
+          e.key === "Enter" &&
+          e.target.id === "typed" &&
+          S.typed.trim() !== ""
+        ) {
+          e.preventDefault();
+          submit();
+        }
+      });
+
+      /* ---------- the demo panel ---------- */
+      function syncDemo() {
+        const val = {
+          kind: S.kind,
+          retry: S.retry,
+          start: S.start,
+          band: String(S.band),
+          orient: $("stage").dataset.o,
+        };
+        document.querySelectorAll(".seg").forEach((seg) => {
+          seg
+            .querySelectorAll("button")
+            .forEach((b) =>
+              b.setAttribute(
+                "aria-pressed",
+                String(b.dataset.v === val[seg.dataset.seg]),
+              ),
+            );
+        });
+      }
+      $("demo").addEventListener("click", (e) => {
+        const b = e.target.closest(".seg button");
+        if (!b) return;
+        const which = b.parentElement.dataset.seg,
+          v = b.dataset.v;
+        if (which === "kind") {
+          S.kind = v;
+          restart(S.start);
+        } else if (which === "retry") {
+          S.retry = v;
+          restart(S.start);
+        } else if (which === "start") restart(v);
+        else if (which === "orient") {
+          $("stage").dataset.o = v;
+          syncDemo();
+          layout();
+        } else if (which === "band") walkTo(Number(v));
+        if (
+          matchMedia("(max-width:999px),(max-height:639px)").matches &&
+          which !== "orient"
+        )
+          openDemo(false);
+      });
+      function walkTo(band) {
+        const wasAway = S.band > 0;
+        S.band = band;
+        if (band === 0) {
+          S.bridge = "none";
+          if (wasAway && (S.step === "look" || S.step === "sheet")) {
+            render();
+            pose("wave", 2200);
+            toast("You are back. The riddle is where you left it.");
+            return;
+          }
+        }
+        render();
+      }
+      function openDemo(on) {
+        $("demo").hidden = !on;
+        $("demoOpen").setAttribute("aria-expanded", String(on));
+      }
+      $("demoOpen").addEventListener("click", () => openDemo($("demo").hidden));
+      $("demoClose").addEventListener("click", () => openDemo(false));
+
+      /* ---------- the camera: a drawn panorama the visitor can turn and walk in ---------- */
+      const PW = 3600,
+        PH = 1125;
+      const V = { w: 390, h: 844, base: 1, z: 1, cx: 1880, cy: 562 };
+      const cam = $("cam"),
+        world = $("world"),
+        fig = $("fig"),
+        ring = $("ring"),
+        awayCv = $("away");
+      function layout() {
+        const r = $("device").getBoundingClientRect();
+        V.w = r.width;
+        V.h = r.height;
+        V.base = Math.max(V.h / PH, V.w / PW);
+        applyView();
+      }
+      function applyView() {
+        const s = V.base * V.z;
+        const hw = V.w / 2 / s,
+          hh = V.h / 2 / s;
+        V.cx = Math.min(PW - hw, Math.max(hw, V.cx));
+        V.cy = Math.min(PH - hh, Math.max(hh, V.cy));
+        world.style.transform = `translate(${V.w / 2 - V.cx * s}px,${V.h / 2 - V.cy * s}px) scale(${s})`;
+        const edge = $("edge");
+        const wants =
+          S.ring && S.band === 0 && (S.step === "final" || S.step === "line2");
+        if (wants) {
+          const x = (R().spot.x - V.cx) * s + V.w / 2;
+          const off = x < -40 ? "l" : x > V.w + 40 ? "r" : "";
+          edge.hidden = off === "";
+          edge.className = `edge ${off}`;
+        } else edge.hidden = true;
+      }
+      function walk(delta) {
+        world.classList.add("glide");
+        V.z = Math.min(3.2, Math.max(1, V.z + delta));
+        applyView();
+        setTimeout(() => world.classList.remove("glide"), 420);
+      }
+      $("closer").addEventListener("click", () => walk(0.6));
+      $("back").addEventListener("click", () => walk(-0.6));
+      let drag = null;
+      cam.addEventListener("pointerdown", (e) => {
+        if (S.band > 0) return;
+        drag = { x: e.clientX, y: e.clientY, cx: V.cx, cy: V.cy };
+        cam.setPointerCapture(e.pointerId);
+      });
+      cam.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const s = V.base * V.z;
+        V.cx = drag.cx - (e.clientX - drag.x) / s;
+        V.cy = drag.cy - (e.clientY - drag.y) / s;
+        applyView();
+        if (!S.looked && S.step === "look") {
+          S.looked = true;
+          $("coach").hidden = true;
+        }
+      });
+      const endDrag = () => {
+        drag = null;
+      };
+      cam.addEventListener("pointerup", endDrag);
+      cam.addEventListener("pointercancel", endDrag);
+      cam.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          V.z = Math.min(3.2, Math.max(1, V.z - e.deltaY * 0.0015));
+          applyView();
+        },
+        { passive: false },
+      );
+      addEventListener("keydown", (e) => {
+        if (e.target.tagName === "INPUT") return;
+        const d = {
+          ArrowLeft: [-90, 0],
+          ArrowRight: [90, 0],
+          ArrowUp: [0, -60],
+          ArrowDown: [0, 60],
+        }[e.key];
+        if (d) {
+          V.cx += d[0];
+          V.cy += d[1];
+          applyView();
+        }
+      });
+      addEventListener("resize", layout);
+      // the on-screen keyboard shrinks the visual viewport only: lift the dock above it
+      if (window.visualViewport) {
+        const onVV = () => {
+          const kb = Math.max(
+            0,
+            Math.round(
+              innerHeight - visualViewport.height - visualViewport.offsetTop,
+            ),
+          );
+          $("device").style.setProperty("--kb", `${kb > 80 ? kb : 0}px`);
+          $("device").classList.toggle("kbup", kb > 80);
+        };
+        visualViewport.addEventListener("resize", onVV);
+        visualViewport.addEventListener("scroll", onVV);
+      }
+
+      /* ---------- painting the place (no photographs: all of it is drawn here) ---------- */
+      function mulberry(seed) {
+        return () => {
+          seed = (seed + 0x6d2b79f5) | 0;
+          let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      function blob(c, x, y, r, colour) {
+        const g = c.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, colour);
+        g.addColorStop(1, colour.replace(/[\d.]+\)$/, "0)"));
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(x, y, r, 0, 7);
+        c.fill();
+      }
+      function paintSky(c, w, h, rnd) {
+        const g = c.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, "#4f88c0");
+        g.addColorStop(0.6, "#9cc3df");
+        g.addColorStop(1, "#e8ece2");
+        c.fillStyle = g;
+        c.fillRect(0, 0, w, h);
+        for (let i = 0; i < 26; i++) {
+          const cx = rnd() * w,
+            cy = h * (0.15 + rnd() * 0.6),
+            sp = 60 + rnd() * 240;
+          for (let k = 0; k < 26; k++) {
+            blob(
+              c,
+              cx + (rnd() - 0.5) * sp * 2.4,
+              cy + (rnd() - 0.5) * sp * 0.5,
+              24 + rnd() * 70,
+              `rgba(255,253,248,${(0.08 + rnd() * 0.22).toFixed(2)})`,
+            );
+          }
+        }
+      }
+      function foliage(c, cx, cy, r, n, rnd, hue) {
+        for (let i = 0; i < n * 3; i++) {
+          const a = rnd() * 6.283,
+            d = Math.sqrt(rnd()) * r;
+          const x = cx + Math.cos(a) * d,
+            y = cy + Math.sin(a) * d * 0.8;
+          const l = 15 + (1 - (y - cy + r) / (2 * r)) * 26 + rnd() * 6;
+          c.fillStyle = `hsl(${hue + rnd() * 26} ${32 + rnd() * 16}% ${l}%)`;
+          c.beginPath();
+          c.ellipse(x, y, 5 + rnd() * 12, 4 + rnd() * 8, rnd() * 3, 0, 7);
+          c.fill();
+        }
+      }
+      function stones(c, x0, y0, x1, y1, rnd) {
+        c.save();
+        c.beginPath();
+        c.rect(x0, y0, x1 - x0, y1 - y0);
+        c.clip();
+        c.fillStyle = "#5e564b";
+        c.fillRect(x0, y0, x1 - x0, y1 - y0);
+        for (let y = y0; y < y1;) {
+          const h = 24 + rnd() * 22;
+          for (let x = x0 - rnd() * 70; x < x1;) {
+            const w = 48 + rnd() * 96;
+            c.fillStyle = `hsl(${30 + rnd() * 12} ${8 + rnd() * 10}% ${51 + rnd() * 13}%)`;
+            c.beginPath();
+            c.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 4);
+            c.fill();
+            c.fillStyle = "rgba(255,250,235,.1)";
+            c.fillRect(x + 5, y + 3, w - 10, 3);
+            c.fillStyle = "rgba(0,0,0,.16)";
+            c.fillRect(x + 5, y + h - 6, w - 10, 3);
+            for (let k = 0; k < 7; k++) {
+              c.fillStyle = `rgba(${rnd() < 0.5 ? "0,0,0" : "255,245,225"},.07)`;
+              c.beginPath();
+              c.arc(x + rnd() * w, y + rnd() * h, 1 + rnd() * 5, 0, 7);
+              c.fill();
+            }
+            x += w;
+          }
+          y += h;
+        }
+        c.restore();
+      }
+      function paintWindow(c, x, y, w, h) {
+        c.fillStyle = "#b7ab96";
+        c.fillRect(x - 16, y - 16, w + 32, h + 32);
+        c.fillStyle = "rgba(0,0,0,.25)";
+        c.fillRect(x - 16, y + h + 12, w + 32, 5);
+        const g = c.createLinearGradient(x, y, x + w, y + h);
+        g.addColorStop(0, "#2c3a48");
+        g.addColorStop(0.5, "#6d8ca3");
+        g.addColorStop(0.55, "#26323e");
+        g.addColorStop(1, "#1b232c");
+        c.fillStyle = g;
+        c.fillRect(x, y, w, h);
+        c.strokeStyle = "#e6e0d2";
+        c.lineWidth = 7;
+        c.strokeRect(x, y, w, h);
+        c.beginPath();
+        c.moveTo(x + w / 2, y);
+        c.lineTo(x + w / 2, y + h);
+        c.moveTo(x, y + h / 2);
+        c.lineTo(x + w, y + h / 2);
+        c.lineWidth = 5;
+        c.stroke();
+      }
+      function carved(c, text, x, y, font) {
+        c.font = font;
+        c.textAlign = "center";
+        c.fillStyle = "rgba(255,248,232,.65)";
+        c.fillText(text, x + 1.2, y + 1.4);
+        c.fillStyle = "#3c3428";
+        c.fillText(text, x, y);
+      }
+      function paintWheel(c, cx, cy, R0) {
+        c.save();
+        c.translate(cx, cy);
+        const wood = "#4a3423",
+          pale = "#6c4e34";
+        c.lineWidth = 26;
+        c.strokeStyle = wood;
+        c.beginPath();
+        c.arc(0, 0, R0, 0, 7);
+        c.stroke();
+        c.lineWidth = 8;
+        c.strokeStyle = pale;
+        c.beginPath();
+        c.arc(-3, -3, R0 + 4, 0, 7);
+        c.stroke();
+        c.lineWidth = 20;
+        c.strokeStyle = wood;
+        c.beginPath();
+        c.arc(0, 0, R0 * 0.66, 0, 7);
+        c.stroke();
+        for (let i = 0; i < 6; i++) {
+          c.save();
+          c.rotate((i * Math.PI) / 3 + 0.13);
+          c.fillStyle = wood;
+          c.fillRect(-13, -R0, 26, R0 * 2);
+          c.fillStyle = pale;
+          c.fillRect(-13, -R0, 7, R0 * 2);
+          c.restore();
+        }
+        c.fillStyle = "#2a1c12";
+        c.beginPath();
+        c.arc(0, 0, 44, 0, 7);
+        c.fill();
+        c.fillStyle = "#54514d";
+        c.beginPath();
+        c.arc(-3, -3, 20, 0, 7);
+        c.fill();
+        // twelve paddles: the number riddle's answer is really there to count
+        for (let i = 0; i < 12; i++) {
+          c.save();
+          c.rotate((i * Math.PI) / 6 + 0.13);
+          c.translate(0, -R0 - 34);
+          c.fillStyle = "#3a2a1c";
+          c.fillRect(-46, -30, 92, 62);
+          c.fillStyle = "#7a5a3c";
+          c.fillRect(-46, -30, 92, 13);
+          c.fillStyle = "rgba(0,0,0,.28)";
+          c.fillRect(-46, 18, 92, 14);
+          c.restore();
+        }
+        c.restore();
+      }
+      function paintPano() {
+        const c = $("pano").getContext("2d"),
+          rnd = mulberry(1742);
+        const W = PW,
+          H = PH,
+          hor = 760;
+        paintSky(c, W, hor, rnd);
+        for (let i = 0; i < 90; i++)
+          foliage(
+            c,
+            rnd() * W,
+            hor - 50 - rnd() * 60,
+            90 + rnd() * 70,
+            26,
+            rnd,
+            96,
+          );
+        // ground
+        const g = c.createLinearGradient(0, hor, 0, H);
+        g.addColorStop(0, "#6c8246");
+        g.addColorStop(1, "#3e5428");
+        c.fillStyle = g;
+        c.fillRect(0, hor, W, H - hor);
+        for (let i = 0; i < 16000; i++) {
+          const y = hor + Math.pow(rnd(), 1.4) * (H - hor),
+            t = (y - hor) / (H - hor);
+          c.strokeStyle = `hsl(${72 + rnd() * 34} ${28 + rnd() * 26}% ${24 + rnd() * 26}%)`;
+          c.lineWidth = 0.6 + t * 1.8;
+          const x = rnd() * W;
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x + (rnd() - 0.5) * 12, y - 4 - t * 16);
+          c.stroke();
+        }
+        // stream
+        c.beginPath();
+        c.moveTo(0, 850);
+        c.bezierCurveTo(500, 830, 900, 840, 1300, 870);
+        c.lineTo(1250, 930);
+        c.bezierCurveTo(800, 960, 300, 1010, 0, 1000);
+        c.closePath();
+        const w = c.createLinearGradient(0, 830, 0, 1000);
+        w.addColorStop(0, "#7f9fb0");
+        w.addColorStop(1, "#3f5a66");
+        c.fillStyle = w;
+        c.fill();
+        for (let i = 0; i < 500; i++) {
+          const x = rnd() * 1250,
+            y = 845 + rnd() * 140;
+          if (y > 930 - (x / 1250) * 20 + (1 - x / 1250) * 60) continue;
+          c.strokeStyle = `rgba(235,246,250,${(0.12 + rnd() * 0.3).toFixed(2)})`;
+          c.lineWidth = 1 + rnd() * 2;
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x + 18 + rnd() * 60, y + rnd() * 2);
+          c.stroke();
+        }
+        // gravel path up to the door
+        c.beginPath();
+        c.moveTo(2340, 762);
+        c.lineTo(2500, 762);
+        c.lineTo(3050, H);
+        c.lineTo(1500, H);
+        c.closePath();
+        const p = c.createLinearGradient(0, 760, 0, H);
+        p.addColorStop(0, "#a79a82");
+        p.addColorStop(1, "#7c705d");
+        c.fillStyle = p;
+        c.fill();
+        for (let i = 0; i < 9000; i++) {
+          const t = Math.pow(rnd(), 1.2),
+            y = 762 + t * (H - 762);
+          const l = 2340 + (1500 - 2340) * t,
+            r2 = 2500 + (3050 - 2500) * t,
+            x = l + rnd() * (r2 - l);
+          c.fillStyle = `hsl(35 ${6 + rnd() * 12}% ${34 + rnd() * 36}%)`;
+          c.beginPath();
+          c.ellipse(x, y, 1 + t * 5 * rnd(), 0.6 + t * 3 * rnd(), 0, 0, 7);
+          c.fill();
+        }
+        // the mill
+        const x0 = 1250,
+          x1 = 2950,
+          top = 300,
+          base = 770;
+        c.fillStyle = "#3c3c38";
+        c.beginPath();
+        c.moveTo(x0 - 50, top + 6);
+        c.lineTo(x0 + 70, 120);
+        c.lineTo(x1 - 70, 120);
+        c.lineTo(x1 + 50, top + 6);
+        c.closePath();
+        c.fill();
+        for (let y = 124; y < top + 6; y += 15) {
+          const t = (y - 120) / (top - 120),
+            l = x0 + 70 - t * 120,
+            r2 = x1 - 70 + t * 120;
+          for (let x = l + (y % 30 ? 13 : 0); x < r2; x += 26) {
+            c.fillStyle = `hsl(${13 + rnd() * 8} ${16 + rnd() * 12}% ${24 + rnd() * 9}%)`;
+            c.fillRect(x, y, 24, 13);
+          }
+        }
+        c.fillStyle = "#6a5f52";
+        c.fillRect(2650, 40, 90, 140);
+        c.fillStyle = "#3f3a33";
+        c.fillRect(2642, 34, 106, 14);
+        stones(c, x0, top, x1, base, rnd);
+        // sun from the left, a shadow under the eave, damp at the foot of the wall
+        let o = c.createLinearGradient(x0, 0, x1, 0);
+        o.addColorStop(0, "rgba(255,226,170,.2)");
+        o.addColorStop(0.55, "rgba(255,226,170,0)");
+        o.addColorStop(1, "rgba(10,18,40,.3)");
+        c.fillStyle = o;
+        c.fillRect(x0, top, x1 - x0, base - top);
+        o = c.createLinearGradient(0, top, 0, top + 70);
+        o.addColorStop(0, "rgba(0,0,0,.58)");
+        o.addColorStop(1, "rgba(0,0,0,0)");
+        c.fillStyle = o;
+        c.fillRect(x0, top, x1 - x0, 70);
+        o = c.createLinearGradient(0, base - 90, 0, base);
+        o.addColorStop(0, "rgba(36,48,24,0)");
+        o.addColorStop(1, "rgba(36,48,24,.6)");
+        c.fillStyle = o;
+        c.fillRect(x0, base - 90, x1 - x0, 90);
+        [1500, 1890, 2300, 2700].forEach((x) =>
+          paintWindow(c, x, 372, 92, 120),
+        );
+        [1500, 1890].forEach((x) => paintWindow(c, x, 576, 92, 112));
+        paintWindow(c, 2710, 576, 92, 112);
+        // the door and the stone over it, where the year and the word are cut
+        c.fillStyle = "#b7ab96";
+        c.fillRect(2322, 530, 196, 240);
+        const d = c.createLinearGradient(2340, 0, 2500, 0);
+        d.addColorStop(0, "#3a2a1b");
+        d.addColorStop(1, "#2a1d12");
+        c.fillStyle = d;
+        c.fillRect(2340, 546, 160, 224);
+        for (let x = 2340; x < 2500; x += 26) {
+          c.fillStyle = "rgba(0,0,0,.34)";
+          c.fillRect(x, 546, 3, 224);
+          c.fillStyle = "rgba(255,220,170,.07)";
+          c.fillRect(x + 3, 546, 2, 224);
+        }
+        c.fillStyle = "#1b1a18";
+        c.fillRect(2340, 594, 160, 9);
+        c.fillRect(2340, 712, 160, 9);
+        c.fillStyle = "#c0a050";
+        c.beginPath();
+        c.arc(2478, 660, 8, 0, 7);
+        c.fill();
+        c.fillStyle = "#c9bea9";
+        c.fillRect(2305, 444, 220, 90);
+        c.strokeStyle = "rgba(0,0,0,.3)";
+        c.lineWidth = 3;
+        c.strokeRect(2305, 444, 220, 90);
+        for (let i = 0; i < 700; i++) {
+          c.fillStyle = `rgba(${rnd() < 0.5 ? "60,50,40" : "255,250,235"},.08)`;
+          c.fillRect(2305 + rnd() * 220, 444 + rnd() * 90, 3, 2);
+        }
+        // a decoy: the plate by the wheel names another year
+        c.fillStyle = "#26221d";
+        c.fillRect(1320, 560, 112, 70);
+        c.strokeStyle = "#8e8061";
+        c.lineWidth = 3;
+        c.strokeRect(1324, 564, 104, 62);
+        // the water wheel and its timber trough
+        c.fillStyle = "#463224";
+        c.fillRect(1010, 318, 330, 26);
+        c.fillStyle = "#6c4e34";
+        c.fillRect(1010, 318, 330, 7);
+        c.fillStyle = "rgba(0,0,0,.3)";
+        blob(c, 1040, 900, 300, "rgba(0,0,0,.34)");
+        paintWheel(c, 1040, 640, 250);
+        c.strokeStyle = "rgba(220,238,246,.7)";
+        c.lineWidth = 3;
+        for (let i = 0; i < 22; i++) {
+          const x = 1012 + rnd() * 24;
+          c.beginPath();
+          c.moveTo(x, 344);
+          c.lineTo(x + rnd() * 14, 372 + rnd() * 26);
+          c.stroke();
+        }
+        // bench, trees and bushes for depth
+        c.fillStyle = "#54402c";
+        c.fillRect(3080, 830, 230, 16);
+        c.fillRect(3080, 790, 230, 13);
+        c.fillRect(3098, 790, 12, 96);
+        c.fillRect(3282, 790, 12, 96);
+        c.fillStyle = "#3c2b1e";
+        c.beginPath();
+        c.moveTo(3480, 960);
+        c.lineTo(3430, 300);
+        c.lineTo(3520, 300);
+        c.lineTo(3570, 960);
+        c.fill();
+        foliage(c, 3470, 170, 300, 900, rnd, 92);
+        c.fillStyle = "#35271b";
+        c.beginPath();
+        c.moveTo(250, 930);
+        c.lineTo(290, 340);
+        c.lineTo(380, 340);
+        c.lineTo(400, 930);
+        c.fill();
+        foliage(c, 330, 200, 310, 950, rnd, 96);
+        foliage(c, 3060, 760, 110, 240, rnd, 100);
+        foliage(c, 2960, 790, 66, 120, rnd, 92);
+        // a soft lens, a warm low sun and duller colour, so the drawing sits closer to a photograph
+        c.save();
+        c.filter = "blur(1.5px) saturate(.8) contrast(1.06)";
+        c.drawImage(c.canvas, 0, 0);
+        c.restore();
+        c.save();
+        c.globalCompositeOperation = "soft-light";
+        const sun = c.createRadialGradient(500, -100, 100, 500, -100, 3400);
+        sun.addColorStop(0, "rgba(255,226,170,.75)");
+        sun.addColorStop(0.5, "rgba(190,190,180,.25)");
+        sun.addColorStop(1, "rgba(30,44,70,.6)");
+        c.fillStyle = sun;
+        c.fillRect(0, 0, W, H);
+        c.restore();
+        // the lettering goes on last, so it stays sharp enough to read
+        const FACE = 'Georgia,"Times New Roman",serif';
+        carved(c, "ANNO 1742", 2415, 482, `700 26px ${FACE}`);
+        carved(c, "PATIENCE", 2415, 515, `700 17px ${FACE}`);
+        c.fillStyle = "#c8b98f";
+        c.textAlign = "center";
+        c.font = `700 13px ${FACE}`;
+        c.fillText("WHEEL", 1376, 584);
+        c.fillText("RENEWED", 1376, 600);
+        c.font = `700 15px ${FACE}`;
+        c.fillText("1762", 1376, 618);
+        // sensor grain
+        grain(c, W, H, 0.17);
+      }
+      function grain(c, W, H, alpha) {
+        const tile = document.createElement("canvas");
+        tile.width = tile.height = 256;
+        const t = tile.getContext("2d"),
+          img = t.createImageData(256, 256),
+          rnd = mulberry(7);
+        for (let i = 0; i < img.data.length; i += 4) {
+          const v = 90 + rnd() * 76;
+          img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+          img.data[i + 3] = 255;
+        }
+        t.putImageData(img, 0, 0);
+        c.save();
+        c.globalCompositeOperation = "overlay";
+        c.globalAlpha = alpha * 2;
+        c.fillStyle = c.createPattern(tile, "repeat");
+        c.fillRect(0, 0, W, H);
+        c.restore();
+      }
+      function paintAway() {
+        const c = awayCv.getContext("2d"),
+          rnd = mulberry(99),
+          W = 1600,
+          H = 900,
+          hor = 470;
+        paintSky(c, W, hor, rnd);
+        for (let i = 0; i < 40; i++)
+          foliage(
+            c,
+            rnd() * W,
+            hor - 30 - rnd() * 40,
+            60 + rnd() * 50,
+            22,
+            rnd,
+            98,
+          );
+        const g = c.createLinearGradient(0, hor, 0, H);
+        g.addColorStop(0, "#71884b");
+        g.addColorStop(1, "#3f552a");
+        c.fillStyle = g;
+        c.fillRect(0, hor, W, H - hor);
+        for (let i = 0; i < 6000; i++) {
+          const y = hor + Math.pow(rnd(), 1.4) * (H - hor),
+            t = (y - hor) / (H - hor),
+            x = rnd() * W;
+          c.strokeStyle = `hsl(${72 + rnd() * 34} ${28 + rnd() * 26}% ${24 + rnd() * 26}%)`;
+          c.lineWidth = 0.6 + t * 1.6;
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x + (rnd() - 0.5) * 10, y - 3 - t * 14);
+          c.stroke();
+        }
+        // the stream and its wooden footbridge
+        c.beginPath();
+        c.moveTo(0, 560);
+        c.bezierCurveTo(500, 520, 1100, 540, W, 500);
+        c.lineTo(W, 600);
+        c.bezierCurveTo(1100, 640, 500, 620, 0, 690);
+        c.closePath();
+        const s = c.createLinearGradient(0, 510, 0, 690);
+        s.addColorStop(0, "#86a6b6");
+        s.addColorStop(1, "#46626e");
+        c.fillStyle = s;
+        c.fill();
+        c.fillStyle = "#5a4230";
+        c.beginPath();
+        c.moveTo(620, 640);
+        c.quadraticCurveTo(820, 500, 1020, 620);
+        c.lineTo(1020, 644);
+        c.quadraticCurveTo(820, 530, 620, 664);
+        c.closePath();
+        c.fill();
+        c.strokeStyle = "#3f2e20";
+        c.lineWidth = 7;
+        for (let x = 640; x <= 1000; x += 40) {
+          const y = 640 - Math.sin(((x - 620) / 400) * Math.PI) * 74;
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x, y - 56);
+          c.stroke();
+        }
+        c.beginPath();
+        c.moveTo(626, 590);
+        c.quadraticCurveTo(820, 446, 1016, 566);
+        c.stroke();
+        // the mill, small and far behind
+        c.fillStyle = "#8f8473";
+        c.fillRect(150, 392, 120, 60);
+        c.fillStyle = "#51322a";
+        c.beginPath();
+        c.moveTo(140, 394);
+        c.lineTo(162, 362);
+        c.lineTo(258, 362);
+        c.lineTo(280, 394);
+        c.fill();
+        // the lane the visitor walks
+        c.beginPath();
+        c.moveTo(1240, 640);
+        c.lineTo(1330, 640);
+        c.lineTo(1250, H);
+        c.lineTo(470, H);
+        c.closePath();
+        const l = c.createLinearGradient(0, 640, 0, H);
+        l.addColorStop(0, "#a79a82");
+        l.addColorStop(1, "#7c705d");
+        c.fillStyle = l;
+        c.fill();
+        foliage(c, 1460, 300, 240, 800, rnd, 96);
+        c.fillStyle = "#3c2b1e";
+        c.fillRect(1430, 420, 56, 300);
+        foliage(c, 1470, 730, 110, 260, rnd, 100);
+        c.save();
+        c.filter = "blur(2.2px) saturate(.72) contrast(1.05)";
+        c.drawImage(c.canvas, 0, 0);
+        c.restore();
+        grain(c, W, H, 0.15);
+      }
+
+      /* ---------- start ---------- */
+      fig.innerHTML = figure();
+      layout();
+      restart("fresh");
+      // the painting takes a moment on a phone: the story shows first
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          paintPano();
+          paintAway();
+        }, 0),
+      );
+    </script>
+  </body>
+</html>
