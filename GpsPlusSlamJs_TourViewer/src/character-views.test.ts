@@ -32,6 +32,21 @@ const walk = (
   stations: Object.entries(states).map(([id, state]) => ({ id, state })),
 });
 
+describe("a portrait with no card", () => {
+  // Why: the bubble is the one part the card stood in for; the rest of the
+  // view, the ring above all, stays what was chosen. No other view changes.
+  it("gains a bubble and changes nothing else, nor any other view", () => {
+    expect(characterViewLook("portrait", true)).toEqual({
+      ...characterViewLook("portrait"),
+      bubble: true,
+      footer: true,
+    });
+    for (const view of ["bubble", "speak", "two-stations", "popup"] as const) {
+      expect(characterViewLook(view, true)).toBe(characterViewLook(view));
+    }
+  });
+});
+
 describe("beckonNext", () => {
   // Why this test matters: he points at the station the visitor goes to
   // next. Under a fixed order that is the next station the walk will

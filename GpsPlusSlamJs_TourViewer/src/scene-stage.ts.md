@@ -61,7 +61,9 @@ tour's other content (`content-placement.ts`). Plan:
   runs, and while a character look stands); optional `getCamera()` (the
   viewer's camera a look turns and opens to; null: it stands still),
   `beckonOf(stationId)` (the next station as an NUE offset from his pose
-  and its title, or null) and `lookPainters` (tests run without a canvas).
+  and its title, or null), `lookPainters` (tests run without a canvas)
+  and `figures` (a `figure-memo.ts`: a look stands from what was painted
+  before, without a decode; absent, every look decodes and paints).
 - `CHARACTER_HEIGHT_M` (1.7).
 
 ## Invariants & assumptions

@@ -18,7 +18,7 @@ export type AudioElementLike = Pick<
   HTMLAudioElement,
   "src" | "onended" | "play" | "pause"
 > &
-  Partial<Pick<HTMLAudioElement, "duration">>;
+  Partial<Pick<HTMLAudioElement, "duration" | "currentTime">>;
 
 export interface UnlockableAudio extends SceneAudio {
   /** Call inside the visitor's tap (synchronously): the element plays a
@@ -86,6 +86,12 @@ export function createSceneAudio(deps: {
     release();
   }
 
+  /** NaN before the metadata, Infinity for a stream: no length then. */
+  const lengthMs = (): number | null => {
+    const s = element?.duration;
+    return s !== undefined && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+  };
+
   return {
     unlock() {
       if (unlockState !== "no") return;
@@ -136,10 +142,14 @@ export function createSceneAudio(deps: {
           if (clipEnded === ended) ended();
         });
     },
-    durationMs() {
-      // NaN before the metadata, Infinity for a stream: no length then.
-      const s = element?.duration;
-      return s !== undefined && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+    durationMs: lengthMs,
+    leftMs() {
+      const whole = lengthMs();
+      const at = element?.currentTime;
+      if (whole === null || at === undefined || !Number.isFinite(at)) {
+        return null;
+      }
+      return Math.max(0, whole - at * 1000);
     },
   };
 }

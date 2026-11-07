@@ -7,7 +7,7 @@ The free items' host: what a station shows that no story brings. It is the secon
 ## Public API
 
 - `createFreeItems(deps): FreeItems`
-  - `follow(isShown)` - every tick: figures of shown stations stand, the others go.
+  - `follow(isShown)` - every tick: the figures of stations no longer shown go first, then one figure of a shown station stands, then the voices left carry on.
   - `faceVisitor(nue)` - turns the standing figures.
   - `tapped(tap)` - true when the tap hit a free figure. A voice plays, or stops for good when it is playing; the bubble view's tap shuts or opens the bubble.
   - `stop()` - nothing stands, no voice is kept. The next `follow` starts afresh.
@@ -20,7 +20,10 @@ The free items' host: what a station shows that no story brings. It is the secon
 - Figures are read once per tour object; another tour stops the old ones.
 - A file landing after he left is dropped (`run`). A figure that cannot be shown says so once, in `sayFailure`, and tries again at the next return.
 - A voice stopped by a tap stays off: only one that was wanted when the visitor left carries on.
-- At a return the voice carries on only if the channel is free. Otherwise he stands silent at his place, and a tap continues (no waiting line).
+- Every voice heard or held at leaving pauses and is numbered in order, the held first. At the return the highest number, the one heard last, carries on if the channel is free. The next takes the one place behind what runs and carries on when that ends or is tapped. Any further one stays silent at his place, and a tap continues (no waiting line).
+- The leaves run before the stands: at overlapping stations a voice coming back finds the old one gone.
+- One figure stands per tick, and no voice waits for his: building a look is a few milliseconds, and several in one task are a hitch.
+- A free `portrait` keeps his figure, name tag and ring and gains the bubble (`noCard`), since no card shows his line here. The story's portrait does not change.
 - His look follows his voice: `speaking` with what is left of it, `spoken` once it ran out, `idle` when held, paused or never heard.
 - A free video or sound has no look yet: it draws nothing and has no tap target here. `content-placement.ts` holds the seam for those looks, and the editor does not offer them.
 - A free figure's words are in his look, so the card's places are written and read by nobody.

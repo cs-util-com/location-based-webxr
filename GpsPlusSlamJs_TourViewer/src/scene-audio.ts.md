@@ -22,6 +22,7 @@ battery"): ONE audio element for the page, unlocked by the visitor's
 - `silentWav()` - a 45-byte RIFF/WAVE, PCM mono 8 kHz, one silent sample.
 - `AudioElementLike` - the slice of `HTMLAudioElement` it drives (`duration` optional).
 - `durationMs()` - the playing clip's length in ms once its metadata is read (`duration` finite and above 0), else null (no clip, not yet known, a stream).
+- `leftMs()` - what is left of it in ms, never below 0; null when the length or the position is not known.
 
 ## Invariants & assumptions
 
