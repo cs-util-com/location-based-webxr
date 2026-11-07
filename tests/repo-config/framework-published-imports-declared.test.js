@@ -91,7 +91,10 @@ for (const file of publishedFiles(SRC)) {
 describe("the app framework's published imports", () => {
   it('reads the imports it checks (the scan is not vacuous)', () => {
     expect(importers.get('three')?.length ?? 0).toBeGreaterThan(0);
-    expect(importers.get('fast-check')).toEqual(['test-utils/tour-arbitraries.ts']);
+    expect(importers.get('fast-check')).toEqual([
+      'test-utils/tour-arbitraries.ts',
+      'test-utils/uniform-arbitrary.ts',
+    ]);
   });
 
   it('declares every package a published file imports as a dependency or a peer', () => {

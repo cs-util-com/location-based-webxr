@@ -20,25 +20,13 @@ import {
   gpsToH3,
   H3_RESOLUTION,
 } from './h3-proximity';
+import { uniformWithSeams } from '../test-utils/uniform-arbitrary';
 
-/**
- * Uniform over `[min, max]` on a 1e-6 grid. Not `fc.double`, which spreads
- * its draws over the floating-point representations: about 91 % of them land
- * within 1e-6 of zero, so "any place" sampled one place.
- */
-function uniformIn(min: number, max: number): fc.Arbitrary<number> {
-  // noBias: by default fast-check skews integers toward zero and the bounds.
-  return fc
-    .noBias(
-      fc.integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
-    )
-    .map((micro) => micro / 1e6);
-}
-
-// Full lat/lng ranges, including near the poles and the ±180° antimeridian, so
-// the validity invariants are exercised at the seams h3-js must handle.
-const latArb = uniformIn(-89.9, 89.9);
-const lngArb = uniformIn(-180, 180);
+// Full lat/lng ranges, uniform, with the bounds (near the poles and the ±180°
+// antimeridian) and zero mixed back in, so the validity invariants are
+// exercised at the seams h3-js must handle.
+const latArb = uniformWithSeams(-89.9, 89.9);
+const lngArb = uniformWithSeams(-180, 180);
 const pathArb = fc.array(fc.record({ lat: latArb, lng: lngArb }), {
   maxLength: 60,
 });

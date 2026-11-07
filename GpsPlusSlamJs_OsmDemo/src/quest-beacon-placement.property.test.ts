@@ -7,7 +7,7 @@ import {
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
 import { type Heightfield } from "gps-plus-slam-osm";
-import { uniformIn } from "./test-support/uniform-arbitrary.js";
+import { uniformIn } from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The beacon's frame holds for ANY origin and ANY quest position.

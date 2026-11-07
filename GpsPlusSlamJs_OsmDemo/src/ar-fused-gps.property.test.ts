@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import { fusedGpsFrom } from "./ar-fused-gps.js";
-import { uniformIn } from "./test-support/uniform-arbitrary.js";
+import { uniformIn } from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 /**
  * The NUE→ENU axis mapping holds for ANY pose and ANY origin latitude.

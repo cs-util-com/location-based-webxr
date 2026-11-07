@@ -28,26 +28,17 @@ import {
   recentre,
 } from "../test-support/tour-frame-points.js";
 import { WGS84_TEXTBOOK } from "../test-support/wgs84-textbook.js";
-
-/**
- * Uniform over `[min, max]` on a 1e-6 grid. Not `fc.double`, which spreads
- * its draws over the floating-point representations: about 91 % of them land
- * within 1e-6 of zero, so "any place" sampled one place.
- */
-function uniformIn(min: number, max: number): fc.Arbitrary<number> {
-  // noBias: by default fast-check skews integers toward zero and the bounds.
-  return fc
-    .noBias(
-      fc.integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) }),
-    )
-    .map((micro) => micro / 1e6);
-}
+import {
+  uniformIn,
+  uniformWithSeams,
+} from "gps-plus-slam-app-framework/test-utils/uniform-arbitrary";
 
 const TOLERANCES_M = [1e-3, 1e-4, 1e-5, 1e-6];
 
 const latLng = fc.record({
   lat: uniformIn(-80, 80),
-  lng: uniformIn(-180, 180),
+  // The antimeridian drawn exactly, not only near it: the frame must hold there.
+  lng: uniformWithSeams(-180, 180),
 });
 /** A station within 5 km of the tour's centre, at any tour height. */
 const tourPoint = fc.tuple(

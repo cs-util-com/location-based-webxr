@@ -25,20 +25,7 @@ import {
   filterRecordingsByName,
 } from './map-browser-index';
 import type { RecordingCoverage } from './recording-index';
-
-/**
- * Uniform over `[min, max]` on a 1e-6 grid. Not `fc.double`, which spreads
- * its draws over the floating-point representations: about 91 % of them land
- * within 1e-6 of zero, so "any place" sampled one place.
- */
-function uniformIn(min: number, max: number): fc.Arbitrary<number> {
-  // noBias: by default fast-check skews integers toward zero and the bounds.
-  return fc
-    .noBias(
-      fc.integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
-    )
-    .map((micro) => micro / 1e6);
-}
+import { uniformIn } from 'gps-plus-slam-app-framework/test-utils/uniform-arbitrary';
 
 const latArb = uniformIn(-85, 85);
 const lngArb = uniformIn(-180, 180);

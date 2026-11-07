@@ -284,6 +284,10 @@ const entryFiles = [
   // and view, version 3 manifests), shared with the Tour Viewer's property
   // tests so both packages test against the same notion of a valid file.
   'src/test-utils/tour-arbitraries.ts',
+  // Uniform number draws (and their seams) for property tests, shared with
+  // the RecorderApp, the Tour Viewer and the OSM demo so every package draws
+  // places and bearings the same, validated way.
+  'src/test-utils/uniform-arbitrary.ts',
 
   // types/
   'src/types/index.ts',

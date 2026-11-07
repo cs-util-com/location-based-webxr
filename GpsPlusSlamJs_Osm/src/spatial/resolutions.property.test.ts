@@ -36,7 +36,7 @@ import {
   fetchTilesForScoreWorkingSet,
   cellPaddingDegrees,
 } from "./resolutions.js";
-import { uniformIn } from "../test-utils/uniform-arbitrary.js";
+import { uniformWithSeams } from "../test-utils/uniform-arbitrary.js";
 
 /** Great-circle distance in metres, for comparing a cell against its own size. */
 function greatCircleMetres(
@@ -52,10 +52,13 @@ function greatCircleMetres(
   return 2 * 6_371_008.8 * Math.asin(Math.sqrt(a));
 }
 
-/** Any point on the globe, including poles and the antimeridian. */
+/**
+ * Any point on the globe, including poles and the antimeridian: uniform, with
+ * the bounds and zero drawn exactly one time in ten.
+ */
 const anyLatLng = fc.record({
-  lat: uniformIn(-89.9, 89.9),
-  lng: uniformIn(-180, 180),
+  lat: uniformWithSeams(-89.9, 89.9),
+  lng: uniformWithSeams(-180, 180),
 });
 
 describe("resolution ladder properties", () => {
