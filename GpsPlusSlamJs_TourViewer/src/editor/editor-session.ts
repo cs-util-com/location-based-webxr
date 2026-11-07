@@ -1921,7 +1921,8 @@ export function createEditorSession(input: {
         (id) => !live.has(id) && find(id) !== undefined,
       );
       // The stations the draft's objects were seated in that the tour
-      // lacks (a far move started one), whole: back before the objects.
+      // lacks ("Move to a new station" started one), whole: back before
+      // the objects.
       const created = settings?.createdStations ?? [];
       // With the stations added by hand there: untitled and empty, each
       // keeps itself here as it did there.

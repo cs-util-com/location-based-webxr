@@ -123,9 +123,9 @@ export interface EditorTourSettings {
    *  Absent: no opinion about them. A pose for a station the file does not
    *  carry is no change. */
   readonly stations?: readonly StationPose[];
-  /** The whole frames of the stations the page created (a far move
-   *  starts one): the draft's objects name them, so a restore puts them
-   *  back first. Not a change of their own. */
+  /** The whole frames of the stations the page created ("Move to a new
+   *  station" starts one): the draft's objects name them, so a restore
+   *  puts them back first. Not a change of their own. */
   readonly createdStations?: readonly StationFrame[];
   /** Once a station was edited beyond its pose here (renamed, added,
    *  deleted, reordered, copied), the stations edited beyond their pose or
