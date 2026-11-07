@@ -554,9 +554,13 @@ async function renderContent(
     for (const view of views) view.dispose();
     for (const model of models) disposeObject3D(model);
     for (const stand of stands) stand.dispose();
+    // Freed first: a part that frees itself only while still mounted
+    // (the stand's `if (!unmountWorldPart(part)) return;`) would free
+    // nothing after an unmount. The unmount then covers a part whose
+    // dispose leaves the set alone.
     for (const part of parts) {
-      unmountWorldPart(part);
       part.dispose();
+      unmountWorldPart(part);
     }
   };
   const photoPoses: ObjectPoseNue[] = [];

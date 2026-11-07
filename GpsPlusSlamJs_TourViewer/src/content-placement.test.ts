@@ -41,7 +41,11 @@ import {
   uprightTurn,
 } from "./content-placement";
 import { mountedModelViews } from "./model-views";
-import { mountedWorldParts, type WorldPart } from "./world-part";
+import {
+  mountedWorldParts,
+  unmountWorldPart,
+  type WorldPart,
+} from "./world-part";
 import { contentSegment } from "./tour-flow";
 import { stationContent } from "./test-support/station-content.js";
 
@@ -912,6 +916,52 @@ describe("renderTourStation", () => {
     drawn.dispose();
     expect(freed).toBe(2);
     for (const part of parts) expect(mountedWorldParts()).not.toContain(part);
+  });
+
+  // Why: the stand and the sign free themselves only while still mounted
+  // (`if (!unmountWorldPart(part)) return;`, so a second dispose is a
+  // no-op). A part built the same way must still be freed with its
+  // station: unmounting it first would leave its geometry, materials and
+  // textures behind on every station change.
+  it("frees a world part that unmounts itself in its own dispose", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: yaw(0) },
+      },
+    ]);
+    let freed = 0;
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: () => {
+          const part: WorldPart = {
+            object: new Object3D(),
+            dispose: () => {
+              if (!unmountWorldPart(part)) return;
+              freed += 1;
+            },
+          };
+          return part;
+        },
+      },
+    );
+    drawn.dispose();
+    expect(freed).toBe(1);
+    expect(mountedWorldParts()).toEqual([]);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
