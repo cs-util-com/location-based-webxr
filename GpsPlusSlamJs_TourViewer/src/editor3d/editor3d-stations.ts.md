@@ -19,6 +19,8 @@ ray (`pick`).
   `mountLectern`; absent, no stand is drawn), `loadContent`,
   `loadGlbModel`, `makeBillboard`, `makeCodeSquare` (the drawing is the
   page's: Node, where the tests run, has no canvas).
+  Both views hand the item builders through one list,
+  `editorDrawings` (`editor3d-drawings.ts`), so neither lacks one.
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
   world), `selectedStation` (the selected station, or the selected item's),
   `stationSelected` (the selection is that station itself), `standing`

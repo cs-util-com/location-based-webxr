@@ -36,13 +36,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 import * as THREE from "three";
 
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
-import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
-import { loadGlbModel } from "../glb-model.js";
-import { mountLectern } from "../lectern-view.js";
-import { mountReadingSign } from "../reading-sign.js";
-import { createPinLabel } from "../pin-label.js";
 import { manifestToWrite, type TourDocumentState } from "../tour-document.js";
 import {
   isStationLocked,
@@ -68,6 +62,7 @@ import {
   editorClipPlanes,
 } from "./editor3d-camera.js";
 import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
+import { editorDrawings } from "./editor3d-drawings.js";
 import {
   createBillboard,
   createCodeFace,
@@ -461,15 +456,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       ellipsoid,
       worldFromEcef: ground.worldFromEcef,
       undulationAt,
-      makeLabel: createPinLabel,
-      makeLectern: mountLectern,
-      makeReadingSign: mountReadingSign,
-      loadPhotoTexture: async (entry) =>
-        decodeFrameTexture(await deps.loadContent(entry), 2, {
-          maxPixels: TOUR_MAX_IMAGE_PIXELS,
-        }),
-      loadContent: (entry) => deps.loadContent(entry),
-      loadGlbModel,
+      ...editorDrawings((entry) => deps.loadContent(entry)),
       makeBillboard: (number, title, selected) =>
         createBillboard(number, title, selected, billboardView()),
       makeCodeSquare: (sizeM) => createCodeSquare(sizeM, codeFace),
