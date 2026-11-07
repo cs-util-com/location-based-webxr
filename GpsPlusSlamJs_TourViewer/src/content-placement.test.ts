@@ -928,7 +928,7 @@ describe("renderTourStation", () => {
     };
     const tilt = new Quaternion()
       .setFromEuler(new Euler(0.3, 0.5, -0.2, "YXZ"))
-      .toArray() as [number, number, number, number];
+      .toArray();
     const blocks = withFreeBlocks(base, [
       {
         id: "film",

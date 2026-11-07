@@ -1963,8 +1963,8 @@ describe("the inspector's Delete, declined", () => {
     del.focus();
     del.click();
     expect(deps.stations.remove).toHaveBeenCalledWith("station:a");
-    if (yes) expect(document.activeElement).not.toBe(del);
-    else expect(document.activeElement).toBe(del);
+    // On Delete after a no only.
+    expect(document.activeElement === del).toBe(!yes);
     shell.hide();
   });
 });
