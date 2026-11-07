@@ -12,8 +12,10 @@ styles, and the field in use brought into sight.
 - `watchKeyboard(win, host)` -> stop: writes `--s-keyboard-h` and
   `data-keyboard="up"` on the body while a keyboard is up, and scrolls the focused field inside `host` into
   sight when the keyboard comes, when it grows while up, and when the
-  focus moves under it. Stopping
-  takes the value away.
+  focus moves under it. Whether it grew is read off the viewport's height
+  alone, so a pan of the visual viewport (its `offsetTop`, also a
+  `scroll` event) never pulls the field back. Stopping takes the value
+  away.
 
 ## Invariants & assumptions
 
@@ -45,5 +47,5 @@ stop();
 ## Tests
 
 `phone-keyboard.test.ts` (jsdom, a stub for the visual viewport): the
-height, a zoom, a browser's bar, the scroll, a field outside, a browser
+height, a zoom, a browser's bar, the scroll, a pan that moves no field, a field outside, a browser
 without the API. No test runs a real keyboard: only a phone can show that.

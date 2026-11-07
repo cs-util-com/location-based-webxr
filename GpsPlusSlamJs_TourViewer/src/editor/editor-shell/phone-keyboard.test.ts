@@ -101,6 +101,25 @@ describe("watchKeyboard", () => {
     expect(scroll).toHaveBeenCalledTimes(2);
   });
 
+  // Why: panning the visual viewport (the page moved up under the
+  // keyboard, a scroll the browser makes itself) changes its offset, not
+  // the keyboard; reading that as a keyboard that grew pulls the field the
+  // creator has just scrolled away from back into sight.
+  it("leaves the field where it is while the viewport pans", () => {
+    const field = document.getElementById("f") as HTMLInputElement;
+    const scroll = vi.fn();
+    field.scrollIntoView = scroll;
+    watchKeyboard(win(), host());
+    field.focus();
+    opened(500);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    for (const offsetTop of [120, 0, 60, 0]) {
+      viewport.offsetTop = offsetTop;
+      viewport.dispatchEvent(new Event("scroll"));
+    }
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
   it("brings a field in sight when the focus moves under the keyboard", () => {
     const field = document.getElementById("f") as HTMLInputElement;
     const scroll = vi.fn();
