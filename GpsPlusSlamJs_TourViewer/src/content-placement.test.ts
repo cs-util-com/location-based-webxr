@@ -1006,6 +1006,48 @@ describe("renderTourStation", () => {
     expect(mountedWorldParts()).not.toContain(made[0]);
   });
 
+  // Why: one part whose dispose throws must not strand the station's
+  // other parts, mounted and unfreed, on every station change; the throw
+  // still reaches the caller once all are freed.
+  it("frees and unmounts every world part when one part's dispose throws", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const film = (id: string): TourBlock => ({
+      id,
+      kind: "video",
+      view: "card",
+      video: "v",
+      transcript: "t",
+      pose: { position: [0, 0, 0], rotation: yaw(0) },
+    });
+    const blocks = withFreeBlocks(base, [film("f1"), film("f2"), film("f3")]);
+    const freed: string[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: (block) => ({
+          object: new Object3D(),
+          dispose: () => {
+            freed.push(block.id);
+            if (block.id !== "f3") throw new Error(`broken ${block.id}`);
+          },
+        }),
+      },
+    );
+    expect(() => {
+      drawn.dispose();
+    }).toThrow("broken f1");
+    expect(freed).toEqual(["f1", "f2", "f3"]);
+    expect(mountedWorldParts()).toEqual([]);
+  });
+
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,
   // toy - keeps the size the tour names by the one shared scale rule, and
   // carries its view's handle for the visitor's page; freeing the station

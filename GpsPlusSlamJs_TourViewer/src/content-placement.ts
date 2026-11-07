@@ -558,10 +558,19 @@ async function renderContent(
     // (the stand's `if (!unmountWorldPart(part)) return;`) would free
     // nothing after an unmount. The unmount then covers a part whose
     // dispose leaves the set alone.
+    // A part whose dispose throws strands none after it: every part is
+    // freed and unmounted, and the first throw then reaches the caller.
+    let failed: { error: unknown } | null = null;
     for (const part of parts) {
-      part.dispose();
-      unmountWorldPart(part);
+      try {
+        part.dispose();
+      } catch (error) {
+        failed ??= { error };
+      } finally {
+        unmountWorldPart(part);
+      }
     }
+    if (failed !== null) throw failed.error;
   };
   const photoPoses: ObjectPoseNue[] = [];
   const photoIds: string[] = [];
