@@ -54,6 +54,12 @@ function lookOf(object: AuthoringObject["object"]): unknown {
       return object.imageAsset.path;
     case "model":
       return [object.asset, object.sizeM];
+    case "video":
+      return object.video;
+    case "audio":
+      return object.audio;
+    case "character":
+      return object.image;
   }
 }
 

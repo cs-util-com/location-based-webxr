@@ -77,6 +77,25 @@ function state(overrides: Partial<ObjectListState>): ObjectListState {
 }
 
 describe("objectListModel on the page", () => {
+  // Why: no creator page has a look for a free character yet, so a row
+  // could offer nothing true about him; the tour keeps him regardless.
+  it("names no free block a creator page cannot draw", () => {
+    const ann: TourObject = {
+      id: "ann",
+      kind: "character",
+      view: "speak",
+      geo: pin("a").geo,
+      name: "Ann",
+      image: "ann",
+      caption: "Hello",
+    };
+    const model = objectListModel(
+      state({ entries: [entry(pin("a")), entry(ann)] }),
+    );
+    expect(model.rows.map((r) => r.id)).toEqual(["a"]);
+    expect(model.heading).toBe("Objects in this tour (1)");
+  });
+
   it("lists every object with edit and delete, and no Move - that needs AR", () => {
     const model = objectListModel(
       state({ entries: [entry(pin("a")), entry(photo("p"), false, true)] }),

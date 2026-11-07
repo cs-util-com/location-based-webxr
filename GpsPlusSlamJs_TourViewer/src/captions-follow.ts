@@ -1,7 +1,8 @@
 /**
  * When the captions strip shows, and what: inside a station, the first
  * of its free long texts a visitor sees in the captions view, while its
- * read-along fits. Leaving the station pauses the voice. Called on every
+ * read-along fits. Leaving the station pauses the voice, and coming back
+ * carries it on. Called on every
  * camera frame.
  *
  * @see captions-follow.ts.md
@@ -40,7 +41,7 @@ export interface CaptionsFollowDeps {
   readonly strip: Pick<CaptionsStrip, "show" | "hide">;
   readonly narration: Pick<
     NarrationVisitor,
-    "verdictOf" | "captions" | "pauseAll"
+    "verdictOf" | "captions" | "pauseAll" | "carryOn"
   >;
   /** The present station's placed free blocks (none outside a station),
    *  its id, and the stored preference. */
@@ -65,8 +66,9 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
       const { blocks, presentId, stored } = deps.read();
       if (presentId !== presentSeen) {
         // A voice does not follow the visitor out of its station.
-        if (presentSeen !== null) deps.narration.pauseAll();
+        if (presentSeen !== null) deps.narration.pauseAll(presentSeen);
         presentSeen = presentId;
+        if (presentId !== null) deps.narration.carryOn(presentId);
       }
       const block = captionsBlock(blocks, stored, (b) =>
         deps.narration.verdictOf(b),

@@ -1,5 +1,6 @@
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { describe, expect, it } from "vitest";
+import { withFreeBlocks } from "./test-support/station-content.js";
 import fc from "fast-check";
 import {
   BoxGeometry,
@@ -823,6 +824,82 @@ describe("renderTourStation", () => {
     ).dispose();
     (await renderTourStation(station, deps)).dispose();
     expect(drawn).toEqual(["lectern:sign", "reading:sign", "reading:sign"]);
+  });
+
+  // Why: a free video and a free sound have no look of their own yet. The
+  // page's builder is where one plugs in; without it nothing stands there,
+  // because a stand-in would be a marker nobody chose. A free character is
+  // the page's free host's, never this renderer's.
+  it("draws a free video or sound by the page's builder at its pose, and nothing without one", async () => {
+    const scene = new Group();
+    const pose = {
+      position: [1, 2, 3] as [number, number, number],
+      rotation: yaw(0),
+    };
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const station = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose,
+      },
+      {
+        id: "song",
+        kind: "audio",
+        view: "card",
+        audio: "a",
+        transcript: "t",
+        pose,
+      },
+      {
+        id: "ann",
+        kind: "character",
+        view: "speak",
+        name: "Ann",
+        image: "i",
+        caption: "Hi",
+        pose,
+      },
+    ]);
+    const deps = {
+      assets: [],
+      scene,
+      zero: ZERO,
+      makeLabel: labelStub,
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    };
+    const bare = await renderTourStation({ ...base, ...station }, deps);
+    expect(bare.count).toBe(0);
+    expect(bare.skipped).toEqual([]);
+    bare.dispose();
+    const built: string[] = [];
+    let freed = 0;
+    const drawn = await renderTourStation(
+      { ...base, ...station },
+      {
+        ...deps,
+        makeFreeItem: (block) => {
+          built.push(block.id);
+          if (block.kind === "audio") return null;
+          return { object: new Group(), dispose: () => (freed += 1) };
+        },
+      },
+    );
+    expect(built).toEqual(["film", "song"]);
+    expect(drawn.count).toBe(1);
+    let found: Object3D | undefined;
+    drawn.root.traverse((o) => {
+      if (o.userData["objectId"] === "film") found = o;
+    });
+    expect(found?.position.toArray()).toEqual([1, 2, 3]);
+    drawn.dispose();
+    expect(freed).toBe(1);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

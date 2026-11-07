@@ -122,17 +122,17 @@ export function automaticStationFrame(
   };
 }
 
-/** A block standing in the world: a short text drawn as a pin, a picture,
- *  a long text on its reading stand or a placed model, the only kinds a
- *  free block can be (its view is a world view, and only these kinds have
- *  one). */
+/** A block the creator pages draw and edit in the world: a short text
+ *  drawn as a pin, a picture, a long text on its reading stand or a placed
+ *  model. */
 export type WorldBlock = Extract<
   TourBlock,
-  { readonly kind: TourObject["kind"] }
+  { readonly kind: "shortText" | "picture" | "longText" | "model" }
 >;
 
-/** A station's free blocks (`tourFreeBlocks`) as the blocks in the world
- *  they are; the filter only names the kinds a reader already settled. */
+/** A station's free blocks (`tourFreeBlocks`) the creator pages draw and
+ *  edit. A free video, sound or character is not among them: those pages
+ *  have no drawing for one yet, and a write keeps it (`withTourContent`). */
 export function worldBlocks(
   station: Pick<TourStation, "children">,
 ): WorldBlock[] {

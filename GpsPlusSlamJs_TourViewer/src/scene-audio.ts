@@ -18,12 +18,17 @@ export type AudioElementLike = Pick<
   HTMLAudioElement,
   "src" | "onended" | "play" | "pause"
 > &
-  Partial<Pick<HTMLAudioElement, "duration">>;
+  Partial<Pick<HTMLAudioElement, "duration" | "currentTime">>;
 
 export interface UnlockableAudio extends SceneAudio {
   /** Call inside the visitor's tap (synchronously): the element plays a
    *  silent clip, which lets it play later clips without a tap. */
   unlock(): void;
+  /** The clip stops where it is, keeping its file and its end. */
+  pause(): void;
+  /** The paused clip carries on; one the browser refuses ends instead, so
+   *  a step waiting for its end does not wait for good. */
+  resume(): void;
 }
 
 /** 8 kHz, 8-bit mono, one sample of silence: the smallest valid WAV. */
@@ -59,6 +64,8 @@ export function createSceneAudio(deps: {
 }): UnlockableAudio {
   let element: AudioElementLike | null = null;
   let clipUrl: string | null = null;
+  /** The clip's end: the element's `onended`, or a refused resume's. */
+  let clipEnded: (() => void) | null = null;
   /** A refused unlock may be tried again on the next tap. */
   let unlockState: "no" | "trying" | "yes" = "no";
 
@@ -74,9 +81,16 @@ export function createSceneAudio(deps: {
   function stop(): void {
     const audio = el();
     audio.onended = null;
+    clipEnded = null;
     audio.pause();
     release();
   }
+
+  /** NaN before the metadata, Infinity for a stream: no length then. */
+  const lengthMs = (): number | null => {
+    const s = element?.duration;
+    return s !== undefined && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+  };
 
   return {
     unlock() {
@@ -105,18 +119,37 @@ export function createSceneAudio(deps: {
       const audio = el();
       clipUrl = deps.objectUrls.create(blob);
       audio.src = clipUrl;
-      audio.onended = () => {
+      const ended = (): void => {
         audio.onended = null;
+        clipEnded = null;
         release();
         onEnded();
       };
+      clipEnded = ended;
+      audio.onended = ended;
       return audio.play();
     },
     stop,
-    durationMs() {
-      // NaN before the metadata, Infinity for a stream: no length then.
-      const s = element?.duration;
-      return s !== undefined && Number.isFinite(s) && s > 0 ? s * 1000 : null;
+    pause() {
+      if (clipEnded !== null) el().pause();
+    },
+    resume() {
+      if (clipEnded === null) return;
+      const ended = clipEnded;
+      el()
+        .play()
+        .catch(() => {
+          if (clipEnded === ended) ended();
+        });
+    },
+    durationMs: lengthMs,
+    leftMs() {
+      const whole = lengthMs();
+      const at = element?.currentTime;
+      if (whole === null || at === undefined || !Number.isFinite(at)) {
+        return null;
+      }
+      return Math.max(0, whole - at * 1000);
     },
   };
 }

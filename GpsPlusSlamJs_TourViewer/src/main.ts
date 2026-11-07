@@ -92,6 +92,7 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { routeVisitorTap, wireVisitorStations } from "./visitor-stations.js";
+import { createVoiceFocus } from "./voice-focus.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { createWalkToast } from "./walk-toast.js";
 import { relocationRequested } from "./tour-relocation.js";
@@ -898,7 +899,9 @@ const escapeButton = element<HTMLButtonElement>("scan-escape");
 // The visitor's narrated texts (one voice per text, shared by its sheet
 // and its captions strip; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
+const voiceFocus = createVoiceFocus();
 const narration = createNarrationVisitor({
+  focus: voiceFocus,
   tour: () => ctx.session,
   assets: () => ctx.tourDocument.manifest()?.assets,
   loadAsset: (path) => stations.loadContent(path),
@@ -956,6 +959,7 @@ const walkToast = createWalkToast(
 // The visitor's stations and their stories (tour kit plan K4), and the
 // walk's sheet.
 const stations = wireVisitorStations({
+  focus: voiceFocus,
   ctx,
   mode,
   arStore,

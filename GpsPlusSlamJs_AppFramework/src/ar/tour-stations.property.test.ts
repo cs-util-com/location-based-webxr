@@ -18,7 +18,7 @@ import {
   tourManifestArbitrary,
 } from '../test-utils/tour-arbitraries';
 import { parseTourAssets } from './tour-assets';
-import { TOUR_WORLD_VIEWS } from './tour-blocks';
+import { TOUR_FREE_BLOCK_VIEWS } from './tour-blocks';
 import { parseTourStations } from './tour-stations';
 import {
   isTourStoryBlock,
@@ -164,10 +164,12 @@ describe('tour stations (properties)', () => {
               });
               expect(refs.every((r) => assetIds.has(r))).toBe(true);
             }
-            // A free block stands in the world.
+            // A free block stands in a view its kind may stand in free.
             expect(
               tourChildrenFreeBlocks(station.children).every((b) =>
-                TOUR_WORLD_VIEWS.has(b.view)
+                (TOUR_FREE_BLOCK_VIEWS[b.kind] as readonly string[]).includes(
+                  b.view
+                )
               )
             ).toBe(true);
             for (const story of tourStories(station)) {

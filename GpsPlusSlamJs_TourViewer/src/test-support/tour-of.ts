@@ -29,6 +29,7 @@ import {
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import { objectOwnText } from "../object-describe.js";
 import { stationContent } from "./station-content.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -106,19 +107,21 @@ export function asHosted(object: TourObject): TourObject {
   return tourObjects(tourOf([object]))[0]!;
 }
 
-/** An object's text: a pin's or a picture's caption, a model's or a
- *  reading stand's title. */
+/** An object's text: a pin's or a picture's caption, a character's name,
+ *  else its title. */
 export function captionOf(object: TourObject): string | undefined {
-  return object.kind === "model" || object.kind === "longText"
-    ? object.title
-    : object.caption;
+  return objectOwnText(object);
 }
 
-/** `object` with `text` as its caption (a pin's text), or its title for
- *  a model or a reading stand. */
+/** `object` with `text` as its own text (`captionOf`). */
 export function withCaption(object: TourObject, text: string): TourObject {
-  if (object.kind === "model" || object.kind === "longText") {
-    return { ...object, title: text };
+  switch (object.kind) {
+    case "shortText":
+    case "picture":
+      return { ...object, caption: text };
+    case "character":
+      return { ...object, name: text };
+    default:
+      return { ...object, title: text };
   }
-  return { ...object, caption: text };
 }

@@ -27,6 +27,8 @@ import {
   TOUR_MODEL_SPACE_MAX,
   TOUR_MODEL_WORLD_VIEWS,
   TOUR_WORLD_VIEWS,
+  TOUR_CHARACTER_VIEWS,
+  TOUR_FREE_BLOCK_VIEWS,
   tourFloorView,
   tourTextCount,
   type TourBlock,
@@ -428,29 +430,56 @@ describe('views', () => {
     );
   });
 
-  it('a free block must stand in the world: pin, plane or placed', () => {
-    // Why: a free block in a card would have no moment to open, and a
-    // staged figure lives only while a story runs.
+  it('a free block stands in a view its kind has for standing free', () => {
+    // Why: a text, a picture or a model has a look in the world, so a card
+    // would be a block nobody can reach, and a staged figure lives only
+    // while a story runs. A video and a sound stand free in `card` until
+    // their world views join the format.
     for (const kind of ['shortText', 'picture', 'model'] as const) {
       expect(parse([VALID[kind]], { shown: [] })).toHaveLength(1);
     }
-    for (const kind of ['longText', 'video', 'audio', 'character'] as const) {
-      expect(() => parse([VALID[kind]], { shown: [] })).toThrow(
-        /stands free in its station/
-      );
+    for (const kind of ['video', 'audio'] as const) {
+      expect(parse([VALID[kind]], { shown: [] })[0]?.view).toBe('card');
+    }
+    expect(() => parse([VALID.longText], { shown: [] })).toThrow(
+      /stands free in its station/
+    );
+    for (const view of ['stage', 'card']) {
+      expect(() =>
+        parse([{ ...VALID.character, view }], { shown: [] })
+      ).toThrow(/stands free in its station/);
     }
     expect(() =>
       parse([{ ...VALID.shortText, view: 'card' }], { shown: [] })
     ).toThrow(/stands free in its station/);
   });
 
-  it("the floor view: a free block's kind's own world view", () => {
+  it.each(TOUR_CHARACTER_VIEWS)(
+    'a free character stands in his %s view',
+    (view) => {
+      // Why: every kind works in a story and directly in a station, so his
+      // five views are not story-only.
+      expect(
+        parse([{ ...VALID.character, view }], { shown: [] })[0]?.view
+      ).toBe(view);
+    }
+  );
+
+  it('the floor view: every kind has one, a view it may stand free in', () => {
+    // Why: a newer file's free block in a view this reader does not know
+    // keeps standing in its station rather than being dropped.
     expect(tourFloorView('shortText')).toBe('pin');
     expect(tourFloorView('picture')).toBe('plane');
     expect(tourFloorView('model')).toBe('placed');
     expect(tourFloorView('longText')).toBe('reading');
-    for (const kind of ['video', 'audio', 'character'] as const) {
-      expect(tourFloorView(kind)).toBeNull();
+    expect(tourFloorView('video')).toBe('card');
+    expect(tourFloorView('audio')).toBe('card');
+    expect(tourFloorView('character')).toBe('speak');
+    for (const kind of Object.keys(
+      TOUR_FREE_BLOCK_VIEWS
+    ) as TourBlock['kind'][]) {
+      const views: readonly string[] = TOUR_FREE_BLOCK_VIEWS[kind];
+      expect(views).toContain(tourFloorView(kind));
     }
   });
 });
