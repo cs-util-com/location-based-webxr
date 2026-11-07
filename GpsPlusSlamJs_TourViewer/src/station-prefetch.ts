@@ -22,7 +22,7 @@
  *   asked again for the stations that asked (R4: offline, the guide's
  *   per-frame ticks retried it every frame); another station asking tries
  *   once more, and the story's own read always tries and says what failed;
- * - a video's file is never prefetched (R3): a video may be as large as
+ * - a video's file is never prefetched: a video may be as large as
  *   the tour's entry cap; its poster, one picture, is;
  * - the cache lives with the open tour (R15): kept across AR sessions,
  *   dropped when the tour closes or another opens.
@@ -100,7 +100,7 @@ export async function decodeFigure<T>(
  *  (`scene-view.ts`): a figure in any view but the card (the stage or
  *  one of the character's story views), a model in its
  *  stage or placed view (a reached placed model stands in the world, B2b), a
- *  character's voice in either. Never a video's file (K4 review R3): a
+ *  character's voice in either. Never a video's file: a
  *  video may be as large as the tour's entry cap allows; its poster, the
  *  picture the item shows before the video loads, is read. Then the
  *  files of the station's free models (each in a world view) (station blocks plan B2b,

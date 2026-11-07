@@ -222,8 +222,8 @@ describe("stationAssetIds", () => {
     expect(of("speak", "nobody")).toEqual(["knight", "voice"]);
   });
 
-  it("never lists a video's file, only its poster: a video may be 256 MiB (R3)", () => {
-    // Why this test matters (K4 review R3): the prefetch read video files
+  it("never lists a video's file, only its poster: a video may be 256 MiB", () => {
+    // Why this test matters: the prefetch read video files
     // nothing played, up to the K0 entry cap each, over a phone's data.
     // Its poster is one picture, minted when the video was brought in, and
     // what the item shows before the video loads: read ahead like one.

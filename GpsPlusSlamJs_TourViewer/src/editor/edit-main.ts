@@ -2301,7 +2301,7 @@ async function openFile(
   sayUnreadDraft();
   keepStorage();
   // Details, station descriptions, card images and block texts the reader
-  // dropped are said, never lost silently by the next save (M4a review #6);
+  // dropped are said, never lost silently by the next save;
   // kept until closed, as an instruction.
   for (const line of [
     droppedDetailsLine(outcome.dropped),
