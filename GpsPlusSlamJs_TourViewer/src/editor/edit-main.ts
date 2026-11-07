@@ -82,11 +82,11 @@ import {
   STATION_PREFIX,
   STORY_PREFIX,
   photoSource,
+  selectedStationOf,
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
 import { applySceneEdit } from "./scene-edits.js";
-import { selectedStationOf } from "../editor3d/editor3d-visibility.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import type { GestureEdit } from "../editor3d/gesture.js";
 import { confirmPausingFrames } from "./browser-question.js";

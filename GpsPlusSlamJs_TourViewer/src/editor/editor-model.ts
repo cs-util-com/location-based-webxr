@@ -13,7 +13,9 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type {
   TourManifest,
   TourObject,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourStationChildIds } from "gps-plus-slam-app-framework/ar/tour-story";
 import { horizontalM } from "../move-with-code.js";
 import {
   BLOCK_KIND_LABEL,
@@ -225,4 +227,31 @@ export function filterItems(
 export function photoSource(item: EditorItem): string | null {
   if (item.kind !== "photo" || item.image === undefined) return null;
   return item.image;
+}
+
+/**
+ * The station of the page's selection: the selected station
+ * (`station:<id>`), or the station holding the selected item, story
+ * (`story:<id>`) or story's child; null for a code, an id the tour does not
+ * have, or no selection. The 3D view's near-K rule draws it, and the tree's
+ * click, add and delete follow it.
+ */
+export function selectedStationOf(
+  selected: string | null,
+  manifest: {
+    readonly stations: readonly Pick<TourStation, "id" | "children">[];
+  } | null,
+): string | null {
+  if (selected === null || manifest === null) return null;
+  if (selected.startsWith(STATION_PREFIX)) {
+    const id = selected.slice(STATION_PREFIX.length);
+    return manifest.stations.some((s) => s.id === id) ? id : null;
+  }
+  const id = selected.startsWith(STORY_PREFIX)
+    ? selected.slice(STORY_PREFIX.length)
+    : selected;
+  return (
+    manifest.stations.find((s) => tourStationChildIds(s).includes(id))?.id ??
+    null
+  );
 }

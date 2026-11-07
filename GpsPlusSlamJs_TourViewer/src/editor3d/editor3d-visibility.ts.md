@@ -21,16 +21,13 @@ station near-K must keep.
   smaller id, plus `selected` when it is one of `stations`. A station with
   a coordinate that is not finite ranks last. RangeError for a `k` that is
   not a whole number >= 0 or a centre that is not finite.
-- `selectedStationOf(selected, manifest)` -> the station id for
-  `station:<id>` when the tour has it, or the station holding the
-  selected item; null for a code, an unknown id, no selection or no tour.
 - Types `MorphBand`, `StationSpot`.
 
 ## Invariants & assumptions
 
-- `selectedStationOf` knows every child of a station: a free block, a story
-  (`story:<id>`) and a story's child. The tree's click, delete and the page's
-  "still in the tour" use it.
+- The selected station the near-K rule keeps comes from `selectedStationOf`
+  in `../editor/editor-model.ts`, which the edit page loads without this
+  view's code.
 - The morph is non-decreasing in the tilt and clamped to 0..1 for any
   valid band.
 - Near-K returns at most `k + 1` ids, always the selected one when it

@@ -65,6 +65,12 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 - `EditorItem`, `EditorItemKind`, `EditorModel`.
 - `STATION_PREFIX` - `"station:"`, the prefix of a station's item id (the
   page and the 3D view's editing tell a station's selection by it).
+- `selectedStationOf(selected, manifest)` -> the station id for
+  `station:<id>` when the tour has it, or the station holding the selected
+  item, story (`story:<id>`) or story's child; null for a code, an unknown
+  id, no selection or no tour. It lives here, not in the 3D view, so the
+  edit page and the shell use it without loading the 3D view's code
+  (`app-bundle.test.ts`).
 
 ## Invariants & assumptions
 

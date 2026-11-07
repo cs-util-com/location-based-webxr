@@ -11,8 +11,6 @@
  * @see editor3d-visibility.ts.md
  */
 
-import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourStationChildIds } from "gps-plus-slam-app-framework/ar/tour-story";
 /**
  * The GLSL smooth step: 0 at `edge0` and below, 1 at `edge1` and above,
  * 3t^2 - 2t^3 between. The package's one copy (a one-liner may exist once
@@ -107,36 +105,4 @@ export function nearStations(
     shown.add(selected);
   }
   return shown;
-}
-
-/** A station's id in the desktop editor's selection (`editor-model.ts`). */
-const STATION_SELECTION = "station:";
-
-/** A story's id in that selection. */
-const STORY_SELECTION = "story:";
-
-/**
- * The station the near-K rule must draw for the page's selection: the
- * selected station (`station:<id>`), or the station holding the selected
- * item, story (`story:<id>`) or story's child; null for a code, an id the
- * tour does not have, or no selection.
- */
-export function selectedStationOf(
-  selected: string | null,
-  manifest: {
-    readonly stations: readonly Pick<TourStation, "id" | "children">[];
-  } | null,
-): string | null {
-  if (selected === null || manifest === null) return null;
-  if (selected.startsWith(STATION_SELECTION)) {
-    const id = selected.slice(STATION_SELECTION.length);
-    return manifest.stations.some((s) => s.id === id) ? id : null;
-  }
-  const id = selected.startsWith(STORY_SELECTION)
-    ? selected.slice(STORY_SELECTION.length)
-    : selected;
-  return (
-    manifest.stations.find((s) => tourStationChildIds(s).includes(id))?.id ??
-    null
-  );
 }

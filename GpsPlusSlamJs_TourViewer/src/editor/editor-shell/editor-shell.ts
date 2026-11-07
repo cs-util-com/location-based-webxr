@@ -58,8 +58,11 @@ import {
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
-import { STATION_PREFIX, STORY_PREFIX } from "../editor-model.js";
-import { selectedStationOf } from "../../editor3d/editor3d-visibility.js";
+import {
+  STATION_PREFIX,
+  STORY_PREFIX,
+  selectedStationOf,
+} from "../editor-model.js";
 import type { ModelEdit } from "../model-edits.js";
 import {
   inComposite,
