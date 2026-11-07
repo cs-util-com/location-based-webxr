@@ -5,8 +5,8 @@
  * `barrier-gates.test.ts` pins the geometry — the gap is opened, it is centred
  * on the node, it merges with its neighbours. None of that proves the thing the
  * feature exists for. Blocking is a property of the STEP between two res-13 cell
- * centres (`nav/obstacles.ts`), so a gap narrower than the ~6 m spacing of those
- * centres can be drawn, look right, and still have no step through it — a
+ * centres (`nav/obstacles.ts`), so a gap narrower than the spacing of those
+ * centres (up to 7.83 m) can be drawn, look right, and still have no step through it — a
  * visible opening the agent walks around, which is the worst of both outcomes
  * and would read as a pathfinding bug rather than as a width constant.
  *
@@ -145,29 +145,46 @@ function asLatLng(cell: string): LatLng {
   return { lat, lng };
 }
 
+/**
+ * A latitude or longitude drawn UNIFORMLY over `[min, max]`.
+ *
+ * Not `fc.double`, whose values are spread evenly over the floating-point
+ * representations rather than over the range: most of them sit within a
+ * hair of zero, so forty runs of `(lat, lng)` sampled essentially ONE spot on
+ * the H3 lattice, and the property never saw the alignments it exists to
+ * check. A micro-degree grid is far finer than a res-13 cell (~0.1 m).
+ */
+function coordinate(min: number, max: number): fc.Arbitrary<number> {
+  return fc
+    .integer({ min: Math.round(min * 1e6), max: Math.round(max * 1e6) })
+    .map((micro) => micro / 1e6);
+}
+
+/** Whether some step across the wall at the gate is left open by the index. */
+function openStepsThroughGate(centre: LatLng, bearing: number): number {
+  const wall = wallThrough(centre, bearing);
+  const index = buildObstacleIndex(features(wall, centre));
+  // Only steps that actually cross the wall are candidates; a step
+  // running parallel to it proves nothing.
+  const crossing = neighbourPairs(centre, 2).filter(([from, to]) =>
+    straddles(asLatLng(from), asLatLng(to), wall),
+  );
+  expect(crossing.length).toBeGreaterThan(0);
+  return crossing.filter(([from, to]) => !crossesObstacle(index, from, to))
+    .length;
+}
+
 describe("a mapped gate is walkable", () => {
   it("always leaves at least one step through it, whatever the bearing", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0, max: 180, noNaN: true }),
-        fc.double({ min: -60, max: 60, noNaN: true }),
-        fc.double({ min: -179, max: 179, noNaN: true }),
+        coordinate(-60, 60),
+        coordinate(-179, 179),
         (bearing, lat, lng) => {
-          const centre = { lat, lng };
-          const wall = wallThrough(centre, bearing);
-          const index = buildObstacleIndex(features(wall, centre));
-
-          // Only steps that actually cross the wall are candidates; a step
-          // running parallel to it proves nothing.
-          const crossing = neighbourPairs(centre, 2).filter(([from, to]) =>
-            straddles(asLatLng(from), asLatLng(to), wall),
+          expect(openStepsThroughGate({ lat, lng }, bearing)).toBeGreaterThan(
+            0,
           );
-          expect(crossing.length).toBeGreaterThan(0);
-
-          const open = crossing.filter(
-            ([from, to]) => !crossesObstacle(index, from, to),
-          );
-          expect(open.length).toBeGreaterThan(0);
         },
       ),
       // Enough alignments to sample the lattice properly; the body builds an
@@ -176,6 +193,33 @@ describe("a mapped gate is walkable", () => {
     );
   });
 
+  it.each([
+    // The counterexample CI found: a north-south wall on the equator, where
+    // the lattice column runs almost exactly along the wall half a metre
+    // off it. Every crossing step then crosses within ~0.3 m of a cell of
+    // that column, so the crossings come ~7.3 m apart and a 6 m gap fell
+    // between two of them.
+    { lat: 0, lng: -21.50740182082131, bearing: 0 },
+    // A near-aligned case found by sweeping bearings within 2 degrees of a
+    // lattice axis: a 7.5 m gap still left no step here, which is why the
+    // constant had to clear the largest res-13 centre spacing (7.83 m) and
+    // not merely the typical one.
+    {
+      lat: 45.00559122496986,
+      lng: 75.68412896246906,
+      bearing: 125.2889612306924,
+    },
+  ])(
+    "leaves a step through the gate at $lat, $lng, bearing $bearing",
+    ({ lat, lng, bearing }) => {
+      // Why this test matters: these are fixed alignments at which the gate
+      // used to open a gap no step of the search could use, so the agent
+      // walked around a visible opening. The property above samples
+      // alignments at random; these pin the two that are known to bite.
+      expect(openStepsThroughGate({ lat, lng }, bearing)).toBeGreaterThan(0);
+    },
+  );
+
   it("still blocks every crossing step at the FAR END of the same wall", () => {
     // THE COUNTERWEIGHT, and the reason the test above cannot be satisfied by
     // simply widening the gap until nothing blocks. A gate opens a gate-sized
@@ -183,8 +227,8 @@ describe("a mapped gate is walkable", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0, max: 180, noNaN: true }),
-        fc.double({ min: -60, max: 60, noNaN: true }),
-        fc.double({ min: -179, max: 179, noNaN: true }),
+        coordinate(-60, 60),
+        coordinate(-179, 179),
         (bearing, lat, lng) => {
           const centre = { lat, lng };
           const wall = wallThrough(centre, bearing);
@@ -211,8 +255,8 @@ describe("a mapped gate is walkable", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0, max: 180, noNaN: true }),
-        fc.double({ min: -60, max: 60, noNaN: true }),
-        fc.double({ min: -179, max: 179, noNaN: true }),
+        coordinate(-60, 60),
+        coordinate(-179, 179),
         (bearing, lat, lng) => {
           const centre = { lat, lng };
           const wall = wallThrough(centre, bearing);
@@ -231,10 +275,11 @@ describe("a mapped gate is walkable", () => {
     );
   });
 
-  it("keeps the gap comparable to the step length it has to admit", () => {
-    // The constant's lower bound, written down where it can fail. A res-13 cell
-    // is ~8 m across and its neighbours' centres are ~6 m away, so a gap far
-    // below that is one the search cannot use however well it is drawn.
-    expect(GATE_GAP_M).toBeGreaterThanOrEqual(4);
+  it("keeps the gap wider than the largest step it has to admit", () => {
+    // The constant's lower bound, written down where it can fail. Res-13
+    // neighbour centres are up to 7.83 m apart (measured over 20 000 random
+    // cells and a global grid), and a wall along a lattice axis is crossed
+    // only one such spacing apart, so a narrower gap can miss every step.
+    expect(GATE_GAP_M).toBeGreaterThan(7.83);
   });
 });
