@@ -29,6 +29,7 @@ const station: InspectorModel = {
   position: { eastM: 12.345, northM: -4.1, altM: 340.256, headingDeg: 90.4 },
   locked: true,
   story: [],
+  contents: [],
 };
 
 const item: InspectorModel = {

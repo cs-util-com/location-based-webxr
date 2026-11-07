@@ -101,8 +101,8 @@
     and neither contains the other, so the choice stays with the caller. Not
     refused, and not checked either: a merge followed by further edits, where
     the run sees only those edits. A `--dry-run` prints the same refusal and
-    exits 0, so it says what the gate would do; that wiring has no test (it
-    takes a merge commit as the head of this repository). The head is read only from a `git` that
+    exits 0, so it says what the gate would do; pinned in
+    `test-changed.test.mjs`. The head is read only from a `git` that
     succeeded; a failed read counts as no merge.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
@@ -115,7 +115,10 @@
   `check:deadcode` and the Tour Viewer gate with its dependents; edit only
   a Globe sidecar → repo-config and the Globe's `format`.
 - Tests: decision logic in `select.test.mjs` / `select.property.test.mjs`;
-  the merge refusal in `select.test.mjs`; the watch line in
-  `test-changed.test.mjs`;
-  the thin shell is verified by `--dry-run` runs against the live tree (see
-  the speedup plan's Phase B acceptance).
+  the merge refusal's decision in `select.test.mjs`. `test-changed.test.mjs`
+  pins the watch line, and runs a copy of the script in a throwaway
+  repository for the shell around the decision: the refusal's exit codes, a
+  named base, `--all`, an ordinary commit, a merge on main, no slot on a dry
+  run, and that a dry run runs nothing. Not covered: a failing `git` read, the
+  library-link refusal, and the real run's command order (`select.test.mjs`
+  holds the order).

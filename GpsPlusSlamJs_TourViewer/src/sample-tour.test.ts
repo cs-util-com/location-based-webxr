@@ -109,7 +109,11 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
       s.children.flatMap((c) => (c.kind === "story" ? [] : [c])),
     );
     expect(free.map((f) => f.map((c) => [c.kind, c.view]))).toEqual([
-      [["shortText", "pin"]],
+      [
+        ["shortText", "pin"],
+        ["character", "speak"],
+        ["character", "bubble"],
+      ],
       [["longText", "lectern"]],
       [["shortText", "pin"]],
     ]);
@@ -209,16 +213,17 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     // output for a real tour, beside the generated ones in the framework.
     // Re-recorded when the tour moved to format 5 (its script writes it
     // through this writer, so the file is the writer's own bytes), and
-    // when it gained the toll story and its free items (content only).
+    // when it gained the toll story and its free items (content only), and
+    // two characters standing free (content only).
     const files = await entries();
     const json = JSON.parse(
       new TextDecoder().decode(files.get("tour.json")),
     ) as unknown;
     const written = serializeTourManifest(parseTourManifest(json));
     expect(written).toBe(new TextDecoder().decode(files.get("tour.json")));
-    expect(written.length).toBe(8434);
+    expect(written.length).toBe(9407);
     expect(createHash("sha256").update(written).digest("hex")).toBe(
-      "989a236749a8a3c1eada210bd80fe331483098b9919f532e2189a9fee098803e",
+      "a744f1c7d6d527bf70b9e516d74a858b2642bf8c33dd22f82eabf9a8b1b71be3",
     );
   });
 });

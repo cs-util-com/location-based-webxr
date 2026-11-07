@@ -277,6 +277,51 @@ describe("stationAssetIds and the world (B2b)", () => {
     expect(stationAssetIds(s)).toEqual(["knight", "arch"]);
   });
 
+  // Why: a free character stands from arrival and a tap must not wait for
+  // his voice, and a free sound starts on a tap: both are read with the
+  // station. A free video stays out, as a story's does: its file may be as
+  // large as the tour's entry cap allows.
+  it("reads a free sound's and a free character's files, never a free video's", () => {
+    const POSE = {
+      position: [0, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    };
+    const base = station("gate", []);
+    const s: TourStation = {
+      ...base,
+      ...withFreeBlocks(base, [
+        {
+          id: "v",
+          kind: "video",
+          view: "card",
+          video: "film",
+          poster: "still",
+          transcript: "t",
+          pose: POSE,
+        },
+        {
+          id: "a",
+          kind: "audio",
+          view: "card",
+          audio: "song",
+          transcript: "t",
+          pose: POSE,
+        },
+        {
+          id: "c",
+          kind: "character",
+          view: "speak",
+          name: "Ann",
+          image: "ann",
+          caption: "Hello",
+          voice: "ann-voice",
+          pose: POSE,
+        },
+      ]),
+    };
+    expect(stationAssetIds(s).sort()).toEqual(["ann", "ann-voice", "song"]);
+  });
+
   // Why (B2b step 2): a placed model a story step reaches stands in the
   // world from then on, so its file is read ahead like a staged one's.
   it("reads a placed story model's file, as a staged one's", () => {

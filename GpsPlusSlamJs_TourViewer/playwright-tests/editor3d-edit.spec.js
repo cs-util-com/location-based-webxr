@@ -817,9 +817,13 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
       );
     }
     const stats = await view3d(page);
-    const box = await page.locator(".view3d-canvas").boundingBox();
+    // In whole pixels, as the view reads it: a phone's sheet leaves the
+    // canvas a fractional box.
+    const canvasPx = await page
+      .locator(".view3d-canvas")
+      .evaluate((el) => el.clientHeight);
     // Pixels per radian of the canvas as drawn, through the 50 degree lens.
-    const focal = (box?.height ?? 0) / 2 / Math.tan((25 * Math.PI) / 180);
+    const focal = canvasPx / 2 / Math.tan((25 * Math.PI) / 180);
     const toCode = [0, 1, 2].map((i) => code[i] - stats.camera[i]);
     const dist = Math.hypot(...toCode);
     const look = [0, 1, 2].map((i) => stats.target[i] - stats.camera[i]);

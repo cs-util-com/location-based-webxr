@@ -44,6 +44,12 @@ rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
   text", "3D model"). The phone's undo and placement words use it for
   every object that is no pin ("the delete of the long text"), where they
   once said "photo" for every one.
+- `hasLook(object)` - whether a creator page has a look for it: a free
+  video, sound or character has none yet, so the object list and the 2D
+  rail name none (the tour keeps them).
+- `objectOwnText(object): string | undefined` - the text a free block
+  carries for its name (a caption, a character's name, else a title); unlike
+  `objectTitle` it can be empty.
 - `objectTitle(object): string` - for any object or block (in the world
   or in a station's story): its title (a character's name), else its
   caption (a pin's own text), else its kind's name

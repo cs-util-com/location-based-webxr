@@ -39,7 +39,9 @@ far the visitor is from each offered station. Plan:
   `placed` view - a reached placed model stands in the world from its
   step on, B2b; never a video nor its poster, K4 review R3; the list is `itemAssets` of `item-card.ts`), then the files of
   the station's free models, each in a world view (B2b, G2 follow-up 9: drawn with the
-  station, so read ahead with it). Free pictures are read on their own.
+  station, so read ahead with it), then a free sound's file and a free character's
+  image, model and voice (he stands from arrival). Never a free video's file or
+  poster. Free pictures are read on their own.
 - `decodeDivisor(size)` - the divisor that brings a figure of this size
   within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
   the "no size: 1" case).

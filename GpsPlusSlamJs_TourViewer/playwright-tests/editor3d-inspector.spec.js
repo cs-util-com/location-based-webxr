@@ -248,6 +248,18 @@ test("a station's name, description and radius typed in the inspector are one st
   await expect(page.locator("#shell-inspector .warn")).toHaveText(
     "1 item stands outside the circle: visitors see it only from inside the circle.",
   );
+  // Tab selected the next field's text, as it does in a field no draw
+  // replaced, so typing replaces the value.
+  await expect(field(page, "east")).toBeFocused();
+  expect(
+    await field(page, "east").evaluate((/** @type {any} */ input) => [
+      input.selectionEnd - input.selectionStart,
+      input.value.length,
+    ]),
+  ).toEqual([
+    (await field(page, "east").inputValue()).length,
+    (await field(page, "east").inputValue()).length,
+  ]);
   expect(
     stationBlocks(await stationNow(page, "a")).map(
       (/** @type {any} */ i) => i.id,
@@ -707,7 +719,7 @@ async function expectInspectorLayout(page, size) {
   let last = null;
   for (const b of l.acts) {
     expect(b.height, at).toBe(28);
-    expect(b.x - dock.x, at).toBe(7);
+    expect(b.x - dock.x, at).toBe(size.width <= 700 ? 6 : 7);
     if (last !== null)
       expect(b.y - (last.y + last.height), at).toBeCloseTo(9, 0);
     last = b;
@@ -727,11 +739,17 @@ async function expectInspectorLayout(page, size) {
   ])) {
     const { row: r, label, shown } = l.fields[name];
     expect(label.width, `${name} ${at}`).toBe(74);
-    expect(shown.x - (label.x + label.width), `${name} ${at}`).toBe(6);
+    // The radius: its slider after the label, its number after the slider.
+    const first = name === "radius" ? l.slider : shown;
+    expect(first.x - (label.x + label.width), `${name} ${at}`).toBe(6);
+    if (name === "radius") {
+      expect(shown.x, at).toBeGreaterThanOrEqual(l.slider.x + l.slider.width);
+    }
     expect(shown.height, `${name} ${at}`).toBe(
       name === "description" ? 52 : 24,
     );
-    expect(r.x - dock.x, `${name} ${at}`).toBe(13);
+    // A phone's sheet has no border at its side.
+    expect(r.x - dock.x, `${name} ${at}`).toBe(size.width <= 700 ? 12 : 13);
     expect(shown.x + shown.width, `${name} ${at}`).toBeLessThanOrEqual(
       dock.x + dock.width - 12 + 0.5,
     );
@@ -817,6 +835,9 @@ function inspectorLayoutOf(page) {
         description: fieldOf("description"),
         radius: fieldOf("radius"),
       },
+      slider: rect(
+        one(document, '#shell-inspector [data-act="radius-slider"]'),
+      ),
       thumb: rect(thumb),
       tag: rect(/** @type {Element} */ (tags[0])),
       positionRows: [

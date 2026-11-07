@@ -12,7 +12,9 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
   - `revision()` - bumped whenever a read-along settles, so a view drawn by a verdict can tell when to look again (`viewer-placement.ts` redraws a text whose captions turned out stale).
   - `sheetNarration(block)` - the sheet's voice (player, timing promise, credit), its read-along read now; undefined for a silent text.
   - `captions(block)` - the strip's content for a text whose read-along fits, or null (while it is read - the read starts here - or when it does not fit).
-  - `pauseAll()`, `reset()`.
+  - `pauseAll(stationId?)` - pauses every voice; with an id, those wanted now (playing, or held by the voice channel) are kept for `carryOn`.
+  - `carryOn(stationId)` - the visitor is back: what that station's leaving paused carries on, as far as the voice channel lets it. The one heard last takes the channel, the next waits behind it and carries on when that one ends or is tapped, any further one stays at its place and a tap takes it up.
+  - `reset()`.
 - `audioAssetPath(assets, id)` - the path of an `audio` asset by id, or null.
 
 ## Invariants and defensive measures
@@ -20,6 +22,10 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
 - A new tour object drops every player, cached timing and plain text of the old one; a read settling for the old tour does not fill the new cache.
 - An audio id the tour has no audio asset for fails the voice through `onError` when played, never at open.
 - Sentences are cut with `plainSentences` and the default language, as the sheet cuts them, so the strip and the sheet follow the voice by the same sentences.
+
+## The voice channel
+
+Every text's voice is a `focusedPlayer` in the page's one channel (`voice-focus.ts`, the `focus` dep, a channel of its own when none is given): the sheet and the strip get the wrapped player, so playing one holds whatever else speaks. `pauseAll` pauses the held voices before the one heard, because pausing the one heard would wake them.
 
 ## Tests
 

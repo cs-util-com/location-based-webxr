@@ -67,6 +67,18 @@ export interface TreeFolder {
   readonly children: readonly TreeChild[];
 }
 
+/** An item of a station, by its kind and name. */
+export type StationContent = Omit<TreeChild, "selected">;
+
+/** A station's items, in its order. */
+export function stationContents(station: TourStation): StationContent[] {
+  return worldBlocks(station).map((item) => ({
+    id: item.id,
+    kind: objectLook(item.kind),
+    title: objectTitle(item),
+  }));
+}
+
 /** A station's row and what it lists. */
 export interface TreeCard {
   readonly id: string;
@@ -187,10 +199,8 @@ export function buildTree(input: TreeInput): TreeModel {
     const selection = `station:${station.id}`;
     const description = station.description?.trim() ?? "";
     const title = stationTitle(station, index + 1);
-    const items = worldBlocks(station).map((item): TreeChild => ({
-      id: item.id,
-      kind: objectLook(item.kind),
-      title: objectTitle(item),
+    const items = stationContents(station).map((item): TreeChild => ({
+      ...item,
       selected: item.id === view.selected,
     }));
     const stationFound = matchesQuery(query, [title, description]);

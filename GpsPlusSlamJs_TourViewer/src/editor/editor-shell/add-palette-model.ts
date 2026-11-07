@@ -11,6 +11,9 @@
  * first is what Enter adds. Both sides are folded to one Unicode form
  * (NFC) and lower case.
  *
+ * A chip (`PALETTE_KINDS`) narrows what the words found to one kind, and
+ * `highlightParts` cuts a row's text around the words it was found by.
+ *
  * @see add-palette-model.ts.md
  */
 import type { ShellIcon } from "gps-plus-slam-editor-kit/chrome";
@@ -39,6 +42,23 @@ export interface PaletteRow {
   readonly place: string;
   readonly icon: ShellIcon;
 }
+
+/** A kind a chip narrows the rows to. */
+export type PaletteKind = PaletteAdd["kind"];
+
+/** The chips, in their order: a kind that adds, then a new station. */
+export const PALETTE_KINDS: readonly {
+  readonly kind: PaletteKind;
+  readonly label: string;
+  readonly icon: ShellIcon;
+}[] = [
+  ...ADD_CHOICES.flatMap((c) =>
+    c.addable && c.kind !== "picture"
+      ? [{ kind: c.kind, label: c.label, icon: c.icon }]
+      : [],
+  ),
+  { kind: "station", label: "Station", icon: "station" },
+];
 
 /** The most rows listed: a tour of many stations is narrowed by typing. */
 export const PALETTE_MAX_ROWS = 40;
@@ -109,12 +129,13 @@ function candidates(
  * The rows for `query` over `stations` (in the tour's order), the
  * default place `selectedStationId` (null, or one not among them: the
  * first station). At most `PALETTE_MAX_ROWS`, best first; equal ones
- * keep the tour's order.
+ * keep the tour's order. `kind` keeps that kind's rows alone.
  */
 export function paletteRows(
   query: string,
   stations: readonly PaletteStation[],
   selectedStationId: string | null,
+  kind: PaletteKind | null = null,
 ): PaletteRow[] {
   const defaultId = stations.some((s) => s.id === selectedStationId)
     ? selectedStationId
@@ -123,6 +144,7 @@ export function paletteRows(
   const kindHit = (c: Candidate, w: string) =>
     c.kindWords.some((k) => k.startsWith(w));
   return candidates(stations, defaultId)
+    .filter((c) => kind === null || c.row.add.kind === kind)
     .filter((c) =>
       words.length === 0
         ? c.atDefault
@@ -143,4 +165,55 @@ export function paletteRows(
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, PALETTE_MAX_ROWS)
     .map((c) => c.row);
+}
+
+/** A piece of a row's text, `hit` where a word of the query stands. */
+export interface HighlightPart {
+  readonly text: string;
+  readonly hit: boolean;
+}
+
+/** Shorter words are not marked: one letter stands all over a row. */
+const LEAST_MARKED_LENGTH = 2;
+
+/**
+ * `text` (in NFC) cut around every place a word of `query` stands, blind
+ * to case; words that overlap make one piece. Words of one letter mark
+ * nothing. The pieces joined give the text back.
+ */
+export function highlightParts(text: string, query: string): HighlightPart[] {
+  const shown = text.normalize("NFC");
+  const spans = wordsOf(query)
+    .filter((w) => [...w].length >= LEAST_MARKED_LENGTH)
+    .flatMap((word) => {
+      const pattern = word.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+      return [...shown.matchAll(new RegExp(pattern, "giu"))].map((m) => ({
+        from: m.index,
+        to: m.index + m[0].length,
+      }));
+    })
+    .sort((a, b) => a.from - b.from);
+  const parts: HighlightPart[] = [];
+  let at = 0;
+  const plain = (to: number) => {
+    if (to > at) parts.push({ text: shown.slice(at, to), hit: false });
+  };
+  let merged: { from: number; to: number } | null = null;
+  const flush = () => {
+    if (merged === null) return;
+    plain(merged.from);
+    parts.push({ text: shown.slice(merged.from, merged.to), hit: true });
+    at = merged.to;
+  };
+  for (const span of spans) {
+    if (merged !== null && span.from <= merged.to) {
+      merged.to = Math.max(merged.to, span.to);
+    } else {
+      flush();
+      merged = { ...span };
+    }
+  }
+  flush();
+  plain(shown.length);
+  return parts.length === 0 ? [{ text: shown, hit: false }] : parts;
 }

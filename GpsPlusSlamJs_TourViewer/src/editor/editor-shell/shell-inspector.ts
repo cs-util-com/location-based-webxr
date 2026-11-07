@@ -2,8 +2,9 @@
  * The 3D view's inspector dock, drawn from its model
  * (`inspector-model.ts`): the selection's name, what it is, its fields,
  * and the position folded away under a disclosure (a station's "Place",
- * its radius first; an item's "Position"). Text only, never
- * markup.
+ * its radius first, a slider beside its number (`radius-slider.ts`); an
+ * item's "Position"), a station's items under its Contents
+ * (`inspector-contents.ts`). Text only, never markup.
  *
  * The fields a creator types carry `data-field` (a station's `title` and
  * `description`, labelled Name and Description at the top of the body, the
@@ -17,7 +18,8 @@
  * together.
  *
  * The buttons carry `data-act`, and the shell answers them: the head's
- * fold and close (`fold`, `close`), the disclosure (`position`), a
+ * fold and close (`fold`, `close`), the disclosures (`position`,
+ * `contents`), Contents' rows and its add (`goto:<id>`, `add-content`), a
  * station's lock beside its Place (`lock`, pressed while locked), its
  * Earlier and Later beside its place in the tour (`earlier`, `later`, off
  * at the ends), the card picture's choices (`image:<id>`, the shown one
@@ -50,6 +52,8 @@ import {
   type InspectorModelParts,
   type InspectorPosition,
 } from "./inspector-model.js";
+import { contentsBody, contentsSummary } from "./inspector-contents.js";
+import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";
 import { blockFieldPlaceholder, type BlockField } from "../block-fields.js";
 
@@ -276,14 +280,20 @@ function disclosure(
   open: boolean,
   summary: string,
   fields: () => readonly HTMLElement[],
-  heading: { readonly label: string; readonly title: string } = {
+  heading: {
+    readonly label: string;
+    readonly title: string;
+    /** Its `data-act`, and its body's class; the position's by default. */
+    readonly act?: string;
+    readonly body?: string;
+  } = {
     label: "Position",
     title: "Exact position and heading",
   },
 ): HTMLElement[] {
   const b = el("button", "disc");
   b.type = "button";
-  b.dataset["act"] = "position";
+  b.dataset["act"] = heading.act ?? "position";
   b.classList.toggle("open", open);
   b.setAttribute("aria-expanded", String(open));
   b.title = heading.title;
@@ -293,7 +303,7 @@ function disclosure(
     el("span", "sum", summary),
   );
   if (!open) return [b];
-  const body = el("div", "pos");
+  const body = el("div", heading.body ?? "pos");
   body.append(...fields());
   return [b, body];
 }
@@ -507,10 +517,11 @@ function imagePicker(
   return row;
 }
 
-/** The radius's field and its note. */
+/** The radius's slider and number, and its note. */
 function radiusParts(model: StationModel): HTMLElement[] {
+  const { box, input } = numberBox("radius", fixed(model.foundRadiusM, 1), "m");
   return [
-    numberField("Radius", "radius", fixed(model.foundRadiusM, 1), "m"),
+    labelled("Radius", input, radiusRange(box, model.foundRadiusM)),
     el(
       "div",
       "note",
@@ -715,6 +726,28 @@ function characterParts(
   return box;
 }
 
+/** A station's items under their own fold. */
+function stationContentsFold(
+  model: StationModel,
+  state: InspectorState,
+): HTMLElement[] {
+  return disclosure(
+    state.contentsOpen ?? true,
+    contentsSummary(model.contents.length),
+    () =>
+      contentsBody(
+        model.contents,
+        actions([action("add-content", "plus", "Add content...")]),
+      ),
+    {
+      label: "Contents",
+      title: "What this station holds",
+      act: "contents",
+      body: "contents",
+    },
+  );
+}
+
 function stationParts(
   model: StationModel,
   state: InspectorState,
@@ -767,6 +800,7 @@ function stationParts(
     section.append(...radiusParts(model), ...outsideWarn(model));
     parts.push(
       el("div", "note pad", "The file gives this station no position."),
+      ...stationContentsFold(model, state),
     );
     return parts;
   }
@@ -781,7 +815,12 @@ function stationParts(
   const row = el("div", "posrow");
   if (disc !== undefined) row.append(disc);
   row.append(lockButton(model.locked));
-  parts.push(row, ...outsideWarn(model), ...open);
+  parts.push(
+    row,
+    ...outsideWarn(model),
+    ...open,
+    ...stationContentsFold(model, state),
+  );
   return parts;
 }
 
@@ -1149,11 +1188,19 @@ function controlNamed(root: HTMLElement, name: string): HTMLElement | null {
 /** The focus put on the control drawn under `name` (`controlName`) in
  *  the dock at `root`: where the focus was going when a draw took that
  *  control out of the page (Chromium then drops the focus to the page).
- *  None, or a disabled one, leaves the focus where it is. */
-export function focusControl(root: HTMLElement, name: string | null): void {
+ *  None, or a disabled one, leaves the focus where it is. `tabbed`: Tab
+ *  brought it there, so a one-line field has its text selected, as Tab
+ *  selects it in a field no draw replaced. */
+export function focusControl(
+  root: HTMLElement,
+  name: string | null,
+  tabbed = false,
+): void {
   if (name === null) return;
   const control = controlNamed(root, name);
-  if (control !== null && control !== document.activeElement) control.focus();
+  if (control === null || control === document.activeElement) return;
+  control.focus();
+  if (tabbed && control instanceof HTMLInputElement) control.select();
 }
 
 function focusIn(root: HTMLElement): FocusKept | null {
@@ -1166,8 +1213,10 @@ function focusIn(root: HTMLElement): FocusKept | null {
       : null;
   return {
     selector,
+    // A control without a caret (a slider) carries nothing: its value is the
+    // document's by the time of a draw, and it has no selection to set.
     field:
-      typedIn === null
+      typedIn === null || typedIn.selectionStart === null
         ? null
         : {
             // Only text typed and not yet committed is carried over.
@@ -1202,6 +1251,8 @@ function focusAgain(root: HTMLElement, kept: FocusKept | null): void {
 export interface InspectorState {
   readonly folded: boolean;
   readonly positionOpen: boolean;
+  /** A station's Contents unfolded (none said: it is). */
+  readonly contentsOpen?: boolean;
   readonly busy?: string | null;
   /** A long text's preview shown, and the inspector made wider. */
   readonly longText?: { readonly preview: boolean; readonly wide: boolean };
@@ -1322,6 +1373,7 @@ function drawDock(
       ? longTextButtons(state)
       : [];
   dock.head.replaceChildren(
+    iconButton("right", "Back to the list", "back"),
     icon,
     head,
     ...longText,

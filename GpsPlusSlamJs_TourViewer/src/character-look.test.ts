@@ -5,15 +5,20 @@ import {
   PerspectiveCamera,
   Vector3,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createCharacterLook } from "./character-look";
+import { createCharacterLook, paintPoses } from "./character-look";
 import type { StageCharacterView } from "./character-views";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters";
 
 function setup(
   view: StageCharacterView,
-  extra: { restYaw?: number; voiced?: boolean; sheet?: boolean } = {},
+  extra: {
+    restYaw?: number;
+    voiced?: boolean;
+    sheet?: boolean;
+    noCard?: boolean;
+  } = {},
 ) {
   const { painters, painted } = fakeCharacterPainters();
   const look = createCharacterLook({
@@ -594,5 +599,103 @@ describe("createCharacterLook: the frames sheet and the read-along", () => {
     });
     expect(popFigure).not.toBeNull();
     expect(shown(popFigure!).image).toBe(painted.sheets[0]![1]!.front);
+  });
+});
+
+describe("createCharacterLook: poses painted before", () => {
+  // Why: a figure coming back stands from the first painting: the look must
+  // take those poses and paint none, or the sharing saves nothing.
+  it("stands from them and paints none", () => {
+    const { painters } = fakeCharacterPainters();
+    const poses = [painters.figure({} as never)];
+    const figure = vi.spyOn(painters, "figure");
+    const look = createCharacterLook({
+      view: "speak",
+      name: "Wendel",
+      line: "Good day.",
+      poses,
+      painters,
+    });
+    expect(figure).not.toHaveBeenCalled();
+    expect(look.state().frames).toBe(1);
+    look.dispose();
+  });
+});
+
+describe("createCharacterLook: the paper stage", () => {
+  // Why: the stage's top and backdrop are the two largest canvases of a
+  // look, and every look painted them although only the pop-up shows them.
+  // Several figures returning build in one task, so this is what a return
+  // costs once his figure is shared.
+  it.each(["bubble", "speak", "two-stations", "portrait"] as const)(
+    "the %s view paints none of it",
+    (view) => {
+      const { painters } = fakeCharacterPainters();
+      const top = vi.spyOn(painters, "stageTop");
+      const backdrop = vi.spyOn(painters, "backdrop");
+      createCharacterLook({
+        view,
+        name: "Wendel",
+        line: "Good day.",
+        figure: { width: 100, height: 200 } as unknown as HTMLCanvasElement,
+        painters,
+      });
+      expect(top).not.toHaveBeenCalled();
+      expect(backdrop).not.toHaveBeenCalled();
+    },
+  );
+
+  it("the pop-up paints it", () => {
+    const { painters } = fakeCharacterPainters();
+    const top = vi.spyOn(painters, "stageTop");
+    const backdrop = vi.spyOn(painters, "backdrop");
+    createCharacterLook({
+      view: "popup",
+      name: "Wendel",
+      line: "Good day.",
+      figure: { width: 100, height: 200 } as unknown as HTMLCanvasElement,
+      painters,
+    });
+    expect(top).toHaveBeenCalledTimes(1);
+    expect(backdrop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("paintPoses", () => {
+  // Why: a sheet that does not slice into four is drawn whole as one pose.
+  it("gives four poses of a sheet, one of an image or a bad sheet", () => {
+    const { painters } = fakeCharacterPainters();
+    const source = {} as never;
+    expect(paintPoses(source, true, painters)).toHaveLength(4);
+    expect(paintPoses(source, false, painters)).toHaveLength(1);
+    expect(
+      paintPoses(source, true, { ...painters, frames: () => [] }),
+    ).toHaveLength(1);
+  });
+});
+
+describe("createCharacterLook: a portrait with no card", () => {
+  // Why: the portrait view draws no bubble because the story card holds his
+  // line. A free figure has no card: voiceless he would say nothing, and
+  // captions always show. The line stands in a bubble by him there.
+  it("opens a bubble with his line, and keeps the name tag far", () => {
+    const { look, standAt, tick, painted } = setup("portrait", {
+      noCard: true,
+    });
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state()).toMatchObject({ bubble: 1, pip: 0 });
+    expect(painted.bubbles.length).toBeGreaterThan(0);
+    standAt(0, 20);
+    tick(1000, true);
+    expect(look.state()).toMatchObject({ bubble: 0, pip: 1 });
+  });
+
+  // Why: the story's portrait keeps the look that was chosen: no bubble.
+  it("a portrait with its card opens no bubble", () => {
+    const { look, standAt, tick } = setup("portrait");
+    standAt(0, 5);
+    tick(0, true);
+    expect(look.state()).toMatchObject({ bubble: 0 });
   });
 });
