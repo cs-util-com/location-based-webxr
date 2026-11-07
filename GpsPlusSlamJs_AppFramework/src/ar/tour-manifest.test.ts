@@ -729,6 +729,23 @@ describe('parseTourObject and tourObjectRecord (the world view a draft keeps)', 
 
   it.each([
     [
+      'a narrated long text',
+      {
+        id: 'l1',
+        kind: 'longText',
+        view: 'reading',
+        title: 'The gate',
+        body: 'Words.',
+        narration: {
+          audio: 'voice',
+          timing: 'timing/l1.json',
+          synthetic: false,
+          durationMs: 1000,
+        },
+        geo: GEO,
+      },
+    ],
+    [
       'a free video',
       {
         id: 'v1',

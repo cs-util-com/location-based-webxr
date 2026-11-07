@@ -11,6 +11,7 @@ import type {
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import type { TourStoryChild } from "gps-plus-slam-app-framework/ar/tour-story";
 
+<<<<<<< HEAD
 import {
   itemAssets,
   itemStoredAssets,
@@ -29,9 +30,13 @@ import {
 } from "./checks/item-lab-kind";
 import { createFreeItems } from "./free-items";
 import { createNarrationPlayer } from "./narration-player";
+=======
+import { itemAssets, showItemCard, type ItemCardHost } from "./item-card";
+>>>>>>> r1098
 import { createSceneView } from "./scene-view";
 import { createVoiceFocus } from "./voice-focus";
 import { TOUR_BLOCK_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 /**
  * Why these tests matter: what every kind of item owes whoever shows it. A
@@ -551,9 +556,14 @@ describe.each(ROWS)("the item contract: $name", (item) => {
     const { view, reads } = panel(undefined, undefined, showOf(item));
     view.offer(stationOf(item.fields));
     await flush();
+<<<<<<< HEAD
     view.characterTapped();
     await flush();
     const declared = declaredOf(item);
+=======
+    const declared = itemAssets(block(item.fields), characters);
+    const stored = tourBlockAssetIds(block(item.fields));
+>>>>>>> r1098
     expect(declared).toEqual(expect.arrayContaining(reads));
     // A prototype has no format half yet: nothing writes it.
     if (kindOfRow.has(item)) return;

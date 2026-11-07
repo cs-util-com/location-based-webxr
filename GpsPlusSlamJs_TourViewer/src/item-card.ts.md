@@ -16,11 +16,6 @@ it has a row).
 - `itemAssets(block, characters)`: the files showing `block` may read, in the
   card or in the world. Every file the card reads is on this list. The
   prefetch reads ahead from it, leaving out a video's files.
-- `itemStoredAssets(block | object, required?)`: the files a tour keeps for
-  `block`, wider than `itemAssets`, because a write keeps what another view
-  of the same item would read. `required` leaves out the pictures a long
-  text's body names, which may be missing. A captured photo's own asset is
-  `objectAssetIds`' concern in `tour-content.ts`.
 - `ItemCardHost`: what an item needs of whoever shows it.
   - `slots`: the card's places (`text`, `speaker`, `portrait?`, `image`,
     `video`). The host clears `speaker`, an item fills it.
