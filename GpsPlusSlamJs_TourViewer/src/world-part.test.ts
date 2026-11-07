@@ -3,7 +3,7 @@
  * in the square takes, so the door the first kinds are built against is
  * fixed here before any of them exists. These tests pin what the page
  * relies on: words painted into a texture look the same in every part
- * (`paintText`), one set holds every mounted part, a tap reaches only a
+ * (`canvasTexture`), one set holds every mounted part, a tap reaches only a
  * part of a station whose content shows, a part may show nothing at all
  * (an audio zone), the world's axes are the ones the renderer applies,
  * and a part loads its files by asset id.
@@ -28,7 +28,7 @@ import { pickObject } from "./object-pick";
 import {
   mountedWorldParts,
   mountWorldPart,
-  paintText,
+  canvasTexture,
   tapShownWorldPart,
   unmountWorldPart,
   worldEnv,
@@ -69,15 +69,15 @@ function tappable(parent: Object3D): WorldPart & { taps: number } {
 // Why: the reading stand, the reading sign and the character's look each
 // set their texture up by hand; one helper keeps words in the world in the
 // right colour space, with a sharpness a slanted page can ask for.
-describe("paintText", () => {
+describe("canvasTexture", () => {
   it("is an sRGB texture of the canvas, as sharp as asked", () => {
     const page = canvas();
-    const plain = paintText(page);
+    const plain = canvasTexture(page);
     expect(plain.image).toBe(page);
     expect(plain.colorSpace).toBe(SRGBColorSpace);
     expect(plain.anisotropy).toBe(1);
     for (const anisotropy of [1, 4, 16]) {
-      const sharp = paintText(page, { anisotropy });
+      const sharp = canvasTexture(page, { anisotropy });
       expect(sharp.anisotropy).toBe(anisotropy);
       sharp.dispose();
     }
@@ -289,7 +289,7 @@ describe("worldEnv", () => {
       expect(env.mode).toBe(mode);
       await expect(env.loadAsset("song")).resolves.toBe(blob);
       await expect(env.loadAsset("gone")).rejects.toThrow(/"gone"/);
-      expect(env.paintText(canvas()).colorSpace).toBe(SRGBColorSpace);
+      expect(env.canvasTexture(canvas()).colorSpace).toBe(SRGBColorSpace);
     }
     expect(asked).toEqual(["content/song.mp3", "content/song.mp3"]);
   });

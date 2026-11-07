@@ -16,12 +16,12 @@ the reading sign (`reading-sign.ts`) are world parts too.
   object, still and silent).
 - `WorldEnv` - what a part is built with: `mode`, `loadAsset(id)` (a tour
   file by asset id; rejects with `no file "<id>" in the tour` for an id the
-  tour lacks) and `paintText(canvas)`.
+  tour lacks) and `canvasTexture(canvas)`.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
   `update?({ seconds, viewer })`, `tap?()`, `leave?()`, `back?()`,
   `dispose()` (frees every geometry, material and texture it made).
-- `paintText(canvas, { anisotropy? } = {})` - the one canvas-text texture:
+- `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
   clamps it to the renderer's largest).
 - `worldEnv(mode, assets, load)` - a page's `WorldEnv`: an asset id is read
@@ -88,7 +88,7 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 
 ## Tests
 
-`world-part.test.ts`: `paintText`'s colour space and anisotropy (swept over
+`world-part.test.ts`: `canvasTexture`'s colour space and anisotropy (swept over
 1, 4 and 16, and none), the mounted set as a property, the shown-only tap
 (hidden, outside any station, no tap, no scene, a miss), the nearer of two
 parts on the ray through the real `pickObject`, an empty `Object3D` as a

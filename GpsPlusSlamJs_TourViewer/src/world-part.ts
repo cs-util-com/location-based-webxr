@@ -41,8 +41,8 @@ export interface WorldEnv {
   readonly mode: WorldMode;
   /** A tour file by its asset id; rejects for an id the tour lacks. */
   loadAsset(id: string): Promise<Blob>;
-  /** Words painted on `canvas` as a texture (`paintText`). */
-  paintText(canvas: HTMLCanvasElement): CanvasTexture;
+  /** `canvas` as a texture (`canvasTexture`). */
+  canvasTexture(canvas: HTMLCanvasElement): CanvasTexture;
 }
 
 /** A kind's object in the world. */
@@ -63,11 +63,11 @@ export interface WorldPart {
 }
 
 /**
- * Words painted on a canvas, as the texture every part shows them with:
- * sRGB, and `anisotropy` for a page seen at a slant (three clamps it to
- * the renderer's largest).
+ * A canvas as a texture, as every part shows one (painted words, a
+ * figure, a shadow blob): sRGB, and `anisotropy` for a page seen at a
+ * slant (three clamps it to the renderer's largest).
  */
-export function paintText(
+export function canvasTexture(
   canvas: HTMLCanvasElement,
   options: { readonly anisotropy?: number } = {},
 ): CanvasTexture {
@@ -95,7 +95,7 @@ export function worldEnv(
         ? Promise.reject(new Error(`no file "${id}" in the tour`))
         : load(path);
     },
-    paintText: (canvas) => paintText(canvas),
+    canvasTexture: (canvas) => canvasTexture(canvas),
   };
 }
 

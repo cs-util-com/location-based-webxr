@@ -24,7 +24,7 @@ one, which the format does not have yet.
   text's range; an empty text draws only the frame; a long title is cut
   with an ellipsis to the line's width.
 - `LECTERN_PAGE_ANISOTROPY` - 16, the page texture's anisotropy
-  (`world-part.ts` `paintText`, sRGB): the prototype asks for the
+  (`world-part.ts` `canvasTexture`, sRGB): the prototype asks for the
   renderer's maximum, and three clamps a texture's to that maximum on
   upload, so the largest any WebGL device reports asks for the same.
 - `buildLecternStand(pageMap | null)` -> `{ root, page, dispose }` - the

@@ -27,7 +27,7 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
 ("reading-sign-plate"), dispose }`. The plate's `onBeforeRender` turns it
   toward the camera, in the parent's frame, in the same frame.
 - `mountReadingSign(block, open?)` - draws the canvas texture
-  (`world-part.ts` `paintText`, sRGB), builds the sign, mounts it in the
+  (`world-part.ts` `canvasTexture`, sRGB), builds the sign, mounts it in the
   one world-part set and returns a `ReadingSignHandle` (a `WorldPart`:
   `block`, `object`, `tapTarget` = the plate, `dispose`) for
   `content-placement.ts`'s `makeReadingSign`. With `open` (the visitor's

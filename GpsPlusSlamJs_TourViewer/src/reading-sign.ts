@@ -35,7 +35,7 @@ import {
 import { readMinutes, wordCount } from "./long-text-sheet.js";
 import {
   mountWorldPart,
-  paintText,
+  canvasTexture,
   unmountWorldPart,
   type WorldPart,
 } from "./world-part.js";
@@ -288,7 +288,7 @@ export function mountReadingSign(
     title: block.title,
     minutes: readMinutes(wordCount(block.body)),
   });
-  const texture = paintText(canvas);
+  const texture = canvasTexture(canvas);
   const sign = buildReadingSign(texture);
   sign.root.userData["objectId"] = block.id;
   const shown = { id: block.id, title: block.title, body: block.body };

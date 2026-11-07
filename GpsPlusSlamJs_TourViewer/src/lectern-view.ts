@@ -46,7 +46,7 @@ import {
 } from "./lectern-page.js";
 import {
   mountWorldPart,
-  paintText,
+  canvasTexture,
   unmountWorldPart,
   type WorldPart,
 } from "./world-part.js";
@@ -297,7 +297,9 @@ export function mountLectern(block: {
   const g = canvas.getContext("2d");
   if (g === null) throw new Error("the reading stand needs a 2D canvas");
   // As sharp seen at a slant from the square as the renderer allows.
-  const texture = paintText(canvas, { anisotropy: LECTERN_PAGE_ANISOTROPY });
+  const texture = canvasTexture(canvas, {
+    anisotropy: LECTERN_PAGE_ANISOTROPY,
+  });
   const text = analyzeLecternText(
     plainTextOf(parseTourMarkdown(block.body)).text,
   );
