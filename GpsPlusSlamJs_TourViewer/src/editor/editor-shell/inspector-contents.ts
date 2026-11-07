@@ -53,7 +53,7 @@ export function contentsBody(
     textOf(
       "div",
       "note",
-      "The same menu as the + on the station's row in the list. Or press Ctrl+K.",
+      "The same menu as the + on the station's row in the list.",
     ),
   ];
 }

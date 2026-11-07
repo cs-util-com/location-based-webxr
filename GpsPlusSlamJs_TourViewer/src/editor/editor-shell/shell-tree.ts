@@ -195,11 +195,8 @@ function cardOf(
     // Unfolded: its picture (only when it has one), then its story
     // folders and its free items below the row.
     if (card.imagePath !== null) {
-      const pic = button("pic");
+      const pic = el("div", "pic");
       pic.dataset["select"] = card.selection;
-      pic.tabIndex = -1;
-      pic.title = card.title;
-      pic.setAttribute("aria-label", card.title);
       pic.setAttribute("aria-hidden", "true");
       pictures.show(pic, card.imagePath);
       box.append(pic);

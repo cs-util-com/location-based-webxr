@@ -360,6 +360,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     host: document.body,
     choose: (id, kind) => {
       addInPlace(id, kind);
+      // Added from the details on a phone: the draw took the button away.
+      if (document.activeElement === document.body) {
+        focusControl(inspector.root, '[data-act="close"]');
+      }
     },
   });
   // Ctrl+K: a kind and a place in one query.

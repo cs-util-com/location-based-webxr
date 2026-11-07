@@ -1644,6 +1644,33 @@ describe("on a phone", () => {
     shell.hide();
   });
 
+  // Why: the tree is out of sight under the details, so the menu's way
+  // back is the button that opened it, and the add draws that button away.
+  it("keeps the focus in sight when the details open the add menu", () => {
+    const { store, edits, select, shell } = setUp();
+    store.dispatch(editorViewActions.selected({ id: "station:a" }));
+    const opener = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-inspector [data-act="add-content"]',
+      );
+    opener()?.focus();
+    opener()?.click();
+    const item = document.querySelector<HTMLElement>(
+      '#tree-add-menu [role="menuitem"]',
+    );
+    item?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(document.activeElement).toBe(opener());
+    opener()?.click();
+    edits.addItem.mockImplementation(() => {
+      select("pa");
+    });
+    item?.click();
+    expect(document.activeElement).toBe(act("close"));
+    shell.hide();
+  });
+
   // Why: the close button leaves the map alone, so List is the only way
   // to the tree then.
   it("shows the map alone after a close, and the list on List", () => {

@@ -168,6 +168,26 @@ describe("wirePhoneSheets", () => {
     expect(dismiss).not.toHaveBeenCalled();
   });
 
+  // Why: with no height to take a share of, a release would divide by
+  // nothing and throw the sheet away.
+  it("leaves a sheet alone when there is no height to share", () => {
+    const root = document.createElement("div");
+    const other = document.createElement("div");
+    const lost = vi.fn();
+    wirePhoneSheets({
+      tree: root,
+      details: other,
+      spacePx: () => 0,
+      dismiss: lost,
+    }).sync("tree");
+    const grip = gripOf(root);
+    grip.dispatchEvent(pointer("pointerdown", 400));
+    grip.dispatchEvent(pointer("pointermove", 400));
+    grip.dispatchEvent(pointer("pointerup", 400));
+    expect(lost).not.toHaveBeenCalled();
+    expect(root.style.height).toBe("");
+  });
+
   it("ignores a move with no press before it", () => {
     sheets.sync("tree");
     gripOf(tree).dispatchEvent(pointer("pointermove", 200));

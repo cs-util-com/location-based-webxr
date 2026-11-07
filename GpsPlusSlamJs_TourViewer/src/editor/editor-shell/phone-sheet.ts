@@ -86,14 +86,24 @@ export function wirePhoneSheets(deps: {
     });
     grip.addEventListener("pointermove", (event) => {
       if (drag === null) return;
-      const most = deps.spacePx() * SHEET_LIMITS.max;
+      const space = deps.spacePx();
+      if (space <= 0) {
+        end();
+        return;
+      }
+      const most = space * SHEET_LIMITS.max;
       const wanted = drag.startPx + drag.startY - event.clientY;
       drag.px = Math.min(most, Math.max(0, wanted));
       root.style.height = `${String(drag.px)}px`;
     });
     grip.addEventListener("pointerup", () => {
       if (drag === null) return;
-      const rest = sheetRelease(drag.px / deps.spacePx());
+      const space = deps.spacePx();
+      if (space <= 0) {
+        end();
+        return;
+      }
+      const rest = sheetRelease(drag.px / space);
       end();
       if (rest === null) {
         deps.dismiss(which);

@@ -201,6 +201,12 @@ describe("drawTree", () => {
       "pic",
       "kids",
     ]);
+    // A picture is no control: the row already selects, and a hidden
+    // button could hold the focus where a reader cannot follow.
+    expect(gate?.querySelector(".pic")?.tagName).toBe("DIV");
+    expect(gate?.querySelector(".pic")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
     expect(gate?.querySelector(".meta")).toBeNull();
     expect(gate?.querySelector(".kids")?.textContent).toBe("The arch");
     // The gate's picture is its first photo, asked for its unfolded card.
@@ -222,8 +228,8 @@ describe("drawTree", () => {
     store.dispatch(editorViewActions.stationFolded({ id: "gate", open: true }));
     draw();
     const picks = [...dock.body.querySelectorAll("[data-select]")];
-    // A station's picture strip selects it as its row does: its second
-    // way there, out of the Tab order, so a keyboard meets the row once.
+    // A station's picture strip selects it as its row does: no control, so
+    // a keyboard and a screen reader meet the row once.
     expect(picks.map((p) => p.getAttribute("data-select"))).toEqual([
       "station:gate",
       "station:gate",
@@ -231,7 +237,7 @@ describe("drawTree", () => {
       "station:steps",
       "level-1",
     ]);
-    for (const pick of picks) {
+    for (const pick of picks.filter((p) => !p.matches(".pic"))) {
       expect(pick.tagName).toBe("BUTTON");
       expect((pick as HTMLButtonElement).type).toBe("button");
     }

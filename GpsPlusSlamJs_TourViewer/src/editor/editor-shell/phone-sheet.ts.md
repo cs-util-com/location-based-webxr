@@ -25,6 +25,7 @@ map, each with a drag grip, and the map's canvas ending at a sheet's top.
 - One number drives both the sheet's height and the canvas: `--s-sheet-share`
   on the body, a share of the height over the bottom panel. No measuring,
   so a bottom panel dragged taller moves the sheet and the canvas with it.
+- With no height to share (`spacePx` 0) a drag ends and the sheet stays.
 - A drag sets the sheet's own `height` and writes the number on release: the
   canvas resizes once, not per step.
 - A sheet remembers its height until the page goes, each its own. A dismissed

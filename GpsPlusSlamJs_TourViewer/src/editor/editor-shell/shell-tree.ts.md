@@ -24,9 +24,8 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
     any (titled "1 item" / "N items"), then `.add` - the row's "+"
     (`data-add`, titled 'Add to "..."', `aria-haspopup="menu"`), its
     last piece, which opens the type menu (`tree-add-menu.ts`);
-  - `.pic` - a button selecting the station as `.pick` does (a tap on the
-    strip is a tap on the station; out of the Tab order, `.pick` is the
-    way for the keyboard) - only when unfolded AND the station has a picture: the
+  - `.pic` - no control, a strip a tap on which selects the station as
+    `.pick` does (`.pick` is the way for the keyboard) - only when unfolded AND the station has a picture: the
     picture under the row (no empty frame when it has none), hidden
     from screen readers;
   - `.kids` - only when unfolded: its story folders first (`.folder`,
