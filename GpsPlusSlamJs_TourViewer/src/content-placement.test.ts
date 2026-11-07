@@ -918,6 +918,45 @@ describe("renderTourStation", () => {
     for (const part of parts) expect(mountedWorldParts()).not.toContain(part);
   });
 
+  // Why: a part stands as its block's pose says, pitch and roll included:
+  // only the stand and the sign are set upright, by their own arm, so a
+  // kind that wants a tilt (a plaque on a slope) gets it.
+  it("gives a world part its block's pose rotation as it stands, tilt included", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const tilt = new Quaternion()
+      .setFromEuler(new Euler(0.3, 0.5, -0.2, "YXZ"))
+      .toArray() as [number, number, number, number];
+    const blocks = withFreeBlocks(base, [
+      {
+        id: "film",
+        kind: "video",
+        view: "card",
+        video: "v",
+        transcript: "t",
+        pose: { position: [0, 0, 0], rotation: tilt },
+      },
+    ]);
+    const object = new Object3D();
+    const drawn = await renderTourStation(
+      { ...base, ...blocks },
+      {
+        assets: [],
+        scene: new Group(),
+        zero: ZERO,
+        makeLabel: labelStub,
+        loadPhotoTexture: () => Promise.resolve(new Texture()),
+        worldPart: () => ({ object, dispose: () => undefined }),
+      },
+    );
+    expect(object.quaternion.angleTo(new Quaternion(...tilt))).toBeLessThan(
+      1e-6,
+    );
+    drawn.dispose();
+  });
+
   // Why: the stand and the sign free themselves only while still mounted
   // (`if (!unmountWorldPart(part)) return;`, so a second dispose is a
   // no-op). A part built the same way must still be freed with its
@@ -939,6 +978,7 @@ describe("renderTourStation", () => {
       },
     ]);
     let freed = 0;
+    const made: WorldPart[] = [];
     const drawn = await renderTourStation(
       { ...base, ...blocks },
       {
@@ -955,13 +995,15 @@ describe("renderTourStation", () => {
               freed += 1;
             },
           };
+          made.push(part);
           return part;
         },
       },
     );
     drawn.dispose();
     expect(freed).toBe(1);
-    expect(mountedWorldParts()).toEqual([]);
+    expect(made).toHaveLength(1);
+    expect(mountedWorldParts()).not.toContain(made[0]);
   });
 
   // Why: every world view of a model - placed, ghost, hotspots, cutaway,

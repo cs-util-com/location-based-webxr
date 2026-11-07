@@ -1,6 +1,6 @@
 /**
  * Why this test matters: a world part is the one shape every kind's object
- * in the square takes, so the door E2's first kinds are built against is
+ * in the square takes, so the door the first kinds are built against is
  * fixed here before any of them exists. These tests pin what the page
  * relies on: words painted into a texture look the same in every part
  * (`paintText`), one set holds every mounted part, a tap reaches only a
@@ -10,10 +10,21 @@
  */
 
 import fc from "fast-check";
-import { Group, Object3D, Quaternion, SRGBColorSpace, Vector3 } from "three";
+import {
+  Group,
+  Mesh,
+  Object3D,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Quaternion,
+  SRGBColorSpace,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 
+import { facingRotation } from "./character-views";
 import { rotationFromHeading } from "./content-placement";
+import { pickObject } from "./object-pick";
 import {
   mountedWorldParts,
   mountWorldPart,
@@ -161,6 +172,39 @@ describe("tapShownWorldPart", () => {
     expect([a.taps, b.taps]).toEqual([0, 0]);
   });
 
+  // Why: the pick is the page's own (`pickObject`): among the shown parts
+  // the nearest exact hit along the ray wins, whatever the kind and
+  // whatever their order in the set, so a sign standing in front of a
+  // stand takes the tap, and the stand behind it does not.
+  it("taps the nearer of two parts on the ray, through the page's real pick", () => {
+    const { scene, shown } = stage();
+    const at = (z: number) => {
+      const object = new Mesh(new PlaneGeometry(1, 1));
+      object.position.set(0, 0, z);
+      shown.add(object);
+      const part = {
+        object,
+        tapTarget: object,
+        taps: 0,
+        tap() {
+          part.taps += 1;
+        },
+        dispose() {},
+      };
+      return part;
+    };
+    const stand = at(-4);
+    const sign = at(-2);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    scene.add(camera);
+    scene.updateMatrixWorld(true);
+    const pick = (targets: ReadonlyMap<string, Object3D>) =>
+      pickObject(camera, targets);
+    expect(tapShownWorldPart(scene, pick, null, [stand, sign])).toBe(true);
+    expect(tapShownWorldPart(scene, pick, null, [sign, stand])).toBe(true);
+    expect([stand.taps, sign.taps]).toEqual([0, 2]);
+  });
+
   // Why: an audio zone may have nothing to see; an empty object is still a
   // part (it stands, it is mounted, it goes), and it takes no tap.
   it("an empty object is a valid part: mounted and shown, never tapped", () => {
@@ -186,9 +230,12 @@ describe("tapShownWorldPart", () => {
   });
 });
 
-// Why: the contract tells a kind which way is up and which way is front;
-// these are the axes the renderer's pose actually gives a part, so the
-// words in the sidecar cannot drift from them. NUE: x North, y Up, z East.
+// Why: the contract tells a kind which way is up and which way is front.
+// The renderer gives a part its block's pose rotation as it stands, and
+// two conventions write that rotation: the QR poster rule
+// (`rotationFromHeading`) and the editor's facing (`facingRotation`).
+// These pin what each makes of the part's axes, so the words in the
+// sidecar cannot drift from them. NUE: x North, y Up, z East.
 describe("the world's axes", () => {
   const bearingOf = (v: Vector3): number =>
     ((Math.atan2(v.z, v.x) * 180) / Math.PI + 360) % 360;
@@ -205,6 +252,20 @@ describe("the world's axes", () => {
           Math.abs(((a - b + 540) % 360) - 180);
         expect(near(bearingOf(right), h)).toBeLessThan(1e-6);
         expect(near(bearingOf(front), h + 90)).toBeLessThan(1e-6);
+      }),
+    );
+  });
+
+  it("the editor's facing turns front, local +Z, to the facing itself", () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 359.9, noNaN: true }), (h) => {
+        const q = new Quaternion(...facingRotation(h)!);
+        const up = new Vector3(0, 1, 0).applyQuaternion(q);
+        const front = new Vector3(0, 0, 1).applyQuaternion(q);
+        expect(up.y).toBeCloseTo(1, 9);
+        const near = (a: number, b: number): number =>
+          Math.abs(((a - b + 540) % 360) - 180);
+        expect(near(bearingOf(front), h)).toBeLessThan(1e-6);
       }),
     );
   });
