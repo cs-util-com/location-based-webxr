@@ -67,12 +67,16 @@ const STYLESHEET = /<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g;
  * against the module that names it. Terrain plan 2026-09-27-0605 §9, finding 3.
  */
 const WORKER_BY_URL =
-  /new\s+(?:Shared)?Worker\s*\(\s*new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+  /new\s+(?:Shared)?Worker\s*\(\s*new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*,?\s*\)/g;
 /** A Worker named by a plain string: resolved against the PAGE, not the module. */
 const WORKER_BY_STRING = /new\s+(?:Shared)?Worker\s*\(\s*["']([^"']+)["']/g;
-/** Any other `new URL("x", import.meta.url)`: a module or a fetched asset. */
+/**
+ * Any other `new URL("x", import.meta.url)`: a module or a fetched asset. Both
+ * URL patterns allow the trailing comma the formatter adds when it breaks the
+ * call over lines.
+ */
 const META_URL =
-  /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+  /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*,?\s*\)/g;
 /**
  * A dynamic `import("x")` with a literal specifier: a module loaded later
  * (the globe's arrival prefetch at the pin press, round-5 plan

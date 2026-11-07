@@ -811,3 +811,57 @@ describe("the globe lab's boot graph", () => {
     assert.deepEqual(offenders, []);
   });
 });
+
+describe("buildLookdev: new URL written the way the formatter writes it", () => {
+  // Why this test matters: Prettier breaks a long `new URL(path, import.meta.url)`
+  // over lines and adds a trailing comma, and the crawl's pattern did not
+  // allow that comma. The building geometry lab named seven of its eight
+  // fixtures that way, so the deploy shipped one and the preview page failed
+  // on a 404 that the local server, which serves every file, never showed.
+  let root;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/wrapped/index.html":
+        "<title>Wrapped lab</title>" +
+        '<script type="module" src="./wrapped.js"></script>',
+      "labs/wrapped/wrapped.js":
+        "export const DATA = new URL(\n" +
+        '  "./a-rather-long-fixture-name.json",\n' +
+        "  import.meta.url,\n" +
+        ");\n" +
+        "const w = new Worker(\n" +
+        '  new URL("./wrapped-worker.js", import.meta.url,),\n' +
+        '  { type: "module" },\n' +
+        ");\n",
+      "labs/wrapped/a-rather-long-fixture-name.json": "{}\n",
+      "labs/wrapped/wrapped-worker.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-wrapped-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [],
+    });
+  });
+  after(() => {
+    for (const dir of [root, out])
+      rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("ships a fetched file named across lines with a trailing comma", () => {
+    assert.ok(
+      files.includes("labs/wrapped/a-rather-long-fixture-name.json"),
+      files.join(", "),
+    );
+  });
+
+  it("ships a Worker named the same way", () => {
+    assert.ok(
+      files.includes("labs/wrapped/wrapped-worker.js"),
+      files.join(", "),
+    );
+  });
+});
