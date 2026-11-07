@@ -179,6 +179,19 @@ describe("a drag that ends without a change event", () => {
         ["gate", 35],
       ]);
     });
+
+    // Why: a press that moved nothing starts no drag and so had no release
+    // to end; its finger must not stay the drag's, or the next drag, one
+    // the keys or another pointer start, waits for that finger's release
+    // and is never written.
+    it("forgets the finger of a press that started no drag", () => {
+      wired();
+      slider.dispatchEvent(pointer("pointerdown", 7));
+      document.dispatchEvent(pointer("pointerup", 7));
+      drag(30);
+      up("pointerup");
+      expect(write.mock.calls).toEqual([["gate", 30]]);
+    });
   });
 
   it("listens for a release only during a drag", () => {
