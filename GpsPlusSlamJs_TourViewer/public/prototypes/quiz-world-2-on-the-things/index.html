@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Prototype: the answers sit on the things in the place, the card keeps a list as the way out. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Answers On Things</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { runStage } from "../quiz-world-stage/stage.js";
+      import { kind } from "./kind.js";
+
+      const samples = await fetch("./sample.json").then((r) => r.json());
+      runStage({ kind, samples, title: "Answers On Things" });
+    </script>
+  </body>
+</html>
