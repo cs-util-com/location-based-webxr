@@ -63,19 +63,19 @@ test.describe("the item lab", () => {
     expect(errors).toEqual([]);
   });
 
-  test("moves through the two-step story and reports its end once", async ({
+  // Why this test matters: the scene view shows its Continue button on a
+  // tap step, so the button a person sees must move the story on; the hook's
+  // `next` alone would pass with a dead button.
+  test("moves through the two-step story by its Continue button and reports its end once", async ({
     page,
   }) => {
     await openLab(page);
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    const proceed = page.getByRole("button", { name: "Continue" });
+    await proceed.click();
     await expect(page.locator("#lab-text")).toHaveText(
       "The story's next step.",
     );
-    await page.evaluate(() => {
-      window.__itemLab?.next();
-    });
+    await proceed.click();
     await expect.poll(async () => (await state(page)).story.ended).toBe(1);
     const free = (await state(page)).free;
     expect(free.standing).toBe(true);

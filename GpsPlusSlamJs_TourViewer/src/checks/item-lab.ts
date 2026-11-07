@@ -296,6 +296,13 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
     },
     showItem,
   });
+  // The scene view shows these on a tap step and on a waiting story.
+  must("lab-continue").addEventListener("click", () => {
+    view.continueTapped();
+  });
+  must("lab-play-next").addEventListener("click", () => {
+    view.playNextNow();
+  });
 
   // Right: the station, in the real free host.
   const renderer = new THREE.WebGLRenderer({ antialias: true });

@@ -15,7 +15,7 @@ Runs a kind from `public/prototypes/item-kinds/<name>/` in both contexts, side b
 
 ## Invariants and assumptions
 
-- Left: real `createSceneView`; the `audio` and `stage` seams are fakes that remember what they would play and stand.
+- Left: real `createSceneView`; the `audio` and `stage` seams are fakes that remember what they would play and stand. Its Continue (`#lab-continue`) and play-next (`#lab-play-next`) buttons, which the scene view shows and hides, are wired to `continueTapped` and `playNextNow` as the app wires its own.
 - Right: real `createFreeItems` and real `createSceneStage` on a three.js scene; a pointer tap goes through the real `pickObject`, a hook tap takes the first target. Its player is the real narration player over `createSilentAudio`.
 - Both sides share one voice channel, one set of loads and one count of object URLs, so a sound on one side holds the other, as in the app.
 - A lost file or a held load is decided in `loadAsset`, so a kind sees what a real failure gives it.
