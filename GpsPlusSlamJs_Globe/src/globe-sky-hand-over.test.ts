@@ -10,10 +10,12 @@
  * frame, so continuity and monotony are checked as properties.
  */
 import fc from "fast-check";
+import { GLOBE_SURFACE } from "./globe-surface.js";
 import { describe, expect, it } from "vitest";
 
 import {
   GLOBE_SKY_HAND_OVER,
+  nearCloudsGain,
   easedExposure,
   groundSkyWeight,
   quantisedObserverKm,
@@ -247,5 +249,41 @@ describe("sunStepped", () => {
   it("refuses a non-finite direction or a step that is not positive", () => {
     expect(() => sunStepped([0, 1, 0], [Number.NaN, 1, 0])).toThrow(RangeError);
     expect(() => sunStepped([0, 1, 0], [0, 1, 0], 0)).toThrow(RangeError);
+  });
+});
+
+describe("nearCloudsGain", () => {
+  // Why this test matters: by day the near clouds keep the look of the page
+  // they were chosen on; below that the camera opens up and they must follow
+  // it, without a step where the raised exposure begins.
+  it("is 1 by day and follows the exposure above the day's", () => {
+    const day = GLOBE_SKY_HAND_OVER.dayExposure;
+    expect(day).toBe(GLOBE_SURFACE.sunIntensity);
+    expect(nearCloudsGain(day / 2, 0.5)).toBe(1);
+    expect(nearCloudsGain(day, 0.5)).toBe(1);
+    expect(nearCloudsGain(day * 3, 0.5)).toBeCloseTo(3);
+    expect(nearCloudsGain(day * 1.001, 0.5)).toBeCloseTo(1.001);
+  });
+
+  // Why this test matters: at night the camera opens up on an empty scene,
+  // and the clouds' small night ambient came out white with it.
+  it("is held at dusk and leaves the night at 1", () => {
+    const day = GLOBE_SKY_HAND_OVER.dayExposure;
+    const { maxGain, fadeSunUp } = GLOBE_SKY_HAND_OVER.nearGain;
+    expect(nearCloudsGain(day * 40, 0)).toBe(maxGain);
+    expect(nearCloudsGain(day * 40, fadeSunUp.dark)).toBe(1);
+    expect(nearCloudsGain(day * 40, -1)).toBe(1);
+    const middle = nearCloudsGain(
+      day * 40,
+      (fadeSunUp.dark + fadeSunUp.lit) / 2,
+    );
+    expect(middle).toBeGreaterThan(1);
+    expect(middle).toBeLessThan(maxGain);
+  });
+
+  it("stays 1 for an exposure that is not a number", () => {
+    expect(nearCloudsGain(Number.NaN, 0.5)).toBe(1);
+    expect(nearCloudsGain(Number.POSITIVE_INFINITY, 0.5)).toBe(1);
+    expect(nearCloudsGain(30, Number.NaN)).toBe(1);
   });
 });

@@ -88,6 +88,7 @@ export const SPECS = {
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "file-access-check.spec.js": { project: "dom", area: "viewer", lane: 1 },
+  "item-lab.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing-film.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "launch-and-errors.spec.js": { project: "dom", area: "viewer", lane: 2 },

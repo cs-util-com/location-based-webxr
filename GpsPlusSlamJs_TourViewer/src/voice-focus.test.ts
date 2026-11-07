@@ -417,6 +417,26 @@ describe("a superseded or refused clip", () => {
     expect(focus.running()).not.toBeNull();
   });
 
+  // Why: a hold pauses the clip, and a pause while its play() is pending
+  // rejects that play() with AbortError. The clip is held, not refused: it
+  // keeps the channel and its step keeps waiting for its end.
+  it("a play cut short by a hold is no refusal", async () => {
+    const focus = createVoiceFocus();
+    const audio = focusedSceneAudio(
+      {
+        play: () => Promise.reject(new DOMException("paused", "AbortError")),
+        stop: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+      },
+      focus,
+    );
+    await expect(audio.play(new Blob(["x"]), () => undefined)).resolves.toBe(
+      undefined,
+    );
+    expect(focus.running()).not.toBeNull();
+  });
+
   // Why: a phone may refuse the clip's way back; nobody hears it then, so
   // the channel must not stay taken by a silent video.
   it("a refused video gives the channel back when it should carry on", async () => {

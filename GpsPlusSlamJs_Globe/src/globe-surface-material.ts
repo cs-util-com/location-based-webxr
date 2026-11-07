@@ -17,7 +17,21 @@ import {
   type GlobeSeaOptions,
   type GlobeSeaUniforms,
 } from "./globe-sea.js";
+import { smoothstep } from "./globe-ease.js";
 import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
+
+/**
+ * The heights (km) the night map's lights fade over. Its texel is many
+ * kilometres wide, so from low down one texel is a grey wash over the view.
+ */
+export const NIGHT_LIGHTS_FADE_KM = { low: 15, high: 60 } as const;
+
+/** The night map's share at a camera height: 1 high up, 0 near the ground. */
+export function nightLightsShare(observerKm: number): number {
+  if (!Number.isFinite(observerKm)) return 1;
+  const { low, high } = NIGHT_LIGHTS_FADE_KM;
+  return smoothstep((observerKm - low) / (high - low));
+}
 
 /** The patch's tunables (lab parameters; the phone round sets them). */
 export const GLOBE_SURFACE_TUNING = {

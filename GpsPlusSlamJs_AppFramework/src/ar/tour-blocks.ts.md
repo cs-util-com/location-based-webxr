@@ -11,6 +11,11 @@ story is a STORY block (`tour-story.ts`).
 The manifest (`tour-manifest.ts`) reads every station's children through
 `tour-story.ts`, which reads each block here.
 
+What each kind knows is one row of `TOUR_KINDS` (`tour-kinds.ts`); the
+tables below are derived from those rows, and this file keeps the envelope.
+Its fields are read with the toolkit of `tour-block-read.ts`. The names keep
+their import path here.
+
 ## Public API
 
 - `TourBlockKind` - `shortText | longText | picture | video | audio |
@@ -50,9 +55,9 @@ model | character`.
   - `longText`: `title` required 80, `body` required 32 000 UTF-16 units;
   - `picture`: `title` optional 40, `caption` optional 1200, `alt`
     optional 300;
-  - `video`, `audio`: `title` optional 40, `transcript` required 32 000;
+  - `video`, `audio`: `title` optional 40, `transcript` optional 32 000;
   - `model`: `title` optional 80;
-  - `character`: `name` required 80, `caption` required 2000.
+  - `character`: `name` required 80, `caption` optional 2000.
 - `TOUR_PICTURE_MIN_WIDTH_M` (0.05), `TOUR_PICTURE_MAX_WIDTH_M` (50) - a
   picture's `widthM`, inclusive.
 - `TOUR_MODEL_MIN_SIZE_M` (0.05), `TOUR_MODEL_MAX_SIZE_M` (500) - a

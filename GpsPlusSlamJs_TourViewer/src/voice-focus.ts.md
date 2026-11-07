@@ -14,7 +14,7 @@ The page's one voice channel: one voice is heard at a time, whoever asks. A tap 
   - `running()` - the voice heard now, or null.
 - `Voice` - `hold()`, `carryOn()`, `stop()`, and `story` on a voice a story owns.
 - `focusedPlayer(inner, focus): FocusedPlayer` - a `NarrationPlayer` in the channel: `play` is a tap, `pause` gives the channel back; adds `wanted()` (playing or held), `carryOn()` (a self-start; refused, it takes the place behind what runs and answers false) and `stop()` (for good, back to its start).
-- `focusedSceneAudio(audio, focus, onHeld?): SceneAudio` - the story's sound channel in it; a clip is a tap. `onHeld(held)` hears the channel hold it and let it go, so its step can wait. `takeBack()` is a tap on the held voice: it runs again, whatever runs is held. A clip replaced by the next one ends nothing: its late refusal or end is not the new clip's.
+- `focusedSceneAudio(audio, focus, onHeld?): SceneAudio` - the story's sound channel in it; a clip is a tap. `onHeld(held)` hears the channel hold it and let it go, so its step can wait. `takeBack()` is a tap on the held voice: it runs again, whatever runs is held. A clip replaced by the next one ends nothing: its late refusal or end is not the new clip's. A `play` a hold's pause cut short (AbortError) is no refusal: it resolves and the clip keeps the channel.
 - `storyVideoVoice(video, focus, onHeld?)` - the story's clip in it; `started` takes the channel unless the clip is muted, `ended` gives it back. A `play` the browser refuses at carrying on gives it back too.
 
 ## Invariants and assumptions

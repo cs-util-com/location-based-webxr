@@ -55,6 +55,12 @@ export function silentWav(): Uint8Array {
   return bytes;
 }
 
+/** A play() a pause cut short: the browser rejects it with AbortError, and
+ *  the clip is held, not refused. */
+export function isPlayAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export function createSceneAudio(deps: {
   createElement(): AudioElementLike;
   readonly objectUrls: {
@@ -138,8 +144,8 @@ export function createSceneAudio(deps: {
       const ended = clipEnded;
       el()
         .play()
-        .catch(() => {
-          if (clipEnded === ended) ended();
+        .catch((error: unknown) => {
+          if (!isPlayAbort(error) && clipEnded === ended) ended();
         });
     },
     durationMs: lengthMs,

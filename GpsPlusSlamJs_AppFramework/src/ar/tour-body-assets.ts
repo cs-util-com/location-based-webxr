@@ -7,14 +7,14 @@
  * cap), which show their alt text only; what a write's asset rule reads
  * (`tour-content.ts`, which must not drop a file the body names).
  *
- * @see long-text-body-assets.ts.md
+ * @see tour-body-assets.ts.md
  */
 
 import {
   parseTourMarkdown,
   type TourMdBlock,
   type TourMdInline,
-} from "gps-plus-slam-app-framework/ar/tour-markdown";
+} from './tour-markdown.js';
 
 /** What one parse of a body gives: the assets it shows and the assets it
  *  names, each in document order and once. */
@@ -26,12 +26,12 @@ interface BodyAssets {
 function inlinesInto(inlines: readonly TourMdInline[], named: string[]): void {
   for (const inline of inlines) {
     switch (inline.kind) {
-      case "pictureAlt":
+      case 'pictureAlt':
         if (inline.asset !== undefined) named.push(inline.asset);
         break;
-      case "emphasis":
-      case "strong":
-      case "link":
+      case 'emphasis':
+      case 'strong':
+      case 'link':
         inlinesInto(inline.children, named);
         break;
       default:
@@ -43,22 +43,22 @@ function inlinesInto(inlines: readonly TourMdInline[], named: string[]): void {
 function blocksInto(
   blocks: readonly TourMdBlock[],
   shown: string[],
-  named: string[],
+  named: string[]
 ): void {
   for (const b of blocks) {
     switch (b.kind) {
-      case "picture":
+      case 'picture':
         shown.push(b.asset);
         named.push(b.asset);
         break;
-      case "paragraph":
-      case "heading":
+      case 'paragraph':
+      case 'heading':
         inlinesInto(b.inlines, named);
         break;
-      case "list":
+      case 'list':
         for (const item of b.items) blocksInto(item, shown, named);
         break;
-      case "quote":
+      case 'quote':
         blocksInto(b.blocks, shown, named);
         break;
     }

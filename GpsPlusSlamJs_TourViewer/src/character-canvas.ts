@@ -659,6 +659,19 @@ export function paintFigure(source: FigureSource): PaintedFigure {
 }
 
 /**
+ * The same picture the right way up, from one stored bottom row first (a
+ * bitmap the decoder flipped for WebGL, where a canvas does not undo it).
+ */
+export function uprightFigure(source: FigureSource): FigureSource {
+  const c = canvas(source.width, source.height);
+  const ctx = ctxOf(c);
+  ctx.translate(0, c.height);
+  ctx.scale(1, -1);
+  ctx.drawImage(source, 0, 0);
+  return c;
+}
+
+/**
  * A frames sheet's four poses, each as a die-cut card (`paintFigure`),
  * in the sheet's order; empty for a sheet too small to slice.
  */

@@ -27,7 +27,7 @@ describe("whether a body shows a picture, remembered", () => {
     expect(parsed).toHaveBeenCalledTimes(2);
   });
 
-  // Why this test matters: the memo (`long-text-body-assets.ts`) is bounded to 64 bodies (a tour's bodies are
+  // Why this test matters: the memo (`tour-body-assets.ts`) is bounded to 64 bodies (a tour's bodies are
   // many, and an editor may produce endless edits of one); when it is
   // full it empties, so a body judged before is parsed again rather than
   // kept forever.

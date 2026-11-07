@@ -17,6 +17,7 @@
 
 import type {
   TourAsset,
+  TourBlock,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -43,12 +44,12 @@ import {
   type ItemClip,
   type ItemTapTarget,
   type ItemVideo,
+  type ItemWorld,
 } from "./item-card.js";
 import { worldBlockReachedBy } from "./shown-blocks.js";
 import { lineReadingMs } from "./character-views.js";
 import type { CharacterVoice } from "./character-look.js";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
-import type { StageCharacterLook } from "./scene-stage.js";
 import { stationHasCard, stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
@@ -63,7 +64,7 @@ export interface SceneViewDom {
   /** The character's round portrait beside his name (the `portrait`
    *  view); absent: none. */
   readonly portrait?: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
-  /** Text, caption or transcript: every step has words (captions always). */
+  /** Text, caption or transcript: a step may have none (a video, a sound or a character without one). */
   readonly text: Pick<HTMLElement, "textContent">;
   /** Loading and failures of this step's media, `aria-live`. */
   readonly status: Pick<HTMLElement, "textContent">;
@@ -77,6 +78,9 @@ export interface SceneViewDom {
   readonly choices: Pick<HTMLElement, "replaceChildren">;
   readonly continueButton: Pick<HTMLElement, "hidden">;
   readonly playNext: Pick<HTMLElement, "textContent" | "hidden">;
+  /** An empty element of the card an item fills on its own (`item-card.ts`),
+   *  emptied when the step changes; absent: no item has one. */
+  readonly surface?: HTMLElement;
 }
 
 /** The sound of a step (one channel: a new clip stops the previous). */
@@ -94,15 +98,10 @@ export interface SceneAudio {
   takeBack?(): void;
 }
 
-/** What a step shows in AR at its station. `onWaiting`: the decoded
- *  figure waits for the station's pose (`scene-stage.ts`). */
-interface SceneStage {
-  showCharacter(
-    stationId: string,
-    image: Blob,
-    onWaiting?: () => void,
-    look?: StageCharacterLook,
-  ): Promise<void>;
+/** What a step shows in AR at its station: the world an item draws on
+ *  (`onWaiting`: what it drew waits for the station's pose,
+ *  `scene-stage.ts`), and what the panel itself tells the stage. */
+interface SceneStage extends Required<ItemWorld> {
   /** The step's voice, which a character look follows; `durationMs`, the
    *  voice's length when known as it starts speaking. */
   setVoice?(voice: CharacterVoice, durationMs?: number): void;
@@ -111,11 +110,6 @@ interface SceneStage {
   release?(): void;
   /** A tap on the bubble view's look: its bubble shuts or opens. */
   toggleBubble?(): void;
-  showModel(
-    stationId: string,
-    model: Blob,
-    onWaiting?: () => void,
-  ): Promise<void>;
   clear(): void;
 }
 
@@ -150,6 +144,9 @@ export interface SceneViewDeps {
   /** The station is done: its one story played to its end, or the last
    *  unplayed of several, or the visitor left its picker. */
   onStoryEnd(stationId: string): void;
+  /** Shows an item's card (the item lab swaps a kind in; `showItemCard`
+   *  otherwise). */
+  showItem?(block: TourBlock, host: ItemCardHost): void;
   /** The story started, moved to another step, ended or stopped, or the
    *  queue changed: what the sheet draws of it (`progress`) may differ. */
   onChange?(): void;
@@ -311,6 +308,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
       dom.portrait.src = "";
     }
     stopVideo();
+    dom.surface?.replaceChildren();
     lineVoice = "none";
     voiceIsHis = false;
     videoStep = false;
@@ -539,8 +537,15 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
   /** What the step's item gets of this panel (`item-card.ts`). */
   function itemHost(station: TourStation): ItemCardHost {
     const token = renderToken;
+    // An item draws through the two doors only, never the panel's own
+    // calls on the stage (clear, release, voice, bubble).
+    const world: ItemWorld = {
+      showCharacter: (...a) => deps.stage.showCharacter(...a),
+      showModel: (...a) => deps.stage.showModel(...a),
+    };
     return {
       slots: dom,
+      ...(dom.surface === undefined ? {} : { surface: dom.surface }),
       ...(deps.characters === undefined ? {} : { characters: deps.characters }),
       checkPicture: (blob) => deps.checkPicture(blob),
       asset: withAsset,
@@ -549,15 +554,9 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         playSound(id, false);
       },
       stage: {
-        character: (blob, look) =>
-          stageFigure("figure", (onWaiting) =>
-            look === undefined
-              ? deps.stage.showCharacter(station.id, blob, onWaiting)
-              : deps.stage.showCharacter(station.id, blob, onWaiting, look),
-          ),
-        model: (blob) =>
-          stageFigure("3D model", (onWaiting) =>
-            deps.stage.showModel(station.id, blob, onWaiting),
+        stand: (what, draw) =>
+          stageFigure(what, (onWaiting) =>
+            draw(world, { stationId: station.id, onWaiting }),
           ),
         tapTarget(target) {
           tapTarget = target;
@@ -580,7 +579,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
    *  player skips quizzes until K5. */
   function showChild(station: TourStation, child: TourStoryChild): void {
     if (isTourStoryBlock(child)) {
-      showItemCard(child, itemHost(station));
+      (deps.showItem ?? showItemCard)(child, itemHost(station));
       return;
     }
     if (child.kind !== "choice") return;
@@ -830,7 +829,7 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     characterTapped() {
       const target = tapTarget;
       if (target === null) return false;
-      if (target.view === "bubble") {
+      if (target.bubble) {
         deps.stage.toggleBubble?.();
         return true;
       }
